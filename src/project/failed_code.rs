@@ -25,7 +25,10 @@ impl Project {
         declared: &[Dependency],
         error: &Error,
     ) -> Option<FailedCodeCapture> {
-        if error.code != "SCRIPT_EXECUTION_FAILED" || declared.len() > MAX_GUARDS {
+        if error.code != "SCRIPT_EXECUTION_FAILED"
+            || declared.len() > MAX_GUARDS
+            || !self.icons.has_complete_path_guards()
+        {
             return None;
         }
         let details = error.details.as_ref()?;

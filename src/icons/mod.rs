@@ -375,6 +375,18 @@ impl Registry {
         self.bindings.extend(other.bindings);
     }
     #[cfg(feature = "rendering")]
+    pub(crate) fn has_complete_path_guards(&self) -> bool {
+        let mut missing = 0;
+        for pack in self.packs.values() {
+            match pack {
+                Ok(_) => {}
+                Err(error) if error.code == "ASSET_NOT_FOUND" => missing += 1,
+                Err(_) => return false,
+            }
+        }
+        missing == self.missing.len()
+    }
+    #[cfg(feature = "rendering")]
     pub(crate) fn path_bindings(&self) -> &BTreeMap<PathBuf, PathBuf> {
         &self.bindings
     }

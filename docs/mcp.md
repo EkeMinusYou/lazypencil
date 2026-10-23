@@ -221,6 +221,8 @@ Reads compare the current document/declared dependencies and recheck captured ru
 
 Generated icon packs participate in the same checks. Captures keep installed icon file hashes and the registry's requested-to-canonical bindings, including notices, manifests, data and optional font files, without retaining the pack payloads. Missing pack directories are absence guards: installing a pack encountered during the failed attempt invalidates that capture. These absence paths share the 1 MiB path budget and have a 4,096-entry bound. Changing installed bytes or redirecting a link to byte-identical files also invalidates the capture.
 
+An icon integrity error or another registry error without a complete file/absence guard prevents publication of a new failed-code capture. Existing captures still require all their original checks; a damaged installation does not become a partially verified capture.
+
 [macOS verification at source 1c84f69](https://github.com/EkeMinusYou/lazypencil/actions/runs/40036814772) passed all four selected failed-source MCP workflows and the library expiry/cancellation/size test as part of 118 passing integration tests. The subsequent guard-count boundary regression and other platform checks remain in progress; see [implementation status](implementation-status.md).
 
 Cancelling an executing script stops its worker process. Real stdio tests cover script execution, runtime-precondition evaluation, and cancellation while waiting for an edit lock. The save boundary is described below.
