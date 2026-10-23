@@ -17,6 +17,7 @@ use tokio_util::sync::CancellationToken;
 
 const MAX_JOURNAL_BYTES: usize = 4 * 1024 * 1024;
 const MAX_RECORD_BYTES: usize = 64 * 1024;
+const LOCK_WAIT: Duration = Duration::from_secs(5);
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -337,10 +338,14 @@ impl UsageAccess {
             crate::cancel::check(cancel)?;
             match file.try_lock_exclusive() {
                 Ok(()) => return Ok(Lock(file)),
-                Err(error)
-                    if crate::store::lock_contended(&error)
-                        && start.elapsed() < Duration::from_secs(2) =>
-                {
+                Err(error) if crate::store::lock_contended(&error) => {
+                    if start.elapsed() >= LOCK_WAIT {
+                        return Err(Error::new(
+                            "LOCK_UNAVAILABLE",
+                            "Design usage remains locked after five seconds",
+                        )
+                        .details(json!({"wait_ms":start.elapsed().as_millis(),"wait_limit_ms":LOCK_WAIT.as_millis()})));
+                    }
                     std::thread::sleep(Duration::from_millis(5));
                 }
                 Err(error) => {
@@ -562,6 +567,53 @@ mod tests {
             assert!(!record.to_string().contains("example_operations"));
             assert!(!record.to_string().contains("body"));
         }
+    }
+
+    #[test]
+    fn journal_waits_for_a_busy_peer_and_cancellation_remains_responsive() {
+        let (_temp, store, mut grant) = grant();
+        let turn = uuid::Uuid::new_v4().to_string();
+        grant.begin_turn(&turn).unwrap();
+        let access = UsageAccess::open(&store, grant.path()).unwrap();
+        let lock_path = access.path.parent().unwrap().join("lock");
+        let held = regular_file(&lock_path, true).unwrap();
+        FileExt::lock_exclusive(&held).unwrap();
+        let cancelled = CancellationToken::new();
+        let token = cancelled.clone();
+        let copy = access.clone();
+        let start = Instant::now();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let waiting = std::thread::spawn(move || {
+            sender.send(()).unwrap();
+            copy.request(&token)
+        });
+        receiver.recv_timeout(Duration::from_secs(3)).unwrap();
+        std::thread::sleep(Duration::from_millis(50));
+        cancelled.cancel();
+        assert_eq!(waiting.join().unwrap().err().unwrap().code, "CANCELLED");
+        assert!(start.elapsed() < Duration::from_secs(2));
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let waiting = std::thread::spawn(move || {
+            sender.send(()).unwrap();
+            access.request(&CancellationToken::new())
+        });
+        receiver.recv_timeout(Duration::from_secs(3)).unwrap();
+        std::thread::sleep(Duration::from_millis(2200));
+        FileExt::unlock(&held).unwrap();
+        waiting
+            .join()
+            .unwrap()
+            .unwrap()
+            .record(
+                "get_guidance",
+                &crate::guidance::get_guidance(Some("operations")).unwrap(),
+                &CancellationToken::new(),
+            )
+            .unwrap();
+        let records = grant.finish_turn().unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0]["turn"], turn);
     }
 
     #[test]
