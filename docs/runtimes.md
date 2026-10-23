@@ -53,3 +53,14 @@ LAZYPENCIL_TEST_CHROMIUM_ARCHIVE=/path/to/pinned.zip cargo test --test runtime -
 ```
 
 These tests launch a real browser and are intentionally separate from ordinary unit tests. The tests cover page pixels, transforms and capture conditions, cache refresh, cancellation and recovery, software shader pixels and extensions, object/background sampling, effect order, texture orientation and opacity, CLI interruption, MCP image content, and installation integrity. In a macOS development sandbox, browser startup may need host permission for Mach services. Do not work around an environment restriction by disabling Chromium's own sandbox.
+
+## Hosted integration without local build trees
+
+The manually dispatched [Chromium integration workflow](../.github/workflows/chromium.yml) builds the verified source distribution on one selected hosted platform. It restores the normal CI job's matching dependency cache, removes application outputs before rebuilding, explicitly installs/verifies the pinned browser, and runs runtime-policy, real page/shader and MCP image tests. Unix jobs also run the real MCP idle and dynamic TUI PTY checks; these Unix-only checks are skipped explicitly on Windows. Chromium's OS sandbox stays enabled. Normal CI remains the separate gate for both feature configurations, Clippy, dependency policy and release checks.
+
+```sh
+gh workflow run chromium.yml --ref main -f os=ubuntu-24.04
+gh workflow run chromium.yml --ref main -f os=macos-15
+```
+
+The platform choices also include `ubuntu-24.04-arm`, `macos-15-intel` and `windows-2025`. Runs retain runtime identity/integrity reports, test logs and a hash-checked combined example PNG for three days. They restore dependency caches without saving replacements, and keep build trees/browser downloads on the hosted runner. A dispatch or successful cache restore does not establish a passed integration check; inspect the completed run and its evidence. These new hosted integration runs remain to be verified.
