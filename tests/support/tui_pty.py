@@ -17,6 +17,7 @@ import sys
 import termios
 import time
 from terminal_screen import Screen
+from terminal_images import KittyFrames
 
 binary, root, fixture, case = sys.argv[1:]
 environment = dict(os.environ)
@@ -82,6 +83,7 @@ if case == "user-agent-config":
     command = [binary, "--data-dir", os.path.join(root, "data"), "tui", document,
         "--image-protocol", "halfblocks"]
 output = bytearray()
+kitty_frames = KittyFrames()
 screen = Screen()
 errors = open(os.path.join(root, "terminal-errors.log"), "wb")
 process = subprocess.Popen(command, env=environment, cwd=root, stdin=slave, stdout=slave, stderr=errors, start_new_session=True)
@@ -94,6 +96,7 @@ def pump():
         try:
             block = os.read(master, 65536)
             output.extend(block)
+            kitty_frames.feed(block)
             screen.feed(block)
             if case in ["auto-kitty", "auto-sixel"] and not probe_answered and b"\x1b[5n" in output:
                 reply = b"\x1b_Gi=31;OK\x1b\\\x1b[?1;2c" if image_case == "kitty" else b"\x1b[?1;2;4c"
@@ -147,19 +150,7 @@ def paste(text):
 
 
 def kitty_images():
-    payload = bytearray()
-    expected = None
-    for params, data in re.findall(rb"\x1b_G([^;]*);([^\x1b]*)\x1b\\", bytes(output)):
-        if b"a=T" in params:
-            fields = dict(field.split(b"=", 1) for field in params.split(b",") if b"=" in field)
-            expected = (int(fields[b"s"]), int(fields[b"v"]))
-            payload = bytearray()
-        if expected:
-            payload.extend(base64.b64decode(data))
-            if b"m=0" in params:
-                assert len(payload) == expected[0] * expected[1] * 4
-                yield bytes(payload)
-                expected = None
+    return iter(kitty_frames.images)
 
 
 def sixel_red_pixels(data):
