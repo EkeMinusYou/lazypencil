@@ -195,6 +195,11 @@ jobs:
           cargo test --locked --lib -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/chromium-unit.log"
           cargo test --locked --no-fail-fast --test runtime --test runtime_config --test scripts -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/chromium-policy.log"
           cargo test --locked --no-fail-fast --test dynamic_render --test browser_readiness --test shader_uniforms -- --include-ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-render.log"
+      - name: Verify failed script source reads and repair
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
+          cargo test --locked --test mcp failed_script_ -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/chromium-script-source.log"
       - name: Verify real MCP image content
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
