@@ -346,6 +346,69 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
+    fn a_periodic_policy_reload_updates_identity_even_when_pixels_are_identical() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("design.pen");
+        let configuration = temp.path().join("lazypencil.toml");
+        let policy = "[runtime.javascript]\nheap_mib=8\nidle_seconds=0\n";
+        std::fs::write(&configuration, policy).unwrap();
+        let saved = json!({"version":"2.21","children":[{
+            "id":"rectangle","type":"rectangle","width":180,"height":90,"fill":"#00FF00"
+        }]})
+        .to_string();
+        std::fs::write(&path, &saved).unwrap();
+        let store = Store::open(&path, Some(temp.path().join("data"))).unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let worker = Worker::start(store, vec![], Backend::halfblocks(), 132).unwrap();
+            let mut request = Request {
+                generation: 1,
+                cells: Size::new(60, 22),
+                view: View::default(),
+                refresh: false,
+                check_only: false,
+                attachment: None,
+            };
+            worker.request(request.clone());
+            let initial = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap()
+                .result
+                .unwrap();
+            request.view = initial.view;
+            request.check_only = true;
+            std::fs::write(&configuration, policy.replace("heap_mib=8", "heap_mib=12")).unwrap();
+            worker.request(request.clone());
+            let changed = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap()
+                .result
+                .unwrap();
+            assert_eq!(initial.png, changed.png);
+            assert_ne!(
+                initial.summary["snapshot_id"],
+                changed.summary["snapshot_id"]
+            );
+            assert_ne!(
+                initial.summary["dependency_revision"],
+                changed.summary["dependency_revision"]
+            );
+            assert_eq!(initial.view.center, changed.view.center);
+            assert_eq!(initial.view.zoom, changed.view.zoom);
+            worker.request(request);
+            assert!(
+                tokio::time::timeout(Duration::from_millis(200), worker.next())
+                    .await
+                    .is_err()
+            );
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), saved);
+        });
+    }
+
+    #[test]
     fn a_periodic_preview_reloads_the_default_family_in_a_live_font_worker() {
         let temp = TempDir::new().unwrap();
         let path = temp.path().join("design.pen");

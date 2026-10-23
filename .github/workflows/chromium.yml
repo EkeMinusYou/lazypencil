@@ -183,7 +183,7 @@ jobs:
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
           set -o pipefail
-          cargo test --locked --lib dynamic::tests:: -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/chromium-cache.log"
+          cargo test --locked --lib -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/chromium-unit.log"
           cargo test --locked --no-fail-fast --test runtime_config --test scripts -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/chromium-policy.log"
           cargo test --locked --no-fail-fast --test dynamic_render --test shader_uniforms -- --include-ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-render.log"
       - name: Verify real MCP image content
