@@ -2106,6 +2106,99 @@ fn failed_script_sources_are_bounded_and_reject_arbitrary_file_reads() {
 
 #[cfg(feature = "rendering")]
 #[test]
+fn failed_script_sources_track_generated_icon_files_bindings_and_missing_packs() {
+    use std::path::Path;
+    let (temp, file, data) = fixture();
+    let code = "/** @schema 2.21 */ throw new Error('nested after generated icon');";
+    fs::write(temp.path().join("nested.js"), code).unwrap();
+    let outer = "/** @schema 2.21 */ return [{type:'icon',library:'feather',icon:'circle',enabled:false,width:24,height:24},{type:'script',scriptUri:'nested.js',width:20,height:20}];";
+    fs::write(temp.path().join("outer.js"), outer).unwrap();
+    fs::write(&file,json!({"version":"2.21","children":[{"id":"chart","type":"script","scriptUri":"outer.js","width":40,"height":20}]}).to_string()).unwrap();
+    let saved = fs::read(&file).unwrap();
+    let mut client = Client::start(&file, &data);
+    let failed = client.call("read_nodes", json!({"calculated":true}));
+    let source_hash = lazypencil::document::hash(code.as_bytes());
+    assert_eq!(
+        failed["structuredContent"]["error"]["code"], "SCRIPT_EXECUTION_FAILED",
+        "{failed}"
+    );
+    let first = client.data("read_asset", json!({"hash":source_hash}));
+    assert_eq!(first["content"], code);
+    let archive =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/icons/feather-icons-4.29.2.tgz");
+    let installed = lazypencil::icons::setup(&data, "feather", Some(&archive)).unwrap();
+    let stale = client.call("read_asset", json!({"hash":source_hash}));
+    assert_eq!(
+        stale["structuredContent"]["error"]["code"],
+        "REVISION_CONFLICT"
+    );
+    let failed = client.call("read_nodes", json!({"calculated":true}));
+    let second = client.data("read_asset", json!({"hash":source_hash}));
+    assert_eq!(second["content"], code);
+    assert_eq!(
+        second["failure_capture_id"],
+        failed["structuredContent"]["error"]["details"]["failure_capture_id"]
+    );
+    assert_ne!(second["failure_capture_id"], first["failure_capture_id"]);
+    fs::write(
+        temp.path().join("outer.js"),
+        outer.replace("enabled:false", "enabled:true"),
+    )
+    .unwrap();
+    let active_failure = client.call("read_nodes", json!({"calculated":true}));
+    let active = client.data("read_asset", json!({"hash":source_hash}));
+    assert_eq!(active["content"], code);
+    assert_eq!(
+        active["failure_capture_id"],
+        active_failure["structuredContent"]["error"]["details"]["failure_capture_id"]
+    );
+    let license = Path::new(installed["path"].as_str().unwrap()).join("LICENSE");
+    let original = fs::read(&license).unwrap();
+    fs::write(&license, b"changed installed notice").unwrap();
+    let stale = client.call("read_asset", json!({"hash":source_hash}));
+    assert_eq!(
+        stale["structuredContent"]["error"]["code"],
+        "REVISION_CONFLICT"
+    );
+    fs::write(&license, &original).unwrap();
+    assert_eq!(
+        client.data("read_asset", json!({"hash":source_hash}))["content"],
+        code
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+        let first_target = temp.path().join("first-notice.txt");
+        let second_target = temp.path().join("second-notice.txt");
+        fs::write(&first_target, &original).unwrap();
+        fs::write(&second_target, &original).unwrap();
+        fs::remove_file(&license).unwrap();
+        symlink(&first_target, &license).unwrap();
+        client.call("read_nodes", json!({"calculated":true}));
+        assert_eq!(
+            client.data("read_asset", json!({"hash":source_hash}))["content"],
+            code
+        );
+        fs::remove_file(&license).unwrap();
+        symlink(&second_target, &license).unwrap();
+        let stale = client.call("read_asset", json!({"hash":source_hash}));
+        assert_eq!(
+            stale["structuredContent"]["error"]["code"],
+            "REVISION_CONFLICT"
+        );
+    }
+    assert_eq!(fs::read(&file).unwrap(), saved);
+    assert!(
+        client.data("get_history", json!({}))["entries"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    client.finish();
+}
+
+#[cfg(feature = "rendering")]
+#[test]
 fn real_stdio_script_source_inputs_and_generated_pixels_form_one_workflow() {
     use base64::Engine;
     use skia_safe::{Color, Data, Image};
