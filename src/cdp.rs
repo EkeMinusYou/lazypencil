@@ -106,8 +106,8 @@ impl Browser {
                 budget.check()?;
                 if let Some(status) = child.try_wait().map_err(|e| failed(e.to_string()))? {
                     return Err(failed(format!(
-                        "Chromium exited before CDP was ready ({status}); check OS sandbox permissions and runtime libraries"
-                    )));
+                        "Chromium exited before CDP was ready ({status}); check OS sandbox permissions and runtime libraries with lazypencil --json doctor"
+                    )).details(json!({"stage":"browser_startup","sandbox":"enabled","host":crate::runtime::host_status()})));
                 }
                 if let Ok(text) = fs::read_to_string(&port_file) {
                     let mut lines = text.lines();

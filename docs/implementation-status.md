@@ -397,6 +397,16 @@ Linux の診断実行 `40008545887` は stderr に `No usable sandbox!` を記�
 
 macOS の拡張実行 `40008549460` は unit 2件・設定7件・JS worker 12件・動的16件・数値 uniform 10件・実 MCP 画像／実待機の各1件が成功し、TUI は5件成功・1件失敗だった。失敗は `script-config` が同じ画素の設定変更にも新しい terminal packet を要求したことによる。PTY は status 行を使い、同じ JS ソースの実行期限だけを下げて timeout、戻して緑画像へ復帰する観測へ修正した。別の worker 試験は、同じ PNG のまま設定変更で snapshot／dependency ID が更新され、その後の変更なしの確認を省略することを検査する。これらと CDP 修正は GHA で確認する。専用 workflow の library 試験も全件を実行し、ローカルの Rust／Skia ビルドは増やさない。
 
+### 起動せずに取得する runtime と host の診断
+
+2026-10-24: Linux の実起動失敗の調査に必要だった host 情報を `runtime status` と `doctor` へ接続した。両者は導入ファイルの有無・完全性と実起動を区別し、`startup: not_checked` を返す。host の OS／CPU・sandbox 必須方針、未確認の OS profile／共有ライブラリを明示し、Linux では実効 UID と3種類の namespace 関連 kernel 値を読み取る。存在しない値・読めない値・不正または128バイト超は null とする。値だけで、その実行ファイルに対する AppArmor profile や起動可否を推定しない。
+
+CDP 前の子終了にも `browser_startup` 段階と同じ host 情報、診断コマンドを返す。任意のブラウザー stderr やページ内容は診断へ取り込まず、OS policy の変更・ブラウザー起動・ダウンロードを診断の副作用にしない。起動すると marker を残す代役を指定した実 CLI で、doctor／status が起動せず data／settings／lock を作らないこと、Linux の模擬 proc 値で既知・未知・不正・上限を検査する試験を追加した。通常 CI と専用 GHA で確認し、ローカルの native build は行わない。実ライブラリの依存検査・profile の検証と、製品内の一般的な起動 probe は残る。
+
+macOS `40010094357` は修正後の拡張検査92件が成功した。全 library 39件・設定7件・JS worker 12件・動的16件・数値 uniform 10件・実 MCP 画像／待機の各1件・全 TUI 6件で、同じ PNG の新 ID、設定だけの timeout／復帰、12種類の通常 PTY、2種類の入力取消も含む。これは新しい host 診断の追加前の source `c9dd6cb` の証拠であり、診断追加と Linux の SIGINT 修正の検証結果は分ける。Linux の同 source `40010090321` はパッケージ導入段階で進行中として追跡を続ける。
+
+先行する通常 CI `40000148383` の Windows は両構成・Clippy・Material 2件・release 検査・42回の native benchmark が成功し、依存 cache の保存まで完了した。取得した小さい report で source・1,000ノード／1920×1080・各20反復を確認した。shadow の中央値／p95 は328／359ms、dashboard は907／922ms、最大 repeated peak RSS は各93,446,144／82,513,920 bytes。各文書内で PNG は一致したが、両方の hash は他 OS と異なり、その原因や全性能保証を確認したものではない。[計測範囲](performance.md#hosted-windows-release-build-2026-10-24)
+
 ### 次に実装・確認すること
 
 - 両実エージェントの画像付きサブスクリプション生成は、上記の条件で確認した。実 API/provider、モデル・モードの全組み合わせ、ランタイムの制限と診断、保持と会話管理、Windows の子孫終了と異常な親終了後の回収は残る。認証方式の確認は adapter report によるもので、請求額の監査ではない。TUI、クリップボード、設定・素材カタログ、配布と CI は未完成。MCP は変数の解決値と計算済みレイアウトの検証を実装した。計算済み・生成ノードの詳細取得も実装した。アイコンの追加カタログ設定や残る設定などを拡張する。通常編集と部品取り込みの保存準備・依存のロック待ちへ取消を接続した。静的レイアウト・描画全体の取消と、各 OS の遅延検証は残る。
