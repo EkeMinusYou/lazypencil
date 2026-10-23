@@ -219,6 +219,8 @@ At most four failed code files of up to 1 MiB each are retained for five minutes
 
 Reads compare the current document/declared dependencies and recheck captured runtime file hashes and requested-to-canonical path bindings. Changing a parent script or library, deleting a runtime source, or redirecting a link invalidates the capture, even if the failing file's own bytes stayed the same. A changed dependency reports `REVISION_CONFLICT`; changed root documents, expiry, eviction and unknown hashes leave the code unavailable (`ASSET_NOT_FOUND`). A caller-supplied path or a file merely adjacent to the project is never sufficient to authorize a read.
 
+[macOS verification at source 1c84f69](https://github.com/EkeMinusYou/lazypencil/actions/runs/40036814772) passed all four selected failed-source MCP workflows and the library expiry/cancellation/size test as part of 118 passing integration tests. The subsequent guard-count boundary regression and other platform checks remain in progress; see [implementation status](implementation-status.md).
+
 Cancelling an executing script stops its worker process. Real stdio tests cover script execution, runtime-precondition evaluation, and cancellation while waiting for an edit lock. The save boundary is described below.
 
 ## Browser and shader rendering

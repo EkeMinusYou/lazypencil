@@ -2,6 +2,10 @@
 
 設計書 v0.9 の全体を実装対象とする。部分的な CLI や描画の試作だけで完成とは扱わない。以下は実際の実装・試験結果で更新する。
 
+2026-10-24: source `1c84f69` の macOS `40036814772` は、library 48・policy 26・実描画32・新しい失敗コード取得の実 MCP 4・実 MCP 画像1・60秒待機回収1・実 TUI 6の計118試験が成功した。新 MCP 4件では library の入れ子の全文・UTF-8 chunk と修復、成功→失敗→成功の選択、同一バイトの symlink 付け替えの拒否、header failure・排出・削除・無関係な file の拒否を確認した。artifact `12537831445` の ZIP digest、ログ内の各成功、画像と report の hash・1000×640・診断0件を検査し、PNG は前回の同じ macOS と一致した。新しい目視や他 OS の成功は主張していない。その後、依存 guard の重複が上限超過の切り詰めを隠さないよう、重複排除前に超過を拒否する修正と回帰試験を source `38abd0e` へ追加した。この追加と取消遅延の検証は macOS `40037242989`、Intel `40036985460` と通常 CI で継続する。
+
+同日: source `24414fe` の Intel 資料結合 `40035656900` も成功した。artifact `12537900609` の442資料の ZIP digest・size／SHA-256・一覧と nested hash・同じ compiler／revision／run ID、library 59件・registry 原本40件、VEX の finding 保持を検査した。これで資産と標準ライブラリを含む実ビルド資料の結合は5環境で確認できた。最終リンク・system・完全な帰属・署名等を完了とは扱わず、`release_ready: false` は維持する。キー設定を含む通常 CI `40034814779` は Intel の取消時間で全体として失敗したが、ほかの4 native job は成功し、4 artifact の12画像の hash・寸法・診断0件と前回同 OS との一致、各42回の benchmark、Linux 各780・macOS arm64 776・Windows 705件の試験成功を確認した。最新の失敗コード取得機能はこの4環境の証拠に含まれない。
+
 2026-10-24: source `24414fe` の Linux arm64 `40035653283`、macOS arm64 `40035646909`、Windows `40035650051` の実ビルドと標準ライブラリ／資産の資料結合が成功した。各442資料の ZIP digest・size／SHA-256・一覧、nested manifest／inventory／source distribution と build 記録の hash、同じ compiler・revision・run ID を照合した。標準ライブラリ source input は各2,274、registry 原本は40、installed target library は順に55／59／44件で、VEX の finding は保持した。資産は各15宣言・20入力・6パックだった。Intel `40035656900` は継続中で、これらは失敗コード取得機能の追加前という scope を保持する。
 
 同日: 失敗コード取得を含む source `c041b45` の macOS `40036529244` は、取消トークンの参照を要求する `Project::set_cancellation` へ値を渡した型不一致でビルドが失敗した。既存の参照 API に合わせて source `1c84f69` で修正し、macOS `40036814772` は本体ビルドを通過して実行試験中である。先行 source `3ea9c65` の通常 Intel `120692050402` は MCP の取消試験が1.5秒の総時間基準を超えて失敗した。元ログでは対象 tool・実時間が分からず原因は未確定である。source `d65d1d4` は同じ基準を維持し、200ms 待機前後と取消から後続応答までの時間・tool を失敗時に表示する。新 Intel 専用 `40036985460` と次の通常 CI で確認し、期限を緩めて成功とは扱わない。
