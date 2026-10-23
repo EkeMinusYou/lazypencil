@@ -47,9 +47,10 @@ impl Fixture {
         .unwrap();
     }
     fn policy(&self, selector: &str, state: &str, timeout: u64) {
-        fs::write(self.0.path().join("lazypencil.toml"), toml::to_string(&json!({"runtime":{"browser":{
-            "wait_until":"load","ready_selector":selector,"selector_state":state,"timeout_ms":timeout
-        }}})).unwrap()).unwrap();
+        // JSON escaping for these strings is valid TOML basic-string syntax.
+        let selector = json!(selector);
+        let state = json!(state);
+        fs::write(self.0.path().join("lazypencil.toml"), format!("[runtime.browser]\nwait_until='load'\nready_selector={selector}\nselector_state={state}\ntimeout_ms={timeout}\n")).unwrap();
     }
     fn project(&self) -> Project {
         let file = self.0.path().join("scene.pen");
