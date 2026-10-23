@@ -200,6 +200,7 @@ jobs:
         run: |
           set -o pipefail
           cargo test --locked --test mcp failed_script_ -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/chromium-script-source.log"
+          cargo test --locked --test mcp cancelling_a_running_script_unblocks_the_mcp_document_worker -- --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-script-cancel.log"
       - name: Verify real MCP image content
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |

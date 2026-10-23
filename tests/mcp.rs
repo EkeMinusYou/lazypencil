@@ -2305,12 +2305,19 @@ fn cancelling_a_running_script_unblocks_the_mcp_document_worker() {
             client.start_request("tools/call", json!({"name":tool,"arguments":arguments}));
         let started = Instant::now();
         std::thread::sleep(Duration::from_millis(200));
+        let before_cancel = started.elapsed();
+        let cancel_sent = Instant::now();
         client.send(json!({"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":request,"reason":"stop script"}}));
         assert_eq!(
             client.data("get_document", json!({}))["revision"],
             document["revision"]
         );
-        assert!(started.elapsed() < Duration::from_millis(1500));
+        assert!(
+            started.elapsed() < Duration::from_millis(1500),
+            "tool={tool}; total={:?}; before_cancel={before_cancel:?}; cancel_and_next_document={:?}",
+            started.elapsed(),
+            cancel_sent.elapsed()
+        );
     }
     let request = client.start_request(
         "tools/call",
@@ -2323,6 +2330,8 @@ fn cancelling_a_running_script_unblocks_the_mcp_document_worker() {
     );
     let started = Instant::now();
     std::thread::sleep(Duration::from_millis(200));
+    let before_cancel = started.elapsed();
+    let cancel_sent = Instant::now();
     client.send(json!({"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":request,"reason":"stop precondition evaluation"}}));
     assert_eq!(
         client.data("get_document", json!({}))["revision"],
@@ -2334,7 +2343,12 @@ fn cancelling_a_running_script_unblocks_the_mcp_document_worker() {
             .unwrap()
             .is_empty()
     );
-    assert!(started.elapsed() < Duration::from_millis(1500));
+    assert!(
+        started.elapsed() < Duration::from_millis(1500),
+        "runtime_edit; total={:?}; before_cancel={before_cancel:?}; cancel_and_document_history={:?}",
+        started.elapsed(),
+        cancel_sent.elapsed()
+    );
     fs::write(
         temp.path().join("draw.js"),
         "/** @schema 2.21 */ return [];",
