@@ -94,9 +94,7 @@ jobs:
       - name: Install Linux native build dependencies
         if: runner.os == 'Linux'
         timeout-minutes: 20
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes clang libclang-dev cmake ninja-build pkg-config libfontconfig1-dev libfreetype6-dev libwayland-dev libx11-dev
+        run: python scripts/ci/linux_dependencies.py
       - name: Check source archive integrity handling
         run: python -m unittest discover -s scripts -p 'test_*.py' -v
       - name: Build a complete source distribution

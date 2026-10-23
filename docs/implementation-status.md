@@ -419,11 +419,17 @@ workflow 全体の hash に依存する旧 key は時間上限の変更でも ca
 
 source `36d1269` の専用 Chromium は macOS arm64 `40014476233`（97件）、Linux x64 `40014480311`（99件）、Linux arm64 `40014488317`（99件）、Windows `40014484065`（84件）がすべて成功した。host 診断・起動しない doctor/status・利用記録の lock 取消／peer 解放も library/runtime 試験で通過した。Unix は実60秒の MCP 待機と全6件の TUI、Windows は対応する実 MCP 画像までを含み、Windows の物理端末や TUI の成功へ読み替えない。4環境とも監査した旧 native key から実際に cache を復元した。新 key への保存と通常の全環境 CI `40014323380` は引き続き確認する。今回の新しい待機条件はこれらの検証 source に含まれない。
 
+同 source の通常 CI は macOS arm64 で描画なし284件・通常470件・Material 2件、Linux arm64 で描画なし286件・通常472件・Material 2件、両構成の Clippy、release・描画3件・各42回の benchmark が成功した。両環境の v2 native cache の保存と、その後の macOS 専用実行での v2 cache 復元も確認した。4環境の複合 PNG は1000×640・診断0件・2取得の実効 limits・固定 browser identity と report hash を照合した。Windows と Linux arm64 の日本語・HTML・GLSL の出力を目視確認し、macOS は以前に確認した PNG とバイト一致した。全 OS の出力 hash が一致するという意味ではない。
+
+通常 CI の Linux x64 は20分の package step 上限に達し、Rust のコンパイル前に失敗した。ログでは Azure の mirror から11.2 MBの cmake・28.8 MBの libclang を繰り返し取得し、後者の1回目に約11分かかった。取得先をジョブ内の一時的な deb822 sources で公式 Ubuntu HTTPS archive／security に変更し、noble の同じ suite・component と既存の archive signing key を使う。package 一覧と20分の上限は維持し、runner 全体の source file は書き換えない。arm64 は既に成功した既存 source を使う。両 workflow は同じ helper を呼び、local invocation／未知 architecture の拒否、update 失敗の伝播、共通 source と一時ファイルの解放を4件の軽量試験で検査する。実際の x64 導入は次の GHA で確認する。Intel の実行は停止せず追跡する。
+
 ### ページの network-idle 待機
 
 2026-10-24: `[runtime.browser] wait_until` に `load`（従来の既定値）と `network_idle` を追加した。後者は現在の main frame／loader に対する Chromium の `networkIdle` lifecycle 通知と document load を待ち、その後に従来の font・image decode・2 animation frame を待つ。別 session・子 frame・古い loader の通知を成功に使わず、現在の loader 一つだけを保持する。URL・header・本文や無制限の event queue は保持しない。context の破棄時に状態を解除し、既存の取消・取得／描画期限・失敗時の process 回収へ接続する。
 
 設定の項目別継承・明示的な既定値による上書き・schema/template・依存失効と、取得 cache の失効・metadata を共通化した。shader へ同名設定を渡す誤りは拒否する。通常試験に session／frame／loader の識別と切り替え、不正通知、設定の継承と不正な下位 scope の拒否を加えた。実 Chromium の試験は、load 後の fetch が終わって緑画素になるまで待つこと、設定だけの再取得と同条件の cache 再利用、未完了の fetch の timeout・回収・復帰・取消、文書不変を検査する。Rust は GHA で検証し、ローカルは書式・差分などの軽量検査に限定する。英語ガイド集合は1.0.5とした。
+
+source `8f14b13` の専用実行は macOS arm64 `40015918054`（101件）、Linux arm64 `40015927331`（103件）、Windows `40015922773`（88件）が全工程で成功した。新しい lifecycle unit 2件・設定の継承／拒否と schema・実 fetch の待機／画素／timeout／復帰／取消を含む。Unix の MCP 待機・全 TUI も通過した。通常 CI の全構成・Clippy・release と、x64 での新条件は引き続き確認する。
 
 この条件は Chromium の lifecycle を利用した取得方針であり、アプリ固有の完了、後から始まる通信、animation・worker・すべての cross-origin frame の静止を保証しない。認証 profile、通信制限、selector 条件、animation 制御、device preset の互換性などは必須の残件として維持する。[CDP lifecycle](https://raw.githubusercontent.com/ChromeDevTools/devtools-protocol/master/pdl/domains/Page.pdl)
 
