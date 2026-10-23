@@ -1,0 +1,170 @@
+name: Chromium integration
+
+on:
+  workflow_dispatch:
+    inputs:
+      os:
+        description: Hosted platform for real sandboxed Chromium integration
+        type: choice
+        default: ubuntu-24.04
+        options:
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+          - macos-15
+          - macos-15-intel
+          - windows-2025
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chromium-${{ github.ref }}-${{ inputs.os }}
+  cancel-in-progress: false
+
+env:
+  CARGO_BUILD_JOBS: '1'
+  CARGO_INCREMENTAL: '0'
+  CARGO_TERM_COLOR: always
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  PYTHONUTF8: '1'
+  LAZYPENCIL_TEST_PYTHON: python
+
+jobs:
+  chromium:
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Select hosted build and isolated user directories
+        working-directory: ${{ github.workspace }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as stream:
+              stream.write(f"CARGO_TARGET_DIR={root / 'lazypencil-target'}\n")
+              stream.write(f"LAZYPENCIL_CONFIG_DIR={root / 'chromium-test-settings'}\n")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
+              stream.write("version=" + os.environ.get("ImageVersion", "unknown") + "\n")
+          PY
+        id: cache-image
+      - name: Install the declared minimum Rust toolchain
+        working-directory: ${{ github.workspace }}
+        run: |
+          rustup toolchain install 1.94.0 --profile minimal --component rustfmt
+          rustup default 1.94.0
+      - name: Install Linux native build dependencies
+        if: runner.os == 'Linux'
+        working-directory: ${{ github.workspace }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes clang libclang-dev cmake ninja-build pkg-config libfontconfig1-dev libfreetype6-dev libwayland-dev libx11-dev
+      - name: Restore verified Cargo downloads
+        continue-on-error: true
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/git/db
+          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
+      - name: Build and verify the complete source distribution
+        working-directory: ${{ github.workspace }}
+        run: |
+          python scripts/dist.py source --output source.tar.gz
+          python scripts/dist.py verify-source source.tar.gz --extract "$RUNNER_TEMP/lazypencil-source"
+      - name: Restore dependencies from the normal native verification job
+        continue-on-error: true
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          key: native-v1-${{ inputs.os }}-${{ steps.cache-image.outputs.version }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', '.github/workflows/ci.yml', 'vendor/skia-bindings/**', 'resources/icons/catalogue.json', '.cargo/config.toml', '.cargo/config', 'rust-toolchain.toml', 'rust-toolchain') }}
+          path: |
+            ${{ runner.temp }}/lazypencil-target
+            ${{ runner.temp }}/lazypencil-source/vendor/skia-bindings/skia
+            ${{ runner.temp }}/lazypencil-material-fonts
+      - name: Rebuild application outputs from this source
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          sh scripts/ci/prune_application_cache.sh
+          cargo fmt --all -- --check
+          cargo build --locked
+      - name: Install and verify the pinned Chromium runtime
+        timeout-minutes: 10
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
+          lazypencil_binary="$CARGO_TARGET_DIR/debug/lazypencil"
+          if [ "$RUNNER_OS" = Windows ]; then lazypencil_binary="$lazypencil_binary.exe"; fi
+          "$lazypencil_binary" --json --data-dir "$RUNNER_TEMP/chromium-test-data" runtime setup chromium > "$RUNNER_TEMP/chromium-setup.json"
+          "$lazypencil_binary" --json --data-dir "$RUNNER_TEMP/chromium-test-data" runtime status > "$RUNNER_TEMP/chromium-status.json"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          status = json.loads((Path(os.environ["RUNNER_TEMP"]) / "chromium-status.json").read_text(encoding="utf-8"))
+          assert status["available"] and status["managed"] and status["integrity_verified"], status
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as stream:
+              stream.write("LAZYPENCIL_TEST_CHROMIUM=" + status["executable"] + "\n")
+          PY
+      - name: Verify captured runtime policy and real page and shader pixels
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
+          cargo test --locked --test runtime_config -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/chromium-policy.log"
+          cargo test --locked --test dynamic_render -- --include-ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-render.log"
+      - name: Verify real MCP image content
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
+          cargo test --locked --test mcp real_mcp_shader_assets_uniform_edits_and_browser_refresh_return_image_content -- --ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-mcp.log"
+      - name: Verify real MCP idle process cleanup
+        if: runner.os != 'Windows'
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
+          cargo test --locked --test mcp idle_mcp_reaps_script_page_and_shader_processes_without_another_request -- --ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-mcp-idle.log"
+      - name: Verify dynamic preview pixels and cleanup in a real PTY
+        if: runner.os != 'Windows'
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
+          cargo test --locked --test tui real_pty_dynamic_previews_survive_idle_cleanup_and_refresh_without_losing_drafts -- --ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-tui.log"
+      - name: Render the combined example for review
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          lazypencil_binary="$CARGO_TARGET_DIR/debug/lazypencil"
+          if [ "$RUNNER_OS" = Windows ]; then lazypencil_binary="$lazypencil_binary.exe"; fi
+          LAZYPENCIL_CHROMIUM="$LAZYPENCIL_TEST_CHROMIUM" "$lazypencil_binary" --json --data-dir "$RUNNER_TEMP/chromium-test-data" render examples/dynamic-panel.pen --time 0.5 --output "$RUNNER_TEMP/chromium-panel.png" > "$RUNNER_TEMP/chromium-panel.json"
+          python - <<'PY'
+          import hashlib, json, os, struct
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          report = json.loads((root / "chromium-panel.json").read_text(encoding="utf-8"))
+          png = (root / "chromium-panel.png").read_bytes()
+          assert (report["width"], report["height"]) == (1000, 640), report
+          assert report["diagnostics"] == [] and len(report["dynamic_artifacts"]) == 2, report
+          assert png[:8] == b"\x89PNG\r\n\x1a\n" and struct.unpack(">II", png[16:24]) == (1000, 640)
+          assert hashlib.sha256(png).hexdigest() == report["png_hash"]
+          PY
+      - name: Retain runtime identity and integration evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: chromium-${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/chromium-*.json
+            ${{ runner.temp }}/chromium-*.log
+            ${{ runner.temp }}/chromium-panel.png
+          if-no-files-found: ignore
+          retention-days: 3
