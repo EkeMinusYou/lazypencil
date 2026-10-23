@@ -54,6 +54,8 @@ Omitted actions retain their defaults; each explicit list replaces that action's
 
 Bindings are captured before entering the terminal and remain fixed for that invocation. The prompt border and help show the effective keys. They act only in the idle prompt; permission dialogs, checkpoint dialogs, search, help and other panels retain their own input handling. Project files cannot remap user shortcuts. Other viewing and global keys currently retain the table's fixed defaults.
 
+[macOS arm64 verification at source 3ea9c65](https://github.com/EkeMinusYou/lazypencil/actions/runs/40034819092) passed all 113 selected integration tests, including custom-key ACP image delivery, permission precedence, and the actual PTY case that reads user settings and submits Japanese multiline text with F5. This is hosted functional evidence; physical keyboard/IME/clipboard behavior and the other platforms remain separate checks.
+
 During an agent turn, the submitted draft and images are locked; viewing, logs, and cancellation remain available. Success clears the submitted draft and pending list. Failure/cancellation preserves them for review and retry. Idle drafts are saved after a one-second debounce and on normal exit. An abrupt kill can lose edits within that debounce. Conversation metadata migrates from version 1 to version 2 for pending text/images.
 
 Permission dialogs show tool details and native choices. Reject Once is initially selected when advertised. PgUp/PgDn scroll details, Enter answers, and Esc denies. Bound document tools use the shared preauthorization policy; other requests remain interactive unless `--non-interactive` rejects them.
