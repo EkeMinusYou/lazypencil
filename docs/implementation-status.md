@@ -2,6 +2,8 @@
 
 設計書 v0.9 の全体を実装対象とする。部分的な CLI や描画の試作だけで完成とは扱わない。以下は実際の実装・試験結果で更新する。
 
+2026-10-24: source `6e1fce2` の Linux arm64 `40033700360` と Intel Mac `40033703894` でも単独標準ライブラリ収集が成功した。各100資料の ZIP digest・size／SHA-256・一覧の完全性を確認し、各2,274 source input・registry 40原本、Linux arm64 55件／Intel 59件の installed target library を記録した。VEX の finding は保持している。これで単独収集は hosted 5環境で確認できた。実アプリへの結合は Linux x64 `40033309721` で検証中であり、最終リンクや公開の完了とは扱わない。
+
 2026-10-24: `scripts/asset_notice_inventory.py` を release 資料収集へ接続した。ソース内の font／icon の literal include 15件をレビューした一覧へ照合し、Noto Sans JP の font／OFL／publisher metadata と、6アイコンパックの data／index／license／provenance の計20入力を既存の manifest・catalogue の pin へ結び付ける。OFL、各 license の原文、font metadata・manifest・icon catalogue と来歴を17資料として保持し、font や icon payload は重複コピーしない。Phosphor の元 CRLF も変更しない。新規・欠損・重複・計算された include、リンク、古い provenance や変更された入力を拒否する。Python 全121試験と現行 repo の実20入力からの収集・再構成検証が成功した。実資料は121,214バイトで、作業用コピーは削除済み。native のローカル build は行っていない。GHA の実収集はまだ未検証であり、最終リンク・全素材の適用・標準／system・署名等の完了とは扱わない。
 
 同日: 標準ライブラリの資料を hosted runner 上で準備する `scripts/ci/toolchain_evidence.py` と専用 workflow を追加した。Rust 1.94.0 の commit `4a4ef493…` と公式 source archive の SHA-256 `0b53ae34…` を固定し、library・原文 license・unwind の参照資料だけを選択して展開する。library lock の registry archive は元 checksum を照合し、既存の collector で実際の installed target library と原文資料を再構成検証する。コンパイルは行わず、大きい source archive・準備用ツリーは成功後に runner から削除する。新 helper は GHA 上でだけ動作し、ローカルでは構文・workflow 検査と既存 collector の19試験だけを行った。実行と、アプリ実ビルドの同じ compiler／target library への結合はまだ未検証。
