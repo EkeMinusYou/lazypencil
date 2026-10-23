@@ -2160,6 +2160,14 @@ fn failed_script_sources_track_generated_icon_files_bindings_and_missing_packs()
         stale["structuredContent"]["error"]["code"],
         "REVISION_CONFLICT"
     );
+    let unverifiable = client.call("read_nodes", json!({"calculated":true}));
+    assert_eq!(unverifiable["isError"], true);
+    assert!(
+        unverifiable["structuredContent"]["error"]["details"]
+            .get("failure_capture_id")
+            .is_none(),
+        "An invalid icon installation has no complete file read set: {unverifiable}"
+    );
     fs::write(&license, &original).unwrap();
     assert_eq!(
         client.data("read_asset", json!({"hash":source_hash}))["content"],
