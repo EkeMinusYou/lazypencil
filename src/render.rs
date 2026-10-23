@@ -84,7 +84,7 @@ fn png_impl(
     project: &Project,
     snapshot: &LayoutSnapshot,
     options: &RenderOptions,
-    runtime: Option<&mut crate::dynamic::DynamicRuntime>,
+    mut runtime: Option<&mut crate::dynamic::DynamicRuntime>,
 ) -> Result<RenderedImage> {
     if !options.time.is_finite() || options.time < 0.0 {
         return Err(invalid("Shader time must be a finite nonnegative number"));
@@ -154,7 +154,7 @@ fn png_impl(
         canvas,
         viewport,
         images: BTreeMap::new(),
-        runtime,
+        runtime: runtime.as_deref_mut(),
         raster_scale: options.scale,
         time: options.time,
         artifacts: Vec::new(),
@@ -190,7 +190,7 @@ fn png_impl(
     )?;
     let encoded = skia_safe::png_encoder::encode_image(None, &image, &Default::default())
         .ok_or_else(|| Error::new("RENDER_ERROR", "PNG encoding failed"))?;
-    if let Some(runtime) = renderer.runtime.as_deref() {
+    if let Some(runtime) = runtime.as_deref() {
         runtime.check()?;
     }
     Ok(RenderedImage {
