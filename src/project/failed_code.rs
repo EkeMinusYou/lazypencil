@@ -14,6 +14,7 @@ pub(crate) struct FailedCodeCapture {
     asset: Asset,
     dependencies: Vec<Dependency>,
     bindings: Vec<(PathBuf, PathBuf)>,
+    missing_icons: Vec<PathBuf>,
     id: String,
 }
 
@@ -50,14 +51,25 @@ impl Project {
                 .filter(|d| !original.contains(&(&d.path, &d.kind, &d.revision)))
                 .chain(self.runtime_dependencies()),
         )?;
-        if dependencies
-            .iter()
-            .any(|d| !matches!(d.kind.as_str(), "document" | "script" | "shader" | "image"))
-        {
+        if dependencies.iter().any(|d| {
+            !matches!(
+                d.kind.as_str(),
+                "document" | "script" | "shader" | "image" | "icon_pack"
+            )
+        }) {
+            return None;
+        }
+        let missing_icons = self.icons.missing_paths();
+        if missing_icons.len() > MAX_GUARDS {
             return None;
         }
         let bindings = {
             let bindings = self.file_bindings.lock().ok()?;
+            let bindings = bindings
+                .iter()
+                .chain(self.icons.path_bindings())
+                .take(MAX_GUARDS + 1)
+                .collect::<Vec<_>>();
             if bindings.len() > MAX_GUARDS {
                 return None;
             }
@@ -68,21 +80,26 @@ impl Project {
                 + dependencies
                     .iter()
                     .map(|d| d.path.as_os_str().len())
+                    .sum::<usize>()
+                + missing_icons
+                    .iter()
+                    .map(|path| path.as_os_str().len())
                     .sum::<usize>();
             if path_bytes > MAX_GUARD_PATH_BYTES {
                 return None;
             }
             bindings
-                .iter()
+                .into_iter()
                 .map(|(a, b)| (a.clone(), b.clone()))
                 .collect::<Vec<_>>()
         };
+        let missing_icons = missing_icons.to_vec();
         if self.verify_unchanged().is_err() {
             return None;
         }
         let revision = self.root_document().revision();
         let dependency_revision = hash(&serde_json::to_vec(declared).ok()?);
-        let id = hash(&serde_json::to_vec(&json!({"revision":revision,"dependency_revision":dependency_revision,"runtime":dependencies,"bindings":bindings,"source_hash":source_hash})).ok()?);
+        let id = hash(&serde_json::to_vec(&json!({"revision":revision,"dependency_revision":dependency_revision,"runtime":dependencies,"bindings":bindings,"missing_icons":missing_icons,"source_hash":source_hash})).ok()?);
         Some(FailedCodeCapture {
             revision,
             dependency_revision,
@@ -93,6 +110,7 @@ impl Project {
             },
             dependencies,
             bindings,
+            missing_icons,
             id,
         })
     }
@@ -161,6 +179,12 @@ impl FailedCodeCapture {
         for (requested, expected) in &self.bindings {
             project.check_cancelled()?;
             if !crate::paths::canonical(requested).is_ok_and(|actual| actual == *expected) {
+                return Err(conflict());
+            }
+        }
+        for missing in &self.missing_icons {
+            project.check_cancelled()?;
+            if missing.exists() {
                 return Err(conflict());
             }
         }

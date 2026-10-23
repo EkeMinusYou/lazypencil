@@ -374,6 +374,14 @@ impl Registry {
         self.missing.extend(other.missing);
         self.bindings.extend(other.bindings);
     }
+    #[cfg(feature = "rendering")]
+    pub(crate) fn path_bindings(&self) -> &BTreeMap<PathBuf, PathBuf> {
+        &self.bindings
+    }
+    #[cfg(feature = "rendering")]
+    pub(crate) fn missing_paths(&self) -> &[PathBuf] {
+        &self.missing
+    }
     pub fn verify_unchanged(&self) -> Result<()> {
         for (requested, expected) in &self.bindings {
             if !crate::paths::canonical(requested).is_ok_and(|current| current == *expected) {

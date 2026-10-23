@@ -2,6 +2,8 @@
 
 設計書 v0.9 の全体を実装対象とする。部分的な CLI や描画の試作だけで完成とは扱わない。以下は実際の実装・試験結果で更新する。
 
+2026-10-24: 生成した追加アイコンを含む計算が入れ子 JS で失敗した場合、`icon_pack` 依存のため全文 capture が作られなかった組み合わせを修正した。Registry の file binding と欠損 pack の path を小さい guard として取得し、既存の file hash と一緒に保持する。アイコン・font payload や Registry 本体は capture へ残さない。追加 install・元 notice の変更・同一バイトの symlink 付け替えでも capture を無効にし、欠損 path も既存の1MiB path budget と4,096件の上限へ含める。実 MCP 試験は、欠損した disabled icon → 原本 archive からの導入 → enabled icon と失敗 JS → notice の変更／復帰 → Unix の link 付け替えまでを通す。ローカルの127 Python 試験・整形・差分は成功し、新しい Rust 試験は GHA で検証する。共有する文字列変数と画像の独立コピーなど、元の残作業は維持する。
+
 2026-10-24: source `1c84f69` の macOS `40036814772` は、library 48・policy 26・実描画32・新しい失敗コード取得の実 MCP 4・実 MCP 画像1・60秒待機回収1・実 TUI 6の計118試験が成功した。新 MCP 4件では library の入れ子の全文・UTF-8 chunk と修復、成功→失敗→成功の選択、同一バイトの symlink 付け替えの拒否、header failure・排出・削除・無関係な file の拒否を確認した。artifact `12537831445` の ZIP digest、ログ内の各成功、画像と report の hash・1000×640・診断0件を検査し、PNG は前回の同じ macOS と一致した。新しい目視や他 OS の成功は主張していない。その後、依存 guard の重複が上限超過の切り詰めを隠さないよう、重複排除前に超過を拒否する修正と回帰試験を source `38abd0e` へ追加した。この追加と取消遅延の検証は macOS `40037242989`、Intel `40036985460` と通常 CI で継続する。
 
 同日: source `24414fe` の Intel 資料結合 `40035656900` も成功した。artifact `12537900609` の442資料の ZIP digest・size／SHA-256・一覧と nested hash・同じ compiler／revision／run ID、library 59件・registry 原本40件、VEX の finding 保持を検査した。これで資産と標準ライブラリを含む実ビルド資料の結合は5環境で確認できた。最終リンク・system・完全な帰属・署名等を完了とは扱わず、`release_ready: false` は維持する。キー設定を含む通常 CI `40034814779` は Intel の取消時間で全体として失敗したが、ほかの4 native job は成功し、4 artifact の12画像の hash・寸法・診断0件と前回同 OS との一致、各42回の benchmark、Linux 各780・macOS arm64 776・Windows 705件の試験成功を確認した。最新の失敗コード取得機能はこの4環境の証拠に含まれない。
