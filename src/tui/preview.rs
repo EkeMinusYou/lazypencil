@@ -173,6 +173,7 @@ impl Drop for Worker {
 
 fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, image_id: u32) {
     let mut cached: Option<(Project, crate::layout::LayoutSnapshot)> = None;
+    let mut document_preview_ready = false;
     let mut script =
         crate::script::ScriptRuntime::new(std::env::current_exe().expect("current executable"));
     let mut dynamic = crate::dynamic::DynamicRuntime::new(store.data_dir());
@@ -237,9 +238,13 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                         .is_ok_and(|document| document.revision() == snapshot.revision)
                         && project.verify_unchanged().is_ok()
                 });
-            if request.check_only && unchanged {
+            if request.check_only && unchanged && document_preview_ready {
                 return Ok(None);
             }
+            // Capturing a layout does not mean an image has been published. A
+            // failed or cancelled render must be retried by dependency polls,
+            // even when that captured layout is still current.
+            document_preview_ready = false;
             if !unchanged {
                 cached = Some(crate::service::layout_snapshot_with_runtime(
                     store,
@@ -296,7 +301,12 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             continue;
         }
         let result = match result {
-            Ok(Some(preview)) => Ok(preview),
+            Ok(Some(preview)) => {
+                if !preview.attachment {
+                    document_preview_ready = true;
+                }
+                Ok(preview)
+            }
             Ok(None) => continue,
             Err(error) => Err(error),
         };
@@ -334,6 +344,75 @@ mod tests {
     use super::*;
     use std::time::Duration;
     use tempfile::TempDir;
+
+    #[test]
+    fn a_periodic_preview_reloads_the_default_family_in_a_live_font_worker() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("design.pen");
+        let configuration = temp.path().join("lazypencil.toml");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fonts");
+        let settings = format!(
+            "[fonts]\nfiles={}\ndefault_family='LP Test Sans'\nlocale='en-US'\n",
+            json!([root.join("faces.ttc"), root.join("cff.otf")])
+        );
+        std::fs::write(&configuration, &settings).unwrap();
+        std::fs::write(
+            &path,
+            json!({"version":"2.21","children":[{
+                "id":"label","type":"text","content":"A","fontSize":80,"fill":"#FF0000"
+            }]})
+            .to_string(),
+        )
+        .unwrap();
+        let store = Store::open(&path, Some(temp.path().join("data"))).unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let worker = Worker::start(store, vec![], Backend::halfblocks(), 131).unwrap();
+            let mut request = Request {
+                generation: 1,
+                cells: Size::new(60, 22),
+                view: View::default(),
+                refresh: false,
+                check_only: false,
+                attachment: None,
+            };
+            worker.request(request.clone());
+            let initial = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap()
+                .result
+                .unwrap();
+            request.view = initial.view;
+            request.check_only = true;
+            std::fs::write(
+                &configuration,
+                settings.replace("LP Test Sans", "LP Test CFF"),
+            )
+            .unwrap();
+            worker.request(request);
+            let changed = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap()
+                .result
+                .unwrap();
+            assert_ne!(
+                initial.png, changed.png,
+                "The new CFF default must replace TrueType pixels"
+            );
+            assert_eq!(initial.nodes[0].id, changed.nodes[0].id);
+            assert_eq!(initial.view.center, changed.view.center);
+            assert_eq!(initial.view.zoom, changed.view.zoom);
+            assert!(
+                changed.summary["diagnostics"]
+                    .as_array()
+                    .unwrap()
+                    .is_empty()
+            );
+        });
+    }
 
     #[test]
     fn preview_tracks_negative_coordinates_latest_view_and_external_image_changes() {

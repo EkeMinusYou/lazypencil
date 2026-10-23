@@ -114,10 +114,14 @@ class NoticesTests(unittest.TestCase):
 
     def test_changed_lock_or_local_notice_invalidates_inventory(self):
         bundle = self.collect()
-        (self.root / "Cargo.lock").write_text((self.root / "Cargo.lock").read_text() + "# changed\n")
+        lock = self.root / "Cargo.lock"
+        original_lock = lock.read_bytes()
+        lock.write_bytes(original_lock + b"# changed\n")
         with self.assertRaisesRegex(notices.NoticeError, "stale"):
             notices.verify(self.root, bundle)
-        self.prepare()
+        # Restore the exact input: recreating gzip changes its timestamp and
+        # therefore the locked archive checksum when the clock crosses a second.
+        lock.write_bytes(original_lock)
         (self.root / "LICENSE").write_text("Different local notice\n")
         with self.assertRaisesRegex(notices.NoticeError, "Workspace notice changed"):
             notices.verify(self.root, bundle)

@@ -4,6 +4,7 @@ import base64
 import errno
 import fcntl
 import glob
+import hashlib
 import json
 import os
 import pty
@@ -360,7 +361,19 @@ try:
         text = open(path, encoding="utf-8").read().replace("default_family='LP Test Sans'", "default_family='LP Test CFF'")
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(text)
-        wait(lambda: len(list(kitty_images())) > frames and list(kitty_images())[-1] != before, "automatic configuration/font reload")
+        try:
+            wait(lambda: len(list(kitty_images())) > frames and list(kitty_images())[-1] != before, "automatic configuration/font reload")
+        except AssertionError:
+            images = list(kitty_images())
+            print(json.dumps({
+                "case": case,
+                "initial_frames": frames,
+                "final_frames": len(images),
+                "before_pixels_sha256": hashlib.sha256(before).hexdigest(),
+                "last_pixels_sha256": [hashlib.sha256(image).hexdigest() for image in images[-3:]],
+                "configuration_text": open(path, encoding="utf-8").read(),
+            }), flush=True)
+            raise
         assert bytes([255, 0, 0, 255]) in list(kitty_images())[-1]
         assert session()["draft"] == "設定を変えても残る下書き"
         assert not session()["native_session_id"]
