@@ -747,7 +747,7 @@ impl DocumentWorker {
         cancel: &tokio_util::sync::CancellationToken,
     ) -> Result<Value> {
         let mut project = self.project()?;
-        project.set_cancellation(Some(cancel.clone()));
+        project.set_cancellation(Some(cancel));
         let result = crate::assets::read_asset(&project, args);
         #[cfg(feature = "rendering")]
         if result
