@@ -124,11 +124,11 @@ python3 scripts/measure_native_performance.py \
 
 The output includes individual samples, the first invocation, and repeated-sample minimum/median/nearest-rank p95/maximum for elapsed time, peak RSS and user/system CPU time. A 20-sample p95 is the nineteenth ordered sample, an observed tail estimate rather than a population guarantee. The script does not flush OS caches, so the first invocation is **not** a controlled cold start. Elapsed time covers process creation through exit observation; the completion polling interval is 1 ms, and resource-query overhead after observing exit is excluded.
 
-On macOS/Linux, per-child [`wait4`](https://docs.python.org/3/library/os.html#os.wait4) supplies resource usage; Darwin peak RSS is recorded in bytes and Linux KiB is converted to bytes. Windows uses [`GetProcessMemoryInfo`](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-getprocessmemoryinfo) / `PeakWorkingSetSize` in bytes and [`GetProcessTimes`](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes) CPU durations. The method is retained in each sample. These OS memory counters have their respective platform semantics; this is not a simultaneous process-group measurement. The real-child counter tests passed with the full 80-test Python suite on all five hosted environments in [run 40000148383](https://github.com/EkeMinusYou/lazypencil/actions/runs/40000148383). The native 1,000-node release workloads still await completion.
+On macOS/Linux, per-child [`wait4`](https://docs.python.org/3/library/os.html#os.wait4) supplies resource usage; Darwin peak RSS is recorded in bytes and Linux KiB is converted to bytes. Windows uses [`GetProcessMemoryInfo`](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-getprocessmemoryinfo) / `PeakWorkingSetSize` in bytes and [`GetProcessTimes`](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes) CPU durations. The method is retained in each sample. These OS memory counters have their respective platform semantics; this is not a simultaneous process-group measurement. The real-child counter tests passed with the full 80-test Python suite on all five hosted environments in [run 40000148383](https://github.com/EkeMinusYou/lazypencil/actions/runs/40000148383). Native release measurements from its successful macOS arm64 and Linux arm64 jobs are recorded below; other platforms remain pending.
 
 Child deadlines, bounded stdout/stderr and PNG size, exit status, workload validation, and immutable executable/pixels are required for a successful report. Reports are published atomically without overwriting another report. Temporary fixtures, logs and PNGs are removed; only the small JSON report remains. Seven Python tests exercise real child counters independently of the previous child's high-water mark, timeout reaping, child failure/output limits, fixture hashes and settings isolation, percentile calculation, changed binaries/pixels, malformed render evidence, and publication failure cleanup.
 
-The hosted release smoke script now runs this helper against the already built executable and retains `release-benchmark.json` with the existing platform artifacts. Dependency-cache pruning removes that report too. This integration and its Windows/Linux measurements await GHA execution; no hardware-dependent timing threshold is asserted by this smoke check.
+The hosted release smoke script runs this helper against the already built executable and retains `release-benchmark.json` with the platform artifacts. Dependency-cache pruning removes that report too. Both arm64 jobs completed this integration; Windows and x64 release measurements remain pending. No hardware-dependent timing threshold is asserted by this smoke check.
 
 ### Retained macOS executable, 2026-10-24
 
@@ -140,6 +140,19 @@ The helper completed 42 exports using the existing macOS arm64 release executabl
 | Dashboard | 823.30 ms | 824.94 ms | 907.03 ms | 923.45 ms | 123,322,368 bytes |
 
 All 21 PNGs per scene matched: shadow `71f026838d25811159637859efbe051106860ace17c304b54c051b74b69815a7`, dashboard `0f65ce77b7de905bb3d03255db3ac60d70debb040a264d849f3c2c56072d69f8`. This validates the measurement path on a retained native executable, not the latest source build or full performance acceptance. Cold start, complete process groups, idle CPU, TUI startup and pan/zoom remain required.
+
+### Hosted arm64 release builds, 2026-10-24
+
+[Run 40000148383](https://github.com/EkeMinusYou/lazypencil/actions/runs/40000148383) built commit `955098a42d3417afdd849789a047239beed37e56` and completed 42 exports on each of macOS arm64 and Linux arm64. The retrieved `release-benchmark.json` artifacts identify the source, executable hashes, runner images and individual samples. Both jobs also passed the normal test configurations, Clippy, Material opt-in tests and release smoke checks. The overall run has a separate Linux x64 input-cancellation failure and is not recorded as an overall pass.
+
+| Environment / scene | First invocation | Repeated median | Repeated p95 | Repeated maximum | Maximum repeated peak RSS |
+| --- | --- | --- | --- | --- | --- |
+| macOS arm64 / shadow | 240.65 ms | 319.05 ms | 447.51 ms | 467.97 ms | 141,754,368 bytes |
+| macOS arm64 / dashboard | 1664.77 ms | 1764.17 ms | 2058.10 ms | 2224.42 ms | 142,983,168 bytes |
+| Linux arm64 / shadow | 206.28 ms | 206.04 ms | 207.07 ms | 207.22 ms | 98,062,336 bytes |
+| Linux arm64 / dashboard | 1273.75 ms | 1271.65 ms | 1284.11 ms | 1294.74 ms | 87,465,984 bytes |
+
+All 21 PNGs matched within each environment/scene. Shadow matched the retained executable's hash. Dashboard hashes differ across environments: macOS `6eb5bf6a9870598763ae4886c6fe5dcf4587ce6abf3a1f6f6a59b86780fee962`, Linux `26fafa62af3c56516016934a722d25a116fb506eeddeb671dc85c7b7ed3baaca`. The benchmark asserts stability within a run, not identical platform font rendering. These shared-host timings have uncontrolled cache and host load, and do not establish controlled cold starts, TUI performance or full performance acceptance.
 
 ## Remaining work
 
