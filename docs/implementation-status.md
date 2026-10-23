@@ -2,6 +2,8 @@
 
 設計書 v0.9 の全体を実装対象とする。部分的な CLI や描画の試作だけで完成とは扱わない。以下は実際の実装・試験結果で更新する。
 
+2026-10-24: ユーザー設定 `[tui.keys]` から送信・貼り付けキーを置き換える実装を追加した。省略した action は既定値を使い、明示した配列は置換する。送信は1〜8件、貼り付けは0〜8件で、空の貼り付け配列はキー経由の clipboard 読み取りを無効にする。Ctrl／Alt／Shift、Enter・ASCII letter・F2〜F24 を扱い、文字入力・中断・command palette・旧端末の制御文字と衝突する指定、重複と action 間の衝突を設定エラーにする。設定は端末を開く前にユーザー設定だけから取得し、起動中は固定する。title と help に実効キーを表示し、idle prompt 以外の focus・検索・modal・permission が優先される。parser／実 key event／CLI 設定・schema／実 ACP 画像送信と permission／Unix PTY からのユーザー設定読み取りと F5 送信の試験を追加した。ローカルでは整形・差分・Python 構文だけを確認し、Rust と実 PTY の実行結果は GHA で確認する。全キーの変更や物理 clipboard／端末互換の完了とは扱わない。
+
 2026-10-24: source `6e1fce2` の Linux arm64 `40033700360` と Intel Mac `40033703894` でも単独標準ライブラリ収集が成功した。各100資料の ZIP digest・size／SHA-256・一覧の完全性を確認し、各2,274 source input・registry 40原本、Linux arm64 55件／Intel 59件の installed target library を記録した。VEX の finding は保持している。これで単独収集は hosted 5環境で確認できた。実アプリへの結合は Linux x64 `40033309721` で検証中であり、最終リンクや公開の完了とは扱わない。
 
 2026-10-24: `scripts/asset_notice_inventory.py` を release 資料収集へ接続した。ソース内の font／icon の literal include 15件をレビューした一覧へ照合し、Noto Sans JP の font／OFL／publisher metadata と、6アイコンパックの data／index／license／provenance の計20入力を既存の manifest・catalogue の pin へ結び付ける。OFL、各 license の原文、font metadata・manifest・icon catalogue と来歴を17資料として保持し、font や icon payload は重複コピーしない。Phosphor の元 CRLF も変更しない。新規・欠損・重複・計算された include、リンク、古い provenance や変更された入力を拒否する。Python 全121試験と現行 repo の実20入力からの収集・再構成検証が成功した。実資料は121,214バイトで、作業用コピーは削除済み。native のローカル build は行っていない。GHA の実収集はまだ未検証であり、最終リンク・全素材の適用・標準／system・署名等の完了とは扱わない。

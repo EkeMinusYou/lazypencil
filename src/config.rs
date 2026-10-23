@@ -14,6 +14,7 @@ use std::{
 
 const MAX_BYTES: usize = 256 * 1024;
 pub mod agents;
+pub mod keys;
 pub mod runtime;
 const TEMPLATE: &str = "version = 1\n\n[fonts]\n# Omitted fields inherit lower-priority settings.\n# Paths resolve relative to this configuration file.\n# files = []\n# search_paths = []\n# default_family = \"Noto Sans JP\"\n# locale = \"ja\"\n# Set fallbacks explicitly to replace the default glyph fallback chain.\n# fallbacks = [\"Noto Sans JP\"]\n";
 
@@ -73,6 +74,7 @@ pub struct UserConfig {
     pub fonts: FontSettings,
     pub runtime: runtime::RuntimeSettings,
     pub agents: agents::AgentSettings,
+    pub tui: keys::TuiSettings,
 }
 impl Default for UserConfig {
     fn default() -> Self {
@@ -81,6 +83,7 @@ impl Default for UserConfig {
             fonts: FontSettings::default(),
             runtime: Default::default(),
             agents: Default::default(),
+            tui: Default::default(),
         }
     }
 }
@@ -150,6 +153,7 @@ struct UserFile {
     fonts: FontOverrides,
     runtime: runtime::RuntimeOverrides,
     agents: agents::AgentSettings,
+    tui: keys::TuiSettings,
 }
 impl Default for UserFile {
     fn default() -> Self {
@@ -158,6 +162,7 @@ impl Default for UserFile {
             fonts: Default::default(),
             runtime: Default::default(),
             agents: Default::default(),
+            tui: Default::default(),
         }
     }
 }
@@ -520,6 +525,8 @@ impl UserSource {
                     )?;
                     parsed.agents.validate()?;
                     result.settings.agents = parsed.agents;
+                    parsed.tui.keys.validate()?;
+                    result.settings.tui = parsed.tui;
                     result.fonts = parsed.fonts;
                     result.runtime = parsed.runtime;
                     result.source = Some((path, bytes));
@@ -843,7 +850,12 @@ fn write_configuration(path: &Path, scope: &str) -> Result<Value> {
     let mut file =
         tempfile::NamedTempFile::new_in(parent).map_err(|error| Error::io(parent, error))?;
     let template = if scope == "user" {
-        format!("{TEMPLATE}{}{}", runtime::TEMPLATE, agents::TEMPLATE)
+        format!(
+            "{TEMPLATE}{}{}{}",
+            runtime::TEMPLATE,
+            agents::TEMPLATE,
+            keys::TEMPLATE
+        )
     } else {
         format!("{TEMPLATE}{}", runtime::TEMPLATE)
     };

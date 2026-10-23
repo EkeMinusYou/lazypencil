@@ -81,6 +81,50 @@ fn font(path: &Path, name: &str) -> PathBuf {
 }
 
 #[test]
+fn prompt_shortcuts_are_user_owned_and_visible_in_config_and_schema() {
+    let f = Fixture::new();
+    f.settings("[tui.keys]\nsubmit=['F5', 'Ctrl+Alt+s']\npaste=[]\n");
+    let shown = f.data(&["config", "show", "--user"]);
+    assert_eq!(
+        shown["settings"]["tui"]["keys"],
+        json!({"submit":["F5","Ctrl+Alt+s"],"paste":[]})
+    );
+    let snapshot = f.snapshot().unwrap();
+    assert_eq!(
+        snapshot.summary()["user"]["settings"]["tui"]["keys"],
+        shown["settings"]["tui"]["keys"]
+    );
+    let schema = f.data(&["config", "schema", "--user"]);
+    assert!(schema["properties"]["tui"].is_object());
+    fs::write(
+        f.project.join("lazypencil.toml"),
+        "[tui.keys]\nsubmit=['F6']\n",
+    )
+    .unwrap();
+    assert!(f.snapshot().is_err(), "Projects cannot remap a user's keys");
+}
+
+#[test]
+fn invalid_shortcuts_fail_without_silently_restoring_defaults() {
+    let f = Fixture::new();
+    for body in [
+        "[tui.keys]\nsubmit=['Enter']\n",
+        "[tui.keys]\npaste=['Ctrl+c']\n",
+        "[tui.keys]\nsubmit=['F5']\npaste=['f5']\n",
+        "[tui.keys]\nsubmit=[]\n",
+        "[tui.keys]\npastes=['F6']\n",
+    ] {
+        f.settings(body);
+        let output = f.cli(&["config", "show", "--user"]);
+        assert!(
+            !output.status.success(),
+            "Unexpected accepted settings: {body}"
+        );
+        assert!(f.snapshot().is_err());
+    }
+}
+
+#[test]
 fn project_fields_override_independently_and_empty_arrays_stop_inheritance() {
     let f = Fixture::new();
     let user_font = font(&f.user.join("fonts/regular.ttf"), "regular.ttf");
