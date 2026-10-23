@@ -526,11 +526,9 @@ fn mcp_variable_queries_expose_themed_values_sources_and_bound_pages() {
     let result = client.data("get_variables", json!({"theme":{"mode":"dark"}}));
     assert_eq!(result["variables"]["ink"]["value"], "$ui:ink");
     assert_eq!(result["resolved_values"]["ink"], "#111111");
-    assert!(
-        result["sources"]["ink"]["value"]
-            .as_str()
-            .unwrap()
-            .ends_with("/tokens.pen")
+    assert_eq!(
+        result["sources"]["ink"]["value"],
+        json!(lazypencil::paths::canonical(temp.path().join("tokens.pen")).unwrap())
     );
     let page = client.data("get_variables", json!({"library_alias":"ui","limit":1}));
     let next = client.data(
