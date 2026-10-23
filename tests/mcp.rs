@@ -216,6 +216,73 @@ fn mcp_invalidates_icon_calculations_after_an_installation_path_is_retargeted() 
     client.finish();
 }
 
+#[cfg(feature = "rendering")]
+#[test]
+fn mcp_script_limits_follow_captured_configuration_and_invalidate_old_calculations() {
+    let (temp, file, data) = fixture();
+    let user = temp.path().join("runtime-user");
+    fs::create_dir(&user).unwrap();
+    fs::write(
+        user.join("config.toml"),
+        "[runtime.javascript]\ntimeout_ms=100\nheap_mib=12\nmax_passes=6\n",
+    )
+    .unwrap();
+    let configuration = temp.path().join("lazypencil.toml");
+    fs::write(
+        &configuration,
+        "[runtime.javascript]\ntimeout_ms=2000\nmax_passes=4\n",
+    )
+    .unwrap();
+    let code = temp.path().join("draw.js");
+    fs::write(
+        &code,
+        "/** @schema 2.21 */ return [{type:'rectangle',width:20,height:10,fill:'#FF0000'}];",
+    )
+    .unwrap();
+    let saved = json!({"version":"2.21","children":[{"id":"chart","type":"script","width":80,"height":40,"scriptUri":"draw.js"}]}).to_string();
+    fs::write(&file, &saved).unwrap();
+    let mut client = Client::start_with_user_config(&file, &data, None, &[], None, Some(&user));
+    let before = client.data("get_layout", json!({}));
+    let limits = &before["script_executions"][0]["limits"];
+    assert_eq!(limits["timeout_ms"], 2000);
+    assert_eq!(limits["heap_mib"], 12);
+    assert_eq!(limits["max_passes"], 4);
+    fs::write(
+        user.join("config.toml"),
+        "[runtime.javascript]\ntimeout_ms=100\nheap_mib=16\nmax_passes=6\n",
+    )
+    .unwrap();
+    let stale = client.call("render", json!({"snapshot_id":before["snapshot_id"],"expected_revision":before["revision"],"expected_dependency_revision":before["dependency_revision"]}));
+    assert_eq!(
+        stale["structuredContent"]["error"]["code"],
+        "REVISION_CONFLICT"
+    );
+    let after = client.data("get_layout", json!({}));
+    assert_eq!(after["script_executions"][0]["limits"]["heap_mib"], 16);
+    assert_ne!(after["snapshot_id"], before["snapshot_id"]);
+    assert_ne!(after["dependency_revision"], before["dependency_revision"]);
+    fs::write(&code, "/** @schema 2.21 */ for (;;) {} ").unwrap();
+    fs::write(&configuration, "[runtime.javascript]\ntimeout_ms=50\n").unwrap();
+    let timeout = client.call("get_layout", json!({}));
+    assert_eq!(
+        timeout["structuredContent"]["error"]["code"],
+        "RENDER_TIMEOUT"
+    );
+    fs::write(
+        &code,
+        "/** @schema 2.21 */ return [{type:'rectangle',width:20,height:10,fill:'#FF0000'}];",
+    )
+    .unwrap();
+    fs::write(&configuration, "[runtime.javascript]\ntimeout_ms=2000\n").unwrap();
+    let recovered = client.data("get_layout", json!({}));
+    assert_eq!(
+        recovered["script_executions"][0]["limits"]["timeout_ms"],
+        2000
+    );
+    assert_eq!(fs::read_to_string(&file).unwrap(), saved);
+    client.finish();
+}
+
 #[test]
 fn mcp_captures_user_settings_and_rejects_edits_from_stale_dependencies() {
     let (temp, file, data) = fixture();

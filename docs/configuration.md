@@ -1,6 +1,6 @@
 # User and project configuration
 
-User `config.toml` persists font preferences and per-agent ACP preferences across projects. Project `lazypencil.toml` overrides individual font fields and adds project design guides, style catalogues, and a default style. CLI, MCP, and TUI use the same captured document settings; CLI and TUI resolve the same user agent profiles. Project instructions require an explicit local user grant. Project executable settings, runtime, asset/library, key-binding, and resource-limit settings remain unfinished.
+User `config.toml` persists font preferences, JavaScript limits, and per-agent ACP preferences across projects. Project `lazypencil.toml` overrides individual font/runtime fields and adds project design guides, style catalogues, and a default style. CLI, MCP, and TUI use the same captured document settings; CLI and TUI resolve the same user agent profiles. Project instructions require an explicit local user grant. Project executable settings, browser/shader policy, asset/library, key-binding, and other resource-limit settings remain unfinished.
 
 ## Start and inspect
 
@@ -16,7 +16,7 @@ lazypencil fonts list --file design.pen
 
 `config init [PATH]` creates `lazypencil.toml` atomically and never overwrites an existing file. A supplied path must have that filename and an existing parent directory. `config show FILE` resolves project settings for that document path without executing scripts, launching a browser/agent, or decoding font glyphs. It can inspect configuration even when the document's contents are invalid. `config schema` returns the JSON Schema for supported settings, including version and array limits. Parsing also enforces byte/path/language limits.
 
-`config init --user` explicitly creates the user configuration and missing parent directories; it also never overwrites an existing file. Ordinary reads do not create those directories. `config show --user` and `config schema --user` need no document and inspect only user settings. The templates leave optional fields commented so a newly initialized project inherits user preferences. User scope accepts `version`, `[fonts]`, and `[agents]`; project design instructions are rejected there. Only the user scope accepts agent executables.
+`config init --user` explicitly creates the user configuration and missing parent directories; it also never overwrites an existing file. Ordinary reads do not create those directories. `config show --user` and `config schema --user` need no document and inspect only user settings. The templates leave optional fields commented so a newly initialized project inherits user preferences. User scope accepts `version`, `[fonts]`, `[runtime.javascript]`, and `[agents]`; project design instructions are rejected there. Only the user scope accepts agent executables.
 
 The default user location comes from the platform's configuration directory: `~/Library/Application Support/dev.lazypencil.lazypencil/config.toml` on macOS, `$XDG_CONFIG_HOME/lazypencil/config.toml` (normally `~/.config/lazypencil/config.toml`) on Linux, and `%APPDATA%\\lazypencil\\lazypencil\\config\\config.toml` on Windows. `LAZYPENCIL_CONFIG_DIR` overrides the directory, not the filename. A relative override resolves against the invoking directory. `doctor` reports the selected path; `config show --user` reports the requested/physical paths and source hash. The actual Windows path and native operation still require platform verification.
 
@@ -48,6 +48,39 @@ These font paths are explicit data inputs. Project configuration has no executab
 `--data-dir` and `LAZYPENCIL_DATA_DIR` resolve relative paths against the invoking directory before child processes change their working directory. ACP adapters and their bound MCP processes therefore use the same local grants, history, and attachments.
 
 The conversation host also pins the absolute `LAZYPENCIL_CONFIG_DIR` in its bound MCP descriptor. Changing the adapter/MCP working directory to a nested document directory does not select another user file. This does not modify the user's global environment or external agent configuration.
+
+## JavaScript execution limits
+
+Both user and project files accept these data-only settings:
+
+```toml
+[runtime.javascript]
+timeout_ms = 2000
+heap_mib = 64
+idle_seconds = 60
+layout_timeout_ms = 10000
+max_evaluations = 128
+max_passes = 8
+```
+
+| Field | Accepted range | Meaning |
+| --- | --- | --- |
+| `timeout_ms` | 1..60,000 ms | One interpreter evaluation, including context setup, compilation and output normalization |
+| `heap_mib` | 4..512 MiB | QuickJS heap cap; separate from native-process or complete process-group RSS |
+| `idle_seconds` | 0..3,600 s | Reap an unused script worker after its last completed request; zero permits immediate reaping |
+| `layout_timeout_ms` | 1..300,000 ms | Budget for script-generated layout calculation, across passes and evaluations |
+| `max_evaluations` | 1..4,096 | Maximum actual script executions in one calculation |
+| `max_passes` | 1..64 | Maximum fixed-point layout passes |
+
+The values shown are defaults. Each field follows **explicit project > explicit user > built-in**. An empty table inherits; an explicit built-in value overrides a different user preference, and `idle_seconds = 0` is an explicit value. `config show FILE` reports effective settings and the supplying scope in `runtime_origins`, using keys such as `javascript.timeout_ms`. Values outside the ranges, wrong types and unknown fields are configuration errors. Invalid lower-priority declarations are rejected even when another scope would override them.
+
+Each calculation applies its captured settings to the shared script runtime. Changes to either configuration file invalidate retained calculations through ordinary configuration dependencies, even when resulting geometry would match. Long-lived hosts apply the new policy on the next calculation; idle cleanup otherwise uses the last applied policy. Configuration inspection does not start workers. Numeric runtime policy does not select executables or grant project executable trust.
+
+The host sends a versioned policy envelope separately from script inputs and the worker validates it before execution. Script code cannot change its limits through `pencil.input`. The parent watchdog is the effective per-evaluation timeout plus 1,000 ms; an earlier absolute layout deadline also caps worker startup, I/O and execution. Interrupting or catching an execution timeout never makes that evaluation successful. Layout budgets are checked before/after native passes and before publishing a completed calculation; they cannot preempt synchronous native layout operations. Document/font loading before script layout is outside this particular budget.
+
+Execution records contain the **configured** `limits`, included in calculation identity. Code/input/output/node/depth and stack guards remain independent: 1 MiB source, 4 MiB protocol frames, 1,000 generated nodes per output, 64 output levels and a 512 KiB JS stack. Browser/shader limits and wider process/cache/asset policies remain separate unfinished work.
+
+The new configuration, real-worker, CLI/MCP and TUI policy regressions await hosted Rust verification. Local work is limited to formatting, Python checks and source review; no native build is performed locally.
 
 ## User agent profiles
 

@@ -946,6 +946,14 @@ impl Project {
         &self.font_settings
     }
 
+    pub fn script_settings(&self) -> crate::config::runtime::ScriptSettings {
+        self.configuration
+            .as_ref()
+            .map_or_else(Default::default, |configuration| {
+                configuration.settings.runtime.javascript
+            })
+    }
+
     #[cfg(feature = "rendering")]
     pub fn load_fonts(&self) -> Result<crate::text::Fonts> {
         self.check_cancelled()?;

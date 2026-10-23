@@ -17,6 +17,7 @@ fn real_pty_handles_japanese_input_live_turns_resize_and_image_protocols() {
         "font-config",
         "user-font-config",
         "user-agent-config",
+        "script-config",
     ] {
         let temp = TempDir::new().unwrap();
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));

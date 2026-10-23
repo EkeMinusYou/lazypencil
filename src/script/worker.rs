@@ -1,24 +1,36 @@
 use super::{MAX_OUTPUT_BYTES, Reply, ScriptOutput, ScriptRequest, invalid, validate_output};
+use crate::config::runtime::ScriptSettings;
 use crate::{Error, Result};
 use rquickjs::{CatchResultExt, Context, Function, Runtime, context::EvalOptions};
 use std::{
     io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
-    sync::mpsc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
     time::{Duration, Instant},
 };
 
 const MAX_REQUEST_BYTES: usize = 4 * 1024 * 1024;
-const SCRIPT_TIME: Duration = Duration::from_secs(2);
-const WATCHDOG: Duration = Duration::from_secs(3);
-const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+const WORKER_PROTOCOL: u32 = 1;
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Envelope<T> {
+    protocol: u32,
+    limits: ScriptSettings,
+    request: T,
+}
 
 /// A process is reused across requests; every request gets a fresh JS runtime.
 pub struct ScriptRuntime {
     executable: PathBuf,
     process: Option<Process>,
     cancel: Option<tokio_util::sync::CancellationToken>,
+    settings: ScriptSettings,
 }
 
 struct Process {
@@ -42,10 +54,20 @@ impl ScriptRuntime {
             executable: executable.into(),
             process: None,
             cancel: None,
+            settings: Default::default(),
         }
     }
     pub fn set_cancellation(&mut self, cancel: Option<tokio_util::sync::CancellationToken>) {
         self.cancel = cancel;
+    }
+    pub fn configure(&mut self, settings: ScriptSettings) -> Result<()> {
+        settings.validate()?;
+        self.settings = settings;
+        self.expire_idle(Instant::now());
+        Ok(())
+    }
+    pub fn settings(&self) -> ScriptSettings {
+        self.settings
     }
     #[cfg(feature = "rendering")]
     pub(crate) fn cancellation(&self) -> Option<tokio_util::sync::CancellationToken> {
@@ -62,8 +84,16 @@ impl ScriptRuntime {
         Ok(runtime)
     }
     pub fn execute(&mut self, request: &ScriptRequest) -> Result<ScriptOutput> {
+        self.execute_until(request, None)
+    }
+    /// Bound startup, I/O and execution by an additional absolute host deadline.
+    pub fn execute_until(
+        &mut self,
+        request: &ScriptRequest,
+        deadline: Option<Instant>,
+    ) -> Result<ScriptOutput> {
         self.expire_idle(Instant::now());
-        self.execute_request(request)
+        self.execute_request(request, deadline)
     }
     /// The owned child ID, for runtime diagnostics.
     pub fn process_id(&self) -> Option<u32> {
@@ -73,7 +103,7 @@ impl ScriptRuntime {
     pub fn idle_deadline(&self) -> Option<Instant> {
         self.process
             .as_ref()
-            .map(|process| process.last_used + IDLE_TIMEOUT)
+            .map(|process| process.last_used + Duration::from_secs(self.settings.idle_seconds))
     }
     /// Reap an idle child while preserving the runtime's ability to start another.
     pub fn expire_idle(&mut self, now: Instant) {
@@ -81,7 +111,11 @@ impl ScriptRuntime {
             self.process.take();
         }
     }
-    fn execute_request(&mut self, request: &ScriptRequest) -> Result<ScriptOutput> {
+    fn execute_request(
+        &mut self,
+        request: &ScriptRequest,
+        deadline: Option<Instant>,
+    ) -> Result<ScriptOutput> {
         if self
             .cancel
             .as_ref()
@@ -90,12 +124,42 @@ impl ScriptRuntime {
             return Err(Error::new("CANCELLED", "Script request cancelled"));
         }
         super::header::Header::parse(&request.code)?;
-        let mut bytes = serde_json::to_vec(request)
-            .map_err(|e| invalid(format!("Cannot encode script input: {e}")))?;
+        let started = Instant::now();
+        let mut limits = self.settings;
+        if let Some(deadline) = deadline {
+            let remaining = deadline
+                .checked_duration_since(started)
+                .filter(|remaining| !remaining.is_zero())
+                .ok_or_else(|| {
+                    Error::new(
+                        "RENDER_TIMEOUT",
+                        "Script layout exceeded its configured deadline",
+                    )
+                })?;
+            let remaining_ms = u64::try_from(remaining.as_millis())
+                .unwrap_or(u64::MAX)
+                .max(1);
+            limits.timeout_ms = limits.timeout_ms.min(remaining_ms);
+        }
+        let watchdog = Duration::from_millis(limits.timeout_ms + 1000);
+        let mut bytes = serde_json::to_vec(&Envelope {
+            protocol: WORKER_PROTOCOL,
+            limits,
+            request,
+        })
+        .map_err(|e| invalid(format!("Cannot encode script input: {e}")))?;
         if bytes.len() > MAX_REQUEST_BYTES {
             return Err(invalid("Script request exceeds 4 MiB"));
         }
         bytes.push(b'\n');
+        if started.elapsed() >= watchdog
+            || deadline.is_some_and(|deadline| Instant::now() >= deadline)
+        {
+            return Err(Error::new(
+                "RENDER_TIMEOUT",
+                "Script worker exceeded its configured deadline",
+            ));
+        }
         if self.process.is_none() {
             self.process = Some(start(&self.executable)?);
         }
@@ -125,7 +189,6 @@ impl ScriptRuntime {
                 return Err(invalid(format!("Cannot start worker I/O: {error}")));
             }
         };
-        let started = Instant::now();
         let received = loop {
             if self
                 .cancel
@@ -139,12 +202,19 @@ impl ScriptRuntime {
                     "Script worker cancelled and terminated",
                 ));
             }
-            match receiver.recv_timeout(Duration::from_millis(20)) {
+            if started.elapsed() >= watchdog
+                || deadline.is_some_and(|deadline| Instant::now() >= deadline)
+            {
+                break Err(());
+            }
+            let wait = deadline.map_or(Duration::from_millis(20), |deadline| {
+                deadline
+                    .saturating_duration_since(Instant::now())
+                    .min(Duration::from_millis(20))
+            });
+            match receiver.recv_timeout(wait) {
                 Ok(response) => break Ok(response),
                 Err(mpsc::RecvTimeoutError::Disconnected) => break Err(()),
-                Err(mpsc::RecvTimeoutError::Timeout) if started.elapsed() >= WATCHDOG => {
-                    break Err(());
-                }
                 Err(mpsc::RecvTimeoutError::Timeout) => continue,
             }
         };
@@ -180,6 +250,15 @@ impl ScriptRuntime {
                 ));
             }
         };
+        if started.elapsed() >= watchdog
+            || deadline.is_some_and(|deadline| Instant::now() >= deadline)
+        {
+            self.process.take();
+            return Err(Error::new(
+                "RENDER_TIMEOUT",
+                "Script worker exceeded its configured deadline",
+            ));
+        }
         let reply: Reply = serde_json::from_slice(&response).map_err(|_| {
             self.process.take();
             invalid("Script worker returned an invalid reply")
@@ -187,6 +266,15 @@ impl ScriptRuntime {
         match reply {
             Reply::Success { output } => {
                 validate_output(&output.nodes)?;
+                if started.elapsed() >= watchdog
+                    || deadline.is_some_and(|deadline| Instant::now() >= deadline)
+                {
+                    self.process.take();
+                    return Err(Error::new(
+                        "RENDER_TIMEOUT",
+                        "Script worker exceeded its configured deadline",
+                    ));
+                }
                 Ok(output)
             }
             Reply::Failure {
@@ -254,15 +342,23 @@ pub(super) fn serve() -> Result<()> {
         if bytes.len() > MAX_REQUEST_BYTES || bytes.last() != Some(&b'\n') {
             return Err(invalid("Script request exceeds its framing limit"));
         }
-        let started = Instant::now();
-        let result = serde_json::from_slice::<ScriptRequest>(&bytes)
+        let result = serde_json::from_slice::<Envelope<ScriptRequest>>(&bytes)
             .map_err(|_| invalid("Invalid script request"))
-            .and_then(execute);
+            .and_then(|envelope| {
+                if envelope.protocol != WORKER_PROTOCOL {
+                    return Err(invalid("Unsupported script worker protocol"));
+                }
+                envelope
+                    .limits
+                    .validate()
+                    .map_err(|_| invalid("Invalid script worker limits"))?;
+                execute(envelope.request, envelope.limits)
+            });
         let reply = match result {
             Ok(output) => Reply::Success { output },
             Err(error) => Reply::Failure {
                 message: error.message,
-                timeout: started.elapsed() >= SCRIPT_TIME,
+                timeout: error.code == "RENDER_TIMEOUT",
                 details: error.details,
             },
         };
@@ -284,7 +380,7 @@ pub(super) fn serve() -> Result<()> {
     }
 }
 
-fn execute(request: ScriptRequest) -> Result<ScriptOutput> {
+fn execute(request: ScriptRequest, limits: ScriptSettings) -> Result<ScriptOutput> {
     if [request.width, request.height]
         .iter()
         .any(|n| !n.is_finite() || *n < 0.0 || *n > 1_000_000.0)
@@ -298,9 +394,17 @@ fn execute(request: ScriptRequest) -> Result<ScriptOutput> {
     let started = Instant::now();
     let runtime =
         Runtime::new().map_err(|e| invalid(format!("Cannot initialize JavaScript: {e}")))?;
-    runtime.set_memory_limit(64 * 1024 * 1024);
+    runtime.set_memory_limit(limits.heap_mib as usize * 1024 * 1024);
     runtime.set_max_stack_size(512 * 1024);
-    runtime.set_interrupt_handler(Some(Box::new(move || started.elapsed() >= SCRIPT_TIME)));
+    let interrupted = Arc::new(AtomicBool::new(false));
+    let flag = interrupted.clone();
+    runtime.set_interrupt_handler(Some(Box::new(move || {
+        let stop = started.elapsed() >= Duration::from_millis(limits.timeout_ms);
+        if stop {
+            flag.store(true, Ordering::Relaxed);
+        }
+        stop
+    })));
     let context = Context::full(&runtime)
         .map_err(|e| invalid(format!("Cannot create JavaScript context: {e}")))?;
     let serialized = context.with(|ctx| -> Result<String> {
@@ -342,6 +446,15 @@ fn execute(request: ScriptRequest) -> Result<ScriptOutput> {
             .catch(&ctx)
             .map_err(|error| super::diagnostic::javascript(error, &request.code, "runtime"))
     });
+    if interrupted.load(Ordering::Relaxed)
+        || started.elapsed() >= Duration::from_millis(limits.timeout_ms)
+    {
+        let mut error = serialized
+            .err()
+            .unwrap_or_else(|| invalid("Script execution exceeded its configured deadline"));
+        error.code = "RENDER_TIMEOUT".into();
+        return Err(error);
+    }
     let serialized = serialized?;
     if runtime.is_job_pending() {
         return Err(invalid(
