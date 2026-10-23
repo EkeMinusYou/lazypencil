@@ -347,6 +347,12 @@ cache 設定の実行 `39995993914` では、Windows の Python fixture が、`C
 
 追加7試験と Python 全76試験が成功した。既存 macOS arm64 release バイナリー `8f322822…` で各21回、合計42描画が成功し、文書ごとに全 PNG が一致した。繰り返しの中央値／p95 は shadow 約160.84／165.26ms、dashboard 約824.94／907.03ms、最大 peak RSS は各133,136,384／123,322,368 bytes。これは現行ソースをローカルで再ビルドした結果ではない。GHA の release smoke に組み込み、小さい JSON を既存の成果物へ含め、依存 cache 保存前に除去する。新しい CI 統合と Windows／Linux の計測は GHA で確認する。統制した cold、全プロセス群、待機 CPU、TUI 応答、全性能要件の完了とは扱わない。[測定条件](performance.md#repeatable-native-child-measurements)
 
+### 実 PTY の画像解析負荷の削減
+
+2026-10-24: Intel の font reload の調査で、実 PTY helper が待機条件を調べるたびに全出力を再解析し、同じ Kitty payload を何度も復号していることを確認した。既存 macOS バイナリー `8f322822…` と Python profiler を使った project-font 1ケースは約6.57秒、そのうち Kitty 解析の累積が約4.07秒、Base64 が879,974回だった。`tests/support/terminal_images.py` の差分 decoder へ置き換え、同じ条件では約2.63秒・658回になった。RGBA と alpha、完了 frame のみの公開、分割 packet、問い合わせとペイロードなしの削除、寸法・payload・packet 上限を検査する。受信済みの大きな wire data を再保持せず、未完 packet と完成画像だけを保持する。
+
+追加4試験・Python 全80試験と、保持済みバイナリーでの通常11 PTY ケースが成功した。15秒の期限や既存の画素変更・日本語・履歴・入力・端末復元の条件は維持した。VT の文字モデルは graphics overlay を表さないため、古い `No complete preview` の文字だけでは画像の欠落とは判断しない。画像は完了した frame の復号で検査する。新しい Rust バイナリーをローカルで作ってはおらず、Intel の失敗の解決は次の GHA で確認する。
+
 ### 次に実装・確認すること
 
 - 両実エージェントの画像付きサブスクリプション生成は、上記の条件で確認した。実 API/provider、モデル・モードの全組み合わせ、ランタイムの制限と診断、保持と会話管理、Windows の子孫終了と異常な親終了後の回収は残る。認証方式の確認は adapter report によるもので、請求額の監査ではない。TUI、クリップボード、設定・素材カタログ、配布と CI は未完成。MCP は変数の解決値と計算済みレイアウトの検証を実装した。計算済み・生成ノードの詳細取得も実装した。アイコンの追加カタログ設定や残る設定などを拡張する。通常編集と部品取り込みの保存準備・依存のロック待ちへ取消を接続した。静的レイアウト・描画全体の取消と、各 OS の遅延検証は残る。
