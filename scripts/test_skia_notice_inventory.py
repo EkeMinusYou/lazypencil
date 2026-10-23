@@ -151,6 +151,20 @@ class SkiaInventoryTests(unittest.TestCase):
         self.assertEqual(notices.digest(data), reference["sha256"])
         self.assertEqual(len(reference["applies_to"]["source_sha256"]), 1)
 
+    def test_reference_mismatch_reports_observed_bytes_without_accepting_line_ending_changes(self):
+        policy = self.reference()
+        original = self.h.read_bytes()
+        self.h.write_bytes(original.replace(b"\n", b"\r\n"))
+        index, texts = self.inventory()
+        with self.assertRaises(notices.NoticeError) as caught:
+            native.apply_references(index, texts, policy)
+        message = str(caught.exception)
+        self.assertIn(self.h.relative_to(self.source).as_posix(), message)
+        self.assertIn(notices.digest(original), message)
+        self.assertIn(notices.digest(self.h.read_bytes()), message)
+        self.assertIn('"crlf_pairs": 3', message)
+        self.assertIn('"bare_cr": 0', message)
+
     def test_malformed_reference_root_is_a_validation_error(self):
         policy = self.reference()
         policy.write_text("[]")

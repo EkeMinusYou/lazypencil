@@ -2,6 +2,12 @@
 
 設計書 v0.9 の全体を実装対象とする。部分的な CLI や描画の試作だけで完成とは扱わない。以下は実際の実装・試験結果で更新する。
 
+2026-10-24: QuickJS の native 入力を元 archive へ結び付ける `scripts/quickjs_notice_inventory.py` を追加し、release 資料収集へ接続した。rquickjs-sys 0.14.0 の Cargo.lock checksum とレビューした build.rs の SHA-256 を固定し、選択された manifest・build.rs・C／header 19入力・各対象の Rust FFI binding を原本へ照合する。生成された target 選択 macro は rustc の host と一致する必要がある。コピーされた C／header の全文から原文の著作権・license comment 候補を保持する。bindgen／update-bindings、新しい版・build script・対象はレビューなしに通さない。release 資料の `licenses/` には既存の対応ソース archive・MPL 本文・元通知も相対パスを維持して含める。Python 全108試験と、実際の checksum 検証済み archive を使った5対象のコピー fixture・再構成検証が成功した。fixture は native をコンパイルしておらず、実 GHA ビルドの入力収集はまだ未検証。最終リンクや完全な帰属レビューの完了とは扱わない。
+
+同日: QuickJS 拡張前の source `74d4a3d` の macOS arm64 run `40025472254` が、release ビルドと資料収集・元入力からの再構成検証を含めて成功した。取得した ZIP の digest と306資料の各 size／SHA-256・一覧の完全性を検証した。資料は source 596ファイルの manifest、実行ファイルの hash、Skia の2,954入力・8外部部品と Skia・33原文資料、既存 Rust 388 package の通知を記録する。native archive は Skia／wrapper 6件と QuickJS 1件。これは新しい QuickJS 入力照合の成功や registry 388 archive の現物検証ではなく、標準・システム・素材・最終リンク・完全な法的レビュー・署名も残る。`release_ready: false` を維持する。
+
+同日: source `74d4a3d` の Windows `40025479412` も release ビルドが成功したが、native の参照元ソースが既存 policy の hash と一致せず、資料収集で停止した。元のエラーは不一致のパスを記録しておらず、この時点で未登録の入力・改行差・別の変更のどれかは確定できない。不一致のパス・期待／実測 hash・改行の個数と LF 換算 hash を診断へ加えた。照合条件は変えず、改行だけを変更した入力も引き続き拒否する試験を含め、Python 全109試験が成功した。Linux arm64 の最初の source `18a0092` も global package ID の重複拒否で失敗したことを終了ログで確認した。同ジョブでは runner image が `20261023.149.3` に更新され、正しい image の native cache がなく cold build だった。別 image の cache を混ぜず、後続の同環境 job と通常 CI を継続する。
+
 2026-10-24: release ビルドと通知資料を結び付ける `scripts/release_evidence.py` と手動 GHA を追加した。検証済みのソース配布物からアプリを再ビルドし、Cargo JSON の package identity で native artifact と build-script を対応付け、報告された出力ディレクトリを使う。実行ファイルと Skia・wrapper・QuickJS archive、rustc と runner の識別情報、Skia の実入力・原文通知、および検証済みの Rust 通知を記録する。収集中のソース・成果物・Cargo 記録の変化、未記載ソース、異なる内容の archive 別名、既存出力への上書きを拒否する。MSVC で cc が生成する同内容の `.a`／`.lib` 別名は両方を記録する。ローカルの Python 101試験が成功した。GHA の実収集はまだ未検証。実行ファイルはアップロードせず、`release_ready: false` と残る監査範囲を明示する。標準・システムライブラリ、native／素材の完全な帰属、最終リンク、署名と公開が完了したとは扱わない。
 
 同日: 最初の macOS arm64 の収集 run `40024439088`（source `18a0092`）は依存 cache の復元と release ビルドが成功したが、Cargo の build-script 記録を全 package ID について一意に要求したため、収集工程で停止した。Cargo が異なる host／feature context で依存をビルドできることを考慮し、選択した native package だけを一意に対応付けるよう修正した。対象 native の曖昧さは引き続き拒否する。実際に重複した package の特定はこのエラーログだけではできない。別 package の複数 context と収集中の Cargo 記録の改変を含む Python 全102試験が成功した。修正後の実収集は次の run で確認する。
