@@ -2,7 +2,9 @@
 
 設計書 v0.9 の全体を実装対象とする。部分的な CLI や描画の試作だけで完成とは扱わない。以下は実際の実装・試験結果で更新する。
 
-2026-10-24: ユーザー設定 `[tui.keys]` から送信・貼り付けキーを置き換える実装を追加した。省略した action は既定値を使い、明示した配列は置換する。送信は1〜8件、貼り付けは0〜8件で、空の貼り付け配列はキー経由の clipboard 読み取りを無効にする。Ctrl／Alt／Shift、Enter・ASCII letter・F2〜F24 を扱い、文字入力・中断・command palette・旧端末の制御文字と衝突する指定、重複と action 間の衝突を設定エラーにする。設定は端末を開く前にユーザー設定だけから取得し、起動中は固定する。title と help に実効キーを表示し、idle prompt 以外の focus・検索・modal・permission が優先される。parser／実 key event／CLI 設定・schema／実 ACP 画像送信と permission／Unix PTY からのユーザー設定読み取りと F5 送信の試験を追加した。ローカルでは整形・差分・Python 構文だけを確認し、Rust と実 PTY の実行結果は GHA で確認する。全キーの変更や物理 clipboard／端末互換の完了とは扱わない。
+2026-10-24: 通常 CI `40029370465` の source `eaaaf79` は監査・native 5環境・配布用ソース検証を含む全体が成功した。5 artifact の ZIP digest、各3枚の PNG と report の hash・寸法・診断0件、各42回の benchmark export を確認した。全15画像はそれぞれ同じ OS の source `18a0092` の前回画像とバイト一致し、今回新たな目視は行っていない。試験ログの描画なし／通常合計は Linux x64・arm64 が各770、macOS arm64・Intel が各766、Windows が695件だった。source artifact `12536537610` は job の検証成功・upload・API metadata を確認し、9.3 MB の archive はローカル取得していない。これは asset／標準ライブラリの結合・今回のキー設定追加前の証拠であり、最新 main の成功とは扱わない。
+
+2026-10-24: ユーザー設定 `[tui.keys]` から送信・貼り付けキーを置き換える実装を追加した。省略した action は既定値を使い、明示した配列は置換する。送信は1〜8件、貼り付けは0〜8件で、空の貼り付け配列はキー経由の clipboard 読み取りを無効にする。Ctrl／Alt／Shift、Enter・ASCII letter・F2〜F24 を扱い、文字入力・中断・command palette・旧端末の制御文字と衝突する指定、重複と action 間の衝突を設定エラーにする。設定は端末を開く前にユーザー設定だけから取得し、起動中は固定する。title と help に実効キーを表示し、idle prompt 以外の focus・検索・modal・permission が優先される。parser／実 key event／CLI 設定・schema／実 ACP 画像送信と permission／Unix PTY からのユーザー設定読み取りと F5 送信の試験を追加した。ローカルでは整形・差分・Python 構文と全127 Python 試験が成功した。source `3ea9c65` の macOS GHA `40034819092` は本体ビルドを通過し実行試験中で、通常5環境 CI `40034814779` も開始した。Rust 試験と実 PTY の結果は未確定である。全キーの変更や物理 clipboard／端末互換の完了とは扱わない。
 
 2026-10-24: source `6e1fce2` の Linux arm64 `40033700360` と Intel Mac `40033703894` でも単独標準ライブラリ収集が成功した。各100資料の ZIP digest・size／SHA-256・一覧の完全性を確認し、各2,274 source input・registry 40原本、Linux arm64 55件／Intel 59件の installed target library を記録した。VEX の finding は保持している。これで単独収集は hosted 5環境で確認できた。実アプリへの結合は Linux x64 `40033309721` で検証中であり、最終リンクや公開の完了とは扱わない。
 
