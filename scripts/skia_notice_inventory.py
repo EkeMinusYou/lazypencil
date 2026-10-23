@@ -24,6 +24,8 @@ MAX_QUERY = 256 * 1024 * 1024
 MAX_SOURCE = 32 * 1024 * 1024
 COMMENTS = re.compile(r"^[ \t]*/\*.*?\*/|^(?:[ \t]*//[^\n]*(?:\n|$))+", re.M | re.S)
 REFERENCES = re.compile(r"Chromium source repository LICENSE", re.I)
+ZLIB_SOURCE = "https://chromium.googlesource.com/chromium/src/third_party/zlib"
+ZLIB_PREFIX = "third_party/externals/zlib/"
 
 
 def query(build, arguments, ninja):
@@ -112,8 +114,10 @@ def build_inventory(source, build, ninja="ninja", query_fn=query):
         text = data[:65536].decode("utf-8", "replace")
         if REFERENCES.search(text):
             crlf = data.count(b"\r\n")
+            lf = data.replace(b"\r\n", b"\n")
             record["reference_line_endings"] = {
-                "lf_sha256": notices.digest(data.replace(b"\r\n", b"\n")),
+                "lf_sha256": notices.digest(lf),
+                "lf_git_blob_sha1": hashlib.sha1(b"blob " + str(len(lf)).encode() + b"\0" + lf).hexdigest(),
                 "crlf_pairs": crlf, "bare_lf": data.count(b"\n") - crlf,
                 "bare_cr": data.count(b"\r") - crlf}
         for match in COMMENTS.finditer(text):
@@ -170,6 +174,27 @@ def load_reference(upstream):
         notices.source_path(path)
         notices.require(path.startswith("third_party/externals/zlib/") and notices.SHA.fullmatch(sha),
                         "Invalid native reference source binding")
+    variants = applies.get("working_tree_variants", {})
+    notices.require(isinstance(variants, dict) and len(variants) <= len(applies["source_sha256"]),
+                    "Invalid native working-tree variants")
+    if variants:
+        origin = applies.get("source_origin")
+        notices.require(isinstance(origin, dict) and set(origin) == {"repository", "revision"}
+                        and origin["repository"] == ZLIB_SOURCE and isinstance(origin["revision"], str)
+                        and re.fullmatch(r"[0-9a-f]{40}", origin["revision"]), "Invalid native variant source origin")
+        for path, variant in variants.items():
+            notices.require(path in applies["source_sha256"] and path.startswith(ZLIB_PREFIX)
+                            and isinstance(variant, dict)
+                            and set(variant) == {"transform", "sha256", "source_git_blob_sha1", "url"},
+                            "Unreviewed native working-tree variant")
+            notices.require(variant["transform"] == "lf_to_crlf" and isinstance(variant["sha256"], str)
+                            and notices.SHA.fullmatch(variant["sha256"])
+                            and variant["sha256"] != applies["source_sha256"][path]
+                            and isinstance(variant["source_git_blob_sha1"], str)
+                            and re.fullmatch(r"[0-9a-f]{40}", variant["source_git_blob_sha1"])
+                            and variant["url"] == ZLIB_SOURCE + "/+/" + origin["revision"] + "/"
+                            + path.removeprefix(ZLIB_PREFIX) + "?format=TEXT",
+                            "Invalid native working-tree variant provenance")
     repository = "https://chromium.googlesource.com/chromium/src"
     revision = reference["revision"]
     notices.require(reference["repository"] == repository and re.fullmatch(r"[0-9a-f]{40}", revision)
@@ -190,14 +215,34 @@ def apply_references(index, texts, upstream):
     deps = next(f for f in index["notice_files"] if f["path"] == "DEPS")
     applies = reference["applies_to"]
     notices.require(applies["skia_deps_sha256"] == deps["sha256"], "Native reference applies to another Skia DEPS revision")
+    variants = applies.get("working_tree_variants", {})
+    if variants:
+        origin = applies["source_origin"]
+        declaration = re.escape((origin["repository"] + "@" + origin["revision"]).encode())
+        notices.require(re.search(rb'''(?m)^\s*["']third_party/externals/zlib["']\s*:\s*["']'''
+                                  + declaration + rb'''["']''', texts[deps["sha256"]]),
+                        "Native variant origin differs from the observed Skia dependency")
     inputs = {i["path"]: i for i in index["inputs"]}
+    forms = {}
+    for path in sorted(expected):
+        item, canonical = inputs[path], applies["source_sha256"].get(path)
+        if item["sha256"] == canonical:
+            forms[path] = {"form": "original_bytes", "sha256": item["sha256"]}
+            continue
+        variant, endings = variants.get(path), item.get("reference_line_endings", {})
+        if (variant is not None and item["sha256"] == variant["sha256"]
+                and endings.get("crlf_pairs", 0) > 0 and endings.get("bare_cr") == endings.get("bare_lf") == 0
+                and endings.get("lf_sha256") == canonical
+                and endings.get("lf_git_blob_sha1") == variant["source_git_blob_sha1"]):
+            forms[path] = {"form": "reviewed_lf_to_crlf", "sha256": item["sha256"]}
     mismatches = [{"path": path, "expected_sha256": applies["source_sha256"].get(path),
                    "observed_sha256": inputs[path]["sha256"],
                    "line_endings": inputs[path].get("reference_line_endings")}
-                  for path in sorted(expected) if applies["source_sha256"].get(path) != inputs[path]["sha256"]]
+                  for path in sorted(expected) if path not in forms]
     notices.require(not mismatches, "Review the changed source referring to Chromium license terms: "
                     + json.dumps({"mismatch_count": len(mismatches), "inputs": mismatches[:10]}, sort_keys=True))
-    reference = {**reference, "observed_source_paths": sorted(expected), "blob": notices.blob(data, texts)}
+    reference = {**reference, "observed_source_paths": sorted(expected), "observed_source_forms": forms,
+                 "blob": notices.blob(data, texts)}
     index["license_references"] = [reference]
     index["review_findings"] = [finding for finding in index["review_findings"]
                                 if not finding.startswith("Chromium BSD terms referenced by source comments")]
@@ -277,7 +322,9 @@ def main():
             if args.upstream is None:
                 parser.error("verify-upstream requires --upstream")
             reference, data = load_reference(args.upstream)
-            print(json.dumps({"verified_reference": reference["id"], "source_bindings": len(reference["applies_to"]["source_sha256"]), "bytes": len(data)}))
+            print(json.dumps({"verified_reference": reference["id"], "source_bindings": len(reference["applies_to"]["source_sha256"]),
+                              "reviewed_working_tree_variants": len(reference["applies_to"].get("working_tree_variants", {})),
+                              "bytes": len(data)}))
             return
         if args.source is None or args.build is None or args.output is None:
             parser.error("collect/verify require --source, --build, and --output")

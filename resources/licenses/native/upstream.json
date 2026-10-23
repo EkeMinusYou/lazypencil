@@ -15,6 +15,66 @@
           "third_party/externals/zlib/crc32_simd.h": "80688abed37fbff1b49079050954749f0a694b5b9998abdbf59019f65401208a",
           "third_party/externals/zlib/google/compression_utils_portable.h": "ad6e83438a781734e0b8873b846b3cafae5ca31e1bf2c56a3d8c7ea2d9dc0c19",
           "third_party/externals/zlib/slide_hash_simd.h": "0524fd845c79ac31bf7e23436e68aa9eb20d21a849088f4ec3250d460214284c"
+        },
+        "source_origin": {
+          "repository": "https://chromium.googlesource.com/chromium/src/third_party/zlib",
+          "revision": "646b7f569718921d7d4b5b8e22572ff6c76f2596"
+        },
+        "working_tree_variants": {
+          "third_party/externals/zlib/adler32_simd.c": {
+            "transform": "lf_to_crlf",
+            "sha256": "12711a8411abd16d5599007912ef9e3cda950c2047065dd67ab24533e0208c5e",
+            "source_git_blob_sha1": "58966eecf0b8009fcd3a84239ebfd8f614f31cf4",
+            "url": "https://chromium.googlesource.com/chromium/src/third_party/zlib/+/646b7f569718921d7d4b5b8e22572ff6c76f2596/adler32_simd.c?format=TEXT"
+          },
+          "third_party/externals/zlib/adler32_simd.h": {
+            "transform": "lf_to_crlf",
+            "sha256": "c9c979a9fee187a7b210c00cdf00744245ebd246ac06e43d40ded257fd2ad8b3",
+            "source_git_blob_sha1": "0b2361a5174f7af327d52889771f94c0634184fa",
+            "url": "https://chromium.googlesource.com/chromium/src/third_party/zlib/+/646b7f569718921d7d4b5b8e22572ff6c76f2596/adler32_simd.h?format=TEXT"
+          },
+          "third_party/externals/zlib/contrib/optimizations/chunkcopy.h": {
+            "transform": "lf_to_crlf",
+            "sha256": "8534ec51330c91321a536af69d20a1bdb745a56adbe365849db7a8517777a375",
+            "source_git_blob_sha1": "f40546d54dbe770c9e4625881317efadceaf0b5b",
+            "url": "https://chromium.googlesource.com/chromium/src/third_party/zlib/+/646b7f569718921d7d4b5b8e22572ff6c76f2596/contrib/optimizations/chunkcopy.h?format=TEXT"
+          },
+          "third_party/externals/zlib/contrib/optimizations/insert_string.h": {
+            "transform": "lf_to_crlf",
+            "sha256": "11f0c6014c4c388edc67e46ba3e2879502157058584936ea000eda3f71d7bf0b",
+            "source_git_blob_sha1": "260b8268029a8c0bc03055ba2ac2dcb19c277c9d",
+            "url": "https://chromium.googlesource.com/chromium/src/third_party/zlib/+/646b7f569718921d7d4b5b8e22572ff6c76f2596/contrib/optimizations/insert_string.h?format=TEXT"
+          },
+          "third_party/externals/zlib/cpu_features.c": {
+            "transform": "lf_to_crlf",
+            "sha256": "8bd81a849b8b74aa14034092b3b731e63393f1dd7d40c4ff5298ed06833fd5f4",
+            "source_git_blob_sha1": "64e0428cd2fc2d965cf18c2af9212df68d2ea8c8",
+            "url": "https://chromium.googlesource.com/chromium/src/third_party/zlib/+/646b7f569718921d7d4b5b8e22572ff6c76f2596/cpu_features.c?format=TEXT"
+          },
+          "third_party/externals/zlib/cpu_features.h": {
+            "transform": "lf_to_crlf",
+            "sha256": "f1284572b00158baab5aaa9802beeaf30265529ccd940eb5032e9bd8fc86ad33",
+            "source_git_blob_sha1": "aed3e834c5ac8910eebf0796b3cb69f65f6d432b",
+            "url": "https://chromium.googlesource.com/chromium/src/third_party/zlib/+/646b7f569718921d7d4b5b8e22572ff6c76f2596/cpu_features.h?format=TEXT"
+          },
+          "third_party/externals/zlib/crc32_simd.c": {
+            "transform": "lf_to_crlf",
+            "sha256": "4919a9818828263d82f7f7359505b11d53013fbf6ba9fba89d4425f6c1a402a7",
+            "source_git_blob_sha1": "7428270920a03e06da4a037434de0255e486058b",
+            "url": "https://chromium.googlesource.com/chromium/src/third_party/zlib/+/646b7f569718921d7d4b5b8e22572ff6c76f2596/crc32_simd.c?format=TEXT"
+          },
+          "third_party/externals/zlib/crc32_simd.h": {
+            "transform": "lf_to_crlf",
+            "sha256": "7317bd2a0ded5a658458ffcffb147f5d1e8b246c08fcb394ff74131bbb473302",
+            "source_git_blob_sha1": "84624647bcd21624e8611ad638426643dd98294a",
+            "url": "https://chromium.googlesource.com/chromium/src/third_party/zlib/+/646b7f569718921d7d4b5b8e22572ff6c76f2596/crc32_simd.h?format=TEXT"
+          },
+          "third_party/externals/zlib/slide_hash_simd.h": {
+            "transform": "lf_to_crlf",
+            "sha256": "a9c682035abd06e7ad466844dc53c5cbe6facd36d9d65ac363a83a208c9a48e4",
+            "source_git_blob_sha1": "1000b774ccb60a601e42d9a30a18e0aa00357ae1",
+            "url": "https://chromium.googlesource.com/chromium/src/third_party/zlib/+/646b7f569718921d7d4b5b8e22572ff6c76f2596/slide_hash_simd.h?format=TEXT"
+          }
         }
       },
       "blob": "texts/368cca1106be99d39ecd32a38d8305585d802a475effb66380b91ffc9bcf709b.txt",
