@@ -26,7 +26,17 @@
 
 ## 現在の検証環境
 
-macOS arm64・Rust 1.99.1、および Debian 12 arm64 コンテナー・Rust 1.94.0。開始時点では設計書だけがあり、実行可能な実装はなかった。OS・CPU ごとの動作確認は、ビルド設定が存在することとは区別する。物理端末・クリップボード・外部ランタイムの条件は個別に記録する。
+現在の継続検証は GHA の Rust 1.94.0 で行い、ローカルでは native build を行わない。下表は確認した source ごとの結果であり、最新コミットの全検証や、物理端末・最低 OS の保証へ読み替えない。
+
+| GHA 環境 | 通常・release CI（source `36d1269`） | Chromium 専用検証（source `d617d5e`） |
+| --- | --- | --- |
+| macOS 15 arm64 | 両構成・Clippy・release 成功 | 109件成功、MCP 待機・TUI を含む |
+| macOS 15 Intel | 両構成・Clippy・通常 build 成功、release 実行中 | 未実行 |
+| Ubuntu 24.04 x64 | 依存取得で20分上限に達した | 111件成功、公式 mirror で導入済み |
+| Ubuntu 24.04 arm64 | 両構成・Clippy・release 成功 | 111件成功、MCP 待機・TUI を含む |
+| Windows Server 2025 x64 | 両構成・Clippy・release 成功 | 96件成功、実 MCP 画像まで。Unix PTY 等を除く |
+
+[通常 CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40014323380) の Intel job を維持し、その後に最新 main の全環境 CI を実行する。Linux x64 の旧 mirror の失敗は、取得先の修正後に実導入と専用検証で確認した。具体的な専用 run と制約は [runtime の検証記録](runtimes.md#hosted-integration-without-local-build-trees) に記載する。過去のローカル検証は macOS arm64・Rust 1.99.1 と Debian 12 arm64・Rust 1.94.0 で行った。物理端末・クリップボード・最低 OS・本家との互換性・公開品質全体の確認は残る。
 
 ## 実装記録
 
@@ -452,6 +462,10 @@ Windows `40019402106` は selector の3件が通過したが、取消試験の�
 navigation の失敗には `page_navigation` 段階と、128バイト以内の `net::ERR_` 形式の code だけを返す。その他の文字列・型は null とし、任意の URL・本文を詳細へ取り込まない。既知の code と不正値の unit を追加した。また、ページの global lexical な `scrollX`／`scrollY` ではなく `window` の実際の値を記録し、同名の変数を持つページで画像と metadata の5000px移動を照合する。これらの修正後の実行は次の GHA で確認する。
 
 先行する source `36d1269` の Intel Mac は、通常試験・両構成の Clippy・通常 build を含む工程を成功で通過した。追加フォントと release の工程を確認してから、job 全体と cache 保存の結果を確定する。
+
+修正後の source `d617d5e` は macOS arm64 `40021082049`（109件）、Linux x64 `40021085896`（111件）、Linux arm64 `40021090172`（111件）、Windows `40021078150`（96件）の専用実行がすべて成功した。Windows の同じ HTTP ページへの取消後の復帰、500ms遅れて来る header と終了、navigation の code／秘匿 unit、global な同名変数を持つページの実 scroll と緑画素を含む。Unix は従来の実 MCP 待機・全 TUI も成功した。元の Windows 失敗の network code は取得していないため、その原因を新しい診断から遡って確定しない。
+
+4環境の小さい成果物を取得し、1000×640・診断0件・2取得・固定版 browser identity・管理 runtime の完全性・実効 limits と既定の selector/state を再検査した。各 PNG と report の hash が一致し、同じ環境の以前の PNG ともバイト一致した。macOS／Windows／Linux arm64 の比較元は目視確認済みである。OS 間で同じ hash になるという主張ではない。macOS・Windows・Linux arm64 は通常 CI が保存した v2 cache を実際に復元し、Linux x64 は監査した v1 を復元した。最新 main の通常 CI・Clippy・release・source artifact は、先行する Intel job の終了後に確認する。
 
 ### 次に実装・確認すること
 
