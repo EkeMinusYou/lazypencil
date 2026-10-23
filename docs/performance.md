@@ -154,6 +154,17 @@ All 21 PNGs per scene matched: shadow `71f026838d25811159637859efbe051106860ace1
 
 All 21 PNGs matched within each environment/scene. Shadow matched the retained executable's hash. Dashboard hashes differ across environments: macOS `6eb5bf6a9870598763ae4886c6fe5dcf4587ce6abf3a1f6f6a59b86780fee962`, Linux `26fafa62af3c56516016934a722d25a116fb506eeddeb671dc85c7b7ed3baaca`. The benchmark asserts stability within a run, not identical platform font rendering. These shared-host timings have uncontrolled cache and host load, and do not establish controlled cold starts, TUI performance or full performance acceptance.
 
+### Hosted Windows release build, 2026-10-24
+
+The Windows x64 job in [run 40000148383](https://github.com/EkeMinusYou/lazypencil/actions/runs/40000148383), at the same `955098a42d3417afdd849789a047239beed37e56` source, completed both normal test configurations, Clippy, the two Material opt-ins, release smoke and all 42 benchmark exports. Its retrieved report uses the actual child process handle for `PeakWorkingSetSize` and process CPU counters. Each scene has twenty repeated fresh children after the separately recorded first invocation.
+
+| Scene | First invocation | Repeated median | Repeated p95 | Repeated maximum | Maximum repeated peak RSS |
+| --- | --- | --- | --- | --- | --- |
+| Simple shadow scene | 359 ms | 328 ms | 359 ms | 360 ms | 93,446,144 bytes |
+| Dashboard | 906 ms | 907 ms | 922 ms | 938 ms | 82,513,920 bytes |
+
+All twenty-one PNGs matched within each scene. Windows hashes are shadow `d29ee020a70d0e8eafa61ca8dd6d8c317388bd88a41164cbcba0bd43f2580034` and dashboard `e90e28ab3b879043a8cde381dced403f63d33154bd0585909ceadca85567fdf3`. Both differ from the other platforms above; the cause of those pixel differences is not established here. The same uncontrolled-host/cache and incomplete-process-group limits apply. This does not establish physical Windows terminal/clipboard behavior or complete performance acceptance.
+
 ## Remaining work
 
 Background-aware layers preserve color alpha and replacement coverage, which can require several working rasters. Explicit scratch reservations are bounded and fail rather than dropping effects. This resource guard is separate from measured RSS.

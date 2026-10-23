@@ -745,15 +745,19 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
             let store = open(file)?;
             Ok(json!({"recovered":store.recover()?,"revision":store.read()?.revision()}))
         }
-        Command::Doctor => Ok(json!({
+        Command::Doctor => {
+            let data = store::data_directory(arguments.data_dir.clone())?;
+            Ok(json!({
             "version":env!("CARGO_PKG_VERSION"),"os":std::env::consts::OS,"architecture":std::env::consts::ARCH,
             "document_version":crate::document::DOCUMENT_VERSION,
-            "data_directory":store::data_directory(arguments.data_dir.clone())?,
+            "data_directory":data,
             "lock_directory":store::default_lock_dir()?,
             "user_configuration":crate::config::user_config_path().map(|path|json!({"path":path})).unwrap_or_else(|error|json!({"error":error})),
             "skia_compiled":cfg!(feature="rendering"),
+            "chromium":crate::runtime::status(&data),
             "release_ready":false,
-        })),
+            }))
+        }
     }
 }
 

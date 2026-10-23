@@ -15,7 +15,18 @@ The current manifest pins Chrome for Testing **156.0.8078.47**, specifically `ch
 
 [The manifest](../resources/runtimes/chromium.json) records the exact HTTPS URL, archive byte length and SHA-256, and the name, size, SHA-256, and executable bit of every installed file. These hashes were computed from the versioned official downloads; they are **not publisher-supplied checksums**. Updating a pin requires acquiring the official archives, regenerating and reviewing their file manifests, and running the installation and rendering checks before release.
 
-The installer verifies the archive before bounded extraction, rejects traversal paths, symbolic links and unpinned files, checks the complete installed file set, then activates the staging directory by rename. A verified installation is reused. A modified installation fails with `RUNTIME_INTEGRITY` and is not silently overwritten. `runtime status` reports availability and integrity without downloading anything or launching the browser. Installation cancellation and complete cross-platform filesystem-durability checks still require work.
+The installer verifies the archive before bounded extraction, rejects traversal paths, symbolic links and unpinned files, checks the complete installed file set, then activates the staging directory by rename. A verified installation is reused. A modified installation fails with `RUNTIME_INTEGRITY` and is not silently overwritten. `runtime status` reports installation availability and integrity without downloading anything or launching the browser. Installation cancellation and complete cross-platform filesystem-durability checks still require work.
+
+## Read-only diagnosis
+
+```sh
+lazypencil --json runtime status
+lazypencil --json doctor
+```
+
+Both reports include the Chromium installation status and explicitly mark `startup: "not_checked"`. `available` describes installed files, not a successful browser launch. `host` reports OS/architecture, the required browser sandbox, and `sandbox_profile` / `shared_libraries` as `not_checked`. On Linux it also reports the effective UID and observed `unprivileged_userns_clone`, `apparmor_restrict_unprivileged_userns` and `max_user_namespaces` values. Missing, unreadable, malformed or oversized values are `null`; they are not treated as permission granted or denied. Reads are bounded, and neither command changes OS policy or creates runtime/settings/lock directories.
+
+These host facts do not determine which AppArmor profile will apply to a selected executable. A restricted namespace setting can coexist with an allowed browser, as the hosted integration demonstrates. If the browser child exits before CDP is ready, the failure includes `error.details.stage: "browser_startup"` and the same host facts, with a command for obtaining the full report. Automated shared-library dependency inspection, profile verification, and a general startup probe in the product remain unfinished. The new reporting and read-only regression tests await hosted verification.
 
 ## Offline archives
 

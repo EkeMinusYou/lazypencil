@@ -13,6 +13,9 @@ use std::{
     time::Duration,
 };
 
+mod diagnostics;
+pub(crate) use diagnostics::host_status;
+
 #[derive(Deserialize)]
 struct Manifest {
     version: String,
@@ -235,12 +238,15 @@ pub fn setup(data: &Path, archive: Option<&Path>) -> Result<Value> {
 }
 
 pub fn status(data: &Path) -> Value {
-    match installed(data) {
+    let mut report = match installed(data) {
         Ok(browser) => {
             json!({"available":true,"managed":browser.version!="external-unverified","integrity_verified":browser.version!="external-unverified","version":browser.version,"platform":browser.platform,"executable":browser.executable})
         }
         Err(error) => json!({"available":false,"error":error}),
-    }
+    };
+    report["startup"] = json!("not_checked");
+    report["host"] = host_status();
+    report
 }
 fn verify(directory: &Path, artifact: &Artifact) -> Result<()> {
     if fs::symlink_metadata(directory)
