@@ -1445,7 +1445,14 @@ fn uses_background(value: &Value) -> bool {
             && value
                 .get("uniforms")
                 .and_then(Value::as_object)
-                .is_some_and(|values| values.values().any(|value| value == "pencil:background"))
+                .is_some_and(|values| {
+                    values.values().any(|value| {
+                        value == "pencil:background"
+                            || value.as_array().is_some_and(|values| {
+                                values.iter().any(|value| value == "pencil:background")
+                            })
+                    })
+                })
 }
 
 fn raster_dimensions(width: u64, height: u64) -> Result<(i32, i32)> {

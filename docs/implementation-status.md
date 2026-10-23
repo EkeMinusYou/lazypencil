@@ -2,6 +2,10 @@
 
 設計書 v0.9 の全体を実装対象とする。部分的な CLI や描画の試作だけで完成とは扱わない。以下は実際の実装・試験結果で更新する。
 
+2026-10-24: sampler 配列の source `3f60528` は macOS `40040697389` でコンパイルが成功したが、実 effect 試験で `pencil:background` が利用不可となって失敗した。背景取得を事前に決める `uses_background` が scalar の値しか調べておらず、配列内の背景指定を見落としていたため、同じ判定へ配列要素を追加した。通常画像の配列・上下方向・scalar 混在・active tail・未指定・短い入力からの復帰、library の要素別依存と切り離し、独立コピーの各新試験はこの run で成功した。全体の成功とは扱わず、修正と source `e406378` の追加ケースを次の GHA で確認する。
+
+同日: 使用中プロセスと open file がないことを確認し、この作業の古いローカル Chromium と ACP adapter の node_modules を削除した。作業 cache は975 MiBから467 MiBへ減った。元 package lock・ソース・検証記録を保持し、Rust／Skia／Chromium の実行検証は GHA で続ける。
+
 2026-10-24: 1次元の画像 sampler 配列を実装した。Rust は文字列リストの長さ・型・符号化済み入力64 MiBの上限を検査し、要素ごとの変数・テーマ・参照元と依存 file を捕捉する。WebGL は active な要素を各 texture unit へ設定し、同じ画像の unit を共有し、未指定要素には透明画像を渡す。切り離し・固定画像を含む独立コピーも配列を扱う。新しい試験は実画像の向き、scalar と配列の混在、active tail、定数式の短い入力からの復帰、object／background、テーマ付き library と切り離し、元 library を削除したコピーを検査する。文字列変数を持つ独立コピー・多次元配列・struct・マクロ宣言・本家の注釈既定値などは元の全対応範囲に残す。英語ガイドは1.0.8へ更新した。新しい Rust コードの実行検証は GHA で行い、成功とはまだ扱わない。
 
 同日: source `5aa27e0` の Windows `40039981583` は、不完全なアイコン guard で capture を作らない追加も含め107試験が成功した。artifact `12539411084` の ZIP digest・各成功ログ・1000×640 PNG／report の hash と診断0件を検査した。source `ff46c24` の通常 CI `40037051278` は監査・native 5環境・source artifact を含め全体が成功した。これは新しい sampler 配列や生成 icon guard の成功を示すものではなく、各 native artifact の詳細検査も別に行う。
