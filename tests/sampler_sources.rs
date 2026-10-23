@@ -450,3 +450,238 @@ fn real_webgl_sampler_variables_and_detachment_preserve_both_theme_images() {
         }
     }
 }
+
+fn copy_operations() -> Value {
+    json!([
+        {"op":"import_component","source":{"library_alias":"ui","node_id":"tile"},"mode":"copy","options":{"variable_prefix":"copied_","themes":{"ui:images:mode":{"action":"reuse","target":"mode"}}}},
+        {"op":"delete","target":"use"},
+        {"op":"remove_import","alias":"ui"}
+    ])
+}
+
+#[test]
+fn independent_sampler_copy_keeps_text_aliases_themes_and_future_consumer_edits() {
+    let (temp, store) = array_fixture();
+    let original = fs::read(store.path()).unwrap();
+    let metadata = service::document_metadata(&store).unwrap();
+    let preview: EditRequest = serde_json::from_value(json!({"request_id":"preview-copy","expected_revision":metadata["revision"],"expected_dependency_revision":metadata["dependency_revision"],"dry_run":true,"operations":copy_operations()})).unwrap();
+    let preview = service::apply_request(&store, &preview).unwrap();
+    assert!(
+        preview["generated_ids"]["0"]["assets"]
+            .as_array()
+            .unwrap()
+            .len()
+            >= 4
+    );
+    assert_eq!(fs::read(store.path()).unwrap(), original);
+    assert!(!temp.path().join("assets").exists());
+    assert!(store.history(10, None).unwrap().is_empty());
+    let mut invalid = copy_operations().as_array().unwrap().clone();
+    invalid.push(json!({"op":"update","target":"absent","set":{"x":1}}));
+    let invalid:EditRequest = serde_json::from_value(json!({"request_id":"invalid-copy","expected_revision":metadata["revision"],"expected_dependency_revision":metadata["dependency_revision"],"operations":invalid})).unwrap();
+    assert!(service::apply_request(&store, &invalid).is_err());
+    assert_eq!(fs::read(store.path()).unwrap(), original);
+    assert!(!temp.path().join("assets").exists());
+    let copied = edit(&store, "copy-samplers", copy_operations());
+    let target = copied["generated_ids"]["0"]["id"].as_str().unwrap();
+    fs::remove_dir_all(temp.path().join("library")).unwrap();
+    let document = store.read().unwrap();
+    assert_eq!(
+        document.value()["variables"]["copied_picture"]["value"],
+        "$copied_leaf"
+    );
+    assert_eq!(
+        document.value()["variables"]["copied_alias"]["value"],
+        "$copied_picture"
+    );
+    assert!(
+        document.value()["imports"]
+            .as_object()
+            .unwrap()
+            .values()
+            .all(|value| value.as_str().unwrap().starts_with("assets/lazypencil/"))
+    );
+    for mode in ["light", "dark"] {
+        edit(
+            &store,
+            &format!("copied-{mode}"),
+            json!([{"op":"set_theme","target":target,"set":{"mode":mode}}]),
+        );
+        let project = Project::load(&store).unwrap();
+        let scene = project.resolve().unwrap();
+        let node = scene.roots.iter().find(|node| node.id() == target).unwrap();
+        assert_eq!(
+            node.children[0].properties["content"],
+            if mode == "light" {
+                "pixel.png"
+            } else {
+                "dark.png"
+            }
+        );
+        for property in ["fill", "stroke", "effect"] {
+            let uri = node.properties[property]["uniforms"]["image"][0]
+                .as_str()
+                .unwrap();
+            let path = project
+                .resolve_file(node.property_source(property), uri)
+                .unwrap();
+            assert!(path.starts_with(temp.path().join("assets/lazypencil")));
+            assert!(project.asset(&path).is_ok());
+        }
+    }
+    image(&temp.path().join("replacement.png"), true);
+    edit(
+        &store,
+        "future-alias",
+        json!([
+            {"op":"set_variable","name":"replacement","definition":{"type":"string","value":"replacement.png"}},
+            {"op":"set_variable","name":"copied_leaf","definition":{"type":"string","value":"$replacement"}}
+        ]),
+    );
+    let project = Project::load(&store).unwrap();
+    let node = project
+        .resolve()
+        .unwrap()
+        .roots
+        .into_iter()
+        .find(|node| node.id() == target)
+        .unwrap();
+    assert_eq!(node.children[0].properties["content"], "replacement.png");
+    assert_eq!(
+        node.properties["fill"]["uniforms"]["image"][0],
+        json!(temp.path().join("replacement.png").canonicalize().unwrap())
+    );
+}
+
+#[test]
+fn independent_sampler_copy_preserves_parent_and_transit_directory_uris() {
+    let (temp, store) = fixture();
+    fs::create_dir(temp.path().join("library/transit")).unwrap();
+    let source = temp.path().join("library/data/images.lib.pen");
+    let mut data: Value = serde_json::from_slice(&fs::read(&source).unwrap()).unwrap();
+    data["variables"]["leaf"]["value"] = json!([
+        {"value":"../transit/../pixel.png"},
+        {"theme":{"mode":"dark"},"value":"./dark.png"}
+    ]);
+    write(&source, data);
+    let result = edit(&store, "parent-copy", copy_operations());
+    let target = result["generated_ids"]["0"]["id"].as_str().unwrap();
+    fs::remove_dir_all(temp.path().join("library")).unwrap();
+    let project = Project::load(&store).unwrap();
+    let node = project
+        .resolve()
+        .unwrap()
+        .roots
+        .into_iter()
+        .find(|node| node.id() == target)
+        .unwrap();
+    assert_eq!(
+        node.children[0].properties["content"],
+        "../transit/../pixel.png"
+    );
+    let input = node.properties["fill"]["uniforms"]["image"]
+        .as_str()
+        .unwrap();
+    assert!(Path::new(input).canonicalize().unwrap().is_file());
+    let imports = store.read().unwrap().value()["imports"].clone();
+    let library = imports
+        .as_object()
+        .unwrap()
+        .values()
+        .find_map(|uri| {
+            let path = temp.path().join(uri.as_str().unwrap());
+            let bytes = fs::read(&path).unwrap();
+            bytes
+                .windows(b"../transit/../pixel.png".len())
+                .any(|bytes| bytes == b"../transit/../pixel.png")
+                .then_some(path)
+        })
+        .unwrap();
+    let modified = fs::read(&library).unwrap();
+    fs::write(&library, b"changed proxy library").unwrap();
+    assert_eq!(
+        project.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    fs::write(library, modified).unwrap();
+}
+
+#[cfg(feature = "rendering")]
+#[test]
+#[ignore = "Requires sandboxed software WebGL Chromium"]
+fn real_webgl_independent_sampler_copy_matches_pixels_after_original_sources_are_deleted() {
+    use lazypencil::{dynamic::DynamicRuntime, render};
+    let (temp, store) = array_fixture();
+    let mut runtime = DynamicRuntime::new(temp.path()).with_executable(
+        std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
+    );
+    let mut originals = Vec::new();
+    for mode in ["light", "dark"] {
+        edit(
+            &store,
+            &format!("before-{mode}"),
+            json!([{"op":"set_theme","target":"use","set":{"mode":mode}}]),
+        );
+        let (project, snapshot) = service::layout_snapshot(&store, &[], None, None).unwrap();
+        originals.push(
+            render::png_with_runtime(&project, &snapshot, &Default::default(), &mut runtime, None)
+                .unwrap()
+                .png,
+        );
+    }
+    let result = edit(&store, "copy-real", copy_operations());
+    let target = result["generated_ids"]["0"]["id"].as_str().unwrap();
+    fs::remove_dir_all(temp.path().join("library")).unwrap();
+    for (index, mode) in ["light", "dark"].into_iter().enumerate() {
+        edit(
+            &store,
+            &format!("after-{mode}"),
+            json!([{"op":"set_theme","target":target,"set":{"mode":mode}}]),
+        );
+        let (project, snapshot) = service::layout_snapshot(&store, &[], None, None).unwrap();
+        let rendered =
+            render::png_with_runtime(&project, &snapshot, &Default::default(), &mut runtime, None)
+                .unwrap();
+        assert_eq!(
+            rendered.png, originals[index],
+            "Copied {mode} sampler pixels changed"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn sampler_copy_rejects_a_redirected_nested_bundle_directory_without_touching_the_document() {
+    let (temp, store) = fixture();
+    let before = fs::read(store.path()).unwrap();
+    let metadata = service::document_metadata(&store).unwrap();
+    let preview:EditRequest=serde_json::from_value(json!({"request_id":"nested-preview","expected_revision":metadata["revision"],"expected_dependency_revision":metadata["dependency_revision"],"dry_run":true,"operations":copy_operations()})).unwrap();
+    let result = service::apply_request(&store, &preview).unwrap();
+    let index = result["generated_ids"]["0"]["assets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|asset| {
+            asset["uri"]
+                .as_str()
+                .unwrap()
+                .ends_with(".bundle/bundle.json")
+        })
+        .unwrap()["uri"]
+        .as_str()
+        .unwrap();
+    let bundle = temp.path().join(index).parent().unwrap().to_path_buf();
+    fs::create_dir_all(bundle.parent().unwrap()).unwrap();
+    let outside = temp.path().join("outside");
+    fs::create_dir(&outside).unwrap();
+    std::os::unix::fs::symlink(&outside, &bundle).unwrap();
+    let metadata = service::document_metadata(&store).unwrap();
+    let request:EditRequest=serde_json::from_value(json!({"request_id":"nested-conflict","expected_revision":metadata["revision"],"expected_dependency_revision":metadata["dependency_revision"],"operations":copy_operations()})).unwrap();
+    assert_eq!(
+        service::apply_request(&store, &request).unwrap_err().code,
+        "ASSET_CONFLICT"
+    );
+    assert_eq!(fs::read(store.path()).unwrap(), before);
+    assert!(store.history(10, None).unwrap().is_empty());
+    assert_eq!(fs::read_dir(outside).unwrap().count(), 0);
+}

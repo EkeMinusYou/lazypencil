@@ -110,7 +110,7 @@ CLI は取得条件を満たした一時点の PNG を出力する。TUI は同�
 
 ### 宣言と数値入力
 
-現在は precision qualifier とコメントを含む uniform 宣言、同じ型の複数宣言、1次元の数値配列を扱う。`float`・`int`・`bool`、`vec2/3/4`・`ivec2/3/4`・`bvec2/3/4`、`mat2/3/4` を受け付ける。配列は平坦な数値リストで保存し、`vec3 colors[2]` は6個、`mat2 transforms[2]` は8個の数値を使う。行列は column-major、boolean のベクトルと配列は数値の0・1で指定する。scalar bool は従来どおり JSON boolean とする。色文字列は scalar の vec3・vec4 へ結び、画像は scalar sampler2D または1次元の sampler2D 配列を使う。配列は画像 URI の文字列リストとし、各要素で文字列変数・別名・テーマの参照元を保持する。要素ごとの依存を捕捉し、切り離しでも同じ参照を維持する。固定画像の配列は元 library から独立したコピーを作れるが、文字列変数を含むコピーの未対応範囲は残る。
+現在は precision qualifier とコメントを含む uniform 宣言、同じ型の複数宣言、1次元の数値配列を扱う。`float`・`int`・`bool`、`vec2/3/4`・`ivec2/3/4`・`bvec2/3/4`、`mat2/3/4` を受け付ける。配列は平坦な数値リストで保存し、`vec3 colors[2]` は6個、`mat2 transforms[2]` は8個の数値を使う。行列は column-major、boolean のベクトルと配列は数値の0・1で指定する。scalar bool は従来どおり JSON boolean とする。色文字列は scalar の vec3・vec4 へ結び、画像は scalar sampler2D または1次元の sampler2D 配列を使う。配列は画像 URI の文字列リストとし、各要素で文字列変数・別名・テーマの参照元を保持する。要素ごとの依存を捕捉し、切り離しでも同じ参照を維持する。固定画像の配列と相対ローカル URI の文字列変数は、元 library から独立したコピーを作れる。文字列の literal だけを画像と同じ管理 bundle の通常 `.pen` library へ置き、root の変数・別名・テーマは接続を保つ。本文の元の文字列を変更しない。絶対パス、異なる画像が衝突する symlink 経路の投影、大文字小文字の衝突などは診断して拒否し、全互換の残作業に含める。
 
 整数リテラルの配列長は Rust 側で検査し、定数・マクロ・式の寸法はソースを変更せず WebGL のコンパイラーへ渡す。実際に使われる linked uniform の型・要素数を取得し、最適化で使われなくなった配列末尾を除いて設定する。定数式のサイズでは active な範囲より短い入力を拒否するが、コンパイラーが公開しない inactive な末尾の厳密な長さを保証しない。未指定の数値・ベクトル・行列・active な数値配列には WebGL のゼロ既定値を使い、`.pen` や GLSL へ書き戻さない。
 

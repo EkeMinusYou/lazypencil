@@ -2,9 +2,12 @@ use super::*;
 use crate::operations::{ImportOptions, NameResolution};
 use uuid::Uuid;
 
+mod samplers;
+
 type Key = (PathBuf, String);
 pub(crate) struct CopyPlan {
     pub definitions: Vec<Value>,
+    pub imports: BTreeMap<String, Value>,
     pub variables: BTreeMap<String, Value>,
     pub themes: BTreeMap<String, Value>,
     pub files: Vec<crate::managed::File>,
@@ -105,6 +108,9 @@ impl Project {
             axes: BTreeMap::new(),
             axis_values: BTreeMap::new(),
             files: BTreeMap::new(),
+            sampler_vars: BTreeSet::new(),
+            sampler_bindings: BTreeMap::new(),
+            copied_imports: BTreeMap::new(),
             used_components: BTreeSet::new(),
             used_variables: BTreeSet::new(),
             used_themes: BTreeSet::new(),
@@ -158,6 +164,7 @@ impl Project {
                 .ids
                 .insert(key.clone(), format!("n{}", Uuid::new_v4().simple()));
         }
+        graph.prepare_sampler_bindings()?;
         let mut definitions = Vec::new();
         for (origin, id) in &roots {
             let node = graph.project.documents[origin].node(id)?.clone();
@@ -165,7 +172,8 @@ impl Project {
         }
         let mut variables = BTreeMap::new();
         for (key, definition) in graph.var_values.clone() {
-            let definition = graph.rewrite_value(&key.0, &definition)?;
+            let mut definition = graph.rewrite_value(&key.0, &definition)?;
+            graph.rewrite_sampler_definition(&key, &mut definition);
             variables.insert(graph.vars[&key].clone(), definition);
         }
         for (provided, used) in [
@@ -200,6 +208,7 @@ impl Project {
             "assets":graph.files.values().map(|file|json!({"uri":file.uri,"hash":hash(&file.bytes),"bytes":file.bytes.len()})).collect::<Vec<_>>()});
         Ok(CopyPlan {
             definitions,
+            imports: graph.copied_imports,
             variables,
             themes: graph.axis_values,
             files: graph.files.into_values().collect(),
@@ -266,6 +275,9 @@ struct Copier<'a> {
     axes: BTreeMap<Key, String>,
     axis_values: BTreeMap<String, Value>,
     files: BTreeMap<PathBuf, crate::managed::File>,
+    sampler_vars: BTreeSet<Key>,
+    sampler_bindings: BTreeMap<Key, String>,
+    copied_imports: BTreeMap<String, Value>,
     used_components: BTreeSet<String>,
     used_variables: BTreeSet<String>,
     used_themes: BTreeSet<String>,
@@ -548,6 +560,7 @@ impl Copier<'_> {
         self.scan_properties(origin, node)
     }
     fn scan_properties(&mut self, origin: &Path, node: &Value) -> Result<()> {
+        self.scan_sampler_values(origin, node)?;
         let object = node
             .as_object()
             .ok_or_else(|| copy_error("A copied node must be an object"))?;
@@ -811,38 +824,6 @@ impl Copier<'_> {
                                         *value = json!(uri);
                                     }
                                 }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        // String-valued shader sampler variables need a separate binding from text uses.
-        for key in ["fill", "stroke", "effect"] {
-            let payload = &node[key];
-            let fills = payload
-                .as_array()
-                .map(|v| v.iter().collect::<Vec<_>>())
-                .unwrap_or_else(|| vec![payload]);
-            for fill in fills {
-                if fill["type"] == "shader" {
-                    for value in fill
-                        .get("uniforms")
-                        .and_then(Value::as_object)
-                        .into_iter()
-                        .flat_map(Map::values)
-                        .flat_map(shader_values)
-                        .filter_map(Value::as_str)
-                    {
-                        if let Some(name) = value.strip_prefix('$') {
-                            let key = self.project.variable_key(origin, name)?;
-                            if self.project.documents[&key.0].value()["variables"][&key.1]["type"]
-                                == "string"
-                            {
-                                return Err(Error::new(
-                                    "UNSUPPORTED_FEATURE",
-                                    "Copying a string-valued shader sampler requires preserving its file binding",
-                                ));
                             }
                         }
                     }

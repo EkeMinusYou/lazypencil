@@ -584,7 +584,7 @@ impl Project {
         let document = match supplied {
             Some(doc) => doc,
             None => Document::parse(match self.overlay.get(path) {
-                Some(bytes) => std::str::from_utf8(bytes)
+                Some(file) => std::str::from_utf8(&file.bytes)
                     .map_err(|_| invalid("A staged document must be UTF-8"))?
                     .to_owned(),
                 None => read_text(path)?,
@@ -776,6 +776,9 @@ impl Project {
             .clone();
         for (requested, expected) in bindings {
             self.check_cancelled()?;
+            if !self.overlay_published && self.overlay.contains_key(&expected) {
+                continue;
+            }
             if !crate::paths::canonical(&requested).is_ok_and(|actual| actual == expected) {
                 return Err(Error::new(
                     "REVISION_CONFLICT",
@@ -843,9 +846,9 @@ impl Project {
 
     pub fn capture_asset(&mut self, path: &Path, kind: &str) -> Result<()> {
         self.check_cancelled()?;
-        if let Some(bytes) = self.overlay.get(path).cloned() {
+        if let Some(file) = self.overlay.get(path).cloned() {
             if !self.assets.contains_key(path) {
-                self.capture_bytes(path.to_owned(), kind, bytes)?;
+                self.capture_bytes(path.to_owned(), kind, file.bytes.clone())?;
             }
             return Ok(());
         }
@@ -995,22 +998,18 @@ impl Project {
 
     pub fn resolve_file(&self, origin: &Path, uri: &str) -> Result<PathBuf> {
         let target = self.reference_path(origin, uri)?;
-        let canonical = if let Some(bytes) = self.overlay.get(&target) {
-            let extension = if target.extension().is_some_and(|s| s == "pen") {
-                "lib.pen"
-            } else {
-                target
-                    .extension()
-                    .and_then(|s| s.to_str())
-                    .ok_or_else(|| invalid("Invalid staged asset extension"))?
-            };
-            let expected = crate::managed::File::new(&self.root, bytes.clone(), extension)?;
-            if expected.path != target {
-                return Err(invalid(
-                    "A staged asset must use its managed content address",
-                ));
-            }
-            target
+        let staged = if self.overlay.is_empty() {
+            target.clone()
+        } else {
+            crate::managed::normalize(&target)?
+        };
+        let canonical = if let Some(file) = self.overlay.get(&staged) {
+            file.for_document(&self.root)?;
+            self.file_bindings
+                .lock()
+                .map_err(|_| invalid("Cannot access staged bindings"))?
+                .insert(target.clone(), staged.clone());
+            staged
         } else {
             let canonical = crate::paths::canonical(&target)?;
             let mut bindings = self
@@ -1056,16 +1055,9 @@ impl Project {
 
     fn verify_published_overlay(&self, path: &Path) -> Result<()> {
         if self.overlay_published
-            && let Some(bytes) = self.overlay.get(path)
+            && let Some(file) = self.overlay.get(path)
         {
-            let extension = if path.extension().is_some_and(|s| s == "pen") {
-                "lib.pen"
-            } else {
-                path.extension()
-                    .and_then(|s| s.to_str())
-                    .ok_or_else(|| invalid("Invalid staged extension"))?
-            };
-            crate::managed::File::new(&self.root, bytes.clone(), extension)?.verify(true)?;
+            file.verify(true)?;
         }
         Ok(())
     }
