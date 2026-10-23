@@ -124,8 +124,9 @@ def cargo_observations(events, root, target):
                 artifacts.append(item)
             elif reason == "build-script-executed":
                 key = item["package_id"]
-                notices.require(key not in builds, "Ambiguous Cargo build-script identity")
-                builds[key] = item
+                # Cargo can build unrelated packages for several feature/host
+                # contexts. Require uniqueness only for each selected native lib.
+                builds.setdefault(key, []).append(item)
             elif reason == "build-finished":
                 finished.append(item.get("success"))
     notices.require(finished == [True], "Cargo release build did not finish successfully")
@@ -146,8 +147,9 @@ def cargo_observations(events, root, target):
                    and a["target"].get("kind") == ["lib"] and a.get("profile", {}).get("test") is False]
         notices.require(len(matches) == 1, "Missing or ambiguous native package artifact: " + name)
         artifact = matches[0]
-        build = builds.get(artifact["package_id"])
-        notices.require(build is not None, "Missing selected Cargo build-script output: " + name)
+        candidates = builds.get(artifact["package_id"], [])
+        notices.require(len(candidates) == 1, "Missing or ambiguous selected Cargo build-script output: " + name)
+        build = candidates[0]
         out = inside(build["out_dir"], target)
         notices.require(out.is_dir() and out.is_relative_to(target / "release" / "build"),
                         "Native package is outside the release build directory")

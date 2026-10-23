@@ -128,7 +128,7 @@ On macOS/Linux, per-child [`wait4`](https://docs.python.org/3/library/os.html#os
 
 Child deadlines, bounded stdout/stderr and PNG size, exit status, workload validation, and immutable executable/pixels are required for a successful report. Reports are published atomically without overwriting another report. Temporary fixtures, logs and PNGs are removed; only the small JSON report remains. Seven Python tests exercise real child counters independently of the previous child's high-water mark, timeout reaping, child failure/output limits, fixture hashes and settings isolation, percentile calculation, changed binaries/pixels, malformed render evidence, and publication failure cleanup.
 
-The hosted release smoke script runs this helper against the already built executable and retains `release-benchmark.json` with the platform artifacts. Dependency-cache pruning removes that report too. Both arm64 jobs completed this integration; Windows and x64 release measurements remain pending. No hardware-dependent timing threshold is asserted by this smoke check.
+The hosted release smoke script runs this helper against the already built executable and retains `release-benchmark.json` with the platform artifacts. Dependency-cache pruning removes that report too. Completed arm64, Windows x64, and Intel macOS measurements are recorded below with their source revisions. No hardware-dependent timing threshold is asserted by this smoke check.
 
 ### Retained macOS executable, 2026-10-24
 
@@ -164,6 +164,17 @@ The Windows x64 job in [run 40000148383](https://github.com/EkeMinusYou/lazypenc
 | Dashboard | 906 ms | 907 ms | 922 ms | 938 ms | 82,513,920 bytes |
 
 All twenty-one PNGs matched within each scene. Windows hashes are shadow `d29ee020a70d0e8eafa61ca8dd6d8c317388bd88a41164cbcba0bd43f2580034` and dashboard `e90e28ab3b879043a8cde381dced403f63d33154bd0585909ceadca85567fdf3`. Both differ from the other platforms above; the cause of those pixel differences is not established here. The same uncontrolled-host/cache and incomplete-process-group limits apply. This does not establish physical Windows terminal/clipboard behavior or complete performance acceptance.
+
+### Hosted Intel macOS release build, 2026-10-24
+
+The macOS 15 Intel job in [run 40014323380](https://github.com/EkeMinusYou/lazypencil/actions/runs/40014323380), at source `36d12699fb69527304d5131d72f7154cfc73668f`, passed both test configurations, Clippy, both Material opt-ins, release smoke and 42 benchmark exports. Its retained report identifies Darwin 24.6.0, x86_64, four logical CPUs and runner image `20260824.0482.1`. The executable SHA-256 is `08e40cd1b0fab950a2f99e196fd75774c93e73b4a168c4e2374dfc67c1719b61`. The overall CI run separately failed Linux x64 dependency installation.
+
+| Scene | First invocation | Repeated median | Repeated p95 | Repeated maximum | Maximum repeated peak RSS |
+| --- | --- | --- | --- | --- | --- |
+| Simple shadow scene | 663.87 ms | 623.88 ms | 751.08 ms | 766.02 ms | 114,331,648 bytes |
+| Dashboard | 1420.07 ms | 1426.66 ms | 1577.48 ms | 1974.17 ms | 109,617,152 bytes |
+
+Each scene retained twenty matching repeated exports after its first invocation: shadow `d29ee020a70d0e8eafa61ca8dd6d8c317388bd88a41164cbcba0bd43f2580034`, dashboard `aa18c4fb3d2de0e746942703f469d1c2559e62e1b350284610b2f2b33376ede4`. The three separate release-smoke PNGs also matched their reports and were visually inspected. This shared-host observation has uncontrolled filesystem cache and host load; it does not establish a cold-start or interaction target, cross-hardware regression, or complete process-group resource usage.
 
 ## Remaining work
 

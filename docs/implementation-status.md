@@ -4,6 +4,10 @@
 
 2026-10-24: release ビルドと通知資料を結び付ける `scripts/release_evidence.py` と手動 GHA を追加した。検証済みのソース配布物からアプリを再ビルドし、Cargo JSON の package identity で native artifact と build-script を対応付け、報告された出力ディレクトリを使う。実行ファイルと Skia・wrapper・QuickJS archive、rustc と runner の識別情報、Skia の実入力・原文通知、および検証済みの Rust 通知を記録する。収集中のソース・成果物・Cargo 記録の変化、未記載ソース、異なる内容の archive 別名、既存出力への上書きを拒否する。MSVC で cc が生成する同内容の `.a`／`.lib` 別名は両方を記録する。ローカルの Python 101試験が成功した。GHA の実収集はまだ未検証。実行ファイルはアップロードせず、`release_ready: false` と残る監査範囲を明示する。標準・システムライブラリ、native／素材の完全な帰属、最終リンク、署名と公開が完了したとは扱わない。
 
+同日: 最初の macOS arm64 の収集 run `40024439088`（source `18a0092`）は依存 cache の復元と release ビルドが成功したが、Cargo の build-script 記録を全 package ID について一意に要求したため、収集工程で停止した。Cargo が異なる host／feature context で依存をビルドできることを考慮し、選択した native package だけを一意に対応付けるよう修正した。対象 native の曖昧さは引き続き拒否する。実際に重複した package の特定はこのエラーログだけではできない。別 package の複数 context と収集中の Cargo 記録の改変を含む Python 全102試験が成功した。修正後の実収集は次の run で確認する。
+
+同日: source `36d1269` の Intel Mac job `120622365013` が成功した。描画なし284・通常470試験、両 Clippy、通常 build、2つの Material opt-in、release の3画像検査と42回の性能出力まで通過した。取得した3画像は report の hash と一致し、日本語・輪郭線・辺別罫線・画像 crop・影・mesh の見た目も確認した。実行後にアプリを prune して v2 native cache を保存したことをログと cache API の両方で確認した。通常 CI 全体は Linux x64 の依存取得失敗を含み、全体の成功ではない。新しい source の全環境 CI と Intel の Chromium 専用検証は別に確認する。[性能の観測](performance.md#hosted-intel-macos-release-build-2026-10-24)
+
 ## 必須要件
 
 - [ ] Rust の CLI と共通サービス。機械向け JSON、終了コード、取消、設定と診断。
@@ -33,12 +37,12 @@
 | GHA 環境 | 通常・release CI（source `36d1269`） | Chromium 専用検証（source `d617d5e`） |
 | --- | --- | --- |
 | macOS 15 arm64 | 両構成・Clippy・release 成功 | 109件成功、MCP 待機・TUI を含む |
-| macOS 15 Intel | 両構成・Clippy・通常 build 成功、release 実行中 | 未実行 |
+| macOS 15 Intel | 両構成・Clippy・Material・release 成功、cache 保存済み | 未実行 |
 | Ubuntu 24.04 x64 | 依存取得で20分上限に達した | 111件成功、公式 mirror で導入済み |
 | Ubuntu 24.04 arm64 | 両構成・Clippy・release 成功 | 111件成功、MCP 待機・TUI を含む |
 | Windows Server 2025 x64 | 両構成・Clippy・release 成功 | 96件成功、実 MCP 画像まで。Unix PTY 等を除く |
 
-[通常 CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40014323380) の Intel job を維持し、その後に最新 main の全環境 CI を実行する。Linux x64 の旧 mirror の失敗は、取得先の修正後に実導入と専用検証で確認した。具体的な専用 run と制約は [runtime の検証記録](runtimes.md#hosted-integration-without-local-build-trees) に記載する。過去のローカル検証は macOS arm64・Rust 1.99.1 と Debian 12 arm64・Rust 1.94.0 で行った。物理端末・クリップボード・最低 OS・本家との互換性・公開品質全体の確認は残る。
+[通常 CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40014323380) の Intel job は成功し、最新 main の全環境 CI を続けて確認する。Linux x64 の旧 mirror の失敗は、取得先の修正後に実導入と専用検証で確認した。具体的な専用 run と制約は [runtime の検証記録](runtimes.md#hosted-integration-without-local-build-trees) に記載する。過去のローカル検証は macOS arm64・Rust 1.99.1 と Debian 12 arm64・Rust 1.94.0 で行った。物理端末・クリップボード・最低 OS・本家との互換性・公開品質全体の確認は残る。
 
 ## 実装記録
 
@@ -480,4 +484,4 @@ navigation の失敗には `page_navigation` 段階と、128バイト以内の `
 - 大量のノードで診断を返す場合の応答量、スキーマ全体の属性検証、CLI の機械向け出力とエラーの残る経路も公開前に確認する。通常の引数解析エラーの JSON 出力は上記の実プロセス試験で確認した。
 - 背景処理の中間画像と余白の範囲を絞り、基準の1,000ノードと1920×1080で性能を検証する。固定した単純な文書と、文字・部品・画像を含む文書の Linux release 初期観測は [性能の観測](performance.md) に記録した。親の画像コピーを減らして単純な影の文書の中央値を約0.31秒にしたが、最終ビルドでの統制した cold/warm、各 OS、TUI の起動・パン・ズーム・画像輸送、待機 CPU と全プロセス群の測定は残る。
 - 既定値・寸法の相互依存・負の座標・効果について、許諾を確認したフィクスチャで互換性と性能を調べる。保存・依存・キャッシュの異常系も拡張する。
-- Linux arm64 コンテナーのソースからのビルド・通常試験・release 初期描画は上記の条件で確認した。macOS Intel、Windows、Linux x64・実デスクトップ等の実行、GitHub 上の CI、最低 OS、バイナリー配布・署名、native を含む完全なライセンス表示とソース提供条件は残る。現在は upstream の修正を当てた `skia-bindings` をソースに同梱している。Cargo の package が patch を除去するため完全なソースアーカイブを用意したが、crates.io 公開の経路は別途解決する。
+- Linux arm64 コンテナーのソースからのビルド・通常試験・release 初期描画を確認し、GHA の OS・source 別の実行結果は上表に記載した。最新 main の全環境検証、実デスクトップ・物理端末・最低 OS、バイナリー配布・署名、native を含む完全なライセンス表示とソース提供条件は残る。現在は upstream の修正を当てた `skia-bindings` をソースに同梱している。Cargo の package が patch を除去するため完全なソースアーカイブを用意したが、crates.io 公開の経路は別途解決する。
