@@ -221,8 +221,13 @@ fn cancelling_an_observed_selector_poll_reaps_the_process_and_recovers() {
     let probe = Arc::new(AtomicBool::new(false));
     let server = reference::Server::with_selector_probe(probe.clone());
     let f = Fixture::new(&format!("http://{}/selector-cancel", server.address));
-    f.policy("#never", "visible", 5000);
     let mut runtime = f.runtime();
+    // This case cancels selector polling. Complete cold startup before starting
+    // its observation deadline; launch cancellation has separate coverage.
+    assert_green(&f.capture(&mut runtime, None).unwrap());
+    assert!(!probe.load(Ordering::SeqCst));
+    assert!(!runtime.process_ids().is_empty());
+    f.policy("#never", "visible", 5000);
     let cancel = CancellationToken::new();
     let signal = cancel.clone();
     let canceller = std::thread::spawn(move || {
@@ -234,10 +239,13 @@ fn cancelling_an_observed_selector_poll_reaps_the_process_and_recovers() {
         signal.cancel();
         observed
     });
+    let started = Instant::now();
     let result = f.capture(&mut runtime, Some(cancel));
     assert!(
         canceller.join().unwrap(),
-        "The page did not observe a selector poll"
+        "The page did not observe the target selector poll; elapsed: {:?}, error: {:?}",
+        started.elapsed(),
+        result.as_ref().err()
     );
     assert_eq!(result.err().unwrap().code, "CANCELLED");
     assert!(runtime.process_ids().is_empty());
