@@ -59,6 +59,69 @@ fn uniform_annotations_bind_to_the_correct_declaration() {
     assert_eq!(arrays[0].length, Some(4));
 }
 
+#[cfg(unix)]
+#[test]
+fn captured_page_shader_and_render_deadlines_cap_launch_and_reap_the_child() {
+    use lazypencil::config::runtime::RuntimeSettings;
+    use std::os::unix::fs::PermissionsExt;
+    let (temp, project, _) =
+        scene(json!([{"id":"page","type":"browser","url":"about:blank","width":8,"height":8}]));
+    let executable = temp.path().join("waiting-browser");
+    let pid_file = temp.path().join("pid");
+    fs::write(
+        &executable,
+        "#!/bin/sh\nprintf '%s' \"$$\" > \"${0%/*}/pid\"\nexec sleep 60\n",
+    )
+    .unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    let resolved = project.resolve().unwrap();
+    for shader in [false, true] {
+        for limiting_scope in ["launch", "operation", "render"] {
+            let mut settings = RuntimeSettings::default();
+            settings.browser.timeout_ms = 5000;
+            settings.shader.timeout_ms = 5000;
+            settings.browser.launch_timeout_ms = 5000;
+            settings.shader.launch_timeout_ms = 5000;
+            match limiting_scope {
+                "launch" => {
+                    settings.browser.launch_timeout_ms = 300;
+                    settings.shader.launch_timeout_ms = 300;
+                }
+                "operation" => {
+                    settings.browser.timeout_ms = 300;
+                    settings.shader.timeout_ms = 300;
+                }
+                "render" => settings.dynamic.render_timeout_ms = 300,
+                _ => unreachable!(),
+            }
+            let _ = fs::remove_file(&pid_file);
+            let mut runtime = DynamicRuntime::new(temp.path()).with_executable(&executable);
+            runtime.configure(settings).unwrap();
+            runtime.begin_render(None, false);
+            let start = Instant::now();
+            let result = if shader {
+                runtime.shader(json!({"width":8,"height":8}))
+            } else {
+                runtime.page(&resolved.roots[0], 8., 8., 1.)
+            };
+            let error = result.err().unwrap();
+            assert_eq!(error.code, "RENDER_TIMEOUT", "{shader}/{limiting_scope}");
+            assert!(start.elapsed() < Duration::from_secs(3));
+            let pid: i32 = fs::read_to_string(&pid_file).unwrap().parse().unwrap();
+            assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
+            assert_eq!(
+                unsafe { libc::waitpid(pid, std::ptr::null_mut(), libc::WNOHANG) },
+                -1
+            );
+            assert_eq!(
+                std::io::Error::last_os_error().raw_os_error(),
+                Some(libc::ECHILD)
+            );
+            assert!(runtime.process_ids().is_empty());
+        }
+    }
+}
+
 #[test]
 #[ignore = "Requires headless Chromium and permission to launch its sandbox"]
 fn browser_pixels_are_captured_composited_and_reused_until_refresh() {
@@ -97,6 +160,105 @@ fn browser_pixels_are_captured_composited_and_reused_until_refresh() {
         a.dynamic_artifacts[0]["acquisition"]["acquisition_id"],
         c.dynamic_artifacts[0]["acquisition"]["acquisition_id"]
     );
+}
+
+#[test]
+#[ignore = "Requires headless Chromium, software WebGL, and permission to launch its sandbox"]
+fn captured_dynamic_policy_reloads_cache_and_expires_purposes_independently() {
+    let temp = TempDir::new().unwrap();
+    fs::create_dir(temp.path().join(".git")).unwrap();
+    let file = temp.path().join("scene.pen");
+    let config = temp.path().join("lazypencil.toml");
+    fs::write(
+        temp.path().join("blue.glsl"),
+        "precision highp float; void main(){gl_FragColor=vec4(0.,0.,1.,1.);}",
+    )
+    .unwrap();
+    let saved = json!({"version":"2.21","children":[
+        {"id":"page","type":"browser","width":16,"height":16,"url":page("<style>html{background:#f00}</style>")},
+        {"id":"shader","type":"rectangle","x":16,"width":16,"height":16,"fill":{"type":"shader","url":"blue.glsl"}}
+    ]}).to_string();
+    fs::write(&file, &saved).unwrap();
+    let write_policy = |cache_mib, shader_idle| {
+        fs::write(
+            &config,
+            format!("[runtime.browser]\ntimeout_ms=30000\nlaunch_timeout_ms=15000\nidle_seconds=0\n[runtime.shader]\ntimeout_ms=15000\nlaunch_timeout_ms=15000\nidle_seconds={shader_idle}\n[runtime.dynamic]\nrender_timeout_ms=45000\ncache_mib={cache_mib}\ncache_entries=32\n"),
+        )
+        .unwrap();
+    };
+    let load = || {
+        let project =
+            Project::from_document(&file, Document::parse(saved.clone()).unwrap(), &[]).unwrap();
+        let layout =
+            lazypencil::layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap())
+                .unwrap();
+        (project, layout)
+    };
+    write_policy(64, 300);
+    let (project, layout) = load();
+    let mut runtime = DynamicRuntime::new(temp.path()).with_executable(executable());
+    let first =
+        render::png_with_runtime(&project, &layout, &Default::default(), &mut runtime, None)
+            .unwrap();
+    assert_eq!(runtime.process_ids().len(), 2);
+    let first_pids = runtime.process_ids();
+    runtime.expire_idle(Instant::now());
+    assert_eq!(runtime.process_ids(), vec![first_pids[1]]);
+    let cached =
+        render::png_with_runtime(&project, &layout, &Default::default(), &mut runtime, None)
+            .unwrap();
+    assert_eq!(cached.png, first.png);
+    assert_eq!(cached.dynamic_artifacts, first.dynamic_artifacts);
+    assert_eq!(runtime.process_ids(), vec![first_pids[1]]);
+    assert_eq!(
+        first.dynamic_artifacts[0]["acquisition"]["limits"]["browser"]["idle_seconds"],
+        0
+    );
+    assert_eq!(
+        first.dynamic_artifacts[1]["acquisition"]["limits"]["shader"]["idle_seconds"],
+        300
+    );
+
+    write_policy(0, 0);
+    assert_eq!(
+        project.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    let (project, layout) = load();
+    let changed =
+        render::png_with_runtime(&project, &layout, &Default::default(), &mut runtime, None)
+            .unwrap();
+    assert_eq!(changed.png, first.png);
+    assert_ne!(
+        changed.dynamic_artifacts[0]["acquisition"]["acquisition_id"],
+        first.dynamic_artifacts[0]["acquisition"]["acquisition_id"]
+    );
+    assert_eq!(
+        changed.dynamic_artifacts[1]["acquisition"]["limits"]["shader"]["idle_seconds"],
+        0
+    );
+    for artifact in &changed.dynamic_artifacts {
+        assert_eq!(artifact["acquisition"]["limits"]["dynamic"]["cache_mib"], 0);
+    }
+    runtime.expire_idle(Instant::now());
+    assert!(runtime.process_ids().is_empty());
+    let uncached =
+        render::png_with_runtime(&project, &layout, &Default::default(), &mut runtime, None)
+            .unwrap();
+    assert_eq!(uncached.png, first.png);
+    assert_ne!(
+        uncached.dynamic_artifacts[0]["acquisition"]["acquisition_id"],
+        changed.dynamic_artifacts[0]["acquisition"]["acquisition_id"]
+    );
+    runtime.expire_idle(Instant::now());
+    assert!(runtime.process_ids().is_empty());
+    let pixels = raster(&uncached.png);
+    assert_eq!(pixels.peek_pixels().unwrap().get_color((8, 8)), Color::RED);
+    assert_eq!(
+        pixels.peek_pixels().unwrap().get_color((24, 8)),
+        Color::BLUE
+    );
+    assert_eq!(fs::read_to_string(&file).unwrap(), saved);
 }
 
 #[test]

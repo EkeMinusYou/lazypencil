@@ -947,10 +947,14 @@ impl Project {
     }
 
     pub fn script_settings(&self) -> crate::config::runtime::ScriptSettings {
+        self.runtime_settings().javascript
+    }
+
+    pub fn runtime_settings(&self) -> crate::config::runtime::RuntimeSettings {
         self.configuration
             .as_ref()
             .map_or_else(Default::default, |configuration| {
-                configuration.settings.runtime.javascript
+                configuration.settings.runtime
             })
     }
 

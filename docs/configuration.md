@@ -1,6 +1,6 @@
 # User and project configuration
 
-User `config.toml` persists font preferences, JavaScript limits, and per-agent ACP preferences across projects. Project `lazypencil.toml` overrides individual font/runtime fields and adds project design guides, style catalogues, and a default style. CLI, MCP, and TUI use the same captured document settings; CLI and TUI resolve the same user agent profiles. Project instructions require an explicit local user grant. Project executable settings, browser/shader policy, asset/library, key-binding, and other resource-limit settings remain unfinished.
+User `config.toml` persists font preferences, runtime limits, and per-agent ACP preferences across projects. Project `lazypencil.toml` overrides individual font/runtime fields and adds project design guides, style catalogues, and a default style. CLI, MCP, and TUI use the same captured document settings; CLI and TUI resolve the same user agent profiles. Project instructions require an explicit local user grant. Project executable settings, browser authentication/network/wait policy, asset/library, key-binding, and other resource-limit settings remain unfinished.
 
 ## Start and inspect
 
@@ -16,7 +16,7 @@ lazypencil fonts list --file design.pen
 
 `config init [PATH]` creates `lazypencil.toml` atomically and never overwrites an existing file. A supplied path must have that filename and an existing parent directory. `config show FILE` resolves project settings for that document path without executing scripts, launching a browser/agent, or decoding font glyphs. It can inspect configuration even when the document's contents are invalid. `config schema` returns the JSON Schema for supported settings, including version and array limits. Parsing also enforces byte/path/language limits.
 
-`config init --user` explicitly creates the user configuration and missing parent directories; it also never overwrites an existing file. Ordinary reads do not create those directories. `config show --user` and `config schema --user` need no document and inspect only user settings. The templates leave optional fields commented so a newly initialized project inherits user preferences. User scope accepts `version`, `[fonts]`, `[runtime.javascript]`, and `[agents]`; project design instructions are rejected there. Only the user scope accepts agent executables.
+`config init --user` explicitly creates the user configuration and missing parent directories; it also never overwrites an existing file. Ordinary reads do not create those directories. `config show --user` and `config schema --user` need no document and inspect only user settings. The templates leave optional fields commented so a newly initialized project inherits user preferences. User scope accepts `version`, `[fonts]`, `[runtime]` and `[agents]`; project design instructions are rejected there. Only the user scope accepts agent executables.
 
 The default user location comes from the platform's configuration directory: `~/Library/Application Support/dev.lazypencil.lazypencil/config.toml` on macOS, `$XDG_CONFIG_HOME/lazypencil/config.toml` (normally `~/.config/lazypencil/config.toml`) on Linux, and `%APPDATA%\\lazypencil\\lazypencil\\config\\config.toml` on Windows. `LAZYPENCIL_CONFIG_DIR` overrides the directory, not the filename. A relative override resolves against the invoking directory. `doctor` reports the selected path; `config show --user` reports the requested/physical paths and source hash. The actual Windows path and native operation still require platform verification.
 
@@ -77,6 +77,42 @@ The values shown are defaults. Each field follows **explicit project > explicit 
 Each calculation applies its captured settings to the shared script runtime. Changes to either configuration file invalidate retained calculations through ordinary configuration dependencies, even when resulting geometry would match. Long-lived hosts apply the new policy on the next calculation; idle cleanup otherwise uses the last applied policy. Configuration inspection does not start workers. Numeric runtime policy does not select executables or grant project executable trust.
 
 The host sends a versioned policy envelope separately from script inputs and the worker validates it before execution. Script code cannot change its limits through `pencil.input`. The parent watchdog is the effective per-evaluation timeout plus 1,000 ms; an earlier absolute layout deadline also caps worker startup, I/O and execution. Interrupting or catching an execution timeout never makes that evaluation successful. Layout budgets are checked before/after native passes and before publishing a completed calculation; they cannot preempt synchronous native layout operations. Document/font loading before script layout is outside this particular budget.
+
+## Browser, shader and raster-cache limits
+
+Both scopes accept the following defaults, with the same per-field inheritance, validation, `runtime_origins`, and captured dependency rules as JavaScript:
+
+```toml
+[runtime.browser]
+timeout_ms = 30000
+launch_timeout_ms = 15000
+idle_seconds = 60
+
+[runtime.shader]
+timeout_ms = 15000
+launch_timeout_ms = 15000
+idle_seconds = 60
+
+[runtime.dynamic]
+render_timeout_ms = 45000
+cache_mib = 64
+cache_entries = 32
+```
+
+| Field | Accepted range | Meaning |
+| --- | --- | --- |
+| Browser/shader `timeout_ms` | 1..300,000 ms | One acquisition, including launch when needed, tab setup, navigation/evaluation and capture |
+| Browser/shader `launch_timeout_ms` | 1..60,000 ms | An additional cap on starting and connecting to that purpose's process |
+| Browser/shader `idle_seconds` | 0..3,600 s | Independent idle expiry after completed work; zero permits immediate cleanup |
+| Dynamic `render_timeout_ms` | 1..300,000 ms | Shared rendering budget across acquisitions and checked native stages |
+| Dynamic `cache_mib` | 0..256 MiB | Maximum total retained encoded raster bytes; zero disables reuse |
+| Dynamic `cache_entries` | 0..256 | Maximum retained raster entries; zero disables reuse |
+
+The common render entry applies the captured policy before beginning work, so CLI, MCP and TUI use the same limits. Launch uses the earliest of its own deadline, the operation deadline and the remaining shared render budget. Deadlines are not restarted between CDP commands. The final checks reject expired/cancelled acquisitions and check the shared budget again after native PNG encoding. Native work, runtime-file verification and OS transport calls are cooperative; synchronous work cannot be preempted, and bounded context/process cleanup may finish after a deadline. Document/font loading and script-layout calculation precede this rendering budget.
+
+Changing browser, shader or dynamic policy clears the runtime's raster cache before reuse; unchanged policy preserves it. An image larger than the configured cache capacity is returned without retention. Reaching the count/byte bound evicts the retained cache before insertion. These limits bound encoded cached PNGs, not active Skia surfaces, decoded image memory, or complete process-group RSS. Acquisitions include their effective purpose and dynamic `limits` in metadata. Expiring a process alone preserves cached pixels; cached reads do not extend its last execution time.
+
+Configuration is data-only: inspection starts no process, and these fields neither select executable files nor install Chromium. Page authentication profiles, network and readiness rules, animation controls, decoded/native memory budgets, and process-group resource enforcement remain separate unfinished requirements. The new numeric policy tests await hosted Rust verification; the real Chromium policy-reload test is opt-in.
 
 Execution records contain the **configured** `limits`, included in calculation identity. Code/input/output/node/depth and stack guards remain independent: 1 MiB source, 4 MiB protocol frames, 1,000 generated nodes per output, 64 output levels and a 512 KiB JS stack. Browser/shader limits and wider process/cache/asset policies remain separate unfinished work.
 

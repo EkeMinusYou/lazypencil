@@ -75,6 +75,7 @@ pub fn png_with_runtime(
     runtime: &mut crate::dynamic::DynamicRuntime,
     cancel: Option<tokio_util::sync::CancellationToken>,
 ) -> Result<RenderedImage> {
+    runtime.configure(project.runtime_settings())?;
     runtime.begin_render(cancel, options.refresh);
     png_impl(project, snapshot, options, Some(runtime))
 }
@@ -189,6 +190,9 @@ fn png_impl(
     )?;
     let encoded = skia_safe::png_encoder::encode_image(None, &image, &Default::default())
         .ok_or_else(|| Error::new("RENDER_ERROR", "PNG encoding failed"))?;
+    if let Some(runtime) = renderer.runtime.as_deref() {
+        runtime.check()?;
+    }
     Ok(RenderedImage {
         png: encoded.as_bytes().into(),
         width: width as u32,

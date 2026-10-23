@@ -48,6 +48,10 @@ impl<'a> Budget<'a> {
         }
         Ok(())
     }
+    pub fn remaining(&self) -> Result<Duration> {
+        self.check()?;
+        Ok(self.end.saturating_duration_since(Instant::now()))
+    }
 }
 
 impl Browser {
