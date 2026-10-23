@@ -407,6 +407,14 @@ macOS `40010094357` は修正後の拡張検査92件が成功した。全 librar
 
 先行する通常 CI `40000148383` の Windows は両構成・Clippy・Material 2件・release 検査・42回の native benchmark が成功し、依存 cache の保存まで完了した。取得した小さい report で source・1,000ノード／1920×1080・各20反復を確認した。shadow の中央値／p95 は328／359ms、dashboard は907／922ms、最大 repeated peak RSS は各93,446,144／82,513,920 bytes。各文書内で PNG は一致したが、両方の hash は他 OS と異なり、その原因や全性能保証を確認したものではない。[計測範囲](performance.md#hosted-windows-release-build-2026-10-24)
 
+### Intel の実行上限と依存 cache の継承
+
+2026-10-24: 通常 CI `40000148383` の Intel は724件の通常試験を通過したが、Clippy の途中で60分の job 上限に達した。check annotation の `The job has exceeded the maximum execution time of 1h0m0s` を確認した。Intel のみ120分とし、Linux の package 導入は20分で区切る。後者は直近の専用実行で実際に約11分かかったため、その成功例を越える余裕を取る。
+
+workflow 全体の hash に依存する旧 key は時間上限の変更でも cache を失効させるため、`native_cache.py` で追跡済みの依存・build script・属性・設定の Git fingerprint、実際の rustc identity とコンパイル環境、OS・runner image を key に束縛する。アプリ本体は毎回 prune して現在の source から作る。既に保存された4環境の旧 key は、監査した input fingerprint・Rust 1.94.0 の commit・コンパイル設定が一致するときだけ候補にする。未確認の Intel 旧 cache は候補にしない。変更された入力や不明な image、dirty／未追跡の依存入力は旧 cache に結び付けない。識別不能なら cache を省略し、検証は継続する。
+
+実 Git での変更・staging・未追跡入力の拒否、依存や compiler／flag の変更、無関係な環境の除外、出力 key の入力検査の5試験と、Python 全85件が成功した。4環境の旧 key が条件付きで生成されること、現在の依存 fingerprint が監査値と一致することも確認した。新 key の復元・旧 cache の継承と保存は次の GHA で検証する。ローカル native build は行わず、全体の未完了項目は維持する。
+
 ### 次に実装・確認すること
 
 - 両実エージェントの画像付きサブスクリプション生成は、上記の条件で確認した。実 API/provider、モデル・モードの全組み合わせ、ランタイムの制限と診断、保持と会話管理、Windows の子孫終了と異常な親終了後の回収は残る。認証方式の確認は adapter report によるもので、請求額の監査ではない。TUI、クリップボード、設定・素材カタログ、配布と CI は未完成。MCP は変数の解決値と計算済みレイアウトの検証を実装した。計算済み・生成ノードの詳細取得も実装した。アイコンの追加カタログ設定や残る設定などを拡張する。通常編集と部品取り込みの保存準備・依存のロック待ちへ取消を接続した。静的レイアウト・描画全体の取消と、各 OS の遅延検証は残る。
