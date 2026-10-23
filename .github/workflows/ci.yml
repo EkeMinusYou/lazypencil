@@ -51,7 +51,7 @@ jobs:
 
   native:
     name: Rust 1.94 / ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: ${{ matrix.os == 'macos-15-intel' && 120 || 60 }}
     strategy:
       fail-fast: false
       matrix:
@@ -93,6 +93,7 @@ jobs:
             cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
       - name: Install Linux native build dependencies
         if: runner.os == 'Linux'
+        timeout-minutes: 20
         run: |
           sudo apt-get update
           sudo apt-get install --yes clang libclang-dev cmake ninja-build pkg-config libfontconfig1-dev libfreetype6-dev libwayland-dev libx11-dev
@@ -102,12 +103,21 @@ jobs:
         run: python scripts/dist.py source --output source.tar.gz
       - name: Verify and extract the distribution
         run: python scripts/dist.py verify-source source.tar.gz --extract "$RUNNER_TEMP/lazypencil-source"
+      - name: Identify compatible hosted dependency caches
+        id: cache-key
+        continue-on-error: true
+        env:
+          LAZYPENCIL_CACHE_PLATFORM: ${{ matrix.os }}
+          LAZYPENCIL_CACHE_IMAGE: ${{ steps.cache-image.outputs.version }}
+        run: python scripts/ci/native_cache.py --platform "$LAZYPENCIL_CACHE_PLATFORM" --image "$LAZYPENCIL_CACHE_IMAGE" --github-output "$GITHUB_OUTPUT"
       - name: Restore hosted dependency build artifacts
         id: native-cache
+        if: ${{ steps.cache-key.outcome == 'success' }}
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
-          key: native-v1-${{ matrix.os }}-${{ steps.cache-image.outputs.version }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', '.github/workflows/ci.yml', 'vendor/skia-bindings/**', 'resources/icons/catalogue.json', '.cargo/config.toml', '.cargo/config', 'rust-toolchain.toml', 'rust-toolchain') }}
+          key: ${{ steps.cache-key.outputs.primary }}
+          restore-keys: ${{ steps.cache-key.outputs.legacy }}
           path: |
             ${{ runner.temp }}/lazypencil-target
             ${{ runner.temp }}/lazypencil-source/vendor/skia-bindings/skia
