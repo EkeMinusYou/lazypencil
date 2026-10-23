@@ -44,20 +44,15 @@ impl Project {
             .iter()
             .map(|d| (&d.path, &d.kind, &d.revision))
             .collect();
-        let mut dependencies = self
-            .dependencies()
-            .into_iter()
-            .filter(|d| !original.contains(&(&d.path, &d.kind, &d.revision)))
-            .chain(self.runtime_dependencies())
-            .take(MAX_GUARDS + 1)
-            .collect::<Vec<_>>();
-        dependencies.sort_by(|a, b| (&a.path, &a.kind).cmp(&(&b.path, &b.kind)));
-        dependencies
-            .dedup_by(|a, b| a.path == b.path && a.kind == b.kind && a.revision == b.revision);
-        if dependencies.len() > MAX_GUARDS
-            || dependencies
-                .iter()
-                .any(|d| !matches!(d.kind.as_str(), "document" | "script" | "shader" | "image"))
+        let dependencies = bounded_dependencies(
+            self.dependencies()
+                .into_iter()
+                .filter(|d| !original.contains(&(&d.path, &d.kind, &d.revision)))
+                .chain(self.runtime_dependencies()),
+        )?;
+        if dependencies
+            .iter()
+            .any(|d| !matches!(d.kind.as_str(), "document" | "script" | "shader" | "image"))
         {
             return None;
         }
@@ -100,6 +95,43 @@ impl Project {
             bindings,
             id,
         })
+    }
+}
+
+fn bounded_dependencies(dependencies: impl Iterator<Item = Dependency>) -> Option<Vec<Dependency>> {
+    let mut result = dependencies.take(MAX_GUARDS + 1).collect::<Vec<_>>();
+    // Check before deduplicating: duplicates must never hide a truncated tail.
+    if result.len() > MAX_GUARDS {
+        return None;
+    }
+    result.sort_by(|a, b| (&a.path, &a.kind).cmp(&(&b.path, &b.kind)));
+    result.dedup_by(|a, b| a.path == b.path && a.kind == b.kind && a.revision == b.revision);
+    Some(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn duplicates_cannot_hide_an_over_budget_guard_tail() {
+        let input = || {
+            (0..MAX_GUARDS + 2).map(|index| Dependency {
+                path: PathBuf::from(if index == MAX_GUARDS + 1 {
+                    "unseen-tail.js"
+                } else {
+                    "repeated.js"
+                }),
+                revision: "same captured revision".into(),
+                kind: "script".into(),
+                version: None,
+                availability: None,
+            })
+        };
+        assert!(bounded_dependencies(input()).is_none());
+        let small = bounded_dependencies(input().take(2)).unwrap();
+        assert_eq!(small.len(), 1);
+        assert_eq!(small[0].path, PathBuf::from("repeated.js"));
     }
 }
 
