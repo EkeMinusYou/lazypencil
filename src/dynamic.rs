@@ -4,7 +4,8 @@ use crate::{
     Error, Result,
     cdp::{Browser, Budget, Purpose},
     config::runtime::{
-        BrowserSettings, DynamicSettings, PageWaitUntil, RuntimeSettings, ShaderSettings,
+        BrowserSettings, DynamicSettings, PageSelectorState, PageWaitUntil, RuntimeSettings,
+        ShaderSettings,
     },
     document::hash,
     project::ResolvedNode,
@@ -246,6 +247,21 @@ impl DynamicRuntime {
         let cancel = self.cancel.clone();
         let limits = json!({"browser":self.browser_settings,"dynamic":self.settings});
         let wait_until = self.browser_settings.wait_until;
+        let ready_selector = self.browser_settings.ready_selector.clone();
+        let selector_state = self.browser_settings.selector_state;
+        let load_condition = if wait_until == PageWaitUntil::NetworkIdle {
+            "load, main-frame networkIdle lifecycle"
+        } else {
+            "load"
+        };
+        let selector_condition = match (ready_selector.is_empty(), selector_state) {
+            (true, _) => "",
+            (false, PageSelectorState::Attached) => ", attached CSS selector",
+            (false, PageSelectorState::Visible) => ", visible CSS selector",
+        };
+        let ready_condition = format!(
+            "{load_condition}{selector_condition}, fonts, decoded images, two animation frames"
+        );
         let duration = self
             .remaining()?
             .min(Duration::from_millis(self.browser_settings.timeout_ms));
@@ -269,14 +285,15 @@ impl DynamicRuntime {
                 std::thread::sleep(Duration::from_millis(20));budget.check()?;
             }
             browser.command(Some(session),"Emulation.setPageScaleFactor",json!({"pageScaleFactor":zoom}),&budget)?;
-            let expression=format!("(async()=>{{await document.fonts.ready;await Promise.all([...document.images].map(image=>image.decode()));window.scrollTo({scroll_x},{scroll_y});await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));return {{url:location.href,scrollX:scrollX,scrollY:scrollY}};}})()");
+            browser.wait_for_selector(session, &ready_selector, selector_state, (scroll_x,scroll_y), &budget)?;
+            let expression=format!("(async()=>{{await document.fonts.ready;await Promise.all([...document.images].map(image=>image.decode()));window.scrollTo({{left:{scroll_x},top:{scroll_y},behavior:'instant'}});await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));return {{url:location.href,scrollX:scrollX,scrollY:scrollY}};}})()");
             let state=browser.evaluate(session,&expression,&budget)?;
             let screenshot=browser.command(Some(session),"Page.captureScreenshot",json!({"format":"png","fromSurface":true,"captureBeyondViewport":false}),&budget)?;
             let png=base64::engine::general_purpose::STANDARD.decode(screenshot["data"].as_str().ok_or_else(|| page_error("No page image was returned"))?).map_err(|_| page_error("Invalid page PNG encoding"))?;
             let metadata=json!({"kind":"browser","acquisition_id":uuid::Uuid::new_v4().to_string(),"requested_url":redacted_url(url),"url_hash":hash(url.as_bytes()),
                 "final_url":state["url"].as_str().map(redacted_url),"browser_version":version,"viewport_width":width,"viewport_height":height,"pixel_width":pixel_width,"pixel_height":pixel_height,
                 "scale":scale,"zoom":zoom,"scroll_x":state["scrollX"],"scroll_y":state["scrollY"],"device_id":device,
-                "wait_until":wait_until,"ready_condition":if wait_until == PageWaitUntil::NetworkIdle {"load, main-frame networkIdle lifecycle, fonts, decoded images, two animation frames"} else {"load, fonts, decoded images, two animation frames"},"acquired_at":timestamp(),"png_hash":hash(&png),"limits":limits});
+                "wait_until":wait_until,"ready_selector":ready_selector,"selector_state":selector_state,"ready_condition":ready_condition,"acquired_at":timestamp(),"png_hash":hash(&png),"limits":limits});
             checked_png(png,metadata)
         });
         self.page_used = Some(Instant::now());
@@ -447,7 +464,7 @@ mod tests {
         let mut settings = RuntimeSettings::default();
         settings.dynamic.cache_mib = 1;
         settings.dynamic.cache_entries = 2;
-        runtime.configure(settings).unwrap();
+        runtime.configure(settings.clone()).unwrap();
         runtime.cache("a".into(), raster(700_000));
         runtime.cache("b".into(), raster(400_000));
         assert!(!runtime.cache.contains_key("a"));
@@ -459,13 +476,13 @@ mod tests {
         assert_eq!(runtime.cache.len(), 2);
         runtime.cache("d".into(), raster(20));
         assert_eq!(runtime.cache.len(), 1);
-        runtime.configure(settings).unwrap();
+        runtime.configure(settings.clone()).unwrap();
         assert!(runtime.cache.contains_key("d"));
         settings.browser.timeout_ms = 1234;
-        runtime.configure(settings).unwrap();
+        runtime.configure(settings.clone()).unwrap();
         assert!(runtime.cache.is_empty());
         runtime.cache("e".into(), raster(20));
-        let mut invalid = settings;
+        let mut invalid = settings.clone();
         invalid.shader.timeout_ms = 0;
         assert_eq!(
             runtime.configure(invalid).unwrap_err().code,
@@ -476,7 +493,7 @@ mod tests {
         for (mib, entries) in [(0, 2), (1, 0)] {
             settings.dynamic.cache_mib = mib;
             settings.dynamic.cache_entries = entries;
-            runtime.configure(settings).unwrap();
+            runtime.configure(settings.clone()).unwrap();
             assert_eq!(runtime.cache("disabled".into(), raster(20)).png.len(), 20);
             assert!(runtime.cache.is_empty());
         }

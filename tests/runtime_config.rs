@@ -1,6 +1,6 @@
 use lazypencil::config::{
     Snapshot,
-    runtime::{PageWaitUntil, ScriptSettings},
+    runtime::{PageSelectorState, PageWaitUntil, ScriptSettings},
 };
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf, process::Command};
@@ -177,7 +177,7 @@ fn dynamic_limits_merge_independently_with_explicit_defaults_and_cache_disabling
     )
     .unwrap();
     let snapshot = f.snapshot().unwrap();
-    let effective = snapshot.settings.runtime;
+    let effective = &snapshot.settings.runtime;
     assert_eq!(effective.browser.timeout_ms, 30000);
     assert_eq!(effective.browser.launch_timeout_ms, 4000);
     assert_eq!(effective.browser.idle_seconds, 0);
@@ -316,6 +316,100 @@ fn page_wait_policy_inherits_invalidates_and_rejects_unknown_or_shader_values() 
 }
 
 #[test]
+fn selector_policy_inherits_independently_and_an_empty_string_clears_it() {
+    let f = Fixture::new();
+    let defaults = f.snapshot().unwrap().settings.runtime.browser;
+    assert!(defaults.ready_selector.is_empty());
+    assert_eq!(defaults.selector_state, PageSelectorState::Visible);
+    fs::write(
+        f.user.join("config.toml"),
+        "[runtime.browser]\nready_selector='#ready'\nselector_state='attached'\n",
+    )
+    .unwrap();
+    let captured = f.snapshot().unwrap();
+    assert_eq!(captured.settings.runtime.browser.ready_selector, "#ready");
+    assert_eq!(
+        captured.settings.runtime.browser.selector_state,
+        PageSelectorState::Attached
+    );
+    assert_eq!(
+        captured.summary()["runtime_origins"]["browser.ready_selector"],
+        "user"
+    );
+    fs::write(
+        f.project.join("lazypencil.toml"),
+        "[runtime.browser]\nready_selector=''\n",
+    )
+    .unwrap();
+    assert_eq!(
+        captured.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    let current = f.snapshot().unwrap();
+    assert!(current.settings.runtime.browser.ready_selector.is_empty());
+    assert_eq!(
+        current.settings.runtime.browser.selector_state,
+        PageSelectorState::Attached
+    );
+    assert_eq!(
+        current.summary()["runtime_origins"]["browser.ready_selector"],
+        "project"
+    );
+    assert_eq!(
+        current.summary()["runtime_origins"]["browser.selector_state"],
+        "user"
+    );
+    assert_eq!(captured.settings.runtime.browser.ready_selector, "#ready");
+}
+
+#[test]
+fn selector_policy_rejects_invalid_lower_scopes_and_bounds_unicode_characters() {
+    let f = Fixture::new();
+    fs::write(
+        f.project.join("lazypencil.toml"),
+        "[runtime.browser]\nready_selector=''\nselector_state='visible'\n",
+    )
+    .unwrap();
+    for policy in [
+        json!({"ready_selector":"あ".repeat(513)}),
+        json!({"ready_selector":"private-value\0"}),
+        json!({"ready_selector":1}),
+        json!({"selector_state":"private-value"}),
+    ] {
+        fs::write(
+            f.user.join("config.toml"),
+            toml::to_string(&json!({"runtime":{"browser":policy}})).unwrap(),
+        )
+        .unwrap();
+        let error = f.snapshot().err().unwrap();
+        assert_eq!(error.code, "CONFIGURATION_ERROR");
+        assert!(!error.message.contains("private-value"));
+    }
+    fs::remove_file(f.project.join("lazypencil.toml")).unwrap();
+    let maximum = "あ".repeat(512);
+    fs::write(
+        f.user.join("config.toml"),
+        toml::to_string(&json!({"runtime":{"browser":{"ready_selector":maximum}}})).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        f.snapshot()
+            .unwrap()
+            .settings
+            .runtime
+            .browser
+            .ready_selector,
+        maximum
+    );
+    fs::write(
+        f.user.join("config.toml"),
+        "[runtime.shader]\nready_selector='#ready'\n",
+    )
+    .unwrap();
+    assert_eq!(f.snapshot().err().unwrap().code, "CONFIGURATION_ERROR");
+}
+
+#[test]
 fn runtime_schema_and_templates_expose_limits_without_overriding_inheritance() {
     let f = Fixture::new();
     for arguments in [vec!["config", "schema"], vec!["config", "schema", "--user"]] {
@@ -339,6 +433,14 @@ fn runtime_schema_and_templates_expose_limits_without_overriding_inheritance() {
             schema["$defs"]["PageWaitUntil"]["enum"],
             json!(["load", "network_idle"])
         );
+        assert_eq!(
+            schema["$defs"]["PageSelectorState"]["enum"],
+            json!(["attached", "visible"])
+        );
+        assert_eq!(
+            schema["$defs"]["BrowserSettings"]["properties"]["ready_selector"]["maxLength"],
+            512
+        );
         assert!(
             schema["$defs"]["ShaderSettings"]["properties"]
                 .get("wait_until")
@@ -350,6 +452,8 @@ fn runtime_schema_and_templates_expose_limits_without_overriding_inheritance() {
     assert!(template.contains("# [runtime.javascript]"));
     assert!(template.contains("# [runtime.browser]"));
     assert!(template.contains("# wait_until = \"load\""));
+    assert!(template.contains("# ready_selector = \"\""));
+    assert!(template.contains("# selector_state = \"visible\""));
     assert!(template.contains("# [runtime.shader]"));
     assert!(template.contains("# [runtime.dynamic]"));
     assert_eq!(

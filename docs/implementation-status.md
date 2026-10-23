@@ -431,7 +431,17 @@ source `36d1269` の専用 Chromium は macOS arm64 `40014476233`（97件）、L
 
 source `8f14b13` の専用実行は macOS arm64 `40015918054`（101件）、Linux arm64 `40015927331`（103件）、Windows `40015922773`（88件）が全工程で成功した。新しい lifecycle unit 2件・設定の継承／拒否と schema・実 fetch の待機／画素／timeout／復帰／取消を含む。Unix の MCP 待機・全 TUI も通過した。通常 CI の全構成・Clippy・release と、x64 での新条件は引き続き確認する。
 
+source `f2b9b84` の Linux x64 `40017390797` も103件すべて成功した。公式 mirror による package 導入は18秒で終了し、network-idle の実 fetch 回帰、MCP の60秒待機、全 TUI を通過した。旧 mirror の20分上限失敗を、取得先の修正後の実導入・全専用検証と区別して記録する。これは次の selector 待機の追加前の結果であり、通常 CI と Intel の実行は引き続き確認する。
+
 この条件は Chromium の lifecycle を利用した取得方針であり、アプリ固有の完了、後から始まる通信、animation・worker・すべての cross-origin frame の静止を保証しない。認証 profile、通信制限、selector 条件、animation 制御、device preset の互換性などは必須の残件として維持する。[CDP lifecycle](https://raw.githubusercontent.com/ChromeDevTools/devtools-protocol/master/pdl/domains/Page.pdl)
+
+### ページ内の要素を条件とする取得待機
+
+2026-10-24: `[runtime.browser] ready_selector` と `selector_state` を追加した。空文字列で無効化し、指定時は現在の main document の最初の一致を待つ。`attached` は存在、既定の `visible` は正の面積の client rect と `checkVisibility` の opacity／CSS visibility／content visibility の条件を使う。被覆や viewport との交差、iframe／shadow root 内部の条件とは扱わない。selector は512 Unicode文字・NULなしとし、構文は Chromium へデータとして渡して検査する。誤った構文は即時 `PAGE_LOAD_FAILED`、満たされない条件は既存の取得／描画期限と取消に従う。文書へ独自属性を追加しない。[CSSOM の visibility](https://drafts.csswg.org/cssom-view/#dom-element-checkvisibility)
+
+項目別の継承・明示的な空文字列・schema/template・依存と取得 cache の失効・metadata を既存の共通描画経路へ接続した。zoom と要求する scroll を待機中にも適用し、ページ側の CSS smooth scroll が中間位置を出力しないように instant を使う。待機後の font・画像 decode・2 frame と、実際の scroll の記録は維持する。JS の設定だけを読む経路で selector の文字列を複製しない。
+
+通常試験に user/project の継承と保持済み設定の不変、下位 scope の不正値・Unicode上限・NUL・shader への誤指定、schema/template を追加した。専用 GHA に実 browser 試験4件を加え、load 後の表示と緑画素、設定だけの再取得と cache 再利用、引用符・JS 風の selector 文字列、hidden／opacity0／content visibility／寸法0／欠損・構文エラー、実 query を page が観測してからの取消・回収・復帰、smooth scroll と offscreen の content visibility を検査する。Rust は GHA で確認し、ローカルは軽量検査だけとする。英語ガイド集合は1.0.6へ更新した。認証・通信制限・animation・device preset・物理端末などの全必須範囲は維持する。
 
 ### 次に実装・確認すること
 

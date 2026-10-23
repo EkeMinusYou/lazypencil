@@ -12,6 +12,7 @@ use tokio_util::sync::CancellationToken;
 use tungstenite::{Message, WebSocket, protocol::WebSocketConfig};
 
 mod lifecycle;
+mod readiness;
 use lifecycle::PageLifecycle;
 
 #[derive(Clone, Copy, PartialEq, Eq)]

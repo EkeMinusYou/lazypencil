@@ -88,6 +88,8 @@ timeout_ms = 30000
 launch_timeout_ms = 15000
 idle_seconds = 60
 wait_until = "load"
+ready_selector = ""
+selector_state = "visible"
 
 [runtime.shader]
 timeout_ms = 15000
@@ -106,6 +108,8 @@ cache_entries = 32
 | Browser/shader `launch_timeout_ms` | 1..60,000 ms | An additional cap on starting and connecting to that purpose's process |
 | Browser/shader `idle_seconds` | 0..3,600 s | Independent idle expiry after completed work; zero permits immediate cleanup |
 | Browser `wait_until` | `load`, `network_idle` | Readiness before fonts, image decoding and two animation frames; default `load` |
+| Browser `ready_selector` | Empty or CSS selector of at most 512 Unicode characters, without NUL | Optional first matching element in the main document; empty disables this condition |
+| Browser `selector_state` | `attached`, `visible` | Require existence or visibility; default `visible`, used only with a nonempty selector |
 | Dynamic `render_timeout_ms` | 1..300,000 ms | Shared rendering budget across acquisitions and checked native stages |
 | Dynamic `cache_mib` | 0..256 MiB | Maximum total retained encoded raster bytes; zero disables reuse |
 | Dynamic `cache_entries` | 0..256 | Maximum retained raster entries; zero disables reuse |
@@ -116,7 +120,11 @@ Changing browser, shader or dynamic policy clears the runtime's raster cache bef
 
 `wait_until = "network_idle"` additionally waits for Chromium's `networkIdle` lifecycle event for the current main-frame loader, while still requiring document load. Lifecycle notifications from the previous document, another tab or a child frame cannot satisfy it. Fonts, decoded images and two animation frames remain required afterward. This follows Chromium's lifecycle readiness; it is not a guarantee that application state, future requests, animations, workers or every cross-origin frame have settled. Long-lived or repeated requests can exhaust the existing acquisition/render deadline; the runtime returns an error and disposes the context and process instead of capturing early. No additional deadline is started. The chosen policy appears in acquisition metadata and inherits independently from user/project settings.
 
-Configuration is data-only: inspection starts no process, and these fields neither select executable files nor install Chromium. Page authentication profiles, request restrictions, selector-based readiness, animation controls, decoded/native memory budgets, and process-group resource enforcement remain separate unfinished requirements. The limits, real workers, policy reload, Linux interruption and TUI policy recovery passed the hosted Chromium runs recorded in [runtime verification](runtimes.md#hosted-integration-without-local-build-trees). The additional network-idle policy and its real-fetch timeout/cancellation regressions passed dedicated macOS arm64, Linux arm64 and Windows x64 runs at source `8f14b13`; Linux x64 and full normal CI remain to be verified.
+For application-specific readiness, set `ready_selector = "#app[data-state='ready']"`. It is queried after load/network readiness and before fonts, image decoding and final animation frames, using the same deadline. `attached` accepts the first matching element even when hidden. `visible` additionally requires a positive-area client rectangle and Chromium's `checkVisibility` with opacity, CSS visibility and skipped-content checks enabled. Hidden ancestors, opacity zero, skipped content and zero-size boxes do not satisfy it. This is a CSS/layout condition, not a test for occlusion or viewport intersection. It does not enter iframes or shadow roots. Selector text is passed as a serialized string, never as JavaScript source. Invalid syntax returns `PAGE_LOAD_FAILED`; an unsatisfied condition times out and disposes the acquisition. See the [CSSOM visibility definition](https://drafts.csswg.org/cssom-view/#dom-element-checkvisibility).
+
+The setting applies to every browser acquisition using that captured configuration. Each field inherits independently; an explicit `ready_selector = ""` clears an inherited selector. The requested zoom and scroll are applied before visibility checks. Scroll is repeated during polling as content appears, with `behavior: instant`, so page CSS smooth scrolling cannot leave an intermediate capture. Metadata records the actual scroll offsets, selector and state; the existing runtime limits and dependency/cache invalidation rules also apply to these fields.
+
+Configuration is data-only: inspection starts no process, and these fields neither select executable files nor install Chromium. Page authentication profiles, request restrictions, animation controls, decoded/native memory budgets, and process-group resource enforcement remain separate unfinished requirements. The limits, real workers, policy reload, Linux interruption and TUI policy recovery passed the hosted Chromium runs recorded in [runtime verification](runtimes.md#hosted-integration-without-local-build-trees). Network-idle regressions passed macOS arm64, Linux arm64 and Windows x64 at source `8f14b13`, and Linux x64 at `f2b9b84`. Full normal CI and the new selector conditions still require their hosted results.
 
 Execution records contain the **configured** `limits`, included in calculation identity. Code/input/output/node/depth and stack guards remain independent: 1 MiB source, 4 MiB protocol frames, 1,000 generated nodes per output, 64 output levels and a 512 KiB JS stack. Browser/shader limits and wider process/cache/asset policies remain separate unfinished work.
 

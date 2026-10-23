@@ -9,12 +9,12 @@ use std::collections::BTreeMap;
 pub(super) const TEMPLATE: &str = concat!(
     "\n# Omitted runtime fields inherit user preferences and built-in limits.\n",
     "# [runtime.javascript]\n# timeout_ms = 2000\n# heap_mib = 64\n# idle_seconds = 60\n# layout_timeout_ms = 10000\n# max_evaluations = 128\n# max_passes = 8\n",
-    "\n# [runtime.browser]\n# timeout_ms = 30000\n# launch_timeout_ms = 15000\n# idle_seconds = 60\n# wait_until = \"load\"\n",
+    "\n# [runtime.browser]\n# timeout_ms = 30000\n# launch_timeout_ms = 15000\n# idle_seconds = 60\n# wait_until = \"load\"\n# ready_selector = \"\"\n# selector_state = \"visible\"\n",
     "\n# [runtime.shader]\n# timeout_ms = 15000\n# launch_timeout_ms = 15000\n# idle_seconds = 60\n",
     "\n# [runtime.dynamic]\n# render_timeout_ms = 45000\n# cache_mib = 64\n# cache_entries = 32\n",
 );
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct RuntimeSettings {
     pub javascript: ScriptSettings,
@@ -82,7 +82,7 @@ impl ScriptSettings {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct BrowserSettings {
     #[schemars(range(min = 1, max = 300000))]
@@ -92,6 +92,18 @@ pub struct BrowserSettings {
     #[schemars(range(min = 0, max = 3600))]
     pub idle_seconds: u64,
     pub wait_until: PageWaitUntil,
+    /// Main-document CSS selector, at most 512 Unicode characters; empty disables it.
+    #[schemars(length(max = 512))]
+    pub ready_selector: String,
+    pub selector_state: PageSelectorState,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PageSelectorState {
+    Attached,
+    #[default]
+    Visible,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -109,6 +121,8 @@ impl Default for BrowserSettings {
             launch_timeout_ms: 15000,
             idle_seconds: 60,
             wait_until: PageWaitUntil::Load,
+            ready_selector: String::new(),
+            selector_state: PageSelectorState::Visible,
         }
     }
 }
@@ -120,7 +134,13 @@ impl BrowserSettings {
             self.timeout_ms,
             self.launch_timeout_ms,
             self.idle_seconds,
-        )
+        )?;
+        if self.ready_selector.chars().count() > 512 || self.ready_selector.contains('\0') {
+            return Err(invalid(
+                "runtime.browser.ready_selector must contain at most 512 Unicode characters without NUL",
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -230,6 +250,8 @@ struct BrowserOverrides {
     launch_timeout_ms: Option<u64>,
     idle_seconds: Option<u64>,
     wait_until: Option<PageWaitUntil>,
+    ready_selector: Option<String>,
+    selector_state: Option<PageSelectorState>,
 }
 
 #[derive(Default, Deserialize)]
@@ -271,6 +293,8 @@ pub(super) fn origins() -> BTreeMap<&'static str, &'static str> {
         "browser.launch_timeout_ms",
         "browser.idle_seconds",
         "browser.wait_until",
+        "browser.ready_selector",
+        "browser.selector_state",
         "shader.timeout_ms",
         "shader.launch_timeout_ms",
         "shader.idle_seconds",
@@ -295,9 +319,12 @@ impl RuntimeOverrides {
         let mut declared = RuntimeSettings::default();
         macro_rules! apply {
             ($scope:ident, $field:ident) => {
-                if let Some(value) = self.$scope.$field {
-                    declared.$scope.$field = value;
-                    settings.$scope.$field = value;
+                if let Some(value) = &self.$scope.$field {
+                    assign(
+                        value,
+                        &mut declared.$scope.$field,
+                        &mut settings.$scope.$field,
+                    );
                     origins.insert(concat!(stringify!($scope), ".", stringify!($field)), origin);
                 }
             };
@@ -312,6 +339,8 @@ impl RuntimeOverrides {
         apply!(browser, launch_timeout_ms);
         apply!(browser, idle_seconds);
         apply!(browser, wait_until);
+        apply!(browser, ready_selector);
+        apply!(browser, selector_state);
         apply!(shader, timeout_ms);
         apply!(shader, launch_timeout_ms);
         apply!(shader, idle_seconds);
@@ -321,4 +350,9 @@ impl RuntimeOverrides {
         declared.validate()?;
         settings.validate()
     }
+}
+
+fn assign<T: Clone>(value: &T, declared: &mut T, effective: &mut T) {
+    declared.clone_from(value);
+    effective.clone_from(value);
 }
