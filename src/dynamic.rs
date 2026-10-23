@@ -276,7 +276,7 @@ impl DynamicRuntime {
             browser.command(Some(session),"Emulation.setDeviceMetricsOverride",json!({"width":width.ceil().max(1.0) as u32,"height":height.ceil().max(1.0) as u32,"deviceScaleFactor":scale,"mobile":mobile}),&budget)?;
             browser.command(Some(session),"Emulation.setTouchEmulationEnabled",json!({"enabled":mobile}),&budget)?;
             let navigation=browser.command(Some(session),"Page.navigate",json!({"url":url}),&budget)?;
-            if navigation.get("errorText").is_some() { return Err(page_error("Page navigation failed")); }
+            if navigation.get("errorText").is_some() { return Err(navigation_error(&navigation)); }
             loop {
                 let frame=browser.command(Some(session),"Page.getFrameTree",json!({}),&budget)?;
                 let committed=navigation.get("loaderId").is_none_or(|loader| frame["frameTree"]["frame"]["loaderId"]==*loader);
@@ -286,7 +286,7 @@ impl DynamicRuntime {
             }
             browser.command(Some(session),"Emulation.setPageScaleFactor",json!({"pageScaleFactor":zoom}),&budget)?;
             browser.wait_for_selector(session, &ready_selector, selector_state, (scroll_x,scroll_y), &budget)?;
-            let expression=format!("(async()=>{{await document.fonts.ready;await Promise.all([...document.images].map(image=>image.decode()));window.scrollTo({{left:{scroll_x},top:{scroll_y},behavior:'instant'}});await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));return {{url:location.href,scrollX:scrollX,scrollY:scrollY}};}})()");
+            let expression=format!("(async()=>{{await document.fonts.ready;await Promise.all([...document.images].map(image=>image.decode()));window.scrollTo({{left:{scroll_x},top:{scroll_y},behavior:'instant'}});await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));return {{url:window.location.href,scrollX:window.scrollX,scrollY:window.scrollY}};}})()");
             let state=browser.evaluate(session,&expression,&budget)?;
             let screenshot=browser.command(Some(session),"Page.captureScreenshot",json!({"format":"png","fromSurface":true,"captureBeyondViewport":false}),&budget)?;
             let png=base64::engine::general_purpose::STANDARD.decode(screenshot["data"].as_str().ok_or_else(|| page_error("No page image was returned"))?).map_err(|_| page_error("Invalid page PNG encoding"))?;
@@ -393,6 +393,20 @@ fn checked_png(png: Vec<u8>, mut metadata: Value) -> Result<Raster> {
         metadata,
     })
 }
+fn navigation_error(navigation: &Value) -> Error {
+    let code = navigation["errorText"].as_str().filter(|code| {
+        code.len() <= 128
+            && code.strip_prefix("net::ERR_").is_some_and(|suffix| {
+                !suffix.is_empty()
+                    && suffix.bytes().all(|byte| {
+                        byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_'
+                    })
+            })
+    });
+    page_error("Page navigation failed")
+        .details(json!({"stage":"page_navigation","browser_error":code}))
+}
+
 fn validate_url(value: &str) -> Result<()> {
     let url = url::Url::parse(value).map_err(|_| page_error("Invalid browser URL"))?;
     if !matches!(url.scheme(), "http" | "https" | "data" | "about")
@@ -450,6 +464,33 @@ fn shader_error(message: impl Into<String>) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn navigation_failure_exposes_only_a_bounded_network_code() {
+        let error = navigation_error(&json!({"errorText":"net::ERR_CONNECTION_RESET"}));
+        assert_eq!(error.code, "PAGE_LOAD_FAILED");
+        assert_eq!(error.message, "Page navigation failed");
+        let details = error.details.unwrap();
+        assert_eq!(details["stage"], "page_navigation");
+        assert_eq!(details["browser_error"], "net::ERR_CONNECTION_RESET");
+        for raw in [
+            json!("private-value https://example.test/?token=private-value"),
+            json!("net::ERR_PRIVATE_VALUE\nprivate-value"),
+            json!(format!("net::ERR_{}", "X".repeat(129))),
+            json!("net::ERR_"),
+            json!("net::ERR_private_value"),
+            json!(42),
+            Value::Null,
+        ] {
+            let error = navigation_error(&json!({"errorText":raw}));
+            assert!(error.details.as_ref().unwrap()["browser_error"].is_null());
+            assert!(
+                !serde_json::to_string(&error)
+                    .unwrap()
+                    .contains("private-value")
+            );
+        }
+    }
 
     fn raster(bytes: usize) -> Raster {
         Raster {

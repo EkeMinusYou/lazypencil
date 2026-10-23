@@ -64,6 +64,8 @@ impl Drop for Server {
 }
 
 fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool) {
+    // Accepted sockets can inherit the listener's nonblocking mode.
+    stream.set_nonblocking(false).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_millis(200)))
         .unwrap();
@@ -71,12 +73,30 @@ fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool) {
         .set_write_timeout(Some(Duration::from_millis(200)))
         .unwrap();
     let mut header = Vec::new();
+    let header_end = Instant::now() + Duration::from_secs(2);
     while header.len() < 8192 && !header.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+        if stop.load(Ordering::SeqCst) || Instant::now() >= header_end {
+            return;
+        }
         let mut buffer = [0; 512];
         match stream.read(&mut buffer) {
-            Ok(0) | Err(_) => return,
+            Ok(0) => return,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock
+                        | std::io::ErrorKind::TimedOut
+                        | std::io::ErrorKind::Interrupted
+                ) =>
+            {
+                continue;
+            }
+            Err(_) => return,
             Ok(count) => header.extend_from_slice(&buffer[..count]),
         }
+    }
+    if !header.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+        return;
     }
     let request = String::from_utf8_lossy(&header);
     let path = request.split_whitespace().nth(1).unwrap_or("");

@@ -12,6 +12,8 @@ use serde_json::{Value, json};
 use skia_safe::{Color, Data, Image};
 use std::{
     fs,
+    io::{Read, Write},
+    net::TcpStream,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -102,6 +104,26 @@ fn assert_green(image: &RenderedImage) {
         raster.peek_pixels().unwrap().get_color((16, 16)),
         Color::GREEN
     );
+}
+
+#[test]
+fn reference_server_keeps_speculative_connections_until_headers_and_stops_when_idle() {
+    let server = reference::Server::new();
+    let mut stream = TcpStream::connect(server.address).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(500));
+    stream
+        .write_all(b"GET /polled HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        .unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).unwrap();
+    assert!(response.starts_with("HTTP/1.1 200 OK\r\n"));
+    let _idle = TcpStream::connect(server.address).unwrap();
+    let started = Instant::now();
+    drop(server);
+    assert!(started.elapsed() < Duration::from_secs(1));
 }
 
 #[test]
@@ -227,12 +249,13 @@ fn cancelling_an_observed_selector_poll_reaps_the_process_and_recovers() {
 #[ignore = "Requires sandboxed headless Chromium"]
 fn selector_visibility_uses_the_requested_view_without_a_css_smooth_scroll() {
     let url = page(
-        "<style>html{background:#f00;scroll-behavior:smooth}body{margin:0}section{position:absolute;top:5000px;left:0;width:32px;height:100px;content-visibility:auto;contain-intrinsic-size:32px 100px}#ready{width:32px;height:100px;background:#0f0}</style><section><div id='ready'></div></section>",
+        "<style>html{background:#f00;scroll-behavior:smooth}body{margin:0}section{position:absolute;top:5000px;left:0;width:32px;height:100px;content-visibility:auto;contain-intrinsic-size:32px 100px}#ready{width:32px;height:100px;background:#0f0}</style><section><div id='ready'></div></section><script>const scrollX=-9,scrollY=-7;document.documentElement.dataset.shadowed='yes';</script>",
     );
     let f = Fixture::new(&url);
     f.url_and_scroll(&url, 5000);
-    f.policy("#ready", "visible", 5000);
+    f.policy("html[data-shadowed=yes] #ready", "visible", 5000);
     let image = f.capture(&mut f.runtime(), None).unwrap();
     assert_green(&image);
     assert_eq!(acquisition(&image)["scroll_y"], 5000);
+    assert_eq!(acquisition(&image)["scroll_x"], 0);
 }
