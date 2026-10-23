@@ -302,6 +302,11 @@ fn permission_modal_can_answer_and_cancel_without_blocking_the_event_loop() {
                 },
             );
             let picker = Backend::halfblocks();
+            app.keys = crate::config::keys::PromptKeys {
+                submit: vec!["F5".into()],
+                paste: vec!["F6".into()],
+            };
+            app.input_reader = fake_clipboard;
             let worker = Worker::start(
                 app.conversation.store().clone(),
                 vec![],
@@ -327,6 +332,14 @@ fn permission_modal_can_answer_and_cancel_without_blocking_the_event_loop() {
                     break;
                 }
             }
+            press(&mut app, KeyCode::F(6), KeyModifiers::NONE, &worker).await;
+            press(&mut app, KeyCode::F(5), KeyModifiers::NONE, &worker).await;
+            assert!(app.input.is_none());
+            assert_eq!(
+                app.permissions.len(),
+                1,
+                "Prompt shortcuts cannot answer a permission"
+            );
             app.key(
                 KeyEvent::new(
                     if cancel {
@@ -437,6 +450,81 @@ async fn press(app: &mut App, code: KeyCode, modifiers: KeyModifiers, worker: &W
         .await
         .unwrap()
     );
+}
+
+#[test]
+fn custom_prompt_keys_keep_focus_and_modal_precedence_and_send_actual_images() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "image-inspect");
+        app.keys = crate::config::keys::PromptKeys {
+            submit: vec!["F5".into()],
+            paste: vec!["F6".into()],
+        };
+        app.keys.validate().unwrap();
+        app.input_reader = fake_clipboard;
+        let worker = Worker::start(
+            app.conversation.store().clone(),
+            vec![],
+            Backend::halfblocks(),
+            135,
+        )
+        .unwrap();
+        app.editor = editor("日本語の依頼");
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.editor.lines().join("\n"), "日本語の依頼\n");
+        press(&mut app, KeyCode::Enter, KeyModifiers::ALT, &worker).await;
+        assert!(
+            !app.conversation.active(),
+            "Replaced submission keys must not submit"
+        );
+        press(&mut app, KeyCode::Char('v'), KeyModifiers::CONTROL, &worker).await;
+        assert!(
+            app.input.is_none(),
+            "Replaced paste keys must not access the clipboard"
+        );
+        for focus in [
+            Focus::Preview,
+            Focus::Nodes,
+            Focus::Attachments,
+            Focus::Conversation,
+        ] {
+            app.focus = focus;
+            press(&mut app, KeyCode::F(6), KeyModifiers::NONE, &worker).await;
+            press(&mut app, KeyCode::F(5), KeyModifiers::NONE, &worker).await;
+            assert!(app.input.is_none() && !app.conversation.active());
+        }
+        app.focus = Focus::Prompt;
+        app.help = true;
+        press(&mut app, KeyCode::F(6), KeyModifiers::NONE, &worker).await;
+        assert!(app.input.is_none());
+        app.help = false;
+        app.modal = Some(checkpoints::Modal::commands());
+        press(&mut app, KeyCode::F(5), KeyModifiers::NONE, &worker).await;
+        assert!(!app.conversation.active());
+        app.modal = None;
+        app.searching = true;
+        press(&mut app, KeyCode::F(5), KeyModifiers::NONE, &worker).await;
+        assert!(!app.conversation.active());
+        app.searching = false;
+        app.editor = editor("日本語の依頼");
+        press(&mut app, KeyCode::F(6), KeyModifiers::NONE, &worker).await;
+        let content = (&mut app.input.as_mut().unwrap().receiver).await.unwrap();
+        app.input.take();
+        app.accept_input(content);
+        assert_eq!(app.conversation.images().len(), 2);
+        press(&mut app, KeyCode::F(5), KeyModifiers::NONE, &worker).await;
+        let events = complete(&mut app).await;
+        assert_eq!(events.last().unwrap()["type"], "complete");
+        assert!(app.conversation.draft().is_empty());
+        for (index, expected) in [[255, 0, 0, 255], [0, 0, 255, 128]].iter().enumerate() {
+            let received = image::open(temp.path().join(format!("received-image-1-{index}.png")))
+                .unwrap()
+                .to_rgba8();
+            assert_eq!(received.get_pixel(0, 0).0, *expected);
+        }
+        app.conversation.close().await.unwrap();
+    });
 }
 
 #[test]

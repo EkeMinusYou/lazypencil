@@ -57,6 +57,12 @@ elif case == "user-agent-config":
     configuration_path = os.path.join(environment["LAZYPENCIL_CONFIG_DIR"], "config.toml")
     with open(configuration_path, "w", encoding="utf-8") as handle:
         handle.write("[agents]\ndefault='claude'\n[agents.claude]\nadapter=" + json.dumps(sys.executable) + "\nadapter_args=[" + json.dumps(fixture) + ",'settings-auth-check']\nmodel='fixture-model-2'\nmode='workspace-write'\nauth_method='fixture-auth'\ntimeout=7\n")
+elif case == "user-key-config":
+    environment["LAZYPENCIL_CONFIG_DIR"] = os.path.join(root, "user-settings")
+    os.mkdir(environment["LAZYPENCIL_CONFIG_DIR"])
+    configuration_path = os.path.join(environment["LAZYPENCIL_CONFIG_DIR"], "config.toml")
+    with open(configuration_path, "w", encoding="utf-8") as handle:
+        handle.write("[tui.keys]\nsubmit=['F5']\npaste=[]\n")
 with open(document, "w", encoding="utf-8") as handle:
     json.dump(design, handle)
 
@@ -213,8 +219,30 @@ def sixel_red_pixels(data):
 
 
 try:
-    wait(lambda: b"Ctrl+V" in output, "initial UI")
-    if case == "user-agent-config":
+    wait(lambda: (b"F5 sends" if case == "user-key-config" else b"Ctrl+V") in output, "initial UI")
+    if case == "user-key-config":
+        text = "日本語の複数行\nq と hjkl は本文"
+        paste(text)
+        wait(lambda: session() and session()["draft"] == text, "custom-key multiline draft")
+        # A later saved edit is a barrier proving Alt+Enter was processed.
+        os.write(master, b"\x1b\r")
+        paste(" 続けて入力")
+        wait(lambda: session() and session()["draft"].endswith(" 続けて入力"), "input after replaced shortcut")
+        assert not turns(), "The replaced key must not launch an agent"
+        expected = session()["draft"]
+        os.write(master, b"\x1b[15~")
+        wait(lambda: any(value.get("type") == "complete" for value in turns()), "F5 submitted actual turn")
+        received = json.load(open(os.path.join(root, "received-turn-1.json"), encoding="utf-8"))
+        assert expected in received["text"], received
+        assert not session()["draft"]
+        # The invocation keeps its startup key bindings even if the file changes.
+        with open(configuration_path, "w", encoding="utf-8") as handle:
+            handle.write("[tui.keys]\nsubmit=['F6']\npaste=[]\n")
+        paste("同じキーで次の依頼")
+        os.write(master, b"\x1b[15~")
+        wait(lambda: len([value for value in turns() if value.get("type") == "complete"]) == 2, "startup shortcut retained")
+        assert len([value for value in turns() if value.get("type") == "ready"]) == 1
+    elif case == "user-agent-config":
         assert session()["agent"] == "claude"
         assert not os.path.exists(os.path.join(root, "sent-turn.txt")), "Viewing must not launch a configured adapter"
         paste("保存したエージェント設定で送信")

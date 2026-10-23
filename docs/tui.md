@@ -42,6 +42,18 @@ Terminal stdin/stdout and at least 50 columns × 16 rows are required. `--json` 
 
 Commands occupy one prompt line and are parsed without shell execution, expansion, or substitution. Paths are relative to the launch directory. Bracketed text paste stays text. `Cmd+V` is controlled by the terminal and is not assumed to carry bitmap pixels. `Ctrl+Enter` depends on terminal keyboard support; Alt+Enter and Ctrl+S provide alternatives.
 
+The user's `config.toml` can replace prompt shortcuts, for example:
+
+```toml
+[tui.keys]
+submit = ["F5", "Ctrl+Alt+s"]
+paste = ["F6"]
+```
+
+Omitted actions retain their defaults; each explicit list replaces that action's list. Submit accepts 1–8 shortcuts and paste accepts 0–8 (`paste = []` disables clipboard shortcuts while `/paste-image` remains available). Keys support `Enter`, ASCII letters with `Ctrl` or `Alt`, and `F2`–`F24`, optionally combining `Ctrl`, `Alt` and `Shift`. Names are case insensitive and modifier matching is exact. Plain Enter remains a newline; F1, Ctrl+C/Ctrl+P and legacy Ctrl+H/I/J/M aliases are reserved. Duplicate bindings, overlaps between actions and unsupported keys fail with `CONFIGURATION_ERROR`. The terminal must transmit the chosen key distinctly; configuration cannot add keyboard-protocol support to a terminal.
+
+Bindings are captured before entering the terminal and remain fixed for that invocation. The prompt border and help show the effective keys. They act only in the idle prompt; permission dialogs, checkpoint dialogs, search, help and other panels retain their own input handling. Project files cannot remap user shortcuts. Other viewing and global keys currently retain the table's fixed defaults.
+
 During an agent turn, the submitted draft and images are locked; viewing, logs, and cancellation remain available. Success clears the submitted draft and pending list. Failure/cancellation preserves them for review and retry. Idle drafts are saved after a one-second debounce and on normal exit. An abrupt kill can lose edits within that debounce. Conversation metadata migrates from version 1 to version 2 for pending text/images.
 
 Permission dialogs show tool details and native choices. Reject Once is initially selected when advertised. PgUp/PgDn scroll details, Enter answers, and Esc denies. Bound document tools use the shared preauthorization policy; other requests remain interactive unless `--non-interactive` rejects them.

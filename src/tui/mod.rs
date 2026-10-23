@@ -106,6 +106,7 @@ pub fn run(args: &TuiArgs, data: Option<PathBuf>, json_output: bool) -> Result<(
             "TUI requires a terminal on stdin and stdout",
         ));
     }
+    let keys = crate::config::keys::load()?;
     let mut conversation = Conversation::open(args.prompt.clone(), data)?;
     let session_id = conversation.id().to_string();
     for image in &args.prompt.images {
@@ -125,6 +126,7 @@ pub fn run(args: &TuiArgs, data: Option<PathBuf>, json_output: bool) -> Result<(
         .map_err(terminal::io)?;
     let result = runtime.block_on(async {
         let mut app = App::new(conversation);
+        app.keys = keys;
         if !screen.startup_text.is_empty() {
             app.insert_text(&screen.startup_text);
         }
@@ -151,6 +153,7 @@ pub fn run(args: &TuiArgs, data: Option<PathBuf>, json_output: bool) -> Result<(
 
 struct App {
     conversation: Conversation,
+    keys: crate::config::keys::PromptKeys,
     editor: TextArea<'static>,
     focus: Focus,
     view: View,
@@ -181,12 +184,10 @@ struct App {
 impl App {
     fn new(conversation: Conversation) -> Self {
         let editor = editor(conversation.draft());
-        let status = format!(
-            "Session {} · Enter text, then Alt+Enter to send",
-            conversation.id()
-        );
+        let status = format!("Session {} · F1 shows shortcuts", conversation.id());
         Self {
             conversation,
+            keys: Default::default(),
             editor,
             focus: Focus::Prompt,
             view: View::default(),
@@ -609,13 +610,11 @@ impl App {
             if self.conversation.active() {
                 return Ok(false);
             }
-            if key.code == KeyCode::Char('v') && (ctrl || alt) {
+            if self.keys.pastes(key) {
                 self.start_input(None)?;
                 return Ok(false);
             }
-            if (key.code == KeyCode::Enter && (ctrl || alt))
-                || (key.code == KeyCode::Char('s') && ctrl)
-            {
+            if self.keys.submits(key) {
                 self.submit().await?;
                 return Ok(false);
             }
@@ -966,11 +965,16 @@ impl App {
             sections[2],
             &mut self.attachments,
         );
+        let prompt_title = format!(
+            "Prompt · {} sends · {} pastes",
+            self.keys.submit_label(),
+            self.keys.paste_label()
+        );
         self.editor.set_block(panel(
             if self.conversation.active() {
-                "Prompt · running"
+                "Prompt · running".to_owned()
             } else {
-                "Prompt · Alt+Enter/Ctrl+Enter/Ctrl+S sends · Ctrl+V attaches"
+                prompt_title
             },
             self.focus == Focus::Prompt,
         ));
@@ -993,7 +997,7 @@ impl App {
         if self.help {
             let popup = centered(area, 100, 26);
             frame.render_widget(Clear, popup);
-            frame.render_widget(Paragraph::new("Tab / Shift+Tab: switch panels\nCtrl+P: command palette; /history: browse and restore checkpoints\nPrompt: Enter inserts a newline; Alt+Enter, Ctrl+Enter or Ctrl+S sends\nCtrl+V / Alt+V: paste image, copied image files, or text\n/attach <quoted path>: attach a PNG, JPEG or WebP file\n/paste-image: read this host's clipboard explicitly\n/clear-images: remove pending attachments\nPreview: hjkl / arrows pan; + / - zoom; 0 fits the document\nNodes: / searches; arrows select; f / Enter focuses the target\nAttachments: arrows review; d / Delete removes a pending image\nConversation: PgUp/PgDn scroll; End follows new output\nr: refresh the preview, including browser captures\no / /open-preview: open the current complete PNG externally\nCtrl+C: cancel active work; exit when idle\nq outside Prompt / /quit: close the conversation and exit\nF1 or Esc: close help\n\nClipboard access happens only on explicit paste. SSH reads the remote host's clipboard. Image protocols do not provide clipboard access.")
+            frame.render_widget(Paragraph::new(format!("Tab / Shift+Tab: switch panels\nCtrl+P: command palette; /history: browse and restore checkpoints\nPrompt: Enter inserts a newline; {} sends\n{}: paste image, copied image files, or text\n/attach <quoted path>: attach a PNG, JPEG or WebP file\n/paste-image: read this host's clipboard explicitly\n/clear-images: remove pending attachments\nPreview: hjkl / arrows pan; + / - zoom; 0 fits the document\nNodes: / searches; arrows select; f / Enter focuses the target\nAttachments: arrows review; d / Delete removes a pending image\nConversation: PgUp/PgDn scroll; End follows new output\nr: refresh the preview, including browser captures\no / /open-preview: open the current complete PNG externally\nCtrl+C: cancel active work; exit when idle\nq outside Prompt / /quit: close the conversation and exit\nF1 or Esc: close help\n\nClipboard access happens only on explicit paste. SSH reads the remote host's clipboard. Image protocols do not provide clipboard access.", self.keys.submit_label(), self.keys.paste_label()))
                 .block(panel("Help", true)).wrap(Wrap { trim: false }), popup);
         }
         self.draw_checkpoint_modal(frame);
