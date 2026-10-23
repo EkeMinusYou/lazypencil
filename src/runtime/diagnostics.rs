@@ -3,20 +3,18 @@
 use serde_json::{Value, json};
 
 pub(crate) fn host_status() -> Value {
-    let report = json!({
+    let mut report = json!({
         "os":std::env::consts::OS,
         "architecture":std::env::consts::ARCH,
-        "browser_sandbox":"required",
-        "sandbox_profile":"not_checked",
-        "shared_libraries":"not_checked",
     });
     #[cfg(target_os = "linux")]
-    let report = {
-        let mut report = report;
+    {
         report["linux"] = linux_policy(std::path::Path::new("/proc"));
         report["linux"]["effective_uid"] = json!(unsafe { libc::geteuid() });
-        report
-    };
+    }
+    report["browser_sandbox"] = json!("required");
+    report["sandbox_profile"] = json!("not_checked");
+    report["shared_libraries"] = json!("not_checked");
     report
 }
 

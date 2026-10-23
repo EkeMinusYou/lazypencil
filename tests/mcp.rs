@@ -242,7 +242,12 @@ fn mcp_script_limits_follow_captured_configuration_and_invalidate_old_calculatio
     let saved = json!({"version":"2.21","children":[{"id":"chart","type":"script","width":80,"height":40,"scriptUri":"draw.js"}]}).to_string();
     fs::write(&file, &saved).unwrap();
     let mut client = Client::start_with_user_config(&file, &data, None, &[], None, Some(&user));
-    let before = client.data("get_layout", json!({}));
+    let current_arguments = |client: &mut Client| {
+        let document = client.data("get_document", json!({}));
+        json!({"expected_revision":document["revision"],"expected_dependency_revision":document["dependency_revision"]})
+    };
+    let arguments = current_arguments(&mut client);
+    let before = client.data("get_layout", arguments);
     let limits = &before["script_executions"][0]["limits"];
     assert_eq!(limits["timeout_ms"], 2000);
     assert_eq!(limits["heap_mib"], 12);
@@ -257,13 +262,15 @@ fn mcp_script_limits_follow_captured_configuration_and_invalidate_old_calculatio
         stale["structuredContent"]["error"]["code"],
         "REVISION_CONFLICT"
     );
-    let after = client.data("get_layout", json!({}));
+    let arguments = current_arguments(&mut client);
+    let after = client.data("get_layout", arguments);
     assert_eq!(after["script_executions"][0]["limits"]["heap_mib"], 16);
     assert_ne!(after["snapshot_id"], before["snapshot_id"]);
     assert_ne!(after["dependency_revision"], before["dependency_revision"]);
     fs::write(&code, "/** @schema 2.21 */ for (;;) {} ").unwrap();
     fs::write(&configuration, "[runtime.javascript]\ntimeout_ms=50\n").unwrap();
-    let timeout = client.call("get_layout", json!({}));
+    let arguments = current_arguments(&mut client);
+    let timeout = client.call("get_layout", arguments);
     assert_eq!(
         timeout["structuredContent"]["error"]["code"],
         "RENDER_TIMEOUT"
@@ -274,7 +281,8 @@ fn mcp_script_limits_follow_captured_configuration_and_invalidate_old_calculatio
     )
     .unwrap();
     fs::write(&configuration, "[runtime.javascript]\ntimeout_ms=2000\n").unwrap();
-    let recovered = client.data("get_layout", json!({}));
+    let arguments = current_arguments(&mut client);
+    let recovered = client.data("get_layout", arguments);
     assert_eq!(
         recovered["script_executions"][0]["limits"]["timeout_ms"],
         2000

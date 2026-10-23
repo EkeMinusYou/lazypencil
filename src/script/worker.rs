@@ -452,7 +452,7 @@ fn execute(request: ScriptRequest, limits: ScriptSettings) -> Result<ScriptOutpu
         let mut error = serialized
             .err()
             .unwrap_or_else(|| invalid("Script execution exceeded its configured deadline"));
-        error.code = "RENDER_TIMEOUT".into();
+        error.code = "RENDER_TIMEOUT";
         return Err(error);
     }
     let serialized = serialized?;
