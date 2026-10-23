@@ -216,6 +216,8 @@ class ReleaseEvidenceTests(unittest.TestCase):
                 patch.object(evidence.native, "verify"), \
                 patch.object(evidence.quick, "collect", return_value={"registry_archive_verified": True}), \
                 patch.object(evidence.quick, "verify"), \
+                patch.object(evidence.assets, "collect", return_value={"embedded_declarations": 15}), \
+                patch.object(evidence.assets, "verify"), \
                 patch.object(evidence.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, b"rustc pinned\nhost: aarch64-apple-darwin\n")):
             return evidence.collect(self.root, self.target, self.events, self.revision, self.output)
 

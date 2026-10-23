@@ -16,6 +16,7 @@ import tarfile
 import tempfile
 
 import dist
+import asset_notice_inventory as assets
 import license_notices as notices
 import quickjs_notice_inventory as quick
 import skia_notice_inventory as native
@@ -27,7 +28,7 @@ GAPS = [
     "Cargo declarations and Skia graph inputs do not establish final binary linkage or used archive members.",
     "Rust standard-library and system-library attribution must be joined to this exact build separately.",
     "QuickJS source comment candidates and the skia-bindings wrapper still require final native attribution review.",
-    "Fonts, icons, other bundled assets, and optional runtimes need separate applicability review.",
+    "Font/icon source declarations and original notices are collected; final applicability, other assets, and optional runtimes still require review.",
     "Complete legal review, signed build provenance, packaging, signing, and publication remain required.",
 ]
 
@@ -228,6 +229,8 @@ def collect(root, target, events, revision, output, rustc="rustc", ninja="ninja"
         native.verify(skia_source, skia_build, stage / "skia", ninja, upstream)
         quickjs = quick.collect(*quick_args, stage / "quickjs")
         quick.verify(*quick_args, stage / "quickjs")
+        asset_summary = assets.collect(root, stage / "assets")
+        assets.verify(root, stage / "assets")
         notices.require(source_identity(root, revision) == source, "Sources changed during evidence collection")
         notices.require(fingerprint(executable, binary["path"]) == binary
                         and native_archives(target, selected) == archives, "Build outputs changed during collection")
@@ -243,6 +246,7 @@ def collect(root, target, events, revision, output, rustc="rustc", ninja="ninja"
         metadata = {"format_version": 1, "release_ready": False, "source": source, "binary": binary,
                     "compiler": compiler_text, "native_packages": selected,
                     "native_archives": archives, "rust_notices": rust, "skia_notices": skia, "quickjs_notices": quickjs,
+                    "asset_notices": asset_summary,
                     "cargo_output": cargo_output,
                     "ignored_non_cargo_lines": ignored, "remaining_review": GAPS,
                     "hosted": {name: os.environ.get(name) for name in
