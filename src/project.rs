@@ -1691,6 +1691,14 @@ impl Project {
         theme: &BTreeMap<String, String>,
         active: &mut Vec<(PathBuf, String)>,
     ) -> Result<Value> {
+        if let Value::Array(values) = value {
+            return Ok(Value::Array(
+                values
+                    .iter()
+                    .map(|value| self.resolve_shader_uniform(origin, value, theme, active))
+                    .collect::<Result<_>>()?,
+            ));
+        }
         let Some(name) = value
             .as_str()
             .and_then(|value| value.strip_prefix('$'))
@@ -2106,7 +2114,11 @@ fn collect_assets(
                 if kind == "shader"
                     && let Some(uniforms) = fill.get("uniforms").and_then(Value::as_object)
                 {
-                    for uniform in uniforms.values().filter_map(Value::as_str) {
+                    for uniform in uniforms
+                        .values()
+                        .flat_map(shader_values)
+                        .filter_map(Value::as_str)
+                    {
                         if !uniform.starts_with(['#', '$'])
                             && !uniform.starts_with("pencil:")
                             && !uniform.is_empty()
@@ -2135,4 +2147,18 @@ fn collect_assets(
         collect_assets(changes, origin, output)?;
     }
     Ok(())
+}
+
+fn shader_values(value: &Value) -> &[Value] {
+    value
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_else(|| std::slice::from_ref(value))
+}
+
+fn shader_values_mut(value: &mut Value) -> &mut [Value] {
+    match value {
+        Value::Array(values) => values,
+        value => std::slice::from_mut(value),
+    }
 }

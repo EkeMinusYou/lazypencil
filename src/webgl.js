@@ -31,6 +31,20 @@
     let unit = 0, components = 0;
     const own = (object, name) => Object.prototype.hasOwnProperty.call(object, name);
     const arrays = request.uniform_arrays || {};
+    const transparent = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==";
+    const textures = new Map();
+    const textureUnit = async value => {
+      if (textures.has(value)) return textures.get(value);
+      if (unit >= gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS)) throw Error("Too many sampler inputs");
+      const image = new Image(); image.src = value; await image.decode();
+      const texture = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+      textures.set(value, unit);
+      return unit++;
+    };
     const numeric = new Map([
       [gl.FLOAT, [1, "uniform1fv"]], [gl.INT, [1, "uniform1iv"]], [gl.BOOL, [1, "uniform1iv"]],
       [gl.FLOAT_VEC2, [2, "uniform2fv"]], [gl.FLOAT_VEC3, [3, "uniform3fv"]], [gl.FLOAT_VEC4, [4, "uniform4fv"]],
@@ -64,15 +78,14 @@
         if (setter.startsWith("uniformMatrix")) gl[setter](location, false, value);
         else gl[setter](location, value);
       } else if (info.type === gl.SAMPLER_2D) {
-          if (array) throw Error("Image sampler arrays are not supported");
-          if (unit >= gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS)) throw Error("Too many sampler inputs");
-          const image = new Image(); image.src = value; await image.decode();
-          const texture = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, texture);
-          gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-          gl.uniform1i(location, unit++);
+        if (array) {
+          if (value === null) value = Array(info.size).fill(transparent);
+          if (!Array.isArray(value) || value.length < info.size)
+            throw Error("Sampler array is shorter than its active linked elements: " + name);
+          const units = [];
+          for (const image of value.slice(0, info.size)) units.push(await textureUnit(image));
+          gl.uniform1iv(location, units);
+        } else gl.uniform1i(location, await textureUnit(value));
       } else throw Error("Unsupported uniform type: " + info.name);
     }
     gl.viewport(0, 0, canvas.width, canvas.height); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);

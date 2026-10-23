@@ -798,7 +798,7 @@ impl Copier<'_> {
                             && let Some(uniforms) =
                                 fill.get_mut("uniforms").and_then(Value::as_object_mut)
                         {
-                            for value in uniforms.values_mut() {
+                            for value in uniforms.values_mut().flat_map(shader_values_mut) {
                                 if let Some(uri) = value.as_str() {
                                     if uri.starts_with('$') {
                                         continue;
@@ -831,6 +831,7 @@ impl Copier<'_> {
                         .and_then(Value::as_object)
                         .into_iter()
                         .flat_map(Map::values)
+                        .flat_map(shader_values)
                         .filter_map(Value::as_str)
                     {
                         if let Some(name) = value.strip_prefix('$') {

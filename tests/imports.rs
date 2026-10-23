@@ -49,6 +49,63 @@ fn operation(mode: &str) -> Value {
 }
 
 #[test]
+fn copied_sampler_arrays_keep_all_literal_images_after_removing_the_source_library() {
+    let (temp, store) = fixture();
+    let source = temp.path().join("library/ui.lib.pen");
+    let mut document: Value = serde_json::from_slice(&fs::read(&source).unwrap()).unwrap();
+    document["children"][0]["children"][3]["fill"] = json!({"type":"shader","url":"sample.glsl","uniforms":{"images":["pixel.png","pixel.png"]}});
+    write(&source, document);
+    fs::write(temp.path().join("library/sample.glsl"),"precision highp float;uniform sampler2D images[2];void main(){gl_FragColor=texture2D(images[0],vec2(0.5))+texture2D(images[1],vec2(0.5));}").unwrap();
+    let edits = json!([operation("copy"),{"op":"remove_import","alias":"ui"}]);
+    let before = fs::read(store.path()).unwrap();
+    let preview = service::apply_request(
+        &store,
+        &request(&store, "array-preview", edits.clone(), true),
+    )
+    .unwrap();
+    assert_eq!(
+        preview["generated_ids"]["0"]["assets"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(fs::read(store.path()).unwrap(), before);
+    assert!(!temp.path().join("assets").exists());
+    let saved =
+        service::apply_request(&store, &request(&store, "array-copy", edits, false)).unwrap();
+    let target = saved["generated_ids"]["0"]["id"].as_str().unwrap();
+    fs::remove_dir_all(temp.path().join("library")).unwrap();
+    let project = Project::load(&store).unwrap();
+    let scene = project.resolve().unwrap();
+    let root = scene.roots.iter().find(|node| node.id() == target).unwrap();
+    let picture = root
+        .children
+        .iter()
+        .find(|node| {
+            node.properties["type"] == "rectangle" && node.properties["fill"]["type"] == "shader"
+        })
+        .unwrap();
+    let inputs = picture.properties["fill"]["uniforms"]["images"]
+        .as_array()
+        .unwrap();
+    assert_eq!(inputs.len(), 2);
+    for value in inputs {
+        assert!(value.as_str().unwrap().starts_with("assets/lazypencil/"));
+        let path = project
+            .resolve_file(picture.property_source("fill"), value.as_str().unwrap())
+            .unwrap();
+        assert!(project.asset(&path).is_ok());
+    }
+    assert!(
+        !project
+            .dependencies()
+            .iter()
+            .any(|entry| entry.kind == "document")
+    );
+}
+
+#[test]
 fn cancelled_imports_and_dry_runs_leave_inputs_outputs_and_history_unchanged() {
     let (temp, store) = fixture();
     let before = fs::read(store.path()).unwrap();

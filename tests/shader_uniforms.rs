@@ -186,7 +186,132 @@ fn builtins_still_reject_stored_values_and_unknown_or_unsupported_bindings_fail(
     assert_eq!(value["uniforms"]["clock"], 0.25);
     assert!(request(source, json!({"clock":1})).is_err());
     assert!(request("uniform float declared;", json!({"unknown":1})).is_err());
-    assert!(request("uniform sampler2D images[2];", json!({})).is_err());
+    assert_eq!(
+        request("uniform sampler2D images[2];", json!({})).unwrap()["uniforms"]["images"],
+        Value::Null
+    );
+}
+
+#[test]
+fn sampler_arrays_validate_lengths_types_defaults_and_reserved_stage_inputs() {
+    for value in [
+        json!([]),
+        json!(true),
+        json!([1, 2]),
+        json!([["pencil:object"], ["pencil:background"]]),
+        json!(["pencil:object"]),
+    ] {
+        assert!(request("uniform sampler2D images[2];", json!({"images":value})).is_err());
+    }
+    assert!(request("uniform sampler2D images[257];", json!({})).is_err());
+    assert!(
+        request(
+            "uniform sampler2D images[2];",
+            json!({"images":["pencil:object","pencil:background"]})
+        )
+        .is_err()
+    );
+    assert_eq!(
+        request("const int N=2;uniform sampler2D images[N];", json!({})).unwrap()["uniform_arrays"]
+            ["images"],
+        Value::Null
+    );
+}
+
+#[test]
+#[ignore = "Requires sandboxed software WebGL Chromium"]
+fn software_webgl_sampler_arrays_bind_images_defaults_active_tails_and_recover() {
+    use skia_safe::{Color, Data, Image};
+    let root = TempDir::new().unwrap();
+    let mut runtime = lazypencil::dynamic::DynamicRuntime::new(root.path()).with_executable(
+        std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
+    );
+    let striped = "precision highp float;\n/* @resolution */ uniform vec2 size;\nuniform sampler2D single,images[3];void main(){vec2 uv=gl_FragCoord.xy/size;gl_FragColor=uv.x<0.5?texture2D(images[0],uv):(uv.y>0.5?texture2D(images[1],uv):texture2D(single,uv));}";
+    let constant = "precision highp float;const int N=2;uniform sampler2D images[N];void main(){gl_FragColor=texture2D(images[1],vec2(0.5));}";
+    for (source, values, success) in [
+        (
+            striped,
+            json!({"single":"blue.png","images":["stripe.png","green.png","stripe.png"]}),
+            true,
+        ),
+        (constant, json!({"images":["blue.png"]}), false),
+        (constant, json!({"images":["blue.png","green.png"]}), true),
+        (constant, json!({}), true),
+    ] {
+        let scene_root = TempDir::new().unwrap();
+        for (name, color) in [
+            ("blue.png", Color::BLUE),
+            ("green.png", Color::GREEN),
+            ("stripe.png", Color::RED),
+        ] {
+            let mut surface = skia_safe::surfaces::raster_n32_premul((4, 4)).unwrap();
+            surface.canvas().clear(color);
+            if name == "stripe.png" {
+                let mut paint = skia_safe::Paint::default();
+                paint.set_color(Color::BLUE);
+                surface
+                    .canvas()
+                    .draw_rect(skia_safe::Rect::from_xywh(0.0, 2.0, 4.0, 2.0), &paint);
+            }
+            fs::write(
+                scene_root.path().join(name),
+                skia_safe::png_encoder::encode_image(
+                    None,
+                    &surface.image_snapshot(),
+                    &Default::default(),
+                )
+                .unwrap()
+                .as_bytes(),
+            )
+            .unwrap();
+        }
+        let unset = values == json!({});
+        let scene = project(&scene_root, source, values);
+        let before = fs::read(scene_root.path().join("input.pen")).unwrap();
+        let layout = lazypencil::layout::compute(
+            scene.resolve().unwrap(),
+            &mut lazypencil::text::Fonts::new(&[]).unwrap(),
+        )
+        .unwrap();
+        let result = lazypencil::render::png_with_runtime(
+            &scene,
+            &layout,
+            &Default::default(),
+            &mut runtime,
+            None,
+        );
+        if !success {
+            let error = result
+                .err()
+                .expect("Expected a linked sampler length error");
+            assert_eq!(error.code, "SHADER_COMPILE_FAILED");
+            assert!(
+                error.message.contains("Sampler array is shorter"),
+                "{error:?}"
+            );
+            continue;
+        }
+        let output = result.unwrap();
+        let image = Image::from_encoded(Data::new_copy(&output.png))
+            .unwrap()
+            .make_raster_image(None, None)
+            .unwrap();
+        let pixels = image.peek_pixels().unwrap();
+        if source == striped {
+            assert_eq!(pixels.get_color((4, 2)), Color::RED);
+            assert_eq!(pixels.get_color((4, 13)), Color::BLUE);
+            assert_eq!(pixels.get_color((28, 2)), Color::GREEN);
+            assert_eq!(pixels.get_color((28, 13)), Color::BLUE);
+        } else if unset {
+            assert_eq!(pixels.get_color((16, 8)).a(), 0);
+        } else {
+            assert_eq!(pixels.get_color((16, 8)), Color::GREEN);
+        }
+        assert_eq!(
+            fs::read(scene_root.path().join("input.pen")).unwrap(),
+            before
+        );
+    }
 }
 
 #[test]

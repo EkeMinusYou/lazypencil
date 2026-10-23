@@ -186,7 +186,7 @@ impl Project {
                             && let Some(uniforms) =
                                 fill.get_mut("uniforms").and_then(Value::as_object_mut)
                         {
-                            for value in uniforms.values_mut() {
+                            for value in uniforms.values_mut().flat_map(shader_values_mut) {
                                 if value.as_str().is_some_and(|s| {
                                     !s.is_empty()
                                         && !s.starts_with(['#', '$'])
@@ -544,7 +544,7 @@ impl Project {
                                 && let Some(uniforms) =
                                     fill.get_mut("uniforms").and_then(Value::as_object_mut)
                             {
-                                for value in uniforms.values_mut() {
+                                for value in uniforms.values_mut().flat_map(shader_values_mut) {
                                     if value.as_str().is_some_and(|s| {
                                         !s.is_empty()
                                             && !s.starts_with(['#', '$'])

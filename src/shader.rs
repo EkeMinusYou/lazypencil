@@ -65,6 +65,7 @@ pub fn request(
     let mut values = Map::new();
     let mut arrays = Map::new();
     let mut component_count = 0;
+    let mut sampler_bytes = 0usize;
     for uniform in definitions {
         let value = overrides.get(&uniform.name);
         if (uniform.resolution || uniform.time) && value.is_some() {
@@ -74,38 +75,51 @@ pub fn request(
         }
         let value = if uniform.array {
             arrays.insert(uniform.name.clone(), json!(uniform.length));
-            numeric_array(&uniform, value)?
+            if uniform.kind == "sampler2D" {
+                match value {
+                    None => Value::Null,
+                    Some(value) => {
+                        let inputs = value.as_array().filter(|values| {
+                            !values.is_empty()
+                                && values.len() <= 256
+                                && uniform.length.is_none_or(|length| length == values.len())
+                        }).ok_or_else(|| invalid("Sampler arrays require 1–256 image URLs matching the declared length"))?;
+                        Value::Array(
+                            inputs
+                                .iter()
+                                .map(|value| {
+                                    sampler(
+                                        project,
+                                        node,
+                                        property,
+                                        Some(value),
+                                        object,
+                                        background,
+                                        &mut sampler_bytes,
+                                    )
+                                })
+                                .collect::<Result<_>>()?,
+                        )
+                    }
+                }
+            } else {
+                numeric_array(&uniform, value)?
+            }
         } else if uniform.resolution {
             json!([width, height])
         } else if uniform.time {
             json!(time)
         } else {
             match uniform.kind.as_str() {
-                "sampler2D" => {
-                    let encoded = if let Some(value) = value {
-                        let uri = value
-                            .as_str()
-                            .ok_or_else(|| invalid("Sampler uniform requires an image URL"))?;
-                        let data = match uri {
-                            "pencil:object" => object.ok_or_else(|| {
-                                invalid("pencil:object is unavailable at this fill stage")
-                            })?,
-                            "pencil:background" => background.ok_or_else(|| {
-                                invalid("pencil:background is unavailable at this stage")
-                            })?,
-                            _ => {
-                                let path =
-                                    project.resolve_file(node.property_source(property), uri)?;
-                                project.asset(&path)?.bytes.as_ref()
-                            }
-                        };
-                        let image = crate::image_input::normalize(data, None)?;
-                        base64::engine::general_purpose::STANDARD.encode(image.png)
-                    } else {
-                        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==".into()
-                    };
-                    json!(format!("data:image/png;base64,{encoded}"))
-                }
+                "sampler2D" => sampler(
+                    project,
+                    node,
+                    property,
+                    value,
+                    object,
+                    background,
+                    &mut sampler_bytes,
+                )?,
                 _ => numeric(&uniform.kind, value)?,
             }
         };
@@ -122,6 +136,43 @@ pub fn request(
         result["uniform_arrays"] = Value::Object(arrays);
     }
     Ok(result)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn sampler(
+    project: &Project,
+    node: &ResolvedNode,
+    property: &str,
+    value: Option<&Value>,
+    object: Option<&[u8]>,
+    background: Option<&[u8]>,
+    supplied_bytes: &mut usize,
+) -> Result<Value> {
+    let encoded = if let Some(value) = value {
+        let uri = value
+            .as_str()
+            .ok_or_else(|| invalid("Sampler uniform requires an image URL"))?;
+        let data = match uri {
+            "pencil:object" => {
+                object.ok_or_else(|| invalid("pencil:object is unavailable at this fill stage"))?
+            }
+            "pencil:background" => background
+                .ok_or_else(|| invalid("pencil:background is unavailable at this stage"))?,
+            _ => {
+                let path = project.resolve_file(node.property_source(property), uri)?;
+                project.asset(&path)?.bytes.as_ref()
+            }
+        };
+        let image = crate::image_input::normalize(data, None)?;
+        base64::engine::general_purpose::STANDARD.encode(image.png)
+    } else {
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==".into()
+    };
+    *supplied_bytes = supplied_bytes.saturating_add(encoded.len());
+    if *supplied_bytes > 64 * 1024 * 1024 {
+        return Err(invalid("Encoded sampler inputs exceed 64 MiB"));
+    }
+    Ok(json!(format!("data:image/png;base64,{encoded}")))
 }
 
 #[derive(Clone, Copy)]
@@ -150,7 +201,7 @@ fn numeric_type(kind: &str) -> Result<(usize, NumberKind)> {
         "mat3" => Ok((9, Float)),
         "mat4" => Ok((16, Float)),
         _ => Err(invalid(format!(
-            "Unsupported numeric uniform type {kind:?}; image sampler arrays are not supported"
+            "Unsupported numeric uniform type {kind:?}"
         ))),
     }
 }

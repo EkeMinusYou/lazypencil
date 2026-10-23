@@ -110,13 +110,13 @@ CLI は取得条件を満たした一時点の PNG を出力する。TUI は同�
 
 ### 宣言と数値入力
 
-現在は precision qualifier とコメントを含む uniform 宣言、同じ型の複数宣言、1次元の数値配列を扱う。`float`・`int`・`bool`、`vec2/3/4`・`ivec2/3/4`・`bvec2/3/4`、`mat2/3/4` を受け付ける。配列は平坦な数値リストで保存し、`vec3 colors[2]` は6個、`mat2 transforms[2]` は8個の数値を使う。行列は column-major、boolean のベクトルと配列は数値の0・1で指定する。scalar bool は従来どおり JSON boolean とする。色文字列は scalar の vec3・vec4 へ結び、画像は scalar sampler2D を使う。
+現在は precision qualifier とコメントを含む uniform 宣言、同じ型の複数宣言、1次元の数値配列を扱う。`float`・`int`・`bool`、`vec2/3/4`・`ivec2/3/4`・`bvec2/3/4`、`mat2/3/4` を受け付ける。配列は平坦な数値リストで保存し、`vec3 colors[2]` は6個、`mat2 transforms[2]` は8個の数値を使う。行列は column-major、boolean のベクトルと配列は数値の0・1で指定する。scalar bool は従来どおり JSON boolean とする。色文字列は scalar の vec3・vec4 へ結び、画像は scalar sampler2D または1次元の sampler2D 配列を使う。配列は画像 URI の文字列リストとし、各要素で文字列変数・別名・テーマの参照元を保持する。要素ごとの依存を捕捉し、切り離しでも同じ参照を維持する。固定画像の配列は元 library から独立したコピーを作れるが、文字列変数を含むコピーの未対応範囲は残る。
 
 整数リテラルの配列長は Rust 側で検査し、定数・マクロ・式の寸法はソースを変更せず WebGL のコンパイラーへ渡す。実際に使われる linked uniform の型・要素数を取得し、最適化で使われなくなった配列末尾を除いて設定する。定数式のサイズでは active な範囲より短い入力を拒否するが、コンパイラーが公開しない inactive な末尾の厳密な長さを保証しない。未指定の数値・ベクトル・行列・active な数値配列には WebGL のゼロ既定値を使い、`.pen` や GLSL へ書き戻さない。
 
 ブロックコメントの `@resolution`・`@time` は単語を正確に照合し、`@time_step` やメールアドレス中の文字列は組み込み入力にしない。宣言前と同じ行の宣言後のコメントを扱い、隣接するコメントを統合する。複数名の宣言では同じ注釈を共有し、組み込み入力の配列・保存済み上書きを拒否する。この宣言規則は現在の lazypencil の実行規則であり、公開資料で未確定な Pencil 固有の注釈既定値まで互換と認定しない。[公開形式](https://docs.pencil.dev/for-developers/the-pen-format#typescript-schema)
 
-ソースは1 MiB、解析は262,144 token、uniform 名は256個、配列は256要素、明示値・linked numeric component は4,096を上限とする。画像 sampler の配列、多次元配列、struct とマクロで生成する uniform 宣言、Pencil 固有の既定値注釈と完全な vertex interface は未完成。定数式に使うマクロは実 WebGL へ渡す。小さい値や実行期限を削って描画成功に見せる処理は行わない。独自の編集可能な [作例](../examples/uniform-study.pen) は同じ [GLSL](../examples/assets/uniform-study.glsl) を配色配列・行列で再利用する。
+ソースは1 MiB、解析は262,144 token、uniform 名は256個、配列は256要素、明示値・linked numeric component は4,096を上限とする。sampler 配列にも同じ宣言長・active prefix の検査を適用し、未指定要素には透明画像を使う。実際の fragment texture unit 上限を検査し、同じ入力画像は unit を共有する。画像の符号化済み入力は1要求64 MiBを上限とする。多次元配列、struct とマクロで生成する uniform 宣言、Pencil 固有の既定値注釈と完全な vertex interface は未完成。定数式に使うマクロは実 WebGL へ渡す。小さい値や実行期限を削って描画成功に見せる処理は行わない。独自の編集可能な [作例](../examples/uniform-study.pen) は同じ [GLSL](../examples/assets/uniform-study.glsl) を配色配列・行列で再利用する。
 
 最終的なページ取得画像とシェーダー画像は、共通の画像表現に正規化して Skia へ渡す。エフェクトが背景を参照する場合は、それ以前の描画結果を用意する。対象ノードだけを単独で描いて背景を省略しない。
 
