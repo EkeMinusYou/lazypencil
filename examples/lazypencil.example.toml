@@ -9,6 +9,30 @@ locale = "ja"
 # Omit fallbacks for the default chain, or provide an explicit replacement.
 # fallbacks = ["Noto Sans JP"]
 
+# Omitted runtime fields inherit explicit user preferences and then defaults.
+# [runtime.javascript]
+# timeout_ms = 2000
+# heap_mib = 64
+# idle_seconds = 60
+# layout_timeout_ms = 10000
+# max_evaluations = 128
+# max_passes = 8
+
+# [runtime.browser]
+# timeout_ms = 30000
+# launch_timeout_ms = 15000
+# idle_seconds = 60
+
+# [runtime.shader]
+# timeout_ms = 15000
+# launch_timeout_ms = 15000
+# idle_seconds = 60
+
+# [runtime.dynamic]
+# render_timeout_ms = 45000
+# cache_mib = 64
+# cache_entries = 32
+
 # Optional project instructions require an explicit local `config trust` grant.
 # [design]
 # styles = ["design/brand.json"]

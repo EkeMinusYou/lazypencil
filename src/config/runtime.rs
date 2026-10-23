@@ -6,12 +6,30 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-pub(super) const TEMPLATE: &str = "\n# Omitted runtime fields inherit user preferences and built-in limits.\n# [runtime.javascript]\n# timeout_ms = 2000\n# heap_mib = 64\n# idle_seconds = 60\n# layout_timeout_ms = 10000\n# max_evaluations = 128\n# max_passes = 8\n";
+pub(super) const TEMPLATE: &str = concat!(
+    "\n# Omitted runtime fields inherit user preferences and built-in limits.\n",
+    "# [runtime.javascript]\n# timeout_ms = 2000\n# heap_mib = 64\n# idle_seconds = 60\n# layout_timeout_ms = 10000\n# max_evaluations = 128\n# max_passes = 8\n",
+    "\n# [runtime.browser]\n# timeout_ms = 30000\n# launch_timeout_ms = 15000\n# idle_seconds = 60\n",
+    "\n# [runtime.shader]\n# timeout_ms = 15000\n# launch_timeout_ms = 15000\n# idle_seconds = 60\n",
+    "\n# [runtime.dynamic]\n# render_timeout_ms = 45000\n# cache_mib = 64\n# cache_entries = 32\n",
+);
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct RuntimeSettings {
     pub javascript: ScriptSettings,
+    pub browser: BrowserSettings,
+    pub shader: ShaderSettings,
+    pub dynamic: DynamicSettings,
+}
+
+impl RuntimeSettings {
+    pub fn validate(&self) -> Result<()> {
+        self.javascript.validate()?;
+        self.browser.validate()?;
+        self.shader.validate()?;
+        self.dynamic.validate()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -64,10 +82,151 @@ impl ScriptSettings {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct BrowserSettings {
+    #[schemars(range(min = 1, max = 300000))]
+    pub timeout_ms: u64,
+    #[schemars(range(min = 1, max = 60000))]
+    pub launch_timeout_ms: u64,
+    #[schemars(range(min = 0, max = 3600))]
+    pub idle_seconds: u64,
+}
+
+impl Default for BrowserSettings {
+    fn default() -> Self {
+        Self {
+            timeout_ms: 30000,
+            launch_timeout_ms: 15000,
+            idle_seconds: 60,
+        }
+    }
+}
+
+impl BrowserSettings {
+    pub fn validate(&self) -> Result<()> {
+        validate_browser_limits(
+            "browser",
+            self.timeout_ms,
+            self.launch_timeout_ms,
+            self.idle_seconds,
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct ShaderSettings {
+    #[schemars(range(min = 1, max = 300000))]
+    pub timeout_ms: u64,
+    #[schemars(range(min = 1, max = 60000))]
+    pub launch_timeout_ms: u64,
+    #[schemars(range(min = 0, max = 3600))]
+    pub idle_seconds: u64,
+}
+
+impl Default for ShaderSettings {
+    fn default() -> Self {
+        Self {
+            timeout_ms: 15000,
+            launch_timeout_ms: 15000,
+            idle_seconds: 60,
+        }
+    }
+}
+
+impl ShaderSettings {
+    pub fn validate(&self) -> Result<()> {
+        validate_browser_limits(
+            "shader",
+            self.timeout_ms,
+            self.launch_timeout_ms,
+            self.idle_seconds,
+        )
+    }
+}
+
+fn validate_browser_limits(
+    scope: &str,
+    timeout_ms: u64,
+    launch_timeout_ms: u64,
+    idle_seconds: u64,
+) -> Result<()> {
+    for (field, value, min, max) in [
+        ("timeout_ms", timeout_ms, 1, 300000),
+        ("launch_timeout_ms", launch_timeout_ms, 1, 60000),
+        ("idle_seconds", idle_seconds, 0, 3600),
+    ] {
+        if !(min..=max).contains(&value) {
+            return Err(invalid(format!(
+                "runtime.{scope}.{field} must be within {min}..{max}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct DynamicSettings {
+    #[schemars(range(min = 1, max = 300000))]
+    pub render_timeout_ms: u64,
+    #[schemars(range(min = 0, max = 256))]
+    pub cache_mib: u64,
+    #[schemars(range(min = 0, max = 256))]
+    pub cache_entries: usize,
+}
+
+impl Default for DynamicSettings {
+    fn default() -> Self {
+        Self {
+            render_timeout_ms: 45000,
+            cache_mib: 64,
+            cache_entries: 32,
+        }
+    }
+}
+
+impl DynamicSettings {
+    pub fn validate(&self) -> Result<()> {
+        for (field, value, min, max) in [
+            ("render_timeout_ms", self.render_timeout_ms, 1, 300000),
+            ("cache_mib", self.cache_mib, 0, 256),
+            ("cache_entries", self.cache_entries as u64, 0, 256),
+        ] {
+            if !(min..=max).contains(&value) {
+                return Err(invalid(format!(
+                    "runtime.dynamic.{field} must be within {min}..{max}"
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(super) struct RuntimeOverrides {
     javascript: ScriptOverrides,
+    browser: BrowserOverrides,
+    shader: BrowserOverrides,
+    dynamic: DynamicOverrides,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct BrowserOverrides {
+    timeout_ms: Option<u64>,
+    launch_timeout_ms: Option<u64>,
+    idle_seconds: Option<u64>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct DynamicOverrides {
+    render_timeout_ms: Option<u64>,
+    cache_mib: Option<u64>,
+    cache_entries: Option<usize>,
 }
 
 #[derive(Default, Deserialize)]
@@ -89,6 +248,15 @@ pub(super) fn origins() -> BTreeMap<&'static str, &'static str> {
         "javascript.layout_timeout_ms",
         "javascript.max_evaluations",
         "javascript.max_passes",
+        "browser.timeout_ms",
+        "browser.launch_timeout_ms",
+        "browser.idle_seconds",
+        "shader.timeout_ms",
+        "shader.launch_timeout_ms",
+        "shader.idle_seconds",
+        "dynamic.render_timeout_ms",
+        "dynamic.cache_mib",
+        "dynamic.cache_entries",
     ]
     .into_iter()
     .map(|field| (field, "builtin"))
@@ -104,24 +272,32 @@ impl RuntimeOverrides {
     ) -> Result<()> {
         // Validate each declared scope before merging so a higher-priority
         // setting cannot hide an invalid lower-priority value.
-        let values = &self.javascript;
-        let mut declared = ScriptSettings::default();
+        let mut declared = RuntimeSettings::default();
         macro_rules! apply {
-            ($field:ident) => {
-                if let Some(value) = values.$field {
-                    declared.$field = value;
-                    settings.javascript.$field = value;
-                    origins.insert(concat!("javascript.", stringify!($field)), origin);
+            ($scope:ident, $field:ident) => {
+                if let Some(value) = self.$scope.$field {
+                    declared.$scope.$field = value;
+                    settings.$scope.$field = value;
+                    origins.insert(concat!(stringify!($scope), ".", stringify!($field)), origin);
                 }
             };
         }
-        apply!(timeout_ms);
-        apply!(heap_mib);
-        apply!(idle_seconds);
-        apply!(layout_timeout_ms);
-        apply!(max_evaluations);
-        apply!(max_passes);
+        apply!(javascript, timeout_ms);
+        apply!(javascript, heap_mib);
+        apply!(javascript, idle_seconds);
+        apply!(javascript, layout_timeout_ms);
+        apply!(javascript, max_evaluations);
+        apply!(javascript, max_passes);
+        apply!(browser, timeout_ms);
+        apply!(browser, launch_timeout_ms);
+        apply!(browser, idle_seconds);
+        apply!(shader, timeout_ms);
+        apply!(shader, launch_timeout_ms);
+        apply!(shader, idle_seconds);
+        apply!(dynamic, render_timeout_ms);
+        apply!(dynamic, cache_mib);
+        apply!(dynamic, cache_entries);
         declared.validate()?;
-        settings.javascript.validate()
+        settings.validate()
     }
 }

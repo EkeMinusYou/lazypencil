@@ -3,6 +3,7 @@
 use crate::{
     Error, Result,
     cdp::{Browser, Budget, Purpose},
+    config::runtime::{BrowserSettings, DynamicSettings, RuntimeSettings, ShaderSettings},
     document::hash,
     project::ResolvedNode,
 };
@@ -15,8 +16,6 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio_util::sync::CancellationToken;
-
-const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Clone)]
 pub struct Raster {
@@ -35,6 +34,9 @@ pub struct DynamicRuntime {
     cancel: Option<CancellationToken>,
     begun: Instant,
     refresh: bool,
+    browser_settings: BrowserSettings,
+    shader_settings: ShaderSettings,
+    settings: DynamicSettings,
 }
 
 impl DynamicRuntime {
@@ -50,11 +52,29 @@ impl DynamicRuntime {
             cancel: None,
             begun: Instant::now(),
             refresh: false,
+            browser_settings: BrowserSettings::default(),
+            shader_settings: ShaderSettings::default(),
+            settings: DynamicSettings::default(),
         }
     }
     pub fn with_executable(mut self, path: impl Into<PathBuf>) -> Self {
         self.executable = Some(path.into());
         self
+    }
+    /// Apply captured data-only limits without launching a process.
+    pub fn configure(&mut self, settings: RuntimeSettings) -> Result<()> {
+        settings.validate()?;
+        if self.browser_settings != settings.browser
+            || self.shader_settings != settings.shader
+            || self.settings != settings.dynamic
+        {
+            self.cache.clear();
+            self.browser_settings = settings.browser;
+            self.shader_settings = settings.shader;
+            self.settings = settings.dynamic;
+        }
+        self.expire_idle(Instant::now());
+        Ok(())
     }
     pub fn begin_render(&mut self, cancel: Option<CancellationToken>, refresh: bool) {
         self.expire_idle(Instant::now());
@@ -76,20 +96,34 @@ impl DynamicRuntime {
     /// Page and shader processes expire independently; cached rasters remain valid.
     pub fn idle_deadline(&self) -> Option<Instant> {
         [
-            self.pages.as_ref().and(self.page_used),
-            self.shaders.as_ref().and(self.shader_used),
+            (
+                self.pages.as_ref().and(self.page_used),
+                self.browser_settings.idle_seconds,
+            ),
+            (
+                self.shaders.as_ref().and(self.shader_used),
+                self.shader_settings.idle_seconds,
+            ),
         ]
         .into_iter()
-        .flatten()
-        .map(|used| used + IDLE_TIMEOUT)
+        .filter_map(|(used, seconds)| used.map(|used| used + Duration::from_secs(seconds)))
         .min()
     }
     pub fn expire_idle(&mut self, now: Instant) {
-        for (slot, used) in [
-            (&mut self.pages, &mut self.page_used),
-            (&mut self.shaders, &mut self.shader_used),
+        for (slot, used, seconds) in [
+            (
+                &mut self.pages,
+                &mut self.page_used,
+                self.browser_settings.idle_seconds,
+            ),
+            (
+                &mut self.shaders,
+                &mut self.shader_used,
+                self.shader_settings.idle_seconds,
+            ),
         ] {
-            if slot.is_some() && used.is_some_and(|used| used + IDLE_TIMEOUT <= now) {
+            if slot.is_some() && used.is_some_and(|used| used + Duration::from_secs(seconds) <= now)
+            {
                 slot.take();
                 *used = None;
             }
@@ -105,8 +139,17 @@ impl DynamicRuntime {
         }
         self.remaining().map(|_| ())
     }
-    fn browser(&mut self, purpose: Purpose) -> Result<&mut Browser> {
-        let launch_duration = self.remaining()?.min(Duration::from_secs(15));
+    fn browser(&mut self, purpose: Purpose, operation: &Budget<'_>) -> Result<&mut Browser> {
+        let milliseconds = if purpose == Purpose::Page {
+            self.browser_settings.launch_timeout_ms
+        } else {
+            self.shader_settings.launch_timeout_ms
+        };
+        let launch_duration = self
+            .remaining()?
+            .min(operation.remaining()?)
+            .min(Duration::from_millis(milliseconds));
+        let launch_budget = Budget::new(launch_duration, self.cancel.as_ref());
         let slot = if purpose == Purpose::Page {
             &mut self.pages
         } else {
@@ -122,32 +165,32 @@ impl DynamicRuntime {
             } else {
                 crate::runtime::installed(&self.data)?
             };
-            *slot = Some(Browser::launch(
-                &browser,
-                purpose,
-                &Budget::new(launch_duration, self.cancel.as_ref()),
-            )?);
+            *slot = Some(Browser::launch(&browser, purpose, &launch_budget)?);
         }
         Ok(slot.as_mut().expect("browser initialized"))
     }
     fn remaining(&self) -> Result<Duration> {
-        Duration::from_secs(45)
+        Duration::from_millis(self.settings.render_timeout_ms)
             .checked_sub(self.begun.elapsed())
             .filter(|remaining| !remaining.is_zero())
             .ok_or_else(|| {
                 Error::new(
                     "RENDER_TIMEOUT",
-                    "Dynamic rendering exceeded its 45 second budget",
+                    "Dynamic rendering exceeded its configured render budget",
                 )
             })
     }
     fn cache(&mut self, key: String, raster: Raster) -> Raster {
+        let capacity = self.settings.cache_mib as usize * 1024 * 1024;
+        if self.settings.cache_entries == 0 || capacity == 0 || raster.png.len() > capacity {
+            return raster;
+        }
         let total = self
             .cache
             .values()
             .map(|entry| entry.png.len())
             .sum::<usize>();
-        if self.cache.len() >= 32 || total + raster.png.len() > 64 * 1024 * 1024 {
+        if self.cache.len() >= self.settings.cache_entries || total + raster.png.len() > capacity {
             self.cache.clear();
         }
         self.cache.insert(key, raster.clone());
@@ -199,9 +242,12 @@ impl DynamicRuntime {
             return Ok(cached.clone());
         }
         let cancel = self.cancel.clone();
-        let duration = self.remaining()?.min(Duration::from_secs(30));
+        let limits = json!({"browser":self.browser_settings,"dynamic":self.settings});
+        let duration = self
+            .remaining()?
+            .min(Duration::from_millis(self.browser_settings.timeout_ms));
         let budget = Budget::new(duration, cancel.as_ref());
-        let browser = self.browser(Purpose::Page)?;
+        let browser = self.browser(Purpose::Page, &budget)?;
         let version = browser.version.clone();
         let result=browser.with_tab(&budget,|browser,session| {
             browser.command(Some(session),"Page.enable",json!({}),&budget)?;
@@ -223,10 +269,15 @@ impl DynamicRuntime {
             let metadata=json!({"kind":"browser","acquisition_id":uuid::Uuid::new_v4().to_string(),"requested_url":redacted_url(url),"url_hash":hash(url.as_bytes()),
                 "final_url":state["url"].as_str().map(redacted_url),"browser_version":version,"viewport_width":width,"viewport_height":height,"pixel_width":pixel_width,"pixel_height":pixel_height,
                 "scale":scale,"zoom":zoom,"scroll_x":state["scrollX"],"scroll_y":state["scrollY"],"device_id":device,
-                "ready_condition":"load, fonts, decoded images, two animation frames","acquired_at":timestamp(),"png_hash":hash(&png)});
+                "ready_condition":"load, fonts, decoded images, two animation frames","acquired_at":timestamp(),"png_hash":hash(&png),"limits":limits});
             checked_png(png,metadata)
         });
         self.page_used = Some(Instant::now());
+        let result = result.and_then(|raster| {
+            budget.check()?;
+            self.check()?;
+            Ok(raster)
+        });
         match result {
             Ok(raster) => Ok(self.cache(key, raster)),
             Err(error) => {
@@ -250,9 +301,12 @@ impl DynamicRuntime {
             return Ok(cached.clone());
         }
         let cancel = self.cancel.clone();
-        let duration = self.remaining()?.min(Duration::from_secs(15));
+        let limits = json!({"shader":self.shader_settings,"dynamic":self.settings});
+        let duration = self
+            .remaining()?
+            .min(Duration::from_millis(self.shader_settings.timeout_ms));
         let budget = Budget::new(duration, cancel.as_ref());
-        let browser = self.browser(Purpose::Shader)?;
+        let browser = self.browser(Purpose::Shader, &budget)?;
         let version = browser.version.clone();
         let result=browser.with_tab(&budget,|browser,session| {
             browser.command(Some(session),"Network.enable",json!({}),&budget)?;
@@ -262,10 +316,15 @@ impl DynamicRuntime {
             if let Some(error)=result.get("error").and_then(Value::as_str) { return Err(shader_error(error.chars().take(8192).collect::<String>())); }
             let encoded=result["png"].as_str().and_then(|value| value.strip_prefix("data:image/png;base64,")).ok_or_else(|| shader_error("WebGL returned no PNG"))?;
             let png=base64::engine::general_purpose::STANDARD.decode(encoded).map_err(|_| shader_error("Invalid WebGL PNG"))?;
-            let metadata=json!({"kind":"shader","browser_version":version,"renderer":result["renderer"],"extensions":result["extensions"],"width":width,"height":height,"request_hash":key,"png_hash":hash(&png),"time":request["time"]});
+            let metadata=json!({"kind":"shader","browser_version":version,"renderer":result["renderer"],"extensions":result["extensions"],"width":width,"height":height,"request_hash":key,"png_hash":hash(&png),"time":request["time"],"limits":limits});
             checked_png(png,metadata)
         });
         self.shader_used = Some(Instant::now());
+        let result = result.and_then(|raster| {
+            budget.check()?;
+            self.check()?;
+            Ok(raster)
+        });
         match result {
             Ok(raster) => Ok(self.cache(key, raster)),
             Err(error) => {
@@ -362,4 +421,75 @@ fn page_error(message: impl Into<String>) -> Error {
 }
 fn shader_error(message: impl Into<String>) -> Error {
     Error::new("SHADER_COMPILE_FAILED", message)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn raster(bytes: usize) -> Raster {
+        Raster {
+            png: vec![0; bytes].into(),
+            metadata: json!({}),
+        }
+    }
+
+    #[test]
+    fn captured_cache_policy_enforces_bytes_entries_and_disabling() {
+        let mut runtime = DynamicRuntime::new("unused");
+        let mut settings = RuntimeSettings::default();
+        settings.dynamic.cache_mib = 1;
+        settings.dynamic.cache_entries = 2;
+        runtime.configure(settings).unwrap();
+        runtime.cache("a".into(), raster(700_000));
+        runtime.cache("b".into(), raster(400_000));
+        assert!(!runtime.cache.contains_key("a"));
+        assert!(runtime.cache.contains_key("b"));
+        let large = runtime.cache("oversized".into(), raster(1024 * 1024 + 1));
+        assert_eq!(large.png.len(), 1024 * 1024 + 1);
+        assert!(!runtime.cache.contains_key("oversized"));
+        runtime.cache("c".into(), raster(20));
+        assert_eq!(runtime.cache.len(), 2);
+        runtime.cache("d".into(), raster(20));
+        assert_eq!(runtime.cache.len(), 1);
+        runtime.configure(settings).unwrap();
+        assert!(runtime.cache.contains_key("d"));
+        settings.browser.timeout_ms = 1234;
+        runtime.configure(settings).unwrap();
+        assert!(runtime.cache.is_empty());
+        runtime.cache("e".into(), raster(20));
+        let mut invalid = settings;
+        invalid.shader.timeout_ms = 0;
+        assert_eq!(
+            runtime.configure(invalid).unwrap_err().code,
+            "CONFIGURATION_ERROR"
+        );
+        assert!(runtime.cache.contains_key("e"));
+        assert_eq!(runtime.shader_settings, settings.shader);
+        for (mib, entries) in [(0, 2), (1, 0)] {
+            settings.dynamic.cache_mib = mib;
+            settings.dynamic.cache_entries = entries;
+            runtime.configure(settings).unwrap();
+            assert_eq!(runtime.cache("disabled".into(), raster(20)).png.len(), 20);
+            assert!(runtime.cache.is_empty());
+        }
+        assert!(runtime.process_ids().is_empty());
+    }
+
+    #[test]
+    fn render_budget_uses_captured_limit_and_retains_cancellation_precedence() {
+        let mut runtime = DynamicRuntime::new("unused");
+        let mut settings = RuntimeSettings::default();
+        settings.dynamic.render_timeout_ms = 20;
+        runtime.configure(settings).unwrap();
+        runtime.begun = Instant::now() - Duration::from_millis(50);
+        assert_eq!(runtime.check().unwrap_err().code, "RENDER_TIMEOUT");
+        let token = CancellationToken::new();
+        token.cancel();
+        runtime.cancel = Some(token);
+        assert_eq!(runtime.check().unwrap_err().code, "CANCELLED");
+        runtime.begin_render(None, false);
+        runtime.check().unwrap();
+        assert!(runtime.idle_deadline().is_none());
+    }
 }
