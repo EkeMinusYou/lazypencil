@@ -16,6 +16,9 @@ use std::{
 };
 use tempfile::TempDir;
 
+#[path = "support/page_wait_reference.rs"]
+mod page_wait_reference;
+
 fn executable() -> PathBuf {
     std::env::var_os("LAZYPENCIL_TEST_CHROMIUM")
         .map(PathBuf::from)
@@ -43,6 +46,136 @@ fn page(html: &str) -> String {
         "data:text/html;base64,{}",
         base64::engine::general_purpose::STANDARD.encode(html)
     )
+}
+
+#[test]
+#[ignore = "Requires headless Chromium and permission to launch its sandbox"]
+fn page_network_idle_waits_for_post_load_fetches_and_recovers_after_timeout_and_cancel() {
+    let server = page_wait_reference::Server::new();
+    let (temp, _, _) = scene(json!([{"id":"page","type":"browser",
+        "url":format!("http://{}/delayed", server.address),"width":32,"height":32}]));
+    fs::create_dir(temp.path().join(".git")).unwrap();
+    let file = temp.path().join("scene.pen");
+    let saved = fs::read_to_string(&file).unwrap();
+    let config = temp.path().join("lazypencil.toml");
+    let load = || {
+        let project = Project::from_document(
+            &file,
+            Document::parse(fs::read_to_string(&file).unwrap()).unwrap(),
+            &[],
+        )
+        .unwrap();
+        let layout =
+            lazypencil::layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap())
+                .unwrap();
+        (project, layout)
+    };
+    let mut runtime = DynamicRuntime::new(temp.path()).with_executable(executable());
+    let (first_project, layout) = load();
+    let first = render::png_with_runtime(
+        &first_project,
+        &layout,
+        &Default::default(),
+        &mut runtime,
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        first.dynamic_artifacts[0]["acquisition"]["wait_until"],
+        "load"
+    );
+    fs::write(
+        &config,
+        "[runtime.browser]\nwait_until='network_idle'\ntimeout_ms=5000\n",
+    )
+    .unwrap();
+    assert_eq!(
+        first_project.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    let (project, layout) = load();
+    let acquired =
+        render::png_with_runtime(&project, &layout, &Default::default(), &mut runtime, None)
+            .unwrap();
+    assert_eq!(
+        raster(&acquired.png)
+            .peek_pixels()
+            .unwrap()
+            .get_color((16, 16)),
+        Color::GREEN
+    );
+    let metadata = &acquired.dynamic_artifacts[0]["acquisition"];
+    assert_eq!(metadata["wait_until"], "network_idle");
+    assert_eq!(metadata["limits"]["browser"]["wait_until"], "network_idle");
+    assert_ne!(
+        metadata["acquisition_id"],
+        first.dynamic_artifacts[0]["acquisition"]["acquisition_id"]
+    );
+    let reused =
+        render::png_with_runtime(&project, &layout, &Default::default(), &mut runtime, None)
+            .unwrap();
+    assert_eq!(reused.dynamic_artifacts, acquired.dynamic_artifacts);
+    assert_eq!(fs::read_to_string(&file).unwrap(), saved);
+
+    let mut busy: Value = serde_json::from_str(&saved).unwrap();
+    busy["children"][0]["url"] = json!(format!("http://{}/busy", server.address));
+    fs::write(&file, busy.to_string()).unwrap();
+    fs::write(
+        &config,
+        "[runtime.browser]\nwait_until='network_idle'\ntimeout_ms=1500\n",
+    )
+    .unwrap();
+    let (project, layout) = load();
+    let started = Instant::now();
+    let error =
+        render::png_with_runtime(&project, &layout, &Default::default(), &mut runtime, None)
+            .err()
+            .unwrap();
+    assert_eq!(error.code, "RENDER_TIMEOUT");
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert!(runtime.process_ids().is_empty());
+
+    // Recover through a new isolated acquisition, then cancel another busy page.
+    fs::write(&file, &saved).unwrap();
+    fs::write(
+        &config,
+        "[runtime.browser]\nwait_until='network_idle'\ntimeout_ms=5000\n",
+    )
+    .unwrap();
+    let (project, layout) = load();
+    let recovered =
+        render::png_with_runtime(&project, &layout, &Default::default(), &mut runtime, None)
+            .unwrap();
+    assert_eq!(
+        raster(&recovered.png)
+            .peek_pixels()
+            .unwrap()
+            .get_color((16, 16)),
+        Color::GREEN
+    );
+    fs::write(&file, busy.to_string()).unwrap();
+    let (project, layout) = load();
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let signal = cancel.clone();
+    let canceller = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(300));
+        signal.cancel();
+    });
+    let started = Instant::now();
+    let error = render::png_with_runtime(
+        &project,
+        &layout,
+        &Default::default(),
+        &mut runtime,
+        Some(cancel),
+    )
+    .err()
+    .unwrap();
+    canceller.join().unwrap();
+    assert_eq!(error.code, "CANCELLED");
+    assert!(started.elapsed() < Duration::from_secs(3));
+    assert!(runtime.process_ids().is_empty());
+    assert_eq!(fs::read_to_string(&file).unwrap(), busy.to_string());
 }
 
 #[test]

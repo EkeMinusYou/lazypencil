@@ -1,4 +1,7 @@
-use lazypencil::config::{Snapshot, runtime::ScriptSettings};
+use lazypencil::config::{
+    Snapshot,
+    runtime::{PageWaitUntil, ScriptSettings},
+};
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf, process::Command};
 use tempfile::TempDir;
@@ -262,6 +265,57 @@ fn invalid_dynamic_limits_are_not_hidden_by_higher_priority_values() {
 }
 
 #[test]
+fn page_wait_policy_inherits_invalidates_and_rejects_unknown_or_shader_values() {
+    let f = Fixture::new();
+    assert_eq!(
+        f.snapshot().unwrap().settings.runtime.browser.wait_until,
+        PageWaitUntil::Load
+    );
+    fs::write(
+        f.user.join("config.toml"),
+        "[runtime.browser]\nwait_until='network_idle'\n",
+    )
+    .unwrap();
+    let captured = f.snapshot().unwrap();
+    assert_eq!(
+        captured.settings.runtime.browser.wait_until,
+        PageWaitUntil::NetworkIdle
+    );
+    assert_eq!(
+        captured.summary()["runtime_origins"]["browser.wait_until"],
+        "user"
+    );
+    fs::write(
+        f.project.join("lazypencil.toml"),
+        "[runtime.browser]\nwait_until='load'\n",
+    )
+    .unwrap();
+    assert_eq!(
+        captured.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    let current = f.snapshot().unwrap();
+    assert_eq!(
+        current.settings.runtime.browser.wait_until,
+        PageWaitUntil::Load
+    );
+    assert_eq!(
+        current.summary()["runtime_origins"]["browser.wait_until"],
+        "project"
+    );
+    for invalid in [
+        "[runtime.browser]\nwait_until='private-value'\n",
+        "[runtime.browser]\nwait_until=1\n",
+        "[runtime.shader]\nwait_until='load'\n",
+    ] {
+        fs::write(f.user.join("config.toml"), invalid).unwrap();
+        let error = f.snapshot().err().unwrap();
+        assert_eq!(error.code, "CONFIGURATION_ERROR");
+        assert!(!error.message.contains("private-value"));
+    }
+}
+
+#[test]
 fn runtime_schema_and_templates_expose_limits_without_overriding_inheritance() {
     let f = Fixture::new();
     for arguments in [vec!["config", "schema"], vec!["config", "schema", "--user"]] {
@@ -281,11 +335,21 @@ fn runtime_schema_and_templates_expose_limits_without_overriding_inheritance() {
         let fields = &schema["$defs"]["DynamicSettings"]["properties"];
         assert_eq!(fields["cache_mib"]["minimum"].as_f64(), Some(0.0));
         assert_eq!(fields["cache_entries"]["maximum"].as_f64(), Some(256.0));
+        assert_eq!(
+            schema["$defs"]["PageWaitUntil"]["enum"],
+            json!(["load", "network_idle"])
+        );
+        assert!(
+            schema["$defs"]["ShaderSettings"]["properties"]
+                .get("wait_until")
+                .is_none()
+        );
     }
     f.cli(&["config", "init", "--user"]);
     let template = fs::read_to_string(f.user.join("config.toml")).unwrap();
     assert!(template.contains("# [runtime.javascript]"));
     assert!(template.contains("# [runtime.browser]"));
+    assert!(template.contains("# wait_until = \"load\""));
     assert!(template.contains("# [runtime.shader]"));
     assert!(template.contains("# [runtime.dynamic]"));
     assert_eq!(

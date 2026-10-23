@@ -87,6 +87,7 @@ Both scopes accept the following defaults, with the same per-field inheritance, 
 timeout_ms = 30000
 launch_timeout_ms = 15000
 idle_seconds = 60
+wait_until = "load"
 
 [runtime.shader]
 timeout_ms = 15000
@@ -104,6 +105,7 @@ cache_entries = 32
 | Browser/shader `timeout_ms` | 1..300,000 ms | One acquisition, including launch when needed, tab setup, navigation/evaluation and capture |
 | Browser/shader `launch_timeout_ms` | 1..60,000 ms | An additional cap on starting and connecting to that purpose's process |
 | Browser/shader `idle_seconds` | 0..3,600 s | Independent idle expiry after completed work; zero permits immediate cleanup |
+| Browser `wait_until` | `load`, `network_idle` | Readiness before fonts, image decoding and two animation frames; default `load` |
 | Dynamic `render_timeout_ms` | 1..300,000 ms | Shared rendering budget across acquisitions and checked native stages |
 | Dynamic `cache_mib` | 0..256 MiB | Maximum total retained encoded raster bytes; zero disables reuse |
 | Dynamic `cache_entries` | 0..256 | Maximum retained raster entries; zero disables reuse |
@@ -112,7 +114,9 @@ The common render entry applies the captured policy before beginning work, so CL
 
 Changing browser, shader or dynamic policy clears the runtime's raster cache before reuse; unchanged policy preserves it. An image larger than the configured cache capacity is returned without retention. Reaching the count/byte bound evicts the retained cache before insertion. These limits bound encoded cached PNGs, not active Skia surfaces, decoded image memory, or complete process-group RSS. Acquisitions include their effective purpose and dynamic `limits` in metadata. Expiring a process alone preserves cached pixels; cached reads do not extend its last execution time.
 
-Configuration is data-only: inspection starts no process, and these fields neither select executable files nor install Chromium. Page authentication profiles, network and readiness rules, animation controls, decoded/native memory budgets, and process-group resource enforcement remain separate unfinished requirements. The seven configuration tests, six purpose/deadline launch cases and real Chromium policy-reload test passed in [hosted macOS arm64 verification](runtimes.md#hosted-integration-without-local-build-trees). The expanded runs also passed both cache/deadline unit tests and all twelve JS-worker tests on macOS arm64 and Linux x64. A normal TUI policy assertion and Linux CLI interruption still need their follow-up runs; other platforms remain to be verified.
+`wait_until = "network_idle"` additionally waits for Chromium's `networkIdle` lifecycle event for the current main-frame loader, while still requiring document load. Lifecycle notifications from the previous document, another tab or a child frame cannot satisfy it. Fonts, decoded images and two animation frames remain required afterward. This follows Chromium's lifecycle readiness; it is not a guarantee that application state, future requests, animations, workers or every cross-origin frame have settled. Long-lived or repeated requests can exhaust the existing acquisition/render deadline; the runtime returns an error and disposes the context and process instead of capturing early. No additional deadline is started. The chosen policy appears in acquisition metadata and inherits independently from user/project settings.
+
+Configuration is data-only: inspection starts no process, and these fields neither select executable files nor install Chromium. Page authentication profiles, request restrictions, selector-based readiness, animation controls, decoded/native memory budgets, and process-group resource enforcement remain separate unfinished requirements. The previously implemented limits, real workers, policy reload, Linux interruption and TUI policy recovery passed the hosted Chromium runs recorded in [runtime verification](runtimes.md#hosted-integration-without-local-build-trees). The additional network-idle policy and its timeout/cancellation regressions require a new hosted run.
 
 Execution records contain the **configured** `limits`, included in calculation identity. Code/input/output/node/depth and stack guards remain independent: 1 MiB source, 4 MiB protocol frames, 1,000 generated nodes per output, 64 output levels and a 512 KiB JS stack. Browser/shader limits and wider process/cache/asset policies remain separate unfinished work.
 
