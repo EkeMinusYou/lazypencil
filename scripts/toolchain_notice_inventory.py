@@ -212,10 +212,7 @@ def build_inventory(source, legal, docs, target_libraries, identity, cargo=None,
     unwind = source / "src/llvm-project/libunwind/LICENSE.TXT"
     if unwind.exists():
         retain("src/llvm-project/libunwind/LICENSE.TXT", notices.read(unwind), "native_unwind_reference")
-    binaries = [native.fingerprint(path, path.name) for path in sorted(target_libraries.iterdir())
-                if path.is_file() and path.suffix.lower() in {".rlib", ".rmeta", ".so", ".dylib", ".dll", ".lib"}]
-    notices.require(any(p["path"].startswith("libstd-") and p["path"].endswith(".rlib") for p in binaries),
-                    "No installed target standard library")
+    binaries = library_fingerprints(target_libraries)
     return {"format_version": 1, "scope": "Installed Rust standard-library source/notice and target-library inventory; not exact application linkage.",
             "observed_toolchain": identity, "source_inputs": inputs, "vendor_packages": packages, "registry_packages": registry,
             "corresponding_sources": corresponding_sources,
@@ -225,6 +222,14 @@ def build_inventory(source, legal, docs, target_libraries, identity, cargo=None,
                        "vendor_checksums": "Present vendor files are checked against vendor metadata and the library lock. With --cargo-home, original archive checksums and all source hashes are also verified; vendor/archive differences remain explicit review findings. Collection never fetches inputs.",
                        "coverage": "All installed library sources and library lock registry packages, including unused, optional and test code; compiler executables, system libraries and exact app linkage are excluded.",
                        "comments": "Comment candidates in the first 65536 bytes of each observed Rust/C/C++/assembly source, not automatic license classifications."}}, texts
+
+
+def library_fingerprints(target_libraries):
+    binaries = [native.fingerprint(path, path.name) for path in sorted(target_libraries.iterdir())
+                if path.is_file() and path.suffix.lower() in {".rlib", ".rmeta", ".so", ".dylib", ".dll", ".lib"}]
+    notices.require(any(p["path"].startswith("libstd-") and p["path"].endswith(".rlib") for p in binaries),
+                    "No installed target standard library")
+    return binaries
 
 
 def bundle_files(index, texts):

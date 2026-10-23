@@ -20,13 +20,14 @@ import asset_notice_inventory as assets
 import license_notices as notices
 import quickjs_notice_inventory as quick
 import skia_notice_inventory as native
+import toolchain_build_binding as stdlib
 
 
 MAX_EVENTS = 64 * 1024 * 1024
 MAX_LINE = 4 * 1024 * 1024
 GAPS = [
     "Cargo declarations and Skia graph inputs do not establish final binary linkage or used archive members.",
-    "Rust standard-library and system-library attribution must be joined to this exact build separately.",
+    "System-library attribution and final Rust source-to-binary/linkage verification remain required.",
     "QuickJS source comment candidates and the skia-bindings wrapper still require final native attribution review.",
     "Font/icon source declarations and original notices are collected; final applicability, other assets, and optional runtimes still require review.",
     "Complete legal review, signed build provenance, packaging, signing, and publication remain required.",
@@ -197,7 +198,7 @@ def native_archives(target, selected):
     return result
 
 
-def collect(root, target, events, revision, output, rustc="rustc", ninja="ninja", cargo=None):
+def collect(root, target, events, revision, output, rustc="rustc", ninja="ninja", cargo=None, toolchain_evidence=None):
     root, target = root.resolve(strict=True), target.resolve(strict=True)
     output = output.absolute()
     notices.require(not output.exists() and not output.is_symlink(), "Evidence output must not exist")
@@ -231,6 +232,8 @@ def collect(root, target, events, revision, output, rustc="rustc", ninja="ninja"
         quick.verify(*quick_args, stage / "quickjs")
         asset_summary = assets.collect(root, stage / "assets")
         assets.verify(root, stage / "assets")
+        standard = stdlib.attach(toolchain_evidence, stage / "toolchain", compiler_text, rustc) if toolchain_evidence else None
+        gaps = GAPS if standard is not None else [*GAPS, "Rust standard-library evidence has not been attached to this build."]
         notices.require(source_identity(root, revision) == source, "Sources changed during evidence collection")
         notices.require(fingerprint(executable, binary["path"]) == binary
                         and native_archives(target, selected) == archives, "Build outputs changed during collection")
@@ -247,8 +250,9 @@ def collect(root, target, events, revision, output, rustc="rustc", ninja="ninja"
                     "compiler": compiler_text, "native_packages": selected,
                     "native_archives": archives, "rust_notices": rust, "skia_notices": skia, "quickjs_notices": quickjs,
                     "asset_notices": asset_summary,
+                    "toolchain_notices": standard,
                     "cargo_output": cargo_output,
-                    "ignored_non_cargo_lines": ignored, "remaining_review": GAPS,
+                    "ignored_non_cargo_lines": ignored, "remaining_review": gaps,
                     "hosted": {name: os.environ.get(name) for name in
                                ("GITHUB_REPOSITORY", "GITHUB_SHA", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT",
                                 "RUNNER_OS", "RUNNER_ARCH", "ImageOS", "ImageVersion")}}
@@ -265,7 +269,7 @@ def collect(root, target, events, revision, output, rustc="rustc", ninja="ninja"
             shutil.rmtree(output)
             raise
     return {"release_ready": False, "source_revision": revision, "binary_sha256": binary["sha256"],
-            "files": len(files) + 1, "remaining_review": GAPS}
+            "files": len(files) + 1, "remaining_review": gaps}
 
 
 def main():
@@ -278,10 +282,11 @@ def main():
     parser.add_argument("--rustc", default="rustc")
     parser.add_argument("--ninja", default="ninja")
     parser.add_argument("--cargo-home", type=Path, help="Offline original registry archives; defaults to Cargo's home")
+    parser.add_argument("--toolchain-evidence", type=Path, help="Prepared original standard-library evidence from this compiler/target")
     args = parser.parse_args()
     try:
         print(json.dumps(collect(args.source, args.target, args.cargo_json, args.revision,
-                                 args.output, args.rustc, args.ninja, args.cargo_home)))
+                                 args.output, args.rustc, args.ninja, args.cargo_home, args.toolchain_evidence)))
     except (notices.NoticeError, dist.DistributionError, OSError, ValueError, KeyError, TypeError,
             tarfile.TarError, EOFError, subprocess.SubprocessError) as error:
         parser.exit(1, "Release evidence error: " + str(error) + "\n")
