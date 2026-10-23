@@ -69,6 +69,8 @@ pub fn serve_with_context(
                 #[cfg(feature = "rendering")]
                 snapshots: VecDeque::new(),
                 #[cfg(feature = "rendering")]
+                failed_code: VecDeque::new(),
+                #[cfg(feature = "rendering")]
                 scripts: None,
                 #[cfg(feature = "rendering")]
                 dynamic: None,
@@ -282,7 +284,7 @@ fn tools() -> Vec<Tool> {
         ),
         tool::<crate::assets::ReadAssetRequest>(
             "read_asset",
-            "Read a captured script or shader by its dependency hash. This tool cannot read an arbitrary filesystem path.",
+            "Read captured script or shader text by dependency hash, including nested script code retained after a failed calculation on this connection. Failed captures are not layout snapshots. This tool cannot read an arbitrary filesystem path.",
             true,
         ),
         {
@@ -423,6 +425,8 @@ struct DocumentWorker {
     #[cfg(feature = "rendering")]
     snapshots: VecDeque<CachedSnapshot>,
     #[cfg(feature = "rendering")]
+    failed_code: VecDeque<CachedFailure>,
+    #[cfg(feature = "rendering")]
     scripts: Option<crate::script::ScriptRuntime>,
     #[cfg(feature = "rendering")]
     dynamic: Option<crate::dynamic::DynamicRuntime>,
@@ -431,6 +435,11 @@ struct DocumentWorker {
 struct CachedSnapshot {
     project: Project,
     layout: crate::layout::LayoutSnapshot,
+    created: Instant,
+}
+#[cfg(feature = "rendering")]
+struct CachedFailure {
+    source: crate::project::FailedCodeCapture,
     created: Instant,
 }
 
@@ -451,6 +460,11 @@ impl DocumentWorker {
                     .iter()
                     .map(|snapshot| snapshot.created + SNAPSHOT_TTL),
             )
+            .chain(
+                self.failed_code
+                    .iter()
+                    .map(|capture| capture.created + SNAPSHOT_TTL),
+            )
             .min()
     }
 
@@ -464,6 +478,8 @@ impl DocumentWorker {
         }
         self.snapshots
             .retain(|snapshot| snapshot.created + SNAPSHOT_TTL > now);
+        self.failed_code
+            .retain(|capture| capture.created + SNAPSHOT_TTL > now);
     }
 
     fn call(
@@ -653,7 +669,7 @@ impl DocumentWorker {
             }
             "read_asset" => {
                 let args: crate::assets::ReadAssetRequest = parse(arguments)?;
-                self.read_asset(&args)?
+                self.read_asset(&args, cancel)?
             }
             "put_asset" => {
                 let args: crate::assets::PutAssetRequest = parse(arguments)?;
@@ -725,30 +741,65 @@ impl DocumentWorker {
         Ok(project)
     }
 
-    fn read_asset(&self, args: &crate::assets::ReadAssetRequest) -> Result<Value> {
-        let project = self.project()?;
+    fn read_asset(
+        &self,
+        args: &crate::assets::ReadAssetRequest,
+        cancel: &tokio_util::sync::CancellationToken,
+    ) -> Result<Value> {
+        let mut project = self.project()?;
+        project.set_cancellation(Some(cancel.clone()));
         let result = crate::assets::read_asset(&project, args);
         #[cfg(feature = "rendering")]
         if result
             .as_ref()
             .is_err_and(|error| error.code == "ASSET_NOT_FOUND")
         {
-            for cached in self.snapshots.iter().rev().filter(|cached| {
-                cached.created.elapsed() < SNAPSHOT_TTL
-                    && cached.project.root_document().revision()
-                        == project.root_document().revision()
-            }) {
-                let result = crate::assets::read_asset(&cached.project, args);
-                if result
-                    .as_ref()
-                    .is_err_and(|error| error.code == "ASSET_NOT_FOUND")
-                {
+            enum Capture<'a> {
+                Snapshot(&'a CachedSnapshot),
+                Failure(&'a CachedFailure),
+            }
+            let mut captures = self
+                .snapshots
+                .iter()
+                .map(|s| (s.created, Capture::Snapshot(s)))
+                .chain(
+                    self.failed_code
+                        .iter()
+                        .map(|s| (s.created, Capture::Failure(s))),
+                )
+                .collect::<Vec<_>>();
+            captures.sort_by_key(|(created, _)| std::cmp::Reverse(*created));
+            for (created, capture) in captures {
+                if created.elapsed() >= SNAPSHOT_TTL {
                     continue;
                 }
-                cached.project.verify_unchanged()?;
-                let mut value = result?;
-                value["snapshot_id"] = json!(cached.layout.id);
-                return Ok(value);
+                match capture {
+                    Capture::Snapshot(cached) => {
+                        if cached.project.root_document().revision()
+                            != project.root_document().revision()
+                        {
+                            continue;
+                        }
+                        let result = crate::assets::read_asset(&cached.project, args);
+                        if result
+                            .as_ref()
+                            .is_err_and(|error| error.code == "ASSET_NOT_FOUND")
+                        {
+                            continue;
+                        }
+                        cached.project.verify_unchanged()?;
+                        let mut value = result?;
+                        value["snapshot_id"] = json!(cached.layout.id);
+                        return Ok(value);
+                    }
+                    Capture::Failure(cached) => {
+                        if cached.source.hash() == args.hash
+                            && cached.source.revision() == project.root_document().revision()
+                        {
+                            return cached.source.read(&project, args);
+                        }
+                    }
+                }
             }
         }
         result
@@ -806,13 +857,38 @@ impl DocumentWorker {
             .as_mut()
             .expect("script runtime")
             .set_cancellation(Some(cancel.clone()));
-        let (project, layout) = service::layout_snapshot_with_runtime(
+        let mut failed_code = None;
+        let result = service::layout_snapshot_observing_failure(
             &self.store,
             &self.fonts,
             revision,
             dependency,
             self.scripts.as_mut().expect("script runtime"),
-        )?;
+            |project, declared, error| {
+                failed_code = project.capture_failed_code(declared, error);
+            },
+        );
+        let (project, layout) = match result {
+            Ok(value) => value,
+            Err(mut error) => {
+                if let Some(source) = failed_code {
+                    self.failed_code.retain(|capture| {
+                        capture.created.elapsed() < SNAPSHOT_TTL
+                            && capture.source.id() != source.id()
+                    });
+                    if self.failed_code.len() >= 4 {
+                        self.failed_code.pop_front();
+                    }
+                    error.details.get_or_insert_with(|| json!({}))["failure_capture_id"] =
+                        json!(source.id());
+                    self.failed_code.push_back(CachedFailure {
+                        source,
+                        created: Instant::now(),
+                    });
+                }
+                return Err(error);
+            }
+        };
         if require_dependency || dependency.is_some() {
             project.require_dependencies(dependency)?;
         }
@@ -990,6 +1066,82 @@ mod tests {
     use super::*;
 
     #[test]
+    fn failed_code_expiry_releases_bytes_and_cancellation_does_not_poison_the_capture() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let file = temp.path().join("design.pen");
+        let store = Store::init(&file, Some(temp.path().join("data"))).unwrap();
+        std::fs::write(
+            temp.path().join("outer.js"),
+            "/** @schema 2.21 */ return [];",
+        )
+        .unwrap();
+        let code = "/** @schema 2.21 */ throw new Error('nested');";
+        std::fs::write(temp.path().join("nested.js"), code).unwrap();
+        std::fs::write(&file, json!({"version":"2.21","children":[{"id":"outer","type":"script","scriptUri":"outer.js","width":20,"height":20}]}).to_string()).unwrap();
+        let mut project = Project::load(&store).unwrap();
+        let declared = project.dependencies();
+        let owner = project.resolve().unwrap().roots.remove(0);
+        project
+            .generated_children(
+                &owner,
+                &[json!({"type":"script","scriptUri":"nested.js","width":20,"height":20})],
+            )
+            .unwrap();
+        let source_hash = crate::document::hash(code.as_bytes());
+        let error = Error::new("SCRIPT_EXECUTION_FAILED", "nested").details(json!({"script_path":crate::paths::canonical(temp.path().join("nested.js")).unwrap(),"source_hash":source_hash}));
+        let source = project.capture_failed_code(&declared, &error).unwrap();
+        drop(project);
+        let created = Instant::now();
+        let mut worker = DocumentWorker {
+            store,
+            attachments: None,
+            usage: None,
+            fonts: vec![],
+            snapshots: VecDeque::new(),
+            failed_code: VecDeque::from([CachedFailure { source, created }]),
+            scripts: None,
+            dynamic: None,
+        };
+        let args = crate::assets::ReadAssetRequest {
+            hash: source_hash,
+            offset: 0,
+            limit: 1024,
+        };
+        let cancel = tokio_util::sync::CancellationToken::new();
+        cancel.cancel();
+        assert_eq!(
+            worker.read_asset(&args, &cancel).unwrap_err().code,
+            "CANCELLED"
+        );
+        let cancel = tokio_util::sync::CancellationToken::new();
+        assert_eq!(worker.read_asset(&args, &cancel).unwrap()["content"], code);
+        let expiry = created + SNAPSHOT_TTL;
+        assert_eq!(worker.maintenance_deadline(), Some(expiry));
+        worker.expire_idle(expiry - Duration::from_nanos(1));
+        assert_eq!(worker.failed_code.len(), 1);
+        worker.expire_idle(expiry);
+        assert!(worker.failed_code.is_empty());
+        assert!(worker.maintenance_deadline().is_none());
+        assert_eq!(
+            worker.read_asset(&args, &cancel).unwrap_err().code,
+            "ASSET_NOT_FOUND"
+        );
+        let large = " ".repeat(1024 * 1024 + 1);
+        std::fs::write(temp.path().join("nested.js"), &large).unwrap();
+        let mut project = worker.project().unwrap();
+        let declared = project.dependencies();
+        let owner = project.resolve().unwrap().roots.remove(0);
+        project
+            .generated_children(
+                &owner,
+                &[json!({"type":"script","scriptUri":"nested.js","width":20,"height":20})],
+            )
+            .unwrap();
+        let error = Error::new("SCRIPT_EXECUTION_FAILED", "oversized code").details(json!({"script_path":crate::paths::canonical(temp.path().join("nested.js")).unwrap(),"source_hash":crate::document::hash(large.as_bytes())}));
+        assert!(project.capture_failed_code(&declared, &error).is_none());
+    }
+
+    #[test]
     fn expired_snapshots_release_their_resources_and_reject_reuse_without_editing() {
         let temp = tempfile::TempDir::new().unwrap();
         let store = Store::init(
@@ -1005,6 +1157,7 @@ mod tests {
             usage: None,
             fonts: vec![],
             snapshots: VecDeque::new(),
+            failed_code: VecDeque::new(),
             scripts: None,
             dynamic: None,
         };

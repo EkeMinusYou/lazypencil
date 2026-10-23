@@ -17,6 +17,10 @@ const MAX_PROJECT_BYTES: usize = 128 * 1024 * 1024;
 const MAX_ASSET_BYTES: usize = 64 * 1024 * 1024;
 
 mod detach;
+#[cfg(feature = "rendering")]
+mod failed_code;
+#[cfg(feature = "rendering")]
+pub(crate) use failed_code::FailedCodeCapture;
 mod import;
 mod missing;
 mod scope;

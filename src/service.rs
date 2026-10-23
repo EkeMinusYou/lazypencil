@@ -692,6 +692,25 @@ pub fn layout_snapshot_with_runtime(
     expected_dependency_revision: Option<&str>,
     runtime: &mut crate::script::ScriptRuntime,
 ) -> Result<(Project, crate::layout::LayoutSnapshot)> {
+    layout_snapshot_observing_failure(
+        store,
+        font_files,
+        expected_revision,
+        expected_dependency_revision,
+        runtime,
+        |_, _, _| {},
+    )
+}
+
+#[cfg(feature = "rendering")]
+pub(crate) fn layout_snapshot_observing_failure(
+    store: &Store,
+    font_files: &[std::path::PathBuf],
+    expected_revision: Option<&str>,
+    expected_dependency_revision: Option<&str>,
+    runtime: &mut crate::script::ScriptRuntime,
+    failed: impl FnOnce(&Project, &[crate::project::Dependency], &Error),
+) -> Result<(Project, crate::layout::LayoutSnapshot)> {
     let cancel = runtime.cancellation();
     let mut project = project_with_overlay_and_cancellation(
         store,
@@ -707,7 +726,14 @@ pub fn layout_snapshot_with_runtime(
         project.require_dependencies(expected_dependency_revision)?;
     }
     let mut fonts = project.load_fonts()?;
-    let snapshot = crate::script::compute(&mut project, &mut fonts, runtime)?;
+    let declared = project.dependencies();
+    let snapshot = match crate::script::compute(&mut project, &mut fonts, runtime) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            failed(&project, &declared, &error);
+            return Err(error);
+        }
+    };
     store::require_revision(&store.read()?, &snapshot.revision)?;
     project.verify_unchanged()?;
     // Retained snapshots must not inherit the lifetime of a finished request.

@@ -1851,8 +1851,15 @@ fn nested_library_script_errors_expose_original_source_and_allow_mcp_repair() {
     fs::create_dir(&library).unwrap();
     let outer =
         "/** @schema 2.21 */ return [{type:'script',scriptUri:'nested.js',width:40,height:20}];";
-    let broken =
-        "/** @schema 2.21 */\nconst label = '日本語';\nthrow new Error('Broken nested source');";
+    let broken = concat!(
+        "/** @schema 2.21 */\n",
+        "const label = '日本語';\n",
+        "// Context outside the diagnostic excerpt.\n",
+        "// Keep every original byte, including Unicode.\n",
+        "const width = 40;\n",
+        "// The source can be read without evaluating it again.\n",
+        "throw new Error('Broken nested source');"
+    );
     fs::write(library.join("outer.js"), outer).unwrap();
     fs::write(library.join("nested.js"), broken).unwrap();
     fs::write(library.join("ui.pen"),json!({"version":"2.21","children":[{"id":"chart","type":"script","reusable":true,"scriptUri":"outer.js","width":40,"height":20}]}).to_string()).unwrap();
@@ -1877,11 +1884,50 @@ fn nested_library_script_errors_expose_original_source_and_allow_mcp_repair() {
             .unwrap()
     );
     assert!(details["node"].to_string().contains("$generated"));
-    assert_eq!(details["script_diagnostic"]["line"], 3);
+    assert_eq!(details["script_diagnostic"]["line"], 7);
     assert_eq!(details["script_diagnostic"]["stage"], "runtime");
     assert_eq!(
         details["script_diagnostic"]["source_excerpt"][1]["text"],
         "throw new Error('Broken nested source');"
+    );
+    assert!(details["failure_capture_id"].is_string());
+    let mut source = String::new();
+    let mut offset = 0;
+    loop {
+        let chunk = client.data(
+            "read_asset",
+            json!({"hash":details["source_hash"],"offset":offset,"limit":11}),
+        );
+        assert_eq!(chunk["failed_calculation"], true);
+        assert_eq!(chunk["failure_capture_id"], details["failure_capture_id"]);
+        assert!(chunk.get("snapshot_id").is_none());
+        source.push_str(chunk["content"].as_str().unwrap());
+        let Some(next) = chunk["next_offset"].as_u64() else {
+            break;
+        };
+        offset = next;
+    }
+    assert_eq!(source, broken);
+    let unavailable = client.call("get_layout", json!({"expected_revision":document["revision"],"snapshot_id":details["failure_capture_id"]}));
+    assert_eq!(
+        unavailable["structuredContent"]["error"]["code"],
+        "SNAPSHOT_UNAVAILABLE"
+    );
+    // A changed outer source invalidates even unchanged failing nested code.
+    fs::write(
+        library.join("outer.js"),
+        format!("{outer}\n// changed parent"),
+    )
+    .unwrap();
+    let stale = client.call("read_asset", json!({"hash":details["source_hash"]}));
+    assert_eq!(
+        stale["structuredContent"]["error"]["code"],
+        "REVISION_CONFLICT"
+    );
+    fs::write(library.join("outer.js"), outer).unwrap();
+    assert_eq!(
+        client.data("read_asset", json!({"hash":details["source_hash"]}))["content"],
+        broken
     );
     let stored = client.data(
         "read_nodes",
@@ -1905,11 +1951,156 @@ fn nested_library_script_errors_expose_original_source_and_allow_mcp_repair() {
         calculation["nodes"][0]["children"][0]["properties"]["fill"],
         "#FF0000"
     );
+    let old_source = client.call("read_asset", json!({"hash":details["source_hash"]}));
+    assert_eq!(
+        old_source["structuredContent"]["error"]["code"],
+        "ASSET_NOT_FOUND"
+    );
     assert_eq!(
         fs::read_to_string(library.join("nested.js")).unwrap(),
         broken
     );
     assert_eq!(fs::read_to_string(library.join("outer.js")).unwrap(), outer);
+    client.finish();
+}
+
+#[cfg(feature = "rendering")]
+#[test]
+fn runtime_code_reads_choose_the_latest_successful_or_failed_context() {
+    let (temp, file, data) = fixture();
+    let library = temp.path().join("ui.pen");
+    let outer = "/** @schema 2.21 */ return [{type:'script',scriptUri:'nested.js',width:pencil.width,height:20}];";
+    let nested =
+        "/** @schema 2.21 */ if(pencil.width === 41) throw new Error('width rejected'); return [];";
+    fs::write(temp.path().join("outer.js"), outer).unwrap();
+    fs::write(temp.path().join("nested.js"), nested).unwrap();
+    fs::write(&file,json!({"version":"2.21","imports":{"ui":"ui.pen"},"children":[{"id":"use","type":"ref","ref":"ui:chart"}]}).to_string()).unwrap();
+    fs::write(&library,json!({"version":"2.21","children":[{"id":"chart","type":"script","reusable":true,"scriptUri":"outer.js","width":40,"height":20}]}).to_string()).unwrap();
+    let mut client = Client::start(&file, &data);
+    let source_hash = lazypencil::document::hash(nested.as_bytes());
+    for width in [40, 41, 42] {
+        fs::write(&library,json!({"version":"2.21","children":[{"id":"chart","type":"script","reusable":true,"scriptUri":"outer.js","width":width,"height":20}]}).to_string()).unwrap();
+        let calculated = client.call("read_nodes", json!({"calculated":true,"node_id":"use"}));
+        let source = client.data("read_asset", json!({"hash":source_hash}));
+        assert_eq!(source["content"], nested);
+        if width == 41 {
+            assert_eq!(
+                calculated["structuredContent"]["error"]["code"],
+                "SCRIPT_EXECUTION_FAILED"
+            );
+            assert_eq!(source["failed_calculation"], true);
+            assert_eq!(
+                source["failure_capture_id"],
+                calculated["structuredContent"]["error"]["details"]["failure_capture_id"]
+            );
+            assert!(source.get("snapshot_id").is_none());
+        } else {
+            assert_ne!(calculated["isError"], true, "{calculated}");
+            assert_eq!(
+                source["snapshot_id"],
+                calculated["structuredContent"]["snapshot_id"]
+            );
+            assert!(source.get("failed_calculation").is_none());
+        }
+    }
+    client.finish();
+}
+
+#[cfg(all(feature = "rendering", unix))]
+#[test]
+fn failed_runtime_source_rejects_a_retargeted_link_even_when_bytes_match() {
+    use std::os::unix::fs::symlink;
+    let (temp, file, data) = fixture();
+    let code = "/** @schema 2.21 */ throw new Error('nested');";
+    for name in ["a.js", "b.js"] {
+        fs::write(temp.path().join(name), code).unwrap();
+    }
+    let requested = temp.path().join("nested.js");
+    symlink("a.js", &requested).unwrap();
+    fs::write(
+        temp.path().join("outer.js"),
+        "/** @schema 2.21 */ return [{type:'script',scriptUri:'nested.js',width:20,height:20}];",
+    )
+    .unwrap();
+    fs::write(&file,json!({"version":"2.21","children":[{"id":"chart","type":"script","scriptUri":"outer.js","width":20,"height":20}]}).to_string()).unwrap();
+    let mut client = Client::start(&file, &data);
+    let failure = client.call("read_nodes", json!({"calculated":true}));
+    let hash = &failure["structuredContent"]["error"]["details"]["source_hash"];
+    assert_eq!(
+        client.data("read_asset", json!({"hash":hash}))["content"],
+        code
+    );
+    fs::remove_file(&requested).unwrap();
+    symlink("b.js", &requested).unwrap();
+    let stale = client.call("read_asset", json!({"hash":hash}));
+    assert_eq!(
+        stale["structuredContent"]["error"]["code"],
+        "REVISION_CONFLICT"
+    );
+    client.finish();
+}
+
+#[cfg(feature = "rendering")]
+#[test]
+fn failed_runtime_code_is_bounded_and_does_not_allow_arbitrary_file_reads() {
+    let (temp, file, data) = fixture();
+    fs::write(
+        temp.path().join("outer.js"),
+        "/** @schema 2.21 */ return [{type:'script',scriptUri:'nested.js',width:20,height:20}];",
+    )
+    .unwrap();
+    fs::write(&file,json!({"version":"2.21","children":[{"id":"chart","type":"script","scriptUri":"outer.js","width":20,"height":20}]}).to_string()).unwrap();
+    let private = "// Never declared or encountered during execution";
+    fs::write(temp.path().join("private.js"), private).unwrap();
+    let mut client = Client::start(&file, &data);
+    let mut hashes = Vec::new();
+    let mut last_source = String::new();
+    for number in 0..5 {
+        let code = format!("// Broken header {number} 日本語\nthrow new Error('never executed');");
+        fs::write(temp.path().join("nested.js"), &code).unwrap();
+        let failure = client.call("read_nodes", json!({"calculated":true}));
+        assert_eq!(
+            failure["structuredContent"]["error"]["details"]["script_diagnostic"]["stage"],
+            "header"
+        );
+        assert!(failure["structuredContent"]["error"]["details"]["failure_capture_id"].is_string());
+        hashes.push(lazypencil::document::hash(code.as_bytes()));
+        last_source = code;
+    }
+    let evicted = client.call("read_asset", json!({"hash":hashes[0]}));
+    assert_eq!(
+        evicted["structuredContent"]["error"]["code"],
+        "ASSET_NOT_FOUND"
+    );
+    let stale = client.call("read_asset", json!({"hash":hashes[1]}));
+    assert_eq!(
+        stale["structuredContent"]["error"]["code"],
+        "REVISION_CONFLICT"
+    );
+    let latest = client.data("read_asset", json!({"hash":hashes[4]}));
+    assert_eq!(latest["content"], last_source);
+    assert!(latest.get("script_header_error").is_some());
+    assert!(latest.get("script_header").is_none());
+    let unknown = client.call(
+        "read_asset",
+        json!({"hash":lazypencil::document::hash(private.as_bytes())}),
+    );
+    assert_eq!(
+        unknown["structuredContent"]["error"]["code"],
+        "ASSET_NOT_FOUND"
+    );
+    fs::remove_file(temp.path().join("nested.js")).unwrap();
+    let missing = client.call("read_asset", json!({"hash":hashes[4]}));
+    assert_eq!(
+        missing["structuredContent"]["error"]["code"],
+        "REVISION_CONFLICT"
+    );
+    assert!(
+        client.data("get_history", json!({}))["entries"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
     client.finish();
 }
 

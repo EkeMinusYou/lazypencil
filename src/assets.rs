@@ -246,6 +246,28 @@ pub fn read_asset(project: &Project, request: &ReadAssetRequest) -> Result<Value
             )
         })?;
     let asset = project.asset(&dependency.path)?;
+    read_code(
+        asset,
+        &dependency.kind,
+        request,
+        &project.root_document().revision(),
+        &project.dependency_revision(),
+    )
+}
+
+pub(crate) fn read_code(
+    asset: &crate::project::Asset,
+    kind: &str,
+    request: &ReadAssetRequest,
+    revision: &str,
+    dependency_revision: &str,
+) -> Result<Value> {
+    if request.limit == 0 || request.limit > 1024 * 1024 {
+        return Err(Error::new(
+            "INVALID_ARGUMENT",
+            "Asset chunk limit must be 1..1048576 bytes",
+        ));
+    }
     let text = std::str::from_utf8(&asset.bytes)
         .map_err(|_| Error::new("INVALID_DOCUMENT", "Code asset is not UTF-8"))?;
     if request.offset > text.len() || !text.is_char_boundary(request.offset) {
@@ -264,10 +286,10 @@ pub fn read_asset(project: &Project, request: &ReadAssetRequest) -> Result<Value
             "Chunk limit is too small for the next UTF-8 character",
         ));
     }
-    let mut result = json!({"revision":project.root_document().revision(),"dependency_revision":project.dependency_revision(),
+    let mut result = json!({"revision":revision,"dependency_revision":dependency_revision,
         "hash":request.hash,"kind":asset.kind,"content":&text[request.offset..end],"offset":request.offset,
         "total_bytes":text.len(),"next_offset":(end<text.len()).then_some(end)});
-    if dependency.kind == "script" {
+    if kind == "script" {
         match crate::script::header::Header::parse(text) {
             Ok(header) => {
                 result["script_header"] = serde_json::to_value(header).expect("script header")
