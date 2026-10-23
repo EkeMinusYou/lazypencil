@@ -81,6 +81,23 @@ fn fixture() -> (TempDir, Store) {
     (temp, store)
 }
 
+fn array_fixture() -> (TempDir, Store) {
+    let (temp, store) = fixture();
+    let library = temp.path().join("library/ui.lib.pen");
+    let mut value: Value = serde_json::from_slice(&fs::read(&library).unwrap()).unwrap();
+    for property in ["fill", "stroke", "effect"] {
+        value["children"][0][property]["uniforms"]["image"] = json!(["$alias", "pixel.png"]);
+    }
+    write(&library, value);
+    let shader = temp.path().join("library/sample.glsl");
+    let source = fs::read_to_string(&shader)
+        .unwrap()
+        .replace("sampler2D image;", "sampler2D image[2];")
+        .replace("texture2D(image,gl_FragCoord.xy/size)", "mix(texture2D(image[0],gl_FragCoord.xy/size),texture2D(image[1],gl_FragCoord.xy/size),step(0.5,gl_FragCoord.x/size.x))");
+    fs::write(&shader, source).unwrap();
+    (temp, store)
+}
+
 fn edit(store: &Store, id: &str, operations: Value) -> Value {
     let metadata = service::document_metadata(store).unwrap();
     let request:EditRequest = serde_json::from_value(json!({"request_id":id,"expected_revision":metadata["revision"],"expected_dependency_revision":metadata["dependency_revision"],"operations":operations})).unwrap();
@@ -136,19 +153,7 @@ fn sampler_aliases_keep_the_terminal_definition_origin_in_every_graphics_propert
 
 #[test]
 fn sampler_array_elements_keep_individual_origins_through_detachment_and_themes() {
-    let (temp, store) = fixture();
-    let library = temp.path().join("library/ui.lib.pen");
-    let mut value: Value = serde_json::from_slice(&fs::read(&library).unwrap()).unwrap();
-    for property in ["fill", "stroke", "effect"] {
-        value["children"][0][property]["uniforms"]["image"] = json!(["$alias", "pixel.png"]);
-    }
-    write(&library, value);
-    let shader = temp.path().join("library/sample.glsl");
-    let source = fs::read_to_string(&shader)
-        .unwrap()
-        .replace("sampler2D image;", "sampler2D image[2];")
-        .replace("texture2D(image,", "texture2D(image[0],");
-    fs::write(&shader, source).unwrap();
+    let (temp, store) = array_fixture();
     for detached in [false, true] {
         if detached {
             edit(
@@ -313,13 +318,16 @@ fn reserved_sampler_values_and_colors_do_not_become_file_paths() {
 
 #[test]
 fn inactive_sampler_variables_do_not_open_missing_or_nonlocal_images() {
-    for value in [
+    for (value, array) in [
         "missing.png",
         "https://invalid.example/image.png",
         "file:forbidden.png",
-    ] {
+    ]
+    .into_iter()
+    .flat_map(|value| [false, true].map(move |array| (value, array)))
+    {
         for disabled in ["node", "parent", "properties"] {
-            let (temp, store) = fixture();
+            let (temp, store) = if array { array_fixture() } else { fixture() };
             let source = temp.path().join("library/data/images.lib.pen");
             let mut data: Value = serde_json::from_slice(&fs::read(&source).unwrap()).unwrap();
             data["variables"]["leaf"]["value"] = json!(value);
@@ -385,50 +393,59 @@ fn inactive_sampler_variables_do_not_open_missing_or_nonlocal_images() {
 fn real_webgl_sampler_variables_and_detachment_preserve_both_theme_images() {
     use lazypencil::{dynamic::DynamicRuntime, render};
     use skia_safe::{Color, Data, Image};
-    let (temp, store) = fixture();
-    let executable =
-        std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM");
-    let mut runtime = DynamicRuntime::new(temp.path()).with_executable(executable);
-    let mut originals = Vec::new();
-    for detached in [false, true] {
-        if detached {
-            edit(
-                &store,
-                "detach",
-                json!([{"op":"detach_instance","target":"use"}]),
-            );
-        }
-        for (index, mode) in ["light", "dark"].into_iter().enumerate() {
-            edit(
-                &store,
-                &format!("theme-{detached}-{mode}"),
-                json!([{"op":"set_theme","target":"use","set":{"mode":mode}}]),
-            );
-            let (project, snapshot) = service::layout_snapshot(&store, &[], None, None).unwrap();
-            let rendered = render::png_with_runtime(
-                &project,
-                &snapshot,
-                &Default::default(),
-                &mut runtime,
-                None,
-            )
-            .unwrap();
-            let image = Image::from_encoded(Data::new_copy(&rendered.png))
-                .unwrap()
-                .make_raster_image(None, None)
-                .unwrap();
-            assert_eq!(
-                image.peek_pixels().unwrap().get_color((10, 10)),
-                if mode == "light" {
-                    Color::YELLOW
-                } else {
-                    Color::BLUE
-                }
-            );
+    for array in [false, true] {
+        let (temp, store) = if array { array_fixture() } else { fixture() };
+        let executable =
+            std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM");
+        let mut runtime = DynamicRuntime::new(temp.path()).with_executable(executable);
+        let mut originals = Vec::new();
+        for detached in [false, true] {
             if detached {
-                assert_eq!(rendered.png, originals[index]);
-            } else {
-                originals.push(rendered.png);
+                edit(
+                    &store,
+                    "detach",
+                    json!([{"op":"detach_instance","target":"use"}]),
+                );
+            }
+            for (index, mode) in ["light", "dark"].into_iter().enumerate() {
+                edit(
+                    &store,
+                    &format!("theme-{detached}-{mode}"),
+                    json!([{"op":"set_theme","target":"use","set":{"mode":mode}}]),
+                );
+                let (project, snapshot) =
+                    service::layout_snapshot(&store, &[], None, None).unwrap();
+                let rendered = render::png_with_runtime(
+                    &project,
+                    &snapshot,
+                    &Default::default(),
+                    &mut runtime,
+                    None,
+                )
+                .unwrap();
+                let image = Image::from_encoded(Data::new_copy(&rendered.png))
+                    .unwrap()
+                    .make_raster_image(None, None)
+                    .unwrap();
+                assert_eq!(
+                    image.peek_pixels().unwrap().get_color((10, 10)),
+                    if mode == "light" {
+                        Color::YELLOW
+                    } else {
+                        Color::BLUE
+                    }
+                );
+                if array {
+                    assert_eq!(
+                        image.peek_pixels().unwrap().get_color((75, 10)),
+                        Color::BLUE
+                    );
+                }
+                if detached {
+                    assert_eq!(rendered.png, originals[index]);
+                } else {
+                    originals.push(rendered.png);
+                }
             }
         }
     }
