@@ -112,6 +112,35 @@ Median child peak RSS fell from 250.38 MiB to 144.58 MiB, approximately 42%. All
 
 This confirms the improvement for this font-rich static example, not acceptance of the 1,000-node workload, cold-start/percentile targets or complete process groups. The Linux verification job passed both normal test configurations but was stopped at the user's request to move builds to GitHub Actions before its remaining checks and release build finished. No new Linux release-memory result is claimed. Future full builds and cross-platform performance work should run on hosted CI rather than recreate the local build trees.
 
+## Repeatable native-child measurements
+
+[measure_native_performance.py](../scripts/measure_native_performance.py) measures the unchanged shadow and dashboard fixtures above without invoking Cargo. It starts a fresh CLI child for every export, isolates user settings and the data directory, and supplies an explicit local project configuration. Each scene has a separate first invocation followed by 20 repeated invocations by default. Every export must have exactly 1,000 expanded nodes at 1920×1080, no diagnostics, no scripts/dynamic acquisitions, the expected asset count, and a PNG whose dimensions and SHA-256 agree with its render report. Repeated PNG hashes must match within each scene. The executable is hashed before and after measurement.
+
+```sh
+python3 scripts/measure_native_performance.py \
+  --binary /path/to/lazypencil \
+  --output native-benchmark.json --samples 20
+```
+
+The output includes individual samples, the first invocation, and repeated-sample minimum/median/nearest-rank p95/maximum for elapsed time, peak RSS and user/system CPU time. A 20-sample p95 is the nineteenth ordered sample, an observed tail estimate rather than a population guarantee. The script does not flush OS caches, so the first invocation is **not** a controlled cold start. Elapsed time covers process creation through exit observation; the completion polling interval is 1 ms, and resource-query overhead after observing exit is excluded.
+
+On macOS/Linux, per-child [`wait4`](https://docs.python.org/3/library/os.html#os.wait4) supplies resource usage; Darwin peak RSS is recorded in bytes and Linux KiB is converted to bytes. Windows uses [`GetProcessMemoryInfo`](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-getprocessmemoryinfo) / `PeakWorkingSetSize` in bytes and [`GetProcessTimes`](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes) CPU durations. The method is retained in each sample. These OS memory counters have their respective platform semantics; this is not a simultaneous process-group measurement. Windows/Linux execution of this new helper still awaits hosted verification.
+
+Child deadlines, bounded stdout/stderr and PNG size, exit status, workload validation, and immutable executable/pixels are required for a successful report. Reports are published atomically without overwriting another report. Temporary fixtures, logs and PNGs are removed; only the small JSON report remains. Seven Python tests exercise real child counters independently of the previous child's high-water mark, timeout reaping, child failure/output limits, fixture hashes and settings isolation, percentile calculation, changed binaries/pixels, malformed render evidence, and publication failure cleanup.
+
+The hosted release smoke script now runs this helper against the already built executable and retains `release-benchmark.json` with the existing platform artifacts. Dependency-cache pruning removes that report too. This integration and its Windows/Linux measurements await GHA execution; no hardware-dependent timing threshold is asserted by this smoke check.
+
+### Retained macOS executable, 2026-10-24
+
+The helper completed 42 exports using the existing macOS arm64 release executable `8f32282214f3f3405a16b2ac7ada505edcfb2f63a3e30b016329022aa68001cc`, with no local build. This executable predates the current hosted TUI retry changes. Host load and filesystem caches were not controlled. Values below summarize the 20 repeated fresh children per scene, keeping the first invocation separate.
+
+| Scene | First invocation | Repeated median | Repeated p95 | Repeated maximum | Maximum repeated peak RSS |
+| --- | --- | --- | --- | --- | --- |
+| Simple shadow scene | 173.22 ms | 160.84 ms | 165.26 ms | 168.81 ms | 133,136,384 bytes |
+| Dashboard | 823.30 ms | 824.94 ms | 907.03 ms | 923.45 ms | 123,322,368 bytes |
+
+All 21 PNGs per scene matched: shadow `71f026838d25811159637859efbe051106860ace17c304b54c051b74b69815a7`, dashboard `0f65ce77b7de905bb3d03255db3ac60d70debb040a264d849f3c2c56072d69f8`. This validates the measurement path on a retained native executable, not the latest source build or full performance acceptance. Cold start, complete process groups, idle CPU, TUI startup and pan/zoom remain required.
+
 ## Remaining work
 
 Background-aware layers preserve color alpha and replacement coverage, which can require several working rasters. Explicit scratch reservations are bounded and fail rather than dropping effects. This resource guard is separate from measured RSS.

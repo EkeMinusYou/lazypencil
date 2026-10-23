@@ -176,6 +176,8 @@ CI runs for pushes to `main`, pull requests and manual dispatches. Main updates 
 
 Hosted dependency builds, downloaded Skia sources and original Material fonts can be reused under a cache key bound to the platform, runner image, toolchain/build configuration, lockfile, vendored binding patch and icon catalogue. The application package is cleaned in both profiles before verification and before a successful dependency cache is saved. Old render PNGs/JSON are removed too, so cached application code or images cannot substitute for the source being tested. Cache availability is optional; build and test checks still run. Artifact names include the run attempt so retries retain distinct evidence.
 
+The release smoke script also records repeated native-child measurements for the two fixed 1,000-node workloads in `release-benchmark.json`: timing, per-child peak memory/CPU, executable/input hashes and matching render hashes. It uses the built executable directly and preserves only the small JSON report. This new hosted integration awaits verification; it does not establish hardware-independent performance acceptance. See [measurement scope and observations](docs/performance.md#repeatable-native-child-measurements).
+
 Dependency policy uses cargo-deny 0.20.2:
 
 ```sh
