@@ -223,7 +223,7 @@ Generated icon packs participate in the same checks. Captures keep installed ico
 
 An icon integrity error or another registry error without a complete file/absence guard prevents publication of a new failed-code capture. Existing captures still require all their original checks; a damaged installation does not become a partially verified capture.
 
-[macOS verification at source 1c84f69](https://github.com/EkeMinusYou/lazypencil/actions/runs/40036814772) passed all four selected failed-source MCP workflows and the library expiry/cancellation/size test as part of 118 passing integration tests. The subsequent guard-count boundary regression and other platform checks remain in progress; see [implementation status](implementation-status.md).
+[macOS verification at source 5aa27e0](https://github.com/EkeMinusYou/lazypencil/actions/runs/40039247655) passed 121 selected integration tests, including generated icon installation/absence, file/link changes, and rejection of a new capture after icon integrity failure. [Windows at source 5c40092](https://github.com/EkeMinusYou/lazypencil/actions/runs/40039000949) passed 107 selected tests for the earlier icon file/absence support; it predates the subsequent integrity-error case, and omits Unix-only link checks. These runs include original failed-source workflows and expiry/cancellation/size checks. Other source/platform checks remain in progress; see [implementation status](implementation-status.md).
 
 Cancelling an executing script stops its worker process. Real stdio tests cover script execution, runtime-precondition evaluation, and cancellation while waiting for an edit lock. The save boundary is described below.
 
