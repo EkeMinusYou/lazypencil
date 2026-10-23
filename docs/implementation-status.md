@@ -8,6 +8,10 @@
 
 同日: 通常 CI `40024349686` の source `18a0092` は Linux x64・macOS arm64・Windows の各 job が成功した。取得した3 artifact の ZIP digest、release 3画像ずつの寸法・hash・診断0件、各42回の benchmark 出力を確認した。描画なし／通常は Linux x64 が291／479、macOS arm64 が289／477、Windows が259／436試験で、両 Clippy・Material 2 opt-in も成功した。Linux x64 の3画像は目視でも確認した。Intel と Linux arm64 はこの run では実行中であり、source artifact や全体の成功とは扱わない。Linux x64 の v2 native cache 保存を終了ログで確認してから、同環境での full 資料収集 `40028057056` を開始した。
 
+同日: 同じ通常 CI `40024349686` は、その後 Intel と Linux arm64、監査および `Verified source artifact` job を含む全体が成功した。追加2環境の artifact の ZIP digest、release 3画像ずつの hash・寸法・診断0件、各42回の benchmark 出力を確認した。描画なし／通常は Intel が289／477、Linux arm64 が291／479件で、両 Clippy・Material 2 opt-in も成功した。新 image `20261023.149.3` 用の Linux arm64 v2 cache が保存されたことを終了ログで確認した。これは source `18a0092` の証拠であり、最新 main の Python／policy／取消 fixture の変更は次の通常 CI で確認する。
+
+同日: source `e99b62e` の Linux x64 full 資料収集 `40028057056` も成功した。artifact `12534248479` の ZIP digest、325資料の size／SHA-256・一覧の完全性、QuickJS の GNU 対象19入力と元 registry archive、option-ext 対応ソースと MPL 原文を照合した。Skia は2,954入力・33原文資料。Windows、macOS arm64 に続く3環境の実収集であり、残る Linux arm64 と Intel Mac の full 収集を、それぞれ保存を確認した native cache から source `1355cfd` で開始した。標準ライブラリ・system・素材・最終帰属・署名等の残作業は継続する。
+
 同日: source `5a29847` の Intel Mac Chromium `40027340811` が成功した。library 43・runtime 4・設定10・script 12・browser_readiness 5・dynamic_render 17・shader_uniforms 10・実 MCP 画像1・60秒待機回収1・TUI 6の計109件が成功し、runtime archive 用の別 opt-in 1件を除外した。起動済みの browser で対象 selector の問い合わせを実際に観測してから取消・回収・正常描画まで成功した。v2 native cache の復元も終了ログで確認した。artifact `12534221384` の ZIP digest、1000×640の画像 hash・診断0件・2取得・実 browser `HeadlessChrome/156.0.8078.47`・実効 policy・管理 runtime の完全性を検査し、画像も目視した。Intel の hash `b10c0cf5…` は初回の基準であり、他 OS とのバイト一致は要求していない。物理端末や clipboard の証拠ではない。
 
 同日: QuickJS 拡張前の source `74d4a3d` の Linux arm64 資料収集 `40025475997` も成功した。取得した306資料の size／SHA-256・一覧の完全性と ZIP digest を確認した。Skia は2,972入力・8外部部品と Skia・33原文資料、native archive は Skia／wrapper 6件と QuickJS 1件で、Rust 388 package の既存通知を含む。この run は新しい QuickJS 入力照合と対応ソース追加の前であり、それらの Linux 検証完了へ読み替えない。
@@ -59,9 +63,9 @@
 | GHA 環境 | 通常・release CI（source 別の確認結果） | Chromium 専用検証（source 別） |
 | --- | --- | --- |
 | macOS 15 arm64 | `18a0092`: 両構成・Clippy・Material・release 成功 | `d617d5e`: 109件成功、MCP 待機・TUI を含む |
-| macOS 15 Intel | `36d1269`: 両構成・Clippy・Material・release 成功、cache 保存済み | `5a29847`: 109件成功、MCP 待機・TUI を含む |
+| macOS 15 Intel | `18a0092`: 両構成・Clippy・Material・release 成功 | `5a29847`: 109件成功、MCP 待機・TUI を含む |
 | Ubuntu 24.04 x64 | `18a0092`: 両構成・Clippy・Material・release 成功 | `d617d5e`: 111件成功、公式 mirror で導入済み |
-| Ubuntu 24.04 arm64 | `36d1269`: 両構成・Clippy・release 成功 | `d617d5e`: 111件成功、MCP 待機・TUI を含む |
+| Ubuntu 24.04 arm64 | `18a0092`: 両構成・Clippy・Material・release 成功 | `d617d5e`: 111件成功、MCP 待機・TUI を含む |
 | Windows Server 2025 x64 | `18a0092`: 両構成・Clippy・Material・release 成功 | `d617d5e`: 96件成功、実 MCP 画像まで。Unix PTY 等を除く |
 
 [通常 CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40014323380) の Intel job は成功し、最新 main の全環境 CI を続けて確認する。Linux x64 の旧 mirror の失敗は、取得先の修正後に実導入と専用検証で確認した。具体的な専用 run と制約は [runtime の検証記録](runtimes.md#hosted-integration-without-local-build-trees) に記載する。過去のローカル検証は macOS arm64・Rust 1.99.1 と Debian 12 arm64・Rust 1.94.0 で行った。物理端末・クリップボード・最低 OS・本家との互換性・公開品質全体の確認は残る。
