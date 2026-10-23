@@ -1,0 +1,34 @@
+[graph]
+all-features = true
+
+[advisories]
+db-urls = ["https://github.com/RustSec/advisory-db"]
+yanked = "deny"
+
+[licenses]
+confidence-threshold = 0.95
+include-dev = true
+include-build = true
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "ISC",
+    "BSD-3-Clause",
+    "Unicode-3.0",
+    "Zlib",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+]
+
+# This unchanged dirs-sys dependency has file-level source obligations.
+# Its unmodified source archive and license are in resources/licenses.
+# Binary distributions must retain those assets; a successful SPDX policy
+# check does not replace the complete Rust/native dependency notice audit.
+[[licenses.exceptions]]
+crate = "option-ext@0.2.0"
+allow = ["MPL-2.0"]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

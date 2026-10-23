@@ -1,0 +1,349 @@
+{
+  "format_version": 1,
+  "license_references": [
+    {
+      "blob": "texts/c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4.txt",
+      "id": "MIT",
+      "role": "Reference terms only; not a package-specific copyright notice.",
+      "sha256": "c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4",
+      "url": "https://spdx.org/licenses/MIT.txt"
+    }
+  ],
+  "packages": [
+    {
+      "archive_sha256": "430e900fdb40a811c1a3e0d85b1134e485d96699f8b90889a15c1da6a0b26c3f",
+      "files": [
+        {
+          "blob": "texts/f250d08cee4549b22b3b4aaaf3a743473336fd280316df5d0340717e5127a221.txt",
+          "git_blob_sha1": "1de02305f81f6dc087b6229a1d86a31774d2fa31",
+          "path": "LICENSE",
+          "revision": "e2d83349bc9e28a4059ea3acefa1c91c966f74e2",
+          "sha256": "f250d08cee4549b22b3b4aaaf3a743473336fd280316df5d0340717e5127a221",
+          "url": "https://raw.githubusercontent.com/agentclientprotocol/agent-client-protocol/e2d83349bc9e28a4059ea3acefa1c91c966f74e2/LICENSE"
+        }
+      ],
+      "name": "agent-client-protocol-schema",
+      "version": "1.12.0"
+    },
+    {
+      "archive_sha256": "339abbe78e73178762e23bea9dfd08e697eb3f3301cd4be981c0f78ba5859195",
+      "files": [
+        {
+          "blob": "texts/71674605ec4c087fe9eb534e3e4f9e26eb2e4aabcd76a29fd156c6a844d44b3d.txt",
+          "git_blob_sha1": "2c7eabb59093ea117d73b20effdd0414f87b2af2",
+          "path": "LICENSE",
+          "revision": "d74c030d9dc4f3cae02146d1f497ff62726ef09a",
+          "sha256": "71674605ec4c087fe9eb534e3e4f9e26eb2e4aabcd76a29fd156c6a844d44b3d",
+          "url": "https://raw.githubusercontent.com/Nugine/simd/d74c030d9dc4f3cae02146d1f497ff62726ef09a/LICENSE"
+        }
+      ],
+      "name": "base64-simd",
+      "version": "0.8.0"
+    },
+    {
+      "archive_sha256": "cdeb9d870516001442e364c5220d3574d2da8dc765554b4a617230d33fa58ef5",
+      "files": [
+        {
+          "blob": "texts/7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54.txt",
+          "git_blob_sha1": "540ae4c81adb5f64a9f61e222b688880da24300e",
+          "path": "LICENSE.md",
+          "revision": "b4167b582b2f75f9a1be75495c41b765344fd03c",
+          "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+          "url": "https://raw.githubusercontent.com/madsmtm/objc2/b4167b582b2f75f9a1be75495c41b765344fd03c/LICENSE.md"
+        }
+      ],
+      "license_reference": "MIT",
+      "name": "block2",
+      "reason": "The exact upstream LICENSE.md declares MIT (or an MIT alternative), but links to the terms instead of providing a populated copyright notice. Preserve that declaration and the published package authors and source attributions; the shared MIT text is a reference, not an invented package notice.",
+      "version": "0.6.2"
+    },
+    {
+      "archive_sha256": "bde03770d3df201d4fb868f2c9c59e66a3e4e2bd06692a0fe701e7103c7e84d4",
+      "files": [
+        {
+          "blob": "texts/c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566.txt",
+          "git_blob_sha1": "36b7cd93cdfbac762f5be4c6ce276df2ea6305c2",
+          "path": "LICENSE",
+          "revision": "3b27cf2bfd1adcfa6e0264eb51c1025ddaf0f342",
+          "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566",
+          "url": "https://raw.githubusercontent.com/DoumanAsh/clipboard-win/3b27cf2bfd1adcfa6e0264eb51c1025ddaf0f342/LICENSE"
+        }
+      ],
+      "name": "clipboard-win",
+      "version": "5.4.1"
+    },
+    {
+      "archive_sha256": "1e0e367e4e7da84520dedcac1901e4da967309406d1e51017ae1abfb97adbd38",
+      "files": [
+        {
+          "blob": "texts/7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54.txt",
+          "git_blob_sha1": "540ae4c81adb5f64a9f61e222b688880da24300e",
+          "path": "LICENSE.md",
+          "revision": "8852b424193ca41602281b3d7540d7c8ed51e49a",
+          "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+          "url": "https://raw.githubusercontent.com/madsmtm/objc2/8852b424193ca41602281b3d7540d7c8ed51e49a/LICENSE.md"
+        }
+      ],
+      "license_reference": "MIT",
+      "name": "dispatch2",
+      "reason": "The exact upstream LICENSE.md declares MIT (or an MIT alternative), but links to the terms instead of providing a populated copyright notice. Preserve that declaration and the published package authors and source attributions; the shared MIT text is a reference, not an invented package notice.",
+      "version": "0.3.1"
+    },
+    {
+      "archive_sha256": "4bfb5a63225620b59df34a235d1fb56ff7b766909c3212a8ff927511a22b181d",
+      "files": [
+        {
+          "blob": "texts/66aaf920a0396276850341369ef155613b76ee53115eaeca2df61efedeb27043.txt",
+          "git_blob_sha1": "737655330944eafaa532debe5919f4356dcd62ce",
+          "path": "LICENSE-APACHE",
+          "revision": "7baecc1bbb18ddf0ff0de83d296b4509a1b64b0f",
+          "sha256": "66aaf920a0396276850341369ef155613b76ee53115eaeca2df61efedeb27043",
+          "url": "https://raw.githubusercontent.com/mkrueger/icy_sixel/7baecc1bbb18ddf0ff0de83d296b4509a1b64b0f/LICENSE-APACHE"
+        },
+        {
+          "blob": "texts/7110f70a51841ce71ec9a2a156db30561aba84d3ad2323ef88ede17c9aa34ba0.txt",
+          "git_blob_sha1": "0106c1d25912fdcbd0b7e272e778a2697ce6637b",
+          "path": "LICENSE-MIT",
+          "revision": "7baecc1bbb18ddf0ff0de83d296b4509a1b64b0f",
+          "sha256": "7110f70a51841ce71ec9a2a156db30561aba84d3ad2323ef88ede17c9aa34ba0",
+          "url": "https://raw.githubusercontent.com/mkrueger/icy_sixel/7baecc1bbb18ddf0ff0de83d296b4509a1b64b0f/LICENSE-MIT"
+        }
+      ],
+      "name": "icy_sixel",
+      "version": "0.5.1"
+    },
+    {
+      "archive_sha256": "08849bbd4767dfae9457696856ae1c84fe4e0281bbe4a7abff2d0e06fb7981f8",
+      "files": [
+        {
+          "blob": "texts/7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54.txt",
+          "git_blob_sha1": "540ae4c81adb5f64a9f61e222b688880da24300e",
+          "path": "LICENSE.md",
+          "revision": "d7d2fa23ceaa5e6096c923b081040e5d81b3b9df",
+          "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+          "url": "https://raw.githubusercontent.com/madsmtm/objc2/d7d2fa23ceaa5e6096c923b081040e5d81b3b9df/LICENSE.md"
+        }
+      ],
+      "license_reference": "MIT",
+      "name": "objc2",
+      "reason": "The exact upstream LICENSE.md declares MIT (or an MIT alternative), but links to the terms instead of providing a populated copyright notice. Preserve that declaration and the published package authors and source attributions; the shared MIT text is a reference, not an invented package notice.",
+      "version": "0.6.5"
+    },
+    {
+      "archive_sha256": "d49e936b501e5c5bf01fda3a9452ff86dc3ea98ad5f283e1455153142d97518c",
+      "files": [
+        {
+          "blob": "texts/7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54.txt",
+          "git_blob_sha1": "540ae4c81adb5f64a9f61e222b688880da24300e",
+          "path": "LICENSE.md",
+          "revision": "7b1abfd750a2cacaea71d6a56ecfb83cb7de560b",
+          "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+          "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/LICENSE.md"
+        }
+      ],
+      "license_reference": "MIT",
+      "name": "objc2-app-kit",
+      "reason": "The exact upstream LICENSE.md declares MIT (or an MIT alternative), but links to the terms instead of providing a populated copyright notice. Preserve that declaration and the published package authors and source attributions; the shared MIT text is a reference, not an invented package notice.",
+      "version": "0.3.2"
+    },
+    {
+      "archive_sha256": "2a180dd8642fa45cdb7dd721cd4c11b1cadd4929ce112ebd8b9f5803cc79d536",
+      "files": [
+        {
+          "blob": "texts/7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54.txt",
+          "git_blob_sha1": "540ae4c81adb5f64a9f61e222b688880da24300e",
+          "path": "LICENSE.md",
+          "revision": "7b1abfd750a2cacaea71d6a56ecfb83cb7de560b",
+          "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+          "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/LICENSE.md"
+        }
+      ],
+      "license_reference": "MIT",
+      "name": "objc2-core-foundation",
+      "reason": "The exact upstream LICENSE.md declares MIT (or an MIT alternative), but links to the terms instead of providing a populated copyright notice. Preserve that declaration and the published package authors and source attributions; the shared MIT text is a reference, not an invented package notice.",
+      "version": "0.3.2"
+    },
+    {
+      "archive_sha256": "e022c9d066895efa1345f8e33e584b9f958da2fd4cd116792e15e07e4720a807",
+      "files": [
+        {
+          "blob": "texts/7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54.txt",
+          "git_blob_sha1": "540ae4c81adb5f64a9f61e222b688880da24300e",
+          "path": "LICENSE.md",
+          "revision": "7b1abfd750a2cacaea71d6a56ecfb83cb7de560b",
+          "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+          "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/LICENSE.md"
+        }
+      ],
+      "license_reference": "MIT",
+      "name": "objc2-core-graphics",
+      "reason": "The exact upstream LICENSE.md declares MIT (or an MIT alternative), but links to the terms instead of providing a populated copyright notice. Preserve that declaration and the published package authors and source attributions; the shared MIT text is a reference, not an invented package notice.",
+      "version": "0.3.2"
+    },
+    {
+      "archive_sha256": "ef25abbcd74fb2609453eb695bd2f860d389e457f67dc17cafc8b8cbc89d0c33",
+      "files": [
+        {
+          "blob": "texts/7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54.txt",
+          "git_blob_sha1": "540ae4c81adb5f64a9f61e222b688880da24300e",
+          "path": "LICENSE.md",
+          "revision": "8d214f5477365ffcbcbb7de058c86ed9a518efb7",
+          "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+          "url": "https://raw.githubusercontent.com/madsmtm/objc2/8d214f5477365ffcbcbb7de058c86ed9a518efb7/LICENSE.md"
+        }
+      ],
+      "license_reference": "MIT",
+      "name": "objc2-encode",
+      "reason": "The exact upstream LICENSE.md declares MIT (or an MIT alternative), but links to the terms instead of providing a populated copyright notice. Preserve that declaration and the published package authors and source attributions; the shared MIT text is a reference, not an invented package notice.",
+      "version": "4.1.0"
+    },
+    {
+      "archive_sha256": "e3e0adef53c21f888deb4fa59fc59f7eb17404926ee8a6f59f5df0fd7f9f3272",
+      "files": [
+        {
+          "blob": "texts/7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54.txt",
+          "git_blob_sha1": "540ae4c81adb5f64a9f61e222b688880da24300e",
+          "path": "LICENSE.md",
+          "revision": "7b1abfd750a2cacaea71d6a56ecfb83cb7de560b",
+          "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+          "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/LICENSE.md"
+        }
+      ],
+      "license_reference": "MIT",
+      "name": "objc2-foundation",
+      "reason": "The exact upstream LICENSE.md declares MIT (or an MIT alternative), but links to the terms instead of providing a populated copyright notice. Preserve that declaration and the published package authors and source attributions; the shared MIT text is a reference, not an invented package notice.",
+      "version": "0.3.2"
+    },
+    {
+      "archive_sha256": "180788110936d59bab6bd83b6060ffdfffb3b922ba1396b312ae795e1de9d81d",
+      "files": [
+        {
+          "blob": "texts/7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54.txt",
+          "git_blob_sha1": "540ae4c81adb5f64a9f61e222b688880da24300e",
+          "path": "LICENSE.md",
+          "revision": "7b1abfd750a2cacaea71d6a56ecfb83cb7de560b",
+          "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+          "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/LICENSE.md"
+        }
+      ],
+      "license_reference": "MIT",
+      "name": "objc2-io-surface",
+      "reason": "The exact upstream LICENSE.md declares MIT (or an MIT alternative), but links to the terms instead of providing a populated copyright notice. Preserve that declaration and the published package authors and source attributions; the shared MIT text is a reference, not an invented package notice.",
+      "version": "0.3.2"
+    },
+    {
+      "archive_sha256": "ba5d37e94c17b8870a5b936001d2845a6782a22ebdb1706c84294eca777f6729",
+      "files": [
+        {
+          "blob": "texts/aac73b3148f6d1d7111dbca32099f68d26c644c6813ae1e4f05f6579aa2663fe.txt",
+          "git_blob_sha1": "62589edd12a37dd28b6b6fed1e2d728ac9f05c8d",
+          "path": "LICENSE-APACHE",
+          "revision": "066855ad3efb4143c3b901c812f80b9b17f8f303",
+          "sha256": "aac73b3148f6d1d7111dbca32099f68d26c644c6813ae1e4f05f6579aa2663fe",
+          "url": "https://raw.githubusercontent.com/IanManske/quantette/066855ad3efb4143c3b901c812f80b9b17f8f303/LICENSE-APACHE"
+        },
+        {
+          "blob": "texts/8f2b430687de9562bfac3b9c2e58d5989d2f0b95772928e94c23a942878c919a.txt",
+          "git_blob_sha1": "df7c68d23c3f99e0e5e5ffce29baf26fc19846fd",
+          "path": "LICENSE-MIT",
+          "revision": "066855ad3efb4143c3b901c812f80b9b17f8f303",
+          "sha256": "8f2b430687de9562bfac3b9c2e58d5989d2f0b95772928e94c23a942878c919a",
+          "url": "https://raw.githubusercontent.com/IanManske/quantette/066855ad3efb4143c3b901c812f80b9b17f8f303/LICENSE-MIT"
+        }
+      ],
+      "name": "quantette",
+      "version": "0.6.0"
+    },
+    {
+      "archive_sha256": "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf",
+      "files": [
+        {
+          "blob": "texts/d027e91dbc9cdbb2f1190068e498bd6b61cff022b6a032b191021ba658d96111.txt",
+          "git_blob_sha1": "79c8b7c4a1dabcfbc718b7fe6d43b1892f9850cd",
+          "path": "AUTHORS",
+          "revision": "7e1b0322d31d625f81a5656096330934f9cd835d",
+          "sha256": "d027e91dbc9cdbb2f1190068e498bd6b61cff022b6a032b191021ba658d96111",
+          "url": "https://raw.githubusercontent.com/r-efi/r-efi/7e1b0322d31d625f81a5656096330934f9cd835d/AUTHORS"
+        }
+      ],
+      "name": "r-efi",
+      "version": "6.0.0"
+    },
+    {
+      "archive_sha256": "6657979a24d543e5fc66f32cef2f47ca82ce8eb55cec5f7d59a12b7b570bbf24",
+      "files": [
+        {
+          "blob": "texts/976ad3d07927343ab99b31510625acba89eac8e0e517c712925620ddeda91b70.txt",
+          "git_blob_sha1": "3aa726b708598dbbf587e7ca2dcd0eff4987bef7",
+          "path": "LICENSE",
+          "revision": "d7ef5eeae702fea24c03643064de454f1c1dd4b0",
+          "sha256": "976ad3d07927343ab99b31510625acba89eac8e0e517c712925620ddeda91b70",
+          "url": "https://raw.githubusercontent.com/DelSkayn/rquickjs/d7ef5eeae702fea24c03643064de454f1c1dd4b0/LICENSE"
+        }
+      ],
+      "name": "rquickjs-core",
+      "version": "0.14.0"
+    },
+    {
+      "archive_sha256": "cee271d0eeba64f0915b846cb7ae02e16faf3dfdffdca91731101d9d30fe3423",
+      "files": [
+        {
+          "blob": "texts/976ad3d07927343ab99b31510625acba89eac8e0e517c712925620ddeda91b70.txt",
+          "git_blob_sha1": "3aa726b708598dbbf587e7ca2dcd0eff4987bef7",
+          "path": "LICENSE",
+          "revision": "d7ef5eeae702fea24c03643064de454f1c1dd4b0",
+          "sha256": "976ad3d07927343ab99b31510625acba89eac8e0e517c712925620ddeda91b70",
+          "url": "https://raw.githubusercontent.com/DelSkayn/rquickjs/d7ef5eeae702fea24c03643064de454f1c1dd4b0/LICENSE"
+        }
+      ],
+      "name": "rquickjs-sys",
+      "version": "0.14.0"
+    },
+    {
+      "archive_sha256": "c61cb643dac43067f3eb76c866635a74377ac0abca0ff2590674e1e295514c3d",
+      "files": [
+        {
+          "blob": "texts/4b33ed5b329a3a79eb1243fd91373c68b0ae0b9df7503bfc50d0c5253adf1b9a.txt",
+          "git_blob_sha1": "837d5bec443f55b54936748712ce8255f97331bd",
+          "path": "LICENSE",
+          "revision": "b7f043e0b1e2a850e702245de811f01df1f6b0ff",
+          "sha256": "4b33ed5b329a3a79eb1243fd91373c68b0ae0b9df7503bfc50d0c5253adf1b9a",
+          "url": "https://raw.githubusercontent.com/rust-skia/rust-skia/b7f043e0b1e2a850e702245de811f01df1f6b0ff/LICENSE"
+        }
+      ],
+      "name": "skia-safe",
+      "version": "0.153.3"
+    },
+    {
+      "archive_sha256": "5c3082ca00d5a5ef149bb8b555a72ae84c9c59f7250f013ac822ac2e49b19c64",
+      "files": [
+        {
+          "blob": "texts/71674605ec4c087fe9eb534e3e4f9e26eb2e4aabcd76a29fd156c6a844d44b3d.txt",
+          "git_blob_sha1": "2c7eabb59093ea117d73b20effdd0414f87b2af2",
+          "path": "LICENSE",
+          "revision": "d74c030d9dc4f3cae02146d1f497ff62726ef09a",
+          "sha256": "71674605ec4c087fe9eb534e3e4f9e26eb2e4aabcd76a29fd156c6a844d44b3d",
+          "url": "https://raw.githubusercontent.com/Nugine/simd/d74c030d9dc4f3cae02146d1f497ff62726ef09a/LICENSE"
+        }
+      ],
+      "name": "vsimd",
+      "version": "0.8.0"
+    },
+    {
+      "archive_sha256": "ac3b87c63620426dd9b991e5ce0329eff545bccbbb34f3be09ff6fb6ab51b7b6",
+      "files": [],
+      "license_reference": "MIT",
+      "name": "winapi-i686-pc-windows-gnu",
+      "reason": "The published archive declares MIT/Apache-2.0 and contains no license text or VCS revision. Preserve its original Cargo.toml license declaration and authors; do not invent a copyright holder.",
+      "version": "0.4.0"
+    },
+    {
+      "archive_sha256": "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f",
+      "files": [],
+      "license_reference": "MIT",
+      "name": "winapi-x86_64-pc-windows-gnu",
+      "reason": "The published archive declares MIT/Apache-2.0 and contains no license text or VCS revision. Preserve its original Cargo.toml license declaration and authors; do not invent a copyright holder.",
+      "version": "0.4.0"
+    }
+  ]
+}

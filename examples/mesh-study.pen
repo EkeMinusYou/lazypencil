@@ -1,0 +1,667 @@
+{
+  "version": "2.21",
+  "children": [
+    {
+      "id": "page",
+      "type": "frame",
+      "layout": "none",
+      "width": 1040,
+      "height": 900,
+      "clip": true,
+      "fill": "#F5F7FB",
+      "children": [
+        {
+          "id": "heading",
+          "type": "text",
+          "x": 24,
+          "y": 20,
+          "width": 900,
+          "height": 48,
+          "textGrowth": "fixed-width-height",
+          "content": "Mesh gradient studio",
+          "fontFamily": "Noto Sans JP",
+          "fontSize": 32,
+          "fill": "#172033",
+          "fontWeight": "700"
+        },
+        {
+          "id": "intro",
+          "type": "text",
+          "x": 24,
+          "y": 76,
+          "width": 960,
+          "height": 28,
+          "textGrowth": "fixed-width-height",
+          "content": "色の格子、点の移動、ベジェハンドル。すべてネイティブで描画。",
+          "fontFamily": "Noto Sans JP",
+          "fontSize": 16,
+          "fill": "#53627C"
+        },
+        {
+          "id": "hero",
+          "type": "frame",
+          "x": 24,
+          "y": 120,
+          "width": 992,
+          "height": 330,
+          "fill": {
+            "type": "mesh_gradient",
+            "columns": 3,
+            "rows": 3,
+            "colors": [
+              "#13274F",
+              "#3830A0",
+              "#8C3A78",
+              "#204779",
+              "#5930B0",
+              "#AF466A",
+              "#17344C",
+              "#423780",
+              "#754687"
+            ],
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                0.5,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                0.5
+              ],
+              [
+                0.68,
+                0.32
+              ],
+              [
+                1,
+                0.5
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0.5,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ]
+          },
+          "cornerRadius": 20,
+          "effect": {
+            "type": "shadow",
+            "offset": {
+              "x": 0,
+              "y": 5
+            },
+            "blur": 10,
+            "color": "#1B254018"
+          },
+          "layout": "none",
+          "clip": true,
+          "children": [
+            {
+              "id": "eyebrow",
+              "type": "text",
+              "x": 28,
+              "y": 24,
+              "width": 900,
+              "height": 28,
+              "textGrowth": "fixed-width-height",
+              "content": "LAZYPENCIL  /  NATIVE COLOR FIELD",
+              "fontFamily": "Noto Sans JP",
+              "fontSize": 13,
+              "fill": "#DDE5FF",
+              "fontWeight": "700"
+            },
+            {
+              "id": "hero-title",
+              "type": "text",
+              "x": 28,
+              "y": 74,
+              "width": 900,
+              "height": 88,
+              "textGrowth": "fixed-width-height",
+              "content": "色を、自由に。",
+              "fontFamily": "Noto Sans JP",
+              "fontSize": 54,
+              "fill": "#FFFFFF",
+              "fontWeight": "700"
+            },
+            {
+              "id": "hero-copy",
+              "type": "text",
+              "x": 30,
+              "y": 178,
+              "width": 840,
+              "height": 62,
+              "textGrowth": "fixed-width-height",
+              "content": "ひとつの面に、いくつもの表情を。\n編集できる .pen ファイルから、そのまま画像へ。",
+              "fontFamily": "Noto Sans JP",
+              "fontSize": 18,
+              "fill": "#EEF1FF",
+              "lineHeight": 1.6
+            },
+            {
+              "id": "hero-button",
+              "type": "rectangle",
+              "x": 30,
+              "y": 264,
+              "width": 188,
+              "height": 42,
+              "fill": "#FFFFFF",
+              "cornerRadius": 10
+            },
+            {
+              "id": "hero-button-label",
+              "type": "text",
+              "x": 40,
+              "y": 273,
+              "width": 168,
+              "height": 26,
+              "textGrowth": "fixed-width-height",
+              "content": "Explore the mesh",
+              "fontFamily": "Noto Sans JP",
+              "fontSize": 14,
+              "fill": "#352575",
+              "fontWeight": "700",
+              "textAlign": "center"
+            },
+            {
+              "id": "hero-runtime",
+              "type": "text",
+              "x": 260,
+              "y": 275,
+              "width": 640,
+              "height": 24,
+              "textGrowth": "fixed-width-height",
+              "content": "Skia CPU  ·  No browser required",
+              "fontFamily": "Noto Sans JP",
+              "fontSize": 13,
+              "fill": "#EBE8FF"
+            }
+          ]
+        },
+        {
+          "id": "card-0",
+          "type": "rectangle",
+          "x": 24,
+          "y": 482,
+          "width": 312,
+          "height": 254,
+          "fill": "#FFFFFF",
+          "cornerRadius": 14,
+          "stroke": "#D9E0ED",
+          "strokeWidth": 1,
+          "strokeAlignment": "inner"
+        },
+        {
+          "id": "card-title-0",
+          "type": "text",
+          "x": 40,
+          "y": 498,
+          "width": 280,
+          "height": 30,
+          "textGrowth": "fixed-width-height",
+          "content": "01  Regular grid",
+          "fontFamily": "Noto Sans JP",
+          "fontSize": 17,
+          "fill": "#172033",
+          "fontWeight": "700"
+        },
+        {
+          "id": "preview-0",
+          "type": "rectangle",
+          "x": 40,
+          "y": 542,
+          "width": 280,
+          "height": 130,
+          "fill": {
+            "type": "mesh_gradient",
+            "columns": 3,
+            "rows": 3,
+            "colors": [
+              "#FC9CA5",
+              "#D8ADFF",
+              "#88ABFE",
+              "#FFC18C",
+              "#F8E5B6",
+              "#92DBD2",
+              "#FFDEB6",
+              "#C8B9EC",
+              "#9CC2FC"
+            ]
+          },
+          "cornerRadius": 10
+        },
+        {
+          "id": "card-caption-0",
+          "type": "text",
+          "x": 40,
+          "y": 692,
+          "width": 280,
+          "height": 25,
+          "textGrowth": "fixed-width-height",
+          "content": "A regular 3 × 3 color field",
+          "fontFamily": "Noto Sans JP",
+          "fontSize": 12,
+          "fill": "#596983"
+        },
+        {
+          "id": "card-1",
+          "type": "rectangle",
+          "x": 364,
+          "y": 482,
+          "width": 312,
+          "height": 254,
+          "fill": "#FFFFFF",
+          "cornerRadius": 14,
+          "stroke": "#D9E0ED",
+          "strokeWidth": 1,
+          "strokeAlignment": "inner"
+        },
+        {
+          "id": "card-title-1",
+          "type": "text",
+          "x": 380,
+          "y": 498,
+          "width": 280,
+          "height": 30,
+          "textGrowth": "fixed-width-height",
+          "content": "02  Move a point",
+          "fontFamily": "Noto Sans JP",
+          "fontSize": 17,
+          "fill": "#172033",
+          "fontWeight": "700"
+        },
+        {
+          "id": "preview-1",
+          "type": "rectangle",
+          "x": 380,
+          "y": 542,
+          "width": 280,
+          "height": 130,
+          "fill": {
+            "type": "mesh_gradient",
+            "columns": 3,
+            "rows": 3,
+            "colors": [
+              "#FC9CA5",
+              "#D8ADFF",
+              "#88ABFE",
+              "#FFC18C",
+              "#F8E5B6",
+              "#92DBD2",
+              "#FFDEB6",
+              "#C8B9EC",
+              "#9CC2FC"
+            ],
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                0.5,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                0.5
+              ],
+              [
+                0.68,
+                0.32
+              ],
+              [
+                1,
+                0.5
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0.5,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ]
+          },
+          "cornerRadius": 10
+        },
+        {
+          "id": "card-caption-1",
+          "type": "text",
+          "x": 380,
+          "y": 692,
+          "width": 280,
+          "height": 25,
+          "textGrowth": "fixed-width-height",
+          "content": "An interior point at 0.68, 0.32",
+          "fontFamily": "Noto Sans JP",
+          "fontSize": 12,
+          "fill": "#596983"
+        },
+        {
+          "id": "card-2",
+          "type": "rectangle",
+          "x": 704,
+          "y": 482,
+          "width": 312,
+          "height": 254,
+          "fill": "#FFFFFF",
+          "cornerRadius": 14,
+          "stroke": "#D9E0ED",
+          "strokeWidth": 1,
+          "strokeAlignment": "inner"
+        },
+        {
+          "id": "card-title-2",
+          "type": "text",
+          "x": 720,
+          "y": 498,
+          "width": 280,
+          "height": 30,
+          "textGrowth": "fixed-width-height",
+          "content": "03  Shape the handles",
+          "fontFamily": "Noto Sans JP",
+          "fontSize": 17,
+          "fill": "#172033",
+          "fontWeight": "700"
+        },
+        {
+          "id": "preview-2",
+          "type": "rectangle",
+          "x": 720,
+          "y": 542,
+          "width": 280,
+          "height": 130,
+          "fill": {
+            "type": "mesh_gradient",
+            "columns": 3,
+            "rows": 3,
+            "colors": [
+              "#FC9CA5",
+              "#D8ADFF",
+              "#88ABFE",
+              "#FFC18C",
+              "#F8E5B6",
+              "#92DBD2",
+              "#FFDEB6",
+              "#C8B9EC",
+              "#9CC2FC"
+            ],
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                0.5,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                0.5
+              ],
+              {
+                "position": [
+                  0.5,
+                  0.5
+                ],
+                "leftHandle": [
+                  -0.3,
+                  0.12
+                ],
+                "rightHandle": [
+                  0.3,
+                  -0.12
+                ],
+                "topHandle": [
+                  -0.1,
+                  -0.28
+                ],
+                "bottomHandle": [
+                  0.1,
+                  0.28
+                ]
+              },
+              [
+                1,
+                0.5
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0.5,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ]
+          },
+          "cornerRadius": 10
+        },
+        {
+          "id": "card-caption-2",
+          "type": "text",
+          "x": 720,
+          "y": 692,
+          "width": 280,
+          "height": 25,
+          "textGrowth": "fixed-width-height",
+          "content": "Four explicit relative offsets",
+          "fontFamily": "Noto Sans JP",
+          "fontSize": 12,
+          "fill": "#596983"
+        },
+        {
+          "id": "mesh-lettering",
+          "type": "text",
+          "x": 24,
+          "y": 752,
+          "width": 640,
+          "height": 96,
+          "textGrowth": "fixed-width-height",
+          "content": "Native color.",
+          "fontFamily": "Noto Sans JP",
+          "fontSize": 64,
+          "fill": {
+            "type": "mesh_gradient",
+            "columns": 3,
+            "rows": 3,
+            "colors": [
+              "#9A2446",
+              "#5840AA",
+              "#245BA9",
+              "#A34B13",
+              "#67497F",
+              "#146D64",
+              "#985713",
+              "#655095",
+              "#24649C"
+            ],
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                0.5,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                0.5
+              ],
+              [
+                0.68,
+                0.32
+              ],
+              [
+                1,
+                0.5
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0.5,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ]
+          },
+          "fontWeight": "700"
+        },
+        {
+          "id": "mesh-border",
+          "type": "rectangle",
+          "x": 710,
+          "y": 778,
+          "width": 306,
+          "height": 66,
+          "fill": "#F5F7FB",
+          "cornerRadius": 16,
+          "stroke": {
+            "type": "mesh_gradient",
+            "columns": 3,
+            "rows": 3,
+            "colors": [
+              "#FC9CA5",
+              "#D8ADFF",
+              "#88ABFE",
+              "#FFC18C",
+              "#F8E5B6",
+              "#92DBD2",
+              "#FFDEB6",
+              "#C8B9EC",
+              "#9CC2FC"
+            ],
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                0.5,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                0.5
+              ],
+              {
+                "position": [
+                  0.5,
+                  0.5
+                ],
+                "leftHandle": [
+                  -0.3,
+                  0.12
+                ],
+                "rightHandle": [
+                  0.3,
+                  -0.12
+                ],
+                "topHandle": [
+                  -0.1,
+                  -0.28
+                ],
+                "bottomHandle": [
+                  0.1,
+                  0.28
+                ]
+              },
+              [
+                1,
+                0.5
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0.5,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ]
+          },
+          "strokeWidth": 6,
+          "strokeAlignment": "inner"
+        },
+        {
+          "id": "border-label",
+          "type": "text",
+          "x": 726,
+          "y": 799,
+          "width": 274,
+          "height": 27,
+          "textGrowth": "fixed-width-height",
+          "content": "Fill · Text · Stroke",
+          "fontFamily": "Noto Sans JP",
+          "fontSize": 16,
+          "fill": "#394963",
+          "fontWeight": "500",
+          "textAlign": "center"
+        },
+        {
+          "id": "footer",
+          "type": "text",
+          "x": 24,
+          "y": 858,
+          "width": 992,
+          "height": 24,
+          "textGrowth": "fixed-width-height",
+          "content": "Editable .pen  ·  Noto Sans JP  ·  Original lazypencil example",
+          "fontFamily": "Noto Sans JP",
+          "fontSize": 12,
+          "fill": "#62718B"
+        }
+      ]
+    }
+  ]
+}

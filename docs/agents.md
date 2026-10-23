@@ -1,0 +1,123 @@
+# ACP agents and prompt commands
+
+The initial agent host uses the official Rust `agent-client-protocol` SDK 3.5.0 and schema 1.12.0. It negotiates **ACP protocol v1**. The SDK package version is separate from the protocol version. Draft v2 and provider-specific extensions that grant additional capabilities are not enabled automatically.
+
+## Install and authenticate an adapter
+
+Adapters and their runtimes are separate dependencies. lazypencil does not download them while sending a prompt, parse a shell command string, or modify global MCP configuration.
+
+| Agent | Executable | Adapter | Underlying runtime |
+| --- | --- | --- | --- |
+| Codex | `codex-acp` | `@agentclientprotocol/codex-acp` | Codex App Server |
+| Claude | `claude-agent-acp` | `@agentclientprotocol/claude-agent-acp` | Claude Agent SDK |
+
+Use the adapter's installation and authentication instructions: [Codex ACP](https://github.com/agentclientprotocol/codex-acp), [Claude ACP](https://github.com/agentclientprotocol/claude-agent-acp). Authenticate with the selected runtime before starting a design session. lazypencil does not read or store ChatGPT/Claude login tokens. An optional `--auth-method ID` calls an agent-managed ACP authentication method only if the adapter advertises that ID. Terminal-based authentication methods are not implemented by the host; use the runtime's own login command.
+
+The following combinations completed initialization, session creation, and an image-backed design workflow on macOS arm64 on 2026-10-23:
+
+| Adapter | Package version | Runtime dependency |
+| --- | --- | --- |
+| Codex ACP | 2.2.2 | bundled `@openai/codex` 0.160.1 |
+| Claude ACP | 0.91.0 | `@anthropic-ai/claude-agent-sdk` 0.3.300 |
+
+The separate `installed_*` checks supplied a document-bound MCP server and sent no LLM prompt. The ignored `agent_workflow` tests then sent actual image prompts, required a reported subscription route, imported the registered image, saved edits, requested layout and PNG previews, and rendered the resulting document again. Codex selected `gpt-6.1-sol`; Claude selected its advertised `default` model option. These are observations for the tested runtime configuration, not model-access guarantees or aesthetic comparisons. Actual API-key/provider workflows and other operating systems still need release verification. Package resolution used the local package manager's existing minimum release age; the Claude version above was eligible under that policy. Do not infer that it is the latest published version.
+
+## Send a prompt
+
+Project `[design]` settings can supply automatic guides, reference-only guides, styles, and a default style. The shared CLI/TUI conversation host reads the same catalogue as the bound MCP server. A local user must first review `config show FILE` and explicitly grant `config trust FILE`; unapproved or unavailable instructions stop a new turn before an adapter is started. The default style applies when `--style` is omitted, and an explicit `--style` takes precedence. Existing design conventions remain the starting point for edits. See [project design configuration](configuration.md#project-guides-and-styles).
+
+Startup sends the workflow, automatic project guide content, style tokens/instructions, example identities and reusable component IDs. It fetches a complete example through MCP when needed instead of putting every example document into the initial prompt. Turn-start records keep initial guide/style IDs, versions and hashes, including the project instruction fingerprint. Successful guide/style queries made through the owned MCP server are also recorded for that turn, as described below. The user's request takes precedence over project rules, selected styles, and standard guidance.
+
+User font preferences from `config.toml` merge with per-field project overrides. The host passes an absolute `LAZYPENCIL_CONFIG_DIR` in its MCP server descriptor before the adapter changes to the document directory, so a relative launch-time setting selects the same file in nested projects. This requires no global environment or agent configuration changes. A deterministic ACP test queries the actual MCP child and verifies its selected user configuration and font paths. Persistent adapter/runtime preferences remain unfinished; see [configuration](configuration.md).
+
+```sh
+lazypencil prompt design.pen --agent codex "Improve the spacing and hierarchy"
+lazypencil prompt new.pen --create --agent claude "日本語の設定画面を作って"
+lazypencil prompt design.pen --image reference.png --style standard-ui "Use this reference"
+lazypencil --json prompt design.pen --non-interactive "Inspect the current design"
+```
+
+`--create` refuses to overwrite any existing file. The working directory is the document's directory. The agent receives a dedicated `lazypencil mcp --file ...` configuration, the original English workflow guide, the requested style, and the user's text. Instructions ask the agent to inspect the document, use current revisions, check layout, render the result, and preserve the user's language. The host does not implement its own LLM loop and does not claim that an instruction guarantees visual verification.
+
+For an explicitly configured executable, use `--adapter /absolute/path/to/program` and repeat `--adapter-arg=VALUE`. Arguments are passed as a vector, without shell expansion. For example, a project-local Node adapter can be started with an absolute Node executable and a script path argument. Persist per-agent defaults in user `config.toml` under `[agents.codex]` / `[agents.claude]`, and select the default agent with `[agents] default = "codex"`. CLI and TUI use explicit CLI values before user defaults; an explicit adapter replaces the configured command and its entire argument list. Relative configured executable paths resolve against the physical user file. Project-selected executables remain unsupported. See [user agent profiles](configuration.md#user-agent-profiles).
+
+`--auth subscription` is the default. The child does not inherit `OPENAI_API_KEY`, `CODEX_API_KEY`, `ANTHROPIC_API_KEY`, or `ANTHROPIC_AUTH_TOKEN`. It also removes `DEFAULT_AUTH_REQUEST`, OpenAI/Anthropic base-URL overrides, and Claude cloud-provider environment switches, so those overrides do not silently select API access. `--auth api` preserves the environment for explicitly configured API access. Neither option reads credentials or signs the user out to enforce a login method. Native settings, key helpers, and managed policy remain owned by the runtime.
+
+The host consumes the adapters' read-only `_auth/status_update` reports. It normalizes `account`, `api_key`, `gateway`, `external`, and `none` into subscription, API-key, gateway, external-provider, and unauthenticated states. Logs/UI retain the route and optional plan; account emails, tokens, arbitrary labels, and vendor metadata from this notification are omitted. The evidence is explicitly `adapter_report`; it is not an independently audited invoice or a promise of model access. OpenAI distinguishes subscription and API authentication and provides account introspection through its runtime. See [official authentication documentation](https://learn.chatgpt.com/docs/auth) and [App Server authentication](https://learn.chatgpt.com/docs/app-server#auth-endpoints).
+
+Before sending each prompt, the reported route must match the request: subscription rejects API keys, gateways, and external providers; API rejects subscription authentication. An unauthenticated state is rejected. A conflicting report during a turn triggers ACP cancellation and preserves committed edits. There is no automatic retry or login through another route. The host does not change stored credentials to force a match. For API mode, configure/authenticate the runtime for the intended API route, or explicitly select an advertised agent-managed `--auth-method`.
+
+When an adapter advertises its `authStatus` capability, the host waits up to five seconds for a usable report and blocks unverified prompts. `--require-auth-status` also enforces this for other adapters, including development wrappers. Older adapters without this capability may operate with unknown authentication unless that flag is set; startup events label the source unknown. A previous conversation's report is cleared at reconnect and is not reused as evidence for the new process.
+
+`--model MODEL` selects a value from the adapter's advertised model configuration, including grouped selectors, and requires the adapter to confirm the new value. `--mode MODE` likewise validates the advertised permission mode and applies it through ACP. Unsupported values fail before prompting. With the standard executables, the initial native mode is Codex `read-only` or Claude `default`; an explicit CLI or user-profile adapter override has no implicit mode, so specify one when needed. Applied modes and configuration options are recorded in the ready event. Model catalogs describe options; actual access is established by a successful inference turn.
+
+## Images and assets
+
+Repeat `--image` for up to eight static PNG, JPEG, or WebP files. The limits are 20 MiB per source and normalized image, 50 MiB total before and after normalization, and 16 megapixels per image. Files are decoded one at a time, orientation is applied, and immutable PNG copies are retained with the conversation. No image is silently resized or omitted.
+
+Images are sent as ACP image blocks containing MIME-typed Base64 data. The host checks the negotiated image capability; an unsupported agent receives no text-only substitute. Each image also has an ordered display name and attachment ID. The prompt does not insert reference images into the document automatically.
+
+The session's MCP connection receives a private manifest bound to that document. `get_document` exposes registered image metadata. `put_asset` can import one with:
+
+```json
+{"kind":"image","source":{"attachment_id":"img_<sha256>"}}
+```
+
+The normal atomic edit operations then reference the returned asset URI. Unknown IDs, grants for another document, modified stored files, and image attachments requested as code are rejected. The connection's grant file is removed on normal cleanup; stored conversation images and already imported project assets remain. Each conversation currently retains at most 256 distinct images. File attachment is implemented; clipboard input, attachment removal/resend controls, retention policy, and recovery of grant files after a hard crash remain unfinished.
+
+## Conversations and events
+
+Every invocation prints a local conversation UUID. Resume it with the same document, adapter arguments, and requested authentication mode:
+
+```sh
+lazypencil prompt design.pen --agent codex --session <local-uuid> "Make the main action clearer"
+```
+
+The native session ID is saved before sending the prompt. Reload occurs only when the adapter advertises `loadSession`; an ordinary transcript is not treated as resumable agent state. A conversation lock prevents concurrent local reuse. There is no automatic replay of a failed prompt. The shared host supports multiple sequential turns on one live connection; the CLI reloads the native session between process invocations.
+
+Metadata, normalized images, and one JSONL transcript per turn live below the document's directory in the lazypencil **user data store**, not alongside the `.pen` source. Unix directories/files are created with private permissions. Logs include guide/style versions and hashes, user text, native session metadata, updates, permission decisions, and the actual final document revision. Image payloads in events are replaced with length/hash metadata in transcripts and CLI NDJSON. Adapter stderr is continuously drained without retaining its contents; connection errors report the drained byte count where available. More complete diagnostics and credential redaction remain a release requirement.
+
+`--json prompt` is NDJSON rather than a single JSON object. Event types currently include `start`, `initialized`, `ready`, `auth_status`, `update`, `agent_notification`, `permission_request`, `permission_response`, `design_resource`, `turn_complete`, `turn_error`, `connection_error`, `complete`, `failed`, and a terminal CLI `error` on failure. Unknown update fields and extension notifications are preserved; the recognized authentication notification is normalized as described above. Text terminal output removes control characters; NDJSON uses ordinary JSON escaping. Per-turn transcripts have a 64 MiB limit, and incoming ACP lines have a 16 MiB limit. A final transcript-write failure reports `failed` and restores the draft and pending attachments; it does not undo committed document edits. If restoring local metadata also fails, the failure is reported explicitly and the live host retains the draft in memory.
+
+### Design-resource records
+
+The shared CLI/TUI host gives its owned MCP process a document- and connection-bound usage grant. Each prompt publishes a new turn UUID, also present in `start`, `complete`, and `failed`. For successful `get_guidance`, `get_style`, and `list_styles` calls, the server syncs a bounded metadata record before returning the result. A guide record includes its ID, version, language and resource hash; the workflow also records each automatic project guide included with it. Styles record their full resource hash, including their example. A style catalogue record describes the returned page's IDs/versions and a SHA-256 of the complete structured response (`hash_scope: "response"`); a catalogue page does not count as reading each style's full instructions. Project revisions and available instruction/catalogue fingerprints accompany the records.
+
+At turn completion, cancellation, or failure, the host freezes the journal, validates it, and appends `design_resource` events to that turn's transcript and NDJSON before the final host result. These events therefore arrive when the turn ends, rather than being a live progress feed. Failed queries are not recorded as retrieved resources. A request captured for an older turn cannot append to a newer turn. Normal connection close removes its grant. A journal write or capacity failure makes the resource tool fail; an unreadable or corrupt journal makes the turn fail and retains the draft. Each record is limited to 64 KiB and each turn's journal to 4 MiB. Resource bodies, tokens, examples, source paths and image payloads are omitted from these records.
+
+The journals remain under `design-usage-CONNECTION/TURN.jsonl` in the conversation's user-data directory, alongside their small lock file, so an interrupted transcript has bounded per-turn evidence available for diagnosis. This is a local record of results prepared by the owned server: it does not prove network delivery, the model's internal reasoning, or that the model applied the instructions. It is not a tamper-proof audit against a process with the user's filesystem access. Parent-crash cleanup and overall retention remain part of the unfinished conversation lifecycle work. Standalone MCP clients have no lazypencil-owned conversation transcript or grant; ordinary `lazypencil mcp` keeps its existing behavior and does not create usage journals.
+
+## Permissions and cancellation
+
+`--document-tools allow` is the default for an explicitly requested document prompt. It selects **allow once** only for registered tools on this conversation's bound lazypencil MCP server. Claude's programmatic tool name is checked against the registry; Codex's name-free approvals are correlated by session and tool-call ID with explicit MCP/server/tool metadata from its earlier tool-call event. Titles are never authorization evidence. Completed calls expire from this correlation, other sessions/servers and unknown tool names are rejected, and no persistent allow option is selected.
+
+Use `--document-tools ask` to disable this preauthorization. Remaining permission requests display the adapter's options when stdin and stderr are terminals. `--non-interactive`, or a non-terminal invocation, rejects unresolved permissions. An agent's later `end_turn` or cancellation after rejection does not hide a non-interactive denial: the CLI exits with an agent error. The host advertises no filesystem or terminal execution callbacks. Other unsupported client requests receive the SDK's method-not-found response.
+
+Authorization for document edits does not grant arbitrary shell or filesystem access. The document-bound MCP server is not a sandbox for the external agent. The native modes above are requested and acknowledged through ACP; they do not prove OS-level isolation for every runtime, hook, plugin, or explicitly supplied adapter. Broader runtime diagnostics and cross-platform restriction tests remain required. A blanket approval mode is not used to make tests pass.
+
+Ctrl+C sends `session/cancel` for an active turn and answers pending permission requests with the cancelled outcome. An unresponsive adapter is terminated after a five-second grace period. `--timeout` limits a turn to 600 seconds by default; setup has a separate 60-second limit. A cancelled queued turn is not sent. Normal close reaps the adapter, and Unix close also terminates its process group. Windows descendant cleanup, abnormal-parent-death handling, and cross-platform runtime behavior remain unfinished.
+
+Committed edit batches remain in the document after cancellation or a crash. The CLI rereads the actual document after stopping, records its revision, and leaves committed history available through `history` and `restore`. It does not automatically roll back or retry. Invalid final document data produces a failure rather than a successful completion event.
+
+## Verification
+
+`tests/agent.rs` launches the deterministic Python peer in `tests/support/acp_fixture.py`. Development tests require Python 3 on PATH, or `LAZYPENCIL_TEST_PYTHON`. They exercise actual process pipes, protocol negotiation, capabilities, repeated turns, reload, permission rejection, pending-permission cancellation, setup/turn timeouts, process-group cleanup, malformed output, crashes, real MCP edits, image import/rendering, and CLI SIGINT. Python is not a dependency of the lazypencil executable.
+
+Ignored `installed_*` tests exercise explicitly installed adapters without an LLM request. Select paths with `LAZYPENCIL_TEST_CODEX_ACP` and `LAZYPENCIL_TEST_CLAUDE_ACP`. They need the native runtime's normal permissions and state directories. The image and rendering tests use the normal rendering build; the host and document workflow also run without Skia.
+
+For a configuration-only check, set `LAZYPENCIL_TEST_AGENT_MODEL` and `LAZYPENCIL_TEST_AGENT_MODE` to advertised values before running one `installed_*` test. Codex `gpt-6.1-sol` / `read-only` and Claude `default` / `default` completed these checks in the environment above. This confirms selection and acknowledgement without a model request.
+
+`cargo test --test agent_workflow creates_and_inspects -- --ignored --nocapture` sends real image prompts and consumes the runtimes' subscription usage. It requires a reported subscription route, permits only bound document tools, and preserves `.pen`, PNG, event logs, and a small report under `LAZYPENCIL_TEST_WORKFLOW_DIR` (or a temporary-directory location). The test checks tool use, actual saved revisions/history, a Japanese heading, discovered native Lucide icons, and a separately rendered PNG. The current workflow also reads the standard UI style, imports its reusable button through `import_component` in copy mode, edits the design, and retains an enabled instance of that copied definition. Both real runtimes passed the extended workflow; each produced one copied style component and two enabled native icons. Independent layout checks reported no layout diagnostics, and both 640×360 PNGs were inspected. The subscription route is evidence from the adapter report, not an independently audited invoice. That is functional evidence; it does not automatically prove aesthetic quality or the model's internal visual reasoning.
+
+The first Claude workflow exposed repeated attempts to use a UI image-mode label and a partial paint update. The official schema's serialized values are `cover`, `contain`, and `stretch`; `update.set` replaces the whole paint object. The image prompt context, `put_asset` description, operations guide, and diagnostics now provide the complete image-paint shape and supported modes. These instructions are original lazypencil content.
+
+After adding per-turn resource records, both live subscription workflows passed again with Codex ACP 2.2.2 and Claude ACP 0.91.0. Codex recorded 13 resource queries and Claude recorded four; each guide/style hash matched a fresh built-in CLI read, and the metadata agreed between NDJSON and the saved transcript. Both documents retained one copied style component and two visible Lucide icons. Independent layout validation returned no diagnostics, and both 640×360 PNGs were inspected. This check used built-in guides/styles; live generation with project-specific instructions, API providers, other OSes, and aesthetic parity still require their own evidence.
+
+The saved-workflow check can revalidate explicitly selected artifacts without another model request:
+
+```sh
+LAZYPENCIL_TEST_SAVED_WORKFLOW_DIRS='["/absolute/path/to/claude-run","/absolute/path/to/codex-run"]' \
+  cargo test --test agent_workflow saved_agent_artifacts -- --ignored
+```
+
+It checks the source document hash recorded by the component import, an enabled remaining instance, enabled icons, saved history, and byte-identical PNG output. It writes `revalidated.png` and `offline-verification.json` beside the original artifacts. This opt-in check requires its directory list; use the `creates_and_inspects` filter when running only the two live workflows. It does not reuse a saved conversation as if it were a fresh inference turn.

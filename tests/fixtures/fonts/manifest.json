@@ -1,0 +1,30 @@
+{
+  "regular.ttf": {
+    "bytes": 904,
+    "sha256": "5d936a7eeba01e56b60e9cfb67824a39350c68b565090170a0bcd2b051f2b877"
+  },
+  "bold.ttf": {
+    "bytes": 876,
+    "sha256": "7acc3f811e4acd408a37244ab53fd59ed48fd5ea47d3c7d22fd98c294584d24e"
+  },
+  "italic.ttf": {
+    "bytes": 896,
+    "sha256": "3972b28dbc7e6aa0999e5e7aa02ebc0d1cfc8dcc6a30772dc7f0c2c48193acf8"
+  },
+  "supplement.ttf": {
+    "bytes": 964,
+    "sha256": "6873369d41fbdebd309c5ba72e6e4fdebd5cfbda60824a42228941b0530489cf"
+  },
+  "faces.ttc": {
+    "bytes": 3680,
+    "sha256": "5d03ff8907c416d70db2ba2be1b7d99c7c9e73c695ffd79533facfab325bd321"
+  },
+  "cff.otf": {
+    "bytes": 864,
+    "sha256": "48320bd0d74048c32d5f78dacd36297bb5eb45b67850a056555aeba47fef0f76"
+  },
+  "cff.otc": {
+    "bytes": 1860,
+    "sha256": "e0e2e340b52fec0328b60daa754c7264e4b03cc7acb0dca98fadb4e64c3a79c0"
+  }
+}

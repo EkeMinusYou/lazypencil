@@ -1,0 +1,7 @@
+/target/
+/dist/
+*.tmp
+.DS_Store
+/vendor/skia-bindings/skia/
+__pycache__/
+*.py[cod]

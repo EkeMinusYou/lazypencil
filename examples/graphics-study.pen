@@ -1,0 +1,344 @@
+{
+  "version": "2.21",
+  "children": [
+    {
+      "id": "artboard",
+      "type": "frame",
+      "layout": "vertical",
+      "width": 1000,
+      "height": 760,
+      "padding": 32,
+      "gap": 20,
+      "fill": "#F8FAFC",
+      "children": [
+        {
+          "id": "heading",
+          "type": "text",
+          "content": "文字・罫線・画像・影の描画",
+          "fontSize": 32,
+          "fill": "#0F172A",
+          "fontWeight": "700"
+        },
+        {
+          "id": "subtitle",
+          "type": "text",
+          "content": "Skia CPU と同梱の Noto Sans JP で描画する、編集可能な作例です。",
+          "fontSize": 16,
+          "fill": "#475569"
+        },
+        {
+          "id": "typography",
+          "type": "frame",
+          "layout": "vertical",
+          "width": "fill_container",
+          "height": "fit_content",
+          "padding": 20,
+          "gap": 12,
+          "fill": "#FFFFFF",
+          "cornerRadius": 12,
+          "children": [
+            {
+              "id": "type-title",
+              "type": "text",
+              "content": "同じ組版結果から、文字と輪郭線を描く",
+              "fontSize": 20,
+              "fill": "#0F172A",
+              "fontWeight": "700"
+            },
+            {
+              "id": "type-row",
+              "type": "frame",
+              "layout": "horizontal",
+              "width": "fill_container",
+              "height": 64,
+              "gap": 32,
+              "alignItems": "center",
+              "children": [
+                {
+                  "id": "underline",
+                  "type": "text",
+                  "content": "下線のある文字",
+                  "fontSize": 26,
+                  "fill": "#0F172A",
+                  "underline": true
+                },
+                {
+                  "id": "strike",
+                  "type": "text",
+                  "content": "取り消し線",
+                  "fontSize": 26,
+                  "fill": "#0F172A",
+                  "strikethrough": true
+                },
+                {
+                  "id": "outline",
+                  "type": "text",
+                  "content": "輪郭線 ABC",
+                  "underline": true,
+                  "fontSize": 32,
+                  "fill": "#EEF2FF",
+                  "fontWeight": "700",
+                  "stroke": "#4F46E5",
+                  "strokeWidth": 1.5,
+                  "strokeAlignment": "outer"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "borders",
+          "type": "frame",
+          "layout": "horizontal",
+          "width": "fill_container",
+          "height": "fit_content",
+          "gap": 20,
+          "children": [
+            {
+              "id": "edges",
+              "type": "frame",
+              "layout": "vertical",
+              "width": "fill_container",
+              "height": "fit_content",
+              "padding": 20,
+              "gap": 12,
+              "fill": "#FFFFFF",
+              "cornerRadius": 12,
+              "children": [
+                {
+                  "id": "edge-title",
+                  "type": "text",
+                  "content": "辺ごとの罫線",
+                  "fontSize": 20,
+                  "fill": "#0F172A",
+                  "fontWeight": "700"
+                },
+                {
+                  "id": "edge-box",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "width": "fill_container",
+                  "height": 96,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "fill": "#F8FAFC",
+                  "cornerRadius": 12,
+                  "stroke": "#2563EB",
+                  "strokeWidth": {
+                    "top": 2,
+                    "right": 4,
+                    "bottom": 8,
+                    "left": 12
+                  },
+                  "strokeAlignment": "inner",
+                  "children": [
+                    {
+                      "id": "edge-label",
+                      "type": "text",
+                      "content": "上 2 / 右 4 / 下 8 / 左 12",
+                      "fontSize": 16,
+                      "fill": "#0F172A"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "inset",
+              "type": "frame",
+              "layout": "vertical",
+              "width": "fill_container",
+              "height": "fit_content",
+              "padding": 20,
+              "gap": 12,
+              "fill": "#FFFFFF",
+              "cornerRadius": 12,
+              "children": [
+                {
+                  "id": "shadow-title",
+                  "type": "text",
+                  "content": "内側の影",
+                  "fontSize": 20,
+                  "fill": "#0F172A",
+                  "fontWeight": "700"
+                },
+                {
+                  "id": "inset-box",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "width": "fill_container",
+                  "height": 96,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "fill": "#EEF2FF",
+                  "cornerRadius": 12,
+                  "effect": {
+                    "type": "shadow",
+                    "shadowType": "inner",
+                    "offset": {
+                      "x": 4,
+                      "y": 5
+                    },
+                    "blur": 12,
+                    "color": "#312E8150"
+                  },
+                  "children": [
+                    {
+                      "id": "shadow-label",
+                      "type": "text",
+                      "content": "外側へはみ出さずに陰影をつける",
+                      "fontSize": 16,
+                      "fill": "#0F172A"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "crops",
+          "type": "frame",
+          "layout": "vertical",
+          "width": "fill_container",
+          "height": "fit_content",
+          "padding": 20,
+          "gap": 12,
+          "fill": "#FFFFFF",
+          "cornerRadius": 12,
+          "children": [
+            {
+              "id": "crop-title",
+              "type": "text",
+              "content": "画像の右半分を、3つの配置方式で使う",
+              "fontSize": 20,
+              "fill": "#0F172A",
+              "fontWeight": "700"
+            },
+            {
+              "id": "crop-row",
+              "type": "frame",
+              "layout": "horizontal",
+              "width": "fill_container",
+              "height": "fit_content",
+              "gap": 20,
+              "children": [
+                {
+                  "id": "crop-cover",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "width": "fill_container",
+                  "height": "fit_content",
+                  "gap": 8,
+                  "children": [
+                    {
+                      "id": "crop-image-cover",
+                      "type": "rectangle",
+                      "width": "fill_container",
+                      "height": 128,
+                      "cornerRadius": 8,
+                      "fill": {
+                        "type": "image",
+                        "url": "assets/crop-source.png",
+                        "mode": "cover",
+                        "transform": [
+                          2,
+                          0,
+                          0,
+                          1,
+                          -1,
+                          0
+                        ]
+                      }
+                    },
+                    {
+                      "id": "crop-label-cover",
+                      "type": "text",
+                      "content": "cover",
+                      "fontSize": 14,
+                      "fill": "#475569"
+                    }
+                  ]
+                },
+                {
+                  "id": "crop-contain",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "width": "fill_container",
+                  "height": "fit_content",
+                  "gap": 8,
+                  "children": [
+                    {
+                      "id": "crop-image-contain",
+                      "type": "rectangle",
+                      "width": "fill_container",
+                      "height": 128,
+                      "cornerRadius": 8,
+                      "fill": {
+                        "type": "image",
+                        "url": "assets/crop-source.png",
+                        "mode": "contain",
+                        "transform": [
+                          2,
+                          0,
+                          0,
+                          1,
+                          -1,
+                          0
+                        ]
+                      }
+                    },
+                    {
+                      "id": "crop-label-contain",
+                      "type": "text",
+                      "content": "contain",
+                      "fontSize": 14,
+                      "fill": "#475569"
+                    }
+                  ]
+                },
+                {
+                  "id": "crop-stretch",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "width": "fill_container",
+                  "height": "fit_content",
+                  "gap": 8,
+                  "children": [
+                    {
+                      "id": "crop-image-stretch",
+                      "type": "rectangle",
+                      "width": "fill_container",
+                      "height": 128,
+                      "cornerRadius": 8,
+                      "fill": {
+                        "type": "image",
+                        "url": "assets/crop-source.png",
+                        "mode": "stretch",
+                        "transform": [
+                          2,
+                          0,
+                          0,
+                          1,
+                          -1,
+                          0
+                        ]
+                      }
+                    },
+                    {
+                      "id": "crop-label-stretch",
+                      "type": "text",
+                      "content": "stretch",
+                      "fontSize": 14,
+                      "fill": "#475569"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+version = 1
+
+[fonts]
+# Paths are relative to this configuration file, not the invoking directory.
+files = []
+search_paths = []
+default_family = "Noto Sans JP"
+locale = "ja"
+# Omit fallbacks for the default chain, or provide an explicit replacement.
+# fallbacks = ["Noto Sans JP"]
+
+# Optional project instructions require an explicit local `config trust` grant.
+# [design]
+# styles = ["design/brand.json"]
+# default_style = "project:brand"
+# [[design.guides]]
+# id = "brand"
+# path = "design/brand.txt"
+# version = "1.0.0"
+# language = "en"
+# automatic = true

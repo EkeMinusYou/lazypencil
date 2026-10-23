@@ -1,0 +1,57 @@
+{
+  "version": "2.21",
+  "variables": {
+    "color.canvas": {"type": "color", "value": "#F8FAFC"},
+    "color.surface": {"type": "color", "value": "#FFFFFF"},
+    "color.text": {"type": "color", "value": "#0F172A"},
+    "color.secondary": {"type": "color", "value": "#475569"},
+    "color.accent": {"type": "color", "value": "#2563EB"}
+  },
+  "children": [
+    {
+      "id": "screen", "type": "frame", "name": "Welcome screen",
+      "width": 960, "height": 640, "layout": "vertical", "padding": 48,
+      "fill": "$color.canvas",
+      "children": [
+        {
+          "id": "card", "type": "frame", "layout": "vertical",
+          "width": "fill_container", "height": "fill_container",
+          "padding": 48, "gap": 16, "cornerRadius": 12, "fill": "$color.surface",
+          "children": [
+            {
+              "id": "heading", "type": "text", "name": "Product heading",
+              "content": "lazypencil", "fontFamily": "Noto Sans JP",
+              "fontSize": 32, "fontWeight": "700", "lineHeight": 1.25,
+              "fill": "$color.text"
+            },
+            {
+              "id": "subtitle", "type": "text", "textGrowth": "fixed-width",
+              "width": "fill_container", "content": "Rust · Skia CPU · SkParagraph · Noto Sans JP",
+              "fontSize": 14, "lineHeight": 1.5, "fill": "$color.secondary"
+            },
+            {"id": "gap", "type": "rectangle", "width": 0, "height": 24},
+            {
+              "id": "body", "type": "text", "textGrowth": "fixed-width",
+              "width": "fill_container", "fontSize": 16, "lineHeight": 1.5,
+              "content": "日本語と English が混在する文章を、同梱フォントで描画しています。\n文字の計測と描画には、同じ段落の組版結果を使います。",
+              "fill": "$color.text"
+            },
+            {"id": "spacer", "type": "rectangle", "width": 0, "height": "fill_container"},
+            {
+              "id": "button", "type": "frame", "name": "Primary action", "reusable": true,
+              "width": 224, "height": 44, "padding": [0, 16], "cornerRadius": 8,
+              "justifyContent": "center", "alignItems": "center", "fill": "$color.accent",
+              "children": [
+                {
+                  "id": "button-label", "type": "text", "content": "デザインをはじめる",
+                  "fontSize": 14, "fontWeight": "500", "lineHeight": 1.5,
+                  "fill": "#FFFFFF"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

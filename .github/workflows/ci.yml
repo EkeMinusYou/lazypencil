@@ -1,0 +1,151 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_BUILD_JOBS: '1'
+  CARGO_INCREMENTAL: '0'
+  CARGO_TERM_COLOR: always
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CARGO_TARGET_DIR: target
+  PYTHONUTF8: '1'
+  LAZYPENCIL_TEST_PYTHON: python
+
+jobs:
+  audit:
+    name: Dependency policy and RustSec
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Check the checked-in Rust notice inventory
+        run: python3 scripts/license_notices.py verify
+      - name: Check the pinned native reference terms
+        run: python3 scripts/skia_notice_inventory.py verify-upstream --upstream resources/licenses/native/upstream.json
+      - name: Check the pinned standard-library package notices
+        run: python3 scripts/toolchain_notice_inventory.py verify-upstream --upstream resources/licenses/toolchain/upstream.json
+      - name: Install the pinned audit tool
+        run: |
+          rustup toolchain install stable --profile minimal
+          cargo +stable install cargo-deny --version 0.20.2 --locked
+      - name: Check all feature and platform dependencies
+        run: cargo deny --all-features --locked check licenses sources advisories
+      - name: Compare notices with locked registry sources
+        run: |
+          cargo fetch --locked
+          python3 scripts/license_notices.py verify --cargo-home "${CARGO_HOME:-$HOME/.cargo}"
+
+  native:
+    name: Rust 1.94 / ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-2025]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Use the hosted runner for compilation outputs
+        run: printf 'CARGO_TARGET_DIR=%s/lazypencil-target\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - name: Install the declared minimum Rust toolchain
+        run: |
+          rustup toolchain install 1.94.0 --profile minimal --component clippy --component rustfmt
+          rustup default 1.94.0
+      - name: Cache verified Cargo downloads
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/git/db
+          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
+      - name: Install Linux native build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes clang libclang-dev cmake ninja-build pkg-config libfontconfig1-dev libfreetype6-dev libwayland-dev libx11-dev
+      - name: Check source archive integrity handling
+        run: python -m unittest discover -s scripts -p 'test_*.py' -v
+      - name: Build a complete source distribution
+        run: python scripts/dist.py source --output source.tar.gz
+      - name: Verify and extract the distribution
+        run: python scripts/dist.py verify-source source.tar.gz --extract "$RUNNER_TEMP/lazypencil-source"
+      - name: Verify notices in the distributed sources
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          python scripts/license_notices.py verify
+          python scripts/skia_notice_inventory.py verify-upstream --upstream resources/licenses/native/upstream.json
+          python scripts/toolchain_notice_inventory.py verify-upstream --upstream resources/licenses/toolchain/upstream.json
+      - name: Check formatting in the distributed sources
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: cargo fmt --all -- --check
+      - name: Test both feature configurations from the distribution
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
+          sh scripts/ci/test.sh 2>&1 | tee "$RUNNER_TEMP/lazypencil-tests.log"
+      - name: Build and smoke-test the release profile
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
+          sh scripts/ci/release-smoke.sh 2>&1 | tee "$RUNNER_TEMP/lazypencil-release.log"
+      - name: Retain verification logs and rendered examples
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: verification-${{ matrix.os }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/lazypencil-tests.log
+            ${{ runner.temp }}/lazypencil-release.log
+            ${{ runner.temp }}/lazypencil-target/release-*.json
+            ${{ runner.temp }}/lazypencil-target/release-*.png
+          if-no-files-found: ignore
+          retention-days: 3
+
+  source:
+    name: Verified source artifact
+    needs: [native, audit]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Build and verify the source artifact
+        run: |
+          mkdir -p dist
+          python scripts/dist.py source --output dist/lazypencil-source.tar.gz > dist/source-report.json
+          python scripts/dist.py verify-source dist/lazypencil-source.tar.gz
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: lazypencil-source-${{ github.sha }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 3

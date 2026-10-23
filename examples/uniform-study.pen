@@ -1,0 +1,70 @@
+{
+  "version": "2.21",
+  "children": [
+    {
+      "id": "uniform-study",
+      "type": "frame",
+      "name": "Numeric GLSL inputs",
+      "layout": "none",
+      "width": 960,
+      "height": 640,
+      "fill": "#F8FAFC",
+      "children": [
+        {
+          "id": "heading", "type": "text", "x": 32, "y": 32, "width": 896,
+          "textGrowth": "fixed-width", "content": "GLSL の配列・行列をデザインに使う",
+          "fontFamily": "Noto Sans JP", "fontSize": 32, "fontWeight": "700", "lineHeight": 1.25, "fill": "#0F172A"
+        },
+        {
+          "id": "intro", "type": "text", "x": 32, "y": 100, "width": 896,
+          "textGrowth": "fixed-width", "content": "同じシェーダーを、配色と座標変換の入力だけ変えて再利用します。",
+          "fontFamily": "Noto Sans JP", "fontSize": 17, "lineHeight": 1.5, "fill": "#475569"
+        },
+        {
+          "id": "horizontal-card", "type": "frame", "x": 32, "y": 170, "width": 432, "height": 330,
+          "layout": "none", "cornerRadius": 20, "fill": "#FFFFFF", "children": [
+            {
+              "id": "horizontal-palette", "type": "rectangle", "x": 16, "y": 16, "width": 400, "height": 240, "cornerRadius": 14,
+              "fill": {"type": "shader", "url": "assets/uniform-study.glsl", "uniforms": {
+                "palette": [0.145, 0.388, 0.922, 0.486, 0.227, 0.929, 0.925, 0.282, 0.6],
+                "stops": [0.45, 9], "contrast": 1, "uvTransform": [1, 0, 0, 1]
+              }}
+            },
+            {
+              "id": "horizontal-label", "type": "text", "x": 16, "y": 278, "width": 400,
+              "textGrowth": "fixed-width", "content": "配列で作る、3色のグラデーション",
+              "fontFamily": "Noto Sans JP", "fontSize": 19, "fontWeight": "600", "lineHeight": 1.3, "fill": "#0F172A"
+            }
+          ]
+        },
+        {
+          "id": "rotated-card", "type": "frame", "x": 496, "y": 170, "width": 432, "height": 330,
+          "layout": "none", "cornerRadius": 20, "fill": "#FFFFFF", "children": [
+            {
+              "id": "rotated-palette", "type": "rectangle", "x": 16, "y": 16, "width": 400, "height": 240, "cornerRadius": 14,
+              "fill": {"type": "shader", "url": "assets/uniform-study.glsl", "uniforms": {
+                "palette": [0.063, 0.725, 0.506, 0.024, 0.714, 0.831, 0.231, 0.51, 0.965],
+                "stops": [0.6, 12], "contrast": 1, "uvTransform": [0, 1, -1, 0]
+              }}
+            },
+            {
+              "id": "rotated-label", "type": "text", "x": 16, "y": 278, "width": 400,
+              "textGrowth": "fixed-width", "content": "行列で変える、色と縞の向き",
+              "fontFamily": "Noto Sans JP", "fontSize": 19, "fontWeight": "600", "lineHeight": 1.3, "fill": "#0F172A"
+            }
+          ]
+        },
+        {
+          "id": "footer", "type": "text", "x": 32, "y": 540, "width": 896,
+          "textGrowth": "fixed-width", "content": "数値入力はファイルに保存。画像を確認しながら、CLI・MCP のプロンプトで修正できます。",
+          "fontFamily": "Noto Sans JP", "fontSize": 16, "lineHeight": 1.55, "fill": "#475569"
+        },
+        {
+          "id": "runtime-note", "type": "text", "x": 32, "y": 606, "width": 896,
+          "textGrowth": "fixed-width", "content": "Skia CPU + separately installed software WebGL · editable .pen + GLSL",
+          "fontFamily": "Noto Sans JP", "fontSize": 12, "lineHeight": 1.4, "fill": "#64748B"
+        }
+      ]
+    }
+  ]
+}

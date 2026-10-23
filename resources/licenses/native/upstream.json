@@ -1,0 +1,33 @@
+{
+  "format_version": 1,
+  "references": [
+    {
+      "applies_to": {
+        "skia_deps_sha256": "765be0ad1aff9088cdaad44d06ea9253293aec89a9647a5f5f4e13cdd6750e02",
+        "source_sha256": {
+          "third_party/externals/zlib/adler32_simd.c": "48bf89b890c80fd737d91a18389439a348a91a18f59f695af72005c7fc17f5d3",
+          "third_party/externals/zlib/adler32_simd.h": "8c1362d66be00e4ee75a303b8b67a36b128786666386d090ebd2cac8cbacd9ea",
+          "third_party/externals/zlib/contrib/optimizations/chunkcopy.h": "10fae79493be1ab143476151b88dcb8ec7bc94ff10c90cdd77c153dac68d8209",
+          "third_party/externals/zlib/contrib/optimizations/insert_string.h": "ff03fe98a4dcaa22022a44340f8fe62f4820c64cd1f326bd710fa5d37f8a2897",
+          "third_party/externals/zlib/cpu_features.c": "10cedfb372a28a8c30f842def6213eeb40e6f7d59c3f98737e4eb78bd1999e06",
+          "third_party/externals/zlib/cpu_features.h": "a3746f6fa6ece0fd7039185b259af68420fe61c2a240baea060952010c29c424",
+          "third_party/externals/zlib/crc32_simd.c": "8db6cd08c69e69020a857d0472e89aa26a5b526a8b2999444015914de656f79c",
+          "third_party/externals/zlib/crc32_simd.h": "80688abed37fbff1b49079050954749f0a694b5b9998abdbf59019f65401208a",
+          "third_party/externals/zlib/google/compression_utils_portable.h": "ad6e83438a781734e0b8873b846b3cafae5ca31e1bf2c56a3d8c7ea2d9dc0c19",
+          "third_party/externals/zlib/slide_hash_simd.h": "0524fd845c79ac31bf7e23436e68aa9eb20d21a849088f4ec3250d460214284c"
+        }
+      },
+      "blob": "texts/368cca1106be99d39ecd32a38d8305585d802a475effb66380b91ffc9bcf709b.txt",
+      "commit_time": "Tue Jan 23 04:03:50 2024",
+      "git_blob_sha1": "2249a28657f86c645f8978b75babc1bd52aca318",
+      "id": "chromium-bsd",
+      "path": "LICENSE",
+      "reason": "Original Chromium repository license referenced by Chromium-origin zlib sources. Individual source copyright notices remain separate. The January 2024 snapshot predates the pinned zlib commit; its license blob also matches the current upstream reference.",
+      "repository": "https://chromium.googlesource.com/chromium/src",
+      "revision": "b99eee51a56e42ecdaef53228da31fc3c12306b9",
+      "sha256": "368cca1106be99d39ecd32a38d8305585d802a475effb66380b91ffc9bcf709b",
+      "tag": "122.0.6261.0",
+      "url": "https://chromium.googlesource.com/chromium/src/+/b99eee51a56e42ecdaef53228da31fc3c12306b9/LICENSE?format=TEXT"
+    }
+  ]
+}
