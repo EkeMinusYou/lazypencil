@@ -389,6 +389,10 @@ cache 設定の実行 `39995993914` では、Windows の Python fixture が、`C
 
 専用 workflow の範囲を点検し、通常の JS ワーカー試験、`shader_uniforms` の数値配列・行列の実 WebGL 試験、通常と動的の全 TUI 試験も対象に加えた。これには入力ワーカーの取消回帰と12ケースの通常 PTY も含む。拡張した検査の成功は次の実行で確認し、ローカルの native build は追加しない。
 
+macOS arm64 の `40007811724` は全工程が成功した。設定7件・動的描画16件・実 MCP 画像1件・実60秒の MCP 待機1件・実60秒の動的 PTY 1件が通過した。成果物の browser 完全性、1000×640・診断なし・2取得の limits・PNG hash を再検査し、日本語・HTML ページ・GLSL の複合画像を目視確認した。PNG は `4d1ca7eb7e29ceec82c6ef5556c40466bdfe40c9ae84cc924ffb7b68332b51ae`。この26試験は拡張前の範囲であり、新しく加えた JS ワーカー・cache unit・数値配列／行列・通常 TUI の成功、物理端末や他 OS、全体の公開品質を証明するものではない。次の実行は Linux `40008545887` と macOS `40008549460` で進める。
+
+Linux の診断実行 `40008545887` は stderr に `No usable sandbox!` を記録した。共有ライブラリは解決し、`unprivileged_userns_clone=1`・`apparmor_restrict_unprivileged_userns=1`・namespace 数上限63852を確認した。次の専用 workflow では、完全性を確認したジョブ専用 Chromium の canonical な1パスだけへ `userns` を与える AppArmor profile を読み込む。パスを管理 runtime 配下に限定し、wildcard を許さず、profile と hash・読み込み結果・global 制限が1のままである証拠を成果物へ残す。Chromium の sandbox と sysctl を変更しない。この許可による起動と描画の成功は次の実行で確認する。製品の installer が管理者設定を自動で変更する機能は追加しない。
+
 ### 次に実装・確認すること
 
 - 両実エージェントの画像付きサブスクリプション生成は、上記の条件で確認した。実 API/provider、モデル・モードの全組み合わせ、ランタイムの制限と診断、保持と会話管理、Windows の子孫終了と異常な親終了後の回収は残る。認証方式の確認は adapter report によるもので、請求額の監査ではない。TUI、クリップボード、設定・素材カタログ、配布と CI は未完成。MCP は変数の解決値と計算済みレイアウトの検証を実装した。計算済み・生成ノードの詳細取得も実装した。アイコンの追加カタログ設定や残る設定などを拡張する。通常編集と部品取り込みの保存準備・依存のロック待ちへ取消を接続した。静的レイアウト・描画全体の取消と、各 OS の遅延検証は残る。
