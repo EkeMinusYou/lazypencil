@@ -947,14 +947,18 @@ impl Project {
     }
 
     pub fn script_settings(&self) -> crate::config::runtime::ScriptSettings {
-        self.runtime_settings().javascript
+        self.configuration
+            .as_ref()
+            .map_or_else(Default::default, |configuration| {
+                configuration.settings.runtime.javascript
+            })
     }
 
     pub fn runtime_settings(&self) -> crate::config::runtime::RuntimeSettings {
         self.configuration
             .as_ref()
             .map_or_else(Default::default, |configuration| {
-                configuration.settings.runtime
+                configuration.settings.runtime.clone()
             })
     }
 

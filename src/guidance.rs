@@ -4,7 +4,7 @@ mod project;
 pub use project::{DesignSettings, ProjectCatalog};
 pub mod usage;
 
-const VERSION: &str = "1.0.5";
+const VERSION: &str = "1.0.6";
 struct Guide {
     id: &'static str,
     summary: &'static str,

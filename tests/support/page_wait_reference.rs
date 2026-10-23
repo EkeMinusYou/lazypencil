@@ -19,6 +19,10 @@ pub struct Server {
 
 impl Server {
     pub fn new() -> Self {
+        Self::with_selector_probe(Arc::new(AtomicBool::new(false)))
+    }
+
+    pub fn with_selector_probe(probe: Arc<AtomicBool>) -> Self {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         listener.set_nonblocking(true).unwrap();
         let address = listener.local_addr().unwrap();
@@ -30,7 +34,8 @@ impl Server {
                 match listener.accept() {
                     Ok((stream, _)) if requests.len() < 64 => {
                         let stopped = stopped.clone();
-                        requests.push(thread::spawn(move || serve(stream, &stopped)));
+                        let probe = probe.clone();
+                        requests.push(thread::spawn(move || serve(stream, &stopped, &probe)));
                     }
                     Ok(_) => (),
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -58,7 +63,7 @@ impl Drop for Server {
     }
 }
 
-fn serve(mut stream: TcpStream, stop: &AtomicBool) {
+fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool) {
     stream
         .set_read_timeout(Some(Duration::from_millis(200)))
         .unwrap();
@@ -75,6 +80,9 @@ fn serve(mut stream: TcpStream, stop: &AtomicBool) {
     }
     let request = String::from_utf8_lossy(&header);
     let path = request.split_whitespace().nth(1).unwrap_or("");
+    if path == "/polled" {
+        probe.store(true, Ordering::SeqCst);
+    }
     let (kind, body, delay) = match path {
         "/delayed" => (
             "text/html",
@@ -84,6 +92,16 @@ fn serve(mut stream: TcpStream, stop: &AtomicBool) {
         "/busy" => (
             "text/html",
             "<style>html{background:#f00}</style><script>addEventListener('load',()=>fetch('/never').then(r=>r.text()));</script>",
+            0,
+        ),
+        "/selector" => (
+            "text/html",
+            "<style>html{background:#f00}#ready{visibility:hidden;width:1px;height:1px}</style><div id='ready'></div><script>addEventListener('load',()=>fetch('/color').then(r=>r.text()).then(color=>{document.documentElement.style.background=color;document.getElementById('ready').style.visibility='visible'}));</script>",
+            0,
+        ),
+        "/selector-cancel" => (
+            "text/html",
+            "<style>html{background:#0f0}</style><script>const query=document.querySelector.bind(document);let polled=false;document.querySelector=selector=>{if(!polled){polled=true;fetch('/polled')}return query(selector)};</script>",
             0,
         ),
         "/color" => ("text/plain", "#00ff00", 1200),
