@@ -349,20 +349,31 @@ try:
         assert not session()["native_session_id"], "Previewing must not start an agent"
     elif case == "script-config":
         saved = open(document, "rb").read()
-        wait(lambda: "RENDER_TIMEOUT" in screen.text(), "configured script execution timeout")
+        def status_line():
+            return "".join(screen.cells[-2]).rstrip()
+        wait(lambda: status_line().startswith("RENDER_TIMEOUT:"), "configured script execution timeout")
         paste("制限を変更しても残る下書き")
         wait(lambda: session()["draft"] == "制限を変更しても残る下書き", "draft after script timeout")
         configuration = configuration.replace("\ntimeout_ms=100\n", "\ntimeout_ms=2000\n")
         with open(configuration_path, "w", encoding="utf-8") as handle:
             handle.write(configuration)
         with open(os.path.join(root, "generated.js"), "w", encoding="utf-8") as handle:
-            handle.write("/** @schema 2.21 */ return [{type:'rectangle',width:180,height:90,fill:'#00FF00'}];")
-        wait(lambda: bool(list(kitty_images())) and bytes([0, 255, 0, 255]) in list(kitty_images())[-1], "recovered script preview")
+            handle.write("/** @schema 2.21 */ let total=0;for(let i=0;i<5000000;i++)total+=i;return [{type:'rectangle',width:180,height:90,fill:total>0?'#00FF00':'#FF0000'}];")
+        source_bytes = open(os.path.join(root, "generated.js"), "rb").read()
+        def green_preview():
+            return status_line().startswith("2 nodes · 0 diagnostics ·") and bool(list(kitty_images())) and bytes([0, 255, 0, 255]) in list(kitty_images())[-1]
+        wait(green_preview, "recovered script preview")
         frames = len(list(kitty_images()))
+        # Identical pixels need not produce another terminal image. Make the
+        # policy change observable without changing the source or document.
+        configuration = configuration.replace("heap_mib=8", "heap_mib=12")
         with open(configuration_path, "w", encoding="utf-8") as handle:
-            handle.write(configuration.replace("heap_mib=8", "heap_mib=12"))
-        wait(lambda: len(list(kitty_images())) > frames, "runtime policy invalidates the preview")
-        assert bytes([0, 255, 0, 255]) in list(kitty_images())[-1]
+            handle.write(configuration.replace("\ntimeout_ms=2000\n", "\ntimeout_ms=1\n"))
+        wait(lambda: status_line().startswith("RENDER_TIMEOUT:"), "policy-only timeout invalidates the preview")
+        with open(configuration_path, "w", encoding="utf-8") as handle:
+            handle.write(configuration)
+        wait(lambda: len(list(kitty_images())) > frames and green_preview(), "policy-only repair restores the script preview")
+        assert open(os.path.join(root, "generated.js"), "rb").read() == source_bytes
         def no_owned_children():
             rows = subprocess.check_output(["ps", "-axo", "pid=,ppid="], text=True)
             return not any(int(parent) == process.pid for pid, parent in (line.split() for line in rows.splitlines()))

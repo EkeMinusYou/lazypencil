@@ -393,6 +393,10 @@ macOS arm64 の `40007811724` は全工程が成功した。設定7件・動的�
 
 Linux の診断実行 `40008545887` は stderr に `No usable sandbox!` を記録した。共有ライブラリは解決し、`unprivileged_userns_clone=1`・`apparmor_restrict_unprivileged_userns=1`・namespace 数上限63852を確認した。次の専用 workflow では、完全性を確認したジョブ専用 Chromium の canonical な1パスだけへ `userns` を与える AppArmor profile を読み込む。パスを管理 runtime 配下に限定し、wildcard を許さず、profile と hash・読み込み結果・global 制限が1のままである証拠を成果物へ残す。Chromium の sandbox と sysctl を変更しない。この許可による起動と描画の成功は次の実行で確認する。製品の installer が管理者設定を自動で変更する機能は追加しない。
 
+続く Linux `40009150116` は profile 読み込み後の sandbox 起動が成功し、cache／期限 unit 2件・設定7件・JS worker 12件・動的描画15件・数値 uniform 10件が成功した。残る動的 CLI の SIGINT 試験は130ではなく4を返した。元の assertion は出力を残していないため、実際のエラー内容は未確定である。CDP の read/write/flush が `Interrupted` を再試行しない経路を修正し、通信エラー・接続終了・起動失敗でも取消と期限を優先して確認する。CLI の assertion には stdout/stderr を追加し、元の失敗の解決は新しい実行で検証する。
+
+macOS の拡張実行 `40008549460` は unit 2件・設定7件・JS worker 12件・動的16件・数値 uniform 10件・実 MCP 画像／実待機の各1件が成功し、TUI は5件成功・1件失敗だった。失敗は `script-config` が同じ画素の設定変更にも新しい terminal packet を要求したことによる。PTY は status 行を使い、同じ JS ソースの実行期限だけを下げて timeout、戻して緑画像へ復帰する観測へ修正した。別の worker 試験は、同じ PNG のまま設定変更で snapshot／dependency ID が更新され、その後の変更なしの確認を省略することを検査する。これらと CDP 修正は GHA で確認する。専用 workflow の library 試験も全件を実行し、ローカルの Rust／Skia ビルドは増やさない。
+
 ### 次に実装・確認すること
 
 - 両実エージェントの画像付きサブスクリプション生成は、上記の条件で確認した。実 API/provider、モデル・モードの全組み合わせ、ランタイムの制限と診断、保持と会話管理、Windows の子孫終了と異常な親終了後の回収は残る。認証方式の確認は adapter report によるもので、請求額の監査ではない。TUI、クリップボード、設定・素材カタログ、配布と CI は未完成。MCP は変数の解決値と計算済みレイアウトの検証を実装した。計算済み・生成ノードの詳細取得も実装した。アイコンの追加カタログ設定や残る設定などを拡張する。通常編集と部品取り込みの保存準備・依存のロック待ちへ取消を接続した。静的レイアウト・描画全体の取消と、各 OS の遅延検証は残る。

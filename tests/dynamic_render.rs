@@ -679,7 +679,13 @@ fn real_cli_uses_the_runtime_and_interrupts_without_writing_an_output() {
             std::thread::sleep(Duration::from_millis(20));
         }
         let output = child.wait_with_output().unwrap();
-        assert_eq!(output.status.code(), Some(130));
+        assert_eq!(
+            output.status.code(),
+            Some(130),
+            "stdout: {}; stderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
         assert!(!output_path.exists());
     }
 }

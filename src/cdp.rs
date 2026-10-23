@@ -153,6 +153,7 @@ impl Browser {
         let socket = match result {
             Ok(socket) => socket,
             Err(error) => {
+                let error = budget.check().err().unwrap_or(error);
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(error);
@@ -187,14 +188,20 @@ impl Browser {
         match self.socket.send(Message::Text(request.to_string().into())) {
             Ok(()) => (),
             Err(tungstenite::Error::Io(error)) if pending(&error) => {}
-            Err(error) => return Err(failed(format!("CDP write failed: {error}"))),
+            Err(error) => {
+                budget.check()?;
+                return Err(failed(format!("CDP write failed: {error}")));
+            }
         }
         loop {
             budget.check()?;
             match self.socket.flush() {
                 Ok(()) => break,
                 Err(tungstenite::Error::Io(error)) if pending(&error) => continue,
-                Err(error) => return Err(failed(format!("CDP flush failed: {error}"))),
+                Err(error) => {
+                    budget.check()?;
+                    return Err(failed(format!("CDP flush failed: {error}")));
+                }
             }
         }
         loop {
@@ -214,10 +221,16 @@ impl Browser {
                     }
                 }
                 Ok(Message::Ping(_)) => {}
-                Ok(Message::Close(_)) => return Err(failed("Chromium closed its CDP connection")),
+                Ok(Message::Close(_)) => {
+                    budget.check()?;
+                    return Err(failed("Chromium closed its CDP connection"));
+                }
                 Ok(_) => {}
                 Err(tungstenite::Error::Io(error)) if pending(&error) => continue,
-                Err(error) => return Err(failed(format!("CDP read failed: {error}"))),
+                Err(error) => {
+                    budget.check()?;
+                    return Err(failed(format!("CDP read failed: {error}")));
+                }
             }
         }
     }
@@ -321,7 +334,7 @@ impl Drop for Browser {
 fn pending(error: &io::Error) -> bool {
     matches!(
         error.kind(),
-        io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+        io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
     )
 }
 fn failed(message: impl Into<String>) -> Error {
