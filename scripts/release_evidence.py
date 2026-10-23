@@ -12,10 +12,12 @@ from pathlib import Path, PurePosixPath
 import re
 import shutil
 import subprocess
+import tarfile
 import tempfile
 
 import dist
 import license_notices as notices
+import quickjs_notice_inventory as quick
 import skia_notice_inventory as native
 
 
@@ -24,7 +26,7 @@ MAX_LINE = 4 * 1024 * 1024
 GAPS = [
     "Cargo declarations and Skia graph inputs do not establish final binary linkage or used archive members.",
     "Rust standard-library and system-library attribution must be joined to this exact build separately.",
-    "QuickJS and the skia-bindings wrapper need full native-source attribution review beyond package notices.",
+    "QuickJS source comment candidates and the skia-bindings wrapper still require final native attribution review.",
     "Fonts, icons, other bundled assets, and optional runtimes need separate applicability review.",
     "Complete legal review, signed build provenance, packaging, signing, and publication remain required.",
 ]
@@ -194,7 +196,7 @@ def native_archives(target, selected):
     return result
 
 
-def collect(root, target, events, revision, output, rustc="rustc", ninja="ninja"):
+def collect(root, target, events, revision, output, rustc="rustc", ninja="ninja", cargo=None):
     root, target = root.resolve(strict=True), target.resolve(strict=True)
     output = output.absolute()
     notices.require(not output.exists() and not output.is_symlink(), "Evidence output must not exist")
@@ -208,6 +210,13 @@ def collect(root, target, events, revision, output, rustc="rustc", ninja="ninja"
     rust = notices.verify(root, root / "resources/licenses/rust")
     compiler = subprocess.run([rustc, "-vV"], capture_output=True, check=True, timeout=30).stdout
     notices.require(len(compiler) <= 65536, "Compiler identity exceeds its byte limit")
+    compiler_text = compiler.decode("utf-8", "strict")
+    host = re.search(r"^host: ([A-Za-z0-9_.-]+)$", compiler_text, re.M)
+    notices.require(host is not None, "Compiler identity does not report a host target")
+    cargo = cargo or Path(os.environ.get("CARGO_HOME") or Path.home() / ".cargo")
+    quick_record = selected["rquickjs_sys"]
+    quick_args = (root, Path(quick_record["manifest_path"]), target / quick_record["out_dir"],
+                  quick_record["features"], cargo, host[1])
     skia_source = inside(root / "vendor/skia-bindings/skia", root)
     skia_build = target / selected["skia_bindings"]["out_dir"] / "skia"
     upstream = root / "resources/licenses/native/upstream.json"
@@ -217,18 +226,23 @@ def collect(root, target, events, revision, output, rustc="rustc", ninja="ninja"
         stage.mkdir()
         skia = native.collect(skia_source, skia_build, stage / "skia", ninja, upstream)
         native.verify(skia_source, skia_build, stage / "skia", ninja, upstream)
+        quickjs = quick.collect(*quick_args, stage / "quickjs")
+        quick.verify(*quick_args, stage / "quickjs")
         notices.require(source_identity(root, revision) == source, "Sources changed during evidence collection")
         notices.require(fingerprint(executable, binary["path"]) == binary
                         and native_archives(target, selected) == archives, "Build outputs changed during collection")
         notices.require(fingerprint(events, "cargo-build.jsonl", MAX_EVENTS) == cargo_output,
                         "Cargo observations changed during collection")
-        shutil.copytree(root / "resources/licenses/rust", stage / "rust")
-        notices.verify(root, stage / "rust")
+        # Preserve relative paths in the existing corresponding-source notices,
+        # including the complete option-ext archive and MPL terms.
+        shutil.copytree(root / "resources/licenses", stage / "licenses")
+        notices.verify(root, stage / "licenses/rust")
+        notices.require(source_identity(root, revision) == source, "Sources changed while copying original legal inputs")
         (stage / "SOURCE-MANIFEST.json").write_bytes(notices.read(root / dist.MANIFEST, dist.MAX_MANIFEST))
         (stage / "LICENSE").write_bytes(notices.read(root / "LICENSE"))
         metadata = {"format_version": 1, "release_ready": False, "source": source, "binary": binary,
-                    "compiler": compiler.decode("utf-8", "strict"), "native_packages": selected,
-                    "native_archives": archives, "rust_notices": rust, "skia_notices": skia,
+                    "compiler": compiler_text, "native_packages": selected,
+                    "native_archives": archives, "rust_notices": rust, "skia_notices": skia, "quickjs_notices": quickjs,
                     "cargo_output": cargo_output,
                     "ignored_non_cargo_lines": ignored, "remaining_review": GAPS,
                     "hosted": {name: os.environ.get(name) for name in
@@ -259,12 +273,13 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--rustc", default="rustc")
     parser.add_argument("--ninja", default="ninja")
+    parser.add_argument("--cargo-home", type=Path, help="Offline original registry archives; defaults to Cargo's home")
     args = parser.parse_args()
     try:
         print(json.dumps(collect(args.source, args.target, args.cargo_json, args.revision,
-                                 args.output, args.rustc, args.ninja)))
+                                 args.output, args.rustc, args.ninja, args.cargo_home)))
     except (notices.NoticeError, dist.DistributionError, OSError, ValueError, KeyError, TypeError,
-            subprocess.SubprocessError) as error:
+            tarfile.TarError, EOFError, subprocess.SubprocessError) as error:
         parser.exit(1, "Release evidence error: " + str(error) + "\n")
 
 

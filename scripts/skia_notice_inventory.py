@@ -110,6 +110,12 @@ def build_inventory(source, build, ninja="ninja", query_fn=query):
         if path.suffix.lower() not in {".c", ".cc", ".cpp", ".h", ".hh", ".hpp", ".inc", ".s"}:
             continue
         text = data[:65536].decode("utf-8", "replace")
+        if REFERENCES.search(text):
+            crlf = data.count(b"\r\n")
+            record["reference_line_endings"] = {
+                "lf_sha256": notices.digest(data.replace(b"\r\n", b"\n")),
+                "crlf_pairs": crlf, "bare_lf": data.count(b"\n") - crlf,
+                "bare_cr": data.count(b"\r") - crlf}
         for match in COMMENTS.finditer(text):
             body = match.group()
             if re.search(r"copyright|SPDX-|licen[cs]e", body, re.I):
@@ -184,9 +190,13 @@ def apply_references(index, texts, upstream):
     deps = next(f for f in index["notice_files"] if f["path"] == "DEPS")
     applies = reference["applies_to"]
     notices.require(applies["skia_deps_sha256"] == deps["sha256"], "Native reference applies to another Skia DEPS revision")
-    inputs = {i["path"]: i["sha256"] for i in index["inputs"]}
-    notices.require(all(applies["source_sha256"].get(path) == inputs[path] for path in expected),
-                    "Review the changed source referring to Chromium license terms")
+    inputs = {i["path"]: i for i in index["inputs"]}
+    mismatches = [{"path": path, "expected_sha256": applies["source_sha256"].get(path),
+                   "observed_sha256": inputs[path]["sha256"],
+                   "line_endings": inputs[path].get("reference_line_endings")}
+                  for path in sorted(expected) if applies["source_sha256"].get(path) != inputs[path]["sha256"]]
+    notices.require(not mismatches, "Review the changed source referring to Chromium license terms: "
+                    + json.dumps({"mismatch_count": len(mismatches), "inputs": mismatches[:10]}, sort_keys=True))
     reference = {**reference, "observed_source_paths": sorted(expected), "blob": notices.blob(data, texts)}
     index["license_references"] = [reference]
     index["review_findings"] = [finding for finding in index["review_findings"]

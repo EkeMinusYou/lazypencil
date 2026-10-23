@@ -193,7 +193,14 @@ class ReleaseEvidenceTests(unittest.TestCase):
     def prepare_collection(self):
         (self.root / "vendor/skia-bindings/skia").mkdir(parents=True)
         (self.root / "resources/licenses/rust").mkdir(parents=True)
-        # Empty directories do not add source inputs.
+        for name, data in {"SOURCE-NOTICES.txt": b"Original source: sources/option-ext-fixture.crate\n",
+                           "MPL-2.0.txt": b"Original MPL terms\n",
+                           "sources/option-ext-fixture.crate": b"Complete original source fixture"}.items():
+            path = self.root / "resources/licenses" / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+            self.manifest["files"].append({**evidence.fingerprint(path, path.relative_to(self.root).as_posix()), "mode": 0o644})
+        self.write_manifest()
         self.output = self.base / "evidence"
 
     def collect(self, native_effect=None):
@@ -207,7 +214,9 @@ class ReleaseEvidenceTests(unittest.TestCase):
         with patch.object(evidence.notices, "verify", return_value={"source_archives_verified": False}), \
                 patch.object(evidence.native, "collect", side_effect=fake_native), \
                 patch.object(evidence.native, "verify"), \
-                patch.object(evidence.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, b"rustc pinned\n")):
+                patch.object(evidence.quick, "collect", return_value={"registry_archive_verified": True}), \
+                patch.object(evidence.quick, "verify"), \
+                patch.object(evidence.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, b"rustc pinned\nhost: aarch64-apple-darwin\n")):
             return evidence.collect(self.root, self.target, self.events, self.revision, self.output)
 
     def test_collection_is_explicitly_incomplete_and_output_cannot_be_replaced(self):
@@ -218,6 +227,9 @@ class ReleaseEvidenceTests(unittest.TestCase):
         self.assertEqual(report["binary"]["sha256"], notices.digest(self.binary.read_bytes()))
         self.assertGreaterEqual(len(report["remaining_review"]), 5)
         self.assertNotIn("must not be copied", (self.output / "build.json").read_text())
+        self.assertEqual((self.output / "licenses/sources/option-ext-fixture.crate").read_bytes(),
+                         b"Complete original source fixture")
+        self.assertIn(b"sources/option-ext-fixture.crate", (self.output / "licenses/SOURCE-NOTICES.txt").read_bytes())
         manifest = json.loads((self.output / "manifest.json").read_bytes())
         for item in manifest["files"]:
             self.assertEqual(evidence.fingerprint(self.output / item["path"], item["path"]), item)
