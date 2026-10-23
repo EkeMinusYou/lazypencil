@@ -107,6 +107,14 @@ class ReleaseEvidenceTests(unittest.TestCase):
             with self.assertRaises(notices.NoticeError):
                 self.observations()
 
+    def test_unrelated_package_may_have_multiple_build_script_contexts(self):
+        self.records[-1:-1] = [
+            {"reason": "build-script-executed", "package_id": "unrelated#1.0.0", "out_dir": "host context"},
+            {"reason": "build-script-executed", "package_id": "unrelated#1.0.0", "out_dir": "target context"},
+        ]
+        self.write_events()
+        self.assertEqual(self.observations()[0], self.binary)
+
     def test_native_build_escape_and_missing_archive_are_rejected(self):
         self.records[2]["out_dir"] = str(self.root)
         self.write_events()
@@ -216,9 +224,9 @@ class ReleaseEvidenceTests(unittest.TestCase):
         with self.assertRaises(notices.NoticeError):
             self.collect()
 
-    def test_changed_binary_or_source_aborts_without_publishing(self):
+    def test_changed_binary_source_or_cargo_records_aborts_without_publishing(self):
         self.prepare_collection()
-        for path in (self.binary, self.root / "src/main.rs"):
+        for path in (self.binary, self.root / "src/main.rs", self.events):
             with self.subTest(path=path):
                 original = path.read_bytes()
                 with self.assertRaises(notices.NoticeError):
