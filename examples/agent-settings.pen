@@ -1,0 +1,157 @@
+{
+  "version": "2.21",
+  "children": [
+    {
+      "type": "frame",
+      "name": "設定画面",
+      "width": 640,
+      "height": 360,
+      "layout": "vertical",
+      "padding": 32,
+      "gap": 24,
+      "fill": "#FFFFFF",
+      "children": [
+        {
+          "type": "frame",
+          "name": "見出しと説明",
+          "layout": "vertical",
+          "width": "fill_container",
+          "height": "fit_content",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "name": "見出し",
+              "content": "設定",
+              "fontFamily": "Noto Sans JP",
+              "fontSize": 30,
+              "fontWeight": "700",
+              "lineHeight": 1.3,
+              "fill": "#0F172A",
+              "id": "nb2a421131d4e45be896a3f231f4fc6a9"
+            },
+            {
+              "type": "text",
+              "name": "説明文",
+              "content": "表示や操作に関する設定を確認し、変更を保存できます。",
+              "fontFamily": "Noto Sans JP",
+              "fontSize": 14,
+              "fontWeight": "400",
+              "lineHeight": 1.5,
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "fill": "#475569",
+              "id": "ncf9e8b6ebed1433d86d1af6574255082"
+            }
+          ],
+          "id": "n55df3d2e47b04ab9a9bb9ded92c85538"
+        },
+        {
+          "type": "frame",
+          "name": "参考画像エリア",
+          "layout": "horizontal",
+          "width": "fill_container",
+          "height": 96,
+          "padding": 16,
+          "gap": 16,
+          "alignItems": "center",
+          "cornerRadius": 8,
+          "fill": "#F8FAFC",
+          "children": [
+            {
+              "type": "rectangle",
+              "name": "添付画像サムネイル",
+              "width": 128,
+              "height": 64,
+              "cornerRadius": 4,
+              "fill": {
+                "type": "image",
+                "url": "assets/crop-source.png",
+                "mode": "contain"
+              },
+              "id": "n6226ad2e6b8a4e9a90474e06df21eaf7"
+            },
+            {
+              "type": "frame",
+              "name": "参考画像の説明",
+              "layout": "vertical",
+              "width": "fill_container",
+              "height": "fit_content",
+              "gap": 4,
+              "children": [
+                {
+                  "type": "text",
+                  "content": "参考画像",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 14,
+                  "fontWeight": "500",
+                  "lineHeight": 1.5,
+                  "fill": "#0F172A",
+                  "id": "ne9ea3b2ac8144b34961b441b53c8107f"
+                },
+                {
+                  "type": "text",
+                  "content": "ボタンの色は、画像左側のオレンジを使用。",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 12,
+                  "fontWeight": "400",
+                  "lineHeight": 1.5,
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "fill": "#475569",
+                  "id": "n74183d5686e249289c803457c3d545f0"
+                }
+              ],
+              "id": "na73875ca60d543e7acb4285d8155d39b"
+            }
+          ],
+          "id": "n63c6b26926e64439a62d50e50a82556c"
+        },
+        {
+          "type": "frame",
+          "name": "余白",
+          "width": "fill_container",
+          "height": "fill_container",
+          "id": "ncdb2052c0dc64fb4ad2a23d6f6eb131d"
+        },
+        {
+          "type": "frame",
+          "name": "操作エリア",
+          "layout": "horizontal",
+          "width": "fill_container",
+          "height": 44,
+          "justifyContent": "end",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "name": "保存ボタン",
+              "layout": "horizontal",
+              "width": 120,
+              "height": 44,
+              "cornerRadius": 8,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "fill": "#F97316",
+              "children": [
+                {
+                  "type": "text",
+                  "content": "保存",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 14,
+                  "fontWeight": "700",
+                  "lineHeight": 1.5,
+                  "fill": "#431407",
+                  "id": "nd7f47d05557c450eb1d39615c52fff6b"
+                }
+              ],
+              "id": "n9582974e8af448928883cf094bf5e821"
+            }
+          ],
+          "id": "nfb3f14a681f5493ab8221f413b1c9553"
+        }
+      ],
+      "id": "nbec48fb8ffe04c768feb19a68d7ef0ac"
+    }
+  ]
+}

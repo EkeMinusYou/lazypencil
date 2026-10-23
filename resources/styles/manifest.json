@@ -1,0 +1,178 @@
+{
+  "version": "1.0.0",
+  "language": "en",
+  "license": "MIT",
+  "styles": [
+    {
+      "id": "standard-ui",
+      "version": "1.0.0",
+      "name": "Standard UI",
+      "description": "A restrained, readable starting point for application screens.",
+      "use_cases": [
+        "app-screen",
+        "forms",
+        "settings"
+      ],
+      "guidance": [
+        "start",
+        "layout",
+        "typography",
+        "color",
+        "components",
+        "verification"
+      ],
+      "example": "welcome.pen",
+      "tokens": {
+        "fontFamily": "Noto Sans JP",
+        "fontSizes": [
+          32,
+          24,
+          20,
+          16,
+          14,
+          12
+        ],
+        "fontWeights": [
+          400,
+          500,
+          700
+        ],
+        "spacing": [
+          4,
+          8,
+          12,
+          16,
+          24,
+          32,
+          48
+        ],
+        "colors": {
+          "canvas": "#F8FAFC",
+          "surface": "#FFFFFF",
+          "text": "#0F172A",
+          "secondary": "#475569",
+          "border": "#CBD5E1",
+          "accent": "#2563EB"
+        },
+        "controlHeight": 44,
+        "cardRadius": 12
+      },
+      "instructions": "Use clear hierarchy, a small spacing scale, and a single prominent primary action. Respect existing document conventions when editing. The example demonstrates composition and measured text; do not copy its stored IDs into an editing batch."
+    },
+    {
+      "id": "dense-workspace",
+      "version": "1.0.0",
+      "name": "Dense workspace",
+      "description": "Compact neutral surfaces for project lists, dashboards, and working interfaces.",
+      "use_cases": [
+        "dashboard",
+        "workspace",
+        "tables"
+      ],
+      "guidance": [
+        "start",
+        "dashboard",
+        "layout",
+        "typography",
+        "components",
+        "verification"
+      ],
+      "example": "dense-workspace.pen",
+      "tokens": {
+        "fontFamily": "Noto Sans JP",
+        "fontSizes": [
+          28,
+          24,
+          20,
+          16,
+          14,
+          12
+        ],
+        "fontWeights": [
+          400,
+          500,
+          700
+        ],
+        "spacing": [
+          4,
+          8,
+          12,
+          16,
+          24,
+          32
+        ],
+        "colors": {
+          "canvas": "#F1F5F9",
+          "surface": "#FFFFFF",
+          "text": "#0F172A",
+          "secondary": "#475569",
+          "border": "#CBD5E1",
+          "accent": "#2563EB"
+        },
+        "rowHeight": 56,
+        "controlHeight": 40,
+        "cardRadius": 12
+      },
+      "instructions": "Prioritize scan order, aligned columns, meaningful metric labels, and consistent status cues. Use restrained emphasis instead of assigning a strong color to every card. Replace sample data with the user's actual information."
+    },
+    {
+      "id": "content-page",
+      "version": "1.0.0",
+      "name": "Content page",
+      "description": "A spacious warm palette and reading hierarchy for editorial or introductory pages.",
+      "use_cases": [
+        "content-page",
+        "landing-page",
+        "editorial"
+      ],
+      "guidance": [
+        "start",
+        "content-page",
+        "typography",
+        "color",
+        "layout",
+        "verification"
+      ],
+      "example": "content-page.pen",
+      "tokens": {
+        "fontFamily": "Noto Sans JP",
+        "fontSizes": [
+          48,
+          32,
+          24,
+          20,
+          18,
+          16,
+          14,
+          12
+        ],
+        "fontWeights": [
+          400,
+          500,
+          700
+        ],
+        "spacing": [
+          8,
+          12,
+          16,
+          24,
+          32,
+          40,
+          64,
+          80
+        ],
+        "colors": {
+          "canvas": "#FFFCF7",
+          "surface": "#FFFFFF",
+          "text": "#292524",
+          "secondary": "#57534E",
+          "border": "#E7E5E4",
+          "accent": "#92400E"
+        },
+        "controlHeight": 48,
+        "cardRadius": 12
+      },
+      "instructions": "Lead with a clear message and a useful next action. Keep body copy readable, make supporting sections specific, and use imagery only when it adds meaning and has suitable usage rights. Adapt section structure to the content."
+    }
+  ]
+}

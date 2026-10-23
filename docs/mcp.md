@@ -1,0 +1,243 @@
+# MCP stdio server
+
+The current server binds to one existing document for its lifetime:
+
+```sh
+lazypencil mcp --file /absolute/path/design.pen
+```
+
+Use the same command and arguments in an MCP client's local stdio server configuration. Optional repeated `--font /path/to/font.ttf` arguments select additional fonts for that server. `--data-dir` or `LAZYPENCIL_DATA_DIR` selects its history and data directory. Locks use a stable per-user cache directory independent of that choice, so changing history directories does not bypass writer coordination. If `LAZYPENCIL_LOCK_DIR` is explicitly overridden, all cooperating processes must use the same absolute directory. Tool arguments cannot switch the bound document or supply an arbitrary file to read.
+
+The bound document also selects its nearest project `lazypencil.toml`. Supported font settings, source bytes, and discovered files are captured as dependencies. `get_document.configuration` exposes the selected data, and `list_fonts` adds effective default family, locale, and fallback policy. A configuration edit or changed search membership invalidates a retained snapshot. A new request can load the new settings; it does not change the document binding. See [project configuration](configuration.md).
+
+The implementation uses the [official Rust SDK](https://github.com/modelcontextprotocol/rust-sdk) at version 3.6.0. The currently advertised protocol is `2025-11-25`; other protocol revisions and broader real-agent workflows still require interoperability testing. Codex and Claude subscription workflows have been checked separately; see [agent integration](agents.md). MCP messages use stdout; startup errors use stderr. Closing stdin ends the server.
+
+When the CLI/TUI conversation host owns the server, it also binds design-resource metadata to the current prompt turn. Successful guide/style/catalogue queries are journaled before their results are returned, and the host appends those records to its transcript at turn end. Tool responses keep their existing shape. Ordinary external MCP connections have no host-owned usage journal. This records served resources rather than proving model comprehension; see [the record format and limits](agents.md#design-resource-records).
+
+## Current tools
+
+| Tool | Behavior |
+| --- | --- |
+| `get_document` | Document metadata, revisions, dependencies, diagnostics, capabilities, and the guidance entry point |
+| `get_guidance` | Built-in English guides, trusted project guides, automatic project rules, versions, hashes, and an index |
+| `list_icons` | Pinned vector icon names, aliases, tags, versions, hashes, licenses, and pack availability |
+| `list_styles`, `get_style` | Built-in and trusted project styles, tokens, guide references, font requirements, and editable `.pen` examples |
+| `read_nodes` | Stored, expanded, or explicitly calculated nodes, generated properties and provenance, inherited addresses, declared libraries, and bounded pages |
+| `list_components` | Reusable definitions in the document and declared libraries |
+| `get_variables` | Paged variable definitions, resolved values, source documents, node/property context, and hypothetical themes |
+| `apply_operations` | The shared atomic editing API with expected revisions and request-ID deduplication |
+| `validate_document` | Structural checks or paged measured-layout diagnostics, with optional retained calculation reuse |
+| `get_history`, `restore_checkpoint` | Committed edits and a dependency-checked restore as a new edit |
+| `read_asset` | Captured JS or GLSL text by hash, UTF-8 byte chunks, script header metadata, and runtime sources from a current retained snapshot |
+| `put_asset` | Immutable managed PNG, JS, or GLSL files; images are checked and normalized before storage |
+| `get_layout` | Calculated positions, transforms, text metrics, overflow, and a retained snapshot ID |
+| `render` | PNG image content and matching snapshot metadata |
+| `list_fonts` | Each bundled/configured face, collection index, source/face hashes, styles, axes, and default fallback chain |
+
+`list_fonts`, `get_layout`, `render`, and calculated node reads require the rendering feature. The public input schemas are generated from the same Rust types used to parse tool arguments; unknown fields are rejected. Domain errors appear as `isError: true` with a structured error code and readable text.
+
+The [icon catalogue](icons.md) currently supports bundled Lucide and explicitly installed Feather; other planned libraries remain unfinished. Component import and detachment have the supported scope and remaining gaps described below. Variable queries and layout validation share the project resolver and calculation pipeline. The `prompt` host registers retained image attachments for its document-bound MCP connection: `get_document` returns their metadata and `put_asset` accepts registered attachment IDs. Ordinary external connections have no attachment grant and reject those IDs; they can upload MIME-typed image data instead. See [agent integration](agents.md) for grant lifetime and remaining image UI work. Scripts, browser captures, and shader fills/effects have initial implementations described below. Basic dynamic TUI preview and refresh have been checked; complete dynamic-content compatibility and TUI controls remain unfinished.
+
+## Editing and inspecting
+
+The bound project's `[design]` settings add guides and styles under `project:ID`. `get_guidance` without an ID returns the English workflow plus automatic `project_guides`, each with its own language/version/hash; reference-only guides remain available by ID. `list_styles` merges approved project styles with the three built-in styles, and `get_style` returns the actual read-only example and source hashes. With no project design settings, built-in catalogue responses retain their previous shape. Contextual responses also identify the current document/dependency revisions.
+
+Project instructions require an explicit local user action: review `config show FILE`, then run `config trust FILE` (optionally pinning the displayed fingerprint). MCP cannot grant trust. `PROJECT_NOT_TRUSTED` blocks unapproved instructions, and agents must not grant trust on the user's behalf. `get_document.guidance.project_design` reports availability and trust metadata without exposing guide bodies. Instruction changes invalidate their grant. Example data and font-only changes remain revision-checked without revoking unchanged instructions. See [project configuration and trust](configuration.md#explicit-design-trust).
+
+`import_component` accepts a project `style_id` through the same atomic link/copy operation as built-in styles. Its example's requested URI and physical asset origin are preserved; normal dependency closure, source revisions, immutable asset publication, and copy limitations apply. A configured default style is a reference for new designs and does not change a document merely by selection.
+
+Start with `get_document` and `get_guidance`. Read relevant nodes and definitions before editing. Use `list_styles` and `get_style` for a suitable starting point when creating a design; preserve existing conventions during a local edit. English guidance does not change the user's requested response or design language.
+
+An edit request has this shape:
+
+```json
+{
+  "request_id": "change-title-1",
+  "expected_revision": "REVISION_FROM_GET_DOCUMENT",
+  "expected_dependency_revision": "DEPENDENCY_REVISION_FROM_GET_DOCUMENT",
+  "operations": [
+    {"op": "update", "target": "heading", "set": {"content": "My project"}}
+  ]
+}
+```
+
+Omit the dependency revision only when the document has no external dependencies. Supply a new request ID for a different edit, and reuse the original ID and payload to retry a request whose result was lost. `dry_run: true` runs the batch validation without saving. The `operations` guide contains a runnable example using server-generated IDs and a component reference in the same batch.
+
+Pass the returned revision and dependency revision to `get_layout`, inspect its nodes and diagnostics, then pass its `snapshot_id` to `render`. The result includes an MCP `image` content block containing Base64 PNG data with `mimeType: image/png`; the image is not merely a local path. `node_id`, `region`, and `scale` can limit the preview. Structural validation alone does not establish a successful visual check.
+
+Font collection files are captured dependencies. `list_fonts` enumerates every supplied face, and `get_layout` text records report the faces actually used by shaped glyph runs, including fallback, selected axes, and synthetic styling. Source `hash` and original `face_index` identify the input; `face_hash` identifies normalized standalone data. Changing the original collection invalidates the snapshot even when its selected face would normalize to the same bytes. See [fonts](fonts.md) for selection, limits, and remaining configuration/platform work.
+
+`node_id` selects its visual bounds as a crop of the composited document. Node and region previews retain surrounding and overlapping scene context; they are not isolated transparent exports of just one node. Native background blur uses that context without Chromium. Parent opacity, transparency, and effect order are preserved through separate replacement coverage, and filter inputs can extend outside the requested output rectangle. See the `effects` guide and [graphics implementation](graphics.md) for the current contract and resource limits.
+
+`get_document.capabilities.graphics.blend_modes` lists the exact eighteen supported native color-mode names. Outer shadows can blend against the actual prior scene, and inner shadows retain the object's alpha. Ordinary shadows, including these modes, use native CPU rendering. `linearBurn` and `linearDodge` mix colors before source-over alpha composition; they do not add alpha. Mode variables follow the same theme and property-source rules as other resolved properties. `graphics.mesh_gradient` advertises native row-major Coons mesh paints, with normalized point arrays or point objects and relative handles. Mesh fills and strokes share ordinary masks, themes, opacity, blending, and effects. See [mesh behavior, defaults, and limits](graphics.md#mesh-gradients). The remaining graphic compatibility work is still required before release.
+
+## Variables and themes
+
+`get_variables` returns raw `variables` and `themes` separately from `resolved_values`, `sources`, and `effective_theme`. An alias remains an alias in its raw definition. Each successful value reports its definition document and terminal value document; string-valued image paths remain strings and are not opened or rewritten by this query. A resolution failure omits that value and adds a named error to `diagnostics`, while retaining the raw definition. `resolution_complete` describes only the returned page. A project-wide `resolution_error` or incomplete asset status remains visible and is not repaired by a successful value query.
+
+With no selector, list variables defined in the bound document. `library_alias` selects a declared library, including nested aliases such as `ui:base`; it is not a file path. `name` selects one exact unprefixed name or qualified reference such as `ui:spacing`. Resolution uses the same alias, type, conditional-value order, and namespace rules as rendering. Listing one scope does not flatten all imported definitions into the consumer's namespace.
+
+`node_id` and optional `instance_path` select a stored or inherited node in that library or the bound document. Its effective theme includes actual ancestors and instance overrides. The default variable scope then becomes that node's source document. Add `property` to use the source namespace of one existing top-level property, such as `fill` or `content`; this distinguishes an instance's consumer override from the original library definition. The response's `scope_document` identifies the chosen namespace. These addresses are stored/inherited addresses, not runtime-generated script IDs.
+
+For example, `{"node_id":"instance","instance_path":["label"],"property":"fill","name":"ink"}` queries the ink value as used by that property. `theme: {"mode":"dark"}` applies a hypothetical override after deriving that context. Each explicit axis/value must be declared in a loaded project document. The query never changes the saved theme, variable definitions, or a retained render calculation.
+
+Optional expected document/dependency revisions reject stale reads. `limit` is 1..500 (default 100). Names are listed in sorted order, and `next_cursor` binds the page to the document, dependencies, context, and query; page size may change. Unknown fields, invalid node paths, undeclared libraries, and invalid explicit theme choices are rejected. CLI uses the same service:
+
+Queries allow at most 128 inherited path elements and 128 explicit theme overrides. Names, selectors, path elements, and each theme axis/value are limited to 4,096 UTF-8 bytes; path elements must be nonempty IDs without `/`. Optional read preconditions can be added or omitted between pages when they still match the bound result; they are not part of the semantic query.
+
+```sh
+lazypencil variables design.pen --name ui:spacing
+lazypencil variables design.pen --node instance --instance-path label --property fill --name ink --theme mode=dark
+```
+
+## Validation scopes
+
+`validate_document` defaults to `scope: "structure"` and checks document structure, references, variable definitions, and themes without running scripts. `scope: "layout"` runs the normal script/layout pipeline and adds measured text, sizing, overflow, font, and icon diagnostics. It requires the rendering feature. Layout errors such as unresolved dimensions or script execution failures remain tool errors. A completed calculation containing diagnostic errors returns `valid: false`; warnings alone keep `valid: true`. `error_count`, `warning_count`, and `total_diagnostics` cover the whole calculation, including diagnostics beyond the returned page.
+
+`complete` means the requested checks completed; `validated_scopes` states which ones. Neither field establishes paint compatibility or visual quality. Layout validation does not launch browser/shader capture to check their pixels, decode every paint, or perform a rendered visual review. Unknown node types retain the existing `UNSUPPORTED_FEATURE` result rather than being silently certified.
+
+Optional expected revisions reject stale input. A fresh read can omit them and returns the actual revisions. Layout validation retains its `snapshot_id`, runtime dependency revision, script execution hashes, and calculation metadata. Pass that ID and the returned revisions to `get_layout` or `render` to use the same calculation. Supply it again to validate retained measurements without rerunning scripts. A changed dependency or document rejects reuse; expired IDs return `SNAPSHOT_UNAVAILABLE`. A structural request cannot include a calculation ID.
+
+Diagnostics use `limit` 1..500 (default 100) and `next_cursor`; the cursor binds to the requested scope and calculation, and a new page size is allowed. For layout pages, reuse the returned `snapshot_id`. Responses retain the shared 4 MiB budget. Cancellation reaches code execution and subsequent verification without poisoning retained calculations.
+
+```sh
+lazypencil validate design.pen
+lazypencil validate design.pen --scope layout --limit 100
+```
+
+CLI validation uses the same service and optional `--font`, expected revision, limit, and cursor arguments. Separate CLI invocations recompute layout and scripts; they do not retain MCP calculations. Diagnostic errors produce exit code 4 with the report under structured error details; warnings return success. Structural validation and variable queries remain available without the rendering feature.
+
+## Components and inherited nodes
+
+To read an inherited label, use `read_nodes` with `{"node_id":"instance","instance_path":["nested-instance","label"],"depth":0}`. The result has `view: "expanded"`; each node includes its `address`, `properties`, property origins, and source node. Variable references remain references in this view. `expand_instances: true` expands a selected root or searches expanded nodes. A `library_alias` selects a declared library; nested aliases follow the declared import chain, separated by `:`. These API addresses do not introduce a new serialized `.pen` reference syntax. Stored-node reads remain available when a dependency is missing and report asset diagnostics or a dependency error.
+
+### Calculated and generated nodes
+
+Use `read_nodes` with `{"calculated":true,"node_id":"chart","depth":2}` to explicitly run the script/layout pipeline and inspect the tree used by PNG output. To reuse a calculation already returned by `get_layout`, layout validation, `render`, or a calculated read, pass `snapshot_id` instead. That form verifies the captured document and dependency bytes and does not rerun scripts. Unknown or expired IDs return `SNAPSHOT_UNAVAILABLE`; changed captured inputs return `REVISION_CONFLICT`. IDs belong to their MCP connection. Calculated reads require the rendering feature; `get_document.capabilities.node_reads` advertises support.
+
+The result has `view: "calculated"`, `variables_resolved: true`, calculation metadata, `total_matches`, and `next_cursor`. Each node includes its public `id`, `address`, resolved `properties`, `property_sources`, effective `theme`, `source_path`, `source_id`, `generated_by`, and the matching `layout` record. Generated properties come from the captured execution, including nested scripts and library-scoped variables. A depth of zero returns `children_count`; larger depths include nested `children`. Resolved properties still describe the node's declarative sizing rules; measured positions and sizes are in `layout`.
+
+An inherited node can still be selected by `node_id` plus `instance_path`. A generated node can be selected by its opaque top-level `id`, as returned by this read or a layout record. Do not construct an ID from `properties.id` or save generated IDs as document edits. Generated nodes remain derived and read-only; follow `generated_by` to edit their owning script's inputs or source. A calculation covers the bound document's effective tree, including used library instances; `library_alias` is rejected. Use a stored/expanded query to inspect unused library definitions. `expand_instances` adds nothing to an already calculated tree.
+
+Name/type filters and depth 0..16 apply to calculated reads. Limits are 1..500, default 100; matches are visited in layout order, and children included by depth can overlap other matches. Reuse both `snapshot_id` and `next_cursor` for later pages, keeping the other query fields unchanged. A different page size is allowed. Response construction is bounded to 4 MiB; reduce depth, page size, or selection after an oversized response. Cancellation reaches script execution and serialization; cancelling a read does not invalidate an otherwise current retained calculation.
+
+```sh
+lazypencil inspect design.pen --calculated --node chart --depth 2
+```
+
+Separate CLI invocations recompute scripts and layout. A cursor works only while that newly computed snapshot and query remain identical; CLI processes do not retain MCP calculation IDs. Omit `--calculated` (or both `calculated` and `snapshot_id` in MCP) to inspect stored code without execution, including code that cannot currently run. Browser and shader pixels still require `render`; calculated properties alone are not a visual review.
+
+### Editing instances
+
+An inherited `update` or `set_override` writes only that instance's override. `reset_override` restores inheritance by removing selected properties or the exact descendant entry. `replace_override` and `set_slot_children` allocate IDs and expose them through `client_ref` or `client_refs`; subsequent operations can use `result_of`. `set_theme` changes individual axes. Inherited nodes cannot be moved or deleted as if they were stored roots.
+
+`detach_instance` handles stored roots and inherited instance targets, including declared external libraries. A stored root keeps its ID. An inherited target becomes a replacement in the owning instance's `descendants` map with a new stored ID. Its result includes `generated_ids[OPERATION_INDEX].address`; `client_ref` binds the new stored ID so a later operation can update it directly. Ordinary inherited descendants require the owning root address until they become stored replacements.
+
+Detachment materializes one instance boundary, applies definition chains and ancestor overrides, removes folded deeper outer overrides, and keeps other nested references and variable references. Different source documents may use the same ID: temporary source-scoped identities prevent collisions before allocating stored IDs. References to definitions owned by the detached subtree follow the newly allocated definitions; other library references remain qualified and linked. Moved image/shader paths are relative to the bound document and retain their original file targets. Library variable references retain their namespace. Additional source-default theme axes become explicit only where needed to preserve the current resolved theme. Source libraries, assets, sibling instances, and variables are not rewritten or copied.
+
+Before accepting each detach operation, the service resolves both trees and compares properties, effective themes, child structure, nested instance boundaries, canonical asset targets, and script execution/input origins. A scope-preservation mismatch fails the whole batch with `UNSUPPORTED_FEATURE`. This is structural verification without executing script, browser, or shader code. Shader image uniforms that use variables retain the document defining the selected terminal value, including aliases and theme conditions. The value is anchored to that document; active asset capture and rendering canonicalize the path and check project roots and dependencies. Inactive images are not opened. Stored variables and their text uses retain their original values and remain linked after detachment. No additional metadata is needed for that shader binding. This is the current lazypencil resolution policy; Pencil parity for imported variable-valued image samplers remains unverified. Independent copying of these variables remains unfinished; component importing is described below.
+
+External script detachment uses the lazypencil extension `metadata.lazypencil.script_scope` version 1 to retain the original execution document and, when needed, the input document. The source URI remains linked to the original JS file. Generated component/variable/image references and nested scripts retain their original document scope. Default ref inputs use that execution document; explicit ref inputs retain the document that supplied them. Other metadata is preserved. The code is not rewritten or executed by the detach operation.
+
+The binding's `library` is a declared alias relative to the document that supplied the metadata; an empty string means that document. `script_uri` identifies the bound source URI. Optional `inputs.library` and `inputs.hash` bind the stored input object; the hash is SHA-256 of compact JSON with all object keys recursively sorted. Changing the stored source URI or input value independently invalidates the corresponding binding. Explicit instance overrides use the overriding document even if their JSON values equal the definition. Invalid bindings and unknown versions are rejected. These are lazypencil semantics inside the format's metadata field, not a verified Pencil round-trip contract. Source libraries remain dependencies, and standalone script copying is unfinished.
+
+`add_import` and `remove_import` edit the declared library map; unresolved references make the complete batch fail.
+
+## Importing components
+
+`import_component` is an operation inside `apply_operations`, with an explicit `mode` of `link` or `copy`. It accepts a normal `parent`, `index`, and `client_ref`. Its generated result contains the placed instance `id`, reusable `component_id`, and `source_revision`. Later operations can address the instance with `result_of`; subsequent requests can edit the copied reusable definition by its returned ID.
+
+Choose one source shape:
+
+```json
+{"library_alias":"ui","node_id":"button"}
+{"uri":"library/ui.lib.pen","import_alias":"ui","node_id":"button"}
+{"style_id":"standard-ui","node_id":"button"}
+```
+
+Omit `library_alias` for a local reusable definition. File URIs resolve beside the bound document and must select a `.pen` inside allowed project roots. They cannot read arbitrary non-document files or remote URLs. A bundled style ID is selected from the built-in catalog; its example hash is the source document revision. Optional `expected_source_revision` rejects a changed source in addition to the ordinary request preconditions.
+
+`link` retains the original definition, variables, and asset scopes. A file source registers its explicit alias; a style source publishes the complete pinned example as a managed `.lib.pen` and registers `style-STYLE_ID` by default. A style source can supply `import_alias` to choose another alias. Alias collisions are rejected. Linking cannot introduce a saved import cycle. A local link simply places another instance.
+
+`copy` closes static references, variable aliases, themes, owned children, descendant replacements, slot children/suggestions, and direct image/shader file inputs. Source documents may use equal node IDs. Each stored node receives a new ID, references and descendant paths follow the corresponding copied definition, and the result's `id_map` uses qualified source keys. Each key segment escapes `%` as `%25` and literal `:` as `%3A`, so a literal source ID cannot collide with a library namespace. Qualified keys are limited to 4,096 bytes. Variables and themes have separate maps. Required definitions live under a disabled frame named `Imported components`; only the placed instance contributes visible artwork. Other nested instances remain references to copied definitions. Source libraries and assets are not changed. Imported image bytes remain exact source bytes; this is a structural file copy, not image normalization or proof that every graphic can render.
+
+For example:
+
+```json
+{"op":"import_component","source":{"library_alias":"ui","node_id":"button"},"mode":"copy","options":{"variable_prefix":"kit.","component_prefix":"Kit "},"client_ref":"primary"}
+```
+
+Name collisions fail by default. `options.variables`, `options.components`, and `options.themes` map a qualified source key to `{"action":"rename","name":"new-name"}` or `{"action":"reuse","target":"local-target"}`. For components, the reuse target is a local reusable node ID; for variables and themes it is the local name. Component display names only receive `component_prefix` when a source name exists. `variable_prefix` applies before collision checking. Local variables/themes can retain their own existing definitions when copied within the same document. Variable reuse checks the declared type; theme reuse requires all source values. A typo or unused per-source resolution is rejected. Changing a theme name also changes its conditions and explicit node selections, including unambiguous inherited axes.
+
+Copying scripts, preserving string-valued shader image sampler bindings, and reusing a reusable definition contained inside another copied subtree remain required work and are advertised as unsupported. Independent dependency definitions or the selected component can be explicitly reused. Unknown node types cannot be structurally copied. The binary does not evaluate code to guess missing dependencies. Original-name policies are not used to silently flatten a component or substitute a different asset.
+
+Imports stage immutable files in memory. The complete batch and captured source inputs are validated before publication; a dry run creates no files or history. Image/shader copies use `assets/lazypencil/CONTENT_HASH.EXT`, with no overwrite. Uploads and imports share this publisher. Its document directory and existing managed directories must retain their exact canonical paths, so a redirected parent or managed directory cannot redirect publication. During a save, source documents, assets, configured fonts, and configuration candidates participate in shared locking and final verification, including sources removed from the resulting document. Library/image symlinks are checked by their requested-to-canonical binding as well as bytes. The same bytes at a different target invalidate the read. Duplicate captured read sets are shared by the batch; captured source bytes and staged output bytes each have a 128 MiB batch limit, and each managed file has a 64 MiB limit. Node, document, and request limits also apply. Edit reports must fit the common 4 MiB response budget with room for transaction fields; oversized reports fail before file/document publication rather than committing a result that MCP cannot return.
+
+A copy may read a library that already imports the consumer without adding a reverse edge to the saved import graph. A link that would create that cycle is rejected. A late conflict or interrupted save may leave complete unreferenced immutable files; it never publishes a partial document or deletes a file that another operation may use. Retention/collection of such files remains unfinished. Replaying a committed request returns its recorded IDs and URIs before attempting to reopen the original library.
+
+## Managed assets
+
+Create code with `{"kind":"script","source":{"text":"return [];"}}`. Images use `{"kind":"image","source":{"mime_type":"image/png","data":"BASE64_DATA"}}`; static PNG, JPEG, and WebP input is normalized to PNG, including orientation. Animated input, false MIME types, and oversized images are rejected. Code is limited to 1 MiB, source and normalized images to 20 MiB each, and decoded images to 16 megapixels. MCP's 4 MiB argument limit also applies to encoded data.
+
+`put_asset` returns a relative URI and SHA-256 hash. Files live under `assets/lazypencil` beside the bound document. Identical content is reused, conflicting files are never overwritten, and asset creation does not itself edit the document or add a history entry. Link the returned URI with `apply_operations`. `read_asset` only reads captured script or shader dependencies after they have been referenced; it is not an arbitrary file reader. CLI users can use `assets put design.pen --kind image --input reference.jpg` and `assets read design.pen --hash HASH`.
+
+Uploads and component-import publication acquire the destination's exclusive path lock in the same namespace as shared dependency locks. This includes a currently absent destination, so a cooperating publisher cannot make it appear between a saving document's final dependency check and commit. Different document/history data directories do not bypass this coordination. Publication rechecks directories and any existing bytes after obtaining the lock, including when it will reuse identical content. Lock waits retain the common five-second limit and return `LOCK_UNAVAILABLE` when it cannot be acquired. Asset publication takes no additional document lock; importing a component may already hold that document's writer lock.
+
+CLI `assets put` accepts Ctrl+C and MCP `put_asset` accepts request cancellation while waiting for the destination, after input normalization, during staged output writes, and immediately before publishing its final name. The component-import path uses the same publisher and its editing token. Once a complete final file is published, verification and directory synchronization finish; an abandoned request can therefore leave a complete unreferenced file. CLI input reads are bounded regular-file reads, with a nonblocking open on Unix. This coordination does not prevent writes by external programs that ignore lazypencil's locks.
+
+File-lock contention is recognized using the raw OS code from [fs2's contention error](https://docs.rs/fs2/0.4.3/fs2/fn.lock_contended_error.html). Checking `ErrorKind::WouldBlock` alone misses Windows file-lock contention under the declared Rust 1.94 toolchain: its [Windows error mapping](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/sys/io/error/windows.rs) leaves that code uncategorized. The same classifier serves document/dependency locks, design-resource journals, and icon installation; unrelated I/O failures are not retried as contention. This code review and the platform-neutral regression test do not replace the still-required native Windows execution.
+
+## Repairing missing assets
+
+Missing declared local images, script sources, shader sources, and shader image inputs do not prevent inspection and structural editing. `get_document`, `read_nodes`, and edit results report `assets_complete: false` and `asset_diagnostics`. Each diagnostic identifies the original URI, origin document, requested path, planned resolved path, and resource kind. Dependencies include absent resources with `availability: "missing"` and an absence revision. The same path used as both an image and code retains a dependency for each kind.
+
+Use the ordinary document and dependency preconditions even when the files are absent. Upload a replacement with `put_asset` and update the node to its returned URI, or remove the affected node/property. Repairs can be saved in several batches: existing missing targets and kinds may remain, but an ordinary edit cannot introduce a different missing target or resource kind. `dry_run` follows the same rule without writing files or history. An explicit `restore_checkpoint` can restore historical missing references and reports the resulting diagnostics.
+
+`assets_complete: true` means the declared asset scan found no missing files; it does not establish graphics compatibility, successful code execution, or visual quality. A resolution failure that prevents a complete scan produces `assets_complete: null` with `resolution_error`. A failed project load instead reports `dependency_error` without claiming an asset status. `validate_document`, `get_layout`, and `render` reject known missing assets with `ASSET_NOT_FOUND`, including the diagnostics; structural repair does not run missing code. Omit the optional runtime dependency precondition when repairing a document whose code cannot currently execute.
+
+If a missing file appears or its parent is redirected after inspection, reload before editing; the old precondition is rejected with `REVISION_CONFLICT`. Creating ordinary parent directories alone retains the same absence revision. Existing and dangling symbolic links are tracked, and adding a new parent link or junction invalidates a captured missing path. This does not provide atomicity against uncooperative external filesystem writers. Publishing an immutable import file can itself fulfill an old absent reference; a resulting conflict leaves the original document unchanged and requires a reload, and the complete immutable file can be reused.
+
+This repair path covers at most 1,024 unique requested-path/resource-kind pairs. Missing path probes allow at most 256 components and 40 dangling-link expansions, within the usual project and response budgets. Missing library documents, configured font files, forbidden URLs, unreadable files, wrong file types, escaped project roots, and unresolved parent traversal after an absent directory remain errors. Runtime-generated resources still require successful code execution to discover. These broader repair cases remain release work.
+
+## Script execution
+
+Create or read a script asset, then insert a `script` node with `scriptUri`, dimensions, and optional `inputs`. `read_asset` returns `script_header` metadata, or `script_header_error` while preserving access to the source for repairs. `get_guidance` with `id: "scripts"` explains supported inputs and the execution contract. Structural validation does not execute scripts.
+
+`get_layout` evaluates scripts and returns execution hashes and generated geometry. Generated records have `generated_by`; their IDs cannot be edited as stored document nodes. Update the source node's inputs or link new immutable code. Render with the returned `snapshot_id` to use the same calculation. Runtime-discovered files are listed under `runtime_dependencies`, with their own `runtime_dependency_revision`. The ordinary dependency revision continues to describe document-declared dependencies. Both sets are checked when a retained snapshot is reused. Runtime sources can be read by hash while that snapshot remains current; a changed dependency reports a conflict.
+
+For an edit based on that calculation, supply `expected_runtime_dependency_revision` alongside the two ordinary expected revisions. The service re-evaluates scripts without save locks, compares the newly captured runtime dependency hash, holds shared dependency locks during saving, and checks captured files again immediately before replacing the document. A mismatch fails with `REVISION_CONFLICT`, including for a dry run. The result records `validated_runtime_dependency_revision`, describing the pre-edit calculation. This is optional so that structural repairs do not require executing broken code. It checks captured local dependencies, not the freshness of an external web page. A committed request is replayed before any script execution; its original request ID and full payload, including runtime preconditions, must match. Builds without rendering reject runtime preconditions explicitly.
+
+The interpreter supports header schema 2.21, synchronous execution, six typed input kinds, existing component references, nested scripts, and fixed random reseeding. Its random sequence and all schema details have not yet been compared with Pencil. The current limits are 2 seconds and 64 MiB of interpreter heap per evaluation, 1,000 output nodes, a 3 second parent watchdog, 8 layout passes, 128 evaluations, and a 10 second layout evaluation budget checked between evaluations. Scripts that read an unresolved content-sized dimension require an explicit fallback. Use [calculated reads](#calculated-and-generated-nodes) to inspect generated properties and their matching geometry.
+
+Script header, compilation, and JavaScript exception diagnostics include `error.details.script_diagnostic`. `stage` distinguishes `header`, `compile`, `runtime`, and internal `setup`. When available, `line` and `column` refer to the original source, including its header, with one-based UTF-8 byte columns. LF, CRLF, CR, and Unicode line/paragraph separators are counted consistently with the interpreter. Wrapper lines are excluded. `location_kind` is `source`, `declaration`, `call_site` for an outer call into dynamic code, `end_of_source` for an incomplete body, or `unavailable`. Errors without a usable reported position have null coordinates and an empty excerpt; a primitive throw does not acquire a fabricated location.
+
+`source_excerpt` contains at most three original source lines, each windowed to 240 Unicode scalar values. Each line has `line`, `text`, one-based UTF-8 byte `start_column`, `truncated_start`, and `truncated_end`. Long failing lines are windowed around the reported column. Source positions are debugging hints from the parser or reported exception stack; JavaScript can replace its own stack. Use captured `source_hash`, `script_path`, and `node` to identify the source and owning address, and use normal revision checks for edits. Declared source/header failures and nested runtime failures retain this context. Input/output validation and parent watchdog failures can lack source positions. The readable CLI/TUI error also includes available locations and bounded excerpts. JSON clients should use the structured coordinates instead of parsing the raw engine stack in `message`.
+
+Cancelling an executing script stops its worker process. Real stdio tests cover script execution, runtime-precondition evaluation, and cancellation while waiting for an edit lock. The save boundary is described below.
+
+## Browser and shader rendering
+
+Run `lazypencil runtime setup chromium` explicitly before rendering browser nodes or GLSL. See [runtime installation](runtimes.md) for pinned artifacts and offline setup. Static documents and script geometry do not launch Chromium.
+
+`render` accepts `time` in seconds (default zero) and `refresh` (default false), alongside `snapshot_id`, `node_id`, `region`, and `scale`. The result contains actual PNG image content and `dynamic_artifacts`: page acquisition IDs, timestamps, redacted URL metadata, browser version, viewport and image dimensions, shader request hashes, software renderer details, and PNG hashes. A layout snapshot identifies geometry and captured local files. A page acquisition identifies a time-dependent web image; refreshing it does not change the layout snapshot ID.
+
+The current page path supports HTTP(S), HTML data URLs, and `about:blank`, dimensions, zoom, scroll offsets, and three basic device IDs. It waits for load, web fonts, decoded images, and two animation frames. Each acquisition uses a fresh isolated context; cached page images are reused until explicit refresh or bounded-cache eviction. Dedicated authentication profiles, full Pencil device presets, configurable waiting/network policy, and retained page sessions remain unfinished.
+
+GLSL fills, strokes, and effects use a separate software WebGL process. Numbers, booleans, vectors, colors, matrices, flat numeric arrays, and scalar image samplers are supported, with exact `@resolution` and `@time` directives. Grouped declarations share their annotations. Array dimensions can use GLSL constants/expressions; the linked active range is validated by WebGL and optimized tails are omitted from upload. Matrix values are column-major. Boolean vectors/arrays use numeric 0/1; scalar booleans retain JSON true/false. Effects receive prior object pixels and can sample the previously painted background, including parent layers. Pencil-specific annotation defaults, image sampler arrays, structs/macro-generated uniforms, and fill-stage object sampling remain unfinished. The `browser` and `shaders` guides describe the current contract. Browser startup is capped at 15 seconds, page jobs at 30 seconds, shader jobs at 15 seconds, and a render at 45 seconds; these deadlines overlap rather than reset at each CDP stage. Cancellation terminates an unresponsive runtime; a later request can start a fresh one.
+
+
+## Snapshots, limits, and cancellation
+
+The current server retains up to four calculation snapshots for five minutes. A missing or expired ID returns `SNAPSHOT_UNAVAILABLE`. Reusing a snapshot checks the current document and dependency revisions. An external edit invalidates its use rather than quietly returning measurements from another revision. CLI calculation IDs are not retained across separate CLI processes.
+
+The document worker waits until either a job or its earliest maintenance deadline arrives. After 60 seconds without actual execution, it closes and reaps the script, page, and shader children independently. Active jobs finish before idle maintenance runs. Cache hits do not extend a child's lifetime. Cached rasters and unexpired calculation snapshots remain available after process cleanup, and a later calculation or explicit refresh starts the required runtime again. Expired snapshots are released even when no new request arrives. No periodic full render or extra cleanup thread is used.
+
+On macOS arm64, an opt-in real MCP test waits through the 60-second interval without sending another job, verifies all three owned children are reaped, reuses a snapshot and cached PNG without starting children, then recalculates and refreshes with the same document and PNG hash. Timeout configuration, process-tree/resource guarantees on all platforms, and release performance measurements remain unfinished.
+
+Tool arguments and structured results are limited to 4 MiB. Rendered PNG content is limited to 8 MiB; choose a smaller region or scale when necessary. The renderer also limits dimensions and total pixels. The worker queue holds up to sixteen pending requests and reports `BUSY` when full. These bounds do not constitute a completed performance benchmark.
+
+Filter overscan and full intermediate node layers also count toward working-raster limits. Explicit CPU scratch reservations are shared and capped at 512 MiB; this is not a bound on total process RSS or external-runtime memory. Large-document culling and a complete performance benchmark remain unfinished.
+
+[MCP cancellation](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/cancellation) abandons the request; a cancelled request normally has no response. Work cancelled while queued does not execute. Executing edits check cancellation while waiting for document and dependency locks, between operations, during component dependency copying and expansion, and before asset publication and document replacement. The same cancellation token covers runtime preconditions and dry runs. `put_asset` also checks cancellation while waiting for its destination lock and before final publication. CLI edits and `assets put` use Ctrl+C for these checkpoints. Cancellation is cooperative; a single bounded parse, hash, or file write can finish before the next checkpoint.
+
+Cancellation before document replacement leaves the original document in place. Late cancellation can leave complete, immutable, unreferenced managed assets or an aborted preparation record. Once document replacement begins, the transaction finishes its journal commit. Read the current document/history after an abandoned request. Retrying the original request ID and identical payload returns a committed result when available; if it was not committed, the retry can perform the edit. Whole static layout/render cancellation and platform-wide latency guarantees still require further work.

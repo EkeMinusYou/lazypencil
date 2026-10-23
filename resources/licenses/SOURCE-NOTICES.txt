@@ -1,0 +1,25 @@
+Corresponding source for option-ext 0.2.0
+======================================
+
+option-ext 0.2.0 is available under the Mozilla Public License, version 2.0.
+Its complete, unmodified source package is included beside this notice at:
+
+    sources/option-ext-0.2.0.crate
+
+The package includes the original source, Cargo manifests, README, and
+LICENSE.txt. A separate, byte-identical copy of that license is MPL-2.0.txt.
+Extract the source package with a gzip-compatible tar tool, for example:
+
+    tar -xzf sources/option-ext-0.2.0.crate
+
+Upstream project: https://github.com/soc/option-ext
+Registry source: https://static.crates.io/crates/option-ext/option-ext-0.2.0.crate
+SHA-256: 04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d
+
+The source remains available under MPL-2.0. No changes to this dependency
+are included by lazypencil. The archive checksum is the corresponding
+Cargo.lock checksum; source-provenance.json records these inputs for checks.
+
+This inventory covers the source package above. It is not the complete
+notice inventory for Rust dependencies, native libraries, fonts, or icons.
+Keep the relevant notices and corresponding source with binary distributions.

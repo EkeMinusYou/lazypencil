@@ -1,0 +1,371 @@
+{
+  "version": "2.21",
+  "children": [
+    {
+      "id": "artboard",
+      "type": "frame",
+      "layout": "none",
+      "width": 1000,
+      "height": 680,
+      "fill": "#0F172A",
+      "children": [
+        {
+          "id": "warm",
+          "type": "ellipse",
+          "x": 12,
+          "y": 120,
+          "width": 430,
+          "height": 430,
+          "fill": "#F97316"
+        },
+        {
+          "id": "cool",
+          "type": "ellipse",
+          "x": 420,
+          "y": 150,
+          "width": 520,
+          "height": 520,
+          "fill": "#2563EB"
+        },
+        {
+          "id": "accent",
+          "type": "ellipse",
+          "x": 620,
+          "y": 80,
+          "width": 280,
+          "height": 280,
+          "fill": "#A855F7"
+        },
+        {
+          "id": "line-0",
+          "type": "rectangle",
+          "x": 32,
+          "y": 120,
+          "width": 3,
+          "height": 500,
+          "fill": "#FFFFFF30"
+        },
+        {
+          "id": "line-1",
+          "type": "rectangle",
+          "x": 96,
+          "y": 120,
+          "width": 3,
+          "height": 500,
+          "fill": "#FFFFFF30"
+        },
+        {
+          "id": "line-2",
+          "type": "rectangle",
+          "x": 160,
+          "y": 120,
+          "width": 3,
+          "height": 500,
+          "fill": "#FFFFFF30"
+        },
+        {
+          "id": "line-3",
+          "type": "rectangle",
+          "x": 224,
+          "y": 120,
+          "width": 3,
+          "height": 500,
+          "fill": "#FFFFFF30"
+        },
+        {
+          "id": "line-4",
+          "type": "rectangle",
+          "x": 288,
+          "y": 120,
+          "width": 3,
+          "height": 500,
+          "fill": "#FFFFFF30"
+        },
+        {
+          "id": "line-5",
+          "type": "rectangle",
+          "x": 352,
+          "y": 120,
+          "width": 3,
+          "height": 500,
+          "fill": "#FFFFFF30"
+        },
+        {
+          "id": "line-6",
+          "type": "rectangle",
+          "x": 416,
+          "y": 120,
+          "width": 3,
+          "height": 500,
+          "fill": "#FFFFFF30"
+        },
+        {
+          "id": "line-7",
+          "type": "rectangle",
+          "x": 480,
+          "y": 120,
+          "width": 3,
+          "height": 500,
+          "fill": "#FFFFFF30"
+        },
+        {
+          "id": "line-8",
+          "type": "rectangle",
+          "x": 544,
+          "y": 120,
+          "width": 3,
+          "height": 500,
+          "fill": "#FFFFFF30"
+        },
+        {
+          "id": "line-9",
+          "type": "rectangle",
+          "x": 608,
+          "y": 120,
+          "width": 3,
+          "height": 500,
+          "fill": "#FFFFFF30"
+        },
+        {
+          "id": "line-10",
+          "type": "rectangle",
+          "x": 672,
+          "y": 120,
+          "width": 3,
+          "height": 500,
+          "fill": "#FFFFFF30"
+        },
+        {
+          "id": "line-11",
+          "type": "rectangle",
+          "x": 736,
+          "y": 120,
+          "width": 3,
+          "height": 500,
+          "fill": "#FFFFFF30"
+        },
+        {
+          "id": "line-12",
+          "type": "rectangle",
+          "x": 800,
+          "y": 120,
+          "width": 3,
+          "height": 500,
+          "fill": "#FFFFFF30"
+        },
+        {
+          "id": "line-13",
+          "type": "rectangle",
+          "x": 864,
+          "y": 120,
+          "width": 3,
+          "height": 500,
+          "fill": "#FFFFFF30"
+        },
+        {
+          "id": "line-14",
+          "type": "rectangle",
+          "x": 928,
+          "y": 120,
+          "width": 3,
+          "height": 500,
+          "fill": "#FFFFFF30"
+        },
+        {
+          "id": "heading",
+          "type": "text",
+          "content": "Backdrop rendering",
+          "fontSize": 18,
+          "x": 64,
+          "y": 48,
+          "fill": "#CBD5E1"
+        },
+        {
+          "id": "caption",
+          "type": "text",
+          "content": "lazypencil · editable example",
+          "fontSize": 14,
+          "x": 64,
+          "y": 84,
+          "fill": "#94A3B8"
+        },
+        {
+          "id": "glass",
+          "type": "frame",
+          "layout": "vertical",
+          "x": 64,
+          "y": 156,
+          "width": 872,
+          "height": 424,
+          "padding": 32,
+          "gap": 22,
+          "cornerRadius": 24,
+          "fill": "#FFFFFF18",
+          "stroke": "#FFFFFF50",
+          "strokeWidth": 1,
+          "strokeAlignment": "inner",
+          "effect": [
+            {
+              "type": "background_blur",
+              "radius": 20
+            },
+            {
+              "type": "shadow",
+              "offset": {
+                "x": 0,
+                "y": 12
+              },
+              "blur": 24,
+              "color": "#00000040"
+            }
+          ],
+          "children": [
+            {
+              "id": "title",
+              "type": "text",
+              "content": "背景をぼかし、内容は鮮明に",
+              "fontSize": 36,
+              "x": 0,
+              "y": 0,
+              "fill": "#F8FAFC",
+              "fontWeight": "700"
+            },
+            {
+              "id": "body",
+              "type": "text",
+              "content": "色と置き換え範囲を分け、透明度と親レイヤーの効果を保ちます。",
+              "fontSize": 18,
+              "x": 0,
+              "y": 0,
+              "fill": "#E2E8F0"
+            },
+            {
+              "id": "metrics",
+              "type": "frame",
+              "layout": "horizontal",
+              "width": "fill_container",
+              "height": "fit_content",
+              "gap": 20,
+              "children": [
+                {
+                  "id": "metric-0",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "width": "fill_container",
+                  "height": 148,
+                  "padding": 20,
+                  "gap": 16,
+                  "cornerRadius": 14,
+                  "fill": "#FFFFFF18",
+                  "stroke": "#FFFFFF30",
+                  "strokeWidth": 1,
+                  "strokeAlignment": "inner",
+                  "children": [
+                    {
+                      "id": "metric-label-0",
+                      "type": "text",
+                      "content": "処理方式",
+                      "fontSize": 15,
+                      "x": 0,
+                      "y": 0,
+                      "fill": "#E2E8F0"
+                    },
+                    {
+                      "id": "metric-value-0",
+                      "type": "text",
+                      "content": "Skia CPU",
+                      "fontSize": 28,
+                      "x": 0,
+                      "y": 0,
+                      "fill": "#F8FAFC",
+                      "fontWeight": "700"
+                    }
+                  ]
+                },
+                {
+                  "id": "metric-1",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "width": "fill_container",
+                  "height": 148,
+                  "padding": 20,
+                  "gap": 16,
+                  "cornerRadius": 14,
+                  "fill": "#FFFFFF18",
+                  "stroke": "#FFFFFF30",
+                  "strokeWidth": 1,
+                  "strokeAlignment": "inner",
+                  "children": [
+                    {
+                      "id": "metric-label-1",
+                      "type": "text",
+                      "content": "ブラウザー",
+                      "fontSize": 15,
+                      "x": 0,
+                      "y": 0,
+                      "fill": "#E2E8F0"
+                    },
+                    {
+                      "id": "metric-value-1",
+                      "type": "text",
+                      "content": "不要",
+                      "fontSize": 28,
+                      "x": 0,
+                      "y": 0,
+                      "fill": "#F8FAFC",
+                      "fontWeight": "700"
+                    }
+                  ]
+                },
+                {
+                  "id": "metric-2",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "width": "fill_container",
+                  "height": 148,
+                  "padding": 20,
+                  "gap": 16,
+                  "cornerRadius": 14,
+                  "fill": "#FFFFFF18",
+                  "stroke": "#FFFFFF30",
+                  "strokeWidth": 1,
+                  "strokeAlignment": "inner",
+                  "children": [
+                    {
+                      "id": "metric-label-2",
+                      "type": "text",
+                      "content": "画面の切り出し",
+                      "fontSize": 15,
+                      "x": 0,
+                      "y": 0,
+                      "fill": "#E2E8F0"
+                    },
+                    {
+                      "id": "metric-value-2",
+                      "type": "text",
+                      "content": "同じ合成結果",
+                      "fontSize": 28,
+                      "x": 0,
+                      "y": 0,
+                      "fill": "#F8FAFC",
+                      "fontWeight": "700"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "note",
+              "type": "text",
+              "content": "角丸、半透明、重なり、効果の順序を、同じ描画経路で扱います。",
+              "fontSize": 16,
+              "x": 0,
+              "y": 0,
+              "fill": "#E2E8F0"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

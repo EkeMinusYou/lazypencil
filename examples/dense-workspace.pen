@@ -1,0 +1,527 @@
+{
+  "version": "2.21",
+  "variables": {
+    "canvas": {
+      "type": "color",
+      "value": "#F1F5F9"
+    },
+    "surface": {
+      "type": "color",
+      "value": "#FFFFFF"
+    },
+    "text": {
+      "type": "color",
+      "value": "#0F172A"
+    },
+    "secondary": {
+      "type": "color",
+      "value": "#475569"
+    },
+    "border": {
+      "type": "color",
+      "value": "#CBD5E1"
+    },
+    "accent": {
+      "type": "color",
+      "value": "#2563EB"
+    }
+  },
+  "children": [
+    {
+      "id": "workspace",
+      "type": "frame",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "topbar",
+          "type": "frame",
+          "layout": "horizontal",
+          "children": [
+            {
+              "id": "title",
+              "type": "text",
+              "content": "Workspace",
+              "fontFamily": "Noto Sans JP",
+              "fontSize": 24,
+              "fontWeight": "700",
+              "lineHeight": 1.5,
+              "fill": "$text"
+            },
+            {
+              "id": "nav-space",
+              "type": "rectangle",
+              "width": "fill_container",
+              "height": 0
+            },
+            {
+              "id": "period",
+              "type": "text",
+              "content": "October 2026",
+              "fontFamily": "Noto Sans JP",
+              "fontSize": 14,
+              "fontWeight": "400",
+              "lineHeight": 1.5,
+              "fill": "$secondary"
+            },
+            {
+              "id": "new-project",
+              "type": "frame",
+              "layout": "horizontal",
+              "children": [
+                {
+                  "id": "new-project-label",
+                  "type": "text",
+                  "content": "New project",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 14,
+                  "fontWeight": "500",
+                  "lineHeight": 1.5,
+                  "fill": "#FFFFFF"
+                }
+              ],
+              "width": 144,
+              "height": 40,
+              "padding": [
+                0,
+                16
+              ],
+              "justifyContent": "center",
+              "alignItems": "center",
+              "cornerRadius": 8,
+              "fill": "$accent",
+              "reusable": true
+            }
+          ],
+          "width": "fill_container",
+          "height": 48,
+          "gap": 16,
+          "alignItems": "center"
+        },
+        {
+          "id": "metrics",
+          "type": "frame",
+          "layout": "horizontal",
+          "children": [
+            {
+              "id": "active",
+              "type": "frame",
+              "layout": "vertical",
+              "children": [
+                {
+                  "id": "active-label",
+                  "type": "text",
+                  "content": "Active projects",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 14,
+                  "fontWeight": "400",
+                  "lineHeight": 1.5,
+                  "fill": "$secondary"
+                },
+                {
+                  "id": "active-value",
+                  "type": "text",
+                  "content": "12",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 28,
+                  "fontWeight": "700",
+                  "lineHeight": 1.25,
+                  "fill": "$text"
+                }
+              ],
+              "width": "fill_container",
+              "height": "fill_container",
+              "padding": 16,
+              "gap": 6,
+              "fill": "$surface",
+              "cornerRadius": 12
+            },
+            {
+              "id": "tasks",
+              "type": "frame",
+              "layout": "vertical",
+              "children": [
+                {
+                  "id": "tasks-label",
+                  "type": "text",
+                  "content": "Tasks completed",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 14,
+                  "fontWeight": "400",
+                  "lineHeight": 1.5,
+                  "fill": "$secondary"
+                },
+                {
+                  "id": "tasks-value",
+                  "type": "text",
+                  "content": "248",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 28,
+                  "fontWeight": "700",
+                  "lineHeight": 1.25,
+                  "fill": "$text"
+                }
+              ],
+              "width": "fill_container",
+              "height": "fill_container",
+              "padding": 16,
+              "gap": 6,
+              "fill": "$surface",
+              "cornerRadius": 12
+            },
+            {
+              "id": "review",
+              "type": "frame",
+              "layout": "vertical",
+              "children": [
+                {
+                  "id": "review-label",
+                  "type": "text",
+                  "content": "Awaiting review",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 14,
+                  "fontWeight": "400",
+                  "lineHeight": 1.5,
+                  "fill": "$secondary"
+                },
+                {
+                  "id": "review-value",
+                  "type": "text",
+                  "content": "7",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 28,
+                  "fontWeight": "700",
+                  "lineHeight": 1.25,
+                  "fill": "$text"
+                }
+              ],
+              "width": "fill_container",
+              "height": "fill_container",
+              "padding": 16,
+              "gap": 6,
+              "fill": "$surface",
+              "cornerRadius": 12
+            }
+          ],
+          "width": "fill_container",
+          "height": 112,
+          "gap": 16
+        },
+        {
+          "id": "main",
+          "type": "frame",
+          "layout": "horizontal",
+          "children": [
+            {
+              "id": "projects",
+              "type": "frame",
+              "layout": "vertical",
+              "children": [
+                {
+                  "id": "projects-title",
+                  "type": "text",
+                  "content": "Projects",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 20,
+                  "fontWeight": "700",
+                  "lineHeight": 1.5,
+                  "fill": "$text"
+                },
+                {
+                  "id": "table-head",
+                  "type": "frame",
+                  "layout": "horizontal",
+                  "children": [
+                    {
+                      "id": "table-head-name",
+                      "type": "text",
+                      "content": "Project",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 12,
+                      "fontWeight": "500",
+                      "lineHeight": 1.5,
+                      "fill": "$text",
+                      "width": "fill_container",
+                      "textGrowth": "fixed-width"
+                    },
+                    {
+                      "id": "table-head-status",
+                      "type": "text",
+                      "content": "Status",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 12,
+                      "fontWeight": "400",
+                      "lineHeight": 1.5,
+                      "fill": "$secondary",
+                      "width": 96,
+                      "textGrowth": "fixed-width"
+                    },
+                    {
+                      "id": "table-head-owner",
+                      "type": "text",
+                      "content": "Owner",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 12,
+                      "fontWeight": "400",
+                      "lineHeight": 1.5,
+                      "fill": "$secondary",
+                      "width": 96,
+                      "textGrowth": "fixed-width"
+                    }
+                  ],
+                  "width": "fill_container",
+                  "height": 32,
+                  "padding": [
+                    0,
+                    8
+                  ],
+                  "gap": 16,
+                  "alignItems": "center",
+                  "fill": "$canvas",
+                  "cornerRadius": 6
+                },
+                {
+                  "id": "row-1",
+                  "type": "frame",
+                  "layout": "horizontal",
+                  "children": [
+                    {
+                      "id": "row-1-name",
+                      "type": "text",
+                      "content": "Website refresh",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 14,
+                      "fontWeight": "400",
+                      "lineHeight": 1.5,
+                      "fill": "$text",
+                      "width": "fill_container",
+                      "textGrowth": "fixed-width"
+                    },
+                    {
+                      "id": "row-1-status",
+                      "type": "text",
+                      "content": "In progress",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 12,
+                      "fontWeight": "400",
+                      "lineHeight": 1.5,
+                      "fill": "$secondary",
+                      "width": 96,
+                      "textGrowth": "fixed-width"
+                    },
+                    {
+                      "id": "row-1-owner",
+                      "type": "text",
+                      "content": "Mina",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 12,
+                      "fontWeight": "400",
+                      "lineHeight": 1.5,
+                      "fill": "$secondary",
+                      "width": 96,
+                      "textGrowth": "fixed-width"
+                    }
+                  ],
+                  "width": "fill_container",
+                  "height": 56,
+                  "padding": [
+                    0,
+                    8
+                  ],
+                  "gap": 16,
+                  "alignItems": "center"
+                },
+                {
+                  "id": "row-2",
+                  "type": "frame",
+                  "layout": "horizontal",
+                  "children": [
+                    {
+                      "id": "row-2-name",
+                      "type": "text",
+                      "content": "Design system",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 14,
+                      "fontWeight": "400",
+                      "lineHeight": 1.5,
+                      "fill": "$text",
+                      "width": "fill_container",
+                      "textGrowth": "fixed-width"
+                    },
+                    {
+                      "id": "row-2-status",
+                      "type": "text",
+                      "content": "Review",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 12,
+                      "fontWeight": "400",
+                      "lineHeight": 1.5,
+                      "fill": "$secondary",
+                      "width": 96,
+                      "textGrowth": "fixed-width"
+                    },
+                    {
+                      "id": "row-2-owner",
+                      "type": "text",
+                      "content": "Alex",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 12,
+                      "fontWeight": "400",
+                      "lineHeight": 1.5,
+                      "fill": "$secondary",
+                      "width": 96,
+                      "textGrowth": "fixed-width"
+                    }
+                  ],
+                  "width": "fill_container",
+                  "height": 56,
+                  "padding": [
+                    0,
+                    8
+                  ],
+                  "gap": 16,
+                  "alignItems": "center"
+                },
+                {
+                  "id": "row-3",
+                  "type": "frame",
+                  "layout": "horizontal",
+                  "children": [
+                    {
+                      "id": "row-3-name",
+                      "type": "text",
+                      "content": "Mobile onboarding",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 14,
+                      "fontWeight": "400",
+                      "lineHeight": 1.5,
+                      "fill": "$text",
+                      "width": "fill_container",
+                      "textGrowth": "fixed-width"
+                    },
+                    {
+                      "id": "row-3-status",
+                      "type": "text",
+                      "content": "In progress",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 12,
+                      "fontWeight": "400",
+                      "lineHeight": 1.5,
+                      "fill": "$secondary",
+                      "width": 96,
+                      "textGrowth": "fixed-width"
+                    },
+                    {
+                      "id": "row-3-owner",
+                      "type": "text",
+                      "content": "Noah",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 12,
+                      "fontWeight": "400",
+                      "lineHeight": 1.5,
+                      "fill": "$secondary",
+                      "width": 96,
+                      "textGrowth": "fixed-width"
+                    }
+                  ],
+                  "width": "fill_container",
+                  "height": 56,
+                  "padding": [
+                    0,
+                    8
+                  ],
+                  "gap": 16,
+                  "alignItems": "center"
+                }
+              ],
+              "fill": "$surface",
+              "cornerRadius": 12,
+              "padding": 24,
+              "gap": 16,
+              "width": "fill_container",
+              "height": "fill_container"
+            },
+            {
+              "id": "activity",
+              "type": "frame",
+              "layout": "vertical",
+              "children": [
+                {
+                  "id": "activity-title",
+                  "type": "text",
+                  "content": "Team activity",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 20,
+                  "fontWeight": "700",
+                  "lineHeight": 1.5,
+                  "fill": "$text"
+                },
+                {
+                  "id": "activity-intro",
+                  "type": "text",
+                  "content": "Recent updates from your team.",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 14,
+                  "fontWeight": "400",
+                  "lineHeight": 1.5,
+                  "fill": "$secondary",
+                  "width": "fill_container",
+                  "textGrowth": "fixed-width"
+                },
+                {
+                  "id": "activity-one",
+                  "type": "text",
+                  "content": "Mina shared a new homepage draft.\n10 minutes ago",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 14,
+                  "fontWeight": "400",
+                  "lineHeight": 1.5,
+                  "fill": "$text",
+                  "width": "fill_container",
+                  "textGrowth": "fixed-width"
+                },
+                {
+                  "id": "activity-two",
+                  "type": "text",
+                  "content": "Alex requested a review of the button components.\n45 minutes ago",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 14,
+                  "fontWeight": "400",
+                  "lineHeight": 1.5,
+                  "fill": "$text",
+                  "width": "fill_container",
+                  "textGrowth": "fixed-width"
+                },
+                {
+                  "id": "activity-three",
+                  "type": "text",
+                  "content": "Noah completed the welcome flow.\n2 hours ago",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 14,
+                  "fontWeight": "400",
+                  "lineHeight": 1.5,
+                  "fill": "$text",
+                  "width": "fill_container",
+                  "textGrowth": "fixed-width"
+                }
+              ],
+              "fill": "$surface",
+              "cornerRadius": 12,
+              "padding": 24,
+              "gap": 24,
+              "width": 280,
+              "height": "fill_container"
+            }
+          ],
+          "width": "fill_container",
+          "height": "fill_container",
+          "gap": 24
+        }
+      ],
+      "width": 1080,
+      "height": 720,
+      "padding": 24,
+      "gap": 24,
+      "fill": "$canvas"
+    }
+  ]
+}

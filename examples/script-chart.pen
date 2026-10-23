@@ -1,0 +1,39 @@
+{
+  "version": "2.21",
+  "children": [
+    {
+      "id": "screen", "type": "frame", "name": "Script chart example",
+      "width": 960, "height": 600,
+      "layout": "vertical", "padding": 32, "gap": 20, "fill": "#F8FAFC",
+      "children": [
+        {
+          "id": "title", "type": "text", "content": "スクリプトで描く週間のアクセス",
+          "fontFamily": "Noto Sans JP", "fontSize": 30, "fontWeight": "700", "fill": "#0F172A"
+        },
+        {
+          "id": "description", "type": "text", "content": "JavaScript の出力を、通常の図形と日本語テキストで描画します。",
+          "fontFamily": "Noto Sans JP", "fontSize": 16, "fill": "#475569"
+        },
+        {
+          "id": "card", "type": "frame", "width": "fill_container", "height": "fill_container",
+          "layout": "vertical", "padding": 24, "gap": 16, "cornerRadius": 16, "fill": "#FFFFFF",
+          "children": [
+            {
+              "id": "card-title", "type": "text", "content": "曜日ごとの比較",
+              "fontFamily": "Noto Sans JP", "fontSize": 18, "fontWeight": "700", "fill": "#0F172A"
+            },
+            {
+              "id": "chart", "type": "script", "name": "Generated weekly bars",
+              "scriptUri": "assets/weekly-bars.js", "width": "fill_container", "height": "fill_container",
+              "inputs": { "color": "#2563EB", "maximum": 200, "rounded": true }
+            },
+            {
+              "id": "caption", "type": "text", "content": "サンプルデータ · ソースと入力を変更して再描画できます",
+              "fontFamily": "Noto Sans JP", "fontSize": 14, "fill": "#64748B"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

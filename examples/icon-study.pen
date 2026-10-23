@@ -1,0 +1,598 @@
+{
+  "version": "2.21",
+  "variables": {
+    "canvas": {
+      "type": "color",
+      "value": "#F1F5F9"
+    },
+    "surface": {
+      "type": "color",
+      "value": "#FFFFFF"
+    },
+    "ink": {
+      "type": "color",
+      "value": "#0F172A"
+    },
+    "muted": {
+      "type": "color",
+      "value": "#475569"
+    }
+  },
+  "children": [
+    {
+      "id": "screen",
+      "type": "frame",
+      "name": "Pinned vector icon study",
+      "width": 960,
+      "height": 700,
+      "layout": "vertical",
+      "padding": 32,
+      "gap": 18,
+      "fill": "$canvas",
+      "children": [
+        {
+          "id": "title",
+          "type": "text",
+          "content": "アイコンのデザイン",
+          "fontFamily": "Noto Sans JP",
+          "fontSize": 28,
+          "fontWeight": "700",
+          "lineHeight": 1.25,
+          "fill": "$ink"
+        },
+        {
+          "id": "subtitle",
+          "type": "text",
+          "content": "Lucide のベクターを、文字・余白・色のルールと組み合わせます。",
+          "fontFamily": "Noto Sans JP",
+          "fontSize": 14,
+          "lineHeight": 1.5,
+          "fill": "$muted"
+        },
+        {
+          "id": "row-0",
+          "type": "frame",
+          "width": "fill_container",
+          "height": 104,
+          "layout": "horizontal",
+          "gap": 16,
+          "children": [
+            {
+              "id": "tile-search",
+              "type": "frame",
+              "width": 136,
+              "height": 104,
+              "layout": "vertical",
+              "padding": 16,
+              "gap": 8,
+              "alignItems": "center",
+              "justifyContent": "center",
+              "cornerRadius": 12,
+              "fill": "$surface",
+              "children": [
+                {
+                  "id": "icon-search",
+                  "type": "icon",
+                  "library": "lucide",
+                  "icon": "search",
+                  "width": 32,
+                  "height": 32,
+                  "fill": "$ink"
+                },
+                {
+                  "id": "label-search",
+                  "type": "text",
+                  "content": "検索",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 12,
+                  "fill": "$muted"
+                }
+              ]
+            },
+            {
+              "id": "tile-house",
+              "type": "frame",
+              "width": 136,
+              "height": 104,
+              "layout": "vertical",
+              "padding": 16,
+              "gap": 8,
+              "alignItems": "center",
+              "justifyContent": "center",
+              "cornerRadius": 12,
+              "fill": "$surface",
+              "children": [
+                {
+                  "id": "icon-house",
+                  "type": "icon",
+                  "library": "lucide",
+                  "icon": "house",
+                  "width": 32,
+                  "height": 32,
+                  "fill": "$ink"
+                },
+                {
+                  "id": "label-house",
+                  "type": "text",
+                  "content": "ホーム",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 12,
+                  "fill": "$muted"
+                }
+              ]
+            },
+            {
+              "id": "tile-settings",
+              "type": "frame",
+              "width": 136,
+              "height": 104,
+              "layout": "vertical",
+              "padding": 16,
+              "gap": 8,
+              "alignItems": "center",
+              "justifyContent": "center",
+              "cornerRadius": 12,
+              "fill": "$surface",
+              "children": [
+                {
+                  "id": "icon-settings",
+                  "type": "icon",
+                  "library": "lucide",
+                  "icon": "settings",
+                  "width": 32,
+                  "height": 32,
+                  "fill": "$ink"
+                },
+                {
+                  "id": "label-settings",
+                  "type": "text",
+                  "content": "設定",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 12,
+                  "fill": "$muted"
+                }
+              ]
+            },
+            {
+              "id": "tile-check",
+              "type": "frame",
+              "width": 136,
+              "height": 104,
+              "layout": "vertical",
+              "padding": 16,
+              "gap": 8,
+              "alignItems": "center",
+              "justifyContent": "center",
+              "cornerRadius": 12,
+              "fill": "$surface",
+              "children": [
+                {
+                  "id": "icon-check",
+                  "type": "icon",
+                  "library": "lucide",
+                  "icon": "check",
+                  "width": 32,
+                  "height": 32,
+                  "fill": "$ink"
+                },
+                {
+                  "id": "label-check",
+                  "type": "text",
+                  "content": "完了",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 12,
+                  "fill": "$muted"
+                }
+              ]
+            },
+            {
+              "id": "tile-bell",
+              "type": "frame",
+              "width": 136,
+              "height": 104,
+              "layout": "vertical",
+              "padding": 16,
+              "gap": 8,
+              "alignItems": "center",
+              "justifyContent": "center",
+              "cornerRadius": 12,
+              "fill": "$surface",
+              "children": [
+                {
+                  "id": "icon-bell",
+                  "type": "icon",
+                  "library": "lucide",
+                  "icon": "bell",
+                  "width": 32,
+                  "height": 32,
+                  "fill": "$ink"
+                },
+                {
+                  "id": "label-bell",
+                  "type": "text",
+                  "content": "通知",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 12,
+                  "fill": "$muted"
+                }
+              ]
+            },
+            {
+              "id": "tile-user",
+              "type": "frame",
+              "width": 136,
+              "height": 104,
+              "layout": "vertical",
+              "padding": 16,
+              "gap": 8,
+              "alignItems": "center",
+              "justifyContent": "center",
+              "cornerRadius": 12,
+              "fill": "$surface",
+              "children": [
+                {
+                  "id": "icon-user",
+                  "type": "icon",
+                  "library": "lucide",
+                  "icon": "user",
+                  "width": 32,
+                  "height": 32,
+                  "fill": "$ink"
+                },
+                {
+                  "id": "label-user",
+                  "type": "text",
+                  "content": "アカウント",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 12,
+                  "fill": "$muted"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "row-1",
+          "type": "frame",
+          "width": "fill_container",
+          "height": 104,
+          "layout": "horizontal",
+          "gap": 16,
+          "children": [
+            {
+              "id": "tile-shield",
+              "type": "frame",
+              "width": 136,
+              "height": 104,
+              "layout": "vertical",
+              "padding": 16,
+              "gap": 8,
+              "alignItems": "center",
+              "justifyContent": "center",
+              "cornerRadius": 12,
+              "fill": "$surface",
+              "children": [
+                {
+                  "id": "icon-shield",
+                  "type": "icon",
+                  "library": "lucide",
+                  "icon": "shield",
+                  "width": 32,
+                  "height": 32,
+                  "fill": "$ink"
+                },
+                {
+                  "id": "label-shield",
+                  "type": "text",
+                  "content": "セキュリティ",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 12,
+                  "fill": "$muted"
+                }
+              ]
+            },
+            {
+              "id": "tile-calendar",
+              "type": "frame",
+              "width": 136,
+              "height": 104,
+              "layout": "vertical",
+              "padding": 16,
+              "gap": 8,
+              "alignItems": "center",
+              "justifyContent": "center",
+              "cornerRadius": 12,
+              "fill": "$surface",
+              "children": [
+                {
+                  "id": "icon-calendar",
+                  "type": "icon",
+                  "library": "lucide",
+                  "icon": "calendar",
+                  "width": 32,
+                  "height": 32,
+                  "fill": "$ink"
+                },
+                {
+                  "id": "label-calendar",
+                  "type": "text",
+                  "content": "カレンダー",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 12,
+                  "fill": "$muted"
+                }
+              ]
+            },
+            {
+              "id": "tile-mail",
+              "type": "frame",
+              "width": 136,
+              "height": 104,
+              "layout": "vertical",
+              "padding": 16,
+              "gap": 8,
+              "alignItems": "center",
+              "justifyContent": "center",
+              "cornerRadius": 12,
+              "fill": "$surface",
+              "children": [
+                {
+                  "id": "icon-mail",
+                  "type": "icon",
+                  "library": "lucide",
+                  "icon": "mail",
+                  "width": 32,
+                  "height": 32,
+                  "fill": "$ink"
+                },
+                {
+                  "id": "label-mail",
+                  "type": "text",
+                  "content": "メール",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 12,
+                  "fill": "$muted"
+                }
+              ]
+            },
+            {
+              "id": "tile-download",
+              "type": "frame",
+              "width": 136,
+              "height": 104,
+              "layout": "vertical",
+              "padding": 16,
+              "gap": 8,
+              "alignItems": "center",
+              "justifyContent": "center",
+              "cornerRadius": 12,
+              "fill": "$surface",
+              "children": [
+                {
+                  "id": "icon-download",
+                  "type": "icon",
+                  "library": "lucide",
+                  "icon": "download",
+                  "width": 32,
+                  "height": 32,
+                  "fill": "$ink"
+                },
+                {
+                  "id": "label-download",
+                  "type": "text",
+                  "content": "ダウンロード",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 12,
+                  "fill": "$muted"
+                }
+              ]
+            },
+            {
+              "id": "tile-arrow-right",
+              "type": "frame",
+              "width": 136,
+              "height": 104,
+              "layout": "vertical",
+              "padding": 16,
+              "gap": 8,
+              "alignItems": "center",
+              "justifyContent": "center",
+              "cornerRadius": 12,
+              "fill": "$surface",
+              "children": [
+                {
+                  "id": "icon-arrow-right",
+                  "type": "icon",
+                  "library": "lucide",
+                  "icon": "arrow-right",
+                  "width": 32,
+                  "height": 32,
+                  "fill": "$ink"
+                },
+                {
+                  "id": "label-arrow-right",
+                  "type": "text",
+                  "content": "次へ",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 12,
+                  "fill": "$muted"
+                }
+              ]
+            },
+            {
+              "id": "tile-heart",
+              "type": "frame",
+              "width": 136,
+              "height": 104,
+              "layout": "vertical",
+              "padding": 16,
+              "gap": 8,
+              "alignItems": "center",
+              "justifyContent": "center",
+              "cornerRadius": 12,
+              "fill": "$surface",
+              "children": [
+                {
+                  "id": "icon-heart",
+                  "type": "icon",
+                  "library": "lucide",
+                  "icon": "heart",
+                  "width": 32,
+                  "height": 32,
+                  "fill": "$ink"
+                },
+                {
+                  "id": "label-heart",
+                  "type": "text",
+                  "content": "お気に入り",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 12,
+                  "fill": "$muted"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "effects",
+          "type": "frame",
+          "width": "fill_container",
+          "height": 144,
+          "layout": "horizontal",
+          "gap": 16,
+          "children": [
+            {
+              "id": "feature-gradient",
+              "type": "frame",
+              "width": 288,
+              "height": 144,
+              "layout": "vertical",
+              "padding": 16,
+              "gap": 8,
+              "alignItems": "center",
+              "justifyContent": "center",
+              "cornerRadius": 12,
+              "fill": "$surface",
+              "children": [
+                {
+                  "id": "gradient",
+                  "type": "icon",
+                  "library": "lucide",
+                  "icon": "circle",
+                  "width": 64,
+                  "height": 64,
+                  "fill": {
+                    "type": "gradient",
+                    "gradientType": "linear",
+                    "rotation": 90,
+                    "colors": [
+                      {
+                        "color": "#F97316",
+                        "position": 0
+                      },
+                      {
+                        "color": "#2563EB",
+                        "position": 1
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "description-gradient",
+                  "type": "text",
+                  "content": "グラデーション",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 12,
+                  "fill": "$muted"
+                }
+              ]
+            },
+            {
+              "id": "feature-fit",
+              "type": "frame",
+              "width": 288,
+              "height": 144,
+              "layout": "vertical",
+              "padding": 16,
+              "gap": 8,
+              "alignItems": "center",
+              "justifyContent": "center",
+              "cornerRadius": 12,
+              "fill": "$surface",
+              "children": [
+                {
+                  "id": "fit",
+                  "type": "icon",
+                  "library": "lucide",
+                  "icon": "circle",
+                  "width": 104,
+                  "height": 48,
+                  "fill": "#2563EB"
+                },
+                {
+                  "id": "description-fit",
+                  "type": "text",
+                  "content": "縦横比を保った配置",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 12,
+                  "fill": "$muted"
+                }
+              ]
+            },
+            {
+              "id": "feature-alpha",
+              "type": "frame",
+              "width": 288,
+              "height": 144,
+              "layout": "vertical",
+              "padding": 16,
+              "gap": 8,
+              "alignItems": "center",
+              "justifyContent": "center",
+              "cornerRadius": 12,
+              "fill": "$surface",
+              "children": [
+                {
+                  "id": "alpha",
+                  "type": "icon",
+                  "library": "lucide",
+                  "icon": "plus",
+                  "width": 64,
+                  "height": 64,
+                  "fill": "#2563EB80",
+                  "effect": {
+                    "type": "shadow",
+                    "shadowType": "outer",
+                    "offset": {
+                      "x": 2,
+                      "y": 4
+                    },
+                    "blur": 4,
+                    "color": "#0F172A33"
+                  }
+                },
+                {
+                  "id": "description-alpha",
+                  "type": "text",
+                  "content": "半透明と影",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 12,
+                  "fill": "$muted"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "caption",
+          "type": "text",
+          "content": "固定版の Lucide を同梱 · 追加パックは明示的に導入 · 元の .pen を編集できます",
+          "fontFamily": "Noto Sans JP",
+          "fontSize": 12,
+          "lineHeight": 1.5,
+          "fill": "$muted"
+        }
+      ]
+    }
+  ]
+}

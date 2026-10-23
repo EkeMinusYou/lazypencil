@@ -1,0 +1,320 @@
+{
+  "version": "2.21",
+  "variables": {
+    "canvas": {
+      "type": "color",
+      "value": "#FFFCF7"
+    },
+    "surface": {
+      "type": "color",
+      "value": "#FFFFFF"
+    },
+    "text": {
+      "type": "color",
+      "value": "#292524"
+    },
+    "secondary": {
+      "type": "color",
+      "value": "#57534E"
+    },
+    "border": {
+      "type": "color",
+      "value": "#E7E5E4"
+    },
+    "accent": {
+      "type": "color",
+      "value": "#92400E"
+    }
+  },
+  "children": [
+    {
+      "id": "page",
+      "type": "frame",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "navigation",
+          "type": "frame",
+          "layout": "horizontal",
+          "children": [
+            {
+              "id": "brand",
+              "type": "text",
+              "content": "Studio Notes",
+              "fontFamily": "Noto Sans JP",
+              "fontSize": 20,
+              "fontWeight": "700",
+              "lineHeight": 1.5,
+              "fill": "$text"
+            },
+            {
+              "id": "navigation-space",
+              "type": "rectangle",
+              "width": "fill_container",
+              "height": 0
+            },
+            {
+              "id": "nav-work",
+              "type": "text",
+              "content": "Our work",
+              "fontFamily": "Noto Sans JP",
+              "fontSize": 14,
+              "fontWeight": "400",
+              "lineHeight": 1.5,
+              "fill": "$text"
+            },
+            {
+              "id": "nav-contact",
+              "type": "text",
+              "content": "Contact",
+              "fontFamily": "Noto Sans JP",
+              "fontSize": 14,
+              "fontWeight": "400",
+              "lineHeight": 1.5,
+              "fill": "$text"
+            }
+          ],
+          "width": "fill_container",
+          "height": 40,
+          "gap": 24,
+          "alignItems": "center"
+        },
+        {
+          "id": "hero",
+          "type": "frame",
+          "layout": "vertical",
+          "children": [
+            {
+              "id": "eyebrow",
+              "type": "text",
+              "content": "FROM A THOUGHT TO A SHARED DIRECTION",
+              "fontFamily": "Noto Sans JP",
+              "fontSize": 12,
+              "fontWeight": "700",
+              "lineHeight": 1.5,
+              "fill": "$accent",
+              "letterSpacing": 1
+            },
+            {
+              "id": "headline",
+              "type": "text",
+              "content": "Design ideas,\nmade tangible.",
+              "fontFamily": "Noto Sans JP",
+              "fontSize": 48,
+              "fontWeight": "700",
+              "lineHeight": 1.15,
+              "fill": "$text",
+              "width": 720,
+              "textGrowth": "fixed-width"
+            },
+            {
+              "id": "hero-copy",
+              "type": "text",
+              "content": "A small collection of editable examples for turning a clear message into a thoughtful, readable page.",
+              "fontFamily": "Noto Sans JP",
+              "fontSize": 20,
+              "fontWeight": "400",
+              "lineHeight": 1.6,
+              "fill": "$secondary",
+              "width": 680,
+              "textGrowth": "fixed-width"
+            },
+            {
+              "id": "hero-actions",
+              "type": "frame",
+              "layout": "horizontal",
+              "children": [
+                {
+                  "id": "explore",
+                  "type": "frame",
+                  "layout": "horizontal",
+                  "children": [
+                    {
+                      "id": "explore-label",
+                      "type": "text",
+                      "content": "Explore the examples",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 14,
+                      "fontWeight": "500",
+                      "lineHeight": 1.5,
+                      "fill": "#FFFFFF"
+                    }
+                  ],
+                  "width": 200,
+                  "height": 48,
+                  "padding": [
+                    0,
+                    16
+                  ],
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "cornerRadius": 8,
+                  "fill": "$accent",
+                  "reusable": true
+                },
+                {
+                  "id": "secondary-action",
+                  "type": "text",
+                  "content": "Read the approach",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 14,
+                  "fontWeight": "400",
+                  "lineHeight": 1.5,
+                  "fill": "$secondary"
+                }
+              ],
+              "gap": 24,
+              "height": 48,
+              "alignItems": "center"
+            }
+          ],
+          "width": "fill_container",
+          "height": "fit_content",
+          "gap": 24
+        },
+        {
+          "id": "features",
+          "type": "frame",
+          "layout": "horizontal",
+          "children": [
+            {
+              "id": "structure",
+              "type": "frame",
+              "layout": "vertical",
+              "children": [
+                {
+                  "id": "structure-title",
+                  "type": "text",
+                  "content": "Start with structure",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 18,
+                  "fontWeight": "700",
+                  "lineHeight": 1.5,
+                  "fill": "$text"
+                },
+                {
+                  "id": "structure-copy",
+                  "type": "text",
+                  "content": "Give the main message room, then organize supporting details into a clear sequence.",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 14,
+                  "fontWeight": "400",
+                  "lineHeight": 1.6,
+                  "fill": "$secondary",
+                  "width": "fill_container",
+                  "textGrowth": "fixed-width"
+                }
+              ],
+              "width": "fill_container",
+              "height": "fill_container",
+              "padding": 24,
+              "gap": 12,
+              "fill": "$surface",
+              "cornerRadius": 12,
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "strokeAlignment": "inner"
+            },
+            {
+              "id": "type",
+              "type": "frame",
+              "layout": "vertical",
+              "children": [
+                {
+                  "id": "type-title",
+                  "type": "text",
+                  "content": "Make words readable",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 18,
+                  "fontWeight": "700",
+                  "lineHeight": 1.5,
+                  "fill": "$text"
+                },
+                {
+                  "id": "type-copy",
+                  "type": "text",
+                  "content": "Use real copy, comfortable line lengths, and a consistent type hierarchy.",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 14,
+                  "fontWeight": "400",
+                  "lineHeight": 1.6,
+                  "fill": "$secondary",
+                  "width": "fill_container",
+                  "textGrowth": "fixed-width"
+                }
+              ],
+              "width": "fill_container",
+              "height": "fill_container",
+              "padding": 24,
+              "gap": 12,
+              "fill": "$surface",
+              "cornerRadius": 12,
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "strokeAlignment": "inner"
+            },
+            {
+              "id": "refine",
+              "type": "frame",
+              "layout": "vertical",
+              "children": [
+                {
+                  "id": "refine-title",
+                  "type": "text",
+                  "content": "Inspect and refine",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 18,
+                  "fontWeight": "700",
+                  "lineHeight": 1.5,
+                  "fill": "$text"
+                },
+                {
+                  "id": "refine-copy",
+                  "type": "text",
+                  "content": "Check the image and the measured layout together before calling the result complete.",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 14,
+                  "fontWeight": "400",
+                  "lineHeight": 1.6,
+                  "fill": "$secondary",
+                  "width": "fill_container",
+                  "textGrowth": "fixed-width"
+                }
+              ],
+              "width": "fill_container",
+              "height": "fill_container",
+              "padding": 24,
+              "gap": 12,
+              "fill": "$surface",
+              "cornerRadius": 12,
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "strokeAlignment": "inner"
+            }
+          ],
+          "width": "fill_container",
+          "height": 180,
+          "gap": 24
+        },
+        {
+          "id": "footer",
+          "type": "text",
+          "content": "An original lazypencil example · Editable .pen content · MIT",
+          "fontFamily": "Noto Sans JP",
+          "fontSize": 14,
+          "fontWeight": "400",
+          "lineHeight": 1.5,
+          "fill": "$secondary"
+        }
+      ],
+      "width": 1080,
+      "height": "fit_content",
+      "padding": [
+        64,
+        80
+      ],
+      "gap": 40,
+      "fill": "$canvas"
+    }
+  ]
+}

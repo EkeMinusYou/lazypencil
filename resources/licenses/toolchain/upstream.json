@@ -1,0 +1,107 @@
+{
+  "format_version": 1,
+  "license_references": [
+    {
+      "blob": "texts/5749785c8bdefafcb5d798270ed0a967036fe2ca63dcedade1627565dfef81d2.txt",
+      "git_blob_sha1": "c6487f4fdf701640ac0f559eb0130cdf76c5d3f4",
+      "id": "LGPL-2.1-or-later",
+      "kind": "reference_terms_only",
+      "path": "text/LGPL-2.1-or-later.txt",
+      "reason": "Canonical SPDX reference terms for the identifier in the published Rust standard-library copyright document. This is not a package copyright notice.",
+      "repository": "https://github.com/spdx/license-list-data",
+      "revision": "31ba1a50e5397e00a304dbadc76531740e89ee48",
+      "sha256": "5749785c8bdefafcb5d798270ed0a967036fe2ca63dcedade1627565dfef81d2",
+      "url": "https://raw.githubusercontent.com/spdx/license-list-data/31ba1a50e5397e00a304dbadc76531740e89ee48/text/LGPL-2.1-or-later.txt"
+    },
+    {
+      "blob": "texts/66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172.txt",
+      "git_blob_sha1": "ee6256cdb62a765749a71aae3abea32884301cd1",
+      "id": "MPL-2.0",
+      "kind": "reference_terms_only",
+      "path": "text/MPL-2.0.txt",
+      "reason": "Canonical SPDX reference terms for the identifier in the published Rust standard-library copyright document. This is not a package copyright notice.",
+      "repository": "https://github.com/spdx/license-list-data",
+      "revision": "31ba1a50e5397e00a304dbadc76531740e89ee48",
+      "sha256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172",
+      "url": "https://raw.githubusercontent.com/spdx/license-list-data/31ba1a50e5397e00a304dbadc76531740e89ee48/text/MPL-2.0.txt"
+    },
+    {
+      "blob": "texts/bfb1112d49db5b1daecdfef24bd7e2f3ea0bafb33aa67aa0ab51e2bf8407c03d.txt",
+      "git_blob_sha1": "e0e3605ba4269a62d38ef0a510d5e96c0ae009cc",
+      "id": "Zlib",
+      "kind": "reference_terms_only",
+      "path": "text/Zlib.txt",
+      "reason": "Canonical SPDX reference terms for the identifier in the published Rust standard-library copyright document. This is not a package copyright notice.",
+      "repository": "https://github.com/spdx/license-list-data",
+      "revision": "31ba1a50e5397e00a304dbadc76531740e89ee48",
+      "sha256": "bfb1112d49db5b1daecdfef24bd7e2f3ea0bafb33aa67aa0ab51e2bf8407c03d",
+      "url": "https://raw.githubusercontent.com/spdx/license-list-data/31ba1a50e5397e00a304dbadc76531740e89ee48/text/Zlib.txt"
+    }
+  ],
+  "packages": [
+    {
+      "archive_sha256": "5efc85edd5b83e8394f4371dd0da6859dff63dd387dab8568fece6af4cde6f84",
+      "files": [
+        {
+          "blob": "texts/fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85.txt",
+          "git_blob_sha1": "14e2f777f6c395e7e04ab4aa306bbcc4b0c1120e",
+          "path": "LICENSE",
+          "revision": "adcc6cdb981bcf2101437edbd3ef6144246621d3",
+          "sha256": "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85",
+          "url": "https://raw.githubusercontent.com/fortanix/rust-sgx/adcc6cdb981bcf2101437edbd3ef6144246621d3/LICENSE"
+        }
+      ],
+      "name": "fortanix-sgx-abi",
+      "reason": "Original workspace-root terms omitted by the published package. Published source attributions and declarations remain separate.",
+      "version": "0.6.1"
+    },
+    {
+      "archive_sha256": "79e5fe15afde1305478b35e2cb717fff59f485428534cf49cfdbfa4723379bf6",
+      "files": [
+        {
+          "blob": "texts/7bc7d5de2a0b793d4e1adb7ffcb99387776adc1f15f055bc3b667ea449249e6a.txt",
+          "git_blob_sha1": "2139563cb8765568e70810c9c73c6beabde49127",
+          "path": "LICENSE.md",
+          "revision": "6c0b83d35b6fc31a7607efe456e387df45476314",
+          "sha256": "7bc7d5de2a0b793d4e1adb7ffcb99387776adc1f15f055bc3b667ea449249e6a",
+          "url": "https://raw.githubusercontent.com/vexide/vex-sdk/6c0b83d35b6fc31a7607efe456e387df45476314/LICENSE.md"
+        }
+      ],
+      "name": "vex-sdk",
+      "reason": "Original workspace-root terms omitted by the published package. Published source attributions and declarations remain separate. Published VCS metadata declares dirty=true; these pinned workspace terms do not attest a pristine checkout.",
+      "version": "0.27.1"
+    },
+    {
+      "archive_sha256": "b5e26842486624357dbeb8f0381cf1fb42f022291fd787d4a816768fec8cc760",
+      "files": [
+        {
+          "blob": "texts/23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3.txt",
+          "git_blob_sha1": "31aa79387f27e730e33d871925e152e35e428031",
+          "path": "LICENSE-MIT",
+          "revision": "e55b3b02fcda2a016f5df14573ff05c5b1e313d6",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "url": "https://raw.githubusercontent.com/bytecodealliance/wasi/e55b3b02fcda2a016f5df14573ff05c5b1e313d6/LICENSE-MIT"
+        },
+        {
+          "blob": "texts/a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2.txt",
+          "git_blob_sha1": "16fe87b06e802f094b3fbb0894b137bca2b16ef1",
+          "path": "LICENSE-APACHE",
+          "revision": "e55b3b02fcda2a016f5df14573ff05c5b1e313d6",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "url": "https://raw.githubusercontent.com/bytecodealliance/wasi/e55b3b02fcda2a016f5df14573ff05c5b1e313d6/LICENSE-APACHE"
+        },
+        {
+          "blob": "texts/268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5.txt",
+          "git_blob_sha1": "f9d81955f4bcb8f96a025e2ecc46f39ec536d465",
+          "path": "LICENSE-Apache-2.0_WITH_LLVM-exception",
+          "revision": "e55b3b02fcda2a016f5df14573ff05c5b1e313d6",
+          "sha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5",
+          "url": "https://raw.githubusercontent.com/bytecodealliance/wasi/e55b3b02fcda2a016f5df14573ff05c5b1e313d6/LICENSE-Apache-2.0_WITH_LLVM-exception"
+        }
+      ],
+      "name": "wasip1",
+      "reason": "Original workspace-root terms omitted by the published package. Published source attributions and declarations remain separate.",
+      "version": "1.0.0"
+    }
+  ]
+}

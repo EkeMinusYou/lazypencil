@@ -1,0 +1,18 @@
+{
+  "format_version": 1,
+  "sources": [
+    {
+      "name": "option-ext",
+      "version": "0.2.0",
+      "registry": "registry+https://github.com/rust-lang/crates.io-index",
+      "archive": "sources/option-ext-0.2.0.crate",
+      "sha256": "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d",
+      "source_url": "https://static.crates.io/crates/option-ext/option-ext-0.2.0.crate",
+      "upstream_repository": "https://github.com/soc/option-ext",
+      "license": "MPL-2.0",
+      "license_file": "MPL-2.0.txt",
+      "license_sha256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172",
+      "modified": false
+    }
+  ]
+}

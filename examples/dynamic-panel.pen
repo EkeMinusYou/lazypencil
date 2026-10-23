@@ -1,0 +1,130 @@
+{
+  "version": "2.21",
+  "children": [
+    {
+      "id": "screen",
+      "type": "frame",
+      "name": "Browser and shader example",
+      "width": 1000,
+      "height": 640,
+      "layout": "vertical",
+      "padding": 32,
+      "gap": 20,
+      "fill": "#F8FAFC",
+      "children": [
+        {
+          "id": "title",
+          "type": "text",
+          "content": "Web ページと GLSL を一つのデザインへ",
+          "fontFamily": "Noto Sans JP",
+          "fontSize": 30,
+          "fontWeight": "700",
+          "fill": "#0F172A"
+        },
+        {
+          "id": "description",
+          "type": "text",
+          "content": "通常の文字とレイアウトは Skia、動的な内容は別途導入したランタイムで描きます。",
+          "fontFamily": "Noto Sans JP",
+          "fontSize": 16,
+          "fontWeight": "400",
+          "fill": "#475569"
+        },
+        {
+          "id": "row",
+          "type": "frame",
+          "width": "fill_container",
+          "height": "fill_container",
+          "layout": "horizontal",
+          "gap": 20,
+          "children": [
+            {
+              "id": "web-card",
+              "type": "frame",
+              "width": "fill_container",
+              "height": "fill_container",
+              "layout": "vertical",
+              "padding": 16,
+              "gap": 16,
+              "cornerRadius": 16,
+              "fill": "#FFFFFF",
+              "children": [
+                {
+                  "id": "web-card-title",
+                  "type": "text",
+                  "content": "ページのスナップショット",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 18,
+                  "fontWeight": "700",
+                  "fill": "#0F172A"
+                },
+                {
+                  "id": "web",
+                  "type": "browser",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "cornerRadius": 8,
+                  "url": "data:text/html;base64,PCFkb2N0eXBlIGh0bWw+PGh0bWw+PG1ldGEgY2hhcnNldD0idXRmLTgiPjxzdHlsZT4KKntib3gtc2l6aW5nOmJvcmRlci1ib3h9aHRtbCxib2R5e21hcmdpbjowO2hlaWdodDoxMDAlO2JhY2tncm91bmQ6I2VlZjJmZjtmb250OjE1cHggQXJpYWwsc2Fucy1zZXJpZjtjb2xvcjojMTcyNTU0fW1haW57cGFkZGluZzoyNHB4fXNtYWxse2ZvbnQtc2l6ZToxMXB4O2xldHRlci1zcGFjaW5nOjJweDtjb2xvcjojNjM2NmYxfWgxe2ZvbnQtc2l6ZToyOHB4O2xpbmUtaGVpZ2h0OjEuMTU7bWFyZ2luOjE0cHggMH1we2NvbG9yOiM0NzU1Njk7bGluZS1oZWlnaHQ6MS42fS50aWxle2JhY2tncm91bmQ6d2hpdGU7Ym9yZGVyLXJhZGl1czoxMnB4O3BhZGRpbmc6MjBweDttYXJnaW4tdG9wOjI0cHh9LnZhbHVle2ZvbnQtc2l6ZTozNnB4O2ZvbnQtd2VpZ2h0OmJvbGQ7Y29sb3I6IzRmNDZlNX0uYmFye2hlaWdodDoxMnB4O2JvcmRlci1yYWRpdXM6NnB4O2JhY2tncm91bmQ6I2UwZTdmZjttYXJnaW4tdG9wOjIwcHh9LmJhcjpiZWZvcmV7Y29udGVudDonJztkaXNwbGF5OmJsb2NrO3dpZHRoOjcyJTtoZWlnaHQ6MTAwJTtib3JkZXItcmFkaXVzOjZweDtiYWNrZ3JvdW5kOiM2MzY2ZjF9Cjwvc3R5bGU+PG1haW4+PHNtYWxsPkxJVkUgUEFHRSBTTkFQU0hPVDwvc21hbGw+PGgxPkEgc21hbGwgdmlldyBvZiB0aGUgd2ViLjwvaDE+PHA+SFRNTCwgQ1NTIGFuZCBwYWdlIHNjcmlwdHMgYXJlIGNhcHR1cmVkIGluIGEgc2VwYXJhdGUgYnJvd3NlciBjb250ZXh0LjwvcD48ZGl2IGNsYXNzPSJ0aWxlIj48ZGl2IGNsYXNzPSJ2YWx1ZSI+NzIlPC9kaXY+PHA+SWxsdXN0cmF0aXZlIHByb2dyZXNzPC9wPjxkaXYgY2xhc3M9ImJhciI+PC9kaXY+PC9kaXY+PC9tYWluPjwvaHRtbD4="
+                },
+                {
+                  "id": "web-card-caption",
+                  "type": "text",
+                  "content": "独自の HTML を使用した、オフラインの作例",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 12,
+                  "fontWeight": "400",
+                  "fill": "#64748B"
+                }
+              ]
+            },
+            {
+              "id": "shader-card",
+              "type": "frame",
+              "width": "fill_container",
+              "height": "fill_container",
+              "layout": "vertical",
+              "padding": 16,
+              "gap": 16,
+              "cornerRadius": 16,
+              "fill": "#FFFFFF",
+              "children": [
+                {
+                  "id": "shader-card-title",
+                  "type": "text",
+                  "content": "ソフトウェア WebGL",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 18,
+                  "fontWeight": "700",
+                  "fill": "#0F172A"
+                },
+                {
+                  "id": "waves",
+                  "type": "rectangle",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "cornerRadius": 8,
+                  "fill": {
+                    "type": "shader",
+                    "url": "assets/waves.glsl",
+                    "uniforms": {
+                      "accent": "#6366F1"
+                    }
+                  }
+                },
+                {
+                  "id": "shader-card-caption",
+                  "type": "text",
+                  "content": "GLSL のソースと uniform を編集可能",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 12,
+                  "fontWeight": "400",
+                  "fill": "#64748B"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

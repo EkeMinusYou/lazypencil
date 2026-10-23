@@ -1,0 +1,571 @@
+#![cfg(feature = "rendering")]
+
+use lazypencil::{
+    layout,
+    project::Project,
+    render::{self, RenderOptions},
+    store::Store,
+    text::Fonts,
+};
+use serde_json::{Value, json};
+use skia_safe::{Color, Data, Image};
+use std::fs;
+use tempfile::TempDir;
+
+struct Scene {
+    directory: TempDir,
+    children: Value,
+}
+impl Scene {
+    fn new(children: Value) -> Self {
+        Self {
+            directory: TempDir::new().unwrap(),
+            children,
+        }
+    }
+    fn render(&self) -> lazypencil::Result<render::RenderedImage> {
+        let file = self.directory.path().join("scene.pen");
+        fs::write(
+            &file,
+            json!({"version":"2.21","children":self.children}).to_string(),
+        )
+        .unwrap();
+        render_file(&file)
+    }
+    fn image(&self) {
+        let mut surface = skia_safe::surfaces::raster_n32_premul((8, 4)).unwrap();
+        surface.canvas().clear(Color::RED);
+        let mut paint = skia_safe::Paint::default();
+        paint.set_color(Color::BLUE);
+        surface
+            .canvas()
+            .draw_rect(skia_safe::Rect::from_xywh(4.0, 0.0, 4.0, 4.0), &paint);
+        fs::write(
+            self.directory.path().join("image.png"),
+            skia_safe::png_encoder::encode_image(
+                None,
+                &surface.image_snapshot(),
+                &Default::default(),
+            )
+            .unwrap()
+            .as_bytes(),
+        )
+        .unwrap();
+    }
+}
+fn render_file(file: &std::path::Path) -> lazypencil::Result<render::RenderedImage> {
+    let store = Store::open(file, None).unwrap();
+    let project = Project::load(&store)?;
+    let snapshot = layout::compute(project.resolve()?, &mut Fonts::new(&[]).unwrap())?;
+    render::png(&project, &snapshot, &RenderOptions::default())
+}
+fn raster(output: &render::RenderedImage) -> Image {
+    Image::from_encoded(Data::new_copy(&output.png))
+        .unwrap()
+        .make_raster_image(None, None)
+        .unwrap()
+}
+fn pixel(output: &render::RenderedImage, x: i32, y: i32) -> Color {
+    raster(output).peek_pixels().unwrap().get_color((x, y))
+}
+fn text(properties: Value) -> Scene {
+    let mut node = json!({"id":"text","type":"text","x":12,"y":12,"width":150,"height":80,"textGrowth":"fixed-width-height","fontSize":32,"content":"A A 日本語","fill":"#FF0000"});
+    node.as_object_mut()
+        .unwrap()
+        .extend(properties.as_object().unwrap().clone());
+    Scene::new(
+        json!([{"id":"frame","type":"frame","layout":"none","width":180,"height":120,"children":[node]}]),
+    )
+}
+
+#[test]
+fn decorations_add_ink_to_shaped_text_without_changing_line_layout() {
+    let plain = text(json!({})).render().unwrap();
+    let base = raster(&plain);
+    let base_pixels = base.peek_pixels().unwrap();
+    for properties in [
+        json!({"underline":true}),
+        json!({"strikethrough":true}),
+        json!({"underline":true,"strikethrough":true}),
+    ] {
+        let decorated = text(properties).render().unwrap();
+        assert_eq!(
+            (decorated.width, decorated.height),
+            (plain.width, plain.height)
+        );
+        let image = raster(&decorated);
+        let pixels = image.peek_pixels().unwrap();
+        let added = (0..120)
+            .flat_map(|y| (0..180).map(move |x| (x, y)))
+            .filter(|point| {
+                base_pixels.get_color(*point).a() == 0 && pixels.get_color(*point).a() > 200
+            })
+            .count();
+        assert!(
+            added > 30,
+            "Decoration produced too little new ink: {added}"
+        );
+        assert_eq!(pixels.get_color((0, 0)).a(), 0);
+    }
+    assert_eq!(
+        text(json!({"underline":"yes"}))
+            .render()
+            .err()
+            .unwrap()
+            .code,
+        "INVALID_DOCUMENT"
+    );
+}
+
+#[test]
+fn text_strokes_follow_glyph_outlines_and_respect_alignment() {
+    let plain = text(json!({})).render().unwrap();
+    let base = raster(&plain);
+    let base_pixels = base.peek_pixels().unwrap();
+    for alignment in ["inner", "center", "outer"] {
+        let stroked =
+            text(json!({"fill":[],"stroke":"#0000FF","strokeWidth":2,"strokeAlignment":alignment}))
+                .render()
+                .unwrap();
+        let image = raster(&stroked);
+        let pixels = image.peek_pixels().unwrap();
+        let mut ink = 0;
+        let mut outside = 0;
+        for y in 0..120 {
+            for x in 0..180 {
+                let color = pixels.get_color((x, y));
+                if color.a() > 200 {
+                    ink += 1;
+                    assert_eq!(color.b(), 255);
+                    if base_pixels.get_color((x, y)).a() == 0 {
+                        outside += 1;
+                    }
+                }
+            }
+        }
+        assert!(ink > 100);
+        if alignment == "inner" {
+            assert_eq!(outside, 0);
+        } else {
+            assert!(outside > 50, "{alignment}: {outside}");
+        }
+        assert_eq!(
+            pixels.get_color((12, 12)).a(),
+            0,
+            "A stroke must not outline the text box"
+        );
+    }
+}
+
+#[test]
+fn text_strokes_include_underline_and_strikethrough_geometry() {
+    let plain = text(json!({"content":"A A", "fill":[], "stroke":"#0000FF", "strokeWidth":2}))
+        .render()
+        .unwrap();
+    for decorations in [
+        json!({"underline":true}),
+        json!({"strikethrough":true}),
+        json!({"underline":true,"strikethrough":true}),
+    ] {
+        let mut properties =
+            json!({"content":"A A", "fill":[], "stroke":"#0000FF", "strokeWidth":2});
+        properties
+            .as_object_mut()
+            .unwrap()
+            .extend(decorations.as_object().unwrap().clone());
+        let decorated = text(properties).render().unwrap();
+        assert_ne!(
+            plain.png, decorated.png,
+            "Decorations must contribute to stroke-only text: {decorations}"
+        );
+    }
+}
+
+#[test]
+fn decoration_strokes_share_the_native_fill_mask_and_do_not_accumulate_alpha() {
+    for decorated in [false, true] {
+        let properties = json!({"content":"A g 日本語\nA A", "fontSize":31.5,"lineHeight":1.7,"letterSpacing":1.25,"underline":decorated,"strikethrough":decorated});
+        let mut native = text(properties.clone());
+        native.children[0]["height"] = json!(240);
+        let native = native.render().unwrap();
+        let native = raster(&native);
+        let mask = native.peek_pixels().unwrap();
+        for (alignment, color) in [
+            ("inner", "#0000FF"),
+            ("center", "#0000FF80"),
+            ("outer", "#0000FF80"),
+        ] {
+            let mut properties = properties.clone();
+            properties["fill"] = json!([]);
+            properties["stroke"] = json!(color);
+            properties["strokeWidth"] = json!(2);
+            properties["strokeAlignment"] = json!(alignment);
+            let mut scene = text(properties);
+            scene.children[0]["height"] = json!(240);
+            let rendered = scene.render().unwrap();
+            let rendered = raster(&rendered);
+            let actual = rendered.peek_pixels().unwrap();
+            let mut ink = 0;
+            for y in 0..240 {
+                for x in 0..180 {
+                    let color = actual.get_color((x, y));
+                    if color.a() > 0 {
+                        ink += 1;
+                        assert_eq!(color.b(), 255);
+                    }
+                    if alignment == "inner" && color.a() > 200 {
+                        assert!(
+                            mask.get_color((x, y)).a() > 0,
+                            "Inner stroke outside native mask, decorated={decorated}, at {x},{y}"
+                        );
+                    }
+                    if alignment != "inner" {
+                        assert!(
+                            color.a() <= 128,
+                            "Overlapping glyph and decoration contours must be painted once"
+                        );
+                    }
+                }
+            }
+            assert!(ink > 100);
+        }
+    }
+}
+
+#[test]
+fn decoration_strokes_accept_gradient_and_image_paints() {
+    for paint in [
+        json!({"type":"gradient","gradientType":"linear","rotation":90,"colors":[{"color":"#FF0000","position":0},{"color":"#0000FF","position":1}]}),
+        json!({"type":"image","url":"image.png","mode":"cover"}),
+    ] {
+        let mut images = Vec::new();
+        for decorated in [false, true] {
+            let scene = text(
+                json!({"content":"A A 日本語", "fill":[], "stroke":paint, "strokeWidth":2, "underline":decorated, "strikethrough":decorated}),
+            );
+            scene.image();
+            images.push(raster(&scene.render().unwrap()));
+        }
+        let before = images[0].peek_pixels().unwrap();
+        let after = images[1].peek_pixels().unwrap();
+        let mut added = 0;
+        for y in 0..120 {
+            for x in 0..180 {
+                if before.get_color((x, y)).a() == 0 && after.get_color((x, y)).a() > 200 {
+                    added += 1;
+                    let color = after.get_color((x, y));
+                    assert!(
+                        color.r() > 0 || color.b() > 0,
+                        "A decoration must receive its stroke paint"
+                    );
+                    assert_eq!(color.g(), 0);
+                }
+            }
+        }
+        assert!(added > 50, "Missing gradient/image decoration ink: {paint}");
+    }
+}
+
+#[test]
+fn outlined_text_keeps_wrapped_runs_alignment_and_variable_font_weight() {
+    for alignment in ["left", "center", "right"] {
+        for weight in ["400", "700"] {
+            let properties =
+                json!({"content":"A A\n日本語 と A","fontWeight":weight,"textAlign":alignment});
+            let mut scene = text(properties.clone());
+            scene.children[0]["height"] = json!(220);
+            let plain = scene.render().unwrap();
+            let image = raster(&plain);
+            let base = image.peek_pixels().unwrap();
+            let mut properties = properties;
+            properties["fill"] = json!([]);
+            properties["stroke"] = json!("#0000FF");
+            properties["strokeWidth"] = json!(1);
+            properties["strokeAlignment"] = json!("inner");
+            let mut scene = text(properties);
+            scene.children[0]["height"] = json!(220);
+            let stroked = scene.render().unwrap();
+            let image = raster(&stroked);
+            let pixels = image.peek_pixels().unwrap();
+            let mut count = 0;
+            for y in 0..220 {
+                for x in 0..180 {
+                    if pixels.get_color((x, y)).a() > 220 {
+                        count += 1;
+                        assert!(
+                            base.get_color((x, y)).a() > 0,
+                            "{alignment}/{weight}: {x},{y}"
+                        );
+                    }
+                }
+            }
+            assert!(count > 100);
+        }
+    }
+    let empty = text(json!({"content":"   \n   ","fill":[],"stroke":"#0000FF","strokeWidth":2}))
+        .render()
+        .unwrap();
+    let image = raster(&empty);
+    let pixels = image.peek_pixels().unwrap();
+    assert!(
+        (0..empty.height as i32)
+            .all(|y| (0..empty.width as i32).all(|x| pixels.get_color((x, y)).a() == 0))
+    );
+}
+
+#[test]
+fn per_side_borders_have_independent_widths_and_matching_export_bounds() {
+    for (alignment, outside) in [("inner", 0.0), ("center", 0.5), ("outer", 1.0)] {
+        let output = Scene::new(json!([{"id":"border","type":"rectangle","width":100,"height":80,"stroke":"#0000FF","strokeWidth":{"top":2,"right":4,"bottom":8,"left":12},"strokeAlignment":alignment}])).render().unwrap();
+        assert_eq!(output.region.x, -12.0 * outside);
+        assert_eq!(output.region.y, -2.0 * outside);
+        assert_eq!(output.width, (100.0 + 16.0 * outside) as u32);
+        assert_eq!(output.height, (80.0 + 10.0 * outside) as u32);
+        let px = |x: f32, y: f32| {
+            pixel(
+                &output,
+                (x - output.region.x) as i32,
+                (y - output.region.y) as i32,
+            )
+        };
+        assert_eq!(px(50.0, 1.0 - 2.0 * outside), Color::BLUE);
+        assert_eq!(px(1.0 - 12.0 * outside, 40.0), Color::BLUE);
+        assert_eq!(px(97.0 + 4.0 * outside, 40.0), Color::BLUE);
+        assert_eq!(px(50.0, 75.0 + 8.0 * outside), Color::BLUE);
+        assert_eq!(px(13.0, 40.0).a(), 0);
+        assert_eq!(px(50.0, 40.0).a(), 0);
+    }
+}
+
+#[test]
+fn acute_path_miters_are_included_in_export_bounds() {
+    let output=Scene::new(json!([{"id":"triangle","type":"path","width":40,"height":40,"viewBox":[0,0,40,40],"geometry":"M0 40 L20 0 L40 40 Z","stroke":"#0000FF","strokeWidth":6,"strokeAlignment":"outer"}])).render().unwrap();
+    assert!(output.region.y < -12.0, "{:?}", output.region);
+    let x = (20.0 - output.region.x) as i32;
+    assert!(pixel(&output, x, 2).b() > 200);
+    assert!(pixel(&output, x, 2).a() > 0);
+}
+
+#[test]
+fn variable_borders_keep_rounded_corners_and_explicit_corner_joins() {
+    for join in ["miter", "round", "bevel"] {
+        let scene = Scene::new(
+            json!([{"id":"border","type":"rectangle","width":60,"height":40,"stroke":"#0000FF","strokeWidth":{"top":8,"left":8,"right":2,"bottom":4},"strokeAlignment":"outer","strokeLinejoin":join}]),
+        );
+        let output = scene.render().unwrap();
+        assert_eq!(
+            pixel(&output, 0, 0).a(),
+            if join == "miter" { 255 } else { 0 }
+        );
+        assert_eq!(pixel(&output, 30, 2), Color::BLUE);
+    }
+    let output=Scene::new(json!([{"id":"border","type":"rectangle","width":80,"height":60,"cornerRadius":16,"stroke":"#0000FF","strokeWidth":{"top":2,"left":10,"right":4,"bottom":8},"strokeAlignment":"inner"}])).render().unwrap();
+    assert_eq!(pixel(&output, 0, 0).a(), 0);
+    assert_eq!(pixel(&output, 40, 0), Color::BLUE);
+    assert_eq!(pixel(&output, 2, 30), Color::BLUE);
+    assert_eq!(pixel(&output, 40, 30).a(), 0);
+}
+
+#[test]
+fn normalized_image_crops_preserve_the_requested_half_and_sizing_mode() {
+    for mode in ["cover", "contain", "stretch"] {
+        let scene = Scene::new(
+            json!([{"id":"image","type":"rectangle","width":80,"height":40,"fill":{"type":"image","url":"image.png","mode":mode,"transform":[2,0,0,1,-1,0]}}]),
+        );
+        scene.image();
+        let output = scene.render().unwrap();
+        assert_eq!(pixel(&output, 40, 20), Color::BLUE);
+        if mode == "contain" {
+            assert_eq!(pixel(&output, 5, 20).a(), 0);
+            assert_eq!(pixel(&output, 75, 20).a(), 0);
+        } else {
+            assert_eq!(pixel(&output, 10, 20), Color::BLUE);
+            assert_eq!(pixel(&output, 70, 20), Color::BLUE);
+        }
+    }
+    let scene = Scene::new(
+        json!([{"id":"image","type":"rectangle","width":40,"height":40,"fill":{"type":"image","url":"image.png","transform":[2,0,0,1,0,0]}}]),
+    );
+    scene.image();
+    assert_eq!(pixel(&scene.render().unwrap(), 20, 20), Color::RED);
+}
+
+#[test]
+fn invalid_image_paints_report_the_supported_modes_and_complete_update_shape() {
+    for mode in [json!("fit"), json!(7)] {
+        let scene = Scene::new(
+            json!([{"id":"image","type":"rectangle","width":80,"height":40,"fill":{"type":"image","url":"image.png","mode":mode}}]),
+        );
+        scene.image();
+        let error = scene.render().err().expect("invalid image mode");
+        assert_eq!(error.code, "INVALID_DOCUMENT");
+        assert_eq!(
+            error.details.unwrap()["allowed_modes"],
+            json!(["cover", "contain", "stretch"])
+        );
+    }
+    let scene = Scene::new(
+        json!([{"id":"image","type":"rectangle","width":80,"height":40,"fill":{"url":"image.png","mode":"contain"}}]),
+    );
+    let error = scene.render().err().expect("a partial paint has no type");
+    assert_eq!(error.code, "INVALID_DOCUMENT");
+    assert!(error.message.contains("entire paint"));
+    assert_eq!(error.details.unwrap()["example"]["type"], "image");
+}
+
+#[test]
+fn rotated_crops_rotate_pixels_and_cover_keeps_translated_or_sheared_views_inside_the_image() {
+    let mut scene = Scene::new(
+        json!([{"id":"image","type":"rectangle","width":40,"height":40,"fill":{"type":"image","url":"image.png","mode":"stretch","transform":[0,1,-1,0,1,0]}}]),
+    );
+    scene.image();
+    let output = scene.render().unwrap();
+    assert_eq!(pixel(&output, 20, 8), Color::RED);
+    assert_eq!(pixel(&output, 20, 32), Color::BLUE);
+    for matrix in [
+        json!([1, 0, 0, 1, 1, 0]),
+        json!([1, 0.5, 0, 1, 0, 0]),
+        json!([0.7, 0.7, -0.7, 0.7, 0.5, -0.2]),
+    ] {
+        scene.children[0]["fill"]["transform"] = matrix;
+        scene.children[0]["fill"]["mode"] = json!("cover");
+        let output = scene.render().unwrap();
+        for point in [(0, 0), (39, 0), (0, 39), (39, 39), (20, 20)] {
+            assert_eq!(pixel(&output, point.0, point.1).a(), 255, "{point:?}");
+        }
+    }
+    scene.children[0]["fill"]["transform"] = json!([0, 0, 0, 0, 0, 0]);
+    assert_eq!(scene.render().err().unwrap().code, "INVALID_DOCUMENT");
+}
+
+#[test]
+fn inherited_image_strokes_keep_their_library_origin_and_cover_the_outer_border() {
+    let scene = Scene::new(json!([]));
+    scene.image();
+    let root = scene.directory.path();
+    fs::create_dir(root.join("lib")).unwrap();
+    let mut surface = skia_safe::surfaces::raster_n32_premul((4, 4)).unwrap();
+    surface.canvas().clear(Color::GREEN);
+    fs::write(
+        root.join("lib/image.png"),
+        skia_safe::png_encoder::encode_image(None, &surface.image_snapshot(), &Default::default())
+            .unwrap()
+            .as_bytes(),
+    )
+    .unwrap();
+    fs::write(root.join("lib/ui.pen"),json!({"version":"2.21","children":[{"id":"card","type":"rectangle","reusable":true,"width":40,"height":40,"stroke":{"type":"image","url":"image.png"},"strokeWidth":4,"strokeAlignment":"outer"}]}).to_string()).unwrap();
+    let file = root.join("scene.pen");
+    fs::write(&file,json!({"version":"2.21","imports":{"ui":"lib/ui.pen"},"children":[{"id":"card","type":"ref","ref":"ui:card","fill":{"type":"image","url":"image.png"}}]}).to_string()).unwrap();
+    let output = render_file(&file).unwrap();
+    assert_eq!(output.assets.len(), 2);
+    assert_eq!(pixel(&output, 1, 24), Color::GREEN);
+    assert_eq!(pixel(&output, 14, 24), Color::RED);
+    assert_eq!(pixel(&output, 34, 24), Color::BLUE);
+}
+
+#[test]
+fn inner_shadows_stay_inside_the_object_and_preserve_translucent_alpha() {
+    for alpha in ["FF", "80"] {
+        let output=Scene::new(json!([{"id":"shadow","type":"rectangle","width":40,"height":40,"fill":format!("#FF0000{alpha}"),"effect":{"type":"shadow","shadowType":"inner","offset":{"x":8,"y":0},"color":"#0000FF","blur":0}}])).render().unwrap();
+        assert_eq!((output.width, output.height), (40, 40));
+        let edge = pixel(&output, 3, 20);
+        let center = pixel(&output, 20, 20);
+        assert_eq!(edge.b(), 255);
+        assert_eq!(edge.a(), center.a());
+        assert_eq!(center.a(), if alpha == "FF" { 255 } else { 128 });
+        if alpha == "FF" {
+            assert_eq!(center, Color::RED);
+        }
+    }
+    let output=Scene::new(json!([{"id":"shadow","type":"rectangle","width":60,"height":60,"cornerRadius":12,"fill":"#FF000080","effect":{"type":"shadow","shadowType":"inner","offset":{"x":3,"y":3},"color":"#0000FF","blur":8}}])).render().unwrap();
+    assert_eq!(pixel(&output, 0, 0).a(), 0);
+    assert!(pixel(&output, 5, 30).b() > pixel(&output, 30, 30).b());
+    assert_eq!(pixel(&output, 30, 30).a(), 128);
+}
+
+#[test]
+fn inactive_and_zero_width_strokes_do_not_reserve_space_or_execute_shaders() {
+    for (enabled, width) in [(false, json!({"top":8,"left":12})), (true, json!(0))] {
+        let scene = Scene::new(
+            json!([{"id":"rect","type":"rectangle","width":40,"height":20,"fill":"#FF0000","stroke":{"type":"shader","enabled":enabled,"url":"unused.glsl"},"strokeWidth":width,"strokeAlignment":"outer"}]),
+        );
+        fs::write(
+            scene.directory.path().join("unused.glsl"),
+            "This is deliberately not valid GLSL.",
+        )
+        .unwrap();
+        let output = scene.render().unwrap();
+        assert_eq!((output.width, output.height), (40, 20));
+        assert_eq!(pixel(&output, 20, 10), Color::RED);
+        assert!(output.dynamic_artifacts.is_empty());
+    }
+}
+
+#[test]
+fn the_bundled_graphics_example_renders_without_layout_diagnostics() {
+    let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/graphics-study.pen");
+    let store = Store::open(&file, None).unwrap();
+    let project = Project::load(&store).unwrap();
+    let snapshot =
+        layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap()).unwrap();
+    assert!(
+        snapshot.summary()["diagnostics"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let output = render::png(&project, &snapshot, &Default::default()).unwrap();
+    assert_eq!((output.width, output.height), (1000, 760));
+    assert_eq!(output.assets.len(), 1);
+}
+
+#[test]
+fn tight_line_height_does_not_crop_glyphs_or_decorations_outside_the_line_box() {
+    use lazypencil::text::TextSpec;
+    let content = "日本語";
+    let mut fonts = Fonts::new(&[]).unwrap();
+    let reference = fonts
+        .layout(
+            &TextSpec {
+                content: content.into(),
+                size: 64.0,
+                line_height: Some(0.5),
+                underline: true,
+                color: Color::WHITE,
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+    let mut surface = skia_safe::surfaces::raster_n32_premul((260, 180)).unwrap();
+    surface.canvas().clear(Color::TRANSPARENT);
+    reference.paragraph.paint(surface.canvas(), (20.0, 70.0));
+    let image = surface
+        .image_snapshot()
+        .make_raster_image(None, None)
+        .unwrap();
+    let expected = image.peek_pixels().unwrap();
+    let output=Scene::new(json!([{"id":"label","type":"text","content":content,"fontSize":64,"lineHeight":0.5,"underline":true,"fill":"#FFFFFF"}])).render().unwrap();
+    let image = raster(&output);
+    let pixels = image.peek_pixels().unwrap();
+    let mut ink = 0;
+    for y in 0..180 {
+        for x in 0..260 {
+            if expected.get_color((x, y)).a() > 220 {
+                ink += 1;
+                let px = (x as f32 - 20.0 - output.region.x).floor() as i32;
+                let py = (y as f32 - 70.0 - output.region.y).floor() as i32;
+                assert!(
+                    px >= 0 && py >= 0 && px < output.width as i32 && py < output.height as i32,
+                    "Ink outside export: {x},{y}, {:?}",
+                    output.region
+                );
+                assert!(
+                    pixels.get_color((px, py)).a() > 0,
+                    "Ink was clipped at {px},{py}"
+                );
+            }
+        }
+    }
+    assert!(ink > 1000);
+}

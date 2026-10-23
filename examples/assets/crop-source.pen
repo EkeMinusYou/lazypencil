@@ -1,0 +1,58 @@
+{
+  "version": "2.21",
+  "children": [
+    {
+      "id": "pattern",
+      "type": "frame",
+      "layout": "none",
+      "width": 320,
+      "height": 160,
+      "fill": "#FDBA74",
+      "children": [
+        {
+          "id": "orange",
+          "type": "rectangle",
+          "width": 160,
+          "height": 160,
+          "fill": "#F97316"
+        },
+        {
+          "id": "blue",
+          "type": "rectangle",
+          "x": 160,
+          "width": 160,
+          "height": 160,
+          "fill": "#2563EB"
+        },
+        {
+          "id": "circle",
+          "type": "ellipse",
+          "x": 112,
+          "y": 32,
+          "width": 96,
+          "height": 96,
+          "fill": "#FFFFFF"
+        },
+        {
+          "id": "bar",
+          "type": "rectangle",
+          "x": 32,
+          "y": 116,
+          "width": 64,
+          "height": 12,
+          "cornerRadius": 6,
+          "fill": "#FED7AA"
+        },
+        {
+          "id": "small",
+          "type": "ellipse",
+          "x": 244,
+          "y": 24,
+          "width": 32,
+          "height": 32,
+          "fill": "#93C5FD"
+        }
+      ]
+    }
+  ]
+}

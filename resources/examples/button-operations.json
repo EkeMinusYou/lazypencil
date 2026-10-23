@@ -1,0 +1,45 @@
+[
+  {
+    "op": "set_variable",
+    "name": "accent",
+    "definition": {"type": "color", "value": "#2563EB"}
+  },
+  {
+    "op": "insert",
+    "client_ref": "button",
+    "node": {
+      "type": "frame",
+      "name": "Primary button",
+      "reusable": true,
+      "layout": "horizontal",
+      "width": 200,
+      "height": 44,
+      "padding": [0, 16],
+      "justifyContent": "center",
+      "alignItems": "center",
+      "fill": "$accent",
+      "cornerRadius": 8,
+      "children": [
+        {
+          "type": "text",
+          "content": "Continue",
+          "fontFamily": "Noto Sans JP",
+          "fontSize": 14,
+          "fontWeight": "500",
+          "lineHeight": 1.5,
+          "fill": "#FFFFFF"
+        }
+      ]
+    }
+  },
+  {
+    "op": "insert",
+    "client_ref": "instance",
+    "node": {
+      "type": "ref",
+      "ref": {"result_of": "button"},
+      "x": 240,
+      "y": 0
+    }
+  }
+]
