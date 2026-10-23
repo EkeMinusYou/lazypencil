@@ -121,6 +121,15 @@ fn file_input_worker_normalizes_without_clipboard_access_and_rejects_non_images(
 
 #[test]
 fn cancellation_reaps_input_worker_and_descendants_without_blocking_on_stdout() {
+    assert_input_worker_cancellation(false);
+}
+
+#[test]
+fn cancellation_remains_live_after_an_input_worker_exits_with_inherited_stdout() {
+    assert_input_worker_cancellation(true);
+}
+
+fn assert_input_worker_cancellation(exited: bool) {
     use lazypencil::clipboard;
     use std::{
         os::unix::fs::PermissionsExt,
@@ -129,15 +138,40 @@ fn cancellation_reaps_input_worker_and_descendants_without_blocking_on_stdout() 
     use tokio_util::sync::CancellationToken;
     let temp = TempDir::new().unwrap();
     let executable = temp.path().join("input-worker");
-    std::fs::write(&executable, "#!/usr/bin/env python3\nimport json, os, sys, time\nchild = os.fork()\nif child == 0:\n time.sleep(60)\nelse:\n path = sys.argv[-1]\n with open(path + '.tmp', 'w') as handle: json.dump([os.getpid(), child], handle)\n os.replace(path + '.tmp', path)\n time.sleep(60)\n").unwrap();
+    std::fs::write(
+        &executable,
+        r#"#!/bin/sh
+for input_path in "$@"; do :; done
+exec "${LAZYPENCIL_TEST_PYTHON:-python3}" -c '
+import json, os, sys, time
+child = os.fork()
+if child == 0:
+ time.sleep(60)
+else:
+ path = sys.argv[-1]
+ with open(path + ".tmp", "w") as handle: json.dump([os.getpid(), child], handle)
+ os.replace(path + ".tmp", path)
+ if path.endswith("exited.json"): sys.exit(0)
+ time.sleep(60)
+' "$@" 2>"$input_path.stderr"
+"#,
+    )
+    .unwrap();
     std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
-    let path = temp.path().join("pids.json");
+    let path = temp.path().join(if exited {
+        "exited.json"
+    } else {
+        "running.json"
+    });
     let cancel = CancellationToken::new();
     let token = cancel.clone();
     let pid_path = path.clone();
     let cancelling = std::thread::spawn(move || {
         for _ in 0..200 {
             if pid_path.exists() {
+                if exited {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
                 token.cancel();
                 return;
             }
@@ -150,7 +184,12 @@ fn cancellation_reaps_input_worker_and_descendants_without_blocking_on_stdout() 
         .err()
         .unwrap();
     cancelling.join().unwrap();
-    assert_eq!(error.code, "CANCELLED");
+    let stderr = std::fs::read_to_string(format!("{}.stderr", path.display())).unwrap_or_default();
+    assert!(
+        path.exists(),
+        "Input fixture did not publish process IDs: {error:?}; stderr: {stderr}"
+    );
+    assert_eq!(error.code, "CANCELLED", "{error:?}; stderr: {stderr}");
     assert!(before.elapsed() < Duration::from_secs(3));
     let pids: Vec<i32> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     for pid in pids {
