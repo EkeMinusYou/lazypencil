@@ -6,6 +6,10 @@
 
 同日: 通常 CI `40024349686` の source `18a0092` は Linux x64・macOS arm64・Windows の各 job が成功した。取得した3 artifact の ZIP digest、release 3画像ずつの寸法・hash・診断0件、各42回の benchmark 出力を確認した。描画なし／通常は Linux x64 が291／479、macOS arm64 が289／477、Windows が259／436試験で、両 Clippy・Material 2 opt-in も成功した。Linux x64 の3画像は目視でも確認した。Intel と Linux arm64 はこの run では実行中であり、source artifact や全体の成功とは扱わない。Linux x64 の v2 native cache 保存を終了ログで確認してから、同環境での full 資料収集 `40028057056` を開始した。
 
+同日: source `5a29847` の Intel Mac Chromium `40027340811` が成功した。library 43・runtime 4・設定10・script 12・browser_readiness 5・dynamic_render 17・shader_uniforms 10・実 MCP 画像1・60秒待機回収1・TUI 6の計109件が成功し、runtime archive 用の別 opt-in 1件を除外した。起動済みの browser で対象 selector の問い合わせを実際に観測してから取消・回収・正常描画まで成功した。v2 native cache の復元も終了ログで確認した。artifact `12534221384` の ZIP digest、1000×640の画像 hash・診断0件・2取得・実 browser `HeadlessChrome/156.0.8078.47`・実効 policy・管理 runtime の完全性を検査し、画像も目視した。Intel の hash `b10c0cf5…` は初回の基準であり、他 OS とのバイト一致は要求していない。物理端末や clipboard の証拠ではない。
+
+同日: QuickJS 拡張前の source `74d4a3d` の Linux arm64 資料収集 `40025475997` も成功した。取得した306資料の size／SHA-256・一覧の完全性と ZIP digest を確認した。Skia は2,972入力・8外部部品と Skia・33原文資料、native archive は Skia／wrapper 6件と QuickJS 1件で、Rust 388 package の既存通知を含む。この run は新しい QuickJS 入力照合と対応ソース追加の前であり、それらの Linux 検証完了へ読み替えない。
+
 2026-10-24: QuickJS の native 入力を元 archive へ結び付ける `scripts/quickjs_notice_inventory.py` を追加し、release 資料収集へ接続した。rquickjs-sys 0.14.0 の Cargo.lock checksum とレビューした build.rs の SHA-256 を固定し、選択された manifest・build.rs・C／header 19入力・各対象の Rust FFI binding を原本へ照合する。生成された target 選択 macro は rustc の host と一致する必要がある。コピーされた C／header の全文から原文の著作権・license comment 候補を保持する。bindgen／update-bindings、新しい版・build script・対象はレビューなしに通さない。release 資料の `licenses/` には既存の対応ソース archive・MPL 本文・元通知も相対パスを維持して含める。Python 全108試験と、実際の checksum 検証済み archive を使った5対象のコピー fixture・再構成検証が成功した。fixture は native をコンパイルしておらず、実 GHA の結果は下記に記録する。最終リンクや完全な帰属レビューの完了とは扱わない。
 
 同日: QuickJS 追加後の source `ec6d326` の macOS arm64 `40026880547` が、release ビルド・Skia／QuickJS の元入力からの再構成検証・資料保存まで成功した。取得した artifact `12533666504` の ZIP digest と325ファイルの size／SHA-256・一覧の完全性を検証した。QuickJS は実ビルドの19入力・4つの C source・15 comment 候補・target binding を記録し、元 registry archive を checksum で検証している。同梱した option-ext 0.2.0 の対応ソース archive と MPL 本文も provenance の hash と一致した。実行ファイルの hash は拡張前の macOS 資料と同じ `0f0fe410…` だった。この環境の入力照合の証拠であり、他 OS や完全な法的レビュー・標準／system／素材の監査・署名の完了ではない。
@@ -50,13 +54,13 @@
 
 現在の継続検証は GHA の Rust 1.94.0 で行い、ローカルでは native build を行わない。下表は確認した source ごとの結果であり、最新コミットの全検証や、物理端末・最低 OS の保証へ読み替えない。
 
-| GHA 環境 | 通常・release CI（source 別の確認結果） | Chromium 専用検証（source `d617d5e`） |
+| GHA 環境 | 通常・release CI（source 別の確認結果） | Chromium 専用検証（source 別） |
 | --- | --- | --- |
-| macOS 15 arm64 | `18a0092`: 両構成・Clippy・Material・release 成功 | 109件成功、MCP 待機・TUI を含む |
-| macOS 15 Intel | `36d1269`: 両構成・Clippy・Material・release 成功、cache 保存済み | 未実行 |
-| Ubuntu 24.04 x64 | `18a0092`: 両構成・Clippy・Material・release 成功 | 111件成功、公式 mirror で導入済み |
-| Ubuntu 24.04 arm64 | `36d1269`: 両構成・Clippy・release 成功 | 111件成功、MCP 待機・TUI を含む |
-| Windows Server 2025 x64 | `18a0092`: 両構成・Clippy・Material・release 成功 | 96件成功、実 MCP 画像まで。Unix PTY 等を除く |
+| macOS 15 arm64 | `18a0092`: 両構成・Clippy・Material・release 成功 | `d617d5e`: 109件成功、MCP 待機・TUI を含む |
+| macOS 15 Intel | `36d1269`: 両構成・Clippy・Material・release 成功、cache 保存済み | `5a29847`: 109件成功、MCP 待機・TUI を含む |
+| Ubuntu 24.04 x64 | `18a0092`: 両構成・Clippy・Material・release 成功 | `d617d5e`: 111件成功、公式 mirror で導入済み |
+| Ubuntu 24.04 arm64 | `36d1269`: 両構成・Clippy・release 成功 | `d617d5e`: 111件成功、MCP 待機・TUI を含む |
+| Windows Server 2025 x64 | `18a0092`: 両構成・Clippy・Material・release 成功 | `d617d5e`: 96件成功、実 MCP 画像まで。Unix PTY 等を除く |
 
 [通常 CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40014323380) の Intel job は成功し、最新 main の全環境 CI を続けて確認する。Linux x64 の旧 mirror の失敗は、取得先の修正後に実導入と専用検証で確認した。具体的な専用 run と制約は [runtime の検証記録](runtimes.md#hosted-integration-without-local-build-trees) に記載する。過去のローカル検証は macOS arm64・Rust 1.99.1 と Debian 12 arm64・Rust 1.94.0 で行った。物理端末・クリップボード・最低 OS・本家との互換性・公開品質全体の確認は残る。
 
