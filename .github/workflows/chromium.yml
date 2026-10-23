@@ -117,6 +117,40 @@ jobs:
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as stream:
               stream.write("LAZYPENCIL_TEST_CHROMIUM=" + status["executable"] + "\n")
           PY
+      - name: Permit the verified browser to create its Linux sandbox
+        if: runner.os == 'Linux'
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          if [ ! -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ] || [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" != 1 ]; then
+            exit 0
+          fi
+          python - <<'PY'
+          import hashlib, json, os, re
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"]).resolve()
+          status = json.loads((root / "chromium-status.json").read_text(encoding="utf-8"))
+          assert status["available"] and status["managed"] and status["integrity_verified"], status
+          executable = Path(status["executable"]).resolve(strict=True)
+          executable.relative_to(root / "chromium-test-data" / "runtimes" / "chromium")
+          assert executable == Path(os.environ["LAZYPENCIL_TEST_CHROMIUM"]).resolve(strict=True)
+          assert re.fullmatch(r"/[A-Za-z0-9_./-]+", str(executable)), executable
+          policy = 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile lazypencil_ci_chromium "' + str(executable) + '" flags=(unconfined) {\n  userns,\n}\n'
+          profile = root / "chromium-userns.apparmor"
+          profile.write_text(policy, encoding="utf-8")
+          profile.chmod(0o600)
+          (root / "chromium-userns-policy.json").write_text(json.dumps({"executable":str(executable),"profile_sha256":hashlib.sha256(policy.encode()).hexdigest(),"kernel_restriction_before":1,"loaded":False}, indent=2) + "\n", encoding="utf-8")
+          PY
+          sudo -n /usr/sbin/apparmor_parser -r "$RUNNER_TEMP/chromium-userns.apparmor"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          report = Path(os.environ["RUNNER_TEMP"]) / "chromium-userns-policy.json"
+          data = json.loads(report.read_text(encoding="utf-8"))
+          data["kernel_restriction_after"] = int(Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns").read_text().strip())
+          assert data["kernel_restriction_after"] == data["kernel_restriction_before"] == 1
+          data["loaded"] = True
+          report.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+          PY
       - name: Diagnose Linux browser startup with the OS sandbox enabled
         if: runner.os == 'Linux'
         working-directory: ${{ runner.temp }}/lazypencil-source
@@ -195,5 +229,6 @@ jobs:
             ${{ runner.temp }}/chromium-*.json
             ${{ runner.temp }}/chromium-*.log
             ${{ runner.temp }}/chromium-panel.png
+            ${{ runner.temp }}/chromium-userns.apparmor
           if-no-files-found: ignore
           retention-days: 3
