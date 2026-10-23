@@ -1845,7 +1845,7 @@ fn real_stdio_image_upload_is_linked_atomically_and_returns_actual_pixels() {
 
 #[cfg(feature = "rendering")]
 #[test]
-fn nested_library_script_errors_expose_original_source_and_allow_mcp_repair() {
+fn failed_script_nested_library_source_can_be_read_and_repaired() {
     let (temp, file, data) = fixture();
     let library = temp.path().join("library");
     fs::create_dir(&library).unwrap();
@@ -1966,7 +1966,7 @@ fn nested_library_script_errors_expose_original_source_and_allow_mcp_repair() {
 
 #[cfg(feature = "rendering")]
 #[test]
-fn runtime_code_reads_choose_the_latest_successful_or_failed_context() {
+fn failed_script_source_reads_choose_latest_successful_or_failed_context() {
     let (temp, file, data) = fixture();
     let library = temp.path().join("ui.pen");
     let outer = "/** @schema 2.21 */ return [{type:'script',scriptUri:'nested.js',width:pencil.width,height:20}];";
@@ -2008,7 +2008,7 @@ fn runtime_code_reads_choose_the_latest_successful_or_failed_context() {
 
 #[cfg(all(feature = "rendering", unix))]
 #[test]
-fn failed_runtime_source_rejects_a_retargeted_link_even_when_bytes_match() {
+fn failed_script_source_rejects_a_retargeted_link_even_when_bytes_match() {
     use std::os::unix::fs::symlink;
     let (temp, file, data) = fixture();
     let code = "/** @schema 2.21 */ throw new Error('nested');";
@@ -2042,7 +2042,7 @@ fn failed_runtime_source_rejects_a_retargeted_link_even_when_bytes_match() {
 
 #[cfg(feature = "rendering")]
 #[test]
-fn failed_runtime_code_is_bounded_and_does_not_allow_arbitrary_file_reads() {
+fn failed_script_sources_are_bounded_and_reject_arbitrary_file_reads() {
     let (temp, file, data) = fixture();
     fs::write(
         temp.path().join("outer.js"),
