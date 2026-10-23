@@ -227,6 +227,89 @@ fn concurrent_icon_setup_converges_and_snapshots_detect_installation_and_file_ch
     assert_eq!(store.read().unwrap().revision(), saved);
 }
 
+#[cfg(unix)]
+#[test]
+fn icon_file_symlink_retargeting_invalidates_live_and_cached_snapshots() {
+    use std::{fs, os::unix::fs::symlink};
+    for filename in ["manifest.json", "LICENSE", "icons.json"] {
+        let temp = TempDir::new().unwrap();
+        let store = fixture(
+            &temp,
+            json!({"id":"icon","type":"icon","library":"feather","icon":"circle","width":24,"height":24}),
+        );
+        let setup = icons::setup(store.data_dir(), "feather", Some(&archive())).unwrap();
+        let requested = Path::new(setup["path"].as_str().unwrap()).join(filename);
+        let original = temp.path().join("original");
+        let replacement = temp.path().join("replacement");
+        fs::copy(&requested, &original).unwrap();
+        fs::copy(&requested, &replacement).unwrap();
+        fs::remove_file(&requested).unwrap();
+        symlink(&original, &requested).unwrap();
+        let first = Project::load(&store).unwrap();
+        let cached = Project::load(&store).unwrap();
+        first.verify_unchanged().unwrap();
+        cached.verify_unchanged().unwrap();
+
+        fs::remove_file(&requested).unwrap();
+        symlink(&replacement, &requested).unwrap();
+        for project in [&first, &cached] {
+            assert_eq!(
+                project.verify_unchanged().unwrap_err().code,
+                "REVISION_CONFLICT",
+                "{filename}"
+            );
+        }
+        let fresh = Project::load(&store).unwrap();
+        fresh.verify_unchanged().unwrap();
+        assert_ne!(fresh.dependency_revision(), first.dependency_revision());
+
+        fs::remove_file(&requested).unwrap();
+        symlink(&original, &requested).unwrap();
+        first.verify_unchanged().unwrap();
+        assert_eq!(
+            fresh.verify_unchanged().unwrap_err().code,
+            "REVISION_CONFLICT"
+        );
+        fs::remove_file(&requested).unwrap();
+        assert_eq!(
+            first.verify_unchanged().unwrap_err().code,
+            "REVISION_CONFLICT"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn replacing_a_pack_directory_symlink_invalidates_its_captured_file_targets() {
+    use std::{fs, os::unix::fs::symlink};
+    let temp = TempDir::new().unwrap();
+    let store = fixture(
+        &temp,
+        json!({"id":"icon","type":"icon","library":"feather","icon":"circle","width":24,"height":24}),
+    );
+    let setup = icons::setup(store.data_dir(), "feather", Some(&archive())).unwrap();
+    let requested = Path::new(setup["path"].as_str().unwrap());
+    let original = temp.path().join("original-pack");
+    let replacement = temp.path().join("replacement-pack");
+    fs::rename(requested, &original).unwrap();
+    fs::create_dir(&replacement).unwrap();
+    for filename in ["manifest.json", "LICENSE", "icons.json"] {
+        fs::copy(original.join(filename), replacement.join(filename)).unwrap();
+    }
+    symlink(&original, requested).unwrap();
+    let project = Project::load(&store).unwrap();
+    project.verify_unchanged().unwrap();
+    fs::remove_file(requested).unwrap();
+    symlink(&replacement, requested).unwrap();
+    assert_eq!(
+        project.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    let fresh = Project::load(&store).unwrap();
+    fresh.verify_unchanged().unwrap();
+    assert_ne!(fresh.dependency_revision(), project.dependency_revision());
+}
+
 #[test]
 fn cli_icons_search_and_offline_install_match_the_shared_service() {
     let temp = TempDir::new().unwrap();

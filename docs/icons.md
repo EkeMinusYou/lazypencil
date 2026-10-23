@@ -83,6 +83,8 @@ Successful layout records include resolved icon metadata. Discovery reports per-
 
 Every load revalidates the original captured file bytes before sharing a pack. Live snapshots can share immutable geometry and font bytes, as well as lazy native typefaces; a modified file is still rejected before cache reuse. Native Material instances have an eight-position LRU per live pack. The cache uses weak pack references, so it does not retain every previously opened font after its snapshots are released.
 
+Each snapshot also retains the requested installation paths and their resolved file targets independently of the shared pack. Retargeting an individual file or an ancestor directory invalidates the snapshot, even if the new target contains identical pinned bytes. Recalculation captures the new targets and dependency revision; returning a link to its original target restores the old snapshot's path condition. These checks also cover packs first loaded by generated content.
+
 When a live pack already owns the original bytes, validation hashes the current geometry/font file through a 64 KiB buffer before reusing them. Project dependency checks use the same bounded streaming hash for all captured binary assets, with cancellation checks between reads. This avoids allocating another full font for each validation while retaining SHA-256 comparison, regular-file checks and input size limits. Native typefaces continue to own their Skia data; they do not borrow a snapshot's Rust byte slice.
 
 ## Provenance and reproduction

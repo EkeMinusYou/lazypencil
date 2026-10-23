@@ -226,7 +226,7 @@ Verbatim source attribution comments:
 clap_lex@1.1.1
 Declared license: MIT OR Apache-2.0
 
-clipboard-win@5.4.1
+clipboard-win@5.4.3
 Declared license: BSL-1.0
 Published package authors: Douman <douman@gmx.se>
 Original workspace-root notices omitted by the published archive.
@@ -19367,7 +19367,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
 ========================================================================
-clipboard-win@5.4.1 :: upstream :: LICENSE
+clipboard-win@5.4.3 :: upstream :: LICENSE
 error-code@3.4.0 :: archive :: LICENSE
 ryu@1.0.23 :: archive :: LICENSE-BOOST
 SHA-256: c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566

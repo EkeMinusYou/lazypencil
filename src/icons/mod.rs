@@ -202,7 +202,12 @@ fn read(path: &Path, max: usize) -> Result<Arc<[u8]>> {
     Ok(bytes.into())
 }
 pub(crate) type CapturedFiles = Vec<(PathBuf, Arc<[u8]>)>;
-fn installed(data: &Path, descriptor: &Descriptor) -> Result<(Arc<Pack>, CapturedFiles)> {
+struct CapturedPack {
+    pack: Arc<Pack>,
+    files: CapturedFiles,
+    bindings: BTreeMap<PathBuf, PathBuf>,
+}
+fn installed(data: &Path, descriptor: &Descriptor) -> Result<CapturedPack> {
     let directory = directory(data, descriptor);
     if !directory.exists() {
         return Err(Error::new("ASSET_NOT_FOUND", format!("Icon pack {:?} is not installed; run {}",descriptor.id,setup_command(&descriptor.id))).details(json!({"pack":descriptor.id,"version":descriptor.version,"setup_command":setup_command(&descriptor.id)})));
@@ -217,6 +222,7 @@ fn installed(data: &Path, descriptor: &Descriptor) -> Result<(Arc<Pack>, Capture
         .and_then(std::sync::Weak::upgrade)
         .filter(|pack| pack.descriptor == *descriptor);
     let mut files = vec![];
+    let mut bindings = BTreeMap::new();
     let mut required = vec![
         ("manifest.json", 16384),
         ("LICENSE", 16384),
@@ -226,8 +232,10 @@ fn installed(data: &Path, descriptor: &Descriptor) -> Result<(Arc<Pack>, Capture
         required.push(("font.ttf", MAX_ARCHIVE));
     }
     for (name, max) in required {
-        let path = crate::paths::canonical(directory.join(name))
+        let requested = directory.join(name);
+        let path = crate::paths::canonical(&requested)
             .map_err(|error| integrity(format!("Cannot read installed icon file: {error}")))?;
+        bindings.insert(requested, path.clone());
         // Hash current files before reusing immutable captured bytes. Large
         // fonts must not be duplicated just to validate another snapshot.
         let captured = cached.as_ref().and_then(|pack| match name {
@@ -302,12 +310,20 @@ fn installed(data: &Path, descriptor: &Descriptor) -> Result<(Arc<Pack>, Capture
             .expect("Installed icon font")
             .clone();
     }
-    Ok((pack, files))
+    Ok(CapturedPack {
+        pack,
+        files,
+        bindings,
+    })
 }
-fn load(data: Option<&Path>, id: &str) -> Result<(Arc<Pack>, CapturedFiles)> {
+fn load(data: Option<&Path>, id: &str) -> Result<CapturedPack> {
     let descriptor = descriptor(id)?;
     if descriptor.bundled {
-        return bundled().map(|pack| (pack, vec![]));
+        return bundled().map(|pack| CapturedPack {
+            pack,
+            files: vec![],
+            bindings: BTreeMap::new(),
+        });
     }
     installed(
         data.ok_or_else(|| {
@@ -327,15 +343,17 @@ fn load(data: Option<&Path>, id: &str) -> Result<(Arc<Pack>, CapturedFiles)> {
 pub(crate) struct Registry {
     packs: BTreeMap<String, Result<Arc<Pack>>>,
     missing: Vec<PathBuf>,
+    bindings: BTreeMap<PathBuf, PathBuf>,
 }
 impl Registry {
     pub fn prepare(libraries: BTreeSet<String>, data: Option<&Path>) -> (Self, CapturedFiles) {
         let mut registry = Self::default();
         let mut files = vec![];
         for id in libraries {
-            let pack = load(data, &id).map(|(pack, captured)| {
-                files.extend(captured);
-                pack
+            let pack = load(data, &id).map(|capture| {
+                files.extend(capture.files);
+                registry.bindings.extend(capture.bindings);
+                capture.pack
             });
             if pack
                 .as_ref()
@@ -354,8 +372,17 @@ impl Registry {
     pub fn extend(&mut self, other: Self) {
         self.packs.extend(other.packs);
         self.missing.extend(other.missing);
+        self.bindings.extend(other.bindings);
     }
     pub fn verify_unchanged(&self) -> Result<()> {
+        for (requested, expected) in &self.bindings {
+            if !crate::paths::canonical(requested).is_ok_and(|current| current == *expected) {
+                return Err(Error::new(
+                    "REVISION_CONFLICT",
+                    "An installed icon file changed its target; recalculate the project snapshot",
+                ));
+            }
+        }
         if self.missing.iter().any(|path| path.exists()) {
             return Err(Error::new(
                 "REVISION_CONFLICT",
@@ -464,8 +491,8 @@ pub fn list(data: &Path, request: &ListRequest) -> Result<Value> {
         let status = if pack.id == selected { availability.clone() } else { load(Some(data),&pack.id).map(|_|json!({"installed":true})).unwrap_or_else(|error|json!({"installed":false,"diagnostic":error})) };
         json!({"id":pack.id,"version":pack.version,"hash":pack.data_sha256,"license":pack.license,"source":pack.source_url,"bundled":pack.bundled,"icon_count":pack.icon_count,"alias_count":pack.alias_count,"status":status})
     }).collect::<Vec<_>>();
-    let (pack, _) = match loaded {
-        Ok(pack) => pack,
+    let pack = match loaded {
+        Ok(capture) => capture.pack,
         Err(error) if error.code == "ASSET_NOT_FOUND" => {
             return Ok(
                 json!({"pack":selected,"packs":packs,"icons":[],"next_cursor":null,"diagnostic":error}),
