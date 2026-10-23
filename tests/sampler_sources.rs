@@ -28,15 +28,21 @@ fn image(path: &Path, dark: bool) {
         .unwrap();
     }
     #[cfg(not(feature = "rendering"))]
-    fs::write(
-        path,
-        if dark {
-            &b"dark image fixture"[..]
+    {
+        use base64::Engine;
+        let encoded = if dark {
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYPj/HwADAgH/5ncLrgAAAABJRU5ErkJggg=="
         } else {
-            &b"light image fixture"[..]
-        },
-    )
-    .unwrap();
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4/5/hPwAH/QL+ppTFtAAAAABJRU5ErkJggg=="
+        };
+        fs::write(
+            path,
+            base64::engine::general_purpose::STANDARD
+                .decode(encoded)
+                .unwrap(),
+        )
+        .unwrap();
+    }
 }
 
 fn fixture() -> (TempDir, Store) {
@@ -525,7 +531,7 @@ fn independent_sampler_copy_keeps_text_aliases_themes_and_future_consumer_edits(
             let path = project
                 .resolve_file(node.property_source(property), uri)
                 .unwrap();
-            assert!(path.starts_with(temp.path().join("assets/lazypencil")));
+            assert!(path.starts_with(store.path().parent().unwrap().join("assets/lazypencil")));
             assert!(project.asset(&path).is_ok());
         }
     }
@@ -559,9 +565,15 @@ fn independent_sampler_copy_preserves_parent_and_transit_directory_uris() {
     fs::create_dir(temp.path().join("library/transit")).unwrap();
     let source = temp.path().join("library/data/images.lib.pen");
     let mut data: Value = serde_json::from_slice(&fs::read(&source).unwrap()).unwrap();
+    fs::create_dir(temp.path().join("library/data/素材")).unwrap();
+    fs::copy(
+        temp.path().join("library/data/dark.png"),
+        temp.path().join("library/data/素材/暗い.png"),
+    )
+    .unwrap();
     data["variables"]["leaf"]["value"] = json!([
         {"value":"../transit/../pixel.png"},
-        {"theme":{"mode":"dark"},"value":"./dark.png"}
+        {"theme":{"mode":"dark"},"value":"./素材/暗い.png"}
     ]);
     write(&source, data);
     let result = edit(&store, "parent-copy", copy_operations());
@@ -583,6 +595,30 @@ fn independent_sampler_copy_preserves_parent_and_transit_directory_uris() {
         .as_str()
         .unwrap();
     assert!(Path::new(input).canonicalize().unwrap().is_file());
+    edit(
+        &store,
+        "unicode-theme",
+        json!([{"op":"set_theme","target":target,"set":{"mode":"dark"}}]),
+    );
+    let dark = Project::load(&store).unwrap();
+    let dark = dark
+        .resolve()
+        .unwrap()
+        .roots
+        .into_iter()
+        .find(|node| node.id() == target)
+        .unwrap();
+    assert_eq!(dark.children[0].properties["content"], "./素材/暗い.png");
+    assert!(
+        Path::new(
+            dark.properties["fill"]["uniforms"]["image"]
+                .as_str()
+                .unwrap()
+        )
+        .canonicalize()
+        .unwrap()
+        .is_file()
+    );
     let imports = store.read().unwrap().value()["imports"].clone();
     let library = imports
         .as_object()
