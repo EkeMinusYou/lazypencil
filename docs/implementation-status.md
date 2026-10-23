@@ -341,6 +341,12 @@ Material 原本の取得を明示する CI helper と4試験を追加した。Go
 
 cache 設定の実行 `39995993914` では、Windows の Python fixture が、`Cargo.lock` の変更検査後に原本 gzip を再作成していたため、秒境界で archive checksum が変わり、別のライセンス変更の検査を隠していた。gzip timestamp を1000→2000へ進める注入で失敗を再現した。元の lock bytes を保存・復元する修正後は同じ注入で成功し、Python 全69試験も成功した。製品のライセンス検査と拒否条件は変えていない。書式・workflow lint・Python 構文も成功し、ローカルの Rust／Skia ビルドは行っていない。既存 macOS arm64 バイナリーで更新した PTY helper の project／user font の2ケースも成功したが、このバイナリーは今回の Rust 修正を含まない。
 
+### 繰り返し可能な1,000ノードの CLI 性能測定
+
+2026-10-24: `scripts/measure_native_performance.py` を追加し、固定した shadow と日本語 dashboard の2文書について、初回と既定20回の繰り返しの実子プロセスを別々に計測する。文書・実行ファイル・生成 PNG のハッシュ、1,000ノード／1920×1080、診断・動的取得・script 実行なし、素材数を検査する。実行時間・子の peak RSS・user/system CPU の全試料と median・nearest-rank p95・最大値を残す。Unix は個々の子の `wait4`、Windows は元の process handle の OS API を使い、親や以前の子の累積 high-water mark を使わない。期限・出力量・実行失敗・結果の変化を拒否し、完成 JSON だけを上書きなしで公開する。測定用の文書と画像は終了時に除去する。
+
+追加7試験と Python 全76試験が成功した。既存 macOS arm64 release バイナリー `8f322822…` で各21回、合計42描画が成功し、文書ごとに全 PNG が一致した。繰り返しの中央値／p95 は shadow 約160.84／165.26ms、dashboard 約824.94／907.03ms、最大 peak RSS は各133,136,384／123,322,368 bytes。これは現行ソースをローカルで再ビルドした結果ではない。GHA の release smoke に組み込み、小さい JSON を既存の成果物へ含め、依存 cache 保存前に除去する。新しい CI 統合と Windows／Linux の計測は GHA で確認する。統制した cold、全プロセス群、待機 CPU、TUI 応答、全性能要件の完了とは扱わない。[測定条件](performance.md#repeatable-native-child-measurements)
+
 ### 次に実装・確認すること
 
 - 両実エージェントの画像付きサブスクリプション生成は、上記の条件で確認した。実 API/provider、モデル・モードの全組み合わせ、ランタイムの制限と診断、保持と会話管理、Windows の子孫終了と異常な親終了後の回収は残る。認証方式の確認は adapter report によるもので、請求額の監査ではない。TUI、クリップボード、設定・素材カタログ、配布と CI は未完成。MCP は変数の解決値と計算済みレイアウトの検証を実装した。計算済み・生成ノードの詳細取得も実装した。アイコンの追加カタログ設定や残る設定などを拡張する。通常編集と部品取り込みの保存準備・依存のロック待ちへ取消を接続した。静的レイアウト・描画全体の取消と、各 OS の遅延検証は残る。

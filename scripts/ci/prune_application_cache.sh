@@ -12,7 +12,7 @@ from pathlib import Path
 directory = Path(os.environ["CARGO_TARGET_DIR"])
 if not directory.is_absolute() or directory.resolve().parent == directory.resolve():
     raise SystemExit("Refusing an ambiguous/root compilation cache directory")
-for name in ("release-smoke", "release-dashboard", "release-graphics"):
+for name in ("release-smoke", "release-dashboard", "release-graphics", "release-benchmark"):
     for extension in ("png", "json"):
         path = directory / f"{name}.{extension}"
         if path.is_file() or path.is_symlink():

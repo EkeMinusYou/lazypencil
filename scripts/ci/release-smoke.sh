@@ -93,4 +93,12 @@ with tempfile.TemporaryDirectory(prefix="lazypencil-release-graphics-", dir=dire
         hashes.append(digest)
     assert hashes[0] != hashes[1], "Decoration-only stroke changes must produce visible output"
     print(json.dumps({"release_graphics": "ok", "decoration_stroke_ink": True, "diagnostics": 0}))
+
+# Repeated measurements use the already built executable, not Cargo startup.
+# Keep observations separate from hardware-dependent acceptance thresholds.
+binary = directory / "release" / ("lazypencil.exe" if sys.platform == "win32" else "lazypencil")
+subprocess.run([
+    sys.executable, "scripts/measure_native_performance.py", "--binary", str(binary.resolve()),
+    "--output", str(directory / "release-benchmark.json"), "--samples", "20",
+], check=True)
 PY
