@@ -168,6 +168,88 @@ class SkiaInventoryTests(unittest.TestCase):
         self.assertIn('"crlf_pairs": 3', message)
         self.assertIn('"bare_cr": 0', message)
 
+    def variant_reference(self):
+        original = self.h.read_bytes().replace(b"\r\n", b"\n")
+        self.h.write_bytes(original)
+        revision = "a" * 40
+        (self.source / "DEPS").write_bytes(('"third_party/externals/zlib": "' + native.ZLIB_SOURCE
+                                          + "@" + revision + '",\n').encode())
+        policy = self.reference()
+        value = json.loads(policy.read_bytes())
+        applies = value["references"][0]["applies_to"]
+        path = self.h.relative_to(self.source).as_posix()
+        actual = original.replace(b"\n", b"\r\n")
+        variant = {"transform": "lf_to_crlf", "sha256": notices.digest(actual),
+                   "source_git_blob_sha1": hashlib.sha1(b"blob " + str(len(original)).encode() + b"\0" + original).hexdigest(),
+                   "url": native.ZLIB_SOURCE + "/+/" + revision + "/native.h?format=TEXT"}
+        applies["source_origin"] = {"repository": native.ZLIB_SOURCE, "revision": revision}
+        applies["working_tree_variants"] = {path: variant}
+        self.h.write_bytes(actual)
+        policy.write_bytes(notices.json_bytes(value))
+        return policy, value, original, variant, path
+
+    def test_reviewed_crlf_variant_records_actual_bytes_and_retains_original_pin(self):
+        policy, value, original, variant, path = self.variant_reference()
+        index, texts = self.inventory()
+        native.apply_references(index, texts, policy)
+        applied = index["license_references"][0]
+        self.assertEqual(applied["observed_source_forms"][path],
+                         {"form": "reviewed_lf_to_crlf", "sha256": notices.digest(self.h.read_bytes())})
+        self.assertEqual(applied["applies_to"]["source_sha256"][path], notices.digest(original))
+        self.assertEqual(index["review_findings"], [])
+        self.h.write_bytes(original)
+        index, texts = self.inventory()
+        native.apply_references(index, texts, policy)
+        self.assertEqual(index["license_references"][0]["observed_source_forms"][path]["form"], "original_bytes")
+
+    def test_declared_variant_cannot_hide_changed_content_mixed_newlines_or_bare_cr(self):
+        policy, value, original, variant, path = self.variant_reference()
+        for data in (original.replace(b"Header Holder", b"Substitute Holder").replace(b"\n", b"\r\n"),
+                     original.replace(b"\n", b"\r\n", 1), original.replace(b"\n", b"\r\r\n")):
+            with self.subTest(data=data[:30]):
+                variant["sha256"] = notices.digest(data)
+                self.h.write_bytes(data)
+                policy.write_bytes(notices.json_bytes(value))
+                index, texts = self.inventory()
+                with self.assertRaisesRegex(notices.NoticeError, "changed source"):
+                    native.apply_references(index, texts, policy)
+
+    def test_variant_requires_exact_working_tree_hash_and_original_git_blob(self):
+        policy, value, original, variant, path = self.variant_reference()
+        for field, bad in (("sha256", "0" * 64), ("source_git_blob_sha1", "0" * 40)):
+            original_field = variant[field]
+            variant[field] = bad
+            policy.write_bytes(notices.json_bytes(value))
+            index, texts = self.inventory()
+            with self.assertRaisesRegex(notices.NoticeError, "changed source"):
+                native.apply_references(index, texts, policy)
+            variant[field] = original_field
+
+    def test_variant_origin_must_match_actual_skia_dependency(self):
+        policy, value, original, variant, path = self.variant_reference()
+        value["references"][0]["applies_to"]["source_origin"]["revision"] = "b" * 40
+        variant["url"] = variant["url"].replace("a" * 40, "b" * 40)
+        policy.write_bytes(notices.json_bytes(value))
+        index, texts = self.inventory()
+        with self.assertRaisesRegex(notices.NoticeError, "observed Skia dependency"):
+            native.apply_references(index, texts, policy)
+
+    def test_variant_provenance_and_unreviewed_paths_are_rejected(self):
+        policy, value, original, variant, path = self.variant_reference()
+        for field, bad in (("transform", "arbitrary-normalization"), ("sha256", "invalid"),
+                           ("source_git_blob_sha1", "invalid"), ("url", "https://example.invalid/source")):
+            original_field = variant[field]
+            variant[field] = bad
+            policy.write_bytes(notices.json_bytes(value))
+            with self.assertRaises(notices.NoticeError):
+                native.load_reference(policy)
+            variant[field] = original_field
+        variants = value["references"][0]["applies_to"]["working_tree_variants"]
+        variants["third_party/externals/zlib/unreviewed.h"] = variants.pop(path)
+        policy.write_bytes(notices.json_bytes(value))
+        with self.assertRaises(notices.NoticeError):
+            native.load_reference(policy)
+
     def test_malformed_reference_root_is_a_validation_error(self):
         policy = self.reference()
         policy.write_text("[]")
