@@ -117,12 +117,41 @@ jobs:
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as stream:
               stream.write("LAZYPENCIL_TEST_CHROMIUM=" + status["executable"] + "\n")
           PY
+      - name: Diagnose Linux browser startup with the OS sandbox enabled
+        if: runner.os == 'Linux'
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          ulimit -c 0
+          lazypencil_profile="$(mktemp -d)"
+          trap 'rm -rf "$lazypencil_profile"' EXIT
+          {
+            id
+            for lazypencil_setting in /proc/sys/kernel/unprivileged_userns_clone /proc/sys/kernel/apparmor_restrict_unprivileged_userns /proc/sys/user/max_user_namespaces; do
+              if [ -f "$lazypencil_setting" ]; then
+                printf '%s: ' "$lazypencil_setting"
+                cat "$lazypencil_setting"
+              fi
+            done
+            ldd "$LAZYPENCIL_TEST_CHROMIUM"
+          } > "$RUNNER_TEMP/chromium-linux-environment.log" 2>&1
+          lazypencil_probe_status=0
+          timeout --kill-after=2s 15s "$LAZYPENCIL_TEST_CHROMIUM" --headless --no-first-run --no-default-browser-check --disable-background-networking --user-data-dir="$lazypencil_profile" --dump-dom about:blank > "$RUNNER_TEMP/chromium-startup-dom.log" 2> "$RUNNER_TEMP/chromium-startup-stderr.log" || lazypencil_probe_status=$?
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          for name in ["chromium-linux-environment.log", "chromium-startup-stderr.log"]:
+              with (root / name).open("rb") as stream:
+                  print(name + ":\n" + stream.read(65536).decode("utf-8", errors="replace"))
+          PY
+          exit "$lazypencil_probe_status"
       - name: Verify captured runtime policy and real page and shader pixels
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
           set -o pipefail
-          cargo test --locked --test runtime_config -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/chromium-policy.log"
-          cargo test --locked --test dynamic_render -- --include-ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-render.log"
+          cargo test --locked --lib dynamic::tests:: -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/chromium-cache.log"
+          cargo test --locked --no-fail-fast --test runtime_config --test scripts -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/chromium-policy.log"
+          cargo test --locked --no-fail-fast --test dynamic_render --test shader_uniforms -- --include-ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-render.log"
       - name: Verify real MCP image content
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
@@ -134,12 +163,12 @@ jobs:
         run: |
           set -o pipefail
           cargo test --locked --test mcp idle_mcp_reaps_script_page_and_shader_processes_without_another_request -- --ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-mcp-idle.log"
-      - name: Verify dynamic preview pixels and cleanup in a real PTY
+      - name: Verify normal and dynamic TUI input pixels and process cleanup
         if: runner.os != 'Windows'
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
           set -o pipefail
-          cargo test --locked --test tui real_pty_dynamic_previews_survive_idle_cleanup_and_refresh_without_losing_drafts -- --ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-tui.log"
+          cargo test --locked --test tui -- --include-ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-tui.log"
       - name: Render the combined example for review
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |

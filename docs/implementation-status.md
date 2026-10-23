@@ -383,7 +383,11 @@ cache 設定の実行 `39995993914` では、Windows の Python fixture が、`C
 
 実 Chromium の opt-in をローカルのビルド木なしで検証するため、`chromium.yml` を追加した。選択した1環境で source archive を検証し、通常 CI の既存依存 cache を復元するが保存し直さず、アプリ出力を除去して現在のソースをビルドする。固定版の明示導入・完全性検査、設定・実 page/shader・実 MCP、Unix の実待機／動的 PTY を実行し、診断なし1000×640の複合例 PNG と hash・log・runtime identity を3日間保持する。通常 CI の feature／Clippy／release 検査を代替しない。workflow lint はローカルで検査し、実行成功は GHA の終了後に確認する。
 
-最初の専用実行 `40007385870`（Linux x64）と `40007389921`（macOS arm64）は、既存の依存 cache を復元して現行ソースをコンパイルし、PNG encoding 後の期限検査が `Renderer` 経由で canvas の借用を延長する Rust エラーを検出した。ランタイムを描画中だけ再借用し、encoding 後は元の参照で確認するように修正する。両実行はブラウザー導入前の失敗であり、動的描画の成功とは扱わない。ローカルの native build は追加せず、修正を新しい専用実行で確認する。
+最初の専用実行 `40007385870`（Linux x64）と `40007389921`（macOS arm64）は、既存の依存 cache を復元して現行ソースをコンパイルし、PNG encoding 後の期限検査が `Renderer` 経由で canvas の借用を延長する Rust エラーを検出した。ランタイムを描画中だけ再借用し、encoding 後は元の参照で確認するように修正した。両実行はブラウザー導入前の失敗であり、動的描画の成功とは扱わない。修正後の実行は両環境でビルドと固定版の導入・完全性検査まで通過した。
+
+`40007807712` の Linux は設定試験7件と代役のプロセスに対する2用途×3期限の試験が成功したが、実ブラウザーが CDP 前に SIGTRAP で終了し、動的描画の13試験が失敗した。元の起動経路は stderr を捨てるため、この信号だけでは原因を確定できない。次の専用 workflow に isolated about:blank の実起動、stderr・共有ライブラリ・namespace の kernel 設定を残す診断を追加した。OS policy は変更しない。macOS の `40007811724` は設定・実 page/shader・実 MCP 画像の段階を通過し、実待機と PTY の段階を引き続き確認する。
+
+専用 workflow の範囲を点検し、通常の JS ワーカー試験、`shader_uniforms` の数値配列・行列の実 WebGL 試験、通常と動的の全 TUI 試験も対象に加えた。これには入力ワーカーの取消回帰と12ケースの通常 PTY も含む。拡張した検査の成功は次の実行で確認し、ローカルの native build は追加しない。
 
 ### 次に実装・確認すること
 
