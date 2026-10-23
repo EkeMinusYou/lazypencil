@@ -2,6 +2,8 @@
 
 設計書 v0.9 の全体を実装対象とする。部分的な CLI や描画の試作だけで完成とは扱わない。以下は実際の実装・試験結果で更新する。
 
+2026-10-24: MCP の失敗した計算で実際に捕捉した入れ子 JS の全文を、同じ接続の `read_asset` から読む経路を追加した。元 error の `source_hash` と捕捉済みの path／kind を照合し、最大1MiBのコード4件・5分を保持する。失敗時の Project・font・scene やほかの payload は保持せず、bounded な依存 hash と path binding だけを残す。通常依存・runtime file・symlink target の変化を再検査し、成功／失敗の capture を新しい順に選ぶ。error／read に `failure_capture_id`、read に `failed_calculation` を返し、layout snapshot と区別する。UTF-8 chunk・全文取得・外側コード変更・修復、成功→失敗→成功、header failure・4件からの排出・無関係なファイルの拒否、同一バイトの symlink 付け替え、取消後の読取・期限切れと容量上限の試験を追加した。英語ガイドは1.0.7へ更新した。ローカルの127 Python 試験・整形・差分は成功し、Rust の実行検証は GHA で行う。CLI をまたいだ永続 capture や元スクリプト仕様の全互換を完了とするものではない。
+
 2026-10-24: source `3ea9c65` の macOS arm64 `40034819092` は、設定したキーでの実 ACP 画像送信と permission の優先、key parser／実 event matching を含む library 47、runtime／設定／script 26、実 readiness／dynamic／shader 32、実 MCP 画像1、60秒待機回収1、実 TUI 6の計113試験が成功した。TUI の集約試験にはユーザー設定から F5 を読み込み、日本語複数行を送信し、置き換えた Alt+Enter が送信しないことと起動中の設定固定を検査する新 PTY case を含む。artifact `12536912406` の ZIP digest・画像 hash／1000×640・診断0件とログ内の各成功を確認した。新しい目視や物理 clipboard／IME・全 OS の成功を示すものではない。CLI schema／設定の追加試験を含む通常5環境 CI `40034814779` は実行中である。
 
 同日: source `0acce40` の Linux x64 release 資料結合 `40033309721` が成功した。artifact `12537031822` の442資料すべての size／SHA-256・一覧と ZIP digest を検査した。nested 標準ライブラリの manifest／inventory／source distribution の hash が build 記録と一致し、同一 compiler・source revision・run ID、library 55件・registry 40原本と2,274 source input、VEX の finding の保持も確認した。資産は15宣言・20入力・6パックを含む。最終リンク・source-to-binary と公開の完了は保証していない。残る4環境の同じ結合を source `24414fe` で開始した: macOS arm64 `40035646909`、Windows `40035650051`、Linux arm64 `40035653283`、Intel Mac `40035656900`。ローカル native build は行っていない。
