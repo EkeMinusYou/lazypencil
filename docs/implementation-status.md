@@ -10,6 +10,8 @@
 
 同日: source `ec6d326` の Windows `40026876238` は新しい改行診断の fixture で、Python の `write_text` によって既に CRLF になった入力へ CR を重ねたため、bare CR の期待値だけが失敗した（108成功・1失敗）。意図する LF 原本を bytes で固定してから CRLF 版を作るよう修正した。アプリや照合条件の変更ではない。Windows の参照元不一致の実入力は、次の資料収集で引き続き確認する。
 
+同日: source `74d4a3d` の Intel Chromium `40025468263` は、library 43・runtime 4・設定10・script 12、browser_readiness の4・dynamic_render 17・shader_uniforms 10が成功した。selector 取消の1試験では、初回の Fonts／layout／browser 起動前から数えた3秒以内にページからの問い合わせ通知を受信できず失敗した。これだけでは取得失敗・起動時間・fixture 通信のどれが直接原因かは確定できない。試験の目的に合わせ、selector を設定しない描画を完了してから対象 selector を設定し、起動済みプロセスでの selector polling を観測するよう修正した。通知も対象 `#never` の問い合わせだけへ限定し、未観測時の error と経過時間を出す。3秒の観測上限・5秒の取得上限・取消・プロセス回収・後続の正常描画は維持する。後段の実 MCP／TUI はこの run では未実行であり、修正後の GHA で改めて確認する。
+
 2026-10-24: release ビルドと通知資料を結び付ける `scripts/release_evidence.py` と手動 GHA を追加した。検証済みのソース配布物からアプリを再ビルドし、Cargo JSON の package identity で native artifact と build-script を対応付け、報告された出力ディレクトリを使う。実行ファイルと Skia・wrapper・QuickJS archive、rustc と runner の識別情報、Skia の実入力・原文通知、および検証済みの Rust 通知を記録する。収集中のソース・成果物・Cargo 記録の変化、未記載ソース、異なる内容の archive 別名、既存出力への上書きを拒否する。MSVC で cc が生成する同内容の `.a`／`.lib` 別名は両方を記録する。ローカルの Python 101試験が成功した。GHA の実収集はまだ未検証。実行ファイルはアップロードせず、`release_ready: false` と残る監査範囲を明示する。標準・システムライブラリ、native／素材の完全な帰属、最終リンク、署名と公開が完了したとは扱わない。
 
 同日: 最初の macOS arm64 の収集 run `40024439088`（source `18a0092`）は依存 cache の復元と release ビルドが成功したが、Cargo の build-script 記録を全 package ID について一意に要求したため、収集工程で停止した。Cargo が異なる host／feature context で依存をビルドできることを考慮し、選択した native package だけを一意に対応付けるよう修正した。対象 native の曖昧さは引き続き拒否する。実際に重複した package の特定はこのエラーログだけではできない。別 package の複数 context と収集中の Cargo 記録の改変を含む Python 全102試験が成功した。修正後の実収集は次の run で確認する。

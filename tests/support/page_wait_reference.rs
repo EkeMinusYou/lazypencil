@@ -121,7 +121,7 @@ fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool) {
         ),
         "/selector-cancel" => (
             "text/html",
-            "<style>html{background:#0f0}</style><script>const query=document.querySelector.bind(document);let polled=false;document.querySelector=selector=>{if(!polled){polled=true;fetch('/polled')}return query(selector)};</script>",
+            "<style>html{background:#0f0}</style><script>const query=document.querySelector.bind(document);let polled=false;document.querySelector=selector=>{if(selector==='#never'&&!polled){polled=true;fetch('/polled')}return query(selector)};</script>",
             0,
         ),
         "/color" => ("text/plain", "#00ff00", 1200),
