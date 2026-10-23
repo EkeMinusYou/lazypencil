@@ -2,6 +2,8 @@
 
 設計書 v0.9 の全体を実装対象とする。部分的な CLI や描画の試作だけで完成とは扱わない。以下は実際の実装・試験結果で更新する。
 
+2026-10-24: release ビルドと通知資料を結び付ける `scripts/release_evidence.py` と手動 GHA を追加した。検証済みのソース配布物からアプリを再ビルドし、Cargo JSON の package identity で native artifact と build-script を対応付け、報告された出力ディレクトリを使う。実行ファイルと Skia・wrapper・QuickJS archive、rustc と runner の識別情報、Skia の実入力・原文通知、および検証済みの Rust 通知を記録する。収集中のソース・成果物・Cargo 記録の変化、未記載ソース、異なる内容の archive 別名、既存出力への上書きを拒否する。MSVC で cc が生成する同内容の `.a`／`.lib` 別名は両方を記録する。ローカルの Python 101試験が成功した。GHA の実収集はまだ未検証。実行ファイルはアップロードせず、`release_ready: false` と残る監査範囲を明示する。標準・システムライブラリ、native／素材の完全な帰属、最終リンク、署名と公開が完了したとは扱わない。
+
 ## 必須要件
 
 - [ ] Rust の CLI と共通サービス。機械向け JSON、終了コード、取消、設定と診断。
