@@ -1,0 +1,57 @@
+name: Standard-library notice evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      os:
+        description: Hosted compiler target for original standard-library evidence
+        type: choice
+        default: ubuntu-24.04
+        options:
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+          - macos-15
+          - macos-15-intel
+          - windows-2025
+
+permissions:
+  contents: read
+
+concurrency:
+  group: toolchain-evidence-${{ github.ref }}-${{ inputs.os }}
+  cancel-in-progress: false
+
+env:
+  PYTHONUTF8: '1'
+
+jobs:
+  toolchain:
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install matching compiler and original copyright documentation
+        run: |
+          rustup toolchain install 1.94.0 --profile minimal --component rust-docs
+          rustup default 1.94.0
+      - name: Check original notice collector tests and pinned supplements
+        run: |
+          python -m unittest discover -s scripts -p 'test_toolchain_notice_inventory.py' -v
+          python scripts/toolchain_notice_inventory.py verify-upstream --upstream resources/licenses/toolchain/upstream.json
+      - name: Prepare pinned original sources and reconstruct installed library evidence
+        run: python scripts/ci/toolchain_evidence.py --output "$RUNNER_TEMP/toolchain-evidence"
+      - name: Retain small notice evidence without source trees or compiler binaries
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: toolchain-evidence-${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/toolchain-evidence
+          if-no-files-found: error
+          retention-days: 3
