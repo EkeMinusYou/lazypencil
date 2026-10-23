@@ -8,6 +8,8 @@
 
 同日: source `74d4a3d` の Windows `40025479412` も release ビルドが成功したが、native の参照元ソースが既存 policy の hash と一致せず、資料収集で停止した。元のエラーは不一致のパスを記録しておらず、この時点で未登録の入力・改行差・別の変更のどれかは確定できない。不一致のパス・期待／実測 hash・改行の個数と LF 換算 hash を診断へ加えた。照合条件は変えず、改行だけを変更した入力も引き続き拒否する試験を含め、Python 全109試験が成功した。Linux arm64 の最初の source `18a0092` も global package ID の重複拒否で失敗したことを終了ログで確認した。同ジョブでは runner image が `20261023.149.3` に更新され、正しい image の native cache がなく cold build だった。別 image の cache を混ぜず、後続の同環境 job と通常 CI を継続する。
 
+同日: source `ec6d326` の Windows `40026876238` は新しい改行診断の fixture で、Python の `write_text` によって既に CRLF になった入力へ CR を重ねたため、bare CR の期待値だけが失敗した（108成功・1失敗）。意図する LF 原本を bytes で固定してから CRLF 版を作るよう修正した。アプリや照合条件の変更ではない。Windows の参照元不一致の実入力は、次の資料収集で引き続き確認する。
+
 2026-10-24: release ビルドと通知資料を結び付ける `scripts/release_evidence.py` と手動 GHA を追加した。検証済みのソース配布物からアプリを再ビルドし、Cargo JSON の package identity で native artifact と build-script を対応付け、報告された出力ディレクトリを使う。実行ファイルと Skia・wrapper・QuickJS archive、rustc と runner の識別情報、Skia の実入力・原文通知、および検証済みの Rust 通知を記録する。収集中のソース・成果物・Cargo 記録の変化、未記載ソース、異なる内容の archive 別名、既存出力への上書きを拒否する。MSVC で cc が生成する同内容の `.a`／`.lib` 別名は両方を記録する。ローカルの Python 101試験が成功した。GHA の実収集はまだ未検証。実行ファイルはアップロードせず、`release_ready: false` と残る監査範囲を明示する。標準・システムライブラリ、native／素材の完全な帰属、最終リンク、署名と公開が完了したとは扱わない。
 
 同日: 最初の macOS arm64 の収集 run `40024439088`（source `18a0092`）は依存 cache の復元と release ビルドが成功したが、Cargo の build-script 記録を全 package ID について一意に要求したため、収集工程で停止した。Cargo が異なる host／feature context で依存をビルドできることを考慮し、選択した native package だけを一意に対応付けるよう修正した。対象 native の曖昧さは引き続き拒否する。実際に重複した package の特定はこのエラーログだけではできない。別 package の複数 context と収集中の Cargo 記録の改変を含む Python 全102試験が成功した。修正後の実収集は次の run で確認する。

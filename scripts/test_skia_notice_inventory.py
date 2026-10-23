@@ -152,8 +152,11 @@ class SkiaInventoryTests(unittest.TestCase):
         self.assertEqual(len(reference["applies_to"]["source_sha256"]), 1)
 
     def test_reference_mismatch_reports_observed_bytes_without_accepting_line_ending_changes(self):
+        # write_text uses host newlines; pin the LF fixture bytes before making
+        # a deliberate CRLF variant on every platform.
+        original = self.h.read_bytes().replace(b"\r\n", b"\n")
+        self.h.write_bytes(original)
         policy = self.reference()
-        original = self.h.read_bytes()
         self.h.write_bytes(original.replace(b"\n", b"\r\n"))
         index, texts = self.inventory()
         with self.assertRaises(notices.NoticeError) as caught:
