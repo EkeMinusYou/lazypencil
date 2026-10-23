@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_BUILD_JOBS: '1'
@@ -69,6 +69,14 @@ jobs:
           python-version: '3.12'
       - name: Use the hosted runner for compilation outputs
         run: printf 'CARGO_TARGET_DIR=%s/lazypencil-target\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - name: Identify the hosted runner image for dependency reuse
+        id: cache-image
+        run: |
+          python - <<'PY'
+          import os
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
+              stream.write("version=" + os.environ.get("ImageVersion", "unknown") + "\n")
+          PY
       - name: Install the declared minimum Rust toolchain
         run: |
           rustup toolchain install 1.94.0 --profile minimal --component clippy --component rustfmt
@@ -94,6 +102,19 @@ jobs:
         run: python scripts/dist.py source --output source.tar.gz
       - name: Verify and extract the distribution
         run: python scripts/dist.py verify-source source.tar.gz --extract "$RUNNER_TEMP/lazypencil-source"
+      - name: Restore hosted dependency build artifacts
+        id: native-cache
+        continue-on-error: true
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          key: native-v1-${{ matrix.os }}-${{ steps.cache-image.outputs.version }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', '.github/workflows/ci.yml', 'vendor/skia-bindings/**', 'resources/icons/catalogue.json', '.cargo/config.toml', '.cargo/config', 'rust-toolchain.toml', 'rust-toolchain') }}
+          path: |
+            ${{ runner.temp }}/lazypencil-target
+            ${{ runner.temp }}/lazypencil-source/vendor/skia-bindings/skia
+            ${{ runner.temp }}/lazypencil-material-fonts
+      - name: Rebuild application code and render evidence from this source
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: sh scripts/ci/prune_application_cache.sh
       - name: Verify notices in the distributed sources
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
@@ -139,7 +160,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: verification-${{ matrix.os }}-${{ github.sha }}
+          name: verification-${{ matrix.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/lazypencil-tests.log
             ${{ runner.temp }}/lazypencil-release.log
@@ -149,6 +170,22 @@ jobs:
             ${{ runner.temp }}/lazypencil-target/release-*.png
           if-no-files-found: ignore
           retention-days: 3
+      - name: Prune application outputs before saving dependency cache
+        id: cache-prune
+        if: ${{ success() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: sh scripts/ci/prune_application_cache.sh
+      - name: Save verified hosted dependency build artifacts
+        if: ${{ success() && steps.cache-prune.outcome == 'success' && github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
+          path: |
+            ${{ runner.temp }}/lazypencil-target
+            ${{ runner.temp }}/lazypencil-source/vendor/skia-bindings/skia
+            ${{ runner.temp }}/lazypencil-material-fonts
 
   source:
     name: Verified source artifact
@@ -169,7 +206,7 @@ jobs:
           python scripts/dist.py verify-source dist/lazypencil-source.tar.gz
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: lazypencil-source-${{ github.sha }}
+          name: lazypencil-source-${{ github.sha }}-attempt-${{ github.run_attempt }}
           path: dist/*
           if-no-files-found: error
           retention-days: 3

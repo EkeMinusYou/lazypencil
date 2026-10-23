@@ -325,6 +325,14 @@ Material 原本の取得を明示する CI helper と4試験を追加した。Go
 
 同じ実行の Linux x64 job `120525593101` は終了コード0で完了した。描画なし273試験・通常449試験（合計722）、両構成の Clippy、既定ビルドに加え、release の mesh・1,000ノードの日本語 dashboard・文字罫線と画像影の3描画検査が成功した。描画なし3件・通常31件の opt-in はこの通常試験から除外しており、新しく設定した Material の2検査もこの実行の成功数には含めない。ログとこの環境の描画成果物だけを取得し、ローカルでの再ビルドは行っていない。
 
+### GHA の依存ビルド再利用
+
+2026-10-24: GHA `39990356564` の Linux x64 job `120540739751`、macOS arm64 `120540739687`、Windows `120540741705`、Linux arm64 `120540739468` が成功した。通常試験・両構成の Clippy の後に、固定した3つの Material 原本による全名・可変重みの opt-in と実 MCP の opt-in、release の3描画検査が成功した。依存監査も成功している。Linux x64 と macOS arm64 は描画なし273・通常449試験、Windows は244・412試験が成功した。これら3環境では小さい成果物だけを取得し、PNG のハッシュ・寸法・診断なしを確認した。Linux x64 の3画像は前回の成功結果と一致し、macOS arm64 と Windows の日本語 dashboard も目視確認した。macOS Intel の完了は引き続き確認する。
+
+この実行を待つ間、以降の hosted build で依存物を再利用する cache を設定した。platform・runner image・Rust/build 設定・lock・vendored binding・icon catalogue を key に含め、Skia の取得済み source と原本 font も保存対象とする。保存は main の検証成功時に限定し、cache の不在・保存失敗を製品の検査成功へ置き換えない。main の更新は実行中の検証を取り消さず、最新の1件を待機させる。PR の更新は従来どおり前の実行を取り消す。これにより、長い native build の途中で main の次の変更を送っても、その検証結果と初回 cache 保存を失わない。
+
+検査前と保存前に、Cargo の package 指定で lazypencil 本体を dev／release の両 profile から除く。古い3描画の PNG／JSON も除き、source archive の固定 timestamp によって旧アプリや旧画像を使うことを防ぐ。模擬 Cargo による軽量な確認で、2 profile の指定・6成果物の除去・依存 marker の保持・root directory の拒否・失敗の伝播を確認し、workflow lint と shell 構文も成功した。実際の cache 再利用と新しい CI 設定は GHA で確認する。成果物名には run attempt を含め、再実行時の証拠を区別する。
+
 ### 次に実装・確認すること
 
 - 両実エージェントの画像付きサブスクリプション生成は、上記の条件で確認した。実 API/provider、モデル・モードの全組み合わせ、ランタイムの制限と診断、保持と会話管理、Windows の子孫終了と異常な親終了後の回収は残る。認証方式の確認は adapter report によるもので、請求額の監査ではない。TUI、クリップボード、設定・素材カタログ、配布と CI は未完成。MCP は変数の解決値と計算済みレイアウトの検証を実装した。計算済み・生成ノードの詳細取得も実装した。アイコンの追加カタログ設定や残る設定などを拡張する。通常編集と部品取り込みの保存準備・依存のロック待ちへ取消を接続した。静的レイアウト・描画全体の取消と、各 OS の遅延検証は残る。
