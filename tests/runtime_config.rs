@@ -376,9 +376,16 @@ fn selector_policy_rejects_invalid_lower_scopes_and_bounds_unicode_characters() 
         json!({"ready_selector":1}),
         json!({"selector_state":"private-value"}),
     ] {
+        // These fixture strings/numbers also use valid TOML basic-value syntax.
+        let fields = policy
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(name, value)| format!("{name}={value}\n"))
+            .collect::<String>();
         fs::write(
             f.user.join("config.toml"),
-            toml::to_string(&json!({"runtime":{"browser":policy}})).unwrap(),
+            format!("[runtime.browser]\n{fields}"),
         )
         .unwrap();
         let error = f.snapshot().err().unwrap();
@@ -389,7 +396,7 @@ fn selector_policy_rejects_invalid_lower_scopes_and_bounds_unicode_characters() 
     let maximum = "あ".repeat(512);
     fs::write(
         f.user.join("config.toml"),
-        toml::to_string(&json!({"runtime":{"browser":{"ready_selector":maximum}}})).unwrap(),
+        format!("[runtime.browser]\nready_selector={}\n", json!(maximum)),
     )
     .unwrap();
     assert_eq!(
