@@ -3,7 +3,9 @@
 use crate::{
     Error, Result,
     cdp::{Browser, Budget, Purpose},
-    config::runtime::{BrowserSettings, DynamicSettings, RuntimeSettings, ShaderSettings},
+    config::runtime::{
+        BrowserSettings, DynamicSettings, PageWaitUntil, RuntimeSettings, ShaderSettings,
+    },
     document::hash,
     project::ResolvedNode,
 };
@@ -243,6 +245,7 @@ impl DynamicRuntime {
         }
         let cancel = self.cancel.clone();
         let limits = json!({"browser":self.browser_settings,"dynamic":self.settings});
+        let wait_until = self.browser_settings.wait_until;
         let duration = self
             .remaining()?
             .min(Duration::from_millis(self.browser_settings.timeout_ms));
@@ -251,6 +254,9 @@ impl DynamicRuntime {
         let version = browser.version.clone();
         let result=browser.with_tab(&budget,|browser,session| {
             browser.command(Some(session),"Page.enable",json!({}),&budget)?;
+            if wait_until == PageWaitUntil::NetworkIdle {
+                browser.watch_page_idle(session, &budget)?;
+            }
             browser.command(Some(session),"Emulation.setDeviceMetricsOverride",json!({"width":width.ceil().max(1.0) as u32,"height":height.ceil().max(1.0) as u32,"deviceScaleFactor":scale,"mobile":mobile}),&budget)?;
             browser.command(Some(session),"Emulation.setTouchEmulationEnabled",json!({"enabled":mobile}),&budget)?;
             let navigation=browser.command(Some(session),"Page.navigate",json!({"url":url}),&budget)?;
@@ -258,7 +264,8 @@ impl DynamicRuntime {
             loop {
                 let frame=browser.command(Some(session),"Page.getFrameTree",json!({}),&budget)?;
                 let committed=navigation.get("loaderId").is_none_or(|loader| frame["frameTree"]["frame"]["loaderId"]==*loader);
-                if committed && browser.evaluate(session,"document.readyState === 'complete'",&budget)?==true { break; }
+                let idle = wait_until == PageWaitUntil::Load || browser.page_is_idle(session, &frame["frameTree"]["frame"]);
+                if committed && idle && browser.evaluate(session,"document.readyState === 'complete'",&budget)?==true { break; }
                 std::thread::sleep(Duration::from_millis(20));budget.check()?;
             }
             browser.command(Some(session),"Emulation.setPageScaleFactor",json!({"pageScaleFactor":zoom}),&budget)?;
@@ -269,7 +276,7 @@ impl DynamicRuntime {
             let metadata=json!({"kind":"browser","acquisition_id":uuid::Uuid::new_v4().to_string(),"requested_url":redacted_url(url),"url_hash":hash(url.as_bytes()),
                 "final_url":state["url"].as_str().map(redacted_url),"browser_version":version,"viewport_width":width,"viewport_height":height,"pixel_width":pixel_width,"pixel_height":pixel_height,
                 "scale":scale,"zoom":zoom,"scroll_x":state["scrollX"],"scroll_y":state["scrollY"],"device_id":device,
-                "ready_condition":"load, fonts, decoded images, two animation frames","acquired_at":timestamp(),"png_hash":hash(&png),"limits":limits});
+                "wait_until":wait_until,"ready_condition":if wait_until == PageWaitUntil::NetworkIdle {"load, main-frame networkIdle lifecycle, fonts, decoded images, two animation frames"} else {"load, fonts, decoded images, two animation frames"},"acquired_at":timestamp(),"png_hash":hash(&png),"limits":limits});
             checked_png(png,metadata)
         });
         self.page_used = Some(Instant::now());

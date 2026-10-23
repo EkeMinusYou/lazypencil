@@ -403,7 +403,7 @@ macOS の拡張実行 `40008549460` は unit 2件・設定7件・JS worker 12件
 
 CDP 前の子終了にも `browser_startup` 段階と同じ host 情報、診断コマンドを返す。任意のブラウザー stderr やページ内容は診断へ取り込まず、OS policy の変更・ブラウザー起動・ダウンロードを診断の副作用にしない。起動すると marker を残す代役を指定した実 CLI で、doctor／status が起動せず data／settings／lock を作らないこと、Linux の模擬 proc 値で既知・未知・不正・上限を検査する試験を追加した。通常 CI と専用 GHA で確認し、ローカルの native build は行わない。実ライブラリの依存検査・profile の検証と、製品内の一般的な起動 probe は残る。
 
-macOS `40010094357` は修正後の拡張検査92件が成功した。全 library 39件・設定7件・JS worker 12件・動的16件・数値 uniform 10件・実 MCP 画像／待機の各1件・全 TUI 6件で、同じ PNG の新 ID、設定だけの timeout／復帰、12種類の通常 PTY、2種類の入力取消も含む。これは新しい host 診断の追加前の source `c9dd6cb` の証拠であり、診断追加と Linux の SIGINT 修正の検証結果は分ける。Linux の同 source `40010090321` はパッケージ導入段階で進行中として追跡を続ける。
+macOS `40010094357` と Linux x64 `40010090321` は、source `c9dd6cb` の拡張検査92件がそれぞれ成功した。全 library 39件・設定7件・JS worker 12件・動的16件・数値 uniform 10件・実 MCP 画像／待機の各1件・全 TUI 6件で、同じ PNG の新 ID、設定だけの timeout／復帰、12種類の通常 PTY、2種類の入力取消も含む。Linux の CLI 取消も130で終了した。これは新しい host 診断の追加前の証拠である。
 
 先行する通常 CI `40000148383` の Windows は両構成・Clippy・Material 2件・release 検査・42回の native benchmark が成功し、依存 cache の保存まで完了した。取得した小さい report で source・1,000ノード／1920×1080・各20反復を確認した。shadow の中央値／p95 は328／359ms、dashboard は907／922ms、最大 repeated peak RSS は各93,446,144／82,513,920 bytes。各文書内で PNG は一致したが、両方の hash は他 OS と異なり、その原因や全性能保証を確認したものではない。[計測範囲](performance.md#hosted-windows-release-build-2026-10-24)
 
@@ -416,6 +416,16 @@ workflow 全体の hash に依存する旧 key は時間上限の変更でも ca
 実 Git での変更・staging・未追跡入力の拒否、依存や compiler／flag の変更、無関係な環境の除外、出力 key の入力検査の5試験と、Python 全85件が成功した。4環境の旧 key が条件付きで生成されること、現在の依存 fingerprint が監査値と一致することも確認した。新 key の復元・旧 cache の継承と保存は次の GHA で検証する。ローカル native build は行わず、全体の未完了項目は維持する。
 
 通常 CI `40010058295` の終了済み3環境から、共通して MCP の新しい試験が必須 `expected_revision` を渡していなかったことと、script worker の既に `&str` である error code に対する不要な `.into()` を Clippy が拒否したことを確認した。試験は各更新後に取得した文書／依存リビジョンを正しく渡すようにし、型変換を除去した。Windows は利用記録への4並行 writer の一部が2秒の lock 待ち上限にも達したため、通常の文書 lock と同じ5秒の有限待ちにし、期限時の詳細を追加した。待機中の取消と、2.2秒後に peer が解放してから安全に記録できる回帰試験を加え、32件を保持する既存試験は維持した。残る2環境も同じ共通失敗と旧 Intel の時間上限を含むため、その実行を取り消し、準備した修正版の CI へ切り替える。修正後の Rust 検証は GHA で行う。
+
+source `36d1269` の専用 Chromium は macOS arm64 `40014476233`（97件）、Linux x64 `40014480311`（99件）、Linux arm64 `40014488317`（99件）、Windows `40014484065`（84件）がすべて成功した。host 診断・起動しない doctor/status・利用記録の lock 取消／peer 解放も library/runtime 試験で通過した。Unix は実60秒の MCP 待機と全6件の TUI、Windows は対応する実 MCP 画像までを含み、Windows の物理端末や TUI の成功へ読み替えない。4環境とも監査した旧 native key から実際に cache を復元した。新 key への保存と通常の全環境 CI `40014323380` は引き続き確認する。今回の新しい待機条件はこれらの検証 source に含まれない。
+
+### ページの network-idle 待機
+
+2026-10-24: `[runtime.browser] wait_until` に `load`（従来の既定値）と `network_idle` を追加した。後者は現在の main frame／loader に対する Chromium の `networkIdle` lifecycle 通知と document load を待ち、その後に従来の font・image decode・2 animation frame を待つ。別 session・子 frame・古い loader の通知を成功に使わず、現在の loader 一つだけを保持する。URL・header・本文や無制限の event queue は保持しない。context の破棄時に状態を解除し、既存の取消・取得／描画期限・失敗時の process 回収へ接続する。
+
+設定の項目別継承・明示的な既定値による上書き・schema/template・依存失効と、取得 cache の失効・metadata を共通化した。shader へ同名設定を渡す誤りは拒否する。通常試験に session／frame／loader の識別と切り替え、不正通知、設定の継承と不正な下位 scope の拒否を加えた。実 Chromium の試験は、load 後の fetch が終わって緑画素になるまで待つこと、設定だけの再取得と同条件の cache 再利用、未完了の fetch の timeout・回収・復帰・取消、文書不変を検査する。Rust は GHA で検証し、ローカルは書式・差分などの軽量検査に限定する。英語ガイド集合は1.0.5とした。
+
+この条件は Chromium の lifecycle を利用した取得方針であり、アプリ固有の完了、後から始まる通信、animation・worker・すべての cross-origin frame の静止を保証しない。認証 profile、通信制限、selector 条件、animation 制御、device preset の互換性などは必須の残件として維持する。[CDP lifecycle](https://raw.githubusercontent.com/ChromeDevTools/devtools-protocol/master/pdl/domains/Page.pdl)
 
 ### 次に実装・確認すること
 

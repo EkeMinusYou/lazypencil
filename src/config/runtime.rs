@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 pub(super) const TEMPLATE: &str = concat!(
     "\n# Omitted runtime fields inherit user preferences and built-in limits.\n",
     "# [runtime.javascript]\n# timeout_ms = 2000\n# heap_mib = 64\n# idle_seconds = 60\n# layout_timeout_ms = 10000\n# max_evaluations = 128\n# max_passes = 8\n",
-    "\n# [runtime.browser]\n# timeout_ms = 30000\n# launch_timeout_ms = 15000\n# idle_seconds = 60\n",
+    "\n# [runtime.browser]\n# timeout_ms = 30000\n# launch_timeout_ms = 15000\n# idle_seconds = 60\n# wait_until = \"load\"\n",
     "\n# [runtime.shader]\n# timeout_ms = 15000\n# launch_timeout_ms = 15000\n# idle_seconds = 60\n",
     "\n# [runtime.dynamic]\n# render_timeout_ms = 45000\n# cache_mib = 64\n# cache_entries = 32\n",
 );
@@ -91,6 +91,15 @@ pub struct BrowserSettings {
     pub launch_timeout_ms: u64,
     #[schemars(range(min = 0, max = 3600))]
     pub idle_seconds: u64,
+    pub wait_until: PageWaitUntil,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PageWaitUntil {
+    #[default]
+    Load,
+    NetworkIdle,
 }
 
 impl Default for BrowserSettings {
@@ -99,6 +108,7 @@ impl Default for BrowserSettings {
             timeout_ms: 30000,
             launch_timeout_ms: 15000,
             idle_seconds: 60,
+            wait_until: PageWaitUntil::Load,
         }
     }
 }
@@ -209,13 +219,22 @@ impl DynamicSettings {
 pub(super) struct RuntimeOverrides {
     javascript: ScriptOverrides,
     browser: BrowserOverrides,
-    shader: BrowserOverrides,
+    shader: ShaderOverrides,
     dynamic: DynamicOverrides,
 }
 
 #[derive(Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 struct BrowserOverrides {
+    timeout_ms: Option<u64>,
+    launch_timeout_ms: Option<u64>,
+    idle_seconds: Option<u64>,
+    wait_until: Option<PageWaitUntil>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct ShaderOverrides {
     timeout_ms: Option<u64>,
     launch_timeout_ms: Option<u64>,
     idle_seconds: Option<u64>,
@@ -251,6 +270,7 @@ pub(super) fn origins() -> BTreeMap<&'static str, &'static str> {
         "browser.timeout_ms",
         "browser.launch_timeout_ms",
         "browser.idle_seconds",
+        "browser.wait_until",
         "shader.timeout_ms",
         "shader.launch_timeout_ms",
         "shader.idle_seconds",
@@ -291,6 +311,7 @@ impl RuntimeOverrides {
         apply!(browser, timeout_ms);
         apply!(browser, launch_timeout_ms);
         apply!(browser, idle_seconds);
+        apply!(browser, wait_until);
         apply!(shader, timeout_ms);
         apply!(shader, launch_timeout_ms);
         apply!(shader, idle_seconds);

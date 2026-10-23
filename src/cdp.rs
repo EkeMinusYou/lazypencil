@@ -11,6 +11,9 @@ use std::{
 use tokio_util::sync::CancellationToken;
 use tungstenite::{Message, WebSocket, protocol::WebSocketConfig};
 
+mod lifecycle;
+use lifecycle::PageLifecycle;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Purpose {
     Page,
@@ -22,6 +25,7 @@ pub struct Browser {
     socket: WebSocket<TcpStream>,
     next_id: u64,
     pub version: String,
+    page_lifecycle: Option<PageLifecycle>,
     _profile: tempfile::TempDir,
 }
 
@@ -164,6 +168,7 @@ impl Browser {
             socket,
             next_id: 0,
             version: String::new(),
+            page_lifecycle: None,
             _profile: profile,
         };
         let version = browser.command(None, "Browser.getVersion", json!({}), budget)?;
@@ -210,6 +215,9 @@ impl Browser {
                 Ok(Message::Text(text)) => {
                     let value: Value =
                         serde_json::from_str(&text).map_err(|_| failed("Invalid CDP JSON"))?;
+                    if let Some(lifecycle) = &mut self.page_lifecycle {
+                        lifecycle.observe(&value);
+                    }
                     if value["id"] == id {
                         if let Some(error) = value.get("error") {
                             return Err(failed(format!(
@@ -274,6 +282,7 @@ impl Browser {
                 .ok_or_else(|| failed("CDP did not return a session ID"))?;
             f(self, session)
         })();
+        self.page_lifecycle = None;
         let _ = self.command(
             None,
             "Target.disposeBrowserContext",
@@ -281,6 +290,28 @@ impl Browser {
             &Budget::new(Duration::from_millis(500), None),
         );
         result
+    }
+
+    /// Observe only the selected main frame; do not retain page or request data.
+    pub fn watch_page_idle(&mut self, session: &str, budget: &Budget<'_>) -> Result<()> {
+        let tree = self.command(Some(session), "Page.getFrameTree", json!({}), budget)?;
+        let frame = tree["frameTree"]["frame"]["id"]
+            .as_str()
+            .ok_or_else(|| failed("CDP did not return the main frame ID"))?;
+        self.page_lifecycle = Some(PageLifecycle::new(session, frame));
+        self.command(
+            Some(session),
+            "Page.setLifecycleEventsEnabled",
+            json!({"enabled":true}),
+            budget,
+        )?;
+        Ok(())
+    }
+
+    pub fn page_is_idle(&self, session: &str, frame: &Value) -> bool {
+        self.page_lifecycle
+            .as_ref()
+            .is_some_and(|lifecycle| lifecycle.is_idle(session, frame))
     }
 
     pub fn evaluate(
