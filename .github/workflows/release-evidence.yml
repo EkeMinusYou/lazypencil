@@ -57,7 +57,7 @@ jobs:
           PY
       - name: Install the declared minimum Rust toolchain
         run: |
-          rustup toolchain install 1.94.0 --profile minimal
+          rustup toolchain install 1.94.0 --profile minimal --component rust-docs
           rustup default 1.94.0
       - name: Install Linux native build dependencies
         if: runner.os == 'Linux'
@@ -98,6 +98,9 @@ jobs:
             ${{ runner.temp }}/lazypencil-target
             ${{ runner.temp }}/lazypencil-source/vendor/skia-bindings/skia
             ${{ runner.temp }}/lazypencil-material-fonts
+      - name: Prepare original standard-library evidence from this compiler
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: python scripts/ci/toolchain_evidence.py --output "$RUNNER_TEMP/toolchain-evidence"
       - name: Compile the release executable and capture Cargo artifact identities
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
@@ -113,7 +116,8 @@ jobs:
         run: |
           python scripts/release_evidence.py --source "$RUNNER_TEMP/lazypencil-source" \
             --target "$CARGO_TARGET_DIR" --cargo-json "$RUNNER_TEMP/release-cargo.jsonl" \
-            --revision "$LAZYPENCIL_SOURCE_REVISION" --output "$RUNNER_TEMP/release-evidence"
+            --revision "$LAZYPENCIL_SOURCE_REVISION" --output "$RUNNER_TEMP/release-evidence" \
+            --toolchain-evidence "$RUNNER_TEMP/toolchain-evidence"
       - name: Retain review evidence without publishing the executable
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
