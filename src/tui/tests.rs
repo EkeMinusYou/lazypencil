@@ -32,6 +32,76 @@ fn runtime() -> tokio::runtime::Runtime {
         .build()
         .unwrap()
 }
+
+#[test]
+fn periodic_preview_checks_retry_a_captured_layout_after_render_failure() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let store = app.conversation.store().clone();
+        let document = json!({"version":"2.21","children":[{
+            "id":"red","type":"rectangle","width":80,"height":40,"fill":"#FF0000"
+        }]})
+        .to_string();
+        std::fs::write(store.path(), &document).unwrap();
+        let worker = Worker::start(store.clone(), vec![], Backend::halfblocks(), 130).unwrap();
+        let mut successful_png = None;
+        for generation in [1, 2] {
+            // Layout capture succeeds before the unsupported viewport fails.
+            // Exercise both a first image and recovery after a previous image.
+            worker.request(Request {
+                generation,
+                cells: Size::new(900, 1),
+                view: View::default(),
+                refresh: false,
+                check_only: false,
+                attachment: None,
+            });
+            let output = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap();
+            assert_eq!(output.generation, generation);
+            let error = output
+                .result
+                .err()
+                .expect("The viewport exceeds 8192 pixels");
+            assert_eq!(error.code, "RENDER_ERROR");
+
+            let request = Request {
+                generation,
+                cells: Size::new(20, 8),
+                view: View::default(),
+                refresh: false,
+                check_only: true,
+                attachment: None,
+            };
+            worker.request(request.clone());
+            let output = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .expect("A periodic check must recover an unpublished image");
+            assert_eq!(output.generation, generation);
+            let preview = output.result.unwrap();
+            assert_eq!(preview.nodes.len(), 1);
+            assert_eq!(preview.nodes[0].id, "red");
+            let pixels = image::load_from_memory(&preview.png).unwrap().to_rgba8();
+            assert!(pixels.pixels().any(|pixel| pixel.0 == [255, 0, 0, 255]));
+            if let Some(previous) = &successful_png {
+                assert_eq!(previous, &preview.png);
+            }
+            successful_png = Some(preview.png);
+            // A current, published image still avoids periodic re-encoding.
+            worker.request(request);
+            assert!(
+                tokio::time::timeout(Duration::from_millis(150), worker.next())
+                    .await
+                    .is_err()
+            );
+        }
+        assert_eq!(std::fs::read_to_string(store.path()).unwrap(), document);
+        app.conversation.close().await.unwrap();
+    });
+}
+
 fn fake_clipboard(_: &Path, path: Option<&Path>, _: &CancellationToken) -> Result<InputContent> {
     assert!(path.is_none());
     let mut images = vec![];
