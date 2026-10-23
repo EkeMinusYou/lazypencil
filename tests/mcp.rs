@@ -165,6 +165,57 @@ impl Client {
     }
 }
 
+#[cfg(all(unix, feature = "rendering"))]
+#[test]
+fn mcp_invalidates_icon_calculations_after_an_installation_path_is_retargeted() {
+    use std::{os::unix::fs::symlink, path::Path};
+    let (temp, file, data) = fixture();
+    let source =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/icons/feather-icons-4.29.2.tgz");
+    let setup = lazypencil::icons::setup(&data, "feather", Some(&source)).unwrap();
+    let requested = Path::new(setup["path"].as_str().unwrap()).join("icons.json");
+    let original = temp.path().join("original-icons.json");
+    let replacement = temp.path().join("replacement-icons.json");
+    fs::copy(&requested, &original).unwrap();
+    fs::copy(&requested, &replacement).unwrap();
+    fs::remove_file(&requested).unwrap();
+    symlink(&original, &requested).unwrap();
+    fs::write(&file, json!({"version":"2.21","children":[{"id":"icon","type":"icon","library":"feather","icon":"circle","width":24,"height":24,"fill":"#123456"}]}).to_string()).unwrap();
+    let saved = fs::read(&file).unwrap();
+    let mut client = Client::start(&file, &data);
+    let before = client.data("get_document", json!({}));
+    let calculation = client.data("get_layout", json!({"expected_revision":before["revision"],"expected_dependency_revision":before["dependency_revision"]}));
+    fs::remove_file(&requested).unwrap();
+    symlink(&replacement, &requested).unwrap();
+    let stale = client.call("render", json!({"snapshot_id":calculation["snapshot_id"],"expected_revision":calculation["revision"],"expected_dependency_revision":calculation["dependency_revision"]}));
+    assert_eq!(
+        stale["structuredContent"]["error"]["code"],
+        "REVISION_CONFLICT"
+    );
+    assert!(
+        stale["content"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["type"] != "image")
+    );
+    let after = client.data("get_document", json!({}));
+    assert_eq!(after["revision"], before["revision"]);
+    assert_ne!(after["dependency_revision"], before["dependency_revision"]);
+    let recalculated = client.data("get_layout", json!({"expected_revision":after["revision"],"expected_dependency_revision":after["dependency_revision"]}));
+    let rendered = client.call("render", json!({"snapshot_id":recalculated["snapshot_id"],"expected_revision":recalculated["revision"],"expected_dependency_revision":recalculated["dependency_revision"]}));
+    assert_ne!(rendered["isError"], true);
+    assert!(
+        rendered["content"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["type"] == "image")
+    );
+    assert_eq!(fs::read(&file).unwrap(), saved);
+    client.finish();
+}
+
 #[test]
 fn mcp_captures_user_settings_and_rejects_edits_from_stale_dependencies() {
     let (temp, file, data) = fixture();

@@ -1,5 +1,5 @@
 {
-  "cargo_lock_sha256": "42691587f535ed0bf9ec8dcadc1a01206b3b0db863f6efc2e82907818b04e352",
+  "cargo_lock_sha256": "9429a44093cbe9b21e7f7f5dfab0a540ead7b59e441e175ad63efb034d851c80",
   "format_version": 1,
   "license_references": [
     {
@@ -1902,7 +1902,7 @@
       "version": "1.1.1"
     },
     {
-      "archive_sha256": "bde03770d3df201d4fb868f2c9c59e66a3e4e2bd06692a0fe701e7103c7e84d4",
+      "archive_sha256": "052af7878466feccda12ba7a6a67d019d712f296809559b47c12c8cc196d3a9a",
       "attribution_comments": [],
       "authors": [
         "Douman <douman@gmx.se>"
@@ -1913,25 +1913,25 @@
           "git_blob_sha1": "36b7cd93cdfbac762f5be4c6ce276df2ea6305c2",
           "kind": "upstream",
           "path": "LICENSE",
-          "revision": "3b27cf2bfd1adcfa6e0264eb51c1025ddaf0f342",
+          "revision": "ed27008ae5d1f10cfbb266de039f0fb35fd05a56",
           "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566",
-          "url": "https://raw.githubusercontent.com/DoumanAsh/clipboard-win/3b27cf2bfd1adcfa6e0264eb51c1025ddaf0f342/LICENSE"
+          "url": "https://raw.githubusercontent.com/DoumanAsh/clipboard-win/ed27008ae5d1f10cfbb266de039f0fb35fd05a56/LICENSE"
         }
       ],
       "license": "BSL-1.0",
       "license_file": null,
-      "manifest_sha256": "0eca1d8c3cbdea6bacfbc993751d7cff18e841416d35ceae48d061991e68df0a",
+      "manifest_sha256": "ef88587744dfd8b37d2ec1e7112b70ccb7d3a3504e18264dfb2384b8fce10ce0",
       "name": "clipboard-win",
       "repository": "https://github.com/DoumanAsh/clipboard-win",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
       "supplement_reason": "Original workspace-root notices omitted by the published archive.",
       "vcs": {
         "git": {
-          "sha1": "3b27cf2bfd1adcfa6e0264eb51c1025ddaf0f342"
+          "sha1": "ed27008ae5d1f10cfbb266de039f0fb35fd05a56"
         },
         "path_in_vcs": ""
       },
-      "version": "5.4.1"
+      "version": "5.4.3"
     },
     {
       "archive_sha256": "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570",

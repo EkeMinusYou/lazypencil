@@ -3,12 +3,12 @@
     {
       "bytes": 1149317,
       "path": "RUST-NOTICES.txt",
-      "sha256": "cd60688d16c7193a880186afe41765eac67de2a49a159e1cf23b2f5f6630df49"
+      "sha256": "6f6515c9d6d0a3258a5c8dd383c288eed8fdb8e4072c391e6235ff7b8f19368b"
     },
     {
       "bytes": 1177707,
       "path": "index.json",
-      "sha256": "b8d9ec64593a2a6348b7533212627eae2fea2ba90b84cad50368cc0d7e254057"
+      "sha256": "5cab0ab060f19440d5bd2aab41270ab8105abdd0757cb90ace22a714c12191fa"
     },
     {
       "bytes": 11357,
@@ -1328,7 +1328,7 @@
     {
       "bytes": 18339,
       "path": "upstream.json",
-      "sha256": "1c3eb82796738256b547dc0675f5a113e18ce2a7d1b8461620c227975f4250de"
+      "sha256": "5ac4d5f75225d4ccd9f1a53ae3474eb78abd7127b86d17ba16292a8865227cb4"
     }
   ],
   "format_version": 1

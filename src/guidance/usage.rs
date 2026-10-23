@@ -606,7 +606,11 @@ mod tests {
         grant.begin_turn(&turn).unwrap();
         let access = UsageAccess::open(&store, grant.path()).unwrap();
         let journal = access.journal(&turn);
-        regular_file(&journal, true)
+        // Growing the fixture requires write access; Windows append-only
+        // handles cannot change a file's length with SetEndOfFile.
+        OpenOptions::new()
+            .write(true)
+            .open(&journal)
             .unwrap()
             .set_len(MAX_JOURNAL_BYTES as u64)
             .unwrap();
