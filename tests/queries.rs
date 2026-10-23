@@ -99,20 +99,16 @@ fn variables_keep_definitions_and_alias_sources_separate_from_resolved_values() 
         result["sources"]["gap"]["definition"],
         store.path().to_str().unwrap()
     );
-    assert!(
-        result["sources"]["gap"]["value"]
-            .as_str()
-            .unwrap()
-            .ends_with("/library/ui.lib.pen")
+    assert_eq!(
+        result["sources"]["gap"]["value"],
+        json!(lazypencil::paths::canonical(temp.path().join("library/ui.lib.pen")).unwrap())
     );
     assert_eq!(result["resolution_complete"], true);
     let qualified = variables(&store, json!({"name":"ui:base:brand"})).unwrap();
     assert_eq!(qualified["resolved_values"]["ui:base:brand"], "#22CC44");
-    assert!(
-        qualified["sources"]["ui:base:brand"]["definition"]
-            .as_str()
-            .unwrap()
-            .ends_with("/colors.pen")
+    assert_eq!(
+        qualified["sources"]["ui:base:brand"]["definition"],
+        json!(lazypencil::paths::canonical(temp.path().join("colors.pen")).unwrap())
     );
     let base = variables(&store, json!({"library_alias":"ui:base","name":"asset"})).unwrap();
     assert_eq!(base["resolved_values"]["asset"], "images/picture.png");

@@ -108,6 +108,28 @@ jobs:
         run: |
           set -o pipefail
           sh scripts/ci/test.sh 2>&1 | tee "$RUNNER_TEMP/lazypencil-tests.log"
+      - name: Prepare pinned Material source fonts
+        id: material-sources
+        timeout-minutes: 5
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: python scripts/ci/prepare_material_fonts.py --output "$RUNNER_TEMP/lazypencil-material-fonts"
+      - name: Test every original Material glyph and continuous weights
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        env:
+          LAZYPENCIL_TEST_MATERIAL_DIR: ${{ runner.temp }}/lazypencil-material-fonts
+          LAZYPENCIL_CONFIG_DIR: ${{ runner.temp }}/lazypencil-material-settings
+        run: |
+          set -o pipefail
+          cargo test --locked --test optional_icons official_material_fonts -- --ignored --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/lazypencil-material-fonts.log"
+      - name: Test Material weight edits and stale snapshots through MCP
+        if: ${{ !cancelled() && steps.material-sources.outcome == 'success' }}
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        env:
+          LAZYPENCIL_TEST_MATERIAL_DIR: ${{ runner.temp }}/lazypencil-material-fonts
+          LAZYPENCIL_CONFIG_DIR: ${{ runner.temp }}/lazypencil-material-settings
+        run: |
+          set -o pipefail
+          cargo test --locked --test mcp real_mcp_material -- --ignored --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/lazypencil-material-mcp.log"
       - name: Build and smoke-test the release profile
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
@@ -121,6 +143,8 @@ jobs:
           path: |
             ${{ runner.temp }}/lazypencil-tests.log
             ${{ runner.temp }}/lazypencil-release.log
+            ${{ runner.temp }}/lazypencil-material-fonts.log
+            ${{ runner.temp }}/lazypencil-material-mcp.log
             ${{ runner.temp }}/lazypencil-target/release-*.json
             ${{ runner.temp }}/lazypencil-target/release-*.png
           if-no-files-found: ignore
