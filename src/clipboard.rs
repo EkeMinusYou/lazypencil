@@ -124,33 +124,40 @@ fn read_worker(
     };
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
-        if cancel.is_cancelled() || Instant::now() >= deadline {
-            return Err(if cancel.is_cancelled() {
-                Error::new("CANCELLED", "Image input cancelled")
-            } else {
-                Error::new(
-                    "CLIPBOARD_TIMEOUT",
-                    "Image input did not finish within five seconds",
-                )
-            });
-        }
+        check_input_deadline(cancel, deadline)?;
         if let Some(status) = process
             .child
             .try_wait()
             .map_err(|error| Error::new("IO_ERROR", error.to_string()))?
         {
-            let bytes = receiver
-                .recv_timeout(Duration::from_secs(1))
-                .map_err(|_| {
-                    Error::new(
+            // A descendant may hold stdout after the direct child exits. Keep
+            // cancellation and the whole request deadline live during EOF wait.
+            let response_deadline = Instant::now() + Duration::from_secs(1);
+            let bytes = loop {
+                check_input_deadline(cancel, deadline)?;
+                let Some(remaining) = response_deadline.checked_duration_since(Instant::now())
+                else {
+                    return Err(Error::new(
                         "CLIPBOARD_UNAVAILABLE",
                         "Image input worker closed without a response",
-                    )
-                })?
-                .map_err(|error| Error::new("IO_ERROR", error.to_string()))?;
+                    ));
+                };
+                match receiver.recv_timeout(remaining.min(Duration::from_millis(15))) {
+                    Ok(bytes) => break bytes,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        return Err(Error::new(
+                            "CLIPBOARD_UNAVAILABLE",
+                            "Image input worker closed without a response",
+                        ));
+                    }
+                }
+            };
             if let Some(reader) = process.reader.take() {
                 let _ = reader.join();
             }
+            check_input_deadline(cancel, deadline)?;
+            let bytes = bytes.map_err(|error| Error::new("IO_ERROR", error.to_string()))?;
             if bytes.len() > MAX_WIRE {
                 return Err(Error::new(
                     "ATTACHMENT_INVALID",
@@ -199,10 +206,24 @@ fn read_worker(
                 }
                 _ => {}
             }
+            check_input_deadline(cancel, deadline)?;
             return Ok(content);
         }
         std::thread::sleep(Duration::from_millis(15));
     }
+}
+
+fn check_input_deadline(cancel: &CancellationToken, deadline: Instant) -> Result<()> {
+    if cancel.is_cancelled() {
+        return Err(Error::new("CANCELLED", "Image input cancelled"));
+    }
+    if Instant::now() >= deadline {
+        return Err(Error::new(
+            "CLIPBOARD_TIMEOUT",
+            "Image input did not finish within five seconds",
+        ));
+    }
+    Ok(())
 }
 
 pub fn serve_worker() -> Result<()> {
