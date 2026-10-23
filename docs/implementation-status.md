@@ -2,6 +2,10 @@
 
 設計書 v0.9 の全体を実装対象とする。部分的な CLI や描画の試作だけで完成とは扱わない。以下は実際の実装・試験結果で更新する。
 
+2026-10-24: 相対ローカル URI を使う文字列 sampler 変数の独立コピーを実装した。root の変数・別名・全テーマ枝を保持し、文字列の literal だけを画像と同じ管理 bundle の通常 `.pen` library へ移す。本文の文字列は元のままで、以後 root の変数を編集する接続も保つ。管理 file の型は元の root・URI・hash を保持して staging と公開を検証し、bundle の一覧 hash・128 MiB／4,096 member／1 MiB path 上限・各祖先の symlink 拒否・同期と no-clobber 公開を加えた。`a/../pixel.png` の a ディレクトリも作り、公開後は元の要求 path と物理 target を再検査する。新試験は dry run／後段の不正操作で無書き込み、元 library の削除後の本文・別名・テーマ・再編集、親 path・途中のディレクトリ、入れ子の bundle の symlink 拒否、実画像の前後 PNG 一致を扱う。英語ガイドは1.0.9。Rust の実行検証は GHA で行う。絶対文字列 path・投影先が衝突する source symlink・case collision 等は全互換の残作業に維持する。
+
+同日: 画像 sampler 配列の背景修正 source `1baf453` の Windows `40041246581` は134試験が成功した。artifact `12539503161` の ZIP digest、成功ログ、1000×640 PNG／report の hash と診断0件を確認した。この証拠には今回の文字列 sampler コピーは含まれない。
+
 2026-10-24: source `e406378` の macOS `40040884141` は、追加した sampler 配列のテーマ別画素・切り離し前後の PNG 一致・独立した literal 画像の画素、非表示の配列が欠損／非ローカル画像を開かない試験も成功した。全体は修正前の背景判定の1件で失敗した。Windows の source `3f60528` も同じ1件の失敗で、通常画像配列と独立コピー等は成功した。背景判定を含む source `1baf453` の検証は macOS arm64 `40041245040`、Windows `40041246581`、Linux x64 `40041441423`、Linux arm64 `40041444018`、Intel Mac `40041445421` の5環境で進める。ローカル native build は行わない。
 
 2026-10-24: sampler 配列の source `3f60528` は macOS `40040697389` でコンパイルが成功したが、実 effect 試験で `pencil:background` が利用不可となって失敗した。背景取得を事前に決める `uses_background` が scalar の値しか調べておらず、配列内の背景指定を見落としていたため、同じ判定へ配列要素を追加した。通常画像の配列・上下方向・scalar 混在・active tail・未指定・短い入力からの復帰、library の要素別依存と切り離し、独立コピーの各新試験はこの run で成功した。全体の成功とは扱わず、修正と source `e406378` の追加ケースを次の GHA で確認する。

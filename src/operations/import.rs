@@ -71,11 +71,11 @@ impl Context<'_> {
     }
     fn stage(&mut self, file: crate::managed::File, publish: bool) -> Result<()> {
         crate::cancel::check(self.cancel)?;
-        self.overlay.insert(file.path.clone(), file.bytes.clone());
+        self.overlay.insert(file.path.clone(), file.clone());
         if self
             .overlay
             .values()
-            .map(|bytes| bytes.len())
+            .map(|file| file.bytes.len())
             .sum::<usize>()
             > 128 * 1024 * 1024
         {
@@ -214,7 +214,11 @@ pub(super) fn apply_import(
             for file in plan.files.drain(..) {
                 context.stage(file, true)?;
             }
-            for (section, values) in [("variables", &plan.variables), ("themes", &plan.themes)] {
+            for (section, values) in [
+                ("imports", &plan.imports),
+                ("variables", &plan.variables),
+                ("themes", &plan.themes),
+            ] {
                 if !values.is_empty() && document.value().get(section).is_none() {
                     document.set_property("", section, &json!({}))?;
                 }

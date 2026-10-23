@@ -8,13 +8,35 @@ use std::{
 };
 use tempfile::NamedTempFile;
 
-pub(crate) type Overlay = BTreeMap<PathBuf, Arc<[u8]>>;
+pub(crate) type Overlay = BTreeMap<PathBuf, File>;
+
+pub(crate) fn normalize(path: &Path) -> Result<PathBuf> {
+    let mut result = PathBuf::new();
+    for part in path.components() {
+        match part {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                if !result.pop() {
+                    return Err(Error::new(
+                        "INVALID_ARGUMENT",
+                        "A staged reference escapes its root",
+                    ));
+                }
+            }
+            part => result.push(part),
+        }
+    }
+    Ok(result)
+}
 
 #[derive(Clone)]
 pub(crate) struct File {
     pub path: PathBuf,
     pub uri: String,
     pub bytes: Arc<[u8]>,
+    base: PathBuf,
+    expected_uri: String,
+    revision: String,
 }
 
 impl File {
@@ -32,7 +54,89 @@ impl File {
             ));
         }
         let uri = format!("assets/lazypencil/{}.{extension}", hash(&bytes));
-        let path = document
+        Self::at(document, uri, bytes)
+    }
+
+    pub fn bundle(
+        document: &Path,
+        members: BTreeMap<String, Arc<[u8]>>,
+        cancel: Option<&tokio_util::sync::CancellationToken>,
+    ) -> Result<Vec<Self>> {
+        if members.is_empty() || members.len() > 4096 {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "Managed bundles require 1–4096 members",
+            ));
+        }
+        let mut total_bytes = 0usize;
+        let mut path_bytes = 0usize;
+        let mut inventory = BTreeMap::new();
+        let mut portable = BTreeMap::new();
+        for (name, bytes) in &members {
+            crate::cancel::check(cancel)?;
+            let path = Path::new(name);
+            if name
+                .split('/')
+                .any(|part| part.is_empty() || part == "." || part == "..")
+                || name.is_empty()
+                || name == "bundle.json"
+                || name.contains('\\')
+                || name.chars().any(char::is_control)
+                || path.components().count() > 128
+                || path
+                    .components()
+                    .any(|part| !matches!(part, std::path::Component::Normal(_)))
+                || bytes.is_empty()
+                || bytes.len() > 64 * 1024 * 1024
+            {
+                return Err(Error::new(
+                    "INVALID_ARGUMENT",
+                    "Invalid managed bundle member",
+                ));
+            }
+            for ancestor in path.ancestors().filter(|path| !path.as_os_str().is_empty()) {
+                let original = ancestor.to_str().expect("UTF-8 member");
+                if portable
+                    .insert(original.to_lowercase(), original.to_owned())
+                    .is_some_and(|previous| previous != original)
+                    || ancestor != path && members.contains_key(original)
+                {
+                    return Err(Error::new(
+                        "ASSET_CONFLICT",
+                        "Managed bundle paths collide as files or portable names",
+                    ));
+                }
+            }
+            total_bytes = total_bytes.saturating_add(bytes.len());
+            path_bytes = path_bytes.saturating_add(name.len());
+            if total_bytes > 128 * 1024 * 1024 || path_bytes > 1024 * 1024 {
+                return Err(Error::new(
+                    "INVALID_ARGUMENT",
+                    "Managed bundle exceeds its byte or path budget",
+                ));
+            }
+            inventory.insert(
+                name,
+                serde_json::json!({"sha256":hash(bytes),"bytes":bytes.len()}),
+            );
+        }
+        let index: Arc<[u8]> =
+            serde_json::to_vec(&serde_json::json!({"version":1,"files":inventory}))
+                .map_err(|_| Error::new("INVALID_ARGUMENT", "Cannot encode managed bundle index"))?
+                .into();
+        let directory = format!("assets/lazypencil/{}.bundle", hash(&index));
+        members
+            .into_iter()
+            .chain(std::iter::once(("bundle.json".into(), index)))
+            .map(|(name, bytes)| {
+                crate::cancel::check(cancel)?;
+                Self::at(document, format!("{directory}/{name}"), bytes)
+            })
+            .collect()
+    }
+
+    fn at(document: &Path, uri: String, bytes: Arc<[u8]>) -> Result<Self> {
+        let base = document
             .parent()
             .ok_or_else(|| {
                 Error::new(
@@ -40,26 +144,39 @@ impl File {
                     "Managed imports require a document path",
                 )
             })?
-            .join(&uri);
-        let file = Self { path, uri, bytes };
+            .to_path_buf();
+        let path = base.join(&uri);
+        let file = Self {
+            path,
+            expected_uri: uri.clone(),
+            uri,
+            revision: hash(&bytes),
+            bytes,
+            base,
+        };
         file.verify(false)?;
         Ok(file)
     }
 
     pub fn verify(&self, required: bool) -> Result<()> {
-        let directory = self.path.parent().expect("managed directory");
-        let base = directory
-            .parent()
-            .and_then(Path::parent)
-            .expect("document directory");
-        if crate::paths::canonical(base)? != base {
+        if self.uri != self.expected_uri
+            || self.path != self.base.join(&self.expected_uri)
+            || hash(&self.bytes) != self.revision
+        {
+            return Err(Error::new(
+                "ASSET_CONFLICT",
+                "A managed import lost its immutable content binding",
+            ));
+        }
+        let base = &self.base;
+        if crate::paths::canonical(base)? != self.base {
             return Err(Error::new(
                 "ASSET_CONFLICT",
                 "The managed import's document directory changed its target",
             ));
         }
-        for path in [directory.parent().expect("assets directory"), directory] {
-            match fs::symlink_metadata(path) {
+        for path in self.directories() {
+            match fs::symlink_metadata(&path) {
                 Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
                     return Err(Error::new(
                         "ASSET_CONFLICT",
@@ -67,7 +184,7 @@ impl File {
                     ));
                 }
                 Ok(_) => {
-                    if crate::paths::canonical(path)? != path {
+                    if crate::paths::canonical(&path)? != path {
                         return Err(Error::new(
                             "ASSET_CONFLICT",
                             "Managed directories must retain their exact physical paths",
@@ -75,7 +192,7 @@ impl File {
                     }
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound && !required => {}
-                Err(e) => return Err(Error::io(path, e)),
+                Err(e) => return Err(Error::io(&path, e)),
             }
         }
         match fs::symlink_metadata(&self.path) {
@@ -106,6 +223,30 @@ impl File {
         }
     }
 
+    pub fn for_document(&self, document: &Path) -> Result<()> {
+        if document.parent() != Some(self.base.as_path()) {
+            return Err(Error::new(
+                "ASSET_CONFLICT",
+                "A staged import belongs to another document directory",
+            ));
+        }
+        self.verify(false)
+    }
+
+    fn directories(&self) -> Vec<PathBuf> {
+        let mut paths = Vec::new();
+        let mut path = self.base.clone();
+        for part in Path::new(&self.expected_uri)
+            .parent()
+            .expect("managed parent")
+            .components()
+        {
+            path.push(part);
+            paths.push(path.clone());
+        }
+        paths
+    }
+
     pub fn publish(
         &self,
         store: &crate::store::Store,
@@ -117,20 +258,21 @@ impl File {
         let _lock = store.lock_publication(&self.path, cancel)?;
         self.verify(false)?;
         let directory = self.path.parent().expect("managed directory");
-        for path in [directory.parent().expect("assets directory"), directory] {
-            match fs::create_dir(path) {
+        for path in self.directories() {
+            crate::cancel::check(cancel)?;
+            match fs::create_dir(&path) {
                 Ok(()) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
-                Err(e) => return Err(Error::io(path, e)),
+                Err(e) => return Err(Error::io(&path, e)),
             }
-            let metadata = fs::symlink_metadata(path).map_err(|e| Error::io(path, e))?;
+            let metadata = fs::symlink_metadata(&path).map_err(|e| Error::io(&path, e))?;
             if metadata.file_type().is_symlink() || !metadata.is_dir() {
                 return Err(Error::new(
                     "ASSET_CONFLICT",
                     "Managed import directories must be real directories",
                 ));
             }
-            if crate::paths::canonical(path)? != path {
+            if crate::paths::canonical(&path)? != path {
                 return Err(Error::new(
                     "ASSET_CONFLICT",
                     "Managed directories must retain their exact physical paths",
@@ -156,14 +298,14 @@ impl File {
             Err(e) => return Err(Error::io(&self.path, e.error)),
         };
         self.verify(true)?;
-        crate::store::sync_directory(directory)?;
-        crate::store::sync_directory(directory.parent().expect("assets directory"))?;
-        crate::store::sync_directory(
-            directory
-                .parent()
-                .and_then(Path::parent)
-                .expect("document directory"),
-        )?;
+        for path in self
+            .directories()
+            .iter()
+            .rev()
+            .chain(std::iter::once(&self.base))
+        {
+            crate::store::sync_directory(path)?;
+        }
         Ok(reused)
     }
 }
