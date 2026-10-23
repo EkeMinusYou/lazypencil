@@ -135,6 +135,90 @@ fn sampler_aliases_keep_the_terminal_definition_origin_in_every_graphics_propert
 }
 
 #[test]
+fn sampler_array_elements_keep_individual_origins_through_detachment_and_themes() {
+    let (temp, store) = fixture();
+    let library = temp.path().join("library/ui.lib.pen");
+    let mut value: Value = serde_json::from_slice(&fs::read(&library).unwrap()).unwrap();
+    for property in ["fill", "stroke", "effect"] {
+        value["children"][0][property]["uniforms"]["image"] = json!(["$alias", "pixel.png"]);
+    }
+    write(&library, value);
+    let shader = temp.path().join("library/sample.glsl");
+    let source = fs::read_to_string(&shader)
+        .unwrap()
+        .replace("sampler2D image;", "sampler2D image[2];")
+        .replace("texture2D(image,", "texture2D(image[0],");
+    fs::write(&shader, source).unwrap();
+    for detached in [false, true] {
+        if detached {
+            edit(
+                &store,
+                "detach-array",
+                json!([{"op":"detach_instance","target":"use"}]),
+            );
+        }
+        for mode in ["light", "dark"] {
+            edit(
+                &store,
+                &format!("array-{detached}-{mode}"),
+                json!([{"op":"set_theme","target":"use","set":{"mode":mode}}]),
+            );
+            let project = Project::load(&store).unwrap();
+            let node = project.resolve().unwrap().roots.remove(0);
+            let leaf = temp
+                .path()
+                .join("library/data")
+                .join(if mode == "light" {
+                    "pixel.png"
+                } else {
+                    "dark.png"
+                })
+                .canonicalize()
+                .unwrap();
+            let literal = temp
+                .path()
+                .join("library/pixel.png")
+                .canonicalize()
+                .unwrap();
+            for property in ["fill", "stroke", "effect"] {
+                let inputs = node.properties[property]["uniforms"]["image"]
+                    .as_array()
+                    .unwrap();
+                for (input, expected) in inputs.iter().zip([&leaf, &literal]) {
+                    assert_eq!(
+                        project
+                            .resolve_file(node.property_source(property), input.as_str().unwrap())
+                            .unwrap(),
+                        *expected
+                    );
+                }
+            }
+            let images = project
+                .dependencies()
+                .into_iter()
+                .filter(|entry| entry.kind == "image")
+                .map(|entry| entry.path)
+                .collect::<std::collections::BTreeSet<_>>();
+            assert_eq!(images, [leaf, literal].into_iter().collect());
+            assert_eq!(
+                node.children[0].properties["content"],
+                if mode == "light" {
+                    "pixel.png"
+                } else {
+                    "dark.png"
+                }
+            );
+        }
+    }
+    let project = Project::load(&store).unwrap();
+    fs::write(temp.path().join("library/pixel.png"), b"changed image").unwrap();
+    assert_eq!(
+        project.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+}
+
+#[test]
 fn detaching_sampler_variables_retains_their_shared_text_values_and_future_edits() {
     let (temp, store) = fixture();
     let source = temp.path().join("library/data/images.lib.pen");

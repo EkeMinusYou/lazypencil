@@ -2,6 +2,10 @@
 
 設計書 v0.9 の全体を実装対象とする。部分的な CLI や描画の試作だけで完成とは扱わない。以下は実際の実装・試験結果で更新する。
 
+2026-10-24: 1次元の画像 sampler 配列を実装した。Rust は文字列リストの長さ・型・符号化済み入力64 MiBの上限を検査し、要素ごとの変数・テーマ・参照元と依存 file を捕捉する。WebGL は active な要素を各 texture unit へ設定し、同じ画像の unit を共有し、未指定要素には透明画像を渡す。切り離し・固定画像を含む独立コピーも配列を扱う。新しい試験は実画像の向き、scalar と配列の混在、active tail、定数式の短い入力からの復帰、object／background、テーマ付き library と切り離し、元 library を削除したコピーを検査する。文字列変数を持つ独立コピー・多次元配列・struct・マクロ宣言・本家の注釈既定値などは元の全対応範囲に残す。英語ガイドは1.0.8へ更新した。新しい Rust コードの実行検証は GHA で行い、成功とはまだ扱わない。
+
+同日: source `5aa27e0` の Windows `40039981583` は、不完全なアイコン guard で capture を作らない追加も含め107試験が成功した。artifact `12539411084` の ZIP digest・各成功ログ・1000×640 PNG／report の hash と診断0件を検査した。source `ff46c24` の通常 CI `40037051278` は監査・native 5環境・source artifact を含め全体が成功した。これは新しい sampler 配列や生成 icon guard の成功を示すものではなく、各 native artifact の詳細検査も別に行う。
+
 2026-10-24: source `5c40092` の生成アイコンを含む失敗コード取得は、macOS `40038350002` の121試験と Windows `40039000949` の107試験で成功した。macOS は元 notice の同一バイトの symlink 付け替えも含み、Windows は同じ byte hash の検査・欠損から導入した際の無効化・enabled icon を含む source 取得を確認した。各 artifact の ZIP digest、成功ログ、1000×640 PNG と report の hash・診断0件を確認し、前回の同 OS の画像と一致した。新しい目視や Windows の物理端末・clipboard の証拠ではない。その後 `5aa27e0` は Registry の integrity／未知エラー等で完全な file／欠損 guard がそろわない場合に capture を作らない条件と、壊れた導入状態で再計算する試験を追加した。macOS `40039247655` の121試験がこの追加も含めて成功し、artifact `12538427996` の画像・ログ・ZIP digest を検査した。Windows の同 source `40039981583` は実行中である。
 
 同日: source `38abd0e` の macOS `40037242989` は重複した guard の末尾を見落とさない回帰試験と取消の単独工程を含む120試験、source `d65d1d4` の Intel `40036985460` は119試験が成功した。両 artifact の ZIP digest・成功ログ・PNG の hash／寸法／診断0件を確認し、各同 OS の前回画像と一致した。Intel には後から加えた `38abd0e` の境界回帰は含まれない。source `ff46c24` の通常 CI `40037051278` は Intel の両試験構成・Clippy・Material opt-in を通過して release 検証中で、他4 native job と監査は成功した。先行 `3ea9c65` の取消時間超過の原因が特定されたわけではなく、run 全体の結果もまだ未確定である。共有文字列を使う部品コピーは本家の参照試験も含めて残す。Pencil 接続は `get_app_state` が transport 未接続で失敗し、標準の `/Applications/Pencil.app`／`pen.dev.app` にも実体を確認していない。参考実行や本家との一致を検証済みとは扱わない。

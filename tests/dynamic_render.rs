@@ -594,6 +594,67 @@ fn effect_scene(
 
 #[test]
 #[ignore = "Requires software WebGL Chromium and permission to launch its sandbox"]
+fn shader_sampler_arrays_accept_object_and_background_in_effects() {
+    let children = json!([
+        {"id":"back","type":"rectangle","width":80,"height":40,"fill":"#00FF00"},
+        {"id":"front","type":"rectangle","x":20,"y":10,"width":40,"height":20,"fill":"#FF0000"}
+    ]);
+    let effect = json!({"type":"shader","url":"combine.glsl","uniforms":{"images":["pencil:object","pencil:background"]}});
+    let (temp, _, _) = effect_scene(
+        json!({"type":"shader","url":"sample.glsl","uniforms":{"src":"pencil:object"}}),
+        children,
+    );
+    fs::write(temp.path().join("combine.glsl"),"precision highp float;\n/* @resolution */ uniform vec2 size;\nuniform sampler2D images[2];void main(){vec2 uv=gl_FragCoord.xy/size;gl_FragColor=mix(texture2D(images[0],uv),texture2D(images[1],uv),0.5);}").unwrap();
+    let path = temp.path().join("scene.pen");
+    let mut source: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    source["children"][1]["effect"] = effect.clone();
+    fs::write(&path, source.to_string()).unwrap();
+    let load = || {
+        let project = Project::from_document(
+            &path,
+            Document::parse(fs::read_to_string(&path).unwrap()).unwrap(),
+            &[],
+        )
+        .unwrap();
+        let layout =
+            lazypencil::layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap())
+                .unwrap();
+        (project, layout)
+    };
+    let (project, layout) = load();
+    let mut runtime = DynamicRuntime::new(temp.path()).with_executable(executable());
+    let output =
+        render::png_with_runtime(&project, &layout, &Default::default(), &mut runtime, None)
+            .unwrap();
+    let image = raster(&output.png);
+    let pixels = image.peek_pixels().unwrap();
+    let mixed = pixels.get_color((30, 20));
+    assert!(
+        (mixed.r() as i32 - 128).abs() <= 1 && (mixed.g() as i32 - 128).abs() <= 1,
+        "{mixed:?}"
+    );
+    assert_eq!((mixed.b(), mixed.a()), (0, 255));
+    assert_eq!(pixels.get_color((5, 5)), Color::GREEN);
+    source["children"][1]
+        .as_object_mut()
+        .unwrap()
+        .remove("effect");
+    source["children"][1]["fill"] = effect;
+    fs::write(&path, source.to_string()).unwrap();
+    let (project, layout) = load();
+    let error =
+        render::png_with_runtime(&project, &layout, &Default::default(), &mut runtime, None)
+            .err()
+            .unwrap();
+    assert_eq!(error.code, "SHADER_COMPILE_FAILED");
+    assert!(
+        error.message.contains("pencil:object is unavailable"),
+        "{error:?}"
+    );
+}
+
+#[test]
+#[ignore = "Requires software WebGL Chromium and permission to launch its sandbox"]
 fn shader_effects_receive_only_the_object_and_run_in_declared_order() {
     let children = json!([
         {"id":"back","type":"rectangle","width":80,"height":40,"fill":"#00FF00"},

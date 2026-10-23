@@ -458,7 +458,7 @@ pub fn document_metadata_with_fonts(
         "validation":{"structure":true,"layout":cfg!(feature="rendering"),"diagnostic_pagination":true,"rendered_visual_check":false},
         "script":{"execution":true,"rendering":cfg!(feature="rendering"),"schemas":["2.21"],"engine":crate::script::ENGINE},
         "browser":{"rendering":cfg!(feature="rendering"),"runtime_setup_required":true,"devices":["desktop","phone","tablet"]},
-        "shader":{"fills":cfg!(feature="rendering"),"effects":cfg!(feature="rendering"),"software_webgl":true,"annotations":["resolution","time"],"variable_image_origins":true},
+        "shader":{"fills":cfg!(feature="rendering"),"effects":cfg!(feature="rendering"),"software_webgl":true,"annotations":["resolution","time"],"variable_image_origins":true,"sampler_arrays":true,"max_encoded_sampler_bytes":67108864},
         "graphics":{"background_blur":cfg!(feature="rendering"),"node_preview":"document_crop","inner_shadow_blending":cfg!(feature="rendering"),"outer_shadow_blending":cfg!(feature="rendering"),"linear_color_blending":cfg!(feature="rendering"),"mesh_gradient":cfg!(feature="rendering")},
         "icons":{"node_type":"icon","packs":crate::icons::catalogue().iter().map(|pack| &pack.id).collect::<Vec<_>>(),"bundled":["lucide"],"rendering":cfg!(feature="rendering"),"synthetic_weights":false,"variable_weight_range":[100,700],"discovery_tool":"list_icons"},
         "fonts":{"rendering":cfg!(feature="rendering"),"formats":["ttf","otf","ttc","otc"],"face_metadata":true,"variation_control":["wght"],"fallback_policy":"project configuration or requested family, bundled default, explicit files","project_configuration":true},
