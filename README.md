@@ -202,6 +202,10 @@ The first check verifies the checked-in bundle, current lockfile, and local pack
 
 This is a source-package inventory, not a list of code linked into a specific binary. Passing the policy and notice checks does not complete the native Skia/QuickJS or Rust standard-library audit. Native/toolchain attributions, per-binary notice assembly, binary archives, minimum OS validation, signing, and release publishing remain unfinished. No Chromium or ACP adapter is added to the source archive.
 
+The manual `Release build evidence` workflow builds a release executable from the verified source distribution on a selected hosted platform. It reuses the normal dependency cache, cleans application outputs, and captures [Cargo JSON artifact and build-script records](https://doc.rust-lang.org/cargo/reference/external-tools.html#json-messages). `scripts/release_evidence.py` pairs each native artifact with its build-script package identity, uses the reported output directory, hashes the executable and selected native archives, and collects and reconstructs the Skia notice inventory. It checks distributed source files and build outputs before and after collection, rejects unlisted source inputs and conflicting archive aliases, and verifies a copy of the checked-in Rust notice bundle. This hosted workflow awaits its first completed run.
+
+Its three-day artifact contains `build.json`, a file-hash manifest, the source manifest, original project/Rust notices, and Skia input/notice evidence. It records compiler and runner identities, selected native features/link declarations, and remaining review. It excludes the executable and arbitrary build-script environment variables. The report always sets `release_ready: false`: Cargo declarations and Ninja inputs do not prove final linkage, and Rust standard-library/system notices, complete native/asset review, signed provenance, packaging and publication remain separate requirements. Hashes provide content integrity, not build authenticity or legal approval.
+
 For a source-built Skia, collect audit evidence from the actual native build directory:
 
 ```sh

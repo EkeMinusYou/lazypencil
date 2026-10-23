@@ -1,0 +1,123 @@
+name: Release build evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      os:
+        description: Hosted platform for source-bound release notice evidence
+        type: choice
+        default: ubuntu-24.04-arm
+        options:
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+          - macos-15
+          - macos-15-intel
+          - windows-2025
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-evidence-${{ github.ref }}-${{ inputs.os }}
+  cancel-in-progress: false
+
+env:
+  CARGO_BUILD_JOBS: '1'
+  CARGO_INCREMENTAL: '0'
+  CARGO_TERM_COLOR: always
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  PYTHONUTF8: '1'
+  LAZYPENCIL_TEST_PYTHON: python
+
+jobs:
+  evidence:
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: ${{ inputs.os == 'macos-15-intel' && 120 || 60 }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Select hosted build storage and runner image
+        id: cache-image
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as stream:
+              stream.write(f"CARGO_TARGET_DIR={Path(os.environ['RUNNER_TEMP']) / 'lazypencil-target'}\n")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
+              stream.write("version=" + os.environ.get("ImageVersion", "unknown") + "\n")
+          PY
+      - name: Install the declared minimum Rust toolchain
+        run: |
+          rustup toolchain install 1.94.0 --profile minimal
+          rustup default 1.94.0
+      - name: Install Linux native build dependencies
+        if: runner.os == 'Linux'
+        timeout-minutes: 20
+        run: python scripts/ci/linux_dependencies.py
+      - name: Restore verified Cargo downloads
+        continue-on-error: true
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/git/db
+          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
+      - name: Verify evidence collector integrity tests
+        run: python -m unittest discover -s scripts -p 'test_*.py' -v
+      - name: Build and verify the complete source distribution
+        run: |
+          python scripts/dist.py source --output source.tar.gz
+          python scripts/dist.py verify-source source.tar.gz --extract "$RUNNER_TEMP/lazypencil-source"
+      - name: Identify compatible hosted dependency caches
+        id: cache-key
+        continue-on-error: true
+        env:
+          LAZYPENCIL_CACHE_PLATFORM: ${{ inputs.os }}
+          LAZYPENCIL_CACHE_IMAGE: ${{ steps.cache-image.outputs.version }}
+        run: python scripts/ci/native_cache.py --platform "$LAZYPENCIL_CACHE_PLATFORM" --image "$LAZYPENCIL_CACHE_IMAGE" --github-output "$GITHUB_OUTPUT"
+      - name: Restore dependencies from normal native verification
+        if: ${{ steps.cache-key.outcome == 'success' }}
+        continue-on-error: true
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          key: ${{ steps.cache-key.outputs.primary }}
+          restore-keys: ${{ steps.cache-key.outputs.legacy }}
+          path: |
+            ${{ runner.temp }}/lazypencil-target
+            ${{ runner.temp }}/lazypencil-source/vendor/skia-bindings/skia
+            ${{ runner.temp }}/lazypencil-material-fonts
+      - name: Compile the release executable and capture Cargo artifact identities
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          sh scripts/ci/prune_application_cache.sh
+          cargo build --locked --release --bin lazypencil --message-format=json > "$RUNNER_TEMP/release-cargo.jsonl"
+          lazypencil_binary="$CARGO_TARGET_DIR/release/lazypencil"
+          if [ "$RUNNER_OS" = Windows ]; then lazypencil_binary="$lazypencil_binary.exe"; fi
+          "$lazypencil_binary" --version
+      - name: Collect and reverify original notices against the selected build
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        env:
+          LAZYPENCIL_SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          python scripts/release_evidence.py --source "$RUNNER_TEMP/lazypencil-source" \
+            --target "$CARGO_TARGET_DIR" --cargo-json "$RUNNER_TEMP/release-cargo.jsonl" \
+            --revision "$LAZYPENCIL_SOURCE_REVISION" --output "$RUNNER_TEMP/release-evidence"
+      - name: Retain review evidence without publishing the executable
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: release-evidence-${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-evidence
+          if-no-files-found: error
+          retention-days: 3
