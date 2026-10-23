@@ -14,6 +14,7 @@ use std::{
 
 const MAX_BYTES: usize = 256 * 1024;
 pub mod agents;
+pub mod runtime;
 const TEMPLATE: &str = "version = 1\n\n[fonts]\n# Omitted fields inherit lower-priority settings.\n# Paths resolve relative to this configuration file.\n# files = []\n# search_paths = []\n# default_family = \"Noto Sans JP\"\n# locale = \"ja\"\n# Set fallbacks explicitly to replace the default glyph fallback chain.\n# fallbacks = [\"Noto Sans JP\"]\n";
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -22,6 +23,7 @@ pub struct ProjectConfig {
     #[schemars(range(min = 1, max = 1))]
     pub version: u32,
     pub fonts: FontSettings,
+    pub runtime: runtime::RuntimeSettings,
     pub design: crate::guidance::DesignSettings,
 }
 impl Default for ProjectConfig {
@@ -29,6 +31,7 @@ impl Default for ProjectConfig {
         Self {
             version: 1,
             fonts: FontSettings::default(),
+            runtime: Default::default(),
             design: Default::default(),
         }
     }
@@ -68,6 +71,7 @@ pub struct UserConfig {
     #[schemars(range(min = 1, max = 1))]
     pub version: u32,
     pub fonts: FontSettings,
+    pub runtime: runtime::RuntimeSettings,
     pub agents: agents::AgentSettings,
 }
 impl Default for UserConfig {
@@ -75,6 +79,7 @@ impl Default for UserConfig {
         Self {
             version: 1,
             fonts: FontSettings::default(),
+            runtime: Default::default(),
             agents: Default::default(),
         }
     }
@@ -124,6 +129,7 @@ impl FontOverrides {
 struct ProjectFile {
     version: u32,
     fonts: FontOverrides,
+    runtime: runtime::RuntimeOverrides,
     design: crate::guidance::DesignSettings,
 }
 impl Default for ProjectFile {
@@ -131,6 +137,7 @@ impl Default for ProjectFile {
         Self {
             version: 1,
             fonts: Default::default(),
+            runtime: Default::default(),
             design: Default::default(),
         }
     }
@@ -141,6 +148,7 @@ impl Default for ProjectFile {
 struct UserFile {
     version: u32,
     fonts: FontOverrides,
+    runtime: runtime::RuntimeOverrides,
     agents: agents::AgentSettings,
 }
 impl Default for UserFile {
@@ -148,6 +156,7 @@ impl Default for UserFile {
         Self {
             version: 1,
             fonts: Default::default(),
+            runtime: Default::default(),
             agents: Default::default(),
         }
     }
@@ -159,6 +168,7 @@ struct UserSource {
     missing: Option<crate::paths::MissingPath>,
     settings: UserConfig,
     fonts: FontOverrides,
+    runtime: runtime::RuntimeOverrides,
     automatic: bool,
 }
 
@@ -193,6 +203,7 @@ pub struct Snapshot {
     pub design: Result<crate::guidance::ProjectCatalog>,
     user: UserSource,
     font_origins: BTreeMap<&'static str, &'static str>,
+    runtime_origins: BTreeMap<&'static str, &'static str>,
     lock_paths: Vec<PathBuf>,
     directories: Vec<Directory>,
     bindings: Vec<(PathBuf, PathBuf)>,
@@ -483,6 +494,7 @@ impl UserSource {
             missing: None,
             settings: UserConfig::default(),
             fonts: FontOverrides::default(),
+            runtime: Default::default(),
             automatic,
         };
         if let Some(requested) = &result.requested {
@@ -501,9 +513,15 @@ impl UserSource {
                         .fonts
                         .apply(&mut result.settings.fonts, &mut origins(), "user");
                     validate_fonts(&result.settings.fonts)?;
+                    parsed.runtime.apply(
+                        &mut result.settings.runtime,
+                        &mut runtime::origins(),
+                        "user",
+                    )?;
                     parsed.agents.validate()?;
                     result.settings.agents = parsed.agents;
                     result.fonts = parsed.fonts;
+                    result.runtime = parsed.runtime;
                     result.source = Some((path, bytes));
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -687,6 +705,12 @@ impl Snapshot {
             .apply(&mut settings.fonts, &mut font_origins, "project");
         settings.design = project.design;
         validate_fonts(&settings.fonts)?;
+        let mut runtime_origins = runtime::origins();
+        user.runtime
+            .apply(&mut settings.runtime, &mut runtime_origins, "user")?;
+        project
+            .runtime
+            .apply(&mut settings.runtime, &mut runtime_origins, "project")?;
         let base = source
             .as_ref()
             .and_then(|(path, _)| path.parent())
@@ -715,6 +739,7 @@ impl Snapshot {
             design,
             user,
             font_origins,
+            runtime_origins,
             lock_paths,
             directories: inputs.directories,
             bindings: inputs.bindings,
@@ -753,7 +778,7 @@ impl Snapshot {
             .as_ref()
             .map(|design| design.metadata())
             .unwrap_or_else(|error| json!({"available":false,"trusted":false,"error":error}));
-        json!({"path":self.source.as_ref().map(|(path,_)|path),"hash":self.source.as_ref().map(|(_,bytes)|hash(bytes)),"root":self.root(),"settings":self.settings,"font_files":self.font_files,"font_origins":self.font_origins,"user":self.user.summary(),"design":design})
+        json!({"path":self.source.as_ref().map(|(path,_)|path),"hash":self.source.as_ref().map(|(_,bytes)|hash(bytes)),"root":self.root(),"settings":self.settings,"font_files":self.font_files,"font_origins":self.font_origins,"runtime_origins":self.runtime_origins,"user":self.user.summary(),"design":design})
     }
     pub fn sources(&self) -> Vec<(PathBuf, Arc<[u8]>)> {
         self.source
@@ -818,9 +843,9 @@ fn write_configuration(path: &Path, scope: &str) -> Result<Value> {
     let mut file =
         tempfile::NamedTempFile::new_in(parent).map_err(|error| Error::io(parent, error))?;
     let template = if scope == "user" {
-        format!("{TEMPLATE}{}", agents::TEMPLATE)
+        format!("{TEMPLATE}{}{}", runtime::TEMPLATE, agents::TEMPLATE)
     } else {
-        TEMPLATE.to_owned()
+        format!("{TEMPLATE}{}", runtime::TEMPLATE)
     };
     file.write_all(template.as_bytes())
         .map_err(|error| Error::io(path, error))?;

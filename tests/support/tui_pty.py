@@ -43,6 +43,14 @@ elif case in ["font-config", "user-font-config"]:
     with open(configuration_path, "w", encoding="utf-8") as handle:
         handle.write("version=1\n[fonts]\nfiles=[" + ",".join(json.dumps(os.path.join(font_root, name), ensure_ascii=False) for name in ["faces.ttc", "cff.otf"]) + "]\ndefault_family='LP Test Sans'\nlocale='en-US'\n")
     design = {"version": "2.21", "children": [{"type": "text", "id": "label", "content": "A", "fontSize": 80, "fill": "#FF0000"}]}
+elif case == "script-config":
+    configuration_path = os.path.join(root, "lazypencil.toml")
+    configuration = "[runtime.javascript]\ntimeout_ms=100\nheap_mib=8\nidle_seconds=0\nlayout_timeout_ms=5000\nmax_evaluations=8\nmax_passes=4\n"
+    with open(configuration_path, "w", encoding="utf-8") as handle:
+        handle.write(configuration)
+    with open(os.path.join(root, "generated.js"), "w", encoding="utf-8") as handle:
+        handle.write("/** @schema 2.21 */ for (;;) {}")
+    design = {"version": "2.21", "children": [{"type": "script", "id": "script", "width": 180, "height": 90, "scriptUri": "generated.js"}]}
 elif case == "user-agent-config":
     environment["LAZYPENCIL_CONFIG_DIR"] = os.path.join(root, "user-settings")
     os.mkdir(environment["LAZYPENCIL_CONFIG_DIR"])
@@ -73,7 +81,7 @@ if case in ["restore", "restore-conflict"]:
 master, slave = pty.openpty()
 original = termios.tcgetattr(slave)
 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 34, 130, 0, 0))
-image_case = "kitty" if case in ["dynamic-idle", "font-config", "user-font-config"] else case.removeprefix("auto-")
+image_case = "kitty" if case in ["dynamic-idle", "font-config", "user-font-config", "script-config"] else case.removeprefix("auto-")
 protocol = "auto" if case.startswith("auto-") else (image_case if image_case in ["kitty", "sixel"] else "halfblocks")
 command = [binary, "--data-dir", os.path.join(root, "data"), "tui", document,
     "--adapter", sys.executable, "--adapter-arg=" + fixture,
@@ -339,6 +347,33 @@ try:
         assert open(document, "rb").read() == saved
         assert session()["draft"] == "待機と更新の後も残る下書き"
         assert not session()["native_session_id"], "Previewing must not start an agent"
+    elif case == "script-config":
+        saved = open(document, "rb").read()
+        wait(lambda: "RENDER_TIMEOUT" in screen.text(), "configured script execution timeout")
+        paste("制限を変更しても残る下書き")
+        wait(lambda: session()["draft"] == "制限を変更しても残る下書き", "draft after script timeout")
+        configuration = configuration.replace("\ntimeout_ms=100\n", "\ntimeout_ms=2000\n")
+        with open(configuration_path, "w", encoding="utf-8") as handle:
+            handle.write(configuration)
+        with open(os.path.join(root, "generated.js"), "w", encoding="utf-8") as handle:
+            handle.write("/** @schema 2.21 */ return [{type:'rectangle',width:180,height:90,fill:'#00FF00'}];")
+        wait(lambda: bool(list(kitty_images())) and bytes([0, 255, 0, 255]) in list(kitty_images())[-1], "recovered script preview")
+        frames = len(list(kitty_images()))
+        with open(configuration_path, "w", encoding="utf-8") as handle:
+            handle.write(configuration.replace("heap_mib=8", "heap_mib=12"))
+        wait(lambda: len(list(kitty_images())) > frames, "runtime policy invalidates the preview")
+        assert bytes([0, 255, 0, 255]) in list(kitty_images())[-1]
+        def no_owned_children():
+            rows = subprocess.check_output(["ps", "-axo", "pid=,ppid="], text=True)
+            return not any(int(parent) == process.pid for pid, parent in (line.split() for line in rows.splitlines()))
+        wait(no_owned_children, "zero-idle script worker cleanup")
+        layout = cli("layout", document)
+        assert layout["script_executions"][0]["limits"]["heap_mib"] == 12
+        assert layout["script_executions"][0]["limits"]["timeout_ms"] == 2000
+        assert layout["script_executions"][0]["limits"]["idle_seconds"] == 0
+        assert session()["draft"] == "制限を変更しても残る下書き"
+        assert not session()["native_session_id"]
+        assert open(document, "rb").read() == saved
     elif case in ["font-config", "user-font-config"]:
         # VT diff updates may split a visible word across cursor commands. The
         # document path can also contain 'diagnostics'; inspect the status line.

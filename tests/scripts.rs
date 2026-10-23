@@ -15,6 +15,163 @@ fn runtime() -> ScriptRuntime {
 }
 
 #[test]
+fn configured_limits_control_the_real_worker_and_invalid_updates_preserve_its_policy() {
+    use lazypencil::config::runtime::ScriptSettings;
+    let mut worker = runtime();
+    let policy = ScriptSettings {
+        timeout_ms: 50,
+        heap_mib: 4,
+        idle_seconds: 2,
+        ..Default::default()
+    };
+    worker.configure(policy).unwrap();
+    let started = Instant::now();
+    assert_eq!(
+        worker.execute(&request("for (;;) {} ")).unwrap_err().code,
+        "RENDER_TIMEOUT"
+    );
+    assert!(started.elapsed() < Duration::from_secs(3));
+    assert_eq!(worker.process_id(), None);
+    assert_eq!(
+        worker
+            .execute(&request("try { for (;;) {} } catch (_) {} return []; "))
+            .unwrap_err()
+            .code,
+        "RENDER_TIMEOUT"
+    );
+    worker
+        .configure(ScriptSettings {
+            timeout_ms: 2000,
+            ..policy
+        })
+        .unwrap();
+    assert!(
+        worker
+            .execute(&request(
+                "const values=[];for(;;)values.push(new Array(16384).fill('allocated')); "
+            ))
+            .is_err()
+    );
+    worker
+        .configure(ScriptSettings {
+            heap_mib: 16,
+            timeout_ms: 2000,
+            ..policy
+        })
+        .unwrap();
+    let before = Instant::now();
+    assert_eq!(
+        worker
+            .execute(&request("return [{type:'rectangle',width:7}];"))
+            .unwrap()
+            .nodes[0]["width"],
+        7
+    );
+    let after = Instant::now();
+    let pid = worker.process_id();
+    let deadline = worker.idle_deadline().unwrap();
+    assert!(deadline >= before + Duration::from_secs(2));
+    assert!(deadline <= after + Duration::from_secs(2));
+    let saved = worker.settings();
+    assert_eq!(
+        worker
+            .configure(ScriptSettings {
+                timeout_ms: 0,
+                ..saved
+            })
+            .unwrap_err()
+            .code,
+        "CONFIGURATION_ERROR"
+    );
+    assert_eq!(worker.settings(), saved);
+    assert_eq!(worker.process_id(), pid);
+    worker
+        .configure(ScriptSettings {
+            idle_seconds: 0,
+            ..saved
+        })
+        .unwrap();
+    assert_eq!(worker.process_id(), None);
+    worker.execute(&request("return []; ")).unwrap();
+    worker.expire_idle(Instant::now());
+    assert_eq!(worker.process_id(), None);
+}
+
+#[test]
+fn an_absolute_host_deadline_bounds_the_worker_and_allows_following_requests() {
+    let mut unavailable = ScriptRuntime::new("a-worker-that-must-not-be-started");
+    assert_eq!(
+        unavailable
+            .execute_until(
+                &request("return [];"),
+                Some(Instant::now() - Duration::from_millis(1))
+            )
+            .unwrap_err()
+            .code,
+        "RENDER_TIMEOUT"
+    );
+    assert_eq!(unavailable.process_id(), None);
+    let mut worker = runtime();
+    let started = Instant::now();
+    assert_eq!(
+        worker
+            .execute_until(
+                &request("for (;;) {}"),
+                Some(started + Duration::from_millis(300))
+            )
+            .unwrap_err()
+            .code,
+        "RENDER_TIMEOUT"
+    );
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert_eq!(worker.process_id(), None);
+    assert_eq!(
+        worker
+            .execute(&request("return [{type:'rectangle',width:7}];"))
+            .unwrap()
+            .nodes[0]["width"],
+        7
+    );
+}
+
+#[test]
+fn the_internal_worker_protocol_validates_policy_before_executing_source() {
+    use lazypencil::config::runtime::ScriptSettings;
+    use std::{
+        io::Write,
+        process::{Command, Stdio},
+    };
+    let mut child = Command::new(env!("CARGO_BIN_EXE_lazypencil"))
+        .arg("__script_worker")
+        .env_clear()
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    for input in [
+        json!({"protocol":999,"limits":ScriptSettings::default(),"request":request("for (;;) {}")}),
+        json!({"protocol":1,"limits":{"heap_mib":1024},"request":request("for (;;) {}")}),
+        json!({"protocol":1,"limits":ScriptSettings::default(),"request":request("return [{type:'rectangle',width:7}];")}),
+    ] {
+        writeln!(child.stdin.as_mut().unwrap(), "{input}").unwrap();
+    }
+    drop(child.stdin.take());
+    let result = child.wait_with_output().unwrap();
+    assert!(result.status.success());
+    let replies = String::from_utf8(result.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(replies.len(), 3);
+    assert_eq!(replies[0]["message"], "Unsupported script worker protocol");
+    assert_eq!(replies[0]["timeout"], false);
+    assert_eq!(replies[1]["message"], "Invalid script worker limits");
+    assert_eq!(replies[1]["timeout"], false);
+    assert_eq!(replies[2]["output"]["nodes"][0]["width"], 7);
+}
+
+#[test]
 fn typed_headers_clamp_numbers_preserve_strings_and_validate_all_six_input_types() {
     let header = Header::parse(
         r##"/**

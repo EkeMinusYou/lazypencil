@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 pub const ENGINE: &str =
-    "rquickjs/0.14.0;quickjs-ng/0.16.2;random/xorshift32-v1;source/function-v2";
+    "rquickjs/0.14.0;quickjs-ng/0.16.2;random/xorshift32-v1;source/function-v2;policy/v1";
 pub const MAX_CODE_BYTES: usize = 1024 * 1024;
 pub const MAX_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_NODES: usize = 1000;

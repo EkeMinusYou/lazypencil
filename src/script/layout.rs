@@ -25,6 +25,8 @@ pub fn compute(
     fonts: &mut Fonts,
     runtime: &mut ScriptRuntime,
 ) -> Result<LayoutSnapshot> {
+    let settings = project.script_settings();
+    runtime.configure(settings)?;
     let mut scene = project.resolve()?;
     if !scene.roots.iter().any(has_enabled_script) {
         return layout::compute(scene, fonts);
@@ -34,13 +36,15 @@ pub fn compute(
     }
     let mut cached = BTreeMap::new();
     let mut runs = 0;
-    let started = Instant::now();
-    for _ in 0..8 {
+    let deadline = Instant::now() + Duration::from_millis(settings.layout_timeout_ms);
+    for _ in 0..settings.max_passes {
+        require_budget(deadline)?;
         let mut count = 0;
         for node in &scene.roots {
             validate_tree(node, 0, &mut count)?;
         }
         let mut snapshot = layout::compute(scene.clone(), fonts)?;
+        require_budget(deadline)?;
         let sizes = snapshot
             .items
             .iter()
@@ -57,7 +61,7 @@ pub fn compute(
                 &mut cached,
                 &mut runs,
                 &mut changed,
-                started,
+                deadline,
             )?;
         }
         if !changed {
@@ -76,13 +80,27 @@ pub fn compute(
                 snapshot.id=hash(json!({"layout":snapshot.id,"script_engine":ENGINE,"executions":snapshot.script_executions,"runtime_dependencies":snapshot.runtime_dependencies}).to_string().as_bytes());
             }
             project.verify_unchanged()?;
+            require_budget(deadline)?;
             return Ok(snapshot);
         }
     }
     Err(Error::new(
         "LAYOUT_UNRESOLVED",
-        "Script-generated layout did not converge within 8 passes",
+        format!(
+            "Script-generated layout did not converge within {} passes",
+            settings.max_passes
+        ),
     ))
+}
+
+fn require_budget(deadline: Instant) -> Result<()> {
+    if Instant::now() >= deadline {
+        return Err(Error::new(
+            "RENDER_TIMEOUT",
+            "Script layout exceeded its configured evaluation budget",
+        ));
+    }
+    Ok(())
 }
 
 fn has_enabled_script(node: &ResolvedNode) -> bool {
@@ -130,14 +148,9 @@ fn expand(
     cached: &mut BTreeMap<String, Cached>,
     runs: &mut usize,
     changed: &mut bool,
-    started: Instant,
+    deadline: Instant,
 ) -> Result<()> {
-    if started.elapsed() > Duration::from_secs(10) {
-        return Err(Error::new(
-            "RENDER_TIMEOUT",
-            "Script layout exceeded its 10 second evaluation budget",
-        ));
-    }
+    require_budget(deadline)?;
     let enabled = inherited_enabled && node.properties.get("enabled") != Some(&Value::Bool(false));
     if !enabled {
         return Ok(());
@@ -188,7 +201,7 @@ fn expand(
         let inputs = project
             .prepare_script_refs(node, &header, inputs)
             .map_err(context)?;
-        let input_key=hash(json!({"source":source_hash,"inputs":inputs,"origin":node.script_origin(),"input_origin":node.script_input_origin(),"theme":node.theme}).to_string().as_bytes());
+        let input_key=hash(json!({"source":source_hash,"inputs":inputs,"origin":node.script_origin(),"input_origin":node.script_input_origin(),"theme":node.theme,"limits":runtime.settings()}).to_string().as_bytes());
         let (width, height) = (rect.width as f64, rect.height as f64);
         let valid = cached.get(&id).is_some_and(|entry: &Cached| {
             entry.input_key == input_key
@@ -197,19 +210,25 @@ fn expand(
         });
         if !valid {
             *runs += 1;
-            if *runs > 128 {
+            if *runs > runtime.settings().max_evaluations {
                 return Err(Error::new(
                     "RENDER_TIMEOUT",
-                    "A calculation may execute at most 128 script evaluations",
+                    format!(
+                        "A calculation may execute at most {} script evaluations",
+                        runtime.settings().max_evaluations
+                    ),
                 ));
             }
             let output = runtime
-                .execute(&ScriptRequest {
-                    code,
-                    width,
-                    height,
-                    inputs: inputs.clone(),
-                })
+                .execute_until(
+                    &ScriptRequest {
+                        code,
+                        width,
+                        height,
+                        inputs: inputs.clone(),
+                    },
+                    Some(deadline),
+                )
                 .map_err(context)?;
             for (key, reads) in [
                 ("width", output.reads_width),
@@ -224,7 +243,7 @@ fn expand(
             node.children = project.generated_children(node, &output.nodes)?;
             let metadata = json!({"node_id":id,"source_path":path,"source_hash":source_hash,"width":width,"height":height,
                 "inputs_hash":hash(serde_json::to_string(&inputs).expect("inputs").as_bytes()),"output_hash":hash(serde_json::to_string(&output.nodes).expect("nodes").as_bytes()),
-                "output_root_count":output.nodes.len(),"engine":ENGINE,"reads_width":output.reads_width,"reads_height":output.reads_height});
+                "output_root_count":output.nodes.len(),"engine":ENGINE,"limits":runtime.settings(),"reads_width":output.reads_width,"reads_height":output.reads_height});
             cached.insert(
                 id,
                 Cached {
@@ -241,7 +260,7 @@ fn expand(
     }
     for child in &mut node.children {
         expand(
-            child, enabled, sizes, project, runtime, cached, runs, changed, started,
+            child, enabled, sizes, project, runtime, cached, runs, changed, deadline,
         )?;
     }
     Ok(())
