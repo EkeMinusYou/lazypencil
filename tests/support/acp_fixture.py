@@ -142,6 +142,12 @@ try:
                 with open("fixture-child.pid.tmp", "w") as handle:
                     handle.write(str(grandchild.pid))
                 os.replace("fixture-child.pid.tmp", "fixture-child.pid")
+            if mode.startswith("process-tree"):
+                from pathlib import Path
+                flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS if os.name == "nt" else 0
+                subprocess.Popen([sys.executable, str(Path(__file__).with_name("agent_process_tree.py")),
+                    "branch", str(os.getpid())], stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags)
         elif method == "session/prompt":
             with open("sent-turn.txt", "w") as handle:
                 handle.write("sent")
@@ -222,7 +228,7 @@ try:
             if mode == "auth-change":
                 auth_status("api_key")
                 continue
-            if mode in ["cancel", "hang-cancel", "cancel-permission"]:
+            if mode in ["cancel", "hang-cancel", "cancel-permission", "process-tree-hang"]:
                 notify({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "working\n"}})
                 if mode != "cancel-permission":
                     continue
@@ -289,7 +295,7 @@ try:
             response(message, {"configOptions": config_options()})
         elif method == "session/cancel":
             cancel_received = True
-            if mode == "hang-cancel":
+            if mode in ["hang-cancel", "process-tree-hang"]:
                 continue
             if mode == "cancel-permission" and not permission_answered:
                 continue

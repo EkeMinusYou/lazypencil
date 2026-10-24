@@ -58,6 +58,9 @@ libc = "0.2.191"
 # Level-triggered polling retains unread input when resize and key events overlap.
 crossterm = { version = "0.29.0", features = ["use-dev-tty"], optional = true }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

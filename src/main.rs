@@ -2,6 +2,20 @@ use clap::{CommandFactory, FromArgMatches};
 use std::{io::Write, process::ExitCode};
 
 fn main() -> ExitCode {
+    #[cfg(windows)]
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|argument| argument == "__agent_process_worker")
+    {
+        return match lazypencil::agent::serve_process_worker() {
+            Ok(true) => ExitCode::SUCCESS,
+            Ok(false) => ExitCode::FAILURE,
+            Err(error) => {
+                eprintln!("{error}");
+                ExitCode::from(error.exit_code())
+            }
+        };
+    }
     #[cfg(feature = "tui")]
     if std::env::args_os()
         .nth(1)

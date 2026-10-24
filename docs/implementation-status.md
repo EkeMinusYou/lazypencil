@@ -2,6 +2,12 @@
 
 設計書 v0.9 の全体を実装対象とする。部分的な CLI や描画の試作だけで完成とは扱わない。以下は実際の実装・試験結果で更新する。
 
+2026-10-24: Windows の ACP 子孫プロセス管理を実装した。非継承の job handle を host が保持し、補助 worker が自分を job に参加させ、一時 handle を閉じてから adapter を起動する。起動成否は固定長の非機密 status で返し、その後は既存の ACP と stderr の上限付き drain を使う。adapter の stderr は小さい buffer で転送し、読み取り中に出力 lock を保持しない。setup の期限にはこの起動も含め、subscription 環境の API override 除去は維持する。通常 close・別セッションの保持・非協調 cancel・host/runtime の drop・親の強制終了・所有者がない worker・起動エラーの実プロセス試験を追加した。専用 GHA で Skia をビルドせず core の全 target Clippy と全試験を実行する。新しい Windows 処理のコンパイル・実行結果はまだ未確認である。
+
+同日: `windows-sys 0.61.2` を Windows 専用の直接依存として使った。既に lock にある package であり、全 registry package の版・checksum は変えていない。lock の root dependency と root manifest の hash に合わせ、notice inventory／manifest を再生成し、388 packages・267 files を元の archive と照合した。ローカルでは metadata・書式・Python の構文・workflow lint 等のみを確認し、Rust の build/test は GHA で行う。
+
+同日: 角丸の残る専用検証 source `22a7ceb` は Intel Mac `40046844885` の229試験、Linux arm64 `40046850324` の231試験、Windows `40046847216` の201試験が成功した。全 artifact の digest、両構成 Clippy、4種×2版の本家参照 PNG 比較、1000×640 PNG／report と診断0件を検査した。Intel の selector cancel 試験も初回起動の準備制限を分けた source で成功したが、以前の5秒の起動失敗の全原因が解消したという証拠にはしない。macOS／Linux x64 の `d7d4bf2` の結果と合わせ、同じ描画コードの5環境で比較が終了した。今回の Windows job 実装はこの証拠に含めない。
+
 2026-10-24: 同じ角丸 source `d7d4bf2` は macOS arm64 `40046640047` でも229試験と両構成の Clippy が成功した。artifact `12541474147` の ZIP digest・全成功ログ・本家参照4種×2版の PNG 比較・三角形の編集後の版と hash を検査した。図形の参照比較の平均チャネル絶対差は Linux と同じ0.037〜0.087の範囲だった。macOS の今回の画像を新たに目視したという意味ではない。Intel の browser 起動準備修正と、残る新 source の各環境は検証中である。
 
 2026-10-24: 角丸 source `d7d4bf2` は Linux x64 `40046642679` で231試験（graphics20件を含む）と両構成の Clippy が成功した。artifact `12541407638` の ZIP digest・ログ・PNG／report を検査した。4種類の本家参照 corpus は2.19／2.21の両版で比較を通過し、全画像の平均チャネル絶対差は0〜255の尺度で0.037〜0.087、単一チャネルが20を超えて異なる画素は各125〜324だった。形状と横長の半径比較の実成果物も目視した。許容誤差付きの図形比較であり、完全な画素一致や一般の本家互換性とは扱わない。source `a7e0c15` の Windows `40045868654` も182試験と両構成の Clippy が成功し、三角形の編集 file／PNG の hash は既に本家で再出力した macOS の成果物と一致した。

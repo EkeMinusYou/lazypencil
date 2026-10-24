@@ -7,13 +7,11 @@ use futures::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use std::{
     path::PathBuf,
-    process::Stdio,
     sync::{Arc, Mutex},
     time::Duration,
 };
 use tokio::{
     io::AsyncReadExt,
-    process::{Child, Command},
     sync::{mpsc, oneshot, watch},
 };
 use tokio_util::{
@@ -25,13 +23,18 @@ const MAX_LINE: usize = 96 * 1024 * 1024;
 
 pub mod auth;
 pub mod permissions;
+mod process;
 mod settings;
 use auth::{AuthPolicy, AuthReport};
+use process::AgentProcess;
 
 #[derive(Debug, Clone)]
 pub struct AgentOptions {
     pub command: PathBuf,
     pub args: Vec<String>,
+    /// Host binary implementing the private Windows process supervisor entry point.
+    /// Defaults to this executable; library hosts must supply the lazypencil binary.
+    pub supervisor_executable: Option<PathBuf>,
     pub cwd: PathBuf,
     pub mcp_servers: Vec<McpServer>,
     pub session_id: Option<String>,
@@ -53,6 +56,7 @@ impl AgentOptions {
         Self {
             command: command.into(),
             args: vec![],
+            supervisor_executable: std::env::current_exe().ok(),
             cwd: cwd.into(),
             mcp_servers: vec![],
             session_id: None,
@@ -182,42 +186,15 @@ async fn run(
     events: mpsc::Sender<AgentEvent>,
     shutdown: CancellationToken,
 ) -> Result<()> {
-    let mut command = Command::new(&options.command);
-    command
-        .args(&options.args)
-        .current_dir(&options.cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    if options.subscription {
-        for key in [
-            "OPENAI_API_KEY",
-            "CODEX_API_KEY",
-            "ANTHROPIC_API_KEY",
-            "ANTHROPIC_AUTH_TOKEN",
-            "DEFAULT_AUTH_REQUEST",
-            "OPENAI_BASE_URL",
-            "ANTHROPIC_BASE_URL",
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY",
-        ] {
-            command.env_remove(key);
-        }
-    }
-    #[cfg(unix)]
-    command.process_group(0);
-    let child = command.spawn().map_err(|error| {
-        Error::new(
-            "AGENT_UNAVAILABLE",
-            format!(
-                "Cannot start ACP adapter {}: {error}",
-                options.command.display()
-            ),
-        )
-    })?;
-    let mut process = AgentProcess::new(child);
+    let setup_started = std::time::Instant::now();
+    let mut process = tokio::select! {
+        result = AgentProcess::spawn(&options) => result?,
+        _ = shutdown.cancelled() => return Ok(()),
+    };
+    let mut options = options;
+    options.setup_timeout = options
+        .setup_timeout
+        .saturating_sub(setup_started.elapsed());
     let stdin = process.child.stdin.take().expect("piped stdin");
     let stdout = process.child.stdout.take().expect("piped stdout");
     let mut stderr = process.child.stderr.take().expect("piped stderr");
@@ -587,33 +564,8 @@ fn validate_frame(line: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-struct AgentProcess {
-    child: Child,
-    group: Option<u32>,
-}
-impl AgentProcess {
-    fn new(child: Child) -> Self {
-        let group = child.id();
-        Self { child, group }
-    }
-    async fn stop(&mut self) {
-        self.kill_group();
-        let _ = self.child.start_kill();
-        let _ = tokio::time::timeout(Duration::from_secs(3), self.child.wait()).await;
-        self.group = None;
-    }
-    fn kill_group(&self) {
-        #[cfg(unix)]
-        if let Some(group) = self.group.and_then(|id| i32::try_from(id).ok()) {
-            // The adapter starts in its own process group; never signal the parent's group.
-            unsafe {
-                libc::kill(-group, libc::SIGKILL);
-            }
-        }
-    }
-}
-impl Drop for AgentProcess {
-    fn drop(&mut self) {
-        self.kill_group();
-    }
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn serve_process_worker() -> Result<bool> {
+    process::serve_worker()
 }

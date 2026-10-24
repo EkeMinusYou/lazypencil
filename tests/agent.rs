@@ -19,6 +19,7 @@ fn fixture() -> PathBuf {
 }
 fn options(mode: &str, directory: &Path) -> AgentOptions {
     let mut options = AgentOptions::new(python(), directory);
+    options.supervisor_executable = Some(env!("CARGO_BIN_EXE_lazypencil").into());
     options.args = vec![fixture().to_str().unwrap().into(), mode.into()];
     options.setup_timeout = Duration::from_secs(5);
     options.turn_timeout = Duration::from_secs(5);
@@ -1026,6 +1027,7 @@ fn installed_adapter(variable: &str, default: &str) {
             .map(PathBuf::from)
             .unwrap_or_else(|| default.into());
         let mut opts = AgentOptions::new(adapter, directory.path());
+        opts.supervisor_executable = Some(env!("CARGO_BIN_EXE_lazypencil").into());
         opts.model = std::env::var("LAZYPENCIL_TEST_AGENT_MODEL").ok();
         opts.session_mode = std::env::var("LAZYPENCIL_TEST_AGENT_MODE").ok();
         opts.require_auth_status = true;
