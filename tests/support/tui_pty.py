@@ -274,6 +274,49 @@ try:
         wait(lambda: "/clear-images" not in screen.text(), "help closed before configured exit")
         assert not turns() and not session()["native_session_id"], "Viewing shortcuts must not start an agent"
         assert session()["draft"] == text + " 続き"
+    elif case == "session-selection":
+        first_draft = "最初の未送信の下書き\nq u N は本文"
+        second_draft = "二番目の未送信の下書き"
+        paste(first_draft)
+        wait(lambda: session() and session()["draft"] == first_draft, "first conversation draft persisted")
+        first_path = glob.glob(os.path.join(root, "data", "**", "session.json"), recursive=True)[0]
+        first_id = json.load(open(first_path, encoding="utf-8"))["id"]
+        saved_document = open(document, "rb").read()
+        os.write(master, b"\x10")
+        wait(lambda: "New empty conversation" in screen.text(), "new conversation command")
+        os.write(master, b"\x1b[B" * 7 + b"\r")
+
+        def second_state():
+            paths = [path for path in glob.glob(os.path.join(root, "data", "**", "session.json"), recursive=True) if path != first_path]
+            return json.load(open(paths[0], encoding="utf-8")) if len(paths) == 1 else None
+
+        wait(lambda: second_state() and "session: " + second_state()["id"][:8] in screen.text() and first_draft.splitlines()[0] not in screen.text(), "new empty conversation selected")
+        second_id = second_state()["id"]
+        second_path = [path for path in glob.glob(os.path.join(root, "data", "**", "session.json"), recursive=True) if path != first_path][0]
+        paste(second_draft)
+        wait(lambda: second_state()["draft"] == second_draft, "second conversation draft persisted")
+
+        def select_saved(identifier, draft, label):
+            os.write(master, b"\x10")
+            wait(lambda: "Browse saved conversations" in screen.text(), "saved conversation command")
+            os.write(master, b"\x1b[B" * 6 + b"\r")
+            wait(lambda: "Saved conversations" in screen.text() and first_id in screen.text() and second_id in screen.text(), "both saved conversations listed")
+            index = sorted([first_id, second_id]).index(identifier)
+            os.write(master, b"\x1b[B" * index + b"u")
+            wait(lambda: "session: " + identifier[:8] in screen.text() and draft.splitlines()[0] in screen.text() and "Saved conversations" not in screen.text(), label)
+            with open(os.path.join(root, "session-selection-" + ("first" if identifier == first_id else "second") + "-screen.txt"), "w", encoding="utf-8") as handle:
+                handle.write(screen.text())
+
+        select_saved(first_id, first_draft, "first draft restored by session selection")
+        select_saved(second_id, second_draft, "second draft restored by session selection")
+        assert json.load(open(first_path, encoding="utf-8"))["draft"] == first_draft
+        assert json.load(open(second_path, encoding="utf-8"))["draft"] == second_draft
+        assert not os.path.exists(os.path.join(root, "sent-turn.txt"))
+        assert not glob.glob(os.path.join(root, "data", "**", "turn-*.jsonl"), recursive=True)
+        assert open(document, "rb").read() == saved_document
+        for name, path in [("first", first_path), ("second", second_path)]:
+            with open(os.path.join(root, f"session-selection-{name}.json"), "wb") as handle:
+                handle.write(open(path, "rb").read())
     elif case == "saved-history":
         draft = "未送信の下書き\nq n p v は本文"
         paste(draft)
@@ -740,6 +783,16 @@ if case == "user-navigation-config":
             "draft_sha256": hashlib.sha256(saved_draft.encode("utf-8")).hexdigest(),
             "help_end_reached": True, "startup_keys_retained": True, "turns": len(turns()),
             "exit_code": process.returncode, "terminal_modes_restored": after_config == before_config}, handle)
+
+if case == "session-selection":
+    assert "Conversation: " + second_id in open(os.path.join(root, "terminal-errors.log"), encoding="utf-8").read()
+    with open(os.path.join(root, "session-selection-report.json"), "w", encoding="utf-8") as handle:
+        json.dump({"source_commit":os.environ.get("GITHUB_SHA"), "case":case,
+            "first_session":first_id, "second_session":second_id, "selected_on_exit":second_id,
+            "first_draft_sha256":hashlib.sha256(first_draft.encode()).hexdigest(),
+            "second_draft_sha256":hashlib.sha256(second_draft.encode()).hexdigest(),
+            "document_sha256":hashlib.sha256(saved_document).hexdigest(), "turn_files":0,
+            "exit_code":process.returncode, "terminal_modes_restored":after_config == before_config}, handle)
 
 if case == "saved-history":
     assert session()["draft"] == draft and not session()["native_session_id"]

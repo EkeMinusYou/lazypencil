@@ -111,7 +111,6 @@ pub fn run(args: &TuiArgs, data: Option<PathBuf>, json_output: bool) -> Result<(
     }
     let settings = crate::config::keys::load_tui()?;
     let mut conversation = Conversation::open(args.prompt.clone(), data)?;
-    let session_id = conversation.id().to_string();
     for image in &args.prompt.images {
         conversation.attach_file(image)?;
     }
@@ -127,7 +126,7 @@ pub fn run(args: &TuiArgs, data: Option<PathBuf>, json_output: bool) -> Result<(
         .enable_all()
         .build()
         .map_err(terminal::io)?;
-    let result = runtime.block_on(async {
+    let (result, session_id) = runtime.block_on(async {
         let mut app = App::new(conversation);
         app.keys = settings.keys;
         app.navigation = settings.navigation;
@@ -148,10 +147,11 @@ pub fn run(args: &TuiArgs, data: Option<PathBuf>, json_output: bool) -> Result<(
             input.cancel.cancel();
         }
         worker.cancel();
+        let session_id = app.conversation.id().to_string();
         let closed = app.conversation.close().await;
         drop(app.document_task.take());
         drop(app.input.take());
-        result.and(closed)
+        (result.and(closed), session_id)
     });
     drop(worker);
     drop(screen);
@@ -186,6 +186,7 @@ struct App {
     modal: Option<checkpoints::Modal>,
     restore_return: Option<checkpoints::Page>,
     saved_return: Option<Box<saved::Page>>,
+    pending_session: Option<saved::SessionChange>,
     help: bool,
     help_scroll: u16,
     dirty: bool,
@@ -224,6 +225,7 @@ impl App {
             modal: None,
             restore_return: None,
             saved_return: None,
+            pending_session: None,
             help: false,
             help_scroll: 0,
             dirty: true,
@@ -715,7 +717,16 @@ impl App {
             return Ok(false);
         }
         if self.modal.is_some() {
-            return self.modal_key(key, worker);
+            let exit = self.modal_key(key, worker)?;
+            if let Some(change) = self.pending_session.take()
+                && let Err(error) = self.select_conversation(change, worker).await
+            {
+                if let Some(checkpoints::Modal::Saved(page)) = &mut self.modal {
+                    page.notice = Some(clean(&error.to_string()));
+                }
+                return Err(error);
+            }
+            return Ok(exit);
         }
         if global(Nav::Help) {
             self.help = !self.help;
@@ -948,13 +959,55 @@ impl App {
         ] {
             text.push_str(&format!("{}: {description}\n", label(action)));
         }
-        text.push_str("\n/open-preview: open the complete PNG externally\n/time <seconds>: seek; /play [1-10 fps], /pause\n/logs: read current saved turns; /conversations: saved conversations\nSaved logs: arrows select/scroll; Enter opens; n/p pages\nv: raw/formatted; Backspace returns; r refreshes; Esc closes\n/commands, /history, /help, /quit\nCtrl+C: cancel active work; exit when idle\nDialogs keep their displayed keys; Esc closes help\nHelp: PgUp/PgDn or arrows scroll; Home/End jump\n\nClipboard access happens only on explicit paste. SSH reads the remote host's clipboard. Image protocols do not provide clipboard access.");
+        text.push_str("\n/open-preview: open the complete PNG externally\n/time <seconds>: seek; /play [1-10 fps], /pause\n/logs: read current saved turns; /conversations: saved conversations\nSaved logs: arrows select/scroll; Enter opens; n/p pages\nu: select local session; N: new local conversation\nv: raw/formatted; Backspace returns; r refreshes; Esc closes\n/commands, /history, /help, /quit\nCtrl+C: cancel active work; exit when idle\nDialogs keep their displayed keys; Esc closes help\nHelp: PgUp/PgDn or arrows scroll; Home/End jump\n\nClipboard access happens only on explicit paste. SSH reads the remote host's clipboard. Image protocols do not provide clipboard access.");
         text
     }
 
     fn show_help(&mut self) {
         self.help = true;
         self.help_scroll = 0;
+    }
+
+    async fn select_conversation(
+        &mut self,
+        change: saved::SessionChange,
+        worker: &Worker,
+    ) -> Result<()> {
+        if self.input.is_some() || self.document_task.is_some() || self.conversation.active() {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "Finish or cancel the active operation before selecting a conversation",
+            ));
+        }
+        self.save_draft()?;
+        let id = match &change {
+            saved::SessionChange::Existing(id) => Some(id.as_str()),
+            saved::SessionChange::New => None,
+        };
+        let changed = self.conversation.select(id).await?;
+        self.modal = None;
+        self.saved_return = None;
+        self.restore_return = None;
+        if !changed {
+            self.status = "This local conversation is already selected".into();
+            return Ok(());
+        }
+        self.editor = editor(self.conversation.draft());
+        self.draft_changed = false;
+        self.turn_pending = false;
+        self.last_draft_save = Instant::now();
+        self.attachments.select(None);
+        self.permissions.clear();
+        self.authentication = "unknown".into();
+        self.log.clear();
+        self.scroll = 0;
+        self.status = format!(
+            "Selected conversation {} · sends only on submit",
+            self.conversation.id()
+        );
+        self.append("\nSelected saved local state. Open saved logs to read earlier turns. Native context resumes on the next submitted request.\n");
+        self.request(worker, false, false);
+        Ok(())
     }
 
     async fn submit(&mut self) -> Result<()> {
@@ -1129,8 +1182,9 @@ impl App {
         };
         frame.render_widget(
             Paragraph::new(format!(
-                "lazypencil · {:?} · {state} · auth: {} · {}",
+                "lazypencil · {:?} · {state} · session: {} · auth: {} · {}",
                 self.conversation.settings().agent,
+                &self.conversation.id()[..8],
                 self.authentication,
                 clean(&self.conversation.store().path().display().to_string())
             ))

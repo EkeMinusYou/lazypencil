@@ -143,6 +143,7 @@ pub const COMMANDS: &[&str] = &[
     "Quit",
     "Browse current conversation logs…",
     "Browse saved conversations…",
+    "New empty conversation (save current draft)…",
 ];
 
 impl super::App {
@@ -274,6 +275,7 @@ impl super::App {
                             super::saved::Page::sessions(self.conversation.id().into()),
                             None,
                         )?,
+                        7 => self.pending_session = Some(super::saved::SessionChange::New),
                         _ => unreachable!(),
                     }
                     return Ok(false);

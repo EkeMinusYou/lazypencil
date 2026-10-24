@@ -742,6 +742,73 @@ fn saved_page(app: &App) -> &saved::Page {
 }
 
 #[test]
+fn saved_log_selection_preserves_drafts_images_and_native_context_and_closes_the_previous_connection()
+ {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "selection");
+        let store = app.conversation.store().clone();
+        let document = std::fs::read(store.path()).unwrap();
+        let first = app.conversation.id().to_string();
+        let first_directory = app.conversation.directory().to_path_buf();
+        app.insert_text("最初の会話の下書き");
+        app.accept_input(fake_clipboard(Path::new("unused"), None, &CancellationToken::new()));
+        let first_images = app.conversation.images().iter().map(|image| image.id.clone()).collect::<Vec<_>>();
+        let worker = Worker::start(store.clone(), vec![], Backend::halfblocks(), 151).unwrap();
+        app.modal = Some(checkpoints::Modal::Commands { selected: 7 });
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+        let second = app.conversation.id().to_string();
+        assert_ne!(first, second);
+        assert!(app.conversation.draft().is_empty() && app.conversation.images().is_empty());
+        app.insert_text("Second unsent draft"); app.save_draft().unwrap();
+        app.open_saved(saved::Page::sessions(second.clone()), None).unwrap();
+        document_result(&mut app, &worker).await;
+        let index = saved_page(&app).data["entries"].as_array().unwrap().iter().position(|entry| entry["id"] == first).unwrap();
+        if let Some(checkpoints::Modal::Saved(page)) = &mut app.modal { page.selected = index; }
+        press(&mut app, KeyCode::Char('u'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.conversation.id(), first);
+        assert_eq!(app.editor.lines().join("\n"), "最初の会話の下書き");
+        assert_eq!(app.conversation.images().iter().map(|image| image.id.clone()).collect::<Vec<_>>(), first_images);
+        assert!(!temp.path().join("sent-turn.txt").exists());
+        app.submit().await.unwrap();
+        assert!(app.select_conversation(saved::SessionChange::New, &worker).await.is_err());
+        assert_eq!(app.conversation.id(), first);
+        let events = complete(&mut app).await; assert_eq!(events.last().unwrap()["type"], "complete");
+        app.sync_turn(&worker);
+        app.insert_text("First after turn");
+        app.accept_input(fake_clipboard(Path::new("unused"), None, &CancellationToken::new()));
+        app.save_draft().unwrap();
+        assert!(std::fs::read_dir(&first_directory).unwrap().flatten().any(|entry| entry.file_name().to_string_lossy().starts_with("grant-")));
+        app.authentication = "subscription".into();
+        app.select_conversation(saved::SessionChange::Existing(second.clone()), &worker).await.unwrap();
+        assert_eq!(app.editor.lines().join("\n"), "Second unsent draft");
+        assert_eq!(app.authentication, "unknown");
+        assert!(app.conversation.images().is_empty() && app.permissions.is_empty());
+        assert!(!std::fs::read_dir(&first_directory).unwrap().flatten().any(|entry| entry.file_name().to_string_lossy().starts_with("grant-")));
+        app.submit().await.unwrap();
+        let events = complete(&mut app).await; assert_eq!(events.last().unwrap()["type"], "complete");
+        app.sync_turn(&worker);
+        app.insert_text("Second after turn"); app.save_draft().unwrap();
+        app.select_conversation(saved::SessionChange::Existing(first.clone()), &worker).await.unwrap();
+        assert_eq!(app.editor.lines().join("\n"), "First after turn");
+        assert_eq!(app.conversation.images().iter().map(|image| image.id.clone()).collect::<Vec<_>>(), first_images);
+        let methods = temp.path().join("received-session-methods.jsonl");
+        let read = || std::fs::read_to_string(&methods).unwrap().lines().map(|line| serde_json::from_str::<Value>(line).unwrap()).collect::<Vec<_>>();
+        assert_eq!(read().len(), 2, "Selecting an idle conversation must not start an adapter");
+        app.submit().await.unwrap();
+        let events = complete(&mut app).await; assert_eq!(events.last().unwrap()["type"], "complete");
+        app.conversation.close().await.unwrap();
+        let methods = read();
+        assert_eq!(methods.iter().map(|value| value["method"].as_str().unwrap()).collect::<Vec<_>>(), ["session/new", "session/new", "session/load"]);
+        let prompts = std::fs::read_to_string(temp.path().join("received-prompts.jsonl")).unwrap().lines().map(|line| serde_json::from_str::<Value>(line).unwrap()).collect::<Vec<_>>();
+        assert_eq!(prompts.iter().map(|value| value["prompt"].as_array().unwrap().iter().filter(|block| block["type"] == "image").count()).collect::<Vec<_>>(), [2, 0, 2]);
+        assert_eq!(crate::conversation::history::list(&store, Some(&first), 10, None, None).unwrap()["entries"].as_array().unwrap().len(), 2);
+        assert_eq!(crate::conversation::history::list(&store, Some(&second), 10, None, None).unwrap()["entries"].as_array().unwrap().len(), 1);
+        assert_eq!(std::fs::read(store.path()).unwrap(), document);
+    });
+}
+
+#[test]
 fn saved_log_browser_pages_formats_refreshes_and_preserves_drafts_images_and_document() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {

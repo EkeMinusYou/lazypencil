@@ -34,6 +34,11 @@ fn real_pty_saved_logs_page_format_refresh_and_keep_the_unsent_draft_without_sta
     run_pty_case("saved-history");
 }
 
+#[test]
+fn real_pty_selects_saved_conversations_and_keeps_both_drafts_without_starting_an_agent() {
+    run_pty_case("session-selection");
+}
+
 fn run_pty_case(case: &str) {
     let temp = TempDir::new().unwrap();
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -48,7 +53,11 @@ fn run_pty_case(case: &str) {
     .output()
     .unwrap();
     if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_TUI_ARTIFACTS")
-        && (!result.status.success() || matches!(case, "user-navigation-config" | "saved-history"))
+        && (!result.status.success()
+            || matches!(
+                case,
+                "user-navigation-config" | "saved-history" | "session-selection"
+            ))
     {
         let directory = std::path::PathBuf::from(directory).join(case);
         std::fs::create_dir_all(&directory).unwrap();
@@ -66,6 +75,11 @@ fn run_pty_case(case: &str) {
             "saved-history-refreshed-screen.txt",
             "saved-history-session.json",
             "saved-history-design.pen",
+            "session-selection-report.json",
+            "session-selection-first.json",
+            "session-selection-second.json",
+            "session-selection-first-screen.txt",
+            "session-selection-second-screen.txt",
         ] {
             let source = temp.path().join(name);
             if source.is_file() {
