@@ -1,4 +1,4 @@
-(async function (request, preprocessor) {
+(async function (request, preprocessor, declarationsOnly = false) {
   let gl;
   try {
     const canvas = document.createElement("canvas");
@@ -62,6 +62,7 @@
     const prepared = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(memory.buffer, result, length)));
     if (typeof prepared.error === "string") throw Error(prepared.error);
     if (typeof prepared.source !== "string") throw Error("Shader preprocessor returned no source");
+    if (declarationsOnly) return { source: prepared.source };
     const source = prepared.source;
     const precision = (source.match(/precision\s+(lowp|mediump|highp)\s+float\s*;/) || [null, "highp"])[1];
     const varyings = [...source.matchAll(/varying\s+(?:(lowp|mediump|highp)\s+)?vec2\s+(v_uv|v_texCoord|vUv)\s*;/g)];

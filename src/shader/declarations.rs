@@ -29,6 +29,13 @@ pub(super) fn parse(source: &str) -> Result<Vec<Uniform>> {
     if source.len() > 1024 * 1024 {
         return Err(invalid("Shader source exceeds 1 MiB"));
     }
+    parse_expanded(source)
+}
+
+pub(super) fn parse_expanded(source: &str) -> Result<Vec<Uniform>> {
+    if source.len() > 4 * 1024 * 1024 {
+        return Err(invalid("Expanded shader exceeds 4 MiB"));
+    }
     let tokens = lex(source)?;
     let mut cursor = 0;
     let mut depth = 0usize;
