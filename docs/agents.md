@@ -85,6 +85,22 @@ Metadata, normalized images, and one JSONL transcript per turn live below the do
 
 `--json prompt` is NDJSON rather than a single JSON object. Event types currently include `start`, `initialized`, `session_restarted`, `local_context`, `ready`, `auth_status`, `update`, `agent_notification`, `permission_request`, `permission_response`, `design_resource`, `turn_complete`, `turn_error`, `connection_error`, `complete`, `failed`, and a terminal CLI `error` on failure. Unknown update fields and extension notifications are preserved; the recognized authentication notification is normalized as described above. Text terminal output removes control characters; NDJSON uses ordinary JSON escaping. Per-turn transcripts have a 64 MiB limit, and incoming ACP lines have a 16 MiB limit. A final transcript-write failure reports `failed` and restores the draft and pending attachments; it does not undo committed document edits. If restoring local metadata also fails, the failure is reported explicitly and the live host retains the draft in memory.
 
+### Read saved conversations without an agent
+
+```sh
+lazypencil conversations list design.pen --json
+lazypencil conversations turns design.pen LOCAL_UUID --json
+lazypencil conversations read design.pen LOCAL_UUID TURN_UUID --json
+```
+
+These read-only commands use the document's local data directory and work while a frontend owns the conversation or after its adapter has been removed. They do not authenticate, launch an adapter, resume a session, clear a draft, or resend a prompt. The document must still exist at its registered path. This is browsing local records, separate from restoring a model's internal context.
+
+Lists accept `--limit 1..200` and `--cursor`, returning `next_cursor`. Entries use stable ascending UUID order rather than an inferred chronology. Listings are live (`snapshot: false`): concurrent new entries before the current cursor appear after refreshing. Cursors are bound to the document and listing; a conversation cursor cannot select turns or another conversation. Invalid recognized entries remain visible as unavailable instead of being treated as successful history.
+
+`read` returns up to 64 KiB of the original JSONL, including an unfinished final record. Follow `next_offset` with `--offset` and the returned `--expected-revision`; continuation requires that revision. Every page checks the entire transcript before and after reading, so even a same-size edit with a preserved modification time invalidates continuation. Normal pages end at UTF-8 boundaries. Damaged UTF-8 returns display text with replacement characters plus exact `bytes_base64`, with `utf8_valid: false`; no saved suffix is silently discarded. This is a bounded raw transcript interface, not a formatted TUI history browser.
+
+Reads retain the existing 64 MiB per-turn bound, accept cancellation and have a 30 second cooperative deadline. Listings keep one page and one lookahead in memory; transcript hashing uses a 64 KiB buffer. Conversation metadata and first-record identity are checked against the selected document/session/turn. Recognized symlink directories, symlink file leaves, non-regular files and foreign headers are rejected. This does not make local logs tamper-proof against their filesystem owner. TUI browsing, conversation selection/deletion and configurable overall retention remain required work.
+
 ### Design-resource records
 
 The shared CLI/TUI host gives its owned MCP process a document- and connection-bound usage grant. Each prompt publishes a new turn UUID, also present in `start`, `complete`, and `failed`. For successful `get_guidance`, `get_style`, and `list_styles` calls, the server syncs a bounded metadata record before returning the result. A guide record includes its ID, version, language and resource hash; the workflow also records each automatic project guide included with it. Styles record their full resource hash, including their example. A style catalogue record describes the returned page's IDs/versions and a SHA-256 of the complete structured response (`hash_scope: "response"`); a catalogue page does not count as reading each style's full instructions. Project revisions and available instruction/catalogue fingerprints accompany the records.

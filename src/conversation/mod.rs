@@ -21,6 +21,7 @@ use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
 mod continuity;
+pub mod history;
 #[cfg(unix)]
 pub(crate) mod lease;
 mod storage;

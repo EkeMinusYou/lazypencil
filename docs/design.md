@@ -449,6 +449,9 @@ lazypencil icons list
 lazypencil icons setup feather
 lazypencil tui design.pen
 lazypencil history design.pen --json
+lazypencil conversations list design.pen --json
+lazypencil conversations turns design.pen <local-session-id> --json
+lazypencil conversations read design.pen <local-session-id> <turn-id> --json
 lazypencil restore design.pen --checkpoint <checkpoint-id> --expected-revision <revision>
 lazypencil mcp --file /absolute/path/design.pen
 lazypencil doctor

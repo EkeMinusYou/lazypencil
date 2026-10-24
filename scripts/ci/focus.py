@@ -113,6 +113,8 @@ def select(paths, platform="auto"):
         targets = sorted(set(targets) | {"project", "queries"})
     if operations_change:
         targets = sorted(set(targets) | {"operations_cli"})
+    if "conversation_history" in stems:
+        targets = sorted(set(targets) | {"conversation_history"})
     native = any(path in {"src/layout.rs", "src/text.rs", "src/render.rs", "src/service.rs", "src/script/layout.rs"}
                  or path.startswith(("src/layout/", "src/text/", "src/render/")) for path in paths)
     if native:
@@ -194,6 +196,13 @@ def commands(suite, targets):
                 [*shader_first, [*common, *selected, "--", "--ignored", "--test-threads=1", *shader_skip]])
     build = [[*common, "--lib", *selected, "--no-run"], ["cargo", "build", "--locked", *features]]
     checks = list(shader_first)
+    history = suite == "conversation" and "conversation_history" in targets
+    if history:
+        checks.extend([
+            [*common, "--lib", "conversation::history::", "--", "--test-threads=2"],
+            [*common, "--test", "conversation_history", "--", "--test-threads=1"],
+        ])
+        selected = [arg for target in targets if target != "conversation_history" for arg in ("--test", target)]
     native = "native_layout" in targets and suite in ("graphics", "dynamic")
     if native:
         # Dynamic focus runs these CPU cases in the workflow before Chromium.
@@ -217,6 +226,8 @@ def commands(suite, targets):
         checks.append([*common, *selected, "--", "--include-ignored", "--test-threads=1", "--skip", "retained_", *shader_skip, *input_skip])
     else:
         checks.append([*common, "--lib", *selected, "--", "--test-threads=2", *input_skip])
+        if history:
+            checks[-1].extend(["--skip", "conversation::history::"])
         if native:
             checks[-1].extend(["--skip", "native_cancellation"])
         if suite == "conversation":
