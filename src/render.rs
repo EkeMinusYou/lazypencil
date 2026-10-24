@@ -30,6 +30,8 @@ pub struct RenderOptions {
     pub background: Color,
     pub time: f64,
     pub refresh: bool,
+    /// Capture current browser DOM without refreshing layout or static shaders.
+    pub refresh_pages: bool,
 }
 
 impl Default for RenderOptions {
@@ -41,6 +43,7 @@ impl Default for RenderOptions {
             background: Color::TRANSPARENT,
             time: 0.0,
             refresh: false,
+            refresh_pages: false,
         }
     }
 }
@@ -78,6 +81,9 @@ pub fn png_with_runtime(
 ) -> Result<RenderedImage> {
     runtime.configure(project.runtime_settings())?;
     runtime.begin_render(cancel, options.refresh);
+    if options.refresh_pages {
+        runtime.refresh_pages();
+    }
     png_impl(project, snapshot, options, Some(runtime))
 }
 

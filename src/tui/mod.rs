@@ -340,6 +340,7 @@ impl App {
             cells: self.cells,
             view: self.view,
             refresh,
+            refresh_pages: false,
             check_only,
             attachment,
         });
@@ -352,7 +353,7 @@ impl App {
             Ok(mut preview) => {
                 if !preview.attachment {
                     self.view = preview.view;
-                    if !preview.time_dependent {
+                    if !preview.time_dependent && !preview.live_pages {
                         self.playback.stop();
                     }
                 }
@@ -390,18 +391,16 @@ impl App {
         self.dirty = true;
     }
     fn start_playback(&mut self, fps: u32, now: Instant) -> Result<()> {
-        if !self
-            .preview
-            .as_ref()
-            .is_some_and(|preview| !preview.attachment && preview.time_dependent)
-        {
+        if !self.preview.as_ref().is_some_and(|preview| {
+            !preview.attachment && (preview.time_dependent || preview.live_pages)
+        }) {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
-                "The complete preview must contain a shader with an @time uniform before playback can start",
+                "The complete preview must contain a browser page or a shader with an @time uniform before playback can start",
             ));
         }
         self.playback.start(self.view.time, fps, now)?;
-        self.status = format!("Playing shader timeline · ≤{fps}fps · Space in Preview pauses");
+        self.status = format!("Playing dynamic preview · ≤{fps}fps · Space in Preview pauses");
         Ok(())
     }
     fn pause_playback(&mut self) {
@@ -413,12 +412,9 @@ impl App {
                 } else {
                     ""
                 };
-                format!(
-                    "Shader playback paused · t={:.3}s{pending}",
-                    preview.view.time
-                )
+                format!("Playback paused · t={:.3}s{pending}", preview.view.time)
             }
-            None => "Shader playback paused".into(),
+            None => "Playback paused".into(),
         };
     }
     fn playback_tick(&mut self, worker: &Worker, now: Instant) -> Result<()> {
@@ -432,14 +428,16 @@ impl App {
         {
             return Ok(());
         }
-        if !self
-            .preview
-            .as_ref()
-            .is_some_and(|preview| !preview.attachment && preview.time_dependent)
-        {
+        if !self.preview.as_ref().is_some_and(|preview| {
+            !preview.attachment && (preview.time_dependent || preview.live_pages)
+        }) {
             self.playback.stop();
             return Ok(());
         }
+        let refresh_pages = self
+            .preview
+            .as_ref()
+            .is_some_and(|preview| preview.live_pages);
         let mut view = self.view;
         view.set_time(time)?;
         let generation = self.generation + 1;
@@ -448,6 +446,7 @@ impl App {
             cells: self.cells,
             view,
             refresh: false,
+            refresh_pages,
             check_only: false,
             attachment: None,
         }) {

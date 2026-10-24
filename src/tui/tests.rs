@@ -177,6 +177,41 @@ fn playback_preserves_input_pauses_on_seek_errors_and_static_output_and_drops_la
 }
 
 #[test]
+fn browser_only_previews_play_and_stop_when_the_completed_scene_becomes_static() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let store = app.conversation.store().clone();
+        std::fs::write(store.path(), json!({"version":"2.21","children":[{"type":"rectangle","id":"static","width":80,"height":40,"fill":"#00FF00"}]}).to_string()).unwrap();
+        let saved = std::fs::read(store.path()).unwrap();
+        let worker = Worker::start(store, vec![], Backend::halfblocks(), 137).unwrap();
+        app.cells = Size::new(20,8);
+        app.request(&worker, false, false);
+        app.accept_preview(tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap());
+        assert!(!app.preview.as_ref().unwrap().time_dependent);
+        assert!(!app.preview.as_ref().unwrap().live_pages);
+        assert!(app.start_playback(2, Instant::now()).is_err());
+        // The real browser-only path is exercised by the page-playback PTY case.
+        app.preview.as_mut().unwrap().live_pages = true;
+        let now = Instant::now();
+        app.start_playback(2, now).unwrap();
+        app.editor = editor("kept page draft");
+        app.playback_tick(&worker, now + Duration::from_secs(1)).unwrap();
+        assert_eq!(app.view.time, 1.0);
+        assert!(app.playback.active());
+        let output = tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap();
+        assert!(!output.result.as_ref().unwrap().live_pages);
+        app.accept_preview(output);
+        assert!(!app.playback.active());
+        assert_eq!(app.playback.deadline(), None);
+        assert_eq!(app.editor.lines(), &["kept page draft"]);
+        assert!(!app.conversation.active());
+        assert_eq!(std::fs::read(app.conversation.store().path()).unwrap(), saved);
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
 fn time_commands_validate_without_sending_or_saving_and_view_keys_keep_input_precedence() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {
@@ -251,6 +286,7 @@ fn periodic_preview_checks_retry_a_captured_layout_after_render_failure() {
                 cells: Size::new(900, 1),
                 view: View::default(),
                 refresh: false,
+                refresh_pages: false,
                 check_only: false,
                 attachment: None,
             });
@@ -269,6 +305,7 @@ fn periodic_preview_checks_retry_a_captured_layout_after_render_failure() {
                 cells: Size::new(20, 8),
                 view: View::default(),
                 refresh: false,
+                refresh_pages: false,
                 check_only: true,
                 attachment: None,
             };

@@ -24,6 +24,17 @@ def frame(pixels, width, height, chunk=3072):
 
 
 class TerminalImages(unittest.TestCase):
+    def test_color_checks_use_pixel_boundaries_and_alpha(self):
+        red = bytes([255, 0, 0, 255]) * 8
+        blue = bytes([0, 0, 255, 255])
+        self.assertIn(blue, red, "The unaligned byte-search regression needs a real counterexample")
+        self.assertTrue(images.has_rgba_color(red, (255, 0, 0, 255)))
+        self.assertFalse(images.has_rgba_color(red, (0, 0, 255, 255)))
+        mixed = red + bytes([0, 255, 0, 128]) + blue
+        self.assertTrue(images.has_rgba_color(mixed, (0, 0, 255, 255)))
+        self.assertTrue(images.has_rgba_color(mixed, (0, 255, 0, 128)))
+        self.assertFalse(images.has_rgba_color(mixed, (0, 255, 0, 255)))
+
     def test_split_packets_preserve_alpha_and_decode_each_chunk_only_once(self):
         decoder = images.KittyFrames()
         red = bytes([255, 0, 0, 255]) * 4
