@@ -1510,3 +1510,209 @@ fn software_webgl_structures_bind_nested_arrays_defaults_matrices_and_samplers()
         fs::write(std::path::Path::new(&output).join("codec-shader-structures.json"),json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"cases":verified,"scope":"Self-authored WebGL expected values for document codecs 2.19/2.21; not a native Pencil pixel oracle"}).to_string()).unwrap();
     }
 }
+
+#[test]
+#[ignore = "Requires sandboxed software WebGL Chromium"]
+fn software_webgl_preprocessed_uniforms_follow_active_types_defaults_and_builtins() {
+    use lazypencil::{dynamic::DynamicRuntime, layout, render, text::Fonts};
+    use skia_safe::{Color, Data, Image};
+    use std::time::{Duration, Instant};
+
+    let runtime_root = TempDir::new().unwrap();
+    let mut runtime = DynamicRuntime::new(runtime_root.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(
+            std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
+        );
+    let cases = [
+        (
+            "#define TYPE vec3\n#define NAME tint\n/** @color @default #3a7fc1 */ uniform TYPE NAME;\nvoid main(){gl_FragColor=vec4(tint,1.);}",
+            json!({}),
+            [58, 127, 193],
+            false,
+        ),
+        (
+            "#if defined(GL_ES) && __VERSION__ == 100\nuniform vec3 tint;\n#else\nuniform float tint;\nuniform NotAType invalid;\n#endif\nvoid main(){gl_FragColor=vec4(tint,1.);}",
+            json!({"tint":[0.25,0.5,0.75]}),
+            [64, 128, 191],
+            false,
+        ),
+        (
+            "#define INPUT(T,N) uniform T N;\n/** @default .25 */ INPUT(float,gain)\nvoid main(){gl_FragColor=vec4(gain,.5,.75,1.);}",
+            json!({}),
+            [64, 128, 191],
+            false,
+        ),
+        (
+            "#define FIELD vec3 color;\n#define N 2\nstruct Lamp{FIELD};uniform Lamp lamps[N];\nvoid main(){gl_FragColor=vec4(lamps[0].color+lamps[1].color,1.);}",
+            json!({"lamps[0].color":[0.25,0.5,0],"lamps[1].color":[0,0,0.75]}),
+            [64, 128, 191],
+            false,
+        ),
+        (
+            "#define N 2\n/** @default .25 */ uniform float weights[N];\nvoid main(){gl_FragColor=vec4(weights[0],weights[1],.75,1.);}",
+            json!({}),
+            [64, 0, 191],
+            false,
+        ),
+        (
+            "#define INPUT(T,N) uniform T N;\n/** @resolution */ INPUT(vec2,size)\n/** @time */ INPUT(float,clock)\nvoid main(){gl_FragColor=vec4(size.x/64.,size.y/32.,clock,1.);}",
+            json!({}),
+            [128, 128, 191],
+            true,
+        ),
+        (
+            "#define IMAGE sampler2D\n#if 0\n/** @time */ uniform float clock;\n#endif\nuniform IMAGE image;\nvoid main(){gl_FragColor=texture2D(image,vec2(.5));}",
+            json!({"image":"red.png"}),
+            [255, 0, 0],
+            false,
+        ),
+        (
+            "#ifdef GL_FRAGMENT_PRECISION_HIGH\n#define INPUT uniform vec3 tint;\n#else\n#define INPUT uniform vec4 tint;\n#endif\nINPUT\nvoid main(){gl_FragColor=vec4(tint,1.);}",
+            json!({"tint":[0.25,0.5,0.75]}),
+            [64, 128, 191],
+            false,
+        ),
+    ];
+    let mut verified = Vec::new();
+    for version in ["2.19", "2.21"] {
+        for (case, (body, overrides, rgb, time_dependent)) in cases.iter().enumerate() {
+            for effect in [false, true] {
+                let root = TempDir::new().unwrap();
+                let source = format!("precision highp float;\n{body}");
+                fs::write(root.path().join("input.glsl"), &source).unwrap();
+                let mut image = skia_safe::surfaces::raster_n32_premul((2, 2)).unwrap();
+                image.canvas().clear(Color::RED);
+                fs::write(
+                    root.path().join("red.png"),
+                    skia_safe::png_encoder::encode_image(
+                        None,
+                        &image.image_snapshot(),
+                        &Default::default(),
+                    )
+                    .unwrap()
+                    .as_bytes(),
+                )
+                .unwrap();
+                let fill = json!({"type":"shader","url":"input.glsl","uniforms":overrides});
+                let mut node =
+                    json!({"id":"shape","type":"rectangle","width":32,"height":16,"fill":fill});
+                if effect {
+                    node["fill"] = json!("#ffffff");
+                    node["effect"] = json!([fill]);
+                }
+                let document = json!({"version":version,"children":[node]}).to_string();
+                let path = root.path().join("input.pen");
+                fs::write(&path, &document).unwrap();
+                let scene =
+                    Project::from_document(&path, Document::parse(document.clone()).unwrap(), &[])
+                        .unwrap();
+                let layout =
+                    layout::compute(scene.resolve().unwrap(), &mut Fonts::new(&[]).unwrap())
+                        .unwrap();
+                for scale in [1, 2] {
+                    let options = render::RenderOptions {
+                        scale: scale as f32,
+                        time: 0.75,
+                        ..Default::default()
+                    };
+                    let output =
+                        render::png_with_runtime(&scene, &layout, &options, &mut runtime, None)
+                            .unwrap();
+                    assert_eq!((output.width, output.height), (32 * scale, 16 * scale));
+                    assert_eq!(output.dynamic_artifacts.len(), 1);
+                    let acquisition = &output.dynamic_artifacts[0]["acquisition"];
+                    assert_eq!(acquisition["time_dependent"], *time_dependent);
+                    assert_eq!(
+                        acquisition["source_hash"],
+                        lazypencil::document::hash(source.as_bytes())
+                    );
+                    let image = Image::from_encoded(Data::new_copy(&output.png))
+                        .unwrap()
+                        .make_raster_image(None, None)
+                        .unwrap();
+                    let pixels = image.peek_pixels().unwrap();
+                    for y in 0..output.height {
+                        for x in 0..output.width {
+                            let color = pixels.get_color((x as i32, y as i32));
+                            assert_eq!(color.a(), 255, "case {case}, effect {effect}");
+                            for (actual, expected) in
+                                [color.r(), color.g(), color.b()].into_iter().zip(*rgb)
+                            {
+                                assert!(
+                                    (actual as i32 - expected).abs() <= 1,
+                                    "case {case}, effect {effect}, scale {scale}: {color:?}"
+                                );
+                            }
+                        }
+                    }
+                    let filename =
+                        format!("codec-shader-preprocessed-{version}-{case}-{effect}-{scale}.png");
+                    verified.push(json!({"document_version":version,"case":case,"effect":effect,"scale":scale,"png":filename,"expected_rgb":rgb,"time_dependent":time_dependent,"rgba_components_checked":output.width*output.height*4,"png_hash":lazypencil::document::hash(&output.png)}));
+                    if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
+                        fs::create_dir_all(&directory).unwrap();
+                        fs::write(std::path::Path::new(&directory).join(filename), &output.png)
+                            .unwrap();
+                    }
+                    // Reusing the prepared interface and PNG must not launch a
+                    // browser after idle expiry or extend its idle deadline.
+                    runtime.expire_idle(Instant::now() + Duration::from_secs(3600));
+                    assert!(runtime.process_ids().is_empty());
+                    let cached =
+                        render::png_with_runtime(&scene, &layout, &options, &mut runtime, None)
+                            .unwrap();
+                    assert_eq!(cached.png, output.png);
+                    if check_expiry {
+                        assert!(runtime.process_ids().is_empty());
+                        assert!(runtime.idle_deadline().is_none());
+                    }
+                }
+                assert_eq!(fs::read_to_string(&path).unwrap(), document);
+                assert_eq!(
+                    fs::read_to_string(root.path().join("input.glsl")).unwrap(),
+                    source
+                );
+            }
+        }
+    }
+    // Invalid active values still fail in the normal typed-input path. Invalid
+    // original GLSL cannot become valid through the declaration preparation.
+    for (body, values) in [
+        (
+            "#define TYPE float\nuniform TYPE gain;void main(){gl_FragColor=vec4(gain);}",
+            json!({"gain":true}),
+        ),
+        (
+            "#if 1\nuniform vec3 tint;\n#endif\nvoid main(){gl_FragColor=vec4(tint,1.);}",
+            json!({"missing":1}),
+        ),
+        (
+            "#define INPUT uniform float clock;\n/** @time */ INPUT\nvoid main(){gl_FragColor=vec4(clock);}",
+            json!({"clock":0.5}),
+        ),
+        (
+            "#version 300 es\nprecision highp float;out vec4 color;void main(){color=vec4(1.);}",
+            json!({}),
+        ),
+    ] {
+        let root = TempDir::new().unwrap();
+        let source = if body.starts_with("#version") {
+            body.to_owned()
+        } else {
+            format!("precision highp float;\n{body}")
+        };
+        let project = project(&root, &source, values);
+        let layout =
+            layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap()).unwrap();
+        assert_eq!(
+            render::png_with_runtime(&project, &layout, &Default::default(), &mut runtime, None)
+                .err()
+                .expect("Invalid active inputs or original GLSL must fail")
+                .code,
+            "SHADER_COMPILE_FAILED"
+        );
+    }
+    if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
+        fs::write(std::path::Path::new(&directory).join("codec-shader-preprocessed.json"),json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"cases":verified,"scope":"Self-authored GLSL expected values, compiler preprocessing, fill/effect and both codecs; not a native Pencil compatibility oracle"}).to_string()).unwrap();
+    }
+}

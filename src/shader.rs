@@ -96,12 +96,27 @@ pub fn request_with_coordinates(
     object: Option<&[u8]>,
     background: Option<&[u8]>,
 ) -> Result<Value> {
-    if coordinates.is_some_and(|size| size.iter().any(|value| !value.is_finite() || *value <= 0.0))
-    {
-        return Err(invalid(
-            "Shader logical dimensions must be positive and finite",
-        ));
-    }
+    request_with_declarations(
+        project,
+        node,
+        fill,
+        property,
+        width,
+        height,
+        coordinates,
+        time,
+        object,
+        background,
+        None,
+    )
+}
+
+pub(crate) fn source<'a>(
+    project: &'a Project,
+    node: &ResolvedNode,
+    fill: &Value,
+    property: &str,
+) -> Result<(&'a str, &'a str)> {
     let url = fill["url"]
         .as_str()
         .ok_or_else(|| invalid("Shader requires a local source URL"))?;
@@ -112,7 +127,31 @@ pub fn request_with_coordinates(
     }
     let source =
         std::str::from_utf8(&asset.bytes).map_err(|_| invalid("Shader source must be UTF-8"))?;
-    let definitions = uniforms(source)?;
+    Ok((source, &asset.revision))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn request_with_declarations(
+    project: &Project,
+    node: &ResolvedNode,
+    fill: &Value,
+    property: &str,
+    width: u32,
+    height: u32,
+    coordinates: Option<[f64; 2]>,
+    time: f64,
+    object: Option<&[u8]>,
+    background: Option<&[u8]>,
+    expanded: Option<&str>,
+) -> Result<Value> {
+    if coordinates.is_some_and(|size| size.iter().any(|value| !value.is_finite() || *value <= 0.0))
+    {
+        return Err(invalid(
+            "Shader logical dimensions must be positive and finite",
+        ));
+    }
+    let (source, source_hash) = source(project, node, fill, property)?;
+    let definitions = expanded.map_or_else(|| uniforms(source), declarations::parse_expanded)?;
     let time_dependent = definitions.iter().any(|uniform| uniform.time);
     let empty = Map::new();
     let overrides = fill
@@ -228,7 +267,7 @@ pub fn request_with_coordinates(
             values.insert(name.to_owned(), value);
         }
     }
-    let mut result = json!({"source":source,"source_hash":asset.revision,"width":width,"height":height,"time":time,"time_dependent":time_dependent,"uniforms":values,"uniform_types":types});
+    let mut result = json!({"source":source,"source_hash":source_hash,"width":width,"height":height,"time":time,"time_dependent":time_dependent,"uniforms":values,"uniform_types":types});
     if let Some(size) = coordinates {
         result["coordinate_size"] = json!(size);
     }
@@ -417,4 +456,79 @@ fn finite(value: &Value) -> Result<f64> {
 }
 fn invalid(message: impl Into<String>) -> Error {
     Error::new("SHADER_COMPILE_FAILED", message)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::document::Document;
+
+    #[test]
+    fn prepared_declarations_bind_values_without_replacing_captured_shader_bytes() {
+        let root = tempfile::TempDir::new().unwrap();
+        let raw = "#define TYPE vec3\nuniform TYPE tint;";
+        std::fs::write(root.path().join("input.glsl"), raw).unwrap();
+        let document = json!({"version":"2.21","children":[{"type":"rectangle","id":"shape","width":32,"height":16,"fill":{"type":"shader","url":"input.glsl","uniforms":{"tint":[0.25,0.5,0.75]}}}]}).to_string();
+        let project = Project::from_document(
+            &root.path().join("input.pen"),
+            Document::parse(document).unwrap(),
+            &[],
+        )
+        .unwrap();
+        let scene = project.resolve().unwrap();
+        let node = &scene.roots[0];
+        let prepared = request_with_declarations(
+            &project,
+            node,
+            &node.properties["fill"],
+            "fill",
+            64,
+            32,
+            Some([32., 16.]),
+            0.5,
+            None,
+            None,
+            Some("uniform vec3 tint;"),
+        )
+        .unwrap();
+        assert_eq!(prepared["source"], raw);
+        assert_eq!(
+            prepared["source_hash"],
+            crate::document::hash(raw.as_bytes())
+        );
+        assert_eq!(prepared["uniform_types"]["tint"], "vec3");
+        assert_eq!(prepared["uniforms"]["tint"], json!([0.25, 0.5, 0.75]));
+        assert_eq!(prepared["time_dependent"], false);
+        for invalid in ["uniform float tint;", "uniform vec3 other;"] {
+            assert_eq!(
+                request_with_declarations(
+                    &project,
+                    node,
+                    &node.properties["fill"],
+                    "fill",
+                    32,
+                    16,
+                    None,
+                    0.,
+                    None,
+                    None,
+                    Some(invalid)
+                )
+                .unwrap_err()
+                .code,
+                "SHADER_COMPILE_FAILED"
+            );
+        }
+        let excessive = " ".repeat(4 * 1024 * 1024 + 1);
+        assert!(declarations::parse_expanded(&excessive).is_err());
+        // An expanded declaration stream has its own bounded four-MiB budget;
+        // the original input still has the independent one-MiB limit.
+        let expanded = " ".repeat(1024 * 1024) + "uniform float value;";
+        assert!(uniforms(&expanded).is_err());
+        assert_eq!(declarations::parse_expanded(&expanded).unwrap().len(), 1);
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("input.glsl")).unwrap(),
+            raw
+        );
+    }
 }

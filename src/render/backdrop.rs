@@ -359,17 +359,6 @@ impl Renderer<'_> {
                                 .and_then(|image| encode_image(&image))
                         })
                         .transpose()?;
-                    let request = crate::shader::request(
-                        self.project,
-                        &node,
-                        effect,
-                        "effect",
-                        width as u32,
-                        height as u32,
-                        self.time,
-                        Some(&object),
-                        background_png.as_deref(),
-                    )?;
                     let raster = self
                         .runtime
                         .as_deref_mut()
@@ -379,7 +368,18 @@ impl Renderer<'_> {
                                 "Shader effects require a configured dynamic runtime",
                             )
                         })?
-                        .shader(request)?;
+                        .shader_for_node(
+                            self.project,
+                            &node,
+                            effect,
+                            "effect",
+                            width as u32,
+                            height as u32,
+                            None,
+                            self.time,
+                            Some(&object),
+                            background_png.as_deref(),
+                        )?;
                     color = Image::from_encoded(Data::new_copy(&raster.png))
                         .ok_or_else(|| invalid("Cannot decode backdrop shader result"))?;
                     coverage = max_coverage(&coverage, &color)?;

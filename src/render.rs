@@ -695,18 +695,6 @@ impl Renderer<'_> {
                 } else {
                     None
                 };
-                let request = crate::shader::request_with_coordinates(
-                    self.project,
-                    node,
-                    fill,
-                    property,
-                    width,
-                    height,
-                    Some([rect.width() as f64, rect.height() as f64]),
-                    self.time,
-                    None,
-                    background.as_deref(),
-                )?;
                 let raster = self
                     .runtime
                     .as_deref_mut()
@@ -716,7 +704,18 @@ impl Renderer<'_> {
                             "Shader rendering requires a configured dynamic runtime",
                         )
                     })?
-                    .shader(request)?;
+                    .shader_for_node(
+                        self.project,
+                        node,
+                        fill,
+                        property,
+                        width,
+                        height,
+                        Some([rect.width() as f64, rect.height() as f64]),
+                        self.time,
+                        None,
+                        background.as_deref(),
+                    )?;
                 let image = Image::from_encoded(Data::new_copy(&raster.png))
                     .ok_or_else(|| invalid("Cannot decode shader PNG"))?;
                 let matrix = Matrix::scale((
@@ -863,18 +862,6 @@ impl Renderer<'_> {
                     } else {
                         None
                     };
-                    let request = crate::shader::request_with_coordinates(
-                        self.project,
-                        &node,
-                        effect,
-                        "effect",
-                        width,
-                        height,
-                        Some([bounds.width as f64, bounds.height as f64]),
-                        self.time,
-                        Some(&object),
-                        background_png.as_deref(),
-                    )?;
                     let raster = self
                         .runtime
                         .as_deref_mut()
@@ -884,7 +871,18 @@ impl Renderer<'_> {
                                 "Shader effects require a configured dynamic runtime",
                             )
                         })?
-                        .shader(request)?;
+                        .shader_for_node(
+                            self.project,
+                            &node,
+                            effect,
+                            "effect",
+                            width,
+                            height,
+                            Some([bounds.width as f64, bounds.height as f64]),
+                            self.time,
+                            Some(&object),
+                            background_png.as_deref(),
+                        )?;
                     image = Image::from_encoded(Data::new_copy(&raster.png))
                         .ok_or_else(|| invalid("Cannot decode shader effect PNG"))?;
                     self.artifacts

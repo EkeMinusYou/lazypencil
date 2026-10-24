@@ -20,11 +20,27 @@ use std::{
 };
 use tokio_util::sync::CancellationToken;
 mod preprocessor;
+mod shader;
 
 #[derive(Clone)]
 pub struct Raster {
     pub png: Arc<[u8]>,
     pub metadata: Value,
+}
+
+#[derive(Clone)]
+enum Cached {
+    Raster(Raster),
+    ShaderSource(Arc<str>),
+}
+
+impl Cached {
+    fn bytes(&self) -> usize {
+        match self {
+            Self::Raster(raster) => raster.png.len(),
+            Self::ShaderSource(source) => source.len(),
+        }
+    }
 }
 
 pub struct DynamicRuntime {
@@ -37,7 +53,7 @@ pub struct DynamicRuntime {
     shaders: Option<Browser>,
     page_used: Option<Instant>,
     shader_used: Option<Instant>,
-    cache: BTreeMap<String, Raster>,
+    cache: BTreeMap<String, Cached>,
     cache_order: VecDeque<String>,
     cancel: Option<CancellationToken>,
     begun: Instant,
@@ -70,6 +86,12 @@ impl DynamicRuntime {
         }
     }
     pub fn with_executable(mut self, path: impl Into<PathBuf>) -> Self {
+        self.shaders.take();
+        self.pages.take();
+        self.page_used = None;
+        self.shader_used = None;
+        self.cache.clear();
+        self.cache_order.clear();
         self.executable = Some(path.into());
         self
     }
@@ -164,8 +186,9 @@ impl DynamicRuntime {
     pub(crate) fn refresh_pages(&mut self) {
         // Remove prior-frame acquisitions once. Repeated composition of the
         // same page in this frame then shares its newly captured raster.
-        self.cache
-            .retain(|_, raster| raster.metadata["kind"] != "browser");
+        self.cache.retain(|_, entry| {
+            !matches!(entry, Cached::Raster(raster) if raster.metadata["kind"] == "browser")
+        });
         let cache = &self.cache;
         self.cache_order.retain(|key| cache.contains_key(key));
     }
@@ -270,34 +293,40 @@ impl DynamicRuntime {
             })
     }
     fn cache(&mut self, key: String, raster: Raster) -> Raster {
-        let capacity = self.settings.cache_mib as usize * 1024 * 1024;
-        if self.settings.cache_entries == 0 || capacity == 0 || raster.png.len() > capacity {
-            return raster;
-        }
-        self.cache.remove(&key);
-        self.cache_order.retain(|existing| existing != &key);
-        let mut total = self
-            .cache
-            .values()
-            .map(|entry| entry.png.len())
-            .sum::<usize>();
-        while self.cache.len() >= self.settings.cache_entries || total + raster.png.len() > capacity
-        {
-            let oldest = self.cache_order.pop_front().expect("cache eviction order");
-            if let Some(evicted) = self.cache.remove(&oldest) {
-                total -= evicted.png.len();
-            }
-        }
-        self.cache_order.push_back(key.clone());
-        self.cache.insert(key, raster.clone());
+        self.cache_entry(key, Cached::Raster(raster.clone()));
         raster
     }
 
+    fn cache_entry(&mut self, key: String, entry: Cached) {
+        let capacity = self.settings.cache_mib as usize * 1024 * 1024;
+        if self.settings.cache_entries == 0 || capacity == 0 || entry.bytes() > capacity {
+            return;
+        }
+        self.cache.remove(&key);
+        self.cache_order.retain(|existing| existing != &key);
+        let mut total = self.cache.values().map(Cached::bytes).sum::<usize>();
+        while self.cache.len() >= self.settings.cache_entries || total + entry.bytes() > capacity {
+            let oldest = self.cache_order.pop_front().expect("cache eviction order");
+            if let Some(evicted) = self.cache.remove(&oldest) {
+                total -= evicted.bytes();
+            }
+        }
+        self.cache_order.push_back(key.clone());
+        self.cache.insert(key, entry);
+    }
+
     fn cached(&mut self, key: &str) -> Option<Raster> {
-        let raster = self.cache.get(key)?.clone();
+        match self.cached_entry(key)? {
+            Cached::Raster(raster) => Some(raster),
+            Cached::ShaderSource(_) => None,
+        }
+    }
+
+    fn cached_entry(&mut self, key: &str) -> Option<Cached> {
+        let entry = self.cache.get(key)?.clone();
         self.cache_order.retain(|existing| existing != key);
         self.cache_order.push_back(key.into());
-        Some(raster)
+        Some(entry)
     }
 
     pub fn page(
@@ -429,6 +458,17 @@ impl DynamicRuntime {
 
     pub fn shader(&mut self, request: Value) -> Result<Raster> {
         self.check()?;
+        let cancel = self.cancel.clone();
+        let duration = self
+            .remaining()?
+            .min(Duration::from_millis(self.shader_settings.timeout_ms));
+        let budget = Budget::new(duration, cancel.as_ref());
+        self.shader_with_budget(request, &budget)
+    }
+
+    fn shader_with_budget(&mut self, request: Value, budget: &Budget<'_>) -> Result<Raster> {
+        self.check()?;
+        budget.check()?;
         let source = request["source"]
             .as_str()
             .ok_or_else(|| shader_error("Shader source is missing"))?;
@@ -457,19 +497,14 @@ impl DynamicRuntime {
         if let Some(cached) = self.cached(&key) {
             return Ok(cached);
         }
-        let cancel = self.cancel.clone();
         let limits = json!({"shader":self.shader_settings,"dynamic":self.settings});
-        let duration = self
-            .remaining()?
-            .min(Duration::from_millis(self.shader_settings.timeout_ms));
-        let budget = Budget::new(duration, cancel.as_ref());
-        let browser = self.browser(Purpose::Shader, &budget)?;
+        let browser = self.browser(Purpose::Shader, budget)?;
         let version = browser.version.clone();
-        let result=browser.with_tab(&budget,|browser,session| {
-            browser.command(Some(session),"Network.enable",json!({}),&budget)?;
-            browser.command(Some(session),"Network.setBlockedURLs",json!({"urls":["http://*","https://*","file://*","ftp://*"]}),&budget)?;
+        let result=browser.with_tab(budget,|browser,session| {
+            browser.command(Some(session),"Network.enable",json!({}),budget)?;
+            browser.command(Some(session),"Network.setBlockedURLs",json!({"urls":["http://*","https://*","file://*","ftp://*"]}),budget)?;
             let expression=format!("({})({},{})",include_str!("webgl.js"),request,json!(preprocessor::encoded()));
-            let result=browser.evaluate(session,&expression,&budget)?;
+            let result=browser.evaluate(session,&expression,budget)?;
             if let Some(error)=result.get("error").and_then(Value::as_str) { return Err(shader_error(error.chars().take(8192).collect::<String>())); }
             let encoded=result["png"].as_str().and_then(|value| value.strip_prefix("data:image/png;base64,")).ok_or_else(|| shader_error("WebGL returned no PNG"))?;
             let png=base64::engine::general_purpose::STANDARD.decode(encoded).map_err(|_| shader_error("Invalid WebGL PNG"))?;
@@ -692,14 +727,7 @@ mod tests {
             assert!(runtime.cache.contains_key("page"));
             assert!(runtime.cache.len() <= 3);
             assert_eq!(runtime.cache_order.len(), runtime.cache.len());
-            assert!(
-                runtime
-                    .cache
-                    .values()
-                    .map(|raster| raster.png.len())
-                    .sum::<usize>()
-                    <= 1024 * 1024
-            );
+            assert!(runtime.cache.values().map(Cached::bytes).sum::<usize>() <= 1024 * 1024);
         }
         // Replacing a key must not accumulate eviction records or double-count bytes.
         for _ in 0..20 {

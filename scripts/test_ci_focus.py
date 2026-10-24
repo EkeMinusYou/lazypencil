@@ -139,6 +139,19 @@ class FocusTests(unittest.TestCase):
             skip = checks[-1].index("session_restart_")
             self.assertEqual(checks[-1][skip - 1], "--skip")
 
+    def test_preprocessed_shader_pipeline_covers_rendering_and_checks_cpu_before_browser(self):
+        result = focus.select(["src/dynamic/shader.rs", "src/render.rs", "src/shader.rs"])
+        self.assertEqual(result["suite"], "dynamic")
+        self.assertEqual(result["platform"], "ubuntu-24.04")
+        self.assertIn("shader_uniforms", result["targets"])
+        workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/native.yml").read_text()
+        early = workflow[workflow.index("- name: Validate dynamic inputs"):workflow.index("- name: Validate shader inputs")]
+        self.assertIn("cargo test --locked --lib dynamic::", early)
+        self.assertIn("shader::tests::prepared_declarations_bind_values_without_replacing_captured_shader_bytes", early)
+        self.assertIn("cargo test --locked --test shader_uniforms", early)
+        self.assertIn("cargo clippy --locked --lib --test dynamic_render --test shader_uniforms -- -D warnings", early)
+        self.assertLess(workflow.index("- name: Check focused dynamic code"), workflow.index("- name: Install and verify the pinned Chromium runtime"))
+
     def test_core_edit_selects_its_existing_integration_target(self):
         result = focus.select(["src/queries.rs", "tests/queries.rs"])
         self.assertEqual(result["suite"], "core")
