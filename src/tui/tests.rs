@@ -34,6 +34,123 @@ fn runtime() -> tokio::runtime::Runtime {
 }
 
 #[test]
+fn playback_preserves_input_pauses_on_seek_errors_and_static_output_and_drops_late_frames() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let store = app.conversation.store().clone();
+        std::fs::write(store.path(), json!({"version":"2.21","children":[{"type":"rectangle","id":"static","width":80,"height":40,"fill":"#00FF00"}]}).to_string()).unwrap();
+        let saved = std::fs::read(store.path()).unwrap();
+        let worker = Worker::start(store, vec![], Backend::halfblocks(), 135).unwrap();
+        app.cells = Size::new(20, 8);
+        app.request(&worker, false, false);
+        let output = tokio::time::timeout(Duration::from_secs(15), worker.next())
+            .await
+            .unwrap();
+        app.accept_preview(output);
+        let now = Instant::now();
+        assert!(app.start_playback(5, now).is_err());
+        app.preview.as_mut().unwrap().time_dependent = true;
+        app.start_playback(5, now).unwrap();
+        let deadline = app.playback.deadline();
+        for text in [
+            "/play 0",
+            "/play 11",
+            "/play -1",
+            "/play 1.5",
+            "/play 1 2",
+            "/time NaN",
+        ] {
+            app.editor = editor(text);
+            assert_eq!(
+                app.command(&worker).await.unwrap_err().code,
+                "INVALID_ARGUMENT"
+            );
+            assert_eq!(app.playback.deadline(), deadline);
+            assert_eq!(app.editor.lines(), &[text]);
+        }
+        app.editor = editor("kept draft");
+        press(&mut app, KeyCode::Char(' '), KeyModifiers::NONE, &worker).await;
+        assert!(app.playback.active());
+        assert_eq!(app.editor.lines(), &["kept draft "]);
+        app.focus = Focus::Preview;
+        app.help = true;
+        app.playback_tick(&worker, now + Duration::from_secs(1))
+            .unwrap();
+        assert_eq!(app.generation, 1);
+        assert_eq!(app.view.time, 0.0);
+        app.help = false;
+        // The elapsed clock advances while the renderer is deferred. No catch-up frames.
+        app.playback_tick(&worker, now + Duration::from_secs(2))
+            .unwrap();
+        assert_eq!(app.generation, 2);
+        assert_eq!(app.view.time, 2.0);
+        let mut output = tokio::time::timeout(Duration::from_secs(15), worker.next())
+            .await
+            .unwrap();
+        assert_eq!(output.result.as_ref().unwrap().view.time, 2.0);
+        output.result.as_mut().unwrap().time_dependent = true;
+        app.accept_preview(output);
+        assert!(app.playback.active());
+        assert_eq!(app.editor.lines(), &["kept draft "]);
+        assert!(app.status.contains("playing"));
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL, &worker).await;
+        assert!(!app.playback.active());
+        assert_eq!(app.playback.deadline(), None);
+        app.start_playback(10, now).unwrap();
+        app.cells = Size::new(0, 0);
+        press(&mut app, KeyCode::Char(']'), KeyModifiers::NONE, &worker).await;
+        assert!(!app.playback.active());
+        assert!((app.view.time - 2.1).abs() < 1e-10);
+        app.editor = editor("/play 3");
+        app.command(&worker).await.unwrap();
+        assert_eq!(app.playback.fps(), Some(3));
+        press(&mut app, KeyCode::Char(' '), KeyModifiers::NONE, &worker).await;
+        assert!(!app.playback.active());
+        press(&mut app, KeyCode::Char(' '), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.playback.fps(), Some(5));
+        app.editor = editor("/pause");
+        app.command(&worker).await.unwrap();
+        assert!(!app.playback.active());
+        app.start_playback(5, now).unwrap();
+        app.accept_preview(preview::Output {
+            generation: app.generation - 1,
+            result: Err(Error::new("RENDER_ERROR", "Superseded frame")),
+        });
+        assert!(app.playback.active());
+        app.accept_preview(preview::Output {
+            generation: app.generation,
+            result: Err(Error::new("RENDER_ERROR", "Current frame failed")),
+        });
+        assert!(!app.playback.active());
+        assert!(app.preview.is_none());
+        app.cells = Size::new(20, 8);
+        app.request(&worker, false, false);
+        let mut output = tokio::time::timeout(Duration::from_secs(15), worker.next())
+            .await
+            .unwrap();
+        output.result.as_mut().unwrap().time_dependent = true;
+        app.accept_preview(output);
+        app.start_playback(5, now).unwrap();
+        app.request(&worker, false, false);
+        let output = tokio::time::timeout(Duration::from_secs(15), worker.next())
+            .await
+            .unwrap();
+        app.accept_preview(output);
+        assert!(
+            !app.playback.active(),
+            "A newly static document stops the timer"
+        );
+        assert_eq!(
+            std::fs::read(app.conversation.store().path()).unwrap(),
+            saved
+        );
+        assert!(!app.conversation.active());
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
 fn time_commands_validate_without_sending_or_saving_and_view_keys_keep_input_precedence() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {

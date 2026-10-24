@@ -6,6 +6,7 @@ import fcntl
 import glob
 import hashlib
 import json
+import math
 import os
 import pty
 import re
@@ -350,9 +351,9 @@ try:
                 last_check[:] = [time.monotonic(), [int(pid) for pid, parent in (line.split() for line in rows.splitlines()) if int(parent) == process.pid]]
             return last_check[1]
 
-        def actual_dynamic_pixels():
+        def actual_dynamic_pixels(shader=(0, 0, 255, 255)):
             images = list(kitty_images())
-            return images and all(bytes(color) in images[-1] for color in [(255, 0, 0, 255), (0, 255, 0, 255), (0, 0, 255, 255)])
+            return images and all(bytes(color) in images[-1] for color in [(255, 0, 0, 255), (0, 255, 0, 255), shader])
 
         wait(lambda: len(children()) == 3 and actual_dynamic_pixels(), "three dynamic workers and actual RGB pixels")
         original_pids = children().copy()
@@ -372,9 +373,32 @@ try:
         os.write(master, b"\r")
         wait(lambda: len(list(kitty_images())) > frame_count and actual_dynamic_pixels() and "t=0.000s" in screen.text(), "time command restores original shader pixels")
         assert children() == original_pids
-        pids = children().copy()
+        frame_count = len(list(kitty_images()))
+        playback_started = time.monotonic()
+        paste("/play 2")
+        os.write(master, b"\r")
+
+        def timeline():
+            match = re.search(r"t=([0-9.]+)s", screen.text())
+            return float(match[1]) if match else -1
+
+        yellow = (255, 255, 0, 255)
+        wait(lambda: timeline() >= 1.0 and "playing" in screen.text() and actual_dynamic_pixels(yellow), "playback advances real shader pixels and clock")
         paste("待機と更新の後も残る下書き")
-        wait(lambda: session()["draft"] == "待機と更新の後も残る下書き", "draft before idle expiry")
+        wait(lambda: session()["draft"] == "待機と更新の後も残る下書き", "Japanese draft preserved during playback")
+        os.write(master, b"\t ")
+        wait(lambda: "playing" not in screen.text().lower(), "Space pauses in Preview")
+        assert children() == original_pids, "Automatic frames must not kill and restart the runtimes"
+        assert len(list(kitty_images())) - frame_count <= math.ceil((time.monotonic() - playback_started) * 2) + 6, "Playback must respect the selected frame-rate cap"
+        paused_time = timeline()
+        paused_frames = len(list(kitty_images()))
+        deadline = time.monotonic() + 2.2
+        while time.monotonic() < deadline:
+            pump()
+        assert timeline() == paused_time, "Paused shader time must not advance"
+        assert len(list(kitty_images())) <= paused_frames + 1, "Only an already requested frame may finish after pause"
+        assert actual_dynamic_pixels(yellow)
+        pids = children().copy()
         wait(lambda: not children(), "automatic idle process cleanup", seconds=75)
         for pid in pids:
             try:
@@ -383,11 +407,11 @@ try:
                 pass
             else:
                 raise AssertionError(f"Idle process {pid} was not reaped")
-        assert actual_dynamic_pixels(), "Preview must remain after process cleanup"
+        assert actual_dynamic_pixels(yellow), "Preview must remain at its paused time after process cleanup"
         assert session()["draft"] == "待機と更新の後も残る下書き"
         frame_count = len(list(kitty_images()))
         os.write(master, b"\tr")
-        wait(lambda: len(children()) == 3 and len(list(kitty_images())) > frame_count and actual_dynamic_pixels(), "refresh after idle cleanup")
+        wait(lambda: len(children()) == 3 and len(list(kitty_images())) > frame_count and actual_dynamic_pixels(yellow), "refresh after idle cleanup at paused time")
         assert all(pid not in pids for pid in children())
         assert open(document, "rb").read() == saved
         assert session()["draft"] == "待機と更新の後も残る下書き"

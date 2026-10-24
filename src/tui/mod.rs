@@ -2,6 +2,7 @@
 
 mod checkpoints;
 mod graphics;
+mod playback;
 mod preview;
 mod terminal;
 #[cfg(test)]
@@ -31,7 +32,7 @@ use std::{
     collections::VecDeque,
     io::IsTerminal,
     path::{Path, PathBuf},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -157,6 +158,7 @@ struct App {
     editor: TextArea<'static>,
     focus: Focus,
     view: View,
+    playback: playback::Playback,
     preview: Option<Preview>,
     generation: u64,
     cells: Size,
@@ -191,6 +193,7 @@ impl App {
             editor,
             focus: Focus::Prompt,
             view: View::default(),
+            playback: playback::Playback::default(),
             preview: None,
             generation: 0,
             cells: Size::new(0, 0),
@@ -237,11 +240,13 @@ impl App {
                     self.request(worker, false, false);
                 }
             }
+            let playback_deadline = self.playback.deadline();
             tokio::select! {
                 signal = tokio::signal::ctrl_c() => {
                     signal.map_err(terminal::io)?;
                     if let Some(task) = &self.document_task { task.cancel.cancel(); }
                     else if self.conversation.active() { self.conversation.cancel(); self.permissions.clear(); }
+                    else if self.playback.active() { self.pause_playback(); self.dirty = true; }
                     else { self.save_draft()?; return Ok(()); }
                 },
                 signal = &mut termination => { signal.map_err(terminal::io)?; self.save_draft()?; return Ok(()); },
@@ -264,19 +269,18 @@ impl App {
                     None => { self.save_draft()?; return Ok(()); },
                 },
                 output = worker.next() => {
-                    if output.generation == self.generation {
-                        match output.result {
-                            Ok(preview) => {
-                                if !preview.attachment { self.view = preview.view; }
-                                self.status = if preview.attachment { "Attachment preview".into() } else { format!("{} nodes · {} diagnostics · {:.0}% · t={:.3}s", preview.nodes.len(), preview.summary["diagnostics"].as_array().map_or(0, Vec::len), self.view.zoom.unwrap_or(1.0) * 100.0, self.view.time) };
-                                // Preserve the document node list while browsing an attachment.
-                                if preview.attachment {
-                                    if let Some(previous) = &mut self.preview { let mut preview = preview; preview.nodes = std::mem::take(&mut previous.nodes); self.preview = Some(preview); }
-                                    else { self.preview = Some(preview); }
-                                } else { self.preview = Some(preview); }
-                            },
-                            Err(error) => { self.preview = None; self.error(error); },
-                        }
+                    self.accept_preview(output);
+                },
+                _ = async {
+                    if let Some(deadline) = playback_deadline {
+                        tokio::time::sleep_until(deadline.into()).await;
+                    } else {
+                        std::future::pending::<()>().await;
+                    }
+                } => {
+                    if let Err(error) = self.playback_tick(worker, Instant::now()) {
+                        self.playback.stop();
+                        self.error(error);
                         self.dirty = true;
                     }
                 },
@@ -339,6 +343,105 @@ impl App {
             check_only,
             attachment,
         });
+    }
+    fn accept_preview(&mut self, output: preview::Output) {
+        if output.generation != self.generation {
+            return;
+        }
+        match output.result {
+            Ok(mut preview) => {
+                if !preview.attachment {
+                    self.view = preview.view;
+                    if !preview.time_dependent {
+                        self.playback.stop();
+                    }
+                }
+                self.status = if preview.attachment {
+                    "Attachment preview".into()
+                } else {
+                    let state = self
+                        .playback
+                        .fps()
+                        .map_or_else(String::new, |fps| format!(" · playing ≤{fps}fps"));
+                    format!(
+                        "{} nodes · {} diagnostics · {:.0}% · t={:.3}s{state}",
+                        preview.nodes.len(),
+                        preview.summary["diagnostics"]
+                            .as_array()
+                            .map_or(0, Vec::len),
+                        self.view.zoom.unwrap_or(1.0) * 100.0,
+                        self.view.time
+                    )
+                };
+                // Preserve the document node list while browsing an attachment.
+                if preview.attachment
+                    && let Some(previous) = &mut self.preview
+                {
+                    preview.nodes = std::mem::take(&mut previous.nodes);
+                }
+                self.preview = Some(preview);
+            }
+            Err(error) => {
+                self.playback.stop();
+                self.preview = None;
+                self.error(error);
+            }
+        }
+        self.dirty = true;
+    }
+    fn start_playback(&mut self, fps: u32, now: Instant) -> Result<()> {
+        if !self
+            .preview
+            .as_ref()
+            .is_some_and(|preview| !preview.attachment && preview.time_dependent)
+        {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "The complete preview must contain a shader with an @time uniform before playback can start",
+            ));
+        }
+        self.playback.start(self.view.time, fps, now)?;
+        self.status = format!("Playing shader timeline · ≤{fps}fps · Space in Preview pauses");
+        Ok(())
+    }
+    fn pause_playback(&mut self) {
+        self.playback.stop();
+        self.status = format!("Shader playback paused · t={:.3}s", self.view.time);
+    }
+    fn playback_tick(&mut self, worker: &Worker, now: Instant) -> Result<()> {
+        let Some(time) = self.playback.frame(now) else {
+            return Ok(());
+        };
+        if self.has_modal()
+            || self.focus == Focus::Attachments
+            || self.cells.width == 0
+            || self.cells.height == 0
+        {
+            return Ok(());
+        }
+        if !self
+            .preview
+            .as_ref()
+            .is_some_and(|preview| !preview.attachment && preview.time_dependent)
+        {
+            self.playback.stop();
+            return Ok(());
+        }
+        let mut view = self.view;
+        view.set_time(time)?;
+        let generation = self.generation + 1;
+        if worker.request_if_idle(Request {
+            generation,
+            cells: self.cells,
+            view,
+            refresh: false,
+            check_only: false,
+            attachment: None,
+        }) {
+            self.generation = generation;
+            self.view = view;
+        }
+        Ok(())
     }
     fn save_draft(&mut self) -> Result<()> {
         if self.draft_changed && !self.conversation.active() {
@@ -510,6 +613,8 @@ impl App {
                 self.conversation.cancel();
                 self.permissions.clear();
                 self.status = "Cancelling request; committed edits are retained".into();
+            } else if self.playback.active() {
+                self.pause_playback();
             } else {
                 return Ok(true);
             }
@@ -650,6 +755,14 @@ impl App {
         }
         match self.focus {
             Focus::Preview => {
+                if key.code == KeyCode::Char(' ') {
+                    if self.playback.active() {
+                        self.pause_playback();
+                    } else {
+                        self.start_playback(playback::DEFAULT_FPS, Instant::now())?;
+                    }
+                    return Ok(false);
+                }
                 let zoom = self.view.zoom.unwrap_or(1.0);
                 let step = 64.0 / zoom;
                 match key.code {
@@ -662,8 +775,14 @@ impl App {
                     }
                     KeyCode::Char('-') => self.view.zoom = Some((zoom / 1.25).max(0.01)),
                     KeyCode::Char('0') => self.view.zoom = None,
-                    KeyCode::Char('[') => self.view.set_time((self.view.time - 0.1).max(0.0))?,
-                    KeyCode::Char(']') => self.view.set_time(self.view.time + 0.1)?,
+                    KeyCode::Char('[') => {
+                        self.view.set_time((self.view.time - 0.1).max(0.0))?;
+                        self.playback.stop();
+                    }
+                    KeyCode::Char(']') => {
+                        self.view.set_time(self.view.time + 0.1)?;
+                        self.playback.stop();
+                    }
                     KeyCode::Char('f') => self.fit_selected(picker)?,
                     _ => return Ok(false),
                 }
@@ -776,13 +895,27 @@ impl App {
                     Error::new("INVALID_ARGUMENT", "Usage: /time <nonnegative seconds>")
                 })?;
                 self.view.set_time(time)?;
+                self.playback.stop();
                 self.request(worker, false, false);
             }
+            Some("/play") if words.len() <= 2 => {
+                let fps = words
+                    .get(1)
+                    .map_or(Ok(playback::DEFAULT_FPS), |text| text.parse::<u32>())
+                    .map_err(|_| {
+                        Error::new(
+                            "INVALID_ARGUMENT",
+                            "Usage: /play [integer fps from 1 to 10]",
+                        )
+                    })?;
+                self.start_playback(fps, Instant::now())?;
+            }
+            Some("/pause") if words.len() == 1 => self.pause_playback(),
             Some("/quit") if words.len() == 1 => return Ok(true),
             _ => {
                 return Err(Error::new(
                     "INVALID_ARGUMENT",
-                    "Commands: /attach <quoted path>, /paste-image, /clear-images, /open-preview, /time <nonnegative seconds>, /commands, /history, /help, /quit",
+                    "Commands: /attach <quoted path>, /paste-image, /clear-images, /open-preview, /time <nonnegative seconds>, /play [fps], /pause, /commands, /history, /help, /quit",
                 ));
             }
         }
@@ -1006,7 +1139,7 @@ impl App {
         if self.help {
             let popup = centered(area, 100, 26);
             frame.render_widget(Clear, popup);
-            frame.render_widget(Paragraph::new(format!("Tab / Shift+Tab: switch panels\nCtrl+P: command palette; /history: browse and restore checkpoints\nPrompt: Enter inserts a newline; {} sends\n{}: paste image, copied image files, or text\n/attach <quoted path>: attach a PNG, JPEG or WebP file\n/paste-image: read this host's clipboard explicitly\n/clear-images: remove pending attachments\nPreview: hjkl / arrows pan; + / - zoom; 0 fits the document\nPreview: [ / ] step shader time by 0.1s; /time <seconds> seeks\nNodes: / searches; arrows select; f / Enter focuses the target\nAttachments: arrows review; d / Delete removes a pending image\nConversation: PgUp/PgDn scroll; End follows new output\nr: refresh the preview, including browser captures\no / /open-preview: open the current complete PNG externally\nCtrl+C: cancel active work; exit when idle\nq outside Prompt / /quit: close the conversation and exit\nF1 or Esc: close help\n\nClipboard access happens only on explicit paste. SSH reads the remote host's clipboard. Image protocols do not provide clipboard access.", self.keys.submit_label(), self.keys.paste_label()))
+            frame.render_widget(Paragraph::new(format!("Tab / Shift+Tab: switch panels\nCtrl+P: command palette; /history: browse and restore checkpoints\nPrompt: Enter inserts a newline; {} sends\n{}: paste image, copied image files, or text\n/attach <quoted path>: attach a PNG, JPEG or WebP file\n/paste-image: read this host's clipboard explicitly\n/clear-images: remove pending attachments\nPreview: hjkl / arrows pan; + / - zoom; 0 fits the document\nPreview: [ / ] step shader time by 0.1s; /time <seconds> seeks\nPreview: Space toggles playback; /play [1-10 fps] and /pause\nNodes: / searches; arrows select; f / Enter focuses the target\nAttachments: arrows review; d / Delete removes a pending image\nConversation: PgUp/PgDn scroll; End follows new output\nr: refresh the preview, including browser captures\no / /open-preview: open the current complete PNG externally\nCtrl+C: cancel active work; exit when idle\nq outside Prompt / /quit: close the conversation and exit\nF1 or Esc: close help\n\nClipboard access happens only on explicit paste. SSH reads the remote host's clipboard. Image protocols do not provide clipboard access.", self.keys.submit_label(), self.keys.paste_label()))
                 .block(panel("Help", true)).wrap(Wrap { trim: false }), popup);
         }
         self.draw_checkpoint_modal(frame);

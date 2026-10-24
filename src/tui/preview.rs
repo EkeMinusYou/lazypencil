@@ -77,6 +77,7 @@ pub struct Preview {
     pub nodes: Vec<Node>,
     pub summary: Value,
     pub attachment: bool,
+    pub time_dependent: bool,
 }
 pub struct Node {
     pub id: String,
@@ -155,6 +156,22 @@ impl Worker {
             pending.0 = Some(request);
         }
         self.shared.wake.notify_one();
+    }
+    pub fn request_if_idle(&self, request: Request) -> bool {
+        let mut pending = self.shared.request.lock().unwrap();
+        if pending.1
+            || pending.0.is_some()
+            || self.shared.active.lock().unwrap().is_some()
+            || self.shared.output.lock().unwrap().is_some()
+        {
+            return false;
+        }
+        self.shared
+            .generation
+            .store(request.generation, Ordering::Relaxed);
+        pending.0 = Some(request);
+        self.shared.wake.notify_one();
+        true
     }
     pub async fn next(&self) -> Output {
         loop {
@@ -240,6 +257,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                     nodes: vec![],
                     summary: json!({"attachment":attachment}),
                     attachment: true,
+                    time_dependent: false,
                 }));
             }
             let unchanged = !request.refresh
@@ -305,6 +323,10 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 nodes,
                 summary: layout.summary(),
                 attachment: false,
+                time_dependent: image.dynamic_artifacts.iter().any(|artifact| {
+                    artifact["acquisition"]["kind"] == "shader"
+                        && artifact["acquisition"]["time_dependent"] == true
+                }),
             }))
         })();
         let cancelled = cancel.is_cancelled();
@@ -356,6 +378,64 @@ mod tests {
     use super::*;
     use std::time::Duration;
     use tempfile::TempDir;
+
+    #[test]
+    fn automatic_frames_do_not_cancel_work_overwrite_pending_output_or_queue_a_backlog() {
+        let shared = Arc::new(Shared {
+            request: Mutex::new((None, false)),
+            wake: Condvar::new(),
+            active: Mutex::new(None),
+            output: Mutex::new(None),
+            notify: Notify::new(),
+            generation: AtomicU64::new(7),
+        });
+        let worker = Worker {
+            shared: shared.clone(),
+            thread: None,
+        };
+        let request = Request {
+            generation: 8,
+            cells: Size::new(20, 8),
+            view: View::default(),
+            refresh: false,
+            check_only: false,
+            attachment: None,
+        };
+        let cancel = CancellationToken::new();
+        *shared.active.lock().unwrap() = Some(cancel.clone());
+        assert!(!worker.request_if_idle(request.clone()));
+        assert!(!cancel.is_cancelled());
+        assert!(shared.request.lock().unwrap().0.is_none());
+        assert_eq!(shared.generation.load(Ordering::Relaxed), 7);
+        shared.active.lock().unwrap().take();
+        *shared.output.lock().unwrap() = Some(Output {
+            generation: 7,
+            result: Err(Error::new("RENDER_ERROR", "Pending result")),
+        });
+        assert!(!worker.request_if_idle(request.clone()));
+        assert_eq!(
+            shared.output.lock().unwrap().as_ref().unwrap().generation,
+            7
+        );
+        shared.output.lock().unwrap().take();
+        shared.request.lock().unwrap().1 = true;
+        assert!(!worker.request_if_idle(request.clone()));
+        shared.request.lock().unwrap().1 = false;
+        assert!(worker.request_if_idle(request.clone()));
+        assert!(!worker.request_if_idle(request));
+        assert_eq!(shared.generation.load(Ordering::Relaxed), 8);
+        assert_eq!(
+            shared
+                .request
+                .lock()
+                .unwrap()
+                .0
+                .as_ref()
+                .unwrap()
+                .generation,
+            8
+        );
+    }
 
     #[test]
     fn time_changes_republish_without_invalidating_layout_or_repainting_idle_polls() {

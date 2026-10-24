@@ -46,6 +46,7 @@ pub fn request(
     let source =
         std::str::from_utf8(&asset.bytes).map_err(|_| invalid("Shader source must be UTF-8"))?;
     let definitions = uniforms(source)?;
+    let time_dependent = definitions.iter().any(|uniform| uniform.time);
     let empty = Map::new();
     let overrides = fill
         .get("uniforms")
@@ -131,7 +132,7 @@ pub fn request(
         }
         values.insert(uniform.name, value);
     }
-    let mut result = json!({"source":source,"source_hash":asset.revision,"width":width,"height":height,"time":time,"uniforms":values});
+    let mut result = json!({"source":source,"source_hash":asset.revision,"width":width,"height":height,"time":time,"time_dependent":time_dependent,"uniforms":values});
     if !arrays.is_empty() {
         result["uniform_arrays"] = Value::Object(arrays);
     }
