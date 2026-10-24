@@ -144,7 +144,7 @@ lazypencil tui new.pen --create --agent claude --image reference.png
 lazypencil tui design.pen --image-protocol sixel
 ```
 
-The default build includes a terminal viewer with pan/zoom, node selection, Japanese multiline input, attachment review/removal, checkpoint restoration, and a persistent ACP conversation. Use Tab to change panels, Alt+Enter or Ctrl+S to send, Ctrl+V or `/paste-image` to paste, and `/attach <quoted path>` for files. Ctrl+P opens the command palette; `/history` opens a paged checkpoint list with review and guarded restoration. Kitty and Sixel have protocol-level PTY tests; halfblocks and external PNG viewing provide fallbacks. Native clipboard and physical-terminal compatibility, configurable keys, and the remaining platform/release work are unfinished. See [terminal behavior and verification](docs/tui.md).
+The default build includes a terminal viewer with pan/zoom, node selection, Japanese multiline input, attachment review/removal, checkpoint restoration, and a persistent ACP conversation. Use Tab to change panels, Alt+Enter or Ctrl+S to send, Ctrl+V or `/paste-image` to paste, and `/attach <quoted path>` for files. Ctrl+P opens the command palette; `/history` opens a paged checkpoint list with review and guarded restoration. Kitty and Sixel have protocol-level PTY tests; halfblocks and external PNG viewing provide fallbacks. Prompt and viewing/global keys can be configured in user settings. Native clipboard, physical-terminal compatibility, and the remaining platform/release work are unfinished. See [terminal behavior and verification](docs/tui.md).
 
 ## Development
 

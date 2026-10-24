@@ -48,8 +48,20 @@ def select(paths, platform="auto"):
         "tests/support/unix_agent_ownership.rs", "tests/support/agent_process_tree.py",
         "tests/support/browser_process_unix.py",
     } for path in paths)
+    input_source = any(path == "src/tui/mod.rs" or path.startswith("src/config/keys") for path in paths)
+    input_only = input_source and all(
+        (path == "README.md" or path.startswith("docs/") and path.endswith(".md")) or path.startswith("src/config/keys") or path in {
+            "src/config.rs", "src/tui/mod.rs", "src/tui/checkpoints.rs", "src/tui/tests.rs", "tests/tui.rs", "tests/user_config.rs",
+            "tests/support/tui_pty.py", "scripts/ci/focus.py", "scripts/test_ci_focus.py",
+            ".github/workflows/native.yml",
+        } for path in paths
+    )
     conversation = ownership or grants_change or bool(stems & {"agent", "conversation", "windows_agent"}) or any(path.startswith("tests/support/acp_") for path in paths)
-    if conversation:
+    if input_only:
+        # Input dispatch has a real static PTY reproduction. Keep Chromium and
+        # the complete dynamic/TUI suites in the unchanged final matrix.
+        suite, targets = "graphics", ["tui", "user_config"]
+    elif conversation:
         suite, targets = "conversation", ["agent"]
         if grants_change:
             targets = ["agent", "attachments", "mcp"]

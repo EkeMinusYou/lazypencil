@@ -62,7 +62,43 @@ paste = ["F6"]
 
 Omitted actions retain their defaults; each explicit list replaces that action's list. Submit accepts 1–8 shortcuts and paste accepts 0–8 (`paste = []` disables clipboard shortcuts while `/paste-image` remains available). Keys support `Enter`, ASCII letters with `Ctrl` or `Alt`, and `F2`–`F24`, optionally combining `Ctrl`, `Alt` and `Shift`. Names are case insensitive and modifier matching is exact. Plain Enter remains a newline; F1, Ctrl+C/Ctrl+P and legacy Ctrl+H/I/J/M aliases are reserved. Duplicate bindings, overlaps between actions and unsupported keys fail with `CONFIGURATION_ERROR`. The terminal must transmit the chosen key distinctly; configuration cannot add keyboard-protocol support to a terminal.
 
-Bindings are captured before entering the terminal and remain fixed for that invocation. The prompt border and help show the effective keys. They act only in the idle prompt; permission dialogs, checkpoint dialogs, search, help and other panels retain their own input handling. Project files cannot remap user shortcuts. Other viewing and global keys currently retain the table's fixed defaults.
+Bindings are captured before entering the terminal and remain fixed for that invocation. The prompt border and help show the effective keys. They act only in the idle prompt; permission dialogs, checkpoint dialogs, search, help and other panels retain their own input handling. Project files cannot remap user shortcuts. Normal viewing and global actions are configured separately under `[tui.navigation]`, described below.
+
+### Viewing and global shortcuts
+
+User `config.toml` also accepts `[tui.navigation]`. Each supplied list replaces that action's default list; omitted actions keep the keys in the table above. Up to eight keys may be assigned to an action, and `[]` disables it. Panel switching must retain at least one shortcut usable while typing, so the prompt cannot trap keyboard focus.
+
+```toml
+[tui.navigation]
+next_panel = ["F6"]
+previous_panel = ["F7"]
+help = ["F8", "?"]
+commands = ["F9"]
+quit = ["x"]
+pan_left = ["a"]
+pan_right = ["d"]
+pan_up = ["w"]
+pan_down = ["s"]
+zoom_in = ["z"]
+zoom_out = ["v"]
+```
+
+The schema and `config show --user` list all actions and effective defaults:
+
+| Scope | Action fields |
+| --- | --- |
+| Normal panels | `next_panel`, `previous_panel`, `help`, `commands` |
+| Outside Prompt | `quit`, `refresh`, `open_preview` |
+| Preview | `pan_left`, `pan_right`, `pan_up`, `pan_down`, `zoom_in`, `zoom_out`, `fit_document`, `time_backward`, `time_forward`, `play_pause` |
+| Preview and Nodes | `fit_selected` |
+| Nodes and Attachments | `previous_item`, `next_item` |
+| Nodes | `search_nodes`, `clear_selection`, `activate_node` |
+| Attachments | `remove_attachment` |
+| Conversation | `scroll_up`, `scroll_down`, `follow_output` |
+
+Navigation supports ASCII letters and printable symbols, Enter, Space, Tab, Esc/Escape, arrows, Home/End, PageUp/PageDown, Delete/Backspace, and F1–F24. Ctrl, Alt and Shift can be combined; `Plus` names `+`. `BackTab` is the same binding as `Shift+Tab`. Already shifted symbols normalize their Shift bit across terminal protocols, so `+` and `Shift+Plus` are equivalent. Other modifiers match exactly. Keys may be shared between disjoint panels, such as Up for panning and list selection. Overlaps in the same panel, including global bindings that would intercept prompt submit/paste, fail before terminal entry.
+
+Unmodified text bindings do not intercept prompt or node-search input. Permission and checkpoint dialogs retain their displayed acceptance/rejection keys. Ctrl+C remains the fixed emergency cancellation/exit key; its aliases and legacy Ctrl+H/I/J/M encodings cannot be rebound. Prompt shortcuts retain their own restrictions above. Help, footer and panel titles show the captured effective keys. Help supports PageUp/PageDown or arrows to scroll and Home/End to jump. Changing the configuration file affects the next invocation; it does not change the active keyboard map. Projects cannot select these user controls.
 
 [macOS arm64 verification at source 3ea9c65](https://github.com/EkeMinusYou/lazypencil/actions/runs/40034819092) passed all 113 selected integration tests, including custom-key ACP image delivery, permission precedence, and the actual PTY case that reads user settings and submits Japanese multiline text with F5. This is hosted functional evidence; physical keyboard/IME/clipboard behavior and the other platforms remain separate checks.
 
@@ -127,4 +163,4 @@ Text assertions use the reconstructed VT screen rather than assuming that visibl
 
 The text-only VT observer does not model graphics overlays; old `No complete preview` text alone does not establish that Kitty pixels are absent. Image assertions use decoded complete frames. The observer now decodes Kitty packets incrementally rather than replaying the entire terminal history every time a wait predicate asks for images. It retains complete RGBA frames, including alpha, handles split packets and payload-free image deletion commands, ignores capability queries, and rejects malformed/incomplete pixels and oversized packets/dimensions. Four Python tests check fragmentation, exact chunk decode counts, image integrity and bounded pending wire data. With the same retained macOS executable and Python profiler, the project-font case fell from 879,974 Base64 calls / 6.57 seconds to 658 calls / 2.63 seconds; all eleven normal PTY cases then passed. The application executable, 15-second wait and pixel checks were unchanged. This removes a measured test-observer bottleneck; the original Intel timeout and current Rust changes still await hosted verification.
 
-PTY checks do not establish physical-terminal compatibility. Native macOS screenshot paste, real Kitty/Sixel terminals, IME composition, tmux/SSH, and Linux clipboard/terminal combinations remain to be verified for the initial release. Windows verification is deferred. Configurable key bindings, persisted log browsing, configurable runtime/cache budgets, animation controls, and performance acceptance tests remain unfinished. The full implementation checklist retains those requirements.
+PTY checks do not establish physical-terminal compatibility. Native macOS screenshot paste, real Kitty/Sixel terminals, IME composition, tmux/SSH, and Linux clipboard/terminal combinations remain to be verified for the initial release. Windows verification is deferred. Persisted log browsing, remaining runtime/cache budgets, animation controls, and performance acceptance tests remain unfinished. Viewing/global key configuration still requires the hosted verification recorded with its implementation change. The full implementation checklist retains those requirements.

@@ -540,6 +540,13 @@ fn permission_modal_can_answer_and_cancel_without_blocking_the_event_loop() {
                 submit: vec!["F5".into()],
                 paste: vec!["F6".into()],
             };
+            app.navigation = crate::config::keys::NavigationKeys {
+                next_panel: vec!["F7".into()],
+                commands: vec!["F8".into()],
+                help: vec!["F9".into()],
+                ..Default::default()
+            };
+            app.navigation.validate(&app.keys).unwrap();
             app.input_reader = fake_clipboard;
             let worker = Worker::start(
                 app.conversation.store().clone(),
@@ -568,6 +575,11 @@ fn permission_modal_can_answer_and_cancel_without_blocking_the_event_loop() {
             }
             press(&mut app, KeyCode::F(6), KeyModifiers::NONE, &worker).await;
             press(&mut app, KeyCode::F(5), KeyModifiers::NONE, &worker).await;
+            for function in [7, 8, 9] {
+                press(&mut app, KeyCode::F(function), KeyModifiers::NONE, &worker).await;
+            }
+            assert_eq!(app.focus, Focus::Prompt);
+            assert!(!app.help && app.modal.is_none());
             assert!(app.input.is_none());
             assert_eq!(
                 app.permissions.len(),
@@ -772,6 +784,106 @@ fn custom_prompt_keys_keep_focus_and_modal_precedence_and_send_actual_images() {
                 .to_rgba8();
             assert_eq!(received.get_pixel(0, 0).0, *expected);
         }
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
+fn custom_navigation_preserves_typing_search_modals_and_moves_the_actual_preview() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let store = app.conversation.store().clone();
+        std::fs::write(store.path(), json!({"version":"2.21","children":[
+            {"type":"rectangle","id":"first","name":"first","width":80,"height":40,"fill":"#00FF00"},
+            {"type":"rectangle","id":"second","name":"second","x":100,"width":80,"height":40,"fill":"#0000FF"}
+        ]}).to_string()).unwrap();
+        let saved = std::fs::read(store.path()).unwrap();
+        let picker = Backend::halfblocks();
+        let worker = Worker::start(store.clone(), vec![], picker.clone(), 155).unwrap();
+        app.cells = Size::new(20, 8);
+        app.request(&worker, false, false);
+        let output = tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap();
+        app.accept_preview(output);
+        assert_eq!(app.preview.as_ref().unwrap().nodes.len(), 2);
+        app.navigation = crate::config::keys::NavigationKeys {
+            next_panel: vec!["F6".into()], previous_panel: vec!["F7".into()],
+            help: vec!["F8".into(), "t".into()], commands: vec!["F9".into()],
+            quit: vec!["x".into()], pan_left: vec!["a".into()], pan_right: vec!["d".into()],
+            pan_up: vec!["w".into()], pan_down: vec!["s".into()],
+            zoom_in: vec!["z".into()], zoom_out: vec!["v".into()],
+            fit_document: vec!["c".into()], next_item: vec!["n".into()],
+            previous_item: vec!["p".into()], time_forward: vec![".".into()],
+            time_backward: vec![",".into()], follow_output: vec!["F10".into()],
+            ..Default::default()
+        };
+        app.navigation.validate(&app.keys).unwrap();
+        app.editor = editor("");
+        for character in "xadtzv".chars() {
+            press(&mut app, KeyCode::Char(character), KeyModifiers::NONE, &worker).await;
+        }
+        assert_eq!(app.editor.lines().join("\n"), "xadtzv");
+        assert!(!app.help && app.modal.is_none() && !app.conversation.active());
+        press(&mut app, KeyCode::F(6), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.focus, Focus::Preview);
+        let center = app.view.center;
+        let zoom = app.view.zoom.unwrap();
+        press(&mut app, KeyCode::Char('h'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.view.center, center);
+        press(&mut app, KeyCode::Char('a'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.view.center[0], center[0] - 64.0 / zoom);
+        press(&mut app, KeyCode::Char('z'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.view.zoom, Some((zoom * 1.25).min(16.0)));
+        let zoomed = app.view.zoom;
+        press(&mut app, KeyCode::Char('0'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.view.zoom, zoomed);
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.view.zoom, None);
+        press(&mut app, KeyCode::Char(']'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.view.time, 0.0);
+        press(&mut app, KeyCode::Char('.'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.view.time, 0.1);
+        press(&mut app, KeyCode::Char(','), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.view.time, 0.0);
+        press(&mut app, KeyCode::F(8), KeyModifiers::NONE, &worker).await;
+        assert!(app.help);
+        press(&mut app, KeyCode::Char('a'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.view.center[0], center[0] - 64.0 / zoom);
+        press(&mut app, KeyCode::End, KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.help_scroll, u16::MAX);
+        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 36)).unwrap();
+        terminal.draw(|frame| { app.draw(frame); }).unwrap();
+        assert!(app.help_scroll > 0 && app.help_scroll < u16::MAX);
+        assert!(app.help_text().contains("a: Preview: pan left"));
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::F(9), KeyModifiers::NONE, &worker).await;
+        assert!(app.modal.is_some());
+        press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE, &worker).await;
+        assert!(app.modal.is_some());
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
+        app.focus = Focus::Nodes;
+        app.nodes.select(Some(0));
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.nodes.selected(), Some(0));
+        press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.nodes.selected(), Some(1));
+        press(&mut app, KeyCode::Char('/'), KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Char('t'), KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE, &worker).await;
+        assert!(app.searching && !app.help);
+        assert_eq!(app.filter, "tx");
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
+        assert!(!app.searching && app.filter.is_empty());
+        app.focus = Focus::Conversation;
+        app.scroll = 20;
+        press(&mut app, KeyCode::End, KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.scroll, 20);
+        press(&mut app, KeyCode::F(10), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.scroll, 0);
+        press(&mut app, KeyCode::F(7), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.focus, Focus::Attachments);
+        assert_eq!(std::fs::read(store.path()).unwrap(), saved);
+        assert!(app.key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE), &picker, &worker).await.unwrap());
         app.conversation.close().await.unwrap();
     });
 }

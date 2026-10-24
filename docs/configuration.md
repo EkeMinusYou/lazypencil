@@ -1,6 +1,6 @@
 # User and project configuration
 
-User `config.toml` persists font preferences, runtime limits, and per-agent ACP preferences across projects. Project `lazypencil.toml` overrides individual font/runtime fields and adds project design guides, style catalogues, and a default style. CLI, MCP, and TUI use the same captured document settings; CLI and TUI resolve the same user agent profiles. Project instructions require an explicit local user grant. Project executable settings, browser authentication/network/wait policy, asset/library, global/viewing key-binding, and other resource-limit settings remain unfinished. Prompt submission and clipboard shortcuts are user-configurable as described below.
+User `config.toml` persists font preferences, runtime limits, and per-agent ACP preferences across projects. Project `lazypencil.toml` overrides individual font/runtime fields and adds project design guides, style catalogues, and a default style. CLI, MCP, and TUI use the same captured document settings; CLI and TUI resolve the same user agent profiles. Project instructions require an explicit local user grant. Project executable settings, browser authentication/network/wait policy, asset/library and other resource-limit settings remain unfinished. Prompt, clipboard, global and viewing shortcuts are user-configurable; see [TUI controls](tui.md#viewing-and-global-shortcuts).
 
 ## Start and inspect
 

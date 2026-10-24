@@ -64,12 +64,14 @@ elif case == "user-agent-config":
     configuration_path = os.path.join(environment["LAZYPENCIL_CONFIG_DIR"], "config.toml")
     with open(configuration_path, "w", encoding="utf-8") as handle:
         handle.write("[agents]\ndefault='claude'\n[agents.claude]\nadapter=" + json.dumps(sys.executable) + "\nadapter_args=[" + json.dumps(fixture) + ",'settings-auth-check']\nmodel='fixture-model-2'\nmode='workspace-write'\nauth_method='fixture-auth'\ntimeout=7\n")
-elif case == "user-key-config":
+elif case in ["user-key-config", "user-navigation-config"]:
     environment["LAZYPENCIL_CONFIG_DIR"] = os.path.join(root, "user-settings")
     os.mkdir(environment["LAZYPENCIL_CONFIG_DIR"])
     configuration_path = os.path.join(environment["LAZYPENCIL_CONFIG_DIR"], "config.toml")
     with open(configuration_path, "w", encoding="utf-8") as handle:
         handle.write("[tui.keys]\nsubmit=['F5']\npaste=[]\n")
+        if case == "user-navigation-config":
+            handle.write("[tui.navigation]\nnext_panel=['F6']\nprevious_panel=['F7']\nhelp=['F8','t']\ncommands=['F9']\nquit=['x']\npan_left=['a']\npan_right=['d']\npan_up=['w']\npan_down=['s']\nzoom_in=['z']\nzoom_out=['v']\n")
 with open(document, "w", encoding="utf-8") as handle:
     json.dump(design, handle)
 
@@ -94,7 +96,7 @@ if case in ["restore", "restore-conflict"]:
 master, slave = pty.openpty()
 original = termios.tcgetattr(slave)
 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 34, 130, 0, 0))
-image_case = "kitty" if case in ["dynamic-idle", "page-playback", "font-config", "user-font-config", "script-config"] else case.removeprefix("auto-")
+image_case = "kitty" if case in ["dynamic-idle", "page-playback", "font-config", "user-font-config", "script-config", "user-navigation-config"] else case.removeprefix("auto-")
 protocol = "auto" if case.startswith("auto-") else (image_case if image_case in ["kitty", "sixel"] else "halfblocks")
 command = [binary, "--data-dir", os.path.join(root, "data"), "tui", document,
     "--adapter", sys.executable, "--adapter-arg=" + fixture,
@@ -226,8 +228,48 @@ def sixel_red_pixels(data):
 
 
 try:
-    wait(lambda: (b"F5 sends" if case == "user-key-config" else b"Ctrl+V") in output, "initial UI")
-    if case == "user-key-config":
+    wait(lambda: (b"F5 sends" if case in ["user-key-config", "user-navigation-config"] else b"Ctrl+V") in output, "initial UI")
+    if case == "user-navigation-config":
+        wait(lambda: len(list(kitty_images())) > 0, "initial complete navigation preview")
+        before = list(kitty_images())[-1]
+        assert has_rgba_color(before, (255, 0, 0, 255))
+        text = "日本語の下書き\nx a d w s z v t は本文"
+        paste(text)
+        wait(lambda: session() and session()["draft"] == text, "navigation letters remain prompt text")
+        os.write(master, b"\x1b[17~")  # F6: Prompt -> Preview.
+        os.write(master, b"h\x1b[19~")  # Replaced pan, then F8 as an event barrier.
+        wait(lambda: "/clear-images" in screen.text(), "configured help opened")
+        assert "a: Preview: pan left" in screen.text()
+        assert list(kitty_images())[-1] == before, "Replaced h must not pan"
+        os.write(master, b"\x1b[F")
+        wait(lambda: "Image protocols do not provide" in screen.text(), "help scroll reaches final lines")
+        os.write(master, b"\x1b[H")
+        wait(lambda: "/clear-images" in screen.text(), "help scroll returns to the beginning")
+        os.write(master, b"\x1b")
+        wait(lambda: "/clear-images" not in screen.text(), "help closed")
+        os.write(master, b"a")
+        wait(lambda: list(kitty_images())[-1] != before, "remapped pan updates actual image pixels")
+        panned = list(kitty_images())[-1]
+        os.write(master, b"z")
+        wait(lambda: list(kitty_images())[-1] != panned, "remapped zoom updates actual image pixels")
+        os.write(master, b"\x1b[20~")
+        wait(lambda: "Commands" in screen.text() and "Restore checkpoint" in screen.text(), "configured command palette")
+        os.write(master, b"x")
+        wait(lambda: "Commands" in screen.text() and "x" in screen.text(), "quit key remains palette search text")
+        os.write(master, b"\x1b")
+        wait(lambda: "Restore checkpoint" not in screen.text(), "palette closed")
+        os.write(master, b"\x1b[18~")  # F7: Preview -> Prompt.
+        paste(" 続き")
+        wait(lambda: session()["draft"] == text + " 続き", "reverse panel shortcut returns to prompt")
+        with open(configuration_path, "w", encoding="utf-8") as handle:
+            handle.write("[tui.navigation]\nnext_panel=['F10']\n")
+        os.write(master, b"\x1b[17~\x1b[19~")
+        wait(lambda: "/clear-images" in screen.text(), "startup navigation remains after configuration edit")
+        os.write(master, b"\x1b")
+        wait(lambda: "/clear-images" not in screen.text(), "help closed before configured exit")
+        assert not turns() and not session()["native_session_id"], "Viewing shortcuts must not start an agent"
+        assert session()["draft"] == text + " 続き"
+    elif case == "user-key-config":
         text = "日本語の複数行\nq と hjkl は本文"
         paste(text)
         wait(lambda: session() and session()["draft"] == text, "custom-key multiline draft")
@@ -544,7 +586,7 @@ try:
             assert red > total // 4, "Decoded Sixel must contain the actual red design"
         assert not os.path.exists(os.path.join(root, "sent-turn.txt")), "Viewing must not launch the agent"
         assert not session()["native_session_id"]
-    os.write(master, b"q" if case == "basic" else b"\x03")
+    os.write(master, b"q" if case == "basic" else (b"x" if case == "user-navigation-config" else b"\x03"))
     deadline = time.monotonic() + 10
     while process.poll() is None and time.monotonic() < deadline:
         pump()

@@ -525,7 +525,7 @@ impl UserSource {
                     )?;
                     parsed.agents.validate()?;
                     result.settings.agents = parsed.agents;
-                    parsed.tui.keys.validate()?;
+                    parsed.tui.validate()?;
                     result.settings.tui = parsed.tui;
                     result.fonts = parsed.fonts;
                     result.runtime = parsed.runtime;
