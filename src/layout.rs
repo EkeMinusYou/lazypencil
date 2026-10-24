@@ -112,6 +112,24 @@ impl Sizing {
 }
 
 pub fn compute(scene: ResolvedScene, fonts: &mut Fonts) -> Result<LayoutSnapshot> {
+    compute_checked(scene, fonts, &|| Ok(()))
+}
+
+/// Cancel at native calculation boundaries without publishing a partial snapshot.
+pub fn compute_with_cancellation(
+    scene: ResolvedScene,
+    fonts: &mut Fonts,
+    cancel: Option<&tokio_util::sync::CancellationToken>,
+) -> Result<LayoutSnapshot> {
+    compute_checked(scene, fonts, &|| crate::cancel::check(cancel))
+}
+
+pub(crate) fn compute_checked(
+    scene: ResolvedScene,
+    fonts: &mut Fonts,
+    check: &dyn Fn() -> Result<()>,
+) -> Result<LayoutSnapshot> {
+    check()?;
     let mut solver = Solver {
         items: Vec::new(),
         roots: Vec::new(),
@@ -120,9 +138,10 @@ pub fn compute(scene: ResolvedScene, fonts: &mut Fonts) -> Result<LayoutSnapshot
         blocks: BTreeMap::new(),
         fill_allocations: BTreeMap::new(),
         fonts,
+        check,
     };
     for node in scene.roots {
-        let root = solver.flatten(node, None, true);
+        let root = solver.flatten(node, None, true)?;
         solver.roots.push(root);
     }
     for index in 0..solver.items.len() {
@@ -147,8 +166,11 @@ pub fn compute(scene: ResolvedScene, fonts: &mut Fonts) -> Result<LayoutSnapshot
     let identity = json!({"engine":ENGINE,"revision":scene.revision,"dependency_revision":scene.dependency_revision,
         "records":solver.items.iter().map(|i| &i.record).collect::<Vec<_>>(),
         "nodes":solver.items.iter().map(|i| &i.node).collect::<Vec<_>>()});
+    check()?;
+    let id = hash(identity.to_string().as_bytes());
+    check()?;
     Ok(LayoutSnapshot {
-        id: hash(identity.to_string().as_bytes()),
+        id,
         revision: scene.revision,
         dependency_revision: scene.dependency_revision,
         dependencies: scene.dependencies,
@@ -169,6 +191,7 @@ struct Solver<'a> {
     blocks: BTreeMap<usize, TextBlock>,
     fill_allocations: BTreeMap<(usize, usize), f32>,
     fonts: &'a mut Fonts,
+    check: &'a dyn Fn() -> Result<()>,
 }
 
 impl Solver<'_> {
@@ -177,7 +200,8 @@ impl Solver<'_> {
         mut node: ResolvedNode,
         parent: Option<usize>,
         inherited_enabled: bool,
-    ) -> usize {
+    ) -> Result<usize> {
+        (self.check)()?;
         let children = std::mem::take(&mut node.children);
         let index = self.items.len();
         let enabled =
@@ -223,13 +247,14 @@ impl Solver<'_> {
             self.items[index].record.diagnostics.push(diagnostic);
         }
         for child in children {
-            let child = self.flatten(child, Some(index), enabled);
+            let child = self.flatten(child, Some(index), enabled)?;
             self.items[index].children.push(child);
         }
-        index
+        Ok(index)
     }
 
     fn dimension(&mut self, index: usize, axis: usize) -> Result<f32> {
+        (self.check)()?;
         if let Some(value) = self.dimensions[index][axis] {
             return Ok(value);
         }
@@ -411,6 +436,7 @@ impl Solver<'_> {
     }
 
     fn fill(&mut self, index: usize, axis: usize, fallback: Option<f32>) -> Result<f32> {
+        (self.check)()?;
         let Some(parent) = self.items[index].parent else {
             return Ok(fallback.unwrap_or(0.0));
         };
@@ -460,6 +486,7 @@ impl Solver<'_> {
     }
 
     fn content(&mut self, index: usize, axis: usize, fallback: Option<f32>) -> Result<f32> {
+        (self.check)()?;
         let kind = self.items[index].node.kind().to_string();
         if matches!(kind.as_str(), "text" | "note" | "prompt" | "context") {
             if axis == 0 {
@@ -511,6 +538,7 @@ impl Solver<'_> {
     }
 
     fn measure_text(&mut self, index: usize, width: Option<f32>) -> Result<()> {
+        (self.check)()?;
         if self
             .blocks
             .get(&index)
@@ -563,13 +591,14 @@ impl Solver<'_> {
             },
             locale: self.fonts.locale().into(),
         };
-        let block = self.fonts.layout(&spec, width)?;
+        let block = self.fonts.layout_checked(&spec, width, self.check)?;
         self.items[index].record.text = Some(block.metrics.clone());
         self.blocks.insert(index, block);
         Ok(())
     }
 
     fn position(&mut self, index: usize, parent_transform: Affine) -> Result<()> {
+        (self.check)()?;
         let rect = self.items[index].record.rect;
         let rotation = self.number(index, "rotation", 0.0)?;
         let xflip = self.items[index].node.properties.get("flipX") == Some(&Value::Bool(true));
@@ -681,6 +710,7 @@ impl Solver<'_> {
     }
 
     fn visual_bounds(&mut self, index: usize) -> Result<Rect> {
+        (self.check)()?;
         let rect = self.items[index].record.rect;
         let transform = self.items[index].record.transform;
         let widths = stroke_widths(&self.items[index].node)?;
@@ -927,4 +957,99 @@ fn boolean(node: &ResolvedNode, property: &str, default: bool) -> Result<bool> {
                 .ok_or_else(|| invalid(format!("{property} must be a boolean")))
         })
         .unwrap_or(Ok(default))
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+    use crate::{document::Document, project::Project};
+    use std::cell::Cell;
+
+    #[test]
+    fn native_cancellation_interrupts_partial_layout_and_preserves_recovery_identity() {
+        let root = tempfile::TempDir::new().unwrap();
+        let path = root.path().join("scene.pen");
+        let rows = (0..40).map(|index| json!({"type":"frame","id":format!("row-{index}"),"layout":"horizontal","width":240,"height":"fit_content","gap":4,"children":[
+            {"id":format!("label-{index}"),"type":"text","content":"日本語 native layout","fontSize":12,"fontFamily":"Noto Sans JP","width":"fill_container","textGrowth":"fixed-width","stroke":"#000000","strokeWidth":0.25},
+            {"id":format!("mark-{index}"),"type":"rectangle","width":10,"height":10,"fill":"#336699"}
+        ]})).collect::<Vec<_>>();
+        let source = json!({"version":"2.21","children":[{"id":"canvas","type":"frame","width":240,"height":"fit_content","layout":"vertical","children":rows}]}).to_string();
+        std::fs::write(&path, &source).unwrap();
+        let project =
+            Project::from_document(&path, Document::parse(source.clone()).unwrap(), &[]).unwrap();
+        let mut fonts = Fonts::new(&[]).unwrap();
+        let count = Cell::new(0usize);
+        let baseline = compute_checked(project.resolve().unwrap(), &mut fonts, &|| {
+            count.set(count.get() + 1);
+            Ok(())
+        })
+        .unwrap();
+        let total = count.get();
+        assert!(
+            total > 400,
+            "Expected substantial native calculation, got {total} checks"
+        );
+        let baseline_records = serde_json::to_value(baseline.records()).unwrap();
+        for cutoff in [1, total / 4, total / 2, total - 1] {
+            let cancel = tokio_util::sync::CancellationToken::new();
+            let checks = Cell::new(0);
+            let result = compute_checked(project.resolve().unwrap(), &mut fonts, &|| {
+                checks.set(checks.get() + 1);
+                if checks.get() == cutoff {
+                    cancel.cancel();
+                }
+                crate::cancel::check(Some(&cancel))
+            });
+            assert_eq!(
+                result
+                    .err()
+                    .expect("A partial calculation must not publish a snapshot")
+                    .code,
+                "CANCELLED"
+            );
+            assert_eq!(checks.get(), cutoff);
+            let recovered =
+                compute_with_cancellation(project.resolve().unwrap(), &mut fonts, None).unwrap();
+            assert_eq!(recovered.id, baseline.id);
+            assert_eq!(
+                serde_json::to_value(recovered.records()).unwrap(),
+                baseline_records
+            );
+        }
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), source);
+    }
+
+    #[test]
+    fn native_cancellation_checked_layout_preserves_deadline_errors_and_priority() {
+        let root = tempfile::TempDir::new().unwrap();
+        let path = root.path().join("scene.pen");
+        let source = json!({"version":"2.21","children":[{"id":"box","type":"rectangle","width":20,"height":20}]}).to_string();
+        std::fs::write(&path, &source).unwrap();
+        let project = Project::from_document(&path, Document::parse(source).unwrap(), &[]).unwrap();
+        let mut fonts = Fonts::new(&[]).unwrap();
+        let checks = Cell::new(0);
+        let error = compute_checked(project.resolve().unwrap(), &mut fonts, &|| {
+            checks.set(checks.get() + 1);
+            if checks.get() == 4 {
+                Err(Error::new(
+                    "RENDER_TIMEOUT",
+                    "Native layout exceeded its calculation budget",
+                ))
+            } else {
+                Ok(())
+            }
+        })
+        .err()
+        .unwrap();
+        assert_eq!(error.code, "RENDER_TIMEOUT");
+        assert_eq!(checks.get(), 4);
+        let cancel = tokio_util::sync::CancellationToken::new();
+        cancel.cancel();
+        let error =
+            compute_with_cancellation(project.resolve().unwrap(), &mut fonts, Some(&cancel))
+                .err()
+                .unwrap();
+        assert_eq!(error.code, "CANCELLED");
+        compute(project.resolve().unwrap(), &mut fonts).unwrap();
+    }
 }

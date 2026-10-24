@@ -725,7 +725,9 @@ pub(crate) fn layout_snapshot_observing_failure(
     if expected_dependency_revision.is_some() {
         project.require_dependencies(expected_dependency_revision)?;
     }
+    crate::cancel::check(cancel.as_ref())?;
     let mut fonts = project.load_fonts()?;
+    crate::cancel::check(cancel.as_ref())?;
     let declared = project.dependencies();
     let snapshot = match crate::script::compute(&mut project, &mut fonts, runtime) {
         Ok(snapshot) => snapshot,
@@ -736,6 +738,7 @@ pub(crate) fn layout_snapshot_observing_failure(
     };
     store::require_revision(&store.read()?, &snapshot.revision)?;
     project.verify_unchanged()?;
+    crate::cancel::check(cancel.as_ref())?;
     // Retained snapshots must not inherit the lifetime of a finished request.
     project.set_cancellation(None);
     Ok((project, snapshot))

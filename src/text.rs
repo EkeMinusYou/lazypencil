@@ -19,6 +19,26 @@ pub use fonts::{FontAxis, FontInfo, Fonts};
 
 impl Fonts {
     pub fn layout(&mut self, spec: &TextSpec, width: Option<f32>) -> Result<TextBlock> {
+        self.layout_checked(spec, width, &|| Ok(()))
+    }
+
+    /// Cancellation is cooperative around native shaping and glyph batches.
+    pub fn layout_with_cancellation(
+        &mut self,
+        spec: &TextSpec,
+        width: Option<f32>,
+        cancel: Option<&tokio_util::sync::CancellationToken>,
+    ) -> Result<TextBlock> {
+        self.layout_checked(spec, width, &|| crate::cancel::check(cancel))
+    }
+
+    pub(crate) fn layout_checked(
+        &mut self,
+        spec: &TextSpec,
+        width: Option<f32>,
+        check: &dyn Fn() -> Result<()>,
+    ) -> Result<TextBlock> {
+        check()?;
         if !spec.size.is_finite() || !(0.0..=4096.0).contains(&spec.size) || spec.size == 0.0 {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
@@ -92,6 +112,7 @@ impl Fonts {
             style.font_style(),
             style.font_arguments().expect("font arguments were set"),
         )?;
+        check()?;
         style.set_font_families(&resolved.families);
         let mut paragraph_style = ParagraphStyle::new();
         paragraph_style.set_text_style(&style);
@@ -99,10 +120,13 @@ impl Fonts {
         let mut builder = ParagraphBuilder::new(&paragraph_style, self.collection.clone());
         builder.add_text(&spec.content);
         let mut paragraph = builder.build();
+        check()?;
         paragraph.layout(width.unwrap_or(1_000_000.0));
+        check()?;
         if width.is_none() {
             let natural = paragraph.max_intrinsic_width().ceil();
             paragraph.layout(natural.max(0.0));
+            check()?;
         }
         let mut missing = paragraph.unresolved_codepoints();
         missing.sort_unstable();
@@ -122,8 +146,16 @@ impl Fonts {
         let mut ink_bounds: Option<crate::geometry::Rect> = None;
         let mut outline = spec.outline_required.then(PathBuilder::new);
         let mut unsupported = false;
+        let mut interrupted = None;
         // Visit the exact positioned glyph runs used by Paragraph::paint.
         paragraph.visit(|line, info| {
+            if interrupted.is_some() {
+                return;
+            }
+            if let Err(error) = check() {
+                interrupted = Some(error);
+                return;
+            }
             if let Some(info) = info {
                 let font = info.font();
                 if info.count() > 0 {
@@ -145,9 +177,21 @@ impl Fonts {
                 let mut include = |rect: crate::geometry::Rect| {
                     ink_bounds = Some(ink_bounds.map_or(rect, |current| current.union(rect)));
                 };
-                for ((glyph, position), bounds) in
-                    info.glyphs().iter().zip(info.positions()).zip(bounds)
+                for (index, ((glyph, position), bounds)) in info
+                    .glyphs()
+                    .iter()
+                    .zip(info.positions())
+                    .zip(bounds)
+                    .enumerate()
                 {
+                    // Token checks can lock; keep the cost bounded for dense
+                    // text while checking every run and at most 64 glyphs.
+                    if index.is_multiple_of(64)
+                        && let Err(error) = check()
+                    {
+                        interrupted = Some(error);
+                        return;
+                    }
                     let position = (origin.x + position.x, origin.y + position.y);
                     if !bounds.is_empty() {
                         include(crate::geometry::Rect::new(
@@ -209,6 +253,10 @@ impl Fonts {
                 }
             }
         });
+        if let Some(error) = interrupted {
+            return Err(error);
+        }
+        check()?;
         if unknown_font {
             return Err(Error::new(
                 "RENDER_ERROR",
@@ -247,6 +295,7 @@ impl Fonts {
                 paragraph.height(),
             ));
             let decoration = decorations::geometry(&paragraph, bounds)?;
+            check()?;
             Some(
                 outline
                     .op(&decoration, skia_safe::PathOp::Union)
@@ -260,6 +309,7 @@ impl Fonts {
         } else {
             outline
         };
+        check()?;
         Ok(TextBlock {
             paragraph,
             metrics,
@@ -325,4 +375,89 @@ pub struct TextBlock {
     pub metrics: TextMetrics,
     pub outline: Option<Path>,
     pub ink_bounds: crate::geometry::Rect,
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    fn outline_png(block: &TextBlock) -> Vec<u8> {
+        let mut surface =
+            skia_safe::surfaces::raster_n32_premul((304, block.metrics.height.ceil() as i32 + 8))
+                .unwrap();
+        surface.canvas().clear(Color::WHITE);
+        let mut paint = skia_safe::Paint::default();
+        paint.set_color(Color::BLACK);
+        paint.set_anti_alias(true);
+        surface
+            .canvas()
+            .draw_path(block.outline.as_ref().unwrap(), &paint);
+        skia_safe::png_encoder::encode_image(None, &surface.image_snapshot(), &Default::default())
+            .unwrap()
+            .as_bytes()
+            .to_vec()
+    }
+
+    #[test]
+    fn native_cancellation_interrupts_glyph_outlines_without_poisoning_font_reuse() {
+        let mut fonts = Fonts::new(&[]).unwrap();
+        let spec = TextSpec {
+            content: "日本語 Native geometry ".repeat(32),
+            size: 18.,
+            outline_required: true,
+            underline: true,
+            ..Default::default()
+        };
+        let before = fonts.layout(&spec, Some(300.)).unwrap();
+        let metrics = serde_json::to_value(&before.metrics).unwrap();
+        let outline = outline_png(&before);
+        let checks = Cell::new(0);
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let result = fonts.layout_checked(&spec, Some(300.), &|| {
+            checks.set(checks.get() + 1);
+            // Initial checks cover font selection and shaping. This interruption
+            // occurs while walking positioned glyph runs and their outlines.
+            if checks.get() == 16 {
+                cancel.cancel();
+            }
+            crate::cancel::check(Some(&cancel))
+        });
+        assert_eq!(
+            result
+                .err()
+                .expect("An interrupted glyph walk must not return a TextBlock")
+                .code,
+            "CANCELLED"
+        );
+        assert_eq!(checks.get(), 16);
+        let after = fonts
+            .layout_with_cancellation(&spec, Some(300.), None)
+            .unwrap();
+        assert_eq!(serde_json::to_value(&after.metrics).unwrap(), metrics);
+        assert_eq!(outline_png(&after), outline);
+        assert_eq!(after.ink_bounds, before.ink_bounds);
+    }
+
+    #[test]
+    fn native_cancellation_preserves_deadline_errors_from_glyph_walks() {
+        let mut fonts = Fonts::new(&[]).unwrap();
+        let spec = TextSpec {
+            content: "Native deadline geometry ".repeat(32),
+            outline_required: true,
+            ..Default::default()
+        };
+        let checks = Cell::new(0);
+        let result = fonts.layout_checked(&spec, Some(240.), &|| {
+            checks.set(checks.get() + 1);
+            if checks.get() == 16 {
+                Err(Error::new("RENDER_TIMEOUT", "Calculation deadline elapsed"))
+            } else {
+                Ok(())
+            }
+        });
+        assert_eq!(result.err().unwrap().code, "RENDER_TIMEOUT");
+        assert_eq!(checks.get(), 16);
+        fonts.layout(&spec, Some(240.)).unwrap();
+    }
 }

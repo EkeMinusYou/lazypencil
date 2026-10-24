@@ -169,6 +169,30 @@ class FocusTests(unittest.TestCase):
         _, checks = focus.commands("dynamic", ["dynamic_render"])
         self.assertTrue(all(case not in check for check in checks for case in cases))
 
+    def test_native_calculation_changes_keep_cancellation_reproduction_and_feature_configuration(self):
+        for path in ["src/layout.rs", "src/text.rs", "src/render.rs", "src/render/backdrop.rs", "src/service.rs", "src/script/layout.rs"]:
+            result = focus.select([path])
+            self.assertIn("native_layout", result["targets"])
+            self.assertIn(result["suite"], ["graphics", "dynamic"])
+            build, checks = focus.commands(result["suite"], result["targets"])
+            self.assertNotIn("--no-default-features", build[0])
+            self.assertIn("native_layout", build[0])
+            if result["suite"] == "graphics":
+                self.assertIn("native_cancellation", checks[0])
+                self.assertIn("native_layout", checks[1])
+                self.assertNotIn("native_layout", checks[-1])
+                self.assertEqual(checks[-1][checks[-1].index("native_cancellation")-1], "--skip")
+            else:
+                self.assertNotIn("native_layout", checks[-1])
+        workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/native.yml").read_text()
+        self.assertLess(workflow.index("- name: Validate native cancellation"), workflow.index("- name: Install and verify the pinned Chromium runtime"))
+        self.assertIn("inputs.suite == 'dynamic' && contains(fromJSON(inputs.targets), 'native_layout')", workflow)
+        self.assertIn("cargo test --locked --lib native_cancellation", workflow)
+        self.assertIn("cargo test --locked --test native_layout", workflow)
+        mixed = focus.select(["src/agent.rs", "src/layout.rs"])
+        self.assertEqual(mixed["suite"], "graphics")
+        self.assertTrue({"agent", "native_layout"} <= set(mixed["targets"]))
+
     def test_core_edit_selects_its_existing_integration_target(self):
         result = focus.select(["src/queries.rs", "tests/queries.rs"])
         self.assertEqual(result["suite"], "core")
@@ -219,13 +243,13 @@ class FocusTests(unittest.TestCase):
 
     def test_graphics_with_workflow_changes_keeps_pixels_first_without_duplicate_tui_units(self):
         result = focus.select(["src/layout.rs", "tests/graphics.rs", ".github/workflows/native.yml"])
-        self.assertEqual(result, {"platform": "ubuntu-24.04", "suite": "graphics", "targets": ["graphics", "layout", "render"]})
+        self.assertEqual(result, {"platform": "ubuntu-24.04", "suite": "graphics", "targets": ["graphics", "layout", "native_layout", "render"]})
         _, checks = focus.commands(result["suite"], result["targets"])
-        self.assertEqual(len(checks), 1)
-        self.assertIn("--lib", checks[0])
-        self.assertNotIn("tui::tests::", checks[0])
-        self.assertIn("graphics", checks[0])
-        self.assertIn("layout", checks[0])
+        self.assertEqual(len(checks), 3 if "native_layout" in result["targets"] else 1)
+        self.assertIn("--lib", checks[-1])
+        self.assertNotIn("tui::tests::", checks[-1])
+        self.assertIn("graphics", checks[-1])
+        self.assertIn("layout", checks[-1])
         core = focus.select(["src/queries.rs", ".github/workflows/ci.yml"])
         self.assertEqual(core["suite"], "core")
         self.assertEqual(core["targets"], ["queries"])
@@ -234,28 +258,28 @@ class FocusTests(unittest.TestCase):
         for paths in (["src/layout.rs"], ["src/layout/metrics.rs"], ["src/layout.rs", ".github/workflows/ci.yml"]):
             with self.subTest(paths=paths):
                 result = focus.select(paths)
-                self.assertEqual(result, {"platform": "ubuntu-24.04", "suite": "graphics", "targets": ["graphics", "layout", "render"]})
+                self.assertEqual(result, {"platform": "ubuntu-24.04", "suite": "graphics", "targets": ["graphics", "layout", "native_layout", "render"]})
                 build, checks = focus.commands(result["suite"], result["targets"])
                 self.assertNotIn("--no-default-features", build[0])
-                self.assertEqual(len(checks), 1)
+                self.assertEqual(len(checks), 3 if "native_layout" in result["targets"] else 1)
                 for target in result["targets"]:
-                    self.assertIn(target, checks[0])
-                self.assertNotIn("--ignored", checks[0])
-                self.assertNotIn("--include-ignored", checks[0])
+                    self.assertTrue(any(target in check for check in checks))
+                self.assertNotIn("--ignored", checks[-1])
+                self.assertNotIn("--include-ignored", checks[-1])
         self.assertEqual(focus.select(["tests/layout.rs"])["targets"], ["layout"])
 
     def test_static_render_regressions_stay_in_the_cpu_graphics_gate(self):
         for paths, targets in [
             (["tests/render.rs"], ["render"]),
-            (["src/layout.rs", "tests/graphics.rs", "tests/render.rs"], ["graphics", "layout", "render"]),
+            (["src/layout.rs", "tests/graphics.rs", "tests/render.rs"], ["graphics", "layout", "native_layout", "render"]),
         ]:
             result = focus.select(paths)
             self.assertEqual(result["platform"], "ubuntu-24.04")
             self.assertEqual(result["suite"], "graphics")
             self.assertEqual(result["targets"], targets)
             _, checks = focus.commands(result["suite"], targets)
-            self.assertEqual(len(checks), 1)
-            self.assertNotIn("--include-ignored", checks[0])
+            self.assertEqual(len(checks), 3 if "native_layout" in result["targets"] else 1)
+            self.assertNotIn("--include-ignored", checks[-1])
         self.assertEqual(focus.select(["src/render.rs"])["suite"], "dynamic")
 
     def test_platform_override_preserves_the_affected_suite(self):
