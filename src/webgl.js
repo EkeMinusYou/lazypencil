@@ -31,6 +31,7 @@
     let unit = 0, components = 0;
     const own = (object, name) => Object.prototype.hasOwnProperty.call(object, name);
     const arrays = request.uniform_arrays || {};
+    const defaultArrays = new Set(request.uniform_array_defaults || []);
     const transparent = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==";
     const textures = new Map();
     const textureUnit = async value => {
@@ -68,6 +69,11 @@
         if (components > 4096) throw Error("Shader exceeds 4096 active numeric components");
         if (array) {
           if (value === null) value = Array(count).fill(0);
+          if (defaultArrays.has(name)) {
+            if (!Array.isArray(value) || value.length !== width)
+              throw Error("Invalid default array element: " + name);
+            value = [...value, ...Array(count - width).fill(0)];
+          }
           if (!Array.isArray(value) || value.length < count || value.length % width !== 0)
             throw Error("Uniform array is shorter than its active linked elements: " + name);
           // The linker can discard an unused tail. Pass only its active prefix.

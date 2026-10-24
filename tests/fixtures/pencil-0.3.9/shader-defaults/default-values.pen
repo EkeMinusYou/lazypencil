@@ -1,0 +1,189 @@
+{
+  "version": "2.19",
+  "children": [
+    {
+      "id": "defaults-probe",
+      "type": "frame",
+      "width": 280,
+      "height": 20,
+      "layout": "none",
+      "fill": "#ffffff",
+      "children": [
+        {
+          "id": "number",
+          "type": "rectangle",
+          "x": 0,
+          "y": 0,
+          "width": 20,
+          "height": 20,
+          "fill": {
+            "type": "shader",
+            "url": "number.glsl"
+          }
+        },
+        {
+          "id": "override",
+          "type": "rectangle",
+          "x": 20,
+          "y": 0,
+          "width": 20,
+          "height": 20,
+          "fill": {
+            "type": "shader",
+            "url": "number.glsl",
+            "uniforms": {
+              "value": 0.25
+            }
+          }
+        },
+        {
+          "id": "plain",
+          "type": "rectangle",
+          "x": 40,
+          "y": 0,
+          "width": 20,
+          "height": 20,
+          "fill": {
+            "type": "shader",
+            "url": "plain-comment.glsl"
+          }
+        },
+        {
+          "id": "trailing",
+          "type": "rectangle",
+          "x": 60,
+          "y": 0,
+          "width": 20,
+          "height": 20,
+          "fill": {
+            "type": "shader",
+            "url": "trailing-comment.glsl"
+          }
+        },
+        {
+          "id": "color",
+          "type": "rectangle",
+          "x": 80,
+          "y": 0,
+          "width": 20,
+          "height": 20,
+          "fill": {
+            "type": "shader",
+            "url": "color.glsl"
+          }
+        },
+        {
+          "id": "color-override",
+          "type": "rectangle",
+          "x": 100,
+          "y": 0,
+          "width": 20,
+          "height": 20,
+          "fill": {
+            "type": "shader",
+            "url": "color.glsl",
+            "uniforms": {
+              "value": "#2060a0"
+            }
+          }
+        },
+        {
+          "id": "integer",
+          "type": "rectangle",
+          "x": 120,
+          "y": 0,
+          "width": 20,
+          "height": 20,
+          "fill": {
+            "type": "shader",
+            "url": "integer.glsl"
+          }
+        },
+        {
+          "id": "negative",
+          "type": "rectangle",
+          "x": 140,
+          "y": 0,
+          "width": 20,
+          "height": 20,
+          "fill": {
+            "type": "shader",
+            "url": "negative.glsl"
+          }
+        },
+        {
+          "id": "scientific",
+          "type": "rectangle",
+          "x": 160,
+          "y": 0,
+          "width": 20,
+          "height": 20,
+          "fill": {
+            "type": "shader",
+            "url": "scientific.glsl"
+          }
+        },
+        {
+          "id": "rgba",
+          "type": "rectangle",
+          "x": 180,
+          "y": 0,
+          "width": 20,
+          "height": 20,
+          "fill": {
+            "type": "shader",
+            "url": "rgba.glsl"
+          }
+        },
+        {
+          "id": "vector-csv",
+          "type": "rectangle",
+          "y": 0,
+          "width": 20,
+          "height": 20,
+          "fill": {
+            "type": "shader",
+            "url": "vector-csv.glsl"
+          },
+          "x": 200
+        },
+        {
+          "id": "grouped",
+          "type": "rectangle",
+          "y": 0,
+          "width": 20,
+          "height": 20,
+          "fill": {
+            "type": "shader",
+            "url": "grouped.glsl"
+          },
+          "x": 220
+        },
+        {
+          "id": "array-default",
+          "type": "rectangle",
+          "y": 0,
+          "width": 20,
+          "height": 20,
+          "fill": {
+            "type": "shader",
+            "url": "array-default.glsl"
+          },
+          "x": 240
+        },
+        {
+          "id": "hex-prefix",
+          "type": "rectangle",
+          "y": 0,
+          "width": 20,
+          "height": 20,
+          "fill": {
+            "type": "shader",
+            "url": "hex-prefix.glsl"
+          },
+          "x": 260
+        }
+      ]
+    }
+  ]
+}

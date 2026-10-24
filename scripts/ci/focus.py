@@ -31,8 +31,12 @@ def select(paths, platform="auto"):
         "src/cdp/process.rs", "tests/support/unix_browser_ownership.rs",
         "tests/support/browser_process_unix.py",
     } for path in paths)
-    conversation = ci_change or ownership or bool(stems & {"agent", "conversation", "windows_agent"}) or any(path.startswith("tests/support/acp_") for path in paths)
+    conversation = ownership or bool(stems & {"agent", "conversation", "windows_agent"}) or any(path.startswith("tests/support/acp_") for path in paths)
     if conversation:
+        suite, targets = "conversation", ["agent"]
+    elif stems & {"shader", "shader_uniforms"}:
+        suite, targets = "shader", ["shader_uniforms"]
+    elif ci_change:
         suite, targets = "conversation", ["agent"]
     elif stems & DYNAMIC or any(path.startswith(("src/cdp/", "src/tui/", "src/render/")) for path in paths):
         suite = "dynamic"
@@ -86,6 +90,12 @@ def commands(suite, targets):
     features = ["--no-default-features"] if core else []
     selected = [arg for target in targets for arg in ("--test", target)]
     common = ["cargo", "test", "--locked", *features]
+    if suite == "shader":
+        if targets != ["shader_uniforms"]:
+            raise ValueError("Shader focus requires only the shader_uniforms target")
+        # CPU validation runs before Chromium acquisition in the native workflow.
+        return ([[*common, *selected, "--no-run"], ["cargo", "build", "--locked"]],
+                [[*common, *selected, "--", "--ignored", "--test-threads=1"]])
     build = [[*common, "--lib", *selected, "--no-run"], ["cargo", "build", "--locked", *features]]
     checks = []
     if suite == "conversation":
@@ -107,7 +117,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("plan", "build", "test"))
     parser.add_argument("--platform", default="auto", choices=["auto", *PLATFORMS])
-    parser.add_argument("--suite", choices=("core", "conversation", "graphics", "dynamic"))
+    parser.add_argument("--suite", choices=("core", "conversation", "graphics", "dynamic", "shader"))
     parser.add_argument("--targets", default="[]")
     args = parser.parse_args()
     if args.mode == "plan":

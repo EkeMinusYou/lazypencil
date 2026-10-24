@@ -26,7 +26,7 @@ class FocusTests(unittest.TestCase):
                 self.assertIn("--test", checks[1])
 
     def test_shared_dynamic_changes_use_one_linux_runner(self):
-        for path in ("src/cdp/tabs.rs", "src/script/context.rs", "src/render.rs", "src/tui/preview.rs", "tests/shader_uniforms.rs"):
+        for path in ("src/cdp/tabs.rs", "src/script/context.rs", "src/render.rs", "src/tui/preview.rs"):
             result = focus.select([path])
             self.assertEqual(result["platform"], "ubuntu-24.04")
             self.assertEqual(result["suite"], "dynamic")
@@ -36,6 +36,22 @@ class FocusTests(unittest.TestCase):
             self.assertIn("retained_", checks[2])
             self.assertIn("--skip", checks[3])
             self.assertIn("--test-threads=1", checks[3])
+
+    def test_shader_changes_select_cpu_validation_then_only_real_shader_cases(self):
+        for paths in (["src/shader.rs"], ["src/shader/defaults.rs"], ["tests/shader_uniforms.rs"], ["src/shader.rs", ".github/workflows/native.yml"]):
+            result=focus.select(paths)
+            self.assertEqual(result,{"platform":"ubuntu-24.04","suite":"shader","targets":["shader_uniforms"]})
+            build,checks=focus.commands(result["suite"],result["targets"])
+            self.assertNotIn("--lib",build[0])
+            self.assertNotIn("--no-default-features",build[0])
+            self.assertEqual(len(checks),1)
+            self.assertIn("--ignored",checks[0])
+            self.assertNotIn("--include-ignored",checks[0])
+            self.assertEqual(checks[0][checks[0].index("--test")+1],"shader_uniforms")
+        native=(Path(__file__).resolve().parents[1]/".github/workflows/native.yml").read_text()
+        self.assertLess(native.index("Validate shader inputs before acquiring Chromium"),native.index("Install and verify the pinned Chromium runtime"))
+        with self.assertRaises(ValueError):
+            focus.commands("shader",["agent"])
 
     def test_browser_ownership_and_nested_fixtures_run_actual_process_cases_before_rendering(self):
         for path in ("src/cdp/process.rs", "src/cdp/process/unix.rs", "tests/support/unix_browser_ownership.rs", "tests/support/browser_process_unix.py"):
@@ -79,7 +95,7 @@ class FocusTests(unittest.TestCase):
         for target in focus.RENDER_TESTS - focus.CREDENTIALED_TESTS:
             with self.subTest(target=target):
                 result = focus.select([f"tests/{target}.rs"])
-                self.assertIn(result["suite"], ["dynamic", "graphics"])
+                self.assertIn(result["suite"], ["dynamic", "graphics", "shader"])
                 self.assertIn(target, result["targets"])
                 build, _ = focus.commands(result["suite"], result["targets"])
                 self.assertNotIn("--no-default-features", build[0])
@@ -132,8 +148,8 @@ class FocusTests(unittest.TestCase):
                 self.assertEqual(command.call_args.args[0], ["git", "ls-files"])
 
     def test_runtime_optins_never_expand_to_credentialed_agent_requests(self):
-        for suite in ("core", "conversation", "graphics", "dynamic"):
-            result = focus.select(["src/cdp.rs"] if suite == "dynamic" else ["tests/queries.rs"])
+        for suite in ("core", "conversation", "graphics", "dynamic", "shader"):
+            result = focus.select(["src/shader.rs"] if suite=="shader" else ["src/cdp.rs"] if suite == "dynamic" else ["tests/queries.rs"])
             _, checks = focus.commands(suite, result["targets"])
             for command in checks:
                 if "--include-ignored" in command:

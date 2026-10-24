@@ -6,6 +6,8 @@ The renderer uses Skia CPU and SkParagraph. CLI and MCP share the same layout sn
 
 The current format reference defines text decorations, stroke alignment and per-side widths, normalized image crop transforms, and inner/outer shadows. See the [official `.pen` schema](https://docs.pencil.dev/for-developers/the-pen-format#typescript-schema). The implementations and examples here are original lazypencil code; full behavioral comparison still requires suitable permitted fixtures.
 
+The same corpus now includes original GLSL documentation-default controls: 14 flat-color cells exported by CLI 0.3.9 from a 2.19 document at scale 2. Numeric/color/vector/grouped values, explicit overrides, comment placement, decimal prefixes and first-element array defaults are covered. The 560×40 PNG and input provenance are retained under `shader-defaults/`; its new software-WebGL comparison runs on hosted CI. This does not establish shader-effect or current-version parity.
+
 ## Rounded polygons
 
 Polygons accept a nonnegative scalar `cornerRadius` through the ordinary variable, theme, and instance property path. Vertices keep their existing placement on the declared ellipse. Circular fillets are constructed from each vertex's original two edges, with their endpoints calculated independently; deriving the next tangent from the previous arc endpoint changes oversized corners. The same path feeds fills, uniform strokes, masks, effects, and visual bounds. Zero-radius and collapsed-edge shapes retain the sharp/degenerate path. Invalid radii are reported as document errors.
