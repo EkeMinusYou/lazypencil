@@ -130,32 +130,6 @@ fn bounded_dependencies(dependencies: impl Iterator<Item = Dependency>) -> Optio
     Some(result)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn duplicates_cannot_hide_an_over_budget_guard_tail() {
-        let input = || {
-            (0..MAX_GUARDS + 2).map(|index| Dependency {
-                path: PathBuf::from(if index == MAX_GUARDS + 1 {
-                    "unseen-tail.js"
-                } else {
-                    "repeated.js"
-                }),
-                revision: "same captured revision".into(),
-                kind: "script".into(),
-                version: None,
-                availability: None,
-            })
-        };
-        assert!(bounded_dependencies(input()).is_none());
-        let small = bounded_dependencies(input().take(2)).unwrap();
-        assert_eq!(small.len(), 1);
-        assert_eq!(small[0].path, PathBuf::from("repeated.js"));
-    }
-}
-
 impl FailedCodeCapture {
     pub(crate) fn hash(&self) -> &str {
         &self.asset.revision
@@ -220,5 +194,31 @@ impl FailedCodeCapture {
         value["failed_calculation"] = json!(true);
         value["failure_capture_id"] = json!(self.id);
         Ok(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn duplicates_cannot_hide_an_over_budget_guard_tail() {
+        let input = || {
+            (0..MAX_GUARDS + 2).map(|index| Dependency {
+                path: PathBuf::from(if index == MAX_GUARDS + 1 {
+                    "unseen-tail.js"
+                } else {
+                    "repeated.js"
+                }),
+                revision: "same captured revision".into(),
+                kind: "script".into(),
+                version: None,
+                availability: None,
+            })
+        };
+        assert!(bounded_dependencies(input()).is_none());
+        let small = bounded_dependencies(input().take(2)).unwrap();
+        assert_eq!(small.len(), 1);
+        assert_eq!(small[0].path, PathBuf::from("repeated.js"));
     }
 }

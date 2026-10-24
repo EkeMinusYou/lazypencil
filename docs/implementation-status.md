@@ -2,6 +2,10 @@
 
 設計書 v0.9 の全体を実装対象とする。部分的な CLI や描画の試作だけで完成とは扱わない。以下は実際の実装・試験結果で更新する。
 
+2026-10-24: 文字列 sampler コピーは Windows の source `ffadaa9`／`40042692046` でも137試験が成功した。source `02b0722` の Linux x64 `40042850180` と arm64 `40042851811` は描画なし8件を含む各166試験が成功した。3 artifact の ZIP digest・各成功・1000×640 PNG／report の hash と診断0件、コピーの本文・テーマ・再編集・日本語／親 path・実 PNG 一致を検査し、画像は各同 OS の前回と一致した。最新の macOS／Windows の追加 core gate と Intel は検証中である。
+
+同日: 通常 CI の source `7d37120`／`40041616334` は先に終了した4 native job が Clippy の `items_after_test_module` で失敗した。Linux x64 と Windows の実ログを確認し、前者の試験90集計は791成功・失敗0だったが、run の成功とは扱わない。`src/project/failed_code.rs` に以前追加した guard の試験 module が後続 impl の前にあったため、試験を file 末尾へ移した。抑制や assertion の変更はせず、専用 Chromium workflow にも両構成の全 target Clippy とログ保存を追加した。full CI と専用 GHA の最新 source で検証する。
+
 2026-10-24: 文字列 sampler コピーの修正済み source `ffadaa9` は macOS `40042690191` の156試験が成功した。元 library を削除した後の明暗2テーマの PNG 一致、本文と別名・テーマ・後続の root 変数編集、日本語の directory／file、親・途中の path、dry run／後段不正操作の無書き込み、入れ子の symlink 拒否を含む。artifact `12540067953` の ZIP digest・成功ログ・1000×640 PNG／report の hash・診断0件を検査し、同じ macOS の前回画像と一致した。source `5dbafc0` の macOS／Windows は正規化済みの path と raw temp path を比較した試験の1件で失敗し、`ffadaa9` は Store の正規化済み directory を使うよう修正した。実コピー画像・親 path は修正前も成功したが、run 全体の成功とは区別する。描画なし fixture も仮のテキストから有効な小さい PNG へ変更した。source `02b0722` は専用 GHA に描画なしの sampler 試験を追加し、Linux x64／arm64 はその gate と default build を成功して描画・MCP／TUI の後段を検証中である。Windows と残る全環境の最新結果は継続して確認する。
 
 同日: 配列の背景取得を修正した source `1baf453` の専用検証は5環境すべて成功し、全 artifact の ZIP digest・成功ログ・PNG／report の hash・寸法・診断0件を検査した。macOS arm64 `40041245040` は152試験、Windows `40041246581` は134、Linux x64 `40041441423` と arm64 `40041444018` は各154、Intel Mac `40041445421` は152。画像配列の向き・scalar 混在・既定値・active tail・短い入力からの復帰、object／background、テーマと切り離し等の新しい成功もログで確認した。macOS・Windows・Intel の PNG はそれぞれ前回の同じ OS と一致した。Linux の前回画像との比較や新しい目視、物理端末、本家 Pencil との比較は主張しない。この source は新しい文字列 sampler コピーの追加前であり、その証拠には使わない。
