@@ -192,7 +192,7 @@
 
 ## 現在の検証環境
 
-現在の継続検証は対象3環境の GHA・Rust 1.94.0 で行い、ローカルでは native build を行わない。下表は独立に成果物を確認した source `5e3df14` の結果であり、最新コミットの全検証や、物理端末・最低 OS の保証へ読み替えない。
+現在の継続検証は対象3環境の GHA・Rust 1.94.0 で行い、ローカルでは native build を行わない。下表は独立に成果物を確認した source `8b28306` の結果であり、最新コミットの全検証や、物理端末・最低 OS の保証へ読み替えない。
 
 | GHA 環境 | 通常・release CI | 同じ native job の Chromium 検証 |
 | --- | --- | --- |
@@ -200,7 +200,7 @@
 | Ubuntu 24.04 x64 | 両構成・Clippy・Material・release 成功 | 実 page／shader・MCP 画像・60秒 idle・TUI／再生 PTY 成功 |
 | Ubuntu 24.04 arm64 | 両構成・Clippy・Material・release 成功 | 実 page／shader・MCP 画像・60秒 idle・TUI／再生 PTY 成功 |
 
-[変更前の CI `40061358575`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40061358575) は旧5環境とソース配布物を成功し、対象3環境のログ・画像・hash・各42回の benchmark と、630ファイルの配布ソースを照合した。初回対象の変更後は3環境の新構成を検証する。Windows／Intel の過去の結果は下記の実装履歴と [runtime の検証記録](runtimes.md#hosted-integration-without-local-build-trees) に保持する。過去のローカル検証は macOS arm64・Rust 1.99.1 と Debian 12 arm64・Rust 1.94.0 で行った。対象3環境の物理端末・クリップボード・最低 OS・本家との互換性・公開品質全体の確認は残る。
+[3環境への変更後の CI `40064481508`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40064481508) は監査・対象3環境・ソース配布物の検証がすべて成功した。各環境のログ・画像・hash・各42回の benchmark と、633ファイルの配布ソースを Git の該当 revision に照合した。後続の通信・プロセス管理修正は別途検証する。Windows／Intel の過去の結果は下記の実装履歴と [runtime の検証記録](runtimes.md#hosted-integration-without-local-build-trees) に保持する。過去のローカル検証は macOS arm64・Rust 1.99.1 と Debian 12 arm64・Rust 1.94.0 で行った。対象3環境の物理端末・クリップボード・最低 OS・本家との互換性・公開品質全体の確認は残る。
 
 ## 実装記録
 
@@ -250,11 +250,11 @@
 | 英語ガイドとスタイル | 独自の英語ガイド 15 本、スタイル 3 種、編集可能な `.pen` 作例と実 API の操作例。CLI・MCP が同じ内容・版・ハッシュを返す | `tests/guidance.rs`、`tests/mcp.rs`。全スタイル作例の計測・描画と、操作例の適用を実行。スクリプト作例は `tests/script_render.rs` で検証。動的な作例の変換と画像確認は下記 |
 | プロジェクトの設計ルール | `[design]` の独自ガイド・JSON スタイル・既定スタイルを `project:ID` で公開する。CLI・MCP と CLI／TUI 共通の会話サービスで使用し、ユーザーのローカル承認へ束縛する。指示の変更と作例データの更新を区別する | `tests/project_guidance.rs` の10試験、実 stdio MCP、疑似 ACP とその子の実 MCP、実 CLI。指示変更後の起動前拒否、相対データ保存先、ページ・依存の失効、copy/link の素材の参照元、設定破損時の保存済み文書の読み取りを確認。今回の追加を使った課金付き実生成・物理 TUI の試験は未実施 |
 | 要求中に取得した指針の記録 | 所有する MCP がガイド・スタイル・一覧の取得結果の識別情報を同期保存し、共通の会話ホストが要求の終了・取消・失敗時に会話ログへ取り込む。開始時の資料と追加取得を記録し、本文・作例・画像は複製しない | `src/guidance/usage.rs` の並行書き込み・取消・古い要求・破損・容量・symlink/FIFO、実 stdio MCP、疑似 ACP と実 CLI、実 TUI PTY の同じ接続の2要求。ログの最終書き込み失敗時も失敗として通知し下書きを復元する。取得はモデルの理解・適用の証明ではなく、親の異常終了後の回収と保持方針全体は未完成。[形式と上限](agents.md#design-resource-records) |
-| TUI の初期実装 | 共通の生きた ACP 接続、プレビュー、ノード検索・対象指定、会話、承認、パン・ズーム、添付の確認・削除、入力保持。Kitty・Sixel の明示指定と Unix の自動検出、halfblocks と外部 PNG 閲覧。コマンドパレットと、履歴のページ取得・確認付き復元 | `src/tui/tests.rs` と `tests/tui.rs`。注入した画像入力から実 ACP の RGBA/alpha、同じ接続の2要求、失敗・再開・承認・取消、完了通知と次の入力の競合を検査。実 PTY の日本語・複数行・リサイズ・端末復元・検出応答なしの最初の入力、Kitty と Sixel の独立復号、チェックポイントの確認・復元・競合後の再取得を確認。実端末・実クリップボード・IME・Windows/Linux・設定等は未完成。詳細は [TUI](tui.md) |
+| TUI の初期実装 | 共通の生きた ACP 接続、プレビュー、ノード検索・対象指定、会話、承認、パン・ズーム、添付の確認・削除、入力保持。Kitty・Sixel の明示指定と Unix の自動検出、halfblocks と外部 PNG 閲覧。コマンドパレットと、履歴のページ取得・確認付き復元 | `src/tui/tests.rs` と `tests/tui.rs`。注入した画像入力から実 ACP の RGBA/alpha、同じ接続の2要求、失敗・再開・承認・取消、完了通知と次の入力の競合を検査。実 PTY の日本語・複数行・リサイズ・端末復元・検出応答なしの最初の入力、Kitty と Sixel の独立復号、チェックポイントの確認・復元・競合後の再取得を確認。対象3環境の実端末・実クリップボード・IME・設定等の保証は未完成。Windows の追加対応は後日に回す。詳細は [TUI](tui.md) |
 | 待機時の解放 | JavaScript・ページ・シェーダーを最終実行から各60秒で終了・回収し、画像と計算結果を保持する。MCP・TUI は要求がなくても最も早い期限で起きる。MCP の5分のスナップショットも待機中に解放する | 実ワーカーの期限・再利用・回収・入力検査失敗、実 Chromium の個別期限と画素、MCP の失効後の画像要求・無保存を検査。追加要求なしの実 MCP と実 PTY の60秒試験も成功。macOS arm64 の結果であり、設定・プロセスツリー全体と各 OS・全性能は未完成 |
 | 実画像 | 編集可能な `examples/welcome.pen` を CLI で 960×640 PNG に変換し、日本語、余白、ボタンを目視確認した | 作例の変換は `tests/render.rs` でも実行する。本家との品質比較の成果物ではない |
 | ソース配布 | ローカル Skia binding patch を含む、再現可能なソースアーカイブの作成・完全性検証・新規ディレクトリーへの展開。ファイルごとの SHA-256、Git の来歴、パス・リンク・容量の検査。MPL 依存の原本ソースとライセンス | `scripts/dist.py` と `scripts/test_dist.py` の12試験。macOS と Linux で成功。`option-ext` の元の registry archive は Cargo.lock の checksum と一致。展開したソースから Linux の実ビルド・試験も確認。署名・バイナリー配布・crate 公開は未完成 |
-| CI と依存ポリシー | Rust 1.94 で配布ソースから両構成を試験し、release の mesh と1,000ノードの日本語・部品・画像を描画する構成。SPDX・取得元・RustSec の検査 | `.github/workflows/ci.yml` は actionlint 成功。ローカルの all-features・locked の cargo-deny は3検査とも成功。GitHub 上の5環境のジョブ、native 依存の完全な表示・ソース提供・バイナリー配布条件は未完了 |
+| CI と依存ポリシー | Rust 1.94 で配布ソースから両構成を試験し、release の mesh と1,000ノードの日本語・部品・画像を描画する構成。SPDX・取得元・RustSec の検査 | `.github/workflows/ci.yml` は actionlint 成功。ローカルの all-features・locked の cargo-deny は3検査とも成功。対象3環境での最新 source の全検証、native 依存の完全な表示・ソース提供・バイナリー配布条件は未完了 |
 | Linux release の初期検証 | Debian 12 arm64・Rust 1.94 の実ビルドと CLI。初回ソースの通常354試験・描画なし205試験、条件式修正後の関連32試験・両構成の Clippy。release で mesh と1,000ノードの描画 | 単純な影の文書は画像の参照を早く解放する修正で中央値約2.1秒から約0.31秒になり、PNG は一致した。端末バックエンド変更後の通常354試験・描画なし205試験と両構成の Clippy も成功し、release の mesh と1,000ノードの描画も成功した。計算済みノードの取得とスクリプト診断の追加は、その検証ソースには含まれない。各 OS・全プロセス群・操作応答の性能達成とは扱わない。[条件と数値](performance.md) |
 
 2026-10-23: 上記の macOS arm64 環境で 61 試験と `cargo clippy --all-targets -- -D warnings` が成功した。Skia を除外する構成も継続して確認する。
@@ -481,7 +481,7 @@ macOS の最適化ビルドと既存の3描画検査も終了コード0で成功
 
 同じ52ノードの作例について macOS release を修正前後で各3回測定し、子プロセス peak RSS の中央値は約250.38 MiBから144.58 MiBへ下がった。全6 PNG のバイト列が一致し、診断0件だった。Linux も通常の271・446試験が成功したが、残る検査と release の途中で、利用者のローカル容量削減と GHA 優先の指示に従ってジョブを停止した。Linux の今回の検証全体・新 release・性能測定は未完了とする。
 
-以降の全体ビルドは GHA を標準とし、ローカルでは編集・書式・workflow lint 等の軽い確認を優先する。使い捨ての build target、重複したソース展開と開発用コンテナーを削除し、必要な検証記録と選択した成果物を保持した。CI 設定は5環境の source build、Cargo download cache、runner temporary directory、ログ・描画成果物と source artifact の3日保持に対応した。main への push、PR、手動操作で起動できる。設定の lint と実際の GHA 実行は区別し、push 前には remote の実行を成功扱いしない。[開発時の方針](../README.md#development)
+以降の全体ビルドは GHA を標準とし、ローカルでは編集・書式・workflow lint 等の軽い確認を優先する。使い捨ての build target、重複したソース展開と開発用コンテナーを削除し、必要な検証記録と選択した成果物を保持した。移行時の CI 設定は旧5環境の source build、Cargo download cache、runner temporary directory、ログ・描画成果物と source artifact の3日保持に対応した。main への push、PR、手動操作で起動できる。設定の lint と実際の GHA 実行は区別し、push 前には remote の実行を成功扱いしない。[開発時の方針](../README.md#development)
 
 ### GHA への移行と依存・参照先の修正
 
