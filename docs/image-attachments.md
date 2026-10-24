@@ -49,12 +49,12 @@ Clipboard と File の入力は、同じ Attachment Service を利用する。
 
 ## OS のクリップボード
 
-Rust 側に Clipboard Provider を置き、macOS・Windows・Linux のバックエンドを分ける。候補は `arboard` とし、必要な画像形式・ファイル URI の取得に不足がある場合は OS ごとの API で補う。[arboard の画像 API](https://docs.rs/arboard/latest/arboard/struct.Clipboard.html#method.get_image)
+初回は macOS Apple Silicon・Linux x64／arm64 の画像入力を検証する。Rust 側の Clipboard Provider は OS 別のバックエンドを維持し、既存の Windows 実装の追加対応は後日に回す。候補は `arboard` とし、必要な画像形式・ファイル URI の取得に不足がある場合は OS ごとの API で補う。[arboard の画像 API](https://docs.rs/arboard/latest/arboard/struct.Clipboard.html#method.get_image)
 
 | 環境 | 対応方針 |
 | --- | --- |
 | macOS | OS の画像クリップボードを読む。スクリーンショットのコピーから `Ctrl+V` で添付する流れを検証する |
-| Windows | ネイティブの画像クリップボードを読む。WSL の動作だけで代替しない |
+| Windows（後日対応） | 既存実装は保持する。初回の必須条件ではなく、将来は WSL の動作だけで対応済みとは扱わない |
 | Linux X11 | CLIPBOARD の画像を取得する。PRIMARY を画像貼り付けの既定にしない |
 | Linux Wayland | 対応するデータ転送のバックエンドを使う。コンポジターごとの制約を診断し、対応一覧へ記録する |
 | SSH・ヘッドレス | 実行ホストのクリップボードを扱う。接続元 PC の画像へ自動アクセスするとは扱わず、ファイル添付を使えるようにする |

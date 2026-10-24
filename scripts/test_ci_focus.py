@@ -15,11 +15,11 @@ spec.loader.exec_module(focus)
 
 
 class FocusTests(unittest.TestCase):
-    def test_windows_fix_reproduces_on_windows_before_the_matrix(self):
+    def test_deferred_windows_changes_keep_shared_checks_on_a_release_runner(self):
         for path in ("src/agent/process/windows.rs", "src/conversation/mod.rs", "tests/windows_agent.rs"):
             with self.subTest(path=path):
                 result = focus.select([path])
-                self.assertEqual(result["platform"], "windows-2025")
+                self.assertEqual(result["platform"], "ubuntu-24.04")
                 build, checks = focus.commands(result["suite"], result["targets"])
                 self.assertIn("--no-default-features", build[0])
                 self.assertIn("embedded_conversation_uses_the_real_helper_for_supervision_and_bound_mcp_edits", checks[0])
@@ -35,6 +35,21 @@ class FocusTests(unittest.TestCase):
             self.assertIn("retained_", checks[1])
             self.assertIn("--skip", checks[2])
             self.assertIn("--test-threads=1", checks[2])
+
+    def test_initial_release_gate_and_manual_entries_exclude_deferred_targets(self):
+        self.assertEqual(set(focus.PLATFORMS), {"ubuntu-24.04", "ubuntu-24.04-arm", "macos-15"})
+        self.assertEqual(focus.select([".github/workflows/ci.yml"])["platform"], "ubuntu-24.04")
+        self.assertEqual(focus.select(["tests/windows_agent.rs"])["targets"], ["agent"])
+        root = Path(__file__).resolve().parents[1]
+        for name in ("ci", "chromium", "process", "release-evidence", "toolchain-evidence"):
+            workflow = (root / ".github/workflows" / (name + ".yml")).read_text()
+            with self.subTest(workflow=name):
+                self.assertNotIn("- macos-15-intel", workflow)
+                self.assertNotIn(", macos-15-intel", workflow)
+                self.assertNotIn("- windows-2025", workflow)
+                self.assertNotIn(", windows-2025", workflow)
+        pipeline = (root / ".github/workflows/ci.yml").read_text()
+        self.assertIn('platforms = runpy.run_path("scripts/ci/focus.py")["PLATFORMS"]', pipeline)
 
     def test_core_edit_selects_its_existing_integration_target(self):
         result = focus.select(["src/queries.rs", "tests/queries.rs"])
@@ -61,7 +76,7 @@ class FocusTests(unittest.TestCase):
 
     def test_platform_specific_rendering_fixes_do_not_become_core_agent_checks(self):
         result = focus.select(["src/text/windows.rs"])
-        self.assertEqual(result["platform"], "windows-2025")
+        self.assertEqual(result["platform"], "ubuntu-24.04")
         self.assertEqual(result["suite"], "graphics")
         self.assertIn("text", result["targets"])
         for path in ["src/color.rs", "src/image_geometry.rs"]:

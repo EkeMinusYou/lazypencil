@@ -30,7 +30,7 @@ env:
 
 jobs:
   verify:
-    timeout-minutes: ${{ inputs.phase == 'focus' && (inputs.suite == 'core' || inputs.suite == 'conversation') && 30 || inputs.os == 'macos-15-intel' && 120 || inputs.os == 'windows-2025' && 90 || 60 }}
+    timeout-minutes: ${{ inputs.phase == 'focus' && (inputs.suite == 'core' || inputs.suite == 'conversation') && 30 || 60 }}
     runs-on: ${{ inputs.os }}
     defaults:
       run:
@@ -165,7 +165,7 @@ jobs:
       - name: Build default test binaries and actual CLI helper
         id: default-build
         if: ${{ !cancelled() && inputs.phase == 'full' }}
-        timeout-minutes: ${{ inputs.os == 'macos-15-intel' && 90 || 45 }}
+        timeout-minutes: 45
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
           set -o pipefail

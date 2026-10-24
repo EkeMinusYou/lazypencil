@@ -7,15 +7,15 @@ on:
   workflow_dispatch:
     inputs:
       os:
-        description: Final verification platforms (all preserves the release gate)
+        description: Initial release platforms (all preserves the three-platform release gate)
         type: choice
         default: all
-        options: [all, ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-2025]
+        options: [all, ubuntu-24.04, ubuntu-24.04-arm, macos-15]
       focus_os:
         description: Override the affected platform for the initial reproduction
         type: choice
         default: auto
-        options: [auto, ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-2025]
+        options: [auto, ubuntu-24.04, ubuntu-24.04-arm, macos-15]
   workflow_call:
     inputs:
       os:
@@ -70,9 +70,9 @@ jobs:
           REQUESTED_OS: ${{ inputs.os || 'all' }}
         run: |
           python3 - <<'PY'
-          import json, os
+          import json, os, runpy
           from pathlib import Path
-          platforms = ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-15", "macos-15-intel", "windows-2025"]
+          platforms = runpy.run_path("scripts/ci/focus.py")["PLATFORMS"]
           requested = os.environ["REQUESTED_OS"]
           assert requested == "all" or requested in platforms
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:

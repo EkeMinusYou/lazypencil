@@ -1,8 +1,8 @@
 # lazypencil フォントと対応環境
 
-確認日: 2026-10-23
+確認日: 2026-10-24
 
-状態: macOS・Windows・Linux を対応目標とし、標準フォントに Noto Sans JP、端末画像に Kitty Graphics Protocol と Sixel を採用する。Noto Sans JP の配布データは版・ハッシュを固定済み。ユーザーによるフォント追加は `--font`、TTF・OTF・TTC・OTC の読み取りと各フェイスの取得、基本のフォールバックを実装・試験した。プロジェクト設定のファイル・検索先・既定書体・任意代替列・言語も CLI・MCP・TUI で共通化した。ユーザー共通の `config.toml` と項目ごとのプロジェクト上書きも実装した。完全な絵文字・可変軸・遅延探索・各 OS の保証は未完成。[現在の実装と検証](fonts.md)、[設定](configuration.md)
+状態: 初回は macOS Apple Silicon・Linux x64／arm64 を対象とし、標準フォントに Noto Sans JP、端末画像に Kitty Graphics Protocol と Sixel を採用する。Noto Sans JP の配布データは版・ハッシュを固定済み。ユーザーによるフォント追加は `--font`、TTF・OTF・TTC・OTC の読み取りと各フェイスの取得、基本のフォールバックを実装・試験した。プロジェクト設定のファイル・検索先・既定書体・任意代替列・言語も CLI・MCP・TUI で共通化した。ユーザー共通の `config.toml` と項目ごとのプロジェクト上書きも実装した。完全な絵文字・可変軸・遅延探索・各 OS の保証は未完成。[現在の実装と検証](fonts.md)、[設定](configuration.md)
 
 ## フォントの扱い
 
@@ -51,27 +51,27 @@ TUI の会話・メニューの文字は端末のフォントに従う。デザ�
 
 ## クロスプラットフォーム
 
-macOS・Windows・Linux で CLI・MCP・TUI と、JavaScript・Web ページ・シェーダーを含む共通機能の提供を目指す。Windows を初期リリースの対象外とする旧方針を変更する。
+macOS Apple Silicon・Linux x64／arm64 の3環境で、CLI・MCP・TUI と JavaScript・Web ページ・シェーダーを含む共通機能を初回リリースの対象とする。
 
-初期の検証・配布候補は次のとおりとする。これは動作確認済みの一覧ではない。
+初回リリースの対象は次のとおりとする。対象の指定と、すべての完成条件を検証済みであることは区別する。
 
-| OS | 初期の検証・配布候補 | 追加検証候補 |
+| OS | 初回の対象 CPU | 確定する互換条件 |
 | --- | --- | --- |
-| macOS | Apple Silicon / Intel | 最低 OS バージョンを P0 で固定する |
-| Windows | x86_64、MSVC | ARM64 のネイティブ実行 |
-| Linux | x86_64、glibc 系 | ARM64、ディストリビューションの範囲 |
+| macOS | Apple Silicon（arm64） | 最低 OS バージョンと端末を固定する |
+| Linux | x86_64、glibc 系 | ディストリビューション・最低版と端末を固定する |
+| Linux | arm64、glibc 系 | ディストリビューション・最低版と端末を固定する |
 
-rust-skia は上記3 OS の x86_64・ARM64 向けプリビルドを提供している。ただし、それだけで lazypencil 全体の配布を保証するものではない。Linux のプリビルドには glibc・libstdc++ の条件があるため、本体と Chromium の両方を満たす対象ディストリビューション・版を固定する。[rust-skia の対応環境](https://github.com/rust-skia/rust-skia#platform-support-build-targets-and-prebuilt-binaries)
+Intel Mac はサポート対象外、Windows は後日対応とする。Windows の既存実装・試験は保持し、追加対応を初回リリースの完了条件に含めない。依存ライブラリに他環境のプリビルドがあっても、lazypencil 全体の配布を保証するものではない。Linux のプリビルドには glibc・libstdc++ の条件があるため、本体と Chromium の両方を満たす対象ディストリビューション・版を固定する。[rust-skia の対応環境](https://github.com/rust-skia/rust-skia#platform-support-build-targets-and-prebuilt-binaries)
 
 Chromium の配布物と必要なシステムライブラリ、JS エンジンのビルド、ソフトウェア WebGL、外部 AI アダプターを各対象で検証する。取得する実行環境は OS・CPU ごとに版とハッシュを固定し、配布元の対応表の存在だけで動作保証しない。[Chrome for Testing の提供状況](https://googlechromelabs.github.io/chrome-for-testing/)
 
-OS 依存処理には、パス・設定保存先・ファイルロック・原子的な置換・子プロセス終了・端末制御を含める。Windows を WSL 上の Linux 動作だけで対応済みとは扱わない。OS ごとにネイティブ実行と保存・復旧を検証する。
+OS 依存処理には、パス・設定保存先・ファイルロック・原子的な置換・子プロセス終了・端末制御を含める。対象3環境でネイティブ実行と保存・復旧を検証する。後日の Windows 対応では、WSL 上の Linux 動作だけで対応済みとは扱わない。
 
 ### 端末内の画像
 
-Kitty Graphics Protocol と Sixel の両方を初期リリースの対応対象とする。最初に Kitty を実装し、続いて Sixel を実装する。端末の応答で利用可否を調べ、設定でも選択できるようにする。Windows Terminal は Sixel に対応している。OS の対応と端末の画像プロトコルの対応は別々に公開する。[Microsoft の Sixel 対応紹介](https://devblogs.microsoft.com/commandline/windows-terminal-preview-1-22-release/)
+Kitty Graphics Protocol と Sixel の両方を初期リリースの対応対象とする。最初に Kitty を実装し、続いて Sixel を実装する。端末の応答で利用可否を調べ、設定でも選択できるようにする。OS・CPU の対応と端末の画像プロトコルの対応は別々に公開する。
 
-Sixel では色の量子化、転送量、再描画・拡大縮小の応答も確認する。PNG 出力を画質の基準とし、端末内の表示方式による差を記録する。各 OS で少なくとも一つの端末による画像閲覧・日本語入力・キーボード操作を受け入れ条件にする。画像非対応端末では既存の外部ビューアへの導線を提供する。
+Sixel では色の量子化、転送量、再描画・拡大縮小の応答も確認する。PNG 出力を画質の基準とし、端末内の表示方式による差を記録する。各対象環境で少なくとも一つの端末による画像閲覧・日本語入力・キーボード操作を受け入れ条件にする。画像非対応端末では既存の外部ビューアへの導線を提供する。
 
 P0 でクロスプラットフォーム上の問題が判明した場合は、機能または環境ごとに原因と対策を記録し、対応範囲の変更が必要なら判断材料を提示する。基本設計の時点で実機確認済みとは表現しない。
 

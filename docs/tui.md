@@ -1,5 +1,7 @@
 # Terminal frontend
 
+The initial release targets macOS Apple Silicon and Linux x64/arm64. Intel Mac is unsupported and Windows is deferred; Windows-specific notes below describe retained implementation, not an initial-release requirement.
+
 The default build includes `lazypencil tui`, using the same document, renderer, attachment service, permissions, and live ACP conversations as the CLI. It provides viewing and prompting, without manual drawing or property editing.
 
 ```sh
@@ -121,4 +123,4 @@ Text assertions use the reconstructed VT screen rather than assuming that visibl
 
 The text-only VT observer does not model graphics overlays; old `No complete preview` text alone does not establish that Kitty pixels are absent. Image assertions use decoded complete frames. The observer now decodes Kitty packets incrementally rather than replaying the entire terminal history every time a wait predicate asks for images. It retains complete RGBA frames, including alpha, handles split packets and payload-free image deletion commands, ignores capability queries, and rejects malformed/incomplete pixels and oversized packets/dimensions. Four Python tests check fragmentation, exact chunk decode counts, image integrity and bounded pending wire data. With the same retained macOS executable and Python profiler, the project-font case fell from 879,974 Base64 calls / 6.57 seconds to 658 calls / 2.63 seconds; all eleven normal PTY cases then passed. The application executable, 15-second wait and pixel checks were unchanged. This removes a measured test-observer bottleneck; the original Intel timeout and current Rust changes still await hosted verification.
 
-PTY checks do not establish physical-terminal compatibility. Native macOS screenshot paste, real Kitty/Sixel terminals, IME composition, tmux/SSH, Windows, and Linux clipboard/terminal combinations remain to be verified. Configurable key bindings, persisted log browsing, configurable runtime/cache budgets, animation controls, and performance acceptance tests remain unfinished. The full implementation checklist retains those requirements.
+PTY checks do not establish physical-terminal compatibility. Native macOS screenshot paste, real Kitty/Sixel terminals, IME composition, tmux/SSH, and Linux clipboard/terminal combinations remain to be verified for the initial release. Windows verification is deferred. Configurable key bindings, persisted log browsing, configurable runtime/cache budgets, animation controls, and performance acceptance tests remain unfinished. The full implementation checklist retains those requirements.

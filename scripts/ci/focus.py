@@ -10,7 +10,7 @@ import urllib.error
 import urllib.request
 
 
-PLATFORMS = ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-15", "macos-15-intel", "windows-2025"]
+PLATFORMS = ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-15"]
 DYNAMIC = {"cdp", "dynamic", "runtime", "runtime_config", "scripts", "shader", "shader_uniforms", "sampler_sources", "imports", "script", "render", "browser_readiness", "dynamic_render", "tui"}
 TEST_FILES = list((Path(__file__).resolve().parents[2] / "tests").glob("*.rs"))
 CORE_TESTS = {path.stem for path in TEST_FILES}
@@ -23,15 +23,13 @@ RENDER_MODULES = set(re.findall(r'#\[cfg\(feature = "(?:rendering|tui)"\)\]\s+(?
 def select(paths, platform="auto"):
     stems = {Path(path).stem for path in paths}
     stems.update(Path(path).parts[1].removesuffix(".rs") for path in paths if path.startswith("src/") and len(Path(path).parts) > 1)
-    windows = any("windows" in path.lower() or path.startswith(("src/conversation/", "src/agent/process")) for path in paths)
-    # CI changes exercise the formerly failing Windows helper route first.
+    # Deferred Windows code remains in the tree; release CI uses supported runners.
     ci_change = any(path.startswith((".github/", "scripts/ci/")) for path in paths)
-    windows |= ci_change
     macos = any("macos" in path.lower() or "darwin" in path.lower() for path in paths)
-    os_name = ("windows-2025" if windows else "macos-15" if macos else "ubuntu-24.04") if platform == "auto" else platform
+    os_name = ("macos-15" if macos else "ubuntu-24.04") if platform == "auto" else platform
     conversation = ci_change or bool(stems & {"agent", "conversation", "windows_agent"}) or any(path.startswith("tests/support/acp_") for path in paths)
     if conversation:
-        suite, targets = "conversation", ["agent", "windows_agent"]
+        suite, targets = "conversation", ["agent"]
     elif stems & DYNAMIC or any(path.startswith(("src/cdp/", "src/tui/", "src/render/")) for path in paths):
         suite = "dynamic"
         targets = sorted({"dynamic_render", "browser_readiness", "shader_uniforms", "sampler_sources", "imports"} | (stems & RENDER_TESTS - CREDENTIALED_TESTS))
