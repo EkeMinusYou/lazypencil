@@ -155,6 +155,16 @@ jobs:
         run: |
           set -o pipefail
           cargo test --locked --no-default-features --no-fail-fast -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/lazypencil-tests.log"
+      - name: Publish a failed core reproduction before longer checks
+        if: ${{ failure() && inputs.phase == 'full' && steps.core-tests.outcome == 'failure' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: core-failure-${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/lazypencil-tests.log
+            ${{ runner.temp }}/core-build.log
+          if-no-files-found: error
+          retention-days: 3
       - name: Check all core targets
         if: ${{ !cancelled() && inputs.phase == 'full' }}
         timeout-minutes: 15
