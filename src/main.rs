@@ -167,6 +167,7 @@ fn main() -> ExitCode {
             | lazypencil::cli::Command::Apply(_)
             | lazypencil::cli::Command::Restore { .. }
             | lazypencil::cli::Command::History { .. }
+            | lazypencil::cli::Command::Conversations { .. }
             | lazypencil::cli::Command::Icons { .. }
             | lazypencil::cli::Command::Assets { .. }
     ) && let Err(error) = lazypencil::cancel::install_cli_handler()

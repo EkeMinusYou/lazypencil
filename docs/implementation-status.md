@@ -671,6 +671,10 @@ source `36d1269` の専用 Chromium は macOS arm64 `40014476233`（97件）、L
 
 追加のキャッシュ調整では、workflow に加えて `scripts/ci/` と直下の `scripts/test_*.py` を application key の入力から除く。CI の変更だけで native binary を再コンパイルしないためで、除外ファイルを Rust が読み込む場合は compiler dep-info の照合で再利用を拒否する。ドキュメント・fixture・resource・その他の script は引き続き束縛する。除外パスの変更での再利用、除外したファイルを埋め込む場合の拒否、似た名前の実入力の失効を軽量試験で検査した。この追加調整の hosted 検証は、進行中の3環境検証を完了してから行う。
 
+### 保存済み会話の読み取り
+
+2026-10-25: 保存済み会話・ターンの一覧と、transcript 全体を容量制限付きでページ取得する共通 API／`conversations list|turns|read` を追加した。アダプター・認証・会話再開を呼ばず、使用中の会話も読み取る。UUID 順の live listing を明示し、一覧の cursor を文書・会話に束縛する。破損した既知の項目は unavailable として残す。JSONL は64 KiB以下で取得し、継続時は全内容の SHA-256 を要求・再検査する。mtime と長さを保った変更も失効させ、日本語の境界と末尾の未完了データを保持する。不正 UTF-8 は表示用文字列と元バイトの Base64 を返す。元データの64 MiB上限・30秒の協調期限・取消を持ち、FIFO と symlink の拒否を含めて試験を追加した。Rust／実 CLI の検証は GHA で行う。これは生の保存記録の読み取り経路であり、TUI の会話ログ閲覧、会話の選択・削除、保持ポリシーを完了扱いにはしない。
+
 ### ページの network-idle 待機
 
 2026-10-24: `[runtime.browser] wait_until` に `load`（従来の既定値）と `network_idle` を追加した。後者は現在の main frame／loader に対する Chromium の `networkIdle` lifecycle 通知と document load を待ち、その後に従来の font・image decode・2 animation frame を待つ。別 session・子 frame・古い loader の通知を成功に使わず、現在の loader 一つだけを保持する。URL・header・本文や無制限の event queue は保持しない。context の破棄時に状態を解除し、既存の取消・取得／描画期限・失敗時の process 回収へ接続する。

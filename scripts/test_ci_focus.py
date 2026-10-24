@@ -15,6 +15,17 @@ spec.loader.exec_module(focus)
 
 
 class FocusTests(unittest.TestCase):
+    def test_saved_history_runs_its_units_and_cli_reproduction_once_before_agent_checks(self):
+        result = focus.select(["src/conversation/history.rs", "src/cli.rs", "src/main.rs", "tests/conversation_history.rs"])
+        self.assertEqual(result["suite"], "conversation")
+        self.assertEqual(result["targets"], ["agent", "conversation_history"])
+        build, checks = focus.commands(result["suite"], result["targets"])
+        self.assertIn("conversation_history", build[0])
+        self.assertIn("conversation::history::", checks[0])
+        self.assertIn("conversation_history", checks[1])
+        self.assertNotIn("conversation_history", checks[-1])
+        self.assertEqual(checks[-1][checks[-1].index("conversation::history::") - 1], "--skip")
+
     def test_input_dispatch_reproduces_real_static_tui_before_full_dynamic_checks(self):
         paths = ["src/config/keys.rs", "src/config/keys/navigation.rs", "src/config.rs",
                  "src/tui/mod.rs", "src/tui/tests.rs", "tests/tui.rs", "tests/user_config.rs",

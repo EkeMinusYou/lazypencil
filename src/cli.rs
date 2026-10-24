@@ -121,6 +121,11 @@ pub enum Command {
         #[arg(long)]
         before_sequence: Option<u64>,
     },
+    /// Browse saved local conversations without starting or authenticating an agent.
+    Conversations {
+        #[command(subcommand)]
+        command: ConversationCommand,
+    },
     /// Restore a committed checkpoint as a new edit.
     Restore {
         file: PathBuf,
@@ -139,6 +144,39 @@ pub enum Command {
     Recover { file: PathBuf },
     /// Report build and environment information without changing a design.
     Doctor,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ConversationCommand {
+    /// List saved conversations for a document in stable UUID order.
+    List {
+        file: PathBuf,
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        #[arg(long)]
+        cursor: Option<String>,
+    },
+    /// List the saved turns of one local conversation.
+    Turns {
+        file: PathBuf,
+        session: String,
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        #[arg(long)]
+        cursor: Option<String>,
+    },
+    /// Read a byte-bounded JSONL transcript page, including unfinished final records.
+    Read {
+        file: PathBuf,
+        session: String,
+        turn: String,
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+        #[arg(long, default_value_t = 65536)]
+        limit: usize,
+        #[arg(long)]
+        expected_revision: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -686,6 +724,50 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
                 )
             }
         },
+        Command::Conversations { command } => {
+            let cancel = crate::cancel::token();
+            match command {
+                ConversationCommand::List {
+                    file,
+                    limit,
+                    cursor,
+                } => crate::conversation::history::list(
+                    &open(file)?,
+                    None,
+                    *limit,
+                    cursor.as_deref(),
+                    Some(&cancel),
+                ),
+                ConversationCommand::Turns {
+                    file,
+                    session,
+                    limit,
+                    cursor,
+                } => crate::conversation::history::list(
+                    &open(file)?,
+                    Some(session),
+                    *limit,
+                    cursor.as_deref(),
+                    Some(&cancel),
+                ),
+                ConversationCommand::Read {
+                    file,
+                    session,
+                    turn,
+                    offset,
+                    limit,
+                    expected_revision,
+                } => crate::conversation::history::read(
+                    &open(file)?,
+                    session,
+                    turn,
+                    *offset,
+                    *limit,
+                    expected_revision.as_deref(),
+                    Some(&cancel),
+                ),
+            }
+        }
         Command::History {
             file,
             limit,

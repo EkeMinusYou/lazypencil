@@ -136,6 +136,16 @@ Codex and Claude completed image-backed subscription workflows on macOS arm64, i
 
 Use `--session LOCAL_UUID` to continue a saved conversation. If native reload is unsupported, the host reports a new native session and supplies current document context with bounded local history. A reload error remains visible; use `--session LOCAL_UUID --restart-session` with an explicit request to start anew while preserving local records. Historical prompts and images are not automatically resubmitted. These shared CLI/TUI recovery paths await hosted verification; see [conversation details](docs/agents.md#conversations-and-events).
 
+Saved local records can be inspected without starting or authenticating an agent:
+
+```sh
+lazypencil conversations list design.pen --json
+lazypencil conversations turns design.pen LOCAL_UUID --json
+lazypencil conversations read design.pen LOCAL_UUID TURN_UUID --json
+```
+
+Lists and complete raw transcripts are paged, with bounded reads and revision-checked continuation. This does not restore model memory or provide the remaining TUI conversation browser and retention controls. See [saved-record behavior](docs/agents.md#read-saved-conversations-without-an-agent).
+
 ## Terminal preview and prompts
 
 ```sh
