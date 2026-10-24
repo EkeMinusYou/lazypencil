@@ -150,6 +150,10 @@ The default build includes a terminal viewer with pan/zoom, node selection, Japa
 
 Run full Rust, Skia and Docker builds on GitHub Actions by default. Local work should focus on source changes, formatting, workflow linting and lightweight Python checks. Avoid creating local build trees or repeated extracted source snapshots for routine verification. Keep only the logs and selected artifacts needed for the current investigation.
 
+CI runs affected tests on one supported runner before the complete macOS Apple Silicon / Linux x64 / Linux arm64 matrix. The fixed audit-tool binary is cached by its version, actual compiler, runner image and architecture; advisory checks still run against the current database. Application outputs use a separate, content-checked cache bound to the complete source inputs, compiler/flags, runner image and absolute build paths. This lets the full job reuse its successful focused build. Workflow-only changes can reuse outputs unless a workflow is itself a compiler input. Missing, changed or unverifiable inputs fall back to a fresh build. Rendered images and test results are always regenerated, and all final checks remain required.
+
+After successful full verification, CI removes main-branch dependency checkpoints that have an exact full-cache counterpart. Application caches retain two full builds and one unmatched focused build per platform. Dependency, download and shader caches are otherwise preserved.
+
 Rust 1.94 or newer and a C compiler for QuickJS-NG are required to build from source. Skia uses prebuilt libraries where supported; otherwise its upstream build tools are required.
 
 ```sh

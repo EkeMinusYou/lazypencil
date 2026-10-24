@@ -99,10 +99,38 @@ jobs:
         run: python3 scripts/skia_notice_inventory.py verify-upstream --upstream resources/licenses/native/upstream.json
       - name: Check the pinned standard-library package notices
         run: python3 scripts/toolchain_notice_inventory.py verify-upstream --upstream resources/licenses/toolchain/upstream.json
-      - name: Install the pinned audit tool
+      - name: Identify the pinned audit tool and compiler
+        id: audit-tool-key
         run: |
           rustup toolchain install stable --profile minimal
-          cargo +stable install cargo-deny --version 0.20.2 --locked
+          python3 scripts/ci/audit_tool_cache.py identify --directory "$RUNNER_TEMP/lazypencil-audit-tool" --github-output "$GITHUB_OUTPUT"
+      - name: Restore the pinned audit tool binary
+        id: audit-tool-cache
+        continue-on-error: true
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          key: ${{ steps.audit-tool-key.outputs.key }}
+          path: |
+            ${{ runner.temp }}/lazypencil-audit-tool/bin/cargo-deny
+            ${{ runner.temp }}/lazypencil-audit-tool/manifest.json
+      - name: Verify or install the pinned audit tool
+        id: audit-tool
+        timeout-minutes: 10
+        run: |
+          if ! python3 scripts/ci/audit_tool_cache.py verify --directory "$RUNNER_TEMP/lazypencil-audit-tool"; then
+            cargo +stable install cargo-deny --version 0.20.2 --locked --force --root "$RUNNER_TEMP/lazypencil-audit-tool" --target-dir "$RUNNER_TEMP/lazypencil-audit-build"
+            python3 scripts/ci/audit_tool_cache.py seal --directory "$RUNNER_TEMP/lazypencil-audit-tool"
+          fi
+          printf '%s/lazypencil-audit-tool/bin\n' "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Save the verified pinned audit tool binary
+        if: github.ref == 'refs/heads/main' && steps.audit-tool-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          key: ${{ steps.audit-tool-key.outputs.key }}
+          path: |
+            ${{ runner.temp }}/lazypencil-audit-tool/bin/cargo-deny
+            ${{ runner.temp }}/lazypencil-audit-tool/manifest.json
       - name: Check all feature and platform dependencies
         run: |
           cargo deny --all-features --locked check licenses sources advisories
@@ -146,6 +174,9 @@ jobs:
     if: ${{ !cancelled() && (inputs.os == 'all' || inputs.os == '') }}
     name: Verified source artifact
     needs: [native, audit]
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -170,3 +201,10 @@ jobs:
           path: dist/*
           if-no-files-found: error
           retention-days: 3
+      - name: Remove redundant checkpoints after full verification
+        if: github.ref == 'refs/heads/main'
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/cache_retention.py --delete

@@ -108,6 +108,34 @@ jobs:
       - name: Rebuild application code and render evidence from this source
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: sh scripts/ci/prune_application_cache.sh
+      - name: Identify source-bound application outputs
+        id: application-key
+        if: steps.cache-key.outcome == 'success'
+        continue-on-error: true
+        env:
+          NATIVE_CACHE_KEY: ${{ steps.cache-key.outputs.primary }}
+        run: |
+          python scripts/ci/application_cache.py identify --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --native-key "$NATIVE_CACHE_KEY" --github-output "$GITHUB_OUTPUT"
+      - name: Restore source-bound application outputs
+        id: application-cache
+        if: steps.application-key.outcome == 'success'
+        continue-on-error: true
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          key: ${{ steps.application-key.outputs.primary }}
+          restore-keys: |
+            ${{ steps.application-key.outputs.checkpoint }}
+          path: ${{ runner.temp }}/lazypencil-application-cache
+      - name: Validate application reuse or keep a fresh build
+        if: steps.application-key.outcome == 'success'
+        timeout-minutes: 3
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        env:
+          NATIVE_CACHE_KEY: ${{ steps.cache-key.outputs.primary }}
+        run: |
+          if ! python scripts/ci/application_cache.py restore --source "$PWD" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --native-key "$NATIVE_CACHE_KEY"; then
+            sh scripts/ci/prune_application_cache.sh
+          fi
       - name: Verify notices in the distributed sources
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
@@ -132,6 +160,27 @@ jobs:
           selected = [argument for target in targets for argument in ("--test", target)]
           subprocess.run(["cargo", "clippy", "--locked", "--no-default-features", "--lib", *selected, "--", "-D", "warnings"], check=True, timeout=300)
           PY
+      - name: Check focused native calculation code
+        if: inputs.phase == 'focus' && contains(fromJSON(inputs.targets), 'native_layout')
+        timeout-minutes: 5
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
+          cargo clippy --locked --lib --test native_layout -- -D warnings 2>&1 | tee "$RUNNER_TEMP/chromium-native-layout-clippy.log"
+      - name: Check focused dynamic code before acquiring Chromium
+        if: inputs.phase == 'focus' && inputs.suite == 'dynamic'
+        timeout-minutes: 5
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
+          cargo clippy --locked --lib --test dynamic_render --test shader_uniforms -- -D warnings 2>&1 | tee "$RUNNER_TEMP/chromium-runtime-clippy.log"
+      - name: Check focused shader code before acquiring Chromium
+        if: inputs.phase == 'focus' && inputs.suite == 'shader'
+        timeout-minutes: 5
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
+          cargo clippy --locked --test shader_uniforms -- -D warnings 2>&1 | tee "$RUNNER_TEMP/chromium-shader-clippy.log"
       - name: Reproduce script worker compatibility before native rendering
         if: inputs.phase == 'focus' && (inputs.suite == 'graphics' || inputs.suite == 'dynamic') && contains(fromJSON(inputs.targets), 'scripts')
         timeout-minutes: 15
@@ -150,13 +199,6 @@ jobs:
         run: |
           set -o pipefail
           python scripts/ci/focus.py build --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS" 2>&1 | tee "$RUNNER_TEMP/focus-build.log"
-      - name: Check focused native calculation code
-        if: inputs.phase == 'focus' && contains(fromJSON(inputs.targets), 'native_layout')
-        timeout-minutes: 5
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          cargo clippy --locked --lib --test native_layout -- -D warnings 2>&1 | tee "$RUNNER_TEMP/chromium-native-layout-clippy.log"
       - name: Validate native cancellation before acquiring Chromium
         if: inputs.phase == 'focus' && inputs.suite == 'dynamic' && contains(fromJSON(inputs.targets), 'native_layout')
         timeout-minutes: 2
@@ -189,13 +231,6 @@ jobs:
           cargo test --locked --lib shader::tests::prepared_declarations_bind_values_without_replacing_captured_shader_bytes -- --exact 2>&1 | tee -a "$RUNNER_TEMP/focus-dynamic-inputs.log"
           cargo test --locked --lib shader::tests::preprocessing_preserves_directive_annotation_barriers_and_source_positions -- --exact 2>&1 | tee -a "$RUNNER_TEMP/focus-dynamic-inputs.log"
           cargo test --locked --test shader_uniforms -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/focus-dynamic-inputs.log"
-      - name: Check focused dynamic code before acquiring Chromium
-        if: inputs.phase == 'focus' && inputs.suite == 'dynamic'
-        timeout-minutes: 5
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          cargo clippy --locked --lib --test dynamic_render --test shader_uniforms -- -D warnings 2>&1 | tee "$RUNNER_TEMP/chromium-runtime-clippy.log"
       - name: Validate shader inputs before acquiring Chromium
         if: inputs.phase == 'focus' && inputs.suite == 'shader'
         timeout-minutes: 2
@@ -203,13 +238,6 @@ jobs:
         run: |
           set -o pipefail
           cargo test --locked --test shader_uniforms -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-tests.log"
-      - name: Check focused shader code before acquiring Chromium
-        if: inputs.phase == 'focus' && inputs.suite == 'shader'
-        timeout-minutes: 5
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          cargo clippy --locked --test shader_uniforms -- -D warnings 2>&1 | tee "$RUNNER_TEMP/chromium-shader-clippy.log"
       - name: Build core test binaries
         id: core-build
         if: inputs.phase == 'full'
@@ -536,6 +564,22 @@ jobs:
             ${{ runner.temp }}/lazypencil-target/release-*.png
           if-no-files-found: ignore
           retention-days: 3
+      - name: Prepare verified application outputs for reuse
+        id: application-save
+        if: ${{ success() && steps.application-key.outcome == 'success' && steps.application-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          NATIVE_CACHE_KEY: ${{ steps.cache-key.outputs.primary }}
+        run: |
+          python scripts/ci/application_cache.py stage --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --native-key "$NATIVE_CACHE_KEY"
+      - name: Save verified application outputs
+        if: ${{ success() && steps.application-save.outcome == 'success' }}
+        continue-on-error: true
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          key: ${{ inputs.phase == 'full' && steps.application-key.outputs.primary || steps.application-key.outputs.checkpoint }}
+          path: ${{ runner.temp }}/lazypencil-application-cache
       - name: Prune application outputs before saving dependency cache
         id: cache-prune
         if: ${{ !cancelled() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true' && (steps.focus-build.outcome == 'success' || steps.default-build.outcome == 'success') }}
