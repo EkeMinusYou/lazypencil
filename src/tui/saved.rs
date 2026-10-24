@@ -37,6 +37,8 @@ pub struct Page {
     back: Option<Box<Page>>,
     current: String,
     deletion_review: Option<Value>,
+    review_scroll: u16,
+    review_maximum_scroll: u16,
     pub(super) deletion_completed: bool,
 }
 
@@ -91,12 +93,16 @@ impl Page {
             back,
             current,
             deletion_review: None,
+            review_scroll: 0,
+            review_maximum_scroll: 0,
             deletion_completed: false,
         }
     }
     fn review_deletion(&self, store: Store, session: String) -> Result<Task> {
         let mut page = self.clone();
         page.deletion_completed = false;
+        page.review_scroll = 0;
+        page.review_maximum_scroll = 0;
         Task::spawn("review-conversation-deletion", move |cancel| {
             page.deletion_review = Some(management::review_delete(&store, &session, Some(cancel))?);
             page.notice = None;
@@ -121,6 +127,14 @@ impl Page {
             if result["cleanup_complete"] != true {
                 notice.push_str(" · cleanup pending: run conversations cleanup");
             }
+            if result["durability_errors"]
+                .as_array()
+                .is_some_and(|errors| !errors.is_empty())
+            {
+                notice.push_str(
+                    " · filesystem sync warning: deletion committed; inspect CLI diagnostics",
+                );
+            }
             match history::list(&store, None, 50, None, Some(cancel)) {
                 Ok(data) => page.data = data,
                 Err(error) => notice.push_str(&format!(" · list refresh failed: {error}")),
@@ -128,6 +142,12 @@ impl Page {
             page.notice = Some(notice);
             Ok(Output::Saved(Box::new(page)))
         })
+    }
+    pub(super) fn operation_error(&mut self, message: String) {
+        self.notice = Some(message);
+        if self.deletion_review.is_some() {
+            self.review_scroll = u16::MAX;
+        }
     }
     pub fn task(mut self, store: Store) -> Result<Task> {
         self.deletion_completed = false;
@@ -254,6 +274,36 @@ impl Page {
                 KeyCode::Char('y') => Action::Delete,
                 KeyCode::Char('n') | KeyCode::Esc => {
                     self.deletion_review = None;
+                    Action::Keep
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.review_scroll = self.review_scroll.saturating_sub(1);
+                    Action::Keep
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.review_scroll = self
+                        .review_scroll
+                        .saturating_add(1)
+                        .min(self.review_maximum_scroll);
+                    Action::Keep
+                }
+                KeyCode::PageUp => {
+                    self.review_scroll = self.review_scroll.saturating_sub(10);
+                    Action::Keep
+                }
+                KeyCode::PageDown => {
+                    self.review_scroll = self
+                        .review_scroll
+                        .saturating_add(10)
+                        .min(self.review_maximum_scroll);
+                    Action::Keep
+                }
+                KeyCode::Home => {
+                    self.review_scroll = 0;
+                    Action::Keep
+                }
+                KeyCode::End => {
+                    self.review_scroll = self.review_maximum_scroll;
                     Action::Keep
                 }
                 _ => Action::Keep,
@@ -458,9 +508,18 @@ pub fn draw(page: &mut Page, frame: &mut ratatui::Frame, area: ratatui::layout::
         let block = super::panel("Delete local conversation?", true);
         let inner = block.inner(area);
         frame.render_widget(block, area);
+        let regions = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(2),
+        ])
+        .split(inner);
+        frame.render_widget(
+            Paragraph::new(review["session"].as_str().unwrap_or("")),
+            regions[0],
+        );
         let mut text = format!(
-            "{}\n{}\n\n{} bytes · {} files\n{} draft characters · {} pending images · {} retained images\n\nThis permanently deletes local drafts, images and logs.\nProject assets and provider history are kept.\n\ny confirms · n/Esc returns",
-            review["session"].as_str().unwrap_or(""),
+            "{}\n\n{} bytes · {} files\n{} draft characters · {} pending images · {} retained images\n\nThis permanently deletes local drafts, images and logs.\nProject assets and provider history are kept.",
             super::clean(review["document"].as_str().unwrap_or("")),
             review["bytes"],
             review["files"],
@@ -471,7 +530,17 @@ pub fn draw(page: &mut Page, frame: &mut ratatui::Frame, area: ratatui::layout::
         if let Some(notice) = &page.notice {
             text.push_str(&format!("\n\n{}", super::clean(notice)));
         }
-        frame.render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), inner);
+        let paragraph = Paragraph::new(text).wrap(Wrap { trim: false });
+        page.review_maximum_scroll = paragraph
+            .line_count(regions[1].width)
+            .saturating_sub(regions[1].height as usize)
+            .min(u16::MAX as usize) as u16;
+        page.review_scroll = page.review_scroll.min(page.review_maximum_scroll);
+        frame.render_widget(paragraph.scroll((page.review_scroll, 0)), regions[1]);
+        frame.render_widget(
+            Paragraph::new("y confirms · n/Esc returns\n↑/↓ PgUp/PgDn · Home/End scroll"),
+            regions[2],
+        );
         return;
     }
     let (title, context) = match &page.location {
@@ -503,7 +572,9 @@ pub fn draw(page: &mut Page, frame: &mut ratatui::Frame, area: ratatui::layout::
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let raw_records = page.data["raw_records"].as_u64().unwrap_or(0);
-    let mut notice = if raw_records > 0 {
+    let mut notice = if page.deletion_completed {
+        format!("{context}\nLocal deletion committed · browsing sends no requests")
+    } else if raw_records > 0 {
         format!("{context}\n{raw_records} structured/unfinished records shown as original text")
     } else {
         format!("{context}\nBrowsing sends no requests · saved data is unchanged")

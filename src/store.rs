@@ -75,6 +75,19 @@ impl Store {
         })
     }
 
+    /// Bind private saved-record maintenance after a document has been moved
+    /// or removed. Callers must validate the hashed document namespace before
+    /// use; this does not authorize opening or editing the missing document.
+    pub(crate) fn for_saved_conversation(path: PathBuf, data_dir: PathBuf) -> Result<Self> {
+        if !path.is_absolute() || path.file_name().is_none() {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "Saved conversation document paths must be absolute",
+            ));
+        }
+        Self::at_canonical_path(path, Some(data_dir))
+    }
+
     pub fn init(path: impl AsRef<Path>, data_dir: Option<PathBuf>) -> Result<Self> {
         let supplied = path.as_ref();
         let filename = supplied

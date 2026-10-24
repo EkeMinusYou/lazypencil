@@ -2,6 +2,31 @@
 
 User `config.toml` persists font preferences, runtime limits, and per-agent ACP preferences across projects. Project `lazypencil.toml` overrides individual font/runtime fields and adds project design guides, style catalogues, and a default style. CLI, MCP, and TUI use the same captured document settings; CLI and TUI resolve the same user agent profiles. Project instructions require an explicit local user grant. Project executable settings, browser authentication/network/wait policy, asset/library and other resource-limit settings remain unfinished. Prompt, clipboard, global and viewing shortcuts are user-configurable; see [TUI controls](tui.md#viewing-and-global-shortcuts).
 
+## Local conversation retention
+
+Retention is user-owned and is rejected in project configuration. Set it in the user `config.toml` created by `config init --user`:
+
+```toml
+[conversations.retention]
+max_age_days = 90
+max_total_bytes = 1073741824
+keep_recent_per_document = 1
+```
+
+Omitted limits keep all local conversations. Limits apply when the user explicitly reviews and commits `conversations prune`; opening a file or submitting a prompt does not silently delete history. Age is measured from the most recent local file write, excluding the maintenance lease, with a cutoff rounded to the start of the current UTC day. This is local activity, not an inferred creation date or provider timestamp. The byte limit covers local conversation files across **all** document stores in the selected `--data-dir`, including retained images, logs and pending deletion payloads. It excludes project assets, document checkpoints, fonts and browser/runtime data. File-byte totals are distinct from filesystem allocation.
+
+```sh
+lazypencil conversations prune --json
+lazypencil conversations prune --expected-revision REVIEWED_SHA256 --json
+lazypencil conversations cleanup --all --json
+```
+
+Review shows each recognized local conversation, the policy, known bytes, unknown totals, protection reasons and selected deletions. Recent conversations are kept per document; eligible expired conversations are selected first, then the oldest eligible records are selected to reduce aggregate bytes. Busy or changing sessions, any nonempty unsent draft, pending images, incomplete native continuity, unknown formats and unsafe filesystem entries are protected. `keep_recent_per_document = 0` disables only the recent-history minimum. Mandatory protection remains. These rules can leave usage above the configured limit; `remaining_over_limit` is unknown when protected data cannot be measured. Pending deletion payloads are counted but require explicit cleanup, so a failed cleanup cannot be reported as reclaimed space.
+
+Apply requires an unchanged review, including its policy and UTC-day cutoff. Each selected conversation is checked again under its exclusive lease; a new draft, request or external change is refused. User-configuration changes and cancellation stop further commits and return completed results. A batch is not atomic: already committed deletions remain committed. Returned remaining-byte figures are estimates from the review, not a new scan that promises a hard quota while other frontends write. Original `.pen` files may have moved or disappeared; maintenance validates the saved document namespace without opening those files, an adapter or authentication. `cleanup --all` similarly recovers recognized deletion journals without the original document.
+
+Review/apply have a shared 30-second cooperative budget, up to 10,000 records and 100,000 entries per scanned directory/tree. Bounds produce diagnostics rather than silently ignoring the tail. Cleanup waiting also observes cancellation/deadline; filesystem cleanup may continue in the same process after waiting stops, and its journal remains recoverable if that process exits. New retention, cleanup-failure and minimum-terminal regressions await hosted verification.
+
 ## Start and inspect
 
 ```sh

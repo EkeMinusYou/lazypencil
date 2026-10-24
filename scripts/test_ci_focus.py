@@ -15,6 +15,10 @@ spec.loader.exec_module(focus)
 
 
 class FocusTests(unittest.TestCase):
+    def test_saved_browser_only_changes_use_the_static_frontend_reproduction(self):
+        for path in ["src/tui/saved.rs", "src/tui/checkpoints.rs"]:
+            self.assertEqual(focus.select([path]), {"platform":"ubuntu-24.04","suite":"graphics","targets":["tui","user_config"]})
+
     def test_saved_log_ui_is_reproduced_before_chromium_and_omitted_from_later_checks(self):
         result = focus.select(["src/conversation/history/display.rs", "src/tui/mod.rs", "src/tui/saved.rs", "tests/conversation_history.rs", "tests/tui.rs"])
         self.assertEqual(result["suite"], "graphics")
@@ -27,12 +31,13 @@ class FocusTests(unittest.TestCase):
         self.assertIn(focus.OWNED_MCP_RECLAIM, native)
         self.assertIn("cargo test --locked --no-default-features --lib conversation::management::", native)
         self.assertIn(focus.SESSION_DELETION_PTY, native)
+        self.assertIn(focus.SESSION_DELETION_SMALL_PTY, native)
         for suite in ["graphics", "dynamic"]:
             _, checks = focus.commands(suite, result["targets"] + ["mcp"] + (["shader_uniforms", "dynamic_render"] if suite == "dynamic" else []))
             self.assertNotIn("conversation_history", checks[-1])
             self.assertEqual(checks[-1][checks[-1].index(focus.SAVED_LOG_PTY) - 1], "--skip")
             self.assertEqual(checks[-1][checks[-1].index("tui::tests::saved_log_") - 1], "--skip")
-            for name in (focus.SESSION_SELECTION_PTY, focus.SESSION_DELETION_PTY, focus.SESSION_RECLAIM, focus.OWNED_MCP_RECLAIM):
+            for name in (focus.SESSION_SELECTION_PTY, focus.SESSION_DELETION_PTY, focus.SESSION_DELETION_SMALL_PTY, focus.SESSION_RECLAIM, focus.OWNED_MCP_RECLAIM):
                 self.assertEqual(checks[-1][checks[-1].index(name) - 1], "--skip")
         mixed = focus.select(["tests/conversation_history.rs", "src/shader.rs"])
         self.assertEqual(mixed["suite"], "dynamic")

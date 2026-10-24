@@ -35,6 +35,11 @@ fn real_pty_saved_logs_page_format_refresh_and_keep_the_unsent_draft_without_sta
 }
 
 #[test]
+fn real_pty_reviewed_deletion_remains_readable_at_minimum_terminal_size() {
+    run_pty_case("session-deletion-small");
+}
+
+#[test]
 fn real_pty_deletes_only_reviewed_inactive_local_conversations_and_preserves_current_state() {
     run_pty_case("session-deletion");
 }
@@ -65,6 +70,7 @@ fn run_pty_case(case: &str) {
                     | "saved-history"
                     | "session-selection"
                     | "session-deletion"
+                    | "session-deletion-small"
             ))
     {
         let directory = std::path::PathBuf::from(directory).join(case);
@@ -92,6 +98,7 @@ fn run_pty_case(case: &str) {
             "session-deletion-review-screen.txt",
             "session-deletion-stale-screen.txt",
             "session-deletion-complete-screen.txt",
+            "session-deletion-scrolled-screen.txt",
         ] {
             let source = temp.path().join(name);
             if source.is_file() {

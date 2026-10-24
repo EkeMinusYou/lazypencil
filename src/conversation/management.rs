@@ -3,7 +3,9 @@
 use super::{Conversation, Session};
 use crate::{Error, Result, agent::permissions::DocumentPermissions};
 
+mod cleanup;
 mod deletion;
+pub mod retention;
 pub use deletion::{cleanup_deleted, delete, review_delete};
 
 impl Conversation {

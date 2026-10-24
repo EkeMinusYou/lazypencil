@@ -269,6 +269,7 @@ jobs:
             cargo test --locked --lib tui::tests::saved_log_ -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
             cargo test --locked --test tui real_pty_saved_logs_page_format_refresh_and_keep_the_unsent_draft_without_starting_an_agent -- --exact 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
             cargo test --locked --test tui real_pty_deletes_only_reviewed_inactive_local_conversations_and_preserves_current_state -- --exact 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
+            cargo test --locked --test tui real_pty_reviewed_deletion_remains_readable_at_minimum_terminal_size -- --exact 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
             cargo test --locked --test tui real_pty_selects_saved_conversations_and_keeps_both_drafts_without_starting_an_agent -- --exact 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
           fi
       - name: Reproduce configured input before other tests and Chromium

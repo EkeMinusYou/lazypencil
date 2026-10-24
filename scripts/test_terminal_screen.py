@@ -13,6 +13,14 @@ spec.loader.exec_module(terminal)
 
 
 class TerminalScreenTests(unittest.TestCase):
+    def test_shrinking_the_screen_clamps_the_cursor_before_erasing_or_writing(self):
+        screen = terminal.Screen(width=8, height=3)
+        screen.feed(b"\x1b[3;8H")
+        screen.resize(2, 1)
+        self.assertEqual((screen.x, screen.y), (1, 0))
+        screen.feed(b"\x1b[KX")
+        self.assertEqual(screen.text(), " X")
+
     def text(self, output):
         screen = terminal.Screen(width=12, height=1)
         screen.feed(output.encode("utf-8"))

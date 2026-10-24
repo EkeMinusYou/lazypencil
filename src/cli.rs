@@ -148,6 +148,11 @@ pub enum Command {
 
 #[derive(Debug, Subcommand)]
 pub enum ConversationCommand {
+    /// Review aggregate user retention, or commit exactly the reviewed plan.
+    Prune {
+        #[arg(long)]
+        expected_revision: Option<String>,
+    },
     /// Review a local deletion, or commit it using the revision from that review.
     Delete {
         file: PathBuf,
@@ -156,7 +161,12 @@ pub enum ConversationCommand {
         expected_revision: Option<String>,
     },
     /// Finish local conversation deletions interrupted after their atomic commit.
-    Cleanup { file: PathBuf },
+    Cleanup {
+        #[arg(required_unless_present = "all")]
+        file: Option<PathBuf>,
+        #[arg(long, conflicts_with = "file")]
+        all: bool,
+    },
     /// Read formatted saved requests, responses and tool status in bounded pages.
     View {
         file: PathBuf,
@@ -746,6 +756,27 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
         Command::Conversations { command } => {
             let cancel = crate::cancel::token();
             match command {
+                ConversationCommand::Prune { expected_revision } => {
+                    let snapshot = crate::config::ConversationSnapshot::load()?;
+                    let data = crate::store::data_directory(arguments.data_dir.clone())?;
+                    if let Some(revision) = expected_revision {
+                        crate::conversation::management::retention::apply_checked(
+                            &data,
+                            &snapshot.settings.retention,
+                            revision,
+                            Some(&cancel),
+                            || snapshot.verify_unchanged(),
+                        )
+                    } else {
+                        let result = crate::conversation::management::retention::review(
+                            &data,
+                            &snapshot.settings.retention,
+                            Some(&cancel),
+                        )?;
+                        snapshot.verify_unchanged()?;
+                        Ok(result)
+                    }
+                }
                 ConversationCommand::Delete {
                     file,
                     session,
@@ -767,8 +798,18 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
                         )
                     }
                 }
-                ConversationCommand::Cleanup { file } => {
-                    crate::conversation::management::cleanup_deleted(&open(file)?, Some(&cancel))
+                ConversationCommand::Cleanup { file, all } => {
+                    if *all {
+                        crate::conversation::management::retention::cleanup_all(
+                            &crate::store::data_directory(arguments.data_dir.clone())?,
+                            Some(&cancel),
+                        )
+                    } else {
+                        crate::conversation::management::cleanup_deleted(
+                            &open(file.as_ref().expect("selected document"))?,
+                            Some(&cancel),
+                        )
+                    }
                 }
                 ConversationCommand::View {
                     file,

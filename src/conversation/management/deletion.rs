@@ -15,12 +15,12 @@ use tokio_util::sync::CancellationToken;
 const TRASH: &str = "conversation-trash-";
 const MAX_ENTRIES: usize = 100_000;
 
-struct Budget<'a> {
-    started: Instant,
-    cancel: Option<&'a CancellationToken>,
+pub(super) struct Budget<'a> {
+    pub(super) started: Instant,
+    pub(super) cancel: Option<&'a CancellationToken>,
 }
 impl Budget<'_> {
-    fn check(&self) -> Result<()> {
+    pub(super) fn check(&self) -> Result<()> {
         crate::cancel::check(self.cancel)?;
         if self.started.elapsed() >= Duration::from_secs(30) {
             return Err(Error::new(
@@ -33,9 +33,10 @@ impl Budget<'_> {
 }
 
 #[derive(Default)]
-struct Inventory {
+pub(super) struct Inventory {
     entries: usize,
-    bytes: u64,
+    pub(super) bytes: u64,
+    pub(super) latest_write_unix_seconds: Option<u64>,
     files: usize,
     symlinks: usize,
     hash: Sha256,
@@ -47,7 +48,7 @@ fn stamp(metadata: &Metadata) -> Value {
 }
 
 impl Inventory {
-    fn revision(&self) -> String {
+    pub(super) fn revision(&self) -> String {
         use std::fmt::Write;
         let mut text = String::with_capacity(64);
         for byte in self.hash.clone().finalize() {
@@ -79,7 +80,7 @@ fn identity(metadata: &Metadata) -> Value {
     json!(format!("{:?}", metadata.created()))
 }
 
-fn scan(root: &Path, budget: &Budget<'_>) -> Result<Inventory> {
+pub(super) fn scan(root: &Path, budget: &Budget<'_>) -> Result<Inventory> {
     let mut inventory = Inventory::default();
     visit(root, root, 0, budget, &mut inventory)?;
     inventory.verify(budget)?;
@@ -140,6 +141,17 @@ fn visit(
             visit(root, &entry, depth + 1, budget, inventory)?;
         }
     } else if before.is_file() {
+        if path != root.join("lock")
+            && let Ok(modified) = before.modified()
+            && let Ok(age) = modified.duration_since(std::time::UNIX_EPOCH)
+        {
+            inventory.latest_write_unix_seconds = Some(
+                inventory
+                    .latest_write_unix_seconds
+                    .unwrap_or(0)
+                    .max(age.as_secs()),
+            );
+        }
         inventory.hash.update(b"file");
         inventory.hash.update(before.len().to_le_bytes());
         let mut input = crate::store::open_regular_file(path)?;
@@ -191,7 +203,7 @@ fn changed() -> Error {
     )
 }
 
-fn target(
+pub(super) fn target(
     store: &Store,
     id: &str,
     budget: &Budget<'_>,
@@ -229,6 +241,20 @@ pub fn delete(
     expected_revision: &str,
     cancel: Option<&CancellationToken>,
 ) -> Result<Value> {
+    let budget = Budget {
+        started: Instant::now(),
+        cancel,
+    };
+    delete_with_budget(store, id, expected_revision, &budget)
+}
+
+pub(super) fn delete_with_budget(
+    store: &Store,
+    id: &str,
+    expected_revision: &str,
+    budget: &Budget<'_>,
+) -> Result<Value> {
+    let cancel = budget.cancel;
     if expected_revision.len() != 64
         || !expected_revision
             .bytes()
@@ -239,19 +265,15 @@ pub fn delete(
             "Deletion requires the reviewed SHA-256 revision",
         ));
     }
-    let budget = Budget {
-        started: Instant::now(),
-        cancel,
-    };
-    let (_lease, directory, _) = target(store, id, &budget)?;
-    let inventory = scan(&directory, &budget)?;
+    let (_lease, directory, _) = target(store, id, budget)?;
+    let inventory = scan(&directory, budget)?;
     let revision = inventory.revision();
     if revision != expected_revision {
         return Err(changed());
     }
     let _registry = storage::registry_lock(store, cancel)?;
     budget.check()?;
-    inventory.verify(&budget)?;
+    inventory.verify(budget)?;
     let operation = uuid::Uuid::new_v4().to_string();
     let trash = store
         .document_data_dir()
@@ -281,21 +303,13 @@ pub fn delete(
     drop(_registry);
     // Cancellation cannot undo the rename. Report the committed deletion even
     // if cleanup fails; the explicit cleanup command can finish after a crash.
-    let cleanup = if cancel.is_some_and(CancellationToken::is_cancelled) {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Interrupted,
-            "Deletion committed; cleanup cancelled",
-        ))
-    } else {
-        finish_trash(&trash)
-    };
-    drop(cleanup_lease);
+    let cleanup = super::cleanup::finish(trash, cleanup_lease, budget);
     Ok(
         json!({"document":store.path(),"session":id,"revision":revision,"deleted":true,"bytes":inventory.bytes,"cleanup_complete":cleanup.is_ok(),"cleanup_error":cleanup.err().map(|error|error.to_string()),"durability_errors":durability_errors,"scope":"local_conversation_only","provider_history_preserved":true,"project_assets_preserved":true}),
     )
 }
 
-fn finish_trash(trash: &Path) -> std::io::Result<()> {
+pub(super) fn finish_trash(trash: &Path) -> std::io::Result<()> {
     let payload = trash.join("payload");
     match fs::symlink_metadata(&payload) {
         Ok(metadata) if metadata.is_symlink() => fs::remove_file(&payload)?,
@@ -309,7 +323,28 @@ fn finish_trash(trash: &Path) -> std::io::Result<()> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(error),
     }
+    crate::store::sync_directory(trash)
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
     fs::remove_dir_all(trash)
+}
+
+#[derive(Default, serde::Serialize)]
+struct CleanupProgress {
+    removed: Vec<String>,
+    retained: Vec<Value>,
+    removed_count: usize,
+    retained_count: usize,
+}
+
+fn cleanup_result(store: &Store, progress: &CleanupProgress) -> Value {
+    let mut result = serde_json::to_value(progress).expect("cleanup progress serialization");
+    result["document"] = json!(store.path());
+    result["scope"] = json!("local_deleted_conversations_only");
+    result["details_truncated"] = json!(
+        progress.removed_count > progress.removed.len()
+            || progress.retained_count > progress.retained.len()
+    );
+    result
 }
 
 /// Finish only recognized, document-bound tombstones left by local deletion.
@@ -318,9 +353,22 @@ pub fn cleanup_deleted(store: &Store, cancel: Option<&CancellationToken>) -> Res
         started: Instant::now(),
         cancel,
     };
+    cleanup_with_budget(store, &budget)
+}
+
+pub(super) fn cleanup_with_budget(store: &Store, budget: &Budget<'_>) -> Result<Value> {
+    let mut progress = CleanupProgress::default();
+    if let Err(error) = cleanup_inner(store, budget, &mut progress) {
+        let cause = error.details.clone();
+        return Err(error
+            .details(json!({"completed_result":cleanup_result(store,&progress),"cause":cause})));
+    }
+    Ok(cleanup_result(store, &progress))
+}
+
+fn cleanup_inner(store: &Store, budget: &Budget<'_>, progress: &mut CleanupProgress) -> Result<()> {
     let parent = store.document_data_dir();
-    let mut removed = Vec::new();
-    let mut retained = Vec::new();
+    let cancel = budget.cancel;
     if fs::symlink_metadata(&parent)
         .is_ok_and(|metadata| metadata.is_symlink() || !metadata.is_dir())
     {
@@ -332,7 +380,7 @@ pub fn cleanup_deleted(store: &Store, cancel: Option<&CancellationToken>) -> Res
     let entries = match fs::read_dir(&parent) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(json!({"removed":removed,"retained":retained}));
+            return Ok(());
         }
         Err(error) => return Err(Error::io(&parent, error)),
     };
@@ -366,7 +414,7 @@ pub fn cleanup_deleted(store: &Store, cancel: Option<&CancellationToken>) -> Res
                 return Err(changed());
             }
             let _registry = storage::registry_lock(store, cancel)?;
-            let _lease = storage::exclusive_lease(&path.join("lock"))?;
+            let cleanup_lease = storage::exclusive_lease(&path.join("lock"))?;
             // Keep the journal outside the payload so a partial recursive
             // cleanup remains recoverable after session.json has been removed.
             let mut bytes = Vec::new();
@@ -390,17 +438,25 @@ pub fn cleanup_deleted(store: &Store, cancel: Option<&CancellationToken>) -> Res
             }
             drop(_registry);
             budget.check()?;
-            finish_trash(&path).map_err(|error| Error::io(&path, error))
+            super::cleanup::finish(path.clone(), cleanup_lease, budget)
         })();
         match result {
-            Ok(()) => removed.push(name),
+            Ok(()) => {
+                progress.removed_count += 1;
+                if progress.removed.len() < 200 {
+                    progress.removed.push(name);
+                }
+            }
             Err(error) if error.code == "CANCELLED" => return Err(error),
-            Err(error) => retained.push(json!({"name":name,"error":error})),
+            Err(error) => {
+                progress.retained_count += 1;
+                if progress.retained.len() < 200 {
+                    progress.retained.push(json!({"name":name,"error":error}));
+                }
+            }
         }
     }
-    Ok(
-        json!({"document":store.path(),"removed":removed,"retained":retained,"scope":"local_deleted_conversations_only"}),
-    )
+    Ok(())
 }
 
 #[cfg(test)]

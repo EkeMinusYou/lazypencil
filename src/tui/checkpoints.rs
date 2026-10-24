@@ -206,7 +206,7 @@ impl super::App {
             }
             Err(error) => {
                 if let Some(mut page) = self.saved_return.take() {
-                    page.notice = Some(super::clean(&error.to_string()));
+                    page.operation_error(super::clean(&error.to_string()));
                     self.modal = Some(Modal::Saved(page));
                 } else if let Some(mut page) = self.restore_return.take() {
                     page.notice = Some(super::clean(&format!(

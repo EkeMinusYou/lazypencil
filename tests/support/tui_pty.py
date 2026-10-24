@@ -23,6 +23,10 @@ from terminal_images import KittyFrames, has_rgba_color
 binary, root, fixture, case = sys.argv[1:]
 environment = dict(os.environ)
 document = os.path.join(root, "design.pen")
+if case == "session-deletion-small":
+    parent = os.path.join(root, "long-project-path-" * 5, "long-design-directory-" * 5)
+    os.makedirs(parent)
+    document = os.path.join(parent, "design.pen")
 design = {"version": "2.21", "children": [{"type": "rectangle", "id": "red", "name": "日本語の対象", "x": -80, "y": -30, "width": 180, "height": 90, "fill": "#FF0000"}]}
 if case == "dynamic-idle":
     with open(os.path.join(root, "generated.js"), "w") as handle:
@@ -274,7 +278,7 @@ try:
         wait(lambda: "/clear-images" not in screen.text(), "help closed before configured exit")
         assert not turns() and not session()["native_session_id"], "Viewing shortcuts must not start an agent"
         assert session()["draft"] == text + " 続き"
-    elif case == "session-deletion":
+    elif case in ["session-deletion", "session-deletion-small"]:
         archived_draft = "削除する保存会話の下書き"
         current_draft = "現在の未送信下書きは保持🙂"
         paste(archived_draft)
@@ -304,10 +308,22 @@ try:
         distance = order.index(archived_id) - order.index(current_id)
         os.write(master, (b"\x1b[B" if distance > 0 else b"\x1b[A") * abs(distance))
         wait(lambda: any("›" in row and archived_id in row for row in screen.text().splitlines()), "inactive conversation highlighted")
+        if case == "session-deletion-small":
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 16, 50, 0, 0))
+            screen.resize(50, 16)
+            os.kill(process.pid, signal.SIGWINCH)
+            wait(lambda: len(screen.text().splitlines()) == 16, "minimum supported terminal size")
         os.write(master, b"d")
         wait(lambda: "Delete local conversation?" in screen.text() and archived_id in screen.text() and "y confirms" in screen.text(), "review deletion before confirmation")
         with open(os.path.join(root, "session-deletion-review-screen.txt"), "w", encoding="utf-8") as handle:
             handle.write(screen.text())
+        if case == "session-deletion-small":
+            os.write(master, b"\x1b[F")
+            wait(lambda: "Project assets and provider history are kept." in screen.text() and archived_id in screen.text() and "y confirms" in screen.text(), "scroll review while keeping UUID and destructive controls visible")
+            with open(os.path.join(root, "session-deletion-scrolled-screen.txt"), "w", encoding="utf-8") as handle:
+                handle.write(screen.text())
+            os.write(master, b"\x1b[H")
+            wait(lambda: "Project assets and provider history are kept." not in screen.text() and archived_id in screen.text() and "y confirms" in screen.text(), "review returns to top at minimum size")
         os.write(master, b"n")
         wait(lambda: "Saved conversations" in screen.text() and "Delete local conversation?" not in screen.text(), "deletion review cancelled")
         assert os.path.isfile(archived_path), "Cancelling review must preserve the entire conversation"
@@ -339,7 +355,7 @@ try:
             "current_rejected": True, "review_cancelled": True, "stale_rejected": True,
             "current_draft_sha256": hashlib.sha256(current_draft.encode()).hexdigest(),
             "document_sha256": hashlib.sha256(saved_document).hexdigest(), "agent_started": False,
-            "cleanup_complete": True}
+            "cleanup_complete": True, "minimum_terminal_review": case == "session-deletion-small"}
         os.write(master, b"\x1b")
         wait(lambda: "Saved conversations" not in screen.text(), "saved browser closed after local deletion")
     elif case == "session-selection":
@@ -858,7 +874,7 @@ if case == "user-navigation-config":
             "help_end_reached": True, "startup_keys_retained": True, "turns": len(turns()),
             "exit_code": process.returncode, "terminal_modes_restored": after_config == before_config}, handle)
 
-if case == "session-deletion":
+if case in ["session-deletion", "session-deletion-small"]:
     assert "Conversation: " + current_id in open(os.path.join(root, "terminal-errors.log"), encoding="utf-8").read()
     deletion_report.update(exit_code=process.returncode, terminal_modes_restored=after_config == before_config, selected_on_exit=current_id)
     with open(os.path.join(root, "session-deletion-report.json"), "w", encoding="utf-8") as handle:

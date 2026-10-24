@@ -814,7 +814,17 @@ fn saved_log_deletion_requires_review_rejects_stale_state_and_keeps_the_current_
         press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE, &worker).await;
         document_result(&mut app, &worker).await;
         press(&mut app, KeyCode::Char('y'), KeyModifiers::NONE, &worker).await;
-        document_result(&mut app, &worker).await;
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            &mut app.document_task.as_mut().unwrap().receiver,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        // An interrupt delivered after the atomic deletion must not restore
+        // the stale review page or describe the deletion as cancelled.
+        app.document_task.as_ref().unwrap().cancel.cancel();
+        app.finish_document_result(result, &worker);
         assert!(!directory.exists());
         assert!(saved_page(&app).deletion_completed);
         assert!(

@@ -17,6 +17,8 @@ class Screen:
         self.width, self.height = width, height
         self.cells = [(row + [" "] * width)[:width] for row in self.cells[:height]]
         self.cells += [[" "] * width for _ in range(height - len(self.cells))]
+        self.x = min(self.x, width - 1)
+        self.y = min(self.y, height - 1)
 
     def feed(self, data):
         self.pending += self.decoder.decode(data)

@@ -106,12 +106,23 @@ pub(super) fn session(store: &Store, id: &str) -> Result<(PathBuf, SavedConversa
     uuid(id)?;
     directory(&root(store))?;
     let path = root(store).join(id);
-    directory(&path)?;
+    let state = metadata(&path)?;
+    if !matches!(state.version, 1..=3) || state.id != id || state.document != store.path() {
+        return Err(Error::new(
+            "INVALID_ARGUMENT",
+            "Saved conversation belongs to a different document or format",
+        ));
+    }
+    Ok((path, state))
+}
+
+pub(super) fn metadata(path: &Path) -> Result<SavedConversation> {
+    directory(path)?;
     let mut bytes = Vec::new();
     open(&path.join("session.json"))?
         .take(MAX_METADATA + 1)
         .read_to_end(&mut bytes)
-        .map_err(|e| Error::io(&path, e))?;
+        .map_err(|e| Error::io(path, e))?;
     if bytes.len() as u64 > MAX_METADATA {
         return Err(Error::new(
             "AGENT_ERROR",
@@ -120,13 +131,7 @@ pub(super) fn session(store: &Store, id: &str) -> Result<(PathBuf, SavedConversa
     }
     let state: SavedConversation = serde_json::from_slice(&bytes)
         .map_err(|_| Error::new("AGENT_ERROR", "Cannot read saved conversation metadata"))?;
-    if !matches!(state.version, 1..=3) || state.id != id || state.document != store.path() {
-        return Err(Error::new(
-            "INVALID_ARGUMENT",
-            "Saved conversation belongs to a different document or format",
-        ));
-    }
-    Ok((path, state))
+    Ok(state)
 }
 
 /// UUID order is stable across metadata updates. New entries require a refresh

@@ -18,6 +18,47 @@ struct Fixture {
     user: PathBuf,
     document: PathBuf,
 }
+
+#[test]
+fn conversation_retention_is_user_owned_validated_and_loaded_without_font_discovery() {
+    let f = Fixture::new();
+    f.settings("[fonts]\nfiles=['unavailable.ttf']\n[conversations.retention]\nmax_age_days=30\nmax_total_bytes=1048576\nkeep_recent_per_document=2\n");
+    let snapshot =
+        lazypencil::config::ConversationSnapshot::load_file(Some(f.user.join("config.toml")))
+            .unwrap();
+    assert_eq!(snapshot.settings.retention.max_age_days, Some(30));
+    assert_eq!(snapshot.settings.retention.max_total_bytes, Some(1048576));
+    assert_eq!(snapshot.settings.retention.keep_recent_per_document, 2);
+    snapshot.verify_unchanged().unwrap();
+    assert!(UserSnapshot::load_file(Some(f.user.join("config.toml"))).is_err());
+    let schema = f.data(&["config", "schema", "--user"]);
+    assert!(schema["properties"]["conversations"].is_object());
+    assert!(schema.to_string().contains("RetentionSettings"));
+    let project = f.data(&["config", "schema"]);
+    assert!(project["properties"].get("conversations").is_none());
+    f.settings("");
+    std::fs::write(
+        f.project.join("lazypencil.toml"),
+        "[conversations.retention]\nmax_age_days=1\n",
+    )
+    .unwrap();
+    assert!(f.snapshot().is_err());
+    for body in [
+        "max_age_days=0",
+        "max_age_days=36501",
+        "max_total_bytes=0",
+        "keep_recent_per_document=1001",
+    ] {
+        f.settings(&format!("[conversations.retention]\n{body}\n"));
+        assert_eq!(
+            lazypencil::config::ConversationSnapshot::load_file(Some(f.user.join("config.toml")))
+                .err()
+                .unwrap()
+                .code,
+            "CONFIGURATION_ERROR"
+        );
+    }
+}
 impl Fixture {
     fn new() -> Self {
         let temp = TempDir::new().unwrap();

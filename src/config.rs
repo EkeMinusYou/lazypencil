@@ -14,6 +14,7 @@ use std::{
 
 const MAX_BYTES: usize = 256 * 1024;
 pub mod agents;
+pub mod conversations;
 pub mod keys;
 pub mod runtime;
 const TEMPLATE: &str = "version = 1\n\n[fonts]\n# Omitted fields inherit lower-priority settings.\n# Paths resolve relative to this configuration file.\n# files = []\n# search_paths = []\n# default_family = \"Noto Sans JP\"\n# locale = \"ja\"\n# Set fallbacks explicitly to replace the default glyph fallback chain.\n# fallbacks = [\"Noto Sans JP\"]\n";
@@ -75,6 +76,7 @@ pub struct UserConfig {
     pub runtime: runtime::RuntimeSettings,
     pub agents: agents::AgentSettings,
     pub tui: keys::TuiSettings,
+    pub conversations: conversations::ConversationSettings,
 }
 impl Default for UserConfig {
     fn default() -> Self {
@@ -84,6 +86,7 @@ impl Default for UserConfig {
             runtime: Default::default(),
             agents: Default::default(),
             tui: Default::default(),
+            conversations: Default::default(),
         }
     }
 }
@@ -154,6 +157,7 @@ struct UserFile {
     runtime: runtime::RuntimeOverrides,
     agents: agents::AgentSettings,
     tui: keys::TuiSettings,
+    conversations: conversations::ConversationSettings,
 }
 impl Default for UserFile {
     fn default() -> Self {
@@ -163,6 +167,7 @@ impl Default for UserFile {
             runtime: Default::default(),
             agents: Default::default(),
             tui: Default::default(),
+            conversations: Default::default(),
         }
     }
 }
@@ -184,6 +189,39 @@ pub struct UserSnapshot {
     pub font_files: Vec<PathBuf>,
     directories: Vec<Directory>,
     bindings: Vec<(PathBuf, PathBuf)>,
+}
+
+/// User retention policy without font discovery, adapters or project loading.
+pub struct ConversationSnapshot {
+    source: UserSource,
+    pub settings: conversations::ConversationSettings,
+}
+
+impl ConversationSnapshot {
+    pub fn load() -> Result<Self> {
+        let source = UserSource::load(Some(user_config_path()?), true)?;
+        Ok(Self {
+            settings: source.settings.conversations.clone(),
+            source,
+        })
+    }
+
+    pub fn load_file(path: Option<PathBuf>) -> Result<Self> {
+        let source = UserSource::load(path, false)?;
+        Ok(Self {
+            settings: source.settings.conversations.clone(),
+            source,
+        })
+    }
+
+    pub fn verify_unchanged(&self) -> Result<()> {
+        self.source.verify().map_err(|_| {
+            Error::new(
+                "REVISION_CONFLICT",
+                "User conversation settings changed; review pruning again",
+            )
+        })
+    }
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -527,6 +565,8 @@ impl UserSource {
                     result.settings.agents = parsed.agents;
                     parsed.tui.validate()?;
                     result.settings.tui = parsed.tui;
+                    parsed.conversations.retention.validate()?;
+                    result.settings.conversations = parsed.conversations;
                     result.fonts = parsed.fonts;
                     result.runtime = parsed.runtime;
                     result.source = Some((path, bytes));
@@ -851,10 +891,11 @@ fn write_configuration(path: &Path, scope: &str) -> Result<Value> {
         tempfile::NamedTempFile::new_in(parent).map_err(|error| Error::io(parent, error))?;
     let template = if scope == "user" {
         format!(
-            "{TEMPLATE}{}{}{}",
+            "{TEMPLATE}{}{}{}{}",
             runtime::TEMPLATE,
             agents::TEMPLATE,
-            keys::TEMPLATE
+            keys::TEMPLATE,
+            conversations::TEMPLATE
         )
     } else {
         format!("{TEMPLATE}{}", runtime::TEMPLATE)
