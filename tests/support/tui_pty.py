@@ -231,6 +231,7 @@ try:
     wait(lambda: (b"F5 sends" if case in ["user-key-config", "user-navigation-config"] else b"Ctrl+V") in output, "initial UI")
     if case == "user-navigation-config":
         wait(lambda: len(list(kitty_images())) > 0, "initial complete navigation preview")
+        before_index = len(kitty_frames.images) - 1
         before = list(kitty_images())[-1]
         assert has_rgba_color(before, (255, 0, 0, 255))
         text = "日本語の下書き\nx a d w s z v t は本文"
@@ -242,16 +243,20 @@ try:
         assert "a: Preview: pan left" in screen.text()
         assert list(kitty_images())[-1] == before, "Replaced h must not pan"
         os.write(master, b"\x1b[F")
-        wait(lambda: "Image protocols do not provide" in screen.text(), "help scroll reaches final lines")
+        wait(lambda: "Clipboard access happens only on explicit paste." in screen.text() and "protocols do not provide clipboard access." in screen.text(), "help scroll reaches final wrapped lines")
         os.write(master, b"\x1b[H")
         wait(lambda: "/clear-images" in screen.text(), "help scroll returns to the beginning")
         os.write(master, b"\x1b")
         wait(lambda: "/clear-images" not in screen.text(), "help closed")
         os.write(master, b"a")
         wait(lambda: list(kitty_images())[-1] != before, "remapped pan updates actual image pixels")
+        panned_index = len(kitty_frames.images) - 1
         panned = list(kitty_images())[-1]
         os.write(master, b"z")
         wait(lambda: list(kitty_images())[-1] != panned, "remapped zoom updates actual image pixels")
+        zoomed_index = len(kitty_frames.images) - 1
+        zoomed = list(kitty_images())[-1]
+        assert has_rgba_color(panned, (255, 0, 0, 255)) and has_rgba_color(zoomed, (255, 0, 0, 255))
         os.write(master, b"\x1b[20~")
         wait(lambda: "Commands" in screen.text() and "Restore checkpoint" in screen.text(), "configured command palette")
         os.write(master, b"x")
@@ -624,5 +629,16 @@ finally:
         handle.write(screen.text())
     os.close(master)
     os.close(slave)
+
+if case == "user-navigation-config":
+    saved_draft = session()["draft"]
+    assert saved_draft == text + " 続き", "Configured exit must preserve the saved draft"
+    with open(os.path.join(root, "navigation-report.json"), "w", encoding="utf-8") as handle:
+        json.dump({"source_commit": os.environ.get("GITHUB_SHA"), "case": case,
+            "frames": {name: {"index": index, "sha256": hashlib.sha256(frame).hexdigest(), "rgba_bytes": len(frame)}
+                for name, index, frame in [("before", before_index, before), ("panned", panned_index, panned), ("zoomed", zoomed_index, zoomed)]},
+            "draft_sha256": hashlib.sha256(saved_draft.encode("utf-8")).hexdigest(),
+            "help_end_reached": True, "startup_keys_retained": True, "turns": len(turns()),
+            "exit_code": process.returncode, "terminal_modes_restored": after_config == before_config}, handle)
 
 print(json.dumps({"case": case, "terminal_bytes": len(output), "exit_code": process.returncode}))
