@@ -30,7 +30,7 @@ env:
 
 jobs:
   verify:
-    timeout-minutes: ${{ inputs.os == 'macos-15-intel' && 120 || 60 }}
+    timeout-minutes: ${{ inputs.phase == 'focus' && (inputs.suite == 'core' || inputs.suite == 'conversation') && 30 || inputs.os == 'macos-15-intel' && 120 || inputs.os == 'windows-2025' && 90 || 60 }}
     runs-on: ${{ inputs.os }}
     defaults:
       run:
@@ -97,7 +97,9 @@ jobs:
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           key: ${{ inputs.phase == 'focus' && (inputs.suite == 'core' || inputs.suite == 'conversation') && 'core-' || '' }}${{ steps.cache-key.outputs.primary }}
-          restore-keys: ${{ (inputs.phase == 'full' || (inputs.suite != 'core' && inputs.suite != 'conversation')) && steps.cache-key.outputs.legacy || '' }}
+          restore-keys: |
+            ${{ (inputs.phase == 'full' || (inputs.suite != 'core' && inputs.suite != 'conversation')) && format('checkpoint-{0}', steps.cache-key.outputs.primary) || '' }}
+            ${{ (inputs.phase == 'full' || (inputs.suite != 'core' && inputs.suite != 'conversation')) && steps.cache-key.outputs.legacy || '' }}
           path: |
             ${{ runner.temp }}/lazypencil-target
             ${{ runner.temp }}/lazypencil-source/vendor/skia-bindings/skia
@@ -374,6 +376,7 @@ jobs:
           set -o pipefail
           cargo clippy --locked --all-targets -- -D warnings 2>&1 | tee -a "$RUNNER_TEMP/lazypencil-tests.log"
       - name: Build and smoke-test the release profile
+        id: release-smoke
         if: inputs.phase == 'full'
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
@@ -412,7 +415,7 @@ jobs:
         continue-on-error: true
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
-          key: ${{ steps.native-cache.outputs.cache-primary-key }}
+          key: ${{ (inputs.phase == 'full' && steps.release-smoke.outcome == 'success' || inputs.phase == 'focus' && (inputs.suite == 'core' || inputs.suite == 'conversation')) && steps.native-cache.outputs.cache-primary-key || format('checkpoint-{0}', steps.cache-key.outputs.primary) }}
           path: |
             ${{ runner.temp }}/lazypencil-target
             ${{ runner.temp }}/lazypencil-source/vendor/skia-bindings/skia
