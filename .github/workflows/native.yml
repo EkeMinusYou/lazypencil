@@ -522,6 +522,7 @@ jobs:
             ${{ runner.temp }}/focus-tests.log
             ${{ runner.temp }}/focus-script-core.log
             ${{ runner.temp }}/focus-dynamic-inputs.log
+            ${{ runner.temp }}/focus-native-layout.log
             ${{ runner.temp }}/tui-reproduction.log
             ${{ runner.temp }}/chromium-*.json
             ${{ runner.temp }}/chromium-*.log
