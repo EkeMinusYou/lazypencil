@@ -1,0 +1,272 @@
+{
+  "version": "2.19",
+  "children": [
+    {
+      "id": "template",
+      "type": "rectangle",
+      "reusable": true,
+      "width": 1,
+      "height": 1,
+      "x": 10000,
+      "fill": "#123456"
+    },
+    {
+      "id": "root",
+      "type": "frame",
+      "width": 256,
+      "height": 264,
+      "layout": "none",
+      "fill": "#ffffff",
+      "children": [
+        {
+          "id": "number-missing",
+          "type": "script",
+          "scriptUri": "number-missing.js",
+          "x": 0,
+          "y": 0,
+          "width": 256,
+          "height": 8,
+          "inputs": {}
+        },
+        {
+          "id": "limited-number-missing",
+          "type": "script",
+          "scriptUri": "limited-number-missing.js",
+          "x": 0,
+          "y": 12,
+          "width": 256,
+          "height": 8,
+          "inputs": {}
+        },
+        {
+          "id": "string-missing",
+          "type": "script",
+          "scriptUri": "string-missing.js",
+          "x": 0,
+          "y": 24,
+          "width": 256,
+          "height": 8,
+          "inputs": {}
+        },
+        {
+          "id": "boolean-missing",
+          "type": "script",
+          "scriptUri": "boolean-missing.js",
+          "x": 0,
+          "y": 36,
+          "width": 256,
+          "height": 8,
+          "inputs": {}
+        },
+        {
+          "id": "color-missing",
+          "type": "script",
+          "scriptUri": "color-missing.js",
+          "x": 0,
+          "y": 48,
+          "width": 256,
+          "height": 8,
+          "inputs": {}
+        },
+        {
+          "id": "enum-missing",
+          "type": "script",
+          "scriptUri": "enum-missing.js",
+          "x": 0,
+          "y": 60,
+          "width": 256,
+          "height": 8,
+          "inputs": {}
+        },
+        {
+          "id": "ref-missing",
+          "type": "script",
+          "scriptUri": "ref-missing.js",
+          "x": 0,
+          "y": 72,
+          "width": 256,
+          "height": 8,
+          "inputs": {}
+        },
+        {
+          "id": "number-default-clamp",
+          "type": "script",
+          "scriptUri": "number-default-clamp.js",
+          "x": 0,
+          "y": 84,
+          "width": 256,
+          "height": 8,
+          "inputs": {}
+        },
+        {
+          "id": "number-zero-clamp",
+          "type": "script",
+          "scriptUri": "number-zero-clamp.js",
+          "x": 0,
+          "y": 96,
+          "width": 256,
+          "height": 8,
+          "inputs": {
+            "value": 0
+          }
+        },
+        {
+          "id": "boolean-false",
+          "type": "script",
+          "scriptUri": "boolean-false.js",
+          "x": 0,
+          "y": 108,
+          "width": 256,
+          "height": 8,
+          "inputs": {
+            "value": false
+          }
+        },
+        {
+          "id": "enum-choice",
+          "type": "script",
+          "scriptUri": "enum-choice.js",
+          "x": 0,
+          "y": 120,
+          "width": 256,
+          "height": 8,
+          "inputs": {
+            "value": "two"
+          }
+        },
+        {
+          "id": "ref-selected",
+          "type": "script",
+          "scriptUri": "ref-selected.js",
+          "x": 0,
+          "y": 132,
+          "width": 256,
+          "height": 8,
+          "inputs": {
+            "value": "template"
+          }
+        },
+        {
+          "id": "unknown-input",
+          "type": "script",
+          "scriptUri": "unknown-input.js",
+          "x": 0,
+          "y": 144,
+          "width": 256,
+          "height": 8,
+          "inputs": {
+            "value": 3,
+            "extra": "kept"
+          }
+        },
+        {
+          "id": "number-null",
+          "type": "script",
+          "scriptUri": "number-null.js",
+          "x": 0,
+          "y": 156,
+          "width": 256,
+          "height": 8,
+          "inputs": {
+            "value": null
+          }
+        },
+        {
+          "id": "string-null",
+          "type": "script",
+          "scriptUri": "string-null.js",
+          "x": 0,
+          "y": 168,
+          "width": 256,
+          "height": 8,
+          "inputs": {
+            "value": null
+          }
+        },
+        {
+          "id": "boolean-null",
+          "type": "script",
+          "scriptUri": "boolean-null.js",
+          "x": 0,
+          "y": 180,
+          "width": 256,
+          "height": 8,
+          "inputs": {
+            "value": null
+          }
+        },
+        {
+          "id": "color-null",
+          "type": "script",
+          "scriptUri": "color-null.js",
+          "x": 0,
+          "y": 192,
+          "width": 256,
+          "height": 8,
+          "inputs": {
+            "value": null
+          }
+        },
+        {
+          "id": "enum-null",
+          "type": "script",
+          "scriptUri": "enum-null.js",
+          "x": 0,
+          "y": 204,
+          "width": 256,
+          "height": 8,
+          "inputs": {
+            "value": null
+          }
+        },
+        {
+          "id": "ref-null",
+          "type": "script",
+          "scriptUri": "ref-null.js",
+          "x": 0,
+          "y": 216,
+          "width": 256,
+          "height": 8,
+          "inputs": {
+            "value": null
+          }
+        },
+        {
+          "id": "ref-empty",
+          "type": "script",
+          "scriptUri": "ref-empty.js",
+          "x": 0,
+          "y": 228,
+          "width": 256,
+          "height": 8,
+          "inputs": {
+            "value": ""
+          }
+        },
+        {
+          "id": "unknown-variable-input",
+          "type": "script",
+          "scriptUri": "unknown-variable-input.js",
+          "x": 0,
+          "y": 240,
+          "width": 256,
+          "height": 8,
+          "inputs": {
+            "value": 3,
+            "extra": "$missing"
+          }
+        },
+        {
+          "id": "negative-maximum",
+          "type": "script",
+          "scriptUri": "negative-maximum.js",
+          "x": 0,
+          "y": 252,
+          "width": 256,
+          "height": 8,
+          "inputs": {}
+        }
+      ]
+    }
+  ]
+}

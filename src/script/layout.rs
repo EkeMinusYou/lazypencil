@@ -186,7 +186,7 @@ fn expand(
             })?
             .to_string();
         let header = Header::parse(&code).map_err(context)?;
-        let inputs = node
+        let mut inputs = node
             .properties
             .get("inputs")
             .map(|value| {
@@ -197,6 +197,16 @@ fn expand(
             .transpose()
             .map_err(context)?
             .unwrap_or_default();
+        if !node.script_inputs_resolved {
+            inputs = project
+                .resolve_script_input_values(node, &header, &inputs)
+                .map_err(context)?;
+            if node.properties.contains_key("inputs") {
+                node.properties
+                    .insert("inputs".into(), Value::Object(inputs.clone()));
+            }
+            node.script_inputs_resolved = true;
+        }
         let inputs = header.prepare(&inputs).map_err(context)?;
         let inputs = project
             .prepare_script_refs(node, &header, inputs)

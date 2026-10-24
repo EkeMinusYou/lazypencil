@@ -83,13 +83,44 @@ fn solid(path: &Path, color: Color) {
 #[test]
 fn native_random_sequence_and_legacy_headers_match_reference_pixels_without_saving_generated_nodes()
 {
-    let fixtures =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/pencil-0.3.9/script-random");
-    let original = include_str!("fixtures/pencil-0.3.9/script-random/random-sequence.pen");
-    let reference_bytes = include_bytes!("fixtures/pencil-0.3.9/script-random/random-sequence.png");
-    let reference = raster(reference_bytes);
+    native_script_reference("script-random", "random-sequence", "codec-script-random");
+}
+
+#[test]
+fn native_input_controls_match_reference_pixels_and_preserve_saved_nulls_and_stale_keys() {
+    native_script_reference("script-inputs", "input-controls", "codec-script-inputs");
+}
+
+fn native_script_reference(corpus: &str, filename: &str, artifact_stem: &str) {
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/pencil-0.3.9")
+        .join(corpus);
+    let original = fs::read_to_string(fixtures.join(format!("{filename}.pen"))).unwrap();
+    let reference_bytes = fs::read(fixtures.join(format!("{filename}.png"))).unwrap();
+    let observations: Value =
+        serde_json::from_slice(&fs::read(fixtures.join("observations.json")).unwrap()).unwrap();
+    assert_eq!(
+        lazypencil::document::hash(&reference_bytes),
+        observations["reference_sha256"].as_str().unwrap()
+    );
+    assert_eq!(
+        lazypencil::document::hash(original.as_bytes()),
+        observations["source_sha256"].as_str().unwrap()
+    );
+    let cases = observations["script_cases"]
+        .as_u64()
+        .unwrap_or_else(|| observations["cases"].as_array().unwrap().len() as u64)
+        as usize;
+    let reference = raster(&reference_bytes);
     let expected = reference.peek_pixels().unwrap();
-    assert_eq!((reference.width(), reference.height()), (1328, 192));
+    let dimensions = (
+        observations["width"].as_u64().unwrap() as u32,
+        observations["height"].as_u64().unwrap() as u32,
+    );
+    assert_eq!(
+        (reference.width() as u32, reference.height() as u32),
+        dimensions
+    );
     for version in ["2.19", "2.21"] {
         let root = TempDir::new().unwrap();
         let mut scripts = Vec::new();
@@ -107,7 +138,7 @@ fn native_random_sequence_and_legacy_headers_match_reference_pixels_without_savi
         fs::write(&path, &source).unwrap();
         let store = Store::open(&path, Some(root.path().join("data"))).unwrap();
         let (project, layout) = snapshot(&store);
-        assert_eq!(layout.script_executions.len(), 4);
+        assert_eq!(layout.script_executions.len(), cases);
         let diagnostics = layout.summary()["diagnostics"].clone();
         assert!(diagnostics.as_array().unwrap().is_empty());
         let output = render::png(
@@ -115,17 +146,18 @@ fn native_random_sequence_and_legacy_headers_match_reference_pixels_without_savi
             &layout,
             &RenderOptions {
                 scale: 2.0,
+                node: Some("root".into()),
                 ..Default::default()
             },
         )
         .unwrap();
-        assert_eq!((output.width, output.height), (1328, 192));
+        assert_eq!((output.width, output.height), dimensions);
         let actual = raster(&output.png);
         let pixels = actual.peek_pixels().unwrap();
         let mut maximum = 0u8;
         let mut difference = 0u64;
-        for y in 0..192 {
-            for x in 0..1328 {
+        for y in 0..reference.height() {
+            for x in 0..reference.width() {
                 let a = pixels.get_color((x, y));
                 let b = expected.get_color((x, y));
                 for delta in [
@@ -147,23 +179,22 @@ fn native_random_sequence_and_legacy_headers_match_reference_pixels_without_savi
         if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
             let directory = std::path::PathBuf::from(directory);
             fs::create_dir_all(&directory).unwrap();
-            let stem = format!("codec-script-random-{version}");
+            let stem = format!("{artifact_stem}-{version}");
             fs::write(directory.join(format!("{stem}.png")), &output.png).unwrap();
-            fs::write(
-                directory.join(format!("{stem}.json")),
-                json!({
-                    "source_commit":std::env::var("GITHUB_SHA").ok(),"document_version":version,
-                    "width":output.width,"height":output.height,"scale":2,"diagnostics":diagnostics,
-                    "png_hash":lazypencil::document::hash(&output.png),
-                    "reference_sha256":lazypencil::document::hash(reference_bytes),
-                    "source_sha256":lazypencil::document::hash(source.as_bytes()),
-                    "native_producer":"@pen.dev/cli 0.3.9","native_document_version":"2.19",
-                    "verified_script_cases":4,"sampled_draws_per_script":37,
-                    "maximum_channel_difference":maximum,"absolute_channel_difference":difference
-                })
-                .to_string(),
-            )
-            .unwrap();
+            let mut report = json!({
+                "source_commit":std::env::var("GITHUB_SHA").ok(),"document_version":version,
+                "width":output.width,"height":output.height,"scale":2,"diagnostics":diagnostics,
+                "png_hash":lazypencil::document::hash(&output.png),
+                "reference_sha256":lazypencil::document::hash(&reference_bytes),
+                "source_sha256":lazypencil::document::hash(source.as_bytes()),
+                "native_producer":"@pen.dev/cli 0.3.9","native_document_version":"2.19",
+                "verified_script_cases":cases,
+                "maximum_channel_difference":maximum,"absolute_channel_difference":difference
+            });
+            if let Some(words) = observations["sample_words_u32"].as_array() {
+                report["sampled_draws_per_script"] = json!(words.len());
+            }
+            fs::write(directory.join(format!("{stem}.json")), report.to_string()).unwrap();
         }
         assert_eq!(
             maximum, 0,
@@ -291,6 +322,86 @@ fn input_variables_resolve_even_when_the_input_name_is_a_literal_property_elsewh
     assert_eq!(layout.items[1].node.properties["content"], "日本語の入力");
     let image = render::png(&project, &layout, &Default::default()).unwrap();
     assert!(!image.png.is_empty());
+}
+
+#[test]
+fn generated_script_inputs_resolve_after_code_capture_and_ignore_stale_variable_controls() {
+    let (temp, store) = fixture(
+        "return [{type:'script',scriptUri:'inner.js',width:40,height:20,inputs:{value:'$caption',unused:'$missing'}}];",
+        json!({"id":"outer","type":"script","scriptUri":"draw.js","width":40,"height":20}),
+    );
+    let inner = "/**\n@schema 2.21\n@input value: string\n*/\nreturn [{type:'rectangle',width:40,height:20,fill:pencil.input.value==='日本語' && Object.keys(pencil.input).length===1?'#00ff00':'#ff0000'}];";
+    fs::write(temp.path().join("inner.js"), inner).unwrap();
+    let mut document = store.read().unwrap();
+    document
+        .set_property(
+            "",
+            "variables",
+            &json!({"caption":{"type":"string","value":"日本語"}}),
+        )
+        .unwrap();
+    fs::write(store.path(), document.text()).unwrap();
+    let before = fs::read(store.path()).unwrap();
+    let (project, layout) = snapshot(&store);
+    assert_eq!(layout.script_executions.len(), 2);
+    assert!(
+        layout
+            .runtime_dependencies
+            .iter()
+            .any(|dependency| dependency.path.ends_with("inner.js"))
+    );
+    let output = render::png(&project, &layout, &Default::default()).unwrap();
+    assert_eq!(
+        raster(&output.png)
+            .peek_pixels()
+            .unwrap()
+            .get_color((10, 10)),
+        Color::GREEN
+    );
+    assert_eq!(fs::read(store.path()).unwrap(), before);
+    assert_eq!(
+        fs::read_to_string(temp.path().join("inner.js")).unwrap(),
+        inner
+    );
+}
+
+#[test]
+fn null_reference_overrides_use_the_default_component_from_the_script_library() {
+    let temp = TempDir::new().unwrap();
+    let library = temp.path().join("lib");
+    fs::create_dir(&library).unwrap();
+    let code = "/**\n@schema 2.21\n@input target: ref = \"button\"\n*/\nreturn [{type:'ref',ref:pencil.input.target,width:pencil.width,height:pencil.height}];";
+    fs::write(library.join("draw.js"), code).unwrap();
+    fs::write(library.join("ui.pen"),json!({"version":"2.21","children":[
+        {"id":"button","type":"rectangle","reusable":true,"fill":"#ff0000","width":30,"height":20},
+        {"id":"chart","type":"script","reusable":true,"scriptUri":"draw.js","width":30,"height":20}
+    ]}).to_string()).unwrap();
+    let path = temp.path().join("main.pen");
+    let source = json!({"version":"2.21","imports":{"ui":"lib/ui.pen"},"children":[
+        {"id":"button","type":"rectangle","reusable":true,"x":100,"fill":"#0000ff","width":30,"height":20},
+        {"id":"chart","type":"ref","ref":"ui:chart","inputs":{"target":null,"unused":"$missing"}}
+    ]}).to_string();
+    fs::write(&path, &source).unwrap();
+    let store = Store::open(&path, Some(temp.path().join("data"))).unwrap();
+    let (project, layout) = snapshot(&store);
+    let output = render::png(
+        &project,
+        &layout,
+        &RenderOptions {
+            node: Some("chart".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        raster(&output.png)
+            .peek_pixels()
+            .unwrap()
+            .get_color((10, 10)),
+        Color::RED
+    );
+    assert_eq!(fs::read(&path).unwrap(), source.as_bytes());
+    assert_eq!(fs::read_to_string(library.join("draw.js")).unwrap(), code);
 }
 
 #[test]

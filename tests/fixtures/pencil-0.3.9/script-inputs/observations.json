@@ -1,0 +1,374 @@
+{
+  "native_producer": "@pen.dev/cli 0.3.9",
+  "document_version": "2.19",
+  "export_scale": 2,
+  "width": 512,
+  "height": 528,
+  "reference_sha256": "601e3212adff42e6b60739f7ddf09b75e9618bc921ef97888b146f3779aec97b",
+  "source_sha256": "58765e701001e8be4ecf5990956b735105c9e6311107789b6a7906c93ba7e34c",
+  "source_files": {
+    "number-missing.js": "e9fef5eb4f2a1b8b06e69906fdda002afc3521febf6f46247f7d005648936bac",
+    "limited-number-missing.js": "5572bd99a3bc2d1b4ea0dea4c03bedb1f342bd6c189063f337569f4f3057358f",
+    "string-missing.js": "cb6d1e9a662bbb6fcb38bda668f052e937e19cdcca87ee288ce7f8179f8f4545",
+    "boolean-missing.js": "3caeb589bdffb203e371c87cb766c3282736802edc30a684d4d88f41083a2d1e",
+    "color-missing.js": "d4f8b1ed5a09564eef8a00ec0923962cb074294518a903de16971226fde89f94",
+    "enum-missing.js": "3d631aa90042976c08e46597680a68bdf49e63af5f4fb5a1275abf6e9a5e66f7",
+    "ref-missing.js": "420bc080de8170862af7c1988236a0a37db20617bd7972e34d43d215753f91ee",
+    "number-default-clamp.js": "f382be6d4556e8015148db878ec2980c35ea59e80323ed88d80c15647d34b116",
+    "number-zero-clamp.js": "f7792915eb1bccb57db64c662889c5d1686a1be9f4856e8ae2130d7248bbb288",
+    "boolean-false.js": "c7dea1dac8507bd5f21b9fb7e3ff5372737b3d7169e7a22c658fef1b00ab7e44",
+    "enum-choice.js": "44dfd374b6b765e9831f4c4c2eb97780a12eb7cbedf2f2eb3a9f69e5d224260f",
+    "ref-selected.js": "420bc080de8170862af7c1988236a0a37db20617bd7972e34d43d215753f91ee",
+    "unknown-input.js": "290a2f8da452dacd1fcc7ff7878f6e99ddbef4472549cf32c34ab9ade232c35b",
+    "number-null.js": "3a34a0c7b93c1ff65a132622e9906c574a29b7f08599f5527ea6648100ac4331",
+    "string-null.js": "cb6585ac968fa0266f8f4737c9cd80c524407b72f7cb636d61a91517de46187c",
+    "boolean-null.js": "c7dea1dac8507bd5f21b9fb7e3ff5372737b3d7169e7a22c658fef1b00ab7e44",
+    "color-null.js": "f71b480a2d117bbbb5b2ab6dd5c9cd899f5dfae7a3374cc303be2016b8b796c3",
+    "enum-null.js": "5cde2729aebaaa9d722149061e075b64fddc86b8a7b2d982d9337a16b6159a5a",
+    "ref-null.js": "420bc080de8170862af7c1988236a0a37db20617bd7972e34d43d215753f91ee",
+    "ref-empty.js": "420bc080de8170862af7c1988236a0a37db20617bd7972e34d43d215753f91ee",
+    "unknown-variable-input.js": "290a2f8da452dacd1fcc7ff7878f6e99ddbef4472549cf32c34ab9ade232c35b",
+    "negative-maximum.js": "609ba179eced8bb53cf3a8c2de413193ee452871ea40301cce4be4deeadf3aa9"
+  },
+  "cases": [
+    {
+      "case": "number-missing",
+      "source": "number-missing.js",
+      "stored_inputs": {},
+      "runtime_observation": [
+        "number",
+        0,
+        [
+          "value"
+        ],
+        null
+      ],
+      "encoded_text": "[\"number\",0,[\"value\"],null]"
+    },
+    {
+      "case": "limited-number-missing",
+      "source": "limited-number-missing.js",
+      "stored_inputs": {},
+      "runtime_observation": [
+        "number",
+        2,
+        [
+          "value"
+        ],
+        null
+      ],
+      "encoded_text": "[\"number\",2,[\"value\"],null]"
+    },
+    {
+      "case": "string-missing",
+      "source": "string-missing.js",
+      "stored_inputs": {},
+      "runtime_observation": [
+        "string",
+        "",
+        [
+          "value"
+        ],
+        null
+      ],
+      "encoded_text": "[\"string\",\"\",[\"value\"],null]"
+    },
+    {
+      "case": "boolean-missing",
+      "source": "boolean-missing.js",
+      "stored_inputs": {},
+      "runtime_observation": [
+        "boolean",
+        false,
+        [
+          "value"
+        ],
+        null
+      ],
+      "encoded_text": "[\"boolean\",false,[\"value\"],null]"
+    },
+    {
+      "case": "color-missing",
+      "source": "color-missing.js",
+      "stored_inputs": {},
+      "runtime_observation": [
+        "string",
+        "#000000",
+        [
+          "value"
+        ],
+        null
+      ],
+      "encoded_text": "[\"string\",\"#000000\",[\"value\"],null]"
+    },
+    {
+      "case": "enum-missing",
+      "source": "enum-missing.js",
+      "stored_inputs": {},
+      "runtime_observation": [
+        "string",
+        "one",
+        [
+          "value"
+        ],
+        null
+      ],
+      "encoded_text": "[\"string\",\"one\",[\"value\"],null]"
+    },
+    {
+      "case": "ref-missing",
+      "source": "ref-missing.js",
+      "stored_inputs": {},
+      "runtime_observation": [
+        "string",
+        "",
+        [
+          "value"
+        ],
+        null
+      ],
+      "encoded_text": "[\"string\",\"\",[\"value\"],null]"
+    },
+    {
+      "case": "number-default-clamp",
+      "source": "number-default-clamp.js",
+      "stored_inputs": {},
+      "runtime_observation": [
+        "number",
+        5,
+        [
+          "value"
+        ],
+        null
+      ],
+      "encoded_text": "[\"number\",5,[\"value\"],null]"
+    },
+    {
+      "case": "number-zero-clamp",
+      "source": "number-zero-clamp.js",
+      "stored_inputs": {
+        "value": 0
+      },
+      "runtime_observation": [
+        "number",
+        2,
+        [
+          "value"
+        ],
+        null
+      ],
+      "encoded_text": "[\"number\",2,[\"value\"],null]"
+    },
+    {
+      "case": "boolean-false",
+      "source": "boolean-false.js",
+      "stored_inputs": {
+        "value": false
+      },
+      "runtime_observation": [
+        "boolean",
+        false,
+        [
+          "value"
+        ],
+        null
+      ],
+      "encoded_text": "[\"boolean\",false,[\"value\"],null]"
+    },
+    {
+      "case": "enum-choice",
+      "source": "enum-choice.js",
+      "stored_inputs": {
+        "value": "two"
+      },
+      "runtime_observation": [
+        "string",
+        "two",
+        [
+          "value"
+        ],
+        null
+      ],
+      "encoded_text": "[\"string\",\"two\",[\"value\"],null]"
+    },
+    {
+      "case": "ref-selected",
+      "source": "ref-selected.js",
+      "stored_inputs": {
+        "value": "template"
+      },
+      "runtime_observation": [
+        "string",
+        "template",
+        [
+          "value"
+        ],
+        null
+      ],
+      "encoded_text": "[\"string\",\"template\",[\"value\"],null]"
+    },
+    {
+      "case": "unknown-input",
+      "source": "unknown-input.js",
+      "stored_inputs": {
+        "value": 3,
+        "extra": "kept"
+      },
+      "runtime_observation": [
+        "number",
+        3,
+        [
+          "value"
+        ],
+        null
+      ],
+      "encoded_text": "[\"number\",3,[\"value\"],null]"
+    },
+    {
+      "case": "number-null",
+      "source": "number-null.js",
+      "stored_inputs": {
+        "value": null
+      },
+      "runtime_observation": [
+        "number",
+        4,
+        [
+          "value"
+        ],
+        null
+      ],
+      "encoded_text": "[\"number\",4,[\"value\"],null]"
+    },
+    {
+      "case": "string-null",
+      "source": "string-null.js",
+      "stored_inputs": {
+        "value": null
+      },
+      "runtime_observation": [
+        "string",
+        "fallback",
+        [
+          "value"
+        ],
+        null
+      ],
+      "encoded_text": "[\"string\",\"fallback\",[\"value\"],null]"
+    },
+    {
+      "case": "boolean-null",
+      "source": "boolean-null.js",
+      "stored_inputs": {
+        "value": null
+      },
+      "runtime_observation": [
+        "boolean",
+        true,
+        [
+          "value"
+        ],
+        null
+      ],
+      "encoded_text": "[\"boolean\",true,[\"value\"],null]"
+    },
+    {
+      "case": "color-null",
+      "source": "color-null.js",
+      "stored_inputs": {
+        "value": null
+      },
+      "runtime_observation": [
+        "string",
+        "#123456",
+        [
+          "value"
+        ],
+        null
+      ],
+      "encoded_text": "[\"string\",\"#123456\",[\"value\"],null]"
+    },
+    {
+      "case": "enum-null",
+      "source": "enum-null.js",
+      "stored_inputs": {
+        "value": null
+      },
+      "runtime_observation": [
+        "string",
+        "two",
+        [
+          "value"
+        ],
+        null
+      ],
+      "encoded_text": "[\"string\",\"two\",[\"value\"],null]"
+    },
+    {
+      "case": "ref-null",
+      "source": "ref-null.js",
+      "stored_inputs": {
+        "value": null
+      },
+      "runtime_observation": [
+        "string",
+        "",
+        [
+          "value"
+        ],
+        null
+      ],
+      "encoded_text": "[\"string\",\"\",[\"value\"],null]"
+    },
+    {
+      "case": "ref-empty",
+      "source": "ref-empty.js",
+      "stored_inputs": {
+        "value": ""
+      },
+      "runtime_observation": [
+        "string",
+        "",
+        [
+          "value"
+        ],
+        null
+      ],
+      "encoded_text": "[\"string\",\"\",[\"value\"],null]"
+    },
+    {
+      "case": "unknown-variable-input",
+      "source": "unknown-variable-input.js",
+      "stored_inputs": {
+        "value": 3,
+        "extra": "$missing"
+      },
+      "runtime_observation": [
+        "number",
+        3,
+        [
+          "value"
+        ],
+        null
+      ],
+      "encoded_text": "[\"number\",3,[\"value\"],null]"
+    },
+    {
+      "case": "negative-maximum",
+      "source": "negative-maximum.js",
+      "stored_inputs": {},
+      "runtime_observation": [
+        "number",
+        -2,
+        [
+          "value"
+        ],
+        null
+      ],
+      "encoded_text": "[\"number\",-2,[\"value\"],null]"
+    }
+  ],
+  "independent_rgba_channels_verified": 1081344,
+  "maximum_formula_difference": 0,
+  "scope": "Original functional observations for valid typed controls, missing/null defaults, empty refs and stale saved inputs including an undefined variable. Invalid typed coercions and error-colored cells are excluded."
+}

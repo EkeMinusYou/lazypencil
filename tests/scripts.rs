@@ -199,18 +199,19 @@ fn typed_headers_clamp_numbers_preserve_strings_and_validate_all_six_input_types
     assert_eq!(inputs["mode"], "a,b");
     assert_eq!(inputs["enabled"], true);
     assert_eq!(inputs["component"], "button");
-    assert!(
-        !header
-            .prepare(&Default::default())
-            .unwrap()
-            .contains_key("component")
+    assert_eq!(
+        header.prepare(&Default::default()).unwrap()["component"],
+        ""
     );
+    let extras = header
+        .prepare(json!({"missing":1}).as_object().unwrap())
+        .unwrap();
+    assert!(!extras.contains_key("missing"));
     for input in [
         json!({"enabled":"true"}),
         json!({"mode":"unknown"}),
         json!({"count":"two"}),
         json!({"color":"bad"}),
-        json!({"missing":1}),
     ] {
         assert!(header.prepare(input.as_object().unwrap()).is_err());
     }
@@ -308,6 +309,58 @@ fn original_native_random_vectors_match_legacy_headers_and_reset_for_each_script
             );
         }
         assert_eq!(input.code, source);
+    }
+}
+
+#[test]
+fn native_input_defaults_null_resets_and_stale_controls_match_original_observations() {
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/pencil-0.3.9/script-inputs");
+    let observations: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(fixtures.join("observations.json")).unwrap())
+            .unwrap();
+    let mut worker = runtime();
+    for case in observations["cases"].as_array().unwrap() {
+        let code =
+            std::fs::read_to_string(fixtures.join(case["source"].as_str().unwrap())).unwrap();
+        let values = case["stored_inputs"].as_object().unwrap().clone();
+        let header = Header::parse(&code).unwrap();
+        let before = serde_json::to_value(&header).unwrap();
+        let prepared = header.prepare(&values).unwrap();
+        assert_eq!(prepared.len(), 1);
+        assert!(prepared.contains_key("value"));
+        assert_eq!(serde_json::to_value(&header).unwrap(), before);
+        let request = ScriptRequest {
+            code,
+            width: 256.0,
+            height: 8.0,
+            inputs: values.clone(),
+        };
+        let output = worker.execute(&request).unwrap();
+        let word = |index: usize| {
+            u32::from_str_radix(
+                output.nodes[index]["fill"]
+                    .as_str()
+                    .unwrap()
+                    .strip_prefix('#')
+                    .unwrap(),
+                16,
+            )
+            .unwrap()
+        };
+        let length = word(0) as usize;
+        assert_eq!(output.nodes.len(), length + 1);
+        let utf16 = (1..=length)
+            .map(|index| u16::try_from(word(index)).unwrap())
+            .collect::<Vec<_>>();
+        let observed: serde_json::Value =
+            serde_json::from_str(&String::from_utf16(&utf16).unwrap()).unwrap();
+        assert_eq!(
+            observed, case["runtime_observation"],
+            "Native input mismatch: {}",
+            case["case"]
+        );
+        assert_eq!(request.inputs, values);
     }
 }
 

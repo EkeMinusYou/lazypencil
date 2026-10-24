@@ -67,6 +67,9 @@ pub struct ResolvedNode {
     script_scope: Option<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
     script_input_scope: Option<PathBuf>,
+    #[cfg(feature = "rendering")]
+    #[serde(skip_serializing)]
+    pub(crate) script_inputs_resolved: bool,
     pub theme: BTreeMap<String, String>,
     pub children: Vec<ResolvedNode>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1324,6 +1327,8 @@ impl Project {
             property_sources,
             script_scope: None,
             script_input_scope: None,
+            #[cfg(feature = "rendering")]
+            script_inputs_resolved: false,
             theme: BTreeMap::new(),
             children: Vec::new(),
             generated_by: None,
@@ -1460,34 +1465,73 @@ impl Project {
         let theme = self.effective_theme(node, inherited)?;
         node.theme = theme.clone();
         let is_script = node.kind() == "script";
+        if is_script {
+            // Input names belong to the captured header. Stale saved controls
+            // must not resolve variables or create runtime dependencies.
+            let header = node
+                .properties
+                .get("scriptUri")
+                .and_then(Value::as_str)
+                .and_then(|uri| {
+                    self.resolve_file(node.property_source("scriptUri"), uri)
+                        .ok()
+                })
+                .and_then(|path| self.assets.get(&path))
+                .and_then(|asset| std::str::from_utf8(&asset.bytes).ok())
+                .and_then(|source| crate::script::header::Header::parse(source).ok());
+            if let Some(values) = node.properties.get("inputs") {
+                let values = values
+                    .as_object()
+                    .ok_or_else(|| invalid("Script inputs must be an object"))?;
+                let values = match &header {
+                    Some(header) => self.resolve_script_input_values(node, header, values)?,
+                    // Generated code may not be captured yet. Its declared
+                    // inputs are resolved once after capture, before execution.
+                    None => values.clone(),
+                };
+                node.properties
+                    .insert("inputs".into(), Value::Object(values));
+            }
+            #[cfg(feature = "rendering")]
+            {
+                node.script_inputs_resolved = header.is_some();
+            }
+        }
         for (key, value) in &mut node.properties {
-            if literal_property(key) {
+            if literal_property(key) || key == "inputs" && is_script {
                 continue;
             }
             let origin = node.property_sources.get(key).unwrap_or(&node.source_path);
-            *value = if key == "inputs" && is_script {
-                let values = value
-                    .as_object()
-                    .ok_or_else(|| invalid("Script inputs must be an object"))?;
-                Value::Object(
-                    values
-                        .iter()
-                        .map(|(key, value)| {
-                            Ok((
-                                key.clone(),
-                                self.resolve_value(origin, value, &theme, &mut Vec::new())?,
-                            ))
-                        })
-                        .collect::<Result<_>>()?,
-                )
-            } else {
-                self.resolve_value(origin, value, &theme, &mut Vec::new())?
-            };
+            *value = self.resolve_value(origin, value, &theme, &mut Vec::new())?;
         }
         for child in &mut node.children {
             self.resolve_properties(child, &theme)?;
         }
         Ok(())
+    }
+
+    pub(crate) fn resolve_script_input_values(
+        &self,
+        node: &ResolvedNode,
+        header: &crate::script::header::Header,
+        values: &Map<String, Value>,
+    ) -> Result<Map<String, Value>> {
+        values
+            .iter()
+            .map(|(name, value)| {
+                let value = if header.inputs.iter().any(|input| &input.name == name) {
+                    self.resolve_value(
+                        node.property_source("inputs"),
+                        value,
+                        &node.theme,
+                        &mut Vec::new(),
+                    )?
+                } else {
+                    value.clone()
+                };
+                Ok((name.clone(), value))
+            })
+            .collect()
     }
 
     fn effective_theme(
@@ -1530,13 +1574,16 @@ impl Project {
                     .properties
                     .get("inputs")
                     .and_then(|values| values.get(&input.name))
-                    .is_some()
+                    .is_some_and(|value| !value.is_null())
                 {
                     node.script_input_origin()
                 } else {
                     node.script_origin()
                 };
                 let reference = value.as_str().expect("validated ref input");
+                if reference.is_empty() {
+                    continue;
+                }
                 let (source, definition) = self.lookup_node(origin, reference)?;
                 if definition["reusable"] != true {
                     return Err(invalid(
