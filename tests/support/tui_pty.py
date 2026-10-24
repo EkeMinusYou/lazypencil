@@ -27,7 +27,7 @@ if case == "dynamic-idle":
     with open(os.path.join(root, "generated.js"), "w") as handle:
         handle.write("/** @schema 2.21 */ return [{type:'rectangle',width:180,height:90,fill:'#00FF00'}];")
     with open(os.path.join(root, "blue.glsl"), "w") as handle:
-        handle.write("precision highp float; void main(){gl_FragColor=vec4(0.,0.,1.,1.);}")
+        handle.write("precision highp float;\n/* @time */ uniform float clock;\nvoid main(){gl_FragColor=clock<0.5?vec4(0.,0.,1.,1.):vec4(1.,1.,0.,1.);}")
     design = {"version": "2.21", "children": [
         {"type": "script", "id": "script", "width": 180, "height": 90, "scriptUri": "generated.js"},
         {"type": "browser", "id": "page", "x": 180, "width": 180, "height": 90, "url": "data:text/html,<style>html{background:%23f00}</style>"},
@@ -355,6 +355,23 @@ try:
             return images and all(bytes(color) in images[-1] for color in [(255, 0, 0, 255), (0, 255, 0, 255), (0, 0, 255, 255)])
 
         wait(lambda: len(children()) == 3 and actual_dynamic_pixels(), "three dynamic workers and actual RGB pixels")
+        original_pids = children().copy()
+        frame_count = len(list(kitty_images()))
+        paste("/time 1")
+        os.write(master, b"\r")
+        wait(lambda: len(list(kitty_images())) > frame_count and bytes((255, 255, 0, 255)) in list(kitty_images())[-1] and "t=1.000s" in screen.text(), "time command changes real shader pixels")
+        assert children() == original_pids, "Seeking must reuse the existing runtimes"
+        assert session()["draft"] == ""
+        frame_count = len(list(kitty_images()))
+        # Two unchanged dependency polls must not repaint a paused clock.
+        deadline = time.monotonic() + 2.2
+        while time.monotonic() < deadline:
+            pump()
+        assert len(list(kitty_images())) == frame_count, "An unchanged time must not repaint"
+        paste("/time 0")
+        os.write(master, b"\r")
+        wait(lambda: len(list(kitty_images())) > frame_count and actual_dynamic_pixels() and "t=0.000s" in screen.text(), "time command restores original shader pixels")
+        assert children() == original_pids
         pids = children().copy()
         paste("待機と更新の後も残る下書き")
         wait(lambda: session()["draft"] == "待機と更新の後も残る下書き", "draft before idle expiry")

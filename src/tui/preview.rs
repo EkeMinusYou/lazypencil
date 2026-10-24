@@ -23,8 +23,19 @@ use tokio_util::sync::CancellationToken;
 pub struct View {
     pub center: [f32; 2],
     pub zoom: Option<f32>,
+    pub time: f64,
 }
 impl View {
+    pub fn set_time(&mut self, time: f64) -> Result<()> {
+        if !time.is_finite() || time < 0.0 {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "Shader time must be a finite nonnegative number of seconds",
+            ));
+        }
+        self.time = time;
+        Ok(())
+    }
     pub fn fit(&mut self, bounds: Rect, pixels: [u32; 2]) {
         self.center = [
             bounds.x + bounds.width / 2.0,
@@ -173,7 +184,7 @@ impl Drop for Worker {
 
 fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, image_id: u32) {
     let mut cached: Option<(Project, crate::layout::LayoutSnapshot)> = None;
-    let mut document_preview_ready = false;
+    let mut document_preview_time = None;
     let mut script =
         crate::script::ScriptRuntime::new(std::env::current_exe().expect("current executable"));
     let mut dynamic = crate::dynamic::DynamicRuntime::new(store.data_dir());
@@ -238,13 +249,13 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                         .is_ok_and(|document| document.revision() == snapshot.revision)
                         && project.verify_unchanged().is_ok()
                 });
-            if request.check_only && unchanged && document_preview_ready {
+            if request.check_only && unchanged && document_preview_time == Some(request.view.time) {
                 return Ok(None);
             }
             // Capturing a layout does not mean an image has been published. A
             // failed or cancelled render must be retried by dependency polls,
             // even when that captured layout is still current.
-            document_preview_ready = false;
+            document_preview_time = None;
             if !unchanged {
                 cached = Some(crate::service::layout_snapshot_with_runtime(
                     store,
@@ -265,6 +276,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 scale: view.zoom.unwrap(),
                 background: skia_safe::Color::from_rgb(248, 250, 252),
                 refresh: request.refresh,
+                time: view.time,
                 ..Default::default()
             };
             let image = crate::render::png_with_runtime(
@@ -303,7 +315,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
         let result = match result {
             Ok(Some(preview)) => {
                 if !preview.attachment {
-                    document_preview_ready = true;
+                    document_preview_time = Some(preview.view.time);
                 }
                 Ok(preview)
             }
@@ -344,6 +356,64 @@ mod tests {
     use super::*;
     use std::time::Duration;
     use tempfile::TempDir;
+
+    #[test]
+    fn time_changes_republish_without_invalidating_layout_or_repainting_idle_polls() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("design.pen");
+        let saved = json!({"version":"2.21","children":[{
+            "id":"rectangle","type":"rectangle","width":180,"height":90,"fill":"#00FF00"
+        }]})
+        .to_string();
+        std::fs::write(&path, &saved).unwrap();
+        let store = Store::open(&path, Some(temp.path().join("data"))).unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let worker = Worker::start(store, vec![], Backend::halfblocks(), 133).unwrap();
+            let mut request = Request {
+                generation: 1,
+                cells: Size::new(20, 8),
+                view: View::default(),
+                refresh: false,
+                check_only: false,
+                attachment: None,
+            };
+            worker.request(request.clone());
+            let initial = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap()
+                .result
+                .unwrap();
+            assert_eq!(initial.view.time, 0.0);
+            request.view = initial.view;
+            request.view.set_time(1.25).unwrap();
+            request.check_only = true;
+            worker.request(request.clone());
+            let changed = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap()
+                .result
+                .unwrap();
+            assert_eq!(changed.view.time, 1.25);
+            assert_eq!(changed.view.center, initial.view.center);
+            assert_eq!(changed.view.zoom, initial.view.zoom);
+            assert_eq!(
+                changed.summary["snapshot_id"],
+                initial.summary["snapshot_id"]
+            );
+            assert_eq!(changed.png, initial.png);
+            worker.request(request);
+            assert!(
+                tokio::time::timeout(Duration::from_millis(200), worker.next())
+                    .await
+                    .is_err()
+            );
+            assert_eq!(std::fs::read_to_string(path).unwrap(), saved);
+        });
+    }
 
     #[test]
     fn a_periodic_policy_reload_updates_identity_even_when_pixels_are_identical() {
