@@ -580,39 +580,10 @@ fn native_pencil_219_triangle_matches_geometry_and_survives_an_edit_without_migr
     let store = Store::open(&file, Some(directory.path().join("data"))).unwrap();
     let output = render_file(&file).unwrap();
     assert_eq!((output.width, output.height), (144, 144));
-    let expected = Image::from_encoded(Data::new_copy(include_bytes!(
-        "fixtures/pencil-0.3.9/triangle.png"
-    )))
-    .unwrap()
-    .make_raster_image(None, None)
-    .unwrap();
-    let actual = raster(&output);
-    let expected_pixels = expected.peek_pixels().unwrap();
-    let actual_pixels = actual.peek_pixels().unwrap();
-    let mut difference = 0u64;
-    let mut changed_pixels = 0;
-    for y in 0..144 {
-        for x in 0..144 {
-            let a = actual_pixels.get_color((x, y));
-            let b = expected_pixels.get_color((x, y));
-            let channels = [
-                a.a().abs_diff(b.a()),
-                a.r().abs_diff(b.r()),
-                a.g().abs_diff(b.g()),
-                a.b().abs_diff(b.b()),
-            ];
-            difference += channels.iter().map(|value| u64::from(*value)).sum::<u64>();
-            changed_pixels += usize::from(channels.iter().any(|value| *value > 20));
-        }
-    }
-    // Permit edge antialiasing differences, while rejecting shifted or stretched vertices.
-    assert!(
-        difference < 144 * 144 * 4 * 2,
-        "Native pixel difference: {difference}"
-    );
-    assert!(
-        changed_pixels < 150,
-        "Native differing pixels: {changed_pixels}"
+    assert_native_pixels(
+        &output,
+        include_bytes!("fixtures/pencil-0.3.9/triangle.png"),
+        150,
     );
     assert_eq!(pixel(&output, 66, 25), Color::RED);
     assert_eq!(pixel(&output, 66, 105), Color::WHITE);
@@ -633,5 +604,113 @@ fn native_pencil_219_triangle_matches_geometry_and_survives_an_edit_without_migr
         fs::write(path.join("codec-triangle.png"), &output.png).unwrap();
         fs::write(path.join("codec-edited.pen"), saved.text()).unwrap();
         fs::write(path.join("codec-edited.png"), &edited.png).unwrap();
+    }
+}
+
+fn assert_native_pixels(output: &render::RenderedImage, reference: &[u8], max_changed: usize) {
+    let expected = Image::from_encoded(Data::new_copy(reference))
+        .unwrap()
+        .make_raster_image(None, None)
+        .unwrap();
+    assert_eq!(
+        (output.width as i32, output.height as i32),
+        (expected.width(), expected.height())
+    );
+    let actual = raster(output);
+    let expected_pixels = expected.peek_pixels().unwrap();
+    let actual_pixels = actual.peek_pixels().unwrap();
+    let mut difference = 0u64;
+    let mut changed_pixels = 0;
+    for y in 0..expected.height() {
+        for x in 0..expected.width() {
+            let a = actual_pixels.get_color((x, y));
+            let b = expected_pixels.get_color((x, y));
+            let channels = [
+                a.a().abs_diff(b.a()),
+                a.r().abs_diff(b.r()),
+                a.g().abs_diff(b.g()),
+                a.b().abs_diff(b.b()),
+            ];
+            difference += channels.iter().map(|value| u64::from(*value)).sum::<u64>();
+            changed_pixels += usize::from(channels.iter().any(|value| *value > 20));
+        }
+    }
+    eprintln!(
+        "Native {}x{}: absolute channel difference={difference}, pixels over20={changed_pixels}",
+        output.width, output.height
+    );
+    // Permit edge antialiasing differences, while rejecting shifted geometry.
+    assert!(
+        difference < u64::from(output.width) * u64::from(output.height) * 4 * 2,
+        "Native pixel difference: {difference}"
+    );
+    assert!(
+        changed_pixels < max_changed,
+        "Native differing pixels: {changed_pixels}"
+    );
+}
+
+#[test]
+fn native_pencil_219_rounded_polygons_match_aspect_ratios_and_oversized_radii() {
+    for (name, source, reference, max_changed) in [
+        (
+            "rounded-polygons",
+            include_str!("fixtures/pencil-0.3.9/rounded-polygons.pen"),
+            include_bytes!("fixtures/pencil-0.3.9/rounded-polygons.png").as_slice(),
+            600,
+        ),
+        (
+            "radius-triangles",
+            include_str!("fixtures/pencil-0.3.9/radius-triangles.pen"),
+            include_bytes!("fixtures/pencil-0.3.9/radius-triangles.png").as_slice(),
+            900,
+        ),
+        (
+            "rounded-large-aspects",
+            include_str!("fixtures/pencil-0.3.9/rounded-large-aspects.pen"),
+            include_bytes!("fixtures/pencil-0.3.9/rounded-large-aspects.png").as_slice(),
+            600,
+        ),
+        (
+            "wide-radius-triangles",
+            include_str!("fixtures/pencil-0.3.9/wide-radius-triangles.pen"),
+            include_bytes!("fixtures/pencil-0.3.9/wide-radius-triangles.png").as_slice(),
+            750,
+        ),
+    ] {
+        for version in ["2.19", "2.21"] {
+            eprintln!("Reference {name}, schema {version}");
+            let directory = TempDir::new().unwrap();
+            let file = directory.path().join("native.pen");
+            fs::write(&file, source.replace("2.19", version)).unwrap();
+            let output = render_file(&file).unwrap();
+            assert_native_pixels(&output, reference, max_changed);
+            if let Some(path) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
+                let path = std::path::PathBuf::from(path);
+                fs::create_dir_all(&path).unwrap();
+                fs::write(
+                    path.join(format!("codec-{name}-{version}.png")),
+                    &output.png,
+                )
+                .unwrap();
+            }
+        }
+    }
+}
+
+#[test]
+fn polygon_radius_validation_and_degenerate_shapes_do_not_create_invalid_arcs() {
+    for radius in [json!(-1), json!("large"), json!([10, 10, 10, 10])] {
+        let scene = Scene::new(
+            json!([{"id":"polygon","type":"polygon","width":100,"height":100,"cornerRadius":radius,"fill":"#ff0000"}]),
+        );
+        assert_eq!(scene.render().err().unwrap().code, "INVALID_DOCUMENT");
+    }
+    for (width, height) in [(0, 100), (100, 0), (0, 0)] {
+        let scene = Scene::new(
+            json!([{"id":"frame","type":"frame","width":144,"height":144,"layout":"none","fill":"#ffffff","children":[{"id":"polygon","type":"polygon","width":width,"height":height,"cornerRadius":100,"fill":"#ff0000"}]}]),
+        );
+        let output = scene.render().unwrap();
+        assert_eq!(pixel(&output, 20, 20), Color::WHITE);
     }
 }

@@ -1,0 +1,70 @@
+{
+  "version": "2.19",
+  "children": [
+    {
+      "id": "wide-radius-canvas",
+      "type": "frame",
+      "width": 720,
+      "height": 160,
+      "layout": "none",
+      "fill": "#ffffff",
+      "children": [
+        {
+          "id": "wide-radius-10",
+          "type": "polygon",
+          "x": 12,
+          "y": 40,
+          "width": 120,
+          "height": 60,
+          "polygonCount": 3,
+          "cornerRadius": 10,
+          "fill": "#ff0000"
+        },
+        {
+          "id": "wide-radius-30",
+          "type": "polygon",
+          "x": 156,
+          "y": 40,
+          "width": 120,
+          "height": 60,
+          "polygonCount": 3,
+          "cornerRadius": 30,
+          "fill": "#ff0000"
+        },
+        {
+          "id": "wide-radius-50",
+          "type": "polygon",
+          "x": 300,
+          "y": 40,
+          "width": 120,
+          "height": 60,
+          "polygonCount": 3,
+          "cornerRadius": 50,
+          "fill": "#ff0000"
+        },
+        {
+          "id": "wide-radius-60",
+          "type": "polygon",
+          "x": 444,
+          "y": 40,
+          "width": 120,
+          "height": 60,
+          "polygonCount": 3,
+          "cornerRadius": 60,
+          "fill": "#ff0000"
+        },
+        {
+          "id": "wide-radius-100",
+          "type": "polygon",
+          "x": 588,
+          "y": 40,
+          "width": 120,
+          "height": 60,
+          "polygonCount": 3,
+          "cornerRadius": 100,
+          "fill": "#ff0000"
+        }
+      ]
+    }
+  ]
+}

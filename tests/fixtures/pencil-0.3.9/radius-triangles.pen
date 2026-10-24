@@ -1,0 +1,81 @@
+{
+  "version": "2.19",
+  "children": [
+    {
+      "id": "radius-canvas",
+      "type": "frame",
+      "width": 864,
+      "height": 144,
+      "layout": "none",
+      "fill": "#ffffff",
+      "children": [
+        {
+          "id": "radius-0",
+          "type": "polygon",
+          "x": 16,
+          "y": 16,
+          "width": 100,
+          "height": 100,
+          "polygonCount": 3,
+          "cornerRadius": 0,
+          "fill": "#ff0000"
+        },
+        {
+          "id": "radius-10",
+          "type": "polygon",
+          "x": 160,
+          "y": 16,
+          "width": 100,
+          "height": 100,
+          "polygonCount": 3,
+          "cornerRadius": 10,
+          "fill": "#ff0000"
+        },
+        {
+          "id": "radius-25",
+          "type": "polygon",
+          "x": 304,
+          "y": 16,
+          "width": 100,
+          "height": 100,
+          "polygonCount": 3,
+          "cornerRadius": 25,
+          "fill": "#ff0000"
+        },
+        {
+          "id": "radius-30",
+          "type": "polygon",
+          "x": 448,
+          "y": 16,
+          "width": 100,
+          "height": 100,
+          "polygonCount": 3,
+          "cornerRadius": 30,
+          "fill": "#ff0000"
+        },
+        {
+          "id": "radius-50",
+          "type": "polygon",
+          "x": 592,
+          "y": 16,
+          "width": 100,
+          "height": 100,
+          "polygonCount": 3,
+          "cornerRadius": 50,
+          "fill": "#ff0000"
+        },
+        {
+          "id": "radius-100",
+          "type": "polygon",
+          "x": 736,
+          "y": 16,
+          "width": 100,
+          "height": 100,
+          "polygonCount": 3,
+          "cornerRadius": 100,
+          "fill": "#ff0000"
+        }
+      ]
+    }
+  ]
+}
