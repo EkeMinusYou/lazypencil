@@ -151,8 +151,6 @@ checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 [[package]]
 name = "glsl-lang-pp"
 version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88677876fb27f116015d0ecebda6d77bdf65f3a6fa3f5dfeed10b8c8f04cb2c5"
 dependencies = [
  "arrayvec",
  "bimap",

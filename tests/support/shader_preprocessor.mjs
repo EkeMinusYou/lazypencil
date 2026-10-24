@@ -60,6 +60,10 @@ if (process.argv[3] === "--bomb") {
     assert(!result.includes("F("), result);
     assert.equal((result.match(/0\.125/g) || []).length, 4, result);
   });
+  check("unused macro arguments are not expanded", () => {
+    const result = prepare("#define IGNORE(x) vec4(0.5)\n#define TAKES_TWO(x,y) x\n" + body("IGNORE(TAKES_TWO(1.))"));
+    assert(result.includes("vec4(0.5)"), result);
+  });
   check("builtin is undefined to conditional preprocessing", () => {
     const result = prepare("#ifdef gl_FragCoord\n#error builtin unexpectedly defined\n#endif\n" + body("vec4(0.,1.,0.,1.)"));
     assert(result.includes("vec4(0.,1.,0.,1.)"));
