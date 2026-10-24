@@ -264,7 +264,7 @@ fn discover(data: &Path, budget: &Budget<'_>) -> Result<Vec<Entry>> {
                             &path,
                             &key,
                             "pending_cleanup",
-                            "committed deletion needs explicit cleanup",
+                            "deletion preparation or cleanup pending",
                         );
                         if directory(&path).is_ok_and(|exists| exists)
                             && let Ok(inventory) = deletion::scan(&path, budget)
@@ -491,6 +491,7 @@ fn apply_at(
     let mut deleted = Vec::new();
     let mut skipped = Vec::new();
     let mut reclaimed = 0u64;
+    verify().map_err(|error|error.details(json!({"completed_result":{"deleted":deleted,"skipped":skipped,"reclaimed_bytes":reclaimed},"remaining_requires_review":true})))?;
     let mut selected = plan
         .entries
         .iter()
@@ -504,7 +505,7 @@ fn apply_at(
         )
     });
     for entry in selected {
-        if let Err(error) = budget.check().and_then(|()| verify()) {
+        if let Err(error) = budget.check() {
             return Err(error.details(json!({"completed_result":{"deleted":deleted,"skipped":skipped,"reclaimed_bytes":reclaimed},"remaining_requires_review":true})));
         }
         let operation = Store::for_saved_conversation(
@@ -512,16 +513,22 @@ fn apply_at(
             data.clone(),
         )
         .and_then(|store| {
-            deletion::delete_with_budget(
+            deletion::delete_verified(
                 &store,
                 entry.session.as_deref().expect("validated session"),
                 entry.revision.as_deref().expect("reviewed revision"),
                 &budget,
+                || {
+                    verify().map_err(|error| {
+                        let cause = error.details.clone();
+                        error.details(json!({"retention_policy_changed":true,"cause":cause}))
+                    })
+                },
             )
         });
         match operation {
             Ok(result)=>{if result["cleanup_complete"]==true {reclaimed+=entry.bytes.unwrap_or(0);}deleted.push(result);},
-            Err(error) if error.code=="CANCELLED"=>return Err(error.details(json!({"completed_result":{"deleted":deleted,"skipped":skipped,"reclaimed_bytes":reclaimed},"remaining_requires_review":true}))),
+            Err(error) if error.code=="CANCELLED" || error.details.as_ref().is_some_and(|details|details["retention_policy_changed"]==true)=>return Err(error.details(json!({"completed_result":{"deleted":deleted,"skipped":skipped,"reclaimed_bytes":reclaimed},"remaining_requires_review":true}))),
             Err(error)=>skipped.push(json!({"document":entry.document,"session":entry.session,"error":error})),
         }
     }

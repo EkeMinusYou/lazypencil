@@ -318,6 +318,51 @@ fn retention_rechecks_each_target_and_never_deletes_a_new_unsent_draft() {
 }
 
 #[test]
+fn retention_checks_user_policy_after_hashing_and_again_after_preparing_the_commit() {
+    for change_at in [1, 2] {
+        let temp = TempDir::new().unwrap();
+        let (store, conversation) = session(&temp, "a.pen");
+        let (_, path) = inactive(conversation, 20);
+        let settings = policy(Some(1), None, 0);
+        let review = plan(store.data_dir(), &settings);
+        let user = temp.path().join("config.toml");
+        fs::write(
+            &user,
+            "[conversations.retention]\nmax_age_days=1\nkeep_recent_per_document=0\n",
+        )
+        .unwrap();
+        let snapshot = crate::config::ConversationSnapshot::load_file(Some(user.clone())).unwrap();
+        let calls = Cell::new(0);
+        let result = apply_at(
+            store.data_dir(),
+            &settings,
+            &review.revision().unwrap(),
+            None,
+            DAY,
+            || {
+                if calls.get() == change_at {
+                    fs::write(&user, "[conversations.retention]\nmax_age_days=36500\n").unwrap();
+                }
+                calls.set(calls.get() + 1);
+                snapshot.verify_unchanged()
+            },
+        )
+        .unwrap_err();
+        assert_eq!(result.code, "REVISION_CONFLICT");
+        assert!(path.exists());
+        assert!(
+            result.details.as_ref().unwrap()["completed_result"]["deleted"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        let cleanup = cleanup_all(store.data_dir(), None).unwrap();
+        assert_eq!(cleanup["removed_count"], if change_at == 2 { 1 } else { 0 });
+        assert!(path.exists());
+    }
+}
+
+#[test]
 fn retention_partial_cancel_and_config_revocation_report_already_committed_deletions() {
     for revoke in [false, true] {
         let temp = TempDir::new().unwrap();
@@ -343,7 +388,7 @@ fn retention_partial_cancel_and_config_revocation_report_already_committed_delet
             Some(&token),
             DAY,
             || {
-                if calls.get() == 1 {
+                if !first.exists() {
                     if revoke {
                         fs::write(&user, "[conversations.retention]\nmax_age_days=36500\n")
                             .unwrap();

@@ -254,6 +254,16 @@ pub(super) fn delete_with_budget(
     expected_revision: &str,
     budget: &Budget<'_>,
 ) -> Result<Value> {
+    delete_verified(store, id, expected_revision, budget, || Ok(()))
+}
+
+pub(super) fn delete_verified(
+    store: &Store,
+    id: &str,
+    expected_revision: &str,
+    budget: &Budget<'_>,
+    verify: impl Fn() -> Result<()>,
+) -> Result<Value> {
     let cancel = budget.cancel;
     if expected_revision.len() != 64
         || !expected_revision
@@ -272,6 +282,7 @@ pub(super) fn delete_with_budget(
         return Err(changed());
     }
     let _registry = storage::registry_lock(store, cancel)?;
+    verify()?;
     budget.check()?;
     inventory.verify(budget)?;
     let operation = uuid::Uuid::new_v4().to_string();
@@ -290,7 +301,9 @@ pub(super) fn delete_with_budget(
     let cleanup_lease = storage::exclusive_lease(&trash.join("lock"))?;
     crate::store::atomic_replace(&trash.join("deletion.json"), &serde_json::to_vec(&json!({"version":1,"document":store.path(),"session":id,"operation":operation,"revision":revision})).unwrap())?;
     crate::store::sync_directory(&store.document_data_dir())?;
+    verify()?;
     budget.check()?;
+    inventory.verify(budget)?;
     fs::rename(&directory, trash.join("payload")).map_err(|error| Error::io(&directory, error))?;
     let durability_errors = [directory.parent().unwrap(), trash.as_path()]
         .into_iter()
