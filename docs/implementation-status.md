@@ -667,6 +667,10 @@ source `36d1269` の専用 Chromium は macOS arm64 `40014476233`（97件）、L
 
 固定 audit tool は version・実 compiler・runner image／architecture に束縛し、binary hash と実行時 version を確認して再利用する。advisory database や監査結果は再利用しない。依存 cache は従来どおりアプリを prune し、その後に別の application cache を検証して重ねる。source distribution の全入力（workflow scheduling を除く）・実 compiler／flag を含む native key・絶対パスを key に含め、保存するのは package の fingerprint／library／CLI／test binary のみ。compiler dep-info の入力が追跡済み source と一致しない場合や workflow 自体を include する場合、独自 build script がある場合は再利用しない。実 source の hash、cache file の hash／mode、追加の compile-time 環境も照合する。画像・試験結果は毎回生成する。対象限定 Clippy は test binary の link 前へ移した。軽量試験と実 GHA の結果は既存の検証記録で確認し、cache miss／拒否は fresh build へ戻す。
 
+`8789b97` の3環境検証と source artifact は成功した。同じ audit key の cold job `120921699548` と warm job `120923033109` では準備工程が191秒から9秒へ短縮し、後者のコンパイルは0件だった。Linux full job `120916088058` は同じ source の focus から39出力を検証して再利用した。`c7d06d8` の focus `120936394399` は216秒で成功し、そのうち対象の試験は約66秒だった。新しい入力設定の再現を最初に一度だけ実行し、後続の対象試験から除外した。変更のない Wasm は再ビルドしなかった。3環境の最終検証はこの focus の成功後に開始した。
+
+追加のキャッシュ調整では、workflow に加えて `scripts/ci/` と直下の `scripts/test_*.py` を application key の入力から除く。CI の変更だけで native binary を再コンパイルしないためで、除外ファイルを Rust が読み込む場合は compiler dep-info の照合で再利用を拒否する。ドキュメント・fixture・resource・その他の script は引き続き束縛する。除外パスの変更での再利用、除外したファイルを埋め込む場合の拒否、似た名前の実入力の失効を軽量試験で検査した。この追加調整の hosted 検証は、進行中の3環境検証を完了してから行う。
+
 ### ページの network-idle 待機
 
 2026-10-24: `[runtime.browser] wait_until` に `load`（従来の既定値）と `network_idle` を追加した。後者は現在の main frame／loader に対する Chromium の `networkIdle` lifecycle 通知と document load を待ち、その後に従来の font・image decode・2 animation frame を待つ。別 session・子 frame・古い loader の通知を成功に使わず、現在の loader 一つだけを保持する。URL・header・本文や無制限の event queue は保持しない。context の破棄時に状態を解除し、既存の取消・取得／描画期限・失敗時の process 回収へ接続する。
