@@ -15,6 +15,8 @@ Install and authenticate an [ACP adapter](agents.md) first. Opening or viewing d
 
 If the adapter cannot load native sessions, the next explicit submission starts a new native session with current document context and bounded local history, and the conversation panel reports the replacement. A load failure does not resend the draft. Reopen with `--session LOCAL_CONVERSATION_UUID --restart-session` to explicitly request a replacement after a load error; submit when ready. This preserves local history and stored images without reattaching past images automatically. See [recovery behavior](agents.md#conversations-and-events) and its verification limits.
 
+If a replacement is interrupted before completing a local turn, the next explicit request supplies document context and bounded history again, including after a successful native load. The panel reports the added local context separately from creating a new native session. A retained failed draft remains editable and is never sent just by reopening the TUI.
+
 Terminal stdin/stdout and at least 50 columns × 16 rows are required. `--json` is rejected before opening/creating a document; use `prompt --json` for structured streams. `--no-default-features` excludes rendering and TUI. `--no-default-features --features rendering` retains image export without TUI.
 
 ## Keys and commands

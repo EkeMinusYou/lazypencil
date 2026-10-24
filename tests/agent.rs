@@ -1115,6 +1115,172 @@ fn session_restart_requires_an_explicit_local_conversation_for_cli_and_native_ho
     assert!(!directory.path().join("fixture-errors.log").exists());
 }
 
+#[test]
+fn session_restart_cancellation_before_sending_preserves_context_for_the_next_loaded_session() {
+    use clap::Parser;
+    use lazypencil::conversation::{Conversation, ConversationEvent};
+    let directory = TempDir::new().unwrap();
+    let first = cli(&directory, "resume-native", &["--create"]);
+    assert!(
+        first.status.success(),
+        "{}",
+        String::from_utf8_lossy(&first.stdout)
+    );
+    let first_events = events(&first);
+    let complete = first_events
+        .iter()
+        .find(|event| event["type"] == "complete")
+        .unwrap();
+    let session = complete["session"].as_str().unwrap();
+    let state_directory = Path::new(complete["transcript"].as_str().unwrap())
+        .parent()
+        .unwrap();
+    let document_path = directory.path().join("design.pen");
+    let original = std::fs::read(&document_path).unwrap();
+    std::fs::write(directory.path().join("fixture-restart"), "").unwrap();
+    let arguments = lazypencil::cli::Arguments::try_parse_from([
+        "lazypencil".into(),
+        "prompt".into(),
+        document_path.clone().into_os_string(),
+        "--adapter".into(),
+        python().into_os_string(),
+        format!("--adapter-arg={}", fixture().display()).into(),
+        "--adapter-arg=resume-native".into(),
+        "--session".into(),
+        session.into(),
+        "--restart-session".into(),
+        "--non-interactive".into(),
+        "日本語の中断される依頼".into(),
+    ])
+    .unwrap();
+    let lazypencil::cli::Command::Prompt(args) = arguments.command else {
+        unreachable!()
+    };
+    let mut conversation = Conversation::open_with_executable(
+        args,
+        Some(directory.path().join("data")),
+        env!("CARGO_BIN_EXE_lazypencil").into(),
+    )
+    .unwrap();
+    runtime().block_on(async {
+        let result = tokio::time::timeout(Duration::from_secs(10), async {
+            conversation.send(None).await.unwrap();
+            let mut restarted = false;
+            loop {
+                if let ConversationEvent::Message(event) = conversation.next_event().await.unwrap()
+                {
+                    if event["type"] == "initialized" {
+                        // Cancel before Conversation handles ready and enqueues
+                        // the turn, independently of adapter task scheduling.
+                        conversation.cancel();
+                    }
+                    if event["type"] == "session_restarted" {
+                        restarted = true;
+                        let saved: Value = serde_json::from_slice(
+                            &std::fs::read(state_directory.join("session.json")).unwrap(),
+                        )
+                        .unwrap();
+                        assert_eq!(saved["native_session_id"], "fixture-restarted");
+                        assert_eq!(saved["continuity_pending"], true);
+                    }
+                    if event["type"] == "failed" {
+                        assert!(restarted);
+                        break;
+                    }
+                }
+            }
+        })
+        .await;
+        conversation.close().await.unwrap();
+        result.expect("Restart/cancellation exceeded ten seconds");
+    });
+    drop(conversation);
+    assert_eq!(std::fs::read(&document_path).unwrap(), original);
+    assert_eq!(
+        std::fs::read_to_string(directory.path().join("received-prompts.jsonl"))
+            .unwrap()
+            .lines()
+            .count(),
+        1
+    );
+    let pending: Value =
+        serde_json::from_slice(&std::fs::read(state_directory.join("session.json")).unwrap())
+            .unwrap();
+    assert_eq!(pending["native_session_id"], "fixture-restarted");
+    assert_eq!(pending["continuity_pending"], true);
+    assert_eq!(pending["draft"], "日本語の中断される依頼");
+    let third = cli(&directory, "resume-native", &["--session", session]);
+    assert!(
+        third.status.success(),
+        "{}",
+        String::from_utf8_lossy(&third.stdout)
+    );
+    let third_events = events(&third);
+    assert!(
+        !third_events
+            .iter()
+            .any(|event| event["type"] == "session_restarted")
+    );
+    let context = third_events
+        .iter()
+        .find(|event| event["type"] == "local_context")
+        .unwrap();
+    assert_eq!(context["native_session_id"], "fixture-restarted");
+    assert_eq!(context["reason"], "restart_pending");
+    assert_eq!(
+        third_events
+            .iter()
+            .find(|event| event["type"] == "ready")
+            .unwrap()["session_origin"],
+        "loaded"
+    );
+    let prompts = std::fs::read_to_string(directory.path().join("received-prompts.jsonl")).unwrap();
+    let prompts: Vec<Value> = prompts
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(prompts.len(), 2);
+    assert!(
+        prompts[1]["prompt"][1]["text"]
+            .as_str()
+            .unwrap()
+            .contains("prior restart did not complete")
+    );
+    assert!(
+        prompts[1]["prompt"][1]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Do not replay historical prompts or edits")
+    );
+    let final_state: Value =
+        serde_json::from_slice(&std::fs::read(state_directory.join("session.json")).unwrap())
+            .unwrap();
+    assert_eq!(final_state["continuity_pending"], false);
+    assert_eq!(final_state["draft"], "");
+    let current: Value = serde_json::from_slice(&std::fs::read(&document_path).unwrap()).unwrap();
+    assert_eq!(current["children"].as_array().unwrap().len(), 2);
+    let fourth = cli(&directory, "resume-native", &["--session", session]);
+    assert!(
+        fourth.status.success(),
+        "{}",
+        String::from_utf8_lossy(&fourth.stdout)
+    );
+    assert!(!events(&fourth).iter().any(|event| matches!(
+        event["type"].as_str(),
+        Some("local_context" | "session_restarted")
+    )));
+    let prompts = std::fs::read_to_string(directory.path().join("received-prompts.jsonl")).unwrap();
+    let prompts: Vec<Value> = prompts
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(prompts.len(), 3);
+    assert_eq!(
+        prompts[2]["prompt"][1]["text"],
+        "日本語でデザインを作成してください"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn cli_interrupt_retains_committed_batches_and_reports_the_actual_revision() {

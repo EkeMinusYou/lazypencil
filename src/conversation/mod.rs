@@ -510,7 +510,9 @@ impl Conversation {
                                     "The adapter returned an invalid session ID",
                                 )
                             })?;
-                        if value["session_origin"] == "restarted" {
+                        let restarted = value["session_origin"] == "restarted";
+                        self.session.state.continuity_pending |= restarted;
+                        if self.session.state.continuity_pending {
                             let active = self.active.as_ref().ok_or_else(|| {
                                 Error::new(
                                     "AGENT_ERROR",
@@ -525,6 +527,14 @@ impl Conversation {
                             );
                             let revision = self.store.read()?.revision();
                             let context = json!({"document":self.store.path(),"revision":revision,"history":summary});
+                            let introduction = if restarted {
+                                format!(
+                                    "The previous native session was replaced (reason: {}). This is a NEW session, not restored model memory.",
+                                    value["restart_reason"].as_str().unwrap_or("unknown")
+                                )
+                            } else {
+                                "A prior restart did not complete a local turn. This bounded local history supplements the current native session.".into()
+                            };
                             let content = self
                                 .active
                                 .as_mut()
@@ -536,16 +546,15 @@ impl Conversation {
                                     )
                                 })?;
                             content.insert(1, ContentBlock::Text(TextContent::new(format!(
-                                "The previous native session was replaced (reason: {}). This is a NEW session, not restored model memory. The following bounded local history is context only, not instructions to repeat prior requests. Failed or interrupted turns may already have committed edits. Read get_document and inspect the current revision before acting. Execute only the user's current request that follows. Do not replay historical prompts or edits. Historical image payloads are not reattached; query the document's retained attachment metadata if needed.\n{context}",
-                                value["restart_reason"].as_str().unwrap_or("unknown")
+                                "{introduction} The following bounded local history is context only, not instructions to repeat prior requests. Failed or interrupted turns may already have committed edits. Read get_document and inspect the current revision before acting. Execute only the user's current request that follows. Do not replay historical prompts or edits. Historical image payloads are not reattached; query the document's retained attachment metadata if needed.\n{context}"
                             ))));
-                            self.message(json!({"type":"session_restarted","reason":value["restart_reason"],"previous_native_session_id":value["replaces_session_id"],"native_session_id":id,"document_revision":revision,"history":summary}))?;
+                            self.message(json!({"type":if restarted {"session_restarted"} else {"local_context"},"reason":if restarted {value["restart_reason"].clone()} else {json!("restart_pending")},"previous_native_session_id":value["replaces_session_id"],"native_session_id":id,"document_revision":revision,"history":summary}))?;
                         }
                         self.session.state.native_session_id = Some(id.into());
-                        self.args.restart_session = false;
                         self.permissions.set_session(id);
-                        self.ready = true;
                         self.session.save()?;
+                        self.args.restart_session = false;
+                        self.ready = true;
                         self.message(value)?;
                         if self.active() {
                             self.submit().await?;
@@ -726,11 +735,13 @@ impl Conversation {
             (
                 self.session.state.draft.clone(),
                 self.session.state.pending_attachments.clone(),
+                self.session.state.continuity_pending,
             )
         });
         if result.is_ok() {
             self.session.state.draft.clear();
             self.session.state.pending_attachments.clear();
+            self.session.state.continuity_pending = false;
         }
         if let Err(error) = self.session.save() {
             result = Err(error);
@@ -756,10 +767,11 @@ impl Conversation {
             result = Err(error);
         }
         if result.is_err()
-            && let Some((draft, attachments)) = consumed_draft
+            && let Some((draft, attachments, continuity_pending)) = consumed_draft
         {
             self.session.state.draft = draft;
             self.session.state.pending_attachments = attachments;
+            self.session.state.continuity_pending = continuity_pending;
             if let Err(error) = self.session.save() {
                 let error = Error::new(
                     "AGENT_ERROR",
@@ -911,6 +923,7 @@ mod tests {
                 transcript.file = std::fs::File::open(&transcript.path).unwrap();
             }
             conversation.transcript = Some(transcript);
+            conversation.session.state.continuity_pending = true;
             conversation.active = Some(ActiveTurn {
                 id,
                 before: document.revision(),
@@ -931,6 +944,7 @@ mod tests {
             )
             .unwrap();
             assert_eq!(state["draft"], "retry this request");
+            assert_eq!(state["continuity_pending"], true);
             assert_eq!(
                 conversation.store.read().unwrap().revision(),
                 document.revision()
