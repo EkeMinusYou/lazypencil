@@ -49,6 +49,16 @@ class FocusTests(unittest.TestCase):
         self.assertEqual(result["platform"], "ubuntu-24.04")
         self.assertEqual(focus.select(["src/clipboard/macos.rs"])["platform"], "macos-15")
 
+    def test_rendering_only_targets_are_never_checked_as_zero_test_core_binaries(self):
+        for target in focus.RENDER_TESTS - focus.CREDENTIALED_TESTS:
+            with self.subTest(target=target):
+                result = focus.select([f"tests/{target}.rs"])
+                self.assertIn(result["suite"], ["dynamic", "graphics"])
+                self.assertIn(target, result["targets"])
+                build, _ = focus.commands(result["suite"], result["targets"])
+                self.assertNotIn("--no-default-features", build[0])
+        self.assertNotIn("agent_workflow", focus.select(["tests/agent_workflow.rs"])["targets"])
+
     def test_platform_override_preserves_the_affected_suite(self):
         result = focus.select(["src/cdp.rs"], "macos-15")
         self.assertEqual(result["platform"], "macos-15")

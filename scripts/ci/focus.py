@@ -11,7 +11,11 @@ import urllib.request
 
 PLATFORMS = ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-15", "macos-15-intel", "windows-2025"]
 DYNAMIC = {"cdp", "dynamic", "runtime", "runtime_config", "scripts", "shader", "shader_uniforms", "sampler_sources", "imports", "script", "render", "browser_readiness", "dynamic_render", "tui"}
-CORE_TESTS = {p.stem for p in (Path(__file__).resolve().parents[2] / "tests").glob("*.rs")}
+TEST_FILES = list((Path(__file__).resolve().parents[2] / "tests").glob("*.rs"))
+CORE_TESTS = {path.stem for path in TEST_FILES}
+RENDER_TESTS = {path.stem for path in TEST_FILES if '#![cfg(feature = "rendering")]' in path.read_text(encoding="utf-8")}
+# These explicit opt-ins consume real model usage and stay outside hosted CI.
+CREDENTIALED_TESTS = {"agent_workflow"}
 
 
 def select(paths, platform="auto"):
@@ -26,9 +30,11 @@ def select(paths, platform="auto"):
     if conversation:
         suite, targets = "conversation", ["agent", "windows_agent"]
     elif stems & DYNAMIC or any(path.startswith(("src/cdp/", "src/tui/", "src/render/")) for path in paths):
-        suite, targets = "dynamic", ["dynamic_render", "browser_readiness", "shader_uniforms", "sampler_sources", "imports"]
-    elif any(path.startswith(("src/graphics", "src/layout", "src/text", "src/icons", "resources/", "vendor/")) for path in paths) or stems & {"graphics", "rendering", "text", "font_sources", "fonts", "optional_icons"}:
-        suite, targets = "graphics", ["graphics", "render", "text", "font_sources", "optional_icons"]
+        suite = "dynamic"
+        targets = sorted({"dynamic_render", "browser_readiness", "shader_uniforms", "sampler_sources", "imports"} | (stems & RENDER_TESTS - CREDENTIALED_TESTS))
+    elif any(path.startswith(("src/graphics", "src/layout", "src/text", "src/icons", "resources/", "vendor/")) for path in paths) or stems & (RENDER_TESTS | {"graphics", "rendering", "text", "font_sources", "fonts", "optional_icons"}):
+        suite = "graphics"
+        targets = sorted(stems & CORE_TESTS - CREDENTIALED_TESTS) or ["graphics", "render", "text", "font_sources", "optional_icons"]
     else:
         suite = "core"
         aliases = {"store": "document_store", "document": "document_store", "query": "queries", "operations": "operations_cli"}
