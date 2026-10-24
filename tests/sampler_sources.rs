@@ -403,7 +403,9 @@ fn real_webgl_sampler_variables_and_detachment_preserve_both_theme_images() {
         let (temp, store) = if array { array_fixture() } else { fixture() };
         let executable =
             std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM");
-        let mut runtime = DynamicRuntime::new(temp.path()).with_executable(executable);
+        let mut runtime = DynamicRuntime::new(temp.path())
+            .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+            .with_executable(executable);
         let mut originals = Vec::new();
         for detached in [false, true] {
             if detached {
@@ -648,9 +650,11 @@ fn independent_sampler_copy_preserves_parent_and_transit_directory_uris() {
 fn real_webgl_independent_sampler_copy_matches_pixels_after_original_sources_are_deleted() {
     use lazypencil::{dynamic::DynamicRuntime, render};
     let (temp, store) = array_fixture();
-    let mut runtime = DynamicRuntime::new(temp.path()).with_executable(
-        std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
-    );
+    let mut runtime = DynamicRuntime::new(temp.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(
+            std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
+        );
     let mut originals = Vec::new();
     for mode in ["light", "dark"] {
         edit(

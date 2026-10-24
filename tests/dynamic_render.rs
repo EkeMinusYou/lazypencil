@@ -88,6 +88,7 @@ fn retained_page_frame_capture_preserves_layout_dom_and_static_shader_acquisitio
         lazypencil::layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap())
             .unwrap();
     let mut runtime = DynamicRuntime::new(temp.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
         .with_executable(executable())
         .with_retained_pages(&file);
     let first =
@@ -213,10 +214,11 @@ fn retained_page_contexts_are_isolated_bounded_and_evicted_in_recency_order() {
         version: "external-unverified".into(),
         platform: lazypencil::runtime::platform().unwrap().into(),
     };
-    let mut browser = Browser::launch(
+    let mut browser = Browser::launch_with_supervisor(
         &installed,
         Purpose::Page,
         &Budget::new(Duration::from_secs(30), None),
+        std::path::Path::new(env!("CARGO_BIN_EXE_lazypencil")),
     )
     .unwrap();
     let visit = |browser: &mut Browser, key: &str, signature: &str| {
@@ -308,6 +310,7 @@ fn retained_page_refresh_preserves_dom_isolates_nodes_and_resets_changed_or_remo
     };
     let (project, snapshot) = load();
     let mut runtime = DynamicRuntime::new(temp.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
         .with_executable(executable())
         .with_retained_pages(&file);
     let acquire = |runtime: &mut DynamicRuntime,
@@ -456,7 +459,9 @@ fn retained_page_refresh_preserves_dom_isolates_nodes_and_resets_changed_or_remo
         restarted.dynamic_artifacts[0]["acquisition"]["page_state"]["id"],
         policy.dynamic_artifacts[0]["acquisition"]["page_state"]["id"]
     );
-    let mut fresh = DynamicRuntime::new(temp.path()).with_executable(executable());
+    let mut fresh = DynamicRuntime::new(temp.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(executable());
     let first_fresh = acquire(&mut fresh, &project, &snapshot, false);
     let second_fresh = acquire(&mut fresh, &project, &snapshot, true);
     assert_eq!(first_fresh.png, second_fresh.png);
@@ -476,6 +481,7 @@ fn cancelling_a_retained_capture_discards_the_context_and_recovers_with_new_stat
     let (temp, project, snapshot) =
         scene(json!([{"id":"a","type":"browser","url":page(html),"width":32,"height":32}]));
     let mut runtime = DynamicRuntime::new(temp.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
         .with_executable(executable())
         .with_retained_pages(&temp.path().join("scene.pen"));
     let first =
@@ -546,7 +552,9 @@ fn page_network_idle_waits_for_post_load_fetches_and_recovers_after_timeout_and_
                 .unwrap();
         (project, layout)
     };
-    let mut runtime = DynamicRuntime::new(temp.path()).with_executable(executable());
+    let mut runtime = DynamicRuntime::new(temp.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(executable());
     let (first_project, layout) = load();
     let first = render::png_with_runtime(
         &first_project,
@@ -704,7 +712,9 @@ fn captured_page_shader_and_render_deadlines_cap_launch_and_reap_the_child() {
                 _ => unreachable!(),
             }
             let _ = fs::remove_file(&pid_file);
-            let mut runtime = DynamicRuntime::new(temp.path()).with_executable(&executable);
+            let mut runtime = DynamicRuntime::new(temp.path())
+                .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+                .with_executable(&executable);
             runtime.configure(settings).unwrap();
             runtime.begin_render(None, false);
             let start = Instant::now();
@@ -740,7 +750,9 @@ fn browser_pixels_are_captured_composited_and_reused_until_refresh() {
     let (temp, project, layout) = scene(
         json!([{"id":"page","type":"browser","url":url,"width":80,"height":40,"cornerRadius":4}]),
     );
-    let mut runtime = DynamicRuntime::new(temp.path()).with_executable(executable());
+    let mut runtime = DynamicRuntime::new(temp.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(executable());
     let a = render::png_with_runtime(&project, &layout, &Default::default(), &mut runtime, None)
         .unwrap();
     let image = raster(&a.png);
@@ -805,7 +817,9 @@ fn captured_dynamic_policy_reloads_cache_and_expires_purposes_independently() {
     };
     write_policy(64, 300);
     let (project, layout) = load();
-    let mut runtime = DynamicRuntime::new(temp.path()).with_executable(executable());
+    let mut runtime = DynamicRuntime::new(temp.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(executable());
     let first =
         render::png_with_runtime(&project, &layout, &Default::default(), &mut runtime, None)
             .unwrap();
@@ -893,7 +907,9 @@ fn page_and_shader_processes_expire_independently_preserve_rasters_and_restart()
     let layout =
         lazypencil::layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap())
             .unwrap();
-    let mut runtime = DynamicRuntime::new(temp.path()).with_executable(executable());
+    let mut runtime = DynamicRuntime::new(temp.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(executable());
     assert_eq!(runtime.idle_deadline(), None);
     let first =
         render::png_with_runtime(&project, &layout, &Default::default(), &mut runtime, None)
@@ -975,7 +991,9 @@ fn software_webgl_pixels_follow_resolution_time_and_color_uniforms() {
     let layout =
         lazypencil::layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap())
             .unwrap();
-    let mut runtime = DynamicRuntime::new(temp.path()).with_executable(executable());
+    let mut runtime = DynamicRuntime::new(temp.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(executable());
     let output = render::png_with_runtime(
         &project,
         &layout,
@@ -1018,7 +1036,9 @@ fn an_infinite_page_script_can_be_cancelled_and_the_runtime_recovers() {
     let (temp, project, layout) = scene(
         json!([{"id":"page","type":"browser","url":page("<script>for(;;){}</script>"),"width":40,"height":20}]),
     );
-    let mut runtime = DynamicRuntime::new(temp.path()).with_executable(executable());
+    let mut runtime = DynamicRuntime::new(temp.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(executable());
     let cancel = tokio_util::sync::CancellationToken::new();
     let token = cancel.clone();
     let thread = std::thread::spawn(move || {
@@ -1098,7 +1118,9 @@ fn shader_sampler_arrays_accept_object_and_background_in_effects() {
         (project, layout)
     };
     let (project, layout) = load();
-    let mut runtime = DynamicRuntime::new(temp.path()).with_executable(executable());
+    let mut runtime = DynamicRuntime::new(temp.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(executable());
     let output =
         render::png_with_runtime(&project, &layout, &Default::default(), &mut runtime, None)
             .unwrap();
@@ -1138,7 +1160,9 @@ fn shader_effects_receive_only_the_object_and_run_in_declared_order() {
     ]);
     let effect = json!({"type":"shader","url":"swap.glsl","uniforms":{"src":"pencil:object"}});
     let (temp, project, layout) = effect_scene(effect.clone(), children.clone());
-    let mut runtime = DynamicRuntime::new(temp.path()).with_executable(executable());
+    let mut runtime = DynamicRuntime::new(temp.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(executable());
     let output =
         render::png_with_runtime(&project, &layout, &Default::default(), &mut runtime, None)
             .unwrap();
@@ -1147,7 +1171,9 @@ fn shader_effects_receive_only_the_object_and_run_in_declared_order() {
     assert_eq!(pixels.get_color((30, 20)), Color::BLUE);
     assert_eq!(pixels.get_color((5, 5)), Color::GREEN);
     let (temp, project, layout) = effect_scene(json!([effect.clone(), effect]), children);
-    let mut runtime = DynamicRuntime::new(temp.path()).with_executable(executable());
+    let mut runtime = DynamicRuntime::new(temp.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(executable());
     let output =
         render::png_with_runtime(&project, &layout, &Default::default(), &mut runtime, None)
             .unwrap();
@@ -1170,7 +1196,9 @@ fn background_sampling_includes_the_scene_and_parent_layers() {
         ]}
     ]);
     let (temp, project, layout) = effect_scene(json!([]), children);
-    let mut runtime = DynamicRuntime::new(temp.path()).with_executable(executable());
+    let mut runtime = DynamicRuntime::new(temp.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(executable());
     let output =
         render::png_with_runtime(&project, &layout, &Default::default(), &mut runtime, None)
             .unwrap();
@@ -1197,7 +1225,9 @@ fn browser_zoom_scroll_and_export_scale_change_the_capture() {
         let (temp, project, layout) = scene(
             json!([{"id":"page","type":"browser","url":url,"width":80,"height":40,"zoom":zoom,"scrollY":scroll}]),
         );
-        let mut runtime = DynamicRuntime::new(temp.path()).with_executable(executable());
+        let mut runtime = DynamicRuntime::new(temp.path())
+            .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+            .with_executable(executable());
         let output = render::png_with_runtime(
             &project,
             &layout,
@@ -1243,7 +1273,9 @@ fn sampler_images_keep_their_orientation_and_fill_opacity() {
     let layout =
         lazypencil::layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap())
             .unwrap();
-    let mut runtime = DynamicRuntime::new(temp.path()).with_executable(executable());
+    let mut runtime = DynamicRuntime::new(temp.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(executable());
     let output =
         render::png_with_runtime(&project, &layout, &Default::default(), &mut runtime, None)
             .unwrap();
@@ -1372,7 +1404,9 @@ fn derivatives_and_uv_varyings_link_with_fragment_precision() {
     let layout =
         lazypencil::layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap())
             .unwrap();
-    let mut runtime = DynamicRuntime::new(temp.path()).with_executable(executable());
+    let mut runtime = DynamicRuntime::new(temp.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(executable());
     let output =
         render::png_with_runtime(&project, &layout, &Default::default(), &mut runtime, None)
             .unwrap();
@@ -1413,7 +1447,9 @@ fn shader_strokes_use_the_library_origin_and_paint_the_outer_border() {
     let layout =
         lazypencil::layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap())
             .unwrap();
-    let mut runtime = DynamicRuntime::new(temp.path()).with_executable(executable());
+    let mut runtime = DynamicRuntime::new(temp.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(executable());
     let output =
         render::png_with_runtime(&project, &layout, &Default::default(), &mut runtime, None)
             .unwrap();
@@ -1434,7 +1470,9 @@ fn background_and_shader_effect_order_preserves_replacement_coverage() {
         "precision highp float;void main(){gl_FragColor=vec4(1.,0.,0.,0.25);}",
     )
     .unwrap();
-    let mut runtime = DynamicRuntime::new(temp.path()).with_executable(executable());
+    let mut runtime = DynamicRuntime::new(temp.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(executable());
     for background_first in [true, false] {
         let mut effects = vec![
             json!({"type":"background_blur","radius":8}),

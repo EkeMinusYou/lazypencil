@@ -99,7 +99,7 @@ impl Process {
         assert_eq!(
             unsafe { WaitForSingleObject(self.handle.as_raw_handle(), 3000) },
             WAIT_OBJECT_0,
-            "Owned adapter descendant {} survived",
+            "Owned descendant {} survived",
             self.pid
         );
     }
@@ -277,4 +277,281 @@ fn windows_missing_adapter_keeps_the_public_unavailable_error() {
         assert_eq!(host.close().await.unwrap_err().code, "AGENT_UNAVAILABLE");
         assert!(!directory.path().join("tree-ready.json").exists());
     });
+}
+
+fn browser_fixture(directory: &Path) -> lazypencil::runtime::InstalledBrowser {
+    let executable = directory.join("browser with spaces 日本語.cmd");
+    let script =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/browser_process_tree.py");
+    std::fs::write(
+        &executable,
+        format!(
+            "@echo off\r\n\"{}\" \"{}\" \"{}\"\r\n",
+            python().display(),
+            script.display(),
+            directory.display()
+        ),
+    )
+    .unwrap();
+    lazypencil::runtime::InstalledBrowser {
+        executable,
+        version: "fixture".into(),
+        platform: "fixture".into(),
+    }
+}
+
+fn launch_browser_fixture(
+    directory: &Path,
+    budget: &lazypencil::cdp::Budget<'_>,
+) -> lazypencil::Result<lazypencil::cdp::Browser> {
+    lazypencil::cdp::Browser::launch_with_supervisor(
+        &browser_fixture(directory),
+        lazypencil::cdp::Purpose::Page,
+        budget,
+        Path::new(env!("CARGO_BIN_EXE_lazypencil")),
+    )
+}
+
+#[test]
+fn windows_browser_startup_cancellation_and_deadline_reap_detached_descendants() {
+    for cancel in [true, false] {
+        let directory = TempDir::new().unwrap();
+        let token = CancellationToken::new();
+        std::thread::scope(|scope| {
+            let startup = scope.spawn(|| {
+                let budget = lazypencil::cdp::Budget::new(Duration::from_secs(15), Some(&token));
+                launch_browser_fixture(directory.path(), &budget)
+                    .err()
+                    .expect("The fixture never opens CDP")
+            });
+            let processes = runtime().block_on(tree(directory.path()));
+            if cancel {
+                token.cancel();
+            }
+            let error = startup.join().unwrap();
+            assert_eq!(
+                error.code,
+                if cancel {
+                    "CANCELLED"
+                } else {
+                    "RENDER_TIMEOUT"
+                }
+            );
+            processes.iter().for_each(Process::assert_exited);
+        });
+    }
+}
+
+#[test]
+fn windows_browser_fixture_host() {
+    // A fresh test process is the real owner in the forced-parent-death case.
+    // The child CLI used for supervision is always the regular binary.
+    let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_BROWSER_TREE_HOST") else {
+        return;
+    };
+    if std::env::var_os("LAZYPENCIL_TEST_BROWSER_REAL").is_some() {
+        let mut browser = real_browser();
+        let pids = browser_pids(&mut browser);
+        let temporary = Path::new(&directory).join("real-pids.json.tmp");
+        std::fs::write(&temporary, serde_json::to_vec(&pids).unwrap()).unwrap();
+        std::fs::rename(temporary, Path::new(&directory).join("real-pids.json")).unwrap();
+        std::thread::sleep(Duration::from_secs(60));
+        panic!("The parent test must terminate this real-browser owner");
+    }
+    let budget = lazypencil::cdp::Budget::new(Duration::from_secs(60), None);
+    let result = launch_browser_fixture(Path::new(&directory), &budget);
+    panic!(
+        "The parent test must terminate this host during startup: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn windows_killing_a_browser_owner_reaps_its_tree_and_preserves_another_owner() {
+    let first = TempDir::new().unwrap();
+    let second = TempDir::new().unwrap();
+    let spawn = |directory: &Path| {
+        Parent(
+            Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "windows_browser_fixture_host", "--nocapture"])
+                .env("LAZYPENCIL_TEST_BROWSER_TREE_HOST", directory)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap(),
+        )
+    };
+    let mut first_host = spawn(first.path());
+    let mut second_host = spawn(second.path());
+    let first_tree = runtime().block_on(tree(first.path()));
+    let second_tree = runtime().block_on(tree(second.path()));
+    first_host.0.kill().unwrap();
+    first_host.0.wait().unwrap();
+    first_tree.iter().for_each(Process::assert_exited);
+    assert!(second_tree.iter().all(Process::alive));
+    second_host.0.kill().unwrap();
+    second_host.0.wait().unwrap();
+    second_tree.iter().for_each(Process::assert_exited);
+}
+
+#[test]
+fn windows_browser_worker_without_an_owner_never_launches_the_browser() {
+    let directory = TempDir::new().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_lazypencil"))
+        .current_dir(directory.path())
+        .arg("__browser_process_worker")
+        .arg(format!(
+            "Local\\lazypencil-browser-{}",
+            uuid::Uuid::new_v4()
+        ))
+        .arg(directory.path().join("status.json"))
+        .arg("--")
+        .arg(python())
+        .args([
+            "-c",
+            "from pathlib import Path; Path('must-not-exist').write_text('unexpected')",
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(!directory.path().join("must-not-exist").exists());
+    let status: Value =
+        serde_json::from_slice(&std::fs::read(directory.path().join("status.json")).unwrap())
+            .unwrap();
+    assert_eq!(status["phase"], "job_join");
+}
+
+#[test]
+fn windows_missing_browser_preserves_a_bounded_structured_startup_error() {
+    let directory = TempDir::new().unwrap();
+    let installed = lazypencil::runtime::InstalledBrowser {
+        executable: directory.path().join("missing-browser.exe"),
+        version: "fixture".into(),
+        platform: "fixture".into(),
+    };
+    let error = lazypencil::cdp::Browser::launch_with_supervisor(
+        &installed,
+        lazypencil::cdp::Purpose::Page,
+        &lazypencil::cdp::Budget::new(Duration::from_secs(5), None),
+        Path::new(env!("CARGO_BIN_EXE_lazypencil")),
+    )
+    .err()
+    .expect("Missing executable must fail before the deadline");
+    assert_eq!(error.code, "RUNTIME_UNAVAILABLE");
+    let details = error.details.unwrap();
+    assert_eq!(details["supervisor_phase"], "browser_spawn");
+    assert!(details["os_error"].is_number());
+}
+
+fn real_browser() -> lazypencil::cdp::Browser {
+    let installed = lazypencil::runtime::InstalledBrowser {
+        executable: std::env::var_os("LAZYPENCIL_TEST_CHROMIUM")
+            .expect("Set LAZYPENCIL_TEST_CHROMIUM")
+            .into(),
+        version: "external-unverified".into(),
+        platform: "win64".into(),
+    };
+    lazypencil::cdp::Browser::launch_with_supervisor(
+        &installed,
+        lazypencil::cdp::Purpose::Page,
+        &lazypencil::cdp::Budget::new(Duration::from_secs(30), None),
+        Path::new(env!("CARGO_BIN_EXE_lazypencil")),
+    )
+    .unwrap()
+}
+
+fn browser_pids(browser: &mut lazypencil::cdp::Browser) -> Vec<u32> {
+    let budget = lazypencil::cdp::Budget::new(Duration::from_secs(15), None);
+    browser
+        .command(
+            None,
+            "Target.createTarget",
+            serde_json::json!({"url":"data:text/html,<p>owned browser renderer</p>"}),
+            &budget,
+        )
+        .unwrap();
+    let info = browser
+        .command(
+            None,
+            "SystemInfo.getProcessInfo",
+            serde_json::json!({}),
+            &budget,
+        )
+        .unwrap();
+    let pids: Vec<_> = info["processInfo"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| u32::try_from(item["id"].as_u64().unwrap()).unwrap())
+        .collect();
+    assert!(
+        pids.contains(&browser.process_id()),
+        "Diagnostics must name Chromium rather than its worker"
+    );
+    assert!(
+        pids.len() >= 2,
+        "The fixture must observe real browser descendants"
+    );
+    pids
+}
+
+#[test]
+#[ignore = "Requires verified sandboxed Chromium on Windows"]
+fn windows_real_browser_drop_and_owner_death_reap_descendants_and_isolate_owners() {
+    let mut browser = real_browser();
+    let processes: Vec<_> = browser_pids(&mut browser)
+        .into_iter()
+        .map(Process::open)
+        .collect();
+    drop(browser);
+    processes.iter().for_each(Process::assert_exited);
+
+    let first = TempDir::new().unwrap();
+    let second = TempDir::new().unwrap();
+    let spawn = |directory: &Path| {
+        let log = std::fs::File::create(directory.join("browser-owner.log")).unwrap();
+        Parent(
+            Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "windows_browser_fixture_host", "--nocapture"])
+                .env("LAZYPENCIL_TEST_BROWSER_TREE_HOST", directory)
+                .env("LAZYPENCIL_TEST_BROWSER_REAL", "1")
+                .stdin(Stdio::null())
+                .stdout(log.try_clone().unwrap())
+                .stderr(log)
+                .spawn()
+                .unwrap(),
+        )
+    };
+    let mut first_host = spawn(first.path());
+    let mut second_host = spawn(second.path());
+    let ready = |directory: &Path, owner: &mut Parent| -> Vec<Process> {
+        let deadline = std::time::Instant::now() + Duration::from_secs(45);
+        loop {
+            if let Ok(bytes) = std::fs::read(directory.join("real-pids.json")) {
+                let pids: Vec<u32> = serde_json::from_slice(&bytes).unwrap();
+                return pids.into_iter().map(Process::open).collect();
+            }
+            if let Some(status) = owner.0.try_wait().unwrap() {
+                panic!(
+                    "Real browser owner exited before readiness ({status}): {}",
+                    std::fs::read_to_string(directory.join("browser-owner.log")).unwrap()
+                );
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "Real browser owner did not become ready"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+    let first_tree = ready(first.path(), &mut first_host);
+    let second_tree = ready(second.path(), &mut second_host);
+    first_host.0.kill().unwrap();
+    first_host.0.wait().unwrap();
+    first_tree.iter().for_each(Process::assert_exited);
+    assert!(second_tree.iter().all(Process::alive));
+    second_host.0.kill().unwrap();
+    second_host.0.wait().unwrap();
+    second_tree.iter().for_each(Process::assert_exited);
 }

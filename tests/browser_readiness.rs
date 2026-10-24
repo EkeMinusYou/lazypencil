@@ -64,9 +64,11 @@ impl Fixture {
         .unwrap()
     }
     fn runtime(&self) -> DynamicRuntime {
-        DynamicRuntime::new(self.0.path()).with_executable(
-            std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
-        )
+        DynamicRuntime::new(self.0.path())
+            .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+            .with_executable(
+                std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
+            )
     }
     fn capture(
         &self,

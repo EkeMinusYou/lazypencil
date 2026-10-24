@@ -437,8 +437,9 @@ fn optional_icon_paths_match_original_svg_and_font_rendering_in_chromium() {
             ));
         }
     }
-    let mut runtime =
-        lazypencil::dynamic::DynamicRuntime::new(store.data_dir()).with_executable(browser);
+    let mut runtime = lazypencil::dynamic::DynamicRuntime::new(store.data_dir())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(browser);
     for (library, name, weight, route, height) in cases {
         let mut icon = node(&library, &name);
         icon["height"] = json!(height);
