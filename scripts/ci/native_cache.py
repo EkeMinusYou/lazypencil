@@ -29,6 +29,11 @@ AUDITED_TREE = "54c7d2d9cc2e1b5e2d3a0297c8648f27b1aff64c76c685a30e63864b41d60a9f
 # sets; each workflow still prunes all application outputs before verification.
 AUDITED_PREVIOUS_INPUTS = {
     "c95e9172415f92d6f202a226bf3696f9f6ede08eaa66b81a612b892f8ca3bfc7": AUDITED_TREE,
+    # e9c90da only adds .gitattributes rules for Wasm and its new notice tree.
+    # All 67 prior native-input paths retain identical attributes; manifests,
+    # lockfile, native sources and compiler policy are byte-for-byte unchanged.
+    "b24ec03467f4fe02cfb29f305f8a393d83c9588dd4729e01787a36e2b994c62d":
+        "c95e9172415f92d6f202a226bf3696f9f6ede08eaa66b81a612b892f8ca3bfc7",
 }
 AUDITED_RUST_COMMIT = "4a4ef493e3a1488c6e321570238084b38948f6db"
 LEGACY_HASHES = {

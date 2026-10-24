@@ -476,6 +476,7 @@ impl Definition {
                 &location
                     .offset_to_line_and_col(entire_range.start().offset)
                     .0
+                    .wrapping_add(1)
                     .to_string(),
                 DIGITS,
                 entire_range,

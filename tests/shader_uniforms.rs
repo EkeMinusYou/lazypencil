@@ -724,6 +724,62 @@ fn linked_constant_dimensions_validate_inputs_and_recover_after_an_error() {
 
 #[test]
 #[ignore = "Requires sandboxed software WebGL Chromium"]
+fn software_webgl_line_and_file_macros_keep_original_source_positions() {
+    use lazypencil::{layout, render, text::Fonts};
+    use skia_safe::{Data, Image};
+    for (source, expected) in [
+        (
+            "precision highp float;\nvoid main(){gl_FragColor=vec4(float(__LINE__)/4.,0.,0.,1.);}",
+            [128, 0, 0],
+        ),
+        (
+            "#version 100\nprecision highp float;\nvoid main(){gl_FragColor=vec4(float(__LINE__)/6.,0.,0.,1.);}",
+            [128, 0, 0],
+        ),
+        (
+            "#line 20 7\nprecision highp float;\nvoid main(){gl_FragColor=vec4(float(__LINE__)/42.,float(__FILE__)/14.,float(__VERSION__)/200.,1.);}",
+            [128, 128, 128],
+        ),
+        (
+            "#line 0\nprecision highp float;\nvoid main(){gl_FragColor=vec4(float(__LINE__)/2.,0.,0.,1.);}",
+            [128, 0, 0],
+        ),
+    ] {
+        let root = TempDir::new().unwrap();
+        let project = project(&root, source, json!({}));
+        let layout =
+            layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap()).unwrap();
+        let mut runtime = lazypencil::dynamic::DynamicRuntime::new(root.path().join("runtime"))
+            .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+            .with_executable(
+                std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
+            );
+        let output = render::png_with_runtime(
+            &project,
+            &layout,
+            &render::RenderOptions::default(),
+            &mut runtime,
+            None,
+        )
+        .unwrap();
+        let image = Image::from_encoded(Data::new_copy(&output.png))
+            .unwrap()
+            .make_raster_image(None, None)
+            .unwrap();
+        let color = image.peek_pixels().unwrap().get_color((16, 8));
+        for (actual, expected) in [color.r(), color.g(), color.b()].into_iter().zip(expected) {
+            assert!((actual as i32 - expected).abs() <= 1, "{source}: {color:?}");
+        }
+        assert_eq!(color.a(), 255);
+        assert_eq!(
+            fs::read_to_string(root.path().join("input.glsl")).unwrap(),
+            source
+        );
+    }
+}
+
+#[test]
+#[ignore = "Requires sandboxed software WebGL Chromium"]
 fn real_compiler_macros_and_scaled_shader_effects_keep_logical_coordinates() {
     use lazypencil::{layout, render, text::Fonts};
     use skia_safe::{Data, Image};

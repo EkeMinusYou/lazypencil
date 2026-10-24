@@ -11,6 +11,10 @@ calls such as `F(F(x))`, whose inner call otherwise remains unexpanded. Expanded
 arguments are cached only when used as ordinary replacement tokens. Unused
 arguments are ignored; token concatenation continues to use raw arguments.
 
+The `__LINE__` builtin converts the internal zero-based location to the GLSL
+line number. Wrapping addition also preserves an explicit `#line 0` without
+changing the zero-based resolver used by source diagnostics.
+
 The workspace-root BSD-3-Clause `LICENSE` from that exact upstream revision is
 included because it is omitted from the published crate archive. Its SHA-256 is
 `2676516154cc85237cf8e97bb58d93b9e15b80a51066d448ef6c19eca05d88b3`.
