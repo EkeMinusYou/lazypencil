@@ -117,6 +117,13 @@ jobs:
       - name: Check formatting in the distributed sources
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: cargo fmt --all -- --check
+      - name: Reproduce script worker compatibility before native rendering
+        if: inputs.phase == 'focus' && (inputs.suite == 'graphics' || inputs.suite == 'dynamic') && contains(fromJSON(inputs.targets), 'scripts')
+        timeout-minutes: 15
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
+          cargo test --locked --no-default-features --test scripts -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-script-core.log"
       - name: Build focused test binaries
         id: focus-build
         if: inputs.phase == 'focus'
@@ -139,6 +146,13 @@ jobs:
         run: |
           set -o pipefail
           python scripts/ci/focus.py test --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS" 2>&1 | tee "$RUNNER_TEMP/focus-tests.log"
+      - name: Validate dynamic inputs and launch deadlines before acquiring Chromium
+        if: inputs.phase == 'focus' && inputs.suite == 'dynamic'
+        timeout-minutes: 2
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
+          cargo test --locked --test dynamic_render -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-dynamic-inputs.log"
       - name: Validate shader inputs before acquiring Chromium
         if: inputs.phase == 'focus' && inputs.suite == 'shader'
         timeout-minutes: 2
@@ -420,6 +434,8 @@ jobs:
             ${{ runner.temp }}/lazypencil-tests.log
             ${{ runner.temp }}/*-build.log
             ${{ runner.temp }}/focus-tests.log
+            ${{ runner.temp }}/focus-script-core.log
+            ${{ runner.temp }}/focus-dynamic-inputs.log
             ${{ runner.temp }}/tui-reproduction.log
             ${{ runner.temp }}/chromium-*.json
             ${{ runner.temp }}/chromium-*.log

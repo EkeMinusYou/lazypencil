@@ -719,7 +719,10 @@ fn captured_page_shader_and_render_deadlines_cap_launch_and_reap_the_child() {
             runtime.begin_render(None, false);
             let start = Instant::now();
             let result = if shader {
-                runtime.shader(json!({"width":8,"height":8}))
+                runtime.shader(json!({
+                    "source":"precision mediump float; void main(){gl_FragColor=vec4(1.0);}",
+                    "width":8,"height":8
+                }))
             } else {
                 runtime.page(&resolved.roots[0], 8., 8., 1.)
             };
@@ -738,6 +741,22 @@ fn captured_page_shader_and_render_deadlines_cap_launch_and_reap_the_child() {
             );
             assert!(runtime.process_ids().is_empty());
         }
+    }
+}
+
+#[test]
+fn invalid_shader_sources_fail_before_browser_launch() {
+    let root = TempDir::new().unwrap();
+    let mut runtime =
+        DynamicRuntime::new(root.path()).with_executable(root.path().join("must-not-be-launched"));
+    for source in [Value::Null, json!(42), json!("x".repeat(1024 * 1024 + 1))] {
+        let error = runtime
+            .shader(json!({"source":source,"width":8,"height":8}))
+            .err()
+            .unwrap();
+        assert_eq!(error.code, "SHADER_COMPILE_FAILED");
+        assert!(error.message.contains("Shader source"));
+        assert!(runtime.process_ids().is_empty());
     }
 }
 

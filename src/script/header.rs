@@ -3,6 +3,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
 
+// Script headers have an independent compatibility set. Accepting the legacy
+// header used by published scripts does not enable 2.11 document files.
+pub const SUPPORTED_SCHEMAS: &[&str] = &["2.11", "2.19", "2.21"];
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Header {
     pub schema: String,
@@ -85,13 +89,13 @@ impl Header {
                 start,
             )
         })?;
-        if crate::document::Codec::parse(&schema).is_none() {
+        if !SUPPORTED_SCHEMAS.contains(&schema.as_str()) {
             return Err(super::diagnostic::header(
                 Error::new(
                     "UNSUPPORTED_VERSION",
                     format!(
                         "Script schema {schema:?} is unsupported; supported schemas are {}",
-                        crate::document::SUPPORTED_DOCUMENT_VERSIONS.join(", ")
+                        SUPPORTED_SCHEMAS.join(", ")
                     ),
                 ),
                 source,

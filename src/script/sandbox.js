@@ -4,6 +4,7 @@
   const stringify = JSON.stringify;
   const isArray = Array.isArray;
   const finite = Number.isFinite;
+  const imul = Math.imul;
   const width = globalThis.__script_width;
   const height = globalThis.__script_height;
   const input = Object.freeze(Object.assign(Object.create(null), parse(globalThis.__script_inputs)));
@@ -12,13 +13,15 @@
   delete globalThis.__script_height;
   let reads_width = false;
   let reads_height = false;
-  let state = 0x6d2b79f5;
+  // Mulberry32 by Tommy Ettinger (CC0-1.0); original dedication and provenance
+  // are retained in resources/licenses/script-random/NOTICE.txt.
+  let state = 0;
   Object.defineProperty(Math, "random", {
     value() {
-      state ^= state << 13;
-      state ^= state >>> 17;
-      state ^= state << 5;
-      return (state >>> 0) / 4294967296;
+      let value = state = (state + 0x6d2b79f5) | 0;
+      value = imul(value ^ (value >>> 15), value | 1);
+      value ^= value + imul(value ^ (value >>> 7), value | 61);
+      return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
     },
     writable: false,
     configurable: false,
