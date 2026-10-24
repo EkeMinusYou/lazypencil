@@ -287,6 +287,18 @@ try:
         body = "PAGE BEGIN 日本語\n" + "".join(f"row {i:04d} · 保存された応答\n" for i in range(2100)) + "PAGE END 日本語\n"
         expected = f"\nTurn {turn_id}\n\nYou:\n保存済みの依頼\n{body}\nRequest complete\n"
         assert 2 * 32768 < len(expected.encode()) < 3 * 32760, "Exercise three bounded display pages"
+        display_pages = []
+        remaining = expected.encode("utf-8")
+        while remaining:
+            page = remaining[:32768].decode("utf-8", errors="ignore")
+            display_pages.append(re.findall(r"(?m)^row \d{4} · 保存された応答$", page))
+            remaining = remaining[len(page.encode("utf-8")):]
+        assert len(display_pages) == 3 and all(display_pages)
+
+        def formatted_page(marker):
+            text = screen.text()
+            return "Saved log · formatted" in text and "Reading saved logs" not in text and marker in text
+
         records = [
             {"type":"start", "session":state["id"], "turn":turn_id, "document":state["document"]},
             {"type":"user_prompt", "text":"保存済みの依頼"},
@@ -312,7 +324,7 @@ try:
         wait(lambda: "Saved log" in screen.text() and "PAGE BEGIN 日本語" in screen.text(), "decoded first saved page")
         saved_screen("formatted")
         os.write(master, b"\x1b[F")
-        wait(lambda: "PAGE BEGIN" not in screen.text() and "row " in screen.text(), "saved page scroll end")
+        wait(lambda: formatted_page(display_pages[0][-1]), "saved page scroll end")
         os.write(master, b"\x1b[H")
         wait(lambda: "PAGE BEGIN 日本語" in screen.text(), "saved page scroll home")
         os.write(master, b"v")
@@ -321,14 +333,16 @@ try:
         os.write(master, b"v")
         wait(lambda: "formatted" in screen.text() and "PAGE BEGIN 日本語" in screen.text(), "return to the same formatted page")
         for number in [2, 3]:
-            previous = screen.text()
             os.write(master, b"n")
-            wait(lambda: "Saved log" in screen.text() and "Reading saved logs" not in screen.text() and screen.text() != previous, f"saved text page {number}")
+            # A partial repaint also changes the screen and can hide the
+            # loading text. Wait for content unique to the requested page
+            # before sending another key; loading deliberately ignores keys.
+            wait(lambda: formatted_page(display_pages[number - 1][0]), f"saved text page {number}")
         os.write(master, b"\x1b[F")
         wait(lambda: "PAGE END 日本語" in screen.text() and "Request complete" in screen.text(), "complete saved response and completion")
         saved_screen("end")
         os.write(master, b"p")
-        wait(lambda: "Saved log" in screen.text() and "Reading saved logs" not in screen.text() and "PAGE END" not in screen.text(), "previous saved text page")
+        wait(lambda: formatted_page(display_pages[1][0]), "previous saved text page")
         before_stat = os.stat(history_path)
         changed = open(history_path, encoding="utf-8").read().replace("PAGE BEGIN", "PAGE BEGAN", 1)
         with open(history_path, "w", encoding="utf-8") as handle:
