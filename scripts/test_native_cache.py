@@ -62,6 +62,20 @@ class NativeCacheTests(unittest.TestCase):
         self.assertEqual(changed, original)
         self.assertNotIn("not-in-report", str(changed))
 
+    def test_wasm_attribute_rules_reuse_only_the_audited_native_inputs(self):
+        previous = "c95e9172415f92d6f202a226bf3696f9f6ede08eaa66b81a612b892f8ca3bfc7"
+        current = "b24ec03467f4fe02cfb29f305f8a393d83c9588dd4729e01787a36e2b994c62d"
+        for platform in ("ubuntu-24.04", "ubuntu-24.04-arm", "macos-15"):
+            with self.subTest(platform=platform):
+                old = self.report(platform=platform, tree=previous)
+                new = self.report(platform=platform, tree=current)
+                self.assertEqual(new["legacy"], old["primary"])
+                self.assertNotEqual(new["primary"], old["primary"])
+        for variant in [dict(compiler="release: 1.95.0\n"),
+                        dict(environment={**cache.BASELINE_FLAGS, "RUSTFLAGS": "--cfg changed"}),
+                        dict(environment={**cache.BASELINE_FLAGS, "CXXFLAGS": "-O3"})]:
+            self.assertEqual(self.report(tree=current, **variant)["legacy"], "")
+
     def test_unknown_or_untrusted_output_fields_are_rejected(self):
         for changes in [dict(platform="unknown"), dict(image="unknown"), dict(image="image\nlegacy=injected"),
                         dict(image="../image"), dict(tree="bad")]:

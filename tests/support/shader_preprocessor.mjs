@@ -111,6 +111,17 @@ if (process.argv[3] === "--bomb") {
     assert(result.includes("file=7;"));
     assert(result.includes("version=100;"));
     assert(!result.includes("__LINE__") && !result.includes("__FILE__"));
+    assert(result.includes("line=20;"), result);
+  });
+  check("line numbers match source lines and explicit zero resets", () => {
+    let result = prepare("int first=__LINE__;\nint second=__LINE__;");
+    assert(result.includes("first=1;") && result.includes("second=2;"), result);
+    result = prepare("#version 100\nint second=__LINE__;");
+    assert(result.includes("second=2;"), result);
+    result = prepare("/* first\nsecond */\nint third=__LINE__;");
+    assert(result.includes("third=3;"), result);
+    result = prepare("#line 0\nint zero=__LINE__;\nint one=__LINE__;");
+    assert(result.includes("zero=0;") && result.includes("one=1;"), result);
   });
   check("invalid requests and include requests fail", () => {
     for (const [source, options] of [["a".repeat(1024 * 1024 + 1), {}], [body("vec4(1.)"), { coordinate_scale: [0, 1] }], [body("vec4(1.)"), { defines: ["arbitrary"] }], ["#include \"secret\"\n" + body("vec4(1.)"), {}]]) {
