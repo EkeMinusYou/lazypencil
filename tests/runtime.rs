@@ -151,10 +151,11 @@ fn startup_failures_report_the_stage_and_host_facts_without_raw_child_output() {
         version: "fixture".into(),
         platform: runtime::platform().unwrap().into(),
     };
-    let error = Browser::launch(
+    let error = Browser::launch_with_supervisor(
         &installed,
         Purpose::Page,
         &Budget::new(Duration::from_secs(5), None),
+        std::path::Path::new(env!("CARGO_BIN_EXE_lazypencil")),
     )
     .err()
     .expect("The fixture exits before CDP startup");

@@ -19,7 +19,7 @@ mod process;
 mod readiness;
 mod tabs;
 use lifecycle::PageLifecycle;
-#[cfg(windows)]
+#[cfg(any(windows, unix))]
 pub use process::serve_worker as serve_process_worker;
 pub use tabs::{MAX_RETAINED_PAGES, PageState};
 
@@ -73,6 +73,8 @@ impl Browser {
         self.child.id()
     }
 
+    /// Launch through the current lazypencil executable. Embedding hosts use
+    /// `launch_with_supervisor` to supply their actual lazypencil CLI.
     pub fn launch(
         browser: &InstalledBrowser,
         purpose: Purpose,
@@ -131,7 +133,8 @@ impl Browser {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
-        let mut child = process::Owned::spawn(command, supervisor, profile.path(), budget)?;
+        let mut child = process::Owned::spawn(command, supervisor, profile.path(), budget)
+            .map_err(|error| budget.check().err().unwrap_or(error))?;
         let result = (|| {
             let port_file = profile.path().join("DevToolsActivePort");
             let (port, path) = loop {
