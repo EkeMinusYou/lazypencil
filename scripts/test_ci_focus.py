@@ -59,6 +59,17 @@ class FocusTests(unittest.TestCase):
                 self.assertNotIn("--no-default-features", build[0])
         self.assertNotIn("agent_workflow", focus.select(["tests/agent_workflow.rs"])["targets"])
 
+    def test_platform_specific_rendering_fixes_do_not_become_core_agent_checks(self):
+        result = focus.select(["src/text/windows.rs"])
+        self.assertEqual(result["platform"], "windows-2025")
+        self.assertEqual(result["suite"], "graphics")
+        self.assertIn("text", result["targets"])
+        for path in ["src/color.rs", "src/image_geometry.rs"]:
+            result = focus.select([path])
+            self.assertEqual(result["suite"], "graphics")
+            build, _ = focus.commands(result["suite"], result["targets"])
+            self.assertNotIn("--no-default-features", build[0])
+
     def test_platform_override_preserves_the_affected_suite(self):
         result = focus.select(["src/cdp.rs"], "macos-15")
         self.assertEqual(result["platform"], "macos-15")

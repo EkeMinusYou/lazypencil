@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import urllib.error
 import urllib.request
@@ -16,6 +17,7 @@ CORE_TESTS = {path.stem for path in TEST_FILES}
 RENDER_TESTS = {path.stem for path in TEST_FILES if '#![cfg(feature = "rendering")]' in path.read_text(encoding="utf-8")}
 # These explicit opt-ins consume real model usage and stay outside hosted CI.
 CREDENTIALED_TESTS = {"agent_workflow"}
+RENDER_MODULES = set(re.findall(r'#\[cfg\(feature = "(?:rendering|tui)"\)\]\s+(?:pub )?mod (\w+);', (Path(__file__).resolve().parents[2] / "src/lib.rs").read_text(encoding="utf-8")))
 
 
 def select(paths, platform="auto"):
@@ -23,16 +25,17 @@ def select(paths, platform="auto"):
     stems.update(Path(path).parts[1].removesuffix(".rs") for path in paths if path.startswith("src/") and len(Path(path).parts) > 1)
     windows = any("windows" in path.lower() or path.startswith(("src/conversation/", "src/agent/process")) for path in paths)
     # CI changes exercise the formerly failing Windows helper route first.
-    windows |= any(path.startswith((".github/", "scripts/ci/")) for path in paths)
+    ci_change = any(path.startswith((".github/", "scripts/ci/")) for path in paths)
+    windows |= ci_change
     macos = any("macos" in path.lower() or "darwin" in path.lower() for path in paths)
     os_name = ("windows-2025" if windows else "macos-15" if macos else "ubuntu-24.04") if platform == "auto" else platform
-    conversation = windows or bool(stems & {"agent", "conversation", "windows_agent"}) or any(path.startswith("tests/support/acp_") for path in paths)
+    conversation = ci_change or bool(stems & {"agent", "conversation", "windows_agent"}) or any(path.startswith("tests/support/acp_") for path in paths)
     if conversation:
         suite, targets = "conversation", ["agent", "windows_agent"]
     elif stems & DYNAMIC or any(path.startswith(("src/cdp/", "src/tui/", "src/render/")) for path in paths):
         suite = "dynamic"
         targets = sorted({"dynamic_render", "browser_readiness", "shader_uniforms", "sampler_sources", "imports"} | (stems & RENDER_TESTS - CREDENTIALED_TESTS))
-    elif any(path.startswith(("src/graphics", "src/layout", "src/text", "src/icons", "resources/", "vendor/")) for path in paths) or stems & (RENDER_TESTS | {"graphics", "rendering", "text", "font_sources", "fonts", "optional_icons"}):
+    elif any(path.startswith(("src/graphics", "src/layout", "src/text", "src/icons", "resources/", "vendor/")) for path in paths) or stems & (RENDER_TESTS | RENDER_MODULES | {"graphics", "rendering", "text", "font_sources", "fonts", "optional_icons"}):
         suite = "graphics"
         targets = sorted(stems & CORE_TESTS - CREDENTIALED_TESTS) or ["graphics", "render", "text", "font_sources", "optional_icons"]
     else:
