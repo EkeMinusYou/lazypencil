@@ -105,25 +105,44 @@ impl Header {
         Ok(Self { schema, inputs })
     }
 
-    /// Missing inputs without a declared default remain absent (undefined in JS).
+    /// Prepare declared inputs without changing the stored values or header.
+    /// Null resets a control; undeclared saved inputs do not enter the sandbox.
     pub fn prepare(&self, values: &Map<String, Value>) -> Result<Map<String, Value>> {
-        if values
-            .keys()
-            .any(|key| !self.inputs.iter().any(|input| &input.name == key))
-        {
-            return Err(invalid("Script inputs contain an undeclared name"));
-        }
         let mut prepared = Map::new();
         for input in &self.inputs {
-            if let Some(value) = values.get(&input.name).or(input.default.as_ref()) {
-                prepared.insert(input.name.clone(), input.validate(value)?);
-            }
+            let implicit;
+            let value = if let Some(value) = values
+                .get(&input.name)
+                .filter(|value| !value.is_null())
+                .or(input.default.as_ref())
+            {
+                value
+            } else {
+                implicit = input.implicit_default()?;
+                &implicit
+            };
+            prepared.insert(input.name.clone(), input.validate(value)?);
         }
         Ok(prepared)
     }
 }
 
 impl Input {
+    fn implicit_default(&self) -> Result<Value> {
+        Ok(match &self.kind {
+            InputKind::Number { .. } => Value::from(0),
+            InputKind::String | InputKind::Ref => Value::from(""),
+            InputKind::Boolean => Value::from(false),
+            InputKind::Color => Value::from("#000000"),
+            InputKind::Enum { options } => Value::from(
+                options
+                    .first()
+                    .ok_or_else(|| invalid("An enum requires at least one option"))?
+                    .clone(),
+            ),
+        })
+    }
+
     fn validate(&self, value: &Value) -> Result<Value> {
         let valid = match &self.kind {
             InputKind::Number { min, max } => {
@@ -149,9 +168,9 @@ impl Input {
             InputKind::Enum { options } => value
                 .as_str()
                 .is_some_and(|s| options.iter().any(|option| option == s)),
-            InputKind::Ref => value.as_str().is_some_and(|s| {
-                !s.is_empty() && s.len() <= 4096 && !s.chars().any(char::is_control)
-            }),
+            InputKind::Ref => value
+                .as_str()
+                .is_some_and(|s| s.len() <= 4096 && !s.chars().any(char::is_control)),
         };
         if !valid {
             return Err(invalid(format!(

@@ -120,6 +120,15 @@ class FocusTests(unittest.TestCase):
         self.assertEqual(result["targets"], ["queries"])
         self.assertEqual(result["platform"], "ubuntu-24.04")
 
+    def test_project_changes_cover_queries_without_losing_script_or_shader_consumers(self):
+        self.assertEqual(focus.select(["src/project/variables.rs"])["targets"], ["project", "queries"])
+        for other, suite in [("src/script/header.rs", "graphics"), ("src/shader.rs", "dynamic")]:
+            result = focus.select(["src/project.rs", other])
+            self.assertEqual(result["suite"], suite)
+            self.assertTrue({"project", "queries"} <= set(result["targets"]))
+            self.assertIn("scripts" if suite == "graphics" else "shader_uniforms", result["targets"])
+        self.assertEqual(focus.select(["tests/project.rs"])["targets"], ["project"])
+
     def test_nested_core_and_adapter_fixtures_keep_their_affected_targets(self):
         self.assertEqual(focus.select(["src/store/content.rs"])["targets"], ["document_store"])
         result = focus.select(["tests/support/acp_fixture.py"])

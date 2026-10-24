@@ -324,6 +324,7 @@ jobs:
           FOCUS_TARGETS: ${{ inputs.targets }}
           LAZYPENCIL_TEST_RETAINED_DIR: ${{ runner.temp }}
           LAZYPENCIL_TEST_NATIVE_SHADER_DIR: ${{ runner.temp }}
+          LAZYPENCIL_TEST_CODEC_DIR: ${{ runner.temp }}/codec-reference
         run: |
           set -o pipefail
           python scripts/ci/focus.py test --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS" 2>&1 | tee -a "$RUNNER_TEMP/focus-tests.log"
