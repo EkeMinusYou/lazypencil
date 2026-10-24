@@ -121,7 +121,7 @@ try:
             authenticated = True
             response(message, {})
         elif method in ["session/new", "session/load"]:
-            if mode.startswith("resume-"):
+            if mode.startswith("resume-") or mode == "selection":
                 with open("received-session-methods.jsonl", "a", encoding="utf-8") as handle:
                     handle.write(json.dumps({"method": method, "params": params}) + "\n")
                 if method == "session/load" and mode == "resume-load-error" and os.path.exists("fixture-restart"):
@@ -165,7 +165,7 @@ try:
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags,
                     start_new_session=(os.name != "nt" and mode == "process-tree-detached"))
         elif method == "session/prompt":
-            if mode.startswith("resume-"):
+            if mode.startswith("resume-") or mode == "selection":
                 assert params["sessionId"] == native_session
                 with open("received-prompts.jsonl", "a", encoding="utf-8") as handle:
                     handle.write(json.dumps(params, ensure_ascii=False) + "\n")

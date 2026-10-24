@@ -145,7 +145,7 @@ lazypencil conversations read design.pen LOCAL_UUID TURN_UUID --json
 lazypencil conversations view design.pen LOCAL_UUID TURN_UUID
 ```
 
-Lists, formatted messages and complete raw transcripts are paged, with bounded reads and revision-checked continuation. The TUI provides the same saved-log browsing through `/logs`, `/conversations` and its command palette. Browsing does not restore model memory or switch the active conversation. Conversation deletion and overall retention controls remain unfinished. See [saved-record behavior](docs/agents.md#read-saved-conversations-without-an-agent).
+Lists, formatted messages and complete raw transcripts are paged, with bounded reads and revision-checked continuation. The TUI provides the same saved-log browsing through `/logs`, `/conversations` and its command palette. Browsing does not restore model memory. Explicit `u` selects a compatible saved conversation while idle; `N` or **New empty conversation** starts empty and preserves the previous draft/images. These selection changes await hosted verification. Conversation deletion and overall retention controls remain unfinished. See [saved-record behavior](docs/agents.md#read-saved-conversations-without-an-agent).
 
 ## Terminal preview and prompts
 

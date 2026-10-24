@@ -685,6 +685,8 @@ cache の一覧では application 6件が5,982,586,140 bytes、総量が10,183,6
 
 TUI の `/logs`・`/conversations` と palette から、会話一覧→ターン→整形ログ／原文を閲覧する経路を追加した。JSON 文字列を小さい buffer で逐次復号し、1レコードや長文全体の `Value`／文字列を作らず、32 KiB のページへ出す。未知・未完了・曖昧なレコードは安全な原文表示を残し、正確なバイトは原文 API に残す。内容 hash と formatter 版へ cursor を束縛し、変更時は元のページへ戻して明示更新を求める。一覧は逆方向 cursor も使い、全ページの配列を保持しない。整形ログのページ cursor は最大8,192件で、既存64 MiBの入力と表示量の上限内に収める。read-only background task は承認に優先せず、読取と AI が重なった Ctrl+C は両方を止める。下書き・画像・文書を保持した閲覧、同サイズ変更、承認の優先、実 PTY の3ページ・原文・更新・終了復元を試験に加えた。新しい表示処理と TUI 拡張は GHA で検証する。会話の切り替え・削除・全体の保持方針など、元の残件は維持する。
 
+保存会話の選択を共通 `Conversation::select` と TUI の `u`／`N`／palette へ追加した。先に選択先の文書・agent・adapter・要求認証と排他を検証し、元の接続・grant を閉じてから切り替える。元の下書きと画像、選択先の native ID を保持し、送信まで新しい agent を起動しない。現在の ID の選択は無変更、使用中・欠損・異なる設定は元の状態を残して拒否する。親の短い registry lease と symlink／regular-file 検査も接続した。3つの共通試験、registry の所有解除、実 ACP の new→new→load と画像2→0→2、実 PTY の2会話の下書き保持と終了 ID を追加した。重い検証は GHA で行う。会話削除・保持方針と元の完成条件は維持し、選択の追加自体も hosted 結果を確認するまで合格扱いにはしない。
+
 ### ページの network-idle 待機
 
 2026-10-24: `[runtime.browser] wait_until` に `load`（従来の既定値）と `network_idle` を追加した。後者は現在の main frame／loader に対する Chromium の `networkIdle` lifecycle 通知と document load を待ち、その後に従来の font・image decode・2 animation frame を待つ。別 session・子 frame・古い loader の通知を成功に使わず、現在の loader 一つだけを保持する。URL・header・本文や無制限の event queue は保持しない。context の破棄時に状態を解除し、既存の取消・取得／描画期限・失敗時の process 回収へ接続する。

@@ -37,8 +37,9 @@ class FocusTests(unittest.TestCase):
         self.assertEqual(result["targets"], ["agent", "conversation_history"])
         build, checks = focus.commands(result["suite"], result["targets"])
         self.assertIn("conversation_history", build[0])
-        self.assertIn("conversation::history::", checks[0])
-        self.assertIn("conversation_history", checks[1])
+        self.assertIn("conversation::management::", checks[0])
+        self.assertIn("conversation::history::", checks[1])
+        self.assertIn("conversation_history", checks[2])
         self.assertNotIn("conversation_history", checks[-1])
         self.assertEqual(checks[-1][checks[-1].index("conversation::history::") - 1], "--skip")
 
@@ -86,8 +87,8 @@ class FocusTests(unittest.TestCase):
                 self.assertEqual(result["platform"], "ubuntu-24.04")
                 build, checks = focus.commands(result["suite"], result["targets"])
                 self.assertIn("--no-default-features", build[0])
-                self.assertIn("agent_ownership::killed_cli_", checks[0])
-                self.assertIn("embedded_conversation_uses_the_real_helper_for_supervision_and_bound_mcp_edits", checks[1])
+                first = next(index for index, command in enumerate(checks) if "agent_ownership::killed_cli_" in command and "--skip" not in command)
+                self.assertIn("embedded_conversation_uses_the_real_helper_for_supervision_and_bound_mcp_edits", checks[first + 1])
                 self.assertIn("--skip", checks[-1])
                 self.assertIn("--test", checks[-1])
 
@@ -170,12 +171,16 @@ class FocusTests(unittest.TestCase):
         for path in ("src/attachments.rs", "src/conversation/lease.rs", "src/conversation/storage.rs", "src/guidance/usage.rs"):
             with self.subTest(path=path):
                 selected = focus.select([path])
-                self.assertEqual(selected, {"platform": "ubuntu-24.04", "suite": "conversation", "targets": ["agent", "attachments", "mcp"]})
+                targets = ["agent", "attachments", "mcp"]
+                if path.startswith("src/conversation/"):
+                    targets.insert(2, "conversation_history")
+                self.assertEqual(selected, {"platform": "ubuntu-24.04", "suite": "conversation", "targets": targets})
                 build, checks = focus.commands(selected["suite"], selected["targets"])
                 self.assertIn("--no-default-features", build[0])
-                self.assertIn("agent_ownership::killed_cli_", checks[0])
+                first = next(command for command in checks if "agent_ownership::killed_cli_" in command and "--skip" not in command)
+                self.assertIn("--nocapture", first)
                 for target in selected["targets"]:
-                    self.assertIn(target, checks[-1])
+                    self.assertTrue(any(target in command for command in checks))
                 self.assertIn("--skip", checks[-1])
 
     def test_session_restart_reproduction_runs_before_the_remaining_core_suite_without_repeating(self):
@@ -184,8 +189,8 @@ class FocusTests(unittest.TestCase):
             self.assertEqual(selected["suite"], "conversation")
             build, checks = focus.commands(selected["suite"], selected["targets"])
             self.assertIn("--no-default-features", build[0])
-            self.assertIn("session_restart_", checks[2])
-            self.assertIn("--nocapture", checks[2])
+            reproduction = next(command for command in checks if "session_restart_" in command and "--skip" not in command)
+            self.assertIn("--nocapture", reproduction)
             skip = checks[-1].index("session_restart_")
             self.assertEqual(checks[-1][skip - 1], "--skip")
 

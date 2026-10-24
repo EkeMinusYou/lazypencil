@@ -39,6 +39,13 @@ pub enum Action {
     Close,
     Show(Box<Page>),
     Read(Box<Page>),
+    Use(String),
+    New,
+}
+
+pub enum SessionChange {
+    Existing(String),
+    New,
 }
 impl Action {
     fn read(page: Page) -> Self {
@@ -198,6 +205,27 @@ impl Page {
         }
         let text = matches!(self.location, Location::Text { .. });
         match key.code {
+            KeyCode::Char('N') => return Ok(Action::New),
+            KeyCode::Char('u') => {
+                let session = match &self.location {
+                    Location::Sessions => {
+                        let Some(entry) = self.entries().get(self.selected) else {
+                            return Ok(Action::Keep);
+                        };
+                        if entry["unavailable"] == true {
+                            self.notice = Some("This saved conversation is unavailable".into());
+                            return Ok(Action::Keep);
+                        }
+                        entry["id"].as_str().map(str::to_owned)
+                    }
+                    Location::Turns(session) | Location::Text { session, .. } => {
+                        Some(session.clone())
+                    }
+                };
+                if let Some(session) = session {
+                    return Ok(Action::Use(session));
+                }
+            }
             KeyCode::Esc | KeyCode::Char('q') => return Ok(Action::Close),
             KeyCode::Backspace => {
                 if let Some(back) = &self.back {
@@ -429,7 +457,7 @@ pub fn draw(page: &mut Page, frame: &mut ratatui::Frame, area: ratatui::layout::
             .min(u16::MAX as usize) as u16;
         page.scroll = page.scroll.min(page.maximum_scroll);
         frame.render_widget(paragraph.scroll((page.scroll, 0)), regions[1]);
-        frame.render_widget(Paragraph::new("↑/↓ PgUp/PgDn scroll · Home/End edges\nn/p or →/← pages · g first · v raw/formatted\nBackspace parent · s sessions · r refresh · Esc closes").wrap(Wrap { trim: false }), regions[2]);
+        frame.render_widget(Paragraph::new("↑/↓ PgUp/PgDn scroll · Home/End edges\nn/p pages · v raw/formatted · u use session · N new\nBackspace parent · s sessions · r refresh · Esc closes").wrap(Wrap { trim: false }), regions[2]);
     } else {
         let entries = page.entries();
         let items = entries
@@ -466,7 +494,7 @@ pub fn draw(page: &mut Page, frame: &mut ratatui::Frame, area: ratatui::layout::
                 &mut state,
             );
         }
-        frame.render_widget(Paragraph::new("↑/↓ select · Enter opens · n/p pages\nHome first · c current conversation · r refresh\nBackspace parent · Esc/q closes · s sessions").wrap(Wrap { trim: false }), regions[2]);
+        frame.render_widget(Paragraph::new("↑/↓ select · Enter opens · u use session · N new\nn/p pages · Home first · c current · r refresh\nBackspace parent · Esc/q closes · s sessions").wrap(Wrap { trim: false }), regions[2]);
     }
 }
 
@@ -506,6 +534,14 @@ impl super::App {
             Action::Keep => self.modal = Some(super::checkpoints::Modal::Saved(page)),
             Action::Show(page) => self.modal = Some(super::checkpoints::Modal::Saved(page)),
             Action::Read(next) => self.open_saved(*next, Some(page))?,
+            Action::Use(session) => {
+                self.pending_session = Some(SessionChange::Existing(session));
+                self.modal = Some(super::checkpoints::Modal::Saved(page));
+            }
+            Action::New => {
+                self.pending_session = Some(SessionChange::New);
+                self.modal = Some(super::checkpoints::Modal::Saved(page));
+            }
             Action::Close => {}
         }
         Ok(false)

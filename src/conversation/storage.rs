@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
     fs::{File, OpenOptions},
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -41,6 +41,14 @@ pub(super) struct Session {
     pub(super) _lock: File,
 }
 
+struct RegistryGuard(File);
+
+impl Drop for RegistryGuard {
+    fn drop(&mut self) {
+        let _ = FileExt::unlock(&self.0);
+    }
+}
+
 impl Drop for Session {
     fn drop(&mut self) {
         // Closing one descriptor may leave a lock held by a duplicate inherited at spawn.
@@ -62,33 +70,75 @@ impl Session {
                 .to_string(),
             None => uuid::Uuid::new_v4().to_string(),
         };
-        let directory = store.document_data_dir().join("conversations").join(&id);
-        if args.session.is_some() && !directory.is_dir() {
-            return Err(Error::new(
-                "INVALID_ARGUMENT",
-                "No local conversation exists for this document and ID",
-            ));
+        let root = store.document_data_dir().join("conversations");
+        match std::fs::symlink_metadata(&root) {
+            Ok(_) => require_directory(&root)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                create_private_directory(&root)?;
+            }
+            Err(error) => return Err(Error::io(&root, error)),
         }
-        create_private_directory(&directory)?;
-        let lock_path = directory.join("lock");
-        let lock = private_options()
-            .create(true)
-            .truncate(false)
-            .open(&lock_path)
-            .map_err(|e| Error::io(&lock_path, e))?;
-        lock.try_lock_exclusive().map_err(|e| {
-            Error::new(
+        require_directory(&root)?;
+        // This stable parent lease also serializes later local deletion with
+        // opening a conversation. Never unlink the registry while it is used.
+        let _registry = RegistryGuard(lock_file(&root.join("registry.lock"), true)?);
+        let directory = root.join(&id);
+        if args.session.is_some() {
+            require_directory(&directory).map_err(|_| {
+                Error::new(
+                    "INVALID_ARGUMENT",
+                    "No regular local conversation exists for this document and ID",
+                )
+            })?;
+        } else if directory.exists() {
+            return Err(Error::new(
                 "REVISION_CONFLICT",
-                format!("The conversation is already in use: {e}"),
-            )
-        })?;
+                "The new conversation directory already exists",
+            ));
+        } else {
+            let mut builder = std::fs::DirBuilder::new();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                builder.mode(0o700);
+            }
+            builder
+                .create(&directory)
+                .map_err(|e| Error::io(&directory, e))?;
+        }
+        let lock_path = directory.join("lock");
+        let lock = lock_file(&lock_path, false)?;
         let fingerprint = hash(
             &serde_json::to_vec(&(command, &args.adapter_args))
                 .map_err(|e| Error::new("INVALID_ARGUMENT", e.to_string()))?,
         );
         let state = if args.session.is_some() {
-            let bytes =
-                crate::attachments::read_bounded(&directory.join("session.json"), 8 * 1024 * 1024)?;
+            let path = directory.join("session.json");
+            require_regular_file(&path)?;
+            let mut options = OpenOptions::new();
+            options.read(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC);
+            }
+            let file = options.open(&path).map_err(|e| Error::io(&path, e))?;
+            if !file.metadata().map_err(|e| Error::io(&path, e))?.is_file() {
+                return Err(Error::new(
+                    "AGENT_ERROR",
+                    "Conversation metadata must be a regular file",
+                ));
+            }
+            let mut bytes = Vec::new();
+            file.take(8 * 1024 * 1024 + 1)
+                .read_to_end(&mut bytes)
+                .map_err(|e| Error::io(&path, e))?;
+            if bytes.len() > 8 * 1024 * 1024 {
+                return Err(Error::new(
+                    "AGENT_ERROR",
+                    "Conversation metadata exceeds 8 MiB",
+                ));
+            }
             let state: SavedConversation = serde_json::from_slice(&bytes)
                 .map_err(|_| Error::new("AGENT_ERROR", "Cannot read the conversation metadata"))?;
             if !matches!(state.version, 1..=3)
@@ -193,6 +243,71 @@ impl Session {
             }
         }
     }
+}
+
+fn require_directory(path: &Path) -> Result<()> {
+    let metadata = std::fs::symlink_metadata(path).map_err(|e| Error::io(path, e))?;
+    if !metadata.is_dir() || metadata.is_symlink() {
+        return Err(Error::new(
+            "AGENT_ERROR",
+            "Conversation directory must not be a symlink",
+        ));
+    }
+    Ok(())
+}
+
+fn require_regular_file(path: &Path) -> Result<()> {
+    let metadata = std::fs::symlink_metadata(path).map_err(|e| Error::io(path, e))?;
+    if !metadata.is_file() || metadata.is_symlink() {
+        return Err(Error::new(
+            "AGENT_ERROR",
+            "Conversation metadata must be a regular file",
+        ));
+    }
+    Ok(())
+}
+
+fn lock_file(path: &Path, wait: bool) -> Result<File> {
+    let mut options = private_options();
+    options.create(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC);
+    }
+    if std::fs::symlink_metadata(path).is_ok_and(|m| !m.is_file() || m.is_symlink()) {
+        return Err(Error::new(
+            "AGENT_ERROR",
+            "Conversation lock must be a regular file",
+        ));
+    }
+    let file = options.open(path).map_err(|e| Error::io(path, e))?;
+    if !file.metadata().map_err(|e| Error::io(path, e))?.is_file() {
+        return Err(Error::new(
+            "AGENT_ERROR",
+            "Conversation lock must be a regular file",
+        ));
+    }
+    let start = std::time::Instant::now();
+    loop {
+        match file.try_lock_exclusive() {
+            Ok(()) => break,
+            Err(error)
+                if wait
+                    && crate::store::lock_contended(&error)
+                    && start.elapsed() < std::time::Duration::from_secs(5) =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(error) => {
+                return Err(Error::new(
+                    "REVISION_CONFLICT",
+                    format!("The conversation is already in use: {error}"),
+                ));
+            }
+        }
+    }
+    Ok(file)
 }
 
 fn private_options() -> OpenOptions {
@@ -345,6 +460,20 @@ mod tests {
             assert!(Session::open(&store, &args, command).is_err());
             assert_eq!(std::fs::read(&path).unwrap(), bytes);
         }
+    }
+
+    #[test]
+    fn registry_owner_releases_its_short_lease_even_if_a_descriptor_was_duplicated() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let path = temp.path().join("registry.lock");
+        let guard = RegistryGuard(lock_file(&path, true).unwrap());
+        let duplicate = guard.0.try_clone().unwrap();
+        assert!(lock_file(&path, false).is_err());
+        drop(guard);
+        let next = lock_file(&path, false).unwrap();
+        assert!(duplicate.try_lock_exclusive().is_err());
+        drop(next);
+        drop(duplicate);
     }
 
     #[test]

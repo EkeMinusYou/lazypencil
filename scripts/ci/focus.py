@@ -24,6 +24,7 @@ INPUT_REPRODUCTIONS = (
     "navigation_shortcuts_are_user_owned_replace_defaults_and_validate_scope_conflicts",
 )
 SAVED_LOG_PTY = "real_pty_saved_logs_page_format_refresh_and_keep_the_unsent_draft_without_starting_an_agent"
+SESSION_SELECTION_PTY = "real_pty_selects_saved_conversations_and_keeps_both_drafts_without_starting_an_agent"
 SHADER_REGRESSIONS = [
     "linked_constant_dimensions_validate_inputs_and_recover_after_an_error",
     "native_annotation_binding_matches_public_pencil_reference_pixels",
@@ -116,7 +117,7 @@ def select(paths, platform="auto"):
         targets = sorted(set(targets) | {"project", "queries"})
     if operations_change:
         targets = sorted(set(targets) | {"operations_cli"})
-    if "conversation_history" in stems or terminal_change:
+    if "conversation_history" in stems or terminal_change or any(path.startswith("src/conversation/") for path in paths):
         targets = sorted(set(targets) | {"conversation_history"})
         if suite == "shader":
             suite = "dynamic"
@@ -208,11 +209,12 @@ def commands(suite, targets):
         # other tests and Chromium; core suites need no rendering dependency.
         if core:
             checks.extend([
+                [*common, "--lib", "conversation::management::", "--", "--test-threads=2"],
                 [*common, "--lib", "conversation::history::", "--", "--test-threads=2"],
                 [*common, "--test", "conversation_history", "--", "--test-threads=1"],
             ])
         selected = [arg for target in targets if target != "conversation_history" for arg in ("--test", target)]
-    history_ui_skip = ["--skip", "tui::tests::saved_log_", "--skip", SAVED_LOG_PTY] if history and "tui" in targets else []
+    history_ui_skip = ["--skip", "tui::tests::saved_log_", "--skip", SAVED_LOG_PTY, "--skip", SESSION_SELECTION_PTY] if history and "tui" in targets else []
     native = "native_layout" in targets and suite in ("graphics", "dynamic")
     if native:
         # Dynamic focus runs these CPU cases in the workflow before Chromium.
@@ -237,7 +239,7 @@ def commands(suite, targets):
     else:
         checks.append([*common, "--lib", *selected, "--", "--test-threads=2", *input_skip, *history_ui_skip])
         if history:
-            checks[-1].extend(["--skip", "conversation::history::"])
+            checks[-1].extend(["--skip", "conversation::history::", "--skip", "conversation::management::"])
         if native:
             checks[-1].extend(["--skip", "native_cancellation"])
         if suite == "conversation":
