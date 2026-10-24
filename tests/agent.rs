@@ -54,6 +54,61 @@ async fn ready(host: &mut AgentHost) {
 }
 
 #[test]
+fn embedded_conversation_uses_the_real_helper_for_supervision_and_bound_mcp_edits() {
+    use clap::Parser;
+    use lazypencil::conversation::{Conversation, ConversationEvent};
+
+    let directory = TempDir::new().unwrap();
+    let file = directory.path().join("design.pen");
+    let arguments = lazypencil::cli::Arguments::try_parse_from([
+        "lazypencil".into(),
+        "prompt".into(),
+        file.clone().into_os_string(),
+        "--create".into(),
+        "--adapter".into(),
+        python().into_os_string(),
+        format!("--adapter-arg={}", fixture().display()).into(),
+        "--adapter-arg=edit".into(),
+        "--non-interactive".into(),
+        "--timeout=5".into(),
+        "日本語の変更をしてください".into(),
+    ])
+    .unwrap();
+    let lazypencil::cli::Command::Prompt(args) = arguments.command else {
+        unreachable!()
+    };
+    let mut conversation = Conversation::open_with_executable(
+        args,
+        Some(directory.path().join("data")),
+        env!("CARGO_BIN_EXE_lazypencil").into(),
+    )
+    .unwrap();
+    runtime().block_on(async {
+        // This runs without Skia and exercises both actual subprocess routes.
+        // Always close the host, including when the bounded reproduction fails.
+        let result = tokio::time::timeout(Duration::from_secs(10), async {
+            conversation.send(None).await?;
+            loop {
+                if let ConversationEvent::Message(value) = conversation.next_event().await?
+                    && matches!(value["type"].as_str(), Some("complete" | "failed"))
+                {
+                    break conversation.result().cloned().expect("terminal result");
+                }
+            }
+        })
+        .await;
+        let closed = conversation.close().await;
+        result
+            .expect("embedded conversation exceeded 10 seconds")
+            .unwrap();
+        closed.unwrap();
+    });
+    let document: Value = serde_json::from_slice(&std::fs::read(file).unwrap()).unwrap();
+    assert_eq!(document["children"][0]["name"], "日本語の変更");
+    assert_eq!(document["children"][0]["fill"], "#E65100");
+}
+
+#[test]
 fn reported_authentication_must_match_the_requested_route_before_prompting() {
     for (mode, subscription, allowed) in [
         ("auth-account", true, true),

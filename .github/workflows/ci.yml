@@ -5,13 +5,33 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      os:
+        description: Final verification platforms (all preserves the release gate)
+        type: choice
+        default: all
+        options: [all, ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-2025]
+      focus_os:
+        description: Override the affected platform for the initial reproduction
+        type: choice
+        default: auto
+        options: [auto, ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-2025]
+  workflow_call:
+    inputs:
+      os:
+        type: string
+        default: all
+      focus_os:
+        type: string
+        default: auto
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: verify-${{ github.ref }}-${{ inputs.os || 'all' }}
+  cancel-in-progress: true
 
 env:
   CARGO_BUILD_JOBS: '1'
@@ -24,7 +44,43 @@ env:
   LAZYPENCIL_TEST_PYTHON: python
 
 jobs:
+  plan:
+    name: Select affected platform and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    outputs:
+      platform: ${{ steps.focus.outputs.platform }}
+      suite: ${{ steps.focus.outputs.suite }}
+      targets: ${{ steps.focus.outputs.targets }}
+      matrix: ${{ steps.matrix.outputs.platforms }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Select changes since the verified baseline
+        id: focus
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FOCUS_PLATFORM: ${{ inputs.focus_os || 'auto' }}
+        run: python3 scripts/ci/focus.py plan --platform "$FOCUS_PLATFORM"
+      - name: Preserve all final verification platforms by default
+        id: matrix
+        env:
+          REQUESTED_OS: ${{ inputs.os || 'all' }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          platforms = ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-15", "macos-15-intel", "windows-2025"]
+          requested = os.environ["REQUESTED_OS"]
+          assert requested == "all" or requested in platforms
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
+              stream.write("platforms=" + json.dumps(platforms if requested == "all" else [requested]) + "\n")
+          PY
+
   audit:
+    needs: focus
     name: Dependency policy and RustSec
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -49,153 +105,30 @@ jobs:
           cargo fetch --locked
           python3 scripts/license_notices.py verify --cargo-home "${CARGO_HOME:-$HOME/.cargo}"
 
+  focus:
+    name: Focused reproduction / ${{ needs.plan.outputs.platform }}
+    needs: plan
+    uses: ./.github/workflows/native.yml
+    with:
+      os: ${{ needs.plan.outputs.platform }}
+      phase: focus
+      suite: ${{ needs.plan.outputs.suite }}
+      targets: ${{ needs.plan.outputs.targets }}
+
   native:
-    name: Rust 1.94 / ${{ matrix.os }}
-    timeout-minutes: ${{ matrix.os == 'macos-15-intel' && 120 || 60 }}
+    name: Full verification / ${{ matrix.os }}
+    needs: [plan, focus]
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-2025]
-    runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: '3.12'
-      - name: Use the hosted runner for compilation outputs
-        run: printf 'CARGO_TARGET_DIR=%s/lazypencil-target\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
-      - name: Identify the hosted runner image for dependency reuse
-        id: cache-image
-        run: |
-          python - <<'PY'
-          import os
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
-              stream.write("version=" + os.environ.get("ImageVersion", "unknown") + "\n")
-          PY
-      - name: Install the declared minimum Rust toolchain
-        run: |
-          rustup toolchain install 1.94.0 --profile minimal --component clippy --component rustfmt
-          rustup default 1.94.0
-      - name: Cache verified Cargo downloads
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/git/db
-          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
-      - name: Install Linux native build dependencies
-        if: runner.os == 'Linux'
-        timeout-minutes: 20
-        run: python scripts/ci/linux_dependencies.py
-      - name: Check source archive integrity handling
-        run: python -m unittest discover -s scripts -p 'test_*.py' -v
-      - name: Build a complete source distribution
-        run: python scripts/dist.py source --output source.tar.gz
-      - name: Verify and extract the distribution
-        run: python scripts/dist.py verify-source source.tar.gz --extract "$RUNNER_TEMP/lazypencil-source"
-      - name: Identify compatible hosted dependency caches
-        id: cache-key
-        continue-on-error: true
-        env:
-          LAZYPENCIL_CACHE_PLATFORM: ${{ matrix.os }}
-          LAZYPENCIL_CACHE_IMAGE: ${{ steps.cache-image.outputs.version }}
-        run: python scripts/ci/native_cache.py --platform "$LAZYPENCIL_CACHE_PLATFORM" --image "$LAZYPENCIL_CACHE_IMAGE" --github-output "$GITHUB_OUTPUT"
-      - name: Restore hosted dependency build artifacts
-        id: native-cache
-        if: ${{ steps.cache-key.outcome == 'success' }}
-        continue-on-error: true
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          key: ${{ steps.cache-key.outputs.primary }}
-          restore-keys: ${{ steps.cache-key.outputs.legacy }}
-          path: |
-            ${{ runner.temp }}/lazypencil-target
-            ${{ runner.temp }}/lazypencil-source/vendor/skia-bindings/skia
-            ${{ runner.temp }}/lazypencil-material-fonts
-      - name: Rebuild application code and render evidence from this source
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: sh scripts/ci/prune_application_cache.sh
-      - name: Verify notices in the distributed sources
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          python scripts/license_notices.py verify
-          python scripts/skia_notice_inventory.py verify-upstream --upstream resources/licenses/native/upstream.json
-          python scripts/toolchain_notice_inventory.py verify-upstream --upstream resources/licenses/toolchain/upstream.json
-      - name: Check formatting in the distributed sources
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: cargo fmt --all -- --check
-      - name: Test both feature configurations from the distribution
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          sh scripts/ci/test.sh 2>&1 | tee "$RUNNER_TEMP/lazypencil-tests.log"
-      - name: Prepare pinned Material source fonts
-        id: material-sources
-        timeout-minutes: 5
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: python scripts/ci/prepare_material_fonts.py --output "$RUNNER_TEMP/lazypencil-material-fonts"
-      - name: Test every original Material glyph and continuous weights
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        env:
-          LAZYPENCIL_TEST_MATERIAL_DIR: ${{ runner.temp }}/lazypencil-material-fonts
-          LAZYPENCIL_CONFIG_DIR: ${{ runner.temp }}/lazypencil-material-settings
-        run: |
-          set -o pipefail
-          cargo test --locked --test optional_icons official_material_fonts -- --ignored --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/lazypencil-material-fonts.log"
-      - name: Test Material weight edits and stale snapshots through MCP
-        if: ${{ !cancelled() && steps.material-sources.outcome == 'success' }}
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        env:
-          LAZYPENCIL_TEST_MATERIAL_DIR: ${{ runner.temp }}/lazypencil-material-fonts
-          LAZYPENCIL_CONFIG_DIR: ${{ runner.temp }}/lazypencil-material-settings
-        run: |
-          set -o pipefail
-          cargo test --locked --test mcp real_mcp_material -- --ignored --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/lazypencil-material-mcp.log"
-      - name: Build and smoke-test the release profile
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          sh scripts/ci/release-smoke.sh 2>&1 | tee "$RUNNER_TEMP/lazypencil-release.log"
-      - name: Retain verification logs and rendered examples
-        if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: verification-${{ matrix.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/lazypencil-tests.log
-            ${{ runner.temp }}/lazypencil-release.log
-            ${{ runner.temp }}/lazypencil-material-fonts.log
-            ${{ runner.temp }}/lazypencil-material-mcp.log
-            ${{ runner.temp }}/lazypencil-target/release-*.json
-            ${{ runner.temp }}/lazypencil-target/release-*.png
-          if-no-files-found: ignore
-          retention-days: 3
-      - name: Prune application outputs before saving dependency cache
-        id: cache-prune
-        if: ${{ success() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true' }}
-        continue-on-error: true
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: sh scripts/ci/prune_application_cache.sh
-      - name: Save verified hosted dependency build artifacts
-        if: ${{ success() && steps.cache-prune.outcome == 'success' && github.ref == 'refs/heads/main' }}
-        continue-on-error: true
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          key: ${{ steps.native-cache.outputs.cache-primary-key }}
-          path: |
-            ${{ runner.temp }}/lazypencil-target
-            ${{ runner.temp }}/lazypencil-source/vendor/skia-bindings/skia
-            ${{ runner.temp }}/lazypencil-material-fonts
+        os: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    uses: ./.github/workflows/native.yml
+    with:
+      os: ${{ matrix.os }}
+      phase: full
 
   source:
+    if: inputs.os == 'all' || inputs.os == ''
     name: Verified source artifact
     needs: [native, audit]
     runs-on: ubuntu-24.04
