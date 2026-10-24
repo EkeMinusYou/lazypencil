@@ -138,11 +138,15 @@ struct Manifest {
     document: PathBuf,
     conversation: String,
     attachments: Vec<Attachment>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    owner: Option<String>,
 }
 
 /// The grant filename is unique per connection. Removing it revokes future requests.
 pub struct AttachmentGrant {
     path: PathBuf,
+    #[cfg(unix)]
+    lease: crate::conversation::lease::Lease,
 }
 impl AttachmentGrant {
     pub fn create(
@@ -157,16 +161,26 @@ impl AttachmentGrant {
             ));
         }
         let path = directory.join(format!("grant-{}.json", uuid::Uuid::new_v4()));
+        #[cfg(unix)]
+        let lease = crate::conversation::lease::Lease::create(&path)?;
         let manifest = Manifest {
             document: store.path().into(),
             conversation: conversation.into(),
             attachments: attachments.into(),
+            #[cfg(unix)]
+            owner: Some(lease.id().into()),
+            #[cfg(not(unix))]
+            owner: None,
         };
         atomic_replace(
             &path,
             &serde_json::to_vec(&manifest).map_err(|e| invalid(e.to_string()))?,
         )?;
-        Ok(Self { path })
+        Ok(Self {
+            path,
+            #[cfg(unix)]
+            lease,
+        })
     }
     pub fn path(&self) -> &Path {
         &self.path
@@ -186,6 +200,10 @@ impl AttachmentGrant {
             document: store.path().into(),
             conversation: conversation.into(),
             attachments: attachments.into(),
+            #[cfg(unix)]
+            owner: Some(self.lease.id().into()),
+            #[cfg(not(unix))]
+            owner: None,
         };
         atomic_replace(
             &self.path,
@@ -202,17 +220,42 @@ impl Drop for AttachmentGrant {
 #[derive(Debug, Clone)]
 pub struct AttachmentAccess {
     path: PathBuf,
+    #[cfg(unix)]
+    owner: Option<String>,
 }
 impl AttachmentAccess {
+    #[cfg(unix)]
+    pub(crate) fn check_connection(&self, store: &Store) -> Result<()> {
+        self.manifest(store).map(|_| ())
+    }
+
     pub fn open(store: &Store, path: &Path) -> Result<Self> {
+        let path = crate::paths::canonical(path)?;
+        let manifest = Self::read_manifest(&path, store)?;
         let access = Self {
-            path: crate::paths::canonical(path)?,
+            path,
+            #[cfg(unix)]
+            owner: manifest.owner,
         };
+        #[cfg(not(unix))]
+        let _ = manifest;
         access.manifest(store)?;
         Ok(access)
     }
     fn manifest(&self, store: &Store) -> Result<Manifest> {
-        let bytes = read_bounded(&self.path, 256 * 1024)?;
+        let manifest = Self::read_manifest(&self.path, store)?;
+        #[cfg(unix)]
+        {
+            if manifest.owner != self.owner {
+                return Err(invalid("The attachment connection changed its identity"));
+            }
+            crate::conversation::lease::require_live(&self.path, self.owner.as_deref())
+                .map_err(|error| invalid(error.message))?;
+        }
+        Ok(manifest)
+    }
+    fn read_manifest(path: &Path, store: &Store) -> Result<Manifest> {
+        let bytes = read_bounded(path, 256 * 1024)?;
         let manifest: Manifest =
             serde_json::from_slice(&bytes).map_err(|_| invalid("Invalid attachment grant"))?;
         if manifest.document != store.path() || manifest.attachments.len() > 256 {
@@ -238,6 +281,27 @@ impl AttachmentAccess {
                 .parent()
                 .ok_or_else(|| invalid("Missing attachment directory"))?,
         )
+    }
+}
+
+#[cfg(unix)]
+pub(crate) fn reclaim_stale_grant(
+    path: &Path,
+    document: &Path,
+    conversation: &str,
+) -> Result<bool> {
+    let bytes = read_bounded(path, 256 * 1024)?;
+    let manifest: Manifest =
+        serde_json::from_slice(&bytes).map_err(|_| invalid("Invalid attachment grant"))?;
+    if manifest.document != document
+        || manifest.conversation != conversation
+        || manifest.attachments.len() > 256
+    {
+        return Ok(false);
+    }
+    match manifest.owner.as_deref() {
+        Some(owner) => crate::conversation::lease::remove_stale(path, owner),
+        None => Ok(false),
     }
 }
 

@@ -122,6 +122,8 @@ impl Session {
             state,
             _lock: lock,
         };
+        #[cfg(unix)]
+        session.reclaim_stale_grants();
         // A report from an earlier process is not evidence for this connection.
         session.state.authentication = None;
         session.state.version = 2;
@@ -134,6 +136,59 @@ impl Session {
             &serde_json::to_vec_pretty(&self.state)
                 .map_err(|e| Error::new("IO_ERROR", e.to_string()))?,
         )
+    }
+
+    #[cfg(unix)]
+    fn reclaim_stale_grants(&self) {
+        // This conversation's exclusive lease is held. Sweep only recognized
+        // connection files; malformed records, images and journals are retained.
+        let Ok(entries) = std::fs::read_dir(&self.directory) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else {
+                continue;
+            };
+            if kind.is_file()
+                && name
+                    .strip_prefix("grant-")
+                    .and_then(|name| name.strip_suffix(".json"))
+                    .is_some_and(|id| {
+                        uuid::Uuid::parse_str(id).is_ok_and(|value| value.to_string() == id)
+                    })
+            {
+                let _ = crate::attachments::reclaim_stale_grant(
+                    &entry.path(),
+                    &self.state.document,
+                    &self.state.id,
+                );
+            } else if kind.is_file()
+                && name
+                    .strip_prefix("grant-")
+                    .and_then(|name| name.strip_suffix(".owner"))
+                    .is_some_and(|id| {
+                        uuid::Uuid::parse_str(id).is_ok_and(|value| value.to_string() == id)
+                    })
+            {
+                let _ = super::lease::remove_orphan(&entry.path().with_extension("json"));
+            } else if kind.is_dir()
+                && let Some(connection) = name.strip_prefix("design-usage-")
+                && uuid::Uuid::parse_str(connection)
+                    .is_ok_and(|value| value.to_string() == connection)
+            {
+                let _ = crate::guidance::usage::reclaim_stale_grant(
+                    &entry.path().join("active.json"),
+                    &self.state.document,
+                    &self.state.id,
+                    connection,
+                );
+                let _ = super::lease::remove_orphan(&entry.path().join("active.json"));
+            }
+        }
     }
 }
 

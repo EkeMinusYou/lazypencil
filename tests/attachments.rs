@@ -1,5 +1,5 @@
 use lazypencil::attachments::prepare;
-#[cfg(feature = "rendering")]
+#[cfg(any(unix, feature = "rendering"))]
 use lazypencil::{
     attachments::{AttachmentAccess, AttachmentGrant},
     store::Store,
@@ -14,6 +14,44 @@ fn image_count_limit_is_checked_before_reading_files() {
     let error = prepare(temp.path(), &files).unwrap_err();
     assert_eq!(error.code, "ATTACHMENT_INVALID");
     assert!(error.message.contains("eight"));
+}
+
+#[cfg(unix)]
+#[test]
+fn attachment_metadata_requires_its_original_living_connection_even_without_rendering() {
+    let temp = TempDir::new().unwrap();
+    let store = Store::init(
+        temp.path().join("design.pen"),
+        Some(temp.path().join("data")),
+    )
+    .unwrap();
+    let directory = temp.path().join("conversation");
+    std::fs::create_dir(&directory).unwrap();
+    let a = AttachmentGrant::create(&store, &directory, "conversation-a", &[]).unwrap();
+    let b = AttachmentGrant::create(&store, &directory, "conversation-b", &[]).unwrap();
+    let access = AttachmentAccess::open(&store, a.path()).unwrap();
+    assert_eq!(
+        access.metadata(&store).unwrap()["conversation"],
+        "conversation-a"
+    );
+    let original = std::fs::read(a.path()).unwrap();
+    let mut manifest: serde_json::Value = serde_json::from_slice(&original).unwrap();
+    let other: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(b.path()).unwrap()).unwrap();
+    manifest["owner"] = other["owner"].clone();
+    std::fs::write(a.path(), manifest.to_string()).unwrap();
+    assert!(access.metadata(&store).is_err());
+    assert!(AttachmentAccess::open(&store, a.path()).is_err());
+    manifest.as_object_mut().unwrap().remove("owner");
+    std::fs::write(a.path(), manifest.to_string()).unwrap();
+    assert!(AttachmentAccess::open(&store, a.path()).is_err());
+    std::fs::write(a.path(), original).unwrap();
+    assert!(access.metadata(&store).is_ok());
+    let owner = a.path().with_extension("owner");
+    drop(a);
+    assert!(!owner.exists());
+    assert!(access.metadata(&store).is_err());
+    assert!(AttachmentAccess::open(&store, b.path()).is_ok());
 }
 
 #[cfg(feature = "rendering")]

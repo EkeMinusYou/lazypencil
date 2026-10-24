@@ -34,6 +34,7 @@ def select(paths, platform="auto"):
     stems.update(Path(path).parts[1].removesuffix(".rs") for path in paths if path.startswith("src/") and len(Path(path).parts) > 1)
     project_change = any(path == "src/project.rs" or path.startswith("src/project/") for path in paths)
     operations_change = any(path == "src/operations.rs" or path.startswith("src/operations/") for path in paths)
+    grants_change = any(path in {"src/attachments.rs", "src/conversation/lease.rs", "src/conversation/storage.rs", "src/guidance/usage.rs", "tests/support/unix_agent_ownership.rs"} for path in paths)
     # Deferred Windows code remains in the tree; release CI uses supported runners.
     ci_change = any(path.startswith((".github/", "scripts/ci/")) for path in paths)
     macos = any("macos" in path.lower() or "darwin" in path.lower() for path in paths)
@@ -43,9 +44,11 @@ def select(paths, platform="auto"):
         "tests/support/unix_agent_ownership.rs", "tests/support/agent_process_tree.py",
         "tests/support/browser_process_unix.py",
     } for path in paths)
-    conversation = ownership or bool(stems & {"agent", "conversation", "windows_agent"}) or any(path.startswith("tests/support/acp_") for path in paths)
+    conversation = ownership or grants_change or bool(stems & {"agent", "conversation", "windows_agent"}) or any(path.startswith("tests/support/acp_") for path in paths)
     if conversation:
         suite, targets = "conversation", ["agent"]
+        if grants_change:
+            targets = ["agent", "attachments", "mcp"]
     elif stems & {"shader", "shader_uniforms"} and not (
         stems & (DYNAMIC - {"shader", "shader_uniforms"})
         or stems & {"script_render", "script_diagnostics", "script_scope"}
@@ -137,7 +140,7 @@ def commands(suite, targets):
     build = [[*common, "--lib", *selected, "--no-run"], ["cargo", "build", "--locked", *features]]
     checks = []
     if suite == "conversation":
-        checks.append([*common, "--test", "agent", "agent_ownership::killed_cli_owners_reap_their_tree_and_preserve_another_owner", "--", "--exact", "--nocapture"])
+        checks.append([*common, "--test", "agent", "agent_ownership::killed_cli_", "--", "--test-threads=1", "--nocapture"])
         checks.append([*common, "--test", "agent", "embedded_conversation_uses_the_real_helper_for_supervision_and_bound_mcp_edits", "--", "--exact", "--nocapture"])
     if suite == "dynamic":
         checks.append([*common, "--lib", "cdp::", "--", "--test-threads=2"])
@@ -150,7 +153,7 @@ def commands(suite, targets):
     else:
         checks.append([*common, "--lib", *selected, "--", "--test-threads=2"])
         if suite == "conversation":
-            checks[-1].extend(["--skip", "agent_ownership::killed_cli_owners_reap_their_tree_and_preserve_another_owner",
+            checks[-1].extend(["--skip", "agent_ownership::killed_cli_",
                                "--skip", "embedded_conversation_uses_the_real_helper_for_supervision_and_bound_mcp_edits"])
     return build, checks
 

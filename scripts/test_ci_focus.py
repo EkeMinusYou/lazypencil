@@ -36,7 +36,7 @@ class FocusTests(unittest.TestCase):
                 self.assertEqual(result["platform"], "ubuntu-24.04")
                 build, checks = focus.commands(result["suite"], result["targets"])
                 self.assertIn("--no-default-features", build[0])
-                self.assertIn("killed_cli_owners_reap_their_tree_and_preserve_another_owner", " ".join(checks[0]))
+                self.assertIn("agent_ownership::killed_cli_", checks[0])
                 self.assertIn("embedded_conversation_uses_the_real_helper_for_supervision_and_bound_mcp_edits", checks[1])
                 self.assertIn("--skip", checks[-1])
                 self.assertIn("--test", checks[-1])
@@ -95,7 +95,7 @@ class FocusTests(unittest.TestCase):
         for path in ("src/cdp/process.rs", "src/cdp/process/unix.rs", "src/process_owner.rs", "src/agent/process/unix.rs", "tests/support/unix_browser_ownership.rs", "tests/support/unix_agent_ownership.rs", "tests/support/agent_process_tree.py", "tests/support/browser_process_unix.py"):
             with self.subTest(path=path):
                 result = focus.select([path])
-                self.assertEqual(result, {"platform": "ubuntu-24.04", "suite": "conversation", "targets": ["agent"]})
+                self.assertEqual(result, {"platform": "ubuntu-24.04", "suite": "conversation", "targets": ["agent", "attachments", "mcp"] if path == "tests/support/unix_agent_ownership.rs" else ["agent"]})
                 build, checks = focus.commands(result["suite"], result["targets"])
                 self.assertIn("--no-default-features", build[0])
                 self.assertIn("--lib", checks[-1])
@@ -115,6 +115,18 @@ class FocusTests(unittest.TestCase):
                 self.assertNotIn(", windows-2025", workflow)
         pipeline = (root / ".github/workflows/ci.yml").read_text()
         self.assertIn('platforms = runpy.run_path("scripts/ci/focus.py")["PLATFORMS"]', pipeline)
+
+    def test_connection_grants_cover_actual_owner_and_mcp_consumers_before_rendering(self):
+        for path in ("src/attachments.rs", "src/conversation/lease.rs", "src/conversation/storage.rs", "src/guidance/usage.rs"):
+            with self.subTest(path=path):
+                selected = focus.select([path])
+                self.assertEqual(selected, {"platform": "ubuntu-24.04", "suite": "conversation", "targets": ["agent", "attachments", "mcp"]})
+                build, checks = focus.commands(selected["suite"], selected["targets"])
+                self.assertIn("--no-default-features", build[0])
+                self.assertIn("agent_ownership::killed_cli_", checks[0])
+                for target in selected["targets"]:
+                    self.assertIn(target, checks[-1])
+                self.assertIn("--skip", checks[-1])
 
     def test_core_edit_selects_its_existing_integration_target(self):
         result = focus.select(["src/queries.rs", "tests/queries.rs"])

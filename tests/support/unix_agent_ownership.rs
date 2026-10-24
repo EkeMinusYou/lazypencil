@@ -166,6 +166,123 @@ fn killed_cli_owners_reap_their_tree_and_preserve_another_owner() {
 }
 
 #[test]
+fn killed_cli_revokes_grants_and_resume_preserves_images_and_transcripts() {
+    use clap::Parser;
+    use lazypencil::{
+        attachments::AttachmentAccess, conversation::Conversation, guidance::usage::UsageAccess,
+        store::Store,
+    };
+
+    let temp = TempDir::new().unwrap();
+    let mut owner = cli_owner(temp.path(), false);
+    let pids = tree(temp.path());
+    let data = temp.path().join("data");
+    let file = temp.path().join("design.pen");
+    let store = Store::open(&file, Some(data.clone())).unwrap();
+    let directory = fs::read_dir(store.document_data_dir().join("conversations"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let id = directory.file_name().unwrap().to_str().unwrap().to_string();
+    let grant = fs::read_dir(&directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("grant-")
+                && path.extension().is_some_and(|ext| ext == "json")
+        })
+        .unwrap();
+    let usage = fs::read_dir(&directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("design-usage-")
+        })
+        .unwrap();
+    let active = usage.join("active.json");
+    let access = AttachmentAccess::open(&store, &grant).unwrap();
+    assert!(UsageAccess::open(&store, &active).is_ok());
+    owner.0.kill().unwrap();
+    owner.0.wait().unwrap();
+    gone(&pids);
+    assert_eq!(
+        access.metadata(&store).unwrap_err().code,
+        "ATTACHMENT_INVALID"
+    );
+    assert!(AttachmentAccess::open(&store, &grant).is_err());
+    assert!(UsageAccess::open(&store, &active).is_err());
+    assert!(
+        grant.is_file() && active.is_file(),
+        "Crash evidence must remain until recovery"
+    );
+    let original = fs::read(&file).unwrap();
+    let mut retained = Vec::new();
+    for root in [&directory, &usage] {
+        for entry in fs::read_dir(root).unwrap().flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext == "jsonl") {
+                retained.push((path.clone(), fs::read(&path).unwrap()));
+            }
+        }
+    }
+    assert!(
+        retained.len() >= 2,
+        "Keep both turn transcript and interrupted usage journal"
+    );
+    let images = directory.join("attachments");
+    fs::create_dir_all(&images).unwrap();
+    let image = images.join("retained.png");
+    fs::write(
+        &image,
+        include_bytes!("../../examples/assets/crop-source.png"),
+    )
+    .unwrap();
+    let unrelated = directory.join("grant-unrecognized.json");
+    fs::write(&unrelated, b"keep unrelated data").unwrap();
+    let arguments = lazypencil::cli::Arguments::try_parse_from([
+        "lazypencil".into(),
+        "prompt".into(),
+        file.clone().into_os_string(),
+        "--session".into(),
+        id.clone().into(),
+        "--adapter".into(),
+        python().into_os_string(),
+        format!("--adapter-arg={}", super::fixture().display()).into(),
+        "--adapter-arg=process-tree-hang".into(),
+    ])
+    .unwrap();
+    let lazypencil::cli::Command::Prompt(args) = arguments.command else {
+        unreachable!()
+    };
+    let conversation = Conversation::open_with_executable(
+        args,
+        Some(data),
+        env!("CARGO_BIN_EXE_lazypencil").into(),
+    )
+    .unwrap();
+    assert_eq!(conversation.id(), id);
+    assert!(!grant.exists() && !grant.with_extension("owner").exists());
+    assert!(!active.exists() && !active.with_extension("owner").exists());
+    for (path, bytes) in retained {
+        assert_eq!(fs::read(path).unwrap(), bytes);
+    }
+    assert_eq!(
+        fs::read(image).unwrap(),
+        include_bytes!("../../examples/assets/crop-source.png")
+    );
+    assert_eq!(fs::read(unrelated).unwrap(), b"keep unrelated data");
+    assert_eq!(fs::read(file).unwrap(), original);
+}
+
+#[test]
 fn killed_cli_reaps_the_adapter_tree_with_an_undrained_event_pipe() {
     use std::os::fd::AsRawFd;
     let directory = TempDir::new().unwrap();

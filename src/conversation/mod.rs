@@ -20,6 +20,8 @@ use std::{
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
+#[cfg(unix)]
+pub(crate) mod lease;
 mod storage;
 pub use storage::sanitize_event;
 use storage::{Session, Transcript};

@@ -4,7 +4,10 @@
 
 初回リリースの完成判定は macOS Apple Silicon・Linux x64／arm64（glibc 系）の3環境に限定する。Intel Mac は対象外、Windows は既存実装・fixture を保持して後日対応とする。以下の過去の5環境検証や Windows／Intel の残件は、初回リリースの必須作業へ追加しない。機能・互換性・性能・実端末・ライセンス・配布の基準は [設計書の受け入れ条件](design.md#検証と受け入れ条件) に従う。
 
-source `e0e1a2b` の GHA `40091647214` は Linux の先行72試験を成功し、guardian を含む回収8ケースを成果物と照合した。通常／core の試験本体も macOS 880件・Linux x64 890件が成功したが、共通化後に残った `ExitStatus` の未使用 import により、両構成 Clippy が失敗した。未使用 import を除き、描画なしの先行検証でも対象 lib／integration の Clippy を test executable のビルドより前に実行する。警告を許可する変更は行わない。実試験の失敗ではないが、全体の成功・配布ソースの完成とは扱わず、修正版を GHA で検証する。
+2026-10-24: Unix の画像添付・ガイド取得の接続に、識別子付き owner file と close-on-exec の排他ロックを追加する。MCP は各要求の非ブロッキング共有 probe で生存を検査し、親の強制終了後は既存接続も失効する。 所有接続のすべての tool call に dispatch 前の検査を設け、文書の読み取り・編集も拒否する。すでに進行中の保存は元の原子的な保存規則に従う。会話の排他ロック取得後、同じ文書・会話に束縛した失効済み manifest／owner のみを回収し、画像・transcript・usage journal・プロジェクト素材を保持する。cleanup が共有 probe を持っても権限を復活させず、symlink・FIFO・inode の置換・不明な記録を扱う。実 CLI の強制終了と再開、接続済みの実 MCP の失効と journal 不変を描画なしで先行し、添付・MCP の利用側も対象へ含める。実装・試験は準備段階であり、GHA 結果は未確認。Windows の既存動作は保持し、保持方針・会話管理全体の完成とは扱わない。
+
+
+source `e0e1a2b` の GHA `40091647214` は Linux の先行72試験を成功し、guardian を含む回収8ケースを成果物と照合した。通常／core の試験本体も macOS 880件・Linux x64 890件が成功したが、共通化後に残った `ExitStatus` の未使用 import により、両構成 Clippy が失敗した。未使用 import を除き、描画なしの先行検証でも対象 lib／integration の Clippy を test executable のビルドより前に実行する。警告を許可する変更は行わない。実試験の失敗ではないが、当該 source の全体の成功・配布ソースの完成とは扱わない。修正版 `00e21c7` の GHA `40092658303` は3環境・監査・source をすべて成功した。Linux 各890・macOS 880件の通常／core、実 Chromium・MCP・TUI・Material、両構成 Clippy と各42回の release 書き出しを成果物と照合した。追加した guardian 回収は Linux 8ケース・macOS 7ケースが各構成で一度ずつ成功し、実際の compiler host も対象3種類と一致した。各3枚の静的 PNG は同 OS 基準と一致し、配布ソース946ファイルを Git の blob・実行 bit へ照合した。接続失効の owner file はこの source に含まれず後続で検証する。
 
 
 2026-10-24: Unix エージェントにも専用 guardian を追加し、ACP とは独立した匿名 socket の EOF で親の終了を検知する。Chromium で検証した PID を再利用前に固定する group 回収を共通化し、adapter の close・取消・runtime drop・親 CLI の強制終了を扱う。Linux は subreaper で独立 session の子・孫も回収する。起動 status・stderr の上限付き転送・subscription の環境除去を維持し、所有 descriptor は adapter 起動前に close-on-exec にする。runtime 破棄時も実際の child を保持する独立 waiter で guardian 自体を回収し、試験では guardian・adapter・子・孫の4 PID を確認する。実プロセスの回収・別会話の分離・詰まった出力・所有者／adapter 欠損を試験に追加し、Skia 不要の force-kill 再現を先行する。Windows 実装は変更しない。新しい Rust の実行と両構成の確認は GHA で行い、macOS の group を離脱する子孫や grant の crash 後回収等は完了としない。
