@@ -47,6 +47,7 @@ pub struct Conversation {
     store: Store,
     args: PromptArgs,
     command: PathBuf,
+    executable: PathBuf,
     session: Session,
     host: Option<AgentHost>,
     grant: Option<AttachmentGrant>,
@@ -62,7 +63,26 @@ pub struct Conversation {
 
 impl Conversation {
     /// Opens local metadata without launching an agent or reading the OS clipboard.
-    pub fn open(mut args: PromptArgs, data_dir: Option<PathBuf>) -> Result<Self> {
+    pub fn open(args: PromptArgs, data_dir: Option<PathBuf>) -> Result<Self> {
+        let executable =
+            std::env::current_exe().map_err(|error| Error::new("IO_ERROR", error.to_string()))?;
+        Self::open_with_executable(args, data_dir, executable)
+    }
+
+    /// Library hosts supply the real lazypencil binary for bound MCP servers
+    /// and the Windows adapter supervisor, rather than their embedding binary.
+    pub fn open_with_executable(
+        mut args: PromptArgs,
+        data_dir: Option<PathBuf>,
+        executable: PathBuf,
+    ) -> Result<Self> {
+        if !executable.is_absolute() || !executable.is_file() {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "Conversation helpers require an absolute path to the lazypencil executable",
+            ));
+        }
+        let executable = crate::paths::canonical(&executable)?;
         let store = if args.create {
             Store::init(&args.file, data_dir)?
         } else {
@@ -86,6 +106,7 @@ impl Conversation {
             store,
             args,
             command,
+            executable,
             session,
             host: None,
             grant: None,
@@ -378,6 +399,7 @@ impl Conversation {
             self.store.path().parent().expect("document parent"),
         );
         options.args = self.args.adapter_args.clone();
+        options.supervisor_executable = Some(self.executable.clone());
         options.subscription = self.args.auth == AuthMode::Subscription;
         options.require_auth_status = self.args.require_auth_status;
         options.auth_method = self.args.auth_method.clone();
@@ -391,20 +413,16 @@ impl Conversation {
         options.session_id = self.session.state.native_session_id.clone();
         options.turn_timeout = Duration::from_secs(self.args.timeout);
         options.mcp_servers = vec![McpServer::Stdio(
-            McpServerStdio::new(
-                "lazypencil",
-                std::env::current_exe()
-                    .map_err(|error| Error::new("IO_ERROR", error.to_string()))?,
-            )
-            .args(args)
-            .env(vec![EnvVariable::new(
-                "LAZYPENCIL_CONFIG_DIR",
-                utf8(
-                    crate::config::user_config_path()?
-                        .parent()
-                        .expect("user configuration parent"),
-                )?,
-            )]),
+            McpServerStdio::new("lazypencil", self.executable.clone())
+                .args(args)
+                .env(vec![EnvVariable::new(
+                    "LAZYPENCIL_CONFIG_DIR",
+                    utf8(
+                        crate::config::user_config_path()?
+                            .parent()
+                            .expect("user configuration parent"),
+                    )?,
+                )]),
         )];
         Ok(options)
     }
@@ -771,6 +789,58 @@ fn utf8(path: &Path) -> Result<String> {
 mod tests {
     use super::*;
     use clap::Parser;
+
+    #[test]
+    fn embedded_conversations_bind_mcp_and_supervision_to_the_supplied_helper() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let helper = temp.path().join("configured-helper");
+        // This case inspects configuration only; real process-backed TUI tests
+        // use the built lazypencil binary for the actual supervisor handshake.
+        std::fs::write(&helper, b"configuration fixture").unwrap();
+        let arguments = crate::cli::Arguments::try_parse_from([
+            "lazypencil".into(),
+            "prompt".into(),
+            temp.path().join("design.pen").into_os_string(),
+            "--create".into(),
+        ])
+        .unwrap();
+        let crate::cli::Command::Prompt(args) = arguments.command else {
+            unreachable!()
+        };
+        let mut conversation = Conversation::open_with_executable(
+            args,
+            Some(temp.path().join("data")),
+            helper.clone(),
+        )
+        .unwrap();
+        conversation.grant = Some(
+            AttachmentGrant::create(
+                &conversation.store,
+                conversation.directory(),
+                conversation.id(),
+                &conversation.session.state.attachments,
+            )
+            .unwrap(),
+        );
+        conversation.usage = Some(
+            crate::guidance::usage::UsageGrant::create(
+                &conversation.store,
+                conversation.directory(),
+                conversation.id(),
+            )
+            .unwrap(),
+        );
+        let options = conversation.agent_options().unwrap();
+        let expected = crate::paths::canonical(&helper).unwrap();
+        assert_eq!(
+            options.supervisor_executable.as_deref(),
+            Some(expected.as_path())
+        );
+        let mcp = serde_json::to_value(&options.mcp_servers[0]).unwrap();
+        assert_eq!(mcp["command"], expected.to_str().unwrap());
+        assert!(conversation.host.is_none());
+        assert!(!conversation.active());
+    }
 
     #[test]
     fn final_transcript_failure_reports_failure_and_restores_the_saved_draft() {
