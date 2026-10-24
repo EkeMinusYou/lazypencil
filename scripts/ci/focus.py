@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import time
 import urllib.error
 import urllib.request
 
@@ -113,6 +114,10 @@ def select(paths, platform="auto"):
         if suite in ("core", "conversation"):
             suite = "graphics"
         targets = sorted(set(targets) | {"native_layout"})
+    if input_source:
+        if suite in ("core", "conversation"):
+            suite = "graphics"
+        targets = sorted(set(targets) | {"tui", "user_config"})
     return {"platform": os_name, "suite": suite, "targets": targets}
 
 
@@ -127,13 +132,26 @@ def changed_paths():
                 f"{os.environ['GITHUB_API_URL']}/repos/{os.environ['GITHUB_REPOSITORY']}/{path}",
                 headers={"Authorization": f"Bearer {os.environ['GH_TOKEN']}", "Accept": "application/vnd.github+json"},
             )
-            with urllib.request.urlopen(request, timeout=15) as response:
-                return json.load(response)
+            for attempt in range(2):
+                try:
+                    with urllib.request.urlopen(request, timeout=15) as response:
+                        return json.load(response)
+                except urllib.error.HTTPError as error:
+                    error.close()
+                    print(f"Verified baseline API returned HTTP {error.code}")
+                    if attempt or error.code not in {500, 502, 503, 504}:
+                        raise
+                    time.sleep(0.25)
 
         runs = api("actions/workflows/ci.yml/runs?status=success&branch=main&per_page=3")["workflow_runs"]
         verified = None
         for run in runs:
-            jobs = api(f"actions/runs/{run['id']}/jobs?per_page=100")["jobs"]
+            try:
+                jobs = api(f"actions/runs/{run['id']}/jobs?per_page=100")["jobs"]
+            except urllib.error.HTTPError as error:
+                if error.code in {401, 403}:
+                    raise
+                continue
             if any(job["name"] == "Verified source artifact" and job["conclusion"] == "success" for job in jobs):
                 verified = run["head_sha"]
                 break
@@ -144,7 +162,8 @@ def changed_paths():
         base = verified
         return subprocess.check_output(["git", "diff", "--name-only", base, "HEAD"], text=True, timeout=15).splitlines()
     except (KeyError, ValueError, OSError, subprocess.SubprocessError, urllib.error.URLError) as error:
-        print(f"Expanding focus because no verified baseline is available: {type(error).__name__}")
+        cause = f"HTTP {error.code}" if isinstance(error, urllib.error.HTTPError) else type(error).__name__
+        print(f"Expanding focus because no verified baseline is available: {cause}")
         return subprocess.check_output(["git", "ls-files"], text=True, timeout=15).splitlines()
 
 

@@ -55,6 +55,7 @@ jobs:
               stream.write("version=" + os.environ.get("ImageVersion", "unknown") + "\n")
           PY
       - name: Install the declared minimum Rust toolchain
+        timeout-minutes: 5
         run: |
           rustup toolchain install 1.94.0 --profile minimal --component clippy --component rustfmt
           rustup default 1.94.0
