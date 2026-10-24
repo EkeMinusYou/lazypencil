@@ -469,6 +469,7 @@ mod tests {
         let raw = "#define TYPE vec3\nuniform TYPE tint;";
         std::fs::write(root.path().join("input.glsl"), raw).unwrap();
         let document = json!({"version":"2.21","children":[{"type":"rectangle","id":"shape","width":32,"height":16,"fill":{"type":"shader","url":"input.glsl","uniforms":{"tint":[0.25,0.5,0.75]}}}]}).to_string();
+        std::fs::write(root.path().join("input.pen"), &document).unwrap();
         let project = Project::from_document(
             &root.path().join("input.pen"),
             Document::parse(document).unwrap(),
