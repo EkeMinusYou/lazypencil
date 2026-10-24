@@ -2,6 +2,8 @@
 
 設計書 v0.9 の全体を実装対象とする。部分的な CLI や描画の試作だけで完成とは扱わない。以下は実際の実装・試験結果で更新する。
 
+2026-10-24: core の macOS arm64 `40049231515`（source `a8ef359`）も302試験と全 target Clippy が成功した。artifact `12542917201` の digest・source-bound report・Unix group cleanup の実成功ログを検査した。Windows 277／Linux 304と合わせ、共通の process refactor を3 OS の描画なし構成で確認した。通常の Windows agent gate は `40049415871`、新しい3実行系の supervised MCP 画素試験を含む後続は Windows `40049818283`／Linux x64 `40049820118` で進める。ローカルの Rust build/test は行っていない。
+
 2026-10-24: job 管理の内側にある実行系の互換性を確認するため、疑似 ACP adapter →実 MCP →QuickJS／Chromium page／WebGL shader の描画試験を追加した。300×100の PNG の緑・青・赤の実画素、2つの acquisition、診断0件、元文書の無変更を検査する。既定の agent suite では opt-in とし、固定 Chromium を導入した専用 GHA の後段で明示して実行し、PNG・report・成功ログを保存する。これにより、Windows job の nested runtime と通常の動的描画を同じ経路で検証する。新試験の実行結果はまだ未確認である。
 
 2026-10-24: Windows job source `4a8d082` の専用 GHA は Windows `40048681707` の277試験と Linux x64 `40048684209` の304試験、両方の core 全 target Clippy が成功した。artifact `12542547386`／`12542467342` の ZIP digest、全試験ログと source-bound report を検査した。Windows 6件は通常 close、別セッションの保持、非協調 cancel、host/runtime drop、親の強制終了、所有者がない worker、起動エラーを実 process/kernel handle で確認する。detached の子・孫も含む。これは描画を含まない構成であり、通常バイナリーは専用 Chromium workflow の agent／windows_agent gate と通常 CI で検証する。macOS の core `40049231515` も別途検証中である。
