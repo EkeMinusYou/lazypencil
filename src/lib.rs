@@ -28,6 +28,8 @@ mod managed;
 pub mod mcp;
 pub mod operations;
 pub mod paths;
+#[cfg(unix)]
+mod process_owner;
 pub mod project;
 pub mod prompt;
 mod query;

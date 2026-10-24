@@ -146,8 +146,9 @@ try:
                 from pathlib import Path
                 flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS if os.name == "nt" else 0
                 subprocess.Popen([sys.executable, str(Path(__file__).with_name("agent_process_tree.py")),
-                    "branch", str(os.getpid())], stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags)
+                    "branch", str(os.getpid()), *(["--detach"] if mode == "process-tree-detached" else [])], stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags,
+                    start_new_session=(os.name != "nt" and mode == "process-tree-detached"))
         elif method == "session/prompt":
             with open("sent-turn.txt", "w") as handle:
                 handle.write("sent")
@@ -237,6 +238,10 @@ try:
                     handle.write(base64.b64decode(image["data"], validate=True))
                 with open("supervised-dynamic.json", "w", encoding="utf-8") as handle:
                     json.dump(preview["structuredContent"], handle)
+            if mode == "process-tree-pressure":
+                for _ in range(4096):
+                    notify({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "x" * 32768}})
+                raise RuntimeError("The undrained test pipe never applied backpressure")
             if mode in ["cancel", "hang-cancel", "cancel-permission", "process-tree-hang"]:
                 notify({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "working\n"}})
                 if mode != "cancel-permission":

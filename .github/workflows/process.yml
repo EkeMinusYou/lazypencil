@@ -112,7 +112,9 @@ jobs:
           if os.environ["RUNNER_OS"] == "Windows":
               cases = ["windows_host_close_reaps_its_whole_tree_and_preserves_another_session", "windows_uncooperative_cancellation_reaps_adapter_and_detached_descendants", "windows_force_killing_the_cli_reaps_the_live_adapter_tree", "windows_worker_without_a_live_owner_never_launches_the_adapter", "windows_missing_adapter_keeps_the_public_unavailable_error", "windows_dropping_host_and_runtime_reaps_the_owned_process_tree"]
           else:
-              cases = ["closing_the_host_reaps_its_adapter_process_group"]
+              cases = ["closing_the_host_reaps_its_adapter_process_group"] + ["agent_ownership::" + name for name in ["close_reaps_the_owned_tree_without_stopping_another_session", "dropping_host_and_runtime_reaps_the_adapter_tree", "uncooperative_cancellation_reaps_the_adapter_tree", "killed_cli_owners_reap_their_tree_and_preserve_another_owner", "killed_cli_reaps_the_adapter_tree_with_an_undrained_event_pipe", "worker_without_a_live_owner_never_starts_the_adapter", "missing_adapter_preserves_the_public_unavailable_error"]]
+              if os.environ["RUNNER_OS"] == "Linux":
+                  cases.append("agent_ownership::linux_subreaper_cleans_detached_adapter_children_and_grandchildren")
           for case in cases:
               assert f"test {case} ... ok" in log, case
           report = {"source_commit": os.environ["GITHUB_SHA"], "platform": os.environ["RUNNER_OS"], "rustc": subprocess.check_output(["rustc", "-vV"], text=True), "configuration": "no-default-features", "passed": sum(int(passed) for status, passed, failed, ignored in results), "required_cases": cases, "scope": "Actual deterministic CLI/MCP/agent processes; Windows job descendants and forced-parent-death cases where applicable. No Skia, model requests or subscription credentials."}

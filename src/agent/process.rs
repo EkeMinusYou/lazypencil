@@ -2,8 +2,15 @@ use super::AgentOptions;
 use crate::{Error, Result};
 use std::{process::Stdio, time::Duration};
 use tokio::process::Child;
-#[cfg(not(windows))]
+#[cfg(not(any(windows, unix)))]
 use tokio::process::Command;
+
+#[cfg(unix)]
+mod unix;
+#[cfg(unix)]
+pub(super) fn serve_worker() -> Result<bool> {
+    unix::serve_worker()
+}
 
 #[cfg(windows)]
 mod windows;
@@ -15,7 +22,7 @@ pub(super) fn serve_worker() -> Result<bool> {
 pub(super) struct AgentProcess {
     pub(super) child: Child,
     #[cfg(unix)]
-    group: Option<u32>,
+    owner: Option<std::os::unix::net::UnixStream>,
     #[cfg(windows)]
     job: Option<windows::Job>,
 }
@@ -26,7 +33,11 @@ impl AgentProcess {
         let job = windows::Job::new()?;
         #[cfg(windows)]
         let mut command = job.command(options)?;
-        #[cfg(not(windows))]
+        #[cfg(unix)]
+        let owner = unix::Owner::new()?;
+        #[cfg(unix)]
+        let mut command = owner.command(options)?;
+        #[cfg(not(any(windows, unix)))]
         let mut command = {
             let mut command = Command::new(&options.command);
             command.args(&options.args);
@@ -37,7 +48,8 @@ impl AgentProcess {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .kill_on_drop(true);
+            // Unix guardians must survive long enough to reap their owned group.
+            .kill_on_drop(!cfg!(unix));
         if options.subscription {
             for key in [
                 "OPENAI_API_KEY",
@@ -67,13 +79,18 @@ impl AgentProcess {
         })?;
         let process = Self {
             #[cfg(unix)]
-            group: child.id(),
+            owner: Some(owner.start()?),
             child,
             #[cfg(windows)]
             job: Some(job),
         };
-        #[cfg(windows)]
+        #[cfg(any(windows, unix))]
         let mut process = process;
+        #[cfg(unix)]
+        if let Err(error) = unix::confirm_startup(&mut process.child, options.setup_timeout).await {
+            process.stop().await;
+            return Err(error);
+        }
         #[cfg(windows)]
         if let Err(error) =
             windows::confirm_startup(&mut process.child, options.setup_timeout).await
@@ -86,21 +103,19 @@ impl AgentProcess {
 
     pub(super) async fn stop(&mut self) {
         self.kill_tree();
+        #[cfg(not(unix))]
         let _ = self.child.start_kill();
-        let _ = tokio::time::timeout(Duration::from_secs(3), self.child.wait()).await;
         #[cfg(unix)]
-        {
-            self.group = None;
-        }
+        self.child.stdin.take();
+        let _ = tokio::time::timeout(Duration::from_secs(3), self.child.wait()).await;
     }
 
     fn kill_tree(&mut self) {
         #[cfg(unix)]
-        if let Some(group) = self.group.and_then(|id| i32::try_from(id).ok()) {
-            // The adapter starts in its own process group; never signal the parent's group.
-            unsafe {
-                libc::kill(-group, libc::SIGKILL);
-            }
+        {
+            // ACP backpressure cannot hold this independent owner channel open.
+            // EOF also covers a killed host or an abruptly dropped Tokio runtime.
+            self.owner.take();
         }
         #[cfg(windows)]
         {
