@@ -21,6 +21,7 @@ import license_notices as notices
 import quickjs_notice_inventory as quick
 import skia_notice_inventory as native
 import toolchain_build_binding as stdlib
+import shader_preprocessor as shaders
 
 
 MAX_EVENTS = 64 * 1024 * 1024
@@ -210,6 +211,7 @@ def collect(root, target, events, revision, output, rustc="rustc", ninja="ninja"
     binary = fingerprint(executable, executable.relative_to(target).as_posix())
     archives = native_archives(target, selected)
     rust = notices.verify(root, root / "resources/licenses/rust")
+    shader = shaders.verify(root)
     compiler = subprocess.run([rustc, "-vV"], capture_output=True, check=True, timeout=30).stdout
     notices.require(len(compiler) <= 65536, "Compiler identity exceeds its byte limit")
     compiler_text = compiler.decode("utf-8", "strict")
@@ -243,6 +245,7 @@ def collect(root, target, events, revision, output, rustc="rustc", ninja="ninja"
         # including the complete option-ext archive and MPL terms.
         shutil.copytree(root / "resources/licenses", stage / "licenses")
         notices.verify(root, stage / "licenses/rust")
+        shutil.copytree(root / "resources/shader-preprocessor", stage / "shader-preprocessor")
         notices.require(source_identity(root, revision) == source, "Sources changed while copying original legal inputs")
         (stage / "SOURCE-MANIFEST.json").write_bytes(notices.read(root / dist.MANIFEST, dist.MAX_MANIFEST))
         (stage / "LICENSE").write_bytes(notices.read(root / "LICENSE"))
@@ -251,6 +254,7 @@ def collect(root, target, events, revision, output, rustc="rustc", ninja="ninja"
                     "native_archives": archives, "rust_notices": rust, "skia_notices": skia, "quickjs_notices": quickjs,
                     "asset_notices": asset_summary,
                     "toolchain_notices": standard,
+                    "shader_preprocessor": shader,
                     "cargo_output": cargo_output,
                     "ignored_non_cargo_lines": ignored, "remaining_review": gaps,
                     "hosted": {name: os.environ.get(name) for name in

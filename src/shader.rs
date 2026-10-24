@@ -37,6 +37,30 @@ pub fn request(
     object: Option<&[u8]>,
     background: Option<&[u8]>,
 ) -> Result<Value> {
+    request_with_coordinates(
+        project, node, fill, property, width, height, None, time, object, background,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn request_with_coordinates(
+    project: &Project,
+    node: &ResolvedNode,
+    fill: &Value,
+    property: &str,
+    width: u32,
+    height: u32,
+    coordinates: Option<[f64; 2]>,
+    time: f64,
+    object: Option<&[u8]>,
+    background: Option<&[u8]>,
+) -> Result<Value> {
+    if coordinates.is_some_and(|size| size.iter().any(|value| !value.is_finite() || *value <= 0.0))
+    {
+        return Err(invalid(
+            "Shader logical dimensions must be positive and finite",
+        ));
+    }
     let url = fill["url"]
         .as_str()
         .ok_or_else(|| invalid("Shader requires a local source URL"))?;
@@ -121,7 +145,7 @@ pub fn request(
                 numeric_array(&uniform, value)?
             }
         } else if uniform.resolution {
-            json!([width, height])
+            coordinates.map_or_else(|| json!([width, height]), |size| json!(size))
         } else if uniform.time {
             json!(time)
         } else {
@@ -147,6 +171,9 @@ pub fn request(
         values.insert(uniform.name, value);
     }
     let mut result = json!({"source":source,"source_hash":asset.revision,"width":width,"height":height,"time":time,"time_dependent":time_dependent,"uniforms":values});
+    if let Some(size) = coordinates {
+        result["coordinate_size"] = json!(size);
+    }
     if !arrays.is_empty() {
         result["uniform_arrays"] = Value::Object(arrays);
     }

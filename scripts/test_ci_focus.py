@@ -20,7 +20,9 @@ class FocusTests(unittest.TestCase):
                      "tests/support/shader_preprocessor.mjs", ".github/workflows/shader-preprocessor.yml",
                      "scripts/ci/toolchain_evidence.py", "resources/licenses/rust/upstream.json",
                      "tests/fixtures/pencil-0.3.9/shader-logical-coordinates/hardcoded.glsl",
-                     "scripts/license_notices.py", "resources/licenses/toolchain/upstream.json"]:
+                     "scripts/license_notices.py", "resources/licenses/toolchain/upstream.json",
+                     "resources/shader-preprocessor/module.wasm", "resources/licenses/shader-preprocessor/packages/index.json",
+                     "scripts/shader_preprocessor.py"]:
             with self.subTest(path=path):
                 self.assertTrue(focus.preprocessor_changed([path]))
         for path in ["src/query.rs", "docs/design.md", "src/shader/defaults.rs"]:

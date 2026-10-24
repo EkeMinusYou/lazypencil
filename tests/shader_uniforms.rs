@@ -66,6 +66,78 @@ fn documentation_defaults_prepare_native_values_and_explicit_zero_wins() {
 }
 
 #[test]
+fn logical_shader_dimensions_are_independent_of_raster_size_and_keep_captured_source() {
+    let root = TempDir::new().unwrap();
+    let source = "/** @resolution */ uniform vec2 size; uniform vec2 fixed;";
+    let project = project(&root, source, json!({"fixed":[32,16]}));
+    let scene = project.resolve().unwrap();
+    let node = &scene.roots[0];
+    let result = shader::request_with_coordinates(
+        &project,
+        node,
+        &node.properties["fill"],
+        "fill",
+        64,
+        33,
+        Some([32.25, 16.5]),
+        0.0,
+        None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(result["width"], 64);
+    assert_eq!(result["height"], 33);
+    assert_eq!(result["uniforms"]["size"], json!([32.25, 16.5]));
+    assert_eq!(result["uniforms"]["fixed"], json!([32.0, 16.0]));
+    assert_eq!(result["coordinate_size"], json!([32.25, 16.5]));
+    assert_eq!(result["source"], source);
+    assert_eq!(
+        result["source_hash"],
+        lazypencil::document::hash(source.as_bytes())
+    );
+    assert_eq!(
+        fs::read_to_string(root.path().join("input.glsl")).unwrap(),
+        source
+    );
+    for size in [
+        [0.0, 16.0],
+        [-1.0, 16.0],
+        [f64::NAN, 16.0],
+        [32.0, f64::INFINITY],
+    ] {
+        assert!(
+            shader::request_with_coordinates(
+                &project,
+                node,
+                &node.properties["fill"],
+                "fill",
+                64,
+                32,
+                Some(size),
+                0.0,
+                None,
+                None
+            )
+            .is_err()
+        );
+    }
+    let legacy = shader::request(
+        &project,
+        node,
+        &node.properties["fill"],
+        "fill",
+        64,
+        32,
+        0.0,
+        None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(legacy["uniforms"]["size"], json!([64, 32]));
+    assert!(legacy.get("coordinate_size").is_none());
+}
+
+#[test]
 fn typed_boolean_and_matrix_defaults_keep_stored_false() {
     let source =
         "/** @default 1 */ uniform bool enabled;\n/** @default 1,0,0,1 */ uniform mat2 transform;";
@@ -652,20 +724,101 @@ fn linked_constant_dimensions_validate_inputs_and_recover_after_an_error() {
 
 #[test]
 #[ignore = "Requires sandboxed software WebGL Chromium"]
-fn native_annotation_binding_matches_public_pencil_reference_pixels() {
+fn real_compiler_macros_and_scaled_shader_effects_keep_logical_coordinates() {
+    use lazypencil::{layout, render, text::Fonts};
+    use skia_safe::{Data, Image};
+    for effect in [false, true] {
+        let root = TempDir::new().unwrap();
+        let source = "#extension GL_LAZYPENCIL_unavailable : enable\nprecision highp float;\n#if defined(GL_ES) && __VERSION__ == 100 && defined(GL_FRAGMENT_PRECISION_HIGH) && !defined(GL_ARB_shading_language_include)\n#define UV (gl_FragCoord.xy/vec2(32.,16.))\n#else\n#define UV vec2(0.)\n#endif\nvoid main(){gl_FragColor=vec4(UV,gl_FragCoord.z,gl_FragCoord.w);}";
+        fs::write(root.path().join("input.glsl"), source).unwrap();
+        let mut node = json!({"id":"shape","type":"rectangle","width":32,"height":16});
+        if effect {
+            node["fill"] = json!("#ffffff");
+            node["effect"] = json!([{"type":"shader","url":"input.glsl"}]);
+        } else {
+            node["fill"] = json!({"type":"shader","url":"input.glsl"});
+        }
+        let document = json!({"version":"2.21","children":[node]}).to_string();
+        let path = root.path().join("design.pen");
+        fs::write(&path, &document).unwrap();
+        let project =
+            Project::from_document(&path, Document::parse(document.clone()).unwrap(), &[]).unwrap();
+        let layout =
+            layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap()).unwrap();
+        let mut runtime = lazypencil::dynamic::DynamicRuntime::new(root.path().join("runtime"))
+            .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+            .with_executable(
+                std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
+            );
+        for scale in [1, 2] {
+            let output = render::png_with_runtime(
+                &project,
+                &layout,
+                &render::RenderOptions {
+                    scale: scale as f32,
+                    ..Default::default()
+                },
+                &mut runtime,
+                None,
+            )
+            .unwrap();
+            assert_eq!((output.width, output.height), (32 * scale, 16 * scale));
+            let image = Image::from_encoded(Data::new_copy(&output.png))
+                .unwrap()
+                .make_raster_image(None, None)
+                .unwrap();
+            let pixels = image.peek_pixels().unwrap();
+            for (x, y) in [
+                (0, 0),
+                (16 * scale, 8 * scale),
+                (32 * scale - 1, 16 * scale - 1),
+            ] {
+                let color = pixels.get_color((x as i32, y as i32));
+                let red = ((x as f64 + 0.5) / (32 * scale) as f64 * 255.0).round() as i32;
+                let green = (((16 * scale) as f64 - y as f64 - 0.5) / (16 * scale) as f64 * 255.0)
+                    .round() as i32;
+                assert!(
+                    (color.r() as i32 - red).abs() <= 1,
+                    "effect={effect}, scale={scale}, x={x}, y={y}, {color:?}"
+                );
+                assert!(
+                    (color.g() as i32 - green).abs() <= 1,
+                    "effect={effect}, scale={scale}, {color:?}"
+                );
+                assert!((color.b() as i32 - 128).abs() <= 1);
+                assert_eq!(color.a(), 255);
+            }
+            let acquisition = &output.dynamic_artifacts[0]["acquisition"];
+            assert_eq!(acquisition["coordinate_size"], json!([32.0, 16.0]));
+            assert_eq!(
+                acquisition["source_hash"],
+                lazypencil::document::hash(source.as_bytes())
+            );
+        }
+        assert_eq!(fs::read_to_string(&path).unwrap(), document);
+        assert_eq!(
+            fs::read_to_string(root.path().join("input.glsl")).unwrap(),
+            source
+        );
+    }
+}
+
+#[test]
+#[ignore = "Requires sandboxed software WebGL Chromium"]
+fn native_logical_coordinates_and_macro_bindings_match_public_pencil_reference_pixels() {
     use lazypencil::{document::hash, render};
     use skia_safe::{Data, Image};
     let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/pencil-0.3.9/shader-annotation-binding");
+        .join("tests/fixtures/pencil-0.3.9/shader-logical-coordinates");
     let source =
-        include_str!("fixtures/pencil-0.3.9/shader-annotation-binding/annotation-binding.pen");
+        include_str!("fixtures/pencil-0.3.9/shader-logical-coordinates/logical-coordinates.pen");
     let reference_bytes =
-        include_bytes!("fixtures/pencil-0.3.9/shader-annotation-binding/annotation-binding.png");
+        include_bytes!("fixtures/pencil-0.3.9/shader-logical-coordinates/logical-coordinates.png");
     let reference = Image::from_encoded(Data::new_copy(reference_bytes))
         .unwrap()
         .make_raster_image(None, None)
         .unwrap();
-    assert_eq!((reference.width(), reference.height()), (320, 240));
+    assert_eq!((reference.width(), reference.height()), (800, 40));
     let expected = reference.peek_pixels().unwrap();
     for version in ["2.19", "2.21"] {
         let root = TempDir::new().unwrap();
@@ -696,12 +849,140 @@ fn native_annotation_binding_matches_public_pencil_reference_pixels() {
         let output = render::png_with_runtime(
             &project,
             &layout,
-            &render::RenderOptions::default(),
+            &render::RenderOptions {
+                scale: 2.0,
+                ..Default::default()
+            },
             &mut runtime,
             None,
         )
         .unwrap();
-        assert_eq!((output.width, output.height), (160, 120));
+        assert_eq!((output.width, output.height), (800, 40));
+        assert_eq!(output.dynamic_artifacts.len(), 10);
+        for artifact in &output.dynamic_artifacts {
+            assert_eq!(
+                artifact["acquisition"]["coordinate_size"],
+                json!([32.0, 16.0])
+            );
+            assert_eq!(
+                artifact["acquisition"]["preprocessor_hash"],
+                hash(include_bytes!(
+                    "../resources/shader-preprocessor/module.wasm"
+                ))
+            );
+        }
+        let diagnostics = layout.summary()["diagnostics"].clone();
+        assert!(diagnostics.as_array().unwrap().is_empty());
+        let image = Image::from_encoded(Data::new_copy(&output.png))
+            .unwrap()
+            .make_raster_image(None, None)
+            .unwrap();
+        let actual = image.peek_pixels().unwrap();
+        let mut maximum = 0u8;
+        let mut difference = 0u64;
+        for y in 0..40 {
+            for x in 0..800 {
+                let a = actual.get_color((x, y));
+                let b = expected.get_color((x, y));
+                for delta in [
+                    a.r().abs_diff(b.r()),
+                    a.g().abs_diff(b.g()),
+                    a.b().abs_diff(b.b()),
+                    a.a().abs_diff(b.a()),
+                ] {
+                    maximum = maximum.max(delta);
+                    difference += u64::from(delta);
+                }
+            }
+        }
+        assert_eq!(fs::read(&path).unwrap(), source.as_bytes());
+        for entry in fs::read_dir(&fixtures).unwrap() {
+            let path = entry.unwrap().path();
+            if path
+                .extension()
+                .is_some_and(|extension| extension == "glsl")
+            {
+                assert_eq!(
+                    fs::read(root.path().join(path.file_name().unwrap())).unwrap(),
+                    fs::read(path).unwrap()
+                );
+            }
+        }
+        if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_NATIVE_SHADER_DIR") {
+            let directory = std::path::PathBuf::from(directory);
+            fs::create_dir_all(&directory).unwrap();
+            let stem = format!("chromium-native-logical-coordinates-{version}");
+            fs::write(directory.join(format!("{stem}.png")), &output.png).unwrap();
+            fs::write(directory.join(format!("{stem}.json")),json!({
+                "source_commit":std::env::var("GITHUB_SHA").ok(),"document_version":version,"native_document_version":"2.19",
+                "width":output.width,"height":output.height,"scale":2,"diagnostics":diagnostics,"verified_cases":10,
+                "native_producer":"@pen.dev/cli 0.3.9","png_hash":hash(&output.png),"reference_sha256":hash(reference_bytes),
+                "source_sha256":hash(source.as_bytes()),"maximum_channel_difference":maximum,"absolute_channel_difference":difference,
+                "preprocessor_sha256":hash(include_bytes!("../resources/shader-preprocessor/module.wasm"))
+            }).to_string()).unwrap();
+        }
+        assert!(
+            maximum <= 1,
+            "Logical coordinates diverged ({version}): maximum={maximum}, difference={difference}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "Requires sandboxed software WebGL Chromium"]
+fn native_annotation_binding_matches_public_pencil_reference_pixels() {
+    use lazypencil::{document::hash, render};
+    use skia_safe::{Data, Image};
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/pencil-0.3.9/shader-annotation-binding");
+    let source =
+        include_str!("fixtures/pencil-0.3.9/shader-annotation-binding/annotation-binding.pen");
+    let reference_bytes =
+        include_bytes!("fixtures/pencil-0.3.9/shader-annotation-binding/annotation-binding.png");
+    let reference = Image::from_encoded(Data::new_copy(reference_bytes))
+        .unwrap()
+        .make_raster_image(None, None)
+        .unwrap();
+    assert_eq!((reference.width(), reference.height()), (320, 240));
+    let expected = reference.peek_pixels().unwrap();
+    for (version, scale) in [("2.19", 1u32), ("2.21", 1), ("2.19", 2), ("2.21", 2)] {
+        let root = TempDir::new().unwrap();
+        for entry in fs::read_dir(&fixtures).unwrap() {
+            let path = entry.unwrap().path();
+            if path
+                .extension()
+                .is_some_and(|extension| extension == "glsl")
+            {
+                fs::copy(&path, root.path().join(path.file_name().unwrap())).unwrap();
+            }
+        }
+        let source = source.replace("\"2.19\"", &format!("\"{version}\""));
+        let path = root.path().join("design.pen");
+        fs::write(&path, &source).unwrap();
+        let project =
+            Project::from_document(&path, Document::parse(source.clone()).unwrap(), &[]).unwrap();
+        let layout = lazypencil::layout::compute(
+            project.resolve().unwrap(),
+            &mut lazypencil::text::Fonts::new(&[]).unwrap(),
+        )
+        .unwrap();
+        let mut runtime = lazypencil::dynamic::DynamicRuntime::new(root.path().join("runtime"))
+            .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+            .with_executable(
+                std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
+            );
+        let output = render::png_with_runtime(
+            &project,
+            &layout,
+            &render::RenderOptions {
+                scale: scale as f32,
+                ..Default::default()
+            },
+            &mut runtime,
+            None,
+        )
+        .unwrap();
+        assert_eq!((output.width, output.height), (160 * scale, 120 * scale));
         assert_eq!(output.dynamic_artifacts.len(), 20);
         let diagnostics = layout.summary()["diagnostics"].clone();
         assert!(diagnostics.as_array().unwrap().is_empty());
@@ -712,13 +993,13 @@ fn native_annotation_binding_matches_public_pencil_reference_pixels() {
         let actual = image.peek_pixels().unwrap();
         let mut maximum = 0u8;
         let mut difference = 0u64;
-        // These original panels are constant colors at both native export pixels
-        // per logical pixel. The 1x render tests metadata independently of the
-        // separately tracked scaled-coordinate compatibility work.
-        for y in 0..120 {
-            for x in 0..160 {
+        // Constant-color native panels allow both output scales to be checked
+        // directly without interpolation or changing the original shader source.
+        let step = 2 / scale as i32;
+        for y in 0..(120 * scale) as i32 {
+            for x in 0..(160 * scale) as i32 {
                 let a = actual.get_color((x, y));
-                let b = expected.get_color((x * 2, y * 2));
+                let b = expected.get_color((x * step, y * step));
                 for delta in [
                     a.r().abs_diff(b.r()),
                     a.g().abs_diff(b.g()),
@@ -734,13 +1015,17 @@ fn native_annotation_binding_matches_public_pencil_reference_pixels() {
         if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_NATIVE_SHADER_DIR") {
             let directory = std::path::PathBuf::from(directory);
             fs::create_dir_all(&directory).unwrap();
-            let stem = format!("chromium-native-annotation-binding-{version}");
+            let stem = if scale == 1 {
+                format!("chromium-native-annotation-binding-{version}")
+            } else {
+                format!("chromium-native-annotation-binding-{version}-scale2")
+            };
             fs::write(directory.join(format!("{stem}.png")), &output.png).unwrap();
             fs::write(
                 directory.join(format!("{stem}.json")),
                 json!({
                     "source_commit":std::env::var("GITHUB_SHA").ok(), "document_version":version,
-                    "width":output.width,"height":output.height,"scale":1,"diagnostics":diagnostics,
+                    "width":output.width,"height":output.height,"scale":scale,"diagnostics":diagnostics,
                     "png_hash":hash(&output.png),"reference_sha256":hash(reference_bytes),
                     "source_sha256":hash(source.as_bytes()),"native_producer":"@pen.dev/cli 0.3.9",
                     "native_document_version":"2.19","native_export_scale":2,"verified_cases":20,

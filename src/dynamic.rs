@@ -19,6 +19,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio_util::sync::CancellationToken;
+mod preprocessor;
 
 #[derive(Clone)]
 pub struct Raster {
@@ -428,6 +429,13 @@ impl DynamicRuntime {
 
     pub fn shader(&mut self, request: Value) -> Result<Raster> {
         self.check()?;
+        let source = request["source"]
+            .as_str()
+            .ok_or_else(|| shader_error("Shader source is missing"))?;
+        if source.len() > 1024 * 1024 {
+            return Err(shader_error("Shader source exceeds 1 MiB"));
+        }
+        let source_hash = hash(source.as_bytes());
         let width = request["width"]
             .as_u64()
             .ok_or_else(|| shader_error("Shader width is missing"))?;
@@ -436,6 +444,7 @@ impl DynamicRuntime {
             .ok_or_else(|| shader_error("Shader height is missing"))?;
         dimensions(width as f64, height as f64)?;
         let mut cache_request = request.clone();
+        cache_request["preprocessor_hash"] = json!(preprocessor::hash());
         if request["time_dependent"] == false {
             // Uniform/sampler values already capture every used input. The
             // selected timeline is not an input to a time-independent shader.
@@ -459,12 +468,12 @@ impl DynamicRuntime {
         let result=browser.with_tab(&budget,|browser,session| {
             browser.command(Some(session),"Network.enable",json!({}),&budget)?;
             browser.command(Some(session),"Network.setBlockedURLs",json!({"urls":["http://*","https://*","file://*","ftp://*"]}),&budget)?;
-            let expression=format!("({})({})",include_str!("webgl.js"),request);
+            let expression=format!("({})({},{})",include_str!("webgl.js"),request,json!(preprocessor::encoded()));
             let result=browser.evaluate(session,&expression,&budget)?;
             if let Some(error)=result.get("error").and_then(Value::as_str) { return Err(shader_error(error.chars().take(8192).collect::<String>())); }
             let encoded=result["png"].as_str().and_then(|value| value.strip_prefix("data:image/png;base64,")).ok_or_else(|| shader_error("WebGL returned no PNG"))?;
             let png=base64::engine::general_purpose::STANDARD.decode(encoded).map_err(|_| shader_error("Invalid WebGL PNG"))?;
-            let metadata=json!({"kind":"shader","browser_version":version,"renderer":result["renderer"],"extensions":result["extensions"],"width":width,"height":height,"request_hash":key,"png_hash":hash(&png),"time":request["time"],"time_dependent":request["time_dependent"].as_bool().unwrap_or(false),"limits":limits});
+            let metadata=json!({"kind":"shader","browser_version":version,"renderer":result["renderer"],"extensions":result["extensions"],"width":width,"height":height,"request_hash":key,"png_hash":hash(&png),"source_hash":source_hash,"coordinate_size":result["coordinate_size"],"preprocessor_hash":preprocessor::hash(),"time":request["time"],"time_dependent":request["time_dependent"].as_bool().unwrap_or(false),"limits":limits});
             checked_png(png,metadata)
         });
         self.shader_used = Some(Instant::now());

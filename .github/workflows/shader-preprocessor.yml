@@ -119,6 +119,9 @@ jobs:
           path: ${{ runner.temp }}/shader-preprocessor-evidence
           if-no-files-found: error
           retention-days: 3
+      - name: Verify the stored module reproduces the compiled component
+        working-directory: ${{ runner.temp }}/lazypencil-wasm-source
+        run: python scripts/shader_preprocessor.py --rebuilt "$CARGO_TARGET_DIR/wasm32-unknown-unknown/release/lazypencil_shader_preprocessor.wasm"
       - name: Keep only component dependencies in the build cache
         id: prune
         if: always()
