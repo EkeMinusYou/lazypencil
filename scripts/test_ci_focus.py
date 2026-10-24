@@ -144,6 +144,42 @@ class FocusTests(unittest.TestCase):
             self.assertIn("shader_uniforms", mixed["targets"])
             self.assertIn("dynamic_render", mixed["targets"])
 
+    def test_dynamic_cpu_and_browser_phases_cover_each_case_once(self):
+        # Model libtest selection across the existing early workflow commands
+        # and the generated browser commands, including mixed affected targets.
+        cases = {
+            "dynamic_render": [("input_limits", False), ("retained_pixels", True), ("browser_pixels", True)],
+            "shader_uniforms": [("invalid_uniform", False), *[(name, True) for name in focus.SHADER_REGRESSIONS], ("other_pixels", True)],
+            "imports": [("static_import", False), ("browser_import", True)],
+        }
+        native = (Path(__file__).resolve().parents[1] / ".github/workflows/native.yml").read_text()
+        early = native[native.index("- name: Validate dynamic inputs"):native.index("- name: Validate shader inputs")]
+        for target in ("dynamic_render", "shader_uniforms"):
+            self.assertIn(f"cargo test --locked --test {target} --", early)
+        for targets in (["dynamic_render"], ["shader_uniforms"], list(cases)):
+            with self.subTest(targets=targets):
+                _, checks = focus.commands("dynamic", targets)
+                counts = {(target, name): int(target in {"dynamic_render", "shader_uniforms"} and not ignored)
+                          for target in targets for name, ignored in cases[target]}
+                for command in checks:
+                    selected = [command[index + 1] for index, arg in enumerate(command) if arg == "--test"]
+                    separator = command.index("--")
+                    filters = command[command.index("--test") + 2:separator] if len(selected) == 1 else []
+                    filters = [arg for arg in filters if not arg.startswith("-")]
+                    skipped = [command[index + 1] for index, arg in enumerate(command) if arg == "--skip"]
+                    for target in selected:
+                        for name, ignored in cases[target]:
+                            if filters and not any(value == name if "--exact" in command else value in name for value in filters):
+                                continue
+                            if any(value in name for value in skipped):
+                                continue
+                            if "--ignored" in command and not ignored:
+                                continue
+                            if ignored and not ({"--ignored", "--include-ignored"} & set(command)):
+                                continue
+                            counts[target, name] += 1
+                self.assertTrue(all(count == 1 for count in counts.values()), counts)
+
     def test_script_compatibility_runs_core_first_then_raster_consumers_without_chromium(self):
         for path in ("src/script/header.rs", "src/script/sandbox.js", "src/script/context.rs"):
             result = focus.select([path])

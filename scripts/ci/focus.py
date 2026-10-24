@@ -242,8 +242,16 @@ def commands(suite, targets):
         # Put the previously hanging TUI cases ahead of unrelated checks.
         checks.append([*common, "--lib", "tui::tests::", "--", "--test-threads=2", *history_ui_skip])
     if suite == "dynamic":
-        checks.append([*common, "--test", "dynamic_render", "retained_", "--", "--ignored", "--test-threads=1"])
-        checks.append([*common, *selected, "--", "--include-ignored", "--test-threads=1", "--skip", "retained_", *shader_skip, *input_skip, *history_ui_skip])
+        if "dynamic_render" in targets:
+            checks.append([*common, "--test", "dynamic_render", "retained_", "--", "--ignored", "--test-threads=1"])
+        # Their normal cases already passed before Chromium acquisition. Run
+        # only the browser opt-ins here; other targets still need both kinds.
+        browser_only = [arg for target in targets if target in {"dynamic_render", "shader_uniforms"} for arg in ("--test", target)]
+        remaining = [arg for target in targets if target not in {"dynamic_render", "shader_uniforms", "conversation_history", "native_layout"} for arg in ("--test", target)]
+        if browser_only:
+            checks.append([*common, *browser_only, "--", "--ignored", "--test-threads=1", "--skip", "retained_", *shader_skip, *input_skip, *history_ui_skip])
+        if remaining:
+            checks.append([*common, *remaining, "--", "--include-ignored", "--test-threads=1", "--skip", "retained_", *shader_skip, *input_skip, *history_ui_skip])
     else:
         checks.append([*common, "--lib", *selected, "--", "--test-threads=2", *input_skip, *history_ui_skip])
         if history:

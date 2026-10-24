@@ -23,7 +23,7 @@ class ApplicationCacheTests(unittest.TestCase):
         self.directory = self.root / "cache"
         self.source.mkdir()
         self.files = {"Cargo.toml": '[package]\nname="lazypencil"\nversion="0.1.0"\n',
-                      "src/lib.rs": "pub fn example() {}\n", "docs/guide.md": "Embedded guide\n",
+                      "src/lib.rs": "pub fn example() {}\n", "resources/guidance/guide.md": "Embedded guide\n",
                       ".github/workflows/ci.yml": "Original workflow\n"}
         self.manifest()
         self.fingerprint = "1234567890abcdef"
@@ -34,7 +34,7 @@ class ApplicationCacheTests(unittest.TestCase):
         self.library.parent.mkdir()
         self.library.write_bytes(b"compiled fixture library")
         self.dep_info = self.target / f"debug/deps/lazypencil-{self.fingerprint}.d"
-        self.dep_info.write_text(f"library: {self.source}/src/lib.rs {self.source}/docs/guide.md\n")
+        self.dep_info.write_text(f"library: {self.source}/src/lib.rs {self.source}/resources/guidance/guide.md\n")
 
     def manifest(self, revision="1" * 40):
         entries = []
@@ -68,7 +68,7 @@ class ApplicationCacheTests(unittest.TestCase):
         self.assertNotEqual(self.identity("native-v2-ubuntu-24.04-changed-compiler-image-flags")["fingerprint"], original)
         other = cache.identity(self.source, self.root / "another-target", "native-v2-ubuntu-24.04-fixture")
         self.assertNotEqual(other["fingerprint"], original)
-        for name in ("src/lib.rs", "Cargo.toml", "docs/guide.md"):
+        for name in ("src/lib.rs", "Cargo.toml", "resources/guidance/guide.md"):
             old = self.files[name]
             self.files[name] += "\n"
             self.manifest()
@@ -103,8 +103,9 @@ class ApplicationCacheTests(unittest.TestCase):
         with self.assertRaises(cache.CacheError):
             self.stage()
 
-    def test_ci_only_changes_reuse_but_embedded_ci_files_disable_reuse(self):
-        excluded = ("scripts/ci/focus.py", "scripts/ci/nested/helper.py",
+    def test_prose_and_ci_changes_reuse_but_embedded_files_disable_reuse(self):
+        excluded = ("README.md", "AGENTS.md", "docs/design.md", "docs/nested/guide.md",
+                    "scripts/ci/focus.py", "scripts/ci/nested/helper.py",
                     "scripts/test_application_cache.py")
         for name in excluded:
             self.files[name] = "Original CI helper\n"
@@ -119,17 +120,27 @@ class ApplicationCacheTests(unittest.TestCase):
                 shutil.rmtree(self.target)
                 self.assertTrue(cache.restore(self.source, self.target, self.directory, self.identity())["reused"])
                 self.dep_info.write_text(f"library: {self.source}/{name}\n")
-                with self.assertRaises(cache.CacheError):
+                with self.assertRaisesRegex(cache.CacheError, "unbound source input"):
                     self.stage()
-                with self.assertRaises(cache.CacheError):
+                # stage uses hard links. Make the modified cached dep-info
+                # internally consistent so restore must reject the compiler
+                # input itself, rather than only noticing a corrupt hash.
+                report_path = self.directory / "manifest.json"
+                report = json.loads(report_path.read_text())
+                for entry in report["files"]:
+                    if entry["path"] == self.dep_info.relative_to(self.target).as_posix():
+                        entry.update(sha256=cache.file_digest(self.dep_info), bytes=self.dep_info.stat().st_size)
+                report_path.write_text(json.dumps(report))
+                with self.assertRaisesRegex(cache.CacheError, "unbound source input"):
                     cache.restore(self.source, self.target, self.directory, self.identity())
-                self.dep_info.write_text(f"library: {self.source}/src/lib.rs {self.source}/docs/guide.md\n")
+                self.dep_info.write_text(f"library: {self.source}/src/lib.rs {self.source}/resources/guidance/guide.md\n")
                 self.stage()
 
     def test_other_scripts_and_similar_path_names_remain_bound(self):
         original = self.identity()["fingerprint"]
         for name in ("scripts/dist.py", "scripts/ci_helper.py", "scripts/test_input.json",
-                     "scripts/test_data/fixture.py", "tests/support/test_fixture.py"):
+                     "scripts/test_data/fixture.py", "tests/support/test_fixture.py",
+                     "docs/fixture.json", "resources/guidance/prompt.md", "tests/fixture.md"):
             with self.subTest(name=name):
                 self.files[name] = "Changed build or runtime input\n"
                 self.manifest()
@@ -176,9 +187,9 @@ class ApplicationCacheTests(unittest.TestCase):
             self.identity()
 
     def test_escaped_spaces_in_compiler_inputs_are_checked(self):
-        self.files["docs/a guide.md"] = "Embedded space\n"
+        self.files["resources/guidance/a guide.md"] = "Embedded space\n"
         self.manifest()
-        self.dep_info.write_text(f"library: {self.source}/docs/a\\ guide.md\n")
+        self.dep_info.write_text(f"library: {self.source}/resources/guidance/a\\ guide.md\n")
         self.stage()
         shutil.rmtree(self.target)
         self.assertTrue(cache.restore(self.source, self.target, self.directory, self.identity())["reused"])

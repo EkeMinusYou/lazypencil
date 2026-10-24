@@ -687,6 +687,12 @@ cache の一覧では application 6件が5,982,586,140 bytes、総量が10,183,6
 
 依存 cache がない先行ジョブは、短い lint 期限の前に対象 binary を一度だけ準備し、後段の同じ build を省く。その準備後に試験や lint が失敗しても依存だけは保存可能とする。対象の試験と最終3環境の成功条件は変えない。期限超過時は Cargo と同じ process group の子も回収し、Ninja や tee の残留を防ぐ。軽量試験には source hash の一致・旧世代の選別・別 ref と依存の保持・TERM を無視する子と pipe の回収を含める。Rust／Skia の実ビルドは GHA で確認する。
 
+2026-10-25 の再調査では、成功済み `40134426833`・`40137073301`・`40139304446` の先行検証への待機は2〜3秒、先行成功後の3環境への待機は2〜5秒だった。`40139304446` の core／default build 工程は Linux x64 が27／32秒、Linux arm64 が74／238秒、macOS arm64 が63／104秒で、通常試験はそれぞれ31／202秒・35／215秒・39／178秒だった。同じ compiled source を再利用した `40137073301` の両 build 合計は x64 が3秒、arm64 が7秒、macOS が9秒だった。実60秒 idle、描画、Material、release の時間を待機列やコンパイル時間と混同しない。
+
+追加修正は dynamic の先行 CPU 試験と Chromium 導入後の試験の重複を除く。`dynamic_render`／`shader_uniforms` は通常試験を導入前に実行し、導入後は ignored の実 browser 試験だけを実行する。他の変更対象は通常・ignored の両方を保持し、既知の再現試験も一度ずつ実行する。最終3環境の通常／core・Clippy・Chromium・MCP・TUI・Material・release・監査と source gate は変更しない。
+
+README・root の Markdown・`docs/` の Markdown は application cache key から除外する。実際に Rust が埋め込む場合は保存時と復元時の compiler dep-info 検証で再利用を拒否し、新規ビルドへ戻す。`resources/guidance/`、fixture、実行用 script、非 Markdown の docs 入力は引き続き束縛する。キーの移行時には application output の再構築が一度発生し得るが、native dependency cache の識別は変更しない。試験結果や画像は再利用せず毎回実行・生成する。軽量検査は文書変更の再利用と埋め込み時の拒否、CPU／browser の全ケースが一度ずつ実行されることを検査する。進行中の既存 CI を完了させてから main の新しい CI で確認し、重いローカルビルドは行わない。
+
 ### 保存済み会話の読み取り
 
 2026-10-25: 保存済み会話・ターンの一覧と、transcript 全体を容量制限付きでページ取得する共通 API／`conversations list|turns|read` を追加した。アダプター・認証・会話再開を呼ばず、使用中の会話も読み取る。UUID 順の live listing を明示し、一覧の cursor を文書・会話に束縛する。破損した既知の項目は unavailable として残す。JSONL は64 KiB以下で取得し、継続時は全内容の SHA-256 を要求・再検査する。mtime と長さを保った変更も失効させ、日本語の境界と末尾の未完了データを保持する。不正 UTF-8 は表示用文字列と元バイトの Base64 を返す。元データの64 MiB上限・30秒の協調期限・取消を持ち、FIFO と symlink の拒否を含めて試験を追加した。Rust／実 CLI の検証は GHA で行う。これは生の保存記録の読み取り経路であり、TUI の会話ログ閲覧、会話の選択・削除、保持ポリシーを完了扱いにはしない。

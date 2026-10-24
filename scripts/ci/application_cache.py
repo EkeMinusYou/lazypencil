@@ -28,6 +28,8 @@ def compiled_inputs(manifest):
     def compiled_input(name):
         path = PurePosixPath(name)
         return not (name.startswith((".github/workflows/", "scripts/ci/"))
+                    or (path.suffix == ".md" and (path.parent == PurePosixPath(".")
+                                                 or name.startswith("docs/")))
                     or (path.parent == PurePosixPath("scripts")
                         and path.name.startswith("test_") and path.suffix == ".py"))
 
@@ -47,9 +49,9 @@ def identity(source, target, native_key):
     platform = re.match(r"native-v2-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-", native_key)
     if package["name"] != "lazypencil" or not platform:
         raise CacheError("Unknown package or hosted build identity")
-    # Scheduling and Python CI checks do not change compiled bytes. If Rust
-    # includes any excluded file as data, dep-info below disables reuse. Keep
-    # docs, fixtures and resources bound: Rust can embed those at compile time.
+    # Scheduling, prose and Python CI checks do not change compiled bytes. If
+    # Rust includes an excluded file as data, dep-info below disables reuse.
+    # Runtime scripts, fixtures and embedded guidance resources stay bound.
     inputs = compiled_inputs(manifest)
     source_hash = source_fingerprint(manifest)
     payload = {"version": 2, "inputs": inputs, "native": native_key,
