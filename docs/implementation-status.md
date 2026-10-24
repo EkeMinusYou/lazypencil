@@ -2,6 +2,8 @@
 
 設計書 v0.9 の全体を実装対象とする。部分的な CLI や描画の試作だけで完成とは扱わない。以下は実際の実装・試験結果で更新する。
 
+2026-10-24: source `c95d7ee` の時刻操作は macOS arm64 `40050825072`（255試験）と Linux x64 `40050828187`（257試験）が両構成の全 target Clippy・実 PTY を含めて成功した。artifact `12543222375`／`12543099553` の ZIP digest・全成功ログ・実画像と report を照合した。追加した worker の同じ layout／時刻 poll 抑止、command の不正値・入力優先、実 PTY の青→黄→青・同じ process の再利用・停止中2 poll の再描画抑止・元の待機回収と refresh が成功した。supervised MCP 300×100の実画素も再検査し、通常の1000×640 example はそれぞれの以前の画像とバイト一致した。新たな目視や Windows の nested runtime の成功へは読み替えない。完全に同じ展開済み資料を確認した一時 ZIP 34個（4,998,200バイト）を削除し、資料本体は保持した。
+
 2026-10-24: TUI の手動 shader 時刻を追加した。`/time <seconds>` と Preview の `[`・`]`（0.1秒刻み、後退は0で止まる）から、既定0秒の評価時刻を変更し、完了した画像の時刻を status に表示する。有限の非負値だけを受け付け、文書・会話には保存しない。時刻だけの変更では layout を再利用し、同じ時刻の依存 poll では画像を再 encode しない。入力／help の優先と無効な値の保持、worker の layout 再利用・同時刻 poll 抑止を追加試験し、実 PTY では `@time` による青→黄→青の画素、同じ子 process の再利用、2回の停止中 poll の再描画抑止を検査する。ローカルの整形・Python 構文・全128 Python 試験は成功した。Rust と実 PTY の GHA 結果は未確認で、再生・周期取得は残る。
 
 2026-10-24: source `a05e521` の Linux x64 専用 Chromium `40049820118` が255試験と両構成の全 target Clippy を成功した。artifact `12543206913` の digest・各成功ログ・PNG/report を検査し、supervised adapter →実 MCP →QuickJS／page／shader の300×100画像の緑・青・赤の実画素、診断0件と2取得を確認した。新しい TUI 時刻操作の追加前の証拠である。実 job log には監査済みの旧 native v2 key `native-v2-ubuntu-24.04-20261012.334.1-989dab0cb93154d57dfa89ebdd8b9252928ed8f08ed85c345b20f90e68efa63f` からの restore 成功が記録されており、cache step の終了だけからの推測ではない。Windows の nested runtime は後続 `40049818283` で確認する。
