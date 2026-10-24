@@ -28,7 +28,10 @@ else:
             if time.monotonic() >= deadline or leaf.poll() is not None:
                 raise RuntimeError("Owned leaf process did not become ready")
             time.sleep(0.01)
-        publish("tree-ready.json", {"adapter": int(sys.argv[2]), "branch": os.getpid(), "leaf": leaf.pid})
+        pids = {"adapter": int(sys.argv[2]), "branch": os.getpid(), "leaf": leaf.pid}
+        if "--guardian" in sys.argv[3:]:
+            pids["guardian"] = int(sys.argv[sys.argv.index("--guardian") + 1])
+        publish("tree-ready.json", pids)
         time.sleep(60)
     finally:
         if leaf.poll() is None:
