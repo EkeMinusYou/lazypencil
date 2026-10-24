@@ -647,19 +647,17 @@ impl super::App {
         Ok(false)
     }
     fn start_deletion_task(&mut self, page: Box<Page>, session: Option<String>) -> Result<()> {
-        let result = if self.conversation.active()
-            || self.document_task.is_some()
-            || self.image_input.is_some()
-        {
-            Err(Error::new(
-                "INVALID_ARGUMENT",
-                "Finish or cancel the active operation before deleting a conversation",
-            ))
-        } else if let Some(session) = session {
-            page.review_deletion(self.conversation.store().clone(), session)
-        } else {
-            page.delete(self.conversation.store().clone())
-        };
+        let result =
+            if self.conversation.active() || self.document_task.is_some() || self.input.is_some() {
+                Err(Error::new(
+                    "INVALID_ARGUMENT",
+                    "Finish or cancel the active operation before deleting a conversation",
+                ))
+            } else if let Some(session) = session {
+                page.review_deletion(self.conversation.store().clone(), session)
+            } else {
+                page.delete(self.conversation.store().clone())
+            };
         let task = match result {
             Ok(task) => task,
             Err(error) => {

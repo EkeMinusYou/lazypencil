@@ -47,6 +47,15 @@ fn stamp(metadata: &Metadata) -> Value {
 }
 
 impl Inventory {
+    fn revision(&self) -> String {
+        use std::fmt::Write;
+        let mut text = String::with_capacity(64);
+        for byte in self.hash.clone().finalize() {
+            write!(&mut text, "{byte:02x}").expect("string write");
+        }
+        text
+    }
+
     fn verify(&self, budget: &Budget<'_>) -> Result<()> {
         for (path, expected) in &self.observed {
             budget.check()?;
@@ -208,7 +217,7 @@ pub fn review_delete(store: &Store, id: &str, cancel: Option<&CancellationToken>
     let (_lease, directory, state) = target(store, id, &budget)?;
     let inventory = scan(&directory, &budget)?;
     Ok(
-        json!({"document":store.path(),"session":id,"revision":format!("{:x}",inventory.hash.finalize()),"bytes":inventory.bytes,"files":inventory.files,"symlinks":inventory.symlinks,"draft_characters":state.draft.chars().count(),"pending_images":state.pending_attachments.len(),"retained_images":state.attachments.len(),"deleted":false,"scope":"local_conversation_only","provider_history_preserved":true,"project_assets_preserved":true}),
+        json!({"document":store.path(),"session":id,"revision":inventory.revision(),"bytes":inventory.bytes,"files":inventory.files,"symlinks":inventory.symlinks,"draft_characters":state.draft.chars().count(),"pending_images":state.pending_attachments.len(),"retained_images":state.attachments.len(),"deleted":false,"scope":"local_conversation_only","provider_history_preserved":true,"project_assets_preserved":true}),
     )
 }
 
@@ -236,7 +245,7 @@ pub fn delete(
     };
     let (_lease, directory, _) = target(store, id, &budget)?;
     let inventory = scan(&directory, &budget)?;
-    let revision = format!("{:x}", inventory.hash.clone().finalize());
+    let revision = inventory.revision();
     if revision != expected_revision {
         return Err(changed());
     }
