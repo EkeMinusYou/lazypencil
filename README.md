@@ -142,9 +142,10 @@ Saved local records can be inspected without starting or authenticating an agent
 lazypencil conversations list design.pen --json
 lazypencil conversations turns design.pen LOCAL_UUID --json
 lazypencil conversations read design.pen LOCAL_UUID TURN_UUID --json
+lazypencil conversations view design.pen LOCAL_UUID TURN_UUID
 ```
 
-Lists and complete raw transcripts are paged, with bounded reads and revision-checked continuation. This does not restore model memory or provide the remaining TUI conversation browser and retention controls. See [saved-record behavior](docs/agents.md#read-saved-conversations-without-an-agent).
+Lists, formatted messages and complete raw transcripts are paged, with bounded reads and revision-checked continuation. The TUI provides the same saved-log browsing through `/logs`, `/conversations` and its command palette. Browsing does not restore model memory or switch the active conversation. Conversation deletion and overall retention controls remain unfinished. See [saved-record behavior](docs/agents.md#read-saved-conversations-without-an-agent).
 
 ## Terminal preview and prompts
 

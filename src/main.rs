@@ -202,6 +202,19 @@ fn main() -> ExitCode {
         && code == 0
     {
         value["body"].as_str().unwrap_or_default().to_string()
+    } else if !arguments.json
+        && code == 0
+        && matches!(
+            arguments.command,
+            lazypencil::cli::Command::Conversations {
+                command: lazypencil::cli::ConversationCommand::View { .. }
+            }
+        )
+    {
+        if let Some(cursor) = value["next_cursor"].as_str() {
+            eprintln!("Continue with --cursor {cursor}");
+        }
+        value["text"].as_str().unwrap_or_default().to_string()
     } else {
         match serde_json::to_string_pretty(&value) {
             Ok(output) => output,

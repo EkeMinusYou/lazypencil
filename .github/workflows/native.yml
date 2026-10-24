@@ -229,6 +229,20 @@ jobs:
           set -o pipefail
           cargo test --locked --lib native_cancellation -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-native-layout.log"
           cargo test --locked --test native_layout -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/focus-native-layout.log"
+      - name: Reproduce saved log browsing before other tests and Chromium
+        if: inputs.phase == 'focus' && contains(fromJSON(inputs.targets), 'conversation_history') && inputs.suite != 'core' && inputs.suite != 'conversation'
+        timeout-minutes: 3
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        env:
+          HISTORY_TUI: ${{ contains(fromJSON(inputs.targets), 'tui') }}
+        run: |
+          set -o pipefail
+          cargo test --locked --lib conversation::history:: -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-history.log"
+          cargo test --locked --test conversation_history -- --test-threads=1 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
+          if [ "$HISTORY_TUI" = true ]; then
+            cargo test --locked --lib tui::tests::saved_log_ -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
+            cargo test --locked --test tui real_pty_saved_logs_page_format_refresh_and_keep_the_unsent_draft_without_starting_an_agent -- --exact 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
+          fi
       - name: Reproduce configured input before other tests and Chromium
         if: inputs.phase == 'focus' && contains(fromJSON(inputs.targets), 'tui') && contains(fromJSON(inputs.targets), 'user_config')
         timeout-minutes: 3
@@ -579,6 +593,7 @@ jobs:
             ${{ runner.temp }}/focus-tests.log
             ${{ runner.temp }}/focus-clippy.log
             ${{ runner.temp }}/focus-input.log
+            ${{ runner.temp }}/focus-history.log
             ${{ runner.temp }}/tui-artifacts/
             ${{ runner.temp }}/focus-script-core.log
             ${{ runner.temp }}/focus-dynamic-inputs.log

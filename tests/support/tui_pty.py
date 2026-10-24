@@ -274,6 +274,92 @@ try:
         wait(lambda: "/clear-images" not in screen.text(), "help closed before configured exit")
         assert not turns() and not session()["native_session_id"], "Viewing shortcuts must not start an agent"
         assert session()["draft"] == text + " 続き"
+    elif case == "saved-history":
+        draft = "未送信の下書き\nq n p v は本文"
+        paste(draft)
+        wait(lambda: session() and session()["draft"] == draft, "saved-log draft persisted")
+        metadata_path = glob.glob(os.path.join(root, "data", "**", "session.json"), recursive=True)[0]
+        saved_metadata = open(metadata_path, "rb").read()
+        saved_design = open(document, "rb").read()
+        state = session()
+        turn_id = "00000000-0000-0000-0000-000000000001"
+        history_path = os.path.join(os.path.dirname(metadata_path), f"turn-{turn_id}.jsonl")
+        body = "PAGE BEGIN 日本語\n" + "".join(f"row {i:04d} · 保存された応答\n" for i in range(2100)) + "PAGE END 日本語\n"
+        expected = f"\nTurn {turn_id}\n\nYou:\n保存済みの依頼\n{body}\nRequest complete\n"
+        assert 2 * 32768 < len(expected.encode()) < 3 * 32760, "Exercise three bounded display pages"
+        records = [
+            {"type":"start", "session":state["id"], "turn":turn_id, "document":state["document"]},
+            {"type":"user_prompt", "text":"保存済みの依頼"},
+            {"type":"update", "notification":{"update":{"sessionUpdate":"agent_message_chunk", "content":{"type":"text", "text":body}}}},
+            {"type":"complete", "session":state["id"], "turn":turn_id},
+        ]
+        with open(history_path, "w", encoding="utf-8") as handle:
+            for record in records:
+                handle.write(json.dumps(record, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n")
+        history_sha = hashlib.sha256(open(history_path, "rb").read()).hexdigest()
+        screen_offsets = {}
+
+        def saved_screen(name):
+            screen_offsets[name] = len(output)
+            with open(os.path.join(root, f"saved-history-{name}-screen.txt"), "w", encoding="utf-8") as handle:
+                handle.write(screen.text())
+
+        os.write(master, b"\x10")
+        wait(lambda: "Browse current conversation logs" in screen.text(), "saved-log command palette")
+        os.write(master, b"\x1b[B" * 5 + b"\r")
+        wait(lambda: "Saved turns" in screen.text() and turn_id in screen.text(), "saved turn list")
+        os.write(master, b"\r")
+        wait(lambda: "Saved log" in screen.text() and "PAGE BEGIN 日本語" in screen.text(), "decoded first saved page")
+        saved_screen("formatted")
+        os.write(master, b"\x1b[F")
+        wait(lambda: "PAGE BEGIN" not in screen.text() and "row " in screen.text(), "saved page scroll end")
+        os.write(master, b"\x1b[H")
+        wait(lambda: "PAGE BEGIN 日本語" in screen.text(), "saved page scroll home")
+        os.write(master, b"v")
+        wait(lambda: "raw JSONL" in screen.text() and '"document"' in screen.text(), "raw saved source")
+        saved_screen("raw")
+        os.write(master, b"v")
+        wait(lambda: "formatted" in screen.text() and "PAGE BEGIN 日本語" in screen.text(), "return to the same formatted page")
+        for number in [2, 3]:
+            previous = screen.text()
+            os.write(master, b"n")
+            wait(lambda: "Saved log" in screen.text() and "Reading saved logs" not in screen.text() and screen.text() != previous, f"saved text page {number}")
+        os.write(master, b"\x1b[F")
+        wait(lambda: "PAGE END 日本語" in screen.text() and "Request complete" in screen.text(), "complete saved response and completion")
+        saved_screen("end")
+        os.write(master, b"p")
+        wait(lambda: "Saved log" in screen.text() and "Reading saved logs" not in screen.text() and "PAGE END" not in screen.text(), "previous saved text page")
+        before_stat = os.stat(history_path)
+        changed = open(history_path, encoding="utf-8").read().replace("PAGE BEGIN", "PAGE BEGAN", 1)
+        with open(history_path, "w", encoding="utf-8") as handle:
+            handle.write(changed)
+        os.utime(history_path, ns=(before_stat.st_atime_ns, before_stat.st_mtime_ns))
+        os.write(master, b"n")
+        wait(lambda: "REVISION_CONFLICT" in screen.text(), "saved source change rejected")
+        os.write(master, b"r")
+        wait(lambda: "PAGE BEGAN 日本語" in screen.text(), "explicit saved-log refresh")
+        saved_screen("refreshed")
+        os.write(master, b"\x7f")
+        wait(lambda: "Saved turns" in screen.text(), "return to the turn list")
+        os.write(master, b"s")
+        wait(lambda: "Saved conversations" in screen.text(), "saved conversation list")
+        os.write(master, b"c")
+        wait(lambda: "Saved turns" in screen.text(), "current conversation shortcut")
+        os.write(master, b"q")
+        wait(lambda: "Saved turns" not in screen.text() and "Saved conversations" not in screen.text(), "saved logs closed")
+        assert session()["draft"] == draft and not session()["native_session_id"]
+        assert open(metadata_path, "rb").read() == saved_metadata
+        assert open(document, "rb").read() == saved_design
+        assert not os.path.exists(os.path.join(root, "sent-turn.txt"))
+        assert glob.glob(os.path.join(os.path.dirname(metadata_path), "turn-*.jsonl")) == [history_path]
+        with open(os.path.join(root, "saved-history-source.jsonl"), "wb") as handle:
+            handle.write(open(history_path, "rb").read())
+        with open(os.path.join(root, "saved-history-expected.txt"), "w", encoding="utf-8") as handle:
+            handle.write(expected)
+        with open(os.path.join(root, "saved-history-session.json"), "wb") as handle:
+            handle.write(saved_metadata)
+        with open(os.path.join(root, "saved-history-design.pen"), "wb") as handle:
+            handle.write(saved_design)
     elif case == "user-key-config":
         text = "日本語の複数行\nq と hjkl は本文"
         paste(text)
@@ -640,5 +726,16 @@ if case == "user-navigation-config":
             "draft_sha256": hashlib.sha256(saved_draft.encode("utf-8")).hexdigest(),
             "help_end_reached": True, "startup_keys_retained": True, "turns": len(turns()),
             "exit_code": process.returncode, "terminal_modes_restored": after_config == before_config}, handle)
+
+if case == "saved-history":
+    assert session()["draft"] == draft and not session()["native_session_id"]
+    with open(os.path.join(root, "saved-history-report.json"), "w", encoding="utf-8") as handle:
+        json.dump({"source_commit":os.environ.get("GITHUB_SHA"), "case":case,
+            "session":state["id"], "turn":turn_id, "screen_offsets":screen_offsets,
+            "original_sha256":history_sha, "refreshed_sha256":hashlib.sha256(open(history_path, "rb").read()).hexdigest(),
+            "expected_formatted_sha256":hashlib.sha256(expected.encode()).hexdigest(),
+            "draft_sha256":hashlib.sha256(draft.encode()).hexdigest(), "display_pages":3,
+            "agent_started":bool(session()["native_session_id"]), "turn_files":1,
+            "exit_code":process.returncode, "terminal_modes_restored":after_config == before_config}, handle)
 
 print(json.dumps({"case": case, "terminal_bytes": len(output), "exit_code": process.returncode}))

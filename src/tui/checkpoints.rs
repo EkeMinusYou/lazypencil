@@ -29,6 +29,7 @@ pub struct Page {
 pub enum Output {
     History(Page),
     Restored(Value),
+    Saved(Box<super::saved::Page>),
 }
 
 pub struct Task {
@@ -37,7 +38,7 @@ pub struct Task {
     thread: Option<JoinHandle<()>>,
 }
 impl Task {
-    fn spawn(
+    pub(super) fn spawn(
         label: &str,
         action: impl FnOnce(&CancellationToken) -> Result<Output> + Send + 'static,
     ) -> Result<Self> {
@@ -127,6 +128,7 @@ pub enum Modal {
     Loading { message: &'static str },
     History(Page),
     Confirm(Page),
+    Saved(Box<super::saved::Page>),
 }
 impl Modal {
     pub fn commands() -> Self {
@@ -139,6 +141,8 @@ pub const COMMANDS: &[&str] = &[
     "Open preview externally",
     "Help",
     "Quit",
+    "Browse current conversation logs…",
+    "Browse saved conversations…",
 ];
 
 impl super::App {
@@ -157,6 +161,7 @@ impl super::App {
             self.conversation.settings().fonts.clone(),
             cursors,
         )?);
+        self.saved_return = None;
         self.modal = Some(Modal::Loading {
             message: "Loading checkpoints… · Esc cancels",
         });
@@ -169,6 +174,16 @@ impl super::App {
         worker: &super::preview::Worker,
     ) {
         match output {
+            Ok(Output::Saved(page)) => {
+                self.saved_return = None;
+                self.modal = Some(Modal::Saved(page));
+                self.status = if self.conversation.active() {
+                    "Saved logs are read-only · active request continues · Ctrl+C cancels"
+                } else {
+                    "Saved logs are read-only; browsing sends no requests"
+                }
+                .into();
+            }
             Ok(Output::History(page)) => {
                 self.modal = Some(Modal::History(page));
                 self.status = "Select a checkpoint; Enter reviews the restoration".into();
@@ -186,7 +201,10 @@ impl super::App {
                 self.request(worker, false, false);
             }
             Err(error) => {
-                if let Some(mut page) = self.restore_return.take() {
+                if let Some(mut page) = self.saved_return.take() {
+                    page.notice = Some(super::clean(&error.to_string()));
+                    self.modal = Some(Modal::Saved(page));
+                } else if let Some(mut page) = self.restore_return.take() {
                     page.notice = Some(super::clean(&format!(
                         "{error} · r reloads current revisions"
                     )));
@@ -196,6 +214,27 @@ impl super::App {
                 }
                 self.error(error);
             }
+        }
+    }
+    pub(super) fn finish_document_result(
+        &mut self,
+        output: Result<Output>,
+        worker: &super::preview::Worker,
+    ) {
+        let cancelled = self
+            .document_task
+            .as_ref()
+            .is_some_and(|task| task.cancel.is_cancelled());
+        self.document_task.take();
+        if cancelled && matches!(&output, Ok(Output::History(_) | Output::Saved(_))) {
+            if let Some(page) = self.saved_return.take() {
+                self.modal = Some(Modal::Saved(page));
+            } else if matches!(self.modal, Some(Modal::Loading { .. })) {
+                self.modal = None;
+            }
+            self.status = "History loading cancelled".into();
+        } else {
+            self.document_result(output, worker);
         }
     }
     pub(super) fn modal_key(
@@ -208,6 +247,12 @@ impl super::App {
             return Ok(false);
         };
         match &mut modal {
+            Modal::Saved(_) => {
+                let Modal::Saved(page) = modal else {
+                    unreachable!()
+                };
+                return self.saved_key(page, key);
+            }
             Modal::Commands { selected } => match key.code {
                 KeyCode::Esc | KeyCode::Char('q') => return Ok(false),
                 KeyCode::Up | KeyCode::Char('k') => *selected = selected.saturating_sub(1),
@@ -221,6 +266,14 @@ impl super::App {
                         2 => self.open_preview()?,
                         3 => self.show_help(),
                         4 => return Ok(true),
+                        5 => self.open_saved(
+                            super::saved::Page::current(self.conversation.id().into()),
+                            None,
+                        )?,
+                        6 => self.open_saved(
+                            super::saved::Page::sessions(self.conversation.id().into()),
+                            None,
+                        )?,
                         _ => unreachable!(),
                     }
                     return Ok(false);
@@ -229,6 +282,7 @@ impl super::App {
             },
             Modal::Loading { .. } => {
                 if key.code == KeyCode::Esc {
+                    self.saved_return = None;
                     if let Some(task) = &self.document_task {
                         task.cancel.cancel();
                     }
@@ -301,20 +355,21 @@ impl super::App {
         self.modal = Some(modal);
         Ok(false)
     }
-    pub(super) fn draw_checkpoint_modal(&self, frame: &mut ratatui::Frame) {
+    pub(super) fn draw_checkpoint_modal(&mut self, frame: &mut ratatui::Frame) {
         use ratatui::{
             layout::{Constraint, Layout},
             style::{Color, Style},
             text::Line,
             widgets::{Clear, List, ListItem, ListState, Paragraph, Wrap},
         };
-        let Some(modal) = &self.modal else {
+        let Some(modal) = &mut self.modal else {
             return;
         };
         let popup = super::centered(frame.area(), 100, 26);
         frame.render_widget(Clear, popup);
         let highlight = Style::default().fg(Color::Black).bg(Color::Cyan);
         match modal {
+            Modal::Saved(page) => super::saved::draw(page, frame, popup),
             Modal::Commands { selected } => {
                 let items = COMMANDS.iter().map(|text| ListItem::new(*text));
                 let mut selection = ListState::default().with_selected(Some(*selected));

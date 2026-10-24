@@ -15,6 +15,22 @@ spec.loader.exec_module(focus)
 
 
 class FocusTests(unittest.TestCase):
+    def test_saved_log_ui_is_reproduced_before_chromium_and_omitted_from_later_checks(self):
+        result = focus.select(["src/conversation/history/display.rs", "src/tui/mod.rs", "src/tui/saved.rs", "tests/conversation_history.rs", "tests/tui.rs"])
+        self.assertEqual(result["suite"], "graphics")
+        self.assertTrue({"agent", "conversation_history", "tui", "user_config"} <= set(result["targets"]))
+        native = (Path(__file__).resolve().parents[1] / ".github/workflows/native.yml").read_text()
+        self.assertLess(native.index("Reproduce saved log browsing"), native.index("Install and verify the pinned Chromium runtime"))
+        self.assertIn(focus.SAVED_LOG_PTY, native)
+        for suite in ["graphics", "dynamic"]:
+            _, checks = focus.commands(suite, result["targets"] + (["shader_uniforms", "dynamic_render"] if suite == "dynamic" else []))
+            self.assertNotIn("conversation_history", checks[-1])
+            self.assertEqual(checks[-1][checks[-1].index(focus.SAVED_LOG_PTY) - 1], "--skip")
+            self.assertEqual(checks[-1][checks[-1].index("tui::tests::saved_log_") - 1], "--skip")
+        mixed = focus.select(["tests/conversation_history.rs", "src/shader.rs"])
+        self.assertEqual(mixed["suite"], "dynamic")
+        focus.commands(mixed["suite"], mixed["targets"])
+
     def test_saved_history_runs_its_units_and_cli_reproduction_once_before_agent_checks(self):
         result = focus.select(["src/conversation/history.rs", "src/cli.rs", "src/main.rs", "tests/conversation_history.rs"])
         self.assertEqual(result["suite"], "conversation")

@@ -148,6 +148,16 @@ pub enum Command {
 
 #[derive(Debug, Subcommand)]
 pub enum ConversationCommand {
+    /// Read formatted saved requests, responses and tool status in bounded pages.
+    View {
+        file: PathBuf,
+        session: String,
+        turn: String,
+        #[arg(long)]
+        cursor: Option<String>,
+        #[arg(long, default_value_t = 65536)]
+        limit: usize,
+    },
     /// List saved conversations for a document in stable UUID order.
     List {
         file: PathBuf,
@@ -727,6 +737,20 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
         Command::Conversations { command } => {
             let cancel = crate::cancel::token();
             match command {
+                ConversationCommand::View {
+                    file,
+                    session,
+                    turn,
+                    cursor,
+                    limit,
+                } => crate::conversation::history::view(
+                    &open(file)?,
+                    session,
+                    turn,
+                    cursor.as_deref(),
+                    *limit,
+                    Some(&cancel),
+                ),
                 ConversationCommand::List {
                     file,
                     limit,
