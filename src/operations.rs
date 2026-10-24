@@ -1321,6 +1321,22 @@ fn validate_variable_definition(
     Ok(())
 }
 
+fn literal_variable_property(key: &str) -> bool {
+    matches!(
+        key,
+        "theme"
+            | "metadata"
+            | "name"
+            | "context"
+            | "id"
+            | "ref"
+            | "scriptUri"
+            | "url"
+            | "geometry"
+            | "href"
+    )
+}
+
 fn variable_references(value: &Value) -> Vec<String> {
     match value {
         Value::String(s) => s
@@ -1331,25 +1347,46 @@ fn variable_references(value: &Value) -> Vec<String> {
         Value::Array(v) => v.iter().flat_map(variable_references).collect(),
         Value::Object(v) => v
             .iter()
-            .filter(|(key, _)| {
-                !matches!(
-                    key.as_str(),
-                    "theme"
-                        | "metadata"
-                        | "name"
-                        | "context"
-                        | "id"
-                        | "ref"
-                        | "scriptUri"
-                        | "url"
-                        | "geometry"
-                        | "href"
-                )
-            })
+            .filter(|(key, _)| !literal_variable_property(key))
             .flat_map(|(_, value)| variable_references(value))
             .collect(),
         _ => Vec::new(),
     }
+}
+
+fn node_variable_references(value: &Value) -> Vec<String> {
+    let Some(properties) = value.as_object() else {
+        return variable_references(value);
+    };
+    let defer_inputs = matches!(
+        properties.get("type").and_then(Value::as_str),
+        None | Some("script" | "ref")
+    );
+    properties
+        .iter()
+        // Script input names require their captured header. This also covers
+        // instance/descendant overrides whose effective type is not local.
+        .filter(|(key, _)| {
+            (key.as_str() != "inputs" || !defer_inputs) && !literal_variable_property(key)
+        })
+        .flat_map(|(key, value)| match key.as_str() {
+            "children" => value
+                .as_array()
+                .map(|children| children.iter().flat_map(node_variable_references).collect())
+                .unwrap_or_else(|| variable_references(value)),
+            "descendants" => value
+                .as_object()
+                .map(|overrides| {
+                    overrides
+                        .values()
+                        .flat_map(node_variable_references)
+                        .collect()
+                })
+                .unwrap_or_else(|| variable_references(value)),
+            // An `inputs` uniform or another nested property is still checked.
+            _ => variable_references(value),
+        })
+        .collect()
 }
 
 fn check_variable_uses(
@@ -1360,7 +1397,7 @@ fn check_variable_uses(
     if has_imports {
         return Ok(());
     }
-    for name in variable_references(value) {
+    for name in node_variable_references(value) {
         if !variables.is_some_and(|v| v.contains_key(&name)) {
             return Err(invalid(format!("Missing variable ${name}")));
         }

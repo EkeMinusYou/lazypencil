@@ -7,6 +7,35 @@ fn write(path: &Path, value: Value) {
     fs::write(path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
 }
 
+#[test]
+fn structural_variable_checks_defer_script_controls_without_hiding_uniform_or_paint_references() {
+    use lazypencil::{document::Document, operations};
+    let children = json!([
+        {"id":"component","type":"frame","reusable":true,"children":[
+            {"id":"code","type":"script","scriptUri":"missing.js","inputs":{"old":"$missing"}}
+        ]},
+        {"id":"instance","type":"ref","ref":"component","descendants":{
+            "code":{"inputs":{"old":"$missing"}}
+        }},
+        {"id":"reusable-script","type":"script","reusable":true,"scriptUri":"missing.js"},
+        {"id":"script-instance","type":"ref","ref":"reusable-script","inputs":{"old":"$missing"}}
+    ]);
+    let base = json!({"version":"2.21","children":children});
+    operations::validate_local(&Document::parse(base.to_string()).unwrap()).unwrap();
+    for property in [
+        json!({"id":"bad","type":"rectangle","fill":"$missing"}),
+        json!({"id":"bad","type":"rectangle","fill":{"type":"shader","url":"paint.glsl","uniforms":{"inputs":"$missing"}}}),
+        json!({"id":"bad","type":"frame","inputs":{"custom":"$missing"}}),
+        json!({"id":"bad","type":"ref","ref":"component","descendants":{"code":{"fill":"$missing"}}}),
+    ] {
+        let mut invalid = base.clone();
+        invalid["children"].as_array_mut().unwrap().push(property);
+        assert!(
+            operations::validate_local(&Document::parse(invalid.to_string()).unwrap()).is_err()
+        );
+    }
+}
+
 fn fixture() -> (TempDir, Store) {
     let temp = TempDir::new().unwrap();
     fs::create_dir(temp.path().join("library")).unwrap();

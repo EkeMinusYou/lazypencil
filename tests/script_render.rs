@@ -325,6 +325,23 @@ fn input_variables_resolve_even_when_the_input_name_is_a_literal_property_elsewh
 }
 
 #[test]
+fn declared_script_variable_inputs_still_fail_before_a_worker_is_launched() {
+    let (temp, store) = fixture(
+        "return [{type:'rectangle',width:pencil.input.value,height:20}];",
+        json!({"id":"code","type":"script","scriptUri":"draw.js","width":40,"height":20,"inputs":{"value":"$missing"}}),
+    );
+    fs::write(temp.path().join("draw.js"),"/**\n@schema 2.21\n@input value: number\n*/\nreturn [{type:'rectangle',width:pencil.input.value,height:20}];").unwrap();
+    let before = fs::read(store.path()).unwrap();
+    let mut runtime = ScriptRuntime::new(env!("CARGO_BIN_EXE_lazypencil"));
+    let error = service::layout_snapshot_with_runtime(&store, &[], None, None, &mut runtime)
+        .err()
+        .unwrap();
+    assert!(error.message.contains("missing"));
+    assert!(runtime.process_id().is_none());
+    assert_eq!(fs::read(store.path()).unwrap(), before);
+}
+
+#[test]
 fn generated_script_inputs_resolve_after_code_capture_and_ignore_stale_variable_controls() {
     let (temp, store) = fixture(
         "return [{type:'script',scriptUri:'inner.js',width:40,height:20,inputs:{value:'$caption',unused:'$missing'}}];",
