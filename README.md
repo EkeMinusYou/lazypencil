@@ -4,7 +4,7 @@ A terminal-first editor and renderer for `.pen` design files, written in Rust.
 
 **Development status:** implementation is in progress. The repository is not yet a finished release. See [implementation status](docs/implementation-status.md) for requirements and verification evidence.
 
-**Initial release platforms:** macOS Apple Silicon (`aarch64-apple-darwin`), Linux x64 (`x86_64-unknown-linux-gnu`) and Linux arm64 (`aarch64-unknown-linux-gnu`). Intel Macs are unsupported. Windows support is deferred; existing Windows code and fixtures are retained, with further work postponed. Minimum OS/distribution versions and supported terminals must still be established. Earlier Windows/Intel results below are historical evidence, not current support commitments.
+**Initial release platforms:** macOS Apple Silicon (`aarch64-apple-darwin`), Linux x64 (`x86_64-unknown-linux-gnu`) and Linux arm64 (`aarch64-unknown-linux-gnu`); Linux requires glibc. Intel Macs are unsupported. Windows support is deferred; existing Windows code and fixtures are retained, with further work postponed. Minimum OS/distribution versions and supported terminals must still be established. Earlier Windows/Intel results below are historical evidence, not current support commitments.
 
 The intended product provides a CLI, an MCP server, and a TUI with keyboard navigation and image previews. Claude Code and Codex integration uses ACP adapters. Rendering uses Skia CPU and SkParagraph, with Noto Sans JP as the bundled default font. Chromium is installed separately for browser nodes and WebGL shaders.
 
