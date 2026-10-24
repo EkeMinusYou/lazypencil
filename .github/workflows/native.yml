@@ -117,6 +117,21 @@ jobs:
       - name: Check formatting in the distributed sources
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: cargo fmt --all -- --check
+      - name: Check focused core code before building test executables
+        if: inputs.phase == 'focus' && (inputs.suite == 'core' || inputs.suite == 'conversation')
+        timeout-minutes: 6
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        env:
+          FOCUS_TARGETS: ${{ inputs.targets }}
+        run: |
+          python - <<'PY'
+          import json, os, runpy, subprocess
+          targets = json.loads(os.environ["FOCUS_TARGETS"])
+          allowed = runpy.run_path("scripts/ci/focus.py")["CORE_TESTS"]
+          assert isinstance(targets, list) and targets and all(target in allowed for target in targets)
+          selected = [argument for target in targets for argument in ("--test", target)]
+          subprocess.run(["cargo", "clippy", "--locked", "--no-default-features", "--lib", *selected, "--", "-D", "warnings"], check=True, timeout=300)
+          PY
       - name: Reproduce script worker compatibility before native rendering
         if: inputs.phase == 'focus' && (inputs.suite == 'graphics' || inputs.suite == 'dynamic') && contains(fromJSON(inputs.targets), 'scripts')
         timeout-minutes: 15

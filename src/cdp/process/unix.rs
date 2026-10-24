@@ -15,7 +15,7 @@ use std::{
         unix::process::CommandExt,
     },
     path::Path,
-    process::{Child, Command, ExitStatus, Stdio},
+    process::{Child, Command, Stdio},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
