@@ -46,6 +46,9 @@ impl Peer {
                     Err(error) => panic!("Cannot accept CDP fixture: {error}"),
                 }
             };
+            // macOS inherits the listener's O_NONBLOCK on accepted sockets.
+            // This peer uses blocking I/O with bounded OS timeouts.
+            stream.set_nonblocking(false).unwrap();
             stream
                 .set_read_timeout(Some(Duration::from_secs(3)))
                 .unwrap();
