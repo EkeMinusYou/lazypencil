@@ -55,12 +55,25 @@ class Screen:
             elif not unicodedata.category(symbol).startswith("C") and not unicodedata.combining(symbol):
                 width = 2 if unicodedata.east_asian_width(symbol) in "WF" else 1
                 if self.x < self.width and self.y < self.height:
+                    self.clear_span(self.y, self.x, min(self.width, self.x + width))
                     self.cells[self.y][self.x] = symbol
                     if width == 2 and self.x + 1 < self.width:
                         self.cells[self.y][self.x + 1] = ""
                 self.x = min(self.width, self.x + width)
             index += 1
         self.pending = self.pending[index:]
+
+    def clear_span(self, row, begin, end):
+        if begin >= end:
+            return
+        cells = self.cells[row]
+        # A terminal clears both halves when text replaces part of a wide
+        # glyph. Orphan continuation cells would remove spaces in text().
+        if begin > 0 and cells[begin] == "":
+            cells[begin - 1] = " "
+        if end < self.width and cells[end] == "":
+            cells[end] = " "
+        cells[begin:end] = [" "] * (end - begin)
 
     def csi(self, params, command):
         if params.startswith(("?", ">", "=", "<")):
@@ -86,7 +99,7 @@ class Screen:
             self.cells = [[" "] * self.width for _ in range(self.height)]
         elif command == "K":
             begin, end = (0, self.width) if values[0] == 2 else ((0, self.x + 1) if values[0] == 1 else (self.x, self.width))
-            self.cells[self.y][begin:end] = [" "] * (end - begin)
+            self.clear_span(self.y, begin, end)
 
     def text(self):
         return "\n".join("".join(row).rstrip() for row in self.cells)
