@@ -2,6 +2,8 @@
 
 設計書 v0.9 の全体を実装対象とする。部分的な CLI や描画の試作だけで完成とは扱わない。以下は実際の実装・試験結果で更新する。
 
+2026-10-24: 再生・LRU の初回 source `1936598` は macOS arm64 `40052100177`（260試験）と Linux x64 `40052102399`（262試験）が両構成 Clippy と実 PTY を含めて成功した。artifact `12543762414`／`12544141047` の ZIP digest・全成功ログ・PNG と report を検査した。5件の時計／背圧／状態／LRU の必須成功、実 PTY の2fps clock・青→黄の画素・日本語 draft・Space 停止・待機回収を確認し、shader acquisition の `time_dependent` が時刻付き example では true、固定色の supervised MCP では false であることも照合した。通常 example の PNG はそれぞれの以前の画像とバイト一致した。停止表示の後続 source `5fd4ddc` は Linux x64 `40052439098`／macOS arm64 `40052437100` で検証中である。現行 app code はそれ以降の CI 分割 commit と同一である。Windows の新しい後続は `40052567048`。物理端末、性能保証、全 OS とプロダクト全体の完了は示していない。
+
 2026-10-24: Windows の先行専用 job `40049415871` は default agent gate を通過した後、複合 runtime step で長時間実行中であり、完了前の log API は404を返した。browser 接続も環境設定の読み込みで失敗し、共有設定は変更していない。現行 job は取り消さず、後続の専用 workflow では単体（10分）、設定・script（10分）、page／shader／import の実画素（20分）を別 step に分けた。実行する command・試験・pipefail・既存 log 名と `always()` での保存は維持する。actionlint が成功し、native dependency input tree が `c95e917…` のままであることも確認した。これは後続で停止箇所と途中 log を取得するための変更であり、Windows の長時間化の原因や解消を示すものではない。
 
 2026-10-24: 手動時刻 source `9129f17` の Linux arm64 `40051538036` も257試験・両構成 Clippy・実 PTY を成功した。artifact `12543678210` の digest・各成功ログ・画像と report を照合し、時刻操作と supervised MCP の実画素、以前の example PNG とのバイト一致を確認した。新しい再生と LRU の追加前の結果である。再生停止時に未完了フレームがあれば、status は表示中画像の時刻を保持して完了待ちを示し、該当フレームの公開後にだけ時刻を更新する修正と、その中間状態の worker／app 検査も追加した。新しい再生の GHA は実行中で、Rust・実 PTY の結果はまだ未確定である。
