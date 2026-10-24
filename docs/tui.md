@@ -26,6 +26,8 @@ Terminal stdin/stdout and at least 50 columns × 16 rows are required. `--json` 
 | Prompt: `/clear-images` then Enter | Remove pending images |
 | Preview: `hjkl` / arrows | Pan |
 | Preview: `+` / `-`, `0` | Zoom or fit the document, including negative coordinates |
+| Preview: `[` / `]` | Step shader evaluation time backward/forward by 0.1 seconds |
+| Prompt: `/time <seconds>` then Enter | Seek shader time without modifying the document |
 | Nodes: `/` | Search names and IDs; Enter keeps the filter, Esc clears it |
 | Nodes: arrows, then `f` / Enter | Select and fit a node; its address accompanies the next AI request |
 | Nodes: `Esc` | Clear the editing target |
@@ -77,6 +79,8 @@ Esc during an operation requests cancellation and closes its overlay; Ctrl+C als
 On Unix, probing has a fixed 350 ms deadline and restores stdin flags before starting the event stream. There is no detached reader after a timeout. Plain text received during probing is retained. Windows currently needs an explicit protocol override for high-resolution images; automatic Windows probing remains unfinished. Cell dimensions come from terminal information, query replies, or a 10×20 fallback. tmux passthrough is detected without changing pane settings. Individual terminals, tmux, and SSH need separate compatibility verification.
 
 Rendering/encoding runs on a dedicated thread, which owns the cached layout and script/browser/shader runtimes. Requests coalesce, superseded work is cancelled, and zooms render the requested document region. Captured document/dependency contents are checked once per second without repainting unchanged content. Preview dimensions are limited to 8192 pixels per side and 16 megapixels. Root/dependency revisions are checked again before publication. Errors clear the preview rather than label incomplete output as complete. Kitty updates reuse one app-owned ID; exit deletes only that ID.
+
+Shader time starts at zero and remains paused. `/time 1.5` evaluates `@time` uniforms at 1.5 seconds; the completed preview's status shows `t=1.500s`. Values must be finite and nonnegative. `[` clamps backward stepping at zero. Seeking preserves the document, zoom, center, and runtime processes, and reuses the captured layout. It does not refresh browser acquisitions or advance JavaScript timers. Unchanged dependency polls at the same time avoid re-encoding the image. Time is local to the current TUI invocation and is not saved in the document or conversation. Playback and periodic browser capture remain unfinished.
 
 User `config.toml` and project `lazypencil.toml` supply font files/search paths, default family, fallback chain, and locale through the same captured settings as CLI and MCP. Explicit project fields override user fields; paths stay relative to their declaring file. Configuration edits, nearer configuration creation, font membership changes, and symlink retargeting invalidate the cached project. The next preview reload preserves pending draft/images and does not rewrite explicit stored font names. Separate real PTY cases change project and user defaults between the original TrueType and CFF fixtures and verify changed Kitty pixels without manually refreshing or losing the Japanese draft. See [configuration](configuration.md).
 

@@ -268,7 +268,7 @@ impl App {
                         match output.result {
                             Ok(preview) => {
                                 if !preview.attachment { self.view = preview.view; }
-                                self.status = if preview.attachment { "Attachment preview".into() } else { format!("{} nodes · {} diagnostics · {:.0}%", preview.nodes.len(), preview.summary["diagnostics"].as_array().map_or(0, Vec::len), self.view.zoom.unwrap_or(1.0) * 100.0) };
+                                self.status = if preview.attachment { "Attachment preview".into() } else { format!("{} nodes · {} diagnostics · {:.0}% · t={:.3}s", preview.nodes.len(), preview.summary["diagnostics"].as_array().map_or(0, Vec::len), self.view.zoom.unwrap_or(1.0) * 100.0, self.view.time) };
                                 // Preserve the document node list while browsing an attachment.
                                 if preview.attachment {
                                     if let Some(previous) = &mut self.preview { let mut preview = preview; preview.nodes = std::mem::take(&mut previous.nodes); self.preview = Some(preview); }
@@ -662,6 +662,8 @@ impl App {
                     }
                     KeyCode::Char('-') => self.view.zoom = Some((zoom / 1.25).max(0.01)),
                     KeyCode::Char('0') => self.view.zoom = None,
+                    KeyCode::Char('[') => self.view.set_time((self.view.time - 0.1).max(0.0))?,
+                    KeyCode::Char(']') => self.view.set_time(self.view.time + 0.1)?,
                     KeyCode::Char('f') => self.fit_selected(picker)?,
                     _ => return Ok(false),
                 }
@@ -769,11 +771,18 @@ impl App {
                 self.request(worker, false, false);
             }
             Some("/open-preview") if words.len() == 1 => self.open_preview()?,
+            Some("/time") if words.len() == 2 => {
+                let time = words[1].parse::<f64>().map_err(|_| {
+                    Error::new("INVALID_ARGUMENT", "Usage: /time <nonnegative seconds>")
+                })?;
+                self.view.set_time(time)?;
+                self.request(worker, false, false);
+            }
             Some("/quit") if words.len() == 1 => return Ok(true),
             _ => {
                 return Err(Error::new(
                     "INVALID_ARGUMENT",
-                    "Commands: /attach <quoted path>, /paste-image, /clear-images, /open-preview, /commands, /history, /help, /quit",
+                    "Commands: /attach <quoted path>, /paste-image, /clear-images, /open-preview, /time <nonnegative seconds>, /commands, /history, /help, /quit",
                 ));
             }
         }
@@ -997,7 +1006,7 @@ impl App {
         if self.help {
             let popup = centered(area, 100, 26);
             frame.render_widget(Clear, popup);
-            frame.render_widget(Paragraph::new(format!("Tab / Shift+Tab: switch panels\nCtrl+P: command palette; /history: browse and restore checkpoints\nPrompt: Enter inserts a newline; {} sends\n{}: paste image, copied image files, or text\n/attach <quoted path>: attach a PNG, JPEG or WebP file\n/paste-image: read this host's clipboard explicitly\n/clear-images: remove pending attachments\nPreview: hjkl / arrows pan; + / - zoom; 0 fits the document\nNodes: / searches; arrows select; f / Enter focuses the target\nAttachments: arrows review; d / Delete removes a pending image\nConversation: PgUp/PgDn scroll; End follows new output\nr: refresh the preview, including browser captures\no / /open-preview: open the current complete PNG externally\nCtrl+C: cancel active work; exit when idle\nq outside Prompt / /quit: close the conversation and exit\nF1 or Esc: close help\n\nClipboard access happens only on explicit paste. SSH reads the remote host's clipboard. Image protocols do not provide clipboard access.", self.keys.submit_label(), self.keys.paste_label()))
+            frame.render_widget(Paragraph::new(format!("Tab / Shift+Tab: switch panels\nCtrl+P: command palette; /history: browse and restore checkpoints\nPrompt: Enter inserts a newline; {} sends\n{}: paste image, copied image files, or text\n/attach <quoted path>: attach a PNG, JPEG or WebP file\n/paste-image: read this host's clipboard explicitly\n/clear-images: remove pending attachments\nPreview: hjkl / arrows pan; + / - zoom; 0 fits the document\nPreview: [ / ] step shader time by 0.1s; /time <seconds> seeks\nNodes: / searches; arrows select; f / Enter focuses the target\nAttachments: arrows review; d / Delete removes a pending image\nConversation: PgUp/PgDn scroll; End follows new output\nr: refresh the preview, including browser captures\no / /open-preview: open the current complete PNG externally\nCtrl+C: cancel active work; exit when idle\nq outside Prompt / /quit: close the conversation and exit\nF1 or Esc: close help\n\nClipboard access happens only on explicit paste. SSH reads the remote host's clipboard. Image protocols do not provide clipboard access.", self.keys.submit_label(), self.keys.paste_label()))
                 .block(panel("Help", true)).wrap(Wrap { trim: false }), popup);
         }
         self.draw_checkpoint_modal(frame);

@@ -34,6 +34,60 @@ fn runtime() -> tokio::runtime::Runtime {
 }
 
 #[test]
+fn time_commands_validate_without_sending_or_saving_and_view_keys_keep_input_precedence() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let store = app.conversation.store().clone();
+        let saved = std::fs::read(store.path()).unwrap();
+        let worker = Worker::start(store, vec![], Backend::halfblocks(), 134).unwrap();
+        app.editor = editor("/time 1.25");
+        app.command(&worker).await.unwrap();
+        assert_eq!(app.view.time, 1.25);
+        assert_eq!(app.conversation.draft(), "");
+        assert!(!app.conversation.active());
+        for text in [
+            "/time NaN",
+            "/time inf",
+            "/time -1",
+            "/time 1e999",
+            "/time",
+            "/time 1 2",
+            "/time nope",
+        ] {
+            app.editor = editor(text);
+            assert_eq!(
+                app.command(&worker).await.unwrap_err().code,
+                "INVALID_ARGUMENT"
+            );
+            assert_eq!(app.editor.lines(), &[text]);
+            assert_eq!(app.view.time, 1.25);
+        }
+        app.editor = editor("");
+        press(&mut app, KeyCode::Char(']'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.editor.lines(), &["]"]);
+        assert_eq!(app.view.time, 1.25);
+        app.focus = Focus::Preview;
+        app.help = true;
+        press(&mut app, KeyCode::Char(']'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.view.time, 1.25);
+        app.help = false;
+        press(&mut app, KeyCode::Char(']'), KeyModifiers::NONE, &worker).await;
+        assert!((app.view.time - 1.35).abs() < 1e-10);
+        press(&mut app, KeyCode::Char('['), KeyModifiers::NONE, &worker).await;
+        assert!((app.view.time - 1.25).abs() < 1e-10);
+        app.view.set_time(0.01).unwrap();
+        press(&mut app, KeyCode::Char('['), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.view.time, 0.0);
+        assert_eq!(
+            std::fs::read(app.conversation.store().path()).unwrap(),
+            saved
+        );
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
 fn periodic_preview_checks_retry_a_captured_layout_after_render_failure() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {
