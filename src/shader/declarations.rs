@@ -10,6 +10,7 @@ use std::{
 #[derive(Clone, Copy)]
 struct Token<'a> {
     text: &'a str,
+    start: usize,
     comment: bool,
     documentation: bool,
 }
@@ -24,6 +25,45 @@ struct Declaration {
 }
 
 type Structures = BTreeMap<String, Vec<Declaration>>;
+
+pub(super) fn preprocessing_source(source: &str) -> Result<Option<String>> {
+    if source.len() > 1024 * 1024 {
+        return Err(invalid("Shader source exceeds 1 MiB"));
+    }
+    if !source.contains('#') {
+        return Ok(None);
+    }
+    let mut pending = None;
+    let mut directives = false;
+    let mut strip = Vec::new();
+    for token in lex(source)? {
+        if token.comment {
+            pending = (token.documentation && !token.text.is_empty()).then_some(token.start);
+        } else {
+            if token.text.starts_with('#') {
+                directives = true;
+                if let Some(start) = pending {
+                    strip.push(start + 2);
+                }
+            }
+            pending = None;
+        }
+    }
+    if !directives {
+        return Ok(None);
+    }
+    // A directive separates metadata from a declaration in the native format.
+    // Preprocessing removes that separator; demote only the preceding JSDoc
+    // marker in this private copy. Keep all byte/line positions and budgets,
+    // including __LINE__/__FILE__, and compile the untouched original source.
+    let mut bytes = source.as_bytes().to_vec();
+    for position in strip {
+        bytes[position] = b' ';
+    }
+    Ok(Some(
+        String::from_utf8(bytes).expect("ASCII marker replacement preserves UTF-8"),
+    ))
+}
 
 pub(super) fn parse(source: &str) -> Result<Vec<Uniform>> {
     if source.len() > 1024 * 1024 {
@@ -419,6 +459,7 @@ fn lex(source: &str) -> Result<Vec<Token<'_>>> {
         };
         tokens.push(Token {
             text,
+            start,
             comment,
             documentation,
         });

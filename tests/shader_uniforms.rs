@@ -674,55 +674,64 @@ fn linked_constant_dimensions_validate_inputs_and_recover_after_an_error() {
         .with_executable(
             std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
         );
-    let source = "precision highp float;\n#define COUNT 3\nuniform float data[COUNT]; uniform mat2 unused_tail[2]; void main(){gl_FragColor=vec4(data[2]+(unused_tail[0]*vec2(0.0,1.0)).x,0.0,0.0,1.0);}";
-    for (values, success) in [
-        (json!({"data":[0.25]}), false),
+    for (dimension, expected_error) in [
         (
-            json!({"data":[0.0,0.0,0.5],"unused_tail":[0,0.9,0.25,0,1,0,0,1]}),
-            true,
+            "#define COUNT 3",
+            "Uniform array has the wrong declared length",
+        ),
+        (
+            "const int COUNT=3;",
+            "shorter than its active linked elements",
         ),
     ] {
-        let scene_root = TempDir::new().unwrap();
-        let scene = project(&scene_root, source, values);
-        let before = fs::read(scene_root.path().join("input.pen")).unwrap();
-        let layout = lazypencil::layout::compute(
-            scene.resolve().unwrap(),
-            &mut lazypencil::text::Fonts::new(&[]).unwrap(),
-        )
-        .unwrap();
-        let result = lazypencil::render::png_with_runtime(
-            &scene,
-            &layout,
-            &Default::default(),
-            &mut runtime,
-            None,
+        let source = format!(
+            "precision highp float;\n{dimension}\nuniform float data[COUNT]; uniform mat2 unused_tail[2]; void main(){{gl_FragColor=vec4(data[2]+(unused_tail[0]*vec2(0.0,1.0)).x,0.0,0.0,1.0);}}"
         );
-        if success {
-            let rendered = result.unwrap();
-            let image = skia_safe::Image::from_encoded(skia_safe::Data::new_copy(&rendered.png))
-                .unwrap()
-                .make_raster_image(None, None)
-                .unwrap();
-            let color = image.peek_pixels().unwrap().get_color((16, 8));
-            assert!(
-                (color.r() as i32 - 191).abs() <= 1,
-                "Unexpected recovered shader pixel: {color:?}"
+        for (values, success) in [
+            (json!({"data":[0.25]}), false),
+            (
+                json!({"data":[0.0,0.0,0.5],"unused_tail":[0,0.9,0.25,0,1,0,0,1]}),
+                true,
+            ),
+        ] {
+            let scene_root = TempDir::new().unwrap();
+            let scene = project(&scene_root, &source, values);
+            let before = fs::read(scene_root.path().join("input.pen")).unwrap();
+            let layout = lazypencil::layout::compute(
+                scene.resolve().unwrap(),
+                &mut lazypencil::text::Fonts::new(&[]).unwrap(),
+            )
+            .unwrap();
+            let result = lazypencil::render::png_with_runtime(
+                &scene,
+                &layout,
+                &Default::default(),
+                &mut runtime,
+                None,
             );
-            assert_eq!((color.g(), color.b(), color.a()), (0, 0, 255));
-        } else {
-            let error = result.err().expect("Expected a linked uniform error");
-            assert_eq!(error.code, "SHADER_COMPILE_FAILED");
-            assert!(
-                error
-                    .message
-                    .contains("shorter than its active linked elements"),
-                "{error:?}"
+            if success {
+                let rendered = result.unwrap();
+                let image =
+                    skia_safe::Image::from_encoded(skia_safe::Data::new_copy(&rendered.png))
+                        .unwrap()
+                        .make_raster_image(None, None)
+                        .unwrap();
+                let color = image.peek_pixels().unwrap().get_color((16, 8));
+                assert!(
+                    (color.r() as i32 - 191).abs() <= 1,
+                    "Unexpected recovered shader pixel: {color:?}"
+                );
+                assert_eq!((color.g(), color.b(), color.a()), (0, 0, 255));
+            } else {
+                let error = result.err().expect("Expected an array uniform error");
+                assert_eq!(error.code, "SHADER_COMPILE_FAILED");
+                assert!(error.message.contains(expected_error), "{error:?}");
+            }
+            assert_eq!(
+                fs::read(scene_root.path().join("input.pen")).unwrap(),
+                before
             );
         }
-        assert_eq!(
-            fs::read(scene_root.path().join("input.pen")).unwrap(),
-            before
-        );
     }
 }
 

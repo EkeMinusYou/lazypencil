@@ -66,6 +66,10 @@ pub fn uniforms(source: &str) -> Result<Vec<Uniform>> {
     declarations::parse(source)
 }
 
+pub(crate) fn preprocessing_source(source: &str) -> Result<Option<String>> {
+    declarations::preprocessing_source(source)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn request(
     project: &Project,
@@ -462,6 +466,46 @@ fn invalid(message: impl Into<String>) -> Error {
 mod tests {
     use super::*;
     use crate::document::Document;
+
+    #[test]
+    fn preprocessing_preserves_directive_annotation_barriers_and_source_positions() {
+        for directive in ["#define UNUSED 1", "#if 1", "#endif", "#else", "#line 40 7"] {
+            let source = format!(
+                "precision highp float;\r\n/** @resolution */\r\n{directive}\r\nuniform vec2 size;\r\n/** @default .5 */ DECL(float,gain)\r\n"
+            );
+            let prepared = preprocessing_source(&source).unwrap().unwrap();
+            assert_eq!(prepared.len(), source.len());
+            let changed = source
+                .bytes()
+                .zip(prepared.bytes())
+                .enumerate()
+                .filter(|(_, (a, b))| a != b)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                changed,
+                vec![(source.find("/**").unwrap() + 2, (b'*', b' '))]
+            );
+            assert!(prepared.contains("/** @default .5 */ DECL"));
+            assert_eq!(source.lines().count(), prepared.lines().count());
+        }
+        for source in [
+            "/** @color @default #3a7fc1 */ uniform vec3 tint;",
+            "/* #if 0 */ uniform float value;",
+            "// #define TYPE int\nuniform float value;",
+        ] {
+            assert!(preprocessing_source(source).unwrap().is_none());
+        }
+        let empty = "/**/\n#define TYPE float\nuniform TYPE value;";
+        assert_eq!(preprocessing_source(empty).unwrap().unwrap(), empty);
+        let source =
+            "/** @default .5 */ /* ordinary separator */\n#define TYPE float\nuniform TYPE value;";
+        assert_eq!(preprocessing_source(source).unwrap().unwrap(), source);
+        let source = "/** @default .5 */\n#define TYPE \\\n float\nuniform TYPE value;";
+        let prepared = preprocessing_source(source).unwrap().unwrap();
+        assert_eq!(prepared.len(), source.len());
+        assert!(prepared.contains("#define TYPE \\\n float"));
+        assert!(preprocessing_source(&"#".repeat(1024 * 1024 + 1)).is_err());
+    }
 
     #[test]
     fn prepared_declarations_bind_values_without_replacing_captured_shader_bytes() {
