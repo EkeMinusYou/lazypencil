@@ -150,6 +150,23 @@ jobs:
         run: |
           set -o pipefail
           python scripts/ci/focus.py build --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS" 2>&1 | tee "$RUNNER_TEMP/focus-build.log"
+      - name: Check focused native calculation code
+        if: inputs.phase == 'focus' && contains(fromJSON(inputs.targets), 'native_layout')
+        timeout-minutes: 5
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
+          cargo clippy --locked --lib --test native_layout -- -D warnings 2>&1 | tee "$RUNNER_TEMP/chromium-native-layout-clippy.log"
+      - name: Validate native cancellation before acquiring Chromium
+        if: inputs.phase == 'focus' && inputs.suite == 'dynamic' && contains(fromJSON(inputs.targets), 'native_layout')
+        timeout-minutes: 2
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        env:
+          LAZYPENCIL_TEST_CODEC_DIR: ${{ runner.temp }}/codec-reference
+        run: |
+          set -o pipefail
+          cargo test --locked --lib native_cancellation -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-native-layout.log"
+          cargo test --locked --test native_layout -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/focus-native-layout.log"
       - name: Run focused reproduction and affected tests
         if: inputs.phase == 'focus' && inputs.suite != 'dynamic' && inputs.suite != 'shader'
         timeout-minutes: 10

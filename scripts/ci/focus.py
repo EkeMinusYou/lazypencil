@@ -95,6 +95,12 @@ def select(paths, platform="auto"):
         targets = sorted(set(targets) | {"project", "queries"})
     if operations_change:
         targets = sorted(set(targets) | {"operations_cli"})
+    native = any(path in {"src/layout.rs", "src/text.rs", "src/render.rs", "src/service.rs", "src/script/layout.rs"}
+                 or path.startswith(("src/layout/", "src/text/", "src/render/")) for path in paths)
+    if native:
+        if suite in ("core", "conversation"):
+            suite = "graphics"
+        targets = sorted(set(targets) | {"native_layout"})
     return {"platform": os_name, "suite": suite, "targets": targets}
 
 
@@ -148,6 +154,15 @@ def commands(suite, targets):
                 [*shader_first, [*common, *selected, "--", "--ignored", "--test-threads=1", *shader_skip]])
     build = [[*common, "--lib", *selected, "--no-run"], ["cargo", "build", "--locked", *features]]
     checks = list(shader_first)
+    native = "native_layout" in targets and suite in ("graphics", "dynamic")
+    if native:
+        # Dynamic focus runs these CPU cases in the workflow before Chromium.
+        if suite == "graphics":
+            checks.extend([
+                [*common, "--lib", "native_cancellation", "--", "--test-threads=2"],
+                [*common, "--test", "native_layout", "--", "--test-threads=2"],
+            ])
+        selected = [arg for target in targets if target != "native_layout" for arg in ("--test", target)]
     if suite == "conversation":
         checks.append([*common, "--test", "agent", "agent_ownership::killed_cli_", "--", "--test-threads=1", "--nocapture"])
         checks.append([*common, "--test", "agent", "embedded_conversation_uses_the_real_helper_for_supervision_and_bound_mcp_edits", "--", "--exact", "--nocapture"])
@@ -162,6 +177,8 @@ def commands(suite, targets):
         checks.append([*common, *selected, "--", "--include-ignored", "--test-threads=1", "--skip", "retained_", *shader_skip])
     else:
         checks.append([*common, "--lib", *selected, "--", "--test-threads=2"])
+        if native:
+            checks[-1].extend(["--skip", "native_cancellation"])
         if suite == "conversation":
             checks[-1].extend(["--skip", "agent_ownership::killed_cli_",
                                "--skip", "session_restart_",

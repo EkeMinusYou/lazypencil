@@ -44,6 +44,8 @@ Coverage is checked after shaping through Paragraph's unresolved-glyph/codepoint
 
 Library callers can replace the fallback list with `Fonts::set_fallback_families`. User/project `[fonts].fallbacks` provides the same policy to CLI, MCP, and TUI. Omit it in both scopes for the default chain; an empty array leaves only the requested family. Effective `default_family` applies when a node omits `fontFamily`, and `locale` appears alongside the requested family in text metrics. Explicit stored families are preserved.
 
+Cancellation can be supplied to `Fonts::layout_with_cancellation`. Common calculations use the same request token and, for script-generated layout, its absolute calculation deadline. Checks surround native shaping and run at every positioned run and at most 64 glyphs while collecting outlines. An interrupted walk returns its cancellation/deadline error without a partial text block; registered fonts can be reused by a later request. An individual Skia call remains cooperative. The new path is under hosted verification.
+
 ## Limits and verification
 
 Current limits are 64 MiB per source or extracted face, 128 MiB of supplied source data, 128 MiB of retained face data, 256 files/faces, 64 variation axes per face, and 4,095 tables per extracted face. Family names are limited to 256 UTF-8 bytes and locale strings to 128 bytes; invalid names produce bounded diagnostics. These are engine input limits, not a measured bound on process RSS. Collection face data is shared with native typefaces where possible, but full lazy loading and configurable cache budgets remain unfinished.

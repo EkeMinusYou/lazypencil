@@ -93,6 +93,9 @@ fn png_impl(
     options: &RenderOptions,
     mut runtime: Option<&mut crate::dynamic::DynamicRuntime>,
 ) -> Result<RenderedImage> {
+    if let Some(runtime) = runtime.as_deref() {
+        runtime.check()?;
+    }
     if !options.time.is_finite() || options.time < 0.0 {
         return Err(invalid("Shader time must be a finite nonnegative number"));
     }
@@ -150,6 +153,9 @@ fn png_impl(
     let (working_width, working_height) =
         raster_dimensions(width + 2 * padding as u64, height + 2 * padding as u64)?;
     let rasters = Rc::new(backdrop::RasterBudget::default());
+    if let Some(runtime) = runtime.as_deref() {
+        runtime.check()?;
+    }
     let _working = rasters.reserve(working_width as u64 * working_height as u64 * 12)?;
     let mut surface = skia_safe::surfaces::raster_n32_premul((working_width, working_height))
         .ok_or_else(|| Error::new("RENDER_ERROR", "Cannot allocate a raster surface"))?;

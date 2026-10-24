@@ -27,9 +27,12 @@ pub fn compute(
 ) -> Result<LayoutSnapshot> {
     let settings = project.script_settings();
     runtime.configure(settings)?;
+    let cancel = runtime.cancellation();
+    crate::cancel::check(cancel.as_ref())?;
     let mut scene = project.resolve()?;
+    crate::cancel::check(cancel.as_ref())?;
     if !scene.roots.iter().any(has_enabled_script) {
-        return layout::compute(scene, fonts);
+        return layout::compute_with_cancellation(scene, fonts, cancel.as_ref());
     }
     for node in &scene.roots {
         validate_initial_scripts(node)?;
@@ -37,14 +40,18 @@ pub fn compute(
     let mut cached = BTreeMap::new();
     let mut runs = 0;
     let deadline = Instant::now() + Duration::from_millis(settings.layout_timeout_ms);
+    let check = || {
+        crate::cancel::check(cancel.as_ref())?;
+        require_budget(deadline)
+    };
     for _ in 0..settings.max_passes {
-        require_budget(deadline)?;
+        check()?;
         let mut count = 0;
         for node in &scene.roots {
             validate_tree(node, 0, &mut count)?;
         }
-        let mut snapshot = layout::compute(scene.clone(), fonts)?;
-        require_budget(deadline)?;
+        let mut snapshot = layout::compute_checked(scene.clone(), fonts, &check)?;
+        check()?;
         let sizes = snapshot
             .items
             .iter()
@@ -80,7 +87,7 @@ pub fn compute(
                 snapshot.id=hash(json!({"layout":snapshot.id,"script_engine":ENGINE,"executions":snapshot.script_executions,"runtime_dependencies":snapshot.runtime_dependencies}).to_string().as_bytes());
             }
             project.verify_unchanged()?;
-            require_budget(deadline)?;
+            check()?;
             return Ok(snapshot);
         }
     }
