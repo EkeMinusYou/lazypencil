@@ -1,24 +1,24 @@
 {
-  "run": 40080651720,
-  "source": "01b5df624753955a4635684a7be4f9160bee6eca",
+  "run": 40083330165,
+  "source": "5260f21d0ec5fe79b1fd4f13d9792a736c8bd308",
   "artifact": {
-    "id": 12554629641,
-    "node_id": "MDg6QXJ0aWZhY3QxMjU1NDYyOTY0MQ==",
-    "name": "shader-preprocessor-01b5df624753955a4635684a7be4f9160bee6eca-attempt-1",
-    "size_in_bytes": 770798,
-    "url": "https://api.github.com/repos/EkeMinusYou/lazypencil/actions/artifacts/12554629641",
-    "archive_download_url": "https://api.github.com/repos/EkeMinusYou/lazypencil/actions/artifacts/12554629641/zip",
+    "id": 12555942264,
+    "node_id": "MDg6QXJ0aWZhY3QxMjU1NTk0MjI2NA==",
+    "name": "shader-preprocessor-5260f21d0ec5fe79b1fd4f13d9792a736c8bd308-attempt-1",
+    "size_in_bytes": 770821,
+    "url": "https://api.github.com/repos/EkeMinusYou/lazypencil/actions/artifacts/12555942264",
+    "archive_download_url": "https://api.github.com/repos/EkeMinusYou/lazypencil/actions/artifacts/12555942264/zip",
     "expired": false,
-    "digest": "sha256:035f86fb989d4dbb240c3aa8a22b3ff21e7bc302c2051bfccafd6d0c666a239c",
-    "created_at": "2026-10-24T09:08:38Z",
-    "updated_at": "2026-10-24T09:08:38Z",
-    "expires_at": "2026-10-27T09:08:36Z",
+    "digest": "sha256:a5eaa06978423c0ec4a66b6531023a142914c452bf035ec9262c94a254c53f28",
+    "created_at": "2026-10-24T09:48:51Z",
+    "updated_at": "2026-10-24T09:48:51Z",
+    "expires_at": "2026-10-27T09:48:50Z",
     "workflow_run": {
-      "id": 40080651720,
+      "id": 40083330165,
       "repository_id": 1429995895,
       "head_repository_id": 1429995895,
       "head_branch": "main",
-      "head_sha": "01b5df624753955a4635684a7be4f9160bee6eca"
+      "head_sha": "5260f21d0ec5fe79b1fd4f13d9792a736c8bd308"
     }
   },
   "source_files_verified": 54,
@@ -30,10 +30,11 @@
       "maximum_pages": 1024
     }
   ],
-  "wasm_sha256": "51f5c7b5aa6b1279560b73a7533bece41fe053bc99356d0e59e9a337322d1644",
-  "wasm_bytes": 481013,
-  "actual_wasm_cases": 16,
+  "wasm_sha256": "3d762d31fd40930cd980abeaa78573e9ddc3a695851154b11d6eff193c1ba1f4",
+  "wasm_bytes": 481016,
+  "actual_wasm_cases": 17,
   "original_package_notices": 69,
   "wasm_standard_libraries": 54,
+  "candidate_only": true,
   "scope": "Standalone Wasm source/compiler/package/stdlib/ABI evidence only. Rendering integration and complete product acceptance remain required."
 }
