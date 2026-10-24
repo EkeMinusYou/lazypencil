@@ -83,6 +83,28 @@ jobs:
               stream.write("platforms=" + json.dumps(platforms if requested == "all" else [requested]) + "\n")
           PY
 
+  cache-maintenance:
+    name: Reserve dependency cache headroom
+    needs: plan
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      actions: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Identify current application inputs without compiling
+        run: |
+          python3 scripts/dist.py source --output "$RUNNER_TEMP/cache-source.tar.gz"
+          python3 scripts/dist.py verify-source "$RUNNER_TEMP/cache-source.tar.gz" --extract "$RUNNER_TEMP/cache-source"
+      - name: Remove application generations that cannot be reused by this source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/cache_retention.py --manifest "$RUNNER_TEMP/cache-source/SOURCE-MANIFEST.json" --delete
+
   audit:
     needs: focus
     if: ${{ !cancelled() && needs.focus.result == 'success' }}
@@ -148,8 +170,8 @@ jobs:
 
   focus:
     name: Focused reproduction / ${{ needs.plan.outputs.platform }}
-    needs: [plan, shader-preprocessor]
-    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.shader-preprocessor.result == 'success' || needs.shader-preprocessor.result == 'skipped') }}
+    needs: [plan, shader-preprocessor, cache-maintenance]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.shader-preprocessor.result == 'success' || needs.shader-preprocessor.result == 'skipped') && (needs.cache-maintenance.result == 'success' || needs.cache-maintenance.result == 'skipped') }}
     uses: ./.github/workflows/native.yml
     with:
       os: ${{ needs.plan.outputs.platform }}
@@ -194,7 +216,7 @@ jobs:
         run: |
           mkdir -p dist
           python scripts/dist.py source --output dist/lazypencil-source.tar.gz > dist/source-report.json
-          python scripts/dist.py verify-source dist/lazypencil-source.tar.gz
+          python scripts/dist.py verify-source dist/lazypencil-source.tar.gz --extract "$RUNNER_TEMP/cache-source"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: lazypencil-source-${{ github.sha }}-attempt-${{ github.run_attempt }}
@@ -207,4 +229,4 @@ jobs:
         timeout-minutes: 3
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/ci/cache_retention.py --delete
+        run: python3 scripts/ci/cache_retention.py --manifest "$RUNNER_TEMP/cache-source/SOURCE-MANIFEST.json" --delete

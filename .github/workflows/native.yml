@@ -149,6 +149,17 @@ jobs:
       - name: Check formatting in the distributed sources
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: cargo fmt --all -- --check
+      - name: Prepare cold focused dependencies before short lint deadlines
+        id: cold-build
+        if: inputs.phase == 'focus' && (steps.native-cache.outputs.cache-matched-key == '' || ((inputs.suite != 'core' && inputs.suite != 'conversation') && startsWith(steps.native-cache.outputs.cache-matched-key, 'core-')))
+        timeout-minutes: ${{ (inputs.suite == 'core' || inputs.suite == 'conversation') && 15 || 45 }}
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        env:
+          FOCUS_SUITE: ${{ inputs.suite }}
+          FOCUS_TARGETS: ${{ inputs.targets }}
+        run: |
+          set -o pipefail
+          python scripts/ci/focus.py build --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS" 2>&1 | tee "$RUNNER_TEMP/cold-build.log"
       - name: Check focused core code before building test executables
         if: inputs.phase == 'focus' && (inputs.suite == 'core' || inputs.suite == 'conversation')
         timeout-minutes: 6
@@ -157,12 +168,13 @@ jobs:
           FOCUS_TARGETS: ${{ inputs.targets }}
         run: |
           python - <<'PY'
-          import json, os, runpy, subprocess
+          import json, os, runpy
           targets = json.loads(os.environ["FOCUS_TARGETS"])
           allowed = runpy.run_path("scripts/ci/focus.py")["CORE_TESTS"]
           assert isinstance(targets, list) and targets and all(target in allowed for target in targets)
           selected = [argument for target in targets for argument in ("--test", target)]
-          subprocess.run(["cargo", "clippy", "--locked", "--no-default-features", "--lib", *selected, "--", "-D", "warnings"], check=True, timeout=300)
+          run = runpy.run_path("scripts/ci/command.py")["run"]
+          run(["cargo", "clippy", "--locked", "--no-default-features", "--lib", *selected, "--", "-D", "warnings"], timeout=300)
           PY
       - name: Check focused rendering code before building test executables
         if: inputs.phase == 'focus' && inputs.suite == 'graphics' && !contains(fromJSON(inputs.targets), 'native_layout')
@@ -173,12 +185,13 @@ jobs:
         run: |
           set -o pipefail
           python - <<'PYTHON' 2>&1 | tee "$RUNNER_TEMP/focus-clippy.log"
-          import json, os, runpy, subprocess
+          import json, os, runpy
           targets = json.loads(os.environ["FOCUS_TARGETS"])
           allowed = runpy.run_path("scripts/ci/focus.py")["CORE_TESTS"]
           assert isinstance(targets, list) and targets and all(target in allowed for target in targets)
           selected = [argument for target in targets for argument in ("--test", target)]
-          subprocess.run(["cargo", "clippy", "--locked", "--lib", *selected, "--", "-D", "warnings"], check=True, timeout=300)
+          run = runpy.run_path("scripts/ci/command.py")["run"]
+          run(["cargo", "clippy", "--locked", "--lib", *selected, "--", "-D", "warnings"], timeout=300)
           PYTHON
       - name: Check focused native calculation code
         if: inputs.phase == 'focus' && contains(fromJSON(inputs.targets), 'native_layout')
@@ -186,21 +199,21 @@ jobs:
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
           set -o pipefail
-          cargo clippy --locked --lib --test native_layout -- -D warnings 2>&1 | tee "$RUNNER_TEMP/chromium-native-layout-clippy.log"
+          python scripts/ci/command.py --timeout 240 cargo clippy --locked --lib --test native_layout -- -D warnings 2>&1 | tee "$RUNNER_TEMP/chromium-native-layout-clippy.log"
       - name: Check focused dynamic code before acquiring Chromium
         if: inputs.phase == 'focus' && inputs.suite == 'dynamic'
         timeout-minutes: 5
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
           set -o pipefail
-          cargo clippy --locked --lib --test dynamic_render --test shader_uniforms -- -D warnings 2>&1 | tee "$RUNNER_TEMP/chromium-runtime-clippy.log"
+          python scripts/ci/command.py --timeout 240 cargo clippy --locked --lib --test dynamic_render --test shader_uniforms -- -D warnings 2>&1 | tee "$RUNNER_TEMP/chromium-runtime-clippy.log"
       - name: Check focused shader code before acquiring Chromium
         if: inputs.phase == 'focus' && inputs.suite == 'shader'
         timeout-minutes: 5
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
           set -o pipefail
-          cargo clippy --locked --test shader_uniforms -- -D warnings 2>&1 | tee "$RUNNER_TEMP/chromium-shader-clippy.log"
+          python scripts/ci/command.py --timeout 240 cargo clippy --locked --test shader_uniforms -- -D warnings 2>&1 | tee "$RUNNER_TEMP/chromium-shader-clippy.log"
       - name: Reproduce script worker compatibility before native rendering
         if: inputs.phase == 'focus' && (inputs.suite == 'graphics' || inputs.suite == 'dynamic') && contains(fromJSON(inputs.targets), 'scripts')
         timeout-minutes: 15
@@ -210,7 +223,7 @@ jobs:
           cargo test --locked --no-default-features --test project --test scripts -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-script-core.log"
       - name: Build focused test binaries
         id: focus-build
-        if: inputs.phase == 'focus'
+        if: inputs.phase == 'focus' && steps.cold-build.outcome != 'success'
         timeout-minutes: ${{ (inputs.suite == 'core' || inputs.suite == 'conversation') && 15 || 45 }}
         working-directory: ${{ runner.temp }}/lazypencil-source
         env:
@@ -629,7 +642,7 @@ jobs:
           path: ${{ runner.temp }}/lazypencil-application-cache
       - name: Prune application outputs before saving dependency cache
         id: cache-prune
-        if: ${{ !cancelled() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true' && (steps.focus-build.outcome == 'success' || steps.default-build.outcome == 'success') }}
+        if: ${{ !cancelled() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true' && (steps.cold-build.outcome == 'success' || steps.focus-build.outcome == 'success' || steps.default-build.outcome == 'success') }}
         continue-on-error: true
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: sh scripts/ci/prune_application_cache.sh

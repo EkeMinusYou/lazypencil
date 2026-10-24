@@ -409,6 +409,20 @@ class FocusTests(unittest.TestCase):
             for name in focus.INPUT_REPRODUCTIONS:
                 self.assertIn(name, native)
 
+    def test_cold_build_precedes_short_lints_and_is_not_built_again_on_success(self):
+        root = Path(__file__).resolve().parents[1]
+        native = (root / ".github/workflows/native.yml").read_text()
+        self.assertLess(native.index("id: cold-build"), native.index("Check focused core code"))
+        self.assertIn("steps.native-cache.outputs.cache-matched-key == ''", native)
+        self.assertIn("if: inputs.phase == 'focus' && steps.cold-build.outcome != 'success'", native)
+        prune = native[native.index("id: cache-prune"):]
+        self.assertIn("!cancelled()", prune)
+        self.assertIn("steps.cold-build.outcome == 'success'", prune)
+        ci = (root / ".github/workflows/ci.yml").read_text()
+        self.assertIn("needs: [plan, shader-preprocessor, cache-maintenance]", ci)
+        self.assertIn("needs.cache-maintenance.result == 'skipped'", ci)
+        self.assertIn('cache_retention.py --manifest "$RUNNER_TEMP/cache-source/SOURCE-MANIFEST.json" --delete', ci)
+
     def test_infrastructure_only_changes_do_not_add_browser_tests_to_input_dispatch(self):
         paths = ["src/config/keys/navigation.rs", "src/tui/mod.rs", "tests/tui.rs", "tests/user_config.rs",
                  "scripts/ci/application_cache.py", "scripts/ci/audit_tool_cache.py", "scripts/ci/cache_retention.py",

@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import subprocess
 import time
 import urllib.error
@@ -265,9 +266,10 @@ def main():
     if not isinstance(targets, list) or not targets or any(target not in CORE_TESTS for target in targets):
         parser.error("Expected existing integration test targets")
     build, checks = commands(args.suite, targets)
+    run = runpy.run_path(str(Path(__file__).with_name("command.py")))["run"]
     for command in build if args.mode == "build" else checks:
         print("+ " + " ".join(command), flush=True)
-        subprocess.run(command, check=True, timeout=2400 if args.mode == "build" else 300)
+        run(command, timeout=(720 if args.suite in ("core", "conversation") else 2400) if args.mode == "build" else 300)
 
 
 if __name__ == "__main__":

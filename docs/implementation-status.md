@@ -671,6 +671,12 @@ source `36d1269` の専用 Chromium は macOS arm64 `40014476233`（97件）、L
 
 追加のキャッシュ調整では、workflow に加えて `scripts/ci/` と直下の `scripts/test_*.py` を application key の入力から除く。CI の変更だけで native binary を再コンパイルしないためで、除外ファイルを Rust が読み込む場合は compiler dep-info の照合で再利用を拒否する。ドキュメント・fixture・resource・その他の script は引き続き束縛する。除外パスの変更での再利用、除外したファイルを埋め込む場合の拒否、似た名前の実入力の失効を軽量試験で検査した。この追加調整の hosted 検証は、進行中の3環境検証を完了してから行う。
 
+追加調整 `25c2676` と履歴追加 `7f0b49f` の3環境・監査・source 検証は成功した。直近3実行の job／step 時刻では待機は1〜4秒だった。`40123845625` の先行ジョブは147秒で、依存 cache 復元29秒、Clippy30秒、対象 build38秒、履歴の再現試験0.76秒で期待値の不一致を検出した。期待値修正後の `40124133381` は同じ runner image の依存 cache が見つからず、Skia 再ビルド中に Clippy の300秒上限へ達し、子プロセスの pipe が残って工程全体は373秒になった。試験へは到達していない。直近成功 `40120701435` の Linux x64 でも通常 build394秒・release 工程630秒を要し、待機列よりビルドを優先して改善する。
+
+cache の一覧では application 6件が5,982,586,140 bytes、総量が10,183,648,331 bytesで、以前復元できた native key が消えていた。full 2世代を保存し終えてからの整理では容量の余裕を確保できないため、main の先行検証前に現在の source 入力を確認し、再利用できない application 世代を削除する。新 key は source hash を独立に含み、同じ source の full 1件と未統合 focus 1件を環境ごとに残す。依存・download・tool と別 ref の cache は保持し、同じ compiler／image のない依存 checkpoint も残す。CI だけの変更では source hash を維持し、compiler 入力と環境の完全性確認も維持する。
+
+依存 cache がない先行ジョブは、短い lint 期限の前に対象 binary を一度だけ準備し、後段の同じ build を省く。その準備後に試験や lint が失敗しても依存だけは保存可能とする。対象の試験と最終3環境の成功条件は変えない。期限超過時は Cargo と同じ process group の子も回収し、Ninja や tee の残留を防ぐ。軽量試験には source hash の一致・旧世代の選別・別 ref と依存の保持・TERM を無視する子と pipe の回収を含める。Rust／Skia の実ビルドは GHA で確認する。
+
 ### 保存済み会話の読み取り
 
 2026-10-25: 保存済み会話・ターンの一覧と、transcript 全体を容量制限付きでページ取得する共通 API／`conversations list|turns|read` を追加した。アダプター・認証・会話再開を呼ばず、使用中の会話も読み取る。UUID 順の live listing を明示し、一覧の cursor を文書・会話に束縛する。破損した既知の項目は unavailable として残す。JSONL は64 KiB以下で取得し、継続時は全内容の SHA-256 を要求・再検査する。mtime と長さを保った変更も失効させ、日本語の境界と末尾の未完了データを保持する。不正 UTF-8 は表示用文字列と元バイトの Base64 を返す。元データの64 MiB上限・30秒の協調期限・取消を持ち、FIFO と symlink の拒否を含めて試験を追加した。Rust／実 CLI の検証は GHA で行う。これは生の保存記録の読み取り経路であり、TUI の会話ログ閲覧、会話の選択・削除、保持ポリシーを完了扱いにはしない。
