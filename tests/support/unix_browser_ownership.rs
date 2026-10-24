@@ -5,7 +5,9 @@ use lazypencil::{
 };
 use serde_json::{Value, json};
 use std::{
+    collections::{BTreeMap, BTreeSet},
     fs,
+    io::{Read, Seek, SeekFrom},
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -424,6 +426,66 @@ fn real_browser() -> Browser {
     .unwrap()
 }
 
+fn ps_output(args: &[&str]) -> Vec<u8> {
+    let mut file = tempfile::tempfile().unwrap();
+    let mut child = Owner(
+        Command::new("ps")
+            .args(args)
+            .stdout(file.try_clone().unwrap())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    let end = Instant::now() + Duration::from_secs(3);
+    loop {
+        assert!(
+            file.metadata().unwrap().len() <= 1024 * 1024,
+            "Oversized ps output"
+        );
+        if let Some(status) = child.0.try_wait().unwrap() {
+            assert!(status.success(), "ps exited with {status}");
+            break;
+        }
+        assert!(
+            Instant::now() < end,
+            "ps did not finish within its deadline"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    file.seek(SeekFrom::Start(0)).unwrap();
+    let mut bytes = Vec::new();
+    file.take(1024 * 1024 + 1).read_to_end(&mut bytes).unwrap();
+    assert!(bytes.len() <= 1024 * 1024);
+    bytes
+}
+
+fn observed_descendants(guardian: u32) -> BTreeSet<u32> {
+    let output = ps_output(&["-A", "-o", "pid=", "-o", "ppid="]);
+    let parents: BTreeMap<u32, u32> = String::from_utf8(output)
+        .unwrap()
+        .lines()
+        .map(|line| {
+            let mut fields = line.split_ascii_whitespace();
+            let pid = fields.next().unwrap().parse().unwrap();
+            let parent = fields.next().unwrap().parse().unwrap();
+            assert!(fields.next().is_none());
+            (pid, parent)
+        })
+        .collect();
+    let mut owned = BTreeSet::from([guardian]);
+    loop {
+        let before = owned.len();
+        for (pid, parent) in &parents {
+            if owned.contains(parent) {
+                owned.insert(*pid);
+            }
+        }
+        if owned.len() == before {
+            return owned;
+        }
+    }
+}
+
 fn real_pids(browser: &mut Browser) -> Vec<u32> {
     let budget = Budget::new(Duration::from_secs(15), None);
     browser
@@ -444,28 +506,28 @@ fn real_pids(browser: &mut Browser) -> Vec<u32> {
         .map(|info| u32::try_from(info["id"].as_u64().unwrap()).unwrap())
         .collect();
     assert!(pids.len() >= 2 && pids.contains(&browser.process_id()));
-    #[cfg(target_os = "macos")]
-    for pid in &pids {
-        // Verify the managed macOS runtime's process-group assumption. Linux's
-        // private subreaper also collects descendants that leave that group.
-        assert_eq!(
-            unsafe { libc::getpgid(*pid as libc::pid_t) },
-            browser.process_id() as libc::pid_t
-        );
-    }
-    let parent = Command::new("ps")
-        .args(["-o", "ppid=", "-p", &browser.process_id().to_string()])
-        .output()
-        .unwrap();
-    assert!(parent.status.success());
-    let guardian: u32 = String::from_utf8(parent.stdout)
-        .unwrap()
-        .trim()
-        .parse()
-        .unwrap();
+    let parent = ps_output(&["-o", "ppid=", "-p", &browser.process_id().to_string()]);
+    let guardian: u32 = String::from_utf8(parent).unwrap().trim().parse().unwrap();
     assert_ne!(guardian, std::process::id());
-    pids.push(guardian);
-    assert!(pids.iter().copied().all(alive));
+    // Include OS-observed children such as zygotes that CDP may omit. Only
+    // query these PIDs; normal exits between observations are harmless.
+    pids.extend(observed_descendants(guardian));
+    pids.sort_unstable();
+    pids.dedup();
+    #[cfg(target_os = "macos")]
+    for pid in pids.iter().filter(|pid| **pid != guardian) {
+        let group = unsafe { libc::getpgid(*pid as libc::pid_t) };
+        if group == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+            continue;
+        }
+        // Verify every observed managed descendant, including non-CDP children.
+        assert_eq!(group, browser.process_id() as libc::pid_t);
+    }
+    assert!(alive(browser.process_id()) && alive(guardian));
+    assert!(
+        pids.iter()
+            .any(|pid| *pid != browser.process_id() && *pid != guardian && alive(*pid))
+    );
     pids
 }
 
