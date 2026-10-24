@@ -422,7 +422,16 @@ impl DynamicRuntime {
             .as_u64()
             .ok_or_else(|| shader_error("Shader height is missing"))?;
         dimensions(width as f64, height as f64)?;
-        let key = hash(request.to_string().as_bytes());
+        let mut cache_request = request.clone();
+        if request["time_dependent"] == false {
+            // Uniform/sampler values already capture every used input. The
+            // selected timeline is not an input to a time-independent shader.
+            cache_request
+                .as_object_mut()
+                .expect("shader request object")
+                .remove("time");
+        }
+        let key = hash(cache_request.to_string().as_bytes());
         if let Some(cached) = self.cached(&key) {
             return Ok(cached);
         }
