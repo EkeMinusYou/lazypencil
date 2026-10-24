@@ -628,8 +628,9 @@ fn native_icons_match_upstream_svg_rendered_by_a_real_browser() {
         .unwrap();
     names.insert(name.clone());
     let temp = TempDir::new().unwrap();
-    let mut dynamic =
-        lazypencil::dynamic::DynamicRuntime::new(temp.path()).with_executable(browser);
+    let mut dynamic = lazypencil::dynamic::DynamicRuntime::new(temp.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(browser);
     for name in names {
         let html = format!(
             "<style>html,body{{margin:0;background:white;color:#123456}}svg{{display:block;width:96px;height:48px}}</style>{}",

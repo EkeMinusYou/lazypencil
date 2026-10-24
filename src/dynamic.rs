@@ -29,6 +29,7 @@ pub struct Raster {
 pub struct DynamicRuntime {
     data: PathBuf,
     executable: Option<PathBuf>,
+    supervisor: Option<PathBuf>,
     page_scope: Option<String>,
     page_snapshot: Option<String>,
     pages: Option<Browser>,
@@ -50,6 +51,7 @@ impl DynamicRuntime {
         Self {
             data: data.into(),
             executable: None,
+            supervisor: None,
             page_scope: None,
             page_snapshot: None,
             pages: None,
@@ -68,6 +70,11 @@ impl DynamicRuntime {
     }
     pub fn with_executable(mut self, path: impl Into<PathBuf>) -> Self {
         self.executable = Some(path.into());
+        self
+    }
+    /// Bind browser workers to the actual CLI when using the library from another host.
+    pub fn with_supervisor_executable(mut self, path: impl Into<PathBuf>) -> Self {
+        self.supervisor = Some(path.into());
         self
     }
     /// Opt into in-memory page state for this document. Ordinary CLI/MCP
@@ -241,7 +248,12 @@ impl DynamicRuntime {
             } else {
                 crate::runtime::installed(&self.data)?
             };
-            *slot = Some(Browser::launch(&browser, purpose, &launch_budget)?);
+            *slot = Some(match &self.supervisor {
+                Some(helper) => {
+                    Browser::launch_with_supervisor(&browser, purpose, &launch_budget, helper)?
+                }
+                None => Browser::launch(&browser, purpose, &launch_budget)?,
+            });
         }
         Ok(slot.as_mut().expect("browser initialized"))
     }

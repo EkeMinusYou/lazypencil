@@ -232,9 +232,11 @@ fn sampler_arrays_validate_lengths_types_defaults_and_reserved_stage_inputs() {
 fn software_webgl_sampler_arrays_bind_images_defaults_active_tails_and_recover() {
     use skia_safe::{Color, Data, Image};
     let root = TempDir::new().unwrap();
-    let mut runtime = lazypencil::dynamic::DynamicRuntime::new(root.path()).with_executable(
-        std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
-    );
+    let mut runtime = lazypencil::dynamic::DynamicRuntime::new(root.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(
+            std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
+        );
     let striped = "precision highp float;\n/* @resolution */ uniform vec2 size;\nuniform sampler2D single,images[3];void main(){vec2 uv=gl_FragCoord.xy/size;gl_FragColor=uv.x<0.5?texture2D(images[0],uv):(uv.y>0.5?texture2D(images[1],uv):texture2D(single,uv));}";
     let constant = "precision highp float;const int N=2;uniform sampler2D images[N];void main(){gl_FragColor=texture2D(images[1],vec2(0.5));}";
     for (source, values, success) in [
@@ -327,9 +329,11 @@ fn software_webgl_sampler_arrays_bind_images_defaults_active_tails_and_recover()
 #[ignore = "Requires sandboxed software WebGL Chromium"]
 fn software_webgl_binds_grouped_arrays_integer_boolean_and_matrix_values() {
     let root = TempDir::new().unwrap();
-    let mut runtime = lazypencil::dynamic::DynamicRuntime::new(root.path()).with_executable(
-        std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
-    );
+    let mut runtime = lazypencil::dynamic::DynamicRuntime::new(root.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(
+            std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
+        );
     let cases = [
         (
             "precision highp float; uniform float red,green; uniform float blue[3]; void main(){gl_FragColor=vec4(red,green,blue[2],1.0);}",
@@ -394,9 +398,11 @@ fn software_webgl_binds_grouped_arrays_integer_boolean_and_matrix_values() {
 #[ignore = "Requires sandboxed software WebGL Chromium"]
 fn linked_constant_dimensions_validate_inputs_and_recover_after_an_error() {
     let root = TempDir::new().unwrap();
-    let mut runtime = lazypencil::dynamic::DynamicRuntime::new(root.path()).with_executable(
-        std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
-    );
+    let mut runtime = lazypencil::dynamic::DynamicRuntime::new(root.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(
+            std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
+        );
     let source = "precision highp float;\n#define COUNT 3\nuniform float data[COUNT]; uniform mat2 unused_tail[2]; void main(){gl_FragColor=vec4(data[2]+(unused_tail[0]*vec2(0.0,1.0)).x,0.0,0.0,1.0);}";
     for (values, success) in [
         (json!({"data":[0.25]}), false),

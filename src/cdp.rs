@@ -6,16 +6,20 @@ use std::{
     collections::{BTreeMap, VecDeque},
     fs, io,
     net::{SocketAddr, TcpStream},
-    process::{Child, Command, Stdio},
+    path::Path,
+    process::{Command, Stdio},
     time::{Duration, Instant},
 };
 use tokio_util::sync::CancellationToken;
 use tungstenite::{Message, WebSocket, protocol::WebSocketConfig};
 
 mod lifecycle;
+mod process;
 mod readiness;
 mod tabs;
 use lifecycle::PageLifecycle;
+#[cfg(windows)]
+pub use process::serve_worker as serve_process_worker;
 pub use tabs::{MAX_RETAINED_PAGES, PageState};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -25,7 +29,7 @@ pub enum Purpose {
 }
 
 pub struct Browser {
-    child: Child,
+    child: process::Owned,
     socket: WebSocket<TcpStream>,
     next_id: u64,
     pub version: String,
@@ -73,6 +77,25 @@ impl Browser {
         purpose: Purpose,
         budget: &Budget<'_>,
     ) -> Result<Self> {
+        Self::launch_inner(browser, purpose, budget, None)
+    }
+
+    /// Supply the actual lazypencil CLI when embedding this library in another executable.
+    pub fn launch_with_supervisor(
+        browser: &InstalledBrowser,
+        purpose: Purpose,
+        budget: &Budget<'_>,
+        supervisor: &Path,
+    ) -> Result<Self> {
+        Self::launch_inner(browser, purpose, budget, Some(supervisor))
+    }
+
+    fn launch_inner(
+        browser: &InstalledBrowser,
+        purpose: Purpose,
+        budget: &Budget<'_>,
+        supervisor: Option<&Path>,
+    ) -> Result<Self> {
         budget.check()?;
         let profile = tempfile::Builder::new()
             .prefix("lazypencil-chromium-")
@@ -102,13 +125,12 @@ impl Browser {
                 "--enable-unsafe-swiftshader",
             ]);
         }
-        let mut child = command
+        command
             .arg("about:blank")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|e| failed(format!("Cannot launch Chromium: {e}")))?;
+            .stderr(Stdio::null());
+        let mut child = process::Owned::spawn(command, supervisor, profile.path(), budget)?;
         let result = (|| {
             let port_file = profile.path().join("DevToolsActivePort");
             let (port, path) = loop {
@@ -163,8 +185,7 @@ impl Browser {
             Ok(socket) => socket,
             Err(error) => {
                 let error = budget.check().err().unwrap_or(error);
-                let _ = child.kill();
-                let _ = child.wait();
+                child.stop();
                 return Err(error);
             }
         };
@@ -326,8 +347,7 @@ impl Drop for Browser {
             json!({}),
             &Budget::new(Duration::from_millis(200), None),
         );
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        self.child.stop();
     }
 }
 fn pending(error: &io::Error) -> bool {
