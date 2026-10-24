@@ -24,7 +24,22 @@ fn app(temp: &TempDir, mode: &str) -> App {
     let crate::cli::Command::Tui(args) = args.command else {
         unreachable!()
     };
-    App::new(Conversation::open(args.prompt, Some(temp.path().join("data"))).unwrap())
+    let harness = std::env::current_exe().unwrap();
+    let executable = harness
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join(format!("lazypencil{}", std::env::consts::EXE_SUFFIX));
+    assert!(
+        executable.is_file(),
+        "Build the matching lazypencil binary before running process-backed TUI unit tests: {}",
+        executable.display()
+    );
+    App::new(
+        Conversation::open_with_executable(args.prompt, Some(temp.path().join("data")), executable)
+            .unwrap(),
+    )
 }
 fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
@@ -568,17 +583,32 @@ fn queued_completion_does_not_erase_the_next_draft() {
         .unwrap();
         app.insert_text("最初の依頼");
         app.submit().await.unwrap();
-        loop {
-            if let ConversationEvent::Message(value) = app.conversation.next_event().await.unwrap()
-                && value["type"] == "turn_complete"
-            {
-                break;
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if let ConversationEvent::Message(value) =
+                    app.conversation.next_event().await.unwrap()
+                {
+                    assert!(
+                        !matches!(value["type"].as_str(), Some("failed" | "connection_error")),
+                        "Unexpected agent failure before completion: {value}"
+                    );
+                    if value["type"] == "turn_complete" {
+                        break;
+                    }
+                }
             }
-        }
+        })
+        .await
+        .expect("The fixture must reach turn_complete without waiting indefinitely");
         assert!(!app.conversation.active());
         app.sync_turn(&worker);
         app.insert_text("次の依頼は消えない");
-        let ConversationEvent::Message(value) = app.conversation.next_event().await.unwrap() else {
+        let ConversationEvent::Message(value) =
+            tokio::time::timeout(Duration::from_secs(10), app.conversation.next_event())
+                .await
+                .expect("Completion must follow turn_complete")
+                .unwrap()
+        else {
             panic!("Expected completion")
         };
         assert_eq!(value["type"], "complete");
