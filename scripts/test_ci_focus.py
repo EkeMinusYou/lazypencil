@@ -48,10 +48,10 @@ class FocusTests(unittest.TestCase):
             self.assertEqual(result["suite"], "dynamic")
             build, checks = focus.commands(result["suite"], result["targets"])
             self.assertNotIn("--no-default-features", build[0])
-            self.assertIn("cdp::", checks[0])
-            self.assertIn("retained_", checks[2])
-            self.assertIn("--skip", checks[3])
-            self.assertIn("--test-threads=1", checks[3])
+            self.assertIn("cdp::", checks[2])
+            self.assertIn("retained_", checks[4])
+            self.assertIn("--skip", checks[5])
+            self.assertIn("--test-threads=1", checks[5])
 
     def test_shader_changes_select_cpu_validation_then_only_real_shader_cases(self):
         for paths in (["src/shader.rs"], ["src/shader/defaults.rs"], ["tests/shader_uniforms.rs"], ["src/webgl.js"], ["src/shader.rs", ".github/workflows/native.yml"]):
@@ -60,7 +60,7 @@ class FocusTests(unittest.TestCase):
             build,checks=focus.commands(result["suite"],result["targets"])
             self.assertNotIn("--lib",build[0])
             self.assertNotIn("--no-default-features",build[0])
-            self.assertEqual(len(checks),1)
+            self.assertEqual(len(checks),3)
             self.assertIn("--ignored",checks[0])
             self.assertNotIn("--include-ignored",checks[0])
             self.assertEqual(checks[0][checks[0].index("--test")+1],"shader_uniforms")
@@ -148,9 +148,26 @@ class FocusTests(unittest.TestCase):
         early = workflow[workflow.index("- name: Validate dynamic inputs"):workflow.index("- name: Validate shader inputs")]
         self.assertIn("cargo test --locked --lib dynamic::", early)
         self.assertIn("shader::tests::prepared_declarations_bind_values_without_replacing_captured_shader_bytes", early)
+        self.assertIn("shader::tests::preprocessing_preserves_directive_annotation_barriers_and_source_positions", early)
         self.assertIn("cargo test --locked --test shader_uniforms", early)
         self.assertIn("cargo clippy --locked --lib --test dynamic_render --test shader_uniforms -- -D warnings", early)
         self.assertLess(workflow.index("- name: Check focused dynamic code"), workflow.index("- name: Install and verify the pinned Chromium runtime"))
+
+    def test_observed_shader_regressions_run_first_without_repeating_or_losing_other_cases(self):
+        cases = ["linked_constant_dimensions_validate_inputs_and_recover_after_an_error",
+                 "native_annotation_binding_matches_public_pencil_reference_pixels"]
+        self.assertEqual(focus.SHADER_REGRESSIONS, cases)
+        for suite in ["dynamic", "shader"]:
+            _, checks = focus.commands(suite, ["shader_uniforms"])
+            for case, check in zip(cases, checks[:2]):
+                self.assertIn(case, check)
+                self.assertIn("--exact", check)
+                self.assertIn("--ignored", check)
+                self.assertNotIn("--skip", check)
+                self.assertEqual(check[check.index("--test") + 1], "shader_uniforms")
+                self.assertEqual(checks[-1][checks[-1].index(case)-1], "--skip")
+        _, checks = focus.commands("dynamic", ["dynamic_render"])
+        self.assertTrue(all(case not in check for check in checks for case in cases))
 
     def test_core_edit_selects_its_existing_integration_target(self):
         result = focus.select(["src/queries.rs", "tests/queries.rs"])

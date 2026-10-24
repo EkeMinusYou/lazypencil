@@ -170,6 +170,7 @@ jobs:
           cargo test --locked --test dynamic_render -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-dynamic-inputs.log"
           cargo test --locked --lib dynamic:: -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/focus-dynamic-inputs.log"
           cargo test --locked --lib shader::tests::prepared_declarations_bind_values_without_replacing_captured_shader_bytes -- --exact 2>&1 | tee -a "$RUNNER_TEMP/focus-dynamic-inputs.log"
+          cargo test --locked --lib shader::tests::preprocessing_preserves_directive_annotation_barriers_and_source_positions -- --exact 2>&1 | tee -a "$RUNNER_TEMP/focus-dynamic-inputs.log"
           cargo test --locked --test shader_uniforms -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/focus-dynamic-inputs.log"
       - name: Check focused dynamic code before acquiring Chromium
         if: inputs.phase == 'focus' && inputs.suite == 'dynamic'

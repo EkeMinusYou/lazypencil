@@ -29,11 +29,8 @@ impl DynamicRuntime {
             cancel.as_ref(),
         );
         let (source, _) = crate::shader::source(project, node, fill, property)?;
-        // Conservatively include hashes inside comments. Sources without any #
-        // cannot contain directives and retain their browser-free CPU checks.
-        let expanded = source
-            .contains('#')
-            .then(|| self.shader_declarations(source, &budget))
+        let expanded = crate::shader::preprocessing_source(source)?
+            .map(|input| self.shader_declarations(source, &input, &budget))
             .transpose()?;
         let request = crate::shader::request_with_declarations(
             project,
@@ -51,7 +48,12 @@ impl DynamicRuntime {
         self.shader_with_budget(request, &budget)
     }
 
-    fn shader_declarations(&mut self, source: &str, budget: &Budget<'_>) -> Result<Arc<str>> {
+    fn shader_declarations(
+        &mut self,
+        source: &str,
+        declaration_source: &str,
+        budget: &Budget<'_>,
+    ) -> Result<Arc<str>> {
         budget.check()?;
         let key = format!(
             "shader-source:{}:{}",
@@ -63,7 +65,7 @@ impl DynamicRuntime {
         }
         let browser = self.browser(Purpose::Shader, budget)?;
         let result = browser.with_tab(budget, |browser, session| {
-            let request = json!({"source":source,"width":1,"height":1});
+            let request = json!({"source":source,"declaration_source":declaration_source,"width":1,"height":1});
             let expression = format!(
                 "({})({},{},true)",
                 include_str!("../webgl.js"),

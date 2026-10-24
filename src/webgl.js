@@ -51,7 +51,7 @@
     if (imports.length !== 1 || imports[0].module !== "env" || imports[0].name !== "memory" || imports[0].kind !== "memory") throw Error("Unexpected shader preprocessor imports");
     const memory = new WebAssembly.Memory({ initial: 256, maximum: 1024 });
     const instance = await WebAssembly.instantiate(module, { env: { memory } });
-    const input = new TextEncoder().encode(JSON.stringify({ source: request.source, defines, coordinate_scale: coordinateSize.map((value, index) => value / [request.width, request.height][index]) }));
+    const input = new TextEncoder().encode(JSON.stringify({ source: declarationsOnly ? request.declaration_source : request.source, defines, coordinate_scale: coordinateSize.map((value, index) => value / [request.width, request.height][index]) }));
     if (input.length > 8 * 1024 * 1024) throw Error("Shader preprocessor input exceeds 8 MiB");
     const pointer = instance.exports.input_buffer(input.length);
     if (!pointer || pointer + input.length > memory.buffer.byteLength) throw Error("Invalid shader preprocessor input region");

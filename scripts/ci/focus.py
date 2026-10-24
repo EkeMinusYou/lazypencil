@@ -17,6 +17,10 @@ CORE_TESTS = {path.stem for path in TEST_FILES}
 RENDER_TESTS = {path.stem for path in TEST_FILES if '#![cfg(feature = "rendering")]' in path.read_text(encoding="utf-8")}
 # These explicit opt-ins consume real model usage and stay outside hosted CI.
 CREDENTIALED_TESTS = {"agent_workflow"}
+SHADER_REGRESSIONS = [
+    "linked_constant_dimensions_validate_inputs_and_recover_after_an_error",
+    "native_annotation_binding_matches_public_pencil_reference_pixels",
+]
 RENDER_MODULES = set(re.findall(r'#\[cfg\(feature = "(?:rendering|tui)"\)\]\s+(?:pub )?mod (\w+);', (Path(__file__).resolve().parents[2] / "src/lib.rs").read_text(encoding="utf-8")))
 
 
@@ -131,14 +135,19 @@ def commands(suite, targets):
     features = ["--no-default-features"] if core else []
     selected = [arg for target in targets for arg in ("--test", target)]
     common = ["cargo", "test", "--locked", *features]
+    shader_first = [
+        [*common, "--test", "shader_uniforms", name, "--", "--ignored", "--exact", "--test-threads=1"]
+        for name in SHADER_REGRESSIONS
+    ] if suite in ("shader", "dynamic") and "shader_uniforms" in targets else []
+    shader_skip = [arg for name in SHADER_REGRESSIONS for arg in ("--skip", name)] if shader_first else []
     if suite == "shader":
         if targets != ["shader_uniforms"]:
             raise ValueError("Shader focus requires only the shader_uniforms target")
         # CPU validation runs before Chromium acquisition in the native workflow.
         return ([[*common, *selected, "--no-run"], ["cargo", "build", "--locked"]],
-                [[*common, *selected, "--", "--ignored", "--test-threads=1"]])
+                [*shader_first, [*common, *selected, "--", "--ignored", "--test-threads=1", *shader_skip]])
     build = [[*common, "--lib", *selected, "--no-run"], ["cargo", "build", "--locked", *features]]
-    checks = []
+    checks = list(shader_first)
     if suite == "conversation":
         checks.append([*common, "--test", "agent", "agent_ownership::killed_cli_", "--", "--test-threads=1", "--nocapture"])
         checks.append([*common, "--test", "agent", "embedded_conversation_uses_the_real_helper_for_supervision_and_bound_mcp_edits", "--", "--exact", "--nocapture"])
@@ -150,7 +159,7 @@ def commands(suite, targets):
         checks.append([*common, "--lib", "tui::tests::", "--", "--test-threads=2"])
     if suite == "dynamic":
         checks.append([*common, "--test", "dynamic_render", "retained_", "--", "--ignored", "--test-threads=1"])
-        checks.append([*common, *selected, "--", "--include-ignored", "--test-threads=1", "--skip", "retained_"])
+        checks.append([*common, *selected, "--", "--include-ignored", "--test-threads=1", "--skip", "retained_", *shader_skip])
     else:
         checks.append([*common, "--lib", *selected, "--", "--test-threads=2"])
         if suite == "conversation":
