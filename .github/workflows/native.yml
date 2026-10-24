@@ -87,6 +87,8 @@ jobs:
         run: python scripts/dist.py source --output source.tar.gz
       - name: Verify and extract the distribution
         run: python scripts/dist.py verify-source source.tar.gz --extract "$RUNNER_TEMP/lazypencil-source"
+      - name: Preserve Cargo freshness for verified extracted inputs
+        run: python scripts/ci/source_timestamps.py --source "$RUNNER_TEMP/lazypencil-source"
       - name: Identify compatible hosted dependency caches
         id: cache-key
         continue-on-error: true
