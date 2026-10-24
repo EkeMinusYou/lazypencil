@@ -204,7 +204,8 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
     let mut document_preview_time = None;
     let mut script =
         crate::script::ScriptRuntime::new(std::env::current_exe().expect("current executable"));
-    let mut dynamic = crate::dynamic::DynamicRuntime::new(store.data_dir());
+    let mut dynamic =
+        crate::dynamic::DynamicRuntime::new(store.data_dir()).with_retained_pages(store.path());
     loop {
         let now = Instant::now();
         script.expire_idle(now);
@@ -316,17 +317,20 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 id: item.record.id.clone(), name: item.node.properties.get("name").and_then(Value::as_str).unwrap_or(&item.record.id).into(), bounds: item.record.visual_bounds,
                 target: json!({"id":item.record.id,"address":item.record.address,"source_id":item.record.source_id,"source_path":item.record.source_path,"generated_by":item.record.generated_by}),
             }).collect();
+            let time_dependent = image.dynamic_artifacts.iter().any(|artifact| {
+                artifact["acquisition"]["kind"] == "shader"
+                    && artifact["acquisition"]["time_dependent"] == true
+            });
+            let mut summary = layout.summary();
+            summary["dynamic_artifacts"] = Value::Array(image.dynamic_artifacts);
             Ok(Some(Preview {
                 protocol,
                 png: image.png,
                 view,
                 nodes,
-                summary: layout.summary(),
+                summary,
                 attachment: false,
-                time_dependent: image.dynamic_artifacts.iter().any(|artifact| {
-                    artifact["acquisition"]["kind"] == "shader"
-                        && artifact["acquisition"]["time_dependent"] == true
-                }),
+                time_dependent,
             }))
         })();
         let cancelled = cancel.is_cancelled();

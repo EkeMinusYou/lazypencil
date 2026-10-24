@@ -3,6 +3,7 @@
 use crate::{Error, Result, runtime::InstalledBrowser};
 use serde_json::{Value, json};
 use std::{
+    collections::{BTreeMap, VecDeque},
     fs, io,
     net::{SocketAddr, TcpStream},
     process::{Child, Command, Stdio},
@@ -13,7 +14,9 @@ use tungstenite::{Message, WebSocket, protocol::WebSocketConfig};
 
 mod lifecycle;
 mod readiness;
+mod tabs;
 use lifecycle::PageLifecycle;
+pub use tabs::{MAX_RETAINED_PAGES, PageState};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Purpose {
@@ -26,7 +29,8 @@ pub struct Browser {
     socket: WebSocket<TcpStream>,
     next_id: u64,
     pub version: String,
-    page_lifecycle: Option<PageLifecycle>,
+    page_lifecycle: BTreeMap<String, PageLifecycle>,
+    retained_tabs: VecDeque<tabs::RetainedTab>,
     _profile: tempfile::TempDir,
 }
 
@@ -169,7 +173,8 @@ impl Browser {
             socket,
             next_id: 0,
             version: String::new(),
-            page_lifecycle: None,
+            page_lifecycle: BTreeMap::new(),
+            retained_tabs: VecDeque::new(),
             _profile: profile,
         };
         let version = browser.command(None, "Browser.getVersion", json!({}), budget)?;
@@ -216,7 +221,10 @@ impl Browser {
                 Ok(Message::Text(text)) => {
                     let value: Value =
                         serde_json::from_str(&text).map_err(|_| failed("Invalid CDP JSON"))?;
-                    if let Some(lifecycle) = &mut self.page_lifecycle {
+                    if let Some(lifecycle) = value["sessionId"]
+                        .as_str()
+                        .and_then(|session| self.page_lifecycle.get_mut(session))
+                    {
                         lifecycle.observe(&value);
                     }
                     if value["id"] == id {
@@ -244,62 +252,21 @@ impl Browser {
         }
     }
 
-    pub fn with_tab<T>(
-        &mut self,
-        budget: &Budget<'_>,
-        f: impl FnOnce(&mut Self, &str) -> Result<T>,
-    ) -> Result<T> {
-        let context = self.command(
-            None,
-            "Target.createBrowserContext",
-            json!({"disposeOnDetach":true}),
-            budget,
-        )?;
-        let context = context["browserContextId"]
-            .as_str()
-            .ok_or_else(|| failed("CDP did not return a context ID"))?
-            .to_string();
-        let result = (|| {
-            self.command(
-                None,
-                "Browser.setDownloadBehavior",
-                json!({"behavior":"deny","browserContextId":context}),
-                budget,
-            )?;
-            let target = self.command(
-                None,
-                "Target.createTarget",
-                json!({"url":"about:blank","browserContextId":context}),
-                budget,
-            )?;
-            let attached = self.command(
-                None,
-                "Target.attachToTarget",
-                json!({"targetId":target["targetId"],"flatten":true}),
-                budget,
-            )?;
-            let session = attached["sessionId"]
-                .as_str()
-                .ok_or_else(|| failed("CDP did not return a session ID"))?;
-            f(self, session)
-        })();
-        self.page_lifecycle = None;
-        let _ = self.command(
-            None,
-            "Target.disposeBrowserContext",
-            json!({"browserContextId":context}),
-            &Budget::new(Duration::from_millis(500), None),
-        );
-        result
-    }
-
-    /// Observe only the selected main frame; do not retain page or request data.
+    /// Observe the selected session's main frame without retaining page or request data.
     pub fn watch_page_idle(&mut self, session: &str, budget: &Budget<'_>) -> Result<()> {
         let tree = self.command(Some(session), "Page.getFrameTree", json!({}), budget)?;
         let frame = tree["frameTree"]["frame"]["id"]
             .as_str()
             .ok_or_else(|| failed("CDP did not return the main frame ID"))?;
-        self.page_lifecycle = Some(PageLifecycle::new(session, frame));
+        if self
+            .page_lifecycle
+            .get(session)
+            .is_some_and(|lifecycle| lifecycle.matches_frame(frame))
+        {
+            return Ok(());
+        }
+        self.page_lifecycle
+            .insert(session.into(), PageLifecycle::new(session, frame));
         self.command(
             Some(session),
             "Page.setLifecycleEventsEnabled",
@@ -311,7 +278,7 @@ impl Browser {
 
     pub fn page_is_idle(&self, session: &str, frame: &Value) -> bool {
         self.page_lifecycle
-            .as_ref()
+            .get(session)
             .is_some_and(|lifecycle| lifecycle.is_idle(session, frame))
     }
 

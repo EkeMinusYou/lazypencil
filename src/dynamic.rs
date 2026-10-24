@@ -13,8 +13,8 @@ use crate::{
 use base64::Engine;
 use serde_json::{Value, json};
 use std::{
-    collections::{BTreeMap, VecDeque},
-    path::PathBuf,
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -29,6 +29,8 @@ pub struct Raster {
 pub struct DynamicRuntime {
     data: PathBuf,
     executable: Option<PathBuf>,
+    page_scope: Option<String>,
+    page_snapshot: Option<String>,
     pages: Option<Browser>,
     shaders: Option<Browser>,
     page_used: Option<Instant>,
@@ -48,6 +50,8 @@ impl DynamicRuntime {
         Self {
             data: data.into(),
             executable: None,
+            page_scope: None,
+            page_snapshot: None,
             pages: None,
             shaders: None,
             page_used: None,
@@ -66,9 +70,65 @@ impl DynamicRuntime {
         self.executable = Some(path.into());
         self
     }
+    /// Opt into in-memory page state for this document. Ordinary CLI/MCP
+    /// runtimes retain their fresh-context acquisition behavior.
+    pub fn with_retained_pages(mut self, document: &Path) -> Self {
+        let scope = hash(document.as_os_str().as_encoded_bytes());
+        if self.page_scope.as_ref() != Some(&scope) {
+            self.pages.take();
+            self.page_used = None;
+            self.cache.clear();
+            self.cache_order.clear();
+            self.page_scope = Some(scope);
+            self.page_snapshot = None;
+        }
+        self
+    }
+
+    fn page_identity(&self, node: &ResolvedNode) -> Option<String> {
+        self.page_scope.as_ref().map(|scope| {
+            hash(json!({"scope":scope,"address":&node.address,"source":hash(node.source_path.as_os_str().as_encoded_bytes())}).to_string().as_bytes())
+        })
+    }
+
+    pub(crate) fn prepare_pages(&mut self, snapshot: &crate::layout::LayoutSnapshot) -> Result<()> {
+        if self.page_scope.is_none() || self.page_snapshot.as_deref() == Some(snapshot.id.as_str())
+        {
+            return Ok(());
+        }
+        // Changed inputs must not resurrect an old URL's acquisition after a
+        // node was removed, edited and later restored. Viewport-only requests
+        // still reuse the same captured layout and cache.
+        self.cache.clear();
+        self.cache_order.clear();
+        if self.pages.is_some() {
+            let keys: BTreeSet<_> = snapshot
+                .items
+                .iter()
+                .filter(|item| item.record.enabled && item.node.kind() == "browser")
+                .filter_map(|item| self.page_identity(&item.node))
+                .collect();
+            let cancel = self.cancel.clone();
+            let budget = Budget::new(self.remaining()?, cancel.as_ref());
+            let result = match self.pages.as_mut() {
+                Some(browser) => browser.retain_page_keys(&keys, &budget),
+                None => Ok(()),
+            };
+            if let Err(error) = result {
+                self.pages.take();
+                return Err(budget.check().err().unwrap_or(error));
+            }
+        }
+        self.page_snapshot = Some(snapshot.id.clone());
+        Ok(())
+    }
     /// Apply captured data-only limits without launching a process.
     pub fn configure(&mut self, settings: RuntimeSettings) -> Result<()> {
         settings.validate()?;
+        if self.page_scope.is_some() && self.browser_settings != settings.browser {
+            self.pages.take();
+            self.page_used = None;
+        }
         if self.browser_settings != settings.browser
             || self.shader_settings != settings.shader
             || self.settings != settings.dynamic
@@ -256,7 +316,17 @@ impl DynamicRuntime {
         let (pixel_width, pixel_height) =
             dimensions(width as f64 * scale as f64, height as f64 * scale as f64)?;
         let request = json!({"url":url,"width":width,"height":height,"scale":scale,"zoom":zoom,"scroll_x":scroll_x,"scroll_y":scroll_y,"device":device});
-        let key = hash(request.to_string().as_bytes());
+        let identity = self.page_identity(node);
+        let signature = hash(json!({"url":url,"device":device}).to_string().as_bytes());
+        let key = if identity.is_some() {
+            hash(
+                json!({"request":request,"page":identity})
+                    .to_string()
+                    .as_bytes(),
+            )
+        } else {
+            hash(request.to_string().as_bytes())
+        };
         if !self.refresh
             && let Some(cached) = self.cached(&key)
         {
@@ -286,14 +356,18 @@ impl DynamicRuntime {
         let budget = Budget::new(duration, cancel.as_ref());
         let browser = self.browser(Purpose::Page, &budget)?;
         let version = browser.version.clone();
-        let result=browser.with_tab(&budget,|browser,session| {
+        let retained = identity.as_deref().map(|key| (key, signature.as_str()));
+        let result=browser.with_page(retained,&budget,|browser,session,page_state| {
             browser.command(Some(session),"Page.enable",json!({}),&budget)?;
+            if page_state.retained {
+                browser.command(Some(session),"Page.bringToFront",json!({}),&budget)?;
+            }
             if wait_until == PageWaitUntil::NetworkIdle {
                 browser.watch_page_idle(session, &budget)?;
             }
             browser.command(Some(session),"Emulation.setDeviceMetricsOverride",json!({"width":width.ceil().max(1.0) as u32,"height":height.ceil().max(1.0) as u32,"deviceScaleFactor":scale,"mobile":mobile}),&budget)?;
             browser.command(Some(session),"Emulation.setTouchEmulationEnabled",json!({"enabled":mobile}),&budget)?;
-            let navigation=browser.command(Some(session),"Page.navigate",json!({"url":url}),&budget)?;
+            let navigation=if page_state.reused { Value::Null } else { browser.command(Some(session),"Page.navigate",json!({"url":url}),&budget)? };
             if navigation.get("errorText").is_some() { return Err(navigation_error(&navigation)); }
             loop {
                 let frame=browser.command(Some(session),"Page.getFrameTree",json!({}),&budget)?;
@@ -311,15 +385,17 @@ impl DynamicRuntime {
             let metadata=json!({"kind":"browser","acquisition_id":uuid::Uuid::new_v4().to_string(),"requested_url":redacted_url(url),"url_hash":hash(url.as_bytes()),
                 "final_url":state["url"].as_str().map(redacted_url),"browser_version":version,"viewport_width":width,"viewport_height":height,"pixel_width":pixel_width,"pixel_height":pixel_height,
                 "scale":scale,"zoom":zoom,"scroll_x":state["scrollX"],"scroll_y":state["scrollY"],"device_id":device,
-                "wait_until":wait_until,"ready_selector":ready_selector,"selector_state":selector_state,"ready_condition":ready_condition,"acquired_at":timestamp(),"png_hash":hash(&png),"limits":limits});
+                "wait_until":wait_until,"ready_selector":ready_selector,"selector_state":selector_state,"ready_condition":ready_condition,"acquired_at":timestamp(),"png_hash":hash(&png),"limits":limits,"page_state":page_state});
             checked_png(png,metadata)
         });
         self.page_used = Some(Instant::now());
-        let result = result.and_then(|raster| {
-            budget.check()?;
-            self.check()?;
-            Ok(raster)
-        });
+        let result = result
+            .map_err(|error| budget.check().err().unwrap_or(error))
+            .and_then(|raster| {
+                budget.check()?;
+                self.check()?;
+                Ok(raster)
+            });
         match result {
             Ok(raster) => Ok(self.cache(key, raster)),
             Err(error) => {
@@ -362,11 +438,13 @@ impl DynamicRuntime {
             checked_png(png,metadata)
         });
         self.shader_used = Some(Instant::now());
-        let result = result.and_then(|raster| {
-            budget.check()?;
-            self.check()?;
-            Ok(raster)
-        });
+        let result = result
+            .map_err(|error| budget.check().err().unwrap_or(error))
+            .and_then(|raster| {
+                budget.check()?;
+                self.check()?;
+                Ok(raster)
+            });
         match result {
             Ok(raster) => Ok(self.cache(key, raster)),
             Err(error) => {

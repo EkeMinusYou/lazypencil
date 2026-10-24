@@ -29,9 +29,11 @@ if case == "dynamic-idle":
         handle.write("/** @schema 2.21 */ return [{type:'rectangle',width:180,height:90,fill:'#00FF00'}];")
     with open(os.path.join(root, "blue.glsl"), "w") as handle:
         handle.write("precision highp float;\n/* @time */ uniform float clock;\nvoid main(){gl_FragColor=clock<0.5?vec4(0.,0.,1.,1.):vec4(1.,1.,0.,1.);}")
+    page_html = "<style>html{background:#f00}</style><script>let n=0;const raf=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=cb=>raf(t=>{document.documentElement.style.background=++n<=2?'#f00':'#f0f';cb(t)});</script>"
+    page_url = "data:text/html;base64," + base64.b64encode(page_html.encode()).decode("ascii")
     design = {"version": "2.21", "children": [
         {"type": "script", "id": "script", "width": 180, "height": 90, "scriptUri": "generated.js"},
-        {"type": "browser", "id": "page", "x": 180, "width": 180, "height": 90, "url": "data:text/html,<style>html{background:%23f00}</style>"},
+        {"type": "browser", "id": "page", "x": 180, "width": 180, "height": 90, "url": page_url},
         {"type": "rectangle", "id": "shader", "x": 360, "width": 180, "height": 90, "fill": {"type": "shader", "url": "blue.glsl"}},
     ]}
 elif case in ["font-config", "user-font-config"]:
@@ -351,12 +353,20 @@ try:
                 last_check[:] = [time.monotonic(), [int(pid) for pid, parent in (line.split() for line in rows.splitlines()) if int(parent) == process.pid]]
             return last_check[1]
 
+        page_color = (255, 0, 0, 255)
+
         def actual_dynamic_pixels(shader=(0, 0, 255, 255)):
             images = list(kitty_images())
-            return images and all(bytes(color) in images[-1] for color in [(255, 0, 0, 255), (0, 255, 0, 255), shader])
+            return images and all(bytes(color) in images[-1] for color in [page_color, (0, 255, 0, 255), shader])
 
         wait(lambda: len(children()) == 3 and actual_dynamic_pixels(), "three dynamic workers and actual RGB pixels")
         original_pids = children().copy()
+        frame_count = len(list(kitty_images()))
+        page_color = (255, 0, 255, 255)
+        os.write(master, b"\tr")
+        wait(lambda: len(list(kitty_images())) > frame_count and actual_dynamic_pixels(), "explicit refresh preserves the live page DOM")
+        assert children() == original_pids
+        os.write(master, b"\x1b[Z")
         frame_count = len(list(kitty_images()))
         paste("/time 1")
         os.write(master, b"\r")
@@ -410,6 +420,7 @@ try:
         assert actual_dynamic_pixels(yellow), "Preview must remain at its paused time after process cleanup"
         assert session()["draft"] == "待機と更新の後も残る下書き"
         frame_count = len(list(kitty_images()))
+        page_color = (255, 0, 0, 255)
         os.write(master, b"\tr")
         wait(lambda: len(children()) == 3 and len(list(kitty_images())) > frame_count and actual_dynamic_pixels(yellow), "refresh after idle cleanup at paused time")
         assert all(pid not in pids for pid in children())

@@ -49,7 +49,7 @@ This explicit override is reported as `external-unverified`, with `managed: fals
 
 ## Execution and licensing
 
-Rust connects directly to a loopback Chrome DevTools Protocol socket. Node.js and Puppeteer are not needed for this rendering path. Each process uses a temporary private browser profile; each acquisition uses a fresh isolated context with downloads denied. Page and shader jobs use separate processes. Browser JavaScript is enabled for page captures.
+Rust connects directly to a loopback Chrome DevTools Protocol socket. Node.js and Puppeteer are not needed for this rendering path. Each process uses a temporary private browser profile. CLI/MCP acquisitions and shader jobs use fresh isolated contexts with downloads denied. The TUI opts into up to eight isolated page contexts tied to its document and nodes; capture refresh preserves their DOM, while URL/device changes, eviction, idle expiry, failure or browser-policy changes can reset them. Downloads remain denied. This new retention path is undergoing hosted verification. Page and shader jobs use separate processes. Browser JavaScript is enabled for page captures.
 
 The shader process explicitly selects `--use-gl=angle --use-angle=swiftshader-webgl --enable-unsafe-swiftshader`. Chromium documents that this software WebGL opt-in has weaker security guarantees than its normal GPU path. It is restricted here to the shader process, which receives captured GLSL and image data and blocks HTTP(S), file, and FTP requests. The ordinary page process does not receive these flags. Chromium's own OS sandbox remains enabled; lazypencil does not add `--no-sandbox`. See [Chromium's SwiftShader documentation](https://chromium.googlesource.com/chromium/src/+/HEAD/docs/gpu/swiftshader.md).
 

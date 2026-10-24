@@ -50,6 +50,325 @@ fn page(html: &str) -> String {
 
 #[test]
 #[ignore = "Requires headless Chromium and permission to launch its sandbox"]
+fn retained_page_contexts_are_isolated_bounded_and_evicted_in_recency_order() {
+    use lazypencil::{
+        cdp::{Browser, Budget, MAX_RETAINED_PAGES, Purpose},
+        runtime::InstalledBrowser,
+    };
+    let installed = InstalledBrowser {
+        executable: executable(),
+        version: "external-unverified".into(),
+        platform: lazypencil::runtime::platform().unwrap().into(),
+    };
+    let mut browser = Browser::launch(
+        &installed,
+        Purpose::Page,
+        &Budget::new(Duration::from_secs(30), None),
+    )
+    .unwrap();
+    let visit = |browser: &mut Browser, key: &str, signature: &str| {
+        let budget = Budget::new(Duration::from_secs(30), None);
+        browser
+            .with_page(
+                Some((key, signature)),
+                &budget,
+                |browser, session, state| {
+                    let count = browser.evaluate(
+                        session,
+                        "(window.lpVisits=(window.lpVisits||0)+1)",
+                        &budget,
+                    )?;
+                    Ok((
+                        state.id.clone().unwrap(),
+                        count.as_u64().unwrap(),
+                        state.reused,
+                    ))
+                },
+            )
+            .unwrap()
+    };
+    let first = visit(&mut browser, "node-0", "url-A");
+    assert_eq!((first.1, first.2), (1, false));
+    for index in 1..MAX_RETAINED_PAGES {
+        assert_eq!(visit(&mut browser, &format!("node-{index}"), "url-A").1, 1);
+    }
+    let repeated = visit(&mut browser, "node-0", "url-A");
+    assert_eq!(repeated, (first.0.clone(), 2, true));
+    visit(&mut browser, "overflow", "url-A");
+    let recreated = visit(&mut browser, "node-1", "url-A");
+    assert_eq!((recreated.1, recreated.2), (1, false));
+    assert_eq!(
+        visit(&mut browser, "node-0", "url-A"),
+        (first.0.clone(), 3, true)
+    );
+    let replaced = visit(&mut browser, "node-0", "url-B");
+    assert_ne!(replaced.0, first.0);
+    assert_eq!((replaced.1, replaced.2), (1, false));
+    let budget = Budget::new(Duration::from_secs(30), None);
+    let contexts = browser
+        .command(None, "Target.getBrowserContexts", json!({}), &budget)
+        .unwrap();
+    assert_eq!(
+        contexts["browserContextIds"].as_array().unwrap().len(),
+        MAX_RETAINED_PAGES
+    );
+    let fresh = browser
+        .with_tab(&budget, |browser, session| {
+            browser.evaluate(session, "window.lpVisits||0", &budget)
+        })
+        .unwrap();
+    assert_eq!(fresh, 0);
+    let contexts = browser
+        .command(None, "Target.getBrowserContexts", json!({}), &budget)
+        .unwrap();
+    assert_eq!(
+        contexts["browserContextIds"].as_array().unwrap().len(),
+        MAX_RETAINED_PAGES
+    );
+}
+
+#[test]
+#[ignore = "Requires headless Chromium and permission to launch its sandbox"]
+fn retained_page_refresh_preserves_dom_isolates_nodes_and_resets_changed_or_removed_state() {
+    let html = "<style>html{background:#f00}</style><script>let n=0;const raf=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=cb=>raf(t=>{document.documentElement.style.background=++n<=2?'#f00':'#0f0';cb(t)});</script>";
+    let url = page(html);
+    let (temp, _, _) = scene(json!([
+        {"id":"a","type":"browser","url":url,"width":32,"height":32},
+        {"id":"b","type":"browser","url":url,"x":32,"width":32,"height":32}
+    ]));
+    fs::create_dir(temp.path().join(".git")).unwrap();
+    let file = temp.path().join("scene.pen");
+    let saved = fs::read_to_string(&file).unwrap();
+    let config = temp.path().join("lazypencil.toml");
+    fs::write(&config, "[runtime.browser]\nwait_until='network_idle'\n").unwrap();
+    let load = || {
+        let project = Project::from_document(
+            &file,
+            Document::parse(fs::read_to_string(&file).unwrap()).unwrap(),
+            &[],
+        )
+        .unwrap();
+        let snapshot =
+            lazypencil::layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap())
+                .unwrap();
+        (project, snapshot)
+    };
+    let (project, snapshot) = load();
+    let mut runtime = DynamicRuntime::new(temp.path())
+        .with_executable(executable())
+        .with_retained_pages(&file);
+    let acquire = |runtime: &mut DynamicRuntime,
+                   project: &Project,
+                   snapshot: &lazypencil::layout::LayoutSnapshot,
+                   refresh| {
+        render::png_with_runtime(
+            project,
+            snapshot,
+            &RenderOptions {
+                refresh,
+                ..Default::default()
+            },
+            runtime,
+            None,
+        )
+        .unwrap()
+    };
+    let first = acquire(&mut runtime, &project, &snapshot, false);
+    let ids: Vec<_> = first
+        .dynamic_artifacts
+        .iter()
+        .map(|entry| entry["acquisition"]["page_state"]["id"].clone())
+        .collect();
+    assert_ne!(
+        ids[0], ids[1],
+        "Identical URLs must not share a node's DOM or cached acquisition"
+    );
+    for entry in &first.dynamic_artifacts {
+        assert_eq!(entry["acquisition"]["page_state"]["retained"], true);
+        assert_eq!(entry["acquisition"]["page_state"]["reused"], false);
+    }
+    let pixels = raster(&first.png);
+    assert_eq!(
+        pixels.peek_pixels().unwrap().get_color((16, 16)),
+        Color::RED
+    );
+    assert_eq!(
+        pixels.peek_pixels().unwrap().get_color((48, 16)),
+        Color::RED
+    );
+    let cached = acquire(&mut runtime, &project, &snapshot, false);
+    assert_eq!(cached.dynamic_artifacts, first.dynamic_artifacts);
+    let refreshed = acquire(&mut runtime, &project, &snapshot, true);
+    for (index, entry) in refreshed.dynamic_artifacts.iter().enumerate() {
+        assert_eq!(entry["acquisition"]["page_state"]["id"], ids[index]);
+        assert_eq!(entry["acquisition"]["page_state"]["reused"], true);
+    }
+    let pixels = raster(&refreshed.png);
+    assert_eq!(
+        pixels.peek_pixels().unwrap().get_color((16, 16)),
+        Color::GREEN
+    );
+    assert_eq!(
+        pixels.peek_pixels().unwrap().get_color((48, 16)),
+        Color::GREEN
+    );
+    let pids = runtime.process_ids();
+    let mut changed: Value = serde_json::from_str(&saved).unwrap();
+    changed["children"][0]["width"] = json!(40);
+    fs::write(&file, changed.to_string()).unwrap();
+    let (project, snapshot) = load();
+    let resized = acquire(&mut runtime, &project, &snapshot, false);
+    assert_eq!(
+        resized.dynamic_artifacts[0]["acquisition"]["page_state"]["id"],
+        ids[0]
+    );
+    assert_eq!(
+        resized.dynamic_artifacts[0]["acquisition"]["viewport_width"],
+        40
+    );
+    assert_eq!(runtime.process_ids(), pids);
+    changed["children"][0]["url"] = json!(page(&(html.to_owned() + " ")));
+    fs::write(&file, changed.to_string()).unwrap();
+    let (project, snapshot) = load();
+    let navigated = acquire(&mut runtime, &project, &snapshot, false);
+    assert_ne!(
+        navigated.dynamic_artifacts[0]["acquisition"]["page_state"]["id"],
+        ids[0]
+    );
+    assert_eq!(
+        navigated.dynamic_artifacts[0]["acquisition"]["page_state"]["reused"],
+        false
+    );
+    assert_eq!(
+        navigated.dynamic_artifacts[1]["acquisition"]["page_state"]["id"],
+        ids[1]
+    );
+    // Restoring the old URL cannot resurrect its earlier green cached acquisition.
+    fs::write(&file, &saved).unwrap();
+    let (project, snapshot) = load();
+    let restored = acquire(&mut runtime, &project, &snapshot, false);
+    let restored_a = restored.dynamic_artifacts[0]["acquisition"]["page_state"]["id"].clone();
+    assert_ne!(restored_a, ids[0]);
+    assert_eq!(
+        raster(&restored.png)
+            .peek_pixels()
+            .unwrap()
+            .get_color((16, 16)),
+        Color::RED
+    );
+    changed = serde_json::from_str(&saved).unwrap();
+    changed["children"].as_array_mut().unwrap().remove(0);
+    fs::write(&file, changed.to_string()).unwrap();
+    let (project, snapshot) = load();
+    acquire(&mut runtime, &project, &snapshot, false);
+    fs::write(&file, &saved).unwrap();
+    let (project, snapshot) = load();
+    let reinserted = acquire(&mut runtime, &project, &snapshot, false);
+    assert_ne!(
+        reinserted.dynamic_artifacts[0]["acquisition"]["page_state"]["id"],
+        restored_a
+    );
+    assert_eq!(
+        reinserted.dynamic_artifacts[1]["acquisition"]["page_state"]["id"],
+        ids[1]
+    );
+    fs::write(
+        &config,
+        "[runtime.browser]\nwait_until='network_idle'\ntimeout_ms=31000\n",
+    )
+    .unwrap();
+    let (project, snapshot) = load();
+    let policy = acquire(&mut runtime, &project, &snapshot, false);
+    assert_ne!(
+        policy.dynamic_artifacts[1]["acquisition"]["page_state"]["id"],
+        ids[1]
+    );
+    assert!(
+        policy
+            .dynamic_artifacts
+            .iter()
+            .all(|entry| entry["acquisition"]["page_state"]["reused"] == false)
+    );
+    runtime.expire_idle(Instant::now() + Duration::from_secs(61));
+    assert!(runtime.process_ids().is_empty());
+    let cached = acquire(&mut runtime, &project, &snapshot, false);
+    assert_eq!(cached.dynamic_artifacts, policy.dynamic_artifacts);
+    assert!(runtime.process_ids().is_empty());
+    let restarted = acquire(&mut runtime, &project, &snapshot, true);
+    assert_ne!(
+        restarted.dynamic_artifacts[0]["acquisition"]["page_state"]["id"],
+        policy.dynamic_artifacts[0]["acquisition"]["page_state"]["id"]
+    );
+    let mut fresh = DynamicRuntime::new(temp.path()).with_executable(executable());
+    let first_fresh = acquire(&mut fresh, &project, &snapshot, false);
+    let second_fresh = acquire(&mut fresh, &project, &snapshot, true);
+    assert_eq!(first_fresh.png, second_fresh.png);
+    assert!(
+        second_fresh.dynamic_artifacts.iter().all(
+            |entry| entry["acquisition"]["page_state"]["retained"] == false
+                && entry["acquisition"]["page_state"]["id"].is_null()
+        )
+    );
+    assert_eq!(fs::read_to_string(&file).unwrap(), saved);
+}
+
+#[test]
+#[ignore = "Requires headless Chromium and permission to launch its sandbox"]
+fn cancelling_a_retained_capture_discards_the_context_and_recovers_with_new_state() {
+    let html = "<style>html{background:#f00}</style><script>let n=0;const raf=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=cb=>raf(t=>{if(++n>2)for(;;){}cb(t)});</script>";
+    let (temp, project, snapshot) =
+        scene(json!([{"id":"a","type":"browser","url":page(html),"width":32,"height":32}]));
+    let mut runtime = DynamicRuntime::new(temp.path())
+        .with_executable(executable())
+        .with_retained_pages(&temp.path().join("scene.pen"));
+    let first =
+        render::png_with_runtime(&project, &snapshot, &Default::default(), &mut runtime, None)
+            .unwrap();
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let token = cancel.clone();
+    let thread = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(200));
+        token.cancel();
+    });
+    let failed = render::png_with_runtime(
+        &project,
+        &snapshot,
+        &RenderOptions {
+            refresh: true,
+            ..Default::default()
+        },
+        &mut runtime,
+        Some(cancel),
+    )
+    .err()
+    .expect("Retained DOM becomes unresponsive");
+    thread.join().unwrap();
+    assert_eq!(failed.code, "CANCELLED");
+    assert!(runtime.process_ids().is_empty());
+    let recovered = render::png_with_runtime(
+        &project,
+        &snapshot,
+        &RenderOptions {
+            refresh: true,
+            ..Default::default()
+        },
+        &mut runtime,
+        None,
+    )
+    .unwrap();
+    assert_eq!(recovered.png, first.png);
+    assert_ne!(
+        recovered.dynamic_artifacts[0]["acquisition"]["page_state"]["id"],
+        first.dynamic_artifacts[0]["acquisition"]["page_state"]["id"]
+    );
+    assert_eq!(
+        recovered.dynamic_artifacts[0]["acquisition"]["page_state"]["reused"],
+        false
+    );
+}
+
+#[test]
+#[ignore = "Requires headless Chromium and permission to launch its sandbox"]
 fn page_network_idle_waits_for_post_load_fetches_and_recovers_after_timeout_and_cancel() {
     let server = page_wait_reference::Server::new();
     let (temp, _, _) = scene(json!([{"id":"page","type":"browser",

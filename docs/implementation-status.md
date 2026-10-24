@@ -2,6 +2,10 @@
 
 設計書 v0.9 の全体を実装対象とする。部分的な CLI や描画の試作だけで完成とは扱わない。以下は実際の実装・試験結果で更新する。
 
+2026-10-24: TUI の文書・ノードごとに DOM を保持する page 取得を追加した。CLI/MCP と shader は fresh context を維持し、TUI だけ opt-in とする。保持は8 context の LRU 上限で、URL/device 変更時は作り直し、寸法・scroll・scale・zoom は同じ状態に適用する。snapshot 変更時に raster cache を失効させ、削除／無効ノードを閉じ、viewport 外の有効ノードは維持する。browser 方針変更・root の結び直し・idle・失敗で context が失われる場合は新しい状態 ID となる。context 破棄の失敗を正常完了とせず、Runtime は browser を閉じる。複数 session の main-frame lifecycle を独立に追跡し、文書の遷移も loader/frame ID で判定する。page_state metadata は取得時を表し、TUI summary にも保持する。実 context の上限／LRU／分離、同じ URL の別ノード、DOM の赤→緑、寸法変更、URL の復元・削除再挿入、policy／idle／取消後の復帰、実 PTY の赤→マゼンタ・待機後の赤への復帰を追加検査する。英語 guide は1.0.11。ローカルの128 Python 試験・構文・整形・差分を確認し、Rust と Chromium は GHA で検証する。新機能はまだ検証中で、周期取得と他の未完成要件は維持する。
+
+2026-10-24: 停止表示修正 source `5fd4ddc` は Linux x64 `40052439098`（262試験）と macOS arm64 `40052437100`（260試験）が成功した。artifact `12544386625`／`12544585448` の digest・必須成功・metadata・実画像を照合し、同じ OS の以前の example PNG と一致した。手動時刻 source `9129f17` の Intel Mac `40051535783`（255試験）も、artifact `12543548154` を同様に照合した。いずれも新しい状態付き page 取得の追加前の証拠である。
+
 2026-10-24: 再生・LRU の初回 source `1936598` は macOS arm64 `40052100177`（260試験）と Linux x64 `40052102399`（262試験）が両構成 Clippy と実 PTY を含めて成功した。artifact `12543762414`／`12544141047` の ZIP digest・全成功ログ・PNG と report を検査した。5件の時計／背圧／状態／LRU の必須成功、実 PTY の2fps clock・青→黄の画素・日本語 draft・Space 停止・待機回収を確認し、shader acquisition の `time_dependent` が時刻付き example では true、固定色の supervised MCP では false であることも照合した。通常 example の PNG はそれぞれの以前の画像とバイト一致した。停止表示の後続 source `5fd4ddc` は Linux x64 `40052439098`／macOS arm64 `40052437100` で検証中である。現行 app code はそれ以降の CI 分割 commit と同一である。Windows の新しい後続は `40052567048`。物理端末、性能保証、全 OS とプロダクト全体の完了は示していない。
 
 2026-10-24: Windows の先行専用 job `40049415871` は default agent gate を通過した後、複合 runtime step で長時間実行中であり、完了前の log API は404を返した。browser 接続も環境設定の読み込みで失敗し、共有設定は変更していない。現行 job は取り消さず、後続の専用 workflow では単体（10分）、設定・script（10分）、page／shader／import の実画素（20分）を別 step に分けた。実行する command・試験・pipefail・既存 log 名と `always()` での保存は維持する。actionlint が成功し、native dependency input tree が `c95e917…` のままであることも確認した。これは後続で停止箇所と途中 log を取得するための変更であり、Windows の長時間化の原因や解消を示すものではない。
