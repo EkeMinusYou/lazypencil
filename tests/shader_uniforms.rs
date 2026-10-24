@@ -631,7 +631,8 @@ fn native_documentation_defaults_match_public_pencil_reference_pixels() {
         )
         .unwrap();
         assert_eq!((output.width, output.height), (560, 40));
-        assert!(layout.diagnostics.is_empty());
+        let diagnostics = layout.summary()["diagnostics"].clone();
+        assert!(diagnostics.as_array().unwrap().is_empty());
         assert_eq!(output.dynamic_artifacts.len(), 14);
         let image = Image::from_encoded(Data::new_copy(&output.png))
             .unwrap()
@@ -669,7 +670,7 @@ fn native_documentation_defaults_match_public_pencil_reference_pixels() {
                 directory.join(format!("{stem}.json")),
                 json!({
                     "source_commit":std::env::var("GITHUB_SHA").ok(),"variant":variant,
-                    "width":output.width,"height":output.height,"diagnostics":layout.diagnostics,
+                    "width":output.width,"height":output.height,"diagnostics":diagnostics,
                     "png_hash":hash(&output.png),"reference_sha256":hash(reference_bytes),
                     "source_sha256":hash(source.as_bytes()),"native_producer":"@pen.dev/cli 0.3.9",
                     "document_version":"2.19","verified_cases":14,
