@@ -148,6 +148,15 @@ pub enum Command {
 
 #[derive(Debug, Subcommand)]
 pub enum ConversationCommand {
+    /// Review a local deletion, or commit it using the revision from that review.
+    Delete {
+        file: PathBuf,
+        session: String,
+        #[arg(long)]
+        expected_revision: Option<String>,
+    },
+    /// Finish local conversation deletions interrupted after their atomic commit.
+    Cleanup { file: PathBuf },
     /// Read formatted saved requests, responses and tool status in bounded pages.
     View {
         file: PathBuf,
@@ -737,6 +746,30 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
         Command::Conversations { command } => {
             let cancel = crate::cancel::token();
             match command {
+                ConversationCommand::Delete {
+                    file,
+                    session,
+                    expected_revision,
+                } => {
+                    let store = open(file)?;
+                    if let Some(revision) = expected_revision {
+                        crate::conversation::management::delete(
+                            &store,
+                            session,
+                            revision,
+                            Some(&cancel),
+                        )
+                    } else {
+                        crate::conversation::management::review_delete(
+                            &store,
+                            session,
+                            Some(&cancel),
+                        )
+                    }
+                }
+                ConversationCommand::Cleanup { file } => {
+                    crate::conversation::management::cleanup_deleted(&open(file)?, Some(&cancel))
+                }
                 ConversationCommand::View {
                     file,
                     session,

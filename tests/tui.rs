@@ -35,6 +35,11 @@ fn real_pty_saved_logs_page_format_refresh_and_keep_the_unsent_draft_without_sta
 }
 
 #[test]
+fn real_pty_deletes_only_reviewed_inactive_local_conversations_and_preserves_current_state() {
+    run_pty_case("session-deletion");
+}
+
+#[test]
 fn real_pty_selects_saved_conversations_and_keeps_both_drafts_without_starting_an_agent() {
     run_pty_case("session-selection");
 }
@@ -56,7 +61,10 @@ fn run_pty_case(case: &str) {
         && (!result.status.success()
             || matches!(
                 case,
-                "user-navigation-config" | "saved-history" | "session-selection"
+                "user-navigation-config"
+                    | "saved-history"
+                    | "session-selection"
+                    | "session-deletion"
             ))
     {
         let directory = std::path::PathBuf::from(directory).join(case);
@@ -80,6 +88,10 @@ fn run_pty_case(case: &str) {
             "session-selection-second.json",
             "session-selection-first-screen.txt",
             "session-selection-second-screen.txt",
+            "session-deletion-report.json",
+            "session-deletion-review-screen.txt",
+            "session-deletion-stale-screen.txt",
+            "session-deletion-complete-screen.txt",
         ] {
             let source = temp.path().join(name);
             if source.is_file() {

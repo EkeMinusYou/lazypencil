@@ -102,7 +102,7 @@ fn root(store: &Store) -> PathBuf {
     store.document_data_dir().join("conversations")
 }
 
-fn session(store: &Store, id: &str) -> Result<(PathBuf, SavedConversation)> {
+pub(super) fn session(store: &Store, id: &str) -> Result<(PathBuf, SavedConversation)> {
     uuid(id)?;
     directory(&root(store))?;
     let path = root(store).join(id);

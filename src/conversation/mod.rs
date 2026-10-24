@@ -24,7 +24,7 @@ mod continuity;
 pub mod history;
 #[cfg(unix)]
 pub(crate) mod lease;
-mod management;
+pub mod management;
 mod storage;
 pub use storage::sanitize_event;
 use storage::{Session, Transcript};

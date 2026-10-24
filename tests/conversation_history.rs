@@ -25,6 +25,83 @@ fn cli(data: &Path, args: &[&str]) -> Value {
 }
 
 #[test]
+fn saved_conversation_cli_reviews_deletion_rejects_changes_and_preserves_the_document() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let data = temp.path().join("data");
+    let store = Store::init(temp.path().join("design.pen"), Some(data.clone())).unwrap();
+    let parsed = Arguments::try_parse_from([
+        "lazypencil".into(),
+        "prompt".into(),
+        store.path().as_os_str().to_owned(),
+        "--adapter=uninstalled-local-deletion-fixture".into(),
+    ])
+    .unwrap();
+    let CliCommand::Prompt(args) = parsed.command else {
+        unreachable!()
+    };
+    let mut conversation = Conversation::open_with_executable(
+        args,
+        Some(data.clone()),
+        env!("CARGO_BIN_EXE_lazypencil").into(),
+    )
+    .unwrap();
+    conversation.set_draft("削除前の下書き".into()).unwrap();
+    let id = conversation.id().to_string();
+    let directory = conversation.directory().to_path_buf();
+    drop(conversation);
+    let original = std::fs::read(store.path()).unwrap();
+    let file = store.path().to_str().unwrap();
+    let review = cli(&data, &["conversations", "delete", file, &id]);
+    assert_eq!(review["deleted"], false);
+    assert!(directory.is_dir());
+    std::fs::write(
+        directory.join("new-local-log.jsonl"),
+        b"changed since review",
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_lazypencil"))
+        .arg("--json")
+        .arg("--data-dir")
+        .arg(&data)
+        .args([
+            "conversations",
+            "delete",
+            file,
+            &id,
+            "--expected-revision",
+            review["revision"].as_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let error: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(error["error"]["code"], "REVISION_CONFLICT");
+    assert!(directory.exists());
+    let review = cli(&data, &["conversations", "delete", file, &id]);
+    let result = cli(
+        &data,
+        &[
+            "conversations",
+            "delete",
+            file,
+            &id,
+            "--expected-revision",
+            review["revision"].as_str().unwrap(),
+        ],
+    );
+    assert_eq!(result["deleted"], true);
+    assert_eq!(result["cleanup_complete"], true);
+    assert!(!directory.exists());
+    assert_eq!(std::fs::read(store.path()).unwrap(), original);
+    assert!(
+        cli(&data, &["conversations", "cleanup", file])["removed"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
 fn saved_conversation_cli_browses_complete_logs_without_starting_or_reconfiguring_an_agent() {
     let temp = tempfile::TempDir::new().unwrap();
     let data = temp.path().join("data");

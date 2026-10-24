@@ -176,9 +176,12 @@ impl super::App {
     ) {
         match output {
             Ok(Output::Saved(page)) => {
+                let deleted = page.deletion_completed;
                 self.saved_return = None;
                 self.modal = Some(Modal::Saved(page));
-                self.status = if self.conversation.active() {
+                self.status = if deleted {
+                    "Local conversation deleted · project assets and provider history kept"
+                } else if self.conversation.active() {
                     "Saved logs are read-only · active request continues · Ctrl+C cancels"
                 } else {
                     "Saved logs are read-only; browsing sends no requests"
@@ -227,7 +230,12 @@ impl super::App {
             .as_ref()
             .is_some_and(|task| task.cancel.is_cancelled());
         self.document_task.take();
-        if cancelled && matches!(&output, Ok(Output::History(_) | Output::Saved(_))) {
+        let read_only = match &output {
+            Ok(Output::History(_)) => true,
+            Ok(Output::Saved(page)) => !page.deletion_completed,
+            _ => false,
+        };
+        if cancelled && read_only {
             if let Some(page) = self.saved_return.take() {
                 self.modal = Some(Modal::Saved(page));
             } else if matches!(self.modal, Some(Modal::Loading { .. })) {

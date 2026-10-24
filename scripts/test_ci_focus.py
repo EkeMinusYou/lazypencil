@@ -26,16 +26,23 @@ class FocusTests(unittest.TestCase):
         self.assertIn(focus.SESSION_RECLAIM, native)
         self.assertIn(focus.OWNED_MCP_RECLAIM, native)
         self.assertIn("cargo test --locked --no-default-features --lib conversation::management::", native)
+        self.assertIn(focus.SESSION_DELETION_PTY, native)
         for suite in ["graphics", "dynamic"]:
             _, checks = focus.commands(suite, result["targets"] + ["mcp"] + (["shader_uniforms", "dynamic_render"] if suite == "dynamic" else []))
             self.assertNotIn("conversation_history", checks[-1])
             self.assertEqual(checks[-1][checks[-1].index(focus.SAVED_LOG_PTY) - 1], "--skip")
             self.assertEqual(checks[-1][checks[-1].index("tui::tests::saved_log_") - 1], "--skip")
-            for name in (focus.SESSION_SELECTION_PTY, focus.SESSION_RECLAIM, focus.OWNED_MCP_RECLAIM):
+            for name in (focus.SESSION_SELECTION_PTY, focus.SESSION_DELETION_PTY, focus.SESSION_RECLAIM, focus.OWNED_MCP_RECLAIM):
                 self.assertEqual(checks[-1][checks[-1].index(name) - 1], "--skip")
         mixed = focus.select(["tests/conversation_history.rs", "src/shader.rs"])
         self.assertEqual(mixed["suite"], "dynamic")
         focus.commands(mixed["suite"], mixed["targets"])
+
+    def test_saved_conversation_deletion_reproduces_core_default_and_actual_ui_before_all_platforms(self):
+        result = focus.select(["src/conversation/management/deletion.rs", "src/conversation/storage.rs", "src/tui/saved.rs", "src/tui/checkpoints.rs", "tests/conversation_history.rs", "tests/tui.rs"])
+        self.assertEqual(result["suite"], "graphics")
+        self.assertEqual(result["platform"], "ubuntu-24.04")
+        self.assertTrue({"agent", "attachments", "mcp", "conversation_history", "tui", "user_config"} <= set(result["targets"]))
 
     def test_saved_history_runs_its_units_and_cli_reproduction_once_before_agent_checks(self):
         result = focus.select(["src/conversation/history.rs", "src/cli.rs", "src/main.rs", "tests/conversation_history.rs"])

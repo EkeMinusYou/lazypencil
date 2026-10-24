@@ -1,7 +1,11 @@
-//! Read-only saved conversation browsing on the shared background task.
+//! Saved conversation browsing and reviewed local deletion on a background task.
 
 use super::checkpoints::{Output, Task};
-use crate::{Error, Result, conversation::history, store::Store};
+use crate::{
+    Error, Result,
+    conversation::{history, management},
+    store::Store,
+};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::Value;
 use std::borrow::Cow;
@@ -32,6 +36,8 @@ pub struct Page {
     trail: Vec<Option<String>>,
     back: Option<Box<Page>>,
     current: String,
+    deletion_review: Option<Value>,
+    pub(super) deletion_completed: bool,
 }
 
 pub enum Action {
@@ -41,6 +47,8 @@ pub enum Action {
     Read(Box<Page>),
     Use(String),
     New,
+    ReviewDeletion(String),
+    Delete,
 }
 
 pub enum SessionChange {
@@ -82,9 +90,47 @@ impl Page {
             trail,
             back,
             current,
+            deletion_review: None,
+            deletion_completed: false,
         }
     }
+    fn review_deletion(&self, store: Store, session: String) -> Result<Task> {
+        let mut page = self.clone();
+        page.deletion_completed = false;
+        Task::spawn("review-conversation-deletion", move |cancel| {
+            page.deletion_review = Some(management::review_delete(&store, &session, Some(cancel))?);
+            page.notice = None;
+            Ok(Output::Saved(Box::new(page)))
+        })
+    }
+    fn delete(&self, store: Store) -> Result<Task> {
+        let review = self.deletion_review.as_ref().ok_or_else(|| {
+            Error::new(
+                "INVALID_ARGUMENT",
+                "Review a local conversation before deleting it",
+            )
+        })?;
+        let session = review["session"].as_str().unwrap_or("").to_owned();
+        let revision = review["revision"].as_str().unwrap_or("").to_owned();
+        let current = self.current.clone();
+        Task::spawn("delete-conversation", move |cancel| {
+            let result = management::delete(&store, &session, &revision, Some(cancel))?;
+            let mut page = Self::sessions(current);
+            page.deletion_completed = true;
+            let mut notice = format!("Deleted local conversation {session}");
+            if result["cleanup_complete"] != true {
+                notice.push_str(" · cleanup pending: run conversations cleanup");
+            }
+            match history::list(&store, None, 50, None, Some(cancel)) {
+                Ok(data) => page.data = data,
+                Err(error) => notice.push_str(&format!(" · list refresh failed: {error}")),
+            }
+            page.notice = Some(notice);
+            Ok(Output::Saved(Box::new(page)))
+        })
+    }
     pub fn task(mut self, store: Store) -> Result<Task> {
+        self.deletion_completed = false;
         Task::spawn("saved-conversation", move |cancel| {
             self.data = match &self.location {
                 Location::Sessions => {
@@ -203,8 +249,38 @@ impl Page {
         ) {
             return Ok(Action::Keep);
         }
+        if self.deletion_review.is_some() {
+            return Ok(match key.code {
+                KeyCode::Char('y') => Action::Delete,
+                KeyCode::Char('n') | KeyCode::Esc => {
+                    self.deletion_review = None;
+                    Action::Keep
+                }
+                _ => Action::Keep,
+            });
+        }
         let text = matches!(self.location, Location::Text { .. });
         match key.code {
+            KeyCode::Char('d') => {
+                let session = match &self.location {
+                    Location::Sessions => self
+                        .entries()
+                        .get(self.selected)
+                        .and_then(|entry| entry["id"].as_str())
+                        .map(str::to_owned),
+                    Location::Turns(session) | Location::Text { session, .. } => {
+                        Some(session.clone())
+                    }
+                };
+                if let Some(session) = session {
+                    if session == self.current {
+                        self.notice =
+                            Some("Select another conversation before deleting this one".into());
+                    } else {
+                        return Ok(Action::ReviewDeletion(session));
+                    }
+                }
+            }
             KeyCode::Char('N') => return Ok(Action::New),
             KeyCode::Char('u') => {
                 let session = match &self.location {
@@ -378,6 +454,26 @@ pub fn draw(page: &mut Page, frame: &mut ratatui::Frame, area: ratatui::layout::
         style::{Color, Style},
         widgets::{List, ListItem, ListState, Paragraph, Wrap},
     };
+    if let Some(review) = &page.deletion_review {
+        let block = super::panel("Delete local conversation?", true);
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+        let mut text = format!(
+            "{}\n{}\n\n{} bytes · {} files\n{} draft characters · {} pending images · {} retained images\n\nThis permanently deletes local drafts, images and logs.\nProject assets and provider history are kept.\n\ny confirms · n/Esc returns",
+            review["session"].as_str().unwrap_or(""),
+            super::clean(review["document"].as_str().unwrap_or("")),
+            review["bytes"],
+            review["files"],
+            review["draft_characters"],
+            review["pending_images"],
+            review["retained_images"]
+        );
+        if let Some(notice) = &page.notice {
+            text.push_str(&format!("\n\n{}", super::clean(notice)));
+        }
+        frame.render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), inner);
+        return;
+    }
     let (title, context) = match &page.location {
         Location::Sessions => (
             "Saved conversations".to_string(),
@@ -403,7 +499,7 @@ pub fn draw(page: &mut Page, frame: &mut ratatui::Frame, area: ratatui::layout::
             ),
         ),
     };
-    let block = super::panel(format!("{title} · read-only"), true);
+    let block = super::panel(title, true);
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let raw_records = page.data["raw_records"].as_u64().unwrap_or(0);
@@ -457,7 +553,7 @@ pub fn draw(page: &mut Page, frame: &mut ratatui::Frame, area: ratatui::layout::
             .min(u16::MAX as usize) as u16;
         page.scroll = page.scroll.min(page.maximum_scroll);
         frame.render_widget(paragraph.scroll((page.scroll, 0)), regions[1]);
-        frame.render_widget(Paragraph::new("↑/↓ PgUp/PgDn scroll · Home/End edges\nn/p pages · v raw/formatted · u use session · N new\nBackspace parent · s sessions · r refresh · Esc closes").wrap(Wrap { trim: false }), regions[2]);
+        frame.render_widget(Paragraph::new("↑/↓ PgUp/PgDn scroll · Home/End edges\nn/p pages · v raw/formatted · u use · N new · d delete…\nBackspace parent · s sessions · r refresh · Esc closes").wrap(Wrap { trim: false }), regions[2]);
     } else {
         let entries = page.entries();
         let items = entries
@@ -494,7 +590,7 @@ pub fn draw(page: &mut Page, frame: &mut ratatui::Frame, area: ratatui::layout::
                 &mut state,
             );
         }
-        frame.render_widget(Paragraph::new("↑/↓ select · Enter opens · u use session · N new\nn/p pages · Home first · c current · r refresh\nBackspace parent · Esc/q closes · s sessions").wrap(Wrap { trim: false }), regions[2]);
+        frame.render_widget(Paragraph::new("↑/↓ select · Enter opens · u use · N new · d delete…\nn/p pages · Home first · c current · r refresh\nBackspace parent · Esc/q closes · s sessions").wrap(Wrap { trim: false }), regions[2]);
     }
 }
 
@@ -542,8 +638,41 @@ impl super::App {
                 self.pending_session = Some(SessionChange::New);
                 self.modal = Some(super::checkpoints::Modal::Saved(page));
             }
+            Action::ReviewDeletion(session) => {
+                self.start_deletion_task(page, Some(session))?;
+            }
+            Action::Delete => self.start_deletion_task(page, None)?,
             Action::Close => {}
         }
         Ok(false)
+    }
+    fn start_deletion_task(&mut self, page: Box<Page>, session: Option<String>) -> Result<()> {
+        let result = if self.conversation.active()
+            || self.document_task.is_some()
+            || self.image_input.is_some()
+        {
+            Err(Error::new(
+                "INVALID_ARGUMENT",
+                "Finish or cancel the active operation before deleting a conversation",
+            ))
+        } else if let Some(session) = session {
+            page.review_deletion(self.conversation.store().clone(), session)
+        } else {
+            page.delete(self.conversation.store().clone())
+        };
+        let task = match result {
+            Ok(task) => task,
+            Err(error) => {
+                self.modal = Some(super::checkpoints::Modal::Saved(page));
+                return Err(error);
+            }
+        };
+        self.saved_return = Some(page);
+        self.restore_return = None;
+        self.document_task = Some(task);
+        self.modal = Some(super::checkpoints::Modal::Loading {
+            message: "Reviewing/deleting local conversation… · Esc cancels before commit",
+        });
+        Ok(())
     }
 }

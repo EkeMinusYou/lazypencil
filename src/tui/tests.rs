@@ -742,6 +742,103 @@ fn saved_page(app: &App) -> &saved::Page {
 }
 
 #[test]
+fn saved_log_deletion_requires_review_rejects_stale_state_and_keeps_the_current_draft_and_images() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let worker = Worker::start(
+            app.conversation.store().clone(),
+            vec![],
+            Backend::halfblocks(),
+            171,
+        )
+        .unwrap();
+        let document = std::fs::read(app.conversation.store().path()).unwrap();
+        app.insert_text("削除する会話の下書き");
+        app.save_draft().unwrap();
+        let removed = app.conversation.id().to_string();
+        let directory = app.conversation.directory().to_path_buf();
+        app.select_conversation(saved::SessionChange::New, &worker)
+            .await
+            .unwrap();
+        app.insert_text("現在の会話は保持");
+        app.save_draft().unwrap();
+        app.accept_input(fake_clipboard(
+            Path::new("unused"),
+            None,
+            &CancellationToken::new(),
+        ));
+        let current = app.conversation.id().to_string();
+        let images = app.conversation.images().to_vec();
+        app.open_saved(saved::Page::sessions(current.clone()), None)
+            .unwrap();
+        document_result(&mut app, &worker).await;
+        press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE, &worker).await;
+        assert!(app.document_task.is_none());
+        assert!(
+            saved_page(&app)
+                .notice
+                .as_deref()
+                .unwrap()
+                .contains("Select another")
+        );
+        let select = |app: &mut App| {
+            if let Some(checkpoints::Modal::Saved(page)) = &mut app.modal {
+                page.selected = page.data["entries"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .position(|entry| entry["id"] == removed)
+                    .unwrap();
+            }
+        };
+        select(&mut app);
+        press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE, &worker).await;
+        document_result(&mut app, &worker).await;
+        press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE, &worker).await;
+        assert!(directory.exists());
+        press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE, &worker).await;
+        document_result(&mut app, &worker).await;
+        std::fs::write(directory.join("new-log.jsonl"), b"changed after review").unwrap();
+        press(&mut app, KeyCode::Char('y'), KeyModifiers::NONE, &worker).await;
+        document_result(&mut app, &worker).await;
+        assert!(directory.exists());
+        assert!(
+            saved_page(&app)
+                .notice
+                .as_deref()
+                .unwrap()
+                .contains("REVISION_CONFLICT")
+        );
+        press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE, &worker).await;
+        document_result(&mut app, &worker).await;
+        press(&mut app, KeyCode::Char('y'), KeyModifiers::NONE, &worker).await;
+        document_result(&mut app, &worker).await;
+        assert!(!directory.exists());
+        assert!(saved_page(&app).deletion_completed);
+        assert!(
+            !saved_page(&app).data["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|entry| entry["id"] == removed)
+        );
+        assert_eq!(app.conversation.id(), current);
+        assert_eq!(app.editor.lines().join("\n"), "現在の会話は保持");
+        assert_eq!(
+            serde_json::to_value(app.conversation.images()).unwrap(),
+            serde_json::to_value(images).unwrap()
+        );
+        assert!(!temp.path().join("sent-turn.txt").exists());
+        assert_eq!(
+            std::fs::read(app.conversation.store().path()).unwrap(),
+            document
+        );
+    });
+}
+
+#[test]
 fn saved_log_selection_preserves_drafts_images_and_native_context_and_closes_the_previous_connection()
  {
     let temp = TempDir::new().unwrap();

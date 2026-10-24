@@ -274,6 +274,74 @@ try:
         wait(lambda: "/clear-images" not in screen.text(), "help closed before configured exit")
         assert not turns() and not session()["native_session_id"], "Viewing shortcuts must not start an agent"
         assert session()["draft"] == text + " 続き"
+    elif case == "session-deletion":
+        archived_draft = "削除する保存会話の下書き"
+        current_draft = "現在の未送信下書きは保持🙂"
+        paste(archived_draft)
+        wait(lambda: session() and session()["draft"] == archived_draft, "draft before local deletion")
+        archived_path = glob.glob(os.path.join(root, "data", "**", "session.json"), recursive=True)[0]
+        archived_id = json.load(open(archived_path, encoding="utf-8"))["id"]
+        saved_document = open(document, "rb").read()
+        os.write(master, b"\x10")
+        wait(lambda: "New empty conversation" in screen.text(), "new empty conversation command")
+        os.write(master, b"\x1b[B" * 7 + b"\r")
+
+        def current_state():
+            paths = [path for path in glob.glob(os.path.join(root, "data", "**", "session.json"), recursive=True) if path != archived_path]
+            return json.load(open(paths[0], encoding="utf-8")) if len(paths) == 1 else None
+
+        wait(lambda: current_state() and "session: " + current_state()["id"][:8] in screen.text(), "new current conversation selected")
+        current_id = current_state()["id"]
+        paste(current_draft)
+        wait(lambda: current_state()["draft"] == current_draft, "current draft persisted before deleting old data")
+        os.write(master, b"\x10")
+        wait(lambda: "Browse saved conversations" in screen.text(), "saved browser command")
+        os.write(master, b"\x1b[B" * 6 + b"\r")
+        wait(lambda: "Saved conversations" in screen.text() and archived_id in screen.text() and current_id in screen.text(), "both conversations listed before deletion")
+        os.write(master, b"d")
+        wait(lambda: "Select another conversation" in screen.text(), "current conversation deletion refused")
+        order = sorted([archived_id, current_id])
+        distance = order.index(archived_id) - order.index(current_id)
+        os.write(master, (b"\x1b[B" if distance > 0 else b"\x1b[A") * abs(distance))
+        wait(lambda: any("›" in row and archived_id in row for row in screen.text().splitlines()), "inactive conversation highlighted")
+        os.write(master, b"d")
+        wait(lambda: "Delete local conversation?" in screen.text() and archived_id in screen.text() and "y confirms" in screen.text(), "review deletion before confirmation")
+        with open(os.path.join(root, "session-deletion-review-screen.txt"), "w", encoding="utf-8") as handle:
+            handle.write(screen.text())
+        os.write(master, b"n")
+        wait(lambda: "Saved conversations" in screen.text() and "Delete local conversation?" not in screen.text(), "deletion review cancelled")
+        assert os.path.isfile(archived_path), "Cancelling review must preserve the entire conversation"
+        os.write(master, b"d")
+        wait(lambda: "Delete local conversation?" in screen.text(), "second deletion review")
+        changed = json.load(open(archived_path, encoding="utf-8"))
+        changed["draft"] += " 外部で変更"
+        with open(archived_path, "w", encoding="utf-8") as handle:
+            json.dump(changed, handle, ensure_ascii=False)
+        os.write(master, b"y")
+        wait(lambda: "Conversation changed" in screen.text(), "stale deletion refused")
+        assert os.path.isfile(archived_path)
+        with open(os.path.join(root, "session-deletion-stale-screen.txt"), "w", encoding="utf-8") as handle:
+            handle.write(screen.text())
+        os.write(master, b"n")
+        wait(lambda: "Saved conversations" in screen.text() and "Delete local conversation?" not in screen.text(), "return from stale review")
+        os.write(master, b"d")
+        wait(lambda: "Delete local conversation?" in screen.text() and "Conversation changed" not in screen.text(), "fresh deletion review")
+        os.write(master, b"y")
+        wait(lambda: not os.path.exists(os.path.dirname(archived_path)) and "Deleted local conversation" in screen.text(), "reviewed deletion committed")
+        assert current_state()["id"] == current_id and current_state()["draft"] == current_draft
+        assert not current_state()["native_session_id"] and not os.path.exists(os.path.join(root, "sent-turn.txt"))
+        assert open(document, "rb").read() == saved_document
+        assert not glob.glob(os.path.join(root, "data", "**", "conversation-trash-*"), recursive=True)
+        with open(os.path.join(root, "session-deletion-complete-screen.txt"), "w", encoding="utf-8") as handle:
+            handle.write(screen.text())
+        deletion_report = {"source_commit": os.environ.get("GITHUB_SHA"), "case": case,
+            "deleted_session": archived_id, "current_session": current_id,
+            "current_rejected": True, "review_cancelled": True, "stale_rejected": True,
+            "current_draft_sha256": hashlib.sha256(current_draft.encode()).hexdigest(),
+            "document_sha256": hashlib.sha256(saved_document).hexdigest(), "agent_started": False,
+            "cleanup_complete": True}
+        os.write(master, b"\x1b")
+        wait(lambda: "Saved conversations" not in screen.text(), "saved browser closed after local deletion")
     elif case == "session-selection":
         first_draft = "最初の未送信の下書き\nq u N は本文"
         second_draft = "二番目の未送信の下書き"
@@ -789,6 +857,12 @@ if case == "user-navigation-config":
             "draft_sha256": hashlib.sha256(saved_draft.encode("utf-8")).hexdigest(),
             "help_end_reached": True, "startup_keys_retained": True, "turns": len(turns()),
             "exit_code": process.returncode, "terminal_modes_restored": after_config == before_config}, handle)
+
+if case == "session-deletion":
+    assert "Conversation: " + current_id in open(os.path.join(root, "terminal-errors.log"), encoding="utf-8").read()
+    deletion_report.update(exit_code=process.returncode, terminal_modes_restored=after_config == before_config, selected_on_exit=current_id)
+    with open(os.path.join(root, "session-deletion-report.json"), "w", encoding="utf-8") as handle:
+        json.dump(deletion_report, handle)
 
 if case == "session-selection":
     assert "Conversation: " + second_id in open(os.path.join(root, "terminal-errors.log"), encoding="utf-8").read()

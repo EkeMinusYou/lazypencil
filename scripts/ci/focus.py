@@ -25,6 +25,7 @@ INPUT_REPRODUCTIONS = (
 )
 SAVED_LOG_PTY = "real_pty_saved_logs_page_format_refresh_and_keep_the_unsent_draft_without_starting_an_agent"
 SESSION_SELECTION_PTY = "real_pty_selects_saved_conversations_and_keeps_both_drafts_without_starting_an_agent"
+SESSION_DELETION_PTY = "real_pty_deletes_only_reviewed_inactive_local_conversations_and_preserves_current_state"
 SESSION_RECLAIM = "agent_ownership::killed_cli_revokes_grants_and_resume_preserves_images_and_transcripts"
 OWNED_MCP_RECLAIM = "owned_mcp_rejects_grants_after_the_host_is_killed_without_reviving_or_writing_journals"
 SHADER_REGRESSIONS = [
@@ -59,7 +60,7 @@ def select(paths, platform="auto"):
         "tests/support/browser_process_unix.py",
     } for path in paths)
     terminal_change = any(path == "tests/support/terminal_screen.py" or path.startswith("tests/fixtures/terminal/") for path in paths)
-    input_source = terminal_change or any(path == "src/tui/mod.rs" or path.startswith("src/config/keys") for path in paths)
+    input_source = terminal_change or any(path in {"src/tui/mod.rs", "src/tui/saved.rs", "src/tui/checkpoints.rs"} or path.startswith("src/config/keys") for path in paths)
     input_only = input_source and all(
         (path == "README.md" or path.startswith("docs/") and path.endswith(".md"))
         or path.startswith(("src/config/keys", ".github/", "scripts/ci/", "scripts/test_", "tests/fixtures/terminal/")) or path in {
@@ -218,7 +219,7 @@ def commands(suite, targets):
             if "mcp" in targets:
                 checks.append([*common, "--test", "mcp", OWNED_MCP_RECLAIM, "--", "--exact", "--test-threads=1"])
         selected = [arg for target in targets if target != "conversation_history" for arg in ("--test", target)]
-    history_ui_skip = ["--skip", "tui::tests::saved_log_", "--skip", SAVED_LOG_PTY, "--skip", SESSION_SELECTION_PTY] if history and "tui" in targets else []
+    history_ui_skip = ["--skip", "tui::tests::saved_log_", "--skip", SAVED_LOG_PTY, "--skip", SESSION_SELECTION_PTY, "--skip", SESSION_DELETION_PTY] if history and "tui" in targets else []
     history_ui_skip += ["--skip", SESSION_RECLAIM] if history and "agent" in targets and not core else []
     history_ui_skip += ["--skip", OWNED_MCP_RECLAIM] if history and "mcp" in targets else []
     native = "native_layout" in targets and suite in ("graphics", "dynamic")

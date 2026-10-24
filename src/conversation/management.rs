@@ -3,6 +3,9 @@
 use super::{Conversation, Session};
 use crate::{Error, Result, agent::permissions::DocumentPermissions};
 
+mod deletion;
+pub use deletion::{cleanup_deleted, delete, review_delete};
+
 impl Conversation {
     /// Select a compatible saved conversation, or create an empty one with
     /// `None`. A failed selection keeps the current lease, draft and images.

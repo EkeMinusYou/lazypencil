@@ -110,7 +110,24 @@ CLI requests continue to choose a local UUID with `prompt --session UUID` or `tu
 
 Selection keeps each conversation’s own draft, pending/retained images, transcripts, and native session ID. It validates and leases the target before closing the previous adapter and revoking its connection grants, then resets live permissions, events and displayed authentication. It does not start/authenticate an adapter or send either draft. The next explicit submission negotiates native loading or the existing bounded continuity fallback. A target must match the document, configured agent, adapter fingerprint and requested authentication route; incompatible or busy targets fail without replacing the current local state. Choose the corresponding CLI agent/adapter settings to open an incompatible session.
 
-Agent requests, image input and local document operations must finish or be cancelled before TUI selection. The short registry lease serializes session opening with future lifecycle operations; the active conversation retains its own exclusive lease. Symlink directories, metadata/lock symlinks and non-regular leaves are rejected. These new transitions and live-connection/PTY regressions await hosted verification; they do not establish complete conversation retention or product acceptance.
+Agent requests, image input and local document operations must finish or be cancelled before TUI selection. The short registry lease serializes session opening with local lifecycle operations; the active conversation retains its own exclusive lease. Symlink directories, metadata/lock symlinks and non-regular leaves are rejected. The selection transitions, live-connection and real-PTY regressions passed all three initial-release targets at `b387074` ([CI 40134426833](https://github.com/EkeMinusYou/lazypencil/actions/runs/40134426833)); this does not establish complete retention or product acceptance.
+
+### Delete local conversation data
+
+```sh
+# Review an inactive conversation without changing or sending its draft.
+lazypencil conversations delete design.pen LOCAL_UUID --json
+# Copy revision from that review, then explicitly commit the deletion.
+lazypencil conversations delete design.pen LOCAL_UUID --expected-revision REVIEWED_SHA256 --json
+# Finish committed deletions interrupted during filesystem cleanup.
+lazypencil conversations cleanup design.pen --json
+```
+
+The review identifies the full local UUID, document, byte/file totals, draft characters and image counts. The shared API holds an exclusive conversation lease while hashing every local file with a 64 KiB buffer. It has a 30 second cooperative deadline and a 100,000 entry/64-level limit; a missing, busy, foreign, unsupported-format or changed conversation is rejected. Revision checking covers contents, names and filesystem identities, including same-length content changes whose modification time was preserved. Metadata/lock symlinks and non-regular files are rejected; ordinary symlink leaves inside the payload are recorded without following their targets.
+
+Commit atomically moves the reviewed directory out of the live conversation namespace under the stable registry lease, then removes its local drafts, attachments, transcripts and usage journals. The `.pen`, document checkpoints, imported project assets, provider-side conversation history and authentication stores remain. An inactive unsent draft may be deleted only through this explicit reviewed operation. Every live CLI/TUI keeps its conversation leased, including while idle; select another or close it first. No adapter or authentication is needed.
+
+After the rename, cancellation or cleanup failure cannot restore the conversation. Results retain `deleted: true` and report `cleanup_complete`, any cleanup error and directory-sync errors. A private journal outside the payload allows `cleanup` to finish after a crash or partial recursive removal, even if `session.json` has already disappeared. Cleanup leaves busy, foreign, malformed or symlink tombstones available for diagnosis. Filesystem calls use cooperative boundaries; a single OS operation cannot be preempted. The TUI's `d` review and `y` confirmation call the same API. These deletion changes await hosted verification; configurable aggregate retention remains required work.
 
 ### Design-resource records
 

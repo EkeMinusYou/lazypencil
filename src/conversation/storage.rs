@@ -41,7 +41,32 @@ pub(super) struct Session {
     pub(super) _lock: File,
 }
 
-struct RegistryGuard(File);
+pub(super) struct RegistryGuard(File);
+
+pub(super) fn exclusive_lease(path: &Path) -> Result<RegistryGuard> {
+    Ok(RegistryGuard(lock_file(path, false)?))
+}
+
+pub(super) fn registry_lock(
+    store: &Store,
+    cancel: Option<&tokio_util::sync::CancellationToken>,
+) -> Result<RegistryGuard> {
+    let path = store.document_data_dir().join("conversations.lock");
+    let started = std::time::Instant::now();
+    loop {
+        crate::cancel::check(cancel)?;
+        match exclusive_lease(&path) {
+            Ok(guard) => return Ok(guard),
+            Err(error)
+                if error.code == "REVISION_CONFLICT"
+                    && started.elapsed() < std::time::Duration::from_secs(5) =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
 
 impl Drop for RegistryGuard {
     fn drop(&mut self) {
@@ -81,10 +106,7 @@ impl Session {
         require_directory(&root)?;
         // This stable parent lease also serializes later local deletion with
         // opening a conversation. Never unlink the registry while it is used.
-        let registry = RegistryGuard(lock_file(
-            &store.document_data_dir().join("conversations.lock"),
-            true,
-        )?);
+        let registry = registry_lock(store, None)?;
         let directory = root.join(&id);
         if args.session.is_some() {
             require_directory(&directory).map_err(|_| {
