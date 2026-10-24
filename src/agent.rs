@@ -32,7 +32,7 @@ use process::AgentProcess;
 pub struct AgentOptions {
     pub command: PathBuf,
     pub args: Vec<String>,
-    /// Host binary implementing the private Windows process supervisor entry point.
+    /// Host binary implementing the private process supervisor entry point.
     /// Defaults to this executable; library hosts must supply the lazypencil binary.
     pub supervisor_executable: Option<PathBuf>,
     pub cwd: PathBuf,
@@ -564,7 +564,7 @@ fn validate_frame(line: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, unix))]
 #[doc(hidden)]
 pub fn serve_process_worker() -> Result<bool> {
     process::serve_worker()

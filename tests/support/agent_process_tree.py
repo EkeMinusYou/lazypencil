@@ -20,7 +20,8 @@ if sys.argv[1] == "leaf":
 else:
     flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS if os.name == "nt" else 0
     leaf = subprocess.Popen([sys.executable, __file__, "leaf"], stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags)
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags,
+        start_new_session=(os.name != "nt" and "--detach" in sys.argv[3:]))
     try:
         deadline = time.monotonic() + 10
         while not Path("tree-leaf-ready.json").exists():

@@ -39,7 +39,8 @@ def select(paths, platform="auto"):
     macos = any("macos" in path.lower() or "darwin" in path.lower() for path in paths)
     os_name = ("macos-15" if macos else "ubuntu-24.04") if platform == "auto" else platform
     ownership = any(path.startswith("src/cdp/process/") or path in {
-        "src/cdp/process.rs", "tests/support/unix_browser_ownership.rs",
+        "src/cdp/process.rs", "src/process_owner.rs", "tests/support/unix_browser_ownership.rs",
+        "tests/support/unix_agent_ownership.rs", "tests/support/agent_process_tree.py",
         "tests/support/browser_process_unix.py",
     } for path in paths)
     conversation = ownership or bool(stems & {"agent", "conversation", "windows_agent"}) or any(path.startswith("tests/support/acp_") for path in paths)
@@ -136,6 +137,7 @@ def commands(suite, targets):
     build = [[*common, "--lib", *selected, "--no-run"], ["cargo", "build", "--locked", *features]]
     checks = []
     if suite == "conversation":
+        checks.append([*common, "--test", "agent", "agent_ownership::killed_cli_owners_reap_their_tree_and_preserve_another_owner", "--", "--exact", "--nocapture"])
         checks.append([*common, "--test", "agent", "embedded_conversation_uses_the_real_helper_for_supervision_and_bound_mcp_edits", "--", "--exact", "--nocapture"])
     if suite == "dynamic":
         checks.append([*common, "--lib", "cdp::", "--", "--test-threads=2"])
@@ -147,6 +149,9 @@ def commands(suite, targets):
         checks.append([*common, *selected, "--", "--include-ignored", "--test-threads=1", "--skip", "retained_"])
     else:
         checks.append([*common, "--lib", *selected, "--", "--test-threads=2"])
+        if suite == "conversation":
+            checks[-1].extend(["--skip", "agent_ownership::killed_cli_owners_reap_their_tree_and_preserve_another_owner",
+                               "--skip", "embedded_conversation_uses_the_real_helper_for_supervision_and_bound_mcp_edits"])
     return build, checks
 
 

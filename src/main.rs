@@ -16,7 +16,7 @@ fn main() -> ExitCode {
             }
         };
     }
-    #[cfg(windows)]
+    #[cfg(any(windows, unix))]
     if std::env::args_os()
         .nth(1)
         .is_some_and(|argument| argument == "__agent_process_worker")

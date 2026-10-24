@@ -4,6 +4,9 @@
 
 初回リリースの完成判定は macOS Apple Silicon・Linux x64／arm64（glibc 系）の3環境に限定する。Intel Mac は対象外、Windows は既存実装・fixture を保持して後日対応とする。以下の過去の5環境検証や Windows／Intel の残件は、初回リリースの必須作業へ追加しない。機能・互換性・性能・実端末・ライセンス・配布の基準は [設計書の受け入れ条件](design.md#検証と受け入れ条件) に従う。
 
+2026-10-24: Unix エージェントにも専用 guardian を追加し、ACP とは独立した匿名 socket の EOF で親の終了を検知する。Chromium で検証した PID を再利用前に固定する group 回収を共通化し、adapter の close・取消・runtime drop・親 CLI の強制終了を扱う。Linux は subreaper で独立 session の子・孫も回収する。起動 status・stderr の上限付き転送・subscription の環境除去を維持し、所有 descriptor は adapter 起動前に close-on-exec にする。実プロセスの回収・別会話の分離・詰まった出力・所有者／adapter 欠損を試験に追加し、Skia 不要の force-kill 再現を先行する。Windows 実装は変更しない。新しい Rust の実行と両構成の確認は GHA で行い、macOS の group を離脱する子孫や grant の crash 後回収等は完了としない。
+
+
 2026-10-24: 本家 CLI 0.3.9 の自作22ケースを調べ、未指定入力の型別既定値、null によるリセット、空の ref、保存済みの旧入力の無視へ合わせる。旧入力に残った `$missing` も解決せず、元データは保存する。512×528の参照 PNG の全1,081,344 RGBA成分を独立に確認した。新たな入れ子のコード依存を取得した後の入力解決と、null で戻した参照の既定ライブラリも検査する。明示値の型と enum の検査は維持し、実行メタデータの engine と英語ガイド1.0.18を更新する。GHA の core worker を先行し、2形式の全画素比較・元データ／履歴の保持と既存の乱数 corpus を続ける。project 変更では query の利用側も対象に含める。実装と参照データを準備し、ローカル Rust／Skia build は行わない。
 
 source `eac581a` の先行 GHA `40088087463` は実 worker の22ケースと、入れ子・既定参照ライブラリ・既存乱数の試験を成功したが、サービスの構造検査が旧入力の `$missing` を先に拒否した。ノード／インスタンス／descendant override の script inputs はヘッダー取得後の検査へ委ね、通常の塗りや `inputs` という名前の shader uniform の変数検査は維持する。新しい構造検査の回帰と、宣言済みの未定義変数が worker 起動前に失敗する試験を追加する。core の project と worker を Skia 前に先行し、operations の変更も既存 CLI 試験へ広げる。失敗した先行 gate の段階で全環境は未起動である。

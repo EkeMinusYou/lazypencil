@@ -1217,5 +1217,9 @@ fn supervised_agent_mcp_renders_script_browser_and_shader_pixels() {
     });
 }
 #[cfg(unix)]
+#[path = "support/unix_agent_ownership.rs"]
+mod agent_ownership;
+
+#[cfg(unix)]
 #[path = "support/unix_browser_ownership.rs"]
 mod browser_ownership;

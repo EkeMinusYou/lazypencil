@@ -70,7 +70,7 @@ impl Conversation {
     }
 
     /// Library hosts supply the real lazypencil binary for bound MCP servers
-    /// and the Windows adapter supervisor, rather than their embedding binary.
+    /// and the adapter supervisor, rather than their embedding binary.
     pub fn open_with_executable(
         mut args: PromptArgs,
         data_dir: Option<PathBuf>,
