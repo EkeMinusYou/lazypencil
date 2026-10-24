@@ -1068,3 +1068,96 @@ fn installed_adapter(variable: &str, default: &str) {
     });
     assert_eq!(store.read().unwrap().value()["children"], json!([]));
 }
+
+#[cfg(feature = "rendering")]
+#[test]
+#[ignore = "Requires sandboxed Chromium; exercises the complete supervised adapter/MCP process tree"]
+fn supervised_agent_mcp_renders_script_browser_and_shader_pixels() {
+    use agent_client_protocol::schema::v1::{EnvVariable, McpServer, McpServerStdio};
+    use skia_safe::{Color, Data, Image};
+    let directory = TempDir::new().unwrap();
+    let file = directory.path().join("design.pen");
+    std::fs::write(directory.path().join("shape.js"), "/** @schema 2.21 */ return [{type:'rectangle',width:pencil.width,height:pencil.height,fill:'#ff0000'}];").unwrap();
+    std::fs::write(
+        directory.path().join("blue.glsl"),
+        "precision highp float;void main(){gl_FragColor=vec4(0.0,0.0,1.0,1.0);}",
+    )
+    .unwrap();
+    std::fs::write(&file, json!({"version":"2.21","children":[{"id":"canvas","type":"frame","width":300,"height":100,"layout":"none","fill":"#ffffff","children":[
+        {"id":"page","type":"browser","url":"data:text/html,<style>html,body{margin:0;background:%2300ff00}</style>","width":100,"height":100},
+        {"id":"shader","type":"rectangle","x":100,"width":100,"height":100,"fill":{"type":"shader","url":"blue.glsl"}},
+        {"id":"script","type":"script","x":200,"width":100,"height":100,"scriptUri":"shape.js"}
+    ]}]}).to_string()).unwrap();
+    let original = std::fs::read(&file).unwrap();
+    let store = lazypencil::store::Store::open(&file, Some(directory.path().join("data"))).unwrap();
+    let chromium =
+        std::env::var("LAZYPENCIL_TEST_CHROMIUM").expect("Pinned test Chromium executable");
+    runtime().block_on(async {
+        let mut opts = options("supervised-dynamic", directory.path());
+        opts.setup_timeout = Duration::from_secs(20);
+        opts.turn_timeout = Duration::from_secs(60);
+        opts.mcp_servers = vec![McpServer::Stdio(
+            McpServerStdio::new("lazypencil", env!("CARGO_BIN_EXE_lazypencil"))
+                .args(vec![
+                    "--data-dir".into(),
+                    store.data_dir().to_str().unwrap().into(),
+                    "mcp".into(),
+                    "--file".into(),
+                    file.to_str().unwrap().into(),
+                ])
+                .env(vec![EnvVariable::new("LAZYPENCIL_CHROMIUM", chromium)]),
+        )];
+        let mut host = AgentHost::spawn(opts).unwrap();
+        ready(&mut host).await;
+        host.prompt(prompt(), CancellationToken::new())
+            .await
+            .unwrap();
+        let event = tokio::time::timeout(Duration::from_secs(70), host.next_event())
+            .await
+            .unwrap()
+            .unwrap();
+        let AgentEvent::Message(event) = event else {
+            panic!("Unexpected permission event")
+        };
+        assert_eq!(
+            event["type"],
+            "update",
+            "{event}\n{}",
+            std::fs::read_to_string(directory.path().join("fixture-errors.log"))
+                .unwrap_or_default()
+        );
+        assert_eq!(message(&mut host).await["type"], "turn_complete");
+        let png = std::fs::read(directory.path().join("supervised-dynamic.png")).unwrap();
+        let raster = Image::from_encoded(Data::new_copy(&png))
+            .unwrap()
+            .make_raster_image(None, None)
+            .unwrap();
+        assert_eq!((raster.width(), raster.height()), (300, 100));
+        let pixels = raster.peek_pixels().unwrap();
+        assert_eq!(pixels.get_color((50, 50)), Color::GREEN);
+        assert_eq!(pixels.get_color((150, 50)), Color::BLUE);
+        assert_eq!(pixels.get_color((250, 50)), Color::RED);
+        let report: Value = serde_json::from_slice(
+            &std::fs::read(directory.path().join("supervised-dynamic.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(report["diagnostics"], json!([]));
+        let artifacts = report["dynamic_artifacts"].as_array().unwrap();
+        assert_eq!(artifacts.len(), 2);
+        for kind in ["browser", "shader"] {
+            assert!(
+                artifacts
+                    .iter()
+                    .any(|artifact| artifact["acquisition"]["kind"] == kind)
+            );
+        }
+        host.close().await.unwrap();
+        assert_eq!(std::fs::read(&file).unwrap(), original);
+        if let Some(output) = std::env::var_os("LAZYPENCIL_TEST_SUPERVISION_DIR") {
+            let output = PathBuf::from(output);
+            std::fs::create_dir_all(&output).unwrap();
+            std::fs::write(output.join("chromium-supervised.png"), &png).unwrap();
+            std::fs::write(output.join("chromium-supervised.json"), report.to_string()).unwrap();
+        }
+    });
+}

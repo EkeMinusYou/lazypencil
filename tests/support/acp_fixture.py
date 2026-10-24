@@ -125,7 +125,7 @@ try:
             if method == "session/load":
                 assert params["sessionId"] == "fixture-native"
                 notify({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "replayed\n"}})
-            if mode in ["edit", "image-edit", "edit-cancel", "image-inspect-audit", "user-config"] or mode.startswith(("project-guidance", "audit-")):
+            if mode in ["edit", "image-edit", "edit-cancel", "image-inspect-audit", "user-config", "supervised-dynamic"] or mode.startswith(("project-guidance", "audit-")):
                 assert len(params["mcpServers"]) == 1
                 connect_mcp(params["mcpServers"][0])
             if mode.startswith("auth-") and mode != "auth-absent":
@@ -228,6 +228,15 @@ try:
             if mode == "auth-change":
                 auth_status("api_key")
                 continue
+            if mode == "supervised-dynamic":
+                current = call_mcp("get_document", {})["structuredContent"]
+                preview = call_mcp("render", {"expected_revision": current["revision"],
+                    "expected_dependency_revision": current["dependency_revision"]})
+                image = next(block for block in preview["content"] if block.get("type") == "image")
+                with open("supervised-dynamic.png", "wb") as handle:
+                    handle.write(base64.b64decode(image["data"], validate=True))
+                with open("supervised-dynamic.json", "w", encoding="utf-8") as handle:
+                    json.dump(preview["structuredContent"], handle)
             if mode in ["cancel", "hang-cancel", "cancel-permission", "process-tree-hang"]:
                 notify({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "working\n"}})
                 if mode != "cancel-permission":

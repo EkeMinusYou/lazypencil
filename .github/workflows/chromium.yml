@@ -222,6 +222,13 @@ jobs:
         run: |
           set -o pipefail
           cargo test --locked --test mcp real_mcp_shader_assets_uniform_edits_and_browser_refresh_return_image_content -- --ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-mcp.log"
+      - name: Verify supervised adapter and MCP dynamic pixels
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        env:
+          LAZYPENCIL_TEST_SUPERVISION_DIR: ${{ runner.temp }}
+        run: |
+          set -o pipefail
+          cargo test --locked --test agent supervised_agent_mcp_renders_script_browser_and_shader_pixels -- --ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-supervision.log"
       - name: Verify real MCP idle process cleanup
         if: runner.os != 'Windows'
         working-directory: ${{ runner.temp }}/lazypencil-source
@@ -260,6 +267,7 @@ jobs:
             ${{ runner.temp }}/chromium-*.json
             ${{ runner.temp }}/chromium-*.log
             ${{ runner.temp }}/chromium-panel.png
+            ${{ runner.temp }}/chromium-supervised.png
             ${{ runner.temp }}/chromium-userns.apparmor
             ${{ runner.temp }}/codec-reference/codec-*
           if-no-files-found: ignore
