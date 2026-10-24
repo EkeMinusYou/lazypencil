@@ -334,6 +334,42 @@ class FocusTests(unittest.TestCase):
                 self.assertEqual(focus.changed_paths(), ["src/agent/process/windows.rs", "src/render.rs"])
                 self.assertEqual(command.call_args.args[0], ["git", "ls-files"])
 
+    def test_transient_baseline_api_failure_retries_once_and_never_trusts_partial_success(self):
+        for failures, expected_calls in (([503], 3), ([503, 503], 2), ([403], 1)):
+            with self.subTest(failures=failures), tempfile.TemporaryDirectory() as directory:
+                event = Path(directory) / "event.json"
+                event.write_text(json.dumps({"before": "previous"}))
+                environment = {"GITHUB_EVENT_PATH": str(event), "GITHUB_API_URL": "https://api.example.invalid", "GITHUB_REPOSITORY": "owner/repo", "GH_TOKEN": "fixture"}
+                replies = [urllib.error.HTTPError("https://api.example.invalid", code, "fixture failure", {}, None) for code in failures]
+                if len(failures) == 1 and failures[0] == 503:
+                    replies += [io.BytesIO(json.dumps(value).encode()) for value in [
+                        {"workflow_runs": [{"id": 1, "head_sha": "verified"}]},
+                        {"jobs": [{"name": "Verified source artifact", "conclusion": "success"}]},
+                    ]]
+                with patch.dict(os.environ, environment), patch.object(focus.urllib.request, "urlopen", side_effect=replies) as api, patch.object(focus.time, "sleep") as sleep, patch.object(focus.subprocess, "check_output", side_effect=["ancestor\n", "src/tui/mod.rs\n"] if expected_calls == 3 else ["src/tui/mod.rs\nsrc/render.rs\n"]) as command:
+                    self.assertEqual(focus.changed_paths(), ["src/tui/mod.rs"] if expected_calls == 3 else ["src/tui/mod.rs", "src/render.rs"])
+                    self.assertEqual(api.call_count, expected_calls)
+                    self.assertEqual(sleep.call_count, int(failures[0] == 503))
+                    if expected_calls != 3:
+                        self.assertEqual(command.call_args.args[0], ["git", "ls-files"])
+
+    def test_unreadable_recent_candidate_can_use_an_older_completed_full_gate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            event = Path(directory) / "event.json"
+            event.write_text(json.dumps({"before": "previous"}))
+            environment = {"GITHUB_EVENT_PATH": str(event), "GITHUB_API_URL": "https://api.example.invalid", "GITHUB_REPOSITORY": "owner/repo", "GH_TOKEN": "fixture"}
+            replies = [io.BytesIO(json.dumps({"workflow_runs": [{"id": 2, "head_sha": "unreadable"}, {"id": 1, "head_sha": "verified"}]}).encode()),
+                       urllib.error.HTTPError("https://api.example.invalid", 404, "fixture missing", {}, None),
+                       io.BytesIO(json.dumps({"jobs": [{"name": "Verified source artifact", "conclusion": "success"}]}).encode())]
+            with patch.dict(os.environ, environment), patch.object(focus.urllib.request, "urlopen", side_effect=replies), patch.object(focus.subprocess, "check_output", side_effect=["ancestor\n", "src/tui/mod.rs\n"]) as command:
+                self.assertEqual(focus.changed_paths(), ["src/tui/mod.rs"])
+                self.assertEqual(command.call_args_list[0].args[0], ["git", "merge-base", "previous", "verified"])
+
+    def test_mixed_or_expanded_changes_cannot_omit_changed_input_reproductions(self):
+        result = focus.select(["src/config/keys/navigation.rs", "src/agent.rs", "src/render.rs"])
+        self.assertEqual(result["suite"], "graphics")
+        self.assertTrue({"agent", "native_layout", "tui", "user_config"} <= set(result["targets"]))
+
     def test_runtime_optins_never_expand_to_credentialed_agent_requests(self):
         for suite in ("core", "conversation", "graphics", "dynamic", "shader"):
             result = focus.select(["src/shader.rs"] if suite=="shader" else ["src/cdp.rs"] if suite == "dynamic" else ["tests/queries.rs"])
