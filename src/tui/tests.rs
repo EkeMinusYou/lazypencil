@@ -94,6 +94,17 @@ fn playback_preserves_input_pauses_on_seek_errors_and_static_output_and_drops_la
         assert!(app.playback.active());
         assert_eq!(app.editor.lines(), &["kept draft "]);
         assert!(app.status.contains("playing"));
+        app.playback_tick(&worker, now + Duration::from_secs(3)).unwrap();
+        app.pause_playback();
+        assert!(app.status.contains("t=2.000s"), "Status describes the complete image");
+        assert!(app.status.contains("finishing requested frame"));
+        let mut output = tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap();
+        output.result.as_mut().unwrap().time_dependent = true;
+        app.accept_preview(output);
+        assert!(!app.playback.active());
+        assert!(app.status.contains("t=3.000s"));
+        assert!(!app.status.contains("finishing requested frame"));
+        app.start_playback(5, now + Duration::from_secs(3)).unwrap();
         press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL, &worker).await;
         assert!(!app.playback.active());
         assert_eq!(app.playback.deadline(), None);
@@ -101,7 +112,7 @@ fn playback_preserves_input_pauses_on_seek_errors_and_static_output_and_drops_la
         app.cells = Size::new(0, 0);
         press(&mut app, KeyCode::Char(']'), KeyModifiers::NONE, &worker).await;
         assert!(!app.playback.active());
-        assert!((app.view.time - 2.1).abs() < 1e-10);
+        assert!((app.view.time - 3.1).abs() < 1e-10);
         app.editor = editor("/play 3");
         app.command(&worker).await.unwrap();
         assert_eq!(app.playback.fps(), Some(3));

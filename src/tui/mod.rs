@@ -406,7 +406,20 @@ impl App {
     }
     fn pause_playback(&mut self) {
         self.playback.stop();
-        self.status = format!("Shader playback paused · t={:.3}s", self.view.time);
+        self.status = match self.preview.as_ref().filter(|preview| !preview.attachment) {
+            Some(preview) => {
+                let pending = if preview.view.time != self.view.time {
+                    " · finishing requested frame"
+                } else {
+                    ""
+                };
+                format!(
+                    "Shader playback paused · t={:.3}s{pending}",
+                    preview.view.time
+                )
+            }
+            None => "Shader playback paused".into(),
+        };
     }
     fn playback_tick(&mut self, worker: &Worker, now: Instant) -> Result<()> {
         let Some(time) = self.playback.frame(now) else {
