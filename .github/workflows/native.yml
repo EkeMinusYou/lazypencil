@@ -378,10 +378,52 @@ jobs:
         env:
           LAZYPENCIL_TEST_RETAINED_DIR: ${{ runner.temp }}
           LAZYPENCIL_TEST_NATIVE_SHADER_DIR: ${{ runner.temp }}
+          LAZYPENCIL_TEST_CODEC_DIR: ${{ runner.temp }}/codec-reference
         run: |
           set -o pipefail
           cargo test --locked --no-fail-fast --test dynamic_render --test browser_readiness --test shader_uniforms --test sampler_sources --test imports --test windows_agent -- --ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-render.log"
           cargo test --locked --test agent browser_ownership::real_browser_drop_and_owner_death_reap_the_tree_and_preserve_other_owners -- --exact --ignored --test-threads=1 2>&1 | tee -a "$RUNNER_TEMP/chromium-render.log"
+      - name: Require retained shader and native cancellation images
+        if: inputs.phase == 'full'
+        timeout-minutes: 1
+        run: |
+          python - <<'PY'
+          import hashlib, itertools, json, os, struct
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"]) / "codec-reference"
+          source = os.environ["GITHUB_SHA"]
+          def report(name):
+              data = json.loads((root / name).read_text(encoding="utf-8"))
+              assert data["source_commit"] == source, name
+              return data
+          def png(name, digest, dimensions):
+              assert Path(name).name == name and name.startswith("codec-"), name
+              data = (root / name).read_bytes()
+              assert hashlib.sha256(data).hexdigest() == digest, name
+              assert data[:8] == b"\x89PNG\r\n\x1a\n" and data[-12:] == b"\x00\x00\x00\x00IEND\xaeB`\x82", name
+              assert struct.unpack(">II", data[16:24]) == dimensions, name
+              return data
+          versions = ["2.19", "2.21"]
+          structures = report("codec-shader-structures.json")["cases"]
+          assert len(structures) == 16 and {(r["document_version"], r["case"]) for r in structures} == set(itertools.product(versions, range(8)))
+          for r in structures:
+              png(f'codec-shader-structure-{r["document_version"]}-{r["case"]}.png', r["png_hash"], (32, 16))
+          expanded = report("codec-shader-preprocessed.json")["cases"]
+          assert len(expanded) == 64 and {(r["document_version"], r["case"], r["effect"], r["scale"]) for r in expanded} == set(itertools.product(versions, range(8), [False, True], [1, 2]))
+          for r in expanded:
+              name = f'codec-shader-preprocessed-{r["document_version"]}-{r["case"]}-{str(r["effect"]).lower()}-{r["scale"]}.png'
+              assert r["png"] == name
+              png(name, r["png_hash"], (32 * r["scale"], 16 * r["scale"]))
+          for version in versions:
+              prefix = f"codec-native-layout-cancellation-{version}"
+              r = report(prefix + ".json")
+              assert r["document_version"] == version and r["worker_process_id"] is None
+              assert r["before_snapshot_id"] == r["recovered_snapshot_id"]
+              before = png(prefix + "-before.png", r["before_png_hash"], (320, 80))
+              after = png(prefix + "-recovered.png", r["recovered_png_hash"], (320, 80))
+              assert before == after
+          print("Verified source identities, hashes and dimensions for 84 required PNGs")
+          PY
       - name: Verify real MCP image content
         if: inputs.phase == 'full'
         timeout-minutes: 5
