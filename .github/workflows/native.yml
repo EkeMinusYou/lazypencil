@@ -296,6 +296,7 @@ jobs:
         run: |
           set -o pipefail
           cargo test --locked --no-fail-fast --test dynamic_render --test browser_readiness --test shader_uniforms --test sampler_sources --test imports --test windows_agent -- --ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-render.log"
+          cargo test --locked --test agent browser_ownership::real_browser_drop_and_owner_death_reap_the_tree_and_preserve_other_owners -- --exact --ignored --test-threads=1 2>&1 | tee -a "$RUNNER_TEMP/chromium-render.log"
       - name: Verify real MCP image content
         if: inputs.phase == 'full'
         timeout-minutes: 5

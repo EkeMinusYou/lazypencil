@@ -1,7 +1,7 @@
 //! Ownership of the browser launcher and its platform lifetime boundary.
 
 use super::Budget;
-#[cfg(not(windows))]
+#[cfg(not(any(windows, unix)))]
 use super::failed;
 use crate::Result;
 use std::{
@@ -13,10 +13,17 @@ use std::{
 mod windows;
 #[cfg(windows)]
 pub use windows::serve_worker;
+#[cfg(unix)]
+mod unix;
+#[cfg(unix)]
+pub use unix::serve_worker;
 
 pub(super) struct Owned {
+    #[cfg(not(unix))]
     child: Child,
-    #[cfg(windows)]
+    #[cfg(unix)]
+    child: Option<Child>,
+    #[cfg(any(windows, unix))]
     browser_pid: u32,
     #[cfg(windows)]
     job: Option<windows::Job>,
@@ -34,7 +41,11 @@ impl Owned {
         {
             windows::spawn(command, supervisor, profile, budget)
         }
-        #[cfg(not(windows))]
+        #[cfg(unix)]
+        {
+            unix::spawn(command, supervisor, profile, budget)
+        }
+        #[cfg(not(any(windows, unix)))]
         {
             let _ = (supervisor, profile);
             let mut command = command;
@@ -46,25 +57,42 @@ impl Owned {
     }
 
     pub(super) fn id(&self) -> u32 {
-        #[cfg(windows)]
+        #[cfg(any(windows, unix))]
         {
             self.browser_pid
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, unix)))]
         {
             self.child.id()
         }
     }
 
     pub(super) fn try_wait(&mut self) -> std::io::Result<Option<ExitStatus>> {
-        self.child.try_wait()
+        #[cfg(unix)]
+        {
+            match &mut self.child {
+                Some(child) => child.try_wait(),
+                None => Ok(None),
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            self.child.try_wait()
+        }
     }
 
     pub(super) fn stop(&mut self) {
         #[cfg(windows)]
         self.job.take();
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        #[cfg(unix)]
+        if let Some(child) = self.child.take() {
+            unix::stop(child);
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
     }
 }
 

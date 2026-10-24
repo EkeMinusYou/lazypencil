@@ -2,6 +2,8 @@
 
 設計書 v0.10 の全体を実装対象とする。部分的な CLI や描画の試作だけで完成とは扱わない。以下は実際の実装・試験結果で更新する。
 
+2026-10-24: macOS／Linux の Chromium を専用 guardian から起動する処理を追加する。所有者だけが書き込み側を保持する pipe の EOF で、所有者の強制終了時にもブラウザーの group を終了する。group leader の終了は `waitid(WNOWAIT)` で確認し、共有する group ID を無効化してから wait するため、回収後の PID を signal しない。Linux の guardian だけを subreaper とし、別 session の子孫も採用・停止・wait する。稼働中の孤立した子孫もその終了ごとに回収し、定期 polling は使わない。通常の終了待ちは3秒で区切り、OS の終了待ちが遅い場合も guardian と waiter の所有を保つ。実プロセスの取消・起動期限・親の強制終了・所有者分離・root の先行終了・継承した SIGCHLD ignore・所有者不在・起動失敗を先行試験へ加えた。実 Chromium は既存の画像検証に加え、全子孫の終了と別所有者の CDP 継続を検査する。macOS の managed runtime の group 条件も検証し、GHA の対象3環境で成功するまでは保証済みとしない。ローカルでは小さい子プロセスで macOS の waitid ABI を確認しただけで、Rust／Chromium はビルドしない。
+
 2026-10-24: CDP のソケット読み書きごとに、現在の操作の絶対期限と取消を確認する経路を追加する。従来の個別 read timeout だけでは、HTTP ヘッダーや WebSocket frame が少しずつ届く間、ライブラリ内部の呼び出しが戻らず外側の期限確認へ進めなかった。TCP 接続にも残り期限を適用し、各 command で取得時の期限を更新する。部分ヘッダー・部分 frame の継続受信、送信先の読み取り停止、接続後に期限が切れた場合の次 command を実ソケットで検査し、動的コンテンツの focused gate でも CDP unit を先行させる。初回対象3環境の GHA で検証し、ローカル native build は行わない。Unix の browser 子孫回収など、他の未完了要件も維持する。
 
 2026-10-24: ユーザーの指定により、初回リリースの対象を macOS Apple Silicon・Linux x64／arm64 の3環境へ変更する。Intel Mac はサポート対象外、Windows は後日対応とし、既存の Windows 実装・fixture を保持する。設計・README・通常／手動 CI と完成条件をこの範囲へ揃え、追加の Windows 対応は延期する。以下の5環境・Windows／Intel の記述は変更前の実装・検証記録であり、現在の必須条件ではない。機能・互換性・性能・実接続・端末・ライセンス・配布の未完了条件は対象3環境について維持する。旧5環境の GHA `40063955857` は範囲変更に伴い停止要求済みで、新しい3環境構成で検証する。
