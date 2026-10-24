@@ -19,6 +19,8 @@ The current manifest pins Chrome for Testing **156.0.8078.47**, specifically `ch
 
 The installer verifies the archive before bounded extraction, rejects traversal paths, symbolic links and unpinned files, checks the complete installed file set, then activates the staging directory by rename. A verified installation is reused. A modified installation fails with `RUNTIME_INTEGRITY` and is not silently overwritten. `runtime status` reports installation availability and integrity without downloading anything or launching the browser. Installation cancellation and complete cross-platform filesystem-durability checks still require work.
 
+Configured launch and acquisition deadlines also bound partial HTTP/WebSocket reads and blocked sends. Receiving more bytes does not extend the deadline. Cancellation remains active while a response is incomplete, and each subsequent command uses its own current operation budget. Regression tests exercise partial responses and stalled sends separately from real browser rendering.
+
 ## Read-only diagnosis
 
 ```sh

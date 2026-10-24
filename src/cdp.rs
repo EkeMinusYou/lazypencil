@@ -5,14 +5,15 @@ use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, VecDeque},
     fs, io,
-    net::{SocketAddr, TcpStream},
+    net::SocketAddr,
     path::Path,
     process::{Command, Stdio},
     time::{Duration, Instant},
 };
 use tokio_util::sync::CancellationToken;
-use tungstenite::{Message, WebSocket, protocol::WebSocketConfig};
+use tungstenite::{Message, WebSocket};
 
+mod connection;
 mod lifecycle;
 mod process;
 mod readiness;
@@ -30,7 +31,7 @@ pub enum Purpose {
 
 pub struct Browser {
     child: process::Owned,
-    socket: WebSocket<TcpStream>,
+    socket: WebSocket<connection::Transport>,
     next_id: u64,
     pub version: String,
     page_lifecycle: BTreeMap<String, PageLifecycle>,
@@ -154,32 +155,7 @@ impl Browser {
                 std::thread::sleep(Duration::from_millis(20));
             };
             let address = SocketAddr::from(([127, 0, 0, 1], port));
-            let stream = TcpStream::connect_timeout(&address, Duration::from_secs(1))
-                .map_err(|e| failed(format!("Cannot connect to local CDP: {e}")))?;
-            stream
-                .set_read_timeout(Some(Duration::from_secs(1)))
-                .map_err(|e| failed(e.to_string()))?;
-            stream
-                .set_write_timeout(Some(Duration::from_secs(1)))
-                .map_err(|e| failed(e.to_string()))?;
-            let config = WebSocketConfig::default()
-                .max_message_size(Some(96 * 1024 * 1024))
-                .max_frame_size(Some(96 * 1024 * 1024));
-            let (socket, _) = tungstenite::client::client_with_config(
-                format!("ws://127.0.0.1:{port}{path}"),
-                stream,
-                Some(config),
-            )
-            .map_err(|e| failed(format!("CDP handshake failed: {e}")))?;
-            socket
-                .get_ref()
-                .set_read_timeout(Some(Duration::from_millis(50)))
-                .map_err(|e| failed(e.to_string()))?;
-            socket
-                .get_ref()
-                .set_write_timeout(Some(Duration::from_millis(50)))
-                .map_err(|e| failed(e.to_string()))?;
-            Ok(socket)
+            connection::connect(address, &path, budget)
         })();
         let socket = match result {
             Ok(socket) => socket,
@@ -211,6 +187,7 @@ impl Browser {
         budget: &Budget<'_>,
     ) -> Result<Value> {
         budget.check()?;
+        self.socket.get_mut().set_budget(budget);
         self.next_id += 1;
         let id = self.next_id;
         let mut request = json!({"id":id,"method":method,"params":params});
@@ -240,8 +217,10 @@ impl Browser {
             budget.check()?;
             match self.socket.read() {
                 Ok(Message::Text(text)) => {
+                    budget.check()?;
                     let value: Value =
                         serde_json::from_str(&text).map_err(|_| failed("Invalid CDP JSON"))?;
+                    budget.check()?;
                     if let Some(lifecycle) = value["sessionId"]
                         .as_str()
                         .and_then(|session| self.page_lifecycle.get_mut(session))

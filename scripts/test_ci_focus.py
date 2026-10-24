@@ -32,9 +32,10 @@ class FocusTests(unittest.TestCase):
             self.assertEqual(result["suite"], "dynamic")
             build, checks = focus.commands(result["suite"], result["targets"])
             self.assertNotIn("--no-default-features", build[0])
-            self.assertIn("retained_", checks[1])
-            self.assertIn("--skip", checks[2])
-            self.assertIn("--test-threads=1", checks[2])
+            self.assertIn("cdp::", checks[0])
+            self.assertIn("retained_", checks[2])
+            self.assertIn("--skip", checks[3])
+            self.assertIn("--test-threads=1", checks[3])
 
     def test_initial_release_gate_and_manual_entries_exclude_deferred_targets(self):
         self.assertEqual(set(focus.PLATFORMS), {"ubuntu-24.04", "ubuntu-24.04-arm", "macos-15"})

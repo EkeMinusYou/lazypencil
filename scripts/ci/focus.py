@@ -86,6 +86,8 @@ def commands(suite, targets):
     checks = []
     if suite == "conversation":
         checks.append([*common, "--test", "agent", "embedded_conversation_uses_the_real_helper_for_supervision_and_bound_mcp_edits", "--", "--exact", "--nocapture"])
+    if suite == "dynamic":
+        checks.append([*common, "--lib", "cdp::", "--", "--test-threads=2"])
     if not core:
         # Put the previously hanging TUI cases ahead of unrelated checks.
         checks.append([*common, "--lib", "tui::tests::", "--", "--test-threads=2"])
