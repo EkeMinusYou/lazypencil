@@ -32,10 +32,11 @@ const prepare = (source, options) => {
 const body = expression => `precision highp float;void main(){gl_FragColor=${expression};}`;
 
 if (process.argv[3] === "--bomb") {
-  const expression = "F(".repeat(32) + "1." + ")".repeat(32);
+  let definitions = "#define F0 1.\n";
+  for (let level = 1; level <= 32; level++) definitions += `#define F${level} (F${level - 1}+F${level - 1})\n`;
   try {
-    const result = execute("#define F(x) ((x)+(x))\n" + body(`vec4(${expression})`));
-    assert.equal(typeof result.error, "string");
+    const result = execute(definitions + body("vec4(F32)"));
+    assert.equal(typeof result.error, "string", JSON.stringify(result).slice(0, 512));
     console.log(JSON.stringify({ contained: true, reason: result.error.slice(0, 256) }));
   } catch (error) {
     assert(error instanceof WebAssembly.RuntimeError, String(error));
@@ -53,6 +54,11 @@ if (process.argv[3] === "--bomb") {
     const result = prepare("#define UV(p) ((p).xy/vec2(32.,16.))\n" + body("vec4(UV(gl_FragCoord),0.,1.)"));
     assert(result.includes("gl_FragCoord.xy*vec2("));
     assert(result.includes("gl_FragCoord.zw"));
+  });
+  check("nested function arguments are fully expanded", () => {
+    const result = prepare("#define F(x) ((x)+(x))\n" + body("vec4(F(F(0.125)))"));
+    assert(!result.includes("F("), result);
+    assert.equal((result.match(/0\.125/g) || []).length, 4, result);
   });
   check("builtin is undefined to conditional preprocessing", () => {
     const result = prepare("#ifdef gl_FragCoord\n#error builtin unexpectedly defined\n#endif\n" + body("vec4(0.,1.,0.,1.)"));
