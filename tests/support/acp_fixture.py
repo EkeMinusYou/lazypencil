@@ -146,7 +146,8 @@ try:
                 from pathlib import Path
                 flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS if os.name == "nt" else 0
                 subprocess.Popen([sys.executable, str(Path(__file__).with_name("agent_process_tree.py")),
-                    "branch", str(os.getpid()), *(["--detach"] if mode == "process-tree-detached" else [])], stdin=subprocess.DEVNULL,
+                    "branch", str(os.getpid()), *(["--guardian", str(os.getppid())] if os.name != "nt" else []),
+                    *(["--detach"] if mode == "process-tree-detached" else [])], stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags,
                     start_new_session=(os.name != "nt" and mode == "process-tree-detached"))
         elif method == "session/prompt":

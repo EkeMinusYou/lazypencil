@@ -20,7 +20,7 @@ pub(super) fn serve_worker() -> Result<bool> {
 }
 
 pub(super) struct AgentProcess {
-    pub(super) child: Child,
+    child: Option<Child>,
     #[cfg(unix)]
     owner: Option<std::os::unix::net::UnixStream>,
     #[cfg(windows)]
@@ -80,20 +80,21 @@ impl AgentProcess {
         let process = Self {
             #[cfg(unix)]
             owner: Some(owner.start()?),
-            child,
+            child: Some(child),
             #[cfg(windows)]
             job: Some(job),
         };
         #[cfg(any(windows, unix))]
         let mut process = process;
         #[cfg(unix)]
-        if let Err(error) = unix::confirm_startup(&mut process.child, options.setup_timeout).await {
+        if let Err(error) = unix::confirm_startup(process.child_mut(), options.setup_timeout).await
+        {
             process.stop().await;
             return Err(error);
         }
         #[cfg(windows)]
         if let Err(error) =
-            windows::confirm_startup(&mut process.child, options.setup_timeout).await
+            windows::confirm_startup(process.child_mut(), options.setup_timeout).await
         {
             process.stop().await;
             return Err(error);
@@ -101,13 +102,17 @@ impl AgentProcess {
         Ok(process)
     }
 
+    pub(super) fn child_mut(&mut self) -> &mut Child {
+        self.child.as_mut().expect("live agent guardian")
+    }
+
     pub(super) async fn stop(&mut self) {
         self.kill_tree();
         #[cfg(not(unix))]
-        let _ = self.child.start_kill();
+        let _ = self.child_mut().start_kill();
         #[cfg(unix)]
-        self.child.stdin.take();
-        let _ = tokio::time::timeout(Duration::from_secs(3), self.child.wait()).await;
+        self.child_mut().stdin.take();
+        let _ = tokio::time::timeout(Duration::from_secs(3), self.child_mut().wait()).await;
     }
 
     fn kill_tree(&mut self) {
@@ -129,5 +134,21 @@ impl AgentProcess {
 impl Drop for AgentProcess {
     fn drop(&mut self) {
         self.kill_tree();
+        #[cfg(unix)]
+        if let Some(mut child) = self.child.take()
+            && matches!(child.try_wait(), Ok(None))
+        {
+            // Tokio's best-effort orphan queue needs a running signal driver.
+            // Keep this exact owned Child until it is reaped even when the
+            // runtime itself has been dropped. Never wait on a recycled PID.
+            std::thread::spawn(move || {
+                loop {
+                    match child.try_wait() {
+                        Ok(Some(_)) | Err(_) => break,
+                        Ok(None) => std::thread::sleep(Duration::from_millis(10)),
+                    }
+                }
+            });
+        }
     }
 }

@@ -195,9 +195,10 @@ async fn run(
     options.setup_timeout = options
         .setup_timeout
         .saturating_sub(setup_started.elapsed());
-    let stdin = process.child.stdin.take().expect("piped stdin");
-    let stdout = process.child.stdout.take().expect("piped stdout");
-    let mut stderr = process.child.stderr.take().expect("piped stderr");
+    let child = process.child_mut();
+    let stdin = child.stdin.take().expect("piped stdin");
+    let stdout = child.stdout.take().expect("piped stdout");
+    let mut stderr = child.stderr.take().expect("piped stderr");
     // Drain continuously without retaining credentials or unbounded diagnostics from the adapter.
     let mut drain = tokio::spawn(async move {
         let mut count = 0u64;

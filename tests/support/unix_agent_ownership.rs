@@ -20,7 +20,7 @@ fn tree(directory: &Path) -> Vec<u32> {
     loop {
         if let Ok(bytes) = fs::read(directory.join("tree-ready.json")) {
             let value: Value = serde_json::from_slice(&bytes).unwrap();
-            let pids = ["adapter", "branch", "leaf"]
+            let pids = ["guardian", "adapter", "branch", "leaf"]
                 .map(|key| u32::try_from(value[key].as_u64().unwrap()).unwrap())
                 .to_vec();
             assert!(pids.iter().copied().all(alive));
