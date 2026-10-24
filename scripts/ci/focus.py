@@ -55,12 +55,13 @@ def select(paths, platform="auto"):
         "tests/support/unix_agent_ownership.rs", "tests/support/agent_process_tree.py",
         "tests/support/browser_process_unix.py",
     } for path in paths)
-    input_source = any(path == "src/tui/mod.rs" or path.startswith("src/config/keys") for path in paths)
+    terminal_change = any(path == "tests/support/terminal_screen.py" or path.startswith("tests/fixtures/terminal/") for path in paths)
+    input_source = terminal_change or any(path == "src/tui/mod.rs" or path.startswith("src/config/keys") for path in paths)
     input_only = input_source and all(
         (path == "README.md" or path.startswith("docs/") and path.endswith(".md"))
-        or path.startswith(("src/config/keys", ".github/", "scripts/ci/", "scripts/test_")) or path in {
+        or path.startswith(("src/config/keys", ".github/", "scripts/ci/", "scripts/test_", "tests/fixtures/terminal/")) or path in {
             "src/config.rs", "src/tui/mod.rs", "src/tui/checkpoints.rs", "src/tui/tests.rs", "tests/tui.rs", "tests/user_config.rs",
-            "tests/support/tui_pty.py", "scripts/ci/focus.py", "scripts/test_ci_focus.py",
+            "tests/support/tui_pty.py", "tests/support/terminal_screen.py", "scripts/ci/focus.py", "scripts/test_ci_focus.py",
             ".github/workflows/native.yml",
         } for path in paths
     )
@@ -115,7 +116,7 @@ def select(paths, platform="auto"):
         targets = sorted(set(targets) | {"project", "queries"})
     if operations_change:
         targets = sorted(set(targets) | {"operations_cli"})
-    if "conversation_history" in stems:
+    if "conversation_history" in stems or terminal_change:
         targets = sorted(set(targets) | {"conversation_history"})
         if suite == "shader":
             suite = "dynamic"

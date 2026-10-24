@@ -58,6 +58,13 @@ class FocusTests(unittest.TestCase):
             with self.subTest(extra=extra):
                 self.assertEqual(focus.select([*paths, extra])["suite"], "dynamic")
 
+    def test_macos_terminal_capture_reproduces_saved_logs_on_macos_first(self):
+        result = focus.select(["tests/support/terminal_screen.py", "scripts/test_terminal_screen.py",
+                               "tests/fixtures/terminal/macos-saved-log-refresh.json", "scripts/ci/focus.py"])
+        self.assertEqual(result["platform"], "macos-15")
+        self.assertEqual(result["suite"], "graphics")
+        self.assertEqual(result["targets"], ["conversation_history", "tui", "user_config"])
+
     def test_preprocessor_inputs_are_validated_before_native_builds_only_when_affected(self):
         for path in ["src/shader/preprocessor/src/lib.rs", "src/shader/preprocessor/Cargo.lock",
                      "tests/support/shader_preprocessor.mjs", ".github/workflows/shader-preprocessor.yml",
