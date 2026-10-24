@@ -1,0 +1,131 @@
+{
+  "version": "2.19",
+  "children": [
+    {
+      "id": "logical-coordinates",
+      "type": "frame",
+      "width": 400,
+      "height": 20,
+      "layout": "none",
+      "fill": "#ffffff",
+      "children": [
+        {
+          "id": "hardcoded",
+          "type": "rectangle",
+          "x": 0,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "hardcoded.glsl"
+          }
+        },
+        {
+          "id": "explicit",
+          "type": "rectangle",
+          "x": 40,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "explicit.glsl",
+            "uniforms": {
+              "size": [
+                32,
+                16
+              ]
+            }
+          }
+        },
+        {
+          "id": "resolution",
+          "type": "rectangle",
+          "x": 80,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "resolution.glsl"
+          }
+        },
+        {
+          "id": "object-macro",
+          "type": "rectangle",
+          "x": 120,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "object-macro.glsl"
+          }
+        },
+        {
+          "id": "function-macro",
+          "type": "rectangle",
+          "x": 160,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "function-macro.glsl"
+          }
+        },
+        {
+          "id": "undefined-builtin",
+          "type": "rectangle",
+          "x": 200,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "undefined-builtin.glsl"
+          }
+        },
+        {
+          "id": "object-override",
+          "type": "rectangle",
+          "x": 240,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "object-override.glsl"
+          }
+        },
+        {
+          "id": "macro-parameter",
+          "type": "rectangle",
+          "x": 280,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "macro-parameter.glsl"
+          }
+        },
+        {
+          "id": "undef",
+          "type": "rectangle",
+          "x": 320,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "undef.glsl"
+          }
+        },
+        {
+          "id": "function-override",
+          "type": "rectangle",
+          "x": 360,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "function-override.glsl"
+          }
+        }
+      ]
+    }
+  ]
+}

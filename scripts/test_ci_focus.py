@@ -15,6 +15,18 @@ spec.loader.exec_module(focus)
 
 
 class FocusTests(unittest.TestCase):
+    def test_preprocessor_inputs_are_validated_before_native_builds_only_when_affected(self):
+        for path in ["src/shader/preprocessor/src/lib.rs", "src/shader/preprocessor/Cargo.lock",
+                     "tests/support/shader_preprocessor.mjs", ".github/workflows/shader-preprocessor.yml",
+                     "scripts/ci/toolchain_evidence.py", "resources/licenses/rust/upstream.json",
+                     "tests/fixtures/pencil-0.3.9/shader-logical-coordinates/hardcoded.glsl",
+                     "scripts/license_notices.py", "resources/licenses/toolchain/upstream.json"]:
+            with self.subTest(path=path):
+                self.assertTrue(focus.preprocessor_changed([path]))
+        for path in ["src/query.rs", "docs/design.md", "src/shader/defaults.rs"]:
+            with self.subTest(path=path):
+                self.assertFalse(focus.preprocessor_changed([path]))
+
     def test_deferred_windows_changes_keep_shared_checks_on_a_release_runner(self):
         for path in ("src/agent/process/windows.rs", "src/conversation/mod.rs", "tests/windows_agent.rs"):
             with self.subTest(path=path):
