@@ -68,7 +68,7 @@ fn fixture() -> (TempDir, Store) {
         json!({"version":"2.21",
         "themes":{"mode":["light","dark"]},"variables":{"leaf":{"type":"string","value":[{"value":"pixel.png"},{"theme":{"mode":"dark"},"value":"dark.png"}]}},"children":[]}),
     );
-    fs::write(temp.path().join("library/sample.glsl"),"precision highp float;\n/* @resolution */ uniform vec2 size;\nuniform sampler2D image;\nuniform float amount;\nuniform vec4 tone;\nvoid main(){gl_FragColor=texture2D(image,gl_FragCoord.xy/size)*tone*amount;}").unwrap();
+    fs::write(temp.path().join("library/sample.glsl"),"precision highp float;\n/** @resolution */ uniform vec2 size;\nuniform sampler2D image;\nuniform float amount;\nuniform vec4 tone;\nvoid main(){gl_FragColor=texture2D(image,gl_FragCoord.xy/size)*tone*amount;}").unwrap();
     let shader = json!({"type":"shader","url":"sample.glsl","uniforms":{"image":"$alias","amount":"$amount","tone":"$tone"}});
     write(
         &temp.path().join("library/ui.lib.pen"),

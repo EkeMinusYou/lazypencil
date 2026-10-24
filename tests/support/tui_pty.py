@@ -28,7 +28,7 @@ if case == "dynamic-idle":
     with open(os.path.join(root, "generated.js"), "w") as handle:
         handle.write("/** @schema 2.21 */ return [{type:'rectangle',width:180,height:90,fill:'#00FF00'}];")
     with open(os.path.join(root, "blue.glsl"), "w") as handle:
-        handle.write("precision highp float;\n/* @time */ uniform float clock;\nvoid main(){gl_FragColor=clock<0.5?vec4(0.,0.,1.,1.):vec4(1.,1.,0.,1.);}")
+        handle.write("precision highp float;\n/** @time */ uniform float clock;\nvoid main(){gl_FragColor=clock<0.5?vec4(0.,0.,1.,1.):vec4(1.,1.,0.,1.);}")
     page_html = "<style>html{background:#f00}</style><script>let n=0;const raf=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=cb=>raf(t=>{document.documentElement.style.background=++n<=2?'#f00':'#f0f';cb(t)});</script>"
     page_url = "data:text/html;base64," + base64.b64encode(page_html.encode()).decode("ascii")
     design = {"version": "2.21", "children": [

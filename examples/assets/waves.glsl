@@ -1,6 +1,6 @@
 precision highp float;
-/* @resolution */ uniform vec2 resolution;
-/* @time */ uniform float clock;
+/** @resolution */ uniform vec2 resolution;
+/** @time */ uniform float clock;
 uniform vec4 accent;
 void main() {
   vec2 uv = gl_FragCoord.xy / resolution;
