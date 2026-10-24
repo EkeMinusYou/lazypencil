@@ -17,7 +17,7 @@ permissions:
 
 concurrency:
   group: process-${{ github.ref }}-${{ inputs.os }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   CARGO_BUILD_JOBS: '1'
@@ -75,16 +75,30 @@ jobs:
         run: |
           cargo fmt --all -- --check
           python scripts/license_notices.py verify
-      - name: Check all core targets without building Skia
+      - name: Build focused helper reproduction binaries without Skia
+        timeout-minutes: 15
         working-directory: ${{ runner.temp }}/lazypencil-process-source
         run: |
           set -o pipefail
-          cargo clippy --locked --no-default-features --all-targets -- -D warnings 2>&1 | tee "$RUNNER_TEMP/process-clippy.log"
+          cargo test --locked --no-default-features --test agent --no-run 2>&1 | tee "$RUNNER_TEMP/process-build.log"
+      - name: Reproduce embedded helper startup and MCP edits first
+        timeout-minutes: 2
+        working-directory: ${{ runner.temp }}/lazypencil-process-source
+        run: |
+          set -o pipefail
+          cargo test --locked --no-default-features --test agent embedded_conversation_uses_the_real_helper_for_supervision_and_bound_mcp_edits -- --exact --nocapture 2>&1 | tee "$RUNNER_TEMP/process-reproduction.log"
       - name: Run actual core CLI MCP and agent processes
+        timeout-minutes: 10
         working-directory: ${{ runner.temp }}/lazypencil-process-source
         run: |
           set -o pipefail
           cargo test --locked --no-default-features --no-fail-fast -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/process-tests.log"
+      - name: Check all core targets without building Skia
+        timeout-minutes: 10
+        working-directory: ${{ runner.temp }}/lazypencil-process-source
+        run: |
+          set -o pipefail
+          cargo clippy --locked --no-default-features --all-targets -- -D warnings 2>&1 | tee "$RUNNER_TEMP/process-clippy.log"
       - name: Verify lifecycle cases and bind results to this source
         working-directory: ${{ runner.temp }}/lazypencil-process-source
         run: |
