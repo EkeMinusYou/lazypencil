@@ -105,6 +105,60 @@ fn saved_conversation_cli_browses_complete_logs_without_starting_or_reconfigurin
         }
     }
     assert_eq!(restored.as_bytes(), bytes);
+    let mut formatted = String::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let mut arguments = vec![
+            "conversations",
+            "view",
+            file,
+            session,
+            &turn,
+            "--limit",
+            "8192",
+        ];
+        if let Some(cursor) = &cursor {
+            arguments.extend(["--cursor", cursor]);
+        }
+        let page = cli(&data, &arguments);
+        formatted.push_str(page["text"].as_str().unwrap());
+        cursor = page["next_cursor"].as_str().map(str::to_owned);
+        if cursor.is_none() {
+            break;
+        }
+    }
+    assert_eq!(
+        formatted,
+        format!(
+            "\nTurn {turn}\n\nYou:\n{}\n{{\"type\":\"unfinished\"",
+            prompt["text"].as_str().unwrap()
+        )
+    );
+    let human = Command::new(env!("CARGO_BIN_EXE_lazypencil"))
+        .arg("--data-dir")
+        .arg(&data)
+        .args([
+            "conversations",
+            "view",
+            file,
+            session,
+            &turn,
+            "--limit",
+            "128",
+        ])
+        .output()
+        .unwrap();
+    assert!(human.status.success());
+    assert!(
+        String::from_utf8(human.stdout)
+            .unwrap()
+            .starts_with(&format!("\nTurn {turn}\n\nYou:\n日本語"))
+    );
+    assert!(
+        String::from_utf8(human.stderr)
+            .unwrap()
+            .contains("Continue with --cursor")
+    );
     assert_eq!(
         std::fs::read(conversation.directory().join("session.json")).unwrap(),
         metadata

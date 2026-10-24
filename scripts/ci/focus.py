@@ -22,6 +22,7 @@ INPUT_REPRODUCTIONS = (
     "real_pty_custom_navigation_preserves_draft_and_changes_preview_pixels",
     "navigation_shortcuts_are_user_owned_replace_defaults_and_validate_scope_conflicts",
 )
+SAVED_LOG_PTY = "real_pty_saved_logs_page_format_refresh_and_keep_the_unsent_draft_without_starting_an_agent"
 SHADER_REGRESSIONS = [
     "linked_constant_dimensions_validate_inputs_and_recover_after_an_error",
     "native_annotation_binding_matches_public_pencil_reference_pixels",
@@ -115,6 +116,9 @@ def select(paths, platform="auto"):
         targets = sorted(set(targets) | {"operations_cli"})
     if "conversation_history" in stems:
         targets = sorted(set(targets) | {"conversation_history"})
+        if suite == "shader":
+            suite = "dynamic"
+            targets = sorted(set(targets) | {"dynamic_render", "browser_readiness", "sampler_sources", "imports"})
     native = any(path in {"src/layout.rs", "src/text.rs", "src/render.rs", "src/service.rs", "src/script/layout.rs"}
                  or path.startswith(("src/layout/", "src/text/", "src/render/")) for path in paths)
     if native:
@@ -196,13 +200,17 @@ def commands(suite, targets):
                 [*shader_first, [*common, *selected, "--", "--ignored", "--test-threads=1", *shader_skip]])
     build = [[*common, "--lib", *selected, "--no-run"], ["cargo", "build", "--locked", *features]]
     checks = list(shader_first)
-    history = suite == "conversation" and "conversation_history" in targets
+    history = "conversation_history" in targets
     if history:
-        checks.extend([
-            [*common, "--lib", "conversation::history::", "--", "--test-threads=2"],
-            [*common, "--test", "conversation_history", "--", "--test-threads=1"],
-        ])
+        # Rendering suites reproduce history in the native workflow before
+        # other tests and Chromium; core suites need no rendering dependency.
+        if core:
+            checks.extend([
+                [*common, "--lib", "conversation::history::", "--", "--test-threads=2"],
+                [*common, "--test", "conversation_history", "--", "--test-threads=1"],
+            ])
         selected = [arg for target in targets if target != "conversation_history" for arg in ("--test", target)]
+    history_ui_skip = ["--skip", "tui::tests::saved_log_", "--skip", SAVED_LOG_PTY] if history and "tui" in targets else []
     native = "native_layout" in targets and suite in ("graphics", "dynamic")
     if native:
         # Dynamic focus runs these CPU cases in the workflow before Chromium.
@@ -220,12 +228,12 @@ def commands(suite, targets):
         checks.append([*common, "--lib", "cdp::", "--", "--test-threads=2"])
     if suite == "dynamic":
         # Put the previously hanging TUI cases ahead of unrelated checks.
-        checks.append([*common, "--lib", "tui::tests::", "--", "--test-threads=2"])
+        checks.append([*common, "--lib", "tui::tests::", "--", "--test-threads=2", *history_ui_skip])
     if suite == "dynamic":
         checks.append([*common, "--test", "dynamic_render", "retained_", "--", "--ignored", "--test-threads=1"])
-        checks.append([*common, *selected, "--", "--include-ignored", "--test-threads=1", "--skip", "retained_", *shader_skip, *input_skip])
+        checks.append([*common, *selected, "--", "--include-ignored", "--test-threads=1", "--skip", "retained_", *shader_skip, *input_skip, *history_ui_skip])
     else:
-        checks.append([*common, "--lib", *selected, "--", "--test-threads=2", *input_skip])
+        checks.append([*common, "--lib", *selected, "--", "--test-threads=2", *input_skip, *history_ui_skip])
         if history:
             checks[-1].extend(["--skip", "conversation::history::"])
         if native:

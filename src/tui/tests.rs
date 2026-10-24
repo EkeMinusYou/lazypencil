@@ -698,8 +698,7 @@ async fn document_result(app: &mut App, worker: &Worker) {
     .await
     .unwrap()
     .unwrap();
-    app.document_task.take();
-    app.document_result(result, worker);
+    app.finish_document_result(result, worker);
 }
 async fn press(app: &mut App, code: KeyCode, modifiers: KeyModifiers, worker: &Worker) {
     assert!(
@@ -711,6 +710,169 @@ async fn press(app: &mut App, code: KeyCode, modifiers: KeyModifiers, worker: &W
         .await
         .unwrap()
     );
+}
+
+fn saved_log(app: &App, number: usize, text: &str) -> PathBuf {
+    let id = format!("00000000-0000-0000-0000-{number:012}");
+    let path = app
+        .conversation
+        .directory()
+        .join(format!("turn-{id}.jsonl"));
+    let values = [
+        json!({"type":"start","session":app.conversation.id(),"turn":id,"document":app.conversation.store().path()}),
+        json!({"type":"user_prompt","text":"保存済みの依頼"}),
+        json!({"type":"update","notification":{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":text}}}}),
+        json!({"type":"complete","session":app.conversation.id(),"turn":id}),
+    ];
+    std::fs::write(
+        &path,
+        values
+            .into_iter()
+            .map(|value| value.to_string() + "\n")
+            .collect::<String>(),
+    )
+    .unwrap();
+    path
+}
+fn saved_page(app: &App) -> &saved::Page {
+    let Some(checkpoints::Modal::Saved(page)) = &app.modal else {
+        panic!("Expected saved logs")
+    };
+    page
+}
+
+#[test]
+fn saved_log_browser_pages_formats_refreshes_and_preserves_drafts_images_and_document() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        app.insert_text("未送信の依頼\n画像も保持"); app.save_draft().unwrap();
+        app.accept_input(fake_clipboard(Path::new("unused"), None, &CancellationToken::new()));
+        let images = app.conversation.images().iter().map(|image| image.id.clone()).collect::<Vec<_>>();
+        let draft = app.conversation.draft().to_string();
+        let document = std::fs::read(app.conversation.store().path()).unwrap();
+        let metadata = std::fs::read(app.conversation.directory().join("session.json")).unwrap();
+        let body = format!("BEGIN 日本語\n{}END 応答\n", (0..2500).map(|n| format!("line {n:04} · 保存された応答\n")).collect::<String>());
+        let path = saved_log(&app, 1, &body);
+        for number in 2..=55 { saved_log(&app, number, "別の応答"); }
+        let worker = Worker::start(app.conversation.store().clone(), vec![], Backend::halfblocks(), 139).unwrap();
+        press(&mut app, KeyCode::Char('p'), KeyModifiers::CONTROL, &worker).await;
+        for _ in 0..5 { press(&mut app, KeyCode::Down, KeyModifiers::NONE, &worker).await; }
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+        document_result(&mut app, &worker).await;
+        assert_eq!(saved_page(&app).data["entries"].as_array().unwrap().len(), 50);
+        press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE, &worker).await; document_result(&mut app, &worker).await;
+        assert_eq!(saved_page(&app).data["entries"].as_array().unwrap().len(), 5);
+        press(&mut app, KeyCode::Char('p'), KeyModifiers::NONE, &worker).await; document_result(&mut app, &worker).await;
+        assert_eq!(saved_page(&app).data["entries"].as_array().unwrap().len(), 50);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await; document_result(&mut app, &worker).await;
+        let first = saved_page(&app).data["text"].as_str().unwrap().to_string();
+        assert!(first.contains("BEGIN 日本語")); assert!(!first.contains("sessionUpdate"));
+        press(&mut app, KeyCode::Char('v'), KeyModifiers::CONTROL, &worker).await;
+        assert!(matches!(saved_page(&app).location, saved::Location::Text { raw: false, .. }));
+        assert!(app.input.is_none());
+        let mut screen = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 36)).unwrap();
+        screen.draw(|frame| { app.draw(frame); }).unwrap();
+        press(&mut app, KeyCode::End, KeyModifiers::NONE, &worker).await;
+        let last_scroll = saved_page(&app).scroll; assert!(last_scroll > 0);
+        press(&mut app, KeyCode::Up, KeyModifiers::NONE, &worker).await;
+        assert!(saved_page(&app).scroll < last_scroll);
+        press(&mut app, KeyCode::Char('v'), KeyModifiers::NONE, &worker).await; document_result(&mut app, &worker).await;
+        assert!(matches!(saved_page(&app).location, saved::Location::Text { raw: true, .. }));
+        assert!(saved_page(&app).data["text"].as_str().unwrap().contains("notification"));
+        press(&mut app, KeyCode::Char('v'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(saved_page(&app).data["text"], first);
+        let mut pages = vec![first];
+        while saved_page(&app).data["next_cursor"].is_string() {
+            press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE, &worker).await; document_result(&mut app, &worker).await;
+            pages.push(saved_page(&app).data["text"].as_str().unwrap().to_string());
+        }
+        assert!(pages.len() >= 2);
+        assert_eq!(pages.concat(), format!("\nTurn 00000000-0000-0000-0000-000000000001\n\nYou:\n保存済みの依頼\n{body}\nRequest complete\n"));
+        press(&mut app, KeyCode::Char('p'), KeyModifiers::NONE, &worker).await; document_result(&mut app, &worker).await;
+        assert_eq!(saved_page(&app).data["text"], pages[pages.len() - 2]);
+        let changed = std::fs::read_to_string(&path).unwrap().replacen("BEGIN", "BEGAN", 1);
+        std::fs::write(&path, changed).unwrap();
+        press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE, &worker).await; document_result(&mut app, &worker).await;
+        assert!(saved_page(&app).notice.as_ref().unwrap().contains("REVISION_CONFLICT"));
+        press(&mut app, KeyCode::Char('r'), KeyModifiers::NONE, &worker).await; document_result(&mut app, &worker).await;
+        assert!(saved_page(&app).data["text"].as_str().unwrap().contains("BEGAN 日本語"));
+        press(&mut app, KeyCode::Backspace, KeyModifiers::NONE, &worker).await;
+        assert!(matches!(saved_page(&app).location, saved::Location::Turns(_)));
+        press(&mut app, KeyCode::Char('s'), KeyModifiers::NONE, &worker).await; document_result(&mut app, &worker).await;
+        assert!(matches!(saved_page(&app).location, saved::Location::Sessions));
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
+        assert!(app.document_task.as_ref().unwrap().cancel.is_cancelled());
+        document_result(&mut app, &worker).await;
+        assert!(app.modal.is_none());
+        assert_eq!(app.editor.lines().join("\n"), draft);
+        assert_eq!(app.conversation.images().iter().map(|image| image.id.clone()).collect::<Vec<_>>(), images);
+        assert_eq!(std::fs::read(app.conversation.store().path()).unwrap(), document);
+        assert_eq!(std::fs::read(app.conversation.directory().join("session.json")).unwrap(), metadata);
+        assert!(!app.conversation.active());
+        assert!(serde_json::from_slice::<Value>(&metadata).unwrap()["native_session_id"].is_null());
+        assert!(!temp.path().join("sent-turn.txt").exists());
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
+fn saved_log_reads_preserve_permission_priority_and_emergency_cancel_stops_the_active_agent_too() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "cancel-permission");
+        saved_log(&app, 1, "過去の応答");
+        let worker = Worker::start(
+            app.conversation.store().clone(),
+            vec![],
+            Backend::halfblocks(),
+            140,
+        )
+        .unwrap();
+        app.insert_text("許可待ちでも履歴は読める");
+        app.submit().await.unwrap();
+        loop {
+            if let ConversationEvent::Permission { id, request } =
+                tokio::time::timeout(Duration::from_secs(5), app.conversation.next_event())
+                    .await
+                    .unwrap()
+                    .unwrap()
+            {
+                app.permissions.push_back(Permission {
+                    id,
+                    request,
+                    selected: 0,
+                    scroll: 0,
+                });
+                break;
+            }
+        }
+        app.open_saved(saved::Page::current(app.conversation.id().into()), None)
+            .unwrap();
+        document_result(&mut app, &worker).await;
+        let selected = saved_page(&app).selected;
+        for key in [KeyCode::Char('q'), KeyCode::Char('v'), KeyCode::F(1)] {
+            press(&mut app, key, KeyModifiers::NONE, &worker).await;
+        }
+        assert_eq!(saved_page(&app).selected, selected);
+        assert_eq!(app.permissions.len(), 1);
+        assert!(app.conversation.active());
+        app.open_saved(
+            saved::Page::current(app.conversation.id().into()),
+            Some(Box::new(saved_page(&app).clone())),
+        )
+        .unwrap();
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL, &worker).await;
+        assert!(app.document_task.as_ref().unwrap().cancel.is_cancelled());
+        assert!(app.permissions.is_empty());
+        document_result(&mut app, &worker).await;
+        let events = complete(&mut app).await;
+        assert_eq!(events.last().unwrap()["type"], "failed");
+        app.sync_turn(&worker);
+        assert_eq!(app.editor.lines().join("\n"), "許可待ちでも履歴は読める");
+        app.conversation.close().await.unwrap();
+    });
 }
 
 #[test]

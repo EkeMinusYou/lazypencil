@@ -675,6 +675,10 @@ source `36d1269` の専用 Chromium は macOS arm64 `40014476233`（97件）、L
 
 2026-10-25: 保存済み会話・ターンの一覧と、transcript 全体を容量制限付きでページ取得する共通 API／`conversations list|turns|read` を追加した。アダプター・認証・会話再開を呼ばず、使用中の会話も読み取る。UUID 順の live listing を明示し、一覧の cursor を文書・会話に束縛する。破損した既知の項目は unavailable として残す。JSONL は64 KiB以下で取得し、継続時は全内容の SHA-256 を要求・再検査する。mtime と長さを保った変更も失効させ、日本語の境界と末尾の未完了データを保持する。不正 UTF-8 は表示用文字列と元バイトの Base64 を返す。元データの64 MiB上限・30秒の協調期限・取消を持ち、FIFO と symlink の拒否を含めて試験を追加した。Rust／実 CLI の検証は GHA で行う。これは生の保存記録の読み取り経路であり、TUI の会話ログ閲覧、会話の選択・削除、保持ポリシーを完了扱いにはしない。
 
+続く `7f0b49f` は対象3環境の通常試験・両構成の Clippy・Chromium／MCP／TUI・Material・release・source artifact が成功した（`40120701435`）。履歴の4 unit と実 CLI 1件が各環境の両構成で一度ずつ成功したこと、全959 source file、既存の84画像と実端末 protocol の出力を独立に照合した。Linux 各954件・macOS944件の通常試験であり、製品全体の完成や実機端末の合格へ読み替えない。
+
+TUI の `/logs`・`/conversations` と palette から、会話一覧→ターン→整形ログ／原文を閲覧する経路を追加した。JSON 文字列を小さい buffer で逐次復号し、1レコードや長文全体の `Value`／文字列を作らず、32 KiB のページへ出す。未知・未完了・曖昧なレコードは安全な原文表示を残し、正確なバイトは原文 API に残す。内容 hash と formatter 版へ cursor を束縛し、変更時は元のページへ戻して明示更新を求める。一覧は逆方向 cursor も使い、全ページの配列を保持しない。整形ログのページ cursor は最大8,192件で、既存64 MiBの入力と表示量の上限内に収める。read-only background task は承認に優先せず、読取と AI が重なった Ctrl+C は両方を止める。下書き・画像・文書を保持した閲覧、同サイズ変更、承認の優先、実 PTY の3ページ・原文・更新・終了復元を試験に加えた。新しい表示処理と TUI 拡張は GHA で検証する。会話の切り替え・削除・全体の保持方針など、元の残件は維持する。
+
 ### ページの network-idle 待機
 
 2026-10-24: `[runtime.browser] wait_until` に `load`（従来の既定値）と `network_idle` を追加した。後者は現在の main frame／loader に対する Chromium の `networkIdle` lifecycle 通知と document load を待ち、その後に従来の font・image decode・2 animation frame を待つ。別 session・子 frame・古い loader の通知を成功に使わず、現在の loader 一つだけを保持する。URL・header・本文や無制限の event queue は保持しない。context の破棄時に状態を解除し、既存の取消・取得／描画期限・失敗時の process 回収へ接続する。

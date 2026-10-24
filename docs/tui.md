@@ -47,6 +47,7 @@ Terminal stdin/stdout and at least 50 columns × 16 rows are required. `--json` 
 | `F1`, or `/help` | Show help |
 | `Ctrl+P`, or `/commands` | Open the command palette |
 | `/history` then Enter | Browse checkpoints without starting an agent |
+| `/logs`, `/conversations` then Enter | Read current saved turns or browse saved conversations |
 | `Ctrl+C` | Cancel active input/agent work; exit when idle |
 | Outside Prompt: `q`, or `/quit` | Stop the conversation and exit |
 
@@ -105,6 +106,18 @@ Unmodified text bindings do not intercept prompt or node-search input. Permissio
 During an agent turn, the submitted draft and images are locked; viewing, logs, and cancellation remain available. Success clears the submitted draft and pending list. Failure/cancellation preserves them for review and retry. Idle drafts are saved after a one-second debounce and on normal exit. An abrupt kill can lose edits within that debounce. Conversation metadata migrates from version 1 to version 2 for pending text/images.
 
 Permission dialogs show tool details and native choices. Reject Once is initially selected when advertised. PgUp/PgDn scroll details, Enter answers, and Esc denies. Bound document tools use the shared preauthorization policy; other requests remain interactive unless `--non-interactive` rejects them.
+
+## Saved conversation logs
+
+Choose **Browse current conversation logs…** or **Browse saved conversations…** in the command palette. `/logs` and `/conversations` open the same views. Browsing uses shared, read-only conversation APIs and a cancellable background task. It does not authenticate, start/resume an adapter, resend an old prompt, select a different active agent, edit a document, or clear pending text/images. An already active request continues; permission dialogs retain priority. Ctrl+C cancels both a pending log read and an active request.
+
+Lists load 50 entries at a time in stable UUID order, explicitly marked as live listings rather than inferred chronology. Arrows select an entry; Enter opens its turns or transcript. `n`/`p` or PgDn/PgUp request the next/previous list page. Home refreshes the first page, `c` opens the current conversation, and `s` opens saved conversations. Backspace returns to the parent; Esc or `q` closes the browser. Recognized invalid entries remain visible as unavailable.
+
+Transcript pages contain up to 32 KiB of formatted requests, responses, thinking text and tool status. Strings and Unicode escapes are decoded incrementally, with bounded parser buffers instead of loading complete JSON records. Unknown/ambiguous/unfinished records remain visible as sanitized original text. Arrows or PgUp/PgDn scroll within the page; Home/End reach its edges. `n`/`p` or Right/Left move between pages, and `g` returns to the first page. The page trail is bounded by the existing 64 MiB per-turn input limit and at most 8,192 cursors. List paging needs no growing page trail. Terminal resize recalculates wrapping and scroll limits.
+
+`v` switches to the complete raw JSONL and back. Raw terminal controls are shown as visible escapes; damaged UTF-8 also shows its exact Base64 bytes. Raw mode retains the formatted page to return to it while the revision matches. Every new page checks the complete transcript hash before and after reading. A changed file leaves the previous page visible with a notice; `r` explicitly refreshes from the first page. History pages are not replayed into live event handling and cannot answer old permission requests. Overall retention/deletion and switching the active TUI conversation remain unfinished.
+
+The expanded streaming, actual-CLI, frontend and real-PTY saved-log tests run on GHA; this extension's hosted verification is pending. Protocol-level PTY evidence is separate from physical terminal/IME/clipboard acceptance.
 
 ## Checkpoint restoration
 

@@ -19,6 +19,9 @@ const MAX_TRANSCRIPT: u64 = 64 * 1024 * 1024;
 const MAX_METADATA: u64 = 8 * 1024 * 1024;
 pub const MAX_PAGE_BYTES: usize = 64 * 1024;
 
+mod display;
+pub use display::view;
+
 struct Budget<'a> {
     started: Instant,
     cancel: Option<&'a CancellationToken>,
@@ -42,6 +45,8 @@ struct Cursor {
     version: u8,
     scope: String,
     after: String,
+    #[serde(default)]
+    before: bool,
 }
 
 fn uuid(value: &str) -> Result<()> {
@@ -151,7 +156,7 @@ pub fn list(
     };
     let scope =
         hash(format!("{}\n{}", store.path().display(), conversation.unwrap_or("")).as_bytes());
-    let after = cursor
+    let boundary = cursor
         .map(|cursor| {
             if cursor.len() > 1024 {
                 return Err(Error::new(
@@ -171,19 +176,21 @@ pub fn list(
                     "Saved history cursor belongs to another listing",
                 ));
             }
-            Ok(value.after)
+            Ok(value)
         })
         .transpose()?;
     match std::fs::symlink_metadata(&path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return Ok(
-                json!({"entries":[],"next_cursor":null,"snapshot":false,"order":"uuid_ascending"}),
+                json!({"entries":[],"next_cursor":null,"previous_cursor":null,"snapshot":false,"order":"uuid_ascending"}),
             );
         }
         Err(error) => return Err(Error::io(&path, error)),
         Ok(_) => {}
     }
     directory(&path)?;
+    let backwards = boundary.as_ref().is_some_and(|value| value.before);
+    let mut other_side = false;
     // Keep at most one page and one lookahead, regardless of directory size.
     let mut candidates = BTreeSet::new();
     for entry in std::fs::read_dir(&path).map_err(|e| Error::io(&path, e))? {
@@ -202,25 +209,55 @@ pub fn list(
         } else {
             name
         };
-        if uuid(id).is_err() || after.as_deref().is_some_and(|after| id <= after) {
+        if uuid(id).is_err() {
+            continue;
+        }
+        if let Some(boundary) = &boundary
+            && if backwards {
+                id >= boundary.after.as_str()
+            } else {
+                id <= boundary.after.as_str()
+            }
+        {
+            other_side = true;
             continue;
         }
         candidates.insert(id.to_string());
         if candidates.len() > limit + 1 {
-            candidates.pop_last();
+            if backwards {
+                candidates.pop_first();
+            } else {
+                candidates.pop_last();
+            }
         }
     }
     let more = candidates.len() > limit;
     if more {
-        candidates.pop_last();
+        if backwards {
+            candidates.pop_first();
+        } else {
+            candidates.pop_last();
+        }
     }
-    let next = if more {
+    let encode = |anchor: Option<&String>, before: bool| {
+        let anchor = anchor
+            .cloned()
+            .or_else(|| boundary.as_ref().map(|value| value.after.clone()))?;
         let value = Cursor {
             version: 1,
-            scope,
-            after: candidates.last().expect("nonempty page").clone(),
+            scope: scope.clone(),
+            after: anchor,
+            before,
         };
         Some(URL_SAFE_NO_PAD.encode(serde_json::to_vec(&value).expect("cursor serialization")))
+    };
+    let next = if if backwards { other_side } else { more } {
+        encode(candidates.last(), false)
+    } else {
+        None
+    };
+    let previous = if if backwards { more } else { other_side } {
+        encode(candidates.first(), true)
     } else {
         None
     };
@@ -241,7 +278,9 @@ pub fn list(
             .push(result.unwrap_or_else(|error| json!({"id":id,"unavailable":true,"error":error})));
     }
     budget.check()?;
-    Ok(json!({"entries":entries,"next_cursor":next,"snapshot":false,"order":"uuid_ascending"}))
+    Ok(
+        json!({"entries":entries,"next_cursor":next,"previous_cursor":previous,"snapshot":false,"order":"uuid_ascending"}),
+    )
 }
 
 fn transcript(store: &Store, conversation: &str, turn: &str) -> Result<File> {
@@ -478,6 +517,17 @@ mod tests {
             }
         }
         assert_eq!(ids, expected);
+        let first = list(&store, None, 2, None, None).unwrap();
+        let second = list(&store, None, 2, first["next_cursor"].as_str(), None).unwrap();
+        let back = list(&store, None, 2, second["previous_cursor"].as_str(), None).unwrap();
+        assert_eq!(back["entries"], first["entries"]);
+        assert!(back["previous_cursor"].is_null());
+        let last = list(&store, None, 2, second["next_cursor"].as_str(), None).unwrap();
+        assert!(last["next_cursor"].is_null());
+        assert_eq!(
+            list(&store, None, 2, last["previous_cursor"].as_str(), None).unwrap()["entries"],
+            second["entries"]
+        );
         for (c, original) in conversations.iter().zip(metadata) {
             assert_eq!(
                 std::fs::read(c.directory().join("session.json")).unwrap(),

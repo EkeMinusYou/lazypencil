@@ -4,6 +4,7 @@ mod checkpoints;
 mod graphics;
 mod playback;
 mod preview;
+mod saved;
 mod terminal;
 #[cfg(test)]
 mod tests;
@@ -184,6 +185,7 @@ struct App {
     document_task: Option<checkpoints::Task>,
     modal: Option<checkpoints::Modal>,
     restore_return: Option<checkpoints::Page>,
+    saved_return: Option<Box<saved::Page>>,
     help: bool,
     help_scroll: u16,
     dirty: bool,
@@ -221,6 +223,7 @@ impl App {
             document_task: None,
             modal: None,
             restore_return: None,
+            saved_return: None,
             help: false,
             help_scroll: 0,
             dirty: true,
@@ -255,7 +258,10 @@ impl App {
             tokio::select! {
                 signal = tokio::signal::ctrl_c() => {
                     signal.map_err(terminal::io)?;
-                    if let Some(task) = &self.document_task { task.cancel.cancel(); }
+                    if let Some(task) = &self.document_task {
+                        task.cancel.cancel();
+                        if self.conversation.active() { self.conversation.cancel(); self.permissions.clear(); }
+                    }
                     else if self.conversation.active() { self.conversation.cancel(); self.permissions.clear(); }
                     else if self.playback.active() { self.pause_playback(); self.dirty = true; }
                     else { self.save_draft()?; return Ok(()); }
@@ -314,13 +320,8 @@ impl App {
                     self.dirty = true;
                 },
                 output = async { (&mut self.document_task.as_mut().unwrap().receiver).await.unwrap_or_else(|error| Err(Error::new("IO_ERROR", format!("Document worker stopped: {error}")))) }, if self.document_task.is_some() => {
-                    let cancelled = self.document_task.as_ref().unwrap().cancel.is_cancelled();
-                    self.document_task.take();
                     let modal = self.has_modal();
-                    if cancelled && matches!(&output, Ok(checkpoints::Output::History(_))) {
-                        if matches!(self.modal, Some(checkpoints::Modal::Loading { .. })) { self.modal = None; }
-                        self.status = "Checkpoint loading cancelled".into();
-                    } else { self.document_result(output, worker); }
+                    self.finish_document_result(output, worker);
                     if modal && !self.has_modal() { screen.redraw()?; }
                     self.dirty = true;
                 },
@@ -637,7 +638,13 @@ impl App {
         if key.code == KeyCode::Char('c') && ctrl {
             if let Some(task) = &self.document_task {
                 task.cancel.cancel();
-                self.status = "Cancelling document operation…".into();
+                if self.conversation.active() {
+                    self.conversation.cancel();
+                    self.permissions.clear();
+                    self.status = "Cancelling saved-log read and active request…".into();
+                } else {
+                    self.status = "Cancelling document operation…".into();
+                }
             } else if let Some(input) = self.input.take() {
                 input.cancel.cancel();
                 self.status = "Image input cancelled".into();
@@ -698,6 +705,7 @@ impl App {
         if global(Nav::Commands) {
             self.help = false;
             if self.modal.take().is_some() {
+                self.saved_return = None;
                 if let Some(task) = &self.document_task {
                     task.cancel.cancel();
                 }
@@ -940,7 +948,7 @@ impl App {
         ] {
             text.push_str(&format!("{}: {description}\n", label(action)));
         }
-        text.push_str("\n/open-preview: open the complete PNG externally\n/time <seconds>: seek; /play [1-10 fps], /pause\n/commands, /history, /help, /quit\nCtrl+C: cancel active work; exit when idle\nDialogs keep their displayed keys; Esc closes help\nHelp: PgUp/PgDn or arrows scroll; Home/End jump\n\nClipboard access happens only on explicit paste. SSH reads the remote host's clipboard. Image protocols do not provide clipboard access.");
+        text.push_str("\n/open-preview: open the complete PNG externally\n/time <seconds>: seek; /play [1-10 fps], /pause\n/logs: read current saved turns; /conversations: saved conversations\nSaved logs: arrows select/scroll; Enter opens; n/p pages\nv: raw/formatted; Backspace returns; r refreshes; Esc closes\n/commands, /history, /help, /quit\nCtrl+C: cancel active work; exit when idle\nDialogs keep their displayed keys; Esc closes help\nHelp: PgUp/PgDn or arrows scroll; Home/End jump\n\nClipboard access happens only on explicit paste. SSH reads the remote host's clipboard. Image protocols do not provide clipboard access.");
         text
     }
 
@@ -989,6 +997,12 @@ impl App {
                 self.modal = Some(checkpoints::Modal::commands())
             }
             Some("/history") if words.len() == 1 => self.open_history(vec![None])?,
+            Some("/logs") if words.len() == 1 => {
+                self.open_saved(saved::Page::current(self.conversation.id().into()), None)?
+            }
+            Some("/conversations") if words.len() == 1 => {
+                self.open_saved(saved::Page::sessions(self.conversation.id().into()), None)?
+            }
             Some("/clear-images") if words.len() == 1 => {
                 self.conversation.clear_images()?;
                 self.request(worker, false, false);
@@ -1019,7 +1033,7 @@ impl App {
             _ => {
                 return Err(Error::new(
                     "INVALID_ARGUMENT",
-                    "Commands: /attach <quoted path>, /paste-image, /clear-images, /open-preview, /time <nonnegative seconds>, /play [fps], /pause, /commands, /history, /help, /quit",
+                    "Commands: /attach <quoted path>, /paste-image, /clear-images, /open-preview, /time <nonnegative seconds>, /play [fps], /pause, /commands, /history, /logs, /conversations, /help, /quit",
                 ));
             }
         }
