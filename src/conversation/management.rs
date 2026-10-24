@@ -117,6 +117,11 @@ mod tests {
             assert!(conversation.images().is_empty());
             assert_eq!(conversation.session.state.native_session_id.as_deref(), Some("second-native"));
             assert_eq!(std::fs::read(store.path()).unwrap(), document);
+            assert!(store.document_data_dir().join("conversations.lock").is_file());
+            assert!(std::fs::read_dir(store.document_data_dir().join("conversations")).unwrap().all(|entry| {
+                let entry = entry.unwrap();
+                entry.file_type().unwrap().is_dir() && uuid::Uuid::parse_str(entry.file_name().to_str().unwrap()).is_ok()
+            }), "Conversation entries must remain UUID directories for existing readers");
             assert_eq!(crate::conversation::history::list(&store, Some(&first), 10, None, None).unwrap()["entries"], json!([]));
         });
     }
