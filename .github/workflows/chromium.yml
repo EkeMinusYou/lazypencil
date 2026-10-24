@@ -18,6 +18,9 @@ permissions:
 
 jobs:
   verify:
+    permissions:
+      contents: read
+      actions: write # Allow the reusable CI's main-only cache retention step.
     uses: ./.github/workflows/ci.yml
     with:
       os: ${{ inputs.os }}

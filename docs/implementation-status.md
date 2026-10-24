@@ -656,6 +656,12 @@ source `36d1269` の専用 Chromium は macOS arm64 `40014476233`（97件）、L
 
 通常 CI の Linux x64 は20分の package step 上限に達し、Rust のコンパイル前に失敗した。ログでは Azure の mirror から11.2 MBの cmake・28.8 MBの libclang を繰り返し取得し、後者の1回目に約11分かかった。取得先をジョブ内の一時的な deb822 sources で公式 Ubuntu HTTPS archive／security に変更し、noble の同じ suite・component と既存の archive signing key を使う。package 一覧と20分の上限は維持し、runner 全体の source file は書き換えない。arm64 は既に成功した既存 source を使う。両 workflow は同じ helper を呼び、local invocation／未知 architecture の拒否、update 失敗の伝播、共通 source と一時ファイルの解放を4件の軽量試験で検査する。実際の x64 導入は次の GHA で確認する。Intel の実行は停止せず追跡する。
 
+### CI の重複ビルド削減
+
+2026-10-25: 成功済み `40094747115`・`40097555337`・`40103285273` の job／step 時刻を照合した。待機は1〜4秒で、固定 cargo-deny の導入は169〜204秒だった。`40103285273` の release コンパイル自体は Linux x64 194秒・Linux arm64 213秒・macOS arm64 260秒で、release 工程全体の216／250／296秒とは区別する。通常試験・実 Chromium・実60秒 idle・TUI・Material・release の検証範囲は維持する。調査時の hosted cache は15件・10,896,984,343 bytesで、うち4件・5,186,184,401 bytesは同条件の full cache がある依存 checkpoint だった。成功した全環境検証の後にこの重複を整理し、application cache は各環境の full 2世代と未統合 focus 1世代に制限する。異なる ref の cache や他用途の cache は対象にしない。
+
+固定 audit tool は version・実 compiler・runner image／architecture に束縛し、binary hash と実行時 version を確認して再利用する。advisory database や監査結果は再利用しない。依存 cache は従来どおりアプリを prune し、その後に別の application cache を検証して重ねる。source distribution の全入力（workflow scheduling を除く）・実 compiler／flag を含む native key・絶対パスを key に含め、保存するのは package の fingerprint／library／CLI／test binary のみ。compiler dep-info の入力が追跡済み source と一致しない場合や workflow 自体を include する場合、独自 build script がある場合は再利用しない。実 source の hash、cache file の hash／mode、追加の compile-time 環境も照合する。画像・試験結果は毎回生成する。対象限定 Clippy は test binary の link 前へ移した。軽量試験と実 GHA の結果は既存の検証記録で確認し、cache miss／拒否は fresh build へ戻す。
+
 ### ページの network-idle 待機
 
 2026-10-24: `[runtime.browser] wait_until` に `load`（従来の既定値）と `network_idle` を追加した。後者は現在の main frame／loader に対する Chromium の `networkIdle` lifecycle 通知と document load を待ち、その後に従来の font・image decode・2 animation frame を待つ。別 session・子 frame・古い loader の通知を成功に使わず、現在の loader 一つだけを保持する。URL・header・本文や無制限の event queue は保持しない。context の破棄時に状態を解除し、既存の取消・取得／描画期限・失敗時の process 回収へ接続する。

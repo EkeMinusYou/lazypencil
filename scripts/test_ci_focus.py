@@ -150,8 +150,9 @@ class FocusTests(unittest.TestCase):
         self.assertIn("shader::tests::prepared_declarations_bind_values_without_replacing_captured_shader_bytes", early)
         self.assertIn("shader::tests::preprocessing_preserves_directive_annotation_barriers_and_source_positions", early)
         self.assertIn("cargo test --locked --test shader_uniforms", early)
-        self.assertIn("cargo clippy --locked --lib --test dynamic_render --test shader_uniforms -- -D warnings", early)
-        self.assertLess(workflow.index("- name: Check focused dynamic code"), workflow.index("- name: Install and verify the pinned Chromium runtime"))
+        self.assertIn("cargo clippy --locked --lib --test dynamic_render --test shader_uniforms -- -D warnings", workflow)
+        for step in ("Check focused native calculation code", "Check focused dynamic code", "Check focused shader code"):
+            self.assertLess(workflow.index("- name: " + step), workflow.index("- name: Build focused test binaries"))
 
     def test_observed_shader_regressions_run_first_without_repeating_or_losing_other_cases(self):
         cases = ["linked_constant_dimensions_validate_inputs_and_recover_after_an_error",
