@@ -881,6 +881,240 @@ fn noninteractive_permission_denial_is_an_error_even_if_agent_reports_end_turn()
     }
 }
 
+#[test]
+fn session_restart_continues_from_current_document_and_bounded_history_without_replaying_edits() {
+    let directory = TempDir::new().unwrap();
+    #[cfg(feature = "rendering")]
+    let image = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/assets/crop-source.png");
+    #[cfg(feature = "rendering")]
+    let extra = ["--create", "--image", image.to_str().unwrap()];
+    #[cfg(not(feature = "rendering"))]
+    let extra = ["--create"];
+    let first = cli(&directory, "resume-no-load", &extra);
+    assert!(
+        first.status.success(),
+        "{}",
+        String::from_utf8_lossy(&first.stdout)
+    );
+    let first_events = events(&first);
+    let complete = first_events
+        .iter()
+        .find(|event| event["type"] == "complete")
+        .unwrap();
+    let session = complete["session"].as_str().unwrap();
+    let transcript = Path::new(complete["transcript"].as_str().unwrap());
+    let original_transcript = std::fs::read(transcript).unwrap();
+    let conversation = transcript.parent().unwrap();
+    let first_metadata: Value =
+        serde_json::from_slice(&std::fs::read(conversation.join("session.json")).unwrap()).unwrap();
+    let interrupted = uuid::Uuid::new_v4().to_string();
+    let start = first_events
+        .iter()
+        .find(|event| event["type"] == "start")
+        .unwrap();
+    let mut historical_start = start.clone();
+    historical_start["turn"] = json!(interrupted);
+    std::fs::write(conversation.join(format!("turn-{interrupted}.jsonl")), format!("{historical_start}\n{}\n{}\n",
+        json!({"type":"user_prompt","text":"HISTORICAL_FAILED_REQUEST_DO_NOT_REPEAT"}),
+        json!({"type":"failed","session":session,"turn":interrupted,"document":complete["document"]}))).unwrap();
+    let path = directory.path().join("design.pen");
+    let mut document: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    document["children"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"id":"outside-edit","type":"rectangle","width":10,"height":10}));
+    std::fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
+    let current_revision =
+        lazypencil::store::Store::open(&path, Some(directory.path().join("data")))
+            .unwrap()
+            .read()
+            .unwrap()
+            .revision();
+    std::fs::write(directory.path().join("fixture-restart"), "").unwrap();
+    let second = cli(&directory, "resume-no-load", &["--session", session]);
+    assert!(
+        second.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&second.stdout),
+        std::fs::read_to_string(directory.path().join("fixture-errors.log")).unwrap()
+    );
+    let second_events = events(&second);
+    let restart = second_events
+        .iter()
+        .find(|event| event["type"] == "session_restarted")
+        .unwrap();
+    assert_eq!(restart["reason"], "load_session_unsupported");
+    assert_eq!(restart["previous_native_session_id"], "fixture-native");
+    assert_eq!(restart["native_session_id"], "fixture-restarted");
+    assert_eq!(restart["document_revision"], current_revision);
+    let history = restart["history"]["recent_turns"].as_array().unwrap();
+    assert_eq!(history.len(), 2);
+    assert!(history.iter().any(|turn| turn["status"] == "failed"
+        && turn["request"]["text"] == "HISTORICAL_FAILED_REQUEST_DO_NOT_REPEAT"));
+    let prompts = std::fs::read_to_string(directory.path().join("received-prompts.jsonl")).unwrap();
+    let prompts: Vec<Value> = prompts
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(
+        prompts.len(),
+        2,
+        "Only the two explicitly requested turns may be sent"
+    );
+    let context = prompts[1]["prompt"][1]["text"].as_str().unwrap();
+    assert!(context.contains("not restored model memory"));
+    assert!(context.contains("Do not replay historical prompts or edits"));
+    assert!(context.contains(&current_revision));
+    assert!(context.contains("HISTORICAL_FAILED_REQUEST_DO_NOT_REPEAT"));
+    let methods =
+        std::fs::read_to_string(directory.path().join("received-session-methods.jsonl")).unwrap();
+    assert_eq!(methods.lines().count(), 2);
+    assert!(
+        methods
+            .lines()
+            .all(|line| serde_json::from_str::<Value>(line).unwrap()["method"] == "session/new")
+    );
+    let current: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(current["children"].as_array().unwrap().len(), 3);
+    assert!(
+        current["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|node| node["id"] == "outside-edit")
+    );
+    assert_eq!(std::fs::read(transcript).unwrap(), original_transcript);
+    let metadata: Value =
+        serde_json::from_slice(&std::fs::read(conversation.join("session.json")).unwrap()).unwrap();
+    assert_eq!(metadata["native_session_id"], "fixture-restarted");
+    assert_eq!(metadata["draft"], "");
+    assert_eq!(metadata["attachments"], first_metadata["attachments"]);
+    assert!(
+        !prompts[1]["prompt"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|block| block["type"] == "image")
+    );
+    #[cfg(feature = "rendering")]
+    {
+        assert_eq!(metadata["attachments"].as_array().unwrap().len(), 1);
+        assert!(
+            prompts[0]["prompt"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|block| block["type"] == "image")
+        );
+        let attachment: lazypencil::attachments::Attachment =
+            serde_json::from_value(metadata["attachments"][0].clone()).unwrap();
+        attachment.read(conversation).unwrap();
+    }
+}
+
+#[test]
+fn session_restart_does_not_hide_session_load_failures_or_send_the_pending_prompt() {
+    let directory = TempDir::new().unwrap();
+    let first = cli(&directory, "resume-load-error", &["--create"]);
+    assert!(
+        first.status.success(),
+        "{}",
+        String::from_utf8_lossy(&first.stdout)
+    );
+    let first_events = events(&first);
+    let complete = first_events
+        .iter()
+        .find(|event| event["type"] == "complete")
+        .unwrap();
+    let session = complete["session"].as_str().unwrap();
+    let directory_path = Path::new(complete["transcript"].as_str().unwrap())
+        .parent()
+        .unwrap();
+    let original = std::fs::read(directory.path().join("design.pen")).unwrap();
+    std::fs::write(directory.path().join("fixture-restart"), "").unwrap();
+    let second = cli(&directory, "resume-load-error", &["--session", session]);
+    assert!(!second.status.success());
+    let second_events = events(&second);
+    assert!(
+        !second_events
+            .iter()
+            .any(|event| event["type"] == "session_restarted")
+    );
+    assert!(second_events.iter().any(|event| event["type"] == "failed"));
+    assert_eq!(
+        std::fs::read_to_string(directory.path().join("received-prompts.jsonl"))
+            .unwrap()
+            .lines()
+            .count(),
+        1
+    );
+    let methods =
+        std::fs::read_to_string(directory.path().join("received-session-methods.jsonl")).unwrap();
+    assert_eq!(methods.lines().count(), 2);
+    assert_eq!(
+        serde_json::from_str::<Value>(methods.lines().last().unwrap()).unwrap()["method"],
+        "session/load"
+    );
+    assert_eq!(
+        std::fs::read(directory.path().join("design.pen")).unwrap(),
+        original
+    );
+    let metadata: Value =
+        serde_json::from_slice(&std::fs::read(directory_path.join("session.json")).unwrap())
+            .unwrap();
+    assert_eq!(metadata["native_session_id"], "fixture-native");
+    assert_eq!(metadata["draft"], "日本語でデザインを作成してください");
+    let third = cli(
+        &directory,
+        "resume-load-error",
+        &["--session", session, "--restart-session"],
+    );
+    assert!(
+        third.status.success(),
+        "{}",
+        String::from_utf8_lossy(&third.stdout)
+    );
+    let third_events = events(&third);
+    let restart = third_events
+        .iter()
+        .find(|event| event["type"] == "session_restarted")
+        .unwrap();
+    assert_eq!(restart["reason"], "user_requested");
+    assert_eq!(restart["native_session_id"], "fixture-restarted");
+    assert_eq!(
+        std::fs::read_to_string(directory.path().join("received-prompts.jsonl"))
+            .unwrap()
+            .lines()
+            .count(),
+        2
+    );
+    let current: Value =
+        serde_json::from_slice(&std::fs::read(directory.path().join("design.pen")).unwrap())
+            .unwrap();
+    assert_eq!(current["children"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn session_restart_requires_an_explicit_local_conversation_for_cli_and_native_hosts() {
+    use clap::Parser;
+    let arguments = lazypencil::cli::Arguments::try_parse_from([
+        "lazypencil",
+        "prompt",
+        "design.pen",
+        "--restart-session",
+        "Continue",
+    ]);
+    assert!(arguments.is_err());
+    let directory = TempDir::new().unwrap();
+    let mut options = options("ok", directory.path());
+    options.restart_session = true;
+    let error = AgentHost::spawn(options)
+        .err()
+        .expect("Missing native session must fail before spawning");
+    assert_eq!(error.code, "INVALID_ARGUMENT");
+    assert!(!directory.path().join("fixture-errors.log").exists());
+}
+
 #[cfg(unix)]
 #[test]
 fn cli_interrupt_retains_committed_batches_and_reports_the_actual_revision() {

@@ -4,8 +4,12 @@
 
 初回リリースの完成判定は macOS Apple Silicon・Linux x64／arm64（glibc 系）の3環境に限定する。Intel Mac は対象外、Windows は既存実装・fixture を保持して後日対応とする。以下の過去の5環境検証や Windows／Intel の残件は、初回リリースの必須作業へ追加しない。機能・互換性・性能・実端末・ライセンス・配布の基準は [設計書の受け入れ条件](design.md#検証と受け入れ条件) に従う。
 
+2026-10-24: 会話の再開非対応時に停止していた経路へ、新しいネイティブ会話への切り替えを追加する。ローカル会話は保持し、現在の文書リビジョンと最大4ターンの説明的な履歴抜粋を渡す。読み取りは4096項目・各 transcript の先頭／末尾64 KiB・各依頼1024文字で区切り、失敗・中断・欠損を成功へ読み替えない。CLI／TUI と transcript に切り替えを明示し、過去の依頼を再送しない。広告済みの load の失敗は自動で隠さず、明示的な `--restart-session` による継続を用意する。実 MCP の編集回数・外部変更の保持・下書き・画像保持と既存履歴の不変を検査し、Skia 不要の先行 gate へ再現を追加する。ローカルは軽量検査だけを行い、新しい Rust 試験は GHA 未確認。実 provider・会話管理全体の完成とは扱わない。
+
 2026-10-24: Unix の画像添付・ガイド取得の接続に、識別子付き owner file と close-on-exec の排他ロックを追加する。MCP は各要求の非ブロッキング共有 probe で生存を検査し、親の強制終了後は既存接続も失効する。 所有接続のすべての tool call に dispatch 前の検査を設け、文書の読み取り・編集も拒否する。すでに進行中の保存は元の原子的な保存規則に従う。会話の排他ロック取得後、同じ文書・会話に束縛した失効済み manifest／owner のみを回収し、画像・transcript・usage journal・プロジェクト素材を保持する。cleanup が共有 probe を持っても権限を復活させず、symlink・FIFO・inode の置換・不明な記録を扱う。実 CLI の強制終了と再開、接続済みの実 MCP の失効と journal 不変を描画なしで先行し、添付・MCP の利用側も対象へ含める。実装・試験は準備段階であり、GHA 結果は未確認。Windows の既存動作は保持し、保持方針・会話管理全体の完成とは扱わない。
 
+
+source `4f01ce5` の GHA `40094747115` は初回対象3環境・監査・source をすべて成功した。Linux 各902件・macOS 892件の通常／core、実 Chromium・MCP・TUI・Material と両構成 Clippy、各42回の release 書き出しを成果物へ照合した。接続失効・回収の関連14ケース（macOS は13）は両構成で一度ずつ成功し、実 compiler host も対象3種類と一致した。各3枚の静的 PNG は同 OS 基準と一致し、配布ソース947ファイルの blob・実行 bit を Git と照合した。focus 後の native 起動待ちは1〜4秒、core build／試験は26／31・79／33・70／44秒、通常 build／試験は76／191・270／210・210／219秒、release 工程は150・248・369秒だった（Linux x64／arm64／macOS）。再開時の新しい文脈引き継ぎはこの source に含まれず、後続で検証する。全体の未完了条件は維持する。
 
 source `e0e1a2b` の GHA `40091647214` は Linux の先行72試験を成功し、guardian を含む回収8ケースを成果物と照合した。通常／core の試験本体も macOS 880件・Linux x64 890件が成功したが、共通化後に残った `ExitStatus` の未使用 import により、両構成 Clippy が失敗した。未使用 import を除き、描画なしの先行検証でも対象 lib／integration の Clippy を test executable のビルドより前に実行する。警告を許可する変更は行わない。実試験の失敗ではないが、当該 source の全体の成功・配布ソースの完成とは扱わない。修正版 `00e21c7` の GHA `40092658303` は3環境・監査・source をすべて成功した。Linux 各890・macOS 880件の通常／core、実 Chromium・MCP・TUI・Material、両構成 Clippy と各42回の release 書き出しを成果物と照合した。追加した guardian 回収は Linux 8ケース・macOS 7ケースが各構成で一度ずつ成功し、実際の compiler host も対象3種類と一致した。各3枚の静的 PNG は同 OS 基準と一致し、配布ソース946ファイルを Git の blob・実行 bit へ照合した。接続失効の owner file はこの source に含まれず後続で検証する。
 

@@ -62,6 +62,9 @@ pub struct PromptArgs {
     /// Resume a local lazypencil conversation ID printed by a previous request.
     #[arg(long)]
     pub session: Option<String>,
+    /// Start a new native session with local history instead of loading the saved one.
+    #[arg(long, requires = "session")]
+    pub restart_session: bool,
     #[arg(long = "image")]
     pub images: Vec<PathBuf>,
     #[arg(long = "font")]
@@ -238,6 +241,9 @@ fn output(value: &Value, json_output: bool) -> Result<()> {
                 value["authentication"]["source"]
                     .as_str()
                     .unwrap_or("unknown")
+            ),
+            Some("session_restarted") => eprintln!(
+                "Started a new native session with current document context and bounded local history; previous model memory was not restored."
             ),
             Some("update")
                 if value["notification"]["update"]["sessionUpdate"] == "agent_message_chunk" =>

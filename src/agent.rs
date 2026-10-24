@@ -38,6 +38,11 @@ pub struct AgentOptions {
     pub cwd: PathBuf,
     pub mcp_servers: Vec<McpServer>,
     pub session_id: Option<String>,
+    /// Allow a new native session when the adapter explicitly cannot load sessions.
+    /// Frontends must supply current-document context and disclose the restart.
+    pub allow_session_restart: bool,
+    /// Explicitly replace a saved native session, retaining frontend history.
+    pub restart_session: bool,
     pub auth_method: Option<String>,
     /// Remove inherited API-key overrides for subscription requests.
     pub subscription: bool,
@@ -60,6 +65,8 @@ impl AgentOptions {
             cwd: cwd.into(),
             mcp_servers: vec![],
             session_id: None,
+            allow_session_restart: false,
+            restart_session: false,
             auth_method: None,
             subscription: true,
             require_auth_status: false,
@@ -97,6 +104,12 @@ pub struct AgentHost {
 
 impl AgentHost {
     pub fn spawn(options: AgentOptions) -> Result<Self> {
+        if options.restart_session && options.session_id.is_none() {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "Restarting requires a saved native session ID",
+            ));
+        }
         if !options.cwd.is_absolute() || !options.cwd.is_dir() {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
@@ -343,7 +356,12 @@ async fn conversation(
                 .await
                 .map_err(protocol_error)?;
         }
-        let (session, response) = if let Some(id) = &options.session_id {
+        let restart = options.session_id.is_some()
+            && (options.restart_session
+                || (!initialized.agent_capabilities.load_session && options.allow_session_restart));
+        let (session, response) = if let Some(id) = &options.session_id
+            && !restart
+        {
             if !initialized.agent_capabilities.load_session {
                 return Err(agent_error(
                     "This adapter cannot reload sessions; a local transcript is not a resumable agent session",
@@ -393,7 +411,10 @@ async fn conversation(
             require_report: options.require_auth_status || auth_supported,
         };
         let reported_auth = authentication.borrow().clone();
-        emit(events, json!({"type":"ready","session_id":session,"response":response,"authentication":reported_auth,"auth_status_required":policy.require_report})).await?;
+        emit(events, json!({"type":"ready","session_id":session,"response":response,"authentication":reported_auth,"auth_status_required":policy.require_report,
+            "session_origin":if restart {"restarted"} else if options.session_id.is_some() {"loaded"} else {"new"},
+            "replaces_session_id":if restart {options.session_id.as_deref()} else {None},
+            "restart_reason":if restart {Some(if options.restart_session {"user_requested"} else {"load_session_unsupported"})} else {None}})).await?;
         Ok((
             session,
             initialized.agent_capabilities.prompt_capabilities.image,

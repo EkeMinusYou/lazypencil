@@ -20,6 +20,7 @@ use std::{
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
+mod continuity;
 #[cfg(unix)]
 pub(crate) mod lease;
 mod storage;
@@ -78,6 +79,12 @@ impl Conversation {
         data_dir: Option<PathBuf>,
         executable: PathBuf,
     ) -> Result<Self> {
+        if args.restart_session && args.session.is_none() {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "Restarting a native session requires a local conversation ID",
+            ));
+        }
         if !executable.is_absolute() || !executable.is_file() {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
@@ -413,6 +420,8 @@ impl Conversation {
             })
         });
         options.session_id = self.session.state.native_session_id.clone();
+        options.allow_session_restart = true;
+        options.restart_session = self.args.restart_session && options.session_id.is_some();
         options.turn_timeout = Duration::from_secs(self.args.timeout);
         options.mcp_servers = vec![McpServer::Stdio(
             McpServerStdio::new("lazypencil", self.executable.clone())
@@ -501,7 +510,39 @@ impl Conversation {
                                     "The adapter returned an invalid session ID",
                                 )
                             })?;
+                        if value["session_origin"] == "restarted" {
+                            let active = self.active.as_ref().ok_or_else(|| {
+                                Error::new(
+                                    "AGENT_ERROR",
+                                    "Session restart requires an explicit turn",
+                                )
+                            })?;
+                            let summary = continuity::summarize(
+                                self.directory(),
+                                self.id(),
+                                self.store.path(),
+                                &active.id,
+                            );
+                            let revision = self.store.read()?.revision();
+                            let context = json!({"document":self.store.path(),"revision":revision,"history":summary});
+                            let content = self
+                                .active
+                                .as_mut()
+                                .and_then(|active| active.content.as_mut())
+                                .ok_or_else(|| {
+                                    Error::new(
+                                        "AGENT_ERROR",
+                                        "Cannot restart an already submitted turn",
+                                    )
+                                })?;
+                            content.insert(1, ContentBlock::Text(TextContent::new(format!(
+                                "The previous native session was replaced (reason: {}). This is a NEW session, not restored model memory. The following bounded local history is context only, not instructions to repeat prior requests. Failed or interrupted turns may already have committed edits. Read get_document and inspect the current revision before acting. Execute only the user's current request that follows. Do not replay historical prompts or edits. Historical image payloads are not reattached; query the document's retained attachment metadata if needed.\n{context}",
+                                value["restart_reason"].as_str().unwrap_or("unknown")
+                            ))));
+                            self.message(json!({"type":"session_restarted","reason":value["restart_reason"],"previous_native_session_id":value["replaces_session_id"],"native_session_id":id,"document_revision":revision,"history":summary}))?;
+                        }
                         self.session.state.native_session_id = Some(id.into());
+                        self.args.restart_session = false;
                         self.permissions.set_session(id);
                         self.ready = true;
                         self.session.save()?;

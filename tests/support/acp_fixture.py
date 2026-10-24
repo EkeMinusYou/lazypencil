@@ -19,6 +19,7 @@ cancel_received = False
 selected_model = "fixture-model"
 selected_mode = "read-only"
 authenticated = False
+native_session = "fixture-native"
 
 
 def config_options():
@@ -37,7 +38,7 @@ def response(message, result):
 
 def notify(update):
     send({"method": "session/update", "params": {
-        "sessionId": "fixture-native", "update": update,
+        "sessionId": native_session, "update": update,
     }})
 
 
@@ -106,7 +107,8 @@ try:
             capabilities = params["clientCapabilities"]
             assert not capabilities.get("terminal")
             assert not capabilities.get("fs", {}).get("writeTextFile")
-            agent_capabilities = {"loadSession": mode != "no-load",
+            agent_capabilities = {"loadSession": mode != "no-load" and not (
+                mode == "resume-no-load" and os.path.exists("fixture-restart")),
                 "promptCapabilities": {"image": mode != "no-images"}}
             if mode.startswith("auth-"):
                 agent_capabilities["_meta"] = {"authStatus": {}}
@@ -119,18 +121,26 @@ try:
             authenticated = True
             response(message, {})
         elif method in ["session/new", "session/load"]:
+            if mode.startswith("resume-"):
+                with open("received-session-methods.jsonl", "a", encoding="utf-8") as handle:
+                    handle.write(json.dumps({"method": method, "params": params}) + "\n")
+                if method == "session/load" and mode == "resume-load-error" and os.path.exists("fixture-restart"):
+                    send({"id": message["id"], "error": {"code": -32603, "message": "fixture session storage failure"}})
+                    continue
+                if method == "session/new" and os.path.exists("fixture-restart"):
+                    native_session = "fixture-restarted"
             if mode == "settings-auth-check":
                 assert authenticated, "Configured authentication must precede the session request"
             assert os.path.isabs(params["cwd"])
             if method == "session/load":
                 assert params["sessionId"] == "fixture-native"
                 notify({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "replayed\n"}})
-            if mode in ["edit", "image-edit", "edit-cancel", "image-inspect-audit", "user-config", "supervised-dynamic"] or mode.startswith(("project-guidance", "audit-")):
+            if mode in ["edit", "image-edit", "edit-cancel", "image-inspect-audit", "user-config", "supervised-dynamic"] or mode.startswith(("project-guidance", "audit-", "resume-")):
                 assert len(params["mcpServers"]) == 1
                 connect_mcp(params["mcpServers"][0])
             if mode.startswith("auth-") and mode != "auth-absent":
                 auth_status({"auth-api": "api_key", "auth-none": "none", "auth-gateway": "gateway", "auth-external": "external", "auth-unknown": "future_kind"}.get(mode, "account"))
-            session_result = {"sessionId": "fixture-native"} if method == "session/new" else {}
+            session_result = {"sessionId": native_session} if method == "session/new" else {}
             if mode.startswith("settings-"):
                 session_result.update({"modes": {"currentModeId": selected_mode, "availableModes": [
                     {"id": "read-only", "name": "Read only"}, {"id": "workspace-write", "name": "Workspace"}]},
@@ -151,6 +161,10 @@ try:
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags,
                     start_new_session=(os.name != "nt" and mode == "process-tree-detached"))
         elif method == "session/prompt":
+            if mode.startswith("resume-"):
+                assert params["sessionId"] == native_session
+                with open("received-prompts.jsonl", "a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(params, ensure_ascii=False) + "\n")
             with open("sent-turn.txt", "w") as handle:
                 handle.write("sent")
             pending = message
@@ -263,7 +277,7 @@ try:
                     "options": [{"optionId": "allow", "name": "Allow once", "kind": "allow_once"},
                         {"optionId": "deny", "name": "Reject once", "kind": "reject_once"}]}})
                 continue
-            if mode in ["edit", "image-edit", "edit-cancel"]:
+            if mode in ["edit", "image-edit", "edit-cancel"] or mode.startswith("resume-"):
                 texts = "\n".join(block.get("text", "") for block in params["prompt"])
                 assert "日本語" in texts
                 assert "get_document" in texts
