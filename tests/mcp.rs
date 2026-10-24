@@ -51,6 +51,17 @@ impl Client {
         usage: Option<&std::path::Path>,
         user: Option<&std::path::Path>,
     ) -> Self {
+        Self::start_with_grants(file, data, chromium, fonts, usage, user, None)
+    }
+    fn start_with_grants(
+        file: &std::path::Path,
+        data: &std::path::Path,
+        chromium: Option<&std::path::Path>,
+        fonts: &[std::path::PathBuf],
+        usage: Option<&std::path::Path>,
+        user: Option<&std::path::Path>,
+        attachments: Option<&std::path::Path>,
+    ) -> Self {
         let mut command = Command::new(env!("CARGO_BIN_EXE_lazypencil"));
         if let Some(path) = user {
             command.env("LAZYPENCIL_CONFIG_DIR", path);
@@ -68,6 +79,9 @@ impl Client {
         }
         if let Some(path) = usage {
             command.arg("--guidance-audit-manifest").arg(path);
+        }
+        if let Some(path) = attachments {
+            command.arg("--attachments-manifest").arg(path);
         }
         let mut child = command
             .stdin(Stdio::piped())
@@ -466,6 +480,115 @@ fn owned_mcp_records_exact_design_resource_metadata_and_rotates_active_turns() {
         standalone.data("get_guidance", json!({"id":"color"})),
         lazypencil::guidance::get_guidance(Some("color")).unwrap()
     );
+    standalone.finish();
+}
+
+#[cfg(unix)]
+#[test]
+fn owned_mcp_rejects_grants_after_the_host_is_killed_without_reviving_or_writing_journals() {
+    use lazypencil::store::Store;
+    struct Owner(Child);
+    impl Drop for Owner {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let (temp, file, data) = fixture();
+    let python = std::env::var_os("LAZYPENCIL_TEST_PYTHON").unwrap_or_else(|| "python3".into());
+    let peer =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/acp_fixture.py");
+    let mut owner = Owner(
+        Command::new(env!("CARGO_BIN_EXE_lazypencil"))
+            .current_dir(temp.path())
+            .arg("--data-dir")
+            .arg(&data)
+            .args(["--json", "prompt"])
+            .arg(&file)
+            .args(["--non-interactive", "--timeout", "60", "--adapter"])
+            .arg(python)
+            .arg(format!("--adapter-arg={}", peer.display()))
+            .arg("--adapter-arg=process-tree-hang")
+            .arg("Wait until this test kills the host")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    let end = Instant::now() + Duration::from_secs(8);
+    while !temp.path().join("tree-ready.json").is_file() {
+        assert!(
+            owner.0.try_wait().unwrap().is_none(),
+            "Host exited before readiness"
+        );
+        assert!(Instant::now() < end, "Host did not initialize its grants");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let store = Store::open(&file, Some(data.clone())).unwrap();
+    let directory = fs::read_dir(store.document_data_dir().join("conversations"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let attachments = fs::read_dir(&directory)
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("grant-")
+                && path.extension().is_some_and(|ext| ext == "json")
+        })
+        .unwrap();
+    let usage = fs::read_dir(&directory)
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("design-usage-")
+        })
+        .unwrap();
+    let active = usage.join("active.json");
+    let mut client = Client::start_with_grants(
+        &file,
+        &data,
+        None,
+        &[],
+        Some(&active),
+        None,
+        Some(&attachments),
+    );
+    assert!(client.data("get_document", json!({}))["attachments"]["images"].is_array());
+    client.data("get_guidance", json!({"id":"color"}));
+    let manifest: Value = serde_json::from_slice(&fs::read(&active).unwrap()).unwrap();
+    let journal = usage.join(format!("{}.jsonl", manifest["turn"].as_str().unwrap()));
+    let recorded = fs::read(&journal).unwrap();
+    assert!(!recorded.is_empty());
+    let original = fs::read(&file).unwrap();
+    owner.0.kill().unwrap();
+    owner.0.wait().unwrap();
+    let denied = client.call("get_document", json!({}));
+    assert_eq!(denied["isError"], true);
+    assert_eq!(denied["structuredContent"]["error"]["code"], "AGENT_ERROR");
+    let denied = client.call("get_guidance", json!({"id":"color"}));
+    assert_eq!(denied["isError"], true);
+    assert_eq!(denied["structuredContent"]["error"]["code"], "AGENT_ERROR");
+    let denied = client.call("apply_operations", json!({"expected_revision":lazypencil::document::hash(&original),"request_id":"expired-connection-must-not-edit","operations":[{"op":"insert","node":{"type":"rectangle","id":"must-not-exist","width":10,"height":10}}]}));
+    assert_eq!(denied["isError"], true);
+    assert_eq!(denied["structuredContent"]["error"]["code"], "AGENT_ERROR");
+    assert_eq!(fs::read(journal).unwrap(), recorded);
+    assert_eq!(fs::read(&file).unwrap(), original);
+    client.finish();
+    let mut standalone = Client::start(&file, &data);
+    assert!(standalone.data("get_document", json!({}))["revision"].is_string());
+    standalone.data("get_guidance", json!({"id":"color"}));
     standalone.finish();
 }
 

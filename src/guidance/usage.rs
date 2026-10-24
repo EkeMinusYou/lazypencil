@@ -27,6 +27,8 @@ struct Manifest {
     conversation: String,
     connection: String,
     turn: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    owner: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -88,6 +90,8 @@ struct ProjectIdentity {
 pub struct UsageGrant {
     access: UsageAccess,
     active: Option<String>,
+    #[cfg(unix)]
+    _lease: crate::conversation::lease::Lease,
 }
 
 impl UsageGrant {
@@ -110,12 +114,18 @@ impl UsageGrant {
             .sync_all()
             .map_err(|error| Error::io(&directory, error))?;
         let path = directory.join("active.json");
+        #[cfg(unix)]
+        let lease = crate::conversation::lease::Lease::create(&path)?;
         let manifest = Manifest {
-            version: 1,
+            version: manifest_version(),
             document: store.path().into(),
             conversation: conversation.into(),
             connection: connection.clone(),
             turn: None,
+            #[cfg(unix)]
+            owner: Some(lease.id().into()),
+            #[cfg(not(unix))]
+            owner: None,
         };
         save_manifest(&path, &manifest)?;
         Ok(Self {
@@ -124,8 +134,12 @@ impl UsageGrant {
                 document: store.path().into(),
                 conversation: conversation.into(),
                 connection,
+                #[cfg(unix)]
+                owner: manifest.owner,
             },
             active: None,
+            #[cfg(unix)]
+            _lease: lease,
         })
     }
 
@@ -263,9 +277,16 @@ pub struct UsageAccess {
     document: PathBuf,
     conversation: String,
     connection: String,
+    #[cfg(unix)]
+    owner: Option<String>,
 }
 
 impl UsageAccess {
+    #[cfg(unix)]
+    pub(crate) fn check_connection(&self) -> Result<()> {
+        self.manifest().map(|_| ())
+    }
+
     pub fn open(store: &Store, path: &Path) -> Result<Self> {
         let bytes = read_bounded(path, 16 * 1024)?;
         let manifest: Manifest =
@@ -289,6 +310,8 @@ impl UsageAccess {
             document: store.path().into(),
             conversation: manifest.conversation,
             connection: manifest.connection,
+            #[cfg(unix)]
+            owner: manifest.owner,
         };
         access.manifest()?;
         Ok(access)
@@ -317,12 +340,19 @@ impl UsageAccess {
         let bytes = read_bounded(&self.path, 16 * 1024)?;
         let manifest: Manifest =
             serde_json::from_slice(&bytes).map_err(|_| invalid("Invalid design usage grant"))?;
-        if manifest.version != 1
+        if manifest.version != manifest_version()
             || manifest.document != self.document
             || manifest.conversation != self.conversation
             || manifest.connection != self.connection
         {
             return Err(invalid("The design usage grant changed its identity"));
+        }
+        #[cfg(unix)]
+        {
+            if manifest.owner != self.owner {
+                return Err(invalid("The design usage connection changed its identity"));
+            }
+            crate::conversation::lease::require_live(&self.path, self.owner.as_deref())?;
         }
         if let Some(turn) = &manifest.turn {
             require_uuid(turn)?;
@@ -356,6 +386,33 @@ impl UsageAccess {
                 }
             }
         }
+    }
+}
+
+fn manifest_version() -> u32 {
+    if cfg!(unix) { 2 } else { 1 }
+}
+
+#[cfg(unix)]
+pub(crate) fn reclaim_stale_grant(
+    path: &Path,
+    document: &Path,
+    conversation: &str,
+    connection: &str,
+) -> Result<bool> {
+    let bytes = read_bounded(path, 16 * 1024)?;
+    let manifest: Manifest =
+        serde_json::from_slice(&bytes).map_err(|_| invalid("Invalid design usage grant"))?;
+    if manifest.version != manifest_version()
+        || manifest.document != document
+        || manifest.conversation != conversation
+        || manifest.connection != connection
+    {
+        return Ok(false);
+    }
+    match manifest.owner.as_deref() {
+        Some(owner) => crate::conversation::lease::remove_stale(path, owner),
+        None => Ok(false),
     }
 }
 

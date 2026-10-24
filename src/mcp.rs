@@ -488,6 +488,24 @@ impl DocumentWorker {
         arguments: Value,
         cancel: &tokio_util::sync::CancellationToken,
     ) -> Result<CallToolResult> {
+        #[cfg(unix)]
+        {
+            crate::cancel::check(Some(cancel))?;
+            let expired = || {
+                Error::new(
+                    "AGENT_ERROR",
+                    "The owned MCP connection is no longer active; reconnect to issue a new grant",
+                )
+            };
+            if let Some(access) = &self.attachments {
+                access
+                    .check_connection(&self.store)
+                    .map_err(|_| expired())?;
+            }
+            if let Some(access) = &self.usage {
+                access.check_connection().map_err(|_| expired())?;
+            }
+        }
         let usage = if matches!(name, "get_guidance" | "get_style" | "list_styles") {
             self.usage
                 .as_ref()
