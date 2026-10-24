@@ -594,6 +594,9 @@ impl App {
             Some("session_restarted") => {
                 self.append("\nStarted a new native session with current document context and bounded local history. Previous model memory was not restored.\n");
             }
+            Some("local_context") => {
+                self.append("\nAdded current document context and bounded local history after an interrupted restart.\n");
+            }
             Some("failed") => {
                 self.append(&format!(
                     "\nRequest failed: {}\n",

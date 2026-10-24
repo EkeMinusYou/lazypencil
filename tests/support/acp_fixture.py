@@ -133,7 +133,11 @@ try:
                 assert authenticated, "Configured authentication must precede the session request"
             assert os.path.isabs(params["cwd"])
             if method == "session/load":
-                assert params["sessionId"] == "fixture-native"
+                if mode == "resume-native":
+                    assert params["sessionId"] in ["fixture-native", "fixture-restarted"]
+                    native_session = params["sessionId"]
+                else:
+                    assert params["sessionId"] == "fixture-native"
                 notify({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "replayed\n"}})
             if mode in ["edit", "image-edit", "edit-cancel", "image-inspect-audit", "user-config", "supervised-dynamic"] or mode.startswith(("project-guidance", "audit-", "resume-")):
                 assert len(params["mcpServers"]) == 1

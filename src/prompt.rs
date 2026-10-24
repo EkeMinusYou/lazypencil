@@ -245,6 +245,9 @@ fn output(value: &Value, json_output: bool) -> Result<()> {
             Some("session_restarted") => eprintln!(
                 "Started a new native session with current document context and bounded local history; previous model memory was not restored."
             ),
+            Some("local_context") => eprintln!(
+                "Added current document context and bounded local history after an interrupted restart."
+            ),
             Some("update")
                 if value["notification"]["update"]["sessionUpdate"] == "agent_message_chunk" =>
             {
