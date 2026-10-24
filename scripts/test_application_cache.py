@@ -90,6 +90,40 @@ class ApplicationCacheTests(unittest.TestCase):
         with self.assertRaises(cache.CacheError):
             self.stage()
 
+    def test_ci_only_changes_reuse_but_embedded_ci_files_disable_reuse(self):
+        excluded = ("scripts/ci/focus.py", "scripts/ci/nested/helper.py",
+                    "scripts/test_application_cache.py")
+        for name in excluded:
+            self.files[name] = "Original CI helper\n"
+        self.manifest()
+        self.stage()
+        original = self.identity()["fingerprint"]
+        for name in excluded:
+            with self.subTest(name=name):
+                self.files[name] = "Changed CI helper\n"
+                self.manifest("2" * 40)
+                self.assertEqual(self.identity()["fingerprint"], original)
+                shutil.rmtree(self.target)
+                self.assertTrue(cache.restore(self.source, self.target, self.directory, self.identity())["reused"])
+                self.dep_info.write_text(f"library: {self.source}/{name}\n")
+                with self.assertRaises(cache.CacheError):
+                    self.stage()
+                with self.assertRaises(cache.CacheError):
+                    cache.restore(self.source, self.target, self.directory, self.identity())
+                self.dep_info.write_text(f"library: {self.source}/src/lib.rs {self.source}/docs/guide.md\n")
+                self.stage()
+
+    def test_other_scripts_and_similar_path_names_remain_bound(self):
+        original = self.identity()["fingerprint"]
+        for name in ("scripts/dist.py", "scripts/ci_helper.py", "scripts/test_input.json",
+                     "scripts/test_data/fixture.py", "tests/support/test_fixture.py"):
+            with self.subTest(name=name):
+                self.files[name] = "Changed build or runtime input\n"
+                self.manifest()
+                self.assertNotEqual(self.identity()["fingerprint"], original)
+                del self.files[name]
+                self.manifest()
+
     def test_same_mtime_source_changes_cannot_reuse_application_outputs(self):
         self.stage()
         path = self.source / "src/lib.rs"

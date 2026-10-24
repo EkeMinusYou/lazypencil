@@ -32,9 +32,16 @@ def identity(source, target, native_key):
     platform = re.match(r"native-v2-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-", native_key)
     if package["name"] != "lazypencil" or not platform:
         raise CacheError("Unknown package or hosted build identity")
-    # Workflow scheduling cannot change compiled bytes. If Rust includes a
-    # workflow as data, dep-info below explicitly disables application reuse.
-    inputs = [entry for entry in manifest["files"] if not entry["path"].startswith(".github/workflows/")]
+    # Scheduling and Python CI checks do not change compiled bytes. If Rust
+    # includes any excluded file as data, dep-info below disables reuse. Keep
+    # docs, fixtures and resources bound: Rust can embed those at compile time.
+    def compiled_input(name):
+        path = PurePosixPath(name)
+        return not (name.startswith((".github/workflows/", "scripts/ci/"))
+                    or (path.parent == PurePosixPath("scripts")
+                        and path.name.startswith("test_") and path.suffix == ".py"))
+
+    inputs = [entry for entry in manifest["files"] if compiled_input(entry["path"])]
     payload = {"version": 1, "inputs": inputs, "native": native_key,
                "source": str(source.resolve()), "target": str(target.resolve())}
     fingerprint = digest(json.dumps(payload, sort_keys=True).encode())
