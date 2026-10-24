@@ -176,7 +176,7 @@ fn image_fills_use_the_library_origin_and_track_the_image_hash() {
 }
 
 #[test]
-fn render_limits_and_unimplemented_features_return_errors() {
+fn render_limits_and_missing_runtime_return_errors() {
     let children = json!([{"id":"large","type":"rectangle","width":1000000,"height":1000000}]);
     assert_eq!(
         render_scene(children, RenderOptions::default())
@@ -193,14 +193,19 @@ fn render_limits_and_unimplemented_features_return_errors() {
             .code,
         "UNSUPPORTED_FEATURE"
     );
+}
+
+#[test]
+fn the_native_render_entry_accepts_ellipse_side_widths_and_keeps_top_width_bounds() {
     let unequal_ellipse = json!([{"id":"ellipse","type":"ellipse","width":100,"height":100,"stroke":"#123456","strokeWidth":{"top":2,"right":4,"bottom":6,"left":8}}]);
-    assert_eq!(
-        render_scene(unequal_ellipse, RenderOptions::default())
-            .err()
-            .unwrap()
-            .code,
-        "UNSUPPORTED_FEATURE"
-    );
+    let mut uniform_ellipse = unequal_ellipse.clone();
+    uniform_ellipse[0]["strokeWidth"] = json!(2);
+    let output = render_scene(unequal_ellipse, RenderOptions::default()).unwrap();
+    let reference = render_scene(uniform_ellipse, RenderOptions::default()).unwrap();
+    assert_eq!((output.width, output.height), (102, 102));
+    assert_eq!(output.region, reference.region);
+    assert_eq!(output.png, reference.png);
+    assert!(pixel(&output.png, 51, 1).a() > 200);
 }
 
 #[test]
