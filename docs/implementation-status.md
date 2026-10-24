@@ -8,6 +8,8 @@
 
 source `eac581a` の先行 GHA `40088087463` は実 worker の22ケースと、入れ子・既定参照ライブラリ・既存乱数の試験を成功したが、サービスの構造検査が旧入力の `$missing` を先に拒否した。ノード／インスタンス／descendant override の script inputs はヘッダー取得後の検査へ委ね、通常の塗りや `inputs` という名前の shader uniform の変数検査は維持する。新しい構造検査の回帰と、宣言済みの未定義変数が worker 起動前に失敗する試験を追加する。core の project と worker を Skia 前に先行し、operations の変更も既存 CLI 試験へ広げる。失敗した先行 gate の段階で全環境は未起動である。
 
+source `dc84dc5` の先行 `40089004985` は core project／worker 各15件と、その後の171件が成功した。入力22ケースと既存乱数4ケースは、両形式の保存 PNG を独立に復号して本家参照と全 RGBA 成分一致を確認した。ただし変更なしの Wasm job が skipped の場合に後続の通常3環境・監査・source まで skipped となり、workflow 全体が success と表示された。これを全体合格として扱わず、native／audit に直接の依存成功条件を明示する。source job は必要な native／audit が両方 success でなければ、生成・アップロード前に失敗させる。スキップ・失敗・取消・欠損した結果を拒否する検査を追加し、修正版の実 GHA で3環境へ進むことを確認する。
+
 source `e6a1bfb` の GHA `40085384401` は初回対象3環境・監査・配布ソースをすべて成功した。Linux 各866・macOS 858件の通常／core 試験、実 Chromium・MCP・TUI・両構成 Clippy・Material と各42回の release 書き出しを確認した。各環境の2形式について、乱数4ケースの各37サンプルと、shader の座標10ケース・注釈20ケースの1倍／2倍・既定値14ケースの保存画像を独立に復号し、本家参照と全 RGBA 成分が一致した。release の3 PNG は各同 OS の基準画像と一致し、配布ソース915ファイルは Git の blob・実行 bit と照合した。focus 後の native 起動待ちは2〜6秒、通常構成の build は99／283／125秒、試験は281／207／200秒（Linux x64／arm64／macOS）、release build と smoke は214／241／256秒だった。全体の初回完成を示すものではなく、新しい22入力ケースと元の互換・provider・性能・実端末・配布条件は引き続き検証する。
 
 2026-10-24: 本家 CLI 0.3.9 の公開 Export で、自作 JS の2.11・2.19・2.21ヘッダーと、寸法・入力を変えた再評価を確認した。4ケースの各37個の乱数は Mulberry32 seed 0 と一致し、1328×192の参照画像の全1,019,904 RGBA成分を独立に照合した。現在の xorshift32 とは異なるため、原作者の CC0 表示を保持して置き換え、JS コンテキストごとの初期化と `Math.imul` の変更への耐性を維持する。2.11ヘッダーの受け入れは文書コーデックとは分離し、未知版の拒否は維持する。英語ガイドは1.0.17。実 worker と2版の全画素比較は GHA で検証し、先に Skia 不要の worker 試験を実行する。レイアウト変更には graphics／render の利用側も先行対象へ含める。ローカル native build は行わない。
