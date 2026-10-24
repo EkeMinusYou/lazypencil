@@ -210,7 +210,7 @@ For `design/brand.json`:
 
 `id`, `name`, `description`, `tokens` (an object), `instructions`, and `example` are required. Version/language use the guide defaults. `use_cases`, `guidance`, `required_fonts`, and `required_packs` default to empty arrays. `license` is optional; an omitted project license remains unknown, and is never assigned the application's MIT license. Guide references use built-in IDs or complete `project:ID` names. Unknown fields and invalid metadata are rejected.
 
-The example is a separate schema 2.21 `.pen` file. For example, `design/components.pen` can contain:
+The example is a separate `.pen` file with an explicitly supported schema (2.19 or 2.21). Its version is retained for project-owned styles. For example, `design/components.pen` can contain:
 
 ```json
 {

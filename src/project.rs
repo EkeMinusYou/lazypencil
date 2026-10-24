@@ -1,6 +1,6 @@
 use crate::{
     Error, Result,
-    document::{DOCUMENT_VERSION, Document, MAX_NODES, hash},
+    document::{Document, MAX_NODES, hash},
     store::{Store, read_text},
 };
 use serde::Serialize;
@@ -590,7 +590,7 @@ impl Project {
                 None => read_text(path)?,
             })?,
         };
-        if document.version() != DOCUMENT_VERSION {
+        if document.codec().is_none() {
             return Err(Error::new(
                 "UNSUPPORTED_VERSION",
                 format!(

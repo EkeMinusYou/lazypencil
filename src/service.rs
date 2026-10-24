@@ -450,13 +450,13 @@ pub fn document_metadata_with_fonts(
     let mut result = document.summary();
     result["path"] = json!(store.path());
     result["capabilities"] = json!({
-        "schema":"2.21","rendering":cfg!(feature="rendering"),"dynamic_content":false,
+        "schema":document.version(),"supported_schemas":crate::document::SUPPORTED_DOCUMENT_VERSIONS,"default_schema":crate::document::DOCUMENT_VERSION,"rendering":cfg!(feature="rendering"),"dynamic_content":false,
         "asset_repair":{"declared_images_and_code":true,"max_missing_references":1024,"allow_new_missing":false,"restore_reports_missing":true},
         "instance_overrides":true,"managed_assets":true,"attachments":false,
         "variables":{"resolved_values":true,"sources":true,"node_theme_context":true,"property_namespace":true,"pagination":true},
         "node_reads":{"calculated":cfg!(feature="rendering"),"generated":cfg!(feature="rendering"),"snapshot_reuse":cfg!(feature="rendering")},
         "validation":{"structure":true,"layout":cfg!(feature="rendering"),"diagnostic_pagination":true,"rendered_visual_check":false},
-        "script":{"execution":true,"rendering":cfg!(feature="rendering"),"schemas":["2.21"],"engine":crate::script::ENGINE},
+        "script":{"execution":true,"rendering":cfg!(feature="rendering"),"schemas":crate::document::SUPPORTED_DOCUMENT_VERSIONS,"engine":crate::script::ENGINE},
         "browser":{"rendering":cfg!(feature="rendering"),"runtime_setup_required":true,"devices":["desktop","phone","tablet"]},
         "shader":{"fills":cfg!(feature="rendering"),"effects":cfg!(feature="rendering"),"software_webgl":true,"annotations":["resolution","time"],"variable_image_origins":true,"sampler_arrays":true,"max_encoded_sampler_bytes":67108864},
         "graphics":{"background_blur":cfg!(feature="rendering"),"node_preview":"document_crop","inner_shadow_blending":cfg!(feature="rendering"),"outer_shadow_blending":cfg!(feature="rendering"),"linear_color_blending":cfg!(feature="rendering"),"mesh_gradient":cfg!(feature="rendering")},

@@ -506,8 +506,15 @@ fn explicit_variable_reuse_checks_types_and_component_reuse_avoids_extra_files()
 
 #[test]
 fn bundled_style_imports_support_both_modes_and_an_explicit_source_revision() {
-    for mode in ["link", "copy"] {
+    for (version, mode) in [
+        ("2.19", "link"),
+        ("2.19", "copy"),
+        ("2.21", "link"),
+        ("2.21", "copy"),
+    ] {
         let (_temp, store) = fixture();
+        let source = store.read().unwrap().text().replace("2.21", version);
+        fs::write(store.path(), source).unwrap();
         let style = lazypencil::guidance::get_style("standard-ui").unwrap();
         let op = json!({"op":"import_component","mode":mode,"source":{"style_id":"standard-ui","node_id":"button"},"expected_source_revision":style["example"]["hash"],"client_ref":"button"});
         let dry = request(&store, "style-preview", json!([op]), true);
@@ -516,6 +523,31 @@ fn bundled_style_imports_support_both_modes_and_an_explicit_source_revision() {
         let result =
             service::apply_request(&store, &request(&store, "style", json!([op]), false)).unwrap();
         let document = store.read().unwrap();
+        assert_eq!(document.version(), version);
+        assert_eq!(
+            result["generated_ids"]["0"]["source_revision"],
+            style["example"]["hash"]
+        );
+        let metadata = service::document_metadata(&store).unwrap();
+        assert_eq!(metadata["capabilities"]["schema"], version);
+        assert_eq!(
+            metadata["capabilities"]["supported_schemas"],
+            json!(["2.19", "2.21"])
+        );
+        for (alias, uri) in document.value()["imports"]
+            .as_object()
+            .into_iter()
+            .flat_map(|imports| imports.iter())
+        {
+            if alias == "ui" {
+                continue;
+            }
+            let library = store.path().parent().unwrap().join(uri.as_str().unwrap());
+            let library =
+                lazypencil::document::Document::parse(fs::read_to_string(library).unwrap())
+                    .unwrap();
+            assert_eq!(library.version(), version);
+        }
         let button = document
             .node(result["bindings"]["button"].as_str().unwrap())
             .unwrap();

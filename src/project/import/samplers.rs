@@ -157,7 +157,7 @@ impl Copier<'_> {
                 number += 1;
             };
             let bytes: Arc<[u8]> = serde_json::to_vec(
-                &json!({"version":DOCUMENT_VERSION,"variables":variables,"children":[]}),
+                &json!({"version":self.project.root_document().version(),"variables":variables,"children":[]}),
             )
             .map_err(|_| copy_error("Cannot encode copied sampler variables"))?
             .into();

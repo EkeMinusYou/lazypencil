@@ -415,3 +415,26 @@ fn an_unresponsive_process_is_killed_by_the_parent_watchdog() {
     );
     assert!(start.elapsed() < Duration::from_secs(5));
 }
+
+#[test]
+fn explicit_supported_schema_headers_execute_without_rewriting_the_source() {
+    let mut worker = runtime();
+    for version in ["2.19", "2.21"] {
+        let mut input = request(
+            "return [{type:'rectangle',width:pencil.width,height:pencil.height,fill:'#ff0000'}];",
+        );
+        input.code = input.code.replace("2.21", version);
+        assert_eq!(Header::parse(&input.code).unwrap().schema, version);
+        let output = worker.execute(&input).unwrap();
+        assert_eq!(output.nodes[0]["width"], 120);
+        assert_eq!(output.nodes[0]["height"], 80);
+    }
+    for version in ["2.18", "2.20", "2.22"] {
+        assert_eq!(
+            Header::parse(&format!("/** @schema {version} */ return [];"))
+                .unwrap_err()
+                .code,
+            "UNSUPPORTED_VERSION"
+        );
+    }
+}

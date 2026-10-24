@@ -1,0 +1,16 @@
+{
+  "producer": "@pen.dev/cli",
+  "version": "0.3.9",
+  "document_version": "2.19",
+  "fixture": "Original white frame and red triangle authored for lazypencil tests.",
+  "method": "Public interactive Insert/save followed by headless export of the sanitized document.",
+  "sanitization": "Removed the opaque root fileToken before export; retained only version and children.",
+  "png_sha256": "434e41459524120f94a4ba9837a0346ba95dffc78a6c9292a4c9b5118ba1a35b",
+  "dimensions": [
+    144,
+    144
+  ],
+  "scope": "Sharp triangle vertex placement only. No claim of general schema, script or aesthetic parity.",
+  "implementation_copied": false,
+  "model_request": false
+}

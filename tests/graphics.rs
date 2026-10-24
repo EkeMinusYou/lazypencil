@@ -569,3 +569,69 @@ fn tight_line_height_does_not_crop_glyphs_or_decorations_outside_the_line_box() 
     }
     assert!(ink > 1000);
 }
+
+#[test]
+fn native_pencil_219_triangle_matches_geometry_and_survives_an_edit_without_migration() {
+    use lazypencil::{operations::EditRequest, service};
+    let directory = TempDir::new().unwrap();
+    let file = directory.path().join("native.pen");
+    let source = include_str!("fixtures/pencil-0.3.9/triangle.pen");
+    fs::write(&file, source).unwrap();
+    let store = Store::open(&file, Some(directory.path().join("data"))).unwrap();
+    let output = render_file(&file).unwrap();
+    assert_eq!((output.width, output.height), (144, 144));
+    let expected = Image::from_encoded(Data::new_copy(include_bytes!(
+        "fixtures/pencil-0.3.9/triangle.png"
+    )))
+    .unwrap()
+    .make_raster_image(None, None)
+    .unwrap();
+    let actual = raster(&output);
+    let expected_pixels = expected.peek_pixels().unwrap();
+    let actual_pixels = actual.peek_pixels().unwrap();
+    let mut difference = 0u64;
+    let mut changed_pixels = 0;
+    for y in 0..144 {
+        for x in 0..144 {
+            let a = actual_pixels.get_color((x, y));
+            let b = expected_pixels.get_color((x, y));
+            let channels = [
+                a.a().abs_diff(b.a()),
+                a.r().abs_diff(b.r()),
+                a.g().abs_diff(b.g()),
+                a.b().abs_diff(b.b()),
+            ];
+            difference += channels.iter().map(|value| u64::from(*value)).sum::<u64>();
+            changed_pixels += usize::from(channels.iter().any(|value| *value > 20));
+        }
+    }
+    // Permit edge antialiasing differences, while rejecting shifted or stretched vertices.
+    assert!(
+        difference < 144 * 144 * 4 * 2,
+        "Native pixel difference: {difference}"
+    );
+    assert!(
+        changed_pixels < 150,
+        "Native differing pixels: {changed_pixels}"
+    );
+    assert_eq!(pixel(&output, 66, 25), Color::RED);
+    assert_eq!(pixel(&output, 66, 105), Color::WHITE);
+    let metadata = service::document_metadata(&store).unwrap();
+    let request: EditRequest = serde_json::from_value(json!({"request_id":"native-219-edit",
+        "expected_revision":metadata["revision"],"expected_dependency_revision":metadata["dependency_revision"],
+        "operations":[{"op":"update","target":"IDhJO","set":{"fill":"#0000ff"}}]})).unwrap();
+    service::apply_request(&store, &request).unwrap();
+    let saved = store.read().unwrap();
+    assert_eq!(saved.version(), "2.19");
+    assert_eq!(saved.text(), source.replace("#ff0000", "#0000ff"));
+    let edited = render_file(&file).unwrap();
+    assert_eq!(pixel(&edited, 66, 25), Color::BLUE);
+    assert_eq!(pixel(&edited, 66, 105), Color::WHITE);
+    if let Some(path) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
+        let path = std::path::PathBuf::from(path);
+        fs::create_dir_all(&path).unwrap();
+        fs::write(path.join("codec-triangle.png"), &output.png).unwrap();
+        fs::write(path.join("codec-edited.pen"), saved.text()).unwrap();
+        fs::write(path.join("codec-edited.png"), &edited.png).unwrap();
+    }
+}

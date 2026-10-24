@@ -8,7 +8,10 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
 
-pub const DOCUMENT_VERSION: &str = "2.21";
+mod codec;
+pub use codec::{Codec, SUPPORTED_DOCUMENT_VERSIONS};
+
+pub const DOCUMENT_VERSION: &str = Codec::DEFAULT.version();
 pub const MAX_DOCUMENT_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_JSON_DEPTH: usize = 128;
 pub const MAX_NODES: usize = 100_000;
@@ -105,13 +108,18 @@ impl Document {
         &self.nodes
     }
 
+    pub fn codec(&self) -> Option<Codec> {
+        Codec::parse(self.version())
+    }
+
     pub fn ensure_writable(&self) -> Result<()> {
-        if self.version() != DOCUMENT_VERSION {
+        if self.codec().is_none() {
             return Err(Error::new(
                 "UNSUPPORTED_VERSION",
                 format!(
-                    "Version {} is read-only; writable version is {DOCUMENT_VERSION}",
-                    self.version()
+                    "Version {} is read-only; writable versions are {}",
+                    self.version(),
+                    SUPPORTED_DOCUMENT_VERSIONS.join(", ")
                 ),
             ));
         }
@@ -144,7 +152,7 @@ impl Document {
 
     pub fn diagnostics(&self) -> Vec<Diagnostic> {
         let mut result = Vec::new();
-        if self.version() != DOCUMENT_VERSION {
+        if self.codec().is_none() {
             result.push(Diagnostic {
                 code: "UNSUPPORTED_VERSION".into(),
                 severity: "error",
@@ -169,7 +177,7 @@ impl Document {
     pub fn summary(&self) -> Value {
         json!({
             "version": self.version(), "revision": self.revision(),
-            "node_count": self.node_count(), "writable": self.version() == DOCUMENT_VERSION,
+            "node_count": self.node_count(), "writable": self.codec().is_some(),
             "roots": self.value["children"].as_array().into_iter().flatten().map(|n| json!({
                 "id": n["id"], "name": n.get("name"), "type": n["type"],
             })).collect::<Vec<_>>(), "diagnostics": self.diagnostics(),

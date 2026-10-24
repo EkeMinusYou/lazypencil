@@ -1,0 +1,28 @@
+{
+  "version": "2.19",
+  "children": [
+    {
+      "type": "frame",
+      "id": "gkC1D",
+      "x": 0,
+      "y": 0,
+      "name": "Reference",
+      "width": 144,
+      "height": 144,
+      "fill": "#ffffff",
+      "layout": "none",
+      "children": [
+        {
+          "type": "polygon",
+          "polygonCount": 3,
+          "id": "IDhJO",
+          "x": 16,
+          "y": 16,
+          "fill": "#ff0000",
+          "width": 100,
+          "height": 100
+        }
+      ]
+    }
+  ]
+}

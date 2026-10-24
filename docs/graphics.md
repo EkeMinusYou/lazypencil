@@ -1,5 +1,7 @@
 # Graphics implementation
 
+A small native reference corpus is kept under `tests/fixtures/pencil-0.3.9`. It contains an original white frame and sharp red triangle authored through the existing Pencil CLI's public interface. The opaque file token was removed before export; no proprietary source, skill, credential, or model request was used. The native export establishes inscribed-ellipse vertex placement for that 2.19 triangle. The hosted regression checks dimensions, pixels with bounded edge antialiasing tolerance, and a color edit that retains version 2.19. Hosted execution and a native re-export of the edited document are pending. Rounded polygons and general Pencil parity remain unfinished.
+
 The renderer uses Skia CPU and SkParagraph. CLI and MCP share the same layout snapshot, shaped text, captured assets, and rendering code. The target remains the complete agreed `.pen` scope. This document describes verified increments, not a reduced release specification or a claim of Pencil parity.
 
 The current format reference defines text decorations, stroke alignment and per-side widths, normalized image crop transforms, and inner/outer shadows. See the [official `.pen` schema](https://docs.pencil.dev/for-developers/the-pen-format#typescript-schema). The implementations and examples here are original lazypencil code; full behavioral comparison still requires suitable permitted fixtures.

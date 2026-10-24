@@ -103,6 +103,7 @@ pub(super) fn apply_import(
     crate::cancel::check(context.cancel)?;
     let mut source_document = document.clone();
     let mut file_source = None;
+    let mut template_revision = None;
     let (alias, node_id) = match source {
         ComponentSource::Library {
             library_alias,
@@ -145,6 +146,11 @@ pub(super) fn apply_import(
                 (Some(alias), node_id.as_str())
             } else {
                 let style = crate::guidance::style_document(style_id)?;
+                template_revision = Some(style.revision());
+                let codec = document
+                    .codec()
+                    .ok_or_else(|| invalid("Style imports need a writable document schema"))?;
+                let style = codec.encode_owned_template(&style)?;
                 let file =
                     crate::managed::File::new(path, style.text().as_bytes().into(), "lib.pen")?;
                 let alias = requested
@@ -172,7 +178,10 @@ pub(super) fn apply_import(
     if let Some((alias, uri)) = &file_source {
         project.attach_import_source(alias, uri)?;
     }
-    let source_revision = project.library_document(alias.as_deref())?.revision();
+    let source_revision = match template_revision {
+        Some(revision) => revision,
+        None => project.library_document(alias.as_deref())?.revision(),
+    };
     if expected.is_some_and(|expected| expected != source_revision) {
         return Err(Error::new(
             "REVISION_CONFLICT",
