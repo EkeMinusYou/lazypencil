@@ -61,7 +61,7 @@ jobs:
       - name: Install the declared minimum Rust toolchain
         working-directory: ${{ github.workspace }}
         run: |
-          rustup toolchain install 1.94.0 --profile minimal --component rustfmt
+          rustup toolchain install 1.94.0 --profile minimal --component rustfmt --component clippy
           rustup default 1.94.0
       - name: Install Linux native build dependencies
         if: runner.os == 'Linux'
@@ -109,6 +109,8 @@ jobs:
           sh scripts/ci/prune_application_cache.sh
           cargo fmt --all -- --check
           set -o pipefail
+          cargo clippy --locked --all-targets -- -D warnings 2>&1 | tee "$RUNNER_TEMP/chromium-clippy.log"
+          cargo clippy --locked --no-default-features --all-targets -- -D warnings 2>&1 | tee "$RUNNER_TEMP/chromium-core-clippy.log"
           cargo test --locked --no-default-features --test sampler_sources -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/chromium-core-samplers.log"
           cargo build --locked
       - name: Install and verify the pinned Chromium runtime
