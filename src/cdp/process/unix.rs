@@ -6,7 +6,10 @@ use serde_json::{Value, json};
 use std::{
     fs,
     io::{self, Read, Write},
-    os::{fd::FromRawFd, unix::process::CommandExt},
+    os::{
+        fd::{AsRawFd, FromRawFd},
+        unix::process::CommandExt,
+    },
     path::Path,
     process::{Child, Command, ExitStatus, Stdio},
     sync::{
@@ -16,13 +19,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-const MAGIC: &[u8; 8] = b"LPBO\x01\0\r\n";
-const MAX_STATUS: u64 = 4096;
+const MAGIC: &[u8; 8] = b"LPBO\x02\0\r\n";
+const MAX_STATUS: usize = 4096;
 
 pub(super) fn spawn(
     command: Command,
     supervisor: Option<&Path>,
-    profile: &Path,
     budget: &Budget<'_>,
 ) -> Result<Owned> {
     let current;
@@ -38,15 +40,13 @@ pub(super) fn spawn(
             "An absolute lazypencil browser supervisor executable is required",
         ));
     }
-    let status = profile.join(format!("lazypencil-process-{}.json", uuid::Uuid::new_v4()));
     let child = Command::new(helper)
         .arg("__browser_process_worker")
-        .arg(&status)
         .arg("--")
         .arg(command.get_program())
         .args(command.get_args())
         .stdin(Stdio::piped())
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .process_group(0)
         .spawn()
@@ -54,7 +54,21 @@ pub(super) fn spawn(
     let mut owned = Owned {
         child: Some(child),
         browser_pid: 0,
+        profile: std::path::PathBuf::new(),
     };
+    let mut output = owned
+        .child
+        .as_mut()
+        .expect("live guardian")
+        .stdout
+        .take()
+        .expect("status pipe");
+    let fd = output.as_raw_fd();
+    // SAFETY: This is our owned pipe descriptor. Only status reads use it.
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    if flags == -1 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } == -1 {
+        return Err(failure("supervisor_status", io::Error::last_os_error()));
+    }
     budget.check()?;
     owned
         .child
@@ -65,52 +79,60 @@ pub(super) fn spawn(
         .expect("owner pipe")
         .write_all(MAGIC)
         .map_err(|e| failure("owner_start", e))?;
+    let mut data = Vec::new();
+    let mut chunk = [0u8; 1024];
     loop {
         budget.check()?;
-        match fs::File::open(&status) {
-            Ok(file) => {
-                let mut data = Vec::new();
-                file.take(MAX_STATUS + 1)
-                    .read_to_end(&mut data)
-                    .map_err(|e| failure("supervisor_status", e))?;
-                if data.len() as u64 > MAX_STATUS {
-                    return Err(failed("Oversized browser supervisor status"));
-                }
-                let value: Value = serde_json::from_slice(&data)
-                    .map_err(|_| failed("Invalid browser supervisor status"))?;
-                if let Some(pid) = value["pid"]
-                    .as_u64()
-                    .and_then(|pid| u32::try_from(pid).ok())
-                    .filter(|pid| *pid != 0)
-                {
-                    owned.browser_pid = pid;
-                    return Ok(owned);
-                }
-                let phase = value["phase"].as_str().unwrap_or("supervisor_status");
-                let code = value["os_error"].as_i64().unwrap_or(0) as i32;
-                return Err(failure(
-                    phase,
-                    if code == 0 {
-                        io::Error::other("Browser supervisor failed")
-                    } else {
-                        io::Error::from_raw_os_error(code)
-                    },
+        match output.read(&mut chunk) {
+            Ok(0) => {
+                return Err(failed(
+                    "Browser supervisor exited before publishing its status",
                 ));
             }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Ok(count) => {
+                data.extend_from_slice(&chunk[..count]);
+                if data.len() > MAX_STATUS {
+                    return Err(failed("Oversized browser supervisor status"));
+                }
+                if let Some(end) = data.iter().position(|byte| *byte == b'\n') {
+                    if end + 1 != data.len() {
+                        return Err(failed("Unexpected trailing browser supervisor status"));
+                    }
+                    let value: Value = serde_json::from_slice(&data[..end])
+                        .map_err(|_| failed("Invalid browser supervisor status"))?;
+                    budget.check()?;
+                    if let Some(pid) = value["pid"]
+                        .as_u64()
+                        .and_then(|pid| u32::try_from(pid).ok())
+                        .filter(|pid| *pid != 0)
+                    {
+                        let profile = value["profile"]
+                            .as_str()
+                            .map(std::path::PathBuf::from)
+                            .filter(|path| path.is_absolute())
+                            .ok_or_else(|| failed("Invalid browser supervisor profile"))?;
+                        owned.browser_pid = pid;
+                        owned.profile = profile;
+                        return Ok(owned);
+                    }
+                    let phase = value["phase"].as_str().unwrap_or("supervisor_status");
+                    let code = value["os_error"].as_i64().unwrap_or(0) as i32;
+                    return Err(failure(
+                        phase,
+                        if code == 0 {
+                            io::Error::other("Browser supervisor failed")
+                        } else {
+                            io::Error::from_raw_os_error(code)
+                        },
+                    ));
+                }
+            }
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
             Err(error) => return Err(failure("supervisor_status", error)),
         }
-        if owned
-            .try_wait()
-            .map_err(|e| failure("supervisor_wait", e))?
-            .is_some()
-        {
-            if status.exists() {
-                continue;
-            }
-            return Err(failed("Browser supervisor exited before startup"));
-        }
-        std::thread::sleep(Duration::from_millis(10));
     }
 }
 
@@ -229,17 +251,13 @@ impl Drop for Group {
 
 pub fn serve_worker() -> Result<bool> {
     let mut args = std::env::args_os().skip(2);
-    let status = args
-        .next()
-        .map(std::path::PathBuf::from)
-        .filter(|path| path.is_absolute())
-        .ok_or_else(|| failed("Invalid browser status path"))?;
     if args.next().as_deref() != Some(std::ffi::OsStr::new("--")) {
         return Err(failed("Invalid browser worker arguments"));
     }
     let command = args
         .next()
         .ok_or_else(|| failed("Missing browser executable"))?;
+    let mut announced = false;
     let result = (|| {
         // SAFETY: The private worker owns stdin, which is the host's pipe.
         let mut owner = unsafe { fs::File::from_raw_fd(libc::STDIN_FILENO) };
@@ -283,7 +301,14 @@ pub fn serve_worker() -> Result<bool> {
                 io::Error::from(io::ErrorKind::BrokenPipe),
             ));
         }
+        // This worker creates and owns the directory it will remove. No
+        // caller-supplied path is ever adopted for recursive cleanup.
+        let profile = tempfile::Builder::new()
+            .prefix("lazypencil-chromium-")
+            .tempdir()
+            .map_err(|e| failure("browser_profile", e))?;
         let child = Command::new(command)
+            .arg(format!("--user-data-dir={}", profile.path().display()))
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -303,36 +328,37 @@ pub fn serve_worker() -> Result<bool> {
         if lost.load(Ordering::Acquire) {
             stop_group(&group.control);
         }
-        publish(&status, &json!({"pid":group.child.id()}))?;
+        publish(&json!({"pid":group.child.id(),"profile":profile.path()}))?;
+        announced = true;
         group
             .wait_for_root()
             .map_err(|e| failure("browser_wait", e))?;
-        group
-            .finish()
-            .map(|status| status.success())
-            .map_err(|e| failure("browser_wait", e))
+        let status = group.finish().map_err(|e| failure("browser_wait", e))?;
+        profile.close().map_err(|e| failure("profile_cleanup", e))?;
+        Ok(status.success())
     })();
-    if let Err(error) = &result {
+    if !announced && let Err(error) = &result {
         let details = error.details.as_ref();
         let _ = publish(
-            &status,
             &json!({"phase":details.and_then(|d| d["supervisor_phase"].as_str()).unwrap_or("supervisor_status"),"os_error":details.and_then(|d| d["os_error"].as_i64()).unwrap_or(0)}),
         );
     }
     result
 }
 
-fn publish(path: &Path, value: &Value) -> Result<()> {
-    let mut file = tempfile::NamedTempFile::new_in(
-        path.parent()
-            .ok_or_else(|| failed("Missing browser status directory"))?,
-    )
-    .map_err(|e| failure("supervisor_status", e))?;
-    file.write_all(value.to_string().as_bytes())
-        .map_err(|e| failure("supervisor_status", e))?;
-    file.persist_noclobber(path)
-        .map_err(|e| failure("supervisor_status", e.error))?;
-    Ok(())
+fn publish(value: &Value) -> Result<()> {
+    let mut bytes =
+        serde_json::to_vec(value).map_err(|_| failed("Cannot encode browser supervisor status"))?;
+    bytes.push(b'\n');
+    if bytes.len() > MAX_STATUS {
+        return Err(failed("Oversized browser supervisor status"));
+    }
+    // The fresh status pipe has room for this bounded message. Only this
+    // worker writes it; the host also handles partial reads and premature EOF.
+    io::stdout()
+        .lock()
+        .write_all(&bytes)
+        .map_err(|e| failure("supervisor_status", e))
 }
 
 fn failure(phase: &str, error: io::Error) -> Error {

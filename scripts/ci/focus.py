@@ -27,7 +27,11 @@ def select(paths, platform="auto"):
     ci_change = any(path.startswith((".github/", "scripts/ci/")) for path in paths)
     macos = any("macos" in path.lower() or "darwin" in path.lower() for path in paths)
     os_name = ("macos-15" if macos else "ubuntu-24.04") if platform == "auto" else platform
-    conversation = ci_change or bool(stems & {"agent", "conversation", "windows_agent"}) or any(path.startswith("tests/support/acp_") for path in paths)
+    ownership = any(path.startswith("src/cdp/process/") or path in {
+        "src/cdp/process.rs", "tests/support/unix_browser_ownership.rs",
+        "tests/support/browser_process_unix.py",
+    } for path in paths)
+    conversation = ci_change or ownership or bool(stems & {"agent", "conversation", "windows_agent"}) or any(path.startswith("tests/support/acp_") for path in paths)
     if conversation:
         suite, targets = "conversation", ["agent"]
     elif stems & DYNAMIC or any(path.startswith(("src/cdp/", "src/tui/", "src/render/")) for path in paths):

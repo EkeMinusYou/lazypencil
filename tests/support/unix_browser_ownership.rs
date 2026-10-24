@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use std::{
     fs,
     os::unix::fs::PermissionsExt,
-    path::Path,
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     time::{Duration, Instant},
 };
@@ -34,7 +34,7 @@ fn launch_fake(directory: &Path, budget: &Budget<'_>) -> lazypencil::Result<Brow
     fs::write(
         &executable,
         format!(
-            "#!/bin/sh\nexec {} {} {} {mode} root\n",
+            "#!/bin/sh\nexec {} {} {} {mode} root \"$@\"\n",
             quote(&python()),
             quote(&fixture),
             quote(directory)
@@ -87,6 +87,17 @@ fn fake_pids(directory: &Path) -> Vec<u32> {
     }
 }
 
+fn fake_profile(directory: &Path) -> PathBuf {
+    let value: Value =
+        serde_json::from_slice(&fs::read(directory.join("browser-profile.json")).unwrap()).unwrap();
+    let path = PathBuf::from(value["path"].as_str().unwrap());
+    assert_eq!(
+        fs::read(path.join("fixture-cache")).unwrap(),
+        b"owned-profile\n"
+    );
+    path
+}
+
 fn gone(pids: &[u32]) {
     let end = Instant::now() + Duration::from_secs(3);
     while pids.iter().copied().any(alive) {
@@ -117,6 +128,7 @@ fn cancellation_and_startup_deadlines_reap_browser_groups() {
                 .expect("The fixture never opens CDP")
             });
             let pids = fake_pids(directory.path());
+            let profile = fake_profile(directory.path());
             if cancel {
                 token.cancel();
             }
@@ -130,6 +142,10 @@ fn cancellation_and_startup_deadlines_reap_browser_groups() {
                 }
             );
             gone(&pids);
+            assert!(
+                !profile.exists(),
+                "Cancelled startup left its browser profile"
+            );
         });
     }
 }
@@ -192,11 +208,19 @@ fn killed_owners_reap_browser_descendants_without_stopping_another_owner() {
     ready(&mut second_owner, second.path(), "browser-tree.json");
     let first_tree = fake_pids(first.path());
     let second_tree = fake_pids(second.path());
+    let first_profile = fake_profile(first.path());
+    let second_profile = fake_profile(second.path());
     terminate(&mut first_owner);
     gone(&first_tree);
+    assert!(
+        !first_profile.exists(),
+        "Killed owner left its browser profile"
+    );
+    assert!(second_profile.is_dir());
     assert!(second_tree.iter().copied().all(alive));
     terminate(&mut second_owner);
     gone(&second_tree);
+    assert!(!second_profile.exists());
 }
 
 #[cfg(target_os = "linux")]
@@ -247,7 +271,6 @@ fn a_worker_without_a_live_owner_never_launches_a_browser() {
     let result = Command::new(env!("CARGO_BIN_EXE_lazypencil"))
         .current_dir(directory.path())
         .arg("__browser_process_worker")
-        .arg(directory.path().join("status.json"))
         .arg("--")
         .arg(python())
         .args([
@@ -259,9 +282,83 @@ fn a_worker_without_a_live_owner_never_launches_a_browser() {
         .unwrap();
     assert!(!result.status.success());
     assert!(!directory.path().join("must-not-exist").exists());
-    let status: Value =
-        serde_json::from_slice(&fs::read(directory.path().join("status.json")).unwrap()).unwrap();
+    let status: Value = serde_json::from_slice(&result.stdout).unwrap();
     assert_eq!(status["phase"], "owner_start");
+}
+
+#[test]
+fn browser_worker_status_is_bounded_and_observes_deadlines_and_cancellation() {
+    for (mode, cancel) in [
+        ("partial", false),
+        ("partial", true),
+        ("oversized", false),
+        ("invalid", false),
+        ("eof", false),
+    ] {
+        let directory = TempDir::new().unwrap();
+        let helper = directory.path().join("status helper 日本語");
+        let fixture =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/browser_process_unix.py");
+        fs::write(
+            &helper,
+            format!(
+                "#!/bin/sh\nexec {} {} {} {mode} supervisor \"$@\"\n",
+                quote(&python()),
+                quote(&fixture),
+                quote(directory.path()),
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
+        let token = CancellationToken::new();
+        let started = Instant::now();
+        std::thread::scope(|scope| {
+            let startup = scope.spawn(|| {
+                Browser::launch_with_supervisor(
+                    &InstalledBrowser {
+                        executable: directory.path().join("must-not-be-launched"),
+                        version: "fixture".into(),
+                        platform: "fixture".into(),
+                    },
+                    Purpose::Page,
+                    &Budget::new(
+                        Duration::from_secs(if cancel { 5 } else { 1 }),
+                        Some(&token),
+                    ),
+                    &helper,
+                )
+                .err()
+                .expect("A fixture status must never launch a real browser")
+            });
+            let ready_end = Instant::now() + Duration::from_secs(2);
+            while !directory.path().join("status-ready.json").is_file() {
+                assert!(
+                    Instant::now() < ready_end,
+                    "Status fixture did not become ready: {mode}"
+                );
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            if cancel {
+                token.cancel();
+            }
+            let error = startup.join().unwrap();
+            assert_eq!(
+                error.code,
+                if cancel {
+                    "CANCELLED"
+                } else if mode == "partial" {
+                    "RENDER_TIMEOUT"
+                } else {
+                    "RUNTIME_UNAVAILABLE"
+                },
+                "{mode}"
+            );
+            assert!(
+                started.elapsed() < Duration::from_secs(2),
+                "Status response exceeded its bound: {mode}"
+            );
+        });
+    }
 }
 
 #[test]
@@ -393,7 +490,8 @@ fn fixture_host() {
         let ids = real_pids(&mut browser);
         fs::write(
             directory.join("ready.tmp"),
-            json!({"pids":ids,"root":browser.process_id()}).to_string(),
+            json!({"pids":ids,"root":browser.process_id(),"profile":browser.profile_path()})
+                .to_string(),
         )
         .unwrap();
         fs::rename(directory.join("ready.tmp"), directory.join("ready.json")).unwrap();
@@ -434,8 +532,11 @@ fn fixture_host() {
 fn real_browser_drop_and_owner_death_reap_the_tree_and_preserve_other_owners() {
     let mut browser = real_browser();
     let ids = real_pids(&mut browser);
+    let profile = browser.profile_path().to_path_buf();
+    assert!(profile.is_dir());
     drop(browser);
     gone(&ids);
+    assert!(!profile.exists(), "Browser drop left its profile");
     let first = TempDir::new().unwrap();
     let second = TempDir::new().unwrap();
     let mut first_owner = owner(first.path(), true);
@@ -444,6 +545,8 @@ fn real_browser_drop_and_owner_death_reap_the_tree_and_preserve_other_owners() {
     let second_tree = ready(&mut second_owner, second.path(), "ready.json");
     terminate(&mut first_owner);
     gone(&pids(&first_tree));
+    assert!(!Path::new(first_tree["profile"].as_str().unwrap()).exists());
+    assert!(Path::new(second_tree["profile"].as_str().unwrap()).is_dir());
     assert!(alive(
         u32::try_from(second_tree["root"].as_u64().unwrap()).unwrap()
     ));
@@ -456,4 +559,5 @@ fn real_browser_drop_and_owner_death_reap_the_tree_and_preserve_other_owners() {
     );
     terminate(&mut second_owner);
     gone(&pids(&second_tree));
+    assert!(!Path::new(second_tree["profile"].as_str().unwrap()).exists());
 }
