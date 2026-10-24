@@ -6,10 +6,10 @@ on:
       os:
         description: Hosted platform for real agent process lifecycle tests
         type: choice
-        default: windows-2025
+        default: ubuntu-24.04
         options:
-          - windows-2025
           - ubuntu-24.04
+          - ubuntu-24.04-arm
           - macos-15
 
 permissions:

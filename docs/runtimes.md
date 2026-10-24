@@ -1,5 +1,7 @@
 # Browser runtime installation
 
+Initial-release support is limited to macOS Apple Silicon and Linux x64/arm64. Intel Mac is unsupported; Windows support and additional work are deferred. Existing runtime catalogue entries and earlier Windows/Intel evidence are retained implementation/history, not release support or acceptance requirements. The same three targets are used by normal and manual CI.
+
 Static Skia rendering and script-generated geometry do not require Chromium. Browser nodes and GLSL fills/effects require a separate headless browser installation. Rendering never downloads or updates a runtime.
 
 ## Managed installation

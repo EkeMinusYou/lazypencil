@@ -11,8 +11,6 @@ on:
           - ubuntu-24.04
           - ubuntu-24.04-arm
           - macos-15
-          - macos-15-intel
-          - windows-2025
 
 permissions:
   contents: read
@@ -33,7 +31,7 @@ env:
 jobs:
   evidence:
     runs-on: ${{ inputs.os }}
-    timeout-minutes: ${{ inputs.os == 'macos-15-intel' && 120 || 60 }}
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash
