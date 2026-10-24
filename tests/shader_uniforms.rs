@@ -25,8 +25,8 @@ fn request(source: &str, overrides: Value) -> lazypencil::Result<Value> {
     let source = json!({"version":"2.21","children":[{"id":"shape","type":"rectangle","width":32,"height":16,
         "fill":{"type":"shader","url":"input.glsl","uniforms":overrides}}]}).to_string();
     fs::write(&path, &source).unwrap();
-    let project = Project::from_document(&path, Document::parse(source).unwrap(), &[]).unwrap();
-    let scene = project.resolve().unwrap();
+    let project = Project::from_document(&path, Document::parse(source)?, &[])?;
+    let scene = project.resolve()?;
     let node = &scene.roots[0];
     shader::request(
         &project,
@@ -1242,6 +1242,12 @@ fn structured_uniforms_prepare_qualified_typed_fields_and_nested_defaults() {
     );
     assert_eq!(value["uniforms"]["control.enabled"], false);
     assert_eq!(value["uniform_types"]["control.count"], "int");
+    assert_eq!(
+        request(source, json!({"scene.first.gain":true}))
+            .unwrap_err()
+            .code,
+        "SHADER_COMPILE_FAILED"
+    );
     assert!(request(source, json!({"scene.first.gain":"wrong"})).is_err());
     assert!(request(source, json!({"scene.first.color":[1,0]})).is_err());
     assert!(request(source, json!({"scene":{"first":{"gain":1}}})).is_err());
