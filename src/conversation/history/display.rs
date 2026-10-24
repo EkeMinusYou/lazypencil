@@ -749,7 +749,7 @@ mod tests {
         let c = conversation(&temp);
         let mut t = turn(&c);
         let expected = format!(
-            "\nTurn {}\n\nYou:\n日本語\n🙂 \"quote\"\\slash\t]52;c;abc\nLine one\nつづき🙂\n[running] Read document\n[completed] Tool\nRequest failed: 失敗\n\nRequest complete\n",
+            "\nTurn {}\n\nYou:\n日本語\n🙂 \"quote\"\\slash\t]52;c;abc\nLine one\nつづき🙂\n[running] Read document\n\n[completed] Tool\n\nRequest failed: 失敗\n\nRequest complete\n",
             t.id
         );
         for record in [
