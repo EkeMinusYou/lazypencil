@@ -23,6 +23,13 @@ BASELINE_FLAGS = {
 # Audited input tree at c9dd6cb. Its dependency sources and compiler policy match
 # the successfully saved v1 archives; later input/flag changes disable migration.
 AUDITED_TREE = "54c7d2d9cc2e1b5e2d3a0297c8648f27b1aff64c76c685a30e63864b41d60a9f"
+# Audited at 4a8d082: only an existing windows-sys normal dependency and its
+# Windows JobObjects features were added. Registry versions/checksums, native
+# sources and compiler policy are unchanged. Cargo rebuilds changed Rust feature
+# sets; each workflow still prunes all application outputs before verification.
+AUDITED_PREVIOUS_INPUTS = {
+    "c95e9172415f92d6f202a226bf3696f9f6ede08eaa66b81a612b892f8ca3bfc7": AUDITED_TREE,
+}
 AUDITED_RUST_COMMIT = "4a4ef493e3a1488c6e321570238084b38948f6db"
 LEGACY_HASHES = {
     "ubuntu-24.04": "cb2b7cd30a1786210e3b9e72b5de57f84878cae8ce5bed69fe87d93e31143d38",
@@ -69,14 +76,20 @@ def identify(platform, image, tree, compiler, environment):
     if not re.fullmatch(r"[0-9a-f]{64}", tree):
         raise CacheError("Dependency input fingerprint is invalid")
     flags = compile_flags(environment)
-    payload = json.dumps({"inputs": tree, "rustc": compiler, "flags": flags}, sort_keys=True, separators=(",", ":")).encode()
-    fingerprint = hashlib.sha256(payload).hexdigest()
+    def build_fingerprint(inputs):
+        payload = json.dumps({"inputs": inputs, "rustc": compiler, "flags": flags}, sort_keys=True, separators=(",", ":")).encode()
+        return hashlib.sha256(payload).hexdigest()
+    fingerprint = build_fingerprint(tree)
     primary = f"native-v2-{platform}-{image}-{fingerprint}"
     legacy = ""
     compiler_lines = compiler.splitlines()
-    if (tree == AUDITED_TREE and "release: 1.94.0" in compiler_lines
+    audited_policy = ("release: 1.94.0" in compiler_lines
             and "commit-hash: " + AUDITED_RUST_COMMIT in compiler_lines
-            and flags == BASELINE_FLAGS and platform in LEGACY_HASHES):
+            and flags == BASELINE_FLAGS)
+    if tree in AUDITED_PREVIOUS_INPUTS and audited_policy:
+        previous = build_fingerprint(AUDITED_PREVIOUS_INPUTS[tree])
+        legacy = f"native-v2-{platform}-{image}-{previous}"
+    elif tree == AUDITED_TREE and audited_policy and platform in LEGACY_HASHES:
         legacy = f"native-v1-{platform}-{image}-{LEGACY_HASHES[platform]}"
     return {"primary": primary, "legacy": legacy, "dependency_fingerprint": tree,
             "build_fingerprint": fingerprint, "compile_flag_names": sorted(flags)}

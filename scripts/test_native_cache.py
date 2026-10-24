@@ -39,6 +39,22 @@ class NativeCacheTests(unittest.TestCase):
         self.assertEqual(self.report(platform="macos-15-intel")["legacy"], "")
         self.assertTrue(self.report(platform="windows-2025")["legacy"].endswith(cache.LEGACY_HASHES["windows-2025"]))
 
+    def test_audited_windows_feature_addition_restores_only_its_exact_previous_dependency_key(self):
+        tree = "c95e9172415f92d6f202a226bf3696f9f6ede08eaa66b81a612b892f8ca3bfc7"
+        for platform in cache.PLATFORMS:
+            with self.subTest(platform=platform):
+                old = self.report(platform=platform)
+                migrated = self.report(platform=platform, tree=tree)
+                self.assertEqual(migrated["legacy"], old["primary"])
+                self.assertNotEqual(migrated["primary"], old["primary"])
+        for variant in [dict(compiler="release: 1.95.0\n"),
+                        dict(compiler="release: 1.94.0\ncommit-hash: different\n"),
+                        dict(environment={**cache.BASELINE_FLAGS, "RUSTFLAGS": "--cfg changed"}),
+                        dict(environment={**cache.BASELINE_FLAGS, "SKIA_SOURCE_DIR": "/changed"}),
+                        dict(environment={**cache.BASELINE_FLAGS, "CARGO_PROFILE_RELEASE_LTO": "thin"})]:
+            self.assertEqual(self.report(tree=tree, **variant)["legacy"], "")
+        self.assertEqual(self.report(tree="0" * 64)["legacy"], "")
+
     def test_non_build_environment_and_temporary_paths_do_not_invalidate_dependencies(self):
         original = self.report()
         changed = self.report(environment={**cache.BASELINE_FLAGS, "CARGO_TARGET_DIR": "/another/temp",
