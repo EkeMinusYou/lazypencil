@@ -12,5 +12,35 @@
   ],
   "scope": "Sharp triangle vertex placement only. No claim of general schema, script or aesthetic parity.",
   "implementation_copied": false,
-  "model_request": false
+  "model_request": false,
+  "additional_fixtures": [
+    {
+      "pen": "rounded-polygons.pen",
+      "png": "rounded-polygons.png",
+      "png_sha256": "8315dd50f9d2516acf14f24c25483cccc418c9aa746e365cde99abc5f94a10ed",
+      "method": "Exported original self-authored2.19 JSON using the existing CLI public headless interface.",
+      "scope": "Circular fillets on triangular, four-sided and non-square five-sided polygons; includes a radius exceeding the bounding-box cap."
+    },
+    {
+      "pen": "radius-triangles.pen",
+      "png": "radius-triangles.png",
+      "png_sha256": "0887455a41b49824c14b806c43c3e872d5b253da9c4a0d5ee71cbc161d5152ef",
+      "method": "Exported original self-authored2.19 JSON using the existing CLI public headless interface.",
+      "scope": "Triangle radii0,10,25,30,50,100;50 and100 have identical decoded144x144 pixels. Oversized fillets cross the original edges."
+    },
+    {
+      "pen": "rounded-large-aspects.pen",
+      "png": "rounded-large-aspects.png",
+      "png_sha256": "4c2a11a35ea693bab5e3f0c28f171e7fe6b659451bbb442c1688da7e60645ce4",
+      "method": "Public headless export of original self-authored2.19 JSON; no model call or proprietary source copied.",
+      "scope": "Oversized triangles and five-sided polygons with unequal width and height; radius is capped by half the shortest edge, not the bounding box."
+    },
+    {
+      "pen": "wide-radius-triangles.pen",
+      "png": "wide-radius-triangles.png",
+      "png_sha256": "93f45983aa59b1505065f514ef3fe2f5954095d25590a8f1e5eb07043029ee27",
+      "method": "Public headless export of original self-authored2.19 JSON; no model call or proprietary source copied.",
+      "scope": "Wide triangles at radii10,30,50,60,100; the lastthree decoded144x160 panels are identical."
+    }
+  ]
 }

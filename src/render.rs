@@ -18,6 +18,7 @@ const MAX_PIXELS: u64 = 32 * 1024 * 1024;
 mod backdrop;
 mod blending;
 mod mesh;
+mod polygon;
 use backdrop::{background_nodes, composite_layer};
 pub use blending::{MODES as BLEND_MODES, blend};
 
@@ -1050,11 +1051,9 @@ pub fn shape(node: &ResolvedNode, rect: SkRect) -> Result<Path> {
             if !(3.0..=1024.0).contains(&count) || count.fract() != 0.0 {
                 return Err(invalid("Polygon count must be an integer in 3..1024"));
             }
-            if number(node.properties.get("cornerRadius"), 0.0)? > 0.0 {
-                return Err(unsupported(
-                    node,
-                    "Rounded polygon corners are not implemented yet",
-                ));
+            let radius = number(node.properties.get("cornerRadius"), 0.0)?;
+            if radius < 0.0 {
+                return Err(invalid("Polygon corner radius must not be negative"));
             }
             let points = (0..count as usize)
                 .map(|i| {
@@ -1066,7 +1065,7 @@ pub fn shape(node: &ResolvedNode, rect: SkRect) -> Result<Path> {
                     )
                 })
                 .collect::<Vec<_>>();
-            Path::polygon(&points, true, None, None)
+            polygon::rounded_path(&points, radius)
         }
         "path" => {
             let geometry = node

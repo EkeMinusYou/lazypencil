@@ -1,10 +1,16 @@
 # Graphics implementation
 
-A small native reference corpus is kept under `tests/fixtures/pencil-0.3.9`. It contains an original white frame and sharp red triangle authored through the existing Pencil CLI's public interface. The opaque file token was removed before export; no proprietary source, skill, credential, or model request was used. The native export establishes inscribed-ellipse vertex placement for that 2.19 triangle. The hosted regression checks dimensions, pixels with bounded edge antialiasing tolerance, and a color edit that retains version 2.19. Hosted execution and a native re-export of the edited document are pending. Rounded polygons and general Pencil parity remain unfinished.
+A small native reference corpus is kept under `tests/fixtures/pencil-0.3.9`. It contains an original white frame and sharp red triangle authored through the existing Pencil CLI's public interface. The opaque file token was removed before export; no proprietary source, skill, credential, or model request was used. The native export establishes inscribed-ellipse vertex placement for that 2.19 triangle. The hosted regression checks dimensions, pixels with bounded edge antialiasing tolerance, and a color edit that retains version 2.19. Hosted execution and a native re-export of the edited document are pending. General Pencil parity remains unfinished.
 
 The renderer uses Skia CPU and SkParagraph. CLI and MCP share the same layout snapshot, shaped text, captured assets, and rendering code. The target remains the complete agreed `.pen` scope. This document describes verified increments, not a reduced release specification or a claim of Pencil parity.
 
 The current format reference defines text decorations, stroke alignment and per-side widths, normalized image crop transforms, and inner/outer shadows. See the [official `.pen` schema](https://docs.pencil.dev/for-developers/the-pen-format#typescript-schema). The implementations and examples here are original lazypencil code; full behavioral comparison still requires suitable permitted fixtures.
+
+## Rounded polygons
+
+Polygons accept a nonnegative scalar `cornerRadius` through the ordinary variable, theme, and instance property path. Vertices keep their existing placement on the declared ellipse. Circular fillets are constructed from each vertex's original two edges, with their endpoints calculated independently; deriving the next tangent from the previous arc endpoint changes oversized corners. The same path feeds fills, uniform strokes, masks, effects, and visual bounds. Zero-radius and collapsed-edge shapes retain the sharp/degenerate path. Invalid radii are reported as document errors.
+
+The reference corpus includes triangles at radii 0, 10, 25, 30, 50, and 100, four-sided and five-sided shapes, unequal width/height, and oversized corners. Black-box pixel measurements are consistent with capping the radius at half the shortest edge, rather than half the bounding box or the inradius. In a 100×100 triangle, radii 50 and 100 produce identical reference pixels; wide triangles distinguish this rule from the bounding-box rule. Large fillets can intersect and retain winding fill behavior. This intentionally preserves those reference shapes rather than introducing a different roundness limit. Hosted comparisons of the implemented paths are pending; the geometric inference alone does not prove raster correspondence.
 
 ## Text and outlines
 

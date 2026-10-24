@@ -119,7 +119,7 @@ jobs:
           LAZYPENCIL_TEST_CODEC_DIR: ${{ runner.temp }}/codec-reference
         run: |
           set -o pipefail
-          cargo test --locked --test graphics native_pencil_219_triangle -- --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-codec.log"
+          cargo test --locked --test graphics -- --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-codec.log"
       - name: Install and verify the pinned Chromium runtime
         timeout-minutes: 10
         working-directory: ${{ runner.temp }}/lazypencil-source
