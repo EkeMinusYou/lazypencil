@@ -15,6 +15,22 @@ spec.loader.exec_module(focus)
 
 
 class FocusTests(unittest.TestCase):
+    def test_input_dispatch_reproduces_real_static_tui_before_full_dynamic_checks(self):
+        paths = ["src/config/keys.rs", "src/config/keys/navigation.rs", "src/config.rs",
+                 "src/tui/mod.rs", "src/tui/tests.rs", "tests/tui.rs", "tests/user_config.rs",
+                 "tests/support/tui_pty.py", "docs/tui.md", "scripts/ci/focus.py",
+                 "scripts/test_ci_focus.py", ".github/workflows/native.yml"]
+        selected = focus.select(paths)
+        self.assertEqual(selected["platform"], "ubuntu-24.04")
+        self.assertEqual(selected["suite"], "graphics")
+        self.assertEqual(selected["targets"], ["tui", "user_config"])
+        build, checks = focus.commands(selected["suite"], selected["targets"])
+        self.assertNotIn("--no-default-features", build[0])
+        self.assertIn("tui", checks[-1])
+        for extra in ["src/tui/preview.rs", "src/config/runtime.rs", "src/render.rs"]:
+            with self.subTest(extra=extra):
+                self.assertEqual(focus.select([*paths, extra])["suite"], "dynamic")
+
     def test_preprocessor_inputs_are_validated_before_native_builds_only_when_affected(self):
         for path in ["src/shader/preprocessor/src/lib.rs", "src/shader/preprocessor/Cargo.lock",
                      "tests/support/shader_preprocessor.mjs", ".github/workflows/shader-preprocessor.yml",

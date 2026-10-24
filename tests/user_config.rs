@@ -125,6 +125,50 @@ fn invalid_shortcuts_fail_without_silently_restoring_defaults() {
 }
 
 #[test]
+fn navigation_shortcuts_are_user_owned_replace_defaults_and_validate_scope_conflicts() {
+    let f = Fixture::new();
+    let body = "[tui.keys]\nsubmit=['F5']\npaste=[]\n[tui.navigation]\nnext_panel=['F6']\nprevious_panel=['F7']\nhelp=['F8']\ncommands=['F9']\npan_left=['a']\npan_right=['d']\nzoom_in=['z']\nquit=['x']\n";
+    f.settings(body);
+    let shown = f.data(&["config", "show", "--user"]);
+    let navigation = &shown["settings"]["tui"]["navigation"];
+    assert_eq!(navigation["next_panel"], json!(["F6"]));
+    assert_eq!(navigation["pan_left"], json!(["a"]));
+    assert_eq!(navigation["pan_up"], json!(["Up", "k"]));
+    assert_eq!(
+        f.snapshot().unwrap().summary()["user"]["settings"]["tui"]["navigation"],
+        *navigation
+    );
+    let schema = f.data(&["config", "schema", "--user"]);
+    assert!(schema.to_string().contains("NavigationKeys"));
+    fs::write(
+        f.project.join("lazypencil.toml"),
+        "[tui.navigation]\nquit=['x']\n",
+    )
+    .unwrap();
+    assert!(
+        f.snapshot().is_err(),
+        "Project files cannot change the user's navigation"
+    );
+    fs::remove_file(f.project.join("lazypencil.toml")).unwrap();
+    for invalid in [
+        "[tui.navigation]\nhelp=['Ctrl+s']\n",
+        "[tui.navigation]\nnext_panel=['BackTab']\n",
+        "[tui.navigation]\nnext_panel=[]\nprevious_panel=[]\n",
+        "[tui.navigation]\npan_left=['q']\n",
+        "[tui.navigation]\nquit=['Ctrl+c']\n",
+        "[tui.navigation]\nunknown_action=['F9']\n",
+    ] {
+        f.settings(invalid);
+        let output = f.cli(&["config", "show", "--user"]);
+        assert!(!output.status.success(), "{invalid}");
+        assert_eq!(
+            serde_json::from_slice::<Value>(&output.stdout).unwrap()["error"]["code"],
+            "CONFIGURATION_ERROR"
+        );
+    }
+}
+
+#[test]
 fn project_fields_override_independently_and_empty_arrays_stop_inheritance() {
     let f = Fixture::new();
     let user_font = font(&f.user.join("fonts/regular.ttf"), "regular.ttf");

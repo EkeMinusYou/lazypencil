@@ -8,6 +8,7 @@ mod terminal;
 #[cfg(test)]
 mod tests;
 
+use crate::config::keys::NavigationAction as Nav;
 use crate::{
     Error, Result,
     clipboard::{self, InputContent},
@@ -107,7 +108,7 @@ pub fn run(args: &TuiArgs, data: Option<PathBuf>, json_output: bool) -> Result<(
             "TUI requires a terminal on stdin and stdout",
         ));
     }
-    let keys = crate::config::keys::load()?;
+    let settings = crate::config::keys::load_tui()?;
     let mut conversation = Conversation::open(args.prompt.clone(), data)?;
     let session_id = conversation.id().to_string();
     for image in &args.prompt.images {
@@ -127,7 +128,13 @@ pub fn run(args: &TuiArgs, data: Option<PathBuf>, json_output: bool) -> Result<(
         .map_err(terminal::io)?;
     let result = runtime.block_on(async {
         let mut app = App::new(conversation);
-        app.keys = keys;
+        app.keys = settings.keys;
+        app.navigation = settings.navigation;
+        app.status = format!(
+            "Session {} · {} shows shortcuts",
+            app.conversation.id(),
+            app.navigation.label(Nav::Help)
+        );
         if !screen.startup_text.is_empty() {
             app.insert_text(&screen.startup_text);
         }
@@ -155,6 +162,7 @@ pub fn run(args: &TuiArgs, data: Option<PathBuf>, json_output: bool) -> Result<(
 struct App {
     conversation: Conversation,
     keys: crate::config::keys::PromptKeys,
+    navigation: crate::config::keys::NavigationKeys,
     editor: TextArea<'static>,
     focus: Focus,
     view: View,
@@ -177,6 +185,7 @@ struct App {
     modal: Option<checkpoints::Modal>,
     restore_return: Option<checkpoints::Page>,
     help: bool,
+    help_scroll: u16,
     dirty: bool,
     draft_changed: bool,
     turn_pending: bool,
@@ -190,6 +199,7 @@ impl App {
         Self {
             conversation,
             keys: Default::default(),
+            navigation: Default::default(),
             editor,
             focus: Focus::Prompt,
             view: View::default(),
@@ -212,6 +222,7 @@ impl App {
             modal: None,
             restore_return: None,
             help: false,
+            help_scroll: 0,
             dirty: true,
             draft_changed: false,
             turn_pending: false,
@@ -618,6 +629,9 @@ impl App {
         picker: &graphics::Backend,
         worker: &Worker,
     ) -> Result<bool> {
+        if key.kind == KeyEventKind::Release {
+            return Ok(false);
+        }
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let alt = key.modifiers.contains(KeyModifiers::ALT);
         if key.code == KeyCode::Char('c') && ctrl {
@@ -673,7 +687,15 @@ impl App {
             }
             return Ok(false);
         }
-        if key.code == KeyCode::Char('p') && ctrl {
+        let typing = self.focus == Focus::Prompt || self.searching;
+        let global = |action| {
+            if typing {
+                self.navigation.matches_while_typing(action, key)
+            } else {
+                self.navigation.matches(action, key)
+            }
+        };
+        if global(Nav::Commands) {
             self.help = false;
             if self.modal.take().is_some() {
                 if let Some(task) = &self.document_task {
@@ -687,13 +709,23 @@ impl App {
         if self.modal.is_some() {
             return self.modal_key(key, worker);
         }
-        if key.code == KeyCode::F(1) {
+        if global(Nav::Help) {
             self.help = !self.help;
+            self.help_scroll = 0;
             return Ok(false);
         }
         if self.help {
-            if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
-                self.help = false;
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('q') => self.help = false,
+                KeyCode::PageUp | KeyCode::Up => {
+                    self.help_scroll = self.help_scroll.saturating_sub(5)
+                }
+                KeyCode::PageDown | KeyCode::Down => {
+                    self.help_scroll = self.help_scroll.saturating_add(5)
+                }
+                KeyCode::Home => self.help_scroll = 0,
+                KeyCode::End => self.help_scroll = u16::MAX,
+                _ => (),
             }
             return Ok(false);
         }
@@ -713,11 +745,10 @@ impl App {
             self.nodes.select(Some(0));
             return Ok(false);
         }
-        if matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {
+        if global(Nav::NextPanel) || global(Nav::PreviousPanel) {
+            let backwards = global(Nav::PreviousPanel);
             let was_attachment = self.focus == Focus::Attachments;
-            self.focus = self
-                .focus
-                .next(key.code == KeyCode::BackTab || key.modifiers.contains(KeyModifiers::SHIFT));
+            self.focus = self.focus.next(backwards);
             if self.focus == Focus::Attachments
                 && !self.conversation.images().is_empty()
                 && self.attachments.selected().is_none()
@@ -756,24 +787,21 @@ impl App {
             self.draft_changed |= self.editor.input(key);
             return Ok(false);
         }
-        if key.code == KeyCode::Char('q') {
+        let action = |action| self.navigation.matches(action, key);
+        if action(Nav::Quit) {
             return Ok(true);
         }
-        if key.code == KeyCode::Char('?') {
-            self.help = true;
-            return Ok(false);
-        }
-        if key.code == KeyCode::Char('o') {
+        if action(Nav::OpenPreview) {
             self.open_preview()?;
             return Ok(false);
         }
-        if key.code == KeyCode::Char('r') {
+        if action(Nav::Refresh) {
             self.request(worker, false, true);
             return Ok(false);
         }
         match self.focus {
             Focus::Preview => {
-                if key.code == KeyCode::Char(' ') {
+                if action(Nav::PlayPause) {
                     if self.playback.active() {
                         self.pause_playback();
                     } else {
@@ -783,86 +811,144 @@ impl App {
                 }
                 let zoom = self.view.zoom.unwrap_or(1.0);
                 let step = 64.0 / zoom;
-                match key.code {
-                    KeyCode::Left | KeyCode::Char('h') => self.view.center[0] -= step,
-                    KeyCode::Right | KeyCode::Char('l') => self.view.center[0] += step,
-                    KeyCode::Up | KeyCode::Char('k') => self.view.center[1] -= step,
-                    KeyCode::Down | KeyCode::Char('j') => self.view.center[1] += step,
-                    KeyCode::Char('+') | KeyCode::Char('=') => {
-                        self.view.zoom = Some((zoom * 1.25).min(16.0))
-                    }
-                    KeyCode::Char('-') => self.view.zoom = Some((zoom / 1.25).max(0.01)),
-                    KeyCode::Char('0') => self.view.zoom = None,
-                    KeyCode::Char('[') => {
-                        self.view.set_time((self.view.time - 0.1).max(0.0))?;
-                        self.playback.stop();
-                    }
-                    KeyCode::Char(']') => {
-                        self.view.set_time(self.view.time + 0.1)?;
-                        self.playback.stop();
-                    }
-                    KeyCode::Char('f') => self.fit_selected(picker)?,
-                    _ => return Ok(false),
+                if action(Nav::PanLeft) {
+                    self.view.center[0] -= step;
+                } else if action(Nav::PanRight) {
+                    self.view.center[0] += step;
+                } else if action(Nav::PanUp) {
+                    self.view.center[1] -= step;
+                } else if action(Nav::PanDown) {
+                    self.view.center[1] += step;
+                } else if action(Nav::ZoomIn) {
+                    self.view.zoom = Some((zoom * 1.25).min(16.0));
+                } else if action(Nav::ZoomOut) {
+                    self.view.zoom = Some((zoom / 1.25).max(0.01));
+                } else if action(Nav::FitDocument) {
+                    self.view.zoom = None;
+                } else if action(Nav::TimeBackward) {
+                    self.view.set_time((self.view.time - 0.1).max(0.0))?;
+                    self.playback.stop();
+                } else if action(Nav::TimeForward) {
+                    self.view.set_time(self.view.time + 0.1)?;
+                    self.playback.stop();
+                } else if action(Nav::FitSelected) {
+                    self.fit_selected(picker)?;
+                } else {
+                    return Ok(false);
                 }
                 self.request(worker, false, false);
             }
             Focus::Nodes => {
                 let count = self.filtered_nodes().len();
-                match key.code {
-                    KeyCode::Up | KeyCode::Char('k') => self
-                        .nodes
-                        .select(Some(self.nodes.selected().unwrap_or(0).saturating_sub(1))),
-                    KeyCode::Down | KeyCode::Char('j') => self.nodes.select(Some(
+                if action(Nav::PreviousItem) {
+                    self.nodes
+                        .select(Some(self.nodes.selected().unwrap_or(0).saturating_sub(1)));
+                } else if action(Nav::NextItem) {
+                    self.nodes.select(Some(
                         (self.nodes.selected().map_or(0, |n| n + 1)).min(count.saturating_sub(1)),
-                    )),
-                    KeyCode::Char('/') => self.searching = true,
-                    KeyCode::Esc => self.nodes.select(None),
-                    KeyCode::Enter | KeyCode::Char('f') => {
-                        self.fit_selected(picker)?;
-                        self.focus = Focus::Preview;
-                        self.request(worker, false, false);
-                    }
-                    _ => {}
+                    ));
+                } else if action(Nav::SearchNodes) {
+                    self.searching = true;
+                } else if action(Nav::ClearSelection) {
+                    self.nodes.select(None);
+                } else if action(Nav::ActivateNode) || action(Nav::FitSelected) {
+                    self.fit_selected(picker)?;
+                    self.focus = Focus::Preview;
+                    self.request(worker, false, false);
                 }
             }
             Focus::Attachments => {
                 let count = self.conversation.images().len();
-                match key.code {
-                    KeyCode::Up | KeyCode::Char('k') => self.attachments.select(Some(
+                if action(Nav::PreviousItem) {
+                    self.attachments.select(Some(
                         self.attachments.selected().unwrap_or(0).saturating_sub(1),
-                    )),
-                    KeyCode::Down | KeyCode::Char('j') => self.attachments.select(Some(
+                    ));
+                } else if action(Nav::NextItem) {
+                    self.attachments.select(Some(
                         (self.attachments.selected().map_or(0, |n| n + 1))
                             .min(count.saturating_sub(1)),
-                    )),
-                    KeyCode::Delete | KeyCode::Backspace | KeyCode::Char('d') => {
-                        if let Some(index) = self.attachments.selected() {
-                            self.conversation.remove_image(index)?;
-                            self.attachments.select(if count > 1 {
-                                Some(index.min(count - 2))
-                            } else {
-                                None
-                            });
-                        }
+                    ));
+                } else if action(Nav::RemoveAttachment) {
+                    if let Some(index) = self.attachments.selected() {
+                        self.conversation.remove_image(index)?;
+                        self.attachments.select(if count > 1 {
+                            Some(index.min(count - 2))
+                        } else {
+                            None
+                        });
                     }
-                    _ => return Ok(false),
+                } else {
+                    return Ok(false);
                 }
                 self.request(worker, false, false);
             }
-            Focus::Conversation => match key.code {
-                KeyCode::PageUp | KeyCode::Up | KeyCode::Char('k') => {
-                    self.scroll = self.scroll.saturating_add(5)
+            Focus::Conversation => {
+                if action(Nav::ScrollUp) {
+                    self.scroll = self.scroll.saturating_add(5);
+                } else if action(Nav::ScrollDown) {
+                    self.scroll = self.scroll.saturating_sub(5);
+                } else if action(Nav::FollowOutput) {
+                    self.scroll = 0;
                 }
-                KeyCode::PageDown | KeyCode::Down | KeyCode::Char('j') => {
-                    self.scroll = self.scroll.saturating_sub(5)
-                }
-                KeyCode::End | KeyCode::Char('G') => self.scroll = 0,
-                _ => {}
-            },
+            }
             Focus::Prompt => {}
         }
         Ok(false)
     }
+    fn help_text(&self) -> String {
+        let label = |action| self.navigation.label(action);
+        let mut text = format!(
+            "{} / {}: switch panels\n{}: command palette; /history: checkpoints\nPrompt: Enter inserts a newline; {} sends\n{}: paste image, copied image files, or text\n",
+            label(Nav::NextPanel),
+            label(Nav::PreviousPanel),
+            label(Nav::Commands),
+            self.keys.submit_label(),
+            self.keys.paste_label()
+        );
+        text.push_str("/attach <quoted path>: attach PNG, JPEG or WebP\n/paste-image: explicitly read this host's clipboard\n/clear-images: remove pending images\n");
+        for (action, description) in [
+            (Nav::Help, "show or hide help outside dialogs"),
+            (Nav::PanLeft, "Preview: pan left"),
+            (Nav::PanRight, "Preview: pan right"),
+            (Nav::PanUp, "Preview: pan up"),
+            (Nav::PanDown, "Preview: pan down"),
+            (Nav::ZoomIn, "Preview: zoom in"),
+            (Nav::ZoomOut, "Preview: zoom out"),
+            (Nav::FitDocument, "Preview: fit the document"),
+            (Nav::FitSelected, "Preview/Nodes: fit selected node"),
+            (
+                Nav::TimeBackward,
+                "Preview: pause and step time back by 0.1s",
+            ),
+            (
+                Nav::TimeForward,
+                "Preview: pause and step time forward by 0.1s",
+            ),
+            (Nav::PlayPause, "Preview: toggle bounded playback"),
+            (Nav::PreviousItem, "Nodes/Attachments: previous item"),
+            (Nav::NextItem, "Nodes/Attachments: next item"),
+            (Nav::SearchNodes, "Nodes: search names and IDs"),
+            (Nav::ClearSelection, "Nodes: clear the editing target"),
+            (Nav::ActivateNode, "Nodes: select and fit the target"),
+            (Nav::RemoveAttachment, "Attachments: remove pending image"),
+            (Nav::ScrollUp, "Conversation: scroll back"),
+            (Nav::ScrollDown, "Conversation: scroll forward"),
+            (Nav::FollowOutput, "Conversation: follow new output"),
+            (Nav::Refresh, "refresh preview, including browser captures"),
+            (Nav::OpenPreview, "open complete PNG in external viewer"),
+            (Nav::Quit, "outside Prompt: close conversation and exit"),
+        ] {
+            text.push_str(&format!("{}: {description}\n", label(action)));
+        }
+        text.push_str("\n/open-preview: open the complete PNG externally\n/time <seconds>: seek; /play [1-10 fps], /pause\n/commands, /history, /help, /quit\nCtrl+C: cancel active work; exit when idle\nDialogs keep their displayed keys; Esc closes help\nHelp: PgUp/PgDn or arrows scroll; Home/End jump\n\nClipboard access happens only on explicit paste. SSH reads the remote host's clipboard. Image protocols do not provide clipboard access.");
+        text
+    }
+
+    fn show_help(&mut self) {
+        self.help = true;
+        self.help_scroll = 0;
+    }
+
     async fn submit(&mut self) -> Result<()> {
         if self.document_task.is_some() {
             return Err(Error::new(
@@ -898,7 +984,7 @@ impl App {
                 self.start_input(Some(PathBuf::from(&words[1])))?
             }
             Some("/paste-image") if words.len() == 1 => self.start_input(None)?,
-            Some("/help") if words.len() == 1 => self.help = true,
+            Some("/help") if words.len() == 1 => self.show_help(),
             Some("/commands") if words.len() == 1 => {
                 self.modal = Some(checkpoints::Modal::commands())
             }
@@ -1075,7 +1161,12 @@ impl App {
             &mut self.nodes,
         );
         let block = panel(
-            format!("Preview · {} · hjkl + − 0 f", self.protocol),
+            format!(
+                "Preview · {} · {} / {} zoom",
+                self.protocol,
+                self.navigation.label(Nav::ZoomIn),
+                self.navigation.label(Nav::ZoomOut)
+            ),
             self.focus == Focus::Preview,
         );
         let inner = block.inner(panes[1]);
@@ -1090,7 +1181,11 @@ impl App {
             );
         }
         let logblock = panel(
-            "Conversation · PgUp/PgDn",
+            format!(
+                "Conversation · {} / {}",
+                self.navigation.label(Nav::ScrollUp),
+                self.navigation.label(Nav::ScrollDown)
+            ),
             self.focus == Focus::Conversation,
         );
         let logarea = logblock.inner(panes[2]);
@@ -1149,7 +1244,7 @@ impl App {
         frame.render_widget(
             Paragraph::new(Text::from(vec![
                 Line::from(self.status.clone()),
-                Line::from("Tab panels · Ctrl+P commands · F1 help · q exits outside prompt · Ctrl+C cancels/exits"),
+                Line::from(format!("{} / {} panels · {} commands · {} help · {} exits outside prompt · Ctrl+C cancels/exits", self.navigation.label(Nav::NextPanel), self.navigation.label(Nav::PreviousPanel), self.navigation.label(Nav::Commands), self.navigation.label(Nav::Help), self.navigation.label(Nav::Quit))),
             ]))
             .wrap(Wrap { trim: false }),
             sections[4],
@@ -1157,8 +1252,15 @@ impl App {
         if self.help {
             let popup = centered(area, 100, 26);
             frame.render_widget(Clear, popup);
-            frame.render_widget(Paragraph::new(format!("Tab / Shift+Tab: switch panels\nCtrl+P: command palette; /history: browse and restore checkpoints\nPrompt: Enter inserts a newline; {} sends\n{}: paste image, copied image files, or text\n/attach <quoted path>: attach a PNG, JPEG or WebP file\n/paste-image: read this host's clipboard explicitly\n/clear-images: remove pending attachments\nPreview: hjkl / arrows pan; + / - zoom; 0 fits the document\nPreview: [ / ] step shader time by 0.1s; /time <seconds> seeks\nPreview: Space toggles playback; /play [1-10 fps] and /pause\nNodes: / searches; arrows select; f / Enter focuses the target\nAttachments: arrows review; d / Delete removes a pending image\nConversation: PgUp/PgDn scroll; End follows new output\nr: refresh the preview, including browser captures\no / /open-preview: open the current complete PNG externally\nCtrl+C: cancel active work; exit when idle\nq outside Prompt / /quit: close the conversation and exit\nF1 or Esc: close help\n\nClipboard access happens only on explicit paste. SSH reads the remote host's clipboard. Image protocols do not provide clipboard access.", self.keys.submit_label(), self.keys.paste_label()))
-                .block(panel("Help", true)).wrap(Wrap { trim: false }), popup);
+            let paragraph = Paragraph::new(self.help_text()).wrap(Wrap { trim: false });
+            let block = panel("Help · PgUp/PgDn scroll · Esc closes", true);
+            let inner = block.inner(popup);
+            let maximum = paragraph
+                .line_count(inner.width)
+                .saturating_sub(inner.height as usize)
+                .min(u16::MAX as usize) as u16;
+            self.help_scroll = self.help_scroll.min(maximum);
+            frame.render_widget(paragraph.scroll((self.help_scroll, 0)).block(block), popup);
         }
         self.draw_checkpoint_modal(frame);
         if let Some(permission) = self.permissions.front() {

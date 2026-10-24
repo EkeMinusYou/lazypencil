@@ -160,6 +160,22 @@ jobs:
           selected = [argument for target in targets for argument in ("--test", target)]
           subprocess.run(["cargo", "clippy", "--locked", "--no-default-features", "--lib", *selected, "--", "-D", "warnings"], check=True, timeout=300)
           PY
+      - name: Check focused rendering code before building test executables
+        if: inputs.phase == 'focus' && inputs.suite == 'graphics' && !contains(fromJSON(inputs.targets), 'native_layout')
+        timeout-minutes: 6
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        env:
+          FOCUS_TARGETS: ${{ inputs.targets }}
+        run: |
+          set -o pipefail
+          python - <<'PYTHON' 2>&1 | tee "$RUNNER_TEMP/focus-clippy.log"
+          import json, os, runpy, subprocess
+          targets = json.loads(os.environ["FOCUS_TARGETS"])
+          allowed = runpy.run_path("scripts/ci/focus.py")["CORE_TESTS"]
+          assert isinstance(targets, list) and targets and all(target in allowed for target in targets)
+          selected = [argument for target in targets for argument in ("--test", target)]
+          subprocess.run(["cargo", "clippy", "--locked", "--lib", *selected, "--", "-D", "warnings"], check=True, timeout=300)
+          PYTHON
       - name: Check focused native calculation code
         if: inputs.phase == 'focus' && contains(fromJSON(inputs.targets), 'native_layout')
         timeout-minutes: 5
@@ -548,6 +564,7 @@ jobs:
             ${{ runner.temp }}/lazypencil-tests.log
             ${{ runner.temp }}/*-build.log
             ${{ runner.temp }}/focus-tests.log
+            ${{ runner.temp }}/focus-clippy.log
             ${{ runner.temp }}/focus-script-core.log
             ${{ runner.temp }}/focus-dynamic-inputs.log
             ${{ runner.temp }}/focus-native-layout.log

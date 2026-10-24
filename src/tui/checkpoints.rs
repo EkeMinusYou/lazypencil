@@ -219,7 +219,7 @@ impl super::App {
                         0 => self.open_history(vec![None])?,
                         1 => self.request(worker, false, true),
                         2 => self.open_preview()?,
-                        3 => self.help = true,
+                        3 => self.show_help(),
                         4 => return Ok(true),
                         _ => unreachable!(),
                     }
