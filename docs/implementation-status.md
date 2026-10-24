@@ -2,6 +2,8 @@
 
 設計書 v0.9 の全体を実装対象とする。部分的な CLI や描画の試作だけで完成とは扱わない。以下は実際の実装・試験結果で更新する。
 
+2026-10-24: Windows job source `4a8d082` の専用 GHA は Windows `40048681707` の277試験と Linux x64 `40048684209` の304試験、両方の core 全 target Clippy が成功した。artifact `12542547386`／`12542467342` の ZIP digest、全試験ログと source-bound report を検査した。Windows 6件は通常 close、別セッションの保持、非協調 cancel、host/runtime drop、親の強制終了、所有者がない worker、起動エラーを実 process/kernel handle で確認する。detached の子・孫も含む。これは描画を含まない構成であり、通常バイナリーは専用 Chromium workflow の agent／windows_agent gate と通常 CI で検証する。macOS の core `40049231515` も別途検証中である。
+
 2026-10-24: `4a8d082` の依存入力は、以前の監査済み tree と Cargo.toml の Windows 専用 `windows-sys` 宣言・Cargo.lock の root dependency だけが異なることを確認した。全 registry package の版・checksum・native source と build 設定は同じである。この特定 tree・Rust 1.94 の実際の compiler identity・既定の flags に限り、以前の正確な v2 dependency key を restore 候補にする。新しい primary key は維持し、Cargo が feature の変わった Rust crate を再ビルドし、app と旧画像の除去も維持する。未知の入力や compiler／flags の変更では候補を返さない6件の Python 試験が成功した。これにより不要な native engine の再ビルドを避ける方針だが、実際の cache restore は次の GHA で確認する。
 
 2026-10-24: Windows の ACP 子孫プロセス管理を実装した。非継承の job handle を host が保持し、補助 worker が自分を job に参加させ、一時 handle を閉じてから adapter を起動する。起動成否は固定長の非機密 status で返し、その後は既存の ACP と stderr の上限付き drain を使う。adapter の stderr は小さい buffer で転送し、読み取り中に出力 lock を保持しない。setup の期限にはこの起動も含め、subscription 環境の API override 除去は維持する。通常 close・別セッションの保持・非協調 cancel・host/runtime の drop・親の強制終了・所有者がない worker・起動エラーの実プロセス試験を追加した。専用 GHA で Skia をビルドせず core の全 target Clippy と全試験を実行する。新しい Windows 処理のコンパイル・実行結果はまだ未確認である。

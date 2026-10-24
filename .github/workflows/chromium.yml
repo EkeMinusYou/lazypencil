@@ -113,6 +113,11 @@ jobs:
           cargo clippy --locked --no-default-features --all-targets -- -D warnings 2>&1 | tee "$RUNNER_TEMP/chromium-core-clippy.log"
           cargo test --locked --no-default-features --test sampler_sources --test document_store --test imports -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/chromium-core-samplers.log"
           cargo build --locked
+      - name: Verify default agent supervision and existing ACP workflows
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
+          cargo test --locked --test agent --test windows_agent -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/chromium-agent.log"
       - name: Verify native Pencil 2.19 reference and version-preserving edits
         working-directory: ${{ runner.temp }}/lazypencil-source
         env:
