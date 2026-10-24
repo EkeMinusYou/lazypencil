@@ -72,7 +72,12 @@ jobs:
         if: runner.os == 'Linux' && (inputs.phase == 'full' || (inputs.suite != 'core' && inputs.suite != 'conversation'))
         timeout-minutes: 20
         run: python scripts/ci/linux_dependencies.py
+      - name: Check focused CI selection
+        if: inputs.phase == 'focus'
+        timeout-minutes: 2
+        run: python -m unittest discover -s scripts -p 'test_ci_focus.py' -v
       - name: Check source archive integrity handling
+        if: inputs.phase == 'full'
         run: python -m unittest discover -s scripts -p 'test_*.py' -v
       - name: Build a complete source distribution
         run: python scripts/dist.py source --output source.tar.gz
@@ -92,7 +97,7 @@ jobs:
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           key: ${{ inputs.phase == 'focus' && (inputs.suite == 'core' || inputs.suite == 'conversation') && 'core-' || '' }}${{ steps.cache-key.outputs.primary }}
-          restore-keys: ${{ inputs.phase == 'full' && steps.cache-key.outputs.legacy || '' }}
+          restore-keys: ${{ (inputs.phase == 'full' || (inputs.suite != 'core' && inputs.suite != 'conversation')) && steps.cache-key.outputs.legacy || '' }}
           path: |
             ${{ runner.temp }}/lazypencil-target
             ${{ runner.temp }}/lazypencil-source/vendor/skia-bindings/skia
@@ -110,8 +115,9 @@ jobs:
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: cargo fmt --all -- --check
       - name: Build focused test binaries
+        id: focus-build
         if: inputs.phase == 'focus'
-        timeout-minutes: 45
+        timeout-minutes: ${{ (inputs.suite == 'core' || inputs.suite == 'conversation') && 15 || 45 }}
         working-directory: ${{ runner.temp }}/lazypencil-source
         env:
           FOCUS_SUITE: ${{ inputs.suite }}
@@ -146,6 +152,13 @@ jobs:
         run: |
           set -o pipefail
           cargo test --locked --no-default-features --no-fail-fast -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/lazypencil-tests.log"
+      - name: Check all core targets
+        if: ${{ !cancelled() && inputs.phase == 'full' }}
+        timeout-minutes: 15
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
+          cargo clippy --locked --no-default-features --all-targets -- -D warnings 2>&1 | tee -a "$RUNNER_TEMP/lazypencil-tests.log"
       - name: Build default test binaries and actual CLI helper
         id: default-build
         if: ${{ !cancelled() && inputs.phase == 'full' }}
@@ -162,6 +175,13 @@ jobs:
         run: |
           set -o pipefail
           cargo test --locked --lib tui::tests:: -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/tui-reproduction.log" | tee -a "$RUNNER_TEMP/lazypencil-tests.log"
+      - name: Reproduce MCP script cancellation without competing tests
+        if: ${{ !cancelled() && inputs.phase == 'full' && steps.default-build.outcome == 'success' }}
+        timeout-minutes: 2
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
+          cargo test --locked --test mcp cancelling_a_running_script_unblocks_the_mcp_document_worker -- --exact --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-script-cancel.log" | tee -a "$RUNNER_TEMP/lazypencil-tests.log"
       - name: Test default configuration
         if: ${{ !cancelled() && inputs.phase == 'full' && steps.default-build.outcome == 'success' }}
         timeout-minutes: 15
@@ -170,21 +190,7 @@ jobs:
           LAZYPENCIL_TEST_CODEC_DIR: ${{ runner.temp }}/codec-reference
         run: |
           set -o pipefail
-          cargo test --locked --no-fail-fast -- --test-threads=2 --skip tui::tests:: 2>&1 | tee -a "$RUNNER_TEMP/lazypencil-tests.log"
-      - name: Check all default targets
-        if: ${{ !cancelled() && inputs.phase == 'full' }}
-        timeout-minutes: 15
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          cargo clippy --locked --all-targets -- -D warnings 2>&1 | tee -a "$RUNNER_TEMP/lazypencil-tests.log"
-      - name: Check all core targets
-        if: ${{ !cancelled() && inputs.phase == 'full' }}
-        timeout-minutes: 15
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          cargo clippy --locked --no-default-features --all-targets -- -D warnings 2>&1 | tee -a "$RUNNER_TEMP/lazypencil-tests.log"
+          cargo test --locked --no-fail-fast -- --test-threads=2 --skip tui::tests:: --skip cancelling_a_running_script_unblocks_the_mcp_document_worker 2>&1 | tee -a "$RUNNER_TEMP/lazypencil-tests.log"
       - name: Install and verify the pinned Chromium runtime
         if: inputs.phase == 'full' || inputs.suite == 'dynamic'
         timeout-minutes: 10
@@ -360,6 +366,13 @@ jobs:
         run: |
           set -o pipefail
           cargo test --locked --test mcp real_mcp_material -- --ignored --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/lazypencil-material-mcp.log"
+      - name: Check all default targets
+        if: ${{ !cancelled() && inputs.phase == 'full' }}
+        timeout-minutes: 15
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
+          cargo clippy --locked --all-targets -- -D warnings 2>&1 | tee -a "$RUNNER_TEMP/lazypencil-tests.log"
       - name: Build and smoke-test the release profile
         if: inputs.phase == 'full'
         working-directory: ${{ runner.temp }}/lazypencil-source
@@ -390,12 +403,12 @@ jobs:
           retention-days: 3
       - name: Prune application outputs before saving dependency cache
         id: cache-prune
-        if: ${{ success() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true' }}
+        if: ${{ !cancelled() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true' && (steps.focus-build.outcome == 'success' || steps.default-build.outcome == 'success') }}
         continue-on-error: true
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: sh scripts/ci/prune_application_cache.sh
-      - name: Save verified hosted dependency build artifacts
-        if: ${{ success() && steps.cache-prune.outcome == 'success' && github.ref == 'refs/heads/main' }}
+      - name: Save compatible hosted dependency build artifacts
+        if: ${{ !cancelled() && steps.cache-prune.outcome == 'success' && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
