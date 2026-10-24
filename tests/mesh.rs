@@ -572,7 +572,7 @@ fn real_webgl_effects_preserve_native_mesh_pixels_and_alpha() {
         .expect("Set LAZYPENCIL_TEST_CHROMIUM to a verified Chromium executable");
     let fill = json!({"type":"mesh_gradient","columns":3,"rows":3,"colors":["#FF004080","#0020FF80","#80FF0080","#4080FF80","#FFFFFF80","#FF204080","#FF80FF80","#10FF8080","#FF800080"],"points":[[0,0],[0.5,0],[1,0],[0,0.5],[0.68,0.38],[1,0.5],[0,1],[0.5,1],[1,1]],"opacity":0.7});
     let (temp, store) = fixture(json!([]));
-    fs::write(temp.path().join("copy.glsl"),"precision highp float;\n/* @resolution */ uniform vec2 size;\nuniform sampler2D object;\nvoid main(){gl_FragColor=texture2D(object,gl_FragCoord.xy/size);}").unwrap();
+    fs::write(temp.path().join("copy.glsl"),"precision highp float;\n/** @resolution */ uniform vec2 size;\nuniform sampler2D object;\nvoid main(){gl_FragColor=texture2D(object,gl_FragCoord.xy/size);}").unwrap();
     let mut runtime = lazypencil::dynamic::DynamicRuntime::new(store.data_dir())
         .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
         .with_executable(executable);

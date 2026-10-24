@@ -664,13 +664,13 @@ fn page_network_idle_waits_for_post_load_fetches_and_recovers_after_timeout_and_
 
 #[test]
 fn uniform_annotations_bind_to_the_correct_declaration() {
-    let parsed=lazypencil::shader::uniforms("/* @resolution */ uniform highp vec2 size;\n/* @time */ uniform float clock;\nuniform vec4 color; /* @color */\n").unwrap();
+    let parsed=lazypencil::shader::uniforms("/** @resolution */ uniform highp vec2 size;\n/** @time */ uniform float clock;\nuniform vec4 color; /* @color */\n").unwrap();
     assert_eq!(parsed.len(), 3);
     assert!(parsed[0].resolution);
     assert!(!parsed[0].time);
     assert!(parsed[1].time);
     assert!(!parsed[2].time);
-    assert!(lazypencil::shader::uniforms("/* @resolution */ uniform float broken;").is_err());
+    assert!(lazypencil::shader::uniforms("/** @resolution */ uniform float broken;").is_err());
     let arrays = lazypencil::shader::uniforms("uniform vec2 array[4];").unwrap();
     assert!(arrays[0].array);
     assert_eq!(arrays[0].length, Some(4));
@@ -983,7 +983,7 @@ fn page_and_shader_processes_expire_independently_preserve_rasters_and_restart()
 fn software_webgl_pixels_follow_resolution_time_and_color_uniforms() {
     let temp = TempDir::new().unwrap();
     let shader = temp.path().join("fill.glsl");
-    fs::write(&shader,"precision highp float;\n/* @resolution */ uniform vec2 size;\n/* @time */ uniform float clock;\nuniform vec4 tint;\nvoid main(){vec2 p=gl_FragCoord.xy/size;gl_FragColor=vec4(p.x,clock,tint.b,tint.a);}").unwrap();
+    fs::write(&shader,"precision highp float;\n/** @resolution */ uniform vec2 size;\n/** @time */ uniform float clock;\nuniform vec4 tint;\nvoid main(){vec2 p=gl_FragCoord.xy/size;gl_FragColor=vec4(p.x,clock,tint.b,tint.a);}").unwrap();
     let path = temp.path().join("scene.pen");
     let source=json!({"version":"2.21","children":[{"id":"rect","type":"rectangle","width":40,"height":20,"fill":{"type":"shader","url":"fill.glsl","uniforms":{"tint":"#0000FFFF"}}}]}).to_string();
     fs::write(&path, &source).unwrap();
@@ -1069,7 +1069,7 @@ fn effect_scene(
     children: Value,
 ) -> (TempDir, Project, lazypencil::layout::LayoutSnapshot) {
     let temp = TempDir::new().unwrap();
-    let sample = "precision highp float;\n/* @resolution */ uniform vec2 size;\nuniform sampler2D src;\nvoid main(){gl_FragColor=texture2D(src,gl_FragCoord.xy/size).bgra;}";
+    let sample = "precision highp float;\n/** @resolution */ uniform vec2 size;\nuniform sampler2D src;\nvoid main(){gl_FragColor=texture2D(src,gl_FragCoord.xy/size).bgra;}";
     fs::write(temp.path().join("swap.glsl"), sample).unwrap();
     fs::write(
         temp.path().join("sample.glsl"),
@@ -1100,7 +1100,7 @@ fn shader_sampler_arrays_accept_object_and_background_in_effects() {
         json!({"type":"shader","url":"sample.glsl","uniforms":{"src":"pencil:object"}}),
         children,
     );
-    fs::write(temp.path().join("combine.glsl"),"precision highp float;\n/* @resolution */ uniform vec2 size;\nuniform sampler2D images[2];void main(){vec2 uv=gl_FragCoord.xy/size;gl_FragColor=mix(texture2D(images[0],uv),texture2D(images[1],uv),0.5);}").unwrap();
+    fs::write(temp.path().join("combine.glsl"),"precision highp float;\n/** @resolution */ uniform vec2 size;\nuniform sampler2D images[2];void main(){vec2 uv=gl_FragCoord.xy/size;gl_FragColor=mix(texture2D(images[0],uv),texture2D(images[1],uv),0.5);}").unwrap();
     let path = temp.path().join("scene.pen");
     let mut source: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     source["children"][1]["effect"] = effect.clone();
@@ -1265,7 +1265,7 @@ fn sampler_images_keep_their_orientation_and_fill_opacity() {
             .as_bytes(),
     )
     .unwrap();
-    fs::write(temp.path().join("sample.glsl"),"precision highp float;\n/* @resolution */ uniform vec2 size;\nuniform sampler2D image;\nvoid main(){gl_FragColor=texture2D(image,gl_FragCoord.xy/size);}").unwrap();
+    fs::write(temp.path().join("sample.glsl"),"precision highp float;\n/** @resolution */ uniform vec2 size;\nuniform sampler2D image;\nvoid main(){gl_FragColor=texture2D(image,gl_FragCoord.xy/size);}").unwrap();
     let path = temp.path().join("scene.pen");
     let source=json!({"version":"2.21","children":[{"id":"rect","type":"rectangle","width":40,"height":20,"fill":{"type":"shader","url":"sample.glsl","opacity":0.5,"uniforms":{"image":"texture.png"}}}]}).to_string();
     fs::write(&path, &source).unwrap();

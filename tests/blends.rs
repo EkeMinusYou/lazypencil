@@ -687,7 +687,7 @@ fn real_webgl_pass_through_preserves_blended_shadows_in_both_effect_orders() {
     let executable = std::env::var_os("LAZYPENCIL_TEST_CHROMIUM")
         .expect("Set LAZYPENCIL_TEST_CHROMIUM to a verified Chromium executable");
     let (temp, store) = fixture(json!([]));
-    fs::write(temp.path().join("copy.glsl"),"precision highp float;\n/* @resolution */ uniform vec2 size;\nuniform sampler2D object;\nvoid main(){gl_FragColor=texture2D(object,gl_FragCoord.xy/size);}").unwrap();
+    fs::write(temp.path().join("copy.glsl"),"precision highp float;\n/** @resolution */ uniform vec2 size;\nuniform sampler2D object;\nvoid main(){gl_FragColor=texture2D(object,gl_FragCoord.xy/size);}").unwrap();
     let mut runtime = lazypencil::dynamic::DynamicRuntime::new(store.data_dir())
         .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
         .with_executable(executable);

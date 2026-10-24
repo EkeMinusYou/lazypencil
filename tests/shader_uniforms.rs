@@ -124,6 +124,83 @@ fn array_defaults_mark_one_element_and_keep_short_explicit_overrides_invalid() {
 }
 
 #[test]
+fn native_annotation_binding_cases_prepare_the_expected_inputs() {
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/pencil-0.3.9/shader-annotation-binding");
+    let active = [
+        "doc-direct",
+        "plain-doc",
+        "doc-after-precision",
+        "doc-after-uniform",
+        "doc-blank-line",
+        "doc-grouped",
+        "default-direct",
+        "default-after-precision",
+        "default-after-uniform",
+    ];
+    let mut count = 0;
+    for entry in fs::read_dir(fixtures).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_none_or(|extension| extension != "glsl") {
+            continue;
+        }
+        let name = path.file_stem().unwrap().to_str().unwrap();
+        let result = request(&fs::read_to_string(&path).unwrap(), json!({})).unwrap();
+        let enabled = active.contains(&name);
+        if name.starts_with("default-") {
+            assert_eq!(
+                result["uniforms"]["value"].as_f64(),
+                Some(if enabled { 0.75 } else { 0.0 }),
+                "{name}"
+            );
+        } else {
+            let expected = if enabled {
+                json!([32, 16])
+            } else {
+                json!([0.0, 0.0])
+            };
+            assert_eq!(result["uniforms"]["size"], expected, "{name}");
+            if name == "doc-grouped" {
+                assert_eq!(result["uniforms"]["other"], expected);
+            }
+        }
+        count += 1;
+    }
+    assert_eq!(count, 20);
+}
+
+#[test]
+fn time_inputs_reject_defaults_and_nonadjacent_metadata_does_not_leak() {
+    let error = request(
+        "/** @time\n @default 0.5 */ uniform float clock;",
+        json!({}),
+    )
+    .unwrap_err();
+    assert_eq!(error.code, "SHADER_COMPILE_FAILED");
+    assert!(error.message.contains("@default"));
+    for separator in [
+        "/* explanation */",
+        "/** explanation */",
+        "// explanation\n",
+        "#define UNUSED 1\n",
+        "precision highp float;",
+        "void helper(){}",
+    ] {
+        let source = format!("/** @time */ {separator} uniform float clock;");
+        let result = request(&source, json!({})).unwrap();
+        assert_eq!(result["uniforms"]["clock"].as_f64(), Some(0.0), "{source}");
+        assert_eq!(result["time_dependent"], false, "{source}");
+    }
+    let result = request(
+        "uniform float first; /** @default .5 */ uniform float second;",
+        json!({}),
+    )
+    .unwrap();
+    assert_eq!(result["uniforms"]["first"].as_f64(), Some(0.0));
+    assert_eq!(result["uniforms"]["second"].as_f64(), Some(0.5));
+}
+
+#[test]
 fn malformed_or_nonfinite_defaults_fail_before_browser_startup() {
     for source in [
         "/** @default */ uniform float value;",
@@ -168,30 +245,30 @@ fn grouped_declarations_keep_individual_array_dimensions_and_shared_precision() 
 }
 
 #[test]
-fn exact_directives_merge_comments_and_respect_statement_boundaries() {
+fn exact_directives_use_the_nearest_documentation_comment_before_a_declaration() {
     let uniforms = shader::uniforms(
         "/* Unicode © annotation @time_step; contact@time.example */ uniform float ordinary;\n\
-        uniform float first,second; /* @time */ /* explanatory comment */\n\
-        /* @resolution */ uniform vec2 size;\n uniform float third;\n",
+        /** @time */ uniform float first,second;\n\
+        /** @resolution */ uniform vec2 size;\n uniform float third;\n",
     )
     .unwrap();
     assert!(!uniforms[0].time);
     assert!(uniforms[1].time && uniforms[2].time);
     assert!(uniforms[3].resolution);
     assert!(!uniforms[4].time && !uniforms[4].resolution);
-    assert!(shader::uniforms("/* @resolution */ /* @time */ uniform vec2 invalid;").is_err());
-    assert!(shader::uniforms("/* @time */ uniform float clock[2];").is_err());
+    assert!(shader::uniforms("/** @resolution */ /** @time */ uniform vec2 invalid;").is_err());
+    assert!(shader::uniforms("/** @time */ uniform float clock[2];").is_err());
 }
 
 #[test]
-fn directives_bind_across_comments_without_reading_macro_bodies_as_declarations() {
+fn comments_inside_declarations_and_macro_bodies_do_not_supply_metadata() {
     let source = "#define DECL uniform float fake;\\\n uniform float also_fake;\n\
         // uniform vec4 ignored;\n\
-        uniform /* @time */ highp /* precision */ float clock;\n\
+        uniform /** @time */ highp /* precision */ float clock;\n\
         const int COUNT = 3; uniform vec2 values[COUNT];";
     let uniforms = shader::uniforms(source).unwrap();
     assert_eq!(uniforms.len(), 2);
-    assert!(uniforms[0].time);
+    assert!(!uniforms[0].time);
     assert_eq!(uniforms[1].name, "values");
     assert_eq!(uniforms[1].length, None);
 }
@@ -293,20 +370,22 @@ fn integer_boolean_vectors_and_column_major_matrices_use_numeric_components() {
 
 #[test]
 fn builtins_still_reject_stored_values_and_unknown_or_unsupported_bindings_fail() {
-    let source = "/* @resolution */ uniform vec2 size; /* @time */\n uniform float ordinary;";
-    // The same-line annotation belongs to the preceding declaration.
-    assert!(request(source, json!({})).is_err());
-    let source = "/* @resolution */ uniform vec2 size;\n/* @time */ uniform float clock;";
+    let source = "/** @resolution */ uniform vec2 size; /** @time */\n uniform float ordinary;";
+    // Documentation after a semicolon describes the next declaration.
+    let next = request(source, json!({})).unwrap();
+    assert_eq!(next["uniforms"]["size"], json!([32, 16]));
+    assert_eq!(next["uniforms"]["ordinary"], 0.25);
+    let source = "/** @resolution */ uniform vec2 size;\n/** @time */ uniform float clock;";
     let value = request(source, json!({})).unwrap();
     assert_eq!(value["uniforms"]["size"], json!([32, 16]));
     assert_eq!(value["uniforms"]["clock"], 0.25);
     assert_eq!(value["time_dependent"], true);
     assert_eq!(
-        request("/* @resolution */ uniform vec2 size;", json!({})).unwrap()["time_dependent"],
+        request("/** @resolution */ uniform vec2 size;", json!({})).unwrap()["time_dependent"],
         false
     );
     assert_eq!(
-        request("/* @time_step */ uniform float clock;", json!({})).unwrap()["time_dependent"],
+        request("/** @time_step */ uniform float clock;", json!({})).unwrap()["time_dependent"],
         false
     );
     assert!(request(source, json!({"clock":1})).is_err());
@@ -353,7 +432,7 @@ fn software_webgl_sampler_arrays_bind_images_defaults_active_tails_and_recover()
         .with_executable(
             std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
         );
-    let striped = "precision highp float;\n/* @resolution */ uniform vec2 size;\nuniform sampler2D single,images[3];void main(){vec2 uv=gl_FragCoord.xy/size;gl_FragColor=uv.x<0.5?texture2D(images[0],uv):(uv.y>0.5?texture2D(images[1],uv):texture2D(single,uv));}";
+    let striped = "precision highp float;\n/** @resolution */ uniform vec2 size;\nuniform sampler2D single,images[3];void main(){vec2 uv=gl_FragCoord.xy/size;gl_FragColor=uv.x<0.5?texture2D(images[0],uv):(uv.y>0.5?texture2D(images[1],uv):texture2D(single,uv));}";
     let constant = "precision highp float;const int N=2;uniform sampler2D images[N];void main(){gl_FragColor=texture2D(images[1],vec2(0.5));}";
     for (source, values, success) in [
         (
@@ -567,6 +646,113 @@ fn linked_constant_dimensions_validate_inputs_and_recover_after_an_error() {
         assert_eq!(
             fs::read(scene_root.path().join("input.pen")).unwrap(),
             before
+        );
+    }
+}
+
+#[test]
+#[ignore = "Requires sandboxed software WebGL Chromium"]
+fn native_annotation_binding_matches_public_pencil_reference_pixels() {
+    use lazypencil::{document::hash, render};
+    use skia_safe::{Data, Image};
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/pencil-0.3.9/shader-annotation-binding");
+    let source =
+        include_str!("fixtures/pencil-0.3.9/shader-annotation-binding/annotation-binding.pen");
+    let reference_bytes =
+        include_bytes!("fixtures/pencil-0.3.9/shader-annotation-binding/annotation-binding.png");
+    let reference = Image::from_encoded(Data::new_copy(reference_bytes))
+        .unwrap()
+        .make_raster_image(None, None)
+        .unwrap();
+    assert_eq!((reference.width(), reference.height()), (320, 240));
+    let expected = reference.peek_pixels().unwrap();
+    for version in ["2.19", "2.21"] {
+        let root = TempDir::new().unwrap();
+        for entry in fs::read_dir(&fixtures).unwrap() {
+            let path = entry.unwrap().path();
+            if path
+                .extension()
+                .is_some_and(|extension| extension == "glsl")
+            {
+                fs::copy(&path, root.path().join(path.file_name().unwrap())).unwrap();
+            }
+        }
+        let source = source.replace("\"2.19\"", &format!("\"{version}\""));
+        let path = root.path().join("design.pen");
+        fs::write(&path, &source).unwrap();
+        let project =
+            Project::from_document(&path, Document::parse(source.clone()).unwrap(), &[]).unwrap();
+        let layout = lazypencil::layout::compute(
+            project.resolve().unwrap(),
+            &mut lazypencil::text::Fonts::new(&[]).unwrap(),
+        )
+        .unwrap();
+        let mut runtime = lazypencil::dynamic::DynamicRuntime::new(root.path().join("runtime"))
+            .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+            .with_executable(
+                std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
+            );
+        let output = render::png_with_runtime(
+            &project,
+            &layout,
+            &render::RenderOptions::default(),
+            &mut runtime,
+            None,
+        )
+        .unwrap();
+        assert_eq!((output.width, output.height), (160, 120));
+        assert_eq!(output.dynamic_artifacts.len(), 20);
+        let diagnostics = layout.summary()["diagnostics"].clone();
+        assert!(diagnostics.as_array().unwrap().is_empty());
+        let image = Image::from_encoded(Data::new_copy(&output.png))
+            .unwrap()
+            .make_raster_image(None, None)
+            .unwrap();
+        let actual = image.peek_pixels().unwrap();
+        let mut maximum = 0u8;
+        let mut difference = 0u64;
+        // These original panels are constant colors at both native export pixels
+        // per logical pixel. The 1x render tests metadata independently of the
+        // separately tracked scaled-coordinate compatibility work.
+        for y in 0..120 {
+            for x in 0..160 {
+                let a = actual.get_color((x, y));
+                let b = expected.get_color((x * 2, y * 2));
+                for delta in [
+                    a.r().abs_diff(b.r()),
+                    a.g().abs_diff(b.g()),
+                    a.b().abs_diff(b.b()),
+                    a.a().abs_diff(b.a()),
+                ] {
+                    maximum = maximum.max(delta);
+                    difference += u64::from(delta);
+                }
+            }
+        }
+        assert_eq!(fs::read(&path).unwrap(), source.as_bytes());
+        if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_NATIVE_SHADER_DIR") {
+            let directory = std::path::PathBuf::from(directory);
+            fs::create_dir_all(&directory).unwrap();
+            let stem = format!("chromium-native-annotation-binding-{version}");
+            fs::write(directory.join(format!("{stem}.png")), &output.png).unwrap();
+            fs::write(
+                directory.join(format!("{stem}.json")),
+                json!({
+                    "source_commit":std::env::var("GITHUB_SHA").ok(), "document_version":version,
+                    "width":output.width,"height":output.height,"scale":1,"diagnostics":diagnostics,
+                    "png_hash":hash(&output.png),"reference_sha256":hash(reference_bytes),
+                    "source_sha256":hash(source.as_bytes()),"native_producer":"@pen.dev/cli 0.3.9",
+                    "native_document_version":"2.19","native_export_scale":2,"verified_cases":20,
+                    "maximum_channel_difference":maximum,"absolute_channel_difference":difference
+                })
+                .to_string(),
+            )
+            .unwrap();
+        }
+        assert!(
+            maximum <= 1,
+            "Native annotation binding diverged ({version}): maximum={maximum}, difference={difference}"
         );
     }
 }

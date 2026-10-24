@@ -1,6 +1,6 @@
 precision highp float;
 
-/* @resolution */
+/** @resolution */
 uniform vec2 size;
 const int PALETTE_SIZE = 3;
 uniform vec3 palette[PALETTE_SIZE];

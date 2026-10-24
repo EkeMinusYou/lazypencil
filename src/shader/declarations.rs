@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 struct Token<'a> {
     text: &'a str,
     comment: bool,
-    trailing: bool,
+    documentation: bool,
 }
 
 pub(super) fn parse(source: &str) -> Result<Vec<Uniform>> {
@@ -19,20 +19,16 @@ pub(super) fn parse(source: &str) -> Result<Vec<Uniform>> {
     let mut cursor = 0;
     let mut depth = 0usize;
     let mut pending = String::new();
-    let mut pending_docs = String::new();
     let mut names = BTreeSet::new();
     let mut result = Vec::new();
     while cursor < tokens.len() {
         let token = tokens[cursor];
         if token.comment {
-            if !token.trailing {
-                pending.push('\n');
-                pending.push_str(token.text);
-                if token.text.starts_with('*') {
-                    pending_docs.push('\n');
-                    pending_docs.push_str(token.text);
-                }
-            }
+            pending = if token.documentation {
+                token.text.into()
+            } else {
+                String::new()
+            };
             cursor += 1;
             continue;
         }
@@ -43,24 +39,22 @@ pub(super) fn parse(source: &str) -> Result<Vec<Uniform>> {
                 _ => {}
             }
             pending.clear();
-            pending_docs.clear();
             cursor += 1;
             continue;
         }
         cursor += 1;
-        let mut annotations = std::mem::take(&mut pending);
-        let documentation = std::mem::take(&mut pending_docs);
-        let mut kind = code(&tokens, &mut cursor, &mut annotations)?;
+        let documentation = std::mem::take(&mut pending);
+        let mut kind = code(&tokens, &mut cursor)?;
         if matches!(kind, "lowp" | "mediump" | "highp") {
-            kind = code(&tokens, &mut cursor, &mut annotations)?;
+            kind = code(&tokens, &mut cursor)?;
         }
         let mut declarations = Vec::new();
         loop {
-            let name = code(&tokens, &mut cursor, &mut annotations)?;
+            let name = code(&tokens, &mut cursor)?;
             if !identifier(name) {
                 return Err(invalid("Expected a GLSL uniform identifier"));
             }
-            comments(&tokens, &mut cursor, &mut annotations);
+            comments(&tokens, &mut cursor);
             let mut array = false;
             let mut length = None;
             if tokens.get(cursor).is_some_and(|token| token.text == "[") {
@@ -105,10 +99,10 @@ pub(super) fn parse(source: &str) -> Result<Vec<Uniform>> {
                     }
                 }
                 cursor += 1;
-                comments(&tokens, &mut cursor, &mut annotations);
+                comments(&tokens, &mut cursor);
             }
             declarations.push((name, array, length));
-            match code(&tokens, &mut cursor, &mut annotations)? {
+            match code(&tokens, &mut cursor)? {
                 "," => continue,
                 ";" => break,
                 _ => {
@@ -118,17 +112,12 @@ pub(super) fn parse(source: &str) -> Result<Vec<Uniform>> {
                 }
             }
         }
-        while tokens
-            .get(cursor)
-            .is_some_and(|token| token.comment && token.trailing)
-        {
-            annotations.push('\n');
-            annotations.push_str(tokens[cursor].text);
-            cursor += 1;
-        }
-        let resolution = directive(&annotations, "resolution");
-        let time = directive(&annotations, "time");
+        let resolution = directive(&documentation, "resolution");
+        let time = directive(&documentation, "time");
         let default = super::defaults::parse(&documentation, kind)?;
+        if time && default.is_some() {
+            return Err(invalid("Built-in @time inputs do not support @default"));
+        }
         if resolution && kind != "vec2" || time && kind != "float" || resolution && time {
             return Err(invalid("@resolution requires vec2; @time requires float"));
         }
@@ -157,16 +146,14 @@ pub(super) fn parse(source: &str) -> Result<Vec<Uniform>> {
     Ok(result)
 }
 
-fn comments(tokens: &[Token<'_>], cursor: &mut usize, annotations: &mut String) {
+fn comments(tokens: &[Token<'_>], cursor: &mut usize) {
     while tokens.get(*cursor).is_some_and(|token| token.comment) {
-        annotations.push('\n');
-        annotations.push_str(tokens[*cursor].text);
         *cursor += 1;
     }
 }
 
-fn code<'a>(tokens: &[Token<'a>], cursor: &mut usize, annotations: &mut String) -> Result<&'a str> {
-    comments(tokens, cursor, annotations);
+fn code<'a>(tokens: &[Token<'a>], cursor: &mut usize) -> Result<&'a str> {
+    comments(tokens, cursor);
     let token = tokens
         .get(*cursor)
         .ok_or_else(|| invalid("Incomplete GLSL uniform declaration"))?;
@@ -201,34 +188,28 @@ pub(super) fn directive(comment: &str, name: &str) -> bool {
 
 fn lex(source: &str) -> Result<Vec<Token<'_>>> {
     let bytes = source.as_bytes();
-    let (mut cursor, mut line) = (0, 0);
-    let mut last_code = None;
+    let mut cursor = 0;
     let mut tokens = Vec::new();
     while cursor < bytes.len() {
         let start = cursor;
         if bytes[cursor].is_ascii_whitespace() {
-            line += usize::from(bytes[cursor] == b'\n');
             cursor += 1;
             continue;
         }
-        if bytes[cursor..].starts_with(b"//") {
+        let line_comment = bytes[cursor..].starts_with(b"//");
+        let block_comment = bytes[cursor..].starts_with(b"/*");
+        let documentation = bytes[cursor..].starts_with(b"/**");
+        let comment = line_comment || block_comment;
+        if line_comment {
             cursor = source[cursor..]
                 .find('\n')
                 .map_or(bytes.len(), |offset| cursor + offset);
-            continue;
-        }
-        let comment = bytes[cursor..].starts_with(b"/*");
-        let trailing = last_code == Some((line, true));
-        if comment {
+        } else if block_comment {
             cursor = source[cursor + 2..]
                 .find("*/")
                 .ok_or_else(|| invalid("Unclosed GLSL annotation comment"))?
                 + cursor
                 + 4;
-            line += source[start..cursor]
-                .bytes()
-                .filter(|byte| *byte == b'\n')
-                .count();
         } else if bytes[cursor] == b'#' {
             // Macro bodies are not literal interface declarations. The actual
             // GLSL preprocessor still runs inside WebGL's compiler.
@@ -241,7 +222,6 @@ fn lex(source: &str) -> Result<Vec<Token<'_>>> {
                 if cursor == bytes.len() || !continued {
                     break;
                 }
-                line += 1;
                 cursor += 1;
             }
         } else if bytes[cursor].is_ascii_alphanumeric() || bytes[cursor] == b'_' {
@@ -257,19 +237,18 @@ fn lex(source: &str) -> Result<Vec<Token<'_>>> {
         if tokens.len() >= 262144 {
             return Err(invalid("Shader declaration token budget exceeded"));
         }
-        let text = if comment {
+        let text = if block_comment {
             &source[start + 2..cursor - 2]
+        } else if line_comment {
+            &source[start + 2..cursor]
         } else {
             &source[start..cursor]
         };
         tokens.push(Token {
             text,
             comment,
-            trailing,
+            documentation,
         });
-        if !comment {
-            last_code = Some((line, text == ";"));
-        }
     }
     Ok(tokens)
 }

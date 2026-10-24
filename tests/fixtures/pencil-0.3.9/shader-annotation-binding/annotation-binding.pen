@@ -1,0 +1,255 @@
+{
+  "version": "2.19",
+  "children": [
+    {
+      "id": "annotation-binding",
+      "type": "frame",
+      "width": 160,
+      "height": 120,
+      "layout": "none",
+      "fill": "#ffffff",
+      "children": [
+        {
+          "id": "doc-direct",
+          "type": "rectangle",
+          "x": 0,
+          "y": 0,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "doc-direct.glsl"
+          }
+        },
+        {
+          "id": "plain-before",
+          "type": "rectangle",
+          "x": 40,
+          "y": 0,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "plain-before.glsl"
+          }
+        },
+        {
+          "id": "doc-trailing",
+          "type": "rectangle",
+          "x": 80,
+          "y": 0,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "doc-trailing.glsl"
+          }
+        },
+        {
+          "id": "doc-inside",
+          "type": "rectangle",
+          "x": 120,
+          "y": 0,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "doc-inside.glsl"
+          }
+        },
+        {
+          "id": "doc-plain-separator",
+          "type": "rectangle",
+          "x": 0,
+          "y": 24,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "doc-plain-separator.glsl"
+          }
+        },
+        {
+          "id": "doc-doc-separator",
+          "type": "rectangle",
+          "x": 40,
+          "y": 24,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "doc-doc-separator.glsl"
+          }
+        },
+        {
+          "id": "doc-line-separator",
+          "type": "rectangle",
+          "x": 80,
+          "y": 24,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "doc-line-separator.glsl"
+          }
+        },
+        {
+          "id": "plain-doc",
+          "type": "rectangle",
+          "x": 120,
+          "y": 24,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "plain-doc.glsl"
+          }
+        },
+        {
+          "id": "doc-after-precision",
+          "type": "rectangle",
+          "x": 0,
+          "y": 48,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "doc-after-precision.glsl"
+          }
+        },
+        {
+          "id": "doc-after-uniform",
+          "type": "rectangle",
+          "x": 40,
+          "y": 48,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "doc-after-uniform.glsl"
+          }
+        },
+        {
+          "id": "doc-blank-line",
+          "type": "rectangle",
+          "x": 80,
+          "y": 48,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "doc-blank-line.glsl"
+          }
+        },
+        {
+          "id": "doc-before-macro",
+          "type": "rectangle",
+          "x": 120,
+          "y": 48,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "doc-before-macro.glsl"
+          }
+        },
+        {
+          "id": "doc-before-conditional",
+          "type": "rectangle",
+          "x": 0,
+          "y": 72,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "doc-before-conditional.glsl"
+          }
+        },
+        {
+          "id": "doc-grouped",
+          "type": "rectangle",
+          "x": 40,
+          "y": 72,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "doc-grouped.glsl"
+          }
+        },
+        {
+          "id": "default-direct",
+          "type": "rectangle",
+          "x": 80,
+          "y": 72,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "default-direct.glsl"
+          }
+        },
+        {
+          "id": "default-plain-separator",
+          "type": "rectangle",
+          "x": 120,
+          "y": 72,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "default-plain-separator.glsl"
+          }
+        },
+        {
+          "id": "default-doc-separator",
+          "type": "rectangle",
+          "x": 0,
+          "y": 96,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "default-doc-separator.glsl"
+          }
+        },
+        {
+          "id": "default-line-separator",
+          "type": "rectangle",
+          "x": 40,
+          "y": 96,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "default-line-separator.glsl"
+          }
+        },
+        {
+          "id": "default-after-precision",
+          "type": "rectangle",
+          "x": 80,
+          "y": 96,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "default-after-precision.glsl"
+          }
+        },
+        {
+          "id": "default-after-uniform",
+          "type": "rectangle",
+          "x": 120,
+          "y": 96,
+          "width": 32,
+          "height": 16,
+          "fill": {
+            "type": "shader",
+            "url": "default-after-uniform.glsl"
+          }
+        }
+      ]
+    }
+  ]
+}
