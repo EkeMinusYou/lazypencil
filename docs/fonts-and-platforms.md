@@ -89,4 +89,4 @@ P0 でクロスプラットフォーム上の問題が判明した場合は、�
 
 要求中の資料取得記録と会話ログ失敗時の処理を含む262ファイルのソースでも、同じ Linux 環境で通常389・描画なし232試験、両構成の静的検査、配布関連12試験、release ビルドと mesh／1,000ノードの描画が終了コード0で成功した。その後の素材公開のロック・取消の修正はこの固定ソースに含めず、macOS の通常395・描画なし238試験等で別に検証した。
 
-CI は Linux x64/arm64、macOS Intel/arm64、Windows x64 でアーカイブから検証する構成を用意した。workflow の静的検査は成功したが、GitHub 上の各ジョブはまだ実行していない。設定の存在と各環境の成功実績は区別し、詳しい記録は [実装状況](implementation-status.md) に残す。
+CI は初回対象の macOS Apple Silicon・Linux x64／arm64 で配布ソースから検証する。対象試験の成功後に3環境へ広げ、両 feature 構成・Chromium・実 PTY・release を含む検証を維持する。Windows と Intel Mac の実行は初回の gate に含めない。設定の存在と各 source の成功実績は区別し、詳しい記録は [実装状況](implementation-status.md) に残す。
