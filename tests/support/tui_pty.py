@@ -301,8 +301,14 @@ try:
             wait(lambda: "Browse saved conversations" in screen.text(), "saved conversation command")
             os.write(master, b"\x1b[B" * 6 + b"\r")
             wait(lambda: "Saved conversations" in screen.text() and first_id in screen.text() and second_id in screen.text(), "both saved conversations listed")
-            index = sorted([first_id, second_id]).index(identifier)
-            os.write(master, b"\x1b[B" * index + b"u")
+            order = sorted([first_id, second_id])
+            # The browser highlights the current session when opening its
+            # first page. Navigate from that actual selection, not row zero.
+            current = next(value for value in order if "session: " + value[:8] in screen.text().splitlines()[0])
+            distance = order.index(identifier) - order.index(current)
+            os.write(master, (b"\x1b[B" if distance > 0 else b"\x1b[A") * abs(distance))
+            wait(lambda: any("›" in row and identifier in row for row in screen.text().splitlines()), "target conversation highlighted")
+            os.write(master, b"u")
             wait(lambda: "session: " + identifier[:8] in screen.text() and draft.splitlines()[0] in screen.text() and "Saved conversations" not in screen.text(), label)
             with open(os.path.join(root, "session-selection-" + ("first" if identifier == first_id else "second") + "-screen.txt"), "w", encoding="utf-8") as handle:
                 handle.write(screen.text())
