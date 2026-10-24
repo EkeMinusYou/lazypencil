@@ -301,9 +301,9 @@ pub(super) fn delete_verified(
     let cleanup_lease = storage::exclusive_lease(&trash.join("lock"))?;
     crate::store::atomic_replace(&trash.join("deletion.json"), &serde_json::to_vec(&json!({"version":1,"document":store.path(),"session":id,"operation":operation,"revision":revision})).unwrap())?;
     crate::store::sync_directory(&store.document_data_dir())?;
+    inventory.verify(budget)?;
     verify()?;
     budget.check()?;
-    inventory.verify(budget)?;
     fs::rename(&directory, trash.join("payload")).map_err(|error| Error::io(&directory, error))?;
     let durability_errors = [directory.parent().unwrap(), trash.as_path()]
         .into_iter()

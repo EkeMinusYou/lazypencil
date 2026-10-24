@@ -61,6 +61,7 @@ impl Entry {
 struct Plan {
     version: u32,
     scope: &'static str,
+    snapshot: bool,
     data_directory: PathBuf,
     as_of_unix_seconds: u64,
     policy: RetentionSettings,
@@ -387,6 +388,7 @@ fn plan_at(data: &Path, policy: &RetentionSettings, day: u64, budget: &Budget<'_
     Ok(Plan {
         version: 1,
         scope: "all_local_document_conversations",
+        snapshot: false,
         data_directory: data,
         as_of_unix_seconds: day,
         policy: policy.clone(),
