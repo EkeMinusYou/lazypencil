@@ -387,7 +387,7 @@ try:
         paste("待機と更新の後も残る下書き")
         wait(lambda: session()["draft"] == "待機と更新の後も残る下書き", "Japanese draft preserved during playback")
         os.write(master, b"\t ")
-        wait(lambda: "playing" not in screen.text().lower(), "Space pauses in Preview")
+        wait(lambda: "playing" not in screen.text().lower() and "finishing requested frame" not in screen.text() and timeline() >= 1.0, "Space pauses in Preview and completes any requested frame")
         assert children() == original_pids, "Automatic frames must not kill and restart the runtimes"
         assert len(list(kitty_images())) - frame_count <= math.ceil((time.monotonic() - playback_started) * 2) + 6, "Playback must respect the selected frame-rate cap"
         paused_time = timeline()
