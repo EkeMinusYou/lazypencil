@@ -2,7 +2,7 @@
 
 設計日: 2026-10-23
 
-状態: JavaScript・Web ページ・シェーダーの初期実行・描画、MCP と TUI の基本経路、待機時の終了を実装・試験した。TUI の手動時刻操作は macOS arm64・Linux x64 の GHA と実 PTY で検証した。上限付き再生と LRU cache の初回実装は macOS arm64・Linux x64 の GHA で検証した。停止時刻表示の修正は後続で検証する。全形式の互換性、状態を保つページ更新、再生を含む各 OS の検証などは未完成であり、3機能全体の完成を示すものではない。
+状態: JavaScript・Web ページ・シェーダーの初期実行・描画、MCP と TUI の基本経路、待機時の終了を実装・試験した。TUI の手動時刻操作は macOS arm64・Linux x64 の GHA と実 PTY で検証した。上限付き再生と LRU cache の初回実装は macOS arm64・Linux x64 の GHA で検証した。停止時刻表示の修正も両環境で検証した。TUI の状態付き page 取得を追加し、GHA で検証する。全形式の互換性、状態を保つページ更新、再生を含む各 OS の検証などは未完成であり、3機能全体の完成を示すものではない。
 
 `.pen` の `script` ノード、`browser` ノード、`shader` の塗り・エフェクトを、初期リリースの正式な対応対象とする。元データを保存できるだけでは完了とせず、実行と画像化、AI による入力・参照コードの編集、CLI・MCP・TUI への統合までを含める。
 
@@ -197,7 +197,7 @@ Rust の別プロセスへ `rquickjs` 0.14.0 と、その配布ソースが含�
 
 Chrome for Testing headless shell 156.0.8078.47 の版別公式 ZIP と全ファイルのサイズ・ハッシュを固定した。専用コマンドから HTTPS 取得または固定したローカル ZIP の導入・検査・再利用を行い、変更された導入先は上書きせず拒否する。macOS arm64 で実際の HTTPS 導入、ローカル ZIP 導入、実ブラウザー描画を確認した。ほかの OS・CPU のアーカイブも記録しているが、lazypencil の実動作を検証済みとはしない。[導入と試験手順](runtimes.md)
 
-Browser ノードは HTTP(S)・HTML data URL・about:blank、寸法・ズーム・スクロール・基本の desktop/phone/tablet を扱う。読み込み・フォント・画像デコード・2回の描画フレームを待ち、取得条件・時刻・画像 ID・版・画像ハッシュを記録する。URL の query・fragment・資格情報・HTML 本文を取得メタデータから除く。取得ごとに新しい隔離コンテキストを用意し、MCP では取得画像を容量・件数制限のあるメモリキャッシュから再利用する。`refresh` で明示取得し直せる。認証専用プロファイル・状態を保つページ更新・待ち条件の設定・本家の全デバイス ID は未完成である。
+Browser ノードは HTTP(S)・HTML data URL・about:blank、寸法・ズーム・スクロール・基本の desktop/phone/tablet を扱う。読み込み・フォント・画像デコード・2回の描画フレームを待ち、取得条件・時刻・画像 ID・版・画像ハッシュを記録する。URL の query・fragment・資格情報・HTML 本文を取得メタデータから除く。CLI・MCP は取得ごとに新しい隔離コンテキストを用意し、取得画像を容量・件数制限のあるメモリキャッシュから再利用する。`refresh` で明示取得し直せる。TUI は文書・ノードの address/source に結び付けた隔離 context を最大8件保持し、明示再取得で DOM を引き継ぐ。寸法・scale・zoom・scroll 変更では再利用し、URL/device 変更は作り直す。LRU で上限を保ち、削除・無効化されたノードは次の有効 snapshot で閉じる。viewport 外に移動しただけでは捨てない。snapshot 変更時には TUI の動的 raster cache を失効させ、以前の URL の古い画像が復活するのを防ぐ。browser 方針の変更・文書の結び直し・待機回収・実行失敗・eviction では状態を失い得る。`page_state` に retained/id/reused/retained_limit を記録し、cache metadata は元の取得時を示す。TUI preview も取得 metadata を保持する。新経路の GHA 検証は未確認で、認証専用 profile・周期的なページ取得・残る取得方針・本家の全 device ID は未完成である。
 
 GLSL は通常ページと別プロセスで明示的に SwiftShader WebGL を選ぶ。Chromium 自身の OS sandbox は維持し、シェーダー用コンテキストで HTTP(S)・file・FTP の取得を拒否する。`@resolution`・`@time`、数値・真偽・ベクトル・色・画像入力、塗り・線・効果、対象画像・親レイヤーを含む背景の入力、効果の順次適用を実装した。画像の向き・透明度、UV varying の precision、微分関数の extension と描画画素も試験した。注釈の全既定値・配列などの宣言互換、塗り段階の対象画像入力、本家との出力比較は未完成である。
 

@@ -136,6 +136,9 @@ fn png_impl(
             "Render exceeds 16384 pixels per side or 32 megapixels",
         ));
     }
+    if let Some(runtime) = runtime.as_deref_mut() {
+        runtime.prepare_pages(snapshot)?;
+    }
     let padding = backdrop_padding(snapshot, options.scale)?;
     let background_nodes = background_nodes(snapshot);
     let (working_width, working_height) =
