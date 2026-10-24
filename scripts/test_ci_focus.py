@@ -1,4 +1,10 @@
 import importlib.util
+import io
+import json
+import os
+import tempfile
+from unittest.mock import patch
+import urllib.error
 from pathlib import Path
 import unittest
 
@@ -20,7 +26,7 @@ class FocusTests(unittest.TestCase):
                 self.assertIn("--test", checks[1])
 
     def test_shared_dynamic_changes_use_one_linux_runner(self):
-        for path in ("src/cdp/tabs.rs", "src/render.rs", "src/tui/preview.rs", "tests/shader_uniforms.rs"):
+        for path in ("src/cdp/tabs.rs", "src/script/context.rs", "src/render.rs", "src/tui/preview.rs", "tests/shader_uniforms.rs"):
             result = focus.select([path])
             self.assertEqual(result["platform"], "ubuntu-24.04")
             self.assertEqual(result["suite"], "dynamic")
@@ -36,6 +42,13 @@ class FocusTests(unittest.TestCase):
         self.assertEqual(result["targets"], ["queries"])
         self.assertEqual(result["platform"], "ubuntu-24.04")
 
+    def test_nested_core_and_adapter_fixtures_keep_their_affected_targets(self):
+        self.assertEqual(focus.select(["src/store/content.rs"])["targets"], ["document_store"])
+        result = focus.select(["tests/support/acp_fixture.py"])
+        self.assertEqual(result["suite"], "conversation")
+        self.assertEqual(result["platform"], "ubuntu-24.04")
+        self.assertEqual(focus.select(["src/clipboard/macos.rs"])["platform"], "macos-15")
+
     def test_platform_override_preserves_the_affected_suite(self):
         result = focus.select(["src/cdp.rs"], "macos-15")
         self.assertEqual(result["platform"], "macos-15")
@@ -46,6 +59,30 @@ class FocusTests(unittest.TestCase):
             result = focus.select(paths)
             self.assertTrue(result["targets"])
             self.assertTrue(set(result["targets"]) <= focus.CORE_TESTS)
+
+    def test_single_platform_success_cannot_replace_the_full_verified_baseline(self):
+        replies = [
+            {"workflow_runs": [{"id": 2, "head_sha": "diagnostic"}, {"id": 1, "head_sha": "verified"}]},
+            {"jobs": [{"name": "Verified source artifact", "conclusion": "skipped"}]},
+            {"jobs": [{"name": "Verified source artifact", "conclusion": "success"}]},
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            event = Path(directory) / "event.json"
+            event.write_text(json.dumps({"before": "previous"}), encoding="utf-8")
+            environment = {"GITHUB_EVENT_PATH": str(event), "GITHUB_API_URL": "https://api.example.invalid", "GITHUB_REPOSITORY": "owner/repo", "GH_TOKEN": "fixture"}
+            with patch.dict(os.environ, environment), patch.object(focus.urllib.request, "urlopen", side_effect=[io.BytesIO(json.dumps(value).encode()) for value in replies]), patch.object(focus.subprocess, "check_output", side_effect=["ancestor\n", "src/store/content.rs\n"]) as command:
+                self.assertEqual(focus.changed_paths(), ["src/store/content.rs"])
+                self.assertEqual(command.call_args_list[0].args[0], ["git", "merge-base", "previous", "verified"])
+                self.assertEqual(command.call_args_list[1].args[0], ["git", "diff", "--name-only", "ancestor", "HEAD"])
+
+    def test_failed_baseline_lookup_expands_instead_of_skipping_unverified_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            event = Path(directory) / "event.json"
+            event.write_text("{}", encoding="utf-8")
+            environment = {"GITHUB_EVENT_PATH": str(event), "GITHUB_API_URL": "https://api.example.invalid", "GITHUB_REPOSITORY": "owner/repo", "GH_TOKEN": "fixture"}
+            with patch.dict(os.environ, environment), patch.object(focus.urllib.request, "urlopen", side_effect=urllib.error.URLError("offline")), patch.object(focus.subprocess, "check_output", return_value="src/agent/process/windows.rs\nsrc/render.rs\n") as command:
+                self.assertEqual(focus.changed_paths(), ["src/agent/process/windows.rs", "src/render.rs"])
+                self.assertEqual(command.call_args.args[0], ["git", "ls-files"])
 
     def test_runtime_optins_never_expand_to_credentialed_agent_requests(self):
         for suite in ("core", "conversation", "graphics", "dynamic"):

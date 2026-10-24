@@ -10,26 +10,29 @@ import urllib.request
 
 
 PLATFORMS = ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-15", "macos-15-intel", "windows-2025"]
-DYNAMIC = {"cdp", "dynamic", "runtime", "runtime_config", "scripts", "shader", "shader_uniforms", "sampler_sources", "imports", "render", "browser_readiness", "dynamic_render", "tui"}
+DYNAMIC = {"cdp", "dynamic", "runtime", "runtime_config", "scripts", "shader", "shader_uniforms", "sampler_sources", "imports", "script", "render", "browser_readiness", "dynamic_render", "tui"}
 CORE_TESTS = {p.stem for p in (Path(__file__).resolve().parents[2] / "tests").glob("*.rs")}
 
 
 def select(paths, platform="auto"):
     stems = {Path(path).stem for path in paths}
+    stems.update(Path(path).parts[1].removesuffix(".rs") for path in paths if path.startswith("src/") and len(Path(path).parts) > 1)
     windows = any("windows" in path.lower() or path.startswith(("src/conversation/", "src/agent/process")) for path in paths)
     # CI changes exercise the formerly failing Windows helper route first.
     windows |= any(path.startswith((".github/", "scripts/ci/")) for path in paths)
-    os_name = ("windows-2025" if windows else "ubuntu-24.04") if platform == "auto" else platform
-    conversation = windows or bool(stems & {"agent", "conversation", "windows_agent"})
+    macos = any("macos" in path.lower() or "darwin" in path.lower() for path in paths)
+    os_name = ("windows-2025" if windows else "macos-15" if macos else "ubuntu-24.04") if platform == "auto" else platform
+    conversation = windows or bool(stems & {"agent", "conversation", "windows_agent"}) or any(path.startswith("tests/support/acp_") for path in paths)
     if conversation:
         suite, targets = "conversation", ["agent", "windows_agent"]
     elif stems & DYNAMIC or any(path.startswith(("src/cdp/", "src/tui/", "src/render/")) for path in paths):
         suite, targets = "dynamic", ["dynamic_render", "browser_readiness", "shader_uniforms", "sampler_sources", "imports"]
-    elif any(path.startswith(("src/graphics", "src/layout", "src/text", "src/icons", "resources/", "vendor/")) for path in paths) or stems & {"graphics", "rendering", "fonts", "optional_icons"}:
+    elif any(path.startswith(("src/graphics", "src/layout", "src/text", "src/icons", "resources/", "vendor/")) for path in paths) or stems & {"graphics", "rendering", "text", "font_sources", "fonts", "optional_icons"}:
         suite, targets = "graphics", ["graphics", "render", "text", "font_sources", "optional_icons"]
     else:
         suite = "core"
-        targets = sorted(stems & CORE_TESTS)
+        aliases = {"store": "document_store", "document": "document_store", "query": "queries", "operations": "operations_cli"}
+        targets = sorted(({aliases.get(stem, stem) for stem in stems}) & CORE_TESTS)
         if not targets:
             targets = ["document_store", "mcp"]
     return {"platform": os_name, "suite": suite, "targets": targets}
