@@ -219,6 +219,8 @@ jobs:
       - name: Verify real page shader and import pixels
         timeout-minutes: 20
         working-directory: ${{ runner.temp }}/lazypencil-source
+        env:
+          LAZYPENCIL_TEST_RETAINED_DIR: ${{ runner.temp }}
         run: |
           set -o pipefail
           cargo test --locked --no-fail-fast --test dynamic_render --test browser_readiness --test shader_uniforms --test sampler_sources --test imports -- --include-ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-render.log"
@@ -279,6 +281,7 @@ jobs:
             ${{ runner.temp }}/chromium-*.log
             ${{ runner.temp }}/chromium-panel.png
             ${{ runner.temp }}/chromium-supervised.png
+            ${{ runner.temp }}/chromium-retained-*.png
             ${{ runner.temp }}/chromium-userns.apparmor
             ${{ runner.temp }}/codec-reference/codec-*
           if-no-files-found: ignore

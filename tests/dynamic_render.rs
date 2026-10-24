@@ -48,6 +48,24 @@ fn page(html: &str) -> String {
     )
 }
 
+fn retain_page_image(name: &str, image: &render::RenderedImage) {
+    if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_RETAINED_DIR") {
+        let directory = PathBuf::from(directory);
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(
+            directory.join(format!("chromium-retained-{name}.png")),
+            &image.png,
+        )
+        .unwrap();
+        let report = json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"width":image.width,"height":image.height,"png_hash":lazypencil::document::hash(&image.png),"snapshot_id":image.snapshot_id,"dynamic_artifacts":image.dynamic_artifacts});
+        fs::write(
+            directory.join(format!("chromium-retained-{name}.json")),
+            serde_json::to_vec_pretty(&report).unwrap(),
+        )
+        .unwrap();
+    }
+}
+
 #[test]
 #[ignore = "Requires headless Chromium and permission to launch its sandbox"]
 fn retained_page_contexts_are_isolated_bounded_and_evicted_in_recency_order() {
@@ -174,6 +192,7 @@ fn retained_page_refresh_preserves_dom_isolates_nodes_and_resets_changed_or_remo
         .unwrap()
     };
     let first = acquire(&mut runtime, &project, &snapshot, false);
+    retain_page_image("first", &first);
     let ids: Vec<_> = first
         .dynamic_artifacts
         .iter()
@@ -199,6 +218,7 @@ fn retained_page_refresh_preserves_dom_isolates_nodes_and_resets_changed_or_remo
     let cached = acquire(&mut runtime, &project, &snapshot, false);
     assert_eq!(cached.dynamic_artifacts, first.dynamic_artifacts);
     let refreshed = acquire(&mut runtime, &project, &snapshot, true);
+    retain_page_image("refreshed", &refreshed);
     for (index, entry) in refreshed.dynamic_artifacts.iter().enumerate() {
         assert_eq!(entry["acquisition"]["page_state"]["id"], ids[index]);
         assert_eq!(entry["acquisition"]["page_state"]["reused"], true);
@@ -223,8 +243,8 @@ fn retained_page_refresh_preserves_dom_isolates_nodes_and_resets_changed_or_remo
         ids[0]
     );
     assert_eq!(
-        resized.dynamic_artifacts[0]["acquisition"]["viewport_width"],
-        40
+        resized.dynamic_artifacts[0]["acquisition"]["viewport_width"].as_f64(),
+        Some(40.0)
     );
     assert_eq!(runtime.process_ids(), pids);
     changed["children"][0]["url"] = json!(page(&(html.to_owned() + " ")));
@@ -264,6 +284,7 @@ fn retained_page_refresh_preserves_dom_isolates_nodes_and_resets_changed_or_remo
     fs::write(&file, &saved).unwrap();
     let (project, snapshot) = load();
     let reinserted = acquire(&mut runtime, &project, &snapshot, false);
+    retain_page_image("reinserted", &reinserted);
     assert_ne!(
         reinserted.dynamic_artifacts[0]["acquisition"]["page_state"]["id"],
         restored_a
@@ -295,6 +316,7 @@ fn retained_page_refresh_preserves_dom_isolates_nodes_and_resets_changed_or_remo
     assert_eq!(cached.dynamic_artifacts, policy.dynamic_artifacts);
     assert!(runtime.process_ids().is_empty());
     let restarted = acquire(&mut runtime, &project, &snapshot, true);
+    retain_page_image("restarted", &restarted);
     assert_ne!(
         restarted.dynamic_artifacts[0]["acquisition"]["page_state"]["id"],
         policy.dynamic_artifacts[0]["acquisition"]["page_state"]["id"]
