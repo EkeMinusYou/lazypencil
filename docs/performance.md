@@ -176,6 +176,29 @@ The macOS 15 Intel job in [run 40014323380](https://github.com/EkeMinusYou/lazyp
 
 Each scene retained twenty matching repeated exports after its first invocation: shadow `d29ee020a70d0e8eafa61ca8dd6d8c317388bd88a41164cbcba0bd43f2580034`, dashboard `aa18c4fb3d2de0e746942703f469d1c2559e62e1b350284610b2f2b33376ede4`. The three separate release-smoke PNGs also matched their reports and were visually inspected. This shared-host observation has uncontrolled filesystem cache and host load; it does not establish a cold-start or interaction target, cross-hardware regression, or complete process-group resource usage.
 
+## Same-source hosted release observations, 2026-10-24
+
+[Run 40047491096](https://github.com/EkeMinusYou/lazypencil/actions/runs/40047491096) succeeded on all five native platforms at source `1c26faf09d47e57fbd54e4c27250947c869e1dcf`. Each release executable exported the fixed shadow and dashboard scenes at 1,000 expanded nodes and 1920×1080, with zero diagnostics, script executions or dynamic acquisitions. Each scene has one first invocation and twenty repeated fresh CLI children. All twenty-one PNGs matched within each platform/scene. Artifact ZIP digests, report/image hashes and all 42 exports per platform were verified; the table's summaries were independently recalculated from the raw repeated samples.
+
+Elapsed time includes process creation, document loading, layout, rendering, PNG encoding and writing. It uses the parent's monotonic clock and a 1 ms completion poll. Peak RSS comes from `wait4` on Unix and the retained child process handle's `PeakWorkingSetSize` on Windows. The maximum below is the largest per-child high-water mark among the twenty repeats, not simultaneous process-group memory. Filesystem cache and hosted CPU load were uncontrolled. The first invocation is recorded separately and is not called a cold-cache measurement. No local build was performed for this observation.
+
+| Platform | Scene | Repeated median (ms) | Repeated p95, nearest rank (ms) | Maximum repeated peak RSS (MiB) |
+| --- | --- | --- | --- | --- |
+| linux-x64 | shadow | 206.4 | 208.5 | 95.8 |
+| linux-x64 | dashboard | 720.4 | 737.4 | 83.4 |
+| linux-arm | shadow | 204.9 | 207.1 | 93.7 |
+| linux-arm | dashboard | 1264.9 | 1276.0 | 77.3 |
+| macos-arm | shadow | 218.5 | 256.4 | 137.5 |
+| macos-arm | dashboard | 1314.7 | 1713.7 | 130.1 |
+| intel | shadow | 435.5 | 454.3 | 109.3 |
+| intel | dashboard | 947.8 | 995.5 | 104.7 |
+| windows | shadow | 344.0 | 375.0 | 89.1 |
+| windows | dashboard | 1094.0 | 1125.0 | 78.8 |
+
+Runner identities: Linux x64 `20261012.334.1` and arm64 `20261012.149.1` used four logical CPUs and kernel `6.17.0-1022-azure`; macOS arm64 `20260907.0337.1` used three logical CPUs, Intel `20260824.0482.1` four, both Darwin 24.6.0; Windows x64 `20261021.278.1` used four logical CPUs on Windows Server 2025. Retained evidence artifacts are respectively `12542428685`, `12542349537`, `12542743195`, `12543092816`, and `12542454823`.
+
+These are static CLI observations at that exact source, before Windows agent job supervision and TUI time seeking. They do not measure interactive latency, authenticated agents, dynamic runtime descendants, idle CPU, physical terminals or final release acceptance. Platform differences are not isolated hardware regressions.
+
 ## Remaining work
 
 Background-aware layers preserve color alpha and replacement coverage, which can require several working rasters. Explicit scratch reservations are bounded and fail rather than dropping effects. This resource guard is separate from measured RSS.
