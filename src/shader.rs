@@ -8,6 +8,7 @@ use base64::Engine;
 use serde_json::{Map, Value, json};
 
 mod declarations;
+mod defaults;
 
 #[derive(Debug)]
 pub struct Uniform {
@@ -17,6 +18,7 @@ pub struct Uniform {
     pub time: bool,
     pub array: bool,
     pub length: Option<usize>,
+    pub default: Option<Value>,
 }
 
 pub fn uniforms(source: &str) -> Result<Vec<Uniform>> {
@@ -65,15 +67,17 @@ pub fn request(
     }
     let mut values = Map::new();
     let mut arrays = Map::new();
+    let mut default_arrays = Vec::new();
     let mut component_count = 0;
     let mut sampler_bytes = 0usize;
     for uniform in definitions {
-        let value = overrides.get(&uniform.name);
-        if (uniform.resolution || uniform.time) && value.is_some() {
+        let stored = overrides.get(&uniform.name);
+        if (uniform.resolution || uniform.time) && stored.is_some() {
             return Err(invalid(
                 "Built-in @resolution and @time uniforms cannot have stored overrides",
             ));
         }
+        let value = stored.or(uniform.default.as_ref());
         let value = if uniform.array {
             arrays.insert(uniform.name.clone(), json!(uniform.length));
             if uniform.kind == "sampler2D" {
@@ -104,7 +108,19 @@ pub fn request(
                     }
                 }
             } else {
-                numeric_array(&uniform, value)?
+                if stored.is_none() && uniform.default.is_some() {
+                    // Native defaults initialize one element; remaining linked
+                    // elements keep zero. Explicit short overrides still fail.
+                    default_arrays.push(uniform.name.clone());
+                    let element = numeric(&uniform.kind, value)?;
+                    match element {
+                        Value::Array(values) => Value::Array(values),
+                        Value::Bool(value) => json!([u8::from(value)]),
+                        value => json!([value]),
+                    }
+                } else {
+                    numeric_array(&uniform, value)?
+                }
             }
         } else if uniform.resolution {
             json!([width, height])
@@ -135,6 +151,9 @@ pub fn request(
     let mut result = json!({"source":source,"source_hash":asset.revision,"width":width,"height":height,"time":time,"time_dependent":time_dependent,"uniforms":values});
     if !arrays.is_empty() {
         result["uniform_arrays"] = Value::Object(arrays);
+    }
+    if !default_arrays.is_empty() {
+        result["uniform_array_defaults"] = json!(default_arrays);
     }
     Ok(result)
 }

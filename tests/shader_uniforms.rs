@@ -38,6 +38,122 @@ fn request(source: &str, overrides: Value) -> lazypencil::Result<Value> {
 }
 
 #[test]
+fn documentation_defaults_prepare_native_values_and_explicit_zero_wins() {
+    let source = "precision highp float;\n/** @default 0.75 */ uniform float value;\n\
+        /** @default 0.5 */ uniform float first,second;\n\
+        /** @default 3 */ uniform int count;\n\
+        /** @default -0.25 */ uniform float negative;\n\
+        /** @default 2.5e-1 */ uniform float exponent;\n\
+        /** @default 0x2 */ uniform float prefix;\n\
+        /** @default 0.25, 0.75 */ uniform vec2 pair;\n\
+        /**\n * @color\n * @default #3a7fc1\n */ uniform vec3 color;";
+    let result = request(source, json!({"value":0})).unwrap();
+    assert_eq!(result["uniforms"]["value"].as_f64(), Some(0.0));
+    for name in ["first", "second"] {
+        assert_eq!(result["uniforms"][name].as_f64(), Some(0.5));
+    }
+    assert_eq!(result["uniforms"]["count"], 3);
+    assert_eq!(result["uniforms"]["negative"].as_f64(), Some(-0.25));
+    assert_eq!(result["uniforms"]["exponent"].as_f64(), Some(0.25));
+    assert_eq!(result["uniforms"]["prefix"].as_f64(), Some(0.0));
+    assert_eq!(result["uniforms"]["pair"], json!([0.25, 0.75]));
+    assert_eq!(
+        result["uniforms"]["color"],
+        json!([58.0 / 255.0, 127.0 / 255.0, 193.0 / 255.0])
+    );
+    let before = request("/** @default 0.75 */ uniform float value;", json!({})).unwrap();
+    assert_eq!(before["uniforms"]["value"].as_f64(), Some(0.75));
+}
+
+#[test]
+fn typed_boolean_and_matrix_defaults_keep_stored_false() {
+    let source =
+        "/** @default 1 */ uniform bool enabled;\n/** @default 1,0,0,1 */ uniform mat2 transform;";
+    let defaults = request(source, json!({})).unwrap();
+    assert_eq!(defaults["uniforms"]["enabled"], true);
+    assert_eq!(
+        defaults["uniforms"]["transform"],
+        json!([1.0, 0.0, 0.0, 1.0])
+    );
+    let overridden = request(source, json!({"enabled":false})).unwrap();
+    assert_eq!(overridden["uniforms"]["enabled"], false);
+}
+
+#[test]
+fn default_annotations_ignore_ordinary_trailing_body_and_similarly_named_comments() {
+    for source in [
+        "/* @default 0.75 */ uniform float value;",
+        "uniform float value; /** @default 0.75 */",
+        "// @default 0.75\nuniform float value;",
+        "/** @default_value 0.75 */ uniform float value;",
+        "/** contact@default.example */ uniform float value;",
+        "void helper(){/** @default 0.75 */ float unused;} uniform float value;",
+    ] {
+        let result = request(source, json!({})).unwrap();
+        assert_eq!(result["uniforms"]["value"].as_f64(), Some(0.0), "{source}");
+    }
+    let result = request(
+        "uniform float first;\n/** @default .5 */ uniform float second;",
+        json!({}),
+    )
+    .unwrap();
+    assert_eq!(result["uniforms"]["first"].as_f64(), Some(0.0));
+    assert_eq!(result["uniforms"]["second"].as_f64(), Some(0.5));
+}
+
+#[test]
+fn array_defaults_mark_one_element_and_keep_short_explicit_overrides_invalid() {
+    for source in [
+        "/** @default 0.25 */ uniform float value[2];",
+        "const int N=2;\n/** @default 0.25 */ uniform float value[N];",
+    ] {
+        let result = request(source, json!({})).unwrap();
+        assert_eq!(result["uniforms"]["value"], json!([0.25]));
+        assert_eq!(result["uniform_array_defaults"], json!(["value"]));
+        let explicit = request(source, json!({"value":[0.75,0.5]})).unwrap();
+        assert_eq!(explicit["uniforms"]["value"], json!([0.75, 0.5]));
+        assert!(explicit.get("uniform_array_defaults").is_none());
+    }
+    assert!(
+        request(
+            "/** @default 0.25 */ uniform float value[2];",
+            json!({"value":[0.5]})
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn malformed_or_nonfinite_defaults_fail_before_browser_startup() {
+    for source in [
+        "/** @default */ uniform float value;",
+        "/** @default invalid */ uniform float value;",
+        "/** @default 1e400 */ uniform float value;",
+        "/** @default 1e300 */ uniform float value;",
+        "/** @default 1.5 */ uniform int value;",
+        "/** @default 0.5 */ uniform vec3 value;",
+        "/** @default 0.25,0.75 */ uniform float value[2];",
+        "/** @default #3a7fc1 */ uniform vec3 value;",
+        "/** @color\n @default #invalid */ uniform vec3 value;",
+        "/** @default 0.25\n @default 0.75 */ uniform float value;",
+    ] {
+        let error = request(source, json!({})).unwrap_err();
+        assert_eq!(error.code, "SHADER_COMPILE_FAILED", "{source}");
+        assert!(error.message.contains("@default"), "{error:?}");
+    }
+    let large = format!(
+        "/** @default {} */ uniform float value;",
+        vec!["0"; 4097].join(",")
+    );
+    assert!(
+        request(&large, json!({}))
+            .unwrap_err()
+            .message
+            .contains("4096")
+    );
+}
+
+#[test]
 fn grouped_declarations_keep_individual_array_dimensions_and_shared_precision() {
     let uniforms = shader::uniforms("uniform highp vec3 first, second[4], third[2+1];").unwrap();
     assert_eq!(
@@ -452,5 +568,116 @@ fn linked_constant_dimensions_validate_inputs_and_recover_after_an_error() {
             fs::read(scene_root.path().join("input.pen")).unwrap(),
             before
         );
+    }
+}
+
+#[test]
+#[ignore = "Requires sandboxed software WebGL Chromium"]
+fn native_documentation_defaults_match_public_pencil_reference_pixels() {
+    use lazypencil::{document::hash, render};
+    use skia_safe::{Data, Image};
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/pencil-0.3.9/shader-defaults");
+    let source = include_str!("fixtures/pencil-0.3.9/shader-defaults/default-values.pen");
+    let reference_bytes =
+        include_bytes!("fixtures/pencil-0.3.9/shader-defaults/default-values.png");
+    let reference = Image::from_encoded(Data::new_copy(reference_bytes))
+        .unwrap()
+        .make_raster_image(None, None)
+        .unwrap();
+    let expected = reference.peek_pixels().unwrap();
+    assert_eq!((reference.width(), reference.height()), (560, 40));
+    for variant in ["literal", "constant"] {
+        let root = TempDir::new().unwrap();
+        for entry in fs::read_dir(&fixtures).unwrap() {
+            let path = entry.unwrap().path();
+            if path
+                .extension()
+                .is_some_and(|extension| extension == "glsl")
+            {
+                let mut bytes = fs::read_to_string(&path).unwrap();
+                if variant == "constant" && path.file_name().unwrap() == "array-default.glsl" {
+                    bytes = bytes
+                        .replace("/** @default", "const int COUNT=2;\n/** @default")
+                        .replace("value[2]", "value[COUNT]");
+                }
+                fs::write(root.path().join(path.file_name().unwrap()), bytes).unwrap();
+            }
+        }
+        let path = root.path().join("design.pen");
+        fs::write(&path, source).unwrap();
+        let project =
+            Project::from_document(&path, Document::parse(source.to_owned()).unwrap(), &[])
+                .unwrap();
+        let layout = lazypencil::layout::compute(
+            project.resolve().unwrap(),
+            &mut lazypencil::text::Fonts::new(&[]).unwrap(),
+        )
+        .unwrap();
+        let mut runtime = lazypencil::dynamic::DynamicRuntime::new(root.path().join("runtime"))
+            .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+            .with_executable(
+                std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
+            );
+        let output = render::png_with_runtime(
+            &project,
+            &layout,
+            &render::RenderOptions {
+                scale: 2.0,
+                ..Default::default()
+            },
+            &mut runtime,
+            None,
+        )
+        .unwrap();
+        assert_eq!((output.width, output.height), (560, 40));
+        assert!(layout.diagnostics.is_empty());
+        assert_eq!(output.dynamic_artifacts.len(), 14);
+        let image = Image::from_encoded(Data::new_copy(&output.png))
+            .unwrap()
+            .make_raster_image(None, None)
+            .unwrap();
+        let actual = image.peek_pixels().unwrap();
+        let mut maximum = 0u8;
+        let mut difference = 0u64;
+        for y in 0..40 {
+            for x in 0..560 {
+                let a = actual.get_color((x, y));
+                let b = expected.get_color((x, y));
+                for delta in [
+                    a.r().abs_diff(b.r()),
+                    a.g().abs_diff(b.g()),
+                    a.b().abs_diff(b.b()),
+                    a.a().abs_diff(b.a()),
+                ] {
+                    maximum = maximum.max(delta);
+                    difference += u64::from(delta);
+                }
+            }
+        }
+        assert!(
+            maximum <= 1,
+            "Native shader defaults diverged ({variant}): maximum={maximum}, difference={difference}"
+        );
+        assert_eq!(fs::read(&path).unwrap(), source.as_bytes());
+        if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_NATIVE_SHADER_DIR") {
+            let directory = std::path::PathBuf::from(directory);
+            fs::create_dir_all(&directory).unwrap();
+            let stem = format!("chromium-native-defaults-{variant}");
+            fs::write(directory.join(format!("{stem}.png")), &output.png).unwrap();
+            fs::write(
+                directory.join(format!("{stem}.json")),
+                json!({
+                    "source_commit":std::env::var("GITHUB_SHA").ok(),"variant":variant,
+                    "width":output.width,"height":output.height,"diagnostics":layout.diagnostics,
+                    "png_hash":hash(&output.png),"reference_sha256":hash(reference_bytes),
+                    "source_sha256":hash(source.as_bytes()),"native_producer":"@pen.dev/cli 0.3.9",
+                    "document_version":"2.19","verified_cases":14,
+                    "maximum_channel_difference":maximum,"absolute_channel_difference":difference
+                })
+                .to_string(),
+            )
+            .unwrap();
+        }
     }
 }

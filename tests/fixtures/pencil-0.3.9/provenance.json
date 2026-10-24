@@ -41,6 +41,108 @@
       "png_sha256": "93f45983aa59b1505065f514ef3fe2f5954095d25590a8f1e5eb07043029ee27",
       "method": "Public headless export of original self-authored2.19 JSON; no model call or proprietary source copied.",
       "scope": "Wide triangles at radii10,30,50,60,100; the lastthree decoded144x160 panels are identical."
+    },
+    {
+      "pen": "shader-defaults/default-values.pen",
+      "png": "shader-defaults/default-values.png",
+      "png_sha256": "2017c9afbee363174badf58d932499e9a7db5ad84960eb67dea0285b66d548dc",
+      "dimensions": [
+        560,
+        40
+      ],
+      "logical_dimensions": [
+        280,
+        20
+      ],
+      "export_scale": 2,
+      "method": "Public headless execute/Export of original self-authored 2.19 JSON and GLSL using existing @pen.dev/cli 0.3.9. No model requests; no vendor programs, prose, skills or credentials incorporated. Functional annotation syntax was checked against the installed interface reference and verified by these outputs.",
+      "scope": "14 flat-color cases: numeric/color/vector/grouped defaults, explicit overrides, ignored ordinary/trailing comments, signed/scientific/decimal-prefix parsing and first-element-only array defaults. No shader-effect, bool, device or current-schema parity claim.",
+      "center_rgba": [
+        [
+          191,
+          0,
+          0,
+          255
+        ],
+        [
+          64,
+          0,
+          0,
+          255
+        ],
+        [
+          0,
+          0,
+          0,
+          255
+        ],
+        [
+          0,
+          0,
+          0,
+          255
+        ],
+        [
+          58,
+          127,
+          193,
+          255
+        ],
+        [
+          32,
+          96,
+          160,
+          255
+        ],
+        [
+          191,
+          0,
+          0,
+          255
+        ],
+        [
+          64,
+          0,
+          0,
+          255
+        ],
+        [
+          64,
+          0,
+          0,
+          255
+        ],
+        [
+          58,
+          127,
+          193,
+          255
+        ],
+        [
+          64,
+          191,
+          0,
+          255
+        ],
+        [
+          128,
+          128,
+          0,
+          255
+        ],
+        [
+          64,
+          0,
+          0,
+          255
+        ],
+        [
+          0,
+          0,
+          0,
+          255
+        ]
+      ]
     }
   ]
 }

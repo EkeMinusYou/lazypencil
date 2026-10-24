@@ -129,7 +129,7 @@ jobs:
           set -o pipefail
           python scripts/ci/focus.py build --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS" 2>&1 | tee "$RUNNER_TEMP/focus-build.log"
       - name: Run focused reproduction and affected tests
-        if: inputs.phase == 'focus' && inputs.suite != 'dynamic'
+        if: inputs.phase == 'focus' && inputs.suite != 'dynamic' && inputs.suite != 'shader'
         timeout-minutes: 10
         working-directory: ${{ runner.temp }}/lazypencil-source
         env:
@@ -138,6 +138,13 @@ jobs:
         run: |
           set -o pipefail
           python scripts/ci/focus.py test --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS" 2>&1 | tee "$RUNNER_TEMP/focus-tests.log"
+      - name: Validate shader inputs before acquiring Chromium
+        if: inputs.phase == 'focus' && inputs.suite == 'shader'
+        timeout-minutes: 2
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
+          cargo test --locked --test shader_uniforms -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-tests.log"
       - name: Build core test binaries
         id: core-build
         if: inputs.phase == 'full'
@@ -205,7 +212,7 @@ jobs:
           set -o pipefail
           cargo test --locked --no-fail-fast -- --test-threads=2 --skip tui::tests:: --skip cancelling_a_running_script_unblocks_the_mcp_document_worker 2>&1 | tee -a "$RUNNER_TEMP/lazypencil-tests.log"
       - name: Install and verify the pinned Chromium runtime
-        if: inputs.phase == 'full' || inputs.suite == 'dynamic'
+        if: inputs.phase == 'full' || inputs.suite == 'dynamic' || inputs.suite == 'shader'
         timeout-minutes: 10
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
@@ -224,7 +231,7 @@ jobs:
           PY
       - name: Permit the verified browser to create its Linux sandbox
         timeout-minutes: 5
-        if: runner.os == 'Linux' && (inputs.phase == 'full' || inputs.suite == 'dynamic')
+        if: runner.os == 'Linux' && (inputs.phase == 'full' || inputs.suite == 'dynamic' || inputs.suite == 'shader')
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
           if [ ! -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ] || [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" != 1 ]; then
@@ -259,7 +266,7 @@ jobs:
           PY
       - name: Diagnose Linux browser startup with the OS sandbox enabled
         timeout-minutes: 5
-        if: runner.os == 'Linux' && (inputs.phase == 'full' || inputs.suite == 'dynamic')
+        if: runner.os == 'Linux' && (inputs.phase == 'full' || inputs.suite == 'dynamic' || inputs.suite == 'shader')
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
           ulimit -c 0
@@ -286,23 +293,25 @@ jobs:
                   print(name + ":\n" + stream.read(65536).decode("utf-8", errors="replace"))
           PY
           exit "$lazypencil_probe_status"
-      - name: Run focused retained-page reproduction and affected pixels
-        if: inputs.phase == 'focus' && inputs.suite == 'dynamic'
+      - name: Run focused dynamic reproduction and affected pixels
+        if: inputs.phase == 'focus' && (inputs.suite == 'dynamic' || inputs.suite == 'shader')
         timeout-minutes: 10
         working-directory: ${{ runner.temp }}/lazypencil-source
         env:
           FOCUS_SUITE: ${{ inputs.suite }}
           FOCUS_TARGETS: ${{ inputs.targets }}
           LAZYPENCIL_TEST_RETAINED_DIR: ${{ runner.temp }}
+          LAZYPENCIL_TEST_NATIVE_SHADER_DIR: ${{ runner.temp }}
         run: |
           set -o pipefail
-          python scripts/ci/focus.py test --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS" 2>&1 | tee "$RUNNER_TEMP/focus-tests.log"
+          python scripts/ci/focus.py test --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS" 2>&1 | tee -a "$RUNNER_TEMP/focus-tests.log"
       - name: Verify real page shader and import pixels
         if: inputs.phase == 'full'
         timeout-minutes: 20
         working-directory: ${{ runner.temp }}/lazypencil-source
         env:
           LAZYPENCIL_TEST_RETAINED_DIR: ${{ runner.temp }}
+          LAZYPENCIL_TEST_NATIVE_SHADER_DIR: ${{ runner.temp }}
         run: |
           set -o pipefail
           cargo test --locked --no-fail-fast --test dynamic_render --test browser_readiness --test shader_uniforms --test sampler_sources --test imports --test windows_agent -- --ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-render.log"

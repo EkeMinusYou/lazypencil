@@ -19,6 +19,7 @@ pub(super) fn parse(source: &str) -> Result<Vec<Uniform>> {
     let mut cursor = 0;
     let mut depth = 0usize;
     let mut pending = String::new();
+    let mut pending_docs = String::new();
     let mut names = BTreeSet::new();
     let mut result = Vec::new();
     while cursor < tokens.len() {
@@ -27,6 +28,10 @@ pub(super) fn parse(source: &str) -> Result<Vec<Uniform>> {
             if !token.trailing {
                 pending.push('\n');
                 pending.push_str(token.text);
+                if token.text.starts_with('*') {
+                    pending_docs.push('\n');
+                    pending_docs.push_str(token.text);
+                }
             }
             cursor += 1;
             continue;
@@ -38,11 +43,13 @@ pub(super) fn parse(source: &str) -> Result<Vec<Uniform>> {
                 _ => {}
             }
             pending.clear();
+            pending_docs.clear();
             cursor += 1;
             continue;
         }
         cursor += 1;
         let mut annotations = std::mem::take(&mut pending);
+        let documentation = std::mem::take(&mut pending_docs);
         let mut kind = code(&tokens, &mut cursor, &mut annotations)?;
         if matches!(kind, "lowp" | "mediump" | "highp") {
             kind = code(&tokens, &mut cursor, &mut annotations)?;
@@ -121,6 +128,7 @@ pub(super) fn parse(source: &str) -> Result<Vec<Uniform>> {
         }
         let resolution = directive(&annotations, "resolution");
         let time = directive(&annotations, "time");
+        let default = super::defaults::parse(&documentation, kind)?;
         if resolution && kind != "vec2" || time && kind != "float" || resolution && time {
             return Err(invalid("@resolution requires vec2; @time requires float"));
         }
@@ -142,6 +150,7 @@ pub(super) fn parse(source: &str) -> Result<Vec<Uniform>> {
                 time,
                 array,
                 length,
+                default: default.clone(),
             });
         }
     }
@@ -173,7 +182,7 @@ fn identifier(value: &str) -> bool {
         && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
 }
 
-fn directive(comment: &str, name: &str) -> bool {
+pub(super) fn directive(comment: &str, name: &str) -> bool {
     comment.match_indices('@').any(|(position, _)| {
         if position != 0
             && !comment[..position]
