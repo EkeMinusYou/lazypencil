@@ -20,6 +20,15 @@ CREDENTIALED_TESTS = {"agent_workflow"}
 RENDER_MODULES = set(re.findall(r'#\[cfg\(feature = "(?:rendering|tui)"\)\]\s+(?:pub )?mod (\w+);', (Path(__file__).resolve().parents[2] / "src/lib.rs").read_text(encoding="utf-8")))
 
 
+def preprocessor_changed(paths):
+    return any(path.startswith(("src/shader/preprocessor/", "resources/licenses/rust/", "resources/licenses/toolchain/",
+                                "tests/fixtures/pencil-0.3.9/shader-logical-coordinates/"))
+               or path in {"scripts/ci/shader_preprocessor_notices.py", "scripts/ci/toolchain_evidence.py",
+                           "scripts/license_notices.py", "scripts/toolchain_notice_inventory.py",
+                           "tests/support/shader_preprocessor.mjs", ".github/workflows/shader-preprocessor.yml"}
+               for path in paths)
+
+
 def select(paths, platform="auto"):
     stems = {Path(path).stem for path in paths}
     stems.update(Path(path).parts[1].removesuffix(".rs") for path in paths if path.startswith("src/") and len(Path(path).parts) > 1)
@@ -121,7 +130,9 @@ def main():
     parser.add_argument("--targets", default="[]")
     args = parser.parse_args()
     if args.mode == "plan":
-        result = select(changed_paths(), args.platform)
+        paths = changed_paths()
+        result = select(paths, args.platform)
+        result["preprocessor"] = str(preprocessor_changed(paths)).lower()
         print(json.dumps(result))
         with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
             for key, value in result.items():

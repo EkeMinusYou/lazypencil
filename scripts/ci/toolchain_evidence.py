@@ -65,11 +65,11 @@ def prepare_source(archive, destination):
     return source, {"selected_files": files, "selected_bytes": size}
 
 
-def collect(root, output):
+def collect(root, output, target=None):
     notices.require(os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("RUNNER_TEMP"),
                     "Run this large-input preparation on GitHub Actions")
     notices.require(not output.exists() and not output.is_symlink(), "Toolchain evidence output must not exist")
-    identity, sysroot, libraries = toolchain.observe("rustc", None)
+    identity, sysroot, libraries = toolchain.observe("rustc", target)
     notices.require(identity["release"] == RELEASE and identity["commit_hash"] == COMMIT,
                     "Review source provenance for the selected compiler")
     work = Path(os.environ["RUNNER_TEMP"]) / "stdlib-notice-inputs"
@@ -116,9 +116,10 @@ def collect(root, output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--target", help="Installed target whose standard-library inputs are inventoried")
     args = parser.parse_args()
     try:
-        print(json.dumps(collect(Path(__file__).resolve().parents[2], args.output)))
+        print(json.dumps(collect(Path(__file__).resolve().parents[2], args.output, args.target)))
     except (notices.NoticeError, OSError, ValueError, KeyError, TypeError, tarfile.TarError,
             EOFError, subprocess.SubprocessError) as error:
         parser.exit(1, "Toolchain evidence error: " + str(error) + "\n")

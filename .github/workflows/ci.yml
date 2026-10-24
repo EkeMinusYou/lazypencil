@@ -52,6 +52,7 @@ jobs:
       platform: ${{ steps.focus.outputs.platform }}
       suite: ${{ steps.focus.outputs.suite }}
       targets: ${{ steps.focus.outputs.targets }}
+      preprocessor: ${{ steps.focus.outputs.preprocessor }}
       matrix: ${{ steps.matrix.outputs.platforms }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -99,15 +100,24 @@ jobs:
           rustup toolchain install stable --profile minimal
           cargo +stable install cargo-deny --version 0.20.2 --locked
       - name: Check all feature and platform dependencies
-        run: cargo deny --all-features --locked check licenses sources advisories
+        run: |
+          cargo deny --all-features --locked check licenses sources advisories
+          cargo deny --manifest-path src/shader/preprocessor/Cargo.toml --all-features --locked check licenses sources advisories
       - name: Compare notices with locked registry sources
         run: |
           cargo fetch --locked
           python3 scripts/license_notices.py verify --cargo-home "${CARGO_HOME:-$HOME/.cargo}"
 
+  shader-preprocessor:
+    name: Check isolated shader preprocessing first
+    needs: plan
+    if: needs.plan.outputs.preprocessor == 'true'
+    uses: ./.github/workflows/shader-preprocessor.yml
+
   focus:
     name: Focused reproduction / ${{ needs.plan.outputs.platform }}
-    needs: plan
+    needs: [plan, shader-preprocessor]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.shader-preprocessor.result == 'success' || needs.shader-preprocessor.result == 'skipped') }}
     uses: ./.github/workflows/native.yml
     with:
       os: ${{ needs.plan.outputs.platform }}

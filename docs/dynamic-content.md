@@ -116,6 +116,8 @@ CLI は取得条件を満たした一時点の PNG を出力する。TUI は同�
 
 宣言直前の最も近い documentation comment（`/** ... */`）の `@resolution`・`@time` を単語として照合する。空行は許すが、別の comment・通常のコード・プリプロセッサ行を挟むと先行注釈を破棄する。セミコロン後の注釈は同じ行でも次の宣言へ適用し、宣言内の注釈や末尾だけの注釈は適用しない。複数名の宣言では同じ注釈を共有する。組み込み入力の配列・保存済み上書きと、`@time`／`@default` の併用は拒否する。本家 CLI 0.3.9／形式2.19の公開 Export による自作20ケースで適用位置を確認した。ベンダーのプログラム・文章・スキル・認証情報は取り込まない。拡大出力時の logical 座標・resolution と、最新形式の完全な互換性は別途未完了とする。
 
+拡大座標を補正する前処理は独立した Rust／Wasm component として実装を進める。GLSL のマクロ・条件分岐を展開した後に残る組み込み座標だけを変換し、元のソースと hash は保持する。Chromium 内の import memory を最大64 MiBに制限し、ファイル・ネットワーク・WASI の import は与えない。component は本体の Cargo.lock と native build cache から分離し、変更時は GHA の Wasm／実行試験と原ライセンス収集を重い native 検証より先に行う。現時点では描画経路へ未接続で、座標互換を達成したとは扱わない。
+
 宣言前の `/** ... */` comment の `@default` は、数値・`@color` の色・カンマ区切りの成分を指定できる。grouped 宣言は共有し、保存済みの uniform 値を優先する。配列は先頭要素だけを初期化し、リンクされた残りを0にする。通常 comment は既定値にしない。宣言後の documentation comment は、上記の隣接規則に従って次の宣言へ適用する。自作の本家 CLI 0.3.9／形式2.19の14ケースを比較用に保持する。シェーダー effect や bool の同 CLI 経路は非対応で、最新形式全体の参照とはしない。source `1f6166c` の通常 GHA `40074036061` は初回対象3環境すべてで成功し、保存した literal／constant 配列の2方式の14ケースを独立に復号して、各環境で本家参照との全 RGBA 画素一致を確認した。
 
 ソースは1 MiB、解析は262,144 token、uniform 名は256個、配列は256要素、明示値・linked numeric component は4,096を上限とする。sampler 配列にも同じ宣言長・active prefix の検査を適用し、未指定要素には透明画像を使う。実際の fragment texture unit 上限を検査し、同じ入力画像は unit を共有する。画像の符号化済み入力は1要求64 MiBを上限とする。多次元配列、struct とマクロで生成する uniform 宣言、残る Pencil 注釈と完全な vertex interface は未完成。定数式に使うマクロは実 WebGL へ渡す。小さい値や実行期限を削って描画成功に見せる処理は行わない。独自の編集可能な [作例](../examples/uniform-study.pen) は同じ [GLSL](../examples/assets/uniform-study.glsl) を配色配列・行列で再利用する。

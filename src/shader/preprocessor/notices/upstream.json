@@ -1,0 +1,51 @@
+{
+  "format_version": 1,
+  "license_references": [],
+  "packages": [
+    {
+      "name": "glsl-lang-pp",
+      "version": "0.8.1",
+      "archive_sha256": "88677876fb27f116015d0ecebda6d77bdf65f3a6fa3f5dfeed10b8c8f04cb2c5",
+      "files": [
+        {
+          "path": "LICENSE",
+          "revision": "247fbba98cd1ba9e1c87f4d5a8e0568fbdc48cfe",
+          "url": "https://raw.githubusercontent.com/alixinne/glsl-lang/247fbba98cd1ba9e1c87f4d5a8e0568fbdc48cfe/LICENSE",
+          "sha256": "2676516154cc85237cf8e97bb58d93b9e15b80a51066d448ef6c19eca05d88b3",
+          "blob": "texts/2676516154cc85237cf8e97bb58d93b9e15b80a51066d448ef6c19eca05d88b3.txt",
+          "git_blob_sha1": "03a3e7d2e2c90447560dbfe297aa9adcf54fb1bc"
+        }
+      ]
+    },
+    {
+      "name": "lang-util",
+      "version": "0.8.1",
+      "archive_sha256": "d1715a1e56998f119cd6d49ac8a69802dcbe4fca96d8291243d6dae87abeb913",
+      "files": [
+        {
+          "path": "LICENSE",
+          "revision": "247fbba98cd1ba9e1c87f4d5a8e0568fbdc48cfe",
+          "url": "https://raw.githubusercontent.com/alixinne/glsl-lang/247fbba98cd1ba9e1c87f4d5a8e0568fbdc48cfe/LICENSE",
+          "sha256": "2676516154cc85237cf8e97bb58d93b9e15b80a51066d448ef6c19eca05d88b3",
+          "blob": "texts/2676516154cc85237cf8e97bb58d93b9e15b80a51066d448ef6c19eca05d88b3.txt",
+          "git_blob_sha1": "03a3e7d2e2c90447560dbfe297aa9adcf54fb1bc"
+        }
+      ]
+    },
+    {
+      "name": "lang-util-derive",
+      "version": "0.8.1",
+      "archive_sha256": "1f2acc66aedf0e445534e0a6b3f0f6ee20ef6ebb9647dbe10735e52ea8d6a096",
+      "files": [
+        {
+          "path": "LICENSE",
+          "revision": "247fbba98cd1ba9e1c87f4d5a8e0568fbdc48cfe",
+          "url": "https://raw.githubusercontent.com/alixinne/glsl-lang/247fbba98cd1ba9e1c87f4d5a8e0568fbdc48cfe/LICENSE",
+          "sha256": "2676516154cc85237cf8e97bb58d93b9e15b80a51066d448ef6c19eca05d88b3",
+          "blob": "texts/2676516154cc85237cf8e97bb58d93b9e15b80a51066d448ef6c19eca05d88b3.txt",
+          "git_blob_sha1": "03a3e7d2e2c90447560dbfe297aa9adcf54fb1bc"
+        }
+      ]
+    }
+  ]
+}
