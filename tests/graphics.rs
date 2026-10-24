@@ -338,6 +338,55 @@ fn per_side_borders_have_independent_widths_and_matching_export_bounds() {
 }
 
 #[test]
+fn nonrectangular_side_widths_match_top_width_pixels_and_export_bounds() {
+    let shapes = [
+        json!({"type":"ellipse"}),
+        json!({"type":"polygon","polygonCount":3,"cornerRadius":6}),
+        json!({"type":"path","geometry":"M0 40 L20 0 L40 40 Z","viewBox":[0,0,40,40]}),
+        json!({"type":"path","geometry":"M0 40 L40 0","viewBox":[0,0,40,40]}),
+        json!({"type":"text","content":"Aj","fontSize":14,"textGrowth":"fixed-width-height"}),
+    ];
+    let widths = [
+        json!({"top":6,"right":0,"bottom":0,"left":0}),
+        json!({"right":6}),
+        json!({"bottom":6,"left":6}),
+        json!({"top":2,"right":4,"bottom":8,"left":12}),
+        json!({}),
+    ];
+    let mut actual = Vec::new();
+    let mut scalar = Vec::new();
+    for (alignment_index, alignment) in ["inner", "center", "outer"].iter().enumerate() {
+        for (row, shape) in shapes.iter().enumerate() {
+            for (column, width) in widths.iter().enumerate() {
+                let mut node = json!({"id":format!("border-{alignment_index}-{row}-{column}"),
+                    "x":column*80+20,"y":(alignment_index*shapes.len()+row)*80+20,
+                    "width":40,"height":40,"fill":"#ff0000","stroke":"#0000ff",
+                    "strokeWidth":width,"strokeAlignment":alignment});
+                node.as_object_mut()
+                    .unwrap()
+                    .extend(shape.as_object().unwrap().clone());
+                actual.push(node.clone());
+                node["strokeWidth"] = width.get("top").cloned().unwrap_or(json!(0));
+                scalar.push(node);
+            }
+        }
+    }
+    let canvas = |children| {
+        json!([{"id":"canvas","type":"frame","width":400,"height":1200,
+        "layout":"none","clip":true,"fill":"#ffffff","children":children}])
+    };
+    let scene = Scene::new(canvas(actual));
+    let output = scene.render().unwrap();
+    let reference = Scene::new(canvas(scalar)).render().unwrap();
+    assert_eq!(output.region, reference.region);
+    assert_eq!(output.png, reference.png);
+    let saved: Value =
+        serde_json::from_slice(&fs::read(scene.directory.path().join("scene.pen")).unwrap())
+            .unwrap();
+    assert_eq!(saved["children"], scene.children);
+}
+
+#[test]
 fn acute_path_miters_are_included_in_export_bounds() {
     let output=Scene::new(json!([{"id":"triangle","type":"path","width":40,"height":40,"viewBox":[0,0,40,40],"geometry":"M0 40 L20 0 L40 40 Z","stroke":"#0000FF","strokeWidth":6,"strokeAlignment":"outer"}])).render().unwrap();
     assert!(output.region.y < -12.0, "{:?}", output.region);
@@ -695,6 +744,90 @@ fn native_pencil_219_rounded_polygons_match_aspect_ratios_and_oversized_radii() 
                 .unwrap();
             }
         }
+    }
+}
+
+#[test]
+fn native_pencil_219_nonrectangular_side_strokes_match_top_width_reference() {
+    let source = include_str!("fixtures/pencil-0.3.9/nonrect-strokes.pen");
+    let reference = Image::from_encoded(Data::new_copy(include_bytes!(
+        "fixtures/pencil-0.3.9/nonrect-strokes.png"
+    )))
+    .unwrap()
+    .make_raster_image(None, None)
+    .unwrap();
+    let expected = reference.peek_pixels().unwrap();
+    assert_eq!((reference.width(), reference.height()), (1760, 480));
+    for version in ["2.19", "2.21"] {
+        let directory = TempDir::new().unwrap();
+        let file = directory.path().join("native.pen");
+        let source = source.replace("2.19", version);
+        fs::write(&file, &source).unwrap();
+        let store = Store::open(&file, None).unwrap();
+        let project = Project::load(&store).unwrap();
+        let snapshot =
+            layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap()).unwrap();
+        let diagnostics = snapshot.summary()["diagnostics"].clone();
+        assert!(diagnostics.as_array().unwrap().is_empty());
+        let output = render::png(
+            &project,
+            &snapshot,
+            &RenderOptions {
+                scale: 2.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!((output.width, output.height), (1760, 480));
+        let actual_image = raster(&output);
+        let actual = actual_image.peek_pixels().unwrap();
+        let mut cases = Vec::new();
+        for row in 0..3 {
+            for column in 0..11 {
+                let mut absolute = 0u64;
+                let mut changed = 0usize;
+                let mut maximum = 0u8;
+                for y in row * 160..(row + 1) * 160 {
+                    for x in column * 160..(column + 1) * 160 {
+                        let a = actual.get_color((x, y));
+                        let b = expected.get_color((x, y));
+                        let deltas = [
+                            a.a().abs_diff(b.a()),
+                            a.r().abs_diff(b.r()),
+                            a.g().abs_diff(b.g()),
+                            a.b().abs_diff(b.b()),
+                        ];
+                        absolute += deltas.iter().map(|value| u64::from(*value)).sum::<u64>();
+                        changed += usize::from(deltas.iter().any(|value| *value > 20));
+                        maximum = maximum.max(*deltas.iter().max().unwrap());
+                    }
+                }
+                cases.push(json!({"id":format!("border-{row}-{column}"),"row":row,"column":column,
+                    "absolute_channel_difference":absolute,"mean_channel_difference":absolute as f64/(160.0*160.0*4.0),
+                    "maximum_channel_difference":maximum,"pixels_over20":changed}));
+            }
+        }
+        if let Some(path) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
+            let path = std::path::PathBuf::from(path);
+            fs::create_dir_all(&path).unwrap();
+            let name = format!("codec-nonrect-strokes-{version}");
+            fs::write(path.join(format!("{name}.png")), &output.png).unwrap();
+            fs::write(path.join(format!("{name}.json")), json!({"source_commit":std::env::var("GITHUB_SHA").ok(),
+                "document_version":version,"width":output.width,"height":output.height,"diagnostics":diagnostics,
+                "png_hash":lazypencil::document::hash(&output.png),"cases":cases,
+                "native_producer":"@pen.dev/cli 0.3.9","reference_document_version":"2.19"}).to_string()).unwrap();
+        }
+        for case in cases {
+            assert!(
+                case["mean_channel_difference"].as_f64().unwrap() < 2.0,
+                "Native stroke {version}: {case}"
+            );
+            assert!(
+                case["pixels_over20"].as_u64().unwrap() < 400,
+                "Native stroke {version}: {case}"
+            );
+        }
+        assert_eq!(fs::read(&file).unwrap(), source.as_bytes());
     }
 }
 

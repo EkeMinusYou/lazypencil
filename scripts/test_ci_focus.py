@@ -113,6 +113,19 @@ class FocusTests(unittest.TestCase):
             build, _ = focus.commands(result["suite"], result["targets"])
             self.assertNotIn("--no-default-features", build[0])
 
+    def test_graphics_with_workflow_changes_keeps_pixels_first_without_duplicate_tui_units(self):
+        result = focus.select(["src/layout.rs", "tests/graphics.rs", ".github/workflows/native.yml"])
+        self.assertEqual(result, {"platform": "ubuntu-24.04", "suite": "graphics", "targets": ["graphics", "layout"]})
+        _, checks = focus.commands(result["suite"], result["targets"])
+        self.assertEqual(len(checks), 1)
+        self.assertIn("--lib", checks[0])
+        self.assertNotIn("tui::tests::", checks[0])
+        self.assertIn("graphics", checks[0])
+        self.assertIn("layout", checks[0])
+        core = focus.select(["src/queries.rs", ".github/workflows/ci.yml"])
+        self.assertEqual(core["suite"], "core")
+        self.assertEqual(core["targets"], ["queries"])
+
     def test_platform_override_preserves_the_affected_suite(self):
         result = focus.select(["src/cdp.rs"], "macos-15")
         self.assertEqual(result["platform"], "macos-15")

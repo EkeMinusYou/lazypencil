@@ -133,6 +133,7 @@ jobs:
         timeout-minutes: 10
         working-directory: ${{ runner.temp }}/lazypencil-source
         env:
+          LAZYPENCIL_TEST_CODEC_DIR: ${{ runner.temp }}/codec-reference
           FOCUS_SUITE: ${{ inputs.suite }}
           FOCUS_TARGETS: ${{ inputs.targets }}
         run: |
