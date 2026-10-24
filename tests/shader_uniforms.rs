@@ -845,7 +845,8 @@ fn real_compiler_macros_and_scaled_shader_effects_keep_logical_coordinates() {
                 assert_eq!(color.a(), 255);
             }
             let acquisition = &output.dynamic_artifacts[0]["acquisition"];
-            assert_eq!(acquisition["coordinate_size"], json!([32.0, 16.0]));
+            assert_eq!(acquisition["coordinate_size"][0].as_f64(), Some(32.0));
+            assert_eq!(acquisition["coordinate_size"][1].as_f64(), Some(16.0));
             assert_eq!(
                 acquisition["source_hash"],
                 lazypencil::document::hash(source.as_bytes())
@@ -917,8 +918,12 @@ fn native_logical_coordinates_and_macro_bindings_match_public_pencil_reference_p
         assert_eq!(output.dynamic_artifacts.len(), 10);
         for artifact in &output.dynamic_artifacts {
             assert_eq!(
-                artifact["acquisition"]["coordinate_size"],
-                json!([32.0, 16.0])
+                artifact["acquisition"]["coordinate_size"][0].as_f64(),
+                Some(32.0)
+            );
+            assert_eq!(
+                artifact["acquisition"]["coordinate_size"][1].as_f64(),
+                Some(16.0)
             );
             assert_eq!(
                 artifact["acquisition"]["preprocessor_hash"],
