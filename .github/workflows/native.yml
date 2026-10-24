@@ -44,8 +44,11 @@ jobs:
           python-version: '3.12'
       - name: Use the hosted runner for compilation outputs
         run: |
-          printf 'CARGO_TARGET_DIR=%s/lazypencil-target\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
-          printf 'LAZYPENCIL_CONFIG_DIR=%s/lazypencil-test-settings\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          {
+            printf 'CARGO_TARGET_DIR=%s/lazypencil-target\n' "$RUNNER_TEMP"
+            printf 'LAZYPENCIL_CONFIG_DIR=%s/lazypencil-test-settings\n' "$RUNNER_TEMP"
+            printf 'LAZYPENCIL_TEST_TUI_ARTIFACTS=%s/tui-artifacts\n' "$RUNNER_TEMP"
+          } >> "$GITHUB_ENV"
       - name: Identify the hosted runner image for dependency reuse
         id: cache-image
         run: |
@@ -76,7 +79,7 @@ jobs:
       - name: Check focused CI selection
         if: inputs.phase == 'focus'
         timeout-minutes: 2
-        run: python -m unittest discover -s scripts -p 'test_ci_focus.py' -v
+        run: python -m unittest discover -s scripts -p 'test_*.py' -v
       - name: Check source archive integrity handling
         if: inputs.phase == 'full'
         run: python -m unittest discover -s scripts -p 'test_*.py' -v
@@ -226,6 +229,15 @@ jobs:
           set -o pipefail
           cargo test --locked --lib native_cancellation -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-native-layout.log"
           cargo test --locked --test native_layout -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/focus-native-layout.log"
+      - name: Reproduce configured input before other tests and Chromium
+        if: inputs.phase == 'focus' && contains(fromJSON(inputs.targets), 'tui') && contains(fromJSON(inputs.targets), 'user_config')
+        timeout-minutes: 3
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
+          cargo test --locked --lib config::keys:: -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-input.log"
+          cargo test --locked --test user_config navigation_shortcuts_are_user_owned_replace_defaults_and_validate_scope_conflicts -- --exact 2>&1 | tee -a "$RUNNER_TEMP/focus-input.log"
+          cargo test --locked --test tui real_pty_custom_navigation_preserves_draft_and_changes_preview_pixels -- --exact 2>&1 | tee -a "$RUNNER_TEMP/focus-input.log"
       - name: Run focused reproduction and affected tests
         if: inputs.phase == 'focus' && inputs.suite != 'dynamic' && inputs.suite != 'shader'
         timeout-minutes: 10
@@ -566,6 +578,8 @@ jobs:
             ${{ runner.temp }}/*-build.log
             ${{ runner.temp }}/focus-tests.log
             ${{ runner.temp }}/focus-clippy.log
+            ${{ runner.temp }}/focus-input.log
+            ${{ runner.temp }}/tui-artifacts/
             ${{ runner.temp }}/focus-script-core.log
             ${{ runner.temp }}/focus-dynamic-inputs.log
             ${{ runner.temp }}/focus-native-layout.log

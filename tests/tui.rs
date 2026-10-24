@@ -18,31 +18,56 @@ fn real_pty_handles_japanese_input_live_turns_resize_and_image_protocols() {
         "user-font-config",
         "user-agent-config",
         "user-key-config",
-        "user-navigation-config",
         "script-config",
     ] {
-        let temp = TempDir::new().unwrap();
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let result = Command::new(
-            std::env::var_os("LAZYPENCIL_TEST_PYTHON").unwrap_or_else(|| "python3".into()),
-        )
-        .arg(root.join("tests/support/tui_pty.py"))
-        .arg(env!("CARGO_BIN_EXE_lazypencil"))
-        .arg(temp.path())
-        .arg(root.join("tests/support/acp_fixture.py"))
-        .arg(case)
-        .output()
-        .unwrap();
-        if !result.status.success() {
-            let artifacts = temp.keep();
-            panic!(
-                "case={case}, artifacts={}: {}\n{}\n{}",
-                artifacts.display(),
-                String::from_utf8_lossy(&result.stdout),
-                String::from_utf8_lossy(&result.stderr),
-                std::fs::read_to_string(artifacts.join("terminal-errors.log")).unwrap_or_default()
-            );
+        run_pty_case(case);
+    }
+}
+
+#[test]
+fn real_pty_custom_navigation_preserves_draft_and_changes_preview_pixels() {
+    run_pty_case("user-navigation-config");
+}
+
+fn run_pty_case(case: &str) {
+    let temp = TempDir::new().unwrap();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let result = Command::new(
+        std::env::var_os("LAZYPENCIL_TEST_PYTHON").unwrap_or_else(|| "python3".into()),
+    )
+    .arg(root.join("tests/support/tui_pty.py"))
+    .arg(env!("CARGO_BIN_EXE_lazypencil"))
+    .arg(temp.path())
+    .arg(root.join("tests/support/acp_fixture.py"))
+    .arg(case)
+    .output()
+    .unwrap();
+    if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_TUI_ARTIFACTS")
+        && (!result.status.success() || case == "user-navigation-config")
+    {
+        let directory = std::path::PathBuf::from(directory).join(case);
+        std::fs::create_dir_all(&directory).unwrap();
+        for name in [
+            "terminal-output.bin",
+            "terminal-screen.txt",
+            "terminal-errors.log",
+            "navigation-report.json",
+        ] {
+            let source = temp.path().join(name);
+            if source.is_file() {
+                std::fs::copy(source, directory.join(name)).unwrap();
+            }
         }
+    }
+    if !result.status.success() {
+        let artifacts = temp.keep();
+        panic!(
+            "case={case}, artifacts={}: {}\n{}\n{}",
+            artifacts.display(),
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr),
+            std::fs::read_to_string(artifacts.join("terminal-errors.log")).unwrap_or_default()
+        );
     }
 }
 

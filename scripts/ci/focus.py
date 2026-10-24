@@ -18,6 +18,10 @@ CORE_TESTS = {path.stem for path in TEST_FILES}
 RENDER_TESTS = {path.stem for path in TEST_FILES if '#![cfg(feature = "rendering")]' in path.read_text(encoding="utf-8")}
 # These explicit opt-ins consume real model usage and stay outside hosted CI.
 CREDENTIALED_TESTS = {"agent_workflow"}
+INPUT_REPRODUCTIONS = (
+    "real_pty_custom_navigation_preserves_draft_and_changes_preview_pixels",
+    "navigation_shortcuts_are_user_owned_replace_defaults_and_validate_scope_conflicts",
+)
 SHADER_REGRESSIONS = [
     "linked_constant_dimensions_validate_inputs_and_recover_after_an_error",
     "native_annotation_binding_matches_public_pencil_reference_pixels",
@@ -51,7 +55,8 @@ def select(paths, platform="auto"):
     } for path in paths)
     input_source = any(path == "src/tui/mod.rs" or path.startswith("src/config/keys") for path in paths)
     input_only = input_source and all(
-        (path == "README.md" or path.startswith("docs/") and path.endswith(".md")) or path.startswith("src/config/keys") or path in {
+        (path == "README.md" or path.startswith("docs/") and path.endswith(".md"))
+        or path.startswith(("src/config/keys", ".github/", "scripts/ci/", "scripts/test_")) or path in {
             "src/config.rs", "src/tui/mod.rs", "src/tui/checkpoints.rs", "src/tui/tests.rs", "tests/tui.rs", "tests/user_config.rs",
             "tests/support/tui_pty.py", "scripts/ci/focus.py", "scripts/test_ci_focus.py",
             ".github/workflows/native.yml",
@@ -117,6 +122,9 @@ def select(paths, platform="auto"):
     if input_source:
         if suite in ("core", "conversation"):
             suite = "graphics"
+        elif suite == "shader":
+            suite = "dynamic"
+            targets = sorted(set(targets) | {"browser_readiness", "dynamic_render", "imports", "sampler_sources"})
         targets = sorted(set(targets) | {"tui", "user_config"})
     return {"platform": os_name, "suite": suite, "targets": targets}
 
@@ -172,6 +180,7 @@ def commands(suite, targets):
     features = ["--no-default-features"] if core else []
     selected = [arg for target in targets for arg in ("--test", target)]
     common = ["cargo", "test", "--locked", *features]
+    input_skip = [argument for name in ("config::keys::", *INPUT_REPRODUCTIONS) for argument in ("--skip", name)] if suite in ("graphics", "dynamic") and {"tui", "user_config"} <= set(targets) else []
     shader_first = [
         [*common, "--test", "shader_uniforms", name, "--", "--ignored", "--exact", "--test-threads=1"]
         for name in SHADER_REGRESSIONS
@@ -205,9 +214,9 @@ def commands(suite, targets):
         checks.append([*common, "--lib", "tui::tests::", "--", "--test-threads=2"])
     if suite == "dynamic":
         checks.append([*common, "--test", "dynamic_render", "retained_", "--", "--ignored", "--test-threads=1"])
-        checks.append([*common, *selected, "--", "--include-ignored", "--test-threads=1", "--skip", "retained_", *shader_skip])
+        checks.append([*common, *selected, "--", "--include-ignored", "--test-threads=1", "--skip", "retained_", *shader_skip, *input_skip])
     else:
-        checks.append([*common, "--lib", *selected, "--", "--test-threads=2"])
+        checks.append([*common, "--lib", *selected, "--", "--test-threads=2", *input_skip])
         if native:
             checks[-1].extend(["--skip", "native_cancellation"])
         if suite == "conversation":

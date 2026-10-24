@@ -370,6 +370,30 @@ class FocusTests(unittest.TestCase):
         self.assertEqual(result["suite"], "graphics")
         self.assertTrue({"agent", "native_layout", "tui", "user_config"} <= set(result["targets"]))
 
+    def test_input_reproductions_run_before_chromium_and_are_not_repeated(self):
+        native = (Path(__file__).resolve().parents[1] / ".github/workflows/native.yml").read_text()
+        self.assertLess(native.index("Reproduce configured input"), native.index("Install and verify the pinned Chromium runtime"))
+        for suite in ("graphics", "dynamic"):
+            targets = ["tui", "user_config"] + (["dynamic_render", "shader_uniforms"] if suite == "dynamic" else [])
+            _, checks = focus.commands(suite, targets)
+            for name in ("config::keys::", *focus.INPUT_REPRODUCTIONS):
+                index = checks[-1].index(name)
+                self.assertEqual(checks[-1][index - 1], "--skip")
+            for name in focus.INPUT_REPRODUCTIONS:
+                self.assertIn(name, native)
+
+    def test_infrastructure_only_changes_do_not_add_browser_tests_to_input_dispatch(self):
+        paths = ["src/config/keys/navigation.rs", "src/tui/mod.rs", "tests/tui.rs", "tests/user_config.rs",
+                 "scripts/ci/application_cache.py", "scripts/ci/audit_tool_cache.py", "scripts/ci/cache_retention.py",
+                 "scripts/test_application_cache.py", ".github/workflows/ci.yml", ".github/workflows/native.yml"]
+        result = focus.select(paths)
+        self.assertEqual(result["suite"], "graphics")
+        self.assertEqual(result["targets"], ["tui", "user_config"])
+        mixed = focus.select(["src/config/keys/navigation.rs", "src/shader.rs"])
+        self.assertEqual(mixed["suite"], "dynamic")
+        self.assertTrue({"tui", "user_config", "shader_uniforms", "dynamic_render"} <= set(mixed["targets"]))
+        focus.commands(mixed["suite"], mixed["targets"])
+
     def test_runtime_optins_never_expand_to_credentialed_agent_requests(self):
         for suite in ("core", "conversation", "graphics", "dynamic", "shader"):
             result = focus.select(["src/shader.rs"] if suite=="shader" else ["src/cdp.rs"] if suite == "dynamic" else ["tests/queries.rs"])
