@@ -13,7 +13,7 @@ use crate::{
 use base64::Engine;
 use serde_json::{Value, json};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     path::PathBuf,
     sync::Arc,
     time::{Duration, Instant},
@@ -34,6 +34,7 @@ pub struct DynamicRuntime {
     page_used: Option<Instant>,
     shader_used: Option<Instant>,
     cache: BTreeMap<String, Raster>,
+    cache_order: VecDeque<String>,
     cancel: Option<CancellationToken>,
     begun: Instant,
     refresh: bool,
@@ -52,6 +53,7 @@ impl DynamicRuntime {
             page_used: None,
             shader_used: None,
             cache: BTreeMap::new(),
+            cache_order: VecDeque::new(),
             cancel: None,
             begun: Instant::now(),
             refresh: false,
@@ -72,6 +74,7 @@ impl DynamicRuntime {
             || self.settings != settings.dynamic
         {
             self.cache.clear();
+            self.cache_order.clear();
             self.browser_settings = settings.browser;
             self.shader_settings = settings.shader;
             self.settings = settings.dynamic;
@@ -86,6 +89,7 @@ impl DynamicRuntime {
         self.refresh = refresh;
         if refresh {
             self.cache.clear();
+            self.cache_order.clear();
         }
     }
     /// The owned Chromium child IDs, for runtime diagnostics.
@@ -188,16 +192,30 @@ impl DynamicRuntime {
         if self.settings.cache_entries == 0 || capacity == 0 || raster.png.len() > capacity {
             return raster;
         }
-        let total = self
+        self.cache.remove(&key);
+        self.cache_order.retain(|existing| existing != &key);
+        let mut total = self
             .cache
             .values()
             .map(|entry| entry.png.len())
             .sum::<usize>();
-        if self.cache.len() >= self.settings.cache_entries || total + raster.png.len() > capacity {
-            self.cache.clear();
+        while self.cache.len() >= self.settings.cache_entries || total + raster.png.len() > capacity
+        {
+            let oldest = self.cache_order.pop_front().expect("cache eviction order");
+            if let Some(evicted) = self.cache.remove(&oldest) {
+                total -= evicted.png.len();
+            }
         }
+        self.cache_order.push_back(key.clone());
         self.cache.insert(key, raster.clone());
         raster
+    }
+
+    fn cached(&mut self, key: &str) -> Option<Raster> {
+        let raster = self.cache.get(key)?.clone();
+        self.cache_order.retain(|existing| existing != key);
+        self.cache_order.push_back(key.into());
+        Some(raster)
     }
 
     pub fn page(
@@ -240,9 +258,9 @@ impl DynamicRuntime {
         let request = json!({"url":url,"width":width,"height":height,"scale":scale,"zoom":zoom,"scroll_x":scroll_x,"scroll_y":scroll_y,"device":device});
         let key = hash(request.to_string().as_bytes());
         if !self.refresh
-            && let Some(cached) = self.cache.get(&key)
+            && let Some(cached) = self.cached(&key)
         {
-            return Ok(cached.clone());
+            return Ok(cached);
         }
         let cancel = self.cancel.clone();
         let limits = json!({"browser":self.browser_settings,"dynamic":self.settings});
@@ -321,8 +339,8 @@ impl DynamicRuntime {
             .ok_or_else(|| shader_error("Shader height is missing"))?;
         dimensions(width as f64, height as f64)?;
         let key = hash(request.to_string().as_bytes());
-        if let Some(cached) = self.cache.get(&key) {
-            return Ok(cached.clone());
+        if let Some(cached) = self.cached(&key) {
+            return Ok(cached);
         }
         let cancel = self.cancel.clone();
         let limits = json!({"shader":self.shader_settings,"dynamic":self.settings});
@@ -340,7 +358,7 @@ impl DynamicRuntime {
             if let Some(error)=result.get("error").and_then(Value::as_str) { return Err(shader_error(error.chars().take(8192).collect::<String>())); }
             let encoded=result["png"].as_str().and_then(|value| value.strip_prefix("data:image/png;base64,")).ok_or_else(|| shader_error("WebGL returned no PNG"))?;
             let png=base64::engine::general_purpose::STANDARD.decode(encoded).map_err(|_| shader_error("Invalid WebGL PNG"))?;
-            let metadata=json!({"kind":"shader","browser_version":version,"renderer":result["renderer"],"extensions":result["extensions"],"width":width,"height":height,"request_hash":key,"png_hash":hash(&png),"time":request["time"],"limits":limits});
+            let metadata=json!({"kind":"shader","browser_version":version,"renderer":result["renderer"],"extensions":result["extensions"],"width":width,"height":height,"request_hash":key,"png_hash":hash(&png),"time":request["time"],"time_dependent":request["time_dependent"].as_bool().unwrap_or(false),"limits":limits});
             checked_png(png,metadata)
         });
         self.shader_used = Some(Instant::now());
@@ -516,7 +534,9 @@ mod tests {
         runtime.cache("c".into(), raster(20));
         assert_eq!(runtime.cache.len(), 2);
         runtime.cache("d".into(), raster(20));
-        assert_eq!(runtime.cache.len(), 1);
+        assert_eq!(runtime.cache.len(), 2);
+        assert!(!runtime.cache.contains_key("b"));
+        assert!(runtime.cache.contains_key("c"));
         runtime.configure(settings.clone()).unwrap();
         assert!(runtime.cache.contains_key("d"));
         settings.browser.timeout_ms = 1234;
@@ -539,6 +559,44 @@ mod tests {
             assert!(runtime.cache.is_empty());
         }
         assert!(runtime.process_ids().is_empty());
+    }
+
+    #[test]
+    fn recently_used_acquisitions_survive_frame_churn_with_bounded_lru_state() {
+        let mut runtime = DynamicRuntime::new("unused");
+        let mut settings = RuntimeSettings::default();
+        settings.dynamic.cache_entries = 3;
+        settings.dynamic.cache_mib = 1;
+        runtime.configure(settings).unwrap();
+        runtime.cache("page".into(), raster(200_000));
+        for frame in 0..100 {
+            assert!(runtime.cached("page").is_some());
+            runtime.cache(format!("frame-{frame}"), raster(400_000));
+            assert!(runtime.cache.contains_key("page"));
+            assert!(runtime.cache.len() <= 3);
+            assert_eq!(runtime.cache_order.len(), runtime.cache.len());
+            assert!(
+                runtime
+                    .cache
+                    .values()
+                    .map(|raster| raster.png.len())
+                    .sum::<usize>()
+                    <= 1024 * 1024
+            );
+        }
+        // Replacing a key must not accumulate eviction records or double-count bytes.
+        for _ in 0..20 {
+            runtime.cache("page".into(), raster(250_000));
+        }
+        assert_eq!(runtime.cache_order.len(), runtime.cache.len());
+        assert!(runtime.cached("page").is_some());
+        assert!(
+            runtime.idle_deadline().is_none(),
+            "Cached reads do not launch or extend runtime processes"
+        );
+        runtime.begin_render(None, true);
+        assert!(runtime.cache.is_empty());
+        assert!(runtime.cache_order.is_empty());
     }
 
     #[test]

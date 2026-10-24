@@ -184,6 +184,15 @@ fn builtins_still_reject_stored_values_and_unknown_or_unsupported_bindings_fail(
     let value = request(source, json!({})).unwrap();
     assert_eq!(value["uniforms"]["size"], json!([32, 16]));
     assert_eq!(value["uniforms"]["clock"], 0.25);
+    assert_eq!(value["time_dependent"], true);
+    assert_eq!(
+        request("/* @resolution */ uniform vec2 size;", json!({})).unwrap()["time_dependent"],
+        false
+    );
+    assert_eq!(
+        request("/* @time_step */ uniform float clock;", json!({})).unwrap()["time_dependent"],
+        false
+    );
     assert!(request(source, json!({"clock":1})).is_err());
     assert!(request("uniform float declared;", json!({"unknown":1})).is_err());
     assert_eq!(
