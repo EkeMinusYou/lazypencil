@@ -67,6 +67,7 @@ pub struct Request {
     pub cells: Size,
     pub view: View,
     pub refresh: bool,
+    pub refresh_pages: bool,
     pub check_only: bool,
     pub attachment: Option<(Attachment, PathBuf)>,
 }
@@ -78,6 +79,7 @@ pub struct Preview {
     pub summary: Value,
     pub attachment: bool,
     pub time_dependent: bool,
+    pub live_pages: bool,
 }
 pub struct Node {
     pub id: String,
@@ -259,6 +261,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                     summary: json!({"attachment":attachment}),
                     attachment: true,
                     time_dependent: false,
+                    live_pages: false,
                 }));
             }
             let unchanged = !request.refresh
@@ -268,7 +271,11 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                         .is_ok_and(|document| document.revision() == snapshot.revision)
                         && project.verify_unchanged().is_ok()
                 });
-            if request.check_only && unchanged && document_preview_time == Some(request.view.time) {
+            if request.check_only
+                && !request.refresh_pages
+                && unchanged
+                && document_preview_time == Some(request.view.time)
+            {
                 return Ok(None);
             }
             // Capturing a layout does not mean an image has been published. A
@@ -295,6 +302,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 scale: view.zoom.unwrap(),
                 background: skia_safe::Color::from_rgb(248, 250, 252),
                 refresh: request.refresh,
+                refresh_pages: request.refresh_pages,
                 time: view.time,
                 ..Default::default()
             };
@@ -321,6 +329,10 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 artifact["acquisition"]["kind"] == "shader"
                     && artifact["acquisition"]["time_dependent"] == true
             });
+            let live_pages = image
+                .dynamic_artifacts
+                .iter()
+                .any(|artifact| artifact["acquisition"]["kind"] == "browser");
             let mut summary = layout.summary();
             summary["dynamic_artifacts"] = Value::Array(image.dynamic_artifacts);
             Ok(Some(Preview {
@@ -331,6 +343,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 summary,
                 attachment: false,
                 time_dependent,
+                live_pages,
             }))
         })();
         let cancelled = cancel.is_cancelled();
@@ -402,6 +415,7 @@ mod tests {
             cells: Size::new(20, 8),
             view: View::default(),
             refresh: false,
+            refresh_pages: false,
             check_only: false,
             attachment: None,
         };
@@ -462,6 +476,7 @@ mod tests {
                 cells: Size::new(20, 8),
                 view: View::default(),
                 refresh: false,
+                refresh_pages: false,
                 check_only: false,
                 attachment: None,
             };
@@ -523,6 +538,7 @@ mod tests {
                 cells: Size::new(60, 22),
                 view: View::default(),
                 refresh: false,
+                refresh_pages: false,
                 check_only: false,
                 attachment: None,
             };
@@ -593,6 +609,7 @@ mod tests {
                 cells: Size::new(60, 22),
                 view: View::default(),
                 refresh: false,
+                refresh_pages: false,
                 check_only: false,
                 attachment: None,
             };
@@ -655,6 +672,7 @@ mod tests {
                 cells: Size::new(20, 8),
                 view: View::default(),
                 refresh: false,
+                refresh_pages: false,
                 check_only: false,
                 attachment: None,
             };

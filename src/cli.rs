@@ -818,6 +818,7 @@ fn run_render(store: &Store, options: &Render) -> Result<Value> {
         scale: options.scale,
         time: options.time,
         refresh: options.refresh,
+        refresh_pages: false,
         node: options.node.clone(),
         region: match options.region.as_slice() {
             [] => None,

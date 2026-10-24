@@ -18,7 +18,7 @@ import sys
 import termios
 import time
 from terminal_screen import Screen
-from terminal_images import KittyFrames
+from terminal_images import KittyFrames, has_rgba_color
 
 binary, root, fixture, case = sys.argv[1:]
 environment = dict(os.environ)
@@ -36,6 +36,10 @@ if case == "dynamic-idle":
         {"type": "browser", "id": "page", "x": 180, "width": 180, "height": 90, "url": page_url},
         {"type": "rectangle", "id": "shader", "x": 360, "width": 180, "height": 90, "fill": {"type": "shader", "url": "blue.glsl"}},
     ]}
+elif case == "page-playback":
+    html = "<style>html{background:#f00}</style><script>let n=0;const raf=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=cb=>raf(t=>{document.documentElement.style.background=++n<=2?'#f00':n<=4?'#0f0':'#00f';cb(t)});</script>"
+    url = "data:text/html;base64," + base64.b64encode(html.encode()).decode("ascii")
+    design = {"version":"2.21", "children":[{"id":"page","type":"browser","width":180,"height":90,"url":url}]}
 elif case in ["font-config", "user-font-config"]:
     font_root = os.path.join(os.path.dirname(os.path.dirname(fixture)), "fixtures", "fonts")
     configuration_path = os.path.join(root, "lazypencil.toml")
@@ -90,7 +94,7 @@ if case in ["restore", "restore-conflict"]:
 master, slave = pty.openpty()
 original = termios.tcgetattr(slave)
 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 34, 130, 0, 0))
-image_case = "kitty" if case in ["dynamic-idle", "font-config", "user-font-config", "script-config"] else case.removeprefix("auto-")
+image_case = "kitty" if case in ["dynamic-idle", "page-playback", "font-config", "user-font-config", "script-config"] else case.removeprefix("auto-")
 protocol = "auto" if case.startswith("auto-") else (image_case if image_case in ["kitty", "sixel"] else "halfblocks")
 command = [binary, "--data-dir", os.path.join(root, "data"), "tui", document,
     "--adapter", sys.executable, "--adapter-arg=" + fixture,
@@ -343,6 +347,37 @@ try:
         paste("最初の入力を保持する")
         wait(lambda: session()["draft"] == "最初の入力を保持する", "first input after probe timeout")
         assert not os.path.exists(os.path.join(root, "sent-turn.txt"))
+    elif case == "page-playback":
+        saved = open(document, "rb").read()
+        def has_color(color):
+            frames = list(kitty_images())
+            return frames and has_rgba_color(frames[-1], color)
+        wait(lambda: has_color((255,0,0,255)), "initial browser-only red pixels")
+        started = time.monotonic()
+        first_frames = len(list(kitty_images()))
+        paste("/play 2")
+        os.write(master, b"\r")
+        wait(lambda: has_color((0,0,255,255)) and "playing" in screen.text(), "periodic browser-only captures advance the retained DOM to blue")
+        paste("ページの再生中も残る下書き")
+        wait(lambda: session()["draft"] == "ページの再生中も残る下書き", "draft during page-only playback")
+        os.write(master, b"\t ")
+        wait(lambda: "playing" not in screen.text().lower() and "finishing requested frame" not in screen.text(), "browser-only playback pause")
+        assert len(list(kitty_images())) - first_frames <= math.ceil((time.monotonic()-started)*2)+6
+        paused = len(list(kitty_images()))
+        deadline = time.monotonic()+2.2
+        while time.monotonic()<deadline:
+            pump()
+        assert len(list(kitty_images())) <= paused+1, "Paused pages must not be periodically captured"
+        assert has_color((0,0,255,255))
+        assert session()["draft"] == "ページの再生中も残る下書き"
+        assert not session()["native_session_id"], "Page playback must not start an agent"
+        assert open(document,"rb").read() == saved
+        assert any(has_rgba_color(frame, (0,255,0,255)) for frame in kitty_images()), "A retained intermediate frame must be green"
+        with open(os.path.join(root,"page-playback.json"),"w",encoding="utf-8") as handle:
+            json.dump({"source_commit":os.environ.get("GITHUB_SHA"),"case":"page-playback", "complete_frames":len(list(kitty_images())),"frames_during_playback":paused-first_frames,
+                "elapsed_seconds":time.monotonic()-started,"frame_rate_cap":2,"paused_frame_delta":len(list(kitty_images()))-paused,
+                "document_unchanged":open(document,"rb").read()==saved,"draft_preserved":session()["draft"]=="ページの再生中も残る下書き",
+                "agent_session_started":bool(session()["native_session_id"]),"observed_colors":["red","green","blue"]},handle)
     elif case == "dynamic-idle":
         saved = open(document, "rb").read()
         last_check = [0.0, []]
@@ -357,7 +392,7 @@ try:
 
         def actual_dynamic_pixels(shader=(0, 0, 255, 255)):
             images = list(kitty_images())
-            return images and all(bytes(color) in images[-1] for color in [page_color, (0, 255, 0, 255), shader])
+            return images and all(has_rgba_color(images[-1], color) for color in [page_color, (0, 255, 0, 255), shader])
 
         wait(lambda: len(children()) == 3 and actual_dynamic_pixels(), "three dynamic workers and actual RGB pixels")
         original_pids = children().copy()
@@ -370,7 +405,7 @@ try:
         frame_count = len(list(kitty_images()))
         paste("/time 1")
         os.write(master, b"\r")
-        wait(lambda: len(list(kitty_images())) > frame_count and bytes((255, 255, 0, 255)) in list(kitty_images())[-1] and "t=1.000s" in screen.text(), "time command changes real shader pixels")
+        wait(lambda: len(list(kitty_images())) > frame_count and has_rgba_color(list(kitty_images())[-1], (255, 255, 0, 255)) and "t=1.000s" in screen.text(), "time command changes real shader pixels")
         assert children() == original_pids, "Seeking must reuse the existing runtimes"
         assert session()["draft"] == ""
         frame_count = len(list(kitty_images()))
@@ -441,7 +476,7 @@ try:
             handle.write("/** @schema 2.21 */ let total=0;for(let i=0;i<5000000;i++)total+=i;return [{type:'rectangle',width:180,height:90,fill:total>0?'#00FF00':'#FF0000'}];")
         source_bytes = open(os.path.join(root, "generated.js"), "rb").read()
         def green_preview():
-            return status_line().startswith("2 nodes · 0 diagnostics ·") and bool(list(kitty_images())) and bytes([0, 255, 0, 255]) in list(kitty_images())[-1]
+            return status_line().startswith("2 nodes · 0 diagnostics ·") and bool(list(kitty_images())) and has_rgba_color(list(kitty_images())[-1], (0, 255, 0, 255))
         wait(green_preview, "recovered script preview")
         frames = len(list(kitty_images()))
         # Identical pixels need not produce another terminal image. Make the
@@ -491,7 +526,7 @@ try:
                 "configuration_text": open(path, encoding="utf-8").read(),
             }), flush=True)
             raise
-        assert bytes([255, 0, 0, 255]) in list(kitty_images())[-1]
+        assert has_rgba_color(list(kitty_images())[-1], (255, 0, 0, 255))
         assert session()["draft"] == "設定を変えても残る下書き"
         assert not session()["native_session_id"]
         assert open(document, "rb").read() == saved
@@ -501,7 +536,7 @@ try:
         if image_case == "kitty":
             images = list(kitty_images())
             assert images, "No complete Kitty image"
-            assert bytes([255, 0, 0, 255]) in images[0], "Actual red design pixels are required"
+            assert has_rgba_color(images[0], (255, 0, 0, 255)), "Actual red design pixels are required"
         else:
             frames = re.findall(rb'\x1bP[0-9;]*q(.*?)\x1b\\', bytes(output), re.DOTALL)
             assert frames, "No complete Sixel image"

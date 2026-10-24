@@ -2,6 +2,8 @@
 
 設計書 v0.9 の全体を実装対象とする。部分的な CLI や描画の試作だけで完成とは扱わない。以下は実際の実装・試験結果で更新する。
 
+2026-10-24: TUI の `/play`／Preview の Space を browser 単独文書にも拡張する。各自動 frame は保持済み DOM の画像だけを取得し、同じ layout と静的 shader の acquisition は再利用する。既存の1〜10 fps・描画中／未消費結果の間引き・モーダル中の延期・pause／error／静的文書での停止を共通利用し、文書の script を時計で再実行しない。実 renderer の DOM・snapshot・静的 shader ID・PNG と、browser-only の実 PTY による赤→緑→青・停止・下書き／文書保持を先行 retained-page 試験へ組み込む。ローカルでは軽量検査を行い、Rust と実 Chromium は Linux の対象試験成功後に既存の全5環境 CI で検証する。全体の未完了要件は維持する。
+
 2026-10-24: CI を変更箇所の代表1環境／Windows 固有変更なら Windows の focused reproduction が成功してから、従来の5環境・両 feature 構成・Clippy・Material・release/source 検証へ進む構成に変更する。既知の embedded Conversation の helper/MCP 経路を Skia 不要の実プロセス試験で先に検査し、応答は10秒で区切る。Chromium opt-in は通常 native job のビルド済み出力を再利用し、60秒 idle・実 PTY・画素・sandbox 条件は維持する。同じ branch／対象範囲の旧実行は新しい commit で置き換える。待機／ビルド／試験は既存 GHA の job/step 時刻とログで確認する。過去の Linux/macOS 成功実行は待機220〜295秒、再ビルド115〜142秒、idle は各62秒、TUI は98〜99秒だった。Windows の旧失敗は再現試験に到達する前に約6分、単体試験の無期限待ちに約52分を費やした。同じ compiler・runner image・依存入力の新キャッシュが存在する4組について旧版だけを削除し、5,110,872,350 bytes を解放した。新構成の実行結果と速度は GHA で確認する。
 
 2026-10-24: 状態付き page の source `7c09434` は Linux x64 `40053898552`／macOS arm64 `40053900227` の両構成 Clippy・単体・既存 page/shader 試験を通過し、新しい retained DOM 試験の viewport 比較で失敗した。実際の JSON は `40.0` で、追加 assertion が整数 `40` と比較していたため、`as_f64() == Some(40.0)` で数値と型を検査する形に修正した。上限／分離／LRU の実 context 試験と retained 取消・復帰は同じ実行で成功していたが、途中で止まった URL 復元・削除再挿入などの後半と実 PTY の成功はまだ示していない。4段階の小さい retained PNG/report を GHA に保存する経路も追加し、後続で実画素と state ID を独立に照合する。

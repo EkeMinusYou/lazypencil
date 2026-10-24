@@ -67,6 +67,141 @@ fn retain_page_image(name: &str, image: &render::RenderedImage) {
 }
 
 #[test]
+#[ignore = "Requires sandboxed Chromium and software WebGL"]
+fn retained_page_frame_capture_preserves_layout_dom_and_static_shader_acquisitions() {
+    let temp = TempDir::new().unwrap();
+    fs::write(
+        temp.path().join("blue.glsl"),
+        "precision highp float; void main(){gl_FragColor=vec4(0.,0.,1.,1.);}",
+    )
+    .unwrap();
+    let html = "<style>html{background:#f00}</style><script>let n=0;const raf=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=cb=>raf(t=>{document.documentElement.style.background=++n<=2?'#f00':'#0f0';cb(t)});</script>";
+    let source = json!({"version":"2.21","children":[
+        {"id":"page","type":"browser","width":32,"height":32,"url":page(html)},
+        {"id":"shader","type":"rectangle","x":32,"width":32,"height":32,"fill":{"type":"shader","url":"blue.glsl"}}
+    ]}).to_string();
+    let file = temp.path().join("scene.pen");
+    fs::write(&file, &source).unwrap();
+    let project =
+        Project::from_document(&file, Document::parse(source.clone()).unwrap(), &[]).unwrap();
+    let layout =
+        lazypencil::layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap())
+            .unwrap();
+    let mut runtime = DynamicRuntime::new(temp.path())
+        .with_executable(executable())
+        .with_retained_pages(&file);
+    let first =
+        render::png_with_runtime(&project, &layout, &Default::default(), &mut runtime, None)
+            .unwrap();
+    let pids = runtime.process_ids();
+    let lookup = |image: &render::RenderedImage, kind: &str| -> Value {
+        image
+            .dynamic_artifacts
+            .iter()
+            .find(|entry| entry["acquisition"]["kind"] == kind)
+            .unwrap()["acquisition"]
+            .clone()
+    };
+    let page_first = lookup(&first, "browser");
+    let shader_first = lookup(&first, "shader");
+    let frame = render::png_with_runtime(
+        &project,
+        &layout,
+        &RenderOptions {
+            refresh_pages: true,
+            time: 1.0,
+            ..Default::default()
+        },
+        &mut runtime,
+        None,
+    )
+    .unwrap();
+    let page_frame = lookup(&frame, "browser");
+    assert_ne!(page_frame["acquisition_id"], page_first["acquisition_id"]);
+    assert_eq!(
+        page_frame["page_state"]["id"],
+        page_first["page_state"]["id"]
+    );
+    assert_eq!(page_frame["page_state"]["reused"], true);
+    assert_eq!(
+        lookup(&frame, "shader"),
+        shader_first,
+        "A page frame must preserve a time-independent shader raster"
+    );
+    assert_eq!(first.snapshot_id, frame.snapshot_id);
+    assert_eq!(runtime.process_ids(), pids);
+    assert_eq!(
+        raster(&first.png)
+            .peek_pixels()
+            .unwrap()
+            .get_color((16, 16)),
+        Color::RED
+    );
+    let bitmap = raster(&frame.png);
+    assert_eq!(
+        bitmap.peek_pixels().unwrap().get_color((16, 16)),
+        Color::GREEN
+    );
+    assert_eq!(
+        bitmap.peek_pixels().unwrap().get_color((48, 16)),
+        Color::BLUE
+    );
+    let paused = render::png_with_runtime(
+        &project,
+        &layout,
+        &RenderOptions {
+            time: 1.0,
+            ..Default::default()
+        },
+        &mut runtime,
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        paused.dynamic_artifacts, frame.dynamic_artifacts,
+        "Frame refresh must not leak into the next render"
+    );
+    assert_eq!(paused.png, frame.png);
+    assert_eq!(fs::read_to_string(file).unwrap(), source);
+    retain_page_image("periodic-first", &first);
+    retain_page_image("periodic-frame", &frame);
+    #[cfg(unix)]
+    {
+        // Keep the real frontend reproduction inside this early retained-page
+        // gate, without repeating the unrelated 60-second idle PTY test.
+        let terminal = TempDir::new().unwrap();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let result = std::process::Command::new(
+            std::env::var_os("LAZYPENCIL_TEST_PYTHON").unwrap_or_else(|| "python3".into()),
+        )
+        .arg(root.join("tests/support/tui_pty.py"))
+        .arg(env!("CARGO_BIN_EXE_lazypencil"))
+        .arg(terminal.path())
+        .arg(root.join("tests/support/acp_fixture.py"))
+        .arg("page-playback")
+        .env("LAZYPENCIL_CHROMIUM", executable())
+        .output()
+        .unwrap();
+        assert!(
+            result.status.success(),
+            "{}\n{}\n{}\n{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr),
+            fs::read_to_string(terminal.path().join("terminal-errors.log")).unwrap_or_default(),
+            fs::read_to_string(terminal.path().join("terminal-screen.txt")).unwrap_or_default()
+        );
+        let proof = fs::read(terminal.path().join("page-playback.json")).unwrap();
+        if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_RETAINED_DIR") {
+            fs::write(
+                PathBuf::from(directory).join("chromium-page-playback.json"),
+                proof,
+            )
+            .unwrap();
+        }
+    }
+}
+
+#[test]
 #[ignore = "Requires headless Chromium and permission to launch its sandbox"]
 fn retained_page_contexts_are_isolated_bounded_and_evicted_in_recency_order() {
     use lazypencil::{

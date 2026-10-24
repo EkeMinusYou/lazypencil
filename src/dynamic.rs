@@ -40,6 +40,7 @@ pub struct DynamicRuntime {
     cancel: Option<CancellationToken>,
     begun: Instant,
     refresh: bool,
+    refresh_pages: bool,
     browser_settings: BrowserSettings,
     shader_settings: ShaderSettings,
     settings: DynamicSettings,
@@ -61,6 +62,7 @@ impl DynamicRuntime {
             cancel: None,
             begun: Instant::now(),
             refresh: false,
+            refresh_pages: false,
             browser_settings: BrowserSettings::default(),
             shader_settings: ShaderSettings::default(),
             settings: DynamicSettings::default(),
@@ -147,10 +149,15 @@ impl DynamicRuntime {
         self.cancel = cancel;
         self.begun = Instant::now();
         self.refresh = refresh;
+        self.refresh_pages = false;
         if refresh {
             self.cache.clear();
             self.cache_order.clear();
         }
+    }
+    /// Refresh browser acquisitions for one render without invalidating shaders.
+    pub(crate) fn refresh_pages(&mut self) {
+        self.refresh_pages = true;
     }
     /// The owned Chromium child IDs, for runtime diagnostics.
     pub fn process_ids(&self) -> Vec<u32> {
@@ -328,6 +335,7 @@ impl DynamicRuntime {
             hash(request.to_string().as_bytes())
         };
         if !self.refresh
+            && !self.refresh_pages
             && let Some(cached) = self.cached(&key)
         {
             return Ok(cached);

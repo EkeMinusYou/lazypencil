@@ -1,6 +1,8 @@
 """Incrementally decode the raw RGBA Kitty frames emitted by the real TUI."""
 
 import base64
+from functools import lru_cache
+import sys
 
 
 class KittyFrames:
@@ -48,3 +50,19 @@ class KittyFrames:
                     self.expected = None
                     self.payload.clear()
             offset = end + 2
+
+
+@lru_cache(maxsize=1)
+def _rgba_colors(frame):
+    if len(frame) % 4:
+        raise ValueError("Expected complete RGBA pixels")
+    # Cache one immutable frame's palette rather than rescanning its channels
+    # on every PTY wait predicate. Native byte order is used on both sides.
+    return frozenset(memoryview(frame).cast("I"))
+
+
+def has_rgba_color(frame, color):
+    value = bytes(color)
+    if len(value) != 4:
+        raise ValueError("Expected one RGBA color")
+    return int.from_bytes(value, sys.byteorder) in _rgba_colors(frame)
