@@ -81,6 +81,98 @@ fn solid(path: &Path, color: Color) {
 }
 
 #[test]
+fn native_random_sequence_and_legacy_headers_match_reference_pixels_without_saving_generated_nodes()
+{
+    let fixtures =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/pencil-0.3.9/script-random");
+    let original = include_str!("fixtures/pencil-0.3.9/script-random/random-sequence.pen");
+    let reference_bytes = include_bytes!("fixtures/pencil-0.3.9/script-random/random-sequence.png");
+    let reference = raster(reference_bytes);
+    let expected = reference.peek_pixels().unwrap();
+    assert_eq!((reference.width(), reference.height()), (1328, 192));
+    for version in ["2.19", "2.21"] {
+        let root = TempDir::new().unwrap();
+        let mut scripts = Vec::new();
+        for entry in fs::read_dir(&fixtures).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_some_and(|extension| extension == "js") {
+                let destination = root.path().join(path.file_name().unwrap());
+                let bytes = fs::read(&path).unwrap();
+                fs::write(&destination, &bytes).unwrap();
+                scripts.push((destination, bytes));
+            }
+        }
+        let source = original.replacen("\"2.19\"", &format!("\"{version}\""), 1);
+        let path = root.path().join("design.pen");
+        fs::write(&path, &source).unwrap();
+        let store = Store::open(&path, Some(root.path().join("data"))).unwrap();
+        let (project, layout) = snapshot(&store);
+        assert_eq!(layout.script_executions.len(), 4);
+        let diagnostics = layout.summary()["diagnostics"].clone();
+        assert!(diagnostics.as_array().unwrap().is_empty());
+        let output = render::png(
+            &project,
+            &layout,
+            &RenderOptions {
+                scale: 2.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!((output.width, output.height), (1328, 192));
+        let actual = raster(&output.png);
+        let pixels = actual.peek_pixels().unwrap();
+        let mut maximum = 0u8;
+        let mut difference = 0u64;
+        for y in 0..192 {
+            for x in 0..1328 {
+                let a = pixels.get_color((x, y));
+                let b = expected.get_color((x, y));
+                for delta in [
+                    a.r().abs_diff(b.r()),
+                    a.g().abs_diff(b.g()),
+                    a.b().abs_diff(b.b()),
+                    a.a().abs_diff(b.a()),
+                ] {
+                    maximum = maximum.max(delta);
+                    difference += u64::from(delta);
+                }
+            }
+        }
+        assert_eq!(fs::read(&path).unwrap(), source.as_bytes());
+        for (path, bytes) in scripts {
+            assert_eq!(fs::read(path).unwrap(), bytes);
+        }
+        assert!(store.history(10, None).unwrap().is_empty());
+        if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
+            let directory = std::path::PathBuf::from(directory);
+            fs::create_dir_all(&directory).unwrap();
+            let stem = format!("codec-script-random-{version}");
+            fs::write(directory.join(format!("{stem}.png")), &output.png).unwrap();
+            fs::write(
+                directory.join(format!("{stem}.json")),
+                json!({
+                    "source_commit":std::env::var("GITHUB_SHA").ok(),"document_version":version,
+                    "width":output.width,"height":output.height,"scale":2,"diagnostics":diagnostics,
+                    "png_hash":lazypencil::document::hash(&output.png),
+                    "reference_sha256":lazypencil::document::hash(reference_bytes),
+                    "source_sha256":lazypencil::document::hash(source.as_bytes()),
+                    "native_producer":"@pen.dev/cli 0.3.9","native_document_version":"2.19",
+                    "verified_script_cases":4,"sampled_draws_per_script":37,
+                    "maximum_channel_difference":maximum,"absolute_channel_difference":difference
+                })
+                .to_string(),
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            maximum, 0,
+            "Native script pixels differ for codec {version}: {difference}"
+        );
+    }
+}
+
+#[test]
 fn generated_geometry_is_measured_painted_and_never_saved_as_stored_children() {
     let (temp, store) = fixture(
         "const result=[];for(let n=0;n<3;n++)result.push({type:'rectangle',x:n*pencil.width/3,width:pencil.width/3-4,height:pencil.height,fill:'#2563EB'});return result;",

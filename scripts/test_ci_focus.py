@@ -40,7 +40,7 @@ class FocusTests(unittest.TestCase):
                 self.assertIn("--test", checks[1])
 
     def test_shared_dynamic_changes_use_one_linux_runner(self):
-        for path in ("src/cdp/tabs.rs", "src/script/context.rs", "src/render.rs", "src/tui/preview.rs"):
+        for path in ("src/cdp/tabs.rs", "src/render.rs", "src/tui/preview.rs"):
             result = focus.select([path])
             self.assertEqual(result["platform"], "ubuntu-24.04")
             self.assertEqual(result["suite"], "dynamic")
@@ -67,6 +67,27 @@ class FocusTests(unittest.TestCase):
         self.assertLess(native.index("Check focused shader code before acquiring Chromium"),native.index("Install and verify the pinned Chromium runtime"))
         with self.assertRaises(ValueError):
             focus.commands("shader",["agent"])
+        for other in ["tests/dynamic_render.rs", "src/script/sandbox.js", "src/render.rs"]:
+            mixed = focus.select(["src/shader.rs", other])
+            self.assertEqual(mixed["suite"], "dynamic")
+            self.assertIn("shader_uniforms", mixed["targets"])
+            self.assertIn("dynamic_render", mixed["targets"])
+
+    def test_script_compatibility_runs_core_first_then_raster_consumers_without_chromium(self):
+        for path in ("src/script/header.rs", "src/script/sandbox.js", "src/script/context.rs"):
+            result = focus.select([path])
+            self.assertEqual(result, {"platform": "ubuntu-24.04", "suite": "graphics", "targets": ["script_diagnostics", "script_render", "script_scope", "scripts"]})
+            _, checks = focus.commands(result["suite"], result["targets"])
+            self.assertEqual(len(checks), 1)
+            self.assertNotIn("--include-ignored", checks[0])
+        self.assertEqual(focus.select(["tests/script_render.rs"])["targets"], ["script_render"])
+        self.assertEqual(focus.select(["tests/scripts.rs"])["targets"], ["scripts"])
+        native = (Path(__file__).resolve().parents[1] / ".github/workflows/native.yml").read_text()
+        self.assertLess(native.index("Reproduce script worker compatibility before native rendering"), native.index("Build focused test binaries"))
+        mixed = focus.select(["src/script/sandbox.js", "tests/dynamic_render.rs"])
+        self.assertEqual(mixed["suite"], "dynamic")
+        self.assertTrue({"scripts", "script_render", "script_diagnostics", "script_scope", "dynamic_render"} <= set(mixed["targets"]))
+        self.assertLess(native.index("Validate dynamic inputs and launch deadlines before acquiring Chromium"), native.index("Install and verify the pinned Chromium runtime"))
 
     def test_browser_ownership_and_nested_fixtures_run_actual_process_cases_before_rendering(self):
         for path in ("src/cdp/process.rs", "src/cdp/process/unix.rs", "tests/support/unix_browser_ownership.rs", "tests/support/browser_process_unix.py"):
@@ -129,7 +150,7 @@ class FocusTests(unittest.TestCase):
 
     def test_graphics_with_workflow_changes_keeps_pixels_first_without_duplicate_tui_units(self):
         result = focus.select(["src/layout.rs", "tests/graphics.rs", ".github/workflows/native.yml"])
-        self.assertEqual(result, {"platform": "ubuntu-24.04", "suite": "graphics", "targets": ["graphics", "layout"]})
+        self.assertEqual(result, {"platform": "ubuntu-24.04", "suite": "graphics", "targets": ["graphics", "layout", "render"]})
         _, checks = focus.commands(result["suite"], result["targets"])
         self.assertEqual(len(checks), 1)
         self.assertIn("--lib", checks[0])
@@ -139,6 +160,20 @@ class FocusTests(unittest.TestCase):
         core = focus.select(["src/queries.rs", ".github/workflows/ci.yml"])
         self.assertEqual(core["suite"], "core")
         self.assertEqual(core["targets"], ["queries"])
+
+    def test_layout_implementation_changes_include_raster_consumers_without_browser_optins(self):
+        for paths in (["src/layout.rs"], ["src/layout/metrics.rs"], ["src/layout.rs", ".github/workflows/ci.yml"]):
+            with self.subTest(paths=paths):
+                result = focus.select(paths)
+                self.assertEqual(result, {"platform": "ubuntu-24.04", "suite": "graphics", "targets": ["graphics", "layout", "render"]})
+                build, checks = focus.commands(result["suite"], result["targets"])
+                self.assertNotIn("--no-default-features", build[0])
+                self.assertEqual(len(checks), 1)
+                for target in result["targets"]:
+                    self.assertIn(target, checks[0])
+                self.assertNotIn("--ignored", checks[0])
+                self.assertNotIn("--include-ignored", checks[0])
+        self.assertEqual(focus.select(["tests/layout.rs"])["targets"], ["layout"])
 
     def test_static_render_regressions_stay_in_the_cpu_graphics_gate(self):
         for paths, targets in [

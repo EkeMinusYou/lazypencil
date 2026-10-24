@@ -259,12 +259,56 @@ fn a_real_worker_uses_dimensions_inputs_and_isolated_host_free_globals() {
 fn process_reuse_resets_the_js_context_and_random_sequence() {
     let mut worker = runtime();
     let code = request(
-        "globalThis.counter=(globalThis.counter||0)+1; return [{type:'rectangle',width:Math.random(),height:globalThis.counter}];",
+        "Math.imul=()=>0; globalThis.counter=(globalThis.counter||0)+1; return [{type:'rectangle',width:Math.random(),height:globalThis.counter}];",
     );
     let a = worker.execute(&code).unwrap();
     let b = worker.execute(&code).unwrap();
     assert_eq!(a.nodes, b.nodes);
     assert_eq!(a.nodes[0]["height"], 1);
+    assert_eq!(
+        a.nodes[0]["width"].as_f64(),
+        Some(0x4434b462u32 as f64 / 4294967296.0)
+    );
+}
+
+#[test]
+fn original_native_random_vectors_match_legacy_headers_and_reset_for_each_script() {
+    let observations: serde_json::Value = serde_json::from_str(include_str!(
+        "fixtures/pencil-0.3.9/script-random/observations.json"
+    ))
+    .unwrap();
+    let words = observations["sample_words_u32"].as_array().unwrap();
+    let sources = [
+        include_str!("fixtures/pencil-0.3.9/script-random/random-0-2.11.js"),
+        include_str!("fixtures/pencil-0.3.9/script-random/random-1-2.19.js"),
+        include_str!("fixtures/pencil-0.3.9/script-random/random-2-2.21.js"),
+        include_str!("fixtures/pencil-0.3.9/script-random/random-3-2.19.js"),
+    ];
+    let mut worker = runtime();
+    for (index, source) in sources.into_iter().enumerate() {
+        let input = ScriptRequest {
+            code: source.into(),
+            width: if index == 3 { 640.0 } else { 600.0 },
+            height: if index == 3 { 20.0 } else { 16.0 },
+            inputs: serde_json::from_value(json!({"marker":if index==3 {900} else {1}})).unwrap(),
+        };
+        let output = worker.execute(&input).unwrap();
+        assert!(output.reads_width && output.reads_height);
+        assert_eq!(output.nodes.len(), 2 * words.len());
+        for (draw, expected) in words.iter().enumerate() {
+            let color = |offset: usize| {
+                let value = output.nodes[2 * draw + offset]["fill"].as_str().unwrap();
+                u64::from_str_radix(value.strip_prefix('#').unwrap(), 16).unwrap()
+            };
+            assert_eq!(
+                (color(0) << 24) | color(1),
+                expected.as_u64().unwrap() << 16,
+                "Native random mismatch in script {index}, draw {}",
+                observations["sample_draw_indices"][draw]
+            );
+        }
+        assert_eq!(input.code, source);
+    }
 }
 
 #[test]
@@ -419,7 +463,7 @@ fn an_unresponsive_process_is_killed_by_the_parent_watchdog() {
 #[test]
 fn explicit_supported_schema_headers_execute_without_rewriting_the_source() {
     let mut worker = runtime();
-    for version in ["2.19", "2.21"] {
+    for version in ["2.11", "2.19", "2.21"] {
         let mut input = request(
             "return [{type:'rectangle',width:pencil.width,height:pencil.height,fill:'#ff0000'}];",
         );

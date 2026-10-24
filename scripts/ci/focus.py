@@ -43,16 +43,36 @@ def select(paths, platform="auto"):
     conversation = ownership or bool(stems & {"agent", "conversation", "windows_agent"}) or any(path.startswith("tests/support/acp_") for path in paths)
     if conversation:
         suite, targets = "conversation", ["agent"]
-    elif stems & {"shader", "shader_uniforms"}:
+    elif stems & {"shader", "shader_uniforms"} and not (
+        stems & (DYNAMIC - {"shader", "shader_uniforms"})
+        or stems & {"script_render", "script_diagnostics", "script_scope"}
+        or any(path == "src/render.rs" or path.startswith("src/render/") for path in paths)
+    ):
         suite, targets = "shader", ["shader_uniforms"]
     elif ci_change and not any(path.startswith(("src/", "tests/")) for path in paths):
         suite, targets = "conversation", ["agent"]
+    elif stems & {"script", "scripts", "script_render", "script_diagnostics", "script_scope"} and not (
+        stems & (DYNAMIC - {"script", "scripts"})
+        or any(path == "src/render.rs" or path.startswith(("src/cdp/", "src/tui/", "src/render/")) for path in paths)
+    ):
+        suite = "graphics"
+        selected = stems & CORE_TESTS - CREDENTIALED_TESTS
+        if any(path == "src/script.rs" or path.startswith("src/script/") for path in paths):
+            selected.update({"scripts", "script_render", "script_diagnostics", "script_scope"})
+        targets = sorted(selected)
     elif stems & DYNAMIC or any(path == "src/render.rs" or path.startswith(("src/cdp/", "src/tui/", "src/render/")) for path in paths):
         suite = "dynamic"
         targets = sorted({"dynamic_render", "browser_readiness", "shader_uniforms", "sampler_sources", "imports"} | (stems & RENDER_TESTS - CREDENTIALED_TESTS))
+        if any(path == "src/script.rs" or path.startswith("src/script/") for path in paths):
+            targets = sorted(set(targets) | {"scripts", "script_render", "script_diagnostics", "script_scope"})
     elif any(path.startswith(("src/graphics", "src/layout", "src/text", "src/icons", "resources/", "vendor/")) for path in paths) or stems & (RENDER_TESTS | RENDER_MODULES | {"graphics", "rendering", "text", "font_sources", "fonts", "optional_icons"}):
         suite = "graphics"
-        targets = sorted(stems & CORE_TESTS - CREDENTIALED_TESTS) or ["graphics", "render", "text", "font_sources", "optional_icons"]
+        selected = stems & CORE_TESTS - CREDENTIALED_TESTS
+        # Layout metrics also determine raster bounds and stroke geometry. Run
+        # those consumers even when their test files did not change.
+        if any(path == "src/layout.rs" or path.startswith("src/layout/") for path in paths):
+            selected.update({"layout", "graphics", "render"})
+        targets = sorted(selected) or ["graphics", "render", "text", "font_sources", "optional_icons"]
     else:
         suite = "core"
         aliases = {"store": "document_store", "document": "document_store", "query": "queries", "operations": "operations_cli"}

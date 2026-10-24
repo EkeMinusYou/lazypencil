@@ -1,0 +1,17 @@
+Mulberry32 algorithm used by src/script/sandbox.js
+Original author dedication (unchanged):
+
+/*  Written in 2017 by Tommy Ettinger (tommy.ettinger@gmail.com)
+
+To the extent possible under law, the author has dedicated all copyright
+and related and neighboring rights to this software to the public domain
+worldwide. This software is distributed without any warranty.
+
+See <http://creativecommons.org/publicdomain/zero/1.0/>. */
+
+Algorithm adapted to JavaScript 32-bit arithmetic; each script starts at seed 0.
+Upstream: https://gist.github.com/tommyettinger/46a874533244883189143505d203312c
+Original source: https://gist.githubusercontent.com/tommyettinger/46a874533244883189143505d203312c/raw/8fe823ef157841986a99f272a3840fa3fae26f81/mulberry32.c
+Original mulberry32.c SHA-256: c7d44b40d342b192bb02542475ac98e78792e8cd020a06fff0a6e4eb7973e0dc
+License: CC0-1.0
+The pen.dev application and its implementation are not included.
