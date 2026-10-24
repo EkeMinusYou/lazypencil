@@ -100,6 +100,7 @@ jobs:
           restore-keys: |
             ${{ (inputs.phase == 'full' || (inputs.suite != 'core' && inputs.suite != 'conversation')) && format('checkpoint-{0}', steps.cache-key.outputs.primary) || '' }}
             ${{ (inputs.phase == 'full' || (inputs.suite != 'core' && inputs.suite != 'conversation')) && steps.cache-key.outputs.legacy || '' }}
+            ${{ inputs.phase == 'full' && format('core-{0}', steps.cache-key.outputs.primary) || '' }}
           path: |
             ${{ runner.temp }}/lazypencil-target
             ${{ runner.temp }}/lazypencil-source/vendor/skia-bindings/skia
