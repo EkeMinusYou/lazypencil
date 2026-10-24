@@ -65,6 +65,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           FOCUS_PLATFORM: ${{ inputs.focus_os || 'auto' }}
         run: python3 scripts/ci/focus.py plan --platform "$FOCUS_PLATFORM"
+      - name: Verify stored shader component when its inputs are unchanged
+        if: steps.focus.outputs.preprocessor != 'true'
+        run: python3 scripts/shader_preprocessor.py
       - name: Preserve all final verification platforms by default
         id: matrix
         env:

@@ -1,0 +1,44 @@
+{
+  "format_version": 1,
+  "license_references": [
+    {
+      "blob": "texts/c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4.txt",
+      "id": "MIT",
+      "role": "Reference terms only; not a package-specific copyright notice.",
+      "sha256": "c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4",
+      "url": "https://spdx.org/licenses/MIT.txt"
+    }
+  ],
+  "packages": [
+    {
+      "archive_sha256": "d1715a1e56998f119cd6d49ac8a69802dcbe4fca96d8291243d6dae87abeb913",
+      "files": [
+        {
+          "blob": "texts/2676516154cc85237cf8e97bb58d93b9e15b80a51066d448ef6c19eca05d88b3.txt",
+          "git_blob_sha1": "03a3e7d2e2c90447560dbfe297aa9adcf54fb1bc",
+          "path": "LICENSE",
+          "revision": "247fbba98cd1ba9e1c87f4d5a8e0568fbdc48cfe",
+          "sha256": "2676516154cc85237cf8e97bb58d93b9e15b80a51066d448ef6c19eca05d88b3",
+          "url": "https://raw.githubusercontent.com/alixinne/glsl-lang/247fbba98cd1ba9e1c87f4d5a8e0568fbdc48cfe/LICENSE"
+        }
+      ],
+      "name": "lang-util",
+      "version": "0.8.1"
+    },
+    {
+      "archive_sha256": "1f2acc66aedf0e445534e0a6b3f0f6ee20ef6ebb9647dbe10735e52ea8d6a096",
+      "files": [
+        {
+          "blob": "texts/2676516154cc85237cf8e97bb58d93b9e15b80a51066d448ef6c19eca05d88b3.txt",
+          "git_blob_sha1": "03a3e7d2e2c90447560dbfe297aa9adcf54fb1bc",
+          "path": "LICENSE",
+          "revision": "247fbba98cd1ba9e1c87f4d5a8e0568fbdc48cfe",
+          "sha256": "2676516154cc85237cf8e97bb58d93b9e15b80a51066d448ef6c19eca05d88b3",
+          "url": "https://raw.githubusercontent.com/alixinne/glsl-lang/247fbba98cd1ba9e1c87f4d5a8e0568fbdc48cfe/LICENSE"
+        }
+      ],
+      "name": "lang-util-derive",
+      "version": "0.8.1"
+    }
+  ]
+}

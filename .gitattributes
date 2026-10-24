@@ -6,6 +6,8 @@ resources/licenses/native/texts/*.txt binary
 resources/licenses/toolchain/texts/*.txt binary
 *.crate binary
 *.tgz binary
+*.wasm binary
+resources/licenses/shader-preprocessor/** -text whitespace=-blank-at-eol,-blank-at-eof
 resources/icons/*/LICENSE binary
 resources/fonts/OFL.txt binary
 resources/licenses/MPL-2.0.txt binary

@@ -695,13 +695,14 @@ impl Renderer<'_> {
                 } else {
                     None
                 };
-                let request = crate::shader::request(
+                let request = crate::shader::request_with_coordinates(
                     self.project,
                     node,
                     fill,
                     property,
                     width,
                     height,
+                    Some([rect.width() as f64, rect.height() as f64]),
                     self.time,
                     None,
                     background.as_deref(),
@@ -862,13 +863,14 @@ impl Renderer<'_> {
                     } else {
                         None
                     };
-                    let request = crate::shader::request(
+                    let request = crate::shader::request_with_coordinates(
                         self.project,
                         &node,
                         effect,
                         "effect",
                         width,
                         height,
+                        Some([bounds.width as f64, bounds.height as f64]),
                         self.time,
                         Some(&object),
                         background_png.as_deref(),

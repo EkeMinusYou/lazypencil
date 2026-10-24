@@ -1,0 +1,21 @@
+{
+  "collector_revision": "01b5df624753955a4635684a7be4f9160bee6eca",
+  "format_version": 1,
+  "observed_toolchain": {
+    "commit_hash": "4a4ef493e3a1488c6e321570238084b38948f6db",
+    "release": "1.94.0",
+    "target": "wasm32-unknown-unknown",
+    "verbose": "rustc 1.94.0 (4a4ef493e 2026-03-02)\nbinary: rustc\ncommit-hash: 4a4ef493e3a1488c6e321570238084b38948f6db\ncommit-date: 2026-03-02\nhost: x86_64-unknown-linux-gnu\nrelease: 1.94.0\nLLVM version: 21.1.8"
+  },
+  "registry_download_bytes": 12019416,
+  "registry_packages": 40,
+  "release_ready": false,
+  "run_id": "40080651720",
+  "scope": "This runner's installed standard-library input evidence; no application binary or final linkage is established.",
+  "source_selection": {
+    "selected_bytes": 45054109,
+    "selected_files": 2278
+  },
+  "source_sha256": "0b53ae34f5c0c3612cfe1de139f9167a018cd5737bc2205664fd69ba9b25f600",
+  "source_url": "https://static.rust-lang.org/dist/rustc-1.94.0-src.tar.xz"
+}

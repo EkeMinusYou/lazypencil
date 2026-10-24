@@ -1,4 +1,4 @@
-(async function (request) {
+(async function (request, preprocessor) {
   let gl;
   try {
     const canvas = document.createElement("canvas");
@@ -14,12 +14,61 @@
       if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw Error(gl.getShaderInfoLog(shader));
       return shader;
     };
-    const precision = (request.source.match(/precision\s+(lowp|mediump|highp)\s+float\s*;/) || [null, "highp"])[1];
-    const varyings = [...request.source.matchAll(/varying\s+(?:(lowp|mediump|highp)\s+)?vec2\s+(v_uv|v_texCoord|vUv)\s*;/g)];
+    // Validate the original WebGL source before preprocessing. The adapter must
+    // not make invalid versions, extensions or reserved identifiers acceptable.
+    gl.deleteShader(compile(gl.FRAGMENT_SHADER, request.source));
+    const stripped = request.source.replace(/\\\r?\n/g, "").replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, " ");
+    const candidates = [...new Set(["GL_ES", "GL_FRAGMENT_PRECISION_HIGH", ...(stripped.match(/\bGL_[A-Za-z0-9_]+\b/g) || [])])];
+    if (candidates.length > 256) throw Error("Shader exceeds 256 predefined macro queries");
+    const defines = [];
+    const probeVertex = compile(gl.VERTEX_SHADER, "attribute vec2 lp_position;void main(){gl_Position=vec4(lp_position,0.,1.);}");
+    try {
+      // Reflect uniforms guarded by the actual compiler's macros. A desktop GLSL
+      // registry or the JavaScript extension list cannot establish definedness.
+      for (let start = 0; start < candidates.length; start += 16) {
+        const batch = candidates.slice(start, start + 16);
+        const uniforms = batch.map((name, index) => `#ifdef ${name}\nuniform float lp_probe_${index};\n#endif`).join("\n");
+        const values = batch.map((name, index) => `#ifdef ${name}\nlp_sum+=lp_probe_${index};\n#endif`).join("\n");
+        const fragment = compile(gl.FRAGMENT_SHADER, `precision mediump float;\n${uniforms}\nvoid main(){float lp_sum=0.;\n${values}\ngl_FragColor=vec4(lp_sum);}`);
+        const program = gl.createProgram();
+        try {
+          gl.attachShader(program, probeVertex); gl.attachShader(program, fragment); gl.linkProgram(program);
+          if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw Error(gl.getProgramInfoLog(program));
+          for (let index = 0; index < gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS); index++) {
+            const uniform = gl.getActiveUniform(program, index);
+            const match = /^lp_probe_(\d+)$/.exec(uniform.name);
+            if (!match || Number(match[1]) >= batch.length) throw Error("Unexpected compiler macro probe result");
+            defines.push(batch[Number(match[1])]);
+          }
+        } finally { gl.deleteProgram(program); gl.deleteShader(fragment); }
+      }
+    } finally { gl.deleteShader(probeVertex); }
+    const coordinateSize = request.coordinate_size === undefined ? [request.width, request.height] : request.coordinate_size;
+    if (!Array.isArray(coordinateSize) || coordinateSize.length !== 2 || coordinateSize.some(value => !Number.isFinite(value) || value <= 0)) throw Error("Invalid logical shader dimensions");
+    const binary = Uint8Array.from(atob(preprocessor), character => character.charCodeAt(0));
+    const module = await WebAssembly.compile(binary);
+    const imports = WebAssembly.Module.imports(module);
+    if (imports.length !== 1 || imports[0].module !== "env" || imports[0].name !== "memory" || imports[0].kind !== "memory") throw Error("Unexpected shader preprocessor imports");
+    const memory = new WebAssembly.Memory({ initial: 256, maximum: 1024 });
+    const instance = await WebAssembly.instantiate(module, { env: { memory } });
+    const input = new TextEncoder().encode(JSON.stringify({ source: request.source, defines, coordinate_scale: coordinateSize.map((value, index) => value / [request.width, request.height][index]) }));
+    if (input.length > 8 * 1024 * 1024) throw Error("Shader preprocessor input exceeds 8 MiB");
+    const pointer = instance.exports.input_buffer(input.length);
+    if (!pointer || pointer + input.length > memory.buffer.byteLength) throw Error("Invalid shader preprocessor input region");
+    new Uint8Array(memory.buffer, pointer, input.length).set(input);
+    const result = instance.exports.process_shader();
+    const length = instance.exports.output_length();
+    if (!length || length > 8 * 1024 * 1024 || result + length > memory.buffer.byteLength) throw Error("Invalid shader preprocessor output region");
+    const prepared = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(memory.buffer, result, length)));
+    if (typeof prepared.error === "string") throw Error(prepared.error);
+    if (typeof prepared.source !== "string") throw Error("Shader preprocessor returned no source");
+    const source = prepared.source;
+    const precision = (source.match(/precision\s+(lowp|mediump|highp)\s+float\s*;/) || [null, "highp"])[1];
+    const varyings = [...source.matchAll(/varying\s+(?:(lowp|mediump|highp)\s+)?vec2\s+(v_uv|v_texCoord|vUv)\s*;/g)];
     const declarations = varyings.map(value => `varying ${value[1] || precision} vec2 ${value[2]};`).join("\n");
     const assignments = varyings.map(value => `${value[2]}=(a_position+1.0)*0.5;`).join("\n");
     const vertex = compile(gl.VERTEX_SHADER, `precision ${precision} float;attribute vec2 a_position;${declarations}\nvoid main(){${assignments}\ngl_Position=vec4(a_position,0.0,1.0);}`);
-    const fragment = compile(gl.FRAGMENT_SHADER, request.source);
+    const fragment = compile(gl.FRAGMENT_SHADER, source);
     const program = gl.createProgram();
     gl.attachShader(program, vertex); gl.attachShader(program, fragment); gl.linkProgram(program);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw Error(gl.getProgramInfoLog(program));
@@ -98,7 +147,7 @@
     gl.drawArrays(gl.TRIANGLES, 0, 6); gl.finish();
     if (gl.isContextLost() || gl.getError() !== gl.NO_ERROR) throw Error("WebGL draw failed or lost its context");
     const debug = gl.getExtension("WEBGL_debug_renderer_info");
-    return { png: canvas.toDataURL("image/png"), extensions, renderer: debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER) };
+    return { png: canvas.toDataURL("image/png"), extensions, coordinate_size: coordinateSize, renderer: debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER) };
   } catch (error) {
     return { error: String(error && error.message || error) };
   } finally {

@@ -201,6 +201,12 @@ class ReleaseEvidenceTests(unittest.TestCase):
             path.write_bytes(data)
             self.manifest["files"].append({**evidence.fingerprint(path, path.relative_to(self.root).as_posix()), "mode": 0o644})
         self.write_manifest()
+        for name, data in {"module.wasm": b"fixture bounded module", "build.json": b"{}", "verification.json": b"{}"}.items():
+            path = self.root / "resources/shader-preprocessor" / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+            self.manifest["files"].append({**evidence.fingerprint(path, path.relative_to(self.root).as_posix()), "mode": 0o644})
+        self.write_manifest()
         self.output = self.base / "evidence"
 
     def collect(self, native_effect=None):
@@ -218,6 +224,7 @@ class ReleaseEvidenceTests(unittest.TestCase):
                 patch.object(evidence.quick, "verify"), \
                 patch.object(evidence.assets, "collect", return_value={"embedded_declarations": 15}), \
                 patch.object(evidence.assets, "verify"), \
+                patch.object(evidence.shaders, "verify", return_value={"wasm_sha256": notices.digest(b"fixture bounded module")}), \
                 patch.object(evidence.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, b"rustc pinned\nhost: aarch64-apple-darwin\n")):
             return evidence.collect(self.root, self.target, self.events, self.revision, self.output)
 
@@ -227,6 +234,7 @@ class ReleaseEvidenceTests(unittest.TestCase):
         self.assertFalse(result["release_ready"])
         report = json.loads((self.output / "build.json").read_bytes())
         self.assertEqual(report["binary"]["sha256"], notices.digest(self.binary.read_bytes()))
+        self.assertEqual(report["shader_preprocessor"]["wasm_sha256"], notices.digest((self.output / "shader-preprocessor/module.wasm").read_bytes()))
         self.assertGreaterEqual(len(report["remaining_review"]), 5)
         self.assertNotIn("must not be copied", (self.output / "build.json").read_text())
         self.assertEqual((self.output / "licenses/sources/option-ext-fixture.crate").read_bytes(),

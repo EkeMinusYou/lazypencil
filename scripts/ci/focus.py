@@ -21,10 +21,10 @@ RENDER_MODULES = set(re.findall(r'#\[cfg\(feature = "(?:rendering|tui)"\)\]\s+(?
 
 
 def preprocessor_changed(paths):
-    return any(path.startswith(("src/shader/preprocessor/", "resources/licenses/rust/", "resources/licenses/toolchain/",
+    return any(path.startswith(("src/shader/preprocessor/", "resources/shader-preprocessor/", "resources/licenses/shader-preprocessor/", "resources/licenses/rust/", "resources/licenses/toolchain/",
                                 "tests/fixtures/pencil-0.3.9/shader-logical-coordinates/"))
                or path in {"scripts/ci/shader_preprocessor_notices.py", "scripts/ci/toolchain_evidence.py",
-                           "scripts/license_notices.py", "scripts/toolchain_notice_inventory.py",
+                           "scripts/license_notices.py", "scripts/toolchain_notice_inventory.py", "scripts/shader_preprocessor.py",
                            "tests/support/shader_preprocessor.mjs", ".github/workflows/shader-preprocessor.yml"}
                for path in paths)
 
