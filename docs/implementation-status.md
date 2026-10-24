@@ -4,6 +4,8 @@
 
 初回リリースの完成判定は macOS Apple Silicon・Linux x64／arm64（glibc 系）の3環境に限定する。Intel Mac は対象外、Windows は既存実装・fixture を保持して後日対応とする。以下の過去の5環境検証や Windows／Intel の残件は、初回リリースの必須作業へ追加しない。機能・互換性・性能・実端末・ライセンス・配布の基準は [設計書の受け入れ条件](design.md#検証と受け入れ条件) に従う。
 
+2026-10-24: source `e60a0da` の先行 GHA `40083564201` で17件の CPU と6件の実 WebGL が成功し、注釈20ケースの1倍／2倍・既定値14ケース・元の行番号を保つ4ソースも通過した。残り2試験は、CDP が返す数値 `32` と、試験側の JSON `32.0` の表現差で停止した。論理寸法を `as_f64` で数値として比較するよう直し、本家10ケースの全画素比較と effect／z/w の条件は維持する。通常3環境は未起動である。同じ先行実行は監査済み旧 v2 key を実際に18秒で復元し、app の再ビルドは約50秒だった。先行する `e9c90da` は新しい属性 key の miss で Skia binding を再構築していたことを終了済み log から確認した。
+
 2026-10-24: 行番号修正の source `5260f21`／GHA `40083330165` は実 Wasm 17ケース・原表示収集・wasm32 の標準 library 収集が成功した。古い同梱 module を拒否する最終検査で停止し、native job は開始していない。生成 artifact を ZIP digest・Git のソース54ファイル・69 package・標準 library 54点・memory import の64 MiB上限へ独立に照合し、481,016バイト／SHA-256 `3d762d31fd40930cd980abeaa78573e9ddc3a695851154b11d6eff193c1ba1f4` の新 module と原表示へ置き換える。次の GHA で再現ビルド一致と実描画を検証し、全3環境の最終基準は維持する。
 
 2026-10-24: 接続後の追加確認で、glsl-lang-pp の `__LINE__` が通常行・明示的 version・`#line` のすべてで1小さいことを、GHA 生成済み module の軽量実行で再現した。内部 resolver の0始まりは保ち、builtin だけを1始まりへ変換し、`#line 0` も維持する。通常・version・複数行 comment・明示的0・file／version の Wasm 再現と実 WebGL の色による試験を追加する。component 変更後は GHA で新 module を生成して取り込み、古い生成物では native gate を開始しない。同時に `.gitattributes` の Wasm／新しい原表示向け追加だけで native cache key が変わっていたことを確認した。依存入力67パスの属性・Cargo manifest／lock・native source・build policy が不変であることを Git から照合し、新しい primary key と全 app 出力の除去を維持したまま、同じ compiler・image・既定 flags に限り直前の v2 依存 key を復元する。
