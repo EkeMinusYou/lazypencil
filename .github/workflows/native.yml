@@ -145,6 +145,13 @@ jobs:
         run: |
           set -o pipefail
           cargo test --locked --test shader_uniforms -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-tests.log"
+      - name: Check focused shader code before acquiring Chromium
+        if: inputs.phase == 'focus' && inputs.suite == 'shader'
+        timeout-minutes: 5
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
+          cargo clippy --locked --test shader_uniforms -- -D warnings 2>&1 | tee "$RUNNER_TEMP/chromium-shader-clippy.log"
       - name: Build core test binaries
         id: core-build
         if: inputs.phase == 'full'

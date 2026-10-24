@@ -50,6 +50,7 @@ class FocusTests(unittest.TestCase):
             self.assertEqual(checks[0][checks[0].index("--test")+1],"shader_uniforms")
         native=(Path(__file__).resolve().parents[1]/".github/workflows/native.yml").read_text()
         self.assertLess(native.index("Validate shader inputs before acquiring Chromium"),native.index("Install and verify the pinned Chromium runtime"))
+        self.assertLess(native.index("Check focused shader code before acquiring Chromium"),native.index("Install and verify the pinned Chromium runtime"))
         with self.assertRaises(ValueError):
             focus.commands("shader",["agent"])
 

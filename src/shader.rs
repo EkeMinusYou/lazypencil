@@ -107,20 +107,18 @@ pub fn request(
                         )
                     }
                 }
-            } else {
-                if stored.is_none() && uniform.default.is_some() {
-                    // Native defaults initialize one element; remaining linked
-                    // elements keep zero. Explicit short overrides still fail.
-                    default_arrays.push(uniform.name.clone());
-                    let element = numeric(&uniform.kind, value)?;
-                    match element {
-                        Value::Array(values) => Value::Array(values),
-                        Value::Bool(value) => json!([u8::from(value)]),
-                        value => json!([value]),
-                    }
-                } else {
-                    numeric_array(&uniform, value)?
+            } else if stored.is_none() && uniform.default.is_some() {
+                // Native defaults initialize one element; remaining linked
+                // elements keep zero. Explicit short overrides still fail.
+                default_arrays.push(uniform.name.clone());
+                let element = numeric(&uniform.kind, value)?;
+                match element {
+                    Value::Array(values) => Value::Array(values),
+                    Value::Bool(value) => json!([u8::from(value)]),
+                    value => json!([value]),
                 }
+            } else {
+                numeric_array(&uniform, value)?
             }
         } else if uniform.resolution {
             json!([width, height])
