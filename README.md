@@ -73,7 +73,7 @@ cargo run -- render examples/script-chart.pen --output script-chart.png
 cargo run -- guidance scripts
 ```
 
-The original chart example combines editable `.pen` layout, Noto Sans JP, and generated geometry. Script nodes use a separate Rust worker with QuickJS-NG 0.16.2 through the pinned `rquickjs` 0.14.0 binding. Headers currently support `@schema 2.21` and six typed input kinds. The engine exposes `pencil.width`, `pencil.height`, and `pencil.input`; output is measured and painted by the same Skia path as ordinary nodes. Generated children remain derived data and carry `generated_by` metadata.
+The original chart example combines editable `.pen` layout, Noto Sans JP, and generated geometry. Script nodes use a separate Rust worker with QuickJS-NG 0.16.2 through the pinned `rquickjs` 0.14.0 binding. Headers accept explicit `@schema 2.19` and `@schema 2.21` and six typed input kinds. The engine exposes `pencil.width`, `pencil.height`, and `pencil.input`; output is measured and painted by the same Skia path as ordinary nodes. Generated children remain derived data and carry `generated_by` metadata.
 
 Use `inspect design.pen --calculated --node chart --depth 2` to read generated properties and their measured geometry. MCP `read_nodes` accepts `calculated: true` for a new calculation or `snapshot_id` to reuse the exact tree from layout/render without rerunning scripts. These reads expose resolved variables, themes, and property origins; generated IDs remain read-only. Ordinary stored reads do not execute scripts. See [calculated node reads](docs/mcp.md#calculated-and-generated-nodes).
 

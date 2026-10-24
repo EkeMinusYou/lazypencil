@@ -750,6 +750,7 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
             Ok(json!({
             "version":env!("CARGO_PKG_VERSION"),"os":std::env::consts::OS,"architecture":std::env::consts::ARCH,
             "document_version":crate::document::DOCUMENT_VERSION,
+            "supported_document_versions":crate::document::SUPPORTED_DOCUMENT_VERSIONS,
             "data_directory":data,
             "lock_directory":store::default_lock_dir()?,
             "user_configuration":crate::config::user_config_path().map(|path|json!({"path":path})).unwrap_or_else(|error|json!({"error":error})),

@@ -214,8 +214,10 @@ impl ProjectCatalog {
                 .map_err(|_| invalid("Project style examples must be UTF-8 .pen documents"))?;
             let document = Document::parse(source.into())
                 .map_err(|_| invalid("Invalid project style example document"))?;
-            if document.version() != crate::document::DOCUMENT_VERSION {
-                return Err(invalid("Project style examples require .pen schema 2.21"));
+            if document.codec().is_none() {
+                return Err(invalid(
+                    "Project style examples require a supported .pen schema",
+                ));
             }
             let id = format!("project:{}", style.id);
             let mut value = serde_json::to_value(&style).expect("style metadata");
@@ -223,7 +225,7 @@ impl ProjectCatalog {
             value["origin"] = json!("project");
             value["source_path"] = json!(path);
             value["source_hash"] = json!(hash(&bytes));
-            value["schema_versions"] = json!(["2.21"]);
+            value["schema_versions"] = json!([document.version()]);
             value["example"] = json!({"filename":example,"format":"pen","document":document.value(),"hash":document.revision(),"read_only":true,
                 "components":document.locations().keys().filter_map(|id| {let node=document.node(id).ok()?;(node["reusable"]==true).then(|| json!({"node_id":id,"name":node.get("name")}))}).collect::<Vec<_>>()});
             super::stamp(&mut value);

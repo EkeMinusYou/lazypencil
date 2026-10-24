@@ -85,13 +85,13 @@ impl Header {
                 start,
             )
         })?;
-        if schema != crate::document::DOCUMENT_VERSION {
+        if crate::document::Codec::parse(&schema).is_none() {
             return Err(super::diagnostic::header(
                 Error::new(
                     "UNSUPPORTED_VERSION",
                     format!(
-                        "Script schema {schema:?} is unsupported; supported schema is {}",
-                        crate::document::DOCUMENT_VERSION
+                        "Script schema {schema:?} is unsupported; supported schemas are {}",
+                        crate::document::SUPPORTED_DOCUMENT_VERSIONS.join(", ")
                     ),
                 ),
                 source,

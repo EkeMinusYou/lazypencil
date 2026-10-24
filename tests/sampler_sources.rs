@@ -721,3 +721,33 @@ fn sampler_copy_rejects_a_redirected_nested_bundle_directory_without_touching_th
     assert!(store.history(10, None).unwrap().is_empty());
     assert_eq!(fs::read_dir(outside).unwrap().count(), 0);
 }
+
+#[test]
+fn legacy_consumer_copies_generate_legacy_libraries_without_rewriting_user_sources() {
+    let (temp, store) = array_fixture();
+    let source_path = temp.path().join("library/ui.lib.pen");
+    let original_library = fs::read(&source_path).unwrap();
+    let original = store.read().unwrap().text().replace("2.21", "2.19");
+    fs::write(store.path(), original).unwrap();
+    edit(&store, "legacy-copy", copy_operations());
+    assert_eq!(fs::read(source_path).unwrap(), original_library);
+    fs::remove_dir_all(temp.path().join("library")).unwrap();
+    let document = store.read().unwrap();
+    assert_eq!(document.version(), "2.19");
+    let imports = document.value()["imports"].as_object().unwrap();
+    assert!(!imports.is_empty());
+    for uri in imports.values() {
+        let path = store.path().parent().unwrap().join(uri.as_str().unwrap());
+        let library =
+            lazypencil::document::Document::parse(fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(library.version(), "2.19");
+    }
+    assert!(
+        !Project::load(&store)
+            .unwrap()
+            .resolve()
+            .unwrap()
+            .roots
+            .is_empty()
+    );
+}

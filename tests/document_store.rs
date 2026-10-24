@@ -510,3 +510,68 @@ fn saves_respect_read_only_documents_and_keep_private_recovery_files() {
     assert_eq!(error.code, "IO_ERROR");
     assert_eq!(store.read().unwrap().text(), before.text());
 }
+
+#[test]
+fn supported_versions_survive_transactions_restores_and_rejected_edits_verbatim() {
+    for version in ["2.19", "2.21"] {
+        let (_temp, store) = setup();
+        let original = fixture().replace("2.21", version);
+        fs::write(store.path(), &original).unwrap();
+        let document = store.read().unwrap();
+        document.ensure_writable().unwrap();
+        assert_eq!(document.summary()["writable"], true);
+        let first = edit(&store, "first", "first");
+        let first_text = store.read().unwrap().text().to_owned();
+        assert_eq!(store.read().unwrap().version(), version);
+        assert!(first_text.contains("// 日本語のコメント"));
+        assert!(first_text.contains("1.000e+3"));
+        assert_eq!(
+            store.read().unwrap().node("b").unwrap()["magic"],
+            json!([1, 2, 3])
+        );
+        let revision = store.read().unwrap().revision();
+        assert!(
+            store
+                .transact("rejected", &revision, "rejected", |doc| {
+                    let mut changed = doc.clone();
+                    changed.set_property("", "name", &json!("discarded"))?;
+                    Err(Error::new("INVALID_OPERATION", "Rejected after editing"))
+                })
+                .is_err()
+        );
+        assert_eq!(fs::read_to_string(store.path()).unwrap(), first_text);
+        edit(&store, "second", "second");
+        store
+            .restore(
+                "restore",
+                &store.read().unwrap().revision(),
+                first["checkpoint_id"].as_str().unwrap(),
+            )
+            .unwrap();
+        // A checkpoint restores its exact saved source, including wire version.
+        assert_eq!(fs::read_to_string(store.path()).unwrap(), first_text);
+    }
+}
+
+#[test]
+fn unrecognized_wire_versions_remain_read_only_without_running_the_edit() {
+    for version in ["2.18", "2.20", "2.22", "9", "2.19.0"] {
+        let (_temp, store) = setup();
+        let original = fixture().replace("2.21", version);
+        fs::write(store.path(), &original).unwrap();
+        let document = store.read().unwrap();
+        assert_eq!(document.summary()["writable"], false);
+        assert_eq!(
+            document.ensure_writable().unwrap_err().code,
+            "UNSUPPORTED_VERSION"
+        );
+        let error = store
+            .transact("unknown", &document.revision(), "unknown", |_| {
+                panic!("Unknown wire versions must never enter a transaction")
+            })
+            .unwrap_err();
+        assert_eq!(error.code, "UNSUPPORTED_VERSION");
+        assert_eq!(fs::read_to_string(store.path()).unwrap(), original);
+        assert!(store.history(10, None).unwrap().is_empty());
+    }
+}

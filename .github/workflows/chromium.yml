@@ -111,8 +111,15 @@ jobs:
           set -o pipefail
           cargo clippy --locked --all-targets -- -D warnings 2>&1 | tee "$RUNNER_TEMP/chromium-clippy.log"
           cargo clippy --locked --no-default-features --all-targets -- -D warnings 2>&1 | tee "$RUNNER_TEMP/chromium-core-clippy.log"
-          cargo test --locked --no-default-features --test sampler_sources -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/chromium-core-samplers.log"
+          cargo test --locked --no-default-features --test sampler_sources --test document_store --test imports -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/chromium-core-samplers.log"
           cargo build --locked
+      - name: Verify native Pencil 2.19 reference and version-preserving edits
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        env:
+          LAZYPENCIL_TEST_CODEC_DIR: ${{ runner.temp }}/codec-reference
+        run: |
+          set -o pipefail
+          cargo test --locked --test graphics native_pencil_219_triangle -- --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-codec.log"
       - name: Install and verify the pinned Chromium runtime
         timeout-minutes: 10
         working-directory: ${{ runner.temp }}/lazypencil-source
@@ -249,5 +256,6 @@ jobs:
             ${{ runner.temp }}/chromium-*.log
             ${{ runner.temp }}/chromium-panel.png
             ${{ runner.temp }}/chromium-userns.apparmor
+            ${{ runner.temp }}/codec-reference/codec-*
           if-no-files-found: ignore
           retention-days: 3
