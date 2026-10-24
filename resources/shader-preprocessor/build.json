@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "source_commit": "01b5df624753955a4635684a7be4f9160bee6eca",
+  "source_commit": "5260f21d0ec5fe79b1fd4f13d9792a736c8bd308",
   "source_files": {
     "src/shader/preprocessor/Cargo.lock": "6d6a6b82ef74e045205857e8c39d3e147ec2937c5c0772dd616b7992c829d70d",
     "src/shader/preprocessor/Cargo.toml": "accd65ce15c44ebadfe793a091f438ddc128599bbca76fde91886c062dfd479c",
@@ -11,7 +11,7 @@
     "src/shader/preprocessor/vendor/glsl-lang-pp/.cargo_vcs_info.json": "7e9542629861224b7554877400f5f97457dd200e219220b14c01f2d1268db7f1",
     "src/shader/preprocessor/vendor/glsl-lang-pp/Cargo.toml": "db2f0cb8272d17f4d503196ccfd0ac9573dbefed62484c8a85aa51328de39360",
     "src/shader/preprocessor/vendor/glsl-lang-pp/Cargo.toml.orig": "3d8a049907f3bdc18bf41df25cfc2fa49382428013363fb3e12035e68daa1a8b",
-    "src/shader/preprocessor/vendor/glsl-lang-pp/LAZYPENCIL_PATCH.md": "a22eaccbffb8b5e61fe8e26e7a9c238739642f4607aafedf79f014bb261792f1",
+    "src/shader/preprocessor/vendor/glsl-lang-pp/LAZYPENCIL_PATCH.md": "5d5756dcbabb3c2669556aa633c36b4ff905ccc534ac941b8b6d5e085228d3e3",
     "src/shader/preprocessor/vendor/glsl-lang-pp/LICENSE": "2676516154cc85237cf8e97bb58d93b9e15b80a51066d448ef6c19eca05d88b3",
     "src/shader/preprocessor/vendor/glsl-lang-pp/README.md": "81f3dec4dec005f2e83debb27db5aa4ce17e1a0b109e215e31e0a48cc1bf20e6",
     "src/shader/preprocessor/vendor/glsl-lang-pp/build.rs": "3af9ca8d9d0d893f3202b6f5fa4a4feeb3eb61eff915b7636dcc3ecfed353296",
@@ -34,7 +34,7 @@
     "src/shader/preprocessor/vendor/glsl-lang-pp/src/parser/syntax_kind.rs": "b6686b0a69a8d90cb9009f93a4598af2ad0aca5dffe6e6ac672b9473c8d45df7",
     "src/shader/preprocessor/vendor/glsl-lang-pp/src/parser/tests.rs": "828a72e83f6f76bd576a8872e51c69be009afa2f79e7e432c708c1fb2ed6bbda",
     "src/shader/preprocessor/vendor/glsl-lang-pp/src/parser.rs": "037f60eafc8ec068d5e96da8d9c19bf24d71c1d3745b70b15fc53844ae27184c",
-    "src/shader/preprocessor/vendor/glsl-lang-pp/src/processor/definition.rs": "9a39b438885a6d34a006b4fdace336793ce4fbf36e90b42f5f50c0d69160a358",
+    "src/shader/preprocessor/vendor/glsl-lang-pp/src/processor/definition.rs": "50c9e9443e99c1c0dbc99d8d5b7299bea0c9f5322efd9fde3da1b8677d466d34",
     "src/shader/preprocessor/vendor/glsl-lang-pp/src/processor/event/send.rs": "ebfaad8b624053f4f01eda2faca5d1a038662309b31a8354a4b3895679b0b212",
     "src/shader/preprocessor/vendor/glsl-lang-pp/src/processor/event.rs": "53a30c01f437097b46d79b010ca62d95e0d815be85360709a2d9ce8b8533705a",
     "src/shader/preprocessor/vendor/glsl-lang-pp/src/processor/expand/if_stack.rs": "102e822ed8a102caa2d6460a2421dc91628bcf516cd84061687c32bf7bec9fc3",
@@ -57,8 +57,8 @@
     "src/shader/preprocessor/vendor/glsl-lang-pp/tests/common/mod.rs": "79defee1f104b9762a497a23a2534535d5d44170e5d5ba4cb91b7f3b131c6788",
     "src/shader/preprocessor/vendor/glsl-lang-pp/tests/issue_61.glsl": "95adb54a2843d54005daaff9a472d91cd8f3b24255f93bed94d99cf666acf362"
   },
-  "wasm_sha256": "51f5c7b5aa6b1279560b73a7533bece41fe053bc99356d0e59e9a337322d1644",
-  "wasm_bytes": 481013,
+  "wasm_sha256": "3d762d31fd40930cd980abeaa78573e9ddc3a695851154b11d6eff193c1ba1f4",
+  "wasm_bytes": 481016,
   "target": "wasm32-unknown-unknown",
   "rustc": "rustc 1.94.0 (4a4ef493e 2026-03-02)\nbinary: rustc\ncommit-hash: 4a4ef493e3a1488c6e321570238084b38948f6db\ncommit-date: 2026-03-02\nhost: x86_64-unknown-linux-gnu\nrelease: 1.94.0\nLLVM version: 21.1.8\n",
   "rustflags": "--remap-path-prefix=/home/runner/work/_temp/lazypencil-wasm-source=/source --remap-path-prefix=/home/runner/.cargo=/cargo -C link-arg=--import-memory -C link-arg=--initial-memory=16777216 -C link-arg=--max-memory=67108864 -C link-arg=-z -C link-arg=stack-size=1048576",

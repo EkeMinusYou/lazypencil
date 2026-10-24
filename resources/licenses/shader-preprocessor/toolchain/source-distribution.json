@@ -1,5 +1,5 @@
 {
-  "collector_revision": "01b5df624753955a4635684a7be4f9160bee6eca",
+  "collector_revision": "5260f21d0ec5fe79b1fd4f13d9792a736c8bd308",
   "format_version": 1,
   "observed_toolchain": {
     "commit_hash": "4a4ef493e3a1488c6e321570238084b38948f6db",
@@ -10,7 +10,7 @@
   "registry_download_bytes": 12019416,
   "registry_packages": 40,
   "release_ready": false,
-  "run_id": "40080651720",
+  "run_id": "40083330165",
   "scope": "This runner's installed standard-library input evidence; no application binary or final linkage is established.",
   "source_selection": {
     "selected_bytes": 45054109,
