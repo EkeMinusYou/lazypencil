@@ -79,6 +79,27 @@ mod tests {
             .unwrap()
     }
 
+    fn stored_image(directory: &std::path::Path) -> Attachment {
+        // Selection restores previously stored PNGs. Decoding new input is
+        // tested by the rendering-enabled attachment and live ACP cases.
+        let png = include_bytes!("../../examples/assets/crop-source.png");
+        let hash = crate::document::hash(png);
+        let image = Attachment {
+            id: format!("img_{hash}"),
+            display_name: "stored.png".into(),
+            width: u32::from_be_bytes(png[16..20].try_into().unwrap()),
+            height: u32::from_be_bytes(png[20..24].try_into().unwrap()),
+            bytes: png.len(),
+            source_bytes: Some(png.len()),
+            hash,
+        };
+        let attachments = directory.join("attachments");
+        crate::store::create_private_directory(&attachments).unwrap();
+        crate::store::atomic_replace(&attachments.join(format!("{}.png", image.hash)), png)
+            .unwrap();
+        image
+    }
+
     #[test]
     fn selection_preserves_each_draft_image_native_id_and_lock_without_starting_an_agent() {
         let temp = TempDir::new().unwrap();
@@ -88,7 +109,7 @@ mod tests {
             let document = std::fs::read(store.path()).unwrap();
             let first = conversation.id().to_string();
             conversation.set_draft("最初の下書き\n画像を保持".into()).unwrap();
-            let image = Attachment::from_file(conversation.directory(), &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/assets/crop-source.png")).unwrap();
+            let image = stored_image(conversation.directory());
             conversation.add_image(image.clone()).unwrap();
             conversation.session.state.native_session_id = Some("first-native".into());
             conversation.session.save().unwrap();
