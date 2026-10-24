@@ -36,7 +36,7 @@ pub struct Browser {
     pub version: String,
     page_lifecycle: BTreeMap<String, PageLifecycle>,
     retained_tabs: VecDeque<tabs::RetainedTab>,
-    _profile: tempfile::TempDir,
+    _profile: Option<tempfile::TempDir>,
 }
 
 pub struct Budget<'a> {
@@ -73,6 +73,19 @@ impl Browser {
         self.child.id()
     }
 
+    /// The ephemeral Chromium profile, for lifecycle diagnostics. On Unix,
+    /// its private guardian owns cleanup even after this host is terminated.
+    pub fn profile_path(&self) -> &Path {
+        #[cfg(unix)]
+        {
+            self.child.profile_path()
+        }
+        #[cfg(not(unix))]
+        {
+            self._profile.as_ref().expect("host browser profile").path()
+        }
+    }
+
     /// Launch through the current lazypencil executable. Embedding hosts use
     /// `launch_with_supervisor` to supply their actual lazypencil CLI.
     pub fn launch(
@@ -100,27 +113,33 @@ impl Browser {
         supervisor: Option<&Path>,
     ) -> Result<Self> {
         budget.check()?;
-        let profile = tempfile::Builder::new()
-            .prefix("lazypencil-chromium-")
-            .tempdir()
-            .map_err(|e| failed(format!("Cannot create browser profile: {e}")))?;
+        #[cfg(unix)]
+        let profile: Option<tempfile::TempDir> = None;
+        #[cfg(not(unix))]
+        let profile = Some(
+            tempfile::Builder::new()
+                .prefix("lazypencil-chromium-")
+                .tempdir()
+                .map_err(|e| failed(format!("Cannot create browser profile: {e}")))?,
+        );
         let mut command = Command::new(&browser.executable);
-        command
-            .args([
-                "--headless",
-                "--remote-debugging-port=0",
-                "--remote-debugging-address=127.0.0.1",
-                "--no-first-run",
-                "--no-default-browser-check",
-                "--disable-background-networking",
-                "--disable-component-update",
-                "--disable-sync",
-                "--disable-breakpad",
-                "--disable-crash-reporter",
-                "--hide-scrollbars",
-                "--mute-audio",
-            ])
-            .arg(format!("--user-data-dir={}", profile.path().display()));
+        command.args([
+            "--headless",
+            "--remote-debugging-port=0",
+            "--remote-debugging-address=127.0.0.1",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-background-networking",
+            "--disable-component-update",
+            "--disable-sync",
+            "--disable-breakpad",
+            "--disable-crash-reporter",
+            "--hide-scrollbars",
+            "--mute-audio",
+        ]);
+        if let Some(profile) = &profile {
+            command.arg(format!("--user-data-dir={}", profile.path().display()));
+        }
         if purpose == Purpose::Shader {
             command.args([
                 "--use-gl=angle",
@@ -133,10 +152,23 @@ impl Browser {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
-        let mut child = process::Owned::spawn(command, supervisor, profile.path(), budget)
-            .map_err(|error| budget.check().err().unwrap_or(error))?;
+        let mut child = process::Owned::spawn(
+            command,
+            supervisor,
+            profile.as_ref().map(tempfile::TempDir::path),
+            budget,
+        )
+        .map_err(|error| budget.check().err().unwrap_or(error))?;
+        #[cfg(unix)]
+        let profile_path = child.profile_path().to_path_buf();
+        #[cfg(not(unix))]
+        let profile_path = profile
+            .as_ref()
+            .expect("host browser profile")
+            .path()
+            .to_path_buf();
         let result = (|| {
-            let port_file = profile.path().join("DevToolsActivePort");
+            let port_file = profile_path.join("DevToolsActivePort");
             let (port, path) = loop {
                 budget.check()?;
                 if let Some(status) = child.try_wait().map_err(|e| failed(e.to_string()))? {

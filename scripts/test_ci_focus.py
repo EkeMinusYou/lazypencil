@@ -37,6 +37,16 @@ class FocusTests(unittest.TestCase):
             self.assertIn("--skip", checks[3])
             self.assertIn("--test-threads=1", checks[3])
 
+    def test_browser_ownership_and_nested_fixtures_run_actual_process_cases_before_rendering(self):
+        for path in ("src/cdp/process.rs", "src/cdp/process/unix.rs", "tests/support/unix_browser_ownership.rs", "tests/support/browser_process_unix.py"):
+            with self.subTest(path=path):
+                result = focus.select([path])
+                self.assertEqual(result, {"platform": "ubuntu-24.04", "suite": "conversation", "targets": ["agent"]})
+                build, checks = focus.commands(result["suite"], result["targets"])
+                self.assertIn("--no-default-features", build[0])
+                self.assertIn("--lib", checks[-1])
+                self.assertEqual(checks[-1][checks[-1].index("--test") + 1], "agent")
+
     def test_initial_release_gate_and_manual_entries_exclude_deferred_targets(self):
         self.assertEqual(set(focus.PLATFORMS), {"ubuntu-24.04", "ubuntu-24.04-arm", "macos-15"})
         self.assertEqual(focus.select([".github/workflows/ci.yml"])["platform"], "ubuntu-24.04")

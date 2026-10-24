@@ -19,6 +19,26 @@ def publish(name, value):
     temporary.replace(name)
 
 
+if role == "supervisor":
+    import select
+    if sys.stdin.buffer.read(8) != b"LPBO\x02\0\r\n":
+        raise RuntimeError("Missing fixture owner")
+    data = {"partial": b'{"pid":', "oversized": b'x' * 4097,
+            "invalid": b'not-json\n', "eof": b''}[mode]
+    sys.stdout.buffer.write(data)
+    sys.stdout.buffer.flush()
+    publish("status-ready.json", {})
+    if mode != "eof":
+        # An unbounded host read still fails within the fixture's three seconds.
+        select.select([sys.stdin.buffer], [], [], 3)
+    sys.exit(0)
+
+if role == "root":
+    profile = next(argument.split("=", 1)[1] for argument in sys.argv
+                   if argument.startswith("--user-data-dir="))
+    Path(profile, "fixture-cache").write_bytes(b"owned-profile\n")
+    publish("browser-profile.json", {"path": profile})
+
 if role == "leaf":
     publish("browser-leaf.json", {"pid": os.getpid()})
     if mode == "adopt":

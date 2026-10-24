@@ -23,6 +23,8 @@ pub(super) struct Owned {
     child: Child,
     #[cfg(unix)]
     child: Option<Child>,
+    #[cfg(unix)]
+    profile: std::path::PathBuf,
     #[cfg(any(windows, unix))]
     browser_pid: u32,
     #[cfg(windows)]
@@ -33,17 +35,23 @@ impl Owned {
     pub(super) fn spawn(
         command: Command,
         supervisor: Option<&Path>,
-        profile: &Path,
+        profile: Option<&Path>,
         budget: &Budget<'_>,
     ) -> Result<Self> {
         budget.check()?;
         #[cfg(windows)]
         {
-            windows::spawn(command, supervisor, profile, budget)
+            windows::spawn(
+                command,
+                supervisor,
+                profile.expect("host browser profile"),
+                budget,
+            )
         }
         #[cfg(unix)]
         {
-            unix::spawn(command, supervisor, profile, budget)
+            debug_assert!(profile.is_none());
+            unix::spawn(command, supervisor, budget)
         }
         #[cfg(not(any(windows, unix)))]
         {
@@ -54,6 +62,11 @@ impl Owned {
                 .map_err(|e| failed(format!("Cannot launch Chromium: {e}")))?;
             Ok(Self { child })
         }
+    }
+
+    #[cfg(unix)]
+    pub(super) fn profile_path(&self) -> &Path {
+        &self.profile
     }
 
     pub(super) fn id(&self) -> u32 {
