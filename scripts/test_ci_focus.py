@@ -126,6 +126,20 @@ class FocusTests(unittest.TestCase):
         self.assertEqual(core["suite"], "core")
         self.assertEqual(core["targets"], ["queries"])
 
+    def test_static_render_regressions_stay_in_the_cpu_graphics_gate(self):
+        for paths, targets in [
+            (["tests/render.rs"], ["render"]),
+            (["src/layout.rs", "tests/graphics.rs", "tests/render.rs"], ["graphics", "layout", "render"]),
+        ]:
+            result = focus.select(paths)
+            self.assertEqual(result["platform"], "ubuntu-24.04")
+            self.assertEqual(result["suite"], "graphics")
+            self.assertEqual(result["targets"], targets)
+            _, checks = focus.commands(result["suite"], targets)
+            self.assertEqual(len(checks), 1)
+            self.assertNotIn("--include-ignored", checks[0])
+        self.assertEqual(focus.select(["src/render.rs"])["suite"], "dynamic")
+
     def test_platform_override_preserves_the_affected_suite(self):
         result = focus.select(["src/cdp.rs"], "macos-15")
         self.assertEqual(result["platform"], "macos-15")

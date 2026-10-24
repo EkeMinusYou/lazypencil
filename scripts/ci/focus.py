@@ -11,7 +11,7 @@ import urllib.request
 
 
 PLATFORMS = ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-15"]
-DYNAMIC = {"cdp", "dynamic", "runtime", "runtime_config", "scripts", "shader", "shader_uniforms", "sampler_sources", "imports", "script", "render", "browser_readiness", "dynamic_render", "tui"}
+DYNAMIC = {"cdp", "dynamic", "runtime", "runtime_config", "scripts", "shader", "shader_uniforms", "sampler_sources", "imports", "script", "browser_readiness", "dynamic_render", "tui"}
 TEST_FILES = list((Path(__file__).resolve().parents[2] / "tests").glob("*.rs"))
 CORE_TESTS = {path.stem for path in TEST_FILES}
 RENDER_TESTS = {path.stem for path in TEST_FILES if '#![cfg(feature = "rendering")]' in path.read_text(encoding="utf-8")}
@@ -38,7 +38,7 @@ def select(paths, platform="auto"):
         suite, targets = "shader", ["shader_uniforms"]
     elif ci_change and not any(path.startswith(("src/", "tests/")) for path in paths):
         suite, targets = "conversation", ["agent"]
-    elif stems & DYNAMIC or any(path.startswith(("src/cdp/", "src/tui/", "src/render/")) for path in paths):
+    elif stems & DYNAMIC or any(path == "src/render.rs" or path.startswith(("src/cdp/", "src/tui/", "src/render/")) for path in paths):
         suite = "dynamic"
         targets = sorted({"dynamic_render", "browser_readiness", "shader_uniforms", "sampler_sources", "imports"} | (stems & RENDER_TESTS - CREDENTIALED_TESTS))
     elif any(path.startswith(("src/graphics", "src/layout", "src/text", "src/icons", "resources/", "vendor/")) for path in paths) or stems & (RENDER_TESTS | RENDER_MODULES | {"graphics", "rendering", "text", "font_sources", "fonts", "optional_icons"}):
