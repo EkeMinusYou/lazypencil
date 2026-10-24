@@ -13,6 +13,8 @@ lazypencil tui design.pen --image-protocol sixel
 
 Install and authenticate an [ACP adapter](agents.md) first. Opening or viewing does not launch the agent. An optional prompt argument and `--image` preload a draft; submission is explicit. Agent, authentication, model, mode, permission, timeout, style, and font options have the same meanings as `prompt`. Resume with the same document, agent, adapter command/arguments, and requested authentication route. The local conversation ID is printed on exit.
 
+If the adapter cannot load native sessions, the next explicit submission starts a new native session with current document context and bounded local history, and the conversation panel reports the replacement. A load failure does not resend the draft. Reopen with `--session LOCAL_CONVERSATION_UUID --restart-session` to explicitly request a replacement after a load error; submit when ready. This preserves local history and stored images without reattaching past images automatically. See [recovery behavior](agents.md#conversations-and-events) and its verification limits.
+
 Terminal stdin/stdout and at least 50 columns × 16 rows are required. `--json` is rejected before opening/creating a document; use `prompt --json` for structured streams. `--no-default-features` excludes rendering and TUI. `--no-default-features --features rendering` retains image export without TUI.
 
 ## Keys and commands

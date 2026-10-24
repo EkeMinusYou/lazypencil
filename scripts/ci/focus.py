@@ -142,6 +142,7 @@ def commands(suite, targets):
     if suite == "conversation":
         checks.append([*common, "--test", "agent", "agent_ownership::killed_cli_", "--", "--test-threads=1", "--nocapture"])
         checks.append([*common, "--test", "agent", "embedded_conversation_uses_the_real_helper_for_supervision_and_bound_mcp_edits", "--", "--exact", "--nocapture"])
+        checks.append([*common, "--test", "agent", "session_restart_", "--", "--test-threads=1", "--nocapture"])
     if suite == "dynamic":
         checks.append([*common, "--lib", "cdp::", "--", "--test-threads=2"])
     if suite == "dynamic":
@@ -154,6 +155,7 @@ def commands(suite, targets):
         checks.append([*common, "--lib", *selected, "--", "--test-threads=2"])
         if suite == "conversation":
             checks[-1].extend(["--skip", "agent_ownership::killed_cli_",
+                               "--skip", "session_restart_",
                                "--skip", "embedded_conversation_uses_the_real_helper_for_supervision_and_bound_mcp_edits"])
     return build, checks
 

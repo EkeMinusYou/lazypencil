@@ -128,6 +128,17 @@ class FocusTests(unittest.TestCase):
                     self.assertIn(target, checks[-1])
                 self.assertIn("--skip", checks[-1])
 
+    def test_session_restart_reproduction_runs_before_the_remaining_core_suite_without_repeating(self):
+        for path in ("src/conversation/continuity.rs", "src/conversation/mod.rs", "src/agent.rs", "tests/support/acp_fixture.py"):
+            selected = focus.select([path])
+            self.assertEqual(selected["suite"], "conversation")
+            build, checks = focus.commands(selected["suite"], selected["targets"])
+            self.assertIn("--no-default-features", build[0])
+            self.assertIn("session_restart_", checks[2])
+            self.assertIn("--nocapture", checks[2])
+            skip = checks[-1].index("session_restart_")
+            self.assertEqual(checks[-1][skip - 1], "--skip")
+
     def test_core_edit_selects_its_existing_integration_target(self):
         result = focus.select(["src/queries.rs", "tests/queries.rs"])
         self.assertEqual(result["suite"], "core")

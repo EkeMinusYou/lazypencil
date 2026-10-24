@@ -134,6 +134,8 @@ Turn logs keep the initial guide/style identities and metadata for additional re
 
 Codex and Claude completed image-backed subscription workflows on macOS arm64, including registered image import, edits, layout, and PNG previews. [The editable settings example](examples/agent-settings.pen) was generated through the Codex workflow; its asset URI was made portable to reference the original bundled image. This demonstrates the workflow, not aesthetic equivalence with Pencil. Actual API/provider workflows, complete clipboard/TUI behavior, other platforms, and release validation remain unfinished. See [agent integration](docs/agents.md) for installation, limits, evidence, and constraints.
 
+Use `--session LOCAL_UUID` to continue a saved conversation. If native reload is unsupported, the host reports a new native session and supplies current document context with bounded local history. A reload error remains visible; use `--session LOCAL_UUID --restart-session` with an explicit request to start anew while preserving local records. Historical prompts and images are not automatically resubmitted. These shared CLI/TUI recovery paths await hosted verification; see [conversation details](docs/agents.md#conversations-and-events).
+
 ## Terminal preview and prompts
 
 ```sh
