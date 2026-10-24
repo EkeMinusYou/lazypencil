@@ -76,6 +76,19 @@ class ApplicationCacheTests(unittest.TestCase):
             self.files[name] = old
         self.manifest()
 
+    def test_public_source_hash_matches_identity_and_ignores_manifest_order(self):
+        manifest = json.loads((self.source / "SOURCE-MANIFEST.json").read_text())
+        expected = cache.source_fingerprint(manifest)
+        original = self.identity()
+        self.assertIn(f"-{expected}-", original["primary"])
+        manifest["files"].reverse()
+        (self.source / "SOURCE-MANIFEST.json").write_text(json.dumps(manifest))
+        self.assertEqual(cache.source_fingerprint(manifest), expected)
+        self.assertEqual(self.identity(), original)
+        other = self.identity("native-v2-macos-15-another-image")
+        self.assertIn(f"-{expected}-", other["primary"])
+        self.assertNotEqual(other["fingerprint"], original["fingerprint"])
+
     def test_workflow_changes_reuse_only_when_not_compiler_inputs(self):
         self.stage()
         original = self.identity()["fingerprint"]

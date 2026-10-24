@@ -43,6 +43,27 @@ class CacheRetentionTests(unittest.TestCase):
         entries.append(self.entry(5, "application-v1-ubuntu-24.04-" + "1" * 64 + "-full", "refs/pull/1/merge"))
         self.assertEqual(cache.obsolete(entries), [])
 
+    def test_preflight_removes_only_other_source_and_superseded_application_outputs(self):
+        current = "a" * 64
+        prefix = f"application-v2-ubuntu-24.04-{current}-"
+        entries = [self.entry(1, f"application-v1-ubuntu-24.04-{'1' * 64}-full"),
+                   self.entry(2, f"application-v2-macos-15-{'b' * 64}-{'2' * 64}-full"),
+                   self.entry(3, prefix + "3" * 64 + "-full"),
+                   self.entry(4, prefix + "4" * 64 + "-full"),
+                   self.entry(5, prefix + "4" * 64 + "-focus"),
+                   self.entry(6, prefix + "6" * 64 + "-focus"),
+                   self.entry(7, f"application-v2-macos-15-{current}-{'7' * 64}-full"),
+                   self.entry(8, "native-v2-current"),
+                   self.entry(9, "checkpoint-native-v2-missing"),
+                   self.entry(10, "cargo-downloads-current"),
+                   self.entry(11, "cargo-deny-v1-current"),
+                   self.entry(12, f"application-v2-macos-15-{'b' * 64}-{'2' * 64}-full", "refs/pull/1/merge")]
+        self.assertEqual([entry["id"] for entry in cache.obsolete(entries, current)], [1, 2, 3, 5])
+        # A focus cache with a different path/compression version is not
+        # redundant with the corresponding full key.
+        entries[4]["version"] = "another-layout"
+        self.assertEqual([entry["id"] for entry in cache.obsolete(entries[:5], current)], [1, 2, 3])
+
 
 if __name__ == "__main__":
     unittest.main()

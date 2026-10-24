@@ -24,6 +24,21 @@ def file_digest(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def compiled_inputs(manifest):
+    def compiled_input(name):
+        path = PurePosixPath(name)
+        return not (name.startswith((".github/workflows/", "scripts/ci/"))
+                    or (path.parent == PurePosixPath("scripts")
+                        and path.name.startswith("test_") and path.suffix == ".py"))
+
+    return sorted((entry for entry in manifest["files"] if compiled_input(entry["path"])),
+                  key=lambda entry: entry["path"])
+
+
+def source_fingerprint(manifest):
+    return digest(json.dumps(compiled_inputs(manifest), sort_keys=True).encode())
+
+
 def identity(source, target, native_key):
     manifest = json.loads((source / "SOURCE-MANIFEST.json").read_text(encoding="utf-8"))
     package = tomllib.loads((source / "Cargo.toml").read_text(encoding="utf-8"))["package"]
@@ -35,19 +50,14 @@ def identity(source, target, native_key):
     # Scheduling and Python CI checks do not change compiled bytes. If Rust
     # includes any excluded file as data, dep-info below disables reuse. Keep
     # docs, fixtures and resources bound: Rust can embed those at compile time.
-    def compiled_input(name):
-        path = PurePosixPath(name)
-        return not (name.startswith((".github/workflows/", "scripts/ci/"))
-                    or (path.parent == PurePosixPath("scripts")
-                        and path.name.startswith("test_") and path.suffix == ".py"))
-
-    inputs = [entry for entry in manifest["files"] if compiled_input(entry["path"])]
-    payload = {"version": 1, "inputs": inputs, "native": native_key,
+    inputs = compiled_inputs(manifest)
+    source_hash = source_fingerprint(manifest)
+    payload = {"version": 2, "inputs": inputs, "native": native_key,
                "source": str(source.resolve()), "target": str(target.resolve())}
     fingerprint = digest(json.dumps(payload, sort_keys=True).encode())
     return {"fingerprint": fingerprint, "source_commit": manifest["git"]["revision"],
-            "primary": f"application-v1-{platform[1]}-{fingerprint}-full",
-            "checkpoint": f"application-v1-{platform[1]}-{fingerprint}-focus",
+            "primary": f"application-v2-{platform[1]}-{source_hash}-{fingerprint}-full",
+            "checkpoint": f"application-v2-{platform[1]}-{source_hash}-{fingerprint}-focus",
             "tracked": {entry["path"]: entry for entry in inputs}}
 
 
