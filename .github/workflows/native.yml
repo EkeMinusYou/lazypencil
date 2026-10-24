@@ -252,7 +252,8 @@ jobs:
           HISTORY_MCP: ${{ contains(fromJSON(inputs.targets), 'mcp') }}
         run: |
           set -o pipefail
-          cargo test --locked --lib conversation::management:: -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-history.log"
+          cargo test --locked --no-default-features --lib conversation::management:: -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-history.log"
+          cargo test --locked --lib conversation::management:: -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
           cargo test --locked --lib conversation::history:: -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
           cargo test --locked --test conversation_history -- --test-threads=1 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
           if [ "$HISTORY_AGENT" = true ]; then
@@ -332,7 +333,7 @@ jobs:
           if-no-files-found: error
           retention-days: 3
       - name: Check all core targets
-        if: ${{ !cancelled() && inputs.phase == 'full' }}
+        if: ${{ success() && inputs.phase == 'full' }}
         timeout-minutes: 15
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
@@ -340,7 +341,7 @@ jobs:
           cargo clippy --locked --no-default-features --all-targets -- -D warnings 2>&1 | tee -a "$RUNNER_TEMP/lazypencil-tests.log"
       - name: Build default test binaries and actual CLI helper
         id: default-build
-        if: ${{ !cancelled() && inputs.phase == 'full' }}
+        if: ${{ success() && inputs.phase == 'full' }}
         timeout-minutes: 45
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
@@ -355,14 +356,14 @@ jobs:
           set -o pipefail
           cargo test --locked --lib tui::tests:: -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/tui-reproduction.log" | tee -a "$RUNNER_TEMP/lazypencil-tests.log"
       - name: Reproduce MCP script cancellation without competing tests
-        if: ${{ !cancelled() && inputs.phase == 'full' && steps.default-build.outcome == 'success' }}
+        if: ${{ success() && inputs.phase == 'full' && steps.default-build.outcome == 'success' }}
         timeout-minutes: 2
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
           set -o pipefail
           cargo test --locked --test mcp cancelling_a_running_script_unblocks_the_mcp_document_worker -- --exact --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-script-cancel.log" | tee -a "$RUNNER_TEMP/lazypencil-tests.log"
       - name: Test default configuration
-        if: ${{ !cancelled() && inputs.phase == 'full' && steps.default-build.outcome == 'success' }}
+        if: ${{ success() && inputs.phase == 'full' && steps.default-build.outcome == 'success' }}
         timeout-minutes: 15
         working-directory: ${{ runner.temp }}/lazypencil-source
         env:
@@ -592,7 +593,7 @@ jobs:
           set -o pipefail
           cargo test --locked --test mcp real_mcp_material -- --ignored --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/lazypencil-material-mcp.log"
       - name: Check all default targets
-        if: ${{ !cancelled() && inputs.phase == 'full' }}
+        if: ${{ success() && inputs.phase == 'full' }}
         timeout-minutes: 15
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |

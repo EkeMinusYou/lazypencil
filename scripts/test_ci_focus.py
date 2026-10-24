@@ -25,6 +25,7 @@ class FocusTests(unittest.TestCase):
         self.assertIn(focus.SESSION_SELECTION_PTY, native)
         self.assertIn(focus.SESSION_RECLAIM, native)
         self.assertIn(focus.OWNED_MCP_RECLAIM, native)
+        self.assertIn("cargo test --locked --no-default-features --lib conversation::management::", native)
         for suite in ["graphics", "dynamic"]:
             _, checks = focus.commands(suite, result["targets"] + ["mcp"] + (["shader_uniforms", "dynamic_render"] if suite == "dynamic" else []))
             self.assertNotIn("conversation_history", checks[-1])
