@@ -104,8 +104,9 @@ jobs:
         with:
           key: ${{ inputs.phase == 'focus' && (inputs.suite == 'core' || inputs.suite == 'conversation') && 'core-' || '' }}${{ steps.cache-key.outputs.primary }}
           restore-keys: |
-            ${{ (inputs.phase == 'full' || (inputs.suite != 'core' && inputs.suite != 'conversation')) && format('checkpoint-{0}', steps.cache-key.outputs.primary) || '' }}
-            ${{ (inputs.phase == 'full' || (inputs.suite != 'core' && inputs.suite != 'conversation')) && steps.cache-key.outputs.legacy || '' }}
+            ${{ inputs.phase == 'focus' && (inputs.suite == 'core' || inputs.suite == 'conversation') && steps.cache-key.outputs.primary || '' }}
+            ${{ format('checkpoint-{0}', steps.cache-key.outputs.primary) }}
+            ${{ steps.cache-key.outputs.legacy }}
             ${{ inputs.phase == 'full' && format('core-{0}', steps.cache-key.outputs.primary) || '' }}
           path: |
             ${{ runner.temp }}/lazypencil-target
@@ -655,7 +656,7 @@ jobs:
           path: ${{ runner.temp }}/lazypencil-application-cache
       - name: Prune application outputs before saving dependency cache
         id: cache-prune
-        if: ${{ !cancelled() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true' && (steps.cold-build.outcome == 'success' || steps.focus-build.outcome == 'success' || steps.default-build.outcome == 'success') }}
+        if: ${{ !cancelled() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true' && steps.native-cache.outputs.cache-matched-key != steps.cache-key.outputs.primary && (steps.cold-build.outcome == 'success' || steps.focus-build.outcome == 'success' || steps.default-build.outcome == 'success') }}
         continue-on-error: true
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: sh scripts/ci/prune_application_cache.sh
