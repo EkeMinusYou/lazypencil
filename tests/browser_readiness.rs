@@ -224,7 +224,16 @@ fn cancelling_an_observed_selector_poll_reaps_the_process_and_recovers() {
     let mut runtime = f.runtime();
     // This case cancels selector polling. Complete cold startup before starting
     // its observation deadline; launch cancellation has separate coverage.
-    assert_green(&f.capture(&mut runtime, None).unwrap());
+    let startup_timeout = lazypencil::config::runtime::BrowserSettings::default().timeout_ms;
+    f.policy("", "visible", startup_timeout);
+    let startup = Instant::now();
+    let initial = f.capture(&mut runtime, None).unwrap_or_else(|error| {
+        panic!(
+            "Cold browser startup failed after {:?} with the default {startup_timeout}ms acquisition limit: {error:?}",
+            startup.elapsed()
+        )
+    });
+    assert_green(&initial);
     assert!(!probe.load(Ordering::SeqCst));
     assert!(!runtime.process_ids().is_empty());
     f.policy("#never", "visible", 5000);
@@ -249,7 +258,8 @@ fn cancelling_an_observed_selector_poll_reaps_the_process_and_recovers() {
     );
     assert_eq!(result.err().unwrap().code, "CANCELLED");
     assert!(runtime.process_ids().is_empty());
-    f.policy("", "visible", 5000);
+    // Cancellation reaps the process, so recovery also includes a cold launch.
+    f.policy("", "visible", startup_timeout);
     assert_green(&f.capture(&mut runtime, None).unwrap());
 }
 
