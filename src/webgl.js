@@ -96,21 +96,26 @@
       return unit++;
     };
     const numeric = new Map([
-      [gl.FLOAT, [1, "uniform1fv"]], [gl.INT, [1, "uniform1iv"]], [gl.BOOL, [1, "uniform1iv"]],
-      [gl.FLOAT_VEC2, [2, "uniform2fv"]], [gl.FLOAT_VEC3, [3, "uniform3fv"]], [gl.FLOAT_VEC4, [4, "uniform4fv"]],
-      [gl.INT_VEC2, [2, "uniform2iv"]], [gl.INT_VEC3, [3, "uniform3iv"]], [gl.INT_VEC4, [4, "uniform4iv"]],
-      [gl.BOOL_VEC2, [2, "uniform2iv"]], [gl.BOOL_VEC3, [3, "uniform3iv"]], [gl.BOOL_VEC4, [4, "uniform4iv"]],
-      [gl.FLOAT_MAT2, [4, "uniformMatrix2fv"]], [gl.FLOAT_MAT3, [9, "uniformMatrix3fv"]], [gl.FLOAT_MAT4, [16, "uniformMatrix4fv"]],
+      [gl.FLOAT, [1, "uniform1fv", "float"]], [gl.INT, [1, "uniform1iv", "int"]], [gl.BOOL, [1, "uniform1iv", "bool"]],
+      [gl.FLOAT_VEC2, [2, "uniform2fv", "vec2"]], [gl.FLOAT_VEC3, [3, "uniform3fv", "vec3"]], [gl.FLOAT_VEC4, [4, "uniform4fv", "vec4"]],
+      [gl.INT_VEC2, [2, "uniform2iv", "ivec2"]], [gl.INT_VEC3, [3, "uniform3iv", "ivec3"]], [gl.INT_VEC4, [4, "uniform4iv", "ivec4"]],
+      [gl.BOOL_VEC2, [2, "uniform2iv", "bvec2"]], [gl.BOOL_VEC3, [3, "uniform3iv", "bvec3"]], [gl.BOOL_VEC4, [4, "uniform4iv", "bvec4"]],
+      [gl.FLOAT_MAT2, [4, "uniformMatrix2fv", "mat2"]], [gl.FLOAT_MAT3, [9, "uniformMatrix3fv", "mat3"]], [gl.FLOAT_MAT4, [16, "uniformMatrix4fv", "mat4"]],
     ]);
     for (let index = 0; index < gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS); index++) {
       const info = gl.getActiveUniform(program, index);
       const location = gl.getUniformLocation(program, info.name);
       const name = info.name.replace(/\[0\]$/, "");
-      const array = own(arrays, name);
-      if (!own(request.uniforms, name)) throw Error("Missing uniform declaration/value: " + name);
+      const pattern = name.replace(/\[\d+\]/g, "[]");
+      const binding = own(request.uniforms, name) ? name : pattern;
+      const array = own(arrays, pattern);
+      if (!own(request.uniforms, binding)) throw Error("Missing uniform declaration/value: " + name);
+      const reflected = info.type === gl.SAMPLER_2D ? "sampler2D" : numeric.get(info.type)?.[2];
+      if (request.uniform_types && request.uniform_types[pattern] !== reflected)
+        throw Error("Uniform type differs from its declared type: " + name);
       if (!array && (info.size !== 1 || info.name !== name)) throw Error("Array declaration metadata is missing: " + name);
       if (info.size > 256) throw Error("Uniform array exceeds 256 active elements: " + name);
-      let value = request.uniforms[name];
+      let value = request.uniforms[binding];
       if (numeric.has(info.type)) {
         const [width, setter] = numeric.get(info.type);
         const count = width * info.size;
@@ -118,7 +123,7 @@
         if (components > 4096) throw Error("Shader exceeds 4096 active numeric components");
         if (array) {
           if (value === null) value = Array(count).fill(0);
-          if (defaultArrays.has(name)) {
+          if (defaultArrays.has(binding)) {
             if (!Array.isArray(value) || value.length !== width)
               throw Error("Invalid default array element: " + name);
             value = [...value, ...Array(count - width).fill(0)];

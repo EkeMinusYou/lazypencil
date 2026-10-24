@@ -6,9 +6,13 @@ use std::fs;
 use tempfile::TempDir;
 
 fn project(root: &TempDir, shader: &str, overrides: Value) -> Project {
+    project_with_version(root, shader, overrides, "2.21")
+}
+
+fn project_with_version(root: &TempDir, shader: &str, overrides: Value, version: &str) -> Project {
     fs::write(root.path().join("input.glsl"), shader).unwrap();
     let path = root.path().join("input.pen");
-    let source = json!({"version":"2.21","children":[{"id":"shape","type":"rectangle","width":32,"height":16,
+    let source = json!({"version":version,"children":[{"id":"shape","type":"rectangle","width":32,"height":16,
         "fill":{"type":"shader","url":"input.glsl","uniforms":overrides}}]}).to_string();
     fs::write(&path, &source).unwrap();
     Project::from_document(&path, Document::parse(source).unwrap(), &[]).unwrap()
@@ -1212,5 +1216,291 @@ fn native_documentation_defaults_match_public_pencil_reference_pixels() {
             )
             .unwrap();
         }
+    }
+}
+
+#[test]
+fn structured_uniforms_prepare_qualified_typed_fields_and_nested_defaults() {
+    let source = "struct Light { float gain; vec3 color; }; struct Scene { Light first,second; mat2 basis; }; uniform Scene scene; uniform struct { int count; bool enabled; } control;";
+    let value = request(
+        source,
+        json!({"scene.first.gain":0.25,"scene.second.color":"#ff0000","control.count":2}),
+    )
+    .unwrap();
+    assert_eq!(value["uniforms"]["scene.first.gain"], 0.25);
+    assert_eq!(
+        value["uniforms"]["scene.second.color"],
+        json!([1.0, 0.0, 0.0])
+    );
+    assert_eq!(
+        value["uniforms"]["scene.first.color"],
+        json!([0.0, 0.0, 0.0])
+    );
+    assert_eq!(
+        value["uniforms"]["scene.basis"],
+        json!([0.0, 0.0, 0.0, 0.0])
+    );
+    assert_eq!(value["uniforms"]["control.enabled"], false);
+    assert_eq!(value["uniform_types"]["control.count"], "int");
+    assert!(request(source, json!({"scene.first.gain":"wrong"})).is_err());
+    assert!(request(source, json!({"scene.first.color":[1,0]})).is_err());
+    assert!(request(source, json!({"scene":{"first":{"gain":1}}})).is_err());
+}
+
+#[test]
+fn structured_array_patterns_validate_each_index_and_keep_leaf_arrays_typed() {
+    let source = "struct Lamp { vec3 color; float weights[2]; }; struct Row { Lamp lamps[2]; }; uniform Row rows[3];";
+    let value = request(
+        source,
+        json!({"rows[1].lamps[0].color":[0.25,0.5,0.75],"rows[2].lamps[1].weights":[0,1]}),
+    )
+    .unwrap();
+    assert_eq!(
+        value["uniforms"]["rows[].lamps[].color"],
+        json!([0.0, 0.0, 0.0])
+    );
+    assert_eq!(
+        value["uniforms"]["rows[1].lamps[0].color"],
+        json!([0.25, 0.5, 0.75])
+    );
+    assert_eq!(value["uniform_arrays"]["rows[].lamps[].weights"], 2);
+    for key in [
+        "rows[3].lamps[0].color",
+        "rows[0].lamps[2].color",
+        "rows[].lamps[0].color",
+        "rows[-1].lamps[0].color",
+        "rows[01].lamps[0].color",
+        "rows[0].lamps[0].missing",
+        "rows[0].lamps[0].weights[0]",
+    ] {
+        let mut values = serde_json::Map::new();
+        values.insert(key.into(), json!([1, 0, 0]));
+        assert!(
+            request(source, Value::Object(values)).is_err(),
+            "Accepted {key}"
+        );
+    }
+    let symbolic = "const int N=2; struct Lamp { vec3 color; }; uniform Lamp lamps[N];";
+    assert!(request(symbolic, json!({"lamps[1].color":[0,1,0]})).is_ok());
+    assert!(request(symbolic, json!({"lamps[256].color":[0,1,0]})).is_err());
+}
+
+#[test]
+fn structure_field_annotations_stay_local_and_default_array_elements_are_marked() {
+    let source = "/** @time */ struct Params { /** @default .25 */ float gain; /** @default .5 */ float weights[2]; }; uniform Params first,second[2]; uniform float ordinary;";
+    let value = request(source, json!({"second[1].weights":[0,0.75]})).unwrap();
+    assert_eq!(value["uniforms"]["first.gain"], 0.25);
+    assert_eq!(value["uniforms"]["second[].weights"], json!([0.5]));
+    assert_eq!(value["uniforms"]["second[1].weights"], json!([0.0, 0.75]));
+    assert_eq!(value["uniforms"]["ordinary"], 0.0);
+    let defaults = value["uniform_array_defaults"].as_array().unwrap();
+    assert!(
+        defaults.contains(&json!("first.weights")) && defaults.contains(&json!("second[].weights"))
+    );
+    assert!(!defaults.contains(&json!("second[1].weights")));
+    assert!(
+        request(
+            "struct Params{float gain;}; /** @default 1 */ uniform Params p;",
+            json!({})
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn structured_sampler_fields_resolve_image_variables_and_aliases_without_rewriting_them() {
+    let root = TempDir::new().unwrap();
+    fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/assets/crop-source.png"),
+        root.path().join("image.png"),
+    )
+    .unwrap();
+    let source =
+        "struct Surface{sampler2D image;sampler2D images[2];};uniform Surface surfaces[2];";
+    fs::write(root.path().join("input.glsl"), source).unwrap();
+    let document=json!({"version":"2.21","variables":{"front":{"type":"string","value":"image.png"},"alias":{"type":"string","value":"$front"}},"children":[{"id":"shape","type":"rectangle","width":32,"height":16,"fill":{"type":"shader","url":"input.glsl","uniforms":{"surfaces[0].image":"$front","surfaces[1].images":["$alias","$front"]}}}]}).to_string();
+    let path = root.path().join("input.pen");
+    fs::write(&path, &document).unwrap();
+    let project =
+        Project::from_document(&path, Document::parse(document.clone()).unwrap(), &[]).unwrap();
+    let scene = project.resolve().unwrap();
+    let node = &scene.roots[0];
+    let prepared = shader::request(
+        &project,
+        node,
+        &node.properties["fill"],
+        "fill",
+        32,
+        16,
+        0.0,
+        None,
+        None,
+    )
+    .unwrap();
+    let image = &prepared["uniforms"]["surfaces[0].image"];
+    assert!(
+        image
+            .as_str()
+            .unwrap()
+            .starts_with("data:image/png;base64,")
+    );
+    assert_eq!(&prepared["uniforms"]["surfaces[1].images"][0], image);
+    assert_eq!(&prepared["uniforms"]["surfaces[1].images"][1], image);
+    assert_eq!(fs::read_to_string(path).unwrap(), document);
+    assert!(request(source, json!({"surfaces[0].image":"pencil:object"})).is_err());
+}
+
+#[test]
+fn malformed_cyclic_and_excessive_structures_fail_without_expanding_unbounded_data() {
+    for source in [
+        "struct A { float x;",
+        "struct A {}; uniform A a;",
+        "struct A { float x,x; }; uniform A a;",
+        "struct A { A loop; }; uniform A a;",
+        "struct A { struct B {float value;} field;};uniform A a;",
+        "struct A { float x; }; struct A {float y;}; uniform A a;",
+    ] {
+        assert!(shader::uniforms(source).is_err(), "Accepted {source}");
+    }
+    let fields = (0..256).map(|i| format!("float v{i};")).collect::<String>();
+    assert!(shader::uniforms(&format!("struct S{{{fields}}};uniform S first,second;")).is_err());
+    let mut nested = "struct S0 { float value; };".to_string();
+    for index in 1..16 {
+        nested.push_str(&format!("struct S{index}{{S{} field;}};", index - 1));
+    }
+    assert!(shader::uniforms(&(nested.clone() + "uniform S15 root;")).is_ok());
+    nested.push_str("struct S16{S15 field;};struct S17{S16 field;};");
+    assert!(shader::uniforms(&(nested + "uniform S17 root;")).is_err());
+}
+
+#[test]
+#[ignore = "Requires sandboxed software WebGL Chromium"]
+fn software_webgl_structures_bind_nested_arrays_defaults_matrices_and_samplers() {
+    use skia_safe::{Color, Data, Image};
+    let root = TempDir::new().unwrap();
+    let mut runtime = lazypencil::dynamic::DynamicRuntime::new(root.path())
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(
+            std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
+        );
+    let cases = [
+        (
+            "struct Lamp {float gain;vec3 color;}; struct Scene {Lamp light;};uniform Scene scene;void main(){gl_FragColor=vec4(vec3(scene.light.gain)+scene.light.color,1.);}",
+            json!({"scene.light.gain":0.25,"scene.light.color":[0.25,0.5,0.75]}),
+            [128, 191, 255],
+        ),
+        (
+            "uniform struct {mat2 transform;bvec2 flags;int count;} setting;void main(){float r=(setting.transform*vec2(.25,.5)).x+float(setting.count)/4.;gl_FragColor=vec4(r,.5,all(setting.flags)?.25:0.,1.);}",
+            json!({"setting.transform":[1,0,0,1],"setting.flags":[1,1],"setting.count":1}),
+            [128, 128, 64],
+        ),
+        (
+            "struct Lamp {vec3 color;float weights[2];};uniform Lamp lamps[2];void main(){gl_FragColor=vec4(lamps[0].color+lamps[1].color+vec3(0.,0.,lamps[1].weights[1]),1.);}",
+            json!({"lamps[0].color":[0.25,0,0],"lamps[1].color":[0,0.5,0],"lamps[1].weights":[0,0.75]}),
+            [64, 128, 191],
+        ),
+        (
+            "const int N=2;struct Lamp {vec3 color;};uniform Lamp lamps[N];void main(){gl_FragColor=vec4(lamps[0].color+lamps[1].color,1.);}",
+            json!({"lamps[0].color":[0.25,0.5,0],"lamps[1].color":[0,0,0.75]}),
+            [64, 128, 191],
+        ),
+        (
+            "struct Cell {vec3 color;};struct Row {Cell cells[2];};uniform Row rows[2];void main(){gl_FragColor=vec4(rows[0].cells[0].color+rows[1].cells[1].color,1.);}",
+            json!({"rows[0].cells[0].color":[0.25,0.5,0],"rows[1].cells[1].color":[0,0,0.75]}),
+            [64, 128, 191],
+        ),
+        (
+            "struct Params{/** @default .25 */ float weights[2];};uniform Params params[2];void main(){gl_FragColor=vec4(params[0].weights[0],params[0].weights[1],params[1].weights[1],1.);}",
+            json!({"params[1].weights":[0.5,0.75]}),
+            [64, 0, 191],
+        ),
+        (
+            "struct Lamp{float gain;vec3 color;};uniform Lamp lamp;void main(){gl_FragColor=vec4(vec3(.2,.4,.6)+vec3(lamp.gain)+lamp.color,1.);}",
+            json!({}),
+            [51, 102, 153],
+        ),
+        (
+            "struct Layer{sampler2D image;sampler2D palette[2];};uniform Layer layers[2];void main(){gl_FragColor=vec4(texture2D(layers[0].image,vec2(.5)).r,0.,texture2D(layers[1].palette[1],vec2(.5)).b,1.);}",
+            json!({"layers[0].image":"red.png","layers[1].palette":["blue.png","blue.png"]}),
+            [255, 0, 255],
+        ),
+    ];
+    let mut verified = Vec::new();
+    for version in ["2.19", "2.21"] {
+        for (index, (source, values, expected)) in cases.iter().enumerate() {
+            let scene_root = TempDir::new().unwrap();
+            for (name, color) in [("red.png", Color::RED), ("blue.png", Color::BLUE)] {
+                let mut surface = skia_safe::surfaces::raster_n32_premul((2, 2)).unwrap();
+                surface.canvas().clear(color);
+                fs::write(
+                    scene_root.path().join(name),
+                    skia_safe::png_encoder::encode_image(
+                        None,
+                        &surface.image_snapshot(),
+                        &Default::default(),
+                    )
+                    .unwrap()
+                    .as_bytes(),
+                )
+                .unwrap();
+            }
+            let source = format!("precision highp float;\n{source}");
+            let scene = project_with_version(&scene_root, &source, values.clone(), version);
+            let before = fs::read(scene_root.path().join("input.pen")).unwrap();
+            let layout = lazypencil::layout::compute(
+                scene.resolve().unwrap(),
+                &mut lazypencil::text::Fonts::new(&[]).unwrap(),
+            )
+            .unwrap();
+            let rendered = lazypencil::render::png_with_runtime(
+                &scene,
+                &layout,
+                &Default::default(),
+                &mut runtime,
+                None,
+            )
+            .unwrap();
+            assert_eq!(rendered.dynamic_artifacts.len(), 1);
+            let image = Image::from_encoded(Data::new_copy(&rendered.png))
+                .unwrap()
+                .make_raster_image(None, None)
+                .unwrap();
+            let pixels = image.peek_pixels().unwrap();
+            for y in 0..16 {
+                for x in 0..32 {
+                    let color = pixels.get_color((x, y));
+                    assert_eq!(color.a(), 255, "Case {index}");
+                    for (actual, expected) in
+                        [color.r(), color.g(), color.b()].into_iter().zip(*expected)
+                    {
+                        assert!(
+                            (actual as i32 - expected).abs() <= 1,
+                            "Case {index}: {color:?}"
+                        );
+                    }
+                }
+            }
+            assert_eq!(
+                fs::read(scene_root.path().join("input.pen")).unwrap(),
+                before
+            );
+            assert_eq!(
+                fs::read_to_string(scene_root.path().join("input.glsl")).unwrap(),
+                source
+            );
+            verified.push(json!({"document_version":version,"case":index,"expected_rgb":expected,"rgba_components_checked":32*16*4,"png_hash":lazypencil::document::hash(&rendered.png)}));
+            if let Some(output) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
+                fs::create_dir_all(&output).unwrap();
+                fs::write(
+                    std::path::Path::new(&output)
+                        .join(format!("codec-shader-structure-{version}-{index}.png")),
+                    &rendered.png,
+                )
+                .unwrap();
+            }
+        }
+    }
+    if let Some(output) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
+        fs::write(std::path::Path::new(&output).join("codec-shader-structures.json"),json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"cases":verified,"scope":"Self-authored WebGL expected values for document codecs 2.19/2.21; not a native Pencil pixel oracle"}).to_string()).unwrap();
     }
 }

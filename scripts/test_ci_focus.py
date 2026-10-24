@@ -54,7 +54,7 @@ class FocusTests(unittest.TestCase):
             self.assertIn("--test-threads=1", checks[3])
 
     def test_shader_changes_select_cpu_validation_then_only_real_shader_cases(self):
-        for paths in (["src/shader.rs"], ["src/shader/defaults.rs"], ["tests/shader_uniforms.rs"], ["src/shader.rs", ".github/workflows/native.yml"]):
+        for paths in (["src/shader.rs"], ["src/shader/defaults.rs"], ["tests/shader_uniforms.rs"], ["src/webgl.js"], ["src/shader.rs", ".github/workflows/native.yml"]):
             result=focus.select(paths)
             self.assertEqual(result,{"platform":"ubuntu-24.04","suite":"shader","targets":["shader_uniforms"]})
             build,checks=focus.commands(result["suite"],result["targets"])

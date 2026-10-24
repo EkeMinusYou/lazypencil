@@ -11,7 +11,7 @@ import urllib.request
 
 
 PLATFORMS = ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-15"]
-DYNAMIC = {"cdp", "dynamic", "runtime", "runtime_config", "scripts", "shader", "shader_uniforms", "sampler_sources", "imports", "script", "browser_readiness", "dynamic_render", "tui"}
+DYNAMIC = {"cdp", "dynamic", "runtime", "runtime_config", "scripts", "shader", "shader_uniforms", "sampler_sources", "imports", "script", "webgl", "browser_readiness", "dynamic_render", "tui"}
 TEST_FILES = list((Path(__file__).resolve().parents[2] / "tests").glob("*.rs"))
 CORE_TESTS = {path.stem for path in TEST_FILES}
 RENDER_TESTS = {path.stem for path in TEST_FILES if '#![cfg(feature = "rendering")]' in path.read_text(encoding="utf-8")}
@@ -49,8 +49,8 @@ def select(paths, platform="auto"):
         suite, targets = "conversation", ["agent"]
         if grants_change:
             targets = ["agent", "attachments", "mcp"]
-    elif stems & {"shader", "shader_uniforms"} and not (
-        stems & (DYNAMIC - {"shader", "shader_uniforms"})
+    elif stems & {"shader", "shader_uniforms", "webgl"} and not (
+        stems & (DYNAMIC - {"shader", "shader_uniforms", "webgl"})
         or stems & {"script_render", "script_diagnostics", "script_scope"}
         or project_change
         or operations_change

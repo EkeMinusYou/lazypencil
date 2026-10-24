@@ -19,6 +19,47 @@ pub struct Uniform {
     pub array: bool,
     pub length: Option<usize>,
     pub default: Option<Value>,
+    /// Bounds for structure-array indices represented by [] in the name pattern.
+    pub indices: Vec<Option<usize>>,
+}
+
+impl Uniform {
+    pub fn matches(&self, name: &str) -> bool {
+        if name.len() > 4096 {
+            return false;
+        }
+        let mut parts = self.name.split("[]");
+        let mut rest = name;
+        for length in &self.indices {
+            let Some(prefix) = parts.next() else {
+                return false;
+            };
+            let Some(tail) = rest
+                .strip_prefix(prefix)
+                .and_then(|tail| tail.strip_prefix('['))
+            else {
+                return false;
+            };
+            let Some((digits, tail)) = tail.split_once(']') else {
+                return false;
+            };
+            if digits.is_empty()
+                || digits.len() > 3
+                || !digits.bytes().all(|byte| byte.is_ascii_digit())
+                || digits.len() > 1 && digits.starts_with('0')
+            {
+                return false;
+            }
+            let Ok(index) = digits.parse::<usize>() else {
+                return false;
+            };
+            if index >= 256 || length.is_some_and(|length| index >= length) {
+                return false;
+            }
+            rest = tail;
+        }
+        parts.next().is_some_and(|suffix| suffix == rest) && parts.next().is_none()
+    }
 }
 
 pub fn uniforms(source: &str) -> Result<Vec<Uniform>> {
@@ -83,94 +124,111 @@ pub fn request_with_coordinates(
         })
         .transpose()?
         .unwrap_or(&empty);
+    if overrides.len() > 4096 {
+        return Err(invalid("Shader uniform input exceeds 4096 bindings"));
+    }
     if overrides
         .keys()
-        .any(|name| !definitions.iter().any(|uniform| &uniform.name == name))
+        .any(|name| !definitions.iter().any(|uniform| uniform.matches(name)))
     {
         return Err(invalid("Override names must match declared uniforms"));
     }
     let mut values = Map::new();
     let mut arrays = Map::new();
+    let mut types = Map::new();
     let mut default_arrays = Vec::new();
     let mut component_count = 0;
     let mut sampler_bytes = 0usize;
     for uniform in definitions {
-        let stored = overrides.get(&uniform.name);
-        if (uniform.resolution || uniform.time) && stored.is_some() {
-            return Err(invalid(
-                "Built-in @resolution and @time uniforms cannot have stored overrides",
-            ));
-        }
-        let value = stored.or(uniform.default.as_ref());
-        let value = if uniform.array {
+        types.insert(uniform.name.clone(), json!(uniform.kind));
+        if uniform.array {
             arrays.insert(uniform.name.clone(), json!(uniform.length));
-            if uniform.kind == "sampler2D" {
-                match value {
-                    None => Value::Null,
-                    Some(value) => {
-                        let inputs = value.as_array().filter(|values| {
+        }
+        let mut bindings = vec![(uniform.name.as_str(), overrides.get(&uniform.name))];
+        if !uniform.indices.is_empty() {
+            bindings.extend(
+                overrides
+                    .iter()
+                    .filter(|(name, _)| uniform.matches(name))
+                    .map(|(name, value)| (name.as_str(), Some(value))),
+            );
+        }
+        for (name, stored) in bindings {
+            if (uniform.resolution || uniform.time) && stored.is_some() {
+                return Err(invalid(
+                    "Built-in @resolution and @time uniforms cannot have stored overrides",
+                ));
+            }
+            let value = stored.or(uniform.default.as_ref());
+            let value = if uniform.array {
+                if uniform.kind == "sampler2D" {
+                    match value {
+                        None => Value::Null,
+                        Some(value) => {
+                            let inputs = value.as_array().filter(|values| {
                             !values.is_empty()
                                 && values.len() <= 256
                                 && uniform.length.is_none_or(|length| length == values.len())
                         }).ok_or_else(|| invalid("Sampler arrays require 1–256 image URLs matching the declared length"))?;
-                        Value::Array(
-                            inputs
-                                .iter()
-                                .map(|value| {
-                                    sampler(
-                                        project,
-                                        node,
-                                        property,
-                                        Some(value),
-                                        object,
-                                        background,
-                                        &mut sampler_bytes,
-                                    )
-                                })
-                                .collect::<Result<_>>()?,
-                        )
+                            Value::Array(
+                                inputs
+                                    .iter()
+                                    .map(|value| {
+                                        sampler(
+                                            project,
+                                            node,
+                                            property,
+                                            Some(value),
+                                            object,
+                                            background,
+                                            &mut sampler_bytes,
+                                        )
+                                    })
+                                    .collect::<Result<_>>()?,
+                            )
+                        }
                     }
+                } else if stored.is_none() && uniform.default.is_some() {
+                    // Native defaults initialize one element; remaining linked
+                    // elements keep zero. Explicit short overrides still fail.
+                    default_arrays.push(name.to_owned());
+                    let element = numeric(&uniform.kind, value)?;
+                    match element {
+                        Value::Array(values) => Value::Array(values),
+                        Value::Bool(value) => json!([u8::from(value)]),
+                        value => json!([value]),
+                    }
+                } else {
+                    numeric_array(&uniform, value)?
                 }
-            } else if stored.is_none() && uniform.default.is_some() {
-                // Native defaults initialize one element; remaining linked
-                // elements keep zero. Explicit short overrides still fail.
-                default_arrays.push(uniform.name.clone());
-                let element = numeric(&uniform.kind, value)?;
-                match element {
-                    Value::Array(values) => Value::Array(values),
-                    Value::Bool(value) => json!([u8::from(value)]),
-                    value => json!([value]),
-                }
+            } else if uniform.resolution {
+                coordinates.map_or_else(|| json!([width, height]), |size| json!(size))
+            } else if uniform.time {
+                json!(time)
             } else {
-                numeric_array(&uniform, value)?
+                match uniform.kind.as_str() {
+                    "sampler2D" => sampler(
+                        project,
+                        node,
+                        property,
+                        value,
+                        object,
+                        background,
+                        &mut sampler_bytes,
+                    )?,
+                    _ => numeric(&uniform.kind, value)?,
+                }
+            };
+            component_count += value.as_array().map_or(1, Vec::len);
+            if component_count > 4096 {
+                return Err(invalid(
+                    "Shader uniform input exceeds 4096 numeric components",
+                ));
             }
-        } else if uniform.resolution {
-            coordinates.map_or_else(|| json!([width, height]), |size| json!(size))
-        } else if uniform.time {
-            json!(time)
-        } else {
-            match uniform.kind.as_str() {
-                "sampler2D" => sampler(
-                    project,
-                    node,
-                    property,
-                    value,
-                    object,
-                    background,
-                    &mut sampler_bytes,
-                )?,
-                _ => numeric(&uniform.kind, value)?,
-            }
-        };
-        component_count += value.as_array().map_or(1, Vec::len);
-        if component_count > 4096 {
-            return Err(invalid(
-                "Shader uniform input exceeds 4096 numeric components",
-            ));
+            values.insert(name.to_owned(), value);
         }
-        values.insert(uniform.name, value);
     }
-    let mut result = json!({"source":source,"source_hash":asset.revision,"width":width,"height":height,"time":time,"time_dependent":time_dependent,"uniforms":values});
+    let mut result = json!({"source":source,"source_hash":asset.revision,"width":width,"height":height,"time":time,"time_dependent":time_dependent,"uniforms":values,"uniform_types":types});
     if let Some(size) = coordinates {
         result["coordinate_size"] = json!(size);
     }

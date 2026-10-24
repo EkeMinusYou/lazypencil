@@ -120,6 +120,10 @@ CLI は取得条件を満たした一時点の PNG を出力する。TUI は同�
 
 現在は precision qualifier とコメントを含む uniform 宣言、同じ型の複数宣言、1次元の数値配列を扱う。`float`・`int`・`bool`、`vec2/3/4`・`ivec2/3/4`・`bvec2/3/4`、`mat2/3/4` を受け付ける。配列は平坦な数値リストで保存し、`vec3 colors[2]` は6個、`mat2 transforms[2]` は8個の数値を使う。行列は column-major、boolean のベクトルと配列は数値の0・1で指定する。scalar bool は従来どおり JSON boolean とする。色文字列は scalar の vec3・vec4 へ結び、画像は scalar sampler2D または1次元の sampler2D 配列を使う。配列は画像 URI の文字列リストとし、各要素で文字列変数・別名・テーマの参照元を保持する。要素ごとの依存を捕捉し、切り離しでも同じ参照を維持する。固定画像の配列と相対ローカル URI の文字列変数は、元 library から独立したコピーを作れる。文字列の literal だけを画像と同じ管理 bundle の通常 `.pen` library へ置き、root の変数・別名・テーマは接続を保つ。本文の元の文字列を変更しない。絶対パス、異なる画像が衝突する symlink 経路の投影、大文字小文字の衝突などは診断して拒否し、全互換の残作業に含める。
 
+構造体は名前付き・inline・匿名・入れ子の型を解析し、`lamp.color` や `lights[1].gain` のような修飾した末端名で、既存の平坦な `uniforms` オブジェクトへ値を保存する。構造体の配列、構造体フィールドの配列、配列を含む構造体の入れ子も同じ規則で扱う。構造体配列の内部表現には添字のパターンを使い、WebGL が返す実際の末端名・型に結び付ける。未指定値・field の既定値・画像入力には既存の型と容量の検査を適用する。field の注釈はその宣言だけに適用し、構造体全体への `@default`・`@time`・`@resolution` は拒否する。構造体配列の末端へ自動の時刻・解像度を設定しない。展開は256末端パターン・16段、識別子は1024バイト、修飾名は4096バイトで区切る。[WebGL の uniform 取得](https://registry.khronos.org/webgl/specs/latest/1.0/#5.14.10) と [OpenGL ES の構造体の末端名](https://raw.githubusercontent.com/KhronosGroup/OpenGL-Refpages/main/es2.0/glGetActiveUniform.xml) を参照する。自作10ケースの CLI 0.3.9 はすべて宣言解析エラーとなったため、その画像を互換性の正解にはしない。新しい8ケースを2形式で、自作 GLSL の計算値と実 WebGL の全画素で検証し、同 CLI との一致や全体の構造体互換性は主張しない。新しい Rust／実 WebGL の実行は GHA で確認する。
+
+対象の GLSL ES 1.00 は直接の配列の配列と、構造体内での新しい型定義を認めないため、それらは構文エラーとして拒否する。既に宣言した型を field として使う入れ子と、構造体を介した複数段の添字は扱う。[GLSL ES 1.00 §4.1.8–4.1.9](https://registry.khronos.org/OpenGL/specs/es/2.0/GLSL_ES_Specification_1.00.pdf)
+
 整数リテラルの配列長は Rust 側で検査し、定数・マクロ・式の寸法はソースを変更せず WebGL のコンパイラーへ渡す。実際に使われる linked uniform の型・要素数を取得し、最適化で使われなくなった配列末尾を除いて設定する。定数式のサイズでは active な範囲より短い入力を拒否するが、コンパイラーが公開しない inactive な末尾の厳密な長さを保証しない。未指定の数値・ベクトル・行列・active な数値配列には WebGL のゼロ既定値を使い、`.pen` や GLSL へ書き戻さない。
 
 宣言直前の最も近い documentation comment（`/** ... */`）の `@resolution`・`@time` を単語として照合する。空行は許すが、別の comment・通常のコード・プリプロセッサ行を挟むと先行注釈を破棄する。セミコロン後の注釈は同じ行でも次の宣言へ適用し、宣言内の注釈や末尾だけの注釈は適用しない。複数名の宣言では同じ注釈を共有する。組み込み入力の配列・保存済み上書きと、`@time`／`@default` の併用は拒否する。本家 CLI 0.3.9／形式2.19の公開 Export による自作20ケースで適用位置を確認した。ベンダーのプログラム・文章・スキル・認証情報は取り込まない。拡大出力時の logical 座標・resolution は以下の経路で実装し、比較試験で検証する。最新形式の完全な互換性は未完了とする。
@@ -128,7 +132,7 @@ CLI は取得条件を満たした一時点の PNG を出力する。TUI は同�
 
 宣言前の `/** ... */` comment の `@default` は、数値・`@color` の色・カンマ区切りの成分を指定できる。grouped 宣言は共有し、保存済みの uniform 値を優先する。配列は先頭要素だけを初期化し、リンクされた残りを0にする。通常 comment は既定値にしない。宣言後の documentation comment は、上記の隣接規則に従って次の宣言へ適用する。自作の本家 CLI 0.3.9／形式2.19の14ケースを比較用に保持する。シェーダー effect や bool の同 CLI 経路は非対応で、最新形式全体の参照とはしない。source `1f6166c` の通常 GHA `40074036061` は初回対象3環境すべてで成功し、保存した literal／constant 配列の2方式の14ケースを独立に復号して、各環境で本家参照との全 RGBA 画素一致を確認した。
 
-ソースは1 MiB、解析は262,144 token、uniform 名は256個、配列は256要素、明示値・linked numeric component は4,096を上限とする。sampler 配列にも同じ宣言長・active prefix の検査を適用し、未指定要素には透明画像を使う。実際の fragment texture unit 上限を検査し、同じ入力画像は unit を共有する。画像の符号化済み入力は1要求64 MiBを上限とする。多次元配列、struct とマクロで生成する uniform 宣言、残る Pencil 注釈と完全な vertex interface は未完成。定数式に使うマクロは実 WebGL へ渡す。小さい値や実行期限を削って描画成功に見せる処理は行わない。独自の編集可能な [作例](../examples/uniform-study.pen) は同じ [GLSL](../examples/assets/uniform-study.glsl) を配色配列・行列で再利用する。
+ソースは1 MiB、解析は262,144 token、uniform 名は256個、配列は256要素、明示値・linked numeric component は4,096を上限とする。sampler 配列にも同じ宣言長・active prefix の検査を適用し、未指定要素には透明画像を使う。実際の fragment texture unit 上限を検査し、同じ入力画像は unit を共有する。画像の符号化済み入力は1要求64 MiBを上限とする。マクロ生成・条件付きの uniform interface 全体、残る Pencil 注釈と完全な vertex interface は未完成。定数式に使うマクロは実 WebGL へ渡す。小さい値や実行期限を削って描画成功に見せる処理は行わない。独自の編集可能な [作例](../examples/uniform-study.pen) は同じ [GLSL](../examples/assets/uniform-study.glsl) を配色配列・行列で再利用する。
 
 最終的なページ取得画像とシェーダー画像は、共通の画像表現に正規化して Skia へ渡す。エフェクトが背景を参照する場合は、それ以前の描画結果を用意する。対象ノードだけを単独で描いて背景を省略しない。
 
