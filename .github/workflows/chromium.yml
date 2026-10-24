@@ -204,12 +204,23 @@ jobs:
                   print(name + ":\n" + stream.read(65536).decode("utf-8", errors="replace"))
           PY
           exit "$lazypencil_probe_status"
-      - name: Verify captured runtime policy and real page and shader pixels
+      - name: Verify preview and runtime units
+        timeout-minutes: 10
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
           set -o pipefail
           cargo test --locked --lib -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/chromium-unit.log"
+      - name: Verify captured runtime policies and scripts
+        timeout-minutes: 10
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
           cargo test --locked --no-fail-fast --test runtime --test runtime_config --test scripts -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/chromium-policy.log"
+      - name: Verify real page shader and import pixels
+        timeout-minutes: 20
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
           cargo test --locked --no-fail-fast --test dynamic_render --test browser_readiness --test shader_uniforms --test sampler_sources --test imports -- --include-ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-render.log"
       - name: Verify failed script source reads and repair
         working-directory: ${{ runner.temp }}/lazypencil-source

@@ -2,6 +2,8 @@
 
 設計書 v0.9 の全体を実装対象とする。部分的な CLI や描画の試作だけで完成とは扱わない。以下は実際の実装・試験結果で更新する。
 
+2026-10-24: Windows の先行専用 job `40049415871` は default agent gate を通過した後、複合 runtime step で長時間実行中であり、完了前の log API は404を返した。browser 接続も環境設定の読み込みで失敗し、共有設定は変更していない。現行 job は取り消さず、後続の専用 workflow では単体（10分）、設定・script（10分）、page／shader／import の実画素（20分）を別 step に分けた。実行する command・試験・pipefail・既存 log 名と `always()` での保存は維持する。actionlint が成功し、native dependency input tree が `c95e917…` のままであることも確認した。これは後続で停止箇所と途中 log を取得するための変更であり、Windows の長時間化の原因や解消を示すものではない。
+
 2026-10-24: 手動時刻 source `9129f17` の Linux arm64 `40051538036` も257試験・両構成 Clippy・実 PTY を成功した。artifact `12543678210` の digest・各成功ログ・画像と report を照合し、時刻操作と supervised MCP の実画素、以前の example PNG とのバイト一致を確認した。新しい再生と LRU の追加前の結果である。再生停止時に未完了フレームがあれば、status は表示中画像の時刻を保持して完了待ちを示し、該当フレームの公開後にだけ時刻を更新する修正と、その中間状態の worker／app 検査も追加した。新しい再生の GHA は実行中で、Rust・実 PTY の結果はまだ未確定である。
 
 2026-10-24: TUI の上限付き shader 再生を追加した。`/play [fps]`（既定5、整数1〜10）と Preview の Space で開始／停止し、単調時計から評価時刻を求める。描画中・待機要求・未表示結果があればフレームを捨て、既存描画を timer で取消さない。静的な画像では開始せず、エラー・静的結果・seek で停止する。停止後は実行中1フレームだけ完了でき、再生 timer は待機しない。入力と modal が優先し、overlay／添付画像中は時計を進めつつ描画を保留する。shader の解析済み `@time` から acquisition の `time_dependent` を記録する。cache の全破棄で page が巻き込まれるのを避けるため、容量・件数を保つ LRU とし、cache hit は idle deadline を延ばさない。時計・背圧・状態遷移・100フレームの cache churn、実 PTY の色と時計・日本語 draft・fps 上限・停止・待機回収を追加検査する。ローカル Python 128試験・構文・整形・差分を確認し、Rust／実 PTY は GHA で検証する。新しい結果は未確認であり、状態を保つ browser 周期取得などの必須スコープは残る。
