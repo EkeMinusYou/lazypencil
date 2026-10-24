@@ -71,7 +71,7 @@ These tests launch a real browser and are intentionally separate from ordinary u
 
 ## Hosted integration without local build trees
 
-The manually dispatched [Chromium integration workflow](../.github/workflows/chromium.yml) builds the verified source distribution on one selected hosted platform. It restores the normal CI job's matching dependency cache, removes application outputs before rebuilding, explicitly installs/verifies the pinned browser, and runs runtime-policy/JS-worker, real page/shader, numeric-array/matrix and MCP image tests. Unix jobs also run the real MCP idle and all normal/dynamic TUI checks; these Unix-only checks are skipped explicitly on Windows. Chromium's OS sandbox stays enabled. Normal CI remains the separate gate for both feature configurations, Clippy, dependency policy and release checks.
+The manually dispatched [Chromium integration workflow](../.github/workflows/chromium.yml) delegates to the same CI pipeline for one selected initial-release target: macOS Apple Silicon, Linux x64 or Linux arm64. The native job builds verified distributed source, reuses matching dependencies, removes application outputs, installs/verifies the pinned browser and runs ordinary and real browser checks with the same compiled binaries. Sandboxed pixels, both feature configurations, Clippy, real MCP idle cleanup and PTY tests remain covered. A single-target diagnostic run does not produce the full release source artifact or establish three-target acceptance. Do not dispatch it alongside full CI to repeat browser checks.
 
 ```sh
 gh workflow run chromium.yml --ref main -f os=ubuntu-24.04
