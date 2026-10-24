@@ -22,11 +22,16 @@ class FocusTests(unittest.TestCase):
         native = (Path(__file__).resolve().parents[1] / ".github/workflows/native.yml").read_text()
         self.assertLess(native.index("Reproduce saved log browsing"), native.index("Install and verify the pinned Chromium runtime"))
         self.assertIn(focus.SAVED_LOG_PTY, native)
+        self.assertIn(focus.SESSION_SELECTION_PTY, native)
+        self.assertIn(focus.SESSION_RECLAIM, native)
+        self.assertIn(focus.OWNED_MCP_RECLAIM, native)
         for suite in ["graphics", "dynamic"]:
-            _, checks = focus.commands(suite, result["targets"] + (["shader_uniforms", "dynamic_render"] if suite == "dynamic" else []))
+            _, checks = focus.commands(suite, result["targets"] + ["mcp"] + (["shader_uniforms", "dynamic_render"] if suite == "dynamic" else []))
             self.assertNotIn("conversation_history", checks[-1])
             self.assertEqual(checks[-1][checks[-1].index(focus.SAVED_LOG_PTY) - 1], "--skip")
             self.assertEqual(checks[-1][checks[-1].index("tui::tests::saved_log_") - 1], "--skip")
+            for name in (focus.SESSION_SELECTION_PTY, focus.SESSION_RECLAIM, focus.OWNED_MCP_RECLAIM):
+                self.assertEqual(checks[-1][checks[-1].index(name) - 1], "--skip")
         mixed = focus.select(["tests/conversation_history.rs", "src/shader.rs"])
         self.assertEqual(mixed["suite"], "dynamic")
         focus.commands(mixed["suite"], mixed["targets"])

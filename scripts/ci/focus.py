@@ -25,6 +25,8 @@ INPUT_REPRODUCTIONS = (
 )
 SAVED_LOG_PTY = "real_pty_saved_logs_page_format_refresh_and_keep_the_unsent_draft_without_starting_an_agent"
 SESSION_SELECTION_PTY = "real_pty_selects_saved_conversations_and_keeps_both_drafts_without_starting_an_agent"
+SESSION_RECLAIM = "agent_ownership::killed_cli_revokes_grants_and_resume_preserves_images_and_transcripts"
+OWNED_MCP_RECLAIM = "owned_mcp_rejects_grants_after_the_host_is_killed_without_reviving_or_writing_journals"
 SHADER_REGRESSIONS = [
     "linked_constant_dimensions_validate_inputs_and_recover_after_an_error",
     "native_annotation_binding_matches_public_pencil_reference_pixels",
@@ -213,8 +215,12 @@ def commands(suite, targets):
                 [*common, "--lib", "conversation::history::", "--", "--test-threads=2"],
                 [*common, "--test", "conversation_history", "--", "--test-threads=1"],
             ])
+            if "mcp" in targets:
+                checks.append([*common, "--test", "mcp", OWNED_MCP_RECLAIM, "--", "--exact", "--test-threads=1"])
         selected = [arg for target in targets if target != "conversation_history" for arg in ("--test", target)]
     history_ui_skip = ["--skip", "tui::tests::saved_log_", "--skip", SAVED_LOG_PTY, "--skip", SESSION_SELECTION_PTY] if history and "tui" in targets else []
+    history_ui_skip += ["--skip", SESSION_RECLAIM] if history and "agent" in targets and not core else []
+    history_ui_skip += ["--skip", OWNED_MCP_RECLAIM] if history and "mcp" in targets else []
     native = "native_layout" in targets and suite in ("graphics", "dynamic")
     if native:
         # Dynamic focus runs these CPU cases in the workflow before Chromium.

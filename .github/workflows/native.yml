@@ -248,11 +248,19 @@ jobs:
         working-directory: ${{ runner.temp }}/lazypencil-source
         env:
           HISTORY_TUI: ${{ contains(fromJSON(inputs.targets), 'tui') }}
+          HISTORY_AGENT: ${{ contains(fromJSON(inputs.targets), 'agent') }}
+          HISTORY_MCP: ${{ contains(fromJSON(inputs.targets), 'mcp') }}
         run: |
           set -o pipefail
           cargo test --locked --lib conversation::management:: -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-history.log"
           cargo test --locked --lib conversation::history:: -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
           cargo test --locked --test conversation_history -- --test-threads=1 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
+          if [ "$HISTORY_AGENT" = true ]; then
+            cargo test --locked --test agent agent_ownership::killed_cli_revokes_grants_and_resume_preserves_images_and_transcripts -- --exact --test-threads=1 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
+          fi
+          if [ "$HISTORY_MCP" = true ]; then
+            cargo test --locked --test mcp owned_mcp_rejects_grants_after_the_host_is_killed_without_reviving_or_writing_journals -- --exact --test-threads=1 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
+          fi
           if [ "$HISTORY_TUI" = true ]; then
             cargo test --locked --lib tui::tests::saved_log_ -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
             cargo test --locked --test tui real_pty_saved_logs_page_format_refresh_and_keep_the_unsent_draft_without_starting_an_agent -- --exact 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"

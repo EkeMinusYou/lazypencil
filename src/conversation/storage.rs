@@ -81,7 +81,10 @@ impl Session {
         require_directory(&root)?;
         // This stable parent lease also serializes later local deletion with
         // opening a conversation. Never unlink the registry while it is used.
-        let _registry = RegistryGuard(lock_file(&root.join("registry.lock"), true)?);
+        let registry = RegistryGuard(lock_file(
+            &store.document_data_dir().join("conversations.lock"),
+            true,
+        )?);
         let directory = root.join(&id);
         if args.session.is_some() {
             require_directory(&directory).map_err(|_| {
@@ -175,6 +178,9 @@ impl Session {
             state,
             _lock: lock,
         };
+        // The target lease now protects its directory. Unrelated sessions
+        // need not wait while this one reclaims connection files or syncs.
+        drop(registry);
         #[cfg(unix)]
         session.reclaim_stale_grants();
         // A report from an earlier process is not evidence for this connection.
