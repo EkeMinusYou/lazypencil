@@ -116,7 +116,7 @@ CLI は取得条件を満たした一時点の PNG を出力する。TUI は同�
 
 ブロックコメントの `@resolution`・`@time` は単語を正確に照合し、`@time_step` やメールアドレス中の文字列は組み込み入力にしない。宣言前と同じ行の宣言後のコメントを扱い、隣接するコメントを統合する。複数名の宣言では同じ注釈を共有し、組み込み入力の配列・保存済み上書きを拒否する。この宣言規則は現在の lazypencil の実行規則であり、公開資料で未確定な Pencil 固有の注釈既定値まで互換と認定しない。[公開形式](https://docs.pencil.dev/for-developers/the-pen-format#typescript-schema)
 
-宣言前の `/** ... */` comment の `@default` は、数値・`@color` の色・カンマ区切りの成分を指定できる。grouped 宣言は共有し、保存済みの uniform 値を優先する。配列は先頭要素だけを初期化し、リンクされた残りを0にする。通常 comment や宣言後の comment は既定値にしない。自作の本家 CLI 0.3.9／形式2.19の14ケースを比較用に保持する。シェーダー effect や bool の同 CLI 経路は非対応で、最新形式全体の参照とはしない。新実装の実行確認は GHA で行う。
+宣言前の `/** ... */` comment の `@default` は、数値・`@color` の色・カンマ区切りの成分を指定できる。grouped 宣言は共有し、保存済みの uniform 値を優先する。配列は先頭要素だけを初期化し、リンクされた残りを0にする。通常 comment や宣言後の comment は既定値にしない。自作の本家 CLI 0.3.9／形式2.19の14ケースを比較用に保持する。シェーダー effect や bool の同 CLI 経路は非対応で、最新形式全体の参照とはしない。source `1f6166c` の通常 GHA `40074036061` は初回対象3環境すべてで成功し、保存した literal／constant 配列の2方式の14ケースを独立に復号して、各環境で本家参照との全 RGBA 画素一致を確認した。
 
 ソースは1 MiB、解析は262,144 token、uniform 名は256個、配列は256要素、明示値・linked numeric component は4,096を上限とする。sampler 配列にも同じ宣言長・active prefix の検査を適用し、未指定要素には透明画像を使う。実際の fragment texture unit 上限を検査し、同じ入力画像は unit を共有する。画像の符号化済み入力は1要求64 MiBを上限とする。多次元配列、struct とマクロで生成する uniform 宣言、残る Pencil 注釈と完全な vertex interface は未完成。定数式に使うマクロは実 WebGL へ渡す。小さい値や実行期限を削って描画成功に見せる処理は行わない。独自の編集可能な [作例](../examples/uniform-study.pen) は同じ [GLSL](../examples/assets/uniform-study.glsl) を配色配列・行列で再利用する。
 

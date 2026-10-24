@@ -143,6 +143,22 @@
           255
         ]
       ]
+    },
+    {
+      "pen": "nonrect-strokes.pen",
+      "png": "nonrect-strokes.png",
+      "png_sha256": "366ce9459188f46a1eb64a79abf1eff36820f5af9519d3a9150f4759a4bb6277",
+      "dimensions": [
+        1760,
+        480
+      ],
+      "logical_dimensions": [
+        880,
+        240
+      ],
+      "export_scale": 2,
+      "method": "Public headless execute/Export of 33 original self-authored 2.19 ellipse/polygon/path cases using existing @pen.dev/cli 0.3.9. No model request, proprietary program, prose, skill or credential incorporated.",
+      "scope": "Centered scalar and per-side widths on ellipse, triangle and closed path. Top-only 6 matches scalar 6; unequal top=2/right=4/bottom=8/left=12 matches scalar 2; zero top paints no stroke. Does not establish all stroke geometry, text/font or current-version parity."
     }
   ]
 }

@@ -36,7 +36,7 @@ def select(paths, platform="auto"):
         suite, targets = "conversation", ["agent"]
     elif stems & {"shader", "shader_uniforms"}:
         suite, targets = "shader", ["shader_uniforms"]
-    elif ci_change:
+    elif ci_change and not any(path.startswith(("src/", "tests/")) for path in paths):
         suite, targets = "conversation", ["agent"]
     elif stems & DYNAMIC or any(path.startswith(("src/cdp/", "src/tui/", "src/render/")) for path in paths):
         suite = "dynamic"
@@ -102,7 +102,7 @@ def commands(suite, targets):
         checks.append([*common, "--test", "agent", "embedded_conversation_uses_the_real_helper_for_supervision_and_bound_mcp_edits", "--", "--exact", "--nocapture"])
     if suite == "dynamic":
         checks.append([*common, "--lib", "cdp::", "--", "--test-threads=2"])
-    if not core:
+    if suite == "dynamic":
         # Put the previously hanging TUI cases ahead of unrelated checks.
         checks.append([*common, "--lib", "tui::tests::", "--", "--test-threads=2"])
     if suite == "dynamic":

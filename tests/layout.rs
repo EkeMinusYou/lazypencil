@@ -30,6 +30,96 @@ fn rect(snapshot: &LayoutSnapshot, id: &str) -> lazypencil::geometry::Rect {
 }
 
 #[test]
+fn nonrectangular_stroke_metrics_use_top_width_without_rewriting_side_values() {
+    let sides = json!({"top":2,"right":4,"bottom":8,"left":12});
+    let snapshot = compute(json!([
+        {"id":"ellipse","type":"ellipse","width":40,"height":30,"stroke":"#00f","strokeWidth":sides,"strokeAlignment":"outer"},
+        {"id":"rectangle","type":"rectangle","x":100,"width":40,"height":30,"stroke":"#00f","strokeWidth":sides,"strokeAlignment":"outer"},
+        {"id":"no-top","type":"ellipse","x":200,"width":40,"height":30,"stroke":"#00f","strokeWidth":{"right":20},"strokeAlignment":"outer"}
+    ])).unwrap();
+    let item = |id: &str| {
+        snapshot
+            .items
+            .iter()
+            .find(|item| item.record.id == id)
+            .unwrap()
+    };
+    assert_eq!(
+        layout::stroke_widths(&item("ellipse").node).unwrap(),
+        [2.0; 4]
+    );
+    assert_eq!(item("ellipse").node.properties["strokeWidth"], sides);
+    assert_eq!(
+        item("ellipse").record.visual_bounds,
+        lazypencil::geometry::Rect::new(-2.0, -2.0, 44.0, 34.0)
+    );
+    assert_eq!(
+        layout::stroke_widths(&item("rectangle").node).unwrap(),
+        [2.0, 4.0, 8.0, 12.0]
+    );
+    assert_eq!(
+        layout::stroke_widths(&item("no-top").node).unwrap(),
+        [0.0; 4]
+    );
+    assert_eq!(
+        item("no-top").record.visual_bounds,
+        lazypencil::geometry::Rect::new(200.0, 0.0, 40.0, 30.0)
+    );
+    for side in [json!(-1), json!("invalid")] {
+        assert_eq!(
+            compute(
+                json!([{"id":"invalid","type":"ellipse","width":40,"height":30,
+            "stroke":"#00f","strokeWidth":{"top":2,"right":side}}])
+            )
+            .err()
+            .unwrap()
+            .code,
+            "INVALID_DOCUMENT"
+        );
+    }
+}
+
+#[test]
+fn nonrectangular_stroke_widths_follow_themed_components_without_rewriting_sources() {
+    let root = TempDir::new().unwrap();
+    let file = root.path().join("themed.pen");
+    let source = json!({"version":"2.21","themes":{"mode":["light","dark"]},
+        "variables":{"edge":{"type":"number","value":[{"value":2},{"value":6,"theme":{"mode":"dark"}}]}},
+        "children":[{"id":"shape","type":"ellipse","reusable":true,"width":40,"height":30,
+            "stroke":"#00f","strokeWidth":{"top":"$edge","right":4,"bottom":8,"left":12},"strokeAlignment":"outer"},
+            {"id":"use","type":"ref","ref":"shape","x":100,"theme":{"mode":"dark"}}]}).to_string();
+    fs::write(&file, &source).unwrap();
+    let project =
+        Project::from_document(&file, Document::parse(source.clone()).unwrap(), &[]).unwrap();
+    let snapshot =
+        layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap()).unwrap();
+    for (id, top, x) in [("shape", 2.0, 0.0), ("use", 6.0, 100.0)] {
+        let item = snapshot
+            .items
+            .iter()
+            .find(|item| item.record.id == id)
+            .unwrap();
+        assert_eq!(layout::stroke_widths(&item.node).unwrap(), [top; 4]);
+        for (side, width) in [
+            ("top", top),
+            ("right", 4.0),
+            ("bottom", 8.0),
+            ("left", 12.0),
+        ] {
+            assert_eq!(
+                item.node.properties["strokeWidth"][side].as_f64(),
+                Some(f64::from(width))
+            );
+        }
+        assert_eq!(
+            item.record.visual_bounds,
+            lazypencil::geometry::Rect::new(x - top, -top, 40.0 + 2.0 * top, 30.0 + 2.0 * top)
+        );
+    }
+    assert_eq!(fs::read(&file).unwrap(), source.as_bytes());
+}
+
+#[test]
 fn horizontal_fill_allocation_uses_padding_gaps_and_fixed_siblings() {
     let scene = compute(
         json!([{"id":"parent","type":"frame","width":320,"height":80,

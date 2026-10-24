@@ -11,7 +11,7 @@ use skia_safe::{Color, textlayout::TextAlign};
 use std::{collections::BTreeMap, path::PathBuf};
 
 const MAX_DIMENSION: f32 = 1_000_000.0;
-const ENGINE: &str = concat!("lazypencil/", env!("CARGO_PKG_VERSION"), "/layout-4");
+const ENGINE: &str = concat!("lazypencil/", env!("CARGO_PKG_VERSION"), "/layout-5");
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LayoutDiagnostic {
@@ -903,7 +903,15 @@ pub fn stroke_widths(node: &ResolvedNode) -> Result<[f32; 4]> {
     if result.iter().any(|n| !n.is_finite() || *n < 0.0) {
         return Err(invalid("Stroke widths must be finite and nonnegative"));
     }
-    Ok(result)
+    // Native 2.19 uses the top entry as a uniform width on other shapes.
+    // Resolve this once so painting, glyph outlines and visual bounds agree.
+    Ok(
+        if matches!(node.kind(), "rectangle" | "frame" | "browser") {
+            result
+        } else {
+            [result[0]; 4]
+        },
+    )
 }
 
 fn invalid(message: impl Into<String>) -> Error {
