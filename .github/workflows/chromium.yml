@@ -108,6 +108,8 @@ jobs:
         run: |
           sh scripts/ci/prune_application_cache.sh
           cargo fmt --all -- --check
+          set -o pipefail
+          cargo test --locked --no-default-features --test sampler_sources -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/chromium-core-samplers.log"
           cargo build --locked
       - name: Install and verify the pinned Chromium runtime
         timeout-minutes: 10
