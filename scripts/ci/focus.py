@@ -33,6 +33,7 @@ def select(paths, platform="auto"):
     stems = {Path(path).stem for path in paths}
     stems.update(Path(path).parts[1].removesuffix(".rs") for path in paths if path.startswith("src/") and len(Path(path).parts) > 1)
     project_change = any(path == "src/project.rs" or path.startswith("src/project/") for path in paths)
+    operations_change = any(path == "src/operations.rs" or path.startswith("src/operations/") for path in paths)
     # Deferred Windows code remains in the tree; release CI uses supported runners.
     ci_change = any(path.startswith((".github/", "scripts/ci/")) for path in paths)
     macos = any("macos" in path.lower() or "darwin" in path.lower() for path in paths)
@@ -48,6 +49,7 @@ def select(paths, platform="auto"):
         stems & (DYNAMIC - {"shader", "shader_uniforms"})
         or stems & {"script_render", "script_diagnostics", "script_scope"}
         or project_change
+        or operations_change
         or any(path == "src/render.rs" or path.startswith("src/render/") for path in paths)
     ):
         suite, targets = "shader", ["shader_uniforms"]
@@ -83,6 +85,8 @@ def select(paths, platform="auto"):
             targets = ["document_store", "mcp"]
     if project_change:
         targets = sorted(set(targets) | {"project", "queries"})
+    if operations_change:
+        targets = sorted(set(targets) | {"operations_cli"})
     return {"platform": os_name, "suite": suite, "targets": targets}
 
 

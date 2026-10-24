@@ -128,6 +128,11 @@ class FocusTests(unittest.TestCase):
             self.assertTrue({"project", "queries"} <= set(result["targets"]))
             self.assertIn("scripts" if suite == "graphics" else "shader_uniforms", result["targets"])
         self.assertEqual(focus.select(["tests/project.rs"])["targets"], ["project"])
+        for other in ["src/script/header.rs", "src/shader.rs"]:
+            result = focus.select(["src/operations.rs", other])
+            self.assertIn("operations_cli", result["targets"])
+        native = (Path(__file__).resolve().parents[1] / ".github/workflows/native.yml").read_text()
+        self.assertIn("--no-default-features --test project --test scripts", native)
 
     def test_nested_core_and_adapter_fixtures_keep_their_affected_targets(self):
         self.assertEqual(focus.select(["src/store/content.rs"])["targets"], ["document_store"])
