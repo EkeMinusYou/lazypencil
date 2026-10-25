@@ -573,7 +573,7 @@ fn native_dependency_tree_requires_clean_committed_inputs_and_ignores_docs() {
 }
 
 #[test]
-fn source_fingerprints_exclude_only_ci_and_prose_and_are_independent_of_manifest_order() {
+fn source_fingerprints_exclude_ci_prose_and_native_review_data_and_ignore_manifest_order() {
     let f = ApplicationFixture::new();
     let mut manifest: Manifest = util::json(&f.source.join(dist::MANIFEST)).unwrap();
     let original = cache::source_fingerprint(&manifest).unwrap();
@@ -586,6 +586,8 @@ fn source_fingerprints_exclude_only_ci_and_prose_and_are_independent_of_manifest
         "docs/nested/guide.md",
         ".github/actions/xtask/action.yml",
         "xtask/src/ci/cache.rs",
+        "resources/licenses/native/quickjs-review.json",
+        "resources/licenses/native/upstream.json",
     ] {
         let mut changed = manifest.clone();
         changed.files.push(Entry {
@@ -697,12 +699,33 @@ fn application_reuse_rejects_same_mtime_mutations_and_unknown_generated_or_custo
         assert!(cache::restore(&f.source, &f.target, &f.directory, &f.identity()).is_err());
     }
     let f = ApplicationFixture::new();
+    let review = "resources/licenses/native/quickjs-review.json";
+    let path = f.source.join(review);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, b"{}\n").unwrap();
+    let mut manifest: Manifest = util::json(&f.source.join(dist::MANIFEST)).unwrap();
+    manifest.files.push(Entry {
+        path: review.into(),
+        bytes: 3,
+        sha256: util::file_digest(&path).unwrap(),
+        mode: 0o644,
+    });
     fs::write(
-        &f.dep_info,
-        format!("library: {}/SOURCE-MANIFEST.json\n", f.source.display()),
+        f.source.join(dist::MANIFEST),
+        util::encode(&manifest).unwrap(),
     )
     .unwrap();
-    assert!(cache::stage(&f.source, &f.target, &f.directory, &f.identity()).is_err());
+    for path in ["SOURCE-MANIFEST.json", review] {
+        fs::write(
+            &f.dep_info,
+            format!("library: {}/{path}\n", f.source.display()),
+        )
+        .unwrap();
+        assert!(
+            cache::stage(&f.source, &f.target, &f.directory, &f.identity()).is_err(),
+            "Excluded compiler input: {path}"
+        );
+    }
     fs::write(f.source.join("build.rs"), b"fn main() {}\n").unwrap();
     assert!(
         cache::application_identity(&f.source, &f.target, "native-v2-ubuntu-24.04-fixture")

@@ -452,7 +452,12 @@ pub fn compiled_inputs(manifest: &Manifest) -> Vec<Entry> {
     let mut entries = manifest
         .files
         .iter()
-        .filter(|entry| !focus::ci_only(&entry.path))
+        // Native notice review data is consumed by the evidence collector,
+        // not embedded in the application. Compiler dep-info still rejects
+        // reuse if an excluded file ever becomes an actual source input.
+        .filter(|entry| {
+            !focus::ci_only(&entry.path) && !entry.path.starts_with("resources/licenses/native/")
+        })
         .cloned()
         .collect::<Vec<_>>();
     entries.sort_by(|a, b| a.path.cmp(&b.path));
