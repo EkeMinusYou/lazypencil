@@ -131,7 +131,15 @@ fn archive(bytes: &[u8]) -> Result<BTreeMap<String, Vec<u8>>> {
         );
         let mut body = Vec::new();
         entry.read_to_end(&mut body)?;
-        ensure!(result.insert(name, body).is_none(), "Duplicate npm member");
+        match result.entry(name) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(body);
+            }
+            std::collections::btree_map::Entry::Occupied(entry) => {
+                // The pinned Phosphor archive repeats its UMD file under package/./.
+                ensure!(entry.get() == &body, "Conflicting duplicate npm member");
+            }
+        }
     }
     Ok(result)
 }

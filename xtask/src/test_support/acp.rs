@@ -332,10 +332,10 @@ impl<'a> Peer<'a> {
                     if mode == "cancel-permission" {
                         assert_eq!(outcome["outcome"], "cancelled");
                         self.permission_answered = true;
-                        if self.cancel_received {
-                            if let Some(pending) = self.pending.take() {
-                                self.response(&pending, json!({"stopReason":"cancelled"}))?;
-                            }
+                        if self.cancel_received
+                            && let Some(pending) = self.pending.take()
+                        {
+                            self.response(&pending, json!({"stopReason":"cancelled"}))?;
                         }
                     } else {
                         assert_eq!(outcome["outcome"], "selected");

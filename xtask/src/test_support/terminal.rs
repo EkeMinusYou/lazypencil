@@ -49,7 +49,7 @@ pub struct Frame {
 }
 impl Frame {
     pub fn new(rgba: Vec<u8>) -> Result<Self> {
-        if rgba.len() % 4 != 0 {
+        if !rgba.len().is_multiple_of(4) {
             return Err("Expected complete RGBA pixels".into());
         }
         let palette = rgba
@@ -104,10 +104,10 @@ impl KittyFrames {
             let parameters = std::str::from_utf8(&packet[..split.unwrap_or(packet.len())])?;
             let mut fields = BTreeMap::new();
             for field in parameters.split(',') {
-                if let Some((key, value)) = field.split_once('=') {
-                    if fields.insert(key, value).is_some() {
-                        return Err("Duplicate Kitty parameter".into());
-                    }
+                if let Some((key, value)) = field.split_once('=')
+                    && fields.insert(key, value).is_some()
+                {
+                    return Err("Duplicate Kitty parameter".into());
                 }
             }
             let action = fields.get("a").copied();
@@ -149,27 +149,26 @@ impl KittyFrames {
                 self.expected = Some(width * height * 4);
                 self.payload.clear();
             }
-            if let Some(expected) = self.expected {
-                if action.is_none() || action == Some("T") {
-                    let separator =
-                        split.ok_or("A Kitty image packet needs a payload separator")?;
-                    let decoded = STANDARD.decode(&packet[separator + 1..])?;
-                    if decoded.len() > expected - self.payload.len() {
-                        return Err("Kitty pixels exceed declared dimensions".into());
-                    }
-                    self.payload.extend_from_slice(&decoded);
-                    match fields.get("m").copied().unwrap_or("0") {
-                        "1" => {}
-                        "0" => {
-                            if self.payload.len() != expected {
-                                return Err("Incomplete Kitty pixel data".into());
-                            }
-                            self.images
-                                .push(Frame::new(std::mem::take(&mut self.payload))?);
-                            self.expected = None;
+            if let Some(expected) = self.expected
+                && (action.is_none() || action == Some("T"))
+            {
+                let separator = split.ok_or("A Kitty image packet needs a payload separator")?;
+                let decoded = STANDARD.decode(&packet[separator + 1..])?;
+                if decoded.len() > expected - self.payload.len() {
+                    return Err("Kitty pixels exceed declared dimensions".into());
+                }
+                self.payload.extend_from_slice(&decoded);
+                match fields.get("m").copied().unwrap_or("0") {
+                    "1" => {}
+                    "0" => {
+                        if self.payload.len() != expected {
+                            return Err("Incomplete Kitty pixel data".into());
                         }
-                        _ => return Err("Invalid Kitty continuation marker".into()),
+                        self.images
+                            .push(Frame::new(std::mem::take(&mut self.payload))?);
+                        self.expected = None;
                     }
+                    _ => return Err("Invalid Kitty continuation marker".into()),
                 }
             }
             offset = end + 2;
