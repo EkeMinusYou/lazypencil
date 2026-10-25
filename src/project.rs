@@ -24,6 +24,7 @@ mod failed_code;
 pub(crate) use failed_code::FailedCodeCapture;
 mod import;
 mod missing;
+mod sampler_images;
 mod scope;
 mod variables;
 pub use variables::VariablesRequest;
@@ -146,6 +147,7 @@ pub struct Project {
     root: PathBuf,
     documents: BTreeMap<PathBuf, Document>,
     imports: BTreeMap<PathBuf, BTreeMap<String, PathBuf>>,
+    sampler_images: BTreeMap<PathBuf, BTreeMap<String, String>>,
     allowed_roots: Vec<PathBuf>,
     assets: BTreeMap<PathBuf, Asset>,
     missing_assets: BTreeMap<(PathBuf, String), missing::MissingAsset>,
@@ -191,10 +193,14 @@ impl Project {
         }
         let root = PathBuf::new();
         let byte_count = document.text().len();
+        let sampler_images = [(root.clone(), sampler_images::parse(&document)?)]
+            .into_iter()
+            .collect();
         Ok(Self {
             root: root.clone(),
             documents: [(root.clone(), document)].into_iter().collect(),
             imports: [(root, BTreeMap::new())].into_iter().collect(),
+            sampler_images,
             allowed_roots: Vec::new(),
             assets: BTreeMap::new(),
             missing_assets: BTreeMap::new(),
@@ -517,6 +523,7 @@ impl Project {
             root: path.clone(),
             documents: BTreeMap::new(),
             imports: BTreeMap::new(),
+            sampler_images: BTreeMap::new(),
             allowed_roots,
             assets: BTreeMap::new(),
             missing_assets: BTreeMap::new(),
@@ -654,6 +661,8 @@ impl Project {
                 .clone(),
             None => Map::new(),
         };
+        self.sampler_images
+            .insert(path.into(), sampler_images::parse(&document)?);
         self.documents.insert(path.into(), document);
         active.insert(path.into());
         let mut imports = BTreeMap::new();
@@ -1940,7 +1949,7 @@ impl Project {
         {
             // Anchor the value without opening inactive assets. Capture and rendering
             // perform canonicalization, root checks, and dependency verification.
-            let path = parent.join(uri);
+            let path = parent.join(self.sampler_uri(&source, uri));
             return Ok(json!(
                 path.to_str()
                     .ok_or_else(|| invalid("Shader image paths must be UTF-8"))?

@@ -246,7 +246,10 @@ impl Copier<'_> {
                 }) else {
                     continue;
                 };
-                let Ok(path) = self.project.resolve_file(&key.0, uri) else {
+                let Ok(path) = self
+                    .project
+                    .resolve_file(&key.0, self.project.sampler_uri(&key.0, uri))
+                else {
                     continue;
                 };
                 let Ok(file) = crate::store::open_regular_file(&path) else {
@@ -300,8 +303,13 @@ impl Copier<'_> {
             let mut map = BTreeMap::new();
             for (owner, uri, kind) in assets {
                 self.project.check_cancelled()?;
-                let path = self.project.resolve_file(&owner, &uri)?;
-                let target = self.asset(&owner, &uri, &kind)?;
+                let source_uri = if kind == "image" {
+                    self.project.sampler_uri(&owner, &uri).to_owned()
+                } else {
+                    uri.clone()
+                };
+                let path = self.project.resolve_file(&owner, &source_uri)?;
+                let target = self.asset(&owner, &source_uri, &kind)?;
                 let relative = relative_uri(&origin, &path)?;
                 for uri in [Some(relative), (owner == origin).then_some(uri)]
                     .into_iter()

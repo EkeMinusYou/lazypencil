@@ -252,7 +252,42 @@ pub fn required_images(root: &Path, commit: &str) -> Result<()> {
             "Recovered cancellation pixels differ"
         );
     }
-    println!("Verified source identities, hashes and dimensions for 84 required PNGs");
+    let sampler = report("codec-sampler-copy.json")?;
+    let cases = sampler["cases"]
+        .as_array()
+        .context("Missing sampler copy images")?;
+    ensure!(cases.len() == 4, "Expected four sampler copy conditions");
+    for absolute in [false, true] {
+        for theme in ["light", "dark"] {
+            let rows: Vec<_> = cases
+                .iter()
+                .filter(|row| row["absolute"] == absolute && row["theme"] == theme)
+                .collect();
+            ensure!(
+                rows.len() == 1,
+                "Missing or duplicate sampler copy condition"
+            );
+            let row = rows[0];
+            let width = u32::try_from(row["width"].as_u64().context("Missing sampler width")?)?;
+            let height = u32::try_from(row["height"].as_u64().context("Missing sampler height")?)?;
+            ensure!(
+                width > 0 && height > 0 && width <= 16384 && height <= 16384,
+                "Invalid sampler image dimensions"
+            );
+            let before = format!("codec-sampler-copy-{absolute}-{theme}-before.png");
+            let after = format!("codec-sampler-copy-{absolute}-{theme}-after.png");
+            ensure!(
+                row["before"] == before && row["after"] == after,
+                "Wrong sampler image names"
+            );
+            ensure!(
+                png(&before, &row["png_hash"], width, height)?
+                    == png(&after, &row["png_hash"], width, height)?,
+                "Copied sampler pixels differ"
+            );
+        }
+    }
+    println!("Verified source identities, hashes and dimensions for 92 required PNGs");
     Ok(())
 }
 pub fn panel(s: &Session) -> Result<()> {

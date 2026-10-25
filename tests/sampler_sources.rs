@@ -104,6 +104,28 @@ fn array_fixture() -> (TempDir, Store) {
     (temp, store)
 }
 
+fn absolute_fixture() -> (TempDir, Store, [String; 2]) {
+    let (temp, store) = array_fixture();
+    let paths = ["pixel.png", "dark.png"].map(|name| {
+        temp.path()
+            .join("library/data")
+            .join(name)
+            .canonicalize()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned()
+    });
+    let source = temp.path().join("library/data/images.lib.pen");
+    let mut value: Value = serde_json::from_slice(&fs::read(&source).unwrap()).unwrap();
+    value["variables"]["leaf"]["value"] = json!([
+        {"value":paths[0]},
+        {"theme":{"mode":"dark"},"value":paths[1]}
+    ]);
+    write(&source, value);
+    (temp, store, paths)
+}
+
 fn edit(store: &Store, id: &str, operations: Value) -> Value {
     let metadata = service::document_metadata(store).unwrap();
     let request:EditRequest = serde_json::from_value(json!({"request_id":id,"expected_revision":metadata["revision"],"expected_dependency_revision":metadata["dependency_revision"],"operations":operations})).unwrap();
@@ -468,6 +490,163 @@ fn copy_operations() -> Value {
 }
 
 #[test]
+fn absolute_sampler_copy_preserves_text_themes_portability_and_future_edits() {
+    let (temp, store, strings) = absolute_fixture();
+    let original = fs::read(store.path()).unwrap();
+    let metadata = service::document_metadata(&store).unwrap();
+    let preview: EditRequest = serde_json::from_value(json!({"request_id":"absolute-preview","expected_revision":metadata["revision"],"expected_dependency_revision":metadata["dependency_revision"],"dry_run":true,"operations":copy_operations()})).unwrap();
+    service::apply_request(&store, &preview).unwrap();
+    assert_eq!(fs::read(store.path()).unwrap(), original);
+    assert!(!temp.path().join("assets").exists());
+    assert!(store.history(10, None).unwrap().is_empty());
+    let hashes = strings
+        .each_ref()
+        .map(|path| lazypencil::document::hash(&fs::read(path).unwrap()));
+    let result = edit(&store, "absolute-copy", copy_operations());
+    let target = result["generated_ids"]["0"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    fs::remove_dir_all(temp.path().join("library")).unwrap();
+    // Move the document and all managed files to a different project root.
+    // Its displayed strings still contain the original, now missing paths.
+    let moved = TempDir::new().unwrap();
+    fs::create_dir(moved.path().join(".git")).unwrap();
+    fs::rename(temp.path().join("assets"), moved.path().join("assets")).unwrap();
+    fs::rename(store.path(), moved.path().join("main.pen")).unwrap();
+    let store = Store::open(
+        moved.path().join("main.pen"),
+        Some(moved.path().join("data")),
+    )
+    .unwrap();
+    for (index, mode) in ["light", "dark"].into_iter().enumerate() {
+        edit(
+            &store,
+            &format!("absolute-{mode}"),
+            json!([{"op":"set_theme","target":target,"set":{"mode":mode}}]),
+        );
+        let project = Project::load(&store).unwrap();
+        let scene = project.resolve().unwrap();
+        let node = scene.roots.iter().find(|node| node.id() == target).unwrap();
+        assert_eq!(node.children[0].properties["content"], strings[index]);
+        for property in ["fill", "stroke", "effect"] {
+            let path = Path::new(
+                node.properties[property]["uniforms"]["image"][0]
+                    .as_str()
+                    .unwrap(),
+            );
+            assert!(
+                path.starts_with(
+                    moved
+                        .path()
+                        .canonicalize()
+                        .unwrap()
+                        .join("assets/lazypencil")
+                )
+            );
+            assert_eq!(project.asset(path).unwrap().revision, hashes[index]);
+        }
+        assert!(
+            project
+                .dependencies()
+                .iter()
+                .all(|dependency| !dependency.path.starts_with(temp.path()))
+        );
+    }
+    // Recopying must resolve the terminal binding rather than reopening the
+    // missing absolute path preserved for text.
+    let copied = edit(
+        &store,
+        "absolute-recopy",
+        json!([
+            {"op":"import_component","source":{"node_id":target},"mode":"copy","options":{"variable_prefix":"again_"}},
+            {"op":"delete","target":target}
+        ]),
+    );
+    let target = copied["generated_ids"]["0"]["id"].as_str().unwrap();
+    let project = Project::load(&store).unwrap();
+    assert!(
+        project
+            .resolve()
+            .unwrap()
+            .roots
+            .iter()
+            .any(|node| node.id() == target)
+    );
+    image(&moved.path().join("replacement.png"), true);
+    let replacement = moved.path().join("replacement.png").canonicalize().unwrap();
+    edit(
+        &store,
+        "absolute-future",
+        json!([{"op":"set_variable","name":"again_copied_leaf","definition":{"type":"string","value":replacement}}]),
+    );
+    let node = Project::load(&store)
+        .unwrap()
+        .resolve()
+        .unwrap()
+        .roots
+        .into_iter()
+        .find(|node| node.id() == target)
+        .unwrap();
+    assert_eq!(node.children[0].properties["content"], json!(replacement));
+    for property in ["fill", "stroke", "effect"] {
+        assert_eq!(
+            node.properties[property]["uniforms"]["image"][0],
+            json!(replacement)
+        );
+    }
+}
+
+#[test]
+fn sampler_image_bindings_reject_unknown_versions_and_unsafe_targets_before_opening_assets() {
+    let (temp, store) = fixture();
+    let original = store.read().unwrap().value().clone();
+    for (binding, code) in [
+        (json!({"version":2,"images":{}}), "UNSUPPORTED_VERSION"),
+        (
+            json!({"version":1,"images":{},"extra":true}),
+            "INVALID_DOCUMENT",
+        ),
+        (json!({"version":1,"images":false}), "INVALID_DOCUMENT"),
+        (
+            json!({"version":1,"images":{"/old.png":12}}),
+            "INVALID_DOCUMENT",
+        ),
+        (
+            json!({"version":1,"images":{"$alias":"images/a.png"}}),
+            "INVALID_DOCUMENT",
+        ),
+        (
+            json!({"version":1,"images":{"/old.png":"../outside.png"}}),
+            "INVALID_DOCUMENT",
+        ),
+        (
+            json!({"version":1,"images":{"/old.png":"/outside.png"}}),
+            "INVALID_DOCUMENT",
+        ),
+        (
+            json!({"version":1,"images":{"/old.png":"C:\\outside.png"}}),
+            "INVALID_DOCUMENT",
+        ),
+        (
+            json!({"version":1,"images":{"/old.png":"images//a.png"}}),
+            "INVALID_DOCUMENT",
+        ),
+    ] {
+        let mut document = original.clone();
+        document["metadata"] = json!({"lazypencil":{"sampler_images":binding}});
+        write(store.path(), document);
+        assert_eq!(Project::load(&store).err().unwrap().code, code);
+    }
+    let mut document = original;
+    document["metadata"] = json!({"lazypencil":{"sampler_images":{"version":1,"images":{"/unused.png":"missing.png"}}}});
+    write(store.path(), document);
+    assert!(Project::load(&store).is_ok());
+    assert!(!temp.path().join("assets").exists());
+    assert!(store.history(10, None).unwrap().is_empty());
+}
+
+#[test]
 fn independent_sampler_copy_keeps_text_aliases_themes_and_future_consumer_edits() {
     let (temp, store) = array_fixture();
     let original = fs::read(store.path()).unwrap();
@@ -649,44 +828,100 @@ fn independent_sampler_copy_preserves_parent_and_transit_directory_uris() {
 #[ignore = "Requires sandboxed software WebGL Chromium"]
 fn real_webgl_independent_sampler_copy_matches_pixels_after_original_sources_are_deleted() {
     use lazypencil::{dynamic::DynamicRuntime, render};
-    let (temp, store) = array_fixture();
-    let mut runtime = DynamicRuntime::new(temp.path())
-        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
-        .with_executable(
-            std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
-        );
-    let mut originals = Vec::new();
-    for mode in ["light", "dark"] {
-        edit(
-            &store,
-            &format!("before-{mode}"),
-            json!([{"op":"set_theme","target":"use","set":{"mode":mode}}]),
-        );
-        let (project, snapshot) = service::layout_snapshot(&store, &[], None, None).unwrap();
-        originals.push(
-            render::png_with_runtime(&project, &snapshot, &Default::default(), &mut runtime, None)
+    let mut evidence = Vec::new();
+    for absolute in [false, true] {
+        let (temp, store) = if absolute {
+            let (temp, store, _) = absolute_fixture();
+            (temp, store)
+        } else {
+            array_fixture()
+        };
+        let mut runtime = DynamicRuntime::new(temp.path())
+            .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+            .with_executable(
+                std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
+            );
+        let mut originals = Vec::new();
+        for mode in ["light", "dark"] {
+            edit(
+                &store,
+                &format!("before-{mode}"),
+                json!([{"op":"set_theme","target":"use","set":{"mode":mode}}]),
+            );
+            let (project, snapshot) = service::layout_snapshot(&store, &[], None, None).unwrap();
+            originals.push(
+                render::png_with_runtime(
+                    &project,
+                    &snapshot,
+                    &Default::default(),
+                    &mut runtime,
+                    None,
+                )
                 .unwrap()
                 .png,
-        );
+            );
+        }
+        let result = edit(&store, "copy-real", copy_operations());
+        let target = result["generated_ids"]["0"]["id"].as_str().unwrap();
+        fs::remove_dir_all(temp.path().join("library")).unwrap();
+        for (index, mode) in ["light", "dark"].into_iter().enumerate() {
+            edit(
+                &store,
+                &format!("after-{mode}"),
+                json!([{"op":"set_theme","target":target,"set":{"mode":mode}}]),
+            );
+            let (project, snapshot) = service::layout_snapshot(&store, &[], None, None).unwrap();
+            let rendered = render::png_with_runtime(
+                &project,
+                &snapshot,
+                &Default::default(),
+                &mut runtime,
+                None,
+            )
+            .unwrap();
+            assert_eq!(
+                rendered.png, originals[index],
+                "Copied {mode} sampler pixels changed (absolute={absolute})"
+            );
+            if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
+                let directory = Path::new(&directory);
+                fs::create_dir_all(directory).unwrap();
+                let before = format!("codec-sampler-copy-{absolute}-{mode}-before.png");
+                let after = format!("codec-sampler-copy-{absolute}-{mode}-after.png");
+                fs::write(directory.join(&before), &originals[index]).unwrap();
+                fs::write(directory.join(&after), &rendered.png).unwrap();
+                evidence.push(json!({"absolute":absolute,"theme":mode,"before":before,"after":after,"width":rendered.width,"height":rendered.height,"png_hash":lazypencil::document::hash(&rendered.png)}));
+            }
+        }
     }
-    let result = edit(&store, "copy-real", copy_operations());
-    let target = result["generated_ids"]["0"]["id"].as_str().unwrap();
-    fs::remove_dir_all(temp.path().join("library")).unwrap();
-    for (index, mode) in ["light", "dark"].into_iter().enumerate() {
-        edit(
-            &store,
-            &format!("after-{mode}"),
-            json!([{"op":"set_theme","target":target,"set":{"mode":mode}}]),
-        );
-        let (project, snapshot) = service::layout_snapshot(&store, &[], None, None).unwrap();
-        let rendered =
-            render::png_with_runtime(&project, &snapshot, &Default::default(), &mut runtime, None)
-                .unwrap();
-        assert_eq!(
-            rendered.png, originals[index],
-            "Copied {mode} sampler pixels changed"
-        );
+    if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
+        fs::write(
+            Path::new(&directory).join("codec-sampler-copy.json"),
+            json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"cases":evidence}).to_string(),
+        )
+        .unwrap();
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn mapped_sampler_images_cannot_escape_allowed_roots_through_symlinks() {
+    let (temp, store) = fixture();
+    let outside = TempDir::new().unwrap();
+    image(&outside.path().join("outside.png"), true);
+    std::os::unix::fs::symlink(
+        outside.path().join("outside.png"),
+        temp.path().join("library/data/redirect.png"),
+    )
+    .unwrap();
+    let source = temp.path().join("library/data/images.lib.pen");
+    let mut document: Value = serde_json::from_slice(&fs::read(&source).unwrap()).unwrap();
+    document["variables"]["leaf"]["value"] = json!("/original.png");
+    document["metadata"] = json!({"lazypencil":{"sampler_images":{"version":1,"images":{"/original.png":"redirect.png"}}}});
+    write(&source, document);
+    assert_eq!(Project::load(&store).err().unwrap().code, "ASSET_NOT_FOUND");
+    assert!(!temp.path().join("assets").exists());
+    assert!(store.history(10, None).unwrap().is_empty());
 }
 
 #[cfg(unix)]

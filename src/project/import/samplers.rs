@@ -31,7 +31,7 @@ impl Copier<'_> {
     pub(super) fn prepare_sampler_bindings(&mut self) -> Result<()> {
         let mut queue = self.sampler_vars.iter().cloned().collect::<VecDeque<_>>();
         let mut seen = BTreeSet::new();
-        let mut images: BTreeMap<PathBuf, BTreeMap<String, Arc<[u8]>>> = BTreeMap::new();
+        let mut images: BTreeMap<(PathBuf, bool), BTreeMap<String, Arc<[u8]>>> = BTreeMap::new();
         while let Some(key) = queue.pop_front() {
             self.project.check_cancelled()?;
             if !seen.insert(key.clone()) {
@@ -48,13 +48,9 @@ impl Copier<'_> {
                 if let Some(name) = uri.strip_prefix('$').filter(|name| !name.is_empty()) {
                     queue.push_back(self.project.variable_key(&key.0, name)?);
                 } else if !uri.is_empty() && !uri.starts_with('#') && !uri.starts_with("pencil:") {
-                    if Path::new(uri).is_absolute() {
-                        return Err(Error::new(
-                            "UNSUPPORTED_FEATURE",
-                            "Independent copying of absolute string sampler paths requires a portable binding policy",
-                        ));
-                    }
-                    let path = self.project.resolve_file(&key.0, uri)?;
+                    let path = self
+                        .project
+                        .resolve_file(&key.0, self.project.sampler_uri(&key.0, uri))?;
                     self.project.capture_asset(&path, "image")?;
                     let bytes = self.project.asset(&path)?.bytes.clone();
                     if !(bytes.starts_with(b"\x89PNG\r\n\x1a\n")
@@ -66,7 +62,7 @@ impl Copier<'_> {
                         ));
                     }
                     images
-                        .entry(key.0.clone())
+                        .entry((key.0.clone(), Path::new(uri).is_absolute()))
                         .or_default()
                         .insert(uri.into(), bytes);
                 }
@@ -79,11 +75,11 @@ impl Copier<'_> {
         let mut members = BTreeMap::new();
         let mut directories = BTreeSet::new();
         let mut libraries = Vec::new();
-        for (index, (origin, images)) in images.into_iter().enumerate() {
+        for (index, ((origin, absolute), images)) in images.into_iter().enumerate() {
             self.project.check_cancelled()?;
             let depth = images
                 .keys()
-                .map(|uri| required_depth(uri))
+                .map(|uri| if absolute { Ok(0) } else { required_depth(uri) })
                 .collect::<Result<Vec<_>>>()?
                 .into_iter()
                 .max()
@@ -110,10 +106,28 @@ impl Copier<'_> {
             };
             let mut variables = Map::new();
             let mut bindings = Vec::new();
+            let mut relocated = Map::new();
             for (uri, bytes) in images {
                 self.project.check_cancelled()?;
+                // Absolute strings may also be visible text. Keep the string and
+                // bind only its sampler use to a portable, content-addressed file.
+                let portable_uri = if absolute {
+                    let extension = if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+                        "png"
+                    } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
+                        "jpg"
+                    } else {
+                        "webp"
+                    };
+                    format!("images/{}.{extension}", hash(&bytes))
+                } else {
+                    uri.clone()
+                };
+                if absolute {
+                    relocated.insert(uri.clone(), json!(portable_uri));
+                }
                 let mut target = anchor.clone();
-                let parts = Path::new(&uri).components().collect::<Vec<_>>();
+                let parts = Path::new(&portable_uri).components().collect::<Vec<_>>();
                 for (i, part) in parts.iter().enumerate() {
                     match part {
                         std::path::Component::CurDir => {}
@@ -156,11 +170,14 @@ impl Copier<'_> {
                 }
                 number += 1;
             };
-            let bytes: Arc<[u8]> = serde_json::to_vec(
-                &json!({"version":self.project.root_document().version(),"variables":variables,"children":[]}),
-            )
-            .map_err(|_| copy_error("Cannot encode copied sampler variables"))?
-            .into();
+            let mut document = json!({"version":self.project.root_document().version(),"variables":variables,"children":[]});
+            if !relocated.is_empty() {
+                document["metadata"] =
+                    json!({"lazypencil":{"sampler_images":{"version":1,"images":relocated}}});
+            }
+            let bytes: Arc<[u8]> = serde_json::to_vec(&document)
+                .map_err(|_| copy_error("Cannot encode copied sampler variables"))?
+                .into();
             insert_member(&mut members, library.clone(), bytes)?;
             libraries.push((library, bindings));
         }
