@@ -47,7 +47,7 @@ fn png(store: &Store, runtime: Option<&mut DynamicRuntime>) -> Vec<u8> {
         ..Default::default()
     };
     if let Some(runtime) = runtime {
-        render::png_with_runtime(&project, &layout, &options, runtime)
+        render::png_with_runtime(&project, &layout, &options, runtime, None)
             .unwrap()
             .png
     } else {
