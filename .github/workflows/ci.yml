@@ -146,15 +146,15 @@ jobs:
           cargo xtask notices rust verify --root xtask --bundle xtask/notices --cargo-home "$HOME/.cargo"
 
   shader-preprocessor:
-    name: Check isolated shader preprocessing first
+    name: Check isolated shader preprocessing
     needs: plan
     if: needs.plan.outputs.preprocessor == 'true'
     uses: ./.github/workflows/shader-preprocessor.yml
 
   focus:
     name: Focused reproduction / ${{ needs.plan.outputs.platform }}
-    needs: [plan, shader-preprocessor, cache-maintenance]
-    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.shader-preprocessor.result == 'success' || needs.shader-preprocessor.result == 'skipped') && (needs.cache-maintenance.result == 'success' || needs.cache-maintenance.result == 'skipped') }}
+    needs: [plan, cache-maintenance]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.cache-maintenance.result == 'success' || needs.cache-maintenance.result == 'skipped') }}
     uses: ./.github/workflows/native.yml
     with:
       os: ${{ needs.plan.outputs.platform }}
@@ -164,8 +164,8 @@ jobs:
 
   native:
     name: Full verification / ${{ matrix.os }}
-    needs: [plan, focus]
-    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.focus.result == 'success' }}
+    needs: [plan, focus, shader-preprocessor]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.focus.result == 'success' && (needs.shader-preprocessor.result == 'success' || needs.shader-preprocessor.result == 'skipped') }}
     strategy:
       fail-fast: false
       matrix:

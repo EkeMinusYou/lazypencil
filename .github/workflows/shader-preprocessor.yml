@@ -12,6 +12,7 @@ env:
   CARGO_PROFILE_TEST_DEBUG: '0'
 jobs:
   wasm:
+    name: Wasm build and source evidence
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
