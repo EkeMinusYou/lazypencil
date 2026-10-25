@@ -320,6 +320,9 @@ impl Session {
                 self.execute(&command, 300, "focus-clippy.log", false)
             }
             Stage::FocusReproduce => {
+                if let Some(command) = commands::color_font_reproduction(&args.suite, &targets) {
+                    self.execute(&command, 300, "focus-color-fonts.log", false)?;
+                }
                 if args.suite == "dynamic" && has("native_layout") {
                     self.test(
                         true,

@@ -1,5 +1,7 @@
 # lazypencil 実装と公開準備の状況
 
+2026-10-26: `2ec8e33` の [先行 GHA `40241490664`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40241490664) で、ネイティブ Paragraph の緑2,240画素が通常描画では0画素になることを再現した。自作フォントには左右の層の side bearing の不整合もあり、赤・緑それぞれ1,000画素超の要求を維持して修正する。描画側は使用したカラー書体を検出し、計測した Paragraph からグリフ・位置・書体・run origin を捕捉する。再組版やテキストの別シリアライズはせず、通常の塗り、画像配置・clip、mesh の既存リソース予約を使って native glyph を描く。通常の単色書体の経路は維持する。両形式・ZWJ／modifier／selector に加え、日本語との混在・装飾・gradient／image／mesh・半透明合成・実 CLI と library の PNG 一致を検査する。先行ではこれらを Chromium より先に実行し、後の同じ条件だけを除外する。ユーザーが実在する書体を指定する既存の system-font opt-in を、未指定の hosted 環境で暗黙に有効化しない。新実装は GHA 未確認で、カラー絵文字全形式の完了とはしない。
+
 2026-10-26: `44ad881` の [GHA `40238504077`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40238504077) は xtask 111試験・先行候補・全3環境・監査・最終 source を成功し、24分6秒だった。通常／core は Linux 各1,148件・macOS 1,138件、各407必須画像と42 release 書き出しを維持した。ソース1,116ファイル・31,126,313バイトを Git と照合した。別実行を含む全3環境の候補は、全構成ファイル・元ソース・収集表示・map と実行ファイルの対応、および元の native source／build tree を隠した QuickJS の768画素を独立確認した。各実行ファイルは `b15bfa5` と同じ hash であり、3環境とも不要な release 再コンパイルを避けた。手元の macOS 27.0.1 でも同じ配布物の CLI・自作例・QuickJS は成功した。自作例は GHA の macOS と1,539画素が異なり、差はすべて宣言された文字領域内だった。原因は断定しない。Kitty／WezTerm の実操作はツールに拒否され、迂回せず未検証として残す。製品全体・性能・正式配布の完成判定とはしない。
 
 カラー文字の通常描画は Paragraph の出力をアルファマスクにして塗り直すため、フォント固有の色が失われる。第三者のフォントを転用せず、OpenType の公開構造に従う自作 COLR／CPAL・ZWJ／modifier の GSUB・異体字 selector の cmap を Rust で生成する再現試験を追加する。まずネイティブ組版と固有色を確認し、通常描画でも色を保つことを両形式で要求する。新しい再現試験は GHA 未確認であり、修正や絵文字対応の完了とは扱わない。

@@ -95,7 +95,14 @@ pub fn generate() -> Vec<u8> {
     for (index, outline) in outlines.into_iter().enumerate() {
         glyf.extend(outline);
         offsets.push(glyf.len() as u32);
-        metrics.extend(u16s(&[if index == 5 { 0 } else { 800 }, 80]));
+        // head.flags declares xMin == lsb; keep the right-hand layer's
+        // bearing at 400, otherwise rasterizers may translate it over the left.
+        let bearing = match index {
+            3 => 400,
+            5 => 0,
+            _ => 80,
+        };
+        metrics.extend(u16s(&[if index == 5 { 0 } else { 800 }, bearing]));
     }
     font.insert(*b"glyf", glyf);
     font.insert(*b"loca", u32s(&offsets));

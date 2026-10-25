@@ -521,7 +521,29 @@ impl Renderer<'_> {
             bounds.right().max(ink.right()),
             bounds.bottom().max(ink.bottom() + offset),
         );
-        if fill_enabled {
+        if fill_enabled && block.native_color {
+            let project = self.project;
+            for fill in values(fill) {
+                project.check_cancelled()?;
+                if let Some(runtime) = self.runtime.as_deref() {
+                    runtime.check()?;
+                }
+                if fill["enabled"] == false {
+                    continue;
+                }
+                let draw = |canvas: &Canvas, paint: &Paint| {
+                    block.paint_native(canvas, offset, paint, &|| project.check_cancelled())
+                };
+                if fill["type"] == "image" {
+                    self.image_paint(node, fill, rect, "fill", draw)?;
+                } else if fill["type"] == "mesh_gradient" {
+                    mesh::paint(self, node, fill, rect, "fill", draw)
+                        .map_err(|error| blending::at_node(error, node, "fill"))?;
+                } else if let Some(paint) = self.fill_paint(node, fill, rect, "fill")? {
+                    draw(self.canvas, &paint)?;
+                }
+            }
+        } else if fill_enabled {
             self.canvas.save_layer(&SaveLayerRec::default());
             self.fills(node, Some(fill), &Path::rect(bounds, None), rect, "fill")?;
             let mut mask = Paint::default();
@@ -951,6 +973,20 @@ impl Renderer<'_> {
         rect: SkRect,
         property: &str,
     ) -> Result<()> {
+        self.image_paint(node, fill, rect, property, |canvas, paint| {
+            canvas.draw_path(shape, paint);
+            Ok(())
+        })
+    }
+
+    fn image_paint(
+        &mut self,
+        node: &ResolvedNode,
+        fill: &Value,
+        rect: SkRect,
+        property: &str,
+        draw: impl FnOnce(&Canvas, &Paint) -> Result<()>,
+    ) -> Result<()> {
         let url = fill["url"]
             .as_str()
             .ok_or_else(|| invalid("Image fill requires a local URL"))?;
@@ -1012,9 +1048,9 @@ impl Renderer<'_> {
             ),
             Some(&matrix(placement.transform)),
         ));
-        self.canvas.draw_path(shape, &paint);
+        let result = draw(self.canvas, &paint);
         self.canvas.restore();
-        Ok(())
+        result
     }
 }
 

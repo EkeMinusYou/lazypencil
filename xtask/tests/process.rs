@@ -39,6 +39,59 @@ fn focused_scheduling_preserves_reproduction_order_and_excludes_only_repeated_co
 }
 
 #[test]
+fn color_font_reproductions_run_before_chromium_and_are_excluded_only_afterwards() {
+    for suite in ["graphics", "dynamic", "copy"] {
+        let targets = vec!["font_sources".into(), "render".into()];
+        let early = commands::color_font_reproduction(suite, &targets).unwrap();
+        assert_eq!(
+            early,
+            [
+                "cargo",
+                "test",
+                "--locked",
+                "--test",
+                "font_sources",
+                "color_fonts::",
+                "--",
+                "--test-threads=1"
+            ]
+        );
+        let plan = commands::plan(&util::root(), suite, &targets).unwrap();
+        let remaining = plan
+            .checks
+            .iter()
+            .filter(|command| {
+                command
+                    .windows(2)
+                    .any(|args| args == ["--test", "font_sources"])
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(remaining.len(), 1);
+        assert!(
+            remaining[0]
+                .windows(2)
+                .any(|args| args == ["--skip", commands::COLOR_FONT_REPRODUCTION])
+        );
+        assert!(!remaining[0].contains(&"--ignored".into()));
+        assert!(!remaining[0].contains(&"--include-ignored".into()));
+        assert!(!plan.build.iter().flatten().any(|arg| arg == "--skip"));
+        assert!(commands::color_font_reproduction(suite, &["render".into()]).is_none());
+    }
+    for suite in ["core", "conversation", "release", "candidate"] {
+        let targets = vec!["font_sources".into()];
+        assert!(commands::color_font_reproduction(suite, &targets).is_none());
+        assert!(
+            !commands::plan(&util::root(), suite, &targets)
+                .unwrap()
+                .checks
+                .iter()
+                .flatten()
+                .any(|arg| arg == commands::COLOR_FONT_REPRODUCTION)
+        );
+    }
+}
+
+#[test]
 fn browser_copy_focus_keeps_each_browser_condition_and_excludes_only_early_reproductions() {
     let targets = ["browser_readiness", "project", "script_scope"].map(str::to_owned);
     let plan = commands::plan(&util::root(), "browser", &targets).unwrap();

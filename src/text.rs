@@ -137,6 +137,7 @@ impl Fonts {
         }
         let mut used = Vec::new();
         let mut used_ids = std::collections::BTreeSet::new();
+        let mut native_color = false;
         let mut unknown_font = false;
         let horizontal = paragraph
             .get_line_metrics()
@@ -161,6 +162,12 @@ impl Fonts {
                 if info.count() > 0 {
                     let id = font.typeface().unique_id();
                     if used_ids.insert(id) {
+                        native_color |=
+                            [*b"COLR", *b"sbix", *b"CBDT", *b"SVG "].iter().any(|tag| {
+                                font.typeface()
+                                    .get_table_size(u32::from_be_bytes(*tag))
+                                    .is_some_and(|size| size > 0)
+                            });
                         if let Some(information) = resolved.information.get(&id) {
                             let mut information = information.clone();
                             information.synthetic_bold |= font.is_embolden();
@@ -263,6 +270,11 @@ impl Fonts {
                 "A shaped font is outside the resolved font snapshot",
             ));
         }
+        let native_runs = if native_color {
+            NativeGlyphRun::capture(&mut paragraph, check)?
+        } else {
+            Vec::new()
+        };
         let metrics = TextMetrics {
             hinting: "none",
             requested_family: spec.family.clone(),
@@ -285,36 +297,44 @@ impl Fonts {
         let ink_bounds = ink_bounds
             .map(|bounds| bounds.outset(1.0, 1.0))
             .unwrap_or_default();
-        let outline = if let Some(outline) = outline.as_ref()
-            && (spec.underline || spec.strikethrough)
-        {
-            let bounds = ink_bounds.union(crate::geometry::Rect::new(
-                0.0,
-                0.0,
-                paragraph.max_width(),
-                paragraph.height(),
-            ));
-            let decoration = decorations::geometry(&paragraph, bounds)?;
-            check()?;
-            Some(
+        let decoration =
+            if (outline.is_some() || native_color) && (spec.underline || spec.strikethrough) {
+                let bounds = ink_bounds.union(crate::geometry::Rect::new(
+                    0.0,
+                    0.0,
+                    paragraph.max_width(),
+                    paragraph.height(),
+                ));
+                let decoration = decorations::geometry(&paragraph, bounds)?;
+                check()?;
+                Some(decoration)
+            } else {
+                None
+            };
+        let outline =
+            if let (Some(outline), Some(decoration)) = (outline.as_ref(), decoration.as_ref()) {
+                Some(
+                    outline
+                        .op(decoration, skia_safe::PathOp::Union)
+                        .ok_or_else(|| {
+                            Error::new(
+                                "RENDER_ERROR",
+                                "Cannot combine glyph and decoration geometry",
+                            )
+                        })?,
+                )
+            } else {
                 outline
-                    .op(&decoration, skia_safe::PathOp::Union)
-                    .ok_or_else(|| {
-                        Error::new(
-                            "RENDER_ERROR",
-                            "Cannot combine glyph and decoration geometry",
-                        )
-                    })?,
-            )
-        } else {
-            outline
-        };
+            };
         check()?;
         Ok(TextBlock {
             paragraph,
             metrics,
             outline,
             ink_bounds,
+            native_color,
+            native_decoration: native_color.then_some(decoration).flatten(),
+            native_runs,
         })
     }
 }
@@ -375,6 +395,84 @@ pub struct TextBlock {
     pub metrics: TextMetrics,
     pub outline: Option<Path>,
     pub ink_bounds: crate::geometry::Rect,
+    pub(crate) native_color: bool,
+    native_decoration: Option<Path>,
+    native_runs: Vec<NativeGlyphRun>,
+}
+
+struct NativeGlyphRun {
+    glyphs: Vec<skia_safe::GlyphId>,
+    positions: Vec<skia_safe::Point>,
+    origin: skia_safe::Point,
+    font: skia_safe::Font,
+}
+
+impl NativeGlyphRun {
+    fn capture(paragraph: &mut Paragraph, check: &dyn Fn() -> Result<()>) -> Result<Vec<Self>> {
+        let mut runs = Vec::new();
+        let mut count = 0usize;
+        let mut error = None;
+        paragraph.visit(|_, run| {
+            if error.is_some() {
+                return;
+            }
+            if let Err(failure) = check() {
+                error = Some(failure);
+                return;
+            }
+            if let Some(run) = run {
+                count = count.saturating_add(run.count());
+                if count > 1024 * 1024 {
+                    error = Some(Error::new(
+                        "RESOURCE_LIMIT",
+                        "Color text exceeds 1048576 positioned glyphs",
+                    ));
+                    return;
+                }
+                if run.count() > 0 {
+                    runs.push(Self {
+                        glyphs: run.glyphs().to_vec(),
+                        positions: run.positions().to_vec(),
+                        origin: run.origin(),
+                        font: run.font().clone(),
+                    });
+                }
+            }
+        });
+        if let Some(error) = error {
+            return Err(error);
+        }
+        Ok(runs)
+    }
+}
+
+impl TextBlock {
+    /// Reuse the shaped glyphs; drawing native glyphs preserves their color palettes.
+    pub(crate) fn paint_native(
+        &self,
+        canvas: &skia_safe::Canvas,
+        offset: f32,
+        paint: &skia_safe::Paint,
+        check: &dyn Fn() -> Result<()>,
+    ) -> Result<()> {
+        for run in &self.native_runs {
+            for (glyphs, positions) in run.glyphs.chunks(64).zip(run.positions.chunks(64)) {
+                check()?;
+                canvas.draw_glyphs_at(
+                    glyphs,
+                    positions,
+                    (run.origin.x, run.origin.y + offset),
+                    &run.font,
+                    paint,
+                );
+            }
+        }
+        if let Some(decoration) = &self.native_decoration {
+            check()?;
+            canvas.draw_path(&decoration.with_offset((0.0, offset)), paint);
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]

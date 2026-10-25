@@ -45,6 +45,7 @@ fn original_color_font_has_independent_sfnt_checksums_and_palette_tables() {
     }
     assert_eq!(tables[b"maxp".as_slice()][4..6], 10u16.to_be_bytes());
     assert_eq!(tables[b"hhea".as_slice()][34..36], 10u16.to_be_bytes());
+    assert_eq!(tables[b"hmtx".as_slice()][14..16], 400u16.to_be_bytes());
     assert_eq!(
         tables[b"CPAL".as_slice()][14..],
         [0, 0, 255, 255, 0, 255, 0, 255]

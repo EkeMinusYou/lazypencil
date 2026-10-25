@@ -4,6 +4,24 @@ use anyhow::{Result, ensure};
 use std::{collections::BTreeSet, path::Path};
 
 pub type Invocation = Vec<String>;
+pub const COLOR_FONT_REPRODUCTION: &str = "color_fonts::";
+
+pub fn color_font_reproduction(suite: &str, targets: &[String]) -> Option<Invocation> {
+    (["graphics", "dynamic", "copy"].contains(&suite)
+        && targets.iter().any(|target| target == "font_sources"))
+    .then(|| {
+        words(&[
+            "cargo",
+            "test",
+            "--locked",
+            "--test",
+            "font_sources",
+            COLOR_FONT_REPRODUCTION,
+            "--",
+            "--test-threads=1",
+        ])
+    })
+}
 fn words(values: &[&str]) -> Invocation {
     values.iter().map(|s| (*s).into()).collect()
 }
@@ -65,6 +83,9 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
         } else {
             vec![]
         };
+    if color_font_reproduction(suite, targets).is_some() {
+        input_skip.extend(skips([COLOR_FONT_REPRODUCTION]));
+    }
     if ["graphics", "dynamic", "copy"].contains(&suite) && has("script_scope") {
         input_skip.extend(skips(["script_bindings::", "generated_browser_"]));
         input_skip.extend(skips(focus::COPY_CPU));
@@ -358,6 +379,7 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
                             "shader_uniforms",
                             "conversation_history",
                             "native_layout",
+                            "font_sources",
                         ]
                         .contains(&t.as_str())
                     })
@@ -393,6 +415,14 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
             c.extend(input_skip.clone());
             c.extend(history_skip.clone());
             checks.push(c);
+        }
+        if has("font_sources") {
+            let mut fonts = append(
+                &common,
+                &["--test", "font_sources", "--", "--test-threads=2"],
+            );
+            fonts.extend(input_skip.clone());
+            checks.push(fonts);
         }
     } else {
         let mut excluded = BTreeSet::new();

@@ -376,6 +376,20 @@ pub(super) fn draw(
     rect: SkRect,
     property: &str,
 ) -> Result<()> {
+    paint(renderer, node, fill, rect, property, |canvas, paint| {
+        canvas.draw_path(shape, paint);
+        Ok(())
+    })
+}
+
+pub(super) fn paint(
+    renderer: &mut Renderer<'_>,
+    node: &ResolvedNode,
+    fill: &Value,
+    rect: SkRect,
+    property: &str,
+    draw: impl FnOnce(&Canvas, &Paint) -> Result<()>,
+) -> Result<()> {
     renderer.project.check_cancelled()?;
     let mesh = Mesh::parse(fill)?;
     let mut paint = Paint::default();
@@ -444,6 +458,5 @@ pub(super) fn draw(
         SamplingOptions::from(skia_safe::FilterMode::Linear),
         Some(&local),
     ));
-    renderer.canvas.draw_path(shape, &paint);
-    Ok(())
+    draw(renderer.canvas, &paint)
 }
