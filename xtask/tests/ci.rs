@@ -22,6 +22,64 @@ fn focus_keeps_the_existing_reproduction_scope_for_every_source_module() {
 }
 
 #[test]
+fn font_sources_generators_and_pins_select_native_color_reproductions_before_the_full_matrix() {
+    for path in [
+        "tests/support/color_fonts.rs",
+        "tests/support/real_emoji.rs",
+        "tests/fixtures/fonts/emoji-upstream.json",
+        "tests/fixtures/fonts/regular.ttf",
+        "xtask/src/fixtures/fonts.rs",
+        "xtask/src/fixtures/fonts/color.rs",
+        "xtask/src/fixtures/emoji.rs",
+    ] {
+        assert_eq!(focus::ci_only(path), path.starts_with("xtask/"), "{path}");
+        let plan = focus::select(&util::root(), &[path.into()], "auto").unwrap();
+        assert_eq!(plan.platform, "ubuntu-24.04");
+        assert_eq!(plan.suite, "graphics", "{path}");
+        assert_eq!(plan.targets, ["font_sources"], "{path}");
+        assert!(ci::commands::color_font_reproduction(&plan.suite, &plan.targets).is_some());
+    }
+    for paths in [
+        vec!["src/text/fonts.rs"],
+        vec!["src/text/container.rs", "src/shader.rs"],
+        vec!["tests/support/real_emoji.rs", "src/shader.rs"],
+    ] {
+        let paths = paths.into_iter().map(str::to_owned).collect::<Vec<_>>();
+        let plan = focus::select(&util::root(), &paths, "auto").unwrap();
+        assert!(plan.targets.iter().any(|target| target == "font_sources"));
+        assert!(ci::commands::color_font_reproduction(&plan.suite, &plan.targets).is_some());
+        if paths.iter().any(|path| path.starts_with("src/text/")) {
+            for target in ["text", "native_layout"] {
+                assert!(plan.targets.iter().any(|actual| actual == target));
+            }
+        }
+        if paths.iter().any(|path| path == "src/shader.rs") {
+            assert_eq!(plan.suite, "dynamic");
+            assert!(
+                plan.targets
+                    .iter()
+                    .any(|target| target == "shader_uniforms")
+            );
+        }
+    }
+    // Preserve the existing priority of source-bound artifact reproductions
+    // for mixed tool-only changes. The full native gate still checks fonts.
+    for (path, expected) in [
+        ("xtask/src/ci/cache.rs", "release"),
+        ("xtask/src/dist/binary.rs", "candidate"),
+    ] {
+        let plan = focus::select(
+            &util::root(),
+            &["xtask/src/fixtures/emoji.rs".into(), path.into()],
+            "auto",
+        )
+        .unwrap();
+        assert_eq!(plan.suite, expected);
+        assert_eq!(plan.targets, ["render"]);
+    }
+}
+
+#[test]
 fn path_identity_changes_reproduce_macos_alias_and_hardlink_behavior_first() {
     for path in ["src/paths.rs", "tests/paths.rs"] {
         let plan = focus::select(&util::root(), &[path.into()], "auto").unwrap();

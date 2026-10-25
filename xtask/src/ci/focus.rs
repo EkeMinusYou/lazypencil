@@ -62,6 +62,21 @@ pub struct Plan {
     pub preprocessor: bool,
 }
 
+fn font_input(path: &str) -> bool {
+    [
+        "src/text.rs",
+        "tests/font_sources.rs",
+        "tests/support/color_fonts.rs",
+        "tests/support/real_emoji.rs",
+        "xtask/src/fixtures/fonts.rs",
+        "xtask/src/fixtures/emoji.rs",
+    ]
+    .contains(&path)
+        || path.starts_with("src/text/")
+        || path.starts_with("xtask/src/fixtures/fonts/")
+        || (path.starts_with("tests/fixtures/fonts/") && !path.ends_with(".md"))
+}
+
 pub fn ci_only(path: &str) -> bool {
     path.starts_with(".github/")
         || path.starts_with("scripts/ci/")
@@ -147,6 +162,7 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     }
     .to_owned();
     let preprocessor = preprocessor_changed(paths);
+    let font_inputs = paths.iter().any(|path| font_input(path));
     if paths
         .iter()
         .all(|path| ci_only(path) || path.starts_with("resources/licenses/native/"))
@@ -190,7 +206,9 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
             preprocessor,
         });
     }
-    if !paths.is_empty() && paths.iter().all(|p| ci_only(p)) {
+    // Font-only generators change native runtime fixtures without becoming
+    // application compiler inputs. Keep their native focus after higher-priority gates.
+    if !paths.is_empty() && !font_inputs && paths.iter().all(|p| ci_only(p)) {
         return Ok(Plan {
             platform,
             suite: "ci".into(),
@@ -465,7 +483,8 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
             "resources/",
             "vendor/",
         ],
-    ) || !stems.is_disjoint(&rendering)
+    ) || font_inputs
+        || !stems.is_disjoint(&rendering)
         || !stems.is_disjoint(&modules)
         || has(
             &stems,
@@ -482,6 +501,9 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         )
     {
         let mut targets = selected();
+        if font_inputs {
+            targets.insert("font_sources".into());
+        }
         if any(paths, &["src/layout.rs"], &["src/layout/"]) {
             targets.extend(["layout", "graphics", "render"].map(str::to_owned));
         }
@@ -516,6 +538,17 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         }
         ("core".into(), targets)
     };
+    if font_inputs {
+        if suite == "shader" {
+            suite = "dynamic".into();
+        } else if ["core", "conversation"].contains(&suite.as_str()) {
+            suite = "graphics".into();
+        }
+        targets.insert("font_sources".into());
+        if any(paths, &["src/text.rs"], &["src/text/"]) {
+            targets.insert("text".into());
+        }
+    }
     if project {
         targets.extend(["project", "queries"].map(str::to_owned));
     }

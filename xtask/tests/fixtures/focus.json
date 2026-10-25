@@ -357,6 +357,7 @@
       "platform": "ubuntu-24.04",
       "suite": "graphics",
       "targets": [
+        "font_sources",
         "native_layout",
         "text"
       ],
@@ -1236,6 +1237,7 @@
       "platform": "ubuntu-24.04",
       "suite": "graphics",
       "targets": [
+        "font_sources",
         "native_layout",
         "text"
       ],
@@ -1250,6 +1252,7 @@
       "platform": "ubuntu-24.04",
       "suite": "graphics",
       "targets": [
+        "font_sources",
         "native_layout",
         "text"
       ],
@@ -1264,6 +1267,7 @@
       "platform": "ubuntu-24.04",
       "suite": "graphics",
       "targets": [
+        "font_sources",
         "native_layout",
         "text"
       ],
