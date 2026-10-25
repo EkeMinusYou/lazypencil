@@ -82,11 +82,11 @@ pub(super) fn request(store: &Store, id: &str, operations: Value, dry_run: bool)
     serde_json::from_value(json!({"request_id":id,"expected_revision":metadata["revision"],"expected_dependency_revision":metadata["dependency_revision"],"operations":operations,"dry_run":dry_run})).unwrap()
 }
 
-pub(super) fn apply(store: &Store, id: &str, operations: Value) -> Value {
+pub(crate) fn apply(store: &Store, id: &str, operations: Value) -> Value {
     service::apply_request(store, &request(store, id, operations, false)).unwrap()
 }
 
-pub(super) fn recopy(
+pub(crate) fn recopy(
     source: &Store,
     source_id: &str,
     destination: &Path,
