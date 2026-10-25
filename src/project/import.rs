@@ -578,8 +578,10 @@ impl Copier<'_> {
             .as_object()
             .ok_or_else(|| copy_error("A copied node must be an object"))?;
         for (key, value) in object {
-            if key == "inputs" && script.is_some() {
-                let header = &script.as_ref().expect("script").header;
+            if key == "inputs"
+                && let Some(script) = &script
+            {
+                let header = &script.header;
                 for input in &header.inputs {
                     if let Some(value) = value.get(&input.name) {
                         self.scan_value(origin, value)?;
@@ -768,8 +770,10 @@ impl Copier<'_> {
             }
         }
         for (key, value) in &mut result {
-            if key == "inputs" && script.is_some() {
-                let header = &script.as_ref().expect("script").header;
+            if key == "inputs"
+                && let Some(script) = &script
+            {
+                let header = &script.header;
                 if let Some(values) = value.as_object_mut() {
                     for input in &header.inputs {
                         if let Some(value) = values.get_mut(&input.name) {
