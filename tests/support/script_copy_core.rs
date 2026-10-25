@@ -232,7 +232,7 @@ fn bound_script_detach_retains_declared_owner_and_can_be_copied_independently_ag
     apply(
         &target,
         "make-detached-reusable",
-        json!([{"op":"update","target":"use","set":{"reusable":true}}]),
+        json!([{"op":"update","target":"use","set":{"reusable":true,"name":"Detached Generator"}}]),
     );
     let (independent, _) = recopy(&target, "use", &temp.path().join("independent"), "last.");
     fs::remove_dir_all(temp.path().join("linked")).unwrap();

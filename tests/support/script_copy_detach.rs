@@ -106,7 +106,7 @@ fn detached_bound_scopes_survive_another_import_and_independent_copy() {
         fixture::apply(
             &linked,
             "detach-first",
-            json!([{"op":"detach_instance","target":"use"},{"op":"update","target":"use","set":{"reusable":true}}]),
+            json!([{"op":"detach_instance","target":"use"},{"op":"update","target":"use","set":{"reusable":true,"name":"Detached Generator"}}]),
         );
         let first = png(&linked, None);
         assert_eq!(before, first);
@@ -114,7 +114,7 @@ fn detached_bound_scopes_survive_another_import_and_independent_copy() {
         fixture::apply(
             &another,
             "detach-again",
-            json!([{"op":"detach_instance","target":"use"},{"op":"update","target":"use","set":{"reusable":true}}]),
+            json!([{"op":"detach_instance","target":"use"},{"op":"update","target":"use","set":{"reusable":true,"name":"Detached Twice"}}]),
         );
         assert_eq!(
             another.read().unwrap().node("use").unwrap()["metadata"]["lazypencil"]["script_bindings"]
