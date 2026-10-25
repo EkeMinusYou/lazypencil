@@ -7,12 +7,14 @@ use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    io::{Cursor, Read},
+    io::{Cursor, Read, Write},
     path::{Path, PathBuf},
     process::Command as Process,
 };
 use unicode_casefold::UnicodeCaseFold;
 use unicode_normalization::UnicodeNormalization;
+
+pub mod binary;
 
 pub const MAX_FILES: usize = 10_000;
 pub const MAX_BYTES: u64 = 256 * 1024 * 1024;
@@ -21,6 +23,12 @@ pub const MANIFEST: &str = "SOURCE-MANIFEST.json";
 
 #[derive(Subcommand)]
 pub enum Command {
+    Binary(binary::Arguments),
+    VerifyBinary {
+        archive: PathBuf,
+        #[arg(long)]
+        extract: Option<PathBuf>,
+    },
     Source {
         #[arg(long, default_value_os_t = util::root())]
         root: PathBuf,
@@ -41,6 +49,10 @@ pub enum Command {
 impl Command {
     pub fn run(self) -> Result<()> {
         match self {
+            Self::Binary(arguments) => util::print(&binary::create(&arguments)?),
+            Self::VerifyBinary { archive, extract } => {
+                util::print(&binary::verify(&archive, extract.as_deref())?)
+            }
             Self::Source {
                 root,
                 output,
@@ -382,20 +394,45 @@ pub fn source(root: &Path, output: &Path, epoch: u32, allow_dirty: bool) -> Resu
         .unwrap_or(Path::new("."));
     fs::create_dir_all(parent)?;
     let temporary = tempfile::NamedTempFile::new_in(parent)?;
-    let compressed = GzBuilder::new()
-        .mtime(epoch)
-        .write(temporary.as_file(), Compression::default());
-    let mut archive = tar::Builder::new(compressed);
     let prefix = format!(
         "{}-{}",
         package["name"].as_str().unwrap(),
         package["version"].as_str().unwrap()
     );
-    for (name, bytes, mode) in std::iter::once((MANIFEST, encoded.as_slice(), 0o644)).chain(
-        files
-            .iter()
-            .map(|(name, (bytes, mode))| (name.as_str(), bytes.as_slice(), *mode)),
-    ) {
+    write_archive(
+        temporary.as_file(),
+        &prefix,
+        epoch,
+        std::iter::once((MANIFEST, encoded.as_slice(), 0o644)).chain(
+            files
+                .iter()
+                .map(|(name, (bytes, mode))| (name.as_str(), bytes.as_slice(), *mode)),
+        ),
+    )?;
+    verify(temporary.path(), None)?;
+    temporary.persist_noclobber(output).map_err(|e| e.error)?;
+    Ok(
+        json!({"archive": output.canonicalize()?, "sha256": util::file_digest(output)?, "files": files.len(), "package": package, "git": provenance}),
+    )
+}
+
+fn write_archive<'a>(
+    writer: impl Write,
+    prefix: &str,
+    epoch: u32,
+    entries: impl IntoIterator<Item = (&'a str, &'a [u8], u32)>,
+) -> Result<()> {
+    util::safe_path(prefix)?;
+    let compressed = GzBuilder::new()
+        .mtime(epoch)
+        .write(writer, Compression::default());
+    let mut archive = tar::Builder::new(compressed);
+    for (name, bytes, mode) in entries {
+        util::safe_path(name)?;
+        ensure!(
+            [0o644, 0o755].contains(&mode),
+            "Unsupported archive permissions"
+        );
         let mut header = tar::Header::new_gnu();
         header.set_size(bytes.len() as u64);
         header.set_mode(mode);
@@ -406,11 +443,7 @@ pub fn source(root: &Path, output: &Path, epoch: u32, allow_dirty: bool) -> Resu
         archive.append_data(&mut header, format!("{prefix}/{name}"), Cursor::new(bytes))?;
     }
     archive.into_inner()?.finish()?;
-    verify(temporary.path(), None)?;
-    temporary.persist_noclobber(output).map_err(|e| e.error)?;
-    Ok(
-        json!({"archive": output.canonicalize()?, "sha256": util::file_digest(output)?, "files": files.len(), "package": package, "git": provenance}),
-    )
+    Ok(())
 }
 
 pub fn read_archive(path: &Path) -> Result<Files> {
@@ -517,26 +550,33 @@ pub fn verify(path: &Path, extract: Option<&Path>) -> Result<Value> {
         "Distribution package identity mismatch"
     );
     if let Some(extract) = extract {
-        let parent = extract
-            .parent()
-            .filter(|p| !p.as_os_str().is_empty())
-            .unwrap_or(Path::new("."));
-        fs::create_dir_all(parent)?;
-        let temporary = tempfile::tempdir_in(parent)?;
-        for (name, (data, mode)) in &files {
-            let destination = temporary.path().join(name);
-            fs::create_dir_all(destination.parent().unwrap())?;
-            fs::write(&destination, data)?;
-            util::chmod(&destination, *mode)?;
-        }
-        fs::write(temporary.path().join(MANIFEST), &members[manifest_name].0)?;
-        fs::create_dir(extract).context("Extraction destination must not exist")?;
-        for entry in fs::read_dir(temporary.path())? {
-            let entry = entry?;
-            fs::rename(entry.path(), extract.join(entry.file_name()))?;
-        }
+        extract_files(&files, MANIFEST, &members[manifest_name].0, extract)?;
     }
     Ok(
         json!({"package":package,"files":files.len(),"sha256":util::file_digest(path)?,"git":manifest.git}),
     )
+}
+
+fn extract_files(files: &Files, manifest: &str, bytes: &[u8], destination: &Path) -> Result<()> {
+    let parent = destination
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    fs::create_dir_all(parent)?;
+    let temporary = tempfile::tempdir_in(parent)?;
+    for (name, (data, mode)) in files {
+        let path = temporary.path().join(name);
+        fs::create_dir_all(path.parent().unwrap())?;
+        fs::write(&path, data)?;
+        util::chmod(&path, *mode)?;
+    }
+    let manifest_path = temporary.path().join(manifest);
+    fs::write(&manifest_path, bytes)?;
+    util::chmod(&manifest_path, 0o644)?;
+    fs::create_dir(destination).context("Extraction destination must not exist")?;
+    for entry in fs::read_dir(temporary.path())? {
+        let entry = entry?;
+        fs::rename(entry.path(), destination.join(entry.file_name()))?;
+    }
+    Ok(())
 }

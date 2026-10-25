@@ -49,6 +49,11 @@ fn find<'a>(value: &'a mut Value, id: &str) -> Option<&'a mut Value> {
 }
 pub fn compile(s: &Session, log: &str) -> Result<()> {
     let command = invocation(s, false)?;
+    validate_cached_map(s, &command)?;
+    s.execute(&command, 3600, log, false)
+}
+
+pub fn validate_cached_map(s: &Session, command: &[String]) -> Result<()> {
     if command.iter().any(|arg| arg == "--") {
         let map = crate::evidence::link_map::path(&s.target);
         ensure!(!map.is_symlink(), "Release link map must not be linked");
@@ -57,7 +62,7 @@ pub fn compile(s: &Session, log: &str) -> Result<()> {
             "Release executable lacks its source-bound link map; prune application outputs before rebuilding"
         );
     }
-    s.execute(&command, 3600, log, false)
+    Ok(())
 }
 
 pub fn invocation(s: &Session, json: bool) -> Result<Vec<String>> {

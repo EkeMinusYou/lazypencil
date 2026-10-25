@@ -64,11 +64,45 @@ jobs:
             ${{ runner.temp }}/lazypencil-material-fonts
       - name: Prepare original standard-library evidence
         run: cargo xtask ci toolchain-evidence --output "$RUNNER_TEMP/toolchain-evidence"
+      - name: Remove application outputs from dependency fallback caches
+        run: cargo xtask ci cache prune --source "$RUNNER_TEMP/lazypencil-source"
+      - name: Identify source-bound application outputs
+        id: application-key
+        if: steps.cache-key.outcome == 'success'
+        continue-on-error: true
+        run: cargo xtask ci cache application identify --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
+      - name: Restore source-bound application outputs
+        if: steps.application-key.outcome == 'success'
+        continue-on-error: true
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          key: ${{ steps.application-key.outputs.primary }}
+          restore-keys: ${{ steps.application-key.outputs.checkpoint }}
+          path: ${{ runner.temp }}/lazypencil-application-cache
+      - name: Validate application reuse or keep a fresh build
+        if: steps.application-key.outcome == 'success'
+        timeout-minutes: 3
+        run: cargo xtask ci cache application restore-or-prune --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
       - name: Compile the release executable and record selected Cargo artifacts
         run: cargo xtask ci native evidence-build
       - name: Collect and reverify original notices against this build
+        id: notices
         run: cargo xtask evidence --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --cargo-json "$RUNNER_TEMP/release-cargo.jsonl" --revision '${{ github.sha }}' --output "$RUNNER_TEMP/release-evidence" --toolchain-evidence "$RUNNER_TEMP/toolchain-evidence" --link-map "$CARGO_TARGET_DIR/release/lazypencil.map"
+      - name: Package and smoke the source-bound binary candidate
+        timeout-minutes: 10
+        run: cargo xtask ci native candidate
+      - name: Retain the verified candidate and isolated smoke evidence
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: binary-candidate-${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/lazypencil-candidate.tar.gz
+            ${{ runner.temp }}/candidate-smoke.json
+            ${{ runner.temp }}/candidate-smoke.png
+          if-no-files-found: error
+          retention-days: 3
       - name: Retain review evidence without publishing the executable
+        if: ${{ !cancelled() && steps.notices.outcome == 'success' }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: release-evidence-${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}

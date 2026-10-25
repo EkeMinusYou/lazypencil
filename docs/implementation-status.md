@@ -1,5 +1,9 @@
 # lazypencil 実装と公開準備の状況
 
+2026-10-26: 生成 browser の `b15bfa5` は [GHA `40234583740`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40234583740) の先行 Linux を成功した。非表示の保存用部品を除き、実際の生成ノードを検査する fixture に直した上で、両形式・7経路・元ファイル削除後と再コピー後の42画像を独立照合した。全21,504画素・86,016 RGBA 成分、PNG hash、前後のバイト列、素材 revision は一致した。宣言なしの同名 URL と、コピー先だけにある未知ページの拒否も通した。全3環境の最終検証は進行中である。
+
+対応ソース・全収集済み表示・検証記録を含むバイナリー配布候補を `cargo xtask dist binary`／`verify-binary` で作成・再検証する実装を追加する。アーカイブと展開処理はソース配布と共有する。初回3 target のヘッダー、ソース・実行ファイル・link map・notice の対応、全構成ファイル・権限・hash を確認し、別ソース・CPU・実行ファイル・欠落した表示・改変を拒否する。GHA は通常検証の実行ファイル／map を復元し、強制再ビルドせず Cargo で再確認する。展開後は元の native source／build tree を隠して版表示と実 QuickJS 描画を試験し、失敗・panic・途中失敗でも元へ戻す。新しい配布コードと試験はローカルの整形・actionlint・差分検査までで、Rust の実行は未検証である。進行中 CI を中断せず、終了後に送る。正式リリースのレビュー・署名・環境保証は継続する。
+
 2026-10-26: 共通 release recipe の `fb05d40` は [GHA `40231164855`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40231164855) の先行検証・全3環境・監査・source を成功した。xtask 103件、通常／core は Linux 各1,145件・macOS 1,135件で、各環境の365必須画像と42回の release 書き出しを維持した。全3環境の raw map、直接ロード宣言、実行ファイルと benchmark の対応を独立照合し、静的9画像と6 scene hash は以前の基準と一致した。独自 contract の36画像・4,054,272画素と、配布ソース1,112ファイル・31,036,145バイトも照合した。先行 Linux の release コンパイル約194秒に対し、同じコミットの54ファイルを再利用した全体側の Cargo 確認は0.19秒、最終確認は0.21秒だった。全体は31分36秒であり、異なる runner 負荷から短縮の因果関係までは主張しない。アプリに埋め込まない native notice の確認資料をアプリキャッシュの識別から除外する追加変更を用意し、検査そのものと compiler dep-info の拒否条件は維持する。製品全体の完成条件は継続する。
 
 2026-10-26: 生成 browser の独立コピーで、script の宣言済み Web 素材 namespace を `browser_library` と既存 bundle に保持する実装を追加する。URL を所有する文脈、metadata の継承、ref／descendant／children の上書き、入れ子 script、再コピーを扱う。両形式の7経路と42画像、同じ URL の異なるコピー先素材、未宣言ページの拒否を試験に追加し、先行検証で早期に実行する。新しい実装は GHA 未検証である。進行中の `fb05d40` の release recipe 検証は先行 Linux が成功し、全3環境の終了を待ってから次の変更を送る。試験・終了待ちの基準と初回リリース対象は維持する。

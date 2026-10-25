@@ -15,12 +15,14 @@ use std::{
 };
 
 pub mod browser;
+mod candidate;
 pub mod parallel;
 pub mod release;
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum Stage {
     EvidenceBuild,
+    Candidate,
     Source,
     Notices,
     FocusCore,
@@ -213,12 +215,8 @@ impl Session {
         let core = ["core", "conversation"].contains(&args.suite.as_str());
         match args.stage {
             Stage::EvidenceBuild => {
-                super::cache::prune(&self.root, &self.target)?;
                 let invocation = release::invocation(self, true)?;
-                let map = crate::evidence::link_map::path(&self.target);
-                if invocation.iter().any(|arg| arg == "--") {
-                    ensure!(!map.exists() && !map.is_symlink(), "Link map must be fresh");
-                }
+                release::validate_cached_map(self, &invocation)?;
                 let mut command = self.command(&invocation);
                 self.capture(&mut command, 3600, "release-cargo.jsonl")?;
                 process::checked(
@@ -227,6 +225,7 @@ impl Session {
                 )?;
                 Ok(())
             }
+            Stage::Candidate => candidate::run(self),
             Stage::Source => {
                 let archive = self.temporary.join("native-source.tar.gz");
                 dist::source(&util::root(), &archive, 0, false)?;
