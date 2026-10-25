@@ -71,6 +71,23 @@ fn inherited_script_overrides_copy_without_running_code_and_survive_independent_
                 }
             );
             Project::load(&copied).unwrap().resolve().unwrap();
+            let target = fixture::active(&copied, &id).address;
+            apply(
+                &copied,
+                "detach",
+                json!([{"op":"detach_instance","target":target}]),
+            );
+            let detached = fixture::active(&copied, &id);
+            assert!(!detached.is_instance);
+            assert_eq!(
+                detached.properties["metadata"]["keep"],
+                if ["metadata", "combined"].contains(mode) {
+                    "override"
+                } else {
+                    "base"
+                }
+            );
+            Project::load(&copied).unwrap().resolve().unwrap();
         }
     }
 }

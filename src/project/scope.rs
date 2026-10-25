@@ -121,6 +121,14 @@ impl Project {
         if value["type"] != "script" {
             return Ok(());
         }
+        // A materialized script owns its effective user metadata. Partial ref
+        // envelopes describe inheritance and must not become ordinary metadata.
+        let properties = value.as_object_mut().expect("script");
+        if let Some(metadata) = original.properties.get("metadata") {
+            properties.insert("metadata".into(), metadata.clone());
+        } else {
+            properties.remove("metadata");
+        }
         if let Some(context) = &original.input_context {
             let alias = self.detached_scope(&context.origin)?;
             let mut context = context.values.clone();
