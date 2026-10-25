@@ -49,6 +49,15 @@ pub(super) fn bind(project: &Project, node: &ResolvedNode) -> Result<Option<Boun
     else {
         return Ok(None);
     };
+    bind_value(project, node, value, node.property_source("metadata"))
+}
+
+pub(super) fn bind_value(
+    project: &Project,
+    node: &ResolvedNode,
+    value: &Value,
+    owner: &Path,
+) -> Result<Option<Bound>> {
     if value.to_string().len() > 4 * 1024 * 1024 {
         return Err(invalid("Script bindings exceed 4 MiB"));
     }
@@ -105,7 +114,6 @@ pub(super) fn bind(project: &Project, node: &ResolvedNode) -> Result<Option<Boun
     {
         return Ok(None);
     }
-    let owner = node.property_source("metadata");
     let origin = match &values.library {
         Some(alias) => project.scope_document(owner, alias)?,
         None => owner.to_path_buf(),

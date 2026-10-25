@@ -46,9 +46,18 @@ impl Project {
     pub(super) fn bind_script_scope(&self, node: &mut ResolvedNode) -> Result<()> {
         node.script_scope = None;
         node.script_input_scope = None;
+        node.input_context = None;
         node.script_bindings = super::bindings::bind(self, node)?;
         if node.kind() != "script" {
             return Ok(());
+        }
+        if let Some(value) = node
+            .properties
+            .get("metadata")
+            .and_then(|v| v.pointer("/lazypencil/script_input_context"))
+        {
+            node.input_context =
+                super::script_context::bind(self, node, value, node.property_source("metadata"))?;
         }
         let Some(value) = node
             .properties
@@ -111,6 +120,32 @@ impl Project {
     ) -> Result<()> {
         if value["type"] != "script" {
             return Ok(());
+        }
+        if let Some(context) = &original.input_context {
+            let alias = self.detached_scope(&context.origin)?;
+            let mut context = context.values.clone();
+            context.library = (!alias.is_empty()).then_some(alias);
+            let metadata = value
+                .as_object_mut()
+                .expect("script")
+                .entry("metadata")
+                .or_insert_with(|| json!({"type":"lazypencil"}))
+                .as_object_mut()
+                .ok_or_else(|| invalid("Script metadata must be an object"))?;
+            let namespace = metadata
+                .entry("lazypencil")
+                .or_insert_with(|| json!({}))
+                .as_object_mut()
+                .ok_or_else(|| invalid("The lazypencil namespace must be an object"))?;
+            namespace.insert(
+                "script_input_context".into(),
+                serde_json::to_value(context).expect("input context"),
+            );
+        } else if let Some(namespace) = value
+            .pointer_mut("/metadata/lazypencil")
+            .and_then(Value::as_object_mut)
+        {
+            namespace.remove("script_input_context");
         }
         let retained = if let Some(bound) = &original.script_bindings {
             let mut values = bound.values.clone();

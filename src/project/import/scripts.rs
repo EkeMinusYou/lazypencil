@@ -13,8 +13,9 @@ pub(super) struct Scope {
 
 pub(super) struct Info {
     pub(super) header: Header,
-    resolved: ResolvedNode,
+    pub(super) resolved: ResolvedNode,
     uri: String,
+    source: Key,
 }
 
 impl Copier<'_> {
@@ -28,6 +29,21 @@ impl Copier<'_> {
         if resolved.kind() != "script" {
             return Ok(None);
         }
+        self.script_info_resolved(
+            resolved,
+            (
+                origin.into(),
+                node["id"].as_str().expect("script ID").into(),
+            ),
+        )
+        .map(Some)
+    }
+
+    pub(super) fn script_info_resolved(
+        &mut self,
+        resolved: ResolvedNode,
+        source: Key,
+    ) -> Result<Info> {
         let uri = resolved
             .properties
             .get("scriptUri")
@@ -40,19 +56,20 @@ impl Copier<'_> {
         self.project.capture_asset(&path, "script")?;
         let code = std::str::from_utf8(&self.project.asset(&path)?.bytes)
             .map_err(|_| copy_error("Copied script source must be UTF-8"))?;
-        Ok(Some(Info {
+        Ok(Info {
             header: Header::parse(code)?,
             resolved,
             uri,
-        }))
+            source,
+        })
     }
 
-    pub(super) fn scan_script(&mut self, origin: &Path, node: &Value) -> Result<Option<Info>> {
-        let Some(info) = self.script_info(origin, node)? else {
-            return Ok(None);
-        };
+    pub(super) fn scan_script_info(&mut self, info: &Info) -> Result<()> {
         self.script_scope(info.resolved.script_origin())?;
         self.script_scope(info.resolved.script_input_origin())?;
+        if info.resolved.properties.contains_key("inputs") {
+            self.script_scope(info.resolved.property_source("inputs"))?;
+        }
         if let Some(bound) = &info.resolved.script_bindings {
             self.script_scope(&bound.origin)?;
             if let Some(assets) = &bound.values.assets {
@@ -65,10 +82,7 @@ impl Copier<'_> {
                 }
             }
         }
-        let source_key = self.key(&(
-            origin.into(),
-            node["id"].as_str().expect("script ID").into(),
-        ))?;
+        let source_key = self.key(&info.source)?;
         if let Some(assets) = self.options.script_assets.get(&source_key).cloned() {
             if assets.len() > 4096 {
                 return Err(copy_error("A script asset manifest exceeds 4096 entries"));
@@ -89,16 +103,7 @@ impl Copier<'_> {
                     .insert((owner.into(), asset.uri, kind.into()));
             }
         }
-        if node["type"] == "ref"
-            && node.get("scriptUri").is_some()
-            && node.get("metadata").is_none()
-        {
-            return Err(Error::new(
-                "UNSUPPORTED_FEATURE",
-                "A copied source override needs a separately preserved metadata inheritance scope",
-            ));
-        }
-        Ok(Some(info))
+        Ok(())
     }
 
     fn script_scope(&mut self, origin: &Path) -> Result<()> {
@@ -335,6 +340,141 @@ impl Copier<'_> {
         Ok(())
     }
 
+    pub(super) fn script_input_expression(
+        &self,
+        origin: &Path,
+        node: &ResolvedNode,
+        name: &str,
+        value: &Value,
+    ) -> Result<(PathBuf, Value)> {
+        if let Some(context) = &node.input_context {
+            Ok((
+                context.origin.clone(),
+                context.values.values.get(name).unwrap_or(value).clone(),
+            ))
+        } else {
+            Ok((origin.into(), value.clone()))
+        }
+    }
+
+    pub(super) fn copied_input_value(
+        &self,
+        _origin: &Path,
+        info: &Info,
+        name: &str,
+        raw: &Value,
+    ) -> Result<Value> {
+        let node = &info.resolved;
+        let (origin, value) =
+            self.script_input_expression(node.property_source("inputs"), node, name, raw)?;
+        if let Some(variable) = value.as_str().and_then(|v| v.strip_prefix('$')) {
+            let known = node
+                .input_context
+                .as_ref()
+                .is_none_or(|context| context.values.variables.values().any(|v| v == variable));
+            if known
+                && let Ok(key) = self.project.variable_key(&origin, variable)
+                && let Some(target) = self.vars.get(&key)
+            {
+                return Ok(json!(format!("${target}")));
+            }
+            return Ok(value);
+        }
+        if info
+            .header
+            .inputs
+            .iter()
+            .any(|input| input.name == name && matches!(input.kind, InputKind::Ref))
+            && let Some(reference) = value.as_str().filter(|v| !v.is_empty())
+        {
+            let (origin, reference) = if let Some(context) = &node.input_context {
+                let target = context
+                    .values
+                    .components
+                    .get(reference)
+                    .map(String::as_str)
+                    .unwrap_or(reference);
+                (context.origin.as_path(), target)
+            } else if let Some(bound) = &node.script_bindings
+                && bound.inputs_bound
+            {
+                let map = bound
+                    .values
+                    .input_components
+                    .as_ref()
+                    .unwrap_or(&bound.values.components);
+                (
+                    bound.origin.as_path(),
+                    map.get(reference).map(String::as_str).unwrap_or(reference),
+                )
+            } else {
+                (node.script_input_origin(), reference)
+            };
+            let (path, definition) = self.project.lookup_node(origin, reference)?;
+            return Ok(json!(self.node_target(&(
+                path,
+                definition["id"].as_str().expect("ref ID").into()
+            ))?));
+        }
+        Ok(value)
+    }
+
+    fn input_context(&self, info: &Info, budget: &mut Budget) -> Result<Option<Value>> {
+        let node = &info.resolved;
+        let Some(values) = node.properties.get("inputs").and_then(Value::as_object) else {
+            return Ok(None);
+        };
+        let variables = if let Some(old) = &node.input_context {
+            composition::mapped(&old.values.variables, budget, |name| {
+                self.vars
+                    .get(&(old.origin.clone(), name.into()))
+                    .cloned()
+                    .ok_or_else(|| copy_error("Missing copied input variable"))
+            })?
+        } else {
+            self.script_scopes[node.property_source("inputs")]
+                .variables
+                .iter()
+                .map(|(name, key)| {
+                    budget.pair(name, &self.vars[key])?;
+                    Ok((name.clone(), json!(self.vars[key])))
+                })
+                .collect::<Result<Map<_, _>>>()?
+        };
+        let components = if let Some(old) = &node.input_context {
+            composition::mapped(&old.values.components, budget, |id| {
+                self.node_target(&(old.origin.clone(), id.into()))
+            })?
+        } else if let Some(bound) = &node.script_bindings
+            && bound.inputs_bound
+        {
+            composition::mapped(
+                bound
+                    .values
+                    .input_components
+                    .as_ref()
+                    .unwrap_or(&bound.values.components),
+                budget,
+                |id| self.node_target(&(bound.origin.clone(), id.into())),
+            )?
+        } else {
+            self.component_bindings(node.script_input_origin(), budget)?
+        };
+        let values = values
+            .iter()
+            .map(|(name, value)| {
+                let value =
+                    self.copied_input_value(node.property_source("inputs"), info, name, value)?;
+                budget.key(name)?;
+                budget.charge(value.to_string().len() + 4)?;
+                Ok((name.clone(), value))
+            })
+            .collect::<Result<Map<_, _>>>()?;
+        Ok(Some(
+            json!({"version":1,"values":values,"variables":variables,"components":components}),
+        ))
+    }
+
     fn component_bindings(&self, origin: &Path, budget: &mut Budget) -> Result<Map<String, Value>> {
         self.script_scopes[origin]
             .components
@@ -379,43 +519,40 @@ impl Copier<'_> {
 
     pub(super) fn rewrite_script(
         &mut self,
-        origin: &Path,
+        _origin: &Path,
         node: &Value,
         result: &mut Map<String, Value>,
         info: Option<&Info>,
     ) -> Result<()> {
         let Some(info) = info else { return Ok(()) };
-        if node["type"] == "ref" && node.get("metadata").is_none() {
-            if let Some(inputs) = node.get("inputs").and_then(Value::as_object) {
-                for input in &info.header.inputs {
-                    if !matches!(input.kind, InputKind::Ref) {
-                        continue;
-                    }
-                    let Some(value) = inputs
-                        .get(&input.name)
-                        .and_then(Value::as_str)
-                        .filter(|v| !v.is_empty())
-                    else {
-                        continue;
-                    };
-                    if value.starts_with('$') {
-                        return Err(Error::new(
-                            "UNSUPPORTED_FEATURE",
-                            "A variable ref override needs a separately preserved input binding scope",
-                        ));
-                    }
-                    let (path, definition) = self
-                        .project
-                        .lookup_node(info.resolved.script_input_origin(), value)?;
-                    result.get_mut("inputs").expect("inputs")[&input.name] = json!(
-                        self.node_target(&(path, definition["id"].as_str().expect("ID").into()))?
-                    );
-                }
+        let old_carrier = super::super::script_context::override_value(
+            node.as_object().expect("script properties"),
+        )?;
+        let metadata = old_carrier
+            .as_ref()
+            .map_or(node.get("metadata").is_some(), |v| v.metadata.is_some());
+        let full = node["type"] == "script";
+        let output = full || metadata || node.get("scriptUri").is_some();
+        if !full && !metadata && node.get("scriptUri").is_none() && node.get("inputs").is_none() {
+            if old_carrier.is_some() {
+                result.remove("metadata");
             }
             return Ok(());
         }
+        if metadata {
+            result.insert(
+                "metadata".into(),
+                info.resolved
+                    .properties
+                    .get("metadata")
+                    .cloned()
+                    .unwrap_or(json!({"type":"lazypencil"})),
+            );
+        } else {
+            result.remove("metadata");
+        }
         let mut budget = Budget::new(self.script_binding_bytes);
-        let output = info.resolved.script_origin();
+        let output_scope = info.resolved.script_origin();
         let input = info.resolved.script_input_origin();
         let uri = self.asset(
             info.resolved.property_source("scriptUri"),
@@ -425,21 +562,20 @@ impl Copier<'_> {
         if node["type"] == "script" || node.get("scriptUri").is_some() {
             result.insert("scriptUri".into(), json!(uri));
         }
-        let mut bindings = if let Some(bound) = &info.resolved.script_bindings {
-            let key = self.key(&(
-                origin.into(),
-                node["id"].as_str().expect("script ID").into(),
-            ))?;
+        let mut bindings = if !output {
+            Value::Null
+        } else if let Some(bound) = &info.resolved.script_bindings {
+            let key = self.key(&info.source)?;
             let additional = self
                 .options
                 .script_assets
                 .get(&key)
                 .cloned()
                 .unwrap_or_default();
-            self.compose_bindings(bound, &uri, input, output, &additional, &mut budget)?
+            self.compose_bindings(bound, &uri, input, output_scope, &additional, &mut budget)?
         } else {
             let mut descendants = Map::new();
-            for (name, key) in &self.script_scopes[output].components {
+            for (name, key) in &self.script_scopes[output_scope].components {
                 if self.reuse.contains_key(key) {
                     continue;
                 }
@@ -452,7 +588,7 @@ impl Copier<'_> {
                 self.override_paths(&expanded, "", "", &mut paths, &mut budget)?;
                 descendants.insert(name.clone(), Value::Object(paths));
             }
-            let variables = self.script_scopes[output]
+            let variables = self.script_scopes[output_scope]
                 .variables
                 .iter()
                 .map(|(name, key)| {
@@ -462,23 +598,34 @@ impl Copier<'_> {
                 .collect::<Result<Map<_, _>>>()?;
             let mut themes = Map::new();
             for (_, name) in self.axes.keys() {
-                let target = self.axis_target(output, name)?;
+                let target = self.axis_target(output_scope, name)?;
                 budget.pair(name, &target)?;
                 themes.insert(name.clone(), json!(target));
             }
-            for (key, target) in &self.script_scopes[output].assets {
+            for (key, target) in &self.script_scopes[output_scope].assets {
                 budget.pair(key, target)?;
             }
-            json!({"version":1,"script_uri":uri,"components":self.component_bindings(output,&mut budget)?,"input_components":self.component_bindings(input,&mut budget)?,
-                "variables":variables,"themes":themes,"descendants":descendants,"assets":self.script_scopes[output].assets})
+            json!({"version":1,"script_uri":uri,"components":self.component_bindings(output_scope,&mut budget)?,"input_components":self.component_bindings(input,&mut budget)?,
+                "variables":variables,"themes":themes,"descendants":descendants,"assets":self.script_scopes[output_scope].assets})
         };
         let inputs_hash = result.get("inputs").map(|value| {
             let mut value = value.clone();
             value.sort_all_objects();
             hash(value.to_string().as_bytes())
         });
-        bindings["inputs_hash"] = json!(inputs_hash);
+        if output {
+            bindings["inputs_hash"] = json!(inputs_hash);
+        }
+        let context = if full || metadata || node.get("inputs").is_some() {
+            self.input_context(info, &mut budget)?
+        } else {
+            None
+        };
         self.script_binding_bytes = self.script_binding_bytes.saturating_add(budget.bytes());
+        if !full && !metadata {
+            result.insert("metadata".into(),json!({"type":"lazypencil","lazypencil":{"script_override":{"version":1,"metadata":null,"output":if output {Some(bindings)} else {None},"input":context}}}));
+            return Ok(());
+        }
         let metadata = result
             .entry("metadata")
             .or_insert_with(|| json!({"type":"lazypencil"}))
@@ -491,6 +638,10 @@ impl Copier<'_> {
             .ok_or_else(|| copy_error("The lazypencil namespace must be an object"))?;
         namespace.remove("script_scope");
         namespace.insert("script_bindings".into(), bindings);
+        namespace.remove("script_input_context");
+        if let Some(context) = context {
+            namespace.insert("script_input_context".into(), context);
+        }
         let _ = origin;
         Ok(())
     }

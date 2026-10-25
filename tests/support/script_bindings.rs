@@ -1,6 +1,9 @@
 use super::*;
 use lazypencil::document::hash;
 
+#[path = "script_override_render.rs"]
+mod overrides;
+
 fn bindings_fixture() -> (TempDir, Store, Vec<u8>) {
     let temp = TempDir::new().unwrap();
     fs::create_dir(temp.path().join(".git")).unwrap();

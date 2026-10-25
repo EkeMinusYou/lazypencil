@@ -558,6 +558,7 @@ impl Project {
                     .and_then(Value::as_object_mut)
                 {
                     namespace.remove("script_bindings");
+                    namespace.remove("script_input_context");
                 }
                 super::scope::without_script_scope(&mut result);
             }
@@ -605,6 +606,13 @@ impl Project {
             after: &Project,
             new: &ResolvedNode,
         ) -> Result<bool> {
+            if match (&old.input_context, &new.input_context) {
+                (Some(old), Some(new)) => !old.equivalent(new),
+                (None, None) => false,
+                _ => true,
+            } {
+                return Ok(false);
+            }
             if match (&old.script_bindings, &new.script_bindings) {
                 (Some(old), Some(new)) => !old.equivalent(new),
                 (None, None) => false,

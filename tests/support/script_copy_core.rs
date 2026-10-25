@@ -5,6 +5,9 @@ use lazypencil::{project::Project, service};
 use serde_json::json;
 use std::fs;
 
+#[path = "script_override_core.rs"]
+mod overrides;
+
 #[test]
 fn script_copy_previews_without_publication_and_keeps_a_complete_namespace_after_source_removal() {
     let (temp, store) = fixture();

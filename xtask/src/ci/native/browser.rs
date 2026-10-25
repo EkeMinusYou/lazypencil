@@ -334,7 +334,53 @@ pub fn required_images(root: &Path, commit: &str) -> Result<()> {
             }
         }
     }
-    println!("Verified source identities, hashes and dimensions for 128 required PNGs");
+    let overrides = report("codec-script-overrides.json")?;
+    let cases = overrides["cases"]
+        .as_array()
+        .context("Missing script override images")?;
+    ensure!(
+        cases.len() == 12,
+        "Expected twelve script override conditions"
+    );
+    for version in ["2.19", "2.21"] {
+        for mode in [
+            "inputs", "code", "metadata", "combined", "literal", "nullable",
+        ] {
+            let rows: Vec<_> = cases
+                .iter()
+                .filter(|row| row["document_version"] == version && row["mode"] == mode)
+                .collect();
+            ensure!(
+                rows.len() == 1,
+                "Missing or duplicate script override condition"
+            );
+            let row = rows[0];
+            let (width, height) = dimensions(row)?;
+            ensure!(
+                (width, height) == (36, 12),
+                "Wrong script override image geometry"
+            );
+            let prefix = format!("codec-script-overrides-{version}-{mode}");
+            let before = format!("{prefix}-before.png");
+            ensure!(row["before"] == before, "Wrong script override image name");
+            let original = png(&before, &row["png_hash"], width, height)?;
+            for stage in ["copied", "recopied"] {
+                let name = format!("{prefix}-{stage}.png");
+                ensure!(row[stage] == name, "Wrong script override image name");
+                ensure!(
+                    original == png(&name, &row["png_hash"], width, height)?,
+                    "Script override pixels differ after {stage}"
+                );
+            }
+            let explicit = format!("{prefix}-explicit.png");
+            ensure!(
+                row["explicit"] == explicit,
+                "Wrong explicit input image name"
+            );
+            png(&explicit, &row["explicit_png_hash"], width, height)?;
+        }
+    }
+    println!("Verified source identities, hashes and dimensions for 176 required PNGs");
     Ok(())
 }
 pub fn panel(s: &Session) -> Result<()> {

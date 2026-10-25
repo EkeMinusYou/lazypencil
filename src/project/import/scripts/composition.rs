@@ -15,7 +15,7 @@ impl Budget {
             previous,
         }
     }
-    fn charge(&mut self, bytes: usize) -> Result<()> {
+    pub(super) fn charge(&mut self, bytes: usize) -> Result<()> {
         self.bytes = self.bytes.saturating_add(bytes);
         if self.bytes > LIMIT
             || self.previous.saturating_add(self.bytes) > crate::document::MAX_DOCUMENT_BYTES
@@ -48,7 +48,7 @@ impl Budget {
     }
 }
 
-fn mapped(
+pub(super) fn mapped(
     source: &BTreeMap<String, String>,
     budget: &mut Budget,
     mut target: impl FnMut(&str) -> Result<String>,

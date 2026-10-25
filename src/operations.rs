@@ -321,6 +321,11 @@ fn apply_impl(
                     ));
                 }
                 let pointer = edited.location(&id)?.pointer.clone();
+                crate::project::revoke_copied_script_context(
+                    &mut edited,
+                    &pointer,
+                    set.keys().chain(unset.iter()).map(String::as_str),
+                )?;
                 for key in unset {
                     edited.remove_property(&pointer, key)?;
                 }
@@ -885,6 +890,11 @@ fn update_override(
     }
     effective_node(document, address, context)?;
     let pointer = property_target(document, address)?;
+    crate::project::revoke_copied_script_context(
+        document,
+        &pointer,
+        set.keys().chain(unset.iter()).map(String::as_str),
+    )?;
     for key in unset {
         document.remove_property(&pointer, key)?;
     }
@@ -903,6 +913,11 @@ fn reset_override(
     if address.instance_path.is_empty() {
         let properties = properties
             .ok_or_else(|| invalid("Resetting root overrides requires explicit property names"))?;
+        crate::project::revoke_copied_script_context(
+            document,
+            &root,
+            properties.iter().map(String::as_str),
+        )?;
         for key in properties {
             if matches!(key.as_str(), "id" | "type" | "ref") {
                 return Err(invalid("Cannot reset instance identity"));
@@ -918,6 +933,11 @@ fn reset_override(
         return Ok(());
     }
     if let Some(properties) = properties {
+        crate::project::revoke_copied_script_context(
+            document,
+            &pointer,
+            properties.iter().map(String::as_str),
+        )?;
         for property in properties {
             if matches!(property.as_str(), "id" | "type" | "ref") {
                 return Err(invalid(

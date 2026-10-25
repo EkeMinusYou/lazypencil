@@ -25,6 +25,8 @@ pub(crate) use failed_code::FailedCodeCapture;
 mod import;
 mod missing;
 mod sampler_images;
+mod script_context;
+pub(crate) use script_context::revoke as revoke_copied_script_context;
 mod scope;
 mod variables;
 pub use variables::VariablesRequest;
@@ -71,6 +73,8 @@ pub struct ResolvedNode {
     script_input_scope: Option<PathBuf>,
     #[serde(skip)]
     script_bindings: Option<bindings::Bound>,
+    #[serde(skip)]
+    input_context: Option<script_context::Bound>,
     #[cfg(feature = "rendering")]
     #[serde(skip_serializing)]
     pub(crate) script_inputs_resolved: bool,
@@ -118,13 +122,22 @@ impl ResolvedNode {
     }
 
     pub fn script_input_origin(&self) -> &Path {
-        self.script_input_scope
-            .as_deref()
+        self.input_context
+            .as_ref()
+            .map(|context| context.origin.as_path())
+            .or(self.script_input_scope.as_deref())
             .unwrap_or_else(|| self.property_source("inputs"))
     }
 
     #[cfg(feature = "rendering")]
     pub(crate) fn script_bindings_revision(&self) -> Option<String> {
+        if self.input_context.is_some() {
+            return Some(hash(
+                json!({"output":self.script_bindings,"input":self.input_context})
+                    .to_string()
+                    .as_bytes(),
+            ));
+        }
         self.script_bindings.as_ref().map(|bindings| {
             hash(
                 serde_json::to_string(bindings)
@@ -1377,6 +1390,7 @@ impl Project {
             script_scope: None,
             script_input_scope: None,
             script_bindings: None,
+            input_context: None,
             #[cfg(feature = "rendering")]
             script_inputs_resolved: false,
             theme: BTreeMap::new(),
@@ -1419,6 +1433,10 @@ impl Project {
         active: &mut Vec<(PathBuf, String)>,
         count: &mut usize,
     ) -> Result<()> {
+        let carrier = script_context::override_value(changes)?;
+        if carrier.is_some() && node.kind() != "script" {
+            return Err(invalid("Copied script overrides require a script target"));
+        }
         for (key, value) in changes {
             if matches!(
                 key.as_str(),
@@ -1426,6 +1444,16 @@ impl Project {
             ) {
                 continue;
             }
+            let value = if key == "metadata"
+                && let Some(carrier) = &carrier
+            {
+                let Some(value) = &carrier.metadata else {
+                    continue;
+                };
+                value
+            } else {
+                value
+            };
             if key == "theme" {
                 let map = value
                     .as_object()
@@ -1463,7 +1491,10 @@ impl Project {
                 )?);
             }
         }
-        if changes.contains_key("metadata") {
+        if carrier
+            .as_ref()
+            .map_or(changes.contains_key("metadata"), |v| v.metadata.is_some())
+        {
             self.bind_script_scope(node)?;
         } else {
             // Explicit instance overrides use the overriding property's document,
@@ -1473,10 +1504,20 @@ impl Project {
                 node.script_bindings = None;
             }
             if changes.contains_key("inputs") {
+                node.input_context = None;
                 node.script_input_scope = None;
                 if let Some(bindings) = &mut node.script_bindings {
                     bindings.inputs_bound = false;
                 }
+            }
+        }
+        if let Some(carrier) = carrier {
+            if let Some(value) = carrier.output {
+                node.script_bindings = bindings::bind_value(self, node, &value, origin)?;
+                node.script_scope = None;
+            }
+            if let Some(value) = carrier.input {
+                node.input_context = script_context::bind(self, node, &value, origin)?;
             }
         }
         Ok(())
@@ -1574,12 +1615,12 @@ impl Project {
             .iter()
             .map(|(name, value)| {
                 let value = if header.inputs.iter().any(|input| &input.name == name) {
-                    self.resolve_value(
-                        node.property_source("inputs"),
-                        value,
-                        &node.theme,
-                        &mut Vec::new(),
-                    )?
+                    let (origin, value) = if let Some(context) = &node.input_context {
+                        (context.origin.as_path(), context.expression(name, value)?)
+                    } else {
+                        (node.property_source("inputs"), value.clone())
+                    };
+                    self.resolve_value(origin, &value, &node.theme, &mut Vec::new())?
                 } else {
                     value.clone()
                 };
@@ -1638,7 +1679,9 @@ impl Project {
                 if reference.is_empty() {
                     continue;
                 }
-                let (origin, reference) = if let Some(bindings) = &node.script_bindings
+                let (origin, reference) = if saved && let Some(context) = &node.input_context {
+                    (context.origin.as_path(), context.component(reference)?)
+                } else if let Some(bindings) = &node.script_bindings
                     && (!saved || bindings.inputs_bound)
                 {
                     (

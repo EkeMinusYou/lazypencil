@@ -574,7 +574,18 @@ impl Copier<'_> {
         self.scan_properties(origin, node)
     }
     fn scan_properties(&mut self, origin: &Path, node: &Value) -> Result<()> {
-        let script = self.scan_script(origin, node)?;
+        let script = self.script_info(origin, node)?;
+        self.scan_properties_info(origin, node, script)
+    }
+    fn scan_properties_info(
+        &mut self,
+        origin: &Path,
+        node: &Value,
+        script: Option<scripts::Info>,
+    ) -> Result<()> {
+        if let Some(info) = &script {
+            self.scan_script_info(info)?;
+        }
         self.scan_sampler_values(origin, node)?;
         let object = node
             .as_object()
@@ -586,7 +597,13 @@ impl Copier<'_> {
                 let header = &script.header;
                 for input in &header.inputs {
                     if let Some(value) = value.get(&input.name) {
-                        self.scan_value(origin, value)?;
+                        let (source, value) = self.script_input_expression(
+                            origin,
+                            &script.resolved,
+                            &input.name,
+                            value,
+                        )?;
+                        self.scan_value(&source, &value)?;
                     }
                 }
             } else if !literal_property(key) && key != "children" {
@@ -633,33 +650,25 @@ impl Copier<'_> {
                 self.project
                     .expand(origin, node, None, &[], &mut Vec::new(), &mut 0)?;
             for (path, changes) in overrides {
-                if changes.get("type").is_none()
-                    && ["inputs", "scriptUri", "metadata"]
-                        .iter()
-                        .any(|key| changes.get(key).is_some())
-                {
+                if changes.get("type").is_none() {
                     let target =
                         find_descendant_mut(&mut expanded, &path.split('/').collect::<Vec<_>>())
                             .ok_or_else(|| copy_error("A copied override target is missing"))?;
                     if target.kind() == "script" {
-                        return Err(Error::new(
-                            "UNSUPPORTED_FEATURE",
-                            "Inherited script input, code and metadata overrides require an independently bound override scope",
-                        ));
+                        let info = self.script_info_resolved(
+                            target.clone(),
+                            (
+                                origin.into(),
+                                format!("{}/{path}", node["id"].as_str().expect("instance ID")),
+                            ),
+                        )?;
+                        self.scan_properties_info(origin, changes, Some(info))?;
+                    } else {
+                        self.scan_properties(origin, changes)?;
                     }
+                } else {
+                    self.scan_node(origin, changes)?;
                 }
-            }
-        }
-        for changes in node
-            .get("descendants")
-            .and_then(Value::as_object)
-            .into_iter()
-            .flat_map(Map::values)
-        {
-            if changes.get("type").is_some() {
-                self.scan_node(origin, changes)?;
-            } else {
-                self.scan_properties(origin, changes)?;
             }
         }
         Ok(())
@@ -751,6 +760,15 @@ impl Copier<'_> {
     fn rewrite_properties(&mut self, origin: &Path, node: &Value, is_node: bool) -> Result<Value> {
         self.project.check_cancelled()?;
         let script = self.script_info(origin, node)?;
+        self.rewrite_properties_info(origin, node, is_node, script)
+    }
+    fn rewrite_properties_info(
+        &mut self,
+        origin: &Path,
+        node: &Value,
+        is_node: bool,
+        script: Option<scripts::Info>,
+    ) -> Result<Value> {
         let mut result = node
             .as_object()
             .ok_or_else(|| copy_error("A copied override must be an object"))?
@@ -777,7 +795,7 @@ impl Copier<'_> {
                 if let Some(values) = value.as_object_mut() {
                     for input in &header.inputs {
                         if let Some(value) = values.get_mut(&input.name) {
-                            *value = self.rewrite_value(origin, value)?;
+                            *value = self.copied_input_value(origin, script, &input.name, value)?;
                         }
                     }
                 }
@@ -841,9 +859,31 @@ impl Copier<'_> {
                         target.component_key.clone(),
                     ))?);
                 }
+                let info = if changes.get("type").is_none() {
+                    let target =
+                        find_descendant_mut(&mut expanded, &parts).expect("validated override");
+                    if target.kind() == "script" {
+                        Some(self.script_info_resolved(
+                            target.clone(),
+                            (
+                                origin.into(),
+                                format!("{}/{path}", node["id"].as_str().expect("instance ID")),
+                            ),
+                        )?)
+                    } else {
+                        None
+                    }
+                } else {
+                    self.script_info(origin, changes)?
+                };
                 remapped.insert(
                     keys.join("/"),
-                    self.rewrite_properties(origin, changes, changes.get("type").is_some())?,
+                    self.rewrite_properties_info(
+                        origin,
+                        changes,
+                        changes.get("type").is_some(),
+                        info,
+                    )?,
                 );
             }
             result.insert("descendants".into(), Value::Object(remapped));
