@@ -145,6 +145,26 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     }
     .to_owned();
     let preprocessor = preprocessor_changed(paths);
+    if paths
+        .iter()
+        .all(|p| ci_only(p) || p.starts_with("resources/licenses/native/"))
+        && paths.iter().any(|p| {
+            [
+                "xtask/src/ci/native.rs",
+                "xtask/src/ci/native/release.rs",
+                "xtask/src/ci/cache.rs",
+                "xtask/src/evidence/link_map.rs",
+            ]
+            .contains(&p.as_str())
+        })
+    {
+        return Ok(Plan {
+            platform,
+            suite: "release".into(),
+            targets: vec!["render".into()],
+            preprocessor,
+        });
+    }
     if !paths.is_empty() && paths.iter().all(|p| ci_only(p)) {
         return Ok(Plan {
             platform,

@@ -48,7 +48,25 @@ fn find<'a>(value: &'a mut Value, id: &str) -> Option<&'a mut Value> {
         .find_map(|c| find(c, id))
 }
 pub fn compile(s: &Session, log: &str) -> Result<()> {
-    s.cargo(&["build", "--locked", "--release"], 3600, log, false)
+    let command = invocation(s, false)?;
+    if command.iter().any(|arg| arg == "--") {
+        let map = crate::evidence::link_map::path(&s.target);
+        ensure!(!map.is_symlink(), "Release link map must not be linked");
+        ensure!(
+            !s.executable("release").exists() || map.is_file(),
+            "Release executable lacks its source-bound link map; prune application outputs before rebuilding"
+        );
+    }
+    s.execute(&command, 3600, log, false)
+}
+
+pub fn invocation(s: &Session, json: bool) -> Result<Vec<String>> {
+    let compiler = process::text(Command::new("rustc").arg("-vV"))?;
+    let host = compiler
+        .lines()
+        .find_map(|line| line.strip_prefix("host: "))
+        .context("Compiler does not report its host")?;
+    crate::evidence::link_map::cargo_arguments(host, &s.target, json)
 }
 
 pub fn smoke(s: &Session) -> Result<()> {
@@ -61,10 +79,14 @@ pub fn smoke(s: &Session) -> Result<()> {
         crate::evidence::linkage::native_host()?,
         &linkage_dir,
     )?;
+    let map = crate::evidence::link_map::collect(
+        &crate::evidence::link_map::path(&s.target),
+        &linkage_dir.join("link-map.map"),
+    )?;
     util::publish(
         &linkage_dir.join("ci.json"),
         &util::encode(
-            &json!({"source_commit":std::env::var("GITHUB_SHA")?,"binary_sha256":linkage["binary_sha256"],"scope":"Direct dynamic-load declarations for this CI release executable; no minimum-OS runtime acceptance."}),
+            &json!({"source_commit":std::env::var("GITHUB_SHA")?,"binary_sha256":linkage["binary_sha256"],"static_link_map":map,"release_recipe":crate::evidence::link_map::RECIPE,"scope":"Link map and direct dynamic-load declarations for this CI release executable; no minimum-OS runtime acceptance or complete attribution."}),
         )?,
         false,
     )?;
@@ -129,6 +151,10 @@ pub fn smoke(s: &Session) -> Result<()> {
     );
     // Keep measurements isolated from every parallel test lane and Cargo startup.
     let report = performance::benchmark(&s.executable("release").canonicalize()?, 20, 30.0)?;
+    ensure!(
+        report["binary_sha256"] == linkage["binary_sha256"],
+        "Measured release executable differs from the mapped executable"
+    );
     util::publish(
         &s.target.join("release-benchmark.json"),
         &util::encode(&report)?,

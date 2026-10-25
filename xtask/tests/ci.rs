@@ -84,7 +84,6 @@ fn generated_reference_changes_reproduce_the_real_script_binding_cases_first() {
 #[test]
 fn tool_changes_only_bypass_focus_native_compilation_when_they_are_not_application_inputs() {
     for path in [
-        "xtask/src/ci/cache.rs",
         "xtask/Cargo.lock",
         "docs/design.md",
         ".github/workflows/native.yml",
@@ -121,6 +120,41 @@ fn tool_changes_only_bypass_focus_native_compilation_when_they_are_not_applicati
         .contains(&"script_scope".into())
     );
     assert!(focus::select(&util::root(), &[], "Windows").is_err());
+}
+
+#[test]
+fn release_recipe_helpers_compile_on_one_platform_before_the_full_matrix() {
+    for path in [
+        "xtask/src/ci/cache.rs",
+        "xtask/src/ci/native.rs",
+        "xtask/src/ci/native/release.rs",
+        "xtask/src/evidence/link_map.rs",
+    ] {
+        let plan = focus::select(
+            &util::root(),
+            &[
+                path.into(),
+                "resources/licenses/native/quickjs-review.json".into(),
+            ],
+            "auto",
+        )
+        .unwrap();
+        assert_eq!(plan.platform, "ubuntu-24.04");
+        assert_eq!(plan.suite, "release");
+        assert_eq!(plan.targets, ["render"]);
+        let commands = ci::commands::plan(&util::root(), &plan.suite, &plan.targets).unwrap();
+        assert!(!commands.build.is_empty() && !commands.checks.is_empty());
+    }
+    let plan = focus::select(
+        &util::root(),
+        &[
+            "src/project/generated_refs.rs".into(),
+            "xtask/src/ci/native/release.rs".into(),
+        ],
+        "auto",
+    )
+    .unwrap();
+    assert!(plan.targets.contains(&"script_scope".into()));
 }
 
 #[test]
@@ -363,6 +397,51 @@ fn application_reuse_checks_all_outputs_before_overlaying_and_never_reuses_image
     .unwrap();
     assert!(cache::restore(&f.source, &f.target, &f.directory, &f.identity()).is_err());
     assert!(!f.target.exists());
+}
+
+#[test]
+fn release_cache_keeps_the_mapped_executable_and_rejects_partial_or_changed_pairs() {
+    for (binary, map) in [(true, false), (false, true), (true, true)] {
+        let f = ApplicationFixture::new();
+        fs::create_dir_all(f.target.join("release")).unwrap();
+        let executable = f.target.join("release/lazypencil");
+        let map_path = lazypencil_xtask::evidence::link_map::path(&f.target);
+        if binary {
+            fs::write(&executable, b"release executable").unwrap();
+        }
+        if map {
+            fs::write(&map_path, b"original map").unwrap();
+        }
+        let staged = cache::stage(&f.source, &f.target, &f.directory, &f.identity());
+        if binary != map {
+            assert!(staged.is_err());
+            continue;
+        }
+        staged.unwrap();
+        fs::remove_dir_all(&f.target).unwrap();
+        cache::restore(&f.source, &f.target, &f.directory, &f.identity()).unwrap();
+        assert_eq!(fs::read(&executable).unwrap(), b"release executable");
+        assert_eq!(fs::read(&map_path).unwrap(), b"original map");
+        fs::remove_dir_all(&f.target).unwrap();
+        let manifest_path = f.directory.join("manifest.json");
+        let original: Value = util::json(&manifest_path).unwrap();
+        let mut partial = original.clone();
+        partial["files"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|entry| entry["path"] != "release/lazypencil.map");
+        fs::write(&manifest_path, util::encode(&partial).unwrap()).unwrap();
+        assert!(cache::restore(&f.source, &f.target, &f.directory, &f.identity()).is_err());
+        assert!(!f.target.exists());
+        fs::write(manifest_path, util::encode(&original).unwrap()).unwrap();
+        fs::write(
+            f.directory.join("files/release/lazypencil.map"),
+            b"changed map",
+        )
+        .unwrap();
+        assert!(cache::restore(&f.source, &f.target, &f.directory, &f.identity()).is_err());
+        assert!(!f.target.exists());
+    }
 }
 
 #[test]

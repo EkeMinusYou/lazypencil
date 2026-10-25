@@ -2,6 +2,35 @@ use lazypencil_xtask::{evidence::link_map, util};
 use std::{fs, path::Path};
 
 #[test]
+fn normal_and_evidence_builds_share_every_compiler_and_linker_argument() {
+    let temp = tempfile::tempdir().unwrap();
+    let target = temp.path().canonicalize().unwrap();
+    for host in [
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "aarch64-apple-darwin",
+    ] {
+        let normal = link_map::cargo_arguments(host, &target, false).unwrap();
+        let mut evidence = link_map::cargo_arguments(host, &target, true).unwrap();
+        evidence.retain(|arg| arg != "--message-format=json");
+        assert_eq!(normal, evidence, "{host}");
+        assert_eq!(
+            &normal[..6],
+            [
+                "cargo",
+                "rustc",
+                "--locked",
+                "--release",
+                "--bin",
+                "lazypencil"
+            ]
+        );
+        assert_eq!(normal.iter().filter(|arg| *arg == "--").count(), 1);
+        assert!(normal.last().unwrap().ends_with(link_map::CACHE_PATH));
+    }
+}
+
+#[test]
 fn map_arguments_stay_on_the_root_rustc_invocation() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().canonicalize().unwrap().join("release map.txt");

@@ -499,7 +499,7 @@ pub fn application_identity(
     let inputs = compiled_inputs(&manifest);
     let target = std::path::absolute(target)?;
     let fingerprint = util::digest(stable_json(
-        &json!({"version":2,"inputs":inputs,"native":native_key,"source":source.canonicalize()?,"target":target}),
+        &json!({"version":3,"release_recipe":crate::evidence::link_map::RECIPE,"inputs":inputs,"native":native_key,"source":source.canonicalize()?,"target":target}),
     ));
     let source_hash = source_fingerprint(&manifest)?;
     Ok(ApplicationIdentity {
@@ -515,6 +515,9 @@ pub fn application_identity(
 }
 
 pub fn allowed(name: &str) -> bool {
+    if name == crate::evidence::link_map::CACHE_PATH {
+        return true;
+    }
     if util::safe_path(name).is_err() {
         return false;
     }
@@ -596,6 +599,14 @@ pub fn outputs(target: &Path) -> Result<Vec<PathBuf>> {
                 files.insert(path);
             }
         }
+    }
+    let map = crate::evidence::link_map::path(target);
+    ensure!(
+        map.exists() == target.join("release/lazypencil").exists(),
+        "Release cache requires the executable and link map together"
+    );
+    if map.exists() {
+        files.insert(map);
     }
     ensure!(
         !files.is_empty()
@@ -739,7 +750,7 @@ pub fn restore(
         let path = directory.join("files").join(&entry.path);
         ensure!(
             allowed(&entry.path)
-                && names.insert(&entry.path)
+                && names.insert(entry.path.clone())
                 && !path.is_symlink()
                 && path.is_file()
                 && path.canonicalize()? == path,
@@ -753,6 +764,11 @@ pub fn restore(
         );
         files.push(path);
     }
+    ensure!(
+        names.contains("release/lazypencil")
+            == names.contains(crate::evidence::link_map::CACHE_PATH),
+        "Cached release executable and map are incomplete"
+    );
     ensure!(
         !files.is_empty()
             && input_environment(&files, source, &identity.tracked)? == report.environment,
@@ -785,6 +801,10 @@ pub fn prune(source: &Path, target: &Path) -> Result<()> {
         target.is_absolute() && target.parent().is_some(),
         "Explicit non-root target directory required"
     );
+    let map = crate::evidence::link_map::path(target);
+    if map.exists() || map.is_symlink() {
+        fs::remove_file(map)?;
+    }
     for name in [
         "release-smoke",
         "release-dashboard",

@@ -3,7 +3,39 @@
 use super::fingerprint;
 use anyhow::{Context, Result, ensure};
 use serde_json::Value;
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
+pub const RECIPE: &str = "root-rustc-release-map-v1";
+pub const CACHE_PATH: &str = "release/lazypencil.map";
+
+pub fn path(target: &Path) -> PathBuf {
+    target.join(CACHE_PATH)
+}
+
+pub fn cargo_arguments(host: &str, target: &Path, json: bool) -> Result<Vec<String>> {
+    let extra = rustc_arguments(host, &path(target))?;
+    let mut arguments = [
+        "cargo",
+        if extra.is_some() { "rustc" } else { "build" },
+        "--locked",
+        "--release",
+        "--bin",
+        "lazypencil",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    if json {
+        arguments.push("--message-format=json".into());
+    }
+    if let Some(extra) = extra {
+        arguments.push("--".into());
+        arguments.extend(extra);
+    }
+    Ok(arguments)
+}
 
 pub fn rustc_arguments(host: &str, map: &Path) -> Result<Option<Vec<String>>> {
     let option = match host {

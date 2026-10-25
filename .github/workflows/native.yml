@@ -169,6 +169,10 @@ jobs:
         if: inputs.phase == 'focus'
         timeout-minutes: 10
         run: cargo xtask ci native focus-test --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
+      - name: Verify changed release build recipe before the full matrix
+        if: inputs.phase == 'focus' && inputs.suite == 'release'
+        timeout-minutes: 60
+        run: cargo xtask ci native focus-release
       - name: Verify real browser shader import and cancellation pixels
         if: inputs.phase == 'full'
         timeout-minutes: 20

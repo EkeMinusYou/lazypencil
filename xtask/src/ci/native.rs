@@ -29,6 +29,7 @@ pub enum Stage {
     FocusLint,
     FocusReproduce,
     FocusTest,
+    FocusRelease,
     CoreBuild,
     CoreTest,
     CoreLint,
@@ -213,28 +214,12 @@ impl Session {
         match args.stage {
             Stage::EvidenceBuild => {
                 super::cache::prune(&self.root, &self.target)?;
-                let compiler = process::text(Command::new("rustc").arg("-vV"))?;
-                let host = compiler
-                    .lines()
-                    .find_map(|line| line.strip_prefix("host: "))
-                    .context("Compiler does not report its host")?;
-                let map = self.temporary.join("release-link.map");
-                let extra = crate::evidence::link_map::rustc_arguments(host, &map)?;
-                let mut command = Command::new("cargo");
-                command.args([
-                    if extra.is_some() { "rustc" } else { "build" },
-                    "--locked",
-                    "--release",
-                    "--bin",
-                    "lazypencil",
-                    "--message-format=json",
-                ]);
-                if let Some(extra) = extra {
+                let invocation = release::invocation(self, true)?;
+                let map = crate::evidence::link_map::path(&self.target);
+                if invocation.iter().any(|arg| arg == "--") {
                     ensure!(!map.exists() && !map.is_symlink(), "Link map must be fresh");
-                    // Root-only rustc arguments keep dependency/Skia fingerprints
-                    // unchanged. Do not introduce workspace-wide RUSTFLAGS.
-                    command.arg("--").args(extra);
                 }
+                let mut command = self.command(&invocation);
                 self.capture(&mut command, 3600, "release-cargo.jsonl")?;
                 process::checked(
                     Command::new(self.executable("release")).arg("--version"),
@@ -502,6 +487,23 @@ impl Session {
                         "focus-copy-shader.log",
                     )?;
                 }
+                Ok(())
+            }
+            Stage::FocusRelease => {
+                release::compile(self, "focus-release.log")?;
+                process::checked(
+                    Command::new(self.executable("release")).arg("--version"),
+                    Duration::from_secs(30),
+                )?;
+                let record = crate::evidence::fingerprint(
+                    &crate::evidence::link_map::path(&self.target),
+                    "release/lazypencil.map",
+                    64 * 1024 * 1024,
+                )?;
+                ensure!(
+                    record["bytes"].as_u64().unwrap_or(0) > 0,
+                    "Missing focused release map"
+                );
                 Ok(())
             }
             Stage::CoreBuild => {

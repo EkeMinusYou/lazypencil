@@ -45,7 +45,8 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
             "graphics",
             "copy",
             "dynamic",
-            "shader"
+            "shader",
+            "release"
         ]
         .contains(&suite),
         "Invalid focused suite"
