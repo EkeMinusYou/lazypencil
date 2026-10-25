@@ -1,0 +1,111 @@
+{
+  "format_version": 1,
+  "package": {
+    "name": "rquickjs-sys",
+    "version": "0.14.0",
+    "archive_sha256": "cee271d0eeba64f0915b846cb7ae02e16faf3dfdffdca91731101d9d30fe3423"
+  },
+  "scope": "Review of all fifteen original copyright/license comments in the pinned copied QuickJS C/header inputs. Retain every original comment and quickjs/LICENSE in QUICKJS-NOTICES.txt, including unused declarations. This does not establish final binary linkage or review other native/system components.",
+  "licenses": {
+    "MIT": {
+      "reference": "https://opensource.org/license/mit",
+      "retention": "Original copyright, permission and warranty notices are retained without replacing authors or dates."
+    },
+    "Unicode-3.0": {
+      "reference": "https://spdx.org/licenses/Unicode-3.0.html",
+      "retention": "The complete Unicode License v3 notice, including the original 1991-2026 Unicode, Inc. copyright, is retained in associated documentation."
+    }
+  },
+  "comments": [
+    {
+      "path": "quickjs/libregexp.c",
+      "line": 1,
+      "sha256": "b65603688dd7d8ce02c3316f9621ad54e914770ffb60dde5f3d58abfad3a763f",
+      "license": "MIT"
+    },
+    {
+      "path": "quickjs/libunicode.c",
+      "line": 1,
+      "sha256": "0edc91fb5bcc10e21c254bdd6e232c26a31e2968b2d69c4a2693aacb3a4fb5cf",
+      "license": "MIT"
+    },
+    {
+      "path": "quickjs/quickjs.c",
+      "line": 1,
+      "sha256": "9c41e7a2771816a0897def2fc1f4ac7bb098d80e43eeb1203288aa6b4d1defc3",
+      "license": "MIT"
+    },
+    {
+      "path": "quickjs/dtoa.c",
+      "line": 1,
+      "sha256": "1189a2dd251a2872f7265fa4298ffbc0df8972fb08a5203044e97bc003ba5cde",
+      "license": "MIT"
+    },
+    {
+      "path": "quickjs/cutils.h",
+      "line": 1,
+      "sha256": "defd35147dab4bae13954c9b6a29713090287cafd52fe2d7d63083e6d8007e12",
+      "license": "MIT"
+    },
+    {
+      "path": "quickjs/dtoa.h",
+      "line": 1,
+      "sha256": "1189a2dd251a2872f7265fa4298ffbc0df8972fb08a5203044e97bc003ba5cde",
+      "license": "MIT"
+    },
+    {
+      "path": "quickjs/libregexp-opcode.h",
+      "line": 1,
+      "sha256": "b65603688dd7d8ce02c3316f9621ad54e914770ffb60dde5f3d58abfad3a763f",
+      "license": "MIT"
+    },
+    {
+      "path": "quickjs/libregexp.h",
+      "line": 1,
+      "sha256": "b65603688dd7d8ce02c3316f9621ad54e914770ffb60dde5f3d58abfad3a763f",
+      "license": "MIT"
+    },
+    {
+      "path": "quickjs/libunicode-table.h",
+      "line": 4,
+      "sha256": "d28ff605271a0675a2b12d9ff65d6bd5651d0cee111b57ec2781ca353d87dae7",
+      "license": "Unicode-3.0"
+    },
+    {
+      "path": "quickjs/libunicode.h",
+      "line": 1,
+      "sha256": "0edc91fb5bcc10e21c254bdd6e232c26a31e2968b2d69c4a2693aacb3a4fb5cf",
+      "license": "MIT"
+    },
+    {
+      "path": "quickjs/list.h",
+      "line": 1,
+      "sha256": "167df93e0112c0d81383e176bd0dc04dc0d8573f508e30707b48c2b64dc2390e",
+      "license": "MIT"
+    },
+    {
+      "path": "quickjs/quickjs-atom.h",
+      "line": 1,
+      "sha256": "24af83600cf56c649568a26e21dc6d058236d527beeeb634f716f1a2d1baceb3",
+      "license": "MIT"
+    },
+    {
+      "path": "quickjs/quickjs-opcode.h",
+      "line": 1,
+      "sha256": "385f7cc6ef27f47aa37933a7122906f35ffff95feb9dfd2c5bb844f11f3aafa2",
+      "license": "MIT"
+    },
+    {
+      "path": "quickjs/quickjs-c-atomics.h",
+      "line": 1,
+      "sha256": "ee00f8c2e1735954ff78fa9a299984c95b527a8a3559f5b0200d8206b9fdbe04",
+      "license": "MIT"
+    },
+    {
+      "path": "quickjs/quickjs.h",
+      "line": 1,
+      "sha256": "b28021f27437406dc438cc45da3fb023d338685b9d688f5244bf57ea0571dc7b",
+      "license": "MIT"
+    }
+  ]
+}

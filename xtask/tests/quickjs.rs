@@ -24,6 +24,9 @@ impl Fixture {
         let cargo = root.join("cargo");
         fs::create_dir_all(&source).unwrap();
         fs::create_dir(&out).unwrap();
+        let review = root.join(quickjs::REVIEW);
+        fs::create_dir_all(review.parent().unwrap()).unwrap();
+        fs::copy(util::root().join(quickjs::REVIEW), review).unwrap();
         let archive = cargo.join("registry/cache/pinned/rquickjs-sys-0.14.0.crate");
         fs::create_dir_all(archive.parent().unwrap()).unwrap();
         fs::copy(
@@ -103,10 +106,31 @@ fn original_archive_binds_every_copied_input_and_retains_notices_separately_from
         4
     );
     assert_eq!(index["package"]["archive_sha256"], quickjs::ARCHIVE_SHA);
+    let review = &index["source_notice_review"];
+    assert_eq!(review["comments"].as_array().unwrap().len(), 15);
+    assert_eq!(
+        review["comments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| r["license"] == "Unicode-3.0")
+            .count(),
+        1
+    );
+    assert!(
+        review["comments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["path"] == "quickjs/libunicode-table.h" && r["license"] == "Unicode-3.0")
+    );
     let files = quickjs::files(&index, texts).unwrap();
     let text = String::from_utf8(files["QUICKJS-NOTICES.txt"].clone()).unwrap();
     assert!(text.contains("Copyright") && text.contains("Permission is hereby granted"));
     assert!(!text.contains("JS_NewRuntime(void) {"));
+    assert!(
+        text.contains("UNICODE LICENSE V3") && text.contains("Copyright © 1991-2026 Unicode, Inc.")
+    );
     let late = format!(
         "{}\n/* Copyright Late Holder. License: retained in full. */\n",
         " ".repeat(70000)
@@ -117,6 +141,31 @@ fn original_archive_binds_every_copied_input_and_retains_notices_separately_from
             .iter()
             .any(|v| v["text"].as_str().unwrap().contains("Late Holder"))
     );
+}
+
+#[test]
+fn notice_review_rejects_changed_missing_duplicate_and_unknown_originals() {
+    let f = Fixture::new();
+    let (index, _) = f.build().unwrap();
+    let comments = index["source_comments"].as_array().unwrap();
+    let definition: Value = util::json(&f.root.join(quickjs::REVIEW)).unwrap();
+    for mode in ["changed", "missing", "duplicate", "unknown", "moved"] {
+        let mut changed = comments.clone();
+        match mode {
+            "changed" => changed[0]["text"] = serde_json::json!("substituted permission notice"),
+            "missing" => {
+                changed.pop();
+            }
+            "duplicate" => changed[1] = changed[0].clone(),
+            "unknown" => changed[0]["path"] = serde_json::json!("quickjs/new-source.c"),
+            "moved" => changed[0]["line"] = serde_json::json!(2),
+            _ => unreachable!(),
+        }
+        assert!(quickjs::review(&changed, &definition).is_err(), "{mode}");
+    }
+    let mut other = definition;
+    other["package"]["archive_sha256"] = serde_json::json!("0".repeat(64));
+    assert!(quickjs::review(comments, &other).is_err());
 }
 
 #[test]

@@ -7,6 +7,7 @@ use std::{collections::BTreeMap, path::Path};
 pub const VERSION: &str = "0.14.0";
 pub const ARCHIVE_SHA: &str = "cee271d0eeba64f0915b846cb7ae02e16faf3dfdffdca91731101d9d30fe3423";
 pub const BUILD_SHA: &str = "d392d7194ae5bcaa0e0dac28a14c55656f6cf2cce3b16a8e6968c09e2ecfff85";
+pub const REVIEW: &str = "resources/licenses/native/quickjs-review.json";
 const SOURCES: &[&str] = &["libregexp.c", "libunicode.c", "quickjs.c", "dtoa.c"];
 const HEADERS: &[&str] = &[
     "builtin-array-fromasync.h",
@@ -49,6 +50,69 @@ fn original(source: &Path, name: &str, hashes: &BTreeMap<String, String>) -> Res
         "QuickJS input differs from registry archive: {name}"
     );
     Ok(bytes)
+}
+
+pub fn review(comments: &[Value], definition: &Value) -> Result<Value> {
+    ensure!(
+        definition["format_version"] == 1
+            && definition["package"]["name"] == "rquickjs-sys"
+            && definition["package"]["version"] == VERSION
+            && definition["package"]["archive_sha256"] == ARCHIVE_SHA,
+        "QuickJS notice review belongs to another package"
+    );
+    let expected = definition["comments"]
+        .as_array()
+        .context("Missing reviewed comments")?;
+    ensure!(
+        expected.len() == 15 && comments.len() == expected.len(),
+        "QuickJS notice membership changed; review original source comments"
+    );
+    let mut remaining = BTreeMap::new();
+    for record in expected {
+        let path = record["path"]
+            .as_str()
+            .context("Missing reviewed notice path")?;
+        let line = record["line"]
+            .as_u64()
+            .filter(|n| *n > 0)
+            .context("Missing reviewed notice line")?;
+        let license = record["license"]
+            .as_str()
+            .context("Missing reviewed license")?;
+        ensure!(
+            ["MIT", "Unicode-3.0"].contains(&license)
+                && definition["licenses"][license]["reference"].is_string()
+                && remaining.insert((path, line), record).is_none(),
+            "Invalid or duplicate reviewed QuickJS notice"
+        );
+    }
+    let mut reviewed = Vec::new();
+    for comment in comments {
+        let path = comment["path"]
+            .as_str()
+            .context("Missing source notice path")?;
+        let line = comment["line"]
+            .as_u64()
+            .context("Missing source notice line")?;
+        let record = remaining
+            .remove(&(path, line))
+            .context("Unreviewed or duplicate QuickJS notice location")?;
+        let text = comment["text"]
+            .as_str()
+            .context("Missing original notice text")?;
+        ensure!(
+            record["sha256"] == util::digest(text.as_bytes()),
+            "QuickJS notice changed; review original text at {path}:{line}"
+        );
+        reviewed.push(record.clone());
+    }
+    ensure!(
+        remaining.is_empty(),
+        "Missing reviewed QuickJS source notice"
+    );
+    Ok(
+        json!({"format_version":1,"package":definition["package"],"scope":definition["scope"],"licenses":definition["licenses"],"comments":reviewed}),
+    )
 }
 
 pub fn build(
@@ -132,6 +196,10 @@ pub fn build(
             std::str::from_utf8(&bytes)?,
         )?);
     }
+    let review_bytes = util::read(&root.join(REVIEW), 64 * 1024)?;
+    let mut notice_review = review(&comments, &serde_json::from_slice(&review_bytes)?)?;
+    notice_review["definition"] =
+        json!({"path":REVIEW,"sha256":util::digest(&review_bytes),"bytes":review_bytes.len()});
     let legal = record["files"]
         .as_array()
         .context("Missing QuickJS notices")?
@@ -167,9 +235,9 @@ pub fn build(
     features.sort();
     Ok((
         json!({"format_version":1,"scope":"Copied QuickJS native inputs selected by a reviewed build script; final linkage and complete attribution review are not established.",
-        "package":package,"build_script_sha256":BUILD_SHA,"target":target,"features":features,"inputs":inputs,"source_comments":comments,"notice_files":legal,
+        "package":package,"build_script_sha256":BUILD_SHA,"target":target,"features":features,"inputs":inputs,"source_comments":comments,"source_notice_review":notice_review,"notice_files":legal,
         "rust_binding":{"path":binding_path,"sha256":util::digest(&binding),"bytes":binding.len()},"generated_target_binding":{"path":"bindings.rs","sha256":util::digest(&generated),"bytes":generated.len()},
-        "limits":["Copied headers may contain unused declarations; system and compiler headers are outside this inventory.","Comment candidates cover the complete selected C/header files; they are not automatic license classifications.","Archive hashes establish content integrity; build authentication and final binary linkage require separate evidence."]}),
+        "limits":["Copied headers may contain unused declarations; system and compiler headers are outside this inventory.","All original source comments are retained and matched to a curated review of the pinned archive; changes require review.","Archive hashes establish content integrity; build authentication and final binary linkage require separate evidence."]}),
         used,
     ))
 }
@@ -203,12 +271,33 @@ pub fn files(index: &Value, mut texts: Files) -> Result<Files> {
         ]);
     }
     lines.extend([
-        "Source comment candidates (original locations; not license classifications)".into(),
+        "Reviewed source notices (original locations and complete original text)".into(),
         "".into(),
     ]);
-    for record in index["source_comments"].as_array().unwrap() {
+    let reviews = index["source_notice_review"]["comments"]
+        .as_array()
+        .context("Missing source notice review")?;
+    let comments = index["source_comments"]
+        .as_array()
+        .context("Missing original source notices")?;
+    ensure!(
+        reviews.len() == comments.len(),
+        "QuickJS notice review is incomplete"
+    );
+    for (record, reviewed) in comments.iter().zip(reviews) {
+        ensure!(
+            record["path"] == reviewed["path"]
+                && record["line"] == reviewed["line"]
+                && reviewed["sha256"] == util::digest(string(&record["text"]).as_bytes()),
+            "QuickJS original notice differs from review"
+        );
         lines.extend([
-            format!("{}:{}", string(&record["path"]), record["line"]),
+            format!(
+                "{}:{} [{}]",
+                string(&record["path"]),
+                record["line"],
+                string(&reviewed["license"])
+            ),
             string(&record["text"]),
             "".into(),
         ]);
@@ -231,7 +320,7 @@ pub fn collect(
     output: &Path,
 ) -> Result<Value> {
     let (index, texts) = build(root, manifest, out, features, cargo, target)?;
-    let result = json!({"native_inputs":index["inputs"].as_array().unwrap().len(),"compiled_sources":4,"source_comments":index["source_comments"].as_array().unwrap().len(),"registry_archive_verified":true,"target":target});
+    let result = json!({"native_inputs":index["inputs"].as_array().unwrap().len(),"compiled_sources":4,"source_comments":index["source_comments"].as_array().unwrap().len(),"reviewed_source_notices":index["source_notice_review"]["comments"].as_array().unwrap().len(),"notice_review_definition":index["source_notice_review"]["definition"],"registry_archive_verified":true,"target":target});
     super::publish_bundle(output, &files(&index, texts)?)?;
     Ok(result)
 }
