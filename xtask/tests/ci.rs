@@ -12,11 +12,12 @@ fn focus_keeps_the_existing_reproduction_scope_for_every_source_module() {
     for case in cases {
         let paths: Vec<String> = serde_json::from_value(case["paths"].clone()).unwrap();
         let actual = focus::select(&util::root(), &paths, "auto").unwrap();
-        assert_eq!(
-            serde_json::to_value(actual).unwrap(),
-            case["expected"],
-            "{paths:?}"
-        );
+        let mut expected = case["expected"].clone();
+        expected["targets"]
+            .as_array_mut()
+            .unwrap()
+            .sort_by(|a, b| a.as_str().cmp(&b.as_str()));
+        assert_eq!(serde_json::to_value(actual).unwrap(), expected, "{paths:?}");
     }
 }
 

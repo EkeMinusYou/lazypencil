@@ -103,7 +103,7 @@ pub fn archive_record(
     let mut vcs = Value::Null;
     let mut total = 0u64;
     let mut source_hashes = source_hashes;
-    let mut members = BTreeMap::new();
+    let attribution = Regex::new(r"(?i)copyright|©|SPDX-(?:FileCopyrightText|License-Identifier)")?;
     for entry in reader.entries()? {
         let mut entry = entry?;
         let name = String::from_utf8(entry.path_bytes().into_owned())?;
@@ -160,14 +160,12 @@ pub fn archive_record(
             ]
             .contains(&extension.as_str())
             {
-                let re =
-                    Regex::new(r"(?i)copyright|©|SPDX-(?:FileCopyrightText|License-Identifier)")?;
                 let body = String::from_utf8_lossy(&data[..data.len().min(32768)]);
                 let lines = body
                     .lines()
                     .enumerate()
                     .filter(|(_, line)| {
-                        re.is_match(line)
+                        attribution.is_match(line)
                             && (["md", "txt"].contains(&extension.as_str())
                                 || ["//", "/*", "*", "#", ";", "!"]
                                     .iter()
@@ -180,9 +178,6 @@ pub fn archive_record(
                 }
             }
         }
-        if data.len() as u64 <= util::MAX_FILE {
-            members.insert(relative.to_owned(), data);
-        }
     }
     let manifest = manifest.context("Missing crate manifest")?;
     let metadata = serde_json::to_value(&manifest["package"])?;
@@ -190,15 +185,30 @@ pub fn archive_record(
         metadata["name"] == package["name"] && metadata["version"] == package["version"],
         "Crate identity mismatch: {key}"
     );
-    if let Some(name) = metadata["license-file"].as_str() {
-        if !files.iter().any(|v| v["path"] == name) {
-            util::safe_path(name)?;
-            let data = members
-                .get(name)
-                .context("Missing declared license file")?
-                .clone();
-            files.push(json!({"path":name,"kind":"archive","sha256":util::digest(&data),"blob":blob(data,texts)}));
+    if let Some(name) = metadata["license-file"].as_str()
+        && !files.iter().any(|v| v["path"] == name)
+    {
+        util::safe_path(name)?;
+        // Most crates use a conventional notice name. Revisit only an explicitly
+        // declared custom file instead of retaining every source member in memory.
+        let expected_name = format!("{prefix}/{name}");
+        let mut archive = tar::Archive::new(GzDecoder::new(bytes.as_slice()));
+        let mut original = None;
+        for entry in archive.entries()? {
+            let mut entry = entry?;
+            if entry.path_bytes().as_ref() == expected_name.as_bytes() {
+                ensure!(
+                    entry.header().entry_type().is_file() && entry.size() <= util::MAX_FILE,
+                    "Invalid declared license file"
+                );
+                let mut data = Vec::new();
+                entry.read_to_end(&mut data)?;
+                original = Some(data);
+                break;
+            }
         }
+        let data = original.context("Missing declared license file")?;
+        files.push(json!({"path":name,"kind":"archive","sha256":util::digest(&data),"blob":blob(data,texts)}));
     }
     files.sort_by(|a, b| a["path"].as_str().cmp(&b["path"].as_str()));
     let manifest_data = manifest_data.unwrap();

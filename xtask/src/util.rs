@@ -14,17 +14,15 @@ pub fn root() -> PathBuf {
     if let Ok(current) = std::env::current_dir() {
         for candidate in current.ancestors() {
             let manifest = candidate.join("Cargo.toml");
-            if let Ok(body) = fs::read_to_string(&manifest) {
-                if let Ok(value) = toml::from_str::<toml::Value>(&body) {
-                    if value
-                        .get("package")
-                        .and_then(|p| p.get("name"))
-                        .and_then(toml::Value::as_str)
-                        == Some("lazypencil")
-                    {
-                        return candidate.to_owned();
-                    }
-                }
+            if let Ok(body) = fs::read_to_string(&manifest)
+                && let Ok(value) = toml::from_str::<toml::Value>(&body)
+                && value
+                    .get("package")
+                    .and_then(|p| p.get("name"))
+                    .and_then(toml::Value::as_str)
+                    == Some("lazypencil")
+            {
+                return candidate.to_owned();
             }
         }
     }

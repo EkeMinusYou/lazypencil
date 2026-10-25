@@ -109,6 +109,12 @@ fn archive(bytes: &[u8]) -> Result<BTreeMap<String, Vec<u8>>> {
             continue;
         }
         let name = String::from_utf8(entry.path_bytes().into_owned())?;
+        ensure!(!name.starts_with('/'), "Absolute npm archive path");
+        let name = name
+            .split('/')
+            .filter(|s| !s.is_empty() && *s != ".")
+            .collect::<Vec<_>>()
+            .join("/");
         util::safe_path(&name)?;
         ensure!(
             entry.header().entry_type().is_file() && entry.link_name()?.is_none(),
@@ -397,11 +403,7 @@ pub fn catalogue_literal(source: &str) -> Result<Value> {
                     if byte == b'"' && !escaped {
                         return Ok(serde_json::from_slice(&self.text[start..self.cursor])?);
                     }
-                    if byte == b'\\' && !escaped {
-                        escaped = true;
-                    } else {
-                        escaped = false;
-                    }
+                    escaped = byte == b'\\' && !escaped;
                 }
                 anyhow::bail!("Unclosed catalogue string");
             }

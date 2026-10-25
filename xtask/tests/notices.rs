@@ -48,6 +48,7 @@ impl Fixture {
             .as_object()
             .unwrap()
             .iter()
+            .filter(|(name, _)| name.as_str() != "manifest.json")
             .map(|(n, b)| (n.clone(), STANDARD.decode(b.as_str().unwrap()).unwrap()))
             .collect()
     }
@@ -150,11 +151,20 @@ fn original_inventories_retain_every_notice_attribution_and_reference_byte() {
             (i, files)
         };
         assert_eq!(index, f.data["index"], "{name}");
+        let expected = f.expected();
         assert_eq!(
-            files,
-            f.expected(),
-            "{name}: source notices and readable output must remain reproducible"
+            files.keys().collect::<Vec<_>>(),
+            expected.keys().collect::<Vec<_>>(),
+            "{name}: complete original members"
         );
+        for (member, bytes) in &expected {
+            assert!(
+                files[member] == *bytes,
+                "{name}/{member}: expected {}, actual {}",
+                util::digest(bytes),
+                util::digest(&files[member])
+            );
+        }
         let output = f.path("published");
         notices::publish_bundle(&output, &files).unwrap();
         notices::verify_expected(&output, &files).unwrap();
@@ -169,6 +179,7 @@ fn every_bundle_rejects_changed_missing_and_unlisted_members() {
             let files = f.expected();
             let output = f.path("output");
             notices::publish_bundle(&output, &files).unwrap();
+            notices::verify_expected(&output, &files).unwrap();
             let member = output.join(files.keys().next().unwrap());
             match mutation {
                 "changed" => fs::write(member, b"changed original notice").unwrap(),

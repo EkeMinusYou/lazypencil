@@ -232,12 +232,15 @@ fn cached_material_sources_revalidate_immutable_pins_without_network() {
 }
 #[test]
 fn retention_preserves_unrelated_download_dependency_tool_and_pull_request_caches() {
-    let entries = vec![
+    let mut entries = vec![
         json!({"id":1,"key":"cargo-downloads-Linux","ref":"refs/heads/main"}),
         json!({"id":2,"key":"native-v2-ubuntu-24.04-image-hash","ref":"refs/heads/main"}),
         json!({"id":3,"key":"xtask-v1-tools","ref":"refs/heads/main"}),
         json!({"id":4,"key":"application-v2-ubuntu-24.04-hash","ref":"refs/pull/1/merge"}),
     ];
+    for entry in &mut entries {
+        entry["version"] = "layout".into();
+    }
     assert!(cache::obsolete(&entries, None).unwrap().is_empty());
 }
 

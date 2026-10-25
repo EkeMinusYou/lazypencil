@@ -98,6 +98,8 @@ pub enum Command {
         github_output: Option<PathBuf>,
     },
     Prune {
+        #[arg(long,default_value_os_t=util::root())]
+        source: PathBuf,
         #[arg(long, env = "CARGO_TARGET_DIR")]
         target: PathBuf,
     },
@@ -156,7 +158,7 @@ impl Command {
                         Ok(report) => report,
                         Err(error) => {
                             eprintln!("Application cache rejected: {error:#}");
-                            prune(&target)?;
+                            prune(&source, &target)?;
                             json!({"reused":false})
                         }
                     },
@@ -191,7 +193,7 @@ impl Command {
                     })
                     .collect::<Vec<_>>();
                 let source_hash = manifest
-                    .map(|p| -> Result<_> { Ok(source_fingerprint(&util::json::<Manifest>(&p)?)?) })
+                    .map(|p| -> Result<_> { source_fingerprint(&util::json::<Manifest>(&p)?) })
                     .transpose()?;
                 let obsolete = obsolete(&entries, source_hash.as_deref())?;
                 util::print(
@@ -284,7 +286,7 @@ impl Command {
                 }
                 Ok(())
             }
-            Self::Prune { target } => prune(&target),
+            Self::Prune { source, target } => prune(&source, &target),
         }
     }
 }
@@ -629,29 +631,29 @@ pub fn input_environment(
                         )?)),
                     );
                 }
-            } else if !line.starts_with('#') {
-                if let Some((_, deps)) = line.split_once(": ") {
-                    for token in shell_words::split(deps)? {
-                        let path = PathBuf::from(token);
-                        let path = if path.is_absolute() {
-                            path
-                        } else {
-                            source.join(path)
-                        };
-                        let resolved = path.canonicalize()?;
-                        let relative = resolved
-                            .strip_prefix(source.canonicalize()?)
-                            .context("External compiler input")?
-                            .to_str()
-                            .context("Invalid compiler path")?
-                            .to_owned();
-                        let entry = tracked.get(&relative).context("Unbound compiler input")?;
-                        if checked.insert(relative) {
-                            ensure!(
-                                !path.is_symlink() && util::file_digest(&path)? == entry.sha256,
-                                "Compiler source input changed"
-                            );
-                        }
+            } else if !line.starts_with('#')
+                && let Some((_, deps)) = line.split_once(": ")
+            {
+                for token in shell_words::split(deps)? {
+                    let path = PathBuf::from(token);
+                    let path = if path.is_absolute() {
+                        path
+                    } else {
+                        source.join(path)
+                    };
+                    let resolved = path.canonicalize()?;
+                    let relative = resolved
+                        .strip_prefix(source.canonicalize()?)
+                        .context("External compiler input")?
+                        .to_str()
+                        .context("Invalid compiler path")?
+                        .to_owned();
+                    let entry = tracked.get(&relative).context("Unbound compiler input")?;
+                    if checked.insert(relative) {
+                        ensure!(
+                            !path.is_symlink() && util::file_digest(&path)? == entry.sha256,
+                            "Compiler source input changed"
+                        );
                     }
                 }
             }
@@ -778,7 +780,7 @@ pub fn restore(
     )
 }
 
-pub fn prune(target: &Path) -> Result<()> {
+pub fn prune(source: &Path, target: &Path) -> Result<()> {
     ensure!(
         target.is_absolute() && target.parent().is_some(),
         "Explicit non-root target directory required"
@@ -798,14 +800,17 @@ pub fn prune(target: &Path) -> Result<()> {
     }
     for profile in ["dev", "release"] {
         process::checked(
-            Process::new("cargo").args([
-                "clean",
-                "--locked",
-                "--package",
-                "lazypencil",
-                "--profile",
-                profile,
-            ]),
+            Process::new("cargo")
+                .current_dir(source)
+                .env("CARGO_TARGET_DIR", target)
+                .args([
+                    "clean",
+                    "--locked",
+                    "--package",
+                    "lazypencil",
+                    "--profile",
+                    profile,
+                ]),
             std::time::Duration::from_secs(180),
         )?;
     }
@@ -835,10 +840,10 @@ pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Valu
         let key = entry["key"].as_str().context("Invalid cache key")?;
         let version = entry["version"].as_str().context("Invalid cache version")?;
         let id = entry["id"].as_u64().context("Invalid cache id")?;
-        if let Some(primary) = key.strip_prefix("checkpoint-native-v2-") {
-            if keys.contains(&(format!("native-v2-{primary}").as_str(), version)) {
-                selected.insert(id, entry.clone());
-            }
+        if let Some(primary) = key.strip_prefix("checkpoint-native-v2-")
+            && keys.contains(&(format!("native-v2-{primary}").as_str(), version))
+        {
+            selected.insert(id, entry.clone());
         }
         if let Some(caps) = re.captures(key) {
             if source_hash.is_some_and(|s| &caps[1] == "1" || s != &caps[3]) {

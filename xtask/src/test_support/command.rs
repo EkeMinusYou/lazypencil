@@ -50,7 +50,15 @@ pub fn render(args: &[String]) -> Result {
         .windows(2)
         .find(|w| w[0] == "--output")
         .ok_or("Missing render output")?;
-    let dashboard = args.iter().any(|a| a.ends_with("dashboard.pen"));
+    let document = args
+        .windows(2)
+        .find(|w| w[0] == "render")
+        .ok_or("Missing render document")?;
+    let dashboard = Path::new(&document[1])
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("avatar.png")
+        .is_file();
     let mut png = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec();
     png.extend(1920u32.to_be_bytes());
     png.extend(1080u32.to_be_bytes());

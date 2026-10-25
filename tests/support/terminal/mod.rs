@@ -1,5 +1,8 @@
 //! Real PTY observations shared by frontend and retained-browser integration tests.
 mod cases;
+#[path = "../../../xtask/src/test_support/command_output.rs"]
+#[allow(dead_code)] // CI also consumes elapsed time and separate stderr.
+mod command_output;
 #[path = "../../../xtask/src/test_support/terminal.rs"]
 #[allow(dead_code)] // Observer methods are also exercised by independent xtask tests.
 pub mod observer;
@@ -57,15 +60,18 @@ fn run_cli(
     environment: &BTreeMap<OsString, OsString>,
     arguments: &[&std::ffi::OsStr],
 ) -> Result<Value> {
-    let output = Command::new(binary)
-        .current_dir(root)
-        .envs(environment)
-        .arg("--data-dir")
-        .arg(root.join("data"))
-        .arg("--json")
-        .args(arguments)
-        .output()?;
-    if !output.status.success() {
+    let output = command_output::output(
+        Command::new(binary)
+            .current_dir(root)
+            .envs(environment)
+            .arg("--data-dir")
+            .arg(root.join("data"))
+            .arg("--json")
+            .args(arguments),
+        Duration::from_secs(300),
+        64 * 1024 * 1024,
+    )?;
+    if output.timed_out || !output.status.success() {
         return Err(format!(
             "CLI failed: {}\n{}",
             String::from_utf8_lossy(&output.stdout),

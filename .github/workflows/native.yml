@@ -88,7 +88,7 @@ jobs:
             ${{ runner.temp }}/lazypencil-source/vendor/skia-bindings/skia
             ${{ runner.temp }}/lazypencil-material-fonts
       - name: Remove application outputs from dependency fallback caches
-        run: cargo xtask ci cache prune
+        run: cargo xtask ci cache prune --source "$RUNNER_TEMP/lazypencil-source"
       - name: Identify source-bound application outputs
         id: application-key
         if: steps.cache-key.outcome == 'success'
@@ -224,7 +224,7 @@ jobs:
         id: cache-prune
         if: ${{ !cancelled() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true' && steps.native-cache.outputs.cache-matched-key != steps.cache-key.outputs.primary && (steps.focus-build.outcome == 'success' || steps.default-build.outcome == 'success') }}
         continue-on-error: true
-        run: cargo xtask ci cache prune
+        run: cargo xtask ci cache prune --source "$RUNNER_TEMP/lazypencil-source"
       - name: Save compatible hosted dependency build artifacts
         if: ${{ !cancelled() && steps.cache-prune.outcome == 'success' && github.ref == 'refs/heads/main' }}
         continue-on-error: true

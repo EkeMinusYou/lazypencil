@@ -1,87 +1,15 @@
-use anyhow::{Context, Result, bail};
-use std::{
-    fs,
-    io::{Read, Seek, SeekFrom, Write},
-    path::Path,
-    process::{Command, ExitStatus, Stdio},
-    thread,
-    time::{Duration, Instant},
-};
-
-pub struct Output {
-    pub status: ExitStatus,
-    pub stdout: Vec<u8>,
-    pub stderr: Vec<u8>,
-    pub elapsed: Duration,
-    pub timed_out: bool,
-}
+use anyhow::{Result, bail};
+use std::{fs, io::Write, path::Path, process::Command, time::Duration};
+#[path = "test_support/command_output.rs"]
+mod command_output;
+pub use command_output::Output;
 
 pub fn output(command: &mut Command, timeout: Duration) -> Result<Output> {
     output_limited(command, timeout, 64 * 1024 * 1024)
 }
 
 pub fn output_limited(command: &mut Command, timeout: Duration, limit: u64) -> Result<Output> {
-    let mut stdout = tempfile::tempfile()?;
-    let mut stderr = tempfile::tempfile()?;
-    command
-        .stdout(Stdio::from(stdout.try_clone()?))
-        .stderr(Stdio::from(stderr.try_clone()?));
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        command.process_group(0);
-    }
-    let started = Instant::now();
-    let mut child = command
-        .spawn()
-        .with_context(|| format!("Starting {command:?}"))?;
-    let mut timed_out = false;
-    let status = loop {
-        if let Some(status) = child.try_wait()? {
-            break status;
-        }
-        if started.elapsed() >= timeout {
-            #[cfg(unix)]
-            unsafe {
-                libc::kill(-(child.id() as i32), libc::SIGTERM);
-            }
-            #[cfg(not(unix))]
-            {
-                let _ = child.kill();
-            }
-            let deadline = Instant::now() + Duration::from_secs(2);
-            while Instant::now() < deadline && child.try_wait()?.is_none() {
-                thread::sleep(Duration::from_millis(10));
-            }
-            // Kill the group even when the direct child has already exited.
-            // Descendants can otherwise retain pipes or continue native builds.
-            #[cfg(unix)]
-            unsafe {
-                libc::kill(-(child.id() as i32), libc::SIGKILL);
-            }
-            let _ = child.kill();
-            timed_out = true;
-            break child.wait()?;
-        }
-        thread::sleep(Duration::from_millis(10));
-    };
-    let mut out = Vec::new();
-    let mut err = Vec::new();
-    stdout.seek(SeekFrom::Start(0))?;
-    stderr.seek(SeekFrom::Start(0))?;
-    stdout.take(limit + 1).read_to_end(&mut out)?;
-    stderr.take(limit + 1).read_to_end(&mut err)?;
-    anyhow::ensure!(
-        out.len() as u64 <= limit && err.len() as u64 <= limit,
-        "Command output exceeded its byte limit"
-    );
-    Ok(Output {
-        status,
-        stdout: out,
-        stderr: err,
-        elapsed: started.elapsed(),
-        timed_out,
-    })
+    Ok(command_output::output(command, timeout, limit)?)
 }
 
 pub fn checked(command: &mut Command, timeout: Duration) -> Result<Vec<u8>> {

@@ -35,7 +35,7 @@ pub fn performance(output_dir: &Path, scene: &str) -> Result<serde_json::Value> 
         ["shadow", "dashboard"].contains(&scene),
         "Unknown performance scene"
     );
-    fs::create_dir(&output_dir)?;
+    fs::create_dir(output_dir)?;
     let source = util::root().join("tests/fixtures/performance");
     let document = source.join(format!("{scene}.pen"));
     let bytes = util::read(&document, util::MAX_FILE)?;

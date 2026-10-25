@@ -177,7 +177,7 @@ impl Session {
         let core = ["core", "conversation"].contains(&args.suite.as_str());
         match args.stage {
             Stage::EvidenceBuild => {
-                super::cache::prune(&self.target)?;
+                super::cache::prune(&self.root, &self.target)?;
                 self.capture(
                     Command::new("cargo").args([
                         "build",
@@ -610,37 +610,36 @@ impl Session {
                 && event["package_id"]
                     .as_str()
                     .is_some_and(|id| id.contains("#lazypencil@"))
+                && let Some(path) = event["executable"].as_str()
             {
-                if let Some(path) = event["executable"].as_str() {
-                    let path = PathBuf::from(path);
-                    ensure!(
-                        path.starts_with(self.target.join("debug/deps")),
-                        "Unexpected test executable path"
-                    );
-                    let name = event["target"]["name"]
-                        .as_str()
-                        .context("Test target name required")?;
-                    let key = if event["target"]["kind"]
-                        .as_array()
-                        .is_some_and(|k| k.contains(&json!("lib")))
-                    {
-                        "lib"
-                    } else {
-                        name
-                    };
-                    ensure!(
-                        binaries
-                            .insert(
-                                key.to_owned(),
-                                Binary {
-                                    sha256: util::file_digest(&path)?,
-                                    path
-                                }
-                            )
-                            .is_none(),
-                        "Duplicate test executable"
-                    );
-                }
+                let path = PathBuf::from(path);
+                ensure!(
+                    path.starts_with(self.target.join("debug/deps")),
+                    "Unexpected test executable path"
+                );
+                let name = event["target"]["name"]
+                    .as_str()
+                    .context("Test target name required")?;
+                let key = if event["target"]["kind"]
+                    .as_array()
+                    .is_some_and(|k| k.contains(&json!("lib")))
+                {
+                    "lib"
+                } else {
+                    name
+                };
+                ensure!(
+                    binaries
+                        .insert(
+                            key.to_owned(),
+                            Binary {
+                                sha256: util::file_digest(&path)?,
+                                path
+                            }
+                        )
+                        .is_none(),
+                    "Duplicate test executable"
+                );
             }
         }
         ensure!(

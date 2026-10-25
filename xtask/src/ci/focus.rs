@@ -155,10 +155,10 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         if let Some(stem) = Path::new(p).file_stem().and_then(|s| s.to_str()) {
             stems.insert(stem.into());
         }
-        if p.starts_with("src/") {
-            if let Some(name) = p.split('/').nth(1) {
-                stems.insert(name.trim_end_matches(".rs").into());
-            }
+        if p.starts_with("src/")
+            && let Some(name) = p.split('/').nth(1)
+        {
+            stems.insert(name.trim_end_matches(".rs").into());
         }
     }
     let selected = || {
@@ -520,7 +520,7 @@ pub fn changed_paths(root: &Path) -> Result<Vec<String>> {
                     .as_str()
                     .context("Missing source identity")?
                     .to_owned();
-                let event: Value = util::json(&Path::new(&std::env::var("GITHUB_EVENT_PATH")?))?;
+                let event: Value = util::json(Path::new(&std::env::var("GITHUB_EVENT_PATH")?))?;
                 let base = event["pull_request"]["base"]["sha"]
                     .as_str()
                     .or_else(|| event["before"].as_str());

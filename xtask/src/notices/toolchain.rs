@@ -181,11 +181,11 @@ pub fn reference_terms(upstream: Option<&Path>) -> Result<BTreeMap<String, (Valu
         None => &empty,
     };
     ensure!(references.len() <= 100, "Too many reference terms");
+    let identifier = Regex::new(r"^[A-Za-z0-9][A-Za-z0-9.+-]{0,127}$")?;
     for item in references {
         let id = string(&item["id"])?;
         ensure!(
-            Regex::new(r"^[A-Za-z0-9][A-Za-z0-9.+-]{0,127}$")?.is_match(id)
-                && !result.contains_key(id),
+            identifier.is_match(id) && !result.contains_key(id),
             "Invalid or duplicate reference identifier"
         );
         ensure!(
@@ -268,6 +268,7 @@ pub fn registry_packages(
     let mut findings = Vec::new();
     let mut sources = Vec::new();
     let mut locked = source_lock(files)?;
+    let license_identifier = Regex::new(r"[A-Za-z0-9][A-Za-z0-9.+-]*")?;
     locked.sort_by(|a, b| {
         string(&a["name"])
             .unwrap()
@@ -343,7 +344,7 @@ pub fn registry_packages(
         }
         record["vendor_registry_comparison"] = comparison;
         record["original_source_hashes"] = serde_json::to_value(hashes)?;
-        if Regex::new(r"[A-Za-z0-9][A-Za-z0-9.+-]*")?
+        if license_identifier
             .find_iter(record["license"].as_str().unwrap_or_default())
             .any(|m| m.as_str() == "MPL-2.0")
         {
