@@ -247,6 +247,23 @@ pub(super) struct Override {
     pub input: Option<Value>,
 }
 
+pub(super) fn metadata_contexts(metadata: Option<&Value>) -> (bool, bool) {
+    let namespace = metadata.and_then(|value| value.get("lazypencil"));
+    let output = namespace.is_some_and(|value| {
+        value.get("script_bindings").is_some() || value.get("script_scope").is_some()
+    });
+    let input = namespace.is_some_and(|value| {
+        value.get("script_input_context").is_some()
+            || value
+                .pointer("/script_scope/inputs")
+                .is_some_and(|v| !v.is_null())
+            || value
+                .pointer("/script_bindings/inputs_hash")
+                .is_some_and(|v| !v.is_null())
+    });
+    (output, input)
+}
+
 pub(super) fn override_value(changes: &Map<String, Value>) -> Result<Option<Override>> {
     let Some(value) = changes
         .get("metadata")

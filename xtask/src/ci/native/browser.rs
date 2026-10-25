@@ -372,15 +372,14 @@ pub fn required_images(root: &Path, commit: &str) -> Result<()> {
                     "Script override pixels differ after {stage}"
                 );
             }
-            let explicit = format!("{prefix}-explicit.png");
-            ensure!(
-                row["explicit"] == explicit,
-                "Wrong explicit input image name"
-            );
-            png(&explicit, &row["explicit_png_hash"], width, height)?;
+            for stage in ["explicit", "reset", "inherited_input", "inherited_code"] {
+                let name = format!("{prefix}-{stage}.png");
+                ensure!(row[stage] == name, "Wrong script input image name");
+                png(&name, &row[format!("{stage}_png_hash")], width, height)?;
+            }
         }
     }
-    println!("Verified source identities, hashes and dimensions for 176 required PNGs");
+    println!("Verified source identities, hashes and dimensions for 212 required PNGs");
     Ok(())
 }
 pub fn panel(s: &Session) -> Result<()> {

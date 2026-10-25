@@ -29,31 +29,6 @@ fn rendered(store: &Store) -> Vec<u8> {
     .png
 }
 
-fn stored_override(store: &Store) -> Value {
-    let document = store.read().unwrap();
-    let mut targets = Vec::new();
-    for id in document.locations().keys() {
-        let node = document.node(id).unwrap();
-        if let Some(overrides) = node.get("descendants").and_then(Value::as_object) {
-            for (path, changes) in overrides {
-                if changes
-                    .pointer("/metadata/lazypencil/script_override")
-                    .is_some()
-                    || changes
-                        .pointer("/metadata/lazypencil/script_input_context")
-                        .is_some()
-                {
-                    targets.push(
-                        json!({"node_id":id,"instance_path":path.split('/').collect::<Vec<_>>()}),
-                    );
-                }
-            }
-        }
-    }
-    assert_eq!(targets.len(), 1);
-    targets.pop().unwrap()
-}
-
 #[test]
 fn inherited_overrides_preserve_live_namespaces_metadata_and_pixels_after_two_independent_copies() {
     let mut reports = Vec::new();
@@ -114,27 +89,24 @@ fn inherited_overrides_preserve_live_namespaces_metadata_and_pixels_after_two_in
                     "future"
                 }
             );
-            let mut inherited_inputs =
-                second.read().unwrap().node(&base).unwrap()["inputs"].clone();
-            inherited_inputs["amount"] = json!(4);
-            fixture::apply(
-                &second,
-                "future-base-input",
-                json!([{"op":"update","target":base,"set":{"inputs":inherited_inputs}}]),
-            );
-            if ["code", "metadata"].contains(mode) {
-                assert_eq!(
-                    fixture::active(&second, &second_id).properties["inputs"]["amount"],
-                    4
+            let target = fixture::stored_override(&second);
+            let absent = match *mode {
+                "inputs" | "literal" => vec!["scriptUri"],
+                "code" => vec!["inputs"],
+                "metadata" => vec!["inputs", "scriptUri"],
+                _ => vec![],
+            };
+            if !absent.is_empty() {
+                fixture::apply(
+                    &second,
+                    "absent-reset",
+                    json!([
+                        {"op":"update","target":target,"unset":absent},
+                        {"op":"reset_override","target":target,"properties":absent}
+                    ]),
                 );
-            } else {
-                assert_ne!(
-                    fixture::active(&second, &second_id).properties["inputs"]["amount"],
-                    4
-                );
+                assert_eq!(rendered(&second), recopied, "{version}/{mode}/absent reset");
             }
-
-            let target = stored_override(&second);
             let current = fixture::active(&second, &second_id);
             let inputs = current.properties["inputs"].clone();
             fixture::apply(
@@ -176,17 +148,73 @@ fn inherited_overrides_preserve_live_namespaces_metadata_and_pixels_after_two_in
                 }
             );
 
+            fixture::apply(
+                &second,
+                "reset-contexts",
+                json!([{"op":"reset_override","target":target,"properties":["inputs","scriptUri"]}]),
+            );
+            let reset = rendered(&second);
+            assert_eq!(pixel(&reset, 5), Color::RED, "{version}/{mode}/reset input");
+            assert_eq!(pixel(&reset, 17), Color::RED, "{version}/{mode}/reset code");
+            let mut base_inputs = second.read().unwrap().node(&base).unwrap()["inputs"].clone();
+            base_inputs["amount"] = json!(4);
+            fixture::apply(
+                &second,
+                "future-base-input",
+                json!([{"op":"update","target":base,"set":{"inputs":base_inputs}}]),
+            );
+            assert_eq!(
+                fixture::active(&second, &second_id).properties["inputs"]["amount"],
+                4
+            );
+            let inherited_input = rendered(&second);
+            assert_eq!(
+                pixel(&inherited_input, 5),
+                Color::MAGENTA,
+                "{version}/{mode}/new base input"
+            );
+            assert_eq!(pixel(&inherited_input, 17), Color::RED);
+            let base_uri = second.read().unwrap().node(&base).unwrap()["scriptUri"].clone();
+            fixture::apply(
+                &second,
+                "future-base-code",
+                json!([{"op":"update","target":base,"set":{"scriptUri":base_uri}}]),
+            );
+            let inherited_code = rendered(&second);
+            assert_eq!(pixel(&inherited_code, 5), Color::MAGENTA);
+            assert_eq!(
+                pixel(&inherited_code, 17),
+                Color::MAGENTA,
+                "{version}/{mode}/new base code"
+            );
+
             let prefix = format!("codec-script-overrides-{version}-{mode}");
-            let names = ["before", "copied", "recopied", "explicit"]
-                .map(|stage| format!("{prefix}-{stage}.png"));
+            let names = [
+                "before",
+                "copied",
+                "recopied",
+                "explicit",
+                "reset",
+                "inherited_input",
+                "inherited_code",
+            ]
+            .map(|stage| format!("{prefix}-{stage}.png"));
             if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
                 let directory = std::path::PathBuf::from(directory);
                 fs::create_dir_all(&directory).unwrap();
-                for (name, png) in names.iter().zip([&before, &copied, &recopied, &explicit]) {
+                for (name, png) in names.iter().zip([
+                    &before,
+                    &copied,
+                    &recopied,
+                    &explicit,
+                    &reset,
+                    &inherited_input,
+                    &inherited_code,
+                ]) {
                     fs::write(directory.join(name), png).unwrap();
                 }
             }
-            reports.push(json!({"document_version":version,"mode":mode,"before":names[0],"copied":names[1],"recopied":names[2],"explicit":names[3],"width":36,"height":12,"png_hash":hash(&before),"explicit_png_hash":hash(&explicit)}));
+            reports.push(json!({"document_version":version,"mode":mode,"before":names[0],"copied":names[1],"recopied":names[2],"explicit":names[3],"reset":names[4],"inherited_input":names[5],"inherited_code":names[6],"width":36,"height":12,"png_hash":hash(&before),"explicit_png_hash":hash(&explicit),"reset_png_hash":hash(&reset),"inherited_input_png_hash":hash(&inherited_input),"inherited_code_png_hash":hash(&inherited_code)}));
         }
     }
     if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {

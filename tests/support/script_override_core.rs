@@ -71,6 +71,45 @@ fn inherited_script_overrides_copy_without_running_code_and_survive_independent_
                 }
             );
             Project::load(&copied).unwrap().resolve().unwrap();
+            let document = copied.read().unwrap();
+            let base = document
+                .locations()
+                .keys()
+                .find(|id| {
+                    document.node(id).unwrap()["name"]
+                        .as_str()
+                        .is_some_and(|name| name.ends_with("Base generator"))
+                })
+                .unwrap()
+                .clone();
+            let mut inputs = document.node(&base).unwrap()["inputs"].clone();
+            inputs["amount"] = json!(4);
+            apply(
+                &copied,
+                "base-input",
+                json!([{"op":"update","target":base,"set":{"inputs":inputs}}]),
+            );
+            let amount = active(&copied, &id).properties["inputs"]["amount"].clone();
+            assert_eq!(amount == json!(4), ["code", "metadata"].contains(mode));
+            let target = stored_override(&copied);
+            apply(
+                &copied,
+                "reset",
+                json!([{"op":"reset_override","target":target,"properties":["inputs","scriptUri"]}]),
+            );
+            let restored = active(&copied, &id);
+            assert_eq!(restored.properties["inputs"]["amount"], 4);
+            assert_eq!(
+                fs::read(
+                    copied
+                        .path()
+                        .parent()
+                        .unwrap()
+                        .join(restored.properties["scriptUri"].as_str().unwrap())
+                )
+                .unwrap(),
+                BASE.as_bytes()
+            );
             let target = fixture::active(&copied, &id).address;
             apply(
                 &copied,

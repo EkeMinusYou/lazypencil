@@ -101,6 +101,31 @@ pub fn operations() -> Value {
     json!([{"op":"import_component","source":{"library_alias":"ui","node_id":"panel"},"mode":"copy","options":{"component_prefix":"Copy ","variables":variables}},
         {"op":"delete","target":"use"},{"op":"remove_import","alias":"ui"}])
 }
+
+pub fn stored_override(store: &Store) -> Value {
+    let document = store.read().unwrap();
+    let mut targets = Vec::new();
+    for id in document.locations().keys() {
+        let node = document.node(id).unwrap();
+        if let Some(overrides) = node.get("descendants").and_then(Value::as_object) {
+            for (path, changes) in overrides {
+                if changes
+                    .pointer("/metadata/lazypencil/script_override")
+                    .is_some()
+                    || changes
+                        .pointer("/metadata/lazypencil/script_input_context")
+                        .is_some()
+                {
+                    targets.push(
+                        json!({"node_id":id,"instance_path":path.split('/').collect::<Vec<_>>()}),
+                    );
+                }
+            }
+        }
+    }
+    assert_eq!(targets.len(), 1);
+    targets.pop().unwrap()
+}
 pub fn active(store: &Store, id: &str) -> ResolvedNode {
     fn find(node: ResolvedNode) -> Option<ResolvedNode> {
         if node.kind() == "script" && node.properties.get("enabled") != Some(&json!(false)) {

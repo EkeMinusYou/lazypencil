@@ -523,9 +523,21 @@ impl Copier<'_> {
         let metadata = old_carrier
             .as_ref()
             .map_or(node.get("metadata").is_some(), |v| v.metadata.is_some());
+        let raw_metadata = old_carrier
+            .as_ref()
+            .map_or(node.get("metadata"), |v| v.metadata.as_ref());
+        let (metadata_output, metadata_input) =
+            super::super::script_context::metadata_contexts(raw_metadata);
         let full = node["type"] == "script";
-        let output = full || metadata || node.get("scriptUri").is_some();
-        if !full && !metadata && node.get("scriptUri").is_none() && node.get("inputs").is_none() {
+        let output = full
+            || metadata_output
+            || node.get("scriptUri").is_some()
+            || old_carrier.as_ref().is_some_and(|v| v.output.is_some());
+        let input_context = full
+            || metadata_input
+            || node.get("inputs").is_some()
+            || old_carrier.as_ref().is_some_and(|v| v.input.is_some());
+        if !full && !metadata && !output && !input_context {
             if old_carrier.is_some() {
                 result.remove("metadata");
             }
@@ -608,14 +620,43 @@ impl Copier<'_> {
         if output {
             bindings["inputs_hash"] = json!(inputs_hash);
         }
-        let context = if full || metadata || node.get("inputs").is_some() {
+        let context = if input_context {
             self.input_context(info, &mut budget)?
         } else {
             None
         };
         self.script_binding_bytes = self.script_binding_bytes.saturating_add(budget.bytes());
-        if !full && !metadata {
-            result.insert("metadata".into(),json!({"type":"lazypencil","lazypencil":{"script_override":{"version":1,"metadata":null,"output":if output {Some(bindings)} else {None},"input":context}}}));
+        if !full {
+            let mut user_metadata = result.remove("metadata");
+            if user_metadata
+                .as_ref()
+                .is_some_and(|value| !value.is_object())
+            {
+                return Err(copy_error("Script metadata must be an object"));
+            }
+            if let Some(namespace) = user_metadata
+                .as_mut()
+                .and_then(|v| v.get_mut("lazypencil"))
+                .and_then(Value::as_object_mut)
+            {
+                for key in [
+                    "script_bindings",
+                    "script_scope",
+                    "script_input_context",
+                    "script_override",
+                ] {
+                    namespace.remove(key);
+                }
+                if namespace.is_empty() {
+                    user_metadata
+                        .as_mut()
+                        .expect("metadata")
+                        .as_object_mut()
+                        .expect("metadata object")
+                        .remove("lazypencil");
+                }
+            }
+            result.insert("metadata".into(),json!({"type":"lazypencil","lazypencil":{"script_override":{"version":1,"metadata":user_metadata,"output":if output {Some(bindings)} else {None},"input":context}}}));
             return Ok(());
         }
         let metadata = result

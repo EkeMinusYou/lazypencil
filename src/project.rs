@@ -1560,23 +1560,41 @@ impl Project {
                 )?);
             }
         }
+        // Ordinary metadata does not own execution context. Reset explicit code
+        // and input edits independently, then bind only reserved context fields.
+        if changes.contains_key("scriptUri") {
+            node.script_scope = None;
+            node.script_bindings = None;
+        }
+        if changes.contains_key("inputs") {
+            node.input_context = None;
+            node.script_input_scope = None;
+            if let Some(bindings) = &mut node.script_bindings {
+                bindings.inputs_bound = false;
+            }
+        }
         if carrier
             .as_ref()
             .map_or(changes.contains_key("metadata"), |v| v.metadata.is_some())
         {
-            self.bind_script_scope(node)?;
-        } else {
-            // Explicit instance overrides use the overriding property's document,
-            // even when their JSON happens to equal the bound definition's value.
-            if changes.contains_key("scriptUri") {
-                node.script_scope = None;
-                node.script_bindings = None;
-            }
-            if changes.contains_key("inputs") {
-                node.input_context = None;
-                node.script_input_scope = None;
-                if let Some(bindings) = &mut node.script_bindings {
-                    bindings.inputs_bound = false;
+            let (output, input) =
+                script_context::metadata_contexts(node.properties.get("metadata"));
+            if output || input {
+                let previous_output =
+                    (!output).then(|| (node.script_bindings.take(), node.script_scope.take()));
+                let previous_input =
+                    (!input).then(|| (node.input_context.take(), node.script_input_scope.take()));
+                self.bind_script_scope(node)?;
+                if let Some((mut bindings, scope)) = previous_output {
+                    if input && let Some(bindings) = &mut bindings {
+                        bindings.inputs_bound = false;
+                    }
+                    node.script_bindings = bindings;
+                    node.script_scope = scope;
+                }
+                if let Some((context, scope)) = previous_input {
+                    node.input_context = context;
+                    node.script_input_scope = scope;
                 }
             }
         }
