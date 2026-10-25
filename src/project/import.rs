@@ -2,8 +2,31 @@ use super::*;
 use crate::operations::{ImportOptions, NameResolution};
 use uuid::Uuid;
 
+mod browsers;
 mod samplers;
 mod scripts;
+
+enum DynamicInfo {
+    Script(scripts::Info),
+    Browser(browsers::Info),
+}
+
+impl DynamicInfo {
+    fn script(&self) -> Option<&scripts::Info> {
+        if let Self::Script(info) = self {
+            Some(info)
+        } else {
+            None
+        }
+    }
+    fn browser(&self) -> Option<&browsers::Info> {
+        if let Self::Browser(info) = self {
+            Some(info)
+        } else {
+            None
+        }
+    }
+}
 
 type Key = (PathBuf, String);
 pub(crate) struct CopyPlan {
@@ -119,6 +142,7 @@ impl Project {
             script_images: BTreeSet::new(),
             used_script_assets: BTreeSet::new(),
             script_binding_bytes: 0,
+            browser_scopes: BTreeMap::new(),
         };
         while let Some(key) = graph.queue.pop_front() {
             graph.project.check_cancelled()?;
@@ -301,9 +325,32 @@ struct Copier<'a> {
     script_images: BTreeSet<(PathBuf, String, String)>,
     used_script_assets: BTreeSet<String>,
     script_binding_bytes: usize,
+    browser_scopes: BTreeMap<PathBuf, String>,
 }
 
 impl Copier<'_> {
+    fn bind_copied_library(&mut self, file: &crate::managed::File, mut alias: String) -> String {
+        while self.project.imports[&self.project.root]
+            .get(&alias)
+            .is_some_and(|path| path != &file.path)
+            || self.project.root_document().value()["variables"]
+                .as_object()
+                .is_some_and(|values| {
+                    values
+                        .keys()
+                        .any(|name| name.starts_with(&format!("{alias}:")))
+                })
+            || self
+                .copied_imports
+                .get(&alias)
+                .is_some_and(|uri| uri != file.uri.as_str())
+        {
+            alias.push('_');
+        }
+        self.copied_imports.insert(alias.clone(), json!(file.uri));
+        alias
+    }
+
     fn axis_target(&self, origin: &Path, axis: &str) -> Result<String> {
         if let Some(target) = self.axes.get(&(origin.into(), axis.into())) {
             return Ok(target.clone());
@@ -574,16 +621,17 @@ impl Copier<'_> {
         self.scan_properties(origin, node)
     }
     fn scan_properties(&mut self, origin: &Path, node: &Value) -> Result<()> {
-        let script = self.script_info(origin, node)?;
-        self.scan_properties_info(origin, node, script)
+        let info = self.dynamic_info(origin, node)?;
+        self.scan_properties_info(origin, node, info)
     }
     fn scan_properties_info(
         &mut self,
         origin: &Path,
         node: &Value,
-        script: Option<scripts::Info>,
+        info: Option<DynamicInfo>,
     ) -> Result<()> {
-        if let Some(info) = &script {
+        let script = info.as_ref().and_then(DynamicInfo::script);
+        if let Some(info) = script {
             self.scan_script_info(info)?;
         }
         self.scan_sampler_values(origin, node)?;
@@ -592,7 +640,7 @@ impl Copier<'_> {
             .ok_or_else(|| copy_error("A copied node must be an object"))?;
         for (key, value) in object {
             if key == "inputs"
-                && let Some(script) = &script
+                && let Some(script) = script
             {
                 let header = &script.header;
                 for input in &header.inputs {
@@ -654,15 +702,15 @@ impl Copier<'_> {
                     let target =
                         find_descendant_mut(&mut expanded, &path.split('/').collect::<Vec<_>>())
                             .ok_or_else(|| copy_error("A copied override target is missing"))?;
-                    if target.kind() == "script" {
-                        let info = self.script_info_resolved(
+                    if matches!(target.kind(), "script" | "browser") {
+                        let info = self.dynamic_info_resolved(
                             target.clone(),
                             (
                                 origin.into(),
                                 format!("{}/{path}", node["id"].as_str().expect("instance ID")),
                             ),
                         )?;
-                        self.scan_properties_info(origin, changes, Some(info))?;
+                        self.scan_properties_info(origin, changes, info)?;
                     } else {
                         self.scan_properties(origin, changes)?;
                     }
@@ -759,16 +807,17 @@ impl Copier<'_> {
     }
     fn rewrite_properties(&mut self, origin: &Path, node: &Value, is_node: bool) -> Result<Value> {
         self.project.check_cancelled()?;
-        let script = self.script_info(origin, node)?;
-        self.rewrite_properties_info(origin, node, is_node, script)
+        let info = self.dynamic_info(origin, node)?;
+        self.rewrite_properties_info(origin, node, is_node, info)
     }
     fn rewrite_properties_info(
         &mut self,
         origin: &Path,
         node: &Value,
         is_node: bool,
-        script: Option<scripts::Info>,
+        info: Option<DynamicInfo>,
     ) -> Result<Value> {
+        let script = info.as_ref().and_then(DynamicInfo::script);
         let mut result = node
             .as_object()
             .ok_or_else(|| copy_error("A copied override must be an object"))?
@@ -789,7 +838,7 @@ impl Copier<'_> {
         }
         for (key, value) in &mut result {
             if key == "inputs"
-                && let Some(script) = &script
+                && let Some(script) = script
             {
                 let header = &script.header;
                 if let Some(values) = value.as_object_mut() {
@@ -862,19 +911,19 @@ impl Copier<'_> {
                 let info = if changes.get("type").is_none() {
                     let target =
                         find_descendant_mut(&mut expanded, &parts).expect("validated override");
-                    if target.kind() == "script" {
-                        Some(self.script_info_resolved(
+                    if matches!(target.kind(), "script" | "browser") {
+                        self.dynamic_info_resolved(
                             target.clone(),
                             (
                                 origin.into(),
                                 format!("{}/{path}", node["id"].as_str().expect("instance ID")),
                             ),
-                        )?)
+                        )?
                     } else {
                         None
                     }
                 } else {
-                    self.script_info(origin, changes)?
+                    self.dynamic_info(origin, changes)?
                 };
                 remapped.insert(
                     keys.join("/"),
@@ -929,7 +978,12 @@ impl Copier<'_> {
                 }
             }
         }
-        self.rewrite_script(node, &mut result, script.as_ref())?;
+        self.rewrite_script(node, &mut result, script)?;
+        self.rewrite_browser(
+            node,
+            &mut result,
+            info.as_ref().and_then(DynamicInfo::browser),
+        )?;
         Ok(Value::Object(result))
     }
 }

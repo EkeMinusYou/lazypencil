@@ -7,6 +7,12 @@ use tempfile::TempDir;
 mod script_copy_core;
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
+#[path = "support/browser_copy_core.rs"]
+mod browser_copy_core;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[path = "support/browser_copy_fixture.rs"]
+mod browser_copy_fixture;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[path = "support/browser_resources.rs"]
 mod browser_resources;
 

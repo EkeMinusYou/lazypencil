@@ -265,7 +265,7 @@ impl Session {
                             "--locked",
                             "--no-default-features",
                             "--lib",
-                            "project::browser_resources::",
+                            "project::browser_",
                             "--",
                             "--test-threads=2",
                         ],

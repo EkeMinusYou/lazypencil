@@ -274,28 +274,10 @@ pub(super) fn metadata_contexts(metadata: Option<&Value>) -> (bool, bool) {
 }
 
 pub(super) fn override_value(changes: &Map<String, Value>) -> Result<Option<Override>> {
-    let Some(value) = changes
-        .get("metadata")
-        .and_then(|v| v.pointer("/lazypencil/script_override"))
+    let Some(value): Option<Override> = super::override_context::parse(changes, "script_override")?
     else {
         return Ok(None);
     };
-    if value.to_string().len() > 4 * 1024 * 1024 {
-        return Err(invalid("Copied script override exceeds 4 MiB"));
-    }
-    let metadata = changes["metadata"].as_object().expect("override owner");
-    if metadata.len() != 2
-        || metadata.get("type").and_then(Value::as_str) != Some("lazypencil")
-        || metadata["lazypencil"]
-            .as_object()
-            .is_none_or(|v| v.len() != 1)
-    {
-        return Err(invalid(
-            "Copied script override must use its dedicated metadata envelope",
-        ));
-    }
-    let value: Override = serde_json::from_value(value.clone())
-        .map_err(|_| invalid("Invalid copied script override"))?;
     if value.version != 1 {
         return Err(Error::new(
             "UNSUPPORTED_VERSION",

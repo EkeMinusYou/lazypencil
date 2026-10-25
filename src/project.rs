@@ -24,10 +24,14 @@ mod detach;
 mod failed_code;
 #[cfg(feature = "rendering")]
 pub(crate) use failed_code::FailedCodeCapture;
+mod browser_context;
 mod import;
 mod missing;
+mod override_context;
+pub(crate) use override_context::preserve_metadata as preserve_execution_metadata;
 mod sampler_images;
 mod script_context;
+pub(crate) use browser_context::revoke as revoke_copied_browser_context;
 pub(crate) use script_context::revoke as revoke_copied_script_context;
 mod scope;
 mod variables;
@@ -77,6 +81,8 @@ pub struct ResolvedNode {
     script_bindings: Option<bindings::Bound>,
     #[serde(skip)]
     input_context: Option<script_context::Bound>,
+    #[serde(skip)]
+    browser_scope: Option<PathBuf>,
     #[cfg(feature = "rendering")]
     #[serde(skip_serializing)]
     pub(crate) script_inputs_resolved: bool,
@@ -121,6 +127,12 @@ impl ResolvedNode {
         self.script_scope
             .as_deref()
             .unwrap_or_else(|| self.property_source("scriptUri"))
+    }
+
+    pub fn browser_origin(&self) -> &Path {
+        self.browser_scope
+            .as_deref()
+            .unwrap_or_else(|| self.property_source("url"))
     }
 
     pub fn script_input_origin(&self) -> &Path {
@@ -1484,6 +1496,7 @@ impl Project {
             script_input_scope: None,
             script_bindings: None,
             input_context: None,
+            browser_scope: None,
             #[cfg(feature = "rendering")]
             script_inputs_resolved: false,
             theme: BTreeMap::new(),
@@ -1493,6 +1506,7 @@ impl Project {
             icon_metadata: None,
         };
         self.bind_script_scope(&mut resolved)?;
+        self.bind_browser_scope(&mut resolved)?;
         if let Some(children) = children {
             for child in children
                 .as_array()
@@ -1527,9 +1541,23 @@ impl Project {
         count: &mut usize,
     ) -> Result<()> {
         let carrier = script_context::override_value(changes)?;
+        let browser_carrier = browser_context::override_value(changes)?;
         if carrier.is_some() && node.kind() != "script" {
             return Err(invalid("Copied script overrides require a script target"));
         }
+        if browser_carrier.is_some() && node.kind() != "browser" {
+            return Err(invalid("Copied browser overrides require a browser target"));
+        }
+        let carrier_metadata = carrier
+            .as_ref()
+            .map(|carrier| carrier.metadata.as_ref())
+            .or_else(|| {
+                browser_carrier
+                    .as_ref()
+                    .map(|carrier| carrier.metadata.as_ref())
+            });
+        let metadata_changed =
+            carrier_metadata.map_or(changes.contains_key("metadata"), |value| value.is_some());
         for (key, value) in changes {
             if matches!(
                 key.as_str(),
@@ -1538,9 +1566,9 @@ impl Project {
                 continue;
             }
             let value = if key == "metadata"
-                && let Some(carrier) = &carrier
+                && let Some(metadata) = carrier_metadata
             {
-                let Some(value) = &carrier.metadata else {
+                let Some(value) = metadata else {
                     continue;
                 };
                 value
@@ -1597,10 +1625,7 @@ impl Project {
                 bindings.inputs_bound = false;
             }
         }
-        if carrier
-            .as_ref()
-            .map_or(changes.contains_key("metadata"), |v| v.metadata.is_some())
-        {
+        if metadata_changed {
             let (output, input) =
                 script_context::metadata_contexts(node.properties.get("metadata"));
             if output || input {
@@ -1630,6 +1655,21 @@ impl Project {
             if let Some(value) = carrier.input {
                 node.input_context = script_context::bind(self, node, &value, origin)?;
             }
+        }
+        if changes.contains_key("url") {
+            node.browser_scope = None;
+        }
+        if metadata_changed
+            && node
+                .properties
+                .get("metadata")
+                .and_then(|value| value.pointer("/lazypencil/browser_scope"))
+                .is_some()
+        {
+            self.bind_browser_scope(node)?;
+        }
+        if let Some(scope) = browser_carrier.and_then(|carrier| carrier.scope) {
+            node.browser_scope = self.browser_scope_value(node, &scope, origin)?;
         }
         Ok(())
     }

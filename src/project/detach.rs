@@ -68,7 +68,7 @@ impl Project {
         Ok(qualified)
     }
 
-    fn detached_variables(&self, origin: &Path, value: &Value) -> Result<Value> {
+    pub(super) fn detached_variables(&self, origin: &Path, value: &Value) -> Result<Value> {
         self.check_cancelled()?;
         Ok(match value {
             Value::String(text) if text.starts_with('$') && text.len() > 1 => {
@@ -226,8 +226,16 @@ impl Project {
             result.insert("id".into(), json!(self.detached_id(origin, id)));
         }
         let expanded = if resolved.is_none()
-            && node.get("inputs").is_some()
-            && matches!(node["type"].as_str(), Some("script" | "ref"))
+            && (node.get("inputs").is_some()
+                || node.get("url").is_some()
+                || node
+                    .get("metadata")
+                    .and_then(|metadata| metadata.get("lazypencil"))
+                    .is_some_and(|namespace| {
+                        namespace.get("browser_scope").is_some()
+                            || namespace.get("browser_override").is_some()
+                    }))
+            && matches!(node["type"].as_str(), Some("script" | "browser" | "ref"))
         {
             Some(self.expand(origin, node, None, &[], &mut Vec::new(), &mut 0)?)
         } else {
@@ -314,6 +322,7 @@ impl Project {
             result.insert("descendants".into(), Value::Object(relocated));
         }
         self.detached_assets(origin, &mut result)?;
+        self.relocate_browser_override(node, &mut result, resolved.or(expanded.as_ref()))?;
         Ok(Value::Object(result))
     }
 
@@ -324,6 +333,7 @@ impl Project {
         inherited: &BTreeMap<String, String>,
     ) -> Result<()> {
         self.retain_detached_script_scope(node, original)?;
+        self.retain_detached_browser_scope(node, original)?;
         let mut actual = self.default_theme(&self.root)?;
         actual.extend(inherited.clone());
         if let Some(theme) = node.get("theme").and_then(Value::as_object) {
@@ -551,6 +561,12 @@ impl Project {
         }
         fn properties(project: &Project, node: &ResolvedNode) -> Result<Map<String, Value>> {
             let mut result = node.properties.clone();
+            if node.kind() == "browser" {
+                super::override_context::remove_metadata_fields(
+                    &mut result,
+                    &["browser_scope", "browser_override"],
+                );
+            }
             if node.kind() == "script" {
                 if let Some(namespace) = result
                     .get_mut("metadata")
@@ -606,6 +622,13 @@ impl Project {
             after: &Project,
             new: &ResolvedNode,
         ) -> Result<bool> {
+            if old.kind() == "browser"
+                && (before.browser_resources.contains_key(old.browser_origin())
+                    || after.browser_resources.contains_key(new.browser_origin()))
+                && old.browser_origin() != new.browser_origin()
+            {
+                return Ok(false);
+            }
             if match (&old.input_context, &new.input_context) {
                 (Some(old), Some(new)) => !old.equivalent(new),
                 (None, None) => false,

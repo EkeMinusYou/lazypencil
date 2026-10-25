@@ -21,13 +21,15 @@ struct InputScope {
 impl Project {
     pub(super) fn scope_document(&self, owner: &Path, alias: &str) -> Result<PathBuf> {
         if alias.len() > 4096 || alias.chars().any(char::is_control) {
-            return Err(invalid("A script scope needs a declared library alias"));
+            return Err(invalid("An execution scope needs a declared library alias"));
         }
         let mut path = owner.to_path_buf();
         if !alias.is_empty() {
             let parts = alias.split(':').collect::<Vec<_>>();
             if parts.len() > 128 {
-                return Err(invalid("A script scope exceeds the library depth limit"));
+                return Err(invalid(
+                    "An execution scope exceeds the library depth limit",
+                ));
             }
             for part in parts {
                 path = self
@@ -36,7 +38,7 @@ impl Project {
                     .and_then(|imports| imports.get(part))
                     .cloned()
                     .ok_or_else(|| {
-                        invalid("A script scope refers to an unknown declared library")
+                        invalid("An execution scope refers to an unknown declared library")
                     })?;
             }
         }
@@ -199,13 +201,13 @@ impl Project {
     }
 }
 
-fn metadata_namespace(node: &mut Value) -> Result<&mut Map<String, Value>> {
+pub(super) fn metadata_namespace(node: &mut Value) -> Result<&mut Map<String, Value>> {
     node.as_object_mut()
         .expect("node")
         .entry("metadata")
         .or_insert_with(|| json!({"type":"lazypencil"}))
         .as_object_mut()
-        .ok_or_else(|| invalid("Script metadata must be an object"))?
+        .ok_or_else(|| invalid("Node metadata must be an object"))?
         .entry("lazypencil")
         .or_insert_with(|| json!({}))
         .as_object_mut()
@@ -220,24 +222,7 @@ fn value_hash(value: &Value) -> String {
 }
 
 pub(super) fn without_script_scope(properties: &mut Map<String, Value>) {
-    let Some(metadata) = properties
-        .get_mut("metadata")
-        .and_then(Value::as_object_mut)
-    else {
-        return;
-    };
-    if let Some(namespace) = metadata
-        .get_mut("lazypencil")
-        .and_then(Value::as_object_mut)
-    {
-        namespace.remove("script_scope");
-        if namespace.is_empty() {
-            metadata.remove("lazypencil");
-        }
-    }
-    if metadata.len() == 1 && metadata.get("type").and_then(Value::as_str) == Some("lazypencil") {
-        properties.remove("metadata");
-    }
+    super::override_context::remove_metadata_fields(properties, &["script_scope"]);
 }
 
 #[cfg(test)]

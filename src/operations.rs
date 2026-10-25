@@ -340,13 +340,7 @@ fn apply_impl(
                     ));
                 }
                 let pointer = edited.location(&id)?.pointer.clone();
-                revoke_script_changes(&mut edited, &pointer, set, unset)?;
-                for key in unset {
-                    edited.remove_property(&pointer, key)?;
-                }
-                for (key, value) in set {
-                    edited.set_property(&pointer, key, &resolve_bindings(value, &bindings)?)?;
-                }
+                apply_property_changes(&mut edited, &pointer, set, unset, &bindings)?;
                 changed.insert(id);
             }
             Operation::Delete { target } => {
@@ -884,12 +878,23 @@ fn property_target(document: &mut Document, address: &NodeAddress) -> Result<Str
     Ok(pointer)
 }
 
-fn revoke_script_changes(
+fn apply_property_changes(
     document: &mut Document,
     pointer: &str,
     set: &Map<String, Value>,
     unset: &[String],
+    bindings: &BTreeMap<String, String>,
 ) -> Result<()> {
+    let metadata = set
+        .get("metadata")
+        .map(|value| resolve_bindings(value, bindings))
+        .transpose()?;
+    let preserved_metadata = crate::project::preserve_execution_metadata(
+        document,
+        pointer,
+        metadata.as_ref(),
+        unset.iter().any(|key| key == "metadata"),
+    )?;
     let keys = set
         .keys()
         .chain(unset.iter().filter(|key| {
@@ -898,9 +903,24 @@ fn revoke_script_changes(
                 .pointer(pointer)
                 .is_some_and(|node| node.get(key.as_str()).is_some())
         }))
+        .filter(|key| !preserved_metadata || key.as_str() != "metadata")
         .map(String::as_str)
         .collect::<Vec<_>>();
-    crate::project::revoke_copied_script_context(document, pointer, keys)
+    crate::project::revoke_copied_script_context(document, pointer, keys.iter().copied())?;
+    crate::project::revoke_copied_browser_context(document, pointer, keys)?;
+    for key in unset
+        .iter()
+        .filter(|key| !preserved_metadata || key.as_str() != "metadata")
+    {
+        document.remove_property(pointer, key)?;
+    }
+    for (key, value) in set
+        .iter()
+        .filter(|(key, _)| !preserved_metadata || key.as_str() != "metadata")
+    {
+        document.set_property(pointer, key, &resolve_bindings(value, bindings)?)?;
+    }
+    Ok(())
 }
 
 fn update_override(
@@ -924,13 +944,7 @@ fn update_override(
     }
     effective_node(document, address, context)?;
     let pointer = property_target(document, address)?;
-    revoke_script_changes(document, &pointer, set, unset)?;
-    for key in unset {
-        document.remove_property(&pointer, key)?;
-    }
-    for (key, value) in set {
-        document.set_property(&pointer, key, &resolve_bindings(value, bindings)?)?;
-    }
+    apply_property_changes(document, &pointer, set, unset, bindings)?;
     prune_empty_override(document, address)
 }
 
@@ -943,14 +957,12 @@ fn reset_override(
     if address.instance_path.is_empty() {
         let properties = properties
             .ok_or_else(|| invalid("Resetting root overrides requires explicit property names"))?;
-        revoke_script_changes(document, &root, &Map::new(), properties)?;
         for key in properties {
             if matches!(key.as_str(), "id" | "type" | "ref") {
                 return Err(invalid("Cannot reset instance identity"));
             }
-            document.remove_property(&root, key)?;
         }
-        return Ok(());
+        return apply_property_changes(document, &root, &Map::new(), properties, &BTreeMap::new());
     }
     let key = address.instance_path.join("/");
     let owner = format!("{root}/descendants");
@@ -959,15 +971,20 @@ fn reset_override(
         return Ok(());
     }
     if let Some(properties) = properties {
-        revoke_script_changes(document, &pointer, &Map::new(), properties)?;
         for property in properties {
             if matches!(property.as_str(), "id" | "type" | "ref") {
                 return Err(invalid(
                     "Reset the complete replacement to restore inherited identity",
                 ));
             }
-            document.remove_property(&pointer, property)?;
         }
+        apply_property_changes(
+            document,
+            &pointer,
+            &Map::new(),
+            properties,
+            &BTreeMap::new(),
+        )?;
         prune_empty_override(document, address)
     } else {
         document.remove_property(&owner, &key)

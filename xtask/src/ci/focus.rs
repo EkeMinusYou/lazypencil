@@ -23,6 +23,8 @@ const DYNAMIC: &[&str] = &[
 ];
 pub const LOCAL_FILES: &str =
     "captured_local_files_render_after_source_removal_and_deny_unlisted_host_files";
+pub const BROWSER_COPY: &str =
+    "copied_browser_namespaces_keep_pixels_across_removal_recopy_themes_and_detach";
 pub const COPY_CPU: &[&str] = &[
     "script_copy::independent_copy_keeps_namespace_nested_workers_and_live_choices_after_source_removal",
     "script_copy::copy_rejects_unmanifested_generated_paths_without_using_consumer_files",

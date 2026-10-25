@@ -181,28 +181,11 @@ impl Copier<'_> {
                 .iter()
                 .find(|file| file.uri.ends_with(&format!("/{library}")))
                 .expect("bundled variable document");
-            let mut alias = format!(
+            let alias = format!(
                 "lazypencil-images-{}-{index}",
                 &hash(file.uri.as_bytes())[..16]
             );
-            while self.project.imports[&self.project.root]
-                .get(&alias)
-                .is_some_and(|path| path != &file.path)
-                || self.project.root_document().value()["variables"]
-                    .as_object()
-                    .is_some_and(|values| {
-                        values
-                            .keys()
-                            .any(|name| name.starts_with(&format!("{alias}:")))
-                    })
-                || self
-                    .copied_imports
-                    .get(&alias)
-                    .is_some_and(|value| value != file.uri.as_str())
-            {
-                alias.push('_');
-            }
-            self.copied_imports.insert(alias.clone(), json!(file.uri));
+            let alias = self.bind_copied_library(file, alias);
             for (key, name) in bindings {
                 self.sampler_bindings
                     .insert(key, format!("${alias}:{name}"));

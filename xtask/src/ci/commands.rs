@@ -229,18 +229,20 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
             &["--lib", "cdp::", "--", "--test-threads=2"],
         ));
         if has("browser_readiness") {
-            checks.push(append(
-                &common,
-                &[
-                    "--test",
-                    "browser_readiness",
-                    focus::LOCAL_FILES,
-                    "--",
-                    "--exact",
-                    "--ignored",
-                    "--test-threads=1",
-                ],
-            ));
+            for reproduction in [focus::LOCAL_FILES, focus::BROWSER_COPY] {
+                checks.push(append(
+                    &common,
+                    &[
+                        "--test",
+                        "browser_readiness",
+                        reproduction,
+                        "--",
+                        "--exact",
+                        "--ignored",
+                        "--test-threads=1",
+                    ],
+                ));
+            }
         }
         let mut tui = append(
             &common,
@@ -304,7 +306,7 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
                 "retained_",
             ]));
             if names.iter().any(|name| name == "browser_readiness") {
-                c.extend(skips([focus::LOCAL_FILES]));
+                c.extend(skips([focus::LOCAL_FILES, focus::BROWSER_COPY]));
             }
             c.extend(shader_skip.clone());
             c.extend(input_skip.clone());

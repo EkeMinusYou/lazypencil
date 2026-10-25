@@ -421,7 +421,95 @@ pub fn required_images(root: &Path, commit: &str) -> Result<()> {
             )?,
         "Extensionless file pixels differ from native loading"
     );
-    println!("Verified source identities, hashes and dimensions for 215 required PNGs");
+    let copied = report("codec-browser-copy.json")?;
+    ensure!(
+        copied["sandbox"] == "enabled",
+        "Browser copy sandbox proof missing"
+    );
+    let rows = copied["cases"]
+        .as_array()
+        .context("Missing browser copy cases")?;
+    ensure!(
+        rows.len() == 32,
+        "Expected both schemas, eight browser contexts and both themes"
+    );
+    for version in ["2.19", "2.21"] {
+        for mode in [
+            "inherited",
+            "literal",
+            "variable",
+            "metadata",
+            "combined",
+            "descendant-url",
+            "descendant-metadata",
+            "replacement",
+        ] {
+            for theme in ["light", "dark"] {
+                let matching = rows
+                    .iter()
+                    .filter(|row| {
+                        row["document_version"] == version
+                            && row["mode"] == mode
+                            && row["theme"] == theme
+                    })
+                    .collect::<Vec<_>>();
+                ensure!(
+                    matching.len() == 1,
+                    "Missing or duplicate browser copy condition"
+                );
+                let row = matching[0];
+                ensure!(
+                    row["sources_removed"] == true && dimensions(row)? == (32, 16),
+                    "Incomplete browser copy geometry/removal proof"
+                );
+                let stages = row["stages"]
+                    .as_array()
+                    .context("Missing browser copy stages")?;
+                ensure!(
+                    stages.len() == 4,
+                    "Expected before, copied, recopied and detached browser images"
+                );
+                let mut original = None;
+                let mut resource_revision = None;
+                for stage in ["before", "copied", "recopied", "detached"] {
+                    let matching = stages
+                        .iter()
+                        .filter(|row| row["stage"] == stage)
+                        .collect::<Vec<_>>();
+                    ensure!(
+                        matching.len() == 1,
+                        "Missing or duplicate browser copy stage"
+                    );
+                    let entry = matching[0];
+                    let name = format!("codec-browser-copy-{version}-{mode}-{theme}-{stage}.png");
+                    ensure!(entry["name"] == name, "Wrong browser copy image name");
+                    let bytes = png(&name, &entry["png_hash"], 32, 16)?;
+                    let revision = entry["resource_revision"]
+                        .as_str()
+                        .context("Missing browser namespace revision")?;
+                    ensure!(
+                        revision.len() == 64
+                            && revision.bytes().all(|byte| byte.is_ascii_hexdigit()),
+                        "Invalid browser namespace revision"
+                    );
+                    if let Some(original) = &original {
+                        ensure!(*original == bytes, "Browser pixels changed after {stage}");
+                    } else {
+                        original = Some(bytes);
+                    }
+                    if let Some(original) = resource_revision {
+                        ensure!(
+                            original == revision,
+                            "Browser namespace changed after {stage}"
+                        );
+                    } else {
+                        resource_revision = Some(revision);
+                    }
+                }
+            }
+        }
+    }
+    println!("Verified source identities, hashes and dimensions for 343 required PNGs");
     Ok(())
 }
 pub fn panel(s: &Session) -> Result<()> {

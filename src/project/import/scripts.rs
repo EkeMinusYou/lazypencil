@@ -19,26 +19,6 @@ pub(super) struct Info {
 }
 
 impl Copier<'_> {
-    pub(super) fn script_info(&mut self, origin: &Path, node: &Value) -> Result<Option<Info>> {
-        if !matches!(node["type"].as_str(), Some("script" | "ref")) {
-            return Ok(None);
-        }
-        let resolved = self
-            .project
-            .expand(origin, node, None, &[], &mut Vec::new(), &mut 0)?;
-        if resolved.kind() != "script" {
-            return Ok(None);
-        }
-        self.script_info_resolved(
-            resolved,
-            (
-                origin.into(),
-                node["id"].as_str().expect("script ID").into(),
-            ),
-        )
-        .map(Some)
-    }
-
     pub(super) fn script_info_resolved(
         &mut self,
         resolved: ResolvedNode,
@@ -679,7 +659,7 @@ impl Copier<'_> {
     }
 }
 
-fn relative_uri(origin: &Path, target: &Path) -> Result<String> {
+pub(super) fn relative_uri(origin: &Path, target: &Path) -> Result<String> {
     let parent = origin
         .parent()
         .ok_or_else(|| copy_error("A script scope needs a bound path"))?;
