@@ -25,9 +25,6 @@ const INPUTS: &[&str] = &[
     ".cargo/config",
     "rust-toolchain.toml",
     "rust-toolchain",
-    "scripts/ci/test.sh",
-    "scripts/ci/prune_application_cache.sh",
-    "scripts/ci/release-smoke.sh",
 ];
 const FLAG_NAMES: &[&str] = &[
     "CARGO_BUILD_JOBS",
@@ -265,13 +262,7 @@ impl Command {
                 let compiler = process::text(Process::new("rustc").args(["+stable", "-vV"]))?;
                 let image = std::env::var("ImageVersion")?;
                 let architecture = std::env::var("RUNNER_ARCH")?;
-                ensure!(
-                    !image.is_empty() && image != "unknown" && !architecture.is_empty(),
-                    "Unknown audit runner identity"
-                );
-                let fingerprint = util::digest(stable_json(
-                    &json!({"compiler":compiler,"image":image,"architecture":architecture,"version":"0.20.2"}),
-                ));
+                let fingerprint = audit_identity(&compiler, &image, &architecture)?;
                 if operation == "identify" {
                     let key = format!("cargo-deny-v1-0.20.2-{fingerprint}");
                     util::github_output(
@@ -281,13 +272,7 @@ impl Command {
                     println!("{key}");
                     return Ok(());
                 }
-                let binary = directory.join("bin/cargo-deny");
-                let version = process::text(Process::new(&binary).arg("--version"))?;
-                ensure!(
-                    version.trim() == "cargo-deny 0.20.2",
-                    "Unexpected cargo-deny version"
-                );
-                let record = json!({"fingerprint":fingerprint,"sha256":util::file_digest(&binary)?,"version":version.trim()});
+                let record = audit_record(&directory, &fingerprint)?;
                 let manifest = directory.join("manifest.json");
                 if operation == "seal" {
                     util::publish(&manifest, &util::encode(&record)?, true)?;
@@ -435,8 +420,9 @@ pub fn native_identity(
         && flags == baseline;
     let previous = match tree {
         // The tool migration adds only a terminal test dependency and a Cargo alias.
-        // Application/native manifests and renderer sources keep their build semantics.
-        "82b44fb4ddd287019d0949e8cebc994019fcea0015aff8681a16fe0c07c96f26" => {
+        // Production dependency declarations, native sources and build flags are unchanged.
+        // Removing the retired Shell entry points does not change dependency build inputs.
+        "e709a9d463008b5dbad67c40766ddbc66cee8fa89f86c6c6b23d7a0d96b95475" => {
             Some("b24ec03467f4fe02cfb29f305f8a393d83c9588dd4729e01787a36e2b994c62d")
         }
         "c95e9172415f92d6f202a226bf3696f9f6ede08eaa66b81a612b892f8ca3bfc7" => {
@@ -891,4 +877,25 @@ pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Valu
         }
     }
     Ok(selected.into_values().collect())
+}
+
+pub fn audit_identity(compiler: &str, image: &str, architecture: &str) -> Result<String> {
+    ensure!(
+        !image.is_empty() && image != "unknown" && !architecture.is_empty(),
+        "Unknown audit runner identity"
+    );
+    Ok(util::digest(stable_json(
+        &json!({"compiler":compiler,"image":image,"architecture":architecture,"version":"0.20.2"}),
+    )))
+}
+pub fn audit_record(directory: &Path, fingerprint: &str) -> Result<Value> {
+    let binary = directory.join("bin/cargo-deny");
+    let version = process::text(Process::new(&binary).arg("--version"))?;
+    ensure!(
+        version.trim() == "cargo-deny 0.20.2",
+        "Unexpected cargo-deny version"
+    );
+    Ok(
+        json!({"fingerprint":fingerprint,"sha256":util::file_digest(&binary)?,"version":version.trim()}),
+    )
 }

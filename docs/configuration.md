@@ -153,7 +153,7 @@ Configuration is data-only: inspection starts no process, and these fields neith
 
 Execution records contain the **configured** `limits`, included in calculation identity. Code/input/output/node/depth and stack guards remain independent: 1 MiB source, 4 MiB protocol frames, 1,000 generated nodes per output, 64 output levels and a 512 KiB JS stack. Browser/shader limits and wider process/cache/asset policies remain separate unfinished work.
 
-Local work is limited to formatting, Python checks and source review; native builds and the remaining full verification run on GHA. A dedicated integration result has the scope listed in its linked record.
+Local work is limited to formatting, workflow linting and source review; native builds and the remaining full verification run on GHA. A dedicated integration result has the scope listed in its linked record.
 
 ## User agent profiles
 
@@ -307,4 +307,4 @@ A retry of an already committed edit returns its saved result even if configurat
 
 The remaining global configuration sections, executable-setting trust, font compatibility, all target platforms, resource measurements, and release packaging remain required work. This configuration layer does not establish whole-product release readiness.
 
-The standard `sh scripts/ci/test.sh` runs both feature configurations and Clippy with an isolated temporary `LAZYPENCIL_CONFIG_DIR`, avoiding the developer's actual preferences. Focused direct `cargo test` invocations should likewise select an empty temporary configuration directory when reference fixtures require built-in defaults. Tests that exercise user settings set per-child environments or pass explicit library paths; they do not mutate process-global environment variables.
+The standard `cargo xtask test` runs both feature configurations and Clippy with an isolated temporary `LAZYPENCIL_CONFIG_DIR`, avoiding the developer's actual preferences. Focused direct `cargo test` invocations should likewise select an empty temporary configuration directory when reference fixtures require built-in defaults. Tests that exercise user settings set per-child environments or pass explicit library paths; they do not mutate process-global environment variables.

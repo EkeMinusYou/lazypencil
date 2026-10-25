@@ -6,11 +6,9 @@ fn render(
     document: &Path,
     output: &Path,
     report_name: &str,
-    width: u32,
-    height: u32,
-    assets: usize,
-    nodes: Option<u32>,
+    expected: (u32, u32, usize, Option<u32>),
 ) -> Result<Value> {
+    let (width, height, assets, nodes) = expected;
     let raw = s.capture(
         Command::new(s.executable("release"))
             .args(["--json", "render"])
@@ -65,10 +63,7 @@ pub fn smoke(s: &Session) -> Result<()> {
         &s.root.join("examples/mesh-study.pen"),
         &s.target.join("release-smoke.png"),
         "lazypencil-target/release-smoke.json",
-        1040,
-        900,
-        0,
-        Some(26),
+        (1040, 900, 0, Some(26)),
     )?;
     let fixture = tempfile::tempdir_in(&s.target)?;
     fixtures::performance(&fixture.path().join("input"), "dashboard")?;
@@ -77,10 +72,7 @@ pub fn smoke(s: &Session) -> Result<()> {
         &fixture.path().join("input/dashboard.pen"),
         &s.target.join("release-dashboard.png"),
         "lazypencil-target/release-dashboard.json",
-        1920,
-        1080,
-        1,
-        Some(1000),
+        (1920, 1080, 1, Some(1000)),
     )?;
     let graphics = tempfile::tempdir_in(&s.target)?;
     for path in util::walk(&s.root.join("examples/assets"))? {
@@ -95,10 +87,7 @@ pub fn smoke(s: &Session) -> Result<()> {
         &s.root.join("examples/graphics-study.pen"),
         &s.target.join("release-graphics.png"),
         "lazypencil-target/release-graphics.json",
-        1000,
-        760,
-        1,
-        None,
+        (1000, 760, 1, None),
     )?;
     let outline = find(&mut design, "outline").context("Missing outline fixture")?;
     ensure!(
@@ -116,10 +105,7 @@ pub fn smoke(s: &Session) -> Result<()> {
             &document,
             &graphics.path().join("strokes.png"),
             "release-strokes.json",
-            1000,
-            760,
-            1,
-            None,
+            (1000, 760, 1, None),
         )?;
         hashes.push(report["png_hash"].clone());
     }

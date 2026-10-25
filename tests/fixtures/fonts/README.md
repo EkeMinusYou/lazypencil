@@ -10,10 +10,10 @@ All files in this directory are original lazypencil test assets, covered by the 
 | `cff.otf` | `LP Test CFF`, with original Type 2 CFF outlines |
 | `cff.otc` | A mixed CFF/TrueType collection containing the CFF and supplementary faces |
 
-[manifest.json](manifest.json) records their sizes and SHA-256 digests. Regenerate them using only Python's standard library:
+[manifest.json](manifest.json) records their sizes and SHA-256 digests. Regenerate them using the independent Rust task:
 
 ```sh
-python3 scripts/make_font_fixtures.py --output /tmp/lazypencil-font-fixtures
+cargo xtask fixtures fonts --output /tmp/lazypencil-font-fixtures
 ```
 
 The generator fixes timestamps and names so that all seven binaries and the manifest reproduce byte-for-byte. Compare the temporary output with this directory before accepting changes. Collection extraction tests compare derived face hashes and PNG pixels with the standalone originals.

@@ -18,14 +18,14 @@ The sample takes roughly two seconds and about 101 MiB in this development build
 
 ## Synthetic native shadow scene, 2026-10-23
 
-The fixed generator [make_native_performance_fixture.py](../scripts/make_native_performance_fixture.py) creates exactly 1,000 stored/expanded nodes: one clipped 1920×1080 frame, 999 rounded rectangles, and one `multiply` outer-shadow effect among those rectangles. It has no text, images, scripts, external assets, or browser/shader runtime. This isolates the path where one backdrop-dependent child previously made ordinary siblings capture the whole parent canvas. Ordinary siblings now avoid that capture, and nested passes retain decoded image caches.
+The fixed fixture [shadow.pen](../tests/fixtures/performance/shadow.pen) creates exactly 1,000 stored/expanded nodes: one clipped 1920×1080 frame, 999 rounded rectangles, and one `multiply` outer-shadow effect among those rectangles. It has no text, images, scripts, external assets, or browser/shader runtime. This isolates the path where one backdrop-dependent child previously made ordinary siblings capture the whole parent canvas. Ordinary siblings now avoid that capture, and nested passes retain decoded image caches.
 
 ```sh
-python3 scripts/make_native_performance_fixture.py --output /tmp/native-1000.pen
-lazypencil render /tmp/native-1000.pen --output /tmp/native-1000.png
+cargo xtask fixtures performance shadow --output-dir /tmp/native-1000
+lazypencil render /tmp/native-1000/shadow.pen --output /tmp/native-1000.png
 ```
 
-The generator refuses to overwrite an existing output. Fixture bytes have SHA-256 `d0a54ed3c8b3716b3ac5f26fe79e4e130164e8afd128bb4146ef96774ccbaa8b`. Measurements used the macOS arm64 debug CLI, fresh child processes, Python's monotonic clock and `wait4` peak RSS in bytes. The OS file cache was already populated; cold start and host load were not controlled. No compilation or test suite ran during these three observations.
+The Rust fixture task refuses to overwrite an existing directory. Historical observations below retain their original measurement method. Fixture bytes have SHA-256 `d0a54ed3c8b3716b3ac5f26fe79e4e130164e8afd128bb4146ef96774ccbaa8b`. Measurements used the macOS arm64 debug CLI, fresh child processes, Python's monotonic clock and `wait4` peak RSS in bytes. The OS file cache was already populated; cold start and host load were not controlled. No compilation or test suite ran during these three observations.
 
 | Run | Elapsed | Peak RSS |
 | --- | --- | --- |
@@ -39,10 +39,10 @@ All runs exited successfully, returned no layout diagnostics or dynamic artifact
 
 Environment: Debian 12 arm64 in Docker Desktop, Linux `7.0.14-linuxkit`, glibc 2.36, Rust 1.94.0, with eight virtual CPUs and 4 GiB assigned to Docker. The application uses the unchanged `release` profile: thin LTO, one codegen unit, stripped debug information, and native CPU Skia. The tested executable has SHA-256 `f7f3c98946d4655741c5cabab5b12f5ede430cef95104a86eb8b87b3273b1686`.
 
-The new [dashboard generator](../scripts/make_dashboard_performance_fixture.py) creates a 1920×1080 document with Japanese/English text, six color variables, a reusable 80-node card, eleven instances with text overrides, rounded clipping, normal shadows, and one local PNG used repeatedly. There are 131 stored nodes and exactly 1,000 expanded nodes. The document SHA-256 is `c55bcf8727afc04d31646ea1a259e17723fe9be03e3cb4fd2dccbf8512764da7`; the asset SHA-256 is `adea05ca47573c3398f5e7d10aebcba7cd6da37abdeae104131e6085cd1e0937`. The generator creates a new directory and refuses to overwrite an existing fixture.
+The fixed [dashboard fixture](../xtask/src/fixtures/mod.rs) creates a 1920×1080 document with Japanese/English text, six color variables, a reusable 80-node card, eleven instances with text overrides, rounded clipping, normal shadows, and one local PNG used repeatedly. There are 131 stored nodes and exactly 1,000 expanded nodes. The document SHA-256 is `c55bcf8727afc04d31646ea1a259e17723fe9be03e3cb4fd2dccbf8512764da7`; the asset SHA-256 is `adea05ca47573c3398f5e7d10aebcba7cd6da37abdeae104131e6085cd1e0937`. The Rust fixture task creates a new directory and refuses to overwrite an existing fixture.
 
 ```sh
-python3 scripts/make_dashboard_performance_fixture.py --output-dir /tmp/dashboard-1000
+cargo xtask fixtures performance dashboard --output-dir /tmp/dashboard-1000
 cargo build --locked --release
 target/release/lazypencil --json render /tmp/dashboard-1000/dashboard.pen --output /tmp/dashboard-1000.png
 ```
@@ -114,21 +114,21 @@ This confirms the improvement for this font-rich static example, not acceptance 
 
 ## Repeatable native-child measurements
 
-[measure_native_performance.py](../scripts/measure_native_performance.py) measures the unchanged shadow and dashboard fixtures above without invoking Cargo. It starts a fresh CLI child for every export, isolates user settings and the data directory, and supplies an explicit local project configuration. Each scene has a separate first invocation followed by 20 repeated invocations by default. Every export must have exactly 1,000 expanded nodes at 1920×1080, no diagnostics, no scripts/dynamic acquisitions, the expected asset count, and a PNG whose dimensions and SHA-256 agree with its render report. Repeated PNG hashes must match within each scene. The executable is hashed before and after measurement.
+[performance.rs](../xtask/src/performance.rs) measures the unchanged shadow and dashboard fixtures above without invoking Cargo. It starts a fresh CLI child for every export, isolates user settings and the data directory, and supplies an explicit local project configuration. Each scene has a separate first invocation followed by 20 repeated invocations by default. Every export must have exactly 1,000 expanded nodes at 1920×1080, no diagnostics, no scripts/dynamic acquisitions, the expected asset count, and a PNG whose dimensions and SHA-256 agree with its render report. Repeated PNG hashes must match within each scene. The executable is hashed before and after measurement.
 
 ```sh
-python3 scripts/measure_native_performance.py \
+cargo xtask measure \
   --binary /path/to/lazypencil \
   --output native-benchmark.json --samples 20
 ```
 
-The output includes individual samples, the first invocation, and repeated-sample minimum/median/nearest-rank p95/maximum for elapsed time, peak RSS and user/system CPU time. A 20-sample p95 is the nineteenth ordered sample, an observed tail estimate rather than a population guarantee. The script does not flush OS caches, so the first invocation is **not** a controlled cold start. Elapsed time covers process creation through exit observation; the completion polling interval is 1 ms, and resource-query overhead after observing exit is excluded.
+The output includes individual samples, the first invocation, and repeated-sample minimum/median/nearest-rank p95/maximum for elapsed time, peak RSS and user/system CPU time. A 20-sample p95 is the nineteenth ordered sample, an observed tail estimate rather than a population guarantee. The Rust measurement task does not flush OS caches, so the first invocation is **not** a controlled cold start. Elapsed time covers process creation through exit observation; the completion polling interval is 1 ms, and resource-query overhead after observing exit is excluded.
 
 On macOS/Linux, per-child [`wait4`](https://docs.python.org/3/library/os.html#os.wait4) supplies resource usage; Darwin peak RSS is recorded in bytes and Linux KiB is converted to bytes. Windows uses [`GetProcessMemoryInfo`](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-getprocessmemoryinfo) / `PeakWorkingSetSize` in bytes and [`GetProcessTimes`](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes) CPU durations. The method is retained in each sample. These OS memory counters have their respective platform semantics; this is not a simultaneous process-group measurement. The real-child counter tests passed with the full 80-test Python suite on all five hosted environments in [run 40000148383](https://github.com/EkeMinusYou/lazypencil/actions/runs/40000148383). Native release measurements from its successful macOS arm64 and Linux arm64 jobs are recorded below; other platforms remain pending.
 
-Child deadlines, bounded stdout/stderr and PNG size, exit status, workload validation, and immutable executable/pixels are required for a successful report. Reports are published atomically without overwriting another report. Temporary fixtures, logs and PNGs are removed; only the small JSON report remains. Seven Python tests exercise real child counters independently of the previous child's high-water mark, timeout reaping, child failure/output limits, fixture hashes and settings isolation, percentile calculation, changed binaries/pixels, malformed render evidence, and publication failure cleanup.
+Child deadlines, bounded stdout/stderr and PNG size, exit status, workload validation, and immutable executable/pixels are required for a successful report. Reports are published atomically without overwriting another report. Temporary fixtures, logs and PNGs are removed; only the small JSON report remains. Rust integration tests now exercise real child counters independently of the previous child's high-water mark, timeout reaping, child failure/output limits, fixture hashes and settings isolation, percentile calculation, changed binaries/pixels, malformed render evidence, and publication failure cleanup.
 
-The hosted release smoke script runs this helper against the already built executable and retains `release-benchmark.json` with the platform artifacts. Dependency-cache pruning removes that report too. Completed arm64, Windows x64, and Intel macOS measurements are recorded below with their source revisions. No hardware-dependent timing threshold is asserted by this smoke check.
+The hosted Rust release smoke task runs this measurement against the already built executable and retains `release-benchmark.json` with the platform artifacts. Dependency-cache pruning removes that report too. Completed arm64, Windows x64, and Intel macOS measurements are recorded below with their source revisions. No hardware-dependent timing threshold is asserted by this smoke check.
 
 ### Retained macOS executable, 2026-10-24
 

@@ -3,13 +3,8 @@ use super::native::Session;
 use crate::{dist, notices, process, shader, util};
 use anyhow::{Context, Result, ensure};
 use clap::ValueEnum;
-use serde_json::{Value, json};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    process::Command,
-    time::Duration,
-};
+use serde_json::json;
+use std::{fs, path::Path, process::Command, time::Duration};
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum Stage {
     Source,

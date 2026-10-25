@@ -4,12 +4,7 @@ use lazypencil_xtask::{
     util,
 };
 use serde_json::{Value, json};
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::{collections::BTreeMap, fs, path::PathBuf, process::Command};
 
 #[test]
 fn focus_keeps_the_existing_reproduction_scope_for_every_source_module() {

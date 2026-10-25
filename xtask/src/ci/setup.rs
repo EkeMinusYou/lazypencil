@@ -49,6 +49,22 @@ pub fn linux_dependencies() -> Result<()> {
         temporary.is_absolute() && temporary.is_dir(),
         "Expected hosted temporary directory"
     );
+    install_linux(&architecture, &temporary, |command| {
+        let output = process::checked(command, Duration::from_secs(20 * 60))?;
+        print!("{}", String::from_utf8_lossy(&output));
+        Ok(())
+    })
+}
+
+pub fn install_linux(
+    architecture: &str,
+    temporary: &Path,
+    mut run: impl FnMut(&mut Command) -> Result<()>,
+) -> Result<()> {
+    ensure!(
+        ["X64", "ARM64"].contains(&architecture),
+        "Unsupported hosted Linux architecture"
+    );
     let temp = tempfile::tempdir_in(temporary)?;
     let mut options = Vec::<String>::new();
     if architecture == "X64" {
@@ -75,14 +91,10 @@ pub fn linux_dependencies() -> Result<()> {
             .chain(PACKAGES.iter().copied())
             .collect(),
     ] {
-        let output = process::checked(
-            Command::new("sudo")
-                .arg("apt-get")
-                .args(&options)
-                .args(args),
-            Duration::from_secs(20 * 60),
-        )?;
-        print!("{}", String::from_utf8_lossy(&output));
+        run(Command::new("sudo")
+            .arg("apt-get")
+            .args(&options)
+            .args(args))?;
     }
     Ok(())
 }

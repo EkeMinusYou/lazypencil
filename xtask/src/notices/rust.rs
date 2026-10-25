@@ -1,4 +1,4 @@
-use super::{Files, MAX_BUNDLE, blob, stored_blob};
+use super::{Files, blob, stored_blob};
 use crate::util;
 use anyhow::{Context, Result, ensure};
 use flate2::read::GzDecoder;
@@ -345,7 +345,7 @@ pub fn supplement(
 fn value_array(value: &Value) -> Result<&Vec<Value>> {
     value.as_array().context("Expected inventory array")
 }
-fn python_string(value: &Value) -> String {
+fn display_field(value: &Value) -> String {
     match value {
         Value::Null => "None".into(),
         Value::String(s) => s.clone(),
@@ -377,14 +377,14 @@ pub fn render(index: &Value, texts: &Files) -> Result<Vec<u8>> {
         lines.push(key.clone());
         lines.push(format!(
             "Declared license: {}",
-            python_string(&package["license"])
+            display_field(&package["license"])
         ));
         if let Some(authors) = package["authors"].as_array().filter(|a| !a.is_empty()) {
             lines.push(format!(
                 "Published package authors: {}",
                 authors
                     .iter()
-                    .map(python_string)
+                    .map(display_field)
                     .collect::<Vec<_>>()
                     .join("; ")
             ));
@@ -403,17 +403,17 @@ pub fn render(index: &Value, texts: &Files) -> Result<Vec<u8>> {
                 .or_default()
                 .push(format!(
                     "{key} :: {} :: {}",
-                    python_string(&item["kind"]),
-                    python_string(&item["path"])
+                    display_field(&item["kind"]),
+                    display_field(&item["path"])
                 ));
         }
         let mut comments = BTreeMap::<String, Vec<String>>::new();
         for item in value_array(&package["attribution_comments"])? {
             for line in value_array(&item["lines"])? {
                 comments
-                    .entry(python_string(&line["text"]))
+                    .entry(display_field(&line["text"]))
                     .or_default()
-                    .push(format!("{}:{}", python_string(&item["path"]), line["line"]));
+                    .push(format!("{}:{}", display_field(&item["path"]), line["line"]));
             }
         }
         if !comments.is_empty() {
@@ -427,12 +427,12 @@ pub fn render(index: &Value, texts: &Files) -> Result<Vec<u8>> {
     }
     for item in value_array(&index["license_references"])? {
         by_blob
-            .entry(python_string(&item["blob"]))
+            .entry(display_field(&item["blob"]))
             .or_default()
             .push(format!(
                 "Shared reference terms: {}; {}",
-                python_string(&item["id"]),
-                python_string(&item["role"])
+                display_field(&item["id"]),
+                display_field(&item["role"])
             ));
     }
     for (name, uses) in by_blob {

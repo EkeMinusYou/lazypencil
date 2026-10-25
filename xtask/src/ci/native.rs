@@ -45,8 +45,6 @@ pub enum Stage {
 pub struct Arguments {
     #[arg(value_enum)]
     pub stage: Stage,
-    #[arg(long, default_value = "full")]
-    pub phase: String,
     #[arg(long, default_value = "core")]
     pub suite: String,
     #[arg(long, default_value = "[]")]

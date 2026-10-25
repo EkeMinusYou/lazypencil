@@ -1,0 +1,37 @@
+{
+  "format_version": 1,
+  "license_references": [
+    {
+      "blob": "texts/c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4.txt",
+      "id": "MIT",
+      "role": "Reference terms only; not a package-specific copyright notice.",
+      "sha256": "c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4",
+      "url": "https://spdx.org/licenses/MIT.txt"
+    }
+  ],
+  "packages": [
+    {
+      "archive_sha256": "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf",
+      "files": [
+        {
+          "blob": "texts/d027e91dbc9cdbb2f1190068e498bd6b61cff022b6a032b191021ba658d96111.txt",
+          "git_blob_sha1": "79c8b7c4a1dabcfbc718b7fe6d43b1892f9850cd",
+          "path": "AUTHORS",
+          "revision": "7e1b0322d31d625f81a5656096330934f9cd835d",
+          "sha256": "d027e91dbc9cdbb2f1190068e498bd6b61cff022b6a032b191021ba658d96111",
+          "url": "https://raw.githubusercontent.com/r-efi/r-efi/7e1b0322d31d625f81a5656096330934f9cd835d/AUTHORS"
+        }
+      ],
+      "name": "r-efi",
+      "version": "6.0.0"
+    },
+    {
+      "archive_sha256": "b7f66b1c8f8caa2ab31dc6d3f35386f16efdab89668f93411e565ac368908e8f",
+      "files": [],
+      "license_reference": "MIT",
+      "name": "unicode-casefold",
+      "reason": "The original registry archive declares MIT/Apache-2.0 but omits standalone notices. Retain its publisher declaration and MIT reference terms without inventing a copyright notice.",
+      "version": "0.2.0"
+    }
+  ]
+}

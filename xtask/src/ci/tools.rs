@@ -13,7 +13,6 @@ use std::{
 pub enum Command {
     Prepare,
     Verify,
-    Prune,
 }
 impl Command {
     pub fn run(self) -> Result<()> {
@@ -95,12 +94,15 @@ impl Command {
                 )
             }
             Self::Verify => {
+                crate::notices::rust::verify(&workspace, &workspace.join("notices"), None)?;
+                let mut failures = Vec::new();
                 for arguments in [
                     vec!["fmt", "--all", "--", "--check"],
                     vec![
                         "test",
                         "--locked",
                         "--all-targets",
+                        "--no-fail-fast",
                         "--",
                         "--test-threads=2",
                     ],
@@ -118,30 +120,20 @@ impl Command {
                         .current_dir(&workspace)
                         .args(&arguments)
                         .env("CARGO_TARGET_DIR", &target);
-                    process::logged(
+                    if let Err(error) = process::logged(
                         &mut command,
                         Duration::from_secs(600),
                         &root.join("xtask-verification.log"),
                         true,
-                    )?;
+                    ) {
+                        eprintln!("{error:#}");
+                        failures.push(arguments);
+                    }
                 }
-                Ok(())
-            }
-            Self::Prune => {
-                process::checked(
-                    Process::new("cargo")
-                        .args([
-                            "clean",
-                            "--locked",
-                            "--package",
-                            "lazypencil-xtask",
-                            "--manifest-path",
-                        ])
-                        .arg(workspace.join("Cargo.toml"))
-                        .arg("--target-dir")
-                        .arg(target),
-                    Duration::from_secs(180),
-                )?;
+                ensure!(
+                    failures.is_empty(),
+                    "Tool verification failed: {failures:?}"
+                );
                 Ok(())
             }
         }

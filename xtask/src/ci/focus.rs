@@ -55,7 +55,7 @@ pub struct Plan {
 }
 
 pub fn ci_only(path: &str) -> bool {
-    path.starts_with(".github/workflows/")
+    path.starts_with(".github/")
         || path.starts_with("scripts/ci/")
         || (path.starts_with("scripts/test_") && path.ends_with(".py"))
         || (path.starts_with("xtask/")
@@ -81,6 +81,7 @@ pub fn preprocessor_changed(paths: &[String]) -> bool {
                 "xtask/src/notices/rust.rs",
                 "xtask/src/notices/toolchain.rs",
                 "xtask/src/ci/toolchain.rs",
+                "xtask/src/ci/component.rs",
                 "tests/support/shader_preprocessor.mjs",
                 ".github/workflows/shader-preprocessor.yml",
             ]

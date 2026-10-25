@@ -133,10 +133,7 @@ fn selected_native_inputs_pair_by_package_identity_without_copying_environment()
             .contains("must not be copied")
     );
     assert_eq!(
-        evidence::native_archives(&f.target, &selected).unwrap()["skia_bindings"]
-            .as_array()
-            .unwrap()
-            .len(),
+        evidence::native_archives(&f.target, &selected).unwrap()["skia_bindings"].len(),
         6
     );
     evidence::source_identity(&f.root, &"a".repeat(40)).unwrap();

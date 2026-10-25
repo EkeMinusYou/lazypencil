@@ -5,11 +5,7 @@ use lazypencil_xtask::{
     util,
 };
 use serde_json::{Value, json};
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{collections::BTreeMap, fs, path::PathBuf};
 struct Fixture {
     _temp: tempfile::TempDir,
     root: PathBuf,

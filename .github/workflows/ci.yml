@@ -140,6 +140,8 @@ jobs:
         run: |
           cargo fetch --locked
           cargo xtask notices rust verify --cargo-home "$HOME/.cargo"
+          cargo fetch --locked --manifest-path xtask/Cargo.toml
+          cargo xtask notices rust verify --root xtask --bundle xtask/notices --cargo-home "$HOME/.cargo"
 
   shader-preprocessor:
     name: Check isolated shader preprocessing first

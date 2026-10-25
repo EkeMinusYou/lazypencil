@@ -240,3 +240,233 @@ fn retention_preserves_unrelated_download_dependency_tool_and_pull_request_cache
     ];
     assert!(cache::obsolete(&entries, None).unwrap().is_empty());
 }
+
+#[test]
+fn native_package_setup_keeps_signed_sources_scoped_and_stops_after_update_failure() {
+    for arch in ["X64", "ARM64", "unknown"] {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut invocations = Vec::new();
+        let mut source_path = None;
+        let result = setup::install_linux(arch, temporary.path(), |command| {
+            assert_eq!(command.get_program(), "sudo");
+            let args = command
+                .get_args()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect::<Vec<_>>();
+            if arch == "X64" {
+                let path = args
+                    .iter()
+                    .find_map(|s| s.strip_prefix("Dir::Etc::sourcelist="))
+                    .unwrap();
+                let text = fs::read_to_string(path).unwrap();
+                assert!(
+                    text.contains("https://archive.ubuntu.com/ubuntu")
+                        && text.contains("https://security.ubuntu.com/ubuntu")
+                        && text
+                            .contains("Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg")
+                );
+                assert!(!text.contains("trusted=yes") && !text.contains("azure.archive"));
+                let parts = args
+                    .iter()
+                    .find_map(|s| s.strip_prefix("Dir::Etc::sourceparts="))
+                    .unwrap();
+                assert_eq!(fs::read_dir(parts).unwrap().count(), 0);
+                if let Some(previous) = &source_path {
+                    assert_eq!(previous, path);
+                }
+                source_path = Some(path.to_owned());
+            }
+            invocations.push(args);
+            Ok(())
+        });
+        assert_eq!(result.is_ok(), arch != "unknown");
+        if arch == "unknown" {
+            assert!(invocations.is_empty());
+        } else {
+            assert_eq!(invocations.len(), 2);
+            assert_eq!(invocations[0].last().unwrap(), "update");
+            assert!(invocations[1].contains(&"install".to_owned()));
+            if arch == "ARM64" {
+                assert_eq!(invocations[0], ["apt-get", "update"]);
+            }
+        }
+        if let Some(path) = source_path {
+            assert!(!std::path::Path::new(&path).exists());
+        }
+        assert_eq!(fs::read_dir(temporary.path()).unwrap().count(), 0);
+    }
+    let temporary = tempfile::tempdir().unwrap();
+    let mut count = 0;
+    assert!(
+        setup::install_linux("X64", temporary.path(), |_| {
+            count += 1;
+            Err(anyhow::anyhow!("update failed"))
+        })
+        .is_err()
+    );
+    assert_eq!(count, 1);
+    assert_eq!(fs::read_dir(temporary.path()).unwrap().count(), 0);
+}
+#[test]
+fn dependency_checkpoint_and_application_retention_require_matching_main_layouts() {
+    let entry = |id, key: String, reference: &str| json!({"id":id,"key":key,"ref":reference,"version":"layout","created_at":format!("2026-10-{id:02}T00:00:00Z")});
+    let mut entries = vec![
+        entry(1, "checkpoint-native-v2-current".into(), "refs/heads/main"),
+        entry(2, "native-v2-current".into(), "refs/heads/main"),
+        entry(3, "checkpoint-native-v2-missing".into(), "refs/heads/main"),
+        entry(4, "native-v2-missing".into(), "refs/pull/1/merge"),
+    ];
+    assert_eq!(
+        cache::obsolete(&entries, None)
+            .unwrap()
+            .iter()
+            .map(|v| v["id"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        [1]
+    );
+    entries[1]["version"] = "different-layout".into();
+    assert!(cache::obsolete(&entries, None).unwrap().is_empty());
+    let current = "a".repeat(64);
+    let prefix = format!("application-v2-ubuntu-24.04-{current}-");
+    let mut entries = vec![
+        entry(
+            1,
+            format!("application-v1-ubuntu-24.04-{}-full", "1".repeat(64)),
+            "refs/heads/main",
+        ),
+        entry(
+            2,
+            format!(
+                "application-v2-macos-15-{}-{}-full",
+                "b".repeat(64),
+                "2".repeat(64)
+            ),
+            "refs/heads/main",
+        ),
+        entry(
+            3,
+            format!("{prefix}{}-full", "3".repeat(64)),
+            "refs/heads/main",
+        ),
+        entry(
+            4,
+            format!("{prefix}{}-full", "4".repeat(64)),
+            "refs/heads/main",
+        ),
+        entry(
+            5,
+            format!("{prefix}{}-focus", "4".repeat(64)),
+            "refs/heads/main",
+        ),
+        entry(
+            6,
+            format!("{prefix}{}-focus", "6".repeat(64)),
+            "refs/heads/main",
+        ),
+    ];
+    assert_eq!(
+        cache::obsolete(&entries, Some(&current))
+            .unwrap()
+            .iter()
+            .map(|v| v["id"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        [1, 2, 3, 5]
+    );
+    entries[4]["version"] = "another-layout".into();
+    assert_eq!(
+        cache::obsolete(&entries[..5], Some(&current))
+            .unwrap()
+            .iter()
+            .map(|v| v["id"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        [1, 2, 3]
+    );
+    let mut entries = Vec::new();
+    let mut id = 0;
+    for platform in ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-15"] {
+        for index in 1..=3 {
+            for phase in ["full", "focus"] {
+                id += 1;
+                let mut e = entry(
+                    id,
+                    format!(
+                        "application-v1-{platform}-{}-{phase}",
+                        index.to_string().repeat(64)
+                    ),
+                    "refs/heads/main",
+                );
+                e["created_at"] = format!("2026-10-{index:02}T00:00:00Z").into();
+                entries.push(e);
+            }
+        }
+        for index in [4, 5] {
+            id += 1;
+            let mut e = entry(
+                id,
+                format!(
+                    "application-v1-{platform}-{}-focus",
+                    index.to_string().repeat(64)
+                ),
+                "refs/heads/main",
+            );
+            e["created_at"] = format!("2026-10-{index:02}T00:00:00Z").into();
+            entries.push(e);
+        }
+    }
+    let removed = cache::obsolete(&entries, None).unwrap();
+    let kept = entries
+        .iter()
+        .filter(|e| !removed.iter().any(|r| r["id"] == e["id"]))
+        .collect::<Vec<_>>();
+    assert_eq!(kept.len(), 9);
+    assert!(
+        kept.iter()
+            .all(|e| e["key"].as_str().unwrap().ends_with("-full")
+                || e["key"].as_str().unwrap().contains(&"5".repeat(64)))
+    );
+}
+
+#[test]
+fn audit_cache_identity_and_observed_version_bind_the_actual_binary() {
+    let original = cache::audit_identity("compiler-one", "image-one", "X64").unwrap();
+    for (compiler, image, arch) in [
+        ("compiler-two", "image-one", "X64"),
+        ("compiler-one", "image-two", "X64"),
+        ("compiler-one", "image-one", "ARM64"),
+    ] {
+        assert_ne!(
+            cache::audit_identity(compiler, image, arch).unwrap(),
+            original
+        );
+    }
+    assert!(cache::audit_identity("compiler", "unknown", "X64").is_err());
+    for version in ["cargo-deny 0.20.2\n", "cargo-deny wrong\n"] {
+        let temp = tempfile::tempdir().unwrap();
+        let bin = temp.path().join("bin");
+        fs::create_dir(&bin).unwrap();
+        let table = temp.path().join("version.json");
+        fs::write(
+            &table,
+            util::encode(&json!({"[\"--version\"]":{"stdout":version}})).unwrap(),
+        )
+        .unwrap();
+        let path = bin.join("cargo-deny");
+        install::install(
+            &util::root(),
+            &path,
+            &[
+                "fixture-command".into(),
+                table.to_string_lossy().into_owned(),
+            ],
+        )
+        .unwrap();
+        let record = cache::audit_record(temp.path(), &original);
+        if version.contains("wrong") {
+            assert!(record.is_err());
+        } else {
+            let record = record.unwrap();
+            assert_eq!(record["sha256"], util::file_digest(&path).unwrap());
+            assert_eq!(record["fingerprint"], original);
+        }
+    }
+}

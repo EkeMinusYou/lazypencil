@@ -48,17 +48,7 @@ pub struct Arguments {
 }
 impl Arguments {
     pub fn run(self) -> Result<()> {
-        util::print(&collect(
-            &self.source,
-            &self.target,
-            &self.cargo_json,
-            &self.revision,
-            &self.output,
-            &self.rustc,
-            &self.ninja,
-            self.cargo_home.as_deref(),
-            self.toolchain_evidence.as_deref(),
-        )?)
+        util::print(&collect(&self)?)
     }
 }
 
@@ -335,17 +325,20 @@ fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn collect(
-    root: &Path,
-    target: &Path,
-    events: &Path,
-    revision: &str,
-    output: &Path,
-    rustc: &str,
-    ninja: &str,
-    cargo: Option<&Path>,
-    standard_evidence: Option<&Path>,
-) -> Result<Value> {
+pub fn collect(arguments: &Arguments) -> Result<Value> {
+    let Arguments {
+        source: root,
+        target,
+        cargo_json: events,
+        revision,
+        output,
+        rustc,
+        ninja,
+        cargo_home: cargo,
+        toolchain_evidence: standard_evidence,
+    } = arguments;
+    let cargo = cargo.as_deref();
+    let standard_evidence = standard_evidence.as_deref();
     let root = root.canonicalize()?;
     let target = target.canonicalize()?;
     let output = std::path::absolute(output)?;

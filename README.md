@@ -160,17 +160,21 @@ The default build includes a terminal viewer with pan/zoom, node selection, Japa
 
 ## Development
 
-Run full Rust, Skia and Docker builds on GitHub Actions by default. Local work should focus on source changes, formatting, workflow linting and lightweight Python checks. Avoid creating local build trees or repeated extracted source snapshots for routine verification. Keep only the logs and selected artifacts needed for the current investigation.
+Run full Rust, Skia and Docker builds on GitHub Actions by default. Local work should focus on source changes, formatting, workflow linting and lightweight source inspection. Avoid creating local build trees or repeated extracted source snapshots for routine verification. Keep only the logs and selected artifacts needed for the current investigation.
 
-CI runs affected tests on one supported runner before the complete macOS Apple Silicon / Linux x64 / Linux arm64 matrix. The fixed audit-tool binary is cached by its version, actual compiler, runner image and architecture; advisory checks still run against the current database. Application outputs use a separate, content-checked cache bound to source inputs, compiler/flags, runner image and absolute build paths. This lets the full job reuse its successful focused build. Changes limited to workflows, `scripts/ci/` or `scripts/test_*.py` can reuse outputs unless an excluded file is itself a compiler input. Documentation, fixtures, resources and other scripts remain bound. Missing, changed or unverifiable inputs fall back to a fresh build. Rendered images and test results are always regenerated, and all final checks remain required.
+CI runs affected tests on one supported runner before the complete macOS Apple Silicon / Linux x64 / Linux arm64 matrix. The fixed audit-tool binary is cached by its version, actual compiler, runner image and architecture; advisory checks still run against the current database. Application outputs use a separate, content-checked cache bound to source inputs, compiler/flags, runner image and absolute build paths. This lets the full job reuse its successful focused build. Changes limited to workflows, the independent `xtask` modules can reuse outputs unless an excluded file is itself a compiler input. Documentation, fixtures, resources and other scripts remain bound. Missing, changed or unverifiable inputs fall back to a fresh build. Rendered images and test results are always regenerated, and all final checks remain required.
+
+Development, CI, source distribution, notice inspection, fixture preparation and measurement are Rust tasks in the independent [`xtask`](xtask/Cargo.toml) workspace. Run `cargo xtask --help` for commands. Its own lockfile and target directory keep it independent of the application and Skia; its [129-package notice inventory](xtask/notices/RUST-NOTICES.txt) is checked separately. `cargo test --locked --manifest-path xtask/Cargo.toml --target-dir xtask/target` checks the tools alone. App integration tests use the native `lazypencil-test-helper` binary; `cargo xtask test` prepares it and isolates user settings. Project-maintained Python and Shell helpers are removed. Upstream Skia source builds still require their upstream build tools on hosted runners. The JavaScript fixture for the actual browser-style WebAssembly ABI remains test input; Rust controls its execution and deadline.
+
+Long idle lifecycle checks and exhaustive Material checks use two independent lanes after one prebuild. Their executable catalog binds each binary to this commit and its SHA-256; no concurrent Cargo compilation or cached test result is used. Each command records elapsed time in the existing verification artifact as `ci-timings.jsonl`. The real idle expiry, frame-rate checks and final three-platform gates remain required.
 
 After successful full verification, CI removes main-branch dependency checkpoints that have an exact full-cache counterpart. Application caches retain two full builds and one unmatched focused build per platform. Dependency, download and shader caches are otherwise preserved.
 
 Rust 1.94 or newer and a C compiler for QuickJS-NG are required to build from source. Skia uses prebuilt libraries where supported; otherwise its upstream build tools are required.
 
 ```sh
-sh scripts/ci/test.sh
-cargo clippy --all-targets -- -D warnings
+cargo xtask test --core # Core processes without Skia
+cargo xtask test        # Both configurations, Clippy, then the runnable application
 ```
 
 Development verification includes macOS arm64 and a Debian 12 arm64 container using the declared Rust 1.94 minimum. Exact test/build conditions and remaining platform/release work are recorded in [implementation status](docs/implementation-status.md). The vendored Skia binding patch and its upstream source are documented in [LAZYPENCIL_PATCH.md](vendor/skia-bindings/LAZYPENCIL_PATCH.md).
@@ -180,13 +184,13 @@ Development verification includes macOS arm64 and a Debian 12 arm64 container us
 Use the source distribution tool to retain the local Skia binding patch and the original Cargo manifests:
 
 ```sh
-python3 scripts/dist.py source --output dist/lazypencil-source.tar.gz
-python3 scripts/dist.py verify-source dist/lazypencil-source.tar.gz --extract /tmp/lazypencil-source
+cargo xtask dist source --output dist/lazypencil-source.tar.gz
+cargo xtask dist verify-source dist/lazypencil-source.tar.gz --extract /tmp/lazypencil-source
 cd /tmp/lazypencil-source
 cargo build --locked
 ```
 
-Python 3.11 or newer is required by the distribution tool. Archive creation requires a clean Git checkout; `--allow-dirty` explicitly creates a local development snapshot with its dirty provenance recorded. The extraction destination must not already exist. The archive includes project sources, the vendored binding patch, fonts/icons and their existing license files, examples, tests, and documentation. Downloaded Skia checkouts and build caches are excluded. Dependencies and native Skia sources still need to be obtained during a first build; this is not an offline dependency vendor bundle.
+Archive creation requires a clean Git checkout; `--allow-dirty` explicitly creates a local development snapshot with its dirty provenance recorded. The extraction destination must not already exist. The archive includes both Cargo workspaces and their lockfiles/notices, project sources, the vendored binding patch, fonts/icons and their existing license files, examples, tests, and documentation. Downloaded Skia checkouts and build caches are excluded. Dependencies and native Skia sources still need to be obtained during a first build; this is not an offline dependency vendor bundle.
 
 Release sources are selected from Git's tracked files within the distribution's source directories. A development snapshot also includes visible untracked files, respecting Git ignore rules; ignored local data is excluded from both modes. Without Git, only the explicit development mode is available and collects the documented directories from the filesystem.
 
@@ -206,25 +210,25 @@ Hosted dependency builds, downloaded Skia sources and original Material fonts ca
 
 The manual `Agent process integration` workflow first reproduces embedded-helper startup and actual bound MCP edits with a 10-second response limit, then runs the complete core suite and core all-target Clippy without building Skia. It retains logs and a source-bound report. Use `gh workflow run process.yml --ref main -f os=ubuntu-24.04` (or `ubuntu-24.04-arm` / `macos-15`). No model request or subscription credential is needed. Windows lifecycle implementation and fixtures remain in the repository for future support; Windows is outside the initial-release CI and acceptance gate.
 
-The release smoke script also records repeated native-child measurements for the two fixed 1,000-node workloads in `release-benchmark.json`: timing, per-child peak memory/CPU, executable/input hashes and matching render hashes. It uses the built executable directly and preserves only the small JSON report. This new hosted integration awaits verification; it does not establish hardware-independent performance acceptance. See [measurement scope and observations](docs/performance.md#repeatable-native-child-measurements).
+The Rust release smoke task also records repeated native-child measurements for the two fixed 1,000-node workloads in `release-benchmark.json`: timing, per-child peak memory/CPU, executable/input hashes and matching render hashes. It uses the built executable directly and preserves only the small JSON report. This new hosted integration awaits verification; it does not establish hardware-independent performance acceptance. See [measurement scope and observations](docs/performance.md#repeatable-native-child-measurements).
 
 Dependency policy uses cargo-deny 0.20.2:
 
 ```sh
 cargo install cargo-deny --version 0.20.2 --locked
 cargo deny --all-features --locked check licenses sources advisories
-python3 -m unittest discover -s scripts -p 'test_*.py' -v
+cargo test --locked --manifest-path xtask/Cargo.toml --target-dir xtask/target
 ```
 
 The policy checks all declared features, registry sources, SPDX expressions, and RustSec advisories. The unchanged `option-ext` dependency has a version-specific MPL-2.0 allowance. Its complete original source archive, matching license, and [source notice](resources/licenses/SOURCE-NOTICES.txt) are included under `resources/licenses`; an automated check matches them against `Cargo.lock`. Keep these source/notice assets with binary distributions.
 
-The [Rust notices](resources/licenses/rust/RUST-NOTICES.txt) and [machine-readable inventory](resources/licenses/rust/index.json) cover all 388 packages in the current lockfile, including optional, build, and platform dependencies. Original notice bytes, source locations, archive checksums, and pinned upstream supplements are retained alongside the readable notices. Published author declarations are identified as declarations; they are not substituted for copyright notices. Reference MIT terms are explicitly distinguished from package notices. The readable file normalizes whitespace, while the original blobs retain their exact upstream bytes through Git.
+The [Rust notices](resources/licenses/rust/RUST-NOTICES.txt) and [machine-readable inventory](resources/licenses/rust/index.json) cover all 391 packages in the application lockfile, including optional, build, and platform dependencies. Original notice bytes, source locations, archive checksums, and pinned upstream supplements are retained alongside the readable notices. Published author declarations are identified as declarations; they are not substituted for copyright notices. Reference MIT terms are explicitly distinguished from package notices. The readable file normalizes whitespace, while the original blobs retain their exact upstream bytes through Git.
 
 ```sh
-python3 scripts/license_notices.py verify
+cargo xtask notices rust verify
 cargo fetch --locked
-python3 scripts/license_notices.py verify --cargo-home "${CARGO_HOME:-$HOME/.cargo}"
-python3 scripts/license_notices.py collect --cargo-home "${CARGO_HOME:-$HOME/.cargo}" \
+cargo xtask notices rust verify --cargo-home "${CARGO_HOME:-$HOME/.cargo}"
+cargo xtask notices rust collect --cargo-home "${CARGO_HOME:-$HOME/.cargo}" \
   --upstream resources/licenses/rust/upstream.json --output /tmp/lazypencil-new-rust-notices
 ```
 
@@ -232,7 +236,7 @@ The first check verifies the checked-in bundle, current lockfile, and local pack
 
 This is a source-package inventory, not a list of code linked into a specific binary. Passing the policy and notice checks does not complete the native Skia/QuickJS or Rust standard-library audit. Native/toolchain attributions, per-binary notice assembly, binary archives, minimum OS validation, signing, and release publishing remain unfinished. No Chromium or ACP adapter is added to the source archive.
 
-The manual `Release build evidence` workflow builds a release executable from the verified source distribution on a selected hosted platform. It reuses the normal dependency cache, cleans application outputs, and captures [Cargo JSON artifact and build-script records](https://doc.rust-lang.org/cargo/reference/external-tools.html#json-messages). `scripts/release_evidence.py` pairs each native artifact with its build-script package identity, uses the reported output directory, hashes the executable and selected native archives, and collects and reconstructs the Skia and QuickJS notice inventories. It checks distributed source files and build outputs before and after collection, rejects unlisted source inputs and conflicting archive aliases, and verifies a copy of the checked-in Rust notice bundle. The full collector, including QuickJS and corresponding-source materials, passed on [macOS arm64 at source ec6d326](https://github.com/EkeMinusYou/lazypencil/actions/runs/40026880547), [Windows x64 at source 5a9698e](https://github.com/EkeMinusYou/lazypencil/actions/runs/40028843720) and [Linux x64 at source e99b62e](https://github.com/EkeMinusYou/lazypencil/actions/runs/40028057056). Each downloaded artifact's 325 file sizes/hashes and complete member list were verified. Other platforms remain under verification.
+The manual `Release build evidence` workflow builds a release executable from the verified source distribution on a selected hosted platform. It reuses the normal dependency cache, cleans application outputs, and captures [Cargo JSON artifact and build-script records](https://doc.rust-lang.org/cargo/reference/external-tools.html#json-messages). `xtask/src/evidence.rs` pairs each native artifact with its build-script package identity, uses the reported output directory, hashes the executable and selected native archives, and collects and reconstructs the Skia and QuickJS notice inventories. It checks distributed source files and build outputs before and after collection, rejects unlisted source inputs and conflicting archive aliases, and verifies a copy of the checked-in Rust notice bundle. The full collector, including QuickJS and corresponding-source materials, passed on [macOS arm64 at source ec6d326](https://github.com/EkeMinusYou/lazypencil/actions/runs/40026880547), [Windows x64 at source 5a9698e](https://github.com/EkeMinusYou/lazypencil/actions/runs/40028843720) and [Linux x64 at source e99b62e](https://github.com/EkeMinusYou/lazypencil/actions/runs/40028057056). Each downloaded artifact's 325 file sizes/hashes and complete member list were verified. Other platforms remain under verification.
 
 Its three-day artifact contains `build.json`, a file-hash manifest, the source manifest, original project notices, `licenses/` with the checked-in Rust notices and corresponding-source materials, and `skia/` and `quickjs/` input/notice evidence. The complete option-ext source archive and MPL terms retain the relative paths in their original notice. The artifact records compiler and runner identities, selected native features/link declarations, and remaining review. It excludes the executable and arbitrary build-script environment variables. The report always sets `release_ready: false`: Cargo declarations and Ninja inputs do not prove final linkage, and Rust standard-library/system notices, complete native/asset review, signed provenance, packaging and publication remain separate requirements. Hashes provide content integrity, not build authenticity or legal approval.
 
@@ -245,13 +249,13 @@ The earlier Skia/QuickJS/corresponding-source stage also passed at source `1355c
 For a source-built Skia, collect audit evidence from the actual native build directory:
 
 ```sh
-python3 scripts/skia_notice_inventory.py collect --source vendor/skia-bindings/skia \
+cargo xtask notices skia collect --source vendor/skia-bindings/skia \
   --build /path/to/skia-bindings-build/out/skia --upstream resources/licenses/native/upstream.json \
   --output /tmp/lazypencil-skia-inventory
-python3 scripts/skia_notice_inventory.py verify --source vendor/skia-bindings/skia \
+cargo xtask notices skia verify --source vendor/skia-bindings/skia \
   --build /path/to/skia-bindings-build/out/skia --upstream resources/licenses/native/upstream.json \
   --output /tmp/lazypencil-skia-inventory
-python3 scripts/skia_notice_inventory.py verify-upstream --upstream resources/licenses/native/upstream.json
+cargo xtask notices skia verify-upstream --upstream resources/licenses/native/upstream.json
 ```
 
 This requires Ninja and a completed native build with its recorded header dependencies. It reads the graph for the five rendering/text libraries, hashes source and generated inputs, retains original local notice bytes and source comment candidates, and reports references needing further review. New native components, missing inputs, links in native inputs, unbuilt libraries, and stale inventories fail explicitly. System header symlinks remain excluded system inputs. Verification reconstructs the inventory from the build and source bytes rather than trusting a self-consistent manifest.
@@ -265,11 +269,11 @@ Recorded headers can include stale or unused objects, and notice candidates deli
 Collect the separately installed Rust standard-library evidence with the compiler used for the build:
 
 ```sh
-python3 scripts/toolchain_notice_inventory.py collect --cargo-home /path/to/stdlib-crate-cache \
+cargo xtask notices toolchain collect --cargo-home /path/to/stdlib-crate-cache \
   --upstream resources/licenses/toolchain/upstream.json --output /tmp/lazypencil-toolchain-inventory
-python3 scripts/toolchain_notice_inventory.py verify --cargo-home /path/to/stdlib-crate-cache \
+cargo xtask notices toolchain verify --cargo-home /path/to/stdlib-crate-cache \
   --upstream resources/licenses/toolchain/upstream.json --output /tmp/lazypencil-toolchain-inventory
-python3 scripts/toolchain_notice_inventory.py verify-upstream --upstream resources/licenses/toolchain/upstream.json
+cargo xtask notices toolchain verify-upstream --upstream resources/licenses/toolchain/upstream.json
 ```
 
 This offline tool requires installed Rust sources, the distribution's `COPYRIGHT` / MIT / Apache files, and `COPYRIGHT-library.html` with its referenced license texts. It observes `rustc --version --verbose`, the sysroot, and installed target libraries; `--rustc` and `--target` select a compiler and installed target. Separate installations can use `--source-root`, `--legal-root`, and `--doc-root`. Missing inputs fail explicitly; nothing is downloaded or installed.
