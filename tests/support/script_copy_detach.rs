@@ -34,14 +34,10 @@ fn imported_bound_detach_preserves_saved_default_and_live_variable_inputs() {
                 };
                 if explicit {
                     let inputs = json!({"selected":"$selection","unused":"$missing"});
-                    let draw = response["generated_ids"]["0"]["id_map"]["ui:draw"].as_str();
-                    let edits = if inherited {
-                        json!([{"op":"set_variable","name":"selection","definition":{"type":"string","value":"badge"}},
-                            {"op":"update","target":"use","set":{"descendants":{draw.unwrap():{"inputs":inputs}}}}])
-                    } else {
-                        json!([{"op":"set_variable","name":"selection","definition":{"type":"string","value":"badge"}},
-                            {"op":"update","target":"use","set":{"inputs":inputs}}])
-                    };
+                    let edits = json!([
+                        {"op":"set_variable","name":"selection","definition":{"type":"string","value":"badge"}},
+                        {"op":"update","target":address,"set":{"inputs":inputs}}
+                    ]);
                     fixture::apply(&target, "explicit-variable-input", edits);
                 }
                 let before = png(&target, None);
