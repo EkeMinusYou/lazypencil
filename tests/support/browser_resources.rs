@@ -188,7 +188,7 @@ fn a_colocated_design_can_be_edited_when_private_state_is_outside_the_web_root()
 }
 
 #[test]
-fn roots_reject_cycles_external_links_private_state_and_non_regular_files() {
+fn roots_reject_directory_cycles_and_external_links() {
     use std::os::unix::fs::symlink;
     let (temp, store) = fixture();
     symlink(".", temp.path().join("web/loop")).unwrap();
@@ -205,7 +205,13 @@ fn roots_reject_cycles_external_links_private_state_and_non_regular_files() {
     .unwrap();
     assert_eq!(Project::load(&store).err().unwrap().code, "ASSET_NOT_FOUND");
     fs::remove_file(temp.path().join("web/escape.js")).unwrap();
-    fs::create_dir(store.data_dir().join("tokens")).unwrap();
+}
+
+#[test]
+fn roots_reject_private_directories_descendants_and_symbolic_file_links() {
+    use std::os::unix::fs::symlink;
+    let (temp, store) = fixture();
+    fs::create_dir_all(store.data_dir().join("tokens")).unwrap();
     fs::write(store.data_dir().join("tokens/private.js"), "private").unwrap();
     symlink(
         store.data_dir().join("tokens/private.js"),
@@ -230,6 +236,11 @@ fn roots_reject_cycles_external_links_private_state_and_non_regular_files() {
         Project::load(&store).err().unwrap().code,
         "INVALID_DOCUMENT"
     );
+}
+
+#[test]
+fn roots_reject_non_regular_files_without_opening_them() {
+    let (temp, store) = fixture();
     write(store.path(), scene(json!([{"url":BASE,"path":"web"}])));
     let fifo = std::ffi::CString::new(temp.path().join("web/pipe").as_os_str().as_encoded_bytes())
         .unwrap();
