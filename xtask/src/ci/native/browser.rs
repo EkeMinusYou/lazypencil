@@ -379,7 +379,18 @@ pub fn required_images(root: &Path, commit: &str) -> Result<()> {
             }
         }
     }
-    println!("Verified source identities, hashes and dimensions for 212 required PNGs");
+    let local = report("codec-browser-local-files.json")?;
+    ensure!(
+        local["source_removed"] == true
+            && local["location_preserved"] == true
+            && local["unsafe_host_file"] == false
+            && local["sandbox"] == "enabled"
+            && local["stats"]["fulfilled"] == 6
+            && local["stats"]["denied"] == 1,
+        "Local browser resource isolation proof missing"
+    );
+    png("codec-browser-local-files.png", &local["png_hash"], 32, 32)?;
+    println!("Verified source identities, hashes and dimensions for 213 required PNGs");
     Ok(())
 }
 pub fn panel(s: &Session) -> Result<()> {

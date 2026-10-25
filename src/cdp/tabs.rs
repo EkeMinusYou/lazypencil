@@ -164,14 +164,15 @@ impl Browser {
     }
 
     fn dispose_tab(&mut self, tab: Tab) -> Result<()> {
-        self.command(
+        let disposed = self.command(
             None,
             "Target.disposeBrowserContext",
             json!({"browserContextId":tab.context}),
             &Budget::new(Duration::from_millis(500), None),
-        )?;
+        );
+        self.local_files.remove(&tab.session);
         self.page_lifecycle.remove(&tab.session);
-        Ok(())
+        disposed.map(|_| ())
     }
 }
 

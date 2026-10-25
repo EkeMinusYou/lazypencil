@@ -109,6 +109,178 @@ fn assert_green(image: &RenderedImage) {
 }
 
 #[test]
+#[ignore = "Requires sandboxed headless Chromium"]
+fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files() {
+    use lazypencil::{
+        cdp::{Browser, Budget, LocalFiles, Purpose},
+        runtime::InstalledBrowser,
+    };
+    let original = TempDir::new().unwrap();
+    let site = original.path().join("site with spaces 日本語");
+    fs::create_dir(&site).unwrap();
+    let sources = [
+        (
+            "index.html",
+            "text/html; charset=utf-8",
+            r#"<!doctype html><html><head>
+            <link rel="icon" href="data:,"><link rel="stylesheet" href="style.css?v=1"><script src="app.js"></script>
+            <script src="../unlisted.js"></script></head><body>
+            <img src="blue.svg?color=blue" width="8" height="8">
+            <iframe src="frame.html#child" width="8" height="8"></iframe></body></html>"#,
+        ),
+        (
+            "style.css",
+            "text/css",
+            "@import url('theme.css?theme=green');body{margin:0}img{position:absolute;left:0;top:0}iframe{position:absolute;left:8px;top:0;border:0}",
+        ),
+        ("theme.css", "text/css", "html{background:#00ff00}"),
+        (
+            "app.js",
+            "text/javascript",
+            r#"window.addEventListener('message',e=>{if(e.data==='frame-ready')window.frameReady=true});
+            window.addEventListener('load',async()=>{await document.images[0].decode();window.localProbe={
+            background:getComputedStyle(document.documentElement).backgroundColor,
+            location:location.href,unsafe:window.unsafeHostFile===true,image:document.images[0].naturalWidth}});"#,
+        ),
+        (
+            "blue.svg",
+            "image/svg+xml",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><path fill="blue" d="M0 0h8v8H0z"/></svg>"#,
+        ),
+        (
+            "frame.html",
+            "text/html",
+            "<!doctype html><style>html{background:#ff0000}</style><script>parent.postMessage('frame-ready','*')</script>",
+        ),
+    ];
+    let mut inventory = Vec::new();
+    for (name, mime, contents) in sources {
+        let path = site.join(name);
+        fs::write(&path, contents).unwrap();
+        inventory.push((
+            url::Url::from_file_path(&path).unwrap().to_string(),
+            mime.to_owned(),
+            fs::read(&path).unwrap(),
+        ));
+    }
+    let captured_bytes: usize = inventory.iter().map(|(_, _, bytes)| bytes.len()).sum();
+    let mut url = url::Url::from_file_path(site.join("index.html")).unwrap();
+    url.set_query(Some("theme=green"));
+    url.set_fragment(Some("original-location"));
+    let files = Arc::new(LocalFiles::new(inventory).unwrap());
+    fs::remove_dir_all(&site).unwrap();
+    assert!(!site.exists());
+    // This live file would execute if an unknown request reached the host.
+    fs::write(
+        original.path().join("unlisted.js"),
+        "window.unsafeHostFile=true",
+    )
+    .unwrap();
+
+    let installed = InstalledBrowser {
+        executable: std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").unwrap().into(),
+        version: "test-managed-runtime".into(),
+        platform: lazypencil::runtime::platform().unwrap().into(),
+    };
+    let startup = Budget::new(Duration::from_secs(30), None);
+    let mut browser = Browser::launch_with_supervisor(
+        &installed,
+        Purpose::Page,
+        &startup,
+        std::path::Path::new(env!("CARGO_BIN_EXE_lazypencil")),
+    )
+    .unwrap();
+    let budget = Budget::new(Duration::from_secs(15), None);
+    let (png, stats, probe) = browser
+        .with_tab(&budget, |browser, session| {
+            browser.command(Some(session), "Page.enable", json!({}), &budget)?;
+            browser.intercept_local_files(session, files, &budget)?;
+            browser.command(
+                Some(session),
+                "Emulation.setDeviceMetricsOverride",
+                json!({"width":32,"height":32,"deviceScaleFactor":1,"mobile":false}),
+                &budget,
+            )?;
+            let navigation = browser.command(
+                Some(session),
+                "Page.navigate",
+                json!({"url":url.as_str()}),
+                &budget,
+            )?;
+            assert!(navigation.get("errorText").is_none(), "{navigation}");
+            let probe = loop {
+                let value = browser.evaluate(
+                    session,
+                    "window.frameReady && window.localProbe || null",
+                    &budget,
+                )?;
+                if !value.is_null() {
+                    break value;
+                }
+                std::thread::sleep(Duration::from_millis(20).min(budget.remaining()?));
+            };
+            assert_eq!(probe["background"], "rgb(0, 255, 0)");
+            assert_eq!(probe["image"], 8);
+            assert_eq!(probe["unsafe"], false);
+            assert_eq!(probe["location"], url.as_str());
+            browser.evaluate(
+                session,
+                "new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))",
+                &budget,
+            )?;
+            let screenshot = browser.command(
+                Some(session),
+                "Page.captureScreenshot",
+                json!({"format":"png","captureBeyondViewport":false}),
+                &budget,
+            )?;
+            let png = base64::engine::general_purpose::STANDARD
+                .decode(screenshot["data"].as_str().unwrap())
+                .unwrap();
+            let stats = browser.local_file_stats(session).unwrap();
+            assert_eq!(stats.fulfilled, sources.len() as u64);
+            assert_eq!(stats.denied, 1);
+            assert_eq!(stats.response_bytes, captured_bytes as u64);
+            Ok((png, stats, probe))
+        })
+        .unwrap();
+    let raster = Image::from_encoded(Data::new_copy(&png))
+        .unwrap()
+        .make_raster_image(None, None)
+        .unwrap();
+    assert_eq!((raster.width(), raster.height()), (32, 32));
+    let pixels = raster.peek_pixels().unwrap();
+    for y in 0..32 {
+        for x in 0..32 {
+            let expected = if y < 8 && x < 8 {
+                Color::BLUE
+            } else if y < 8 && x < 16 {
+                Color::RED
+            } else {
+                Color::GREEN
+            };
+            assert_eq!(
+                pixels.get_color((x, y)),
+                expected,
+                "local resource pixel {x},{y}"
+            );
+        }
+    }
+    assert!(!site.exists());
+    if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
+        let directory = std::path::PathBuf::from(directory);
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("codec-browser-local-files.png"), &png).unwrap();
+        fs::write(directory.join("codec-browser-local-files.json"), serde_json::to_vec_pretty(&json!({
+            "source_commit":std::env::var("GITHUB_SHA").ok(),"width":32,"height":32,
+            "png_hash":lazypencil::document::hash(&png),"stats":stats,"source_removed":true,
+            "location_preserved":probe["location"]==url.as_str(),"unsafe_host_file":probe["unsafe"],
+            "sandbox":"enabled","browser":browser.version
+        })).unwrap()).unwrap();
+    }
+}
+
+#[test]
 fn reference_server_keeps_speculative_connections_until_headers_and_stops_when_idle() {
     let server = reference::Server::new();
     let mut stream = TcpStream::connect(server.address).unwrap();

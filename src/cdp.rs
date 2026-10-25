@@ -15,10 +15,12 @@ use tungstenite::{Message, WebSocket};
 
 mod connection;
 mod lifecycle;
+mod local_files;
 mod process;
 mod readiness;
 mod tabs;
 use lifecycle::PageLifecycle;
+pub use local_files::{LocalFileStats, LocalFiles};
 #[cfg(any(windows, unix))]
 pub use process::serve_worker as serve_process_worker;
 pub use tabs::{MAX_RETAINED_PAGES, PageState};
@@ -36,6 +38,8 @@ pub struct Browser {
     pub version: String,
     page_lifecycle: BTreeMap<String, PageLifecycle>,
     retained_tabs: VecDeque<tabs::RetainedTab>,
+    local_files: local_files::Interception,
+    purpose: Purpose,
     _profile: Option<tempfile::TempDir>,
 }
 
@@ -207,6 +211,8 @@ impl Browser {
             version: String::new(),
             page_lifecycle: BTreeMap::new(),
             retained_tabs: VecDeque::new(),
+            local_files: local_files::Interception::default(),
+            purpose,
             _profile: profile,
         };
         let version = browser.command(None, "Browser.getVersion", json!({}), budget)?;
@@ -221,6 +227,56 @@ impl Browser {
         params: Value,
         budget: &Budget<'_>,
     ) -> Result<Value> {
+        let id = self.send_command(session, method, params, budget)?;
+        loop {
+            budget.check()?;
+            match self.socket.read() {
+                Ok(Message::Text(text)) => {
+                    budget.check()?;
+                    let value: Value =
+                        serde_json::from_str(&text).map_err(|_| failed("Invalid CDP JSON"))?;
+                    budget.check()?;
+                    if let Some(lifecycle) = value["sessionId"]
+                        .as_str()
+                        .and_then(|session| self.page_lifecycle.get_mut(session))
+                    {
+                        lifecycle.observe(&value);
+                    }
+                    self.dispatch_local_files(&value, budget)?;
+                    if value["id"] == id {
+                        if let Some(error) = value.get("error") {
+                            return Err(failed(format!(
+                                "CDP {method} failed: {}",
+                                error["message"].as_str().unwrap_or("protocol error")
+                            )));
+                        }
+                        return Ok(value["result"].clone());
+                    }
+                }
+                Ok(Message::Ping(_)) => {}
+                Ok(Message::Close(_)) => {
+                    budget.check()?;
+                    return Err(failed("Chromium closed its CDP connection"));
+                }
+                Ok(_) => {}
+                Err(tungstenite::Error::Io(error)) if pending(&error) => continue,
+                Err(error) => {
+                    budget.check()?;
+                    return Err(failed(format!("CDP read failed: {error}")));
+                }
+            }
+        }
+    }
+
+    // Event handlers enqueue commands without recursively reading the socket:
+    // an unrelated response may arrive while a paused request is being served.
+    fn send_command(
+        &mut self,
+        session: Option<&str>,
+        method: &str,
+        params: Value,
+        budget: &Budget<'_>,
+    ) -> Result<u64> {
         budget.check()?;
         self.socket.get_mut().set_budget(budget);
         self.next_id += 1;
@@ -248,43 +304,7 @@ impl Browser {
                 }
             }
         }
-        loop {
-            budget.check()?;
-            match self.socket.read() {
-                Ok(Message::Text(text)) => {
-                    budget.check()?;
-                    let value: Value =
-                        serde_json::from_str(&text).map_err(|_| failed("Invalid CDP JSON"))?;
-                    budget.check()?;
-                    if let Some(lifecycle) = value["sessionId"]
-                        .as_str()
-                        .and_then(|session| self.page_lifecycle.get_mut(session))
-                    {
-                        lifecycle.observe(&value);
-                    }
-                    if value["id"] == id {
-                        if let Some(error) = value.get("error") {
-                            return Err(failed(format!(
-                                "CDP {method} failed: {}",
-                                error["message"].as_str().unwrap_or("protocol error")
-                            )));
-                        }
-                        return Ok(value["result"].clone());
-                    }
-                }
-                Ok(Message::Ping(_)) => {}
-                Ok(Message::Close(_)) => {
-                    budget.check()?;
-                    return Err(failed("Chromium closed its CDP connection"));
-                }
-                Ok(_) => {}
-                Err(tungstenite::Error::Io(error)) if pending(&error) => continue,
-                Err(error) => {
-                    budget.check()?;
-                    return Err(failed(format!("CDP read failed: {error}")));
-                }
-            }
-        }
+        Ok(id)
     }
 
     /// Observe the selected session's main frame without retaining page or request data.
