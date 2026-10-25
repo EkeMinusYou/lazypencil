@@ -728,9 +728,7 @@ impl Copier<'_> {
         let extension = match kind {
             "shader" => "glsl",
             "script" => "js",
-            "image" if bytes.starts_with(b"\x89PNG\r\n\x1a\n") => "png",
-            "image" if bytes.starts_with(&[0xff, 0xd8, 0xff]) => "jpg",
-            "image" if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") => "webp",
+            "image" => image_extension(&bytes)?,
             _ => {
                 return Err(copy_error(
                     "Copied images must contain PNG, JPEG, or WebP data",
@@ -893,6 +891,20 @@ impl Copier<'_> {
         }
         self.rewrite_script(origin, node, &mut result, script.as_ref())?;
         Ok(Value::Object(result))
+    }
+}
+
+fn image_extension(bytes: &[u8]) -> Result<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Ok("png")
+    } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
+        Ok("jpg")
+    } else if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") {
+        Ok("webp")
+    } else {
+        Err(copy_error(
+            "Copied images must contain PNG, JPEG, or WebP data",
+        ))
     }
 }
 

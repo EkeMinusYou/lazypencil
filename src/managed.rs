@@ -1,6 +1,6 @@
 use crate::{Error, Result, document::hash};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs,
     io::Write,
     path::{Path, PathBuf},
@@ -9,6 +9,51 @@ use std::{
 use tempfile::NamedTempFile;
 
 pub(crate) type Overlay = BTreeMap<PathBuf, File>;
+
+/// Validate projected names before any filesystem operation. A copier can choose
+/// portable storage without treating an existing-file conflict as a path alias.
+pub(crate) fn validate_bundle_names<'a>(
+    names: impl IntoIterator<Item = &'a str>,
+    cancel: Option<&tokio_util::sync::CancellationToken>,
+) -> Result<()> {
+    let names = names.into_iter().collect::<BTreeSet<_>>();
+    let mut portable = BTreeMap::new();
+    for name in &names {
+        crate::cancel::check(cancel)?;
+        let path = Path::new(name);
+        if name
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+            || name.is_empty()
+            || *name == "bundle.json"
+            || name.contains('\\')
+            || name.chars().any(char::is_control)
+            || path.components().count() > 128
+            || path
+                .components()
+                .any(|part| !matches!(part, std::path::Component::Normal(_)))
+        {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "Invalid managed bundle member path",
+            ));
+        }
+        for ancestor in path.ancestors().filter(|path| !path.as_os_str().is_empty()) {
+            let original = ancestor.to_str().expect("UTF-8 member");
+            if portable
+                .insert(original.to_lowercase(), original.to_owned())
+                .is_some_and(|previous| previous != original)
+                || ancestor != path && names.contains(original)
+            {
+                return Err(Error::new(
+                    "ASSET_CONFLICT",
+                    "Managed bundle paths collide as files or portable names",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
 
 pub(crate) fn normalize(path: &Path) -> Result<PathBuf> {
     let mut result = PathBuf::new();
@@ -71,41 +116,14 @@ impl File {
         let mut total_bytes = 0usize;
         let mut path_bytes = 0usize;
         let mut inventory = BTreeMap::new();
-        let mut portable = BTreeMap::new();
+        validate_bundle_names(members.keys().map(String::as_str), cancel)?;
         for (name, bytes) in &members {
             crate::cancel::check(cancel)?;
-            let path = Path::new(name);
-            if name
-                .split('/')
-                .any(|part| part.is_empty() || part == "." || part == "..")
-                || name.is_empty()
-                || name == "bundle.json"
-                || name.contains('\\')
-                || name.chars().any(char::is_control)
-                || path.components().count() > 128
-                || path
-                    .components()
-                    .any(|part| !matches!(part, std::path::Component::Normal(_)))
-                || bytes.is_empty()
-                || bytes.len() > 64 * 1024 * 1024
-            {
+            if bytes.is_empty() || bytes.len() > 64 * 1024 * 1024 {
                 return Err(Error::new(
                     "INVALID_ARGUMENT",
                     "Invalid managed bundle member",
                 ));
-            }
-            for ancestor in path.ancestors().filter(|path| !path.as_os_str().is_empty()) {
-                let original = ancestor.to_str().expect("UTF-8 member");
-                if portable
-                    .insert(original.to_lowercase(), original.to_owned())
-                    .is_some_and(|previous| previous != original)
-                    || ancestor != path && members.contains_key(original)
-                {
-                    return Err(Error::new(
-                        "ASSET_CONFLICT",
-                        "Managed bundle paths collide as files or portable names",
-                    ));
-                }
             }
             total_bytes = total_bytes.saturating_add(bytes.len());
             path_bytes = path_bytes.saturating_add(name.len());

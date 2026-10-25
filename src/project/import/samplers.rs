@@ -55,14 +55,7 @@ impl Copier<'_> {
                         .resolve_file(&key.0, self.project.sampler_uri(&key.0, uri))?;
                     self.project.capture_asset(&path, "image")?;
                     let bytes = self.project.asset(&path)?.bytes.clone();
-                    if !(bytes.starts_with(b"\x89PNG\r\n\x1a\n")
-                        || bytes.starts_with(&[0xff, 0xd8, 0xff])
-                        || bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP"))
-                    {
-                        return Err(copy_error(
-                            "Copied sampler images require PNG, JPEG, or WebP data",
-                        ));
-                    }
+                    image_extension(&bytes)?;
                     images
                         .entry((key.0.clone(), Path::new(uri).is_absolute()))
                         .or_default()
@@ -75,7 +68,6 @@ impl Copier<'_> {
             return Ok(());
         }
         let mut members = BTreeMap::new();
-        let mut directories = BTreeSet::new();
         let mut libraries = Vec::new();
         for (index, ((origin, absolute), images)) in images.into_iter().enumerate() {
             self.project.check_cancelled()?;
@@ -106,46 +98,38 @@ impl Copier<'_> {
                     ));
                 }
             };
+            let projected = if absolute {
+                None
+            } else {
+                match project_images(&anchor, &images, self.project.cancel.as_ref()) {
+                    Ok(files) => Some(files),
+                    // Only pure projection failures permit relocation. Existing
+                    // files, root restrictions and publication are checked later.
+                    Err(error) if matches!(error.code, "ASSET_CONFLICT" | "INVALID_ARGUMENT") => {
+                        None
+                    }
+                    Err(error) => return Err(error),
+                }
+            };
+            let relocate = projected.is_none();
             let mut variables = Map::new();
             let mut bindings = Vec::new();
             let mut relocated = Map::new();
+            let mut packed = ImageFiles::new();
             for (uri, bytes) in images {
                 self.project.check_cancelled()?;
-                // Absolute strings may also be visible text. Keep the string and
-                // bind only its sampler use to a portable, content-addressed file.
-                let portable_uri = if absolute {
-                    let extension = if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-                        "png"
-                    } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
-                        "jpg"
-                    } else {
-                        "webp"
-                    };
+                // Preserve visible text even when filesystem aliases cannot be
+                // reproduced as a directory tree in a portable bundle.
+                let portable_uri = if relocate {
+                    let extension = image_extension(&bytes)?;
                     format!("images/{}.{extension}", hash(&bytes))
                 } else {
                     uri.clone()
                 };
-                if absolute {
+                if relocate {
                     relocated.insert(uri.clone(), json!(portable_uri));
+                    packed.insert(portable_uri, bytes);
                 }
-                let mut target = anchor.clone();
-                let parts = Path::new(&portable_uri).components().collect::<Vec<_>>();
-                for (i, part) in parts.iter().enumerate() {
-                    match part {
-                        std::path::Component::CurDir => {}
-                        std::path::Component::ParentDir => {
-                            target.pop();
-                        }
-                        std::path::Component::Normal(part) => {
-                            target.push(part);
-                            if i + 1 < parts.len() {
-                                directories.insert(member_name(&target)?);
-                            }
-                        }
-                        _ => return Err(copy_error("Sampler image paths must be relative")),
-                    }
-                }
-                insert_member(&mut members, member_name(&target)?, bytes)?;
                 let mut name = format!("lazypencil_image_{index}_{}", hash(uri.as_bytes()));
                 while self.vars.values().any(|value| value == &name)
                     || self
@@ -159,6 +143,11 @@ impl Copier<'_> {
                 variables.insert(name.clone(), json!({"type":"string","value":uri}));
                 bindings.push(((origin.clone(), uri), name));
             }
+            let mut files = match projected {
+                Some(files) => files,
+                None => project_images(&anchor, &packed, self.project.cancel.as_ref())?,
+            };
+            members.append(&mut files);
             let mut number = 0usize;
             let library = loop {
                 let name =
@@ -182,19 +171,6 @@ impl Copier<'_> {
                 .into();
             insert_member(&mut members, library.clone(), bytes)?;
             libraries.push((library, bindings));
-        }
-        // A URI such as a/../pixel.png still needs the a directory to exist.
-        for directory in directories {
-            if !members
-                .keys()
-                .any(|name| name.starts_with(&format!("{directory}/")))
-            {
-                insert_member(
-                    &mut members,
-                    format!("{directory}/.lazypencil-directory"),
-                    Arc::from(&b"{}\n"[..]),
-                )?;
-            }
         }
         let document = self
             .path
@@ -270,6 +246,52 @@ fn definition_values_mut(value: &mut Value) -> Vec<&mut Value> {
         value => vec![value],
     }
 }
+
+fn project_images(
+    anchor: &Path,
+    images: &ImageFiles,
+    cancel: Option<&tokio_util::sync::CancellationToken>,
+) -> Result<ImageFiles> {
+    let mut members = ImageFiles::new();
+    let mut directories = BTreeSet::new();
+    for (uri, bytes) in images {
+        crate::cancel::check(cancel)?;
+        let mut target = anchor.to_path_buf();
+        let parts = Path::new(uri).components().collect::<Vec<_>>();
+        for (index, part) in parts.iter().enumerate() {
+            match part {
+                std::path::Component::CurDir => {}
+                std::path::Component::ParentDir => {
+                    target.pop();
+                }
+                std::path::Component::Normal(part) => {
+                    target.push(part);
+                    if index + 1 < parts.len() {
+                        directories.insert(member_name(&target)?);
+                    }
+                }
+                _ => return Err(copy_error("Sampler image paths must be relative")),
+            }
+        }
+        insert_member(&mut members, member_name(&target)?, bytes.clone())?;
+    }
+    // Preserve transit directories for paths such as a/../pixel.png.
+    for directory in directories {
+        if !members
+            .keys()
+            .any(|name| name.starts_with(&format!("{directory}/")))
+        {
+            insert_member(
+                &mut members,
+                format!("{directory}/.lazypencil-directory"),
+                Arc::from(&b"{}\n"[..]),
+            )?;
+        }
+    }
+    crate::managed::validate_bundle_names(members.keys().map(String::as_str), cancel)?;
+    Ok(members)
+}
+
 fn required_depth(uri: &str) -> Result<usize> {
     let (mut position, mut depth) = (0i32, 0i32);
     for part in Path::new(uri).components() {

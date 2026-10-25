@@ -187,6 +187,15 @@ pub fn required_images(root: &Path, commit: &str) -> Result<()> {
         );
         Ok(bytes)
     };
+    let dimensions = |row: &Value| -> Result<(u32, u32)> {
+        let width = u32::try_from(row["width"].as_u64().context("Missing image width")?)?;
+        let height = u32::try_from(row["height"].as_u64().context("Missing image height")?)?;
+        ensure!(
+            width > 0 && height > 0 && width <= 16384 && height <= 16384,
+            "Invalid image dimensions"
+        );
+        Ok((width, height))
+    };
     let structures = report("codec-shader-structures.json")?;
     let structures = structures["cases"]
         .as_array()
@@ -268,12 +277,7 @@ pub fn required_images(root: &Path, commit: &str) -> Result<()> {
                 "Missing or duplicate sampler copy condition"
             );
             let row = rows[0];
-            let width = u32::try_from(row["width"].as_u64().context("Missing sampler width")?)?;
-            let height = u32::try_from(row["height"].as_u64().context("Missing sampler height")?)?;
-            ensure!(
-                width > 0 && height > 0 && width <= 16384 && height <= 16384,
-                "Invalid sampler image dimensions"
-            );
+            let (width, height) = dimensions(row)?;
             let before = format!("codec-sampler-copy-{absolute}-{theme}-before.png");
             let after = format!("codec-sampler-copy-{absolute}-{theme}-after.png");
             ensure!(
@@ -287,7 +291,50 @@ pub fn required_images(root: &Path, commit: &str) -> Result<()> {
             );
         }
     }
-    println!("Verified source identities, hashes and dimensions for 92 required PNGs");
+    let projection = report("codec-sampler-projection.json")?;
+    let cases = projection["cases"]
+        .as_array()
+        .context("Missing sampler projection images")?;
+    ensure!(
+        cases.len() == 12,
+        "Expected twelve sampler projection conditions"
+    );
+    for version in ["2.19", "2.21"] {
+        for case in ["aliases", "file_directory", "case"] {
+            for theme in ["light", "dark"] {
+                let rows: Vec<_> = cases
+                    .iter()
+                    .filter(|row| {
+                        row["document_version"] == version
+                            && row["case"] == case
+                            && row["theme"] == theme
+                    })
+                    .collect();
+                ensure!(
+                    rows.len() == 1,
+                    "Missing or duplicate sampler projection condition"
+                );
+                let row = rows[0];
+                let (width, height) = dimensions(row)?;
+                let prefix = format!("codec-sampler-projection-{version}-{case}-{theme}");
+                let before = format!("{prefix}-before.png");
+                ensure!(
+                    row["before"] == before,
+                    "Wrong sampler projection image name"
+                );
+                let original = png(&before, &row["png_hash"], width, height)?;
+                for stage in ["copied", "recopied"] {
+                    let name = format!("{prefix}-{stage}.png");
+                    ensure!(row[stage] == name, "Wrong sampler projection image name");
+                    ensure!(
+                        original == png(&name, &row["png_hash"], width, height)?,
+                        "Sampler projection pixels differ after {stage}"
+                    );
+                }
+            }
+        }
+    }
+    println!("Verified source identities, hashes and dimensions for 128 required PNGs");
     Ok(())
 }
 pub fn panel(s: &Session) -> Result<()> {

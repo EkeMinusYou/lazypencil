@@ -257,19 +257,14 @@ impl Session {
                 Ok(())
             }
             Stage::FocusCore => {
-                if ["graphics", "dynamic", "copy"].contains(&args.suite.as_str()) && has("scripts")
+                if ["graphics", "dynamic", "copy"].contains(&args.suite.as_str())
+                    && (has("scripts") || has("sampler_sources"))
                 {
-                    let mut command = vec![
-                        "test",
-                        "--locked",
-                        "--no-default-features",
-                        "--test",
-                        "project",
-                        "--test",
-                        "scripts",
-                    ];
-                    if has("sampler_sources") {
-                        command.extend(["--test", "sampler_sources"]);
+                    let mut command = vec!["test", "--locked", "--no-default-features"];
+                    for name in ["project", "scripts", "sampler_sources"] {
+                        if has(name) || name == "project" && has("scripts") {
+                            command.extend(["--test", name]);
+                        }
                     }
                     command.extend(["--", "--test-threads=2"]);
                     self.cargo(&command, 900, "focus-script-core.log", false)?;
