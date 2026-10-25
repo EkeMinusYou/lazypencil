@@ -17,6 +17,7 @@ use std::{
 
 const MAX_EVENTS: u64 = 64 * 1024 * 1024;
 const MAX_LINE: usize = 4 * 1024 * 1024;
+pub mod link_map;
 pub mod linkage;
 const GAPS: &[&str] = &[
     "Cargo declarations and Skia graph inputs do not establish final binary linkage or used archive members.",
@@ -46,6 +47,8 @@ pub struct Arguments {
     cargo_home: Option<PathBuf>,
     #[arg(long)]
     toolchain_evidence: Option<PathBuf>,
+    #[arg(long)]
+    link_map: Option<PathBuf>,
 }
 impl Arguments {
     pub fn run(self) -> Result<()> {
@@ -337,6 +340,7 @@ pub fn collect(arguments: &Arguments) -> Result<Value> {
         ninja,
         cargo_home: cargo,
         toolchain_evidence: standard_evidence,
+        link_map: map,
     } = arguments;
     let cargo = cargo.as_deref();
     let standard_evidence = standard_evidence.as_deref();
@@ -396,6 +400,10 @@ pub fn collect(arguments: &Arguments) -> Result<Value> {
         .tempdir_in(parent)?;
     let stage = temporary.path().join("evidence");
     fs::create_dir(&stage)?;
+    let static_link_map = map
+        .as_deref()
+        .map(|path| link_map::collect(path, &stage.join("link-map.map")))
+        .transpose()?;
     let dynamic_linkage = if [
         "aarch64-apple-darwin",
         "x86_64-unknown-linux-gnu",
@@ -458,6 +466,9 @@ pub fn collect(arguments: &Arguments) -> Result<Value> {
     if dynamic_linkage.is_none() {
         gaps.push("Dynamic-load declarations are not collected for this deferred target.".into());
     }
+    if static_link_map.is_none() {
+        gaps.push("The final link map has not been attached to this build.".into());
+    }
     ensure!(
         source_identity(&root, revision)? == source,
         "Sources changed during evidence collection"
@@ -471,6 +482,12 @@ pub fn collect(arguments: &Arguments) -> Result<Value> {
         fingerprint(events, "cargo-build.jsonl", MAX_EVENTS)? == cargo_output,
         "Cargo observations changed during collection"
     );
+    if let Some(path) = map {
+        ensure!(
+            Some(fingerprint(path, "link-map.map", 64 * 1024 * 1024)?) == static_link_map,
+            "Link map changed during evidence collection"
+        );
+    }
     copy_tree(&root.join("resources/licenses"), &stage.join("licenses"))?;
     notices::rust::verify(&root, &stage.join("licenses/rust"), None)?;
     copy_tree(
@@ -496,7 +513,7 @@ pub fn collect(arguments: &Arguments) -> Result<Value> {
     .into_iter()
     .map(|s| (s, std::env::var(s).ok()))
     .collect::<BTreeMap<_, _>>();
-    let metadata = json!({"format_version":1,"release_ready":false,"source":source,"binary":binary,"compiler":compiler,"dynamic_linkage":dynamic_linkage,"native_packages":selected,"native_archives":archives,"rust_notices":rust,"skia_notices":skia,"quickjs_notices":quickjs,"asset_notices":assets,"toolchain_notices":standard,"shader_preprocessor":shader,"cargo_output":cargo_output,"ignored_non_cargo_lines":ignored,"remaining_review":gaps,"hosted":hosted});
+    let metadata = json!({"format_version":1,"release_ready":false,"source":source,"binary":binary,"compiler":compiler,"dynamic_linkage":dynamic_linkage,"static_link_map":static_link_map,"native_packages":selected,"native_archives":archives,"rust_notices":rust,"skia_notices":skia,"quickjs_notices":quickjs,"asset_notices":assets,"toolchain_notices":standard,"shader_preprocessor":shader,"cargo_output":cargo_output,"ignored_non_cargo_lines":ignored,"remaining_review":gaps,"hosted":hosted});
     util::publish(&stage.join("build.json"), &util::encode(&metadata)?, false)?;
     let files = util::walk(&stage)?
         .iter()

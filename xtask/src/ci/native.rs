@@ -213,18 +213,29 @@ impl Session {
         match args.stage {
             Stage::EvidenceBuild => {
                 super::cache::prune(&self.root, &self.target)?;
-                self.capture(
-                    Command::new("cargo").args([
-                        "build",
-                        "--locked",
-                        "--release",
-                        "--bin",
-                        "lazypencil",
-                        "--message-format=json",
-                    ]),
-                    3600,
-                    "release-cargo.jsonl",
-                )?;
+                let compiler = process::text(Command::new("rustc").arg("-vV"))?;
+                let host = compiler
+                    .lines()
+                    .find_map(|line| line.strip_prefix("host: "))
+                    .context("Compiler does not report its host")?;
+                let map = self.temporary.join("release-link.map");
+                let extra = crate::evidence::link_map::rustc_arguments(host, &map)?;
+                let mut command = Command::new("cargo");
+                command.args([
+                    if extra.is_some() { "rustc" } else { "build" },
+                    "--locked",
+                    "--release",
+                    "--bin",
+                    "lazypencil",
+                    "--message-format=json",
+                ]);
+                if let Some(extra) = extra {
+                    ensure!(!map.exists() && !map.is_symlink(), "Link map must be fresh");
+                    // Root-only rustc arguments keep dependency/Skia fingerprints
+                    // unchanged. Do not introduce workspace-wide RUSTFLAGS.
+                    command.arg("--").args(extra);
+                }
+                self.capture(&mut command, 3600, "release-cargo.jsonl")?;
                 process::checked(
                     Command::new(self.executable("release")).arg("--version"),
                     Duration::from_secs(30),

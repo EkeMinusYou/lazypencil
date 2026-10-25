@@ -67,7 +67,7 @@ jobs:
       - name: Compile the release executable and record selected Cargo artifacts
         run: cargo xtask ci native evidence-build
       - name: Collect and reverify original notices against this build
-        run: cargo xtask evidence --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --cargo-json "$RUNNER_TEMP/release-cargo.jsonl" --revision '${{ github.sha }}' --output "$RUNNER_TEMP/release-evidence" --toolchain-evidence "$RUNNER_TEMP/toolchain-evidence"
+        run: cargo xtask evidence --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --cargo-json "$RUNNER_TEMP/release-cargo.jsonl" --revision '${{ github.sha }}' --output "$RUNNER_TEMP/release-evidence" --toolchain-evidence "$RUNNER_TEMP/toolchain-evidence" --link-map "$RUNNER_TEMP/release-link.map"
       - name: Retain review evidence without publishing the executable
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
