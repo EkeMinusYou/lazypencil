@@ -61,7 +61,8 @@ class FocusTests(unittest.TestCase):
         self.assertIn("cargo test --locked --test script_scope script_bindings::", native)
 
     def test_script_copy_runs_cpu_reproductions_once_then_only_its_affected_shader_before_full_matrix(self):
-        for path in ("src/project/import/scripts.rs", "tests/support/script_copy.rs", "tests/support/script_copy_core.rs"):
+        for path in ("src/project/import/scripts.rs", "src/project/import/scripts/composition.rs",
+                     "tests/support/script_copy.rs", "tests/support/script_copy_core.rs", "tests/support/script_copy_fixture.rs"):
             result=focus.select([path])
             self.assertEqual(result["suite"],"copy")
             self.assertTrue({"project","scripts","script_scope"}<=set(result["targets"]))

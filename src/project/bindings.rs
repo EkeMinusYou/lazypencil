@@ -5,32 +5,30 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct Bindings {
-    version: u32,
-    script_uri: String,
+pub(super) struct Bindings {
+    pub(super) version: u32,
+    pub(super) script_uri: String,
     #[serde(default)]
-    inputs_hash: Option<String>,
+    pub(super) inputs_hash: Option<String>,
     #[serde(default)]
-    components: BTreeMap<String, String>,
+    pub(super) components: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    input_components: Option<BTreeMap<String, String>>,
+    pub(super) input_components: Option<BTreeMap<String, String>>,
     #[serde(default)]
-    variables: BTreeMap<String, String>,
+    pub(super) variables: BTreeMap<String, String>,
     #[serde(default)]
-    themes: BTreeMap<String, String>,
+    pub(super) themes: BTreeMap<String, String>,
     #[serde(default)]
-    descendants: BTreeMap<String, BTreeMap<String, String>>,
+    pub(super) descendants: BTreeMap<String, BTreeMap<String, String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    assets: Option<BTreeMap<String, String>>,
+    pub(super) assets: Option<BTreeMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub(super) struct Bound {
-    #[cfg(feature = "rendering")]
     pub(super) origin: PathBuf,
     pub(super) inputs_bound: bool,
-    #[cfg(feature = "rendering")]
-    values: Bindings,
+    pub(super) values: Bindings,
 }
 
 fn valid_name(value: &str) -> bool {
@@ -148,10 +146,8 @@ pub(super) fn bind(project: &Project, node: &ResolvedNode) -> Result<Option<Boun
         })
     });
     Ok(Some(Bound {
-        #[cfg(feature = "rendering")]
         origin,
         inputs_bound,
-        #[cfg(feature = "rendering")]
         values,
     }))
 }

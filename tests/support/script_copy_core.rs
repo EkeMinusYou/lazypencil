@@ -52,6 +52,13 @@ fn script_copy_previews_without_publication_and_keeps_a_complete_namespace_after
             .unwrap()
             .contains_key("image:pixel.png")
     );
+    assert!(
+        bindings["assets"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .all(|key| !key.split_once(':').unwrap().1.starts_with('/'))
+    );
     let uri = generator["scriptUri"].as_str().unwrap();
     assert_eq!(fs::read(temp.path().join(uri)).unwrap(), CODE.as_bytes());
     fs::remove_dir_all(temp.path().join("library")).unwrap();
@@ -123,4 +130,43 @@ fn script_copy_does_not_evaluate_javascript_during_preview_or_commit() {
         .unwrap();
     let uri = document.node(id).unwrap()["scriptUri"].as_str().unwrap();
     assert_eq!(fs::read_to_string(temp.path().join(uri)).unwrap(), code);
+}
+
+#[test]
+fn bound_script_recopy_composes_names_and_assets_without_retaining_source_documents() {
+    let (temp, store) = fixture();
+    let first = apply(&store, "first-copy", operations());
+    let first_id = first["generated_ids"]["0"]["component_id"]
+        .as_str()
+        .unwrap();
+    fs::remove_dir_all(temp.path().join("library")).unwrap();
+    let (second, id) = recopy(&store, first_id, &temp.path().join("second"), "second.");
+    fs::remove_file(store.path()).unwrap();
+    fs::remove_dir_all(temp.path().join("assets")).unwrap();
+    let project = Project::load(&second).unwrap();
+    project.resolve().unwrap();
+    let document = second.read().unwrap();
+    let definition = document.node(&id).unwrap()["ref"].as_str().unwrap();
+    let generator = document.node(definition).unwrap();
+    let binding = &generator["metadata"]["lazypencil"]["script_bindings"];
+    assert_eq!(binding["variables"]["tone"], "second.copy.tone");
+    assert_ne!(binding["components"]["badge"], "badge");
+    assert!(binding["assets"].get("image:future.png").is_some());
+    assert_eq!(
+        fs::read(
+            second
+                .path()
+                .parent()
+                .unwrap()
+                .join(generator["scriptUri"].as_str().unwrap())
+        )
+        .unwrap(),
+        CODE.as_bytes()
+    );
+    assert!(
+        project
+            .dependencies()
+            .iter()
+            .all(|entry| entry.path.starts_with(second.path().parent().unwrap()))
+    );
 }

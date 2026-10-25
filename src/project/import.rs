@@ -118,6 +118,7 @@ impl Project {
             script_scopes: BTreeMap::new(),
             script_images: BTreeSet::new(),
             used_script_assets: BTreeSet::new(),
+            script_binding_bytes: 0,
         };
         while let Some(key) = graph.queue.pop_front() {
             graph.project.check_cancelled()?;
@@ -299,6 +300,7 @@ struct Copier<'a> {
     script_scopes: BTreeMap<PathBuf, scripts::Scope>,
     script_images: BTreeSet<(PathBuf, String, String)>,
     used_script_assets: BTreeSet<String>,
+    script_binding_bytes: usize,
 }
 
 impl Copier<'_> {

@@ -323,6 +323,7 @@ jobs:
         run: |
           set -o pipefail
           cargo test --locked --no-default-features --lib project::bindings:: -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-bindings.log"
+          cargo test --locked --no-default-features --lib project::import::scripts::composition::tests:: -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/focus-bindings.log"
           cargo test --locked --test script_scope script_bindings:: -- --test-threads=1 2>&1 | tee -a "$RUNNER_TEMP/focus-bindings.log"
           cargo test --locked --test script_scope script_copy:: -- --test-threads=1 2>&1 | tee -a "$RUNNER_TEMP/focus-bindings.log"
       - name: Run focused reproduction and affected tests

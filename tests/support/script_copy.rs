@@ -171,6 +171,89 @@ fn independent_copy_keeps_namespace_nested_workers_and_live_choices_after_source
 }
 
 #[test]
+fn repeated_copy_keeps_original_and_saved_input_namespaces_after_each_source_is_removed() {
+    for version in ["2.19", "2.21"] {
+        let (temp, store) = fixture();
+        for name in ["main.pen", "library/ui.lib.pen", "library/base.lib.pen"] {
+            let path = temp.path().join(name);
+            let mut document: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            document["version"] = json!(version);
+            fixture::write(&path, document);
+        }
+        let (response, id) = copied(&store);
+        fs::remove_dir_all(temp.path().join("library")).unwrap();
+        fixture::apply(
+            &store,
+            "saved-consumer-input",
+            json!([{"op":"update","target":id,"set":{"inputs":{"selected":"badge"}}}]),
+        );
+        let before = png(&store, None);
+        assert_eq!(pixel(&before, 5), Color::GREEN);
+        let source_id = response["generated_ids"]["0"]["component_id"]
+            .as_str()
+            .unwrap();
+        // Copy the instance's current input into its reusable definition.
+        fixture::apply(
+            &store,
+            "saved-definition-input",
+            json!([{"op":"update","target":source_id,"set":{"inputs":{"selected":"badge"}}}]),
+        );
+        let (second, second_instance) =
+            fixture::recopy(&store, source_id, &temp.path().join("second"), "second.");
+        fs::remove_file(store.path()).unwrap();
+        fs::remove_dir_all(temp.path().join("assets")).unwrap();
+        let after = png(&second, None);
+        assert_eq!(before, after);
+        let second_id = second.read().unwrap().node(&second_instance).unwrap()["ref"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let (third, third_instance) =
+            fixture::recopy(&second, &second_id, &temp.path().join("third"), "third.");
+        fs::remove_dir_all(temp.path().join("second")).unwrap();
+        let independent = png(&third, None);
+        assert_eq!(before, independent);
+        fixture::apply(
+            &third,
+            "uncalled-branch-after-third-copy",
+            json!([{"op":"update","target":third_instance,"set":{"inputs":{"alternate":true}}}]),
+        );
+        let future = png(&third, None);
+        for x in [5, 25, 45] {
+            assert_eq!(pixel(&future, x), Color::CYAN);
+        }
+        fixture::apply(
+            &third,
+            "default-after-third-copy",
+            json!([{"op":"update","target":third_instance,"set":{"inputs":{"selected":null}}}]),
+        );
+        let default = png(&third, None);
+        assert_eq!(pixel(&default, 5), Color::RED);
+        fixture::apply(
+            &third,
+            "edited-token-after-third-copy",
+            json!([{"op":"set_variable","name":"third.second.copy.tone","definition":{"type":"color","value":"#ffff00"}}]),
+        );
+        let changed = png(&third, None);
+        for x in [25, 75, 85] {
+            assert_eq!(pixel(&changed, x), Color::YELLOW);
+        }
+        record(
+            &format!("recopy-{version}"),
+            &[
+                ("before", &before),
+                ("second", &after),
+                ("independent", &independent),
+                ("future", &future),
+                ("default", &default),
+                ("changed", &changed),
+            ],
+            json!({"copies":3,"sources_removed":true,"saved_consumer_input":true,"default_body_namespace":true,"unexecuted_branch":true,"live_nested_theme_variable":true}),
+        );
+    }
+}
+
+#[test]
 fn copy_rejects_unmanifested_generated_paths_without_using_consumer_files() {
     let (temp, store) = fixture();
     let (_, id) = copied(&store);
@@ -252,5 +335,48 @@ fn copied_script_shader_keeps_string_sampler_coupling_and_consumer_edits() {
         "shader",
         &[("initial", &initial), ("changed", &changed)],
         json!({"original_removed":true,"copied_sampler_origin":true,"consumer_image_and_text_edit_coupled":true,"software_webgl":true}),
+    );
+    let source_id = store.read().unwrap().node(&id).unwrap()["ref"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    fixture::apply(
+        &store,
+        "shader-definition",
+        json!([{"op":"update","target":source_id,"set":{"inputs":{"shader":true}}}]),
+    );
+    let (second, _) = fixture::recopy(
+        &store,
+        &source_id,
+        &temp.path().join("shader-copy"),
+        "shader.",
+    );
+    fs::remove_file(store.path()).unwrap();
+    fs::remove_dir_all(temp.path().join("assets")).unwrap();
+    fs::remove_file(temp.path().join("consumer.png")).unwrap();
+    let independent = png(&second, Some(&mut runtime));
+    assert_eq!(changed, independent);
+    image(
+        &second.path().parent().unwrap().join("fresh.png"),
+        Color::BLUE,
+    );
+    fixture::apply(
+        &second,
+        "recopied-sampler-edit",
+        json!([{"op":"set_variable","name":"shader.copy.texture","definition":{"type":"string","value":"fresh.png"}}]),
+    );
+    let edited = png(&second, Some(&mut runtime));
+    assert_eq!(pixel(&edited, 45), Color::BLUE);
+    let (_, layout) = calculation(&second);
+    assert!(
+        layout
+            .items
+            .iter()
+            .any(|item| item.node.properties.get("content") == Some(&json!("fresh.png")))
+    );
+    record(
+        "recopy-shader",
+        &[("independent", &independent), ("edited", &edited)],
+        json!({"source_removed":true,"pixels_equal":true,"live_sampler_and_text":true,"software_webgl":true}),
     );
 }

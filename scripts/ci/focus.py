@@ -32,6 +32,7 @@ OWNED_MCP_RECLAIM = "owned_mcp_rejects_grants_after_the_host_is_killed_without_r
 SCRIPT_COPY_CPU = (
     "script_copy::independent_copy_keeps_namespace_nested_workers_and_live_choices_after_source_removal",
     "script_copy::copy_rejects_unmanifested_generated_paths_without_using_consumer_files",
+    "script_copy::repeated_copy_keeps_original_and_saved_input_namespaces_after_each_source_is_removed",
 )
 SHADER_REGRESSIONS = [
     "linked_constant_dimensions_validate_inputs_and_recover_after_an_error",
@@ -129,7 +130,8 @@ def select(paths, platform="auto"):
         if suite in ("core", "conversation"):
             suite = "graphics"
         targets = sorted(set(targets) | {"script_scope"})
-    if any(path in {"src/project/bindings.rs", "src/project/import/scripts.rs", "tests/support/script_copy.rs", "tests/support/script_copy_core.rs"} for path in paths):
+    if any(path in {"src/project/bindings.rs", "src/project/import/scripts.rs"}
+           or path.startswith(("src/project/import/scripts/", "tests/support/script_copy")) for path in paths):
         if suite in ("core", "conversation", "graphics"):
             suite = "copy"
         targets = sorted(set(targets) | {"project", "scripts", "script_scope"})

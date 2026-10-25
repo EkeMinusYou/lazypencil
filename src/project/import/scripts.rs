@@ -1,6 +1,9 @@
 use super::*;
 use crate::script::header::{Header, InputKind};
 
+mod composition;
+use composition::Budget;
+
 pub(super) struct Scope {
     documents: BTreeSet<PathBuf>,
     components: BTreeMap<String, Key>,
@@ -24,12 +27,6 @@ impl Copier<'_> {
             .expand(origin, node, None, &[], &mut Vec::new(), &mut 0)?;
         if resolved.kind() != "script" {
             return Ok(None);
-        }
-        if resolved.script_bindings.is_some() {
-            return Err(Error::new(
-                "UNSUPPORTED_FEATURE",
-                "Re-copying bound scripts requires composing their complete namespace mappings",
-            ));
         }
         let uri = resolved
             .properties
@@ -55,6 +52,18 @@ impl Copier<'_> {
         };
         self.script_scope(info.resolved.script_origin())?;
         self.script_scope(info.resolved.script_input_origin())?;
+        if let Some(bound) = &info.resolved.script_bindings {
+            self.script_scope(&bound.origin)?;
+            if let Some(assets) = &bound.values.assets {
+                for (key, uri) in assets {
+                    let (kind, _) = key.split_once(':').expect("validated asset binding");
+                    let path = self.project.resolve_file(&bound.origin, uri)?;
+                    self.project.capture_asset(&path, kind)?;
+                    self.script_images
+                        .insert((bound.origin.clone(), uri.clone(), kind.into()));
+                }
+            }
+        }
         let source_key = self.key(&(
             origin.into(),
             node["id"].as_str().expect("script ID").into(),
@@ -229,7 +238,10 @@ impl Copier<'_> {
             }
             for value in samplers::definition_values(&definition["value"]) {
                 let Some(uri) = value.as_str().filter(|v| {
-                    !v.is_empty() && !v.starts_with(['$', '#']) && !v.starts_with("pencil:")
+                    !v.is_empty()
+                        && v.len() <= 4096
+                        && !v.starts_with(['$', '#'])
+                        && !v.starts_with("pencil:")
                 }) else {
                     continue;
                 };
@@ -270,7 +282,9 @@ impl Copier<'_> {
                 ));
             }
         }
+        let mut total = 0usize;
         for origin in self.script_scopes.keys().cloned().collect::<Vec<_>>() {
+            let mut budget = Budget::new(total);
             let documents = self.script_scopes[&origin].documents.clone();
             let mut assets = Vec::new();
             for path in &documents {
@@ -288,36 +302,39 @@ impl Copier<'_> {
                 let path = self.project.resolve_file(&owner, &uri)?;
                 let target = self.asset(&owner, &uri, &kind)?;
                 let relative = relative_uri(&origin, &path)?;
-                for uri in [
-                    Some(relative),
-                    path.to_str().map(str::to_owned),
-                    (owner == origin).then_some(uri),
-                ]
-                .into_iter()
-                .flatten()
+                for uri in [Some(relative), (owner == origin).then_some(uri)]
+                    .into_iter()
+                    .flatten()
                 {
                     let key = super::super::bindings::asset_key(&kind, &uri)?;
-                    if map
-                        .insert(key, target.clone())
-                        .is_some_and(|previous| previous != target)
-                    {
-                        return Err(Error::new(
-                            "ASSET_CONFLICT",
-                            "Script asset paths have conflicting copied bindings",
-                        ));
+                    if let Some(previous) = map.get(&key) {
+                        if previous != &target {
+                            return Err(Error::new(
+                                "ASSET_CONFLICT",
+                                "Script asset paths have conflicting copied bindings",
+                            ));
+                        }
+                    } else {
+                        budget.pair(&key, &target)?;
+                        map.insert(key, target.clone());
                     }
                 }
             }
             self.script_scopes.get_mut(&origin).expect("scope").assets = map;
+            total = total.saturating_add(budget.bytes());
         }
         Ok(())
     }
 
-    fn component_bindings(&self, origin: &Path) -> Result<Map<String, Value>> {
+    fn component_bindings(&self, origin: &Path, budget: &mut Budget) -> Result<Map<String, Value>> {
         self.script_scopes[origin]
             .components
             .iter()
-            .map(|(name, key)| Ok((name.clone(), json!(self.node_target(key)?))))
+            .map(|(name, key)| {
+                let target = self.node_target(key)?;
+                budget.pair(name, &target)?;
+                Ok((name.clone(), json!(target)))
+            })
             .collect()
     }
 
@@ -327,17 +344,25 @@ impl Copier<'_> {
         from: &str,
         to: &str,
         result: &mut Map<String, Value>,
+        budget: &mut Budget,
     ) -> Result<()> {
         for child in &root.children {
             self.project.check_cancelled()?;
             let key = (child.component_source.clone(), child.component_key.clone());
             let source = format!("{from}{}", child.component_key);
             let target = format!("{to}{}", self.node_target(&key)?);
+            budget.pair(&source, &target)?;
             result.insert(source.clone(), json!(target));
             if child.is_instance {
-                self.override_paths(child, &format!("{source}/"), &format!("{target}/"), result)?;
+                self.override_paths(
+                    child,
+                    &format!("{source}/"),
+                    &format!("{target}/"),
+                    result,
+                    budget,
+                )?;
             } else {
-                self.override_paths(child, from, to, result)?;
+                self.override_paths(child, from, to, result, budget)?;
             }
         }
         Ok(())
@@ -380,6 +405,7 @@ impl Copier<'_> {
             }
             return Ok(());
         }
+        let mut budget = Budget::new(self.script_binding_bytes);
         let output = info.resolved.script_origin();
         let input = info.resolved.script_input_origin();
         let uri = self.asset(
@@ -390,35 +416,60 @@ impl Copier<'_> {
         if node["type"] == "script" || node.get("scriptUri").is_some() {
             result.insert("scriptUri".into(), json!(uri));
         }
-        let mut descendants = Map::new();
-        for (name, key) in &self.script_scopes[output].components {
-            if self.reuse.contains_key(key) {
-                continue;
+        let mut bindings = if let Some(bound) = &info.resolved.script_bindings {
+            let key = self.key(&(
+                origin.into(),
+                node["id"].as_str().expect("script ID").into(),
+            ))?;
+            let additional = self
+                .options
+                .script_assets
+                .get(&key)
+                .cloned()
+                .unwrap_or_default();
+            self.compose_bindings(bound, &uri, input, output, &additional, &mut budget)?
+        } else {
+            let mut descendants = Map::new();
+            for (name, key) in &self.script_scopes[output].components {
+                if self.reuse.contains_key(key) {
+                    continue;
+                }
+                let definition = self.project.documents[&key.0].node(&key.1)?;
+                let expanded =
+                    self.project
+                        .expand(&key.0, definition, None, &[], &mut Vec::new(), &mut 0)?;
+                let mut paths = Map::new();
+                budget.key(name)?;
+                self.override_paths(&expanded, "", "", &mut paths, &mut budget)?;
+                descendants.insert(name.clone(), Value::Object(paths));
             }
-            let definition = self.project.documents[&key.0].node(&key.1)?;
-            let expanded =
-                self.project
-                    .expand(&key.0, definition, None, &[], &mut Vec::new(), &mut 0)?;
-            let mut paths = Map::new();
-            self.override_paths(&expanded, "", "", &mut paths)?;
-            descendants.insert(name.clone(), Value::Object(paths));
-        }
-        let variables = self.script_scopes[output]
-            .variables
-            .iter()
-            .map(|(name, key)| (name.clone(), json!(self.vars[key])))
-            .collect::<Map<_, _>>();
-        let mut themes = Map::new();
-        for (_, name) in self.axes.keys() {
-            themes.insert(name.clone(), json!(self.axis_target(output, name)?));
-        }
+            let variables = self.script_scopes[output]
+                .variables
+                .iter()
+                .map(|(name, key)| {
+                    budget.pair(name, &self.vars[key])?;
+                    Ok((name.clone(), json!(self.vars[key])))
+                })
+                .collect::<Result<Map<_, _>>>()?;
+            let mut themes = Map::new();
+            for (_, name) in self.axes.keys() {
+                let target = self.axis_target(output, name)?;
+                budget.pair(name, &target)?;
+                themes.insert(name.clone(), json!(target));
+            }
+            for (key, target) in &self.script_scopes[output].assets {
+                budget.pair(key, target)?;
+            }
+            json!({"version":1,"script_uri":uri,"components":self.component_bindings(output,&mut budget)?,"input_components":self.component_bindings(input,&mut budget)?,
+                "variables":variables,"themes":themes,"descendants":descendants,"assets":self.script_scopes[output].assets})
+        };
         let inputs_hash = result.get("inputs").map(|value| {
             let mut value = value.clone();
             value.sort_all_objects();
             hash(value.to_string().as_bytes())
         });
-        let bindings = json!({"version":1,"script_uri":uri,"components":self.component_bindings(output)?,"input_components":self.component_bindings(input)?,
-            "variables":variables,"themes":themes,"descendants":descendants,"assets":self.script_scopes[output].assets,"inputs_hash":inputs_hash});
+        bindings["inputs_hash"] = json!(inputs_hash);
+        self.script_binding_bytes = self.script_binding_bytes.saturating_add(budget.bytes());
         let metadata = result
             .entry("metadata")
             .or_insert_with(|| json!({"type":"lazypencil"}))

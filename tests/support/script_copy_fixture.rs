@@ -85,3 +85,33 @@ pub(super) fn request(store: &Store, id: &str, operations: Value, dry_run: bool)
 pub(super) fn apply(store: &Store, id: &str, operations: Value) -> Value {
     service::apply_request(store, &request(store, id, operations, false)).unwrap()
 }
+
+pub(super) fn recopy(
+    source: &Store,
+    source_id: &str,
+    destination: &Path,
+    prefix: &str,
+) -> (Store, String) {
+    fs::create_dir_all(destination).unwrap();
+    write(
+        &destination.join("main.pen"),
+        json!({"version":source.read().unwrap().version(),
+        "imports":{"source":source.path().to_str().unwrap()},"children":[
+            {"id":"local-definitions","type":"frame","enabled":false,"children":[
+                {"id":"badge","type":"rectangle","reusable":true,"width":10,"height":10,"fill":"#ff00ff"}]}]}),
+    );
+    let target = Store::open(destination.join("main.pen"), Some(destination.join("data"))).unwrap();
+    let response = apply(
+        &target,
+        "recopy-script",
+        json!([
+        {"op":"import_component","source":{"library_alias":"source","node_id":source_id},"mode":"copy",
+            "options":{"variable_prefix":prefix,"component_prefix":prefix},"client_ref":"recopied"},
+        {"op":"remove_import","alias":"source"}]),
+    );
+    let id = response["bindings"]["recopied"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    (target, id)
+}
