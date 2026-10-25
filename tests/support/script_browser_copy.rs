@@ -148,7 +148,7 @@ fn capture(store: &Store, stage: &'static str, style: &str) -> Frame {
     let nodes = layout
         .items
         .iter()
-        .filter(|item| item.enabled && item.node.kind() == "browser")
+        .filter(|item| item.record.enabled && item.node.kind() == "browser")
         .collect::<Vec<_>>();
     assert_eq!(nodes.len(), 1, "{style}/{stage}");
     let node = &nodes[0].node;
@@ -224,7 +224,7 @@ pub fn study(version: &str, style: &str) -> (TempDir, Vec<Frame>) {
         let page = &layout
             .items
             .iter()
-            .find(|item| item.enabled && item.node.kind() == "browser")
+            .find(|item| item.record.enabled && item.node.kind() == "browser")
             .unwrap()
             .node;
         let url = page.properties["url"].as_str().unwrap();
