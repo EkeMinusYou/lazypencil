@@ -29,7 +29,32 @@ env:
   LAZYPENCIL_TEST_PYTHON: python
 
 jobs:
+  ci-checks:
+    name: Check changed CI and distribution inputs
+    if: inputs.phase == 'focus' && inputs.suite == 'ci'
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 5
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Reproduce CI selection, cache safety and command deadlines
+        timeout-minutes: 2
+        run: python -m unittest discover -s scripts -p 'test_*.py' -v
+      - name: Verify the current source distribution
+        timeout-minutes: 2
+        run: |
+          python scripts/dist.py source --output "$RUNNER_TEMP/focus-source.tar.gz"
+          python scripts/dist.py verify-source "$RUNNER_TEMP/focus-source.tar.gz" --extract "$RUNNER_TEMP/focus-source"
+
   verify:
+    if: inputs.phase != 'focus' || inputs.suite != 'ci'
     timeout-minutes: ${{ inputs.phase == 'focus' && (inputs.suite == 'core' || inputs.suite == 'conversation') && 30 || 60 }}
     runs-on: ${{ inputs.os }}
     defaults:

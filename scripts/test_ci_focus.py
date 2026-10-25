@@ -15,6 +15,38 @@ spec.loader.exec_module(focus)
 
 
 class FocusTests(unittest.TestCase):
+    def test_ci_and_prose_only_changes_use_bounded_checks_without_rust_builds(self):
+        paths = [".github/workflows/ci.yml", "scripts/ci/application_cache.py",
+                 "scripts/test_ci_focus.py", "README.md", "docs/implementation-status.md"]
+        for changed in ([path] for path in paths):
+            self.assertEqual(focus.select(changed), {"platform": "ubuntu-24.04", "suite": "ci", "targets": []})
+        self.assertEqual(focus.select(paths, "macos-15"), {"platform": "macos-15", "suite": "ci", "targets": []})
+        with self.assertRaises(ValueError):
+            focus.commands("ci", [])
+        native = (Path(__file__).resolve().parents[1] / ".github/workflows/native.yml").read_text()
+        lightweight = native[native.index("  ci-checks:"):native.index("  verify:")]
+        self.assertIn("inputs.phase == 'focus' && inputs.suite == 'ci'", lightweight)
+        self.assertIn("python -m unittest discover", lightweight)
+        self.assertIn("scripts/dist.py verify-source", lightweight)
+        self.assertIn("timeout-minutes: 2", lightweight)
+        self.assertNotIn("cargo", lightweight)
+        self.assertNotIn("actions/cache", lightweight)
+        self.assertIn("if: inputs.phase != 'focus' || inputs.suite != 'ci'", native)
+        pipeline = (Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml").read_text()
+        self.assertIn("needs: [plan, focus]", pipeline)
+        self.assertIn("needs.focus.result == 'success'", pipeline)
+        self.assertIn("needs: [native, audit]", pipeline)
+
+    def test_mixed_and_unrecognized_inputs_cannot_take_the_ci_only_path(self):
+        for path in ("src/project.rs", "tests/project.rs", "resources/guidance/components.md",
+                     "tests/fixture.md", "scripts/dist.py", "scripts/ci_helper.py", "Cargo.lock",
+                     "docs/fixture.json", ".github/actions/build/action.yml"):
+            with self.subTest(path=path):
+                self.assertNotEqual(focus.select([".github/workflows/ci.yml", path])["suite"], "ci")
+        self.assertNotEqual(focus.select([])["suite"], "ci")
+        selected = focus.select([".github/workflows/native.yml", "resources/guidance/components.md"])
+        self.assertEqual(selected["suite"], "graphics")
+
     def test_script_binding_changes_reproduce_core_validation_and_worker_pixels_once(self):
         for path in ("src/project/bindings.rs", "tests/support/script_bindings.rs"):
             result = focus.select([path])

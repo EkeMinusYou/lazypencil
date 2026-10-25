@@ -56,9 +56,13 @@ def select(paths, platform="auto"):
     operations_change = any(path == "src/operations.rs" or path.startswith("src/operations/") for path in paths)
     grants_change = any(path in {"src/attachments.rs", "src/conversation/lease.rs", "src/conversation/storage.rs", "src/guidance/usage.rs", "tests/support/unix_agent_ownership.rs"} for path in paths)
     # Deferred Windows code remains in the tree; release CI uses supported runners.
-    ci_change = any(path.startswith((".github/", "scripts/ci/")) for path in paths)
     macos = any("macos" in path.lower() or "darwin" in path.lower() for path in paths)
     os_name = ("macos-15" if macos else "ubuntu-24.04") if platform == "auto" else platform
+    # Use the same boundary as application reuse. The final matrix still
+    # validates compiler dep-info and runs every native check on these changes.
+    compiled_inputs = runpy.run_path(str(Path(__file__).with_name("application_cache.py")))["compiled_inputs"]
+    if paths and not compiled_inputs({"files": [{"path": path} for path in paths]}):
+        return {"platform": os_name, "suite": "ci", "targets": []}
     ownership = any(path.startswith("src/cdp/process/") or path in {
         "src/cdp/process.rs", "src/process_owner.rs", "tests/support/unix_browser_ownership.rs",
         "tests/support/unix_agent_ownership.rs", "tests/support/agent_process_tree.py",
@@ -91,8 +95,6 @@ def select(paths, platform="auto"):
         or any(path == "src/render.rs" or path.startswith("src/render/") for path in paths)
     ):
         suite, targets = "shader", ["shader_uniforms"]
-    elif ci_change and not any(path.startswith(("src/", "tests/")) for path in paths):
-        suite, targets = "conversation", ["agent"]
     elif stems & {"script", "scripts", "script_render", "script_diagnostics", "script_scope"} and not (
         stems & (DYNAMIC - {"script", "scripts"})
         or any(path == "src/render.rs" or path.startswith(("src/cdp/", "src/tui/", "src/render/")) for path in paths)
@@ -201,6 +203,8 @@ def changed_paths():
 
 
 def commands(suite, targets):
+    if suite == "ci":
+        raise ValueError("CI-only focus runs Python and distribution checks in the hosted workflow")
     core = suite in ("core", "conversation")
     features = ["--no-default-features"] if core else []
     selected = [arg for target in targets for arg in ("--test", target)]

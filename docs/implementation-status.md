@@ -687,6 +687,10 @@ source `36d1269` の専用 Chromium は macOS arm64 `40014476233`（97件）、L
 
 ### CI の重複ビルド削減
 
+2026-10-25 の追加調査では、直近8実行 `40137073301`〜`40152097284` の job／step 時刻と終了済みログを照合した。最新の3環境の runner 待機は2〜4秒で、core／default の build 工程合計は Linux x64 124秒・Linux arm64 360秒・macOS arm64 90秒、同じ通常試験は336／257／246秒だった。release 工程全体は208／241／246秒で、最適化コンパイルと画像・反復測定の双方を含む。別に最新の手動実行では、workflow 作成から最初の job 開始まで56秒かかった。これは job の runner 待機2秒と区別する。アプリ入力の一致した `40137073301` は core／default の build 合計が各3／7／9秒で、キャッシュでコンパイルを省けることを既存ログでも確認した。
+
+CI・Python の CI 試験・説明文だけの変更にも従来は先行 Rust agent 試験と native cache の復元を行っていた。これらだけの変更は application cache と共通の入力境界で `ci` を選び、対象1環境の Python 全試験と現在の配布ソースの生成・検証を先行させる。Rust toolchain・native cache・Chromium の準備はこの先行 job では行わない。Rust・素材・埋め込みガイド・fixture・未分類入力が一つでも混ざれば従来の対象別先行検証へ戻す。先行検証成功後の3環境での core/default・Clippy・実 Chromium／MCP／TUI・Material・release、監査と source gate は維持し、キャッシュの compiler dep-info・出力 hash 検証と画像の再生成も変更しない。実行は main の push 1回に揃え、同じ変更の手動実行は重ねない。新しい進捗表は作らず、結果はこの既存記録へ追記する。
+
 2026-10-25: 成功済み `40094747115`・`40097555337`・`40103285273` の job／step 時刻を照合した。待機は1〜4秒で、固定 cargo-deny の導入は169〜204秒だった。`40103285273` の release コンパイル自体は Linux x64 194秒・Linux arm64 213秒・macOS arm64 260秒で、release 工程全体の216／250／296秒とは区別する。通常試験・実 Chromium・実60秒 idle・TUI・Material・release の検証範囲は維持する。調査時の hosted cache は15件・10,896,984,343 bytesで、うち4件・5,186,184,401 bytesは同条件の full cache がある依存 checkpoint だった。成功した全環境検証の後にこの重複を整理し、application cache は各環境の full 2世代と未統合 focus 1世代に制限する。異なる ref の cache や他用途の cache は対象にしない。
 
 固定 audit tool は version・実 compiler・runner image／architecture に束縛し、binary hash と実行時 version を確認して再利用する。advisory database や監査結果は再利用しない。依存 cache は従来どおりアプリを prune し、その後に別の application cache を検証して重ねる。source distribution の全入力（workflow scheduling を除く）・実 compiler／flag を含む native key・絶対パスを key に含め、保存するのは package の fingerprint／library／CLI／test binary のみ。compiler dep-info の入力が追跡済み source と一致しない場合や workflow 自体を include する場合、独自 build script がある場合は再利用しない。実 source の hash、cache file の hash／mode、追加の compile-time 環境も照合する。画像・試験結果は毎回生成する。対象限定 Clippy は test binary の link 前へ移した。軽量試験と実 GHA の結果は既存の検証記録で確認し、cache miss／拒否は fresh build へ戻す。
