@@ -122,6 +122,7 @@ pub struct LocalFileStats {
     pub fulfilled: u64,
     pub denied: u64,
     pub response_bytes: u64,
+    pub attached_targets: u64,
 }
 
 struct Session {
@@ -308,6 +309,11 @@ impl Interception {
                     files: entry.files.clone(),
                     stats: LocalFileStats::default(),
                 };
+                self.sessions
+                    .get_mut(&entry.owner)
+                    .expect("inventory owner")
+                    .stats
+                    .attached_targets += 1;
                 self.sessions.insert(child.into(), entry);
                 Ok(Some(Dispatch {
                     session: child.into(),

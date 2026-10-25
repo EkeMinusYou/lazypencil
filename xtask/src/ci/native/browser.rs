@@ -386,7 +386,10 @@ pub fn required_images(root: &Path, commit: &str) -> Result<()> {
             && local["unsafe_host_file"] == false
             && local["sandbox"] == "enabled"
             && local["stats"]["fulfilled"] == 6
-            && local["stats"]["denied"] == 1,
+            && local["stats"]["denied"] == 1
+            && local["stats"]["attached_targets"]
+                .as_u64()
+                .is_some_and(|count| count >= 2),
         "Local browser resource isolation proof missing"
     );
     png("codec-browser-local-files.png", &local["png_hash"], 32, 32)?;

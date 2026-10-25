@@ -182,6 +182,7 @@ fn child_startup_waits_for_interception_then_recursive_auto_attach_before_resume
     assert_eq!(state.sessions["root"].stats.fulfilled, 1);
     assert_eq!(state.sessions["root"].stats.response_bytes, 8);
     attach(&mut state, "worker", "grandchild");
+    assert_eq!(state.sessions["root"].stats.attached_targets, 2);
     assert!(Arc::ptr_eq(
         &state.sessions["root"].files,
         &state.sessions["grandchild"].files

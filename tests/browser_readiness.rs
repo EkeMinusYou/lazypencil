@@ -138,6 +138,11 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
             "app.js",
             "text/javascript",
             r#"window.addEventListener('message',e=>{if(e.data==='frame-ready')window.frameReady=true});
+            const nestedCode="postMessage('nested-ready')";
+            const workerCode=`const child=new Worker(URL.createObjectURL(new Blob([${JSON.stringify(nestedCode)}],{type:'text/javascript'})));
+                child.onmessage=e=>{postMessage(e.data);child.terminate()}`;
+            const worker=new Worker(URL.createObjectURL(new Blob([workerCode],{type:'text/javascript'})));
+            worker.onmessage=e=>{if(e.data==='nested-ready')window.workerReady=true;worker.terminate()};
             window.addEventListener('load',async()=>{await document.images[0].decode();window.localProbe={
             background:getComputedStyle(document.documentElement).backgroundColor,
             location:location.href,unsafe:window.unsafeHostFile===true,image:document.images[0].naturalWidth}});"#,
@@ -211,7 +216,7 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
             let probe = loop {
                 let value = browser.evaluate(
                     session,
-                    "window.frameReady && window.localProbe || null",
+                    "window.frameReady && window.workerReady && window.localProbe || null",
                     &budget,
                 )?;
                 if !value.is_null() {
@@ -241,6 +246,7 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
             assert_eq!(stats.fulfilled, sources.len() as u64);
             assert_eq!(stats.denied, 1);
             assert_eq!(stats.response_bytes, captured_bytes as u64);
+            assert!(stats.attached_targets >= 2);
             Ok((png, stats, probe))
         })
         .unwrap();

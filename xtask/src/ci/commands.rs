@@ -228,6 +228,20 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
             &common,
             &["--lib", "cdp::", "--", "--test-threads=2"],
         ));
+        if has("browser_readiness") {
+            checks.push(append(
+                &common,
+                &[
+                    "--test",
+                    "browser_readiness",
+                    focus::LOCAL_FILES,
+                    "--",
+                    "--exact",
+                    "--ignored",
+                    "--test-threads=1",
+                ],
+            ));
+        }
         let mut tui = append(
             &common,
             &["--lib", "tui::tests::", "--", "--test-threads=2"],
@@ -289,6 +303,9 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
                 "--skip",
                 "retained_",
             ]));
+            if names.iter().any(|name| name == "browser_readiness") {
+                c.extend(skips([focus::LOCAL_FILES]));
+            }
             c.extend(shader_skip.clone());
             c.extend(input_skip.clone());
             c.extend(history_skip.clone());
