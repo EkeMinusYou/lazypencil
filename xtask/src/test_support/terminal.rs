@@ -242,9 +242,8 @@ pub fn sixel_red_pixels(data: &[u8]) -> Result<(usize, usize)> {
             }
             for bit in 0..6 {
                 if (symbol - 63) & (1 << bit) != 0 && y + bit < height {
-                    for position in (y + bit) * width + x..(y + bit) * width + x + repeat {
-                        pixels[position] = colors.get(&color) == Some(&[100, 0, 0]);
-                    }
+                    let start = (y + bit) * width + x;
+                    pixels[start..start + repeat].fill(colors.get(&color) == Some(&[100, 0, 0]));
                 }
             }
             x += repeat;

@@ -2,7 +2,7 @@ use lazypencil_xtask::{dist, util};
 use serde_json::Value;
 use std::{
     fs,
-    io::Cursor,
+    io::{Cursor, Read, Write},
     path::{Path, PathBuf},
     process::Command,
 };
@@ -259,5 +259,119 @@ fn source_manifest_types_duplicates_modes_and_package_identity_are_strict() {
         members.get_mut(manifest_name).unwrap().0 = serde_json::to_vec(&manifest).unwrap();
         replace(&archive, &members);
         assert!(dist::verify(&archive, None).is_err(), "variant={variant}");
+    }
+}
+
+#[test]
+fn compressed_bombs_are_bounded_before_tar_parsing_and_links_or_declared_payloads_are_rejected() {
+    let temporary = tempfile::tempdir().unwrap();
+    let path = temporary.path().join("bomb.tar.gz");
+    let mut encoder = flate2::write::GzEncoder::new(
+        fs::File::create(&path).unwrap(),
+        flate2::Compression::default(),
+    );
+    for _ in 0..128 {
+        encoder.write_all(&[0; 4096]).unwrap();
+    }
+    encoder.finish().unwrap();
+    let error = dist::read_archive_with_limit(&path, 4096).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("Expanded distribution exceeds its byte budget")
+    );
+    for linked in [true, false] {
+        let mut header = tar::Header::new_gnu();
+        header.set_path("fixture-0.1.0/payload").unwrap();
+        header.set_mode(0o644);
+        if linked {
+            header.set_entry_type(tar::EntryType::Symlink);
+            header.set_link_name("../../private").unwrap();
+            header.set_size(0);
+        } else {
+            header.set_size(dist::MAX_BYTES + dist::MAX_MANIFEST + 1);
+        }
+        header.set_cksum();
+        let mut raw = header.as_bytes().to_vec();
+        raw.extend([0; 1024]);
+        let mut encoder = flate2::write::GzEncoder::new(
+            fs::File::create(&path).unwrap(),
+            flate2::Compression::default(),
+        );
+        encoder.write_all(&raw).unwrap();
+        encoder.finish().unwrap();
+        let output = temporary.path().join("must-not-exist");
+        let error = dist::verify(&path, Some(&output)).unwrap_err();
+        assert!(
+            error.to_string().contains(if linked {
+                "regular files"
+            } else {
+                "byte budget"
+            }),
+            "{error:#}"
+        );
+        assert!(!output.exists());
+    }
+}
+#[test]
+fn bundled_mpl_corresponding_source_is_the_complete_exact_locked_registry_archive() {
+    let root = util::root();
+    let provenance: Value =
+        util::json(&root.join("resources/licenses/source-provenance.json")).unwrap();
+    let lock: toml::Value =
+        toml::from_str(&fs::read_to_string(root.join("Cargo.lock")).unwrap()).unwrap();
+    let packages = serde_json::to_value(&lock["package"]).unwrap();
+    for item in provenance["sources"].as_array().unwrap() {
+        let matches = packages
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|p| {
+                p["name"] == item["name"]
+                    && p["version"] == item["version"]
+                    && p["source"] == item["registry"]
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(matches.len(), 1);
+        let archive = root
+            .join("resources/licenses")
+            .join(util::safe_path(item["archive"].as_str().unwrap()).unwrap());
+        assert_eq!(util::file_digest(&archive).unwrap(), matches[0]["checksum"]);
+        assert_eq!(item["sha256"], matches[0]["checksum"]);
+        assert_eq!(item["modified"], false);
+        let mut files = std::collections::BTreeMap::new();
+        let mut tar = tar::Archive::new(flate2::read::GzDecoder::new(
+            fs::File::open(archive).unwrap(),
+        ));
+        for entry in tar.entries().unwrap() {
+            let mut entry = entry.unwrap();
+            let name = entry.path().unwrap().to_string_lossy().into_owned();
+            if entry.header().entry_type().is_file() {
+                let mut bytes = Vec::new();
+                entry.read_to_end(&mut bytes).unwrap();
+                files.insert(name, bytes);
+            }
+        }
+        let prefix = format!(
+            "{}-{}/",
+            item["name"].as_str().unwrap(),
+            item["version"].as_str().unwrap()
+        );
+        for member in ["src/lib.rs", "Cargo.toml", "LICENSE.txt"] {
+            assert!(files.contains_key(&format!("{prefix}{member}")));
+        }
+        let manifest: toml::Value =
+            toml::from_str(std::str::from_utf8(&files[&format!("{prefix}Cargo.toml")]).unwrap())
+                .unwrap();
+        assert_eq!(
+            serde_json::to_value(&manifest["package"]["license"]).unwrap(),
+            item["license"]
+        );
+        let original = &files[&format!("{prefix}LICENSE.txt")];
+        let license = root
+            .join("resources/licenses")
+            .join(util::safe_path(item["license_file"].as_str().unwrap()).unwrap());
+        assert_eq!(fs::read(license).unwrap(), *original);
+        assert_eq!(util::digest(original), item["license_sha256"]);
     }
 }

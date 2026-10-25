@@ -1,6 +1,6 @@
 use lazypencil_xtask::{
     ci::{self, cache, focus},
-    dist::{Entry, Manifest},
+    dist::{self, Entry, Manifest},
     util,
 };
 use serde_json::{Value, json};
@@ -371,4 +371,206 @@ fn native_dependency_tree_requires_clean_committed_inputs_and_ignores_docs() {
     fs::create_dir_all(root.join("vendor/skia-bindings")).unwrap();
     fs::write(root.join("vendor/skia-bindings/new.cpp"), "changed").unwrap();
     assert!(cache::dependency_tree(root).is_err());
+}
+
+#[test]
+fn source_fingerprints_exclude_only_ci_and_prose_and_are_independent_of_manifest_order() {
+    let f = ApplicationFixture::new();
+    let mut manifest: Manifest = util::json(&f.source.join(dist::MANIFEST)).unwrap();
+    let original = cache::source_fingerprint(&manifest).unwrap();
+    manifest.files.reverse();
+    assert_eq!(cache::source_fingerprint(&manifest).unwrap(), original);
+    for path in [
+        "README.md",
+        "AGENTS.md",
+        "docs/design.md",
+        "docs/nested/guide.md",
+        ".github/actions/xtask/action.yml",
+        "xtask/src/ci/cache.rs",
+    ] {
+        let mut changed = manifest.clone();
+        changed.files.push(Entry {
+            path: path.into(),
+            bytes: 7,
+            sha256: util::digest(b"changed"),
+            mode: 0o644,
+        });
+        assert_eq!(
+            cache::source_fingerprint(&changed).unwrap(),
+            original,
+            "{path}"
+        );
+    }
+    for path in [
+        "tests/support/fixture.rs",
+        "xtask/src/test_support/acp.rs",
+        "xtask/src/bin/test-helper.rs",
+        "docs/fixture.json",
+        "resources/guidance/prompt.md",
+        "tests/fixture.md",
+        "scripts/test_input.json",
+    ] {
+        let mut changed = manifest.clone();
+        changed.files.push(Entry {
+            path: path.into(),
+            bytes: 7,
+            sha256: util::digest(b"changed"),
+            mode: 0o644,
+        });
+        assert_ne!(
+            cache::source_fingerprint(&changed).unwrap(),
+            original,
+            "{path}"
+        );
+    }
+}
+#[test]
+fn application_reuse_rejects_same_mtime_mutations_and_unknown_generated_or_custom_build_inputs() {
+    for update_manifest in [false, true] {
+        let f = ApplicationFixture::new();
+        f.stage();
+        let path = f.source.join("src/lib.rs");
+        let metadata = fs::metadata(&path).unwrap();
+        fs::write(&path, b"pub fn changed() {}\n").unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_times(
+                fs::FileTimes::new()
+                    .set_modified(metadata.modified().unwrap())
+                    .set_accessed(metadata.accessed().unwrap()),
+            )
+            .unwrap();
+        if update_manifest {
+            let mut manifest: Manifest = util::json(&f.source.join(dist::MANIFEST)).unwrap();
+            let entry = manifest
+                .files
+                .iter_mut()
+                .find(|e| e.path == "src/lib.rs")
+                .unwrap();
+            entry.sha256 = util::file_digest(&path).unwrap();
+            entry.bytes = fs::metadata(path).unwrap().len();
+            fs::write(
+                f.source.join(dist::MANIFEST),
+                util::encode(&manifest).unwrap(),
+            )
+            .unwrap();
+        }
+        assert!(cache::restore(&f.source, &f.target, &f.directory, &f.identity()).is_err());
+    }
+    let f = ApplicationFixture::new();
+    fs::write(
+        &f.dep_info,
+        format!("library: {}/SOURCE-MANIFEST.json\n", f.source.display()),
+    )
+    .unwrap();
+    assert!(cache::stage(&f.source, &f.target, &f.directory, &f.identity()).is_err());
+    fs::write(f.source.join("build.rs"), b"fn main() {}\n").unwrap();
+    assert!(
+        cache::application_identity(&f.source, &f.target, "native-v2-ubuntu-24.04-fixture")
+            .is_err()
+    );
+}
+#[test]
+fn escaped_space_inputs_are_bound_and_compile_time_environment_changes_cannot_reuse_outputs() {
+    let f = ApplicationFixture::new();
+    let path = f.source.join("resources/guidance/a guide.md");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, b"Embedded space\n").unwrap();
+    let mut manifest: Manifest = util::json(&f.source.join(dist::MANIFEST)).unwrap();
+    manifest.files.push(Entry {
+        path: "resources/guidance/a guide.md".into(),
+        bytes: 15,
+        sha256: util::file_digest(&path).unwrap(),
+        mode: 0o644,
+    });
+    fs::write(
+        f.source.join(dist::MANIFEST),
+        util::encode(&manifest).unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        &f.dep_info,
+        format!(
+            "library: {}/resources/guidance/a\\ guide.md\n",
+            f.source.display()
+        ),
+    )
+    .unwrap();
+    f.stage();
+    fs::remove_dir_all(&f.target).unwrap();
+    assert!(
+        cache::restore(&f.source, &f.target, &f.directory, &f.identity()).unwrap()["reused"]
+            == true
+    );
+    // Test environment binding in separate processes rather than mutating global test state.
+    fs::remove_dir_all(&f.directory).unwrap();
+    fs::write(
+        &f.dep_info,
+        format!(
+            "library: {}/src/lib.rs\n# env-dep:EXAMPLE_BUILD_SETTING=one\n",
+            f.source.display()
+        ),
+    )
+    .unwrap();
+    let invoke = |operation: &str, value: &str| {
+        Command::new(env!("CARGO_BIN_EXE_xtask"))
+            .env("EXAMPLE_BUILD_SETTING", value)
+            .args(["ci", "cache", "application", operation, "--source"])
+            .arg(&f.source)
+            .arg("--target")
+            .arg(&f.target)
+            .arg("--directory")
+            .arg(&f.directory)
+            .args(["--native-key", "native-v2-ubuntu-24.04-fixture"])
+            .output()
+            .unwrap()
+    };
+    let staged = invoke("stage", "one");
+    assert!(
+        staged.status.success(),
+        "{}",
+        String::from_utf8_lossy(&staged.stderr)
+    );
+    let restored = invoke("restore", "two");
+    assert!(!restored.status.success());
+    assert!(String::from_utf8_lossy(&restored.stderr).contains("environment"));
+}
+#[cfg(unix)]
+#[test]
+fn cache_symlinks_cannot_redirect_source_or_overlay_destinations() {
+    use std::os::unix::fs::symlink;
+    for location in ["source", "cache", "destination"] {
+        let f = ApplicationFixture::new();
+        f.stage();
+        let external = f._temp.path().join("external");
+        match location {
+            "source" => {
+                let original = f.source.join("src/lib.rs");
+                fs::rename(&original, &external).unwrap();
+                symlink(&external, original).unwrap();
+            }
+            "cache" => {
+                let original = f
+                    .directory
+                    .join("files/debug/deps/liblazypencil-1234567890abcdef.rlib");
+                fs::rename(&original, &external).unwrap();
+                symlink(&external, original).unwrap();
+            }
+            _ => {
+                fs::create_dir(&external).unwrap();
+                fs::remove_dir_all(&f.target).unwrap();
+                fs::create_dir(&f.target).unwrap();
+                symlink(&external, f.target.join("debug")).unwrap();
+            }
+        }
+        assert!(
+            cache::restore(&f.source, &f.target, &f.directory, &f.identity()).is_err(),
+            "{location}"
+        );
+        if external.is_dir() {
+            assert_eq!(fs::read_dir(external).unwrap().count(), 0);
+        }
+    }
 }

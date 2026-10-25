@@ -355,9 +355,14 @@ pub fn git_blob(bytes: &[u8]) -> String {
 }
 
 pub fn source_comments(name: &str, text: &str) -> Result<Vec<Value>> {
-    let comments = regex::Regex::new(r"(?ms)^[ \t]*/\*.*?\*/|^(?:[ \t]*//[^\n]*(?:\n|$))+")?;
-    let terms = regex::Regex::new(r"(?i)copyright|SPDX-|licen[cs]e")?;
-    Ok(comments.find_iter(text).filter(|m|terms.is_match(m.as_str())).map(|m|json!({"path":name,"line":text[..m.start()].bytes().filter(|b|*b==b'\n').count()+1,"text":m.as_str()})).collect())
+    static COMMENTS: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"(?ms)^[ \t]*/\*.*?\*/|^(?:[ \t]*//[^\n]*(?:\n|$))+")
+            .expect("Constant source comment pattern")
+    });
+    static TERMS: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"(?i)copyright|SPDX-|licen[cs]e").expect("Constant attribution pattern")
+    });
+    Ok(COMMENTS.find_iter(text).filter(|m|TERMS.is_match(m.as_str())).map(|m|json!({"path":name,"line":text[..m.start()].bytes().filter(|b|*b==b'\n').count()+1,"text":m.as_str()})).collect())
 }
 
 pub fn verify_expected(output: &Path, expected: &Files) -> Result<()> {

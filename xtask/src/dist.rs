@@ -414,8 +414,15 @@ pub fn source(root: &Path, output: &Path, epoch: u32, allow_dirty: bool) -> Resu
 }
 
 pub fn read_archive(path: &Path) -> Result<Files> {
+    read_archive_with_limit(path, MAX_BYTES + MAX_MANIFEST + MAX_FILES as u64 * 4096)
+}
+
+pub fn read_archive_with_limit(path: &Path, limit: u64) -> Result<Files> {
+    ensure!(
+        limit > 0 && limit <= MAX_BYTES + MAX_MANIFEST + MAX_FILES as u64 * 4096,
+        "Invalid decompression inspection limit"
+    );
     let compressed = util::read(path, MAX_BYTES)?;
-    let limit = MAX_BYTES + MAX_MANIFEST + MAX_FILES as u64 * 4096;
     let mut bytes = Vec::new();
     MultiGzDecoder::new(compressed.as_slice())
         .take(limit + 1)
