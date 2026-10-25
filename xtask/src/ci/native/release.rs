@@ -55,6 +55,19 @@ pub fn smoke(s: &Session) -> Result<()> {
     // Recheck Cargo inputs even when the parallel lane already compiled this
     // source. A warm build performs freshness checks without recompilation.
     compile(s, "lazypencil-release-check.log")?;
+    let linkage_dir = s.temporary.join("release-linkage");
+    let linkage = crate::evidence::linkage::collect(
+        &s.executable("release"),
+        crate::evidence::linkage::native_host()?,
+        &linkage_dir,
+    )?;
+    util::publish(
+        &linkage_dir.join("ci.json"),
+        &util::encode(
+            &json!({"source_commit":std::env::var("GITHUB_SHA")?,"binary_sha256":linkage["binary_sha256"],"scope":"Direct dynamic-load declarations for this CI release executable; no minimum-OS runtime acceptance."}),
+        )?,
+        false,
+    )?;
     process::checked(
         Command::new(s.executable("release")).arg("--version"),
         Duration::from_secs(30),

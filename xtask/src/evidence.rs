@@ -17,6 +17,7 @@ use std::{
 
 const MAX_EVENTS: u64 = 64 * 1024 * 1024;
 const MAX_LINE: usize = 4 * 1024 * 1024;
+pub mod linkage;
 const GAPS: &[&str] = &[
     "Cargo declarations and Skia graph inputs do not establish final binary linkage or used archive members.",
     "System-library attribution and final Rust source-to-binary/linkage verification remain required.",
@@ -395,6 +396,24 @@ pub fn collect(arguments: &Arguments) -> Result<Value> {
         .tempdir_in(parent)?;
     let stage = temporary.path().join("evidence");
     fs::create_dir(&stage)?;
+    let dynamic_linkage = if [
+        "aarch64-apple-darwin",
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+    ]
+    .contains(&host.as_str())
+    {
+        let report = linkage::collect(&executable, &host, &stage.join("linkage"))?;
+        ensure!(
+            report["binary_sha256"] == binary["sha256"],
+            "Linkage evidence uses another executable"
+        );
+        Some(report)
+    } else {
+        // Preserve earlier collectors for deferred platforms without claiming
+        // the initial-release linkage inspector covers those targets.
+        None
+    };
     let skia = skia::collect(
         &skia_source,
         &skia_build,
@@ -436,6 +455,9 @@ pub fn collect(arguments: &Arguments) -> Result<Value> {
     if standard.is_none() {
         gaps.push("Rust standard-library evidence has not been attached to this build.".into());
     }
+    if dynamic_linkage.is_none() {
+        gaps.push("Dynamic-load declarations are not collected for this deferred target.".into());
+    }
     ensure!(
         source_identity(&root, revision)? == source,
         "Sources changed during evidence collection"
@@ -474,7 +496,7 @@ pub fn collect(arguments: &Arguments) -> Result<Value> {
     .into_iter()
     .map(|s| (s, std::env::var(s).ok()))
     .collect::<BTreeMap<_, _>>();
-    let metadata = json!({"format_version":1,"release_ready":false,"source":source,"binary":binary,"compiler":compiler,"native_packages":selected,"native_archives":archives,"rust_notices":rust,"skia_notices":skia,"quickjs_notices":quickjs,"asset_notices":assets,"toolchain_notices":standard,"shader_preprocessor":shader,"cargo_output":cargo_output,"ignored_non_cargo_lines":ignored,"remaining_review":gaps,"hosted":hosted});
+    let metadata = json!({"format_version":1,"release_ready":false,"source":source,"binary":binary,"compiler":compiler,"dynamic_linkage":dynamic_linkage,"native_packages":selected,"native_archives":archives,"rust_notices":rust,"skia_notices":skia,"quickjs_notices":quickjs,"asset_notices":assets,"toolchain_notices":standard,"shader_preprocessor":shader,"cargo_output":cargo_output,"ignored_non_cargo_lines":ignored,"remaining_review":gaps,"hosted":hosted});
     util::publish(&stage.join("build.json"), &util::encode(&metadata)?, false)?;
     let files = util::walk(&stage)?
         .iter()

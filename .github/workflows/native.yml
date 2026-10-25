@@ -207,6 +207,7 @@ jobs:
             ${{ runner.temp }}/codec-reference/codec-*
             ${{ runner.temp }}/lazypencil-target/release-*.json
             ${{ runner.temp }}/lazypencil-target/release-*.png
+            ${{ runner.temp }}/release-linkage/
           if-no-files-found: ignore
           retention-days: 3
       - name: Stage verified application outputs for reuse

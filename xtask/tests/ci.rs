@@ -526,6 +526,22 @@ fn independent_oracle_changes_test_all_consumers_without_rebuilding_the_wasm_com
             ["graphics", "script_render", "scripts", "shader_uniforms"]
         );
     }
+    let relocated_abi_fixture = focus::select(
+        &util::root(),
+        &[
+            "xtask/src/fixtures/oracles/shaders.rs".into(),
+            "tests/shader_uniforms.rs".into(),
+            "tests/support/shader_preprocessor.mjs".into(),
+        ],
+        "auto",
+    )
+    .unwrap();
+    assert_eq!(relocated_abi_fixture.suite, "dynamic");
+    assert_eq!(
+        relocated_abi_fixture.targets,
+        ["graphics", "script_render", "scripts", "shader_uniforms"]
+    );
+    assert!(relocated_abi_fixture.preprocessor);
 }
 #[test]
 fn application_reuse_rejects_same_mtime_mutations_and_unknown_generated_or_custom_build_inputs() {

@@ -267,6 +267,7 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
                     "tests/scripts.rs",
                     "tests/script_render.rs",
                     "tests/shader_uniforms.rs",
+                    "tests/support/shader_preprocessor.mjs",
                 ]
                 .contains(&p.as_str())
         });
