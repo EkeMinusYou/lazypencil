@@ -218,7 +218,8 @@ fn expand(
         let inputs = project
             .prepare_script_refs(node, &header, inputs)
             .map_err(context)?;
-        let input_key=hash(json!({"source":source_hash,"inputs":inputs,"origin":node.script_origin(),"input_origin":node.script_input_origin(),"theme":node.theme,"limits":runtime.settings()}).to_string().as_bytes());
+        let bindings_revision = node.script_bindings_revision();
+        let input_key=hash(json!({"source":source_hash,"inputs":inputs,"origin":node.script_origin(),"input_origin":node.script_input_origin(),"bindings_revision":bindings_revision,"theme":node.theme,"limits":runtime.settings()}).to_string().as_bytes());
         let (width, height) = (rect.width as f64, rect.height as f64);
         let valid = cached.get(&id).is_some_and(|entry: &Cached| {
             entry.input_key == input_key
@@ -258,7 +259,7 @@ fn expand(
                 }
             }
             node.children = project.generated_children(node, &output.nodes)?;
-            let metadata = json!({"node_id":id,"source_path":path,"source_hash":source_hash,"width":width,"height":height,
+            let metadata = json!({"node_id":id,"source_path":path,"source_hash":source_hash,"bindings_revision":bindings_revision,"width":width,"height":height,
                 "inputs_hash":hash(serde_json::to_string(&inputs).expect("inputs").as_bytes()),"output_hash":hash(serde_json::to_string(&output.nodes).expect("nodes").as_bytes()),
                 "output_root_count":output.nodes.len(),"engine":ENGINE,"limits":runtime.settings(),"reads_width":output.reads_width,"reads_height":output.reads_height});
             cached.insert(

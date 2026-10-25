@@ -15,6 +15,9 @@ use skia_safe::{Color, Data, Image};
 use std::{fs, path::Path};
 use tempfile::TempDir;
 
+#[path = "support/script_bindings.rs"]
+mod script_bindings;
+
 fn write(path: &Path, value: Value) {
     fs::write(path, value.to_string()).unwrap();
 }

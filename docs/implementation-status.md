@@ -671,6 +671,12 @@ source `36d1269` の専用 Chromium は macOS arm64 `40014476233`（97件）、L
 
 通常 CI の Linux x64 は20分の package step 上限に達し、Rust のコンパイル前に失敗した。ログでは Azure の mirror から11.2 MBの cmake・28.8 MBの libclang を繰り返し取得し、後者の1回目に約11分かかった。取得先をジョブ内の一時的な deb822 sources で公式 Ubuntu HTTPS archive／security に変更し、noble の同じ suite・component と既存の archive signing key を使う。package 一覧と20分の上限は維持し、runner 全体の source file は書き換えない。arm64 は既に成功した既存 source を使う。両 workflow は同じ helper を呼び、local invocation／未知 architecture の拒否、update 失敗の伝播、共通 source と一時ファイルの解放を4件の軽量試験で検査する。実際の x64 導入は次の GHA で確認する。Intel の実行は停止せず追跡する。
 
+### Script の独立コピーに向けた実行時の参照対応
+
+2026-10-25: コピー後の JS を変更せずに生成物の部品・変数・テーマ・上書き経路をコピー先へ結ぶ `script_bindings` を追加する。保存済み入力の canonical JSON hash とコード URI、メタデータを所有する文書を固定し、同じ値の明示入力やコード上書きによる失効を区別する。ref 入力は実行時 handle へ変換し、生成した literal の参照と混同しない。対応状態を計算条件・実行記録へ含める。core/default の形式・対象・失効 unit と、元 source を削除した実 worker の画素、入力・null・変数・テーマ・descendant・literal metadata、別文書からの利用での同名衝突を検査する試験を追加する。先行1環境で新しい実 worker 試験を他の試験より先に実行し、同じ先行実行の後半では重複させない。実 Rust は GHA で検証する。
+
+これは独立コピーの実行時参照の前提機能であり、copy 操作での対応表の生成、全スコープ・素材・入れ子と再コピー／切り離しの閉包は引き続き未完成。`src/project/import.rs` の script コピー拒否は維持している。リンクや静的 snapshot を代替とはせず、本来の独立コピーと公開可能な完成品質の条件を残す。
+
 ### CI の重複ビルド削減
 
 2026-10-25: 成功済み `40094747115`・`40097555337`・`40103285273` の job／step 時刻を照合した。待機は1〜4秒で、固定 cargo-deny の導入は169〜204秒だった。`40103285273` の release コンパイル自体は Linux x64 194秒・Linux arm64 213秒・macOS arm64 260秒で、release 工程全体の216／250／296秒とは区別する。通常試験・実 Chromium・実60秒 idle・TUI・Material・release の検証範囲は維持する。調査時の hosted cache は15件・10,896,984,343 bytesで、うち4件・5,186,184,401 bytesは同条件の full cache がある依存 checkpoint だった。成功した全環境検証の後にこの重複を整理し、application cache は各環境の full 2世代と未統合 focus 1世代に制限する。異なる ref の cache や他用途の cache は対象にしない。

@@ -46,6 +46,7 @@ impl Project {
     pub(super) fn bind_script_scope(&self, node: &mut ResolvedNode) -> Result<()> {
         node.script_scope = None;
         node.script_input_scope = None;
+        node.script_bindings = super::bindings::bind(self, node)?;
         if node.kind() != "script" {
             return Ok(());
         }
@@ -110,6 +111,18 @@ impl Project {
     ) -> Result<()> {
         if value["type"] != "script" {
             return Ok(());
+        }
+        if original
+            .properties
+            .get("metadata")
+            .and_then(|value| value.get("lazypencil"))
+            .and_then(|value| value.get("script_bindings"))
+            .is_some()
+        {
+            return Err(Error::new(
+                "UNSUPPORTED_FEATURE",
+                "Detaching a script binding requires relocating its complete target namespace",
+            ));
         }
         let origin = original.script_origin();
         let inputs_origin = original.script_input_origin();

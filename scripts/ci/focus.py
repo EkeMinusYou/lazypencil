@@ -119,6 +119,10 @@ def select(paths, platform="auto"):
             targets = ["document_store", "mcp"]
     if project_change:
         targets = sorted(set(targets) | {"project", "queries"})
+    if "src/project/bindings.rs" in paths or "tests/support/script_bindings.rs" in paths:
+        if suite in ("core", "conversation"):
+            suite = "graphics"
+        targets = sorted(set(targets) | {"script_scope"})
     if operations_change:
         targets = sorted(set(targets) | {"operations_cli"})
     if "conversation_history" in stems or terminal_change or any(path.startswith("src/conversation/") for path in paths):
@@ -194,6 +198,8 @@ def commands(suite, targets):
     selected = [arg for target in targets for arg in ("--test", target)]
     common = ["cargo", "test", "--locked", *features]
     input_skip = [argument for name in ("config::keys::", *INPUT_REPRODUCTIONS) for argument in ("--skip", name)] if suite in ("graphics", "dynamic") and {"tui", "user_config"} <= set(targets) else []
+    if suite in ("graphics", "dynamic") and "script_scope" in targets:
+        input_skip += ["--skip", "script_bindings::"]
     shader_first = [
         [*common, "--test", "shader_uniforms", name, "--", "--ignored", "--exact", "--test-threads=1"]
         for name in SHADER_REGRESSIONS
@@ -206,6 +212,8 @@ def commands(suite, targets):
         return ([[*common, *selected, "--no-run"], ["cargo", "build", "--locked"]],
                 [*shader_first, [*common, *selected, "--", "--ignored", "--test-threads=1", *shader_skip]])
     build = [[*common, "--lib", *selected, "--no-run"], ["cargo", "build", "--locked", *features]]
+    if not core and "script_scope" in targets:
+        build.append(["cargo", "test", "--locked", "--no-default-features", "--lib", "--no-run"])
     checks = list(shader_first)
     history = "conversation_history" in targets
     if history:

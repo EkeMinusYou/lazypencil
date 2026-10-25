@@ -15,6 +15,19 @@ spec.loader.exec_module(focus)
 
 
 class FocusTests(unittest.TestCase):
+    def test_script_binding_changes_reproduce_core_validation_and_worker_pixels_once(self):
+        for path in ("src/project/bindings.rs", "tests/support/script_bindings.rs"):
+            result = focus.select([path])
+            self.assertEqual(result["suite"], "graphics")
+            self.assertIn("script_scope", result["targets"])
+            build, checks = focus.commands(result["suite"], result["targets"])
+            self.assertTrue(any("--no-default-features" in command and "--lib" in command for command in build))
+            self.assertEqual(checks[-1][checks[-1].index("script_bindings::") - 1], "--skip")
+        native = (Path(__file__).resolve().parents[1] / ".github/workflows/native.yml").read_text()
+        self.assertLess(native.index("Reproduce script reference bindings"), native.index("Run focused reproduction and affected tests"))
+        self.assertIn("cargo test --locked --no-default-features --lib project::bindings::tests::", native)
+        self.assertIn("cargo test --locked --test script_scope script_bindings::", native)
+
     def test_saved_browser_only_changes_use_the_static_frontend_reproduction(self):
         for path in ["src/tui/saved.rs", "src/tui/checkpoints.rs"]:
             self.assertEqual(focus.select([path]), {"platform":"ubuntu-24.04","suite":"graphics","targets":["tui","user_config"]})

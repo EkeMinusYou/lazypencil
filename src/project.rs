@@ -16,6 +16,7 @@ const MAX_DEPENDENCY_DOCUMENTS: usize = 128;
 const MAX_PROJECT_BYTES: usize = 128 * 1024 * 1024;
 const MAX_ASSET_BYTES: usize = 64 * 1024 * 1024;
 
+mod bindings;
 mod detach;
 #[cfg(feature = "rendering")]
 mod failed_code;
@@ -67,6 +68,8 @@ pub struct ResolvedNode {
     script_scope: Option<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
     script_input_scope: Option<PathBuf>,
+    #[serde(skip)]
+    script_bindings: Option<bindings::Bound>,
     #[cfg(feature = "rendering")]
     #[serde(skip_serializing)]
     pub(crate) script_inputs_resolved: bool,
@@ -117,6 +120,17 @@ impl ResolvedNode {
         self.script_input_scope
             .as_deref()
             .unwrap_or_else(|| self.property_source("inputs"))
+    }
+
+    #[cfg(feature = "rendering")]
+    pub(crate) fn script_bindings_revision(&self) -> Option<String> {
+        self.script_bindings.as_ref().map(|bindings| {
+            hash(
+                serde_json::to_string(bindings)
+                    .expect("script bindings")
+                    .as_bytes(),
+            )
+        })
     }
 }
 
@@ -1327,6 +1341,7 @@ impl Project {
             property_sources,
             script_scope: None,
             script_input_scope: None,
+            script_bindings: None,
             #[cfg(feature = "rendering")]
             script_inputs_resolved: false,
             theme: BTreeMap::new(),
@@ -1420,9 +1435,13 @@ impl Project {
             // even when their JSON happens to equal the bound definition's value.
             if changes.contains_key("scriptUri") {
                 node.script_scope = None;
+                node.script_bindings = None;
             }
             if changes.contains_key("inputs") {
                 node.script_input_scope = None;
+                if let Some(bindings) = &mut node.script_bindings {
+                    bindings.inputs_bound = false;
+                }
             }
         }
         Ok(())
@@ -1570,12 +1589,12 @@ impl Project {
             if matches!(input.kind, crate::script::header::InputKind::Ref)
                 && let Some(value) = inputs.get(&input.name)
             {
-                let origin = if node
+                let saved = node
                     .properties
                     .get("inputs")
                     .and_then(|values| values.get(&input.name))
-                    .is_some_and(|value| !value.is_null())
-                {
+                    .is_some_and(|value| !value.is_null());
+                let origin = if saved {
                     node.script_input_origin()
                 } else {
                     node.script_origin()
@@ -1584,6 +1603,13 @@ impl Project {
                 if reference.is_empty() {
                     continue;
                 }
+                let (origin, reference) = if let Some(bindings) = &node.script_bindings
+                    && (!saved || bindings.inputs_bound)
+                {
+                    (bindings.origin.as_path(), bindings.component(reference)?)
+                } else {
+                    (origin, reference)
+                };
                 let (source, definition) = self.lookup_node(origin, reference)?;
                 if definition["reusable"] != true {
                     return Err(invalid(
@@ -1593,7 +1619,7 @@ impl Project {
                 let same_scope = self
                     .lookup_node(node.script_origin(), reference)
                     .is_ok_and(|(path, other)| path == source && other["id"] == definition["id"]);
-                if !same_scope {
+                if !same_scope || node.script_bindings.is_some() {
                     let id = definition["id"]
                         .as_str()
                         .expect("definition ID")
@@ -1616,8 +1642,18 @@ impl Project {
         script: &ResolvedNode,
         nodes: &[Value],
     ) -> Result<Vec<ResolvedNode>> {
-        let origin = script.script_origin().to_path_buf();
+        let origin = script
+            .script_bindings
+            .as_ref()
+            .map(|bindings| bindings.origin.clone())
+            .unwrap_or_else(|| script.script_origin().to_path_buf());
         let mut nodes = nodes.to_vec();
+        if let Some(bindings) = &script.script_bindings {
+            for node in &mut nodes {
+                self.check_cancelled()?;
+                bindings.rewrite(node, &self.runtime_refs)?;
+            }
+        }
         let mut counter = 0;
         let mut ids = BTreeSet::new();
         for node in &mut nodes {
