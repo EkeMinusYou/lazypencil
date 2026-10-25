@@ -574,12 +574,21 @@ impl Session {
             Stage::BrowserSetup => browser::setup(self),
             Stage::BrowserTest => browser::tests(self),
             Stage::Mcp => {
-                self.test(
-                    true,
-                    "mcp",
+                for test in [
                     "real_mcp_shader_assets_uniform_edits_and_browser_refresh_return_image_content",
-                    &["--ignored", "--test-threads=1"],
-                    "chromium-mcp.log",
+                    "local_pages::real_mcp_and_cli_local_pages_declare_edit_pack_and_render_after_source_removal",
+                ] {
+                    self.test(
+                        true,
+                        "mcp",
+                        test,
+                        &["--exact", "--ignored", "--test-threads=1"],
+                        "chromium-mcp.log",
+                    )?;
+                }
+                browser::local_page_mcp_images(
+                    &self.temporary.join("codec-reference"),
+                    &std::env::var("GITHUB_SHA")?,
                 )?;
                 self.test(
                     true,

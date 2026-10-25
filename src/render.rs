@@ -84,7 +84,8 @@ pub fn png_with_runtime(
     if options.refresh_pages {
         runtime.refresh_pages();
     }
-    png_impl(project, snapshot, options, Some(runtime))
+    let result = png_impl(project, snapshot, options, Some(runtime));
+    runtime.render_result(result)
 }
 
 fn png_impl(
@@ -146,7 +147,7 @@ fn png_impl(
         ));
     }
     if let Some(runtime) = runtime.as_deref_mut() {
-        runtime.prepare_pages(snapshot)?;
+        runtime.prepare_pages(project, snapshot)?;
     }
     let padding = backdrop_padding(snapshot, options.scale)?;
     let background_nodes = background_nodes(snapshot);
@@ -422,7 +423,13 @@ impl Renderer<'_> {
                             "Browser rendering requires a configured dynamic runtime",
                         )
                     })?
-                    .page(node, rect.width(), rect.height(), self.raster_scale)?;
+                    .page_in_project(
+                        self.project,
+                        node,
+                        rect.width(),
+                        rect.height(),
+                        self.raster_scale,
+                    )?;
                 let image = Image::from_encoded(Data::new_copy(&raster.png))
                     .ok_or_else(|| invalid("Cannot decode browser PNG"))?;
                 self.artifacts

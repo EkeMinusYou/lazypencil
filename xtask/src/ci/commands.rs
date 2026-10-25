@@ -228,8 +228,12 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
             &common,
             &["--lib", "cdp::", "--", "--test-threads=2"],
         ));
+        checks.push(append(
+            &common,
+            &["--lib", "dynamic::pages::tests::", "--", "--test-threads=2"],
+        ));
         if has("browser_readiness") {
-            for reproduction in [focus::LOCAL_FILES, focus::BROWSER_COPY] {
+            for reproduction in [focus::LOCAL_FILES, focus::BROWSER_COPY, focus::LOCAL_PAGES] {
                 checks.push(append(
                     &common,
                     &[
@@ -306,7 +310,11 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
                 "retained_",
             ]));
             if names.iter().any(|name| name == "browser_readiness") {
-                c.extend(skips([focus::LOCAL_FILES, focus::BROWSER_COPY]));
+                c.extend(skips([
+                    focus::LOCAL_FILES,
+                    focus::BROWSER_COPY,
+                    focus::LOCAL_PAGES,
+                ]));
             }
             c.extend(shader_skip.clone());
             c.extend(input_skip.clone());

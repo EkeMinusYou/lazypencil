@@ -123,7 +123,7 @@ dry-run と後続操作の失敗では素材を公開しない。欠損した入
 
 URL の部分上書きには `browser_override` v1 の専用 metadata envelope を使う。ユーザーの metadata と素材の参照文脈を分け、指定していない metadata や URL は元定義への継承を保つ。切り離しは有効な参照元をルート文書の宣言済み別名へ結び直し、保存前に実効プロパティ・テーマ・素材の参照元が変わらないことを検査する。通常の metadata だけの更新・unset は実行文脈を保持し、URL の明示更新は同じ JSON でも古い対応を失効させる。URL の override を reset すると元定義への継承に戻る。
 
-この経路だけで公開の描画 API の `file:` URL を有効にはしない。ユーザーの読取許可、実行 cache と保持 page の更新を統合し、CLI・MCP・TUI の共通経路で検証するまで、製品全体の対応は未完了として扱う。本家との往復描画互換も別途確認する。
+共通編集バッチの `{"op":"set_browser_resources","roots":[{"url":"file:///original/site/","path":"web"}]}` で宣言を設定し、空配列でこの文書の宣言を解除する。宣言は既存の Project の許可 root を拡張せず、私有データの境界を越えられない。共通描画入口は file URL を所有する文書の捕捉済み namespace だけに結び、未登録の file 要求をホストから読まない。捕捉元と素材 revision を raster cache／保持 page の識別子へ含め、素材が変わった場合は画面外の保持 context も閉じる。寸法だけの変更は DOM を保つ。取消は描画入口で処理し、最初の確認で中止した場合も既存の browser／shader process と動的 cache を回収する。新経路は GHA で検証中である。ネイティブ file の日時・range／media・worklet／popup・全 worker 起動方式、本家との往復描画互換と製品全体の残件は引き続き必要である。
 
 ### 取得と合成
 

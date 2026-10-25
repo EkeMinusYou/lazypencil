@@ -29,6 +29,11 @@ pub(super) struct RetainedTab {
 }
 
 impl Browser {
+    #[cfg(feature = "rendering")]
+    pub(crate) fn retained_page_count(&self) -> usize {
+        self.retained_tabs.len()
+    }
+
     pub fn with_tab<T>(
         &mut self,
         budget: &Budget<'_>,
@@ -103,10 +108,30 @@ impl Browser {
 
     /// Close removed nodes without resetting the retained nodes that remain.
     pub fn retain_page_keys(&mut self, keys: &BTreeSet<String>, budget: &Budget<'_>) -> Result<()> {
+        self.retain_pages(|entry| keys.contains(&entry.key), budget)
+    }
+
+    /// Retire stale inputs even when the owning node is outside the viewport.
+    pub fn retain_page_signatures(
+        &mut self,
+        signatures: &std::collections::BTreeMap<String, String>,
+        budget: &Budget<'_>,
+    ) -> Result<()> {
+        self.retain_pages(
+            |entry| signatures.get(&entry.key) == Some(&entry.signature),
+            budget,
+        )
+    }
+
+    fn retain_pages(
+        &mut self,
+        keep: impl Fn(&RetainedTab) -> bool,
+        budget: &Budget<'_>,
+    ) -> Result<()> {
         let mut index = 0;
         while index < self.retained_tabs.len() {
             budget.check()?;
-            if keys.contains(&self.retained_tabs[index].key) {
+            if keep(&self.retained_tabs[index]) {
                 index += 1;
             } else {
                 let removed = self

@@ -28,6 +28,10 @@ use tokio_util::sync::CancellationToken;
 mod browser_copy_fixture;
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
+#[path = "support/local_pages.rs"]
+mod local_pages;
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 #[ignore = "Requires sandboxed headless Chromium"]
 fn copied_browser_namespaces_keep_pixels_across_removal_recopy_themes_and_detach() {

@@ -18,7 +18,7 @@ const MAX_ASSET_BYTES: usize = 64 * 1024 * 1024;
 
 mod bindings;
 mod browser_resources;
-pub use browser_resources::BrowserResources;
+pub use browser_resources::{BrowserResourceRoot, BrowserResources};
 mod detach;
 #[cfg(feature = "rendering")]
 mod failed_code;

@@ -105,6 +105,8 @@ The original dynamic-panel example combines a local HTML data page, GLSL, and na
 
 Page and shader processes expire independently after 60 idle seconds by default; cached images remain available, and explicit refresh can restart the processes. User/project `[runtime.browser]`, `[runtime.shader]` and `[runtime.dynamic]` configure acquisition/launch deadlines, idle expiry and encoded-image cache limits through the common render entry. Configuration, real policy reload, dynamic pixels, MCP and idle/dynamic TUI checks passed a hosted macOS arm64 run; Linux startup and expanded regression coverage remain under verification. See [limits and scope](docs/configuration.md#browser-shader-and-raster-cache-limits) and [hosted evidence](docs/runtimes.md#hosted-integration-without-local-build-trees). Complete Pencil device presets, remaining annotations and full vertex compatibility, fill-stage object sampling, persistent authenticated page contexts, configurable capture policy, animation controls, and all-platform verification remain unfinished. These rendering paths do not establish full Pencil compatibility.
 
+Local file pages require explicit resource roots within the existing project read boundaries. `set_browser_resources` declares an original file directory URL and a resource directory; `pack_browser_resources` saves those captured inputs as portable assets. The common render path serves captured files only, retains original URLs and invalidates stale rasters and retained DOM when resources change. Arbitrary host file reads are rejected. See [local resources](docs/dynamic-content.md#ローカル素材の固定と持ち運び) for the metadata format and remaining native-file compatibility work.
+
 ## MCP and design guidance
 
 ```sh

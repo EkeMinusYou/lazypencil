@@ -521,7 +521,176 @@ pub fn required_images(root: &Path, commit: &str) -> Result<()> {
             }
         }
     }
-    println!("Verified source identities, hashes and dimensions for 343 required PNGs");
+    let local = report("codec-local-pages.json")?;
+    ensure!(
+        local["sandbox"] == "enabled",
+        "Local page sandbox proof missing"
+    );
+    let cases = local["cases"]
+        .as_array()
+        .context("Missing local page cases")?;
+    let images = local["images"]
+        .as_array()
+        .context("Missing local page images")?;
+    ensure!(
+        cases.len() == 2 && images.len() == 14,
+        "Expected both schemas and seven local page stages"
+    );
+    for version in ["2.19", "2.21"] {
+        let cases = cases
+            .iter()
+            .filter(|row| row["document_version"] == version)
+            .collect::<Vec<_>>();
+        ensure!(cases.len() == 1, "Missing or duplicate local page schema");
+        for proof in [
+            "raster_cache_reused",
+            "offscreen_resource_change_retired",
+            "offscreen_denied_retired",
+            "cancelled_process_reaped",
+            "same_browser_after_offscreen_retirement",
+        ] {
+            ensure!(cases[0][proof] == true, "Missing local page proof: {proof}");
+        }
+        let mut states = std::collections::BTreeMap::new();
+        let mut revisions = std::collections::BTreeMap::new();
+        for (stage, width, rgba) in [
+            ("first", 32, json!([0, 255, 0, 255])),
+            ("changed", 32, json!([0, 0, 255, 255])),
+            ("retained", 32, json!([0, 0, 255, 255])),
+            ("resized", 40, json!([255, 255, 0, 255])),
+            ("returned", 40, json!([255, 0, 0, 255])),
+            ("restored", 40, json!([255, 0, 0, 255])),
+            ("recovered", 40, json!([255, 0, 0, 255])),
+        ] {
+            let matching = images
+                .iter()
+                .filter(|row| row["document_version"] == version && row["stage"] == stage)
+                .collect::<Vec<_>>();
+            ensure!(matching.len() == 1, "Missing or duplicate local page stage");
+            let row = matching[0];
+            let name = format!("codec-local-page-{version}-{stage}.png");
+            ensure!(
+                row["name"] == name && dimensions(row)? == (width, 32) && row["rgba"] == rgba,
+                "Wrong local page geometry/color"
+            );
+            png(&name, &row["png_hash"], width, 32)?;
+            let acquisition = &row["acquisition"];
+            let local_files = &acquisition["local_files"];
+            ensure!(
+                local_files["fulfilled"] == 5
+                    && local_files["denied"] == 1
+                    && local_files["attached_targets"]
+                        .as_u64()
+                        .is_some_and(|n| n >= 2),
+                "Missing local page worker/denial proof"
+            );
+            let revision = acquisition["resources"]["revision"]
+                .as_str()
+                .context("Missing captured resource revision")?;
+            ensure!(
+                revision.len() == 64 && revision.bytes().all(|b| b.is_ascii_hexdigit()),
+                "Invalid captured revision"
+            );
+            revisions.insert(stage, revision);
+            states.insert(stage, &acquisition["page_state"]);
+        }
+        ensure!(
+            revisions["first"] != revisions["changed"]
+                && revisions["changed"] == revisions["retained"]
+                && revisions["retained"] == revisions["resized"]
+                && revisions["returned"] != revisions["resized"]
+                && revisions["returned"] == revisions["restored"]
+                && revisions["restored"] == revisions["recovered"],
+            "Stale local page resource revision"
+        );
+        for stage in ["retained", "resized", "returned", "restored", "recovered"] {
+            ensure!(
+                states[stage]["retained"] == true && states[stage]["id"].is_string(),
+                "Missing retained page identity"
+            );
+        }
+        ensure!(
+            states["resized"]["reused"] == true
+                && states["resized"]["id"] == states["retained"]["id"]
+                && states["returned"]["id"] != states["retained"]["id"]
+                && states["restored"]["id"] != states["returned"]["id"]
+                && states["recovered"]["id"] != states["restored"]["id"],
+            "Stale local page context"
+        );
+    }
+    println!("Verified source identities, hashes and dimensions for 357 required PNGs");
+    Ok(())
+}
+
+pub fn local_page_mcp_images(root: &Path, commit: &str) -> Result<()> {
+    let report: Value = util::json(&root.join("codec-local-pages-mcp.json"))?;
+    ensure!(
+        report["source_commit"] == commit,
+        "Wrong source for local page MCP images"
+    );
+    let images = report["images"]
+        .as_array()
+        .context("Missing local page MCP images")?;
+    ensure!(
+        images.len() == 8,
+        "Expected both schemas and four MCP/CLI stages"
+    );
+    for version in ["2.19", "2.21"] {
+        let mut changed = None;
+        let mut revisions = std::collections::BTreeMap::new();
+        for stage in ["first", "changed", "packed", "cli"] {
+            let matching = images
+                .iter()
+                .filter(|row| row["document_version"] == version && row["stage"] == stage)
+                .collect::<Vec<_>>();
+            ensure!(
+                matching.len() == 1,
+                "Missing or duplicate local page MCP stage"
+            );
+            let row = matching[0];
+            let name = format!("codec-local-page-{version}-mcp-{stage}.png");
+            ensure!(
+                row["name"] == name
+                    && row["width"] == 32
+                    && row["height"] == 32
+                    && row["source_removed"] == matches!(stage, "packed" | "cli"),
+                "Wrong local page MCP geometry/removal proof"
+            );
+            let bytes = performance::png(&root.join(&name), row, 32, 32)?;
+            let artifacts = row["dynamic_artifacts"]
+                .as_array()
+                .context("Missing local page MCP acquisition")?;
+            ensure!(
+                artifacts.len() == 1
+                    && artifacts[0]["acquisition"]["local_files"]["fulfilled"] == 2
+                    && artifacts[0]["acquisition"]["local_files"]["denied"] == 0,
+                "Incomplete local page MCP response proof"
+            );
+            let revision = artifacts[0]["acquisition"]["resources"]["revision"]
+                .as_str()
+                .context("Missing local page MCP revision")?;
+            ensure!(
+                revision.len() == 64 && revision.bytes().all(|b| b.is_ascii_hexdigit()),
+                "Invalid local page MCP revision"
+            );
+            revisions.insert(stage, revision);
+            if stage == "changed" {
+                changed = Some(bytes);
+            } else if matches!(stage, "packed" | "cli") {
+                ensure!(
+                    changed.as_ref() == Some(&bytes),
+                    "Packed MCP/CLI local page pixels changed"
+                );
+            }
+        }
+        ensure!(
+            revisions["first"] != revisions["changed"]
+                && revisions["changed"] == revisions["packed"]
+                && revisions["packed"] == revisions["cli"],
+            "Stale local page MCP namespace"
+        );
+    }
+    println!("Verified source identities, hashes and dimensions for eight local page MCP/CLI PNGs");
     Ok(())
 }
 pub fn panel(s: &Session) -> Result<()> {

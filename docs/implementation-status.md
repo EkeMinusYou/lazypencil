@@ -1,5 +1,7 @@
 # lazypencil 実装と公開準備の状況
 
+2026-10-26: 宣言済みのローカル Web 素材を共通描画入口へ接続する実装を追加する。`set_browser_resources` で所有文書の素材 root を編集し、既存 Project の許可 root と私有データの境界を維持する。捕捉元・内容 revision を cache と保持 page の識別子に含め、素材の変更・宣言解除では画面外の古い context も閉じる。描画取消では最初の確認で中止した場合も browser／shader と動的 cache を回収する。両形式の共通描画14画像と MCP／CLI の8画像を検査し、元ディレクトリ削除後の bundle の読取、古い依存 revision の拒否、親子 worker、未登録 host script の拒否、寸法変更時の DOM 維持、取消後の復帰を確認する。英語 guide は1.0.24。新実装は GHA 未検証であり、ネイティブ file の全挙動、本家の往復互換と製品全体の残件は維持する。ローカルで重い build は行わない。
+
 2026-10-26: Web 素材の管理 bundle `d0e74b7` は [GHA `40205037740`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40205037740) の先行 Linux・全3環境・監査・source を成功した。通常／core は macOS 1,113件、Linux 各1,123件で、各環境の215画像の必須確認、元素材を削除して保存済み bundle を読み直した後の CSS／画像／iframe／親子 worker と未登録 script の拒否を通した。拡張子なしファイルは通常の Chromium の MIME・実行状態・PNG と一致し、新画像の全3,072画素と配布ソース1,103ファイルを独立照合した。各環境の静的 release 画像と42回の書き出しも確認した。
 
 Web 素材の namespace を独立コピー／再コピー、URL／metadata の部分上書き・切り離しへ結ぶ。リテラル URL と捕捉元を版付きの補助情報に保持し、同じ URL のコピー先素材へフォールバックしない。通常 metadata と実行文脈の更新、専用 envelope の検査、補助ライブラリの別名の衝突処理を script／画像と共通化する。`44ea392` の先行 Linux は core 44件・Clippy・新しい128画像を成功し、全90,112画素を独立照合した。全体の macOS は再コピー先の未正規化パスと依存の正規化済みパスを比べた新試験2件が失敗したため、Store の正規化済み保存先を比較基準に直す。CI は直前 commit の単一環境で native 試験が失敗していれば、その環境を次の先行検証に選び、明示指定と最終3環境の基準は維持する。公開描画 API の file URL、ユーザーの読取許可・宣言編集・cache／保持 page の更新、本家の往復互換、および製品全体の残件は維持する。
@@ -14,7 +16,7 @@ Web 素材の namespace を独立コピー／再コピー、URL／metadata の�
 
 2026-10-25: 開発・CI・ソース配布・ライセンス収集・計測・試験用プロセスを、アプリ本体や Skia に依存しない独立した Rust の `xtask` workspace へ移した。入口は `cargo xtask …` とし、プロジェクトが管理する Python と Shell の補助処理は削除した。PTY のシナリオは Rust の統合テスト、ACP・ブラウザー・入力ワーカーの fixture は専用の Rust バイナリーへ移した。従来の小さな入力と期待結果を固定 fixture に保持し、原文ライセンス・改変拒否・パス検査を比較する。期限付きプロセス実行・取得・配布検証を共通化し、並列試験の計測は同じ実行処理で記録する。履歴中の旧 script 名と Python の試験数は当時の記録であり、現在の入口は README の Rust コマンドを参照する。補助ツール単体、対象を絞った再現試験、最終3環境の通常／core・実描画・配布証跡を GHA で検証する。製品全体の未完了条件は維持する。
 
-移行後の source `8177c28` は [GHA `40178627693`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40178627693) で補助ツール81試験と Clippy、先行 Linux x64、対象3環境の通常／core・実描画・release・監査・配布ソース検証を成功した。追加の整理では旧 Python ファイル向けの CI 分類を削除し、独立 workspace／依存 lock と管理対象ディレクトリの補助スクリプト再導入を検査する Rust 統合試験を加える。この追加分は次の GHA で確認する。ローカル build tree は作らない。
+移行後の source `8177c28` は [GHA `40178627693`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40178627693) で補助ツール81試験と Clippy、先行 Linux x64、対象3環境の通常／core・実描画・release・監査・配布ソース検証を成功した。追加の整理では旧 Python ファイル向けの CI 分類を削除し、独立 workspace／依存 lock と管理対象ディレクトリの補助スクリプト再導入を検査する Rust 統合試験を加えた。この整理を含む source `d0e74b7` の [GHA `40205037740`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40205037740) で、補助ツール84試験と Clippy、対象3環境・監査・配布ソース検証の成功を確認した。ローカル build tree は作っていない。Skia upstream 自身のビルドツールと実 Wasm ABI の JavaScript fixture は外部入力として保持し、その実行・期限・結果確認は Rust から管理する。
 
 source `54ce426` の先行補助ツール83試験・Clippy・ソース検証と依存監査は成功した。全体検証では macOS の既存 hardlink 試験が、選択した `second.pen` を `first.pen` として解決する失敗を検出した。標準の canonicalize 後の不要な `F_GETPATH` 再解決を削除し、hardlink を持つ大文字小文字／Unicode 別名と、名前変更後の保存先・原本・履歴の分離を既存試験で検査する。関連変更は macOS の paths 試験を先行し、成功後に全3環境へ進む。試験の省略や期限変更は行わない。
 

@@ -13,14 +13,16 @@ use crate::{
 use base64::Engine;
 use serde_json::{Value, json};
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, VecDeque},
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
 };
 use tokio_util::sync::CancellationToken;
+mod pages;
 mod preprocessor;
 mod shader;
+use pages::{PageInput, page_url};
 
 #[derive(Clone)]
 pub struct Raster {
@@ -121,7 +123,20 @@ impl DynamicRuntime {
         })
     }
 
-    pub(crate) fn prepare_pages(&mut self, snapshot: &crate::layout::LayoutSnapshot) -> Result<()> {
+    pub(crate) fn prepare_pages(
+        &mut self,
+        project: &crate::project::Project,
+        snapshot: &crate::layout::LayoutSnapshot,
+    ) -> Result<()> {
+        let result = self.prepare_page_inputs(project, snapshot);
+        self.page_result(result)
+    }
+
+    fn prepare_page_inputs(
+        &mut self,
+        project: &crate::project::Project,
+        snapshot: &crate::layout::LayoutSnapshot,
+    ) -> Result<()> {
         if self.page_scope.is_none() || self.page_snapshot.as_deref() == Some(snapshot.id.as_str())
         {
             return Ok(());
@@ -132,22 +147,34 @@ impl DynamicRuntime {
         self.cache.clear();
         self.cache_order.clear();
         if self.pages.is_some() {
-            let keys: BTreeSet<_> = snapshot
+            let mut signatures = BTreeMap::new();
+            for item in snapshot
                 .items
                 .iter()
                 .filter(|item| item.record.enabled && item.node.kind() == "browser")
-                .filter_map(|item| self.page_identity(&item.node))
-                .collect();
+            {
+                self.check()?;
+                if let Some(key) = self.page_identity(&item.node) {
+                    match PageInput::capture(Some(project), &item.node)
+                        .and_then(|input| input.signature(&item.node))
+                    {
+                        Ok(signature) => {
+                            signatures.insert(key, signature);
+                        }
+                        Err(error) if error.code == "CANCELLED" => return Err(error),
+                        // Retire an invalid offscreen page now; the normal visible
+                        // acquisition reports its own error if it is requested.
+                        Err(_) => {}
+                    }
+                }
+            }
             let cancel = self.cancel.clone();
             let budget = Budget::new(self.remaining()?, cancel.as_ref());
             let result = match self.pages.as_mut() {
-                Some(browser) => browser.retain_page_keys(&keys, &budget),
+                Some(browser) => browser.retain_page_signatures(&signatures, &budget),
                 None => Ok(()),
             };
-            if let Err(error) = result {
-                self.pages.take();
-                return Err(budget.check().err().unwrap_or(error));
-            }
+            result.map_err(|error| budget.check().err().unwrap_or(error))?;
         }
         self.page_snapshot = Some(snapshot.id.clone());
         Ok(())
@@ -199,6 +226,10 @@ impl DynamicRuntime {
             .flatten()
             .map(Browser::process_id)
             .collect()
+    }
+    /// Number of live page contexts retained by this runtime for diagnostics.
+    pub fn retained_page_count(&self) -> usize {
+        self.pages.as_ref().map_or(0, Browser::retained_page_count)
     }
     /// Page and shader processes expire independently; cached rasters remain valid.
     pub fn idle_deadline(&self) -> Option<Instant> {
@@ -336,14 +367,24 @@ impl DynamicRuntime {
         height: f32,
         scale: f32,
     ) -> Result<Raster> {
+        let result = (|| {
+            self.check()?;
+            let input = PageInput::capture(None, node)?;
+            self.page_with_input(node, width, height, scale, input)
+        })();
+        self.page_result(result)
+    }
+
+    fn page_with_input(
+        &mut self,
+        node: &ResolvedNode,
+        width: f32,
+        height: f32,
+        scale: f32,
+        input: PageInput,
+    ) -> Result<Raster> {
         self.check()?;
-        let url = node
-            .properties
-            .get("url")
-            .and_then(Value::as_str)
-            .filter(|url| !url.is_empty())
-            .ok_or_else(|| page_error("Browser node needs a URL"))?;
-        validate_url(url)?;
+        let url = page_url(node)?;
         let zoom = number(node.properties.get("zoom"), 1.0)?;
         if !(0.1..=5.0).contains(&zoom) {
             return Err(page_error("Page zoom must be within 0.1..5"));
@@ -366,9 +407,9 @@ impl DynamicRuntime {
         };
         let (pixel_width, pixel_height) =
             dimensions(width as f64 * scale as f64, height as f64 * scale as f64)?;
-        let request = json!({"url":url,"width":width,"height":height,"scale":scale,"zoom":zoom,"scroll_x":scroll_x,"scroll_y":scroll_y,"device":device});
+        let request = json!({"url":url,"width":width,"height":height,"scale":scale,"zoom":zoom,"scroll_x":scroll_x,"scroll_y":scroll_y,"device":device,"resources":input.identity});
         let identity = self.page_identity(node);
-        let signature = hash(json!({"url":url,"device":device}).to_string().as_bytes());
+        let signature = input.signature(node)?;
         let key = if identity.is_some() {
             hash(
                 json!({"request":request,"page":identity})
@@ -410,6 +451,9 @@ impl DynamicRuntime {
         let retained = identity.as_deref().map(|key| (key, signature.as_str()));
         let result=browser.with_page(retained,&budget,|browser,session,page_state| {
             browser.command(Some(session),"Page.enable",json!({}),&budget)?;
+            if !page_state.reused && let Some(resources)=&input.resources {
+                browser.intercept_local_files(session,resources.files.clone(),&budget)?;
+            }
             if page_state.retained {
                 browser.command(Some(session),"Page.bringToFront",json!({}),&budget)?;
             }
@@ -433,10 +477,15 @@ impl DynamicRuntime {
             let state=browser.evaluate(session,&expression,&budget)?;
             let screenshot=browser.command(Some(session),"Page.captureScreenshot",json!({"format":"png","fromSurface":true,"captureBeyondViewport":false}),&budget)?;
             let png=base64::engine::general_purpose::STANDARD.decode(screenshot["data"].as_str().ok_or_else(|| page_error("No page image was returned"))?).map_err(|_| page_error("Invalid page PNG encoding"))?;
-            let metadata=json!({"kind":"browser","acquisition_id":uuid::Uuid::new_v4().to_string(),"requested_url":redacted_url(url),"url_hash":hash(url.as_bytes()),
+            let mut metadata=json!({"kind":"browser","acquisition_id":uuid::Uuid::new_v4().to_string(),"requested_url":redacted_url(url),"url_hash":hash(url.as_bytes()),
                 "final_url":state["url"].as_str().map(redacted_url),"browser_version":version,"viewport_width":width,"viewport_height":height,"pixel_width":pixel_width,"pixel_height":pixel_height,
                 "scale":scale,"zoom":zoom,"scroll_x":state["scrollX"],"scroll_y":state["scrollY"],"device_id":device,
                 "wait_until":wait_until,"ready_selector":ready_selector,"selector_state":selector_state,"ready_condition":ready_condition,"acquired_at":timestamp(),"png_hash":hash(&png),"limits":limits,"page_state":page_state});
+            if let Some(identity)=&input.identity {
+                metadata["resources"]=identity.clone();
+                metadata["local_files"]=serde_json::to_value(browser.local_file_stats(session)
+                    .ok_or_else(||page_error("Local browser resource session is missing"))?).expect("local resource statistics");
+            }
             checked_png(png,metadata)
         });
         self.page_used = Some(Instant::now());
@@ -447,13 +496,7 @@ impl DynamicRuntime {
                 self.check()?;
                 Ok(raster)
             });
-        match result {
-            Ok(raster) => Ok(self.cache(key, raster)),
-            Err(error) => {
-                self.pages.take();
-                Err(error)
-            }
-        }
+        result.map(|raster| self.cache(key, raster))
     }
 
     pub fn shader(&mut self, request: Value) -> Result<Raster> {

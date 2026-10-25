@@ -122,6 +122,11 @@ pub enum Operation {
     },
     /// Capture this document's declared local web resources into portable assets.
     PackBrowserResources {},
+    /// Declare immutable local web inputs without expanding filesystem permissions.
+    SetBrowserResources {
+        #[schemars(length(max = 128))]
+        roots: Vec<crate::project::BrowserResourceRoot>,
+    },
     SetOverride {
         target: Target,
         #[serde(default)]
@@ -261,6 +266,28 @@ fn apply_impl(
     for (index, operation) in operations.iter().enumerate() {
         crate::cancel::check(cancel)?;
         match operation {
+            Operation::SetBrowserResources { roots } => {
+                for (pointer, key) in [("", "metadata"), ("/metadata", "lazypencil")] {
+                    let value = edited
+                        .value()
+                        .pointer(pointer)
+                        .and_then(|value| value.get(key));
+                    match value {
+                        None => edited.set_property(pointer, key, &json!({}))?,
+                        Some(value) if value.is_object() => {}
+                        Some(_) => {
+                            return Err(invalid(
+                                "Browser resources require object metadata and a lazypencil namespace",
+                            ));
+                        }
+                    }
+                }
+                edited.set_property(
+                    "/metadata/lazypencil",
+                    "browser_resources",
+                    &json!({"version":1,"roots":roots}),
+                )?;
+            }
             Operation::PackBrowserResources {} => {
                 let path = context.path.ok_or_else(|| {
                     invalid("Packing browser resources requires a bound document path")

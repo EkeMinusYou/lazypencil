@@ -121,8 +121,8 @@ impl LocalFiles {
 }
 
 pub(crate) fn local_key(value: &str) -> Result<String> {
-    if value.len() > 64 * 1024 {
-        return Err(invalid("Local browser URL exceeds 64 KiB"));
+    if value.len() > 1024 * 1024 {
+        return Err(invalid("Local browser URL exceeds 1 MiB"));
     }
     let mut url = url::Url::parse(value).map_err(|_| invalid("Invalid local browser URL"))?;
     if url.scheme() != "file"

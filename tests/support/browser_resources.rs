@@ -312,6 +312,114 @@ fn scene(roots: Value) -> Value {
 }
 
 #[test]
+fn resource_declaration_edits_create_namespaces_preview_pack_and_clear_atomically() {
+    for metadata in [
+        None,
+        Some(json!({"label":"keep","lazypencil":{"custom":7}})),
+    ] {
+        let (_temp, store) = fixture();
+        let mut document = scene(json!([]));
+        document.as_object_mut().unwrap().remove("metadata");
+        if let Some(metadata) = &metadata {
+            document["metadata"] = metadata.clone();
+        }
+        write(store.path(), document);
+        let before = fs::read(store.path()).unwrap();
+        let set = json!({"op":"set_browser_resources","roots":[{"url":BASE,"path":"web"}]});
+        service::apply_request(&store, &edit(&store, "roots-preview", json!([set]), true)).unwrap();
+        assert_eq!(fs::read(store.path()).unwrap(), before);
+        service::apply_request(
+            &store,
+            &edit(
+                &store,
+                "roots-pack",
+                json!([set,{"op":"pack_browser_resources"}]),
+                false,
+            ),
+        )
+        .unwrap();
+        let packed = Project::load(&store).unwrap();
+        packed
+            .browser_page_resources(store.path(), &format!("{BASE}index.html"))
+            .unwrap();
+        assert!(
+            packed
+                .root_document()
+                .value()
+                .pointer("/metadata/lazypencil/browser_resources/bundle")
+                .is_some()
+        );
+        if metadata.is_some() {
+            assert_eq!(packed.root_document().value()["metadata"]["label"], "keep");
+            assert_eq!(
+                packed.root_document().value()["metadata"]["lazypencil"]["custom"],
+                7
+            );
+        }
+        service::apply_request(
+            &store,
+            &edit(
+                &store,
+                "roots-clear",
+                json!([{"op":"set_browser_resources","roots":[]}]),
+                false,
+            ),
+        )
+        .unwrap();
+        let cleared = Project::load(&store).unwrap();
+        assert_eq!(
+            cleared
+                .browser_page_resources(store.path(), &format!("{BASE}index.html"))
+                .err()
+                .unwrap()
+                .code,
+            "ASSET_NOT_FOUND"
+        );
+        cleared.verify_unchanged().unwrap();
+    }
+}
+
+#[test]
+fn declaration_edits_cannot_expand_allowed_roots_or_publish_invalid_batches() {
+    let (temp, store) = fixture();
+    let outside = TempDir::new().unwrap();
+    fs::write(outside.path().join("secret"), b"private").unwrap();
+    for path in [
+        outside.path().to_string_lossy().into_owned(),
+        "private".into(),
+        "missing".into(),
+    ] {
+        let before = fs::read(store.path()).unwrap();
+        let request = edit(
+            &store,
+            &format!("roots-reject-{}", uuid::Uuid::new_v4()),
+            json!([{"op":"set_browser_resources","roots":[{"url":BASE,"path":path}]},{"op":"pack_browser_resources"}]),
+            false,
+        );
+        assert!(
+            service::apply_request(&store, &request).is_err(),
+            "accepted {path}"
+        );
+        assert_eq!(fs::read(store.path()).unwrap(), before);
+        assert!(!temp.path().join("assets").exists());
+    }
+    for roots in [
+        json!([{"url":"https://example.com/","path":"web"}]),
+        json!([{"url":BASE,"path":"web","grant":true}]),
+        json!(vec![json!({"url":BASE,"path":"web"}); 129]),
+    ] {
+        let before = fs::read(store.path()).unwrap();
+        let request: std::result::Result<EditRequest, _> = serde_json::from_value(
+            json!({"request_id":"invalid-roots","expected_revision":Project::load(&store).unwrap().root_document().revision(),"expected_dependency_revision":Project::load(&store).unwrap().dependency_revision(),"operations":[{"op":"set_browser_resources","roots":roots}]}),
+        );
+        if let Ok(request) = request {
+            assert!(service::apply_request(&store, &request).is_err());
+        }
+        assert_eq!(fs::read(store.path()).unwrap(), before);
+    }
+}
+
+#[test]
 fn declared_roots_capture_empty_files_and_share_one_immutable_namespace_per_owner() {
     let (temp, store) = fixture();
     let project = Project::load(&store).unwrap();

@@ -12,6 +12,17 @@ const MAX_DIRECTORIES: usize = 4096;
 const MAX_NAMES: usize = 1024 * 1024;
 const MAX_FILE: usize = 32 * 1024 * 1024;
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BrowserResourceRoot {
+    /// Original canonical file directory URL, including its trailing slash.
+    #[schemars(length(min = 1, max = 4096))]
+    pub url: String,
+    /// Physical directory relative to the owning .pen file, within allowed roots.
+    #[schemars(length(min = 1, max = 4096))]
+    pub path: String,
+}
+
 struct Root {
     url: url::Url,
     path: String,

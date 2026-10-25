@@ -11,6 +11,10 @@ use tempfile::TempDir;
 #[path = "support/fixture.rs"]
 mod fixture_support;
 
+#[cfg(all(feature = "rendering", any(target_os = "linux", target_os = "macos")))]
+#[path = "support/local_pages_mcp.rs"]
+mod local_pages;
+
 struct Client {
     child: Child,
     input: Option<ChildStdin>,
@@ -137,10 +141,18 @@ impl Client {
         id
     }
     fn response(&mut self, id: u64) -> Value {
+        self.response_with_timeout(id, Duration::from_secs(10))
+    }
+    fn response_with_timeout(&mut self, id: u64, timeout: Duration) -> Value {
+        let deadline = Instant::now() + timeout;
         loop {
             let message = self
                 .messages
-                .recv_timeout(Duration::from_secs(10))
+                .recv_timeout(
+                    deadline
+                        .checked_duration_since(Instant::now())
+                        .expect("MCP response timeout"),
+                )
                 .expect("MCP response timeout");
             if message.get("id").is_some() {
                 assert_eq!(message["id"], id, "Unexpected response: {message}");
@@ -153,7 +165,10 @@ impl Client {
         self.response(id)
     }
     fn call(&mut self, name: &str, arguments: Value) -> Value {
-        let response = self.request("tools/call", json!({"name":name,"arguments":arguments}));
+        let id = self.start_request("tools/call", json!({"name":name,"arguments":arguments}));
+        // Rendering has a 45-second shared budget plus bounded dispatch/cleanup.
+        let timeout = Duration::from_secs(if name == "render" { 60 } else { 10 });
+        let response = self.response_with_timeout(id, timeout);
         assert!(response.get("error").is_none(), "{response}");
         response["result"].clone()
     }
