@@ -64,7 +64,7 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
             vec![]
         };
     if ["graphics", "dynamic", "copy"].contains(&suite) && has("script_scope") {
-        input_skip.extend(skips(["script_bindings::"]));
+        input_skip.extend(skips(["script_bindings::", "generated_browser_"]));
         input_skip.extend(skips(focus::COPY_CPU));
     }
     let shader_first: Vec<_> = if ["shader", "dynamic"].contains(&suite) && has("shader_uniforms") {
@@ -234,7 +234,12 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
             &["--lib", "dynamic::pages::tests::", "--", "--test-threads=2"],
         ));
         if has("browser_readiness") {
-            for reproduction in [focus::LOCAL_FILES, focus::BROWSER_COPY, focus::LOCAL_PAGES] {
+            for reproduction in [
+                focus::GENERATED_BROWSER,
+                focus::LOCAL_FILES,
+                focus::BROWSER_COPY,
+                focus::LOCAL_PAGES,
+            ] {
                 checks.push(append(
                     &common,
                     &[
@@ -314,6 +319,7 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
                 c.extend(skips([
                     focus::LOCAL_FILES,
                     focus::BROWSER_COPY,
+                    focus::GENERATED_BROWSER,
                     focus::LOCAL_PAGES,
                 ]));
             }

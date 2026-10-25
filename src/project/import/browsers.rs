@@ -65,7 +65,7 @@ impl Copier<'_> {
         }
     }
 
-    fn copied_browser_scope(&mut self, origin: &Path) -> Result<String> {
+    pub(super) fn copied_browser_scope(&mut self, origin: &Path) -> Result<String> {
         if let Some(alias) = self.browser_scopes.get(origin) {
             return Ok(alias.clone());
         }

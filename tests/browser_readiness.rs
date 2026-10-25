@@ -28,6 +28,98 @@ use tokio_util::sync::CancellationToken;
 mod browser_copy_fixture;
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
+#[path = "support/script_browser_copy.rs"]
+mod script_browser_copy;
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+#[ignore = "Requires sandboxed headless Chromium"]
+fn generated_browser_namespaces_keep_pixels_after_source_removal_and_recopy() {
+    use lazypencil::{
+        cdp::{Browser, Budget, Purpose},
+        runtime::InstalledBrowser,
+    };
+    let installed = InstalledBrowser {
+        executable: std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").unwrap().into(),
+        version: "test-managed-runtime".into(),
+        platform: lazypencil::runtime::platform().unwrap().into(),
+    };
+    let mut browser = Browser::launch_with_supervisor(
+        &installed,
+        Purpose::Page,
+        &Budget::new(Duration::from_secs(30), None),
+        std::path::Path::new(env!("CARGO_BIN_EXE_lazypencil")),
+    )
+    .unwrap();
+    let directory = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR").map(std::path::PathBuf::from);
+    if let Some(directory) = &directory {
+        fs::create_dir_all(directory).unwrap();
+    }
+    let mut cases = Vec::new();
+    for version in ["2.19", "2.21"] {
+        for style in script_browser_copy::STYLES {
+            let (_temp, frames) = script_browser_copy::study(version, style);
+            let mut original = None;
+            let mut stages = Vec::new();
+            for frame in frames {
+                let budget = Budget::new(Duration::from_secs(15), None);
+                let png=browser.with_tab(&budget,|browser,session| {
+                    browser.command(Some(session),"Page.enable",json!({}),&budget)?;
+                    browser.intercept_local_files(session,frame.files.clone(),&budget)?;
+                    browser.command(Some(session),"Emulation.setDeviceMetricsOverride",json!({"width":32,"height":16,"deviceScaleFactor":1,"mobile":false}),&budget)?;
+                    let navigation=browser.command(Some(session),"Page.navigate",json!({"url":frame.url}),&budget)?;
+                    assert!(navigation.get("errorText").is_none(),"{navigation}");
+                    let ready=format!("location.href==={}&&document.readyState==='complete'",serde_json::to_string(&frame.url).unwrap());
+                    while browser.evaluate(session,&ready,&budget)?!=true {
+                        std::thread::sleep(Duration::from_millis(20).min(budget.remaining()?));
+                    }
+                    browser.evaluate(session,"new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))",&budget)?;
+                    let screenshot=browser.command(Some(session),"Page.captureScreenshot",json!({"format":"png","captureBeyondViewport":false}),&budget)?;
+                    let stats=browser.local_file_stats(session).unwrap();
+                    assert_eq!(stats.fulfilled,2);assert_eq!(stats.denied,0);
+                    Ok(base64::engine::general_purpose::STANDARD.decode(screenshot["data"].as_str().unwrap()).unwrap())
+                }).unwrap();
+                let image = Image::from_encoded(Data::new_copy(&png))
+                    .unwrap()
+                    .make_raster_image(None, None)
+                    .unwrap();
+                assert_eq!((image.width(), image.height()), (32, 16));
+                let pixels = image.peek_pixels().unwrap();
+                let expected =
+                    Color::from_argb(frame.rgba[3], frame.rgba[0], frame.rgba[1], frame.rgba[2]);
+                for y in 0..16 {
+                    for x in 0..32 {
+                        assert_eq!(
+                            pixels.get_color((x, y)),
+                            expected,
+                            "{version}/{style}/{} at {x},{y}",
+                            frame.stage
+                        );
+                    }
+                }
+                if let Some(original) = &original {
+                    assert_eq!(&png, original);
+                } else {
+                    original = Some(png.clone());
+                }
+                let name = format!(
+                    "codec-generated-browser-{version}-{style}-{}.png",
+                    frame.stage
+                );
+                if let Some(directory) = &directory {
+                    fs::write(directory.join(&name), &png).unwrap();
+                }
+                stages.push(json!({"stage":frame.stage,"name":name,"png_hash":lazypencil::document::hash(&png),"resource_revision":frame.revision}));
+            }
+            cases.push(json!({"document_version":version,"style":style,"rgba":if style=="inherited" {[255,0,0,255]} else {[0,255,0,255]},"stages":stages,"sources_removed":true}));
+        }
+    }
+    if let Some(directory) = directory {
+        fs::write(directory.join("codec-generated-browser.json"),serde_json::to_vec_pretty(&json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"sandbox":"enabled","cases":cases})).unwrap()).unwrap();
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[path = "support/local_pages.rs"]
 mod local_pages;
 

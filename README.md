@@ -91,6 +91,8 @@ Files discovered only in generated content appear in `runtime_dependencies`, sep
 
 ## Browser pages and GLSL
 
+Independent script copies now retain their declared local browser namespace in `script_bindings.browser_library`. Generated pages and URL overrides keep original URLs while their HTML/CSS and other declared responses travel in the existing managed bundle. A reference without a URL override retains its component's namespace. Recopying composes the saved alias, including nested scripts; unknown local URLs cannot borrow matching caller resources. New two-schema layout regressions and 42 sandboxed Chromium images are awaiting hosted verification. Explicit generated `browser_scope`/`browser_override` composition remains unfinished. See [dynamic scope handling](docs/dynamic-content.md).
+
 ```sh
 cargo run -- runtime setup chromium
 cargo run -- runtime status

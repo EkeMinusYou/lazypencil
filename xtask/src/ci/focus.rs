@@ -25,6 +25,8 @@ pub const LOCAL_FILES: &str =
     "captured_local_files_render_after_source_removal_and_deny_unlisted_host_files";
 pub const BROWSER_COPY: &str =
     "copied_browser_namespaces_keep_pixels_across_removal_recopy_themes_and_detach";
+pub const GENERATED_BROWSER: &str =
+    "generated_browser_namespaces_keep_pixels_after_source_removal_and_recopy";
 pub const LOCAL_PAGES: &str =
     "local_pages::project_local_pages_update_resources_retire_offscreen_state_and_recover";
 pub const COPY_CPU: &[&str] = &[
@@ -486,6 +488,18 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     }
     if operations {
         targets.insert("operations_cli".into());
+    }
+    if any(
+        paths,
+        &[
+            "src/project/browser_context.rs",
+            "src/project/import/browsers.rs",
+            "tests/support/script_browser_copy.rs",
+        ],
+        &[],
+    ) {
+        suite = "dynamic".into();
+        targets.extend(["script_scope", "browser_readiness"].map(str::to_owned));
     }
     if stems.contains("conversation_history") || terminal || any(paths, &[], &["src/conversation/"])
     {

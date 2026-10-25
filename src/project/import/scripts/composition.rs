@@ -192,10 +192,23 @@ impl Copier<'_> {
                 assets.insert(key, json!(target));
             }
         }
-        Ok(
-            json!({"version":1,"script_uri":uri,"components":components,"input_components":input_components,
-            "variables":variables,"themes":themes,"descendants":descendants,"assets":assets}),
-        )
+        let mut values = json!({"version":1,"script_uri":uri,"components":components,"input_components":input_components,
+            "variables":variables,"themes":themes,"descendants":descendants,"assets":assets});
+        let browser_origin = if let Some(alias) = &bound.values.browser_library {
+            Some(self.project.scope_document(&bound.origin, alias)?)
+        } else if bound.values.assets.is_none()
+            && self.project.browser_resources.contains_key(&bound.origin)
+        {
+            Some(bound.origin.clone())
+        } else {
+            None
+        };
+        if let Some(origin) = browser_origin {
+            let alias = self.copied_browser_scope(&origin)?;
+            budget.pair("browser_library", &alias)?;
+            values["browser_library"] = json!(alias);
+        }
+        Ok(values)
     }
 }
 

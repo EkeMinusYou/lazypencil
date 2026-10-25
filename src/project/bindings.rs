@@ -10,6 +10,8 @@ pub(super) struct Bindings {
     pub(super) script_uri: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) library: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) browser_library: Option<String>,
     #[serde(default)]
     pub(super) inputs_hash: Option<String>,
     #[serde(default)]
@@ -88,6 +90,10 @@ pub(super) fn bind_value(
             .library
             .as_ref()
             .is_some_and(|alias| alias.len() > 4096 || alias.chars().any(char::is_control))
+        || values
+            .browser_library
+            .as_ref()
+            .is_some_and(|alias| !valid_name(alias))
         || maps
             .iter()
             .flat_map(|map| map.iter())
@@ -119,6 +125,14 @@ pub(super) fn bind_value(
         None => owner.to_path_buf(),
     };
     let document = &project.documents[&origin];
+    if let Some(alias) = &values.browser_library {
+        let browser_origin = project.scope_document(&origin, alias)?;
+        if !project.browser_resources.contains_key(&browser_origin) {
+            return Err(invalid(
+                "A script browser binding needs a captured resource namespace",
+            ));
+        }
+    }
     for target in values.components.values() {
         project.check_cancelled()?;
         if document.node(target)?["reusable"] != true {
@@ -180,6 +194,7 @@ impl Bound {
             && self.values.themes == other.values.themes
             && self.values.descendants == other.values.descendants
             && self.values.assets == other.values.assets
+            && self.values.browser_library == other.values.browser_library
     }
 }
 
@@ -210,20 +225,12 @@ impl Bound {
             .ok_or_else(||Error::new("ASSET_NOT_FOUND","A generated file is outside the copied script asset manifest; include it in script_assets when copying"))
     }
 
-    fn assets(&self, node: &mut Value) -> Result<()> {
+    fn assets(&self, node: &mut Value, inherited_bytes: &mut usize) -> Result<()> {
         if self.values.assets.is_none() || node["enabled"] == false {
             return Ok(());
         }
-        if node["type"] == "browser"
-            && node
-                .get("href")
-                .and_then(Value::as_str)
-                .is_some_and(|uri| uri.starts_with("file:"))
-        {
-            return Err(Error::new(
-                "UNSUPPORTED_FEATURE",
-                "Copied file browser URLs need an independent page-resource closure",
-            ));
+        if node["type"] == "browser" {
+            self.generated_browser_context(node, true, inherited_bytes)?;
         }
         if let Some(uri) = node.get_mut("scriptUri")
             && let Some(value) = uri.as_str()
@@ -363,7 +370,7 @@ impl Bound {
         handles: &BTreeMap<String, (PathBuf, String)>,
         inherited_bytes: &mut usize,
     ) -> Result<()> {
-        self.assets(node)?;
+        self.assets(node, inherited_bytes)?;
         let original_reference = node.get("ref").and_then(Value::as_str).map(str::to_owned);
         if node["type"] == "ref" {
             let name = original_reference
@@ -584,6 +591,18 @@ mod tests {
             ),
             (
                 json!({"version":1,"script_uri":"draw.js","library":"missing"}),
+                "INVALID_DOCUMENT",
+            ),
+            (
+                json!({"version":1,"script_uri":"draw.js","browser_library":"missing"}),
+                "INVALID_DOCUMENT",
+            ),
+            (
+                json!({"version":1,"script_uri":"draw.js","browser_library":"../outside.pen"}),
+                "INVALID_DOCUMENT",
+            ),
+            (
+                json!({"version":1,"script_uri":"draw.js","browser_library":""}),
                 "INVALID_DOCUMENT",
             ),
             (

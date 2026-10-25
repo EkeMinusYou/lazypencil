@@ -26,6 +26,7 @@ impl Project {
             && (node.get("inputs").is_some()
                 || node.get("descendants").is_some()
                 || node.get("scriptUri").is_some()
+                || node.get("url").is_some()
                 || node.get("children").is_some())
         {
             let mut resolved =
@@ -78,10 +79,15 @@ impl Project {
         }
         if let Some(mut resolved) = reference {
             self.bind_generated_source(node, &mut resolved, bindings, inherited_bytes)?;
+            if resolved.kind() == "browser" {
+                bindings.generated_browser_context(node, false, inherited_bytes)?;
+            }
             if let Some(changes) = node.get_mut("descendants").and_then(Value::as_object_mut) {
                 for (path, changes) in changes {
                     if changes.get("type").is_none()
-                        && (changes.get("inputs").is_some() || changes.get("scriptUri").is_some())
+                        && (changes.get("inputs").is_some()
+                            || changes.get("scriptUri").is_some()
+                            || changes.get("url").is_some())
                     {
                         let target = find_descendant_mut(
                             &mut resolved,
@@ -89,6 +95,9 @@ impl Project {
                         )
                         .ok_or_else(|| invalid("A generated script override target is missing"))?;
                         self.bind_generated_source(changes, target, bindings, inherited_bytes)?;
+                        if target.kind() == "browser" {
+                            bindings.generated_browser_context(changes, false, inherited_bytes)?;
+                        }
                     }
                 }
             }

@@ -427,6 +427,7 @@ impl Session {
                 {
                     for filter in [
                         "project::bindings::",
+                        "project::browser_context::",
                         "project::import::scripts::composition::tests::",
                     ] {
                         self.test(
@@ -437,7 +438,7 @@ impl Session {
                             "focus-bindings.log",
                         )?;
                     }
-                    for filter in ["script_bindings::", "script_copy::"] {
+                    for filter in ["generated_browser_", "script_bindings::", "script_copy::"] {
                         self.test(
                             true,
                             "script_scope",

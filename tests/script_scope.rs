@@ -20,6 +20,23 @@ mod script_bindings;
 #[path = "support/script_copy.rs"]
 mod script_copy;
 
+#[path = "support/script_browser_copy.rs"]
+mod script_browser_copy;
+
+#[test]
+fn generated_browser_namespaces_survive_independent_copy_and_recopy() {
+    for version in ["2.19", "2.21"] {
+        for style in script_browser_copy::STYLES {
+            let _case = script_browser_copy::study(version, style);
+        }
+    }
+}
+
+#[test]
+fn generated_browser_urls_cannot_borrow_a_callers_matching_namespace() {
+    script_browser_copy::reject_missing_namespace();
+}
+
 fn write(path: &Path, value: Value) {
     fs::write(path, value.to_string()).unwrap();
 }

@@ -589,8 +589,14 @@ impl Copier<'_> {
             for (key, target) in &self.script_scopes[output_scope].assets {
                 budget.pair(key, target)?;
             }
-            json!({"version":1,"script_uri":uri,"components":self.component_bindings(output_scope,&mut budget)?,"input_components":self.component_bindings(input,&mut budget)?,
-                "variables":variables,"themes":themes,"descendants":descendants,"assets":self.script_scopes[output_scope].assets})
+            let mut values = json!({"version":1,"script_uri":uri,"components":self.component_bindings(output_scope,&mut budget)?,"input_components":self.component_bindings(input,&mut budget)?,
+                "variables":variables,"themes":themes,"descendants":descendants,"assets":self.script_scopes[output_scope].assets});
+            if self.project.browser_resources.contains_key(output_scope) {
+                let alias = self.copied_browser_scope(output_scope)?;
+                budget.pair("browser_library", &alias)?;
+                values["browser_library"] = json!(alias);
+            }
+            values
         };
         let inputs_hash = result.get("inputs").map(|value| {
             let mut value = value.clone();

@@ -82,6 +82,31 @@ fn generated_reference_changes_reproduce_the_real_script_binding_cases_first() {
 }
 
 #[test]
+fn generated_browser_copy_changes_run_namespace_and_real_pixel_reproductions_first() {
+    for path in [
+        "src/project/browser_context.rs",
+        "src/project/import/browsers.rs",
+        "tests/support/script_browser_copy.rs",
+    ] {
+        let plan = focus::select(&util::root(), &[path.into()], "auto").unwrap();
+        assert_eq!(plan.suite, "dynamic");
+        for target in ["script_scope", "browser_readiness"] {
+            assert!(
+                plan.targets.iter().any(|value| value == target),
+                "{path}/{target}"
+            );
+        }
+        let commands = ci::commands::plan(&util::root(), &plan.suite, &plan.targets).unwrap();
+        assert!(
+            commands
+                .checks
+                .iter()
+                .any(|command| command.iter().any(|arg| arg == focus::GENERATED_BROWSER))
+        );
+    }
+}
+
+#[test]
 fn tool_changes_only_bypass_focus_native_compilation_when_they_are_not_application_inputs() {
     for path in [
         "xtask/Cargo.lock",
