@@ -18,7 +18,7 @@ pub(super) struct Info {
 }
 
 impl Copier<'_> {
-    pub(super) fn script_info(&self, origin: &Path, node: &Value) -> Result<Option<Info>> {
+    pub(super) fn script_info(&mut self, origin: &Path, node: &Value) -> Result<Option<Info>> {
         if !matches!(node["type"].as_str(), Some("script" | "ref")) {
             return Ok(None);
         }
@@ -37,6 +37,7 @@ impl Copier<'_> {
         let path = self
             .project
             .resolve_file(resolved.property_source("scriptUri"), &uri)?;
+        self.project.capture_asset(&path, "script")?;
         let code = std::str::from_utf8(&self.project.asset(&path)?.bytes)
             .map_err(|_| copy_error("Copied script source must be UTF-8"))?;
         Ok(Some(Info {
