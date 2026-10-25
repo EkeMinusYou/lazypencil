@@ -1,4 +1,4 @@
-use super::{message, options, prompt, python, ready, runtime};
+use super::{helper, message, options, prompt, ready, runtime};
 use lazypencil::agent::AgentHost;
 use serde_json::Value;
 use std::{
@@ -123,7 +123,7 @@ fn cli_owner(directory: &Path, pressure: bool) -> Parent {
                 "60",
                 "--adapter",
             ])
-            .arg(python())
+            .arg(helper())
             .arg(format!("--adapter-arg={}", super::fixture().display()))
             .arg(if pressure {
                 "--adapter-arg=process-tree-pressure"
@@ -254,7 +254,7 @@ fn killed_cli_revokes_grants_and_resume_preserves_images_and_transcripts() {
         "--session".into(),
         id.clone().into(),
         "--adapter".into(),
-        python().into_os_string(),
+        helper().into_os_string(),
         format!("--adapter-arg={}", super::fixture().display()).into(),
         "--adapter-arg=process-tree-hang".into(),
     ])
@@ -333,11 +333,8 @@ fn worker_without_a_live_owner_never_starts_the_adapter() {
         Command::new(env!("CARGO_BIN_EXE_lazypencil"))
             .current_dir(directory.path())
             .args(["__agent_process_worker", "2147483647", "--"])
-            .arg(python())
-            .args([
-                "-c",
-                "from pathlib import Path; Path('must-not-exist').touch()",
-            ])
+            .arg(helper())
+            .args(["mark", "must-not-exist"])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())

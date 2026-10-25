@@ -1,4 +1,6 @@
 /target/
+/xtask/target/
+/xtask-verification.log
 /dist/
 *.tmp
 .DS_Store

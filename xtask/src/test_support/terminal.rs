@@ -1,0 +1,261 @@
+use base64::{Engine, engine::general_purpose::STANDARD};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    num::NonZeroU16,
+};
+
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+pub struct Screen {
+    parser: vt100::Parser,
+}
+impl Screen {
+    pub fn new(width: u16, height: u16) -> Self {
+        Self {
+            parser: vt100::Parser::new(
+                NonZeroU16::new(height).unwrap(),
+                NonZeroU16::new(width).unwrap(),
+                0,
+            ),
+        }
+    }
+    pub fn resize(&mut self, width: u16, height: u16) {
+        self.parser.set_size(
+            NonZeroU16::new(height).unwrap(),
+            NonZeroU16::new(width).unwrap(),
+        );
+    }
+    pub fn feed(&mut self, bytes: &[u8]) {
+        self.parser.process(bytes);
+    }
+    pub fn text(&self) -> String {
+        self.parser
+            .screen()
+            .rows(0, self.parser.screen().size().1.get())
+            .map(|s| s.trim_end().to_owned())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+    pub fn cursor(&self) -> (u16, u16) {
+        let (y, x) = self.parser.screen().cursor_position();
+        (x, y)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Frame {
+    pub rgba: Vec<u8>,
+    palette: BTreeSet<[u8; 4]>,
+}
+impl Frame {
+    pub fn new(rgba: Vec<u8>) -> Result<Self> {
+        if rgba.len() % 4 != 0 {
+            return Err("Expected complete RGBA pixels".into());
+        }
+        let palette = rgba
+            .chunks_exact(4)
+            .map(|p| p.try_into().unwrap())
+            .collect();
+        Ok(Self { rgba, palette })
+    }
+    pub fn has_color(&self, color: [u8; 4]) -> bool {
+        self.palette.contains(&color)
+    }
+}
+
+#[derive(Default)]
+pub struct KittyFrames {
+    pub images: Vec<Frame>,
+    pub deleted_resources: BTreeSet<u32>,
+    pub pending: Vec<u8>,
+    pub payload: Vec<u8>,
+    expected: Option<usize>,
+}
+impl KittyFrames {
+    pub fn feed(&mut self, bytes: &[u8]) -> Result<()> {
+        self.pending.extend_from_slice(bytes);
+        let mut offset = 0;
+        loop {
+            let Some(start) = self.pending[offset..]
+                .windows(3)
+                .position(|s| s == b"\x1b_G")
+                .map(|i| i + offset)
+            else {
+                let keep = self.pending.len().saturating_sub(2);
+                self.pending.drain(..keep);
+                return Ok(());
+            };
+            let Some(end) = self.pending[start + 3..]
+                .windows(2)
+                .position(|s| s == b"\x1b\\")
+                .map(|i| i + start + 3)
+            else {
+                self.pending.drain(..start);
+                if self.pending.len() > 8192 {
+                    return Err("Oversized Kitty protocol packet".into());
+                }
+                return Ok(());
+            };
+            if end - start > 8192 {
+                return Err("Oversized Kitty protocol packet".into());
+            }
+            let packet = &self.pending[start + 3..end];
+            let split = packet.iter().position(|b| *b == b';');
+            let parameters = std::str::from_utf8(&packet[..split.unwrap_or(packet.len())])?;
+            let mut fields = BTreeMap::new();
+            for field in parameters.split(',') {
+                if let Some((key, value)) = field.split_once('=') {
+                    if fields.insert(key, value).is_some() {
+                        return Err("Duplicate Kitty parameter".into());
+                    }
+                }
+            }
+            let action = fields.get("a").copied();
+            if action == Some("d")
+                && fields.get("d") == Some(&"I")
+                && fields.get("q") == Some(&"2")
+                && split.is_none()
+            {
+                self.deleted_resources.insert(
+                    fields
+                        .get("i")
+                        .ok_or("Missing deleted Kitty resource ID")?
+                        .parse()?,
+                );
+            }
+            if action == Some("T") {
+                if self.expected.is_some() {
+                    return Err("A new Kitty frame interrupted an incomplete frame".into());
+                }
+                if fields.get("f") != Some(&"32") || fields.contains_key("o") {
+                    return Err("Expected uncompressed RGBA Kitty pixels".into());
+                }
+                let width = fields
+                    .get("s")
+                    .ok_or("Missing Kitty width")?
+                    .parse::<usize>()?;
+                let height = fields
+                    .get("v")
+                    .ok_or("Missing Kitty height")?
+                    .parse::<usize>()?;
+                if width == 0
+                    || height == 0
+                    || width > 8192
+                    || height > 8192
+                    || width * height > 16 * 1024 * 1024
+                {
+                    return Err("Invalid Kitty dimensions".into());
+                }
+                self.expected = Some(width * height * 4);
+                self.payload.clear();
+            }
+            if let Some(expected) = self.expected {
+                if action.is_none() || action == Some("T") {
+                    let separator =
+                        split.ok_or("A Kitty image packet needs a payload separator")?;
+                    let decoded = STANDARD.decode(&packet[separator + 1..])?;
+                    if decoded.len() > expected - self.payload.len() {
+                        return Err("Kitty pixels exceed declared dimensions".into());
+                    }
+                    self.payload.extend_from_slice(&decoded);
+                    match fields.get("m").copied().unwrap_or("0") {
+                        "1" => {}
+                        "0" => {
+                            if self.payload.len() != expected {
+                                return Err("Incomplete Kitty pixel data".into());
+                            }
+                            self.images
+                                .push(Frame::new(std::mem::take(&mut self.payload))?);
+                            self.expected = None;
+                        }
+                        _ => return Err("Invalid Kitty continuation marker".into()),
+                    }
+                }
+            }
+            offset = end + 2;
+        }
+    }
+}
+
+pub fn sixel_red_pixels(data: &[u8]) -> Result<(usize, usize)> {
+    let dimensions = data
+        .iter()
+        .position(|b| *b == b'"')
+        .ok_or("Missing Sixel raster dimensions")?;
+    let mut end = dimensions + 1;
+    while end < data.len() && (data[end].is_ascii_digit() || data[end] == b';') {
+        end += 1;
+    }
+    let values = std::str::from_utf8(&data[dimensions + 1..end])?
+        .split(';')
+        .map(str::parse::<usize>)
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    if values.len() != 4 {
+        return Err("Invalid Sixel raster dimensions".into());
+    }
+    let (width, height) = (values[2], values[3]);
+    if width == 0 || height == 0 || width > 8192 || height > 8192 {
+        return Err("Oversized Sixel raster".into());
+    }
+    let mut pixels = vec![false; width * height];
+    let mut colors = BTreeMap::new();
+    let (mut color, mut x, mut y, mut index) = (0, 0, 0, 0);
+    while index < data.len() {
+        let mut symbol = data[index];
+        if symbol == b'"' || symbol == b'#' {
+            let mut end = index + 1;
+            while end < data.len() && (data[end].is_ascii_digit() || data[end] == b';') {
+                end += 1;
+            }
+            let values = std::str::from_utf8(&data[index + 1..end])?
+                .split(';')
+                .filter(|s| !s.is_empty())
+                .map(str::parse::<usize>)
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            if symbol == b'#' {
+                color = *values.first().ok_or("Missing Sixel palette index")?;
+                if values.len() == 5 {
+                    if values[1] != 2 || values[2..].iter().any(|v| *v > 100) {
+                        return Err("Expected RGB Sixel palette".into());
+                    }
+                    colors.insert(color, [values[2], values[3], values[4]]);
+                }
+            }
+            index = end;
+            continue;
+        }
+        let mut repeat = 1;
+        if symbol == b'!' {
+            let mut end = index + 1;
+            while end < data.len() && data[end].is_ascii_digit() {
+                end += 1;
+            }
+            repeat = std::str::from_utf8(&data[index + 1..end])?.parse()?;
+            if repeat == 0 || repeat > width || end == data.len() {
+                return Err("Invalid Sixel repeat".into());
+            }
+            symbol = data[end];
+            index = end;
+        }
+        if (63..=126).contains(&symbol) {
+            if x + repeat > width {
+                return Err("Sixel band exceeds raster width".into());
+            }
+            for bit in 0..6 {
+                if (symbol - 63) & (1 << bit) != 0 && y + bit < height {
+                    for position in (y + bit) * width + x..(y + bit) * width + x + repeat {
+                        pixels[position] = colors.get(&color) == Some(&[100, 0, 0]);
+                    }
+                }
+            }
+            x += repeat;
+        } else if symbol == b'$' {
+            x = 0;
+        } else if symbol == b'-' {
+            x = 0;
+            y += 6;
+        }
+        index += 1;
+    }
+    Ok((pixels.iter().filter(|v| **v).count(), width * height))
+}

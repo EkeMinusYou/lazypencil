@@ -65,6 +65,15 @@ Verbatim source attribution comments:
 arboard@3.7.0
 Declared license: MIT OR Apache-2.0
 
+arrayvec@0.7.8
+Declared license: MIT OR Apache-2.0
+Published package authors: bluss
+Verbatim source attribution comments:
+// Copyright 2012-2016 The Rust Project Developers. See the COPYRIGHT
+  Source: src/char.rs:1
+// http://rust-lang.org/COPYRIGHT.
+  Source: src/char.rs:3
+
 autocfg@1.5.1
 Declared license: Apache-2.0 OR MIT
 Published package authors: Josh Stone <cuviper@gmail.com>
@@ -1983,6 +1992,17 @@ Verbatim source attribution comments:
 vsimd@0.8.0
 Declared license: MIT
 Original workspace-root notices omitted by the published archive.
+
+vt100@0.18.1
+Declared license: MIT
+Published package authors: Jesse Luehrs <doy@tozt.net>
+
+vte@0.15.0
+Declared license: Apache-2.0 OR MIT
+Published package authors: Joe Wilm <joe@jwilm.com>; Christian Duerr <contact@christianduerr.com>
+Verbatim source attribution comments:
+// SPDX-License-Identifier: Apache-2.0
+  Source: src/ansi.rs:1
 
 wasi@0.11.1+wasi-snapshot-preview1
 Declared license: Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
@@ -9719,6 +9739,36 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
 ========================================================================
+arrayvec@0.7.8 :: archive :: LICENSE-MIT
+SHA-256: 4da95ec4ecb65b738d470b7d762894ad9c97da93e6cbfb18b570fc2c96f4b871
+
+Copyright (c) Ulrik Sverdrup "bluss" 2015-2023
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+========================================================================
 nom@7.1.3 :: archive :: LICENSE
 nom@8.0.0 :: archive :: LICENSE
 SHA-256: 4dbda04344456f09a7a588140455413a9ac59b6b26a1ef7cdf9c800c012d87f0
@@ -10093,6 +10143,32 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
+
+========================================================================
+vt100@0.18.1 :: archive :: LICENSE
+SHA-256: 53a04b0a11073f3d0183c31a4b7bdf9a3f68d453adeec136e59e5a9d9a554370
+
+The MIT License (MIT)
+
+Copyright (c) 2016 Jesse Luehrs
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 ========================================================================
 shlex@1.3.0 :: archive :: LICENSE-APACHE
@@ -10677,6 +10753,7 @@ typed-path@0.12.4 :: archive :: LICENSE-APACHE
 unicode-ident@1.0.27 :: archive :: LICENSE-APACHE
 utf8-zero@0.8.1 :: archive :: LICENSE-APACHE
 utf8parse@0.2.2 :: archive :: LICENSE-APACHE
+vte@0.15.0 :: archive :: LICENSE-APACHE
 SHA-256: 62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a
 
                               Apache License
@@ -16122,6 +16199,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ========================================================================
+arrayvec@0.7.8 :: archive :: LICENSE-APACHE
 autocfg@1.5.1 :: archive :: LICENSE-APACHE
 base64@0.22.1 :: archive :: LICENSE-APACHE
 base64@0.23.1 :: archive :: LICENSE-APACHE
@@ -21057,6 +21135,7 @@ SHA-256: e4705ddab847449a2cdcb3c88b005ea10330aa249d9148ca2eef9c84c5d29895
 
 ========================================================================
 utf8parse@0.2.2 :: archive :: LICENSE-MIT
+vte@0.15.0 :: archive :: LICENSE-MIT
 SHA-256: e4c9b06fa850cb9b540a5e400e9f6394cf15efcf4098144de477d1d3dae10150
 
 Copyright (c) 2016 Joe Wilm

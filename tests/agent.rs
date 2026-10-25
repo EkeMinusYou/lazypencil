@@ -9,16 +9,17 @@ use std::{
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
-fn python() -> PathBuf {
-    std::env::var_os("LAZYPENCIL_TEST_PYTHON")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| "python3".into())
+#[path = "support/fixture.rs"]
+mod fixture_support;
+
+fn helper() -> PathBuf {
+    fixture_support::helper()
 }
 fn fixture() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/acp_fixture.py")
+    "acp".into()
 }
 fn options(mode: &str, directory: &Path) -> AgentOptions {
-    let mut options = AgentOptions::new(python(), directory);
+    let mut options = AgentOptions::new(helper(), directory);
     options.supervisor_executable = Some(env!("CARGO_BIN_EXE_lazypencil").into());
     options.args = vec![fixture().to_str().unwrap().into(), mode.into()];
     options.setup_timeout = Duration::from_secs(5);
@@ -66,7 +67,7 @@ fn embedded_conversation_uses_the_real_helper_for_supervision_and_bound_mcp_edit
         file.clone().into_os_string(),
         "--create".into(),
         "--adapter".into(),
-        python().into_os_string(),
+        helper().into_os_string(),
         format!("--adapter-arg={}", fixture().display()).into(),
         "--adapter-arg=edit".into(),
         "--non-interactive".into(),
@@ -175,7 +176,7 @@ fn relative_user_configuration_is_pinned_before_adapter_working_directory_change
             "nested/design.pen",
             "--adapter",
         ])
-        .arg(python())
+        .arg(helper())
         .arg(format!("--adapter-arg={}", fixture().display()))
         .arg("--adapter-arg=user-config")
         .args([
@@ -545,7 +546,7 @@ fn cli(directory: &TempDir, mode: &str, extra: &[&str]) -> Output {
         .args(["--json", "prompt"])
         .arg(directory.path().join("design.pen"))
         .args(["--adapter"])
-        .arg(python())
+        .arg(helper())
         .arg(format!("--adapter-arg={}", fixture().display()))
         .arg(format!("--adapter-arg={mode}"))
         .args(["--non-interactive", "--timeout", "10"])
@@ -672,7 +673,7 @@ fn cli_prompt_passes_trusted_project_rules_and_default_style_and_blocks_changed_
             "nested/design.pen",
             "--adapter",
         ])
-        .arg(python())
+        .arg(helper())
         .arg(format!("--adapter-arg={}", fixture().display()))
         .arg("--adapter-arg=project-guidance")
         .args([
@@ -1143,7 +1144,7 @@ fn session_restart_cancellation_before_sending_preserves_context_for_the_next_lo
         "prompt".into(),
         document_path.clone().into_os_string(),
         "--adapter".into(),
-        python().into_os_string(),
+        helper().into_os_string(),
         format!("--adapter-arg={}", fixture().display()).into(),
         "--adapter-arg=resume-native".into(),
         "--session".into(),
@@ -1293,7 +1294,7 @@ fn cli_interrupt_retains_committed_batches_and_reports_the_actual_revision() {
         .args(["--json", "prompt"])
         .arg(directory.path().join("design.pen"))
         .args(["--create", "--non-interactive", "--adapter"])
-        .arg(python())
+        .arg(helper())
         .arg(format!("--adapter-arg={}", fixture().display()))
         .arg("--adapter-arg=edit-cancel")
         .arg("日本語のデザイン")
@@ -1369,7 +1370,7 @@ fn subscription_requests_remove_inherited_api_key_overrides() {
         .args(["--json", "prompt"])
         .arg(directory.path().join("design.pen"))
         .args(["--create", "--non-interactive", "--adapter"])
-        .arg(python())
+        .arg(helper())
         .arg(format!("--adapter-arg={}", fixture().display()))
         .arg("--adapter-arg=env")
         .arg("日本語")

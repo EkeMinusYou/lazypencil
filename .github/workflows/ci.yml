@@ -39,49 +39,34 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_PROFILE_DEV_DEBUG: '0'
   CARGO_PROFILE_TEST_DEBUG: '0'
-  CARGO_TARGET_DIR: target
-  PYTHONUTF8: '1'
-  LAZYPENCIL_TEST_PYTHON: python
 
 jobs:
   plan:
     name: Select affected platform and tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 3
+    timeout-minutes: 15
     outputs:
       platform: ${{ steps.focus.outputs.platform }}
       suite: ${{ steps.focus.outputs.suite }}
       targets: ${{ steps.focus.outputs.targets }}
       preprocessor: ${{ steps.focus.outputs.preprocessor }}
-      matrix: ${{ steps.matrix.outputs.platforms }}
+      matrix: ${{ steps.focus.outputs.matrix }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Select changes since the verified baseline
+      - uses: ./.github/actions/xtask
+      - name: Select changes since the last fully verified baseline
         id: focus
         env:
           GH_TOKEN: ${{ github.token }}
           FOCUS_PLATFORM: ${{ inputs.focus_os || 'auto' }}
-        run: python3 scripts/ci/focus.py plan --platform "$FOCUS_PLATFORM"
-      - name: Verify stored shader component when its inputs are unchanged
-        if: steps.focus.outputs.preprocessor != 'true'
-        run: python3 scripts/shader_preprocessor.py
-      - name: Preserve all final verification platforms by default
-        id: matrix
-        env:
           REQUESTED_OS: ${{ inputs.os || 'all' }}
-        run: |
-          python3 - <<'PY'
-          import json, os, runpy
-          from pathlib import Path
-          platforms = runpy.run_path("scripts/ci/focus.py")["PLATFORMS"]
-          requested = os.environ["REQUESTED_OS"]
-          assert requested == "all" or requested in platforms
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
-              stream.write("platforms=" + json.dumps(platforms if requested == "all" else [requested]) + "\n")
-          PY
+        run: cargo xtask ci plan --platform "$FOCUS_PLATFORM" --matrix "$REQUESTED_OS"
+      - name: Verify the stored shader component when its inputs are unchanged
+        if: steps.focus.outputs.preprocessor != 'true'
+        run: cargo xtask shader
 
   cache-maintenance:
     name: Reserve dependency cache headroom
@@ -91,42 +76,41 @@ jobs:
       contents: read
       actions: write
     runs-on: ubuntu-24.04
-    timeout-minutes: 3
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - name: Identify current application inputs without compiling
-        run: |
-          python3 scripts/dist.py source --output "$RUNNER_TEMP/cache-source.tar.gz"
-          python3 scripts/dist.py verify-source "$RUNNER_TEMP/cache-source.tar.gz" --extract "$RUNNER_TEMP/cache-source"
-      - name: Remove application generations that cannot be reused by this source
+      - uses: ./.github/actions/xtask
+      - name: Identify reusable application inputs without native compilation
+        run: cargo xtask ci native source
+      - name: Remove application generations that cannot be reused
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/ci/cache_retention.py --manifest "$RUNNER_TEMP/cache-source/SOURCE-MANIFEST.json" --delete
+        run: cargo xtask ci cache retain --manifest "$RUNNER_TEMP/lazypencil-source/SOURCE-MANIFEST.json" --delete
 
   audit:
     needs: focus
     if: ${{ !cancelled() && needs.focus.result == 'success' }}
     name: Dependency policy and RustSec
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - name: Check the checked-in Rust notice inventory
-        run: python3 scripts/license_notices.py verify
-      - name: Check the pinned native reference terms
-        run: python3 scripts/skia_notice_inventory.py verify-upstream --upstream resources/licenses/native/upstream.json
-      - name: Check the pinned standard-library package notices
-        run: python3 scripts/toolchain_notice_inventory.py verify-upstream --upstream resources/licenses/toolchain/upstream.json
+      - uses: ./.github/actions/xtask
+      - name: Verify checked-in Rust and native reference notices
+        run: |
+          cargo xtask notices rust verify
+          cargo xtask notices skia verify-upstream --upstream resources/licenses/native/upstream.json
+          cargo xtask notices toolchain verify-upstream --upstream resources/licenses/toolchain/upstream.json
       - name: Identify the pinned audit tool and compiler
         id: audit-tool-key
         run: |
           rustup toolchain install stable --profile minimal
-          python3 scripts/ci/audit_tool_cache.py identify --directory "$RUNNER_TEMP/lazypencil-audit-tool" --github-output "$GITHUB_OUTPUT"
-      - name: Restore the pinned audit tool binary
+          cargo xtask ci cache audit identify --directory "$RUNNER_TEMP/lazypencil-audit-tool"
+      - name: Restore the pinned audit tool
         id: audit-tool-cache
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
@@ -136,15 +120,9 @@ jobs:
             ${{ runner.temp }}/lazypencil-audit-tool/bin/cargo-deny
             ${{ runner.temp }}/lazypencil-audit-tool/manifest.json
       - name: Verify or install the pinned audit tool
-        id: audit-tool
         timeout-minutes: 10
-        run: |
-          if ! python3 scripts/ci/audit_tool_cache.py verify --directory "$RUNNER_TEMP/lazypencil-audit-tool"; then
-            cargo +stable install cargo-deny --version 0.20.2 --locked --force --root "$RUNNER_TEMP/lazypencil-audit-tool" --target-dir "$RUNNER_TEMP/lazypencil-audit-build"
-            python3 scripts/ci/audit_tool_cache.py seal --directory "$RUNNER_TEMP/lazypencil-audit-tool"
-          fi
-          printf '%s/lazypencil-audit-tool/bin\n' "$RUNNER_TEMP" >> "$GITHUB_PATH"
-      - name: Save the verified pinned audit tool binary
+        run: cargo xtask ci cache audit ensure --directory "$RUNNER_TEMP/lazypencil-audit-tool"
+      - name: Save the verified audit tool
         if: github.ref == 'refs/heads/main' && steps.audit-tool-cache.outputs.cache-hit != 'true'
         continue-on-error: true
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
@@ -153,14 +131,15 @@ jobs:
           path: |
             ${{ runner.temp }}/lazypencil-audit-tool/bin/cargo-deny
             ${{ runner.temp }}/lazypencil-audit-tool/manifest.json
-      - name: Check all feature and platform dependencies
+      - name: Check every feature and platform dependency
         run: |
           cargo deny --all-features --locked check licenses sources advisories
+          cargo deny --manifest-path xtask/Cargo.toml --all-features --locked check licenses sources advisories
           cargo deny --manifest-path src/shader/preprocessor/Cargo.toml --all-features --locked check licenses sources advisories
-      - name: Compare notices with locked registry sources
+      - name: Compare notices with exact locked registry sources
         run: |
           cargo fetch --locked
-          python3 scripts/license_notices.py verify --cargo-home "${CARGO_HOME:-$HOME/.cargo}"
+          cargo xtask notices rust verify --cargo-home "$HOME/.cargo"
 
   shader-preprocessor:
     name: Check isolated shader preprocessing first
@@ -200,23 +179,20 @@ jobs:
       contents: read
       actions: write
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - uses: ./.github/actions/xtask
       - name: Require all final verification jobs to succeed
         env:
           VERIFICATION_RESULTS: ${{ toJSON(needs) }}
-        run: python3 scripts/ci/release_gate.py
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: '3.12'
-      - name: Build and verify the source artifact
+        run: cargo xtask ci gate
+      - name: Build and verify the complete source artifact
         run: |
-          mkdir -p dist
-          python scripts/dist.py source --output dist/lazypencil-source.tar.gz > dist/source-report.json
-          python scripts/dist.py verify-source dist/lazypencil-source.tar.gz --extract "$RUNNER_TEMP/cache-source"
+          cargo xtask dist source --output dist/lazypencil-source.tar.gz
+          cargo xtask dist verify-source dist/lazypencil-source.tar.gz --extract "$RUNNER_TEMP/cache-source"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: lazypencil-source-${{ github.sha }}-attempt-${{ github.run_attempt }}
@@ -229,4 +205,4 @@ jobs:
         timeout-minutes: 3
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/ci/cache_retention.py --manifest "$RUNNER_TEMP/cache-source/SOURCE-MANIFEST.json" --delete
+        run: cargo xtask ci cache retain --manifest "$RUNNER_TEMP/cache-source/SOURCE-MANIFEST.json" --delete

@@ -16,8 +16,14 @@ use std::{
 };
 use tempfile::TempDir;
 
+#[cfg(unix)]
+#[path = "support/fixture.rs"]
+mod fixture_support;
 #[path = "support/page_wait_reference.rs"]
 mod page_wait_reference;
+#[cfg(unix)]
+#[path = "support/terminal/mod.rs"]
+mod terminal;
 
 fn executable() -> PathBuf {
     std::env::var_os("LAZYPENCIL_TEST_CHROMIUM")
@@ -171,23 +177,15 @@ fn retained_page_frame_capture_preserves_layout_dom_and_static_shader_acquisitio
         // Keep the real frontend reproduction inside this early retained-page
         // gate, without repeating the unrelated 60-second idle PTY test.
         let terminal = TempDir::new().unwrap();
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let result = std::process::Command::new(
-            std::env::var_os("LAZYPENCIL_TEST_PYTHON").unwrap_or_else(|| "python3".into()),
-        )
-        .arg(root.join("tests/support/tui_pty.py"))
-        .arg(env!("CARGO_BIN_EXE_lazypencil"))
-        .arg(terminal.path())
-        .arg(root.join("tests/support/acp_fixture.py"))
-        .arg("page-playback")
-        .env("LAZYPENCIL_CHROMIUM", executable())
-        .output()
-        .unwrap();
+        let result = terminal::run(
+            std::path::Path::new(env!("CARGO_BIN_EXE_lazypencil")),
+            terminal.path(),
+            "page-playback",
+            &[("LAZYPENCIL_CHROMIUM".into(), executable().into_os_string())],
+        );
         assert!(
-            result.status.success(),
-            "{}\n{}\n{}\n{}",
-            String::from_utf8_lossy(&result.stdout),
-            String::from_utf8_lossy(&result.stderr),
+            result.is_ok(),
+            "{result:?}\n{}\n{}",
             fs::read_to_string(terminal.path().join("terminal-errors.log")).unwrap_or_default(),
             fs::read_to_string(terminal.path().join("terminal-screen.txt")).unwrap_or_default()
         );

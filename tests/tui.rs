@@ -3,6 +3,11 @@
 use std::{path::Path, process::Command};
 use tempfile::TempDir;
 
+#[path = "support/fixture.rs"]
+mod fixture_support;
+#[path = "support/terminal/mod.rs"]
+mod terminal;
+
 #[test]
 fn real_pty_handles_japanese_input_live_turns_resize_and_image_protocols() {
     for case in [
@@ -51,19 +56,17 @@ fn real_pty_selects_saved_conversations_and_keeps_both_drafts_without_starting_a
 
 fn run_pty_case(case: &str) {
     let temp = TempDir::new().unwrap();
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let result = Command::new(
-        std::env::var_os("LAZYPENCIL_TEST_PYTHON").unwrap_or_else(|| "python3".into()),
-    )
-    .arg(root.join("tests/support/tui_pty.py"))
-    .arg(env!("CARGO_BIN_EXE_lazypencil"))
-    .arg(temp.path())
-    .arg(root.join("tests/support/acp_fixture.py"))
-    .arg(case)
-    .output()
-    .unwrap();
+    let result = std::panic::catch_unwind(|| {
+        terminal::run(
+            Path::new(env!("CARGO_BIN_EXE_lazypencil")),
+            temp.path(),
+            case,
+            &[],
+        )
+    });
+    let success = matches!(&result, Ok(Ok(())));
     if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_TUI_ARTIFACTS")
-        && (!result.status.success()
+        && (!success
             || matches!(
                 case,
                 "user-navigation-config"
@@ -106,13 +109,11 @@ fn run_pty_case(case: &str) {
             }
         }
     }
-    if !result.status.success() {
+    if !success {
         let artifacts = temp.keep();
         panic!(
-            "case={case}, artifacts={}: {}\n{}\n{}",
+            "case={case}, artifacts={}: {result:?}\n{}",
             artifacts.display(),
-            String::from_utf8_lossy(&result.stdout),
-            String::from_utf8_lossy(&result.stderr),
             std::fs::read_to_string(artifacts.join("terminal-errors.log")).unwrap_or_default()
         );
     }
@@ -122,26 +123,18 @@ fn run_pty_case(case: &str) {
 #[ignore = "Requires Chromium and real idle expiry in a native PTY"]
 fn real_pty_dynamic_previews_survive_idle_cleanup_and_refresh_without_losing_drafts() {
     let temp = TempDir::new().unwrap();
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let result = Command::new(
-        std::env::var_os("LAZYPENCIL_TEST_PYTHON").unwrap_or_else(|| "python3".into()),
-    )
-    .arg(root.join("tests/support/tui_pty.py"))
-    .arg(env!("CARGO_BIN_EXE_lazypencil"))
-    .arg(temp.path())
-    .arg(root.join("tests/support/acp_fixture.py"))
-    .arg("dynamic-idle")
-    .env(
-        "LAZYPENCIL_CHROMIUM",
-        std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
-    )
-    .output()
-    .unwrap();
+    let result = terminal::run(
+        Path::new(env!("CARGO_BIN_EXE_lazypencil")),
+        temp.path(),
+        "dynamic-idle",
+        &[(
+            "LAZYPENCIL_CHROMIUM".into(),
+            std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
+        )],
+    );
     assert!(
-        result.status.success(),
-        "{}\n{}\n{}\n{}",
-        String::from_utf8_lossy(&result.stdout),
-        String::from_utf8_lossy(&result.stderr),
+        result.is_ok(),
+        "{result:?}\n{}\n{}",
         std::fs::read_to_string(temp.path().join("terminal-errors.log")).unwrap_or_default(),
         std::fs::read_to_string(temp.path().join("terminal-screen.txt")).unwrap_or_default()
     );
@@ -205,33 +198,11 @@ fn cancellation_remains_live_after_an_input_worker_exits_with_inherited_stdout()
 
 fn assert_input_worker_cancellation(exited: bool) {
     use lazypencil::clipboard;
-    use std::{
-        os::unix::fs::PermissionsExt,
-        time::{Duration, Instant},
-    };
+    use std::time::{Duration, Instant};
     use tokio_util::sync::CancellationToken;
     let temp = TempDir::new().unwrap();
     let executable = temp.path().join("input-worker");
-    std::fs::write(
-        &executable,
-        r#"#!/bin/sh
-for input_path in "$@"; do :; done
-exec "${LAZYPENCIL_TEST_PYTHON:-python3}" -c '
-import json, os, sys, time
-child = os.fork()
-if child == 0:
- time.sleep(60)
-else:
- path = sys.argv[-1]
- with open(path + ".tmp", "w") as handle: json.dump([os.getpid(), child], handle)
- os.replace(path + ".tmp", path)
- if path.endswith("exited.json"): sys.exit(0)
- time.sleep(60)
-' "$@" 2>"$input_path.stderr"
-"#,
-    )
-    .unwrap();
-    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+    fixture_support::install(&executable, &["input-worker".into()]);
     let path = temp.path().join(if exited {
         "exited.json"
     } else {

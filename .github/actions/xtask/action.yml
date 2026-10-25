@@ -1,0 +1,56 @@
+name: Prepare Rust development tools
+description: Build and check the independent tool workspace before native compilation
+runs:
+  using: composite
+  steps:
+    - name: Install the declared compiler
+      shell: bash
+      run: |
+        rustup toolchain install 1.94.0 --profile minimal --component clippy --component rustfmt
+        rustup default 1.94.0
+    - name: Restore compiled tool dependencies
+      id: dependencies
+      continue-on-error: true
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: xtask/target
+        key: xtask-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.ImageVersion }}-rust1.94.0-${{ hashFiles('xtask/Cargo.lock', 'xtask/Cargo.toml', '.github/actions/xtask/action.yml') }}
+    - name: Restore tools bound to these sources
+      id: tools
+      continue-on-error: true
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: xtask/target
+        key: xtask-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.ImageVersion }}-rust1.94.0-${{ hashFiles('xtask/**', '!xtask/target/**', '.github/actions/xtask/action.yml') }}
+    - name: Build the lightweight tools and native fixtures
+      if: steps.tools.outputs.cache-hit != 'true'
+      shell: bash
+      run: cargo build --locked --manifest-path xtask/Cargo.toml --target-dir xtask/target --bins
+    - name: Prepare isolated test paths and source freshness
+      shell: bash
+      run: xtask/target/debug/xtask ci tools prepare
+    - name: Verify Rust tools before application builds
+      shell: bash
+      run: cargo xtask ci tools verify
+    - name: Save verified source-bound tools
+      if: steps.tools.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+      continue-on-error: true
+      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: xtask/target
+        key: ${{ steps.tools.outputs.cache-primary-key }}
+    - name: Keep only dependencies in fallback caches
+      if: steps.dependencies.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+      shell: bash
+      run: cargo xtask ci tools prune
+    - name: Save reusable tool dependencies
+      if: steps.dependencies.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+      continue-on-error: true
+      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: xtask/target
+        key: ${{ steps.dependencies.outputs.cache-primary-key }}
+    - name: Restore the tools after dependency-only staging
+      if: steps.dependencies.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+      shell: bash
+      run: cargo build --locked --manifest-path xtask/Cargo.toml --target-dir xtask/target --bins

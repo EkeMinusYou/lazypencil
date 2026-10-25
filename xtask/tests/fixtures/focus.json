@@ -1,0 +1,2363 @@
+[
+  {
+    "paths": [
+      "src/cdp.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/runtime.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/layout.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "graphics",
+        "layout",
+        "native_layout",
+        "render"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/error.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "document_store",
+        "mcp"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/process_owner.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/config.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "config"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/shader.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "shader",
+      "targets": [
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/color.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "graphics",
+        "render",
+        "text",
+        "font_sources",
+        "optional_icons"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/image_input.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "document_store",
+        "mcp"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/render.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "native_layout",
+        "render",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/cancel.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "document_store",
+        "mcp"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/lib.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "document_store",
+        "mcp"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/paths.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "paths"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/query.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "queries"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/store.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "document_store"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/service.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "document_store",
+        "mcp",
+        "native_layout"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/guidance.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "guidance"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/image_geometry.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "graphics",
+        "render",
+        "text",
+        "font_sources",
+        "optional_icons"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/project.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "project",
+        "queries"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/prompt.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "document_store",
+        "mcp"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/main.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "document_store",
+        "mcp"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/clipboard.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "graphics",
+        "render",
+        "text",
+        "font_sources",
+        "optional_icons"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/agent.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/document.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "document_store"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/text.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "native_layout",
+        "text"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/geometry.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "geometry"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/assets.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "assets"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/managed.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "document_store",
+        "mcp"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/dynamic.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/operations.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "operations_cli"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/attachments.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent",
+        "attachments",
+        "mcp"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/mcp.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "mcp"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/cli.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "document_store",
+        "mcp"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/cdp/tabs.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/cdp/readiness.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/cdp/lifecycle.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/cdp/process.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/cdp/connection.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/dynamic/preprocessor.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/dynamic/shader.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/config/keys.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "tui",
+        "user_config"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/config/agents.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "config"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/config/runtime.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/config/conversations.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "config"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/guidance/usage.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent",
+        "attachments",
+        "mcp"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/guidance/project.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "guidance",
+        "project"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/tui/checkpoints.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "tui",
+        "user_config"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/tui/terminal.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/tui/preview.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/tui/graphics.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "graphics",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/tui/playback.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/tui/mod.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "tui",
+        "user_config"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/tui/saved.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "tui",
+        "user_config"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/tui/tests.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/runtime/diagnostics.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/render/mesh.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "mesh",
+        "native_layout",
+        "render",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/render/polygon.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "native_layout",
+        "render",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/render/backdrop.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "native_layout",
+        "render",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/render/blending.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "native_layout",
+        "render",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/agent/auth.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/agent/process.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/agent/permissions.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/agent/settings.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/document/codec.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "document_store"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/operations/import.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "operations_cli"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/script/layout.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "layout",
+        "native_layout",
+        "script_diagnostics",
+        "script_render",
+        "script_scope",
+        "scripts"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/script/header.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "script_diagnostics",
+        "script_render",
+        "script_scope",
+        "scripts"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/script/worker.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "script_diagnostics",
+        "script_render",
+        "script_scope",
+        "scripts"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/script/mod.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "script_diagnostics",
+        "script_render",
+        "script_scope",
+        "scripts"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/script/diagnostic.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "script_diagnostics",
+        "script_render",
+        "script_scope",
+        "scripts"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/project/detach.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "copy",
+      "targets": [
+        "detach",
+        "project",
+        "queries",
+        "script_scope",
+        "scripts"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/project/variables.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "project",
+        "queries"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/project/import.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "project",
+        "queries"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/project/missing.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "project",
+        "queries"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/project/scope.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "copy",
+      "targets": [
+        "project",
+        "queries",
+        "script_scope",
+        "scripts"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/project/failed_code.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "project",
+        "queries"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/project/bindings.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "copy",
+      "targets": [
+        "project",
+        "queries",
+        "script_scope",
+        "scripts"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/icons/drawing.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "icons"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/icons/optional.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "icons"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/icons/mod.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "icons"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/shader/declarations.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "shader",
+      "targets": [
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/shader/defaults.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "shader",
+      "targets": [
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/text/fonts.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "native_layout",
+        "text"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/text/container.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "native_layout",
+        "text"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/text/decorations.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "native_layout",
+        "text"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/service/guidance.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "guidance"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/service/validation.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "document_store",
+        "mcp"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/service/calculated_nodes.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "calculated_nodes"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/store/content.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "document_store"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/conversation/mod.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent",
+        "conversation_history"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/conversation/history.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent",
+        "conversation_history"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/conversation/lease.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent",
+        "attachments",
+        "conversation_history",
+        "mcp"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/conversation/continuity.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent",
+        "conversation_history"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/conversation/storage.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent",
+        "attachments",
+        "conversation_history",
+        "mcp"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/conversation/management.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent",
+        "conversation_history"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/conversation/management/cleanup.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent",
+        "conversation_history"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/conversation/management/retention.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent",
+        "conversation_history"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/conversation/management/deletion.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent",
+        "conversation_history"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/conversation/history/display.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent",
+        "conversation_history"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/conversation/management/retention/tests.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent",
+        "conversation_history"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/project/import/samplers.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "project",
+        "queries"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/project/import/scripts.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "copy",
+      "targets": [
+        "project",
+        "queries",
+        "script_scope",
+        "scripts"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/project/import/scripts/composition.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "copy",
+      "targets": [
+        "project",
+        "queries",
+        "script_scope",
+        "scripts"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/agent/process/unix.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/agent/process/windows.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/config/keys/navigation.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "tui",
+        "user_config"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/cdp/connection/tests.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/cdp/process/unix.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/cdp/process/windows.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/native_layout.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "native_layout"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/operations_cli.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "operations_cli"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/detach.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "detach"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/background.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "background"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/imports.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/runtime.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/shader_uniforms.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "shader",
+      "targets": [
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/mesh.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "mesh"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/script_diagnostics.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "script_diagnostics"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/icons.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "icons"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/layout.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "layout"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/user_agent_config.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "user_agent_config"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/script_render.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "script_render"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/config.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "config"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/optional_icons.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "optional_icons"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/font_sources.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "font_sources"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/render.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "render"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/paths.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "paths"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/script_scope.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "script_scope"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/graphics.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "graphics"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/repair.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "repair"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/runtime_config.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/browser_readiness.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/guidance.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "guidance"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/sampler_sources.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/project_guidance.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "project_guidance"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/project.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "project"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/components.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "components"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/conversation_history.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "conversation_history"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/scripts.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "scripts"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/blends.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "blends"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/agent.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/dynamic_render.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/text.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "text"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/geometry.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "geometry"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/assets.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "assets"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/queries.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "queries"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/tui.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/document_store.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "document_store"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/calculated_nodes.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "calculated_nodes"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/attachments.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "attachments"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/mcp.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "mcp"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/user_config.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "core",
+      "targets": [
+        "user_config"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/windows_agent.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "conversation",
+      "targets": [
+        "agent"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "tests/agent_workflow.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "graphics",
+        "render",
+        "text",
+        "font_sources",
+        "optional_icons"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "README.md"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "ci",
+      "targets": [],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "docs/design.md"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "ci",
+      "targets": [],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      ".github/workflows/ci.yml"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "ci",
+      "targets": [],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/project/import/scripts.rs",
+      "src/shader.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "project",
+        "queries",
+        "sampler_sources",
+        "script_scope",
+        "scripts",
+        "shader_uniforms"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/config/keys/navigation.rs",
+      "src/shader.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "dynamic",
+      "targets": [
+        "browser_readiness",
+        "dynamic_render",
+        "imports",
+        "sampler_sources",
+        "shader_uniforms",
+        "tui",
+        "user_config"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/layout.rs",
+      "tests/graphics.rs",
+      ".github/workflows/native.yml"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "graphics",
+        "layout",
+        "native_layout",
+        "render"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/conversation/management/deletion.rs",
+      "src/conversation/storage.rs",
+      "src/tui/saved.rs",
+      "src/tui/checkpoints.rs",
+      "tests/conversation_history.rs",
+      "tests/tui.rs"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "graphics",
+      "targets": [
+        "agent",
+        "attachments",
+        "conversation_history",
+        "mcp",
+        "tui",
+        "user_config"
+      ],
+      "preprocessor": false
+    }
+  },
+  {
+    "paths": [
+      "src/project/bindings.rs",
+      ".github/workflows/ci.yml"
+    ],
+    "expected": {
+      "platform": "ubuntu-24.04",
+      "suite": "copy",
+      "targets": [
+        "project",
+        "queries",
+        "script_scope",
+        "scripts"
+      ],
+      "preprocessor": false
+    }
+  }
+]

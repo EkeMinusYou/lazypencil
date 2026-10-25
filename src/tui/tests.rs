@@ -5,6 +5,9 @@ use clap::Parser;
 use serde_json::json;
 use tempfile::TempDir;
 
+#[path = "../../tests/support/fixture.rs"]
+mod fixture_support;
+
 fn app(temp: &TempDir, mode: &str) -> App {
     let args = crate::cli::Arguments::try_parse_from([
         "lazypencil".into(),
@@ -12,12 +15,8 @@ fn app(temp: &TempDir, mode: &str) -> App {
         temp.path().join("design.pen").into_os_string(),
         "--create".into(),
         "--adapter".into(),
-        std::env::var_os("LAZYPENCIL_TEST_PYTHON").unwrap_or_else(|| "python3".into()),
-        format!(
-            "--adapter-arg={}/tests/support/acp_fixture.py",
-            env!("CARGO_MANIFEST_DIR")
-        )
-        .into(),
+        fixture_support::helper().into_os_string(),
+        "--adapter-arg=acp".into(),
         format!("--adapter-arg={mode}").into(),
     ])
     .unwrap();

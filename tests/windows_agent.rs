@@ -19,18 +19,19 @@ use windows_sys::Win32::{
     },
 };
 
-fn python() -> PathBuf {
-    std::env::var_os("LAZYPENCIL_TEST_PYTHON")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| "python".into())
+#[path = "support/fixture.rs"]
+mod fixture_support;
+
+fn helper() -> PathBuf {
+    fixture_support::helper()
 }
 
 fn fixture() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/acp_fixture.py")
+    "acp".into()
 }
 
 fn options(directory: &Path, mode: &str) -> AgentOptions {
-    let mut options = AgentOptions::new(python(), directory);
+    let mut options = AgentOptions::new(helper(), directory);
     options.supervisor_executable = Some(env!("CARGO_BIN_EXE_lazypencil").into());
     options.args = vec![fixture().to_str().unwrap().into(), mode.into()];
     options.setup_timeout = Duration::from_secs(15);
@@ -223,7 +224,7 @@ fn windows_force_killing_the_cli_reaps_the_live_adapter_tree() {
                 "60",
                 "--adapter",
             ])
-            .arg(python())
+            .arg(helper())
             .arg(format!("--adapter-arg={}", fixture().display()))
             .arg("--adapter-arg=process-tree-hang")
             .arg("Wait until the test terminates this host")
@@ -248,11 +249,8 @@ fn windows_worker_without_a_live_owner_never_launches_the_adapter() {
         .arg("__agent_process_worker")
         .arg(format!("Local\\lazypencil-agent-{}", uuid::Uuid::new_v4()))
         .arg("--")
-        .arg(python())
-        .args([
-            "-c",
-            "from pathlib import Path; Path('must-not-exist').write_text('unexpected')",
-        ])
+        .arg(helper())
+        .args(["mark", "must-not-exist"])
         .output()
         .unwrap();
     assert!(!output.status.success());
@@ -280,19 +278,11 @@ fn windows_missing_adapter_keeps_the_public_unavailable_error() {
 }
 
 fn browser_fixture(directory: &Path) -> lazypencil::runtime::InstalledBrowser {
-    let executable = directory.join("browser with spaces 日本語.cmd");
-    let script =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/browser_process_tree.py");
-    std::fs::write(
+    let executable = directory.join("browser with spaces 日本語.exe");
+    fixture_support::install(
         &executable,
-        format!(
-            "@echo off\r\n\"{}\" \"{}\" \"{}\"\r\n",
-            python().display(),
-            script.display(),
-            directory.display()
-        ),
-    )
-    .unwrap();
+        &["browser-tree".into(), directory.to_str().unwrap().into()],
+    );
     lazypencil::runtime::InstalledBrowser {
         executable,
         version: "fixture".into(),
@@ -407,11 +397,8 @@ fn windows_browser_worker_without_an_owner_never_launches_the_browser() {
         ))
         .arg(directory.path().join("status.json"))
         .arg("--")
-        .arg(python())
-        .args([
-            "-c",
-            "from pathlib import Path; Path('must-not-exist').write_text('unexpected')",
-        ])
+        .arg(helper())
+        .args(["mark", "must-not-exist"])
         .output()
         .unwrap();
     assert!(!output.status.success());

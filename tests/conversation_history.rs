@@ -8,6 +8,9 @@ use lazypencil::{
 use serde_json::{Value, json};
 use std::{path::Path, process::Command};
 
+#[path = "support/fixture.rs"]
+mod fixture_support;
+
 fn cli(data: &Path, args: &[&str]) -> Value {
     let output = Command::new(env!("CARGO_BIN_EXE_lazypencil"))
         .arg("--json")
@@ -323,16 +326,11 @@ fn saved_conversation_cli_browses_complete_logs_without_starting_or_reconfigurin
     let data = temp.path().join("data");
     let path = temp.path().join("design.pen");
     let store = Store::init(&path, Some(data.clone())).unwrap();
-    let adapter = temp.path().join("adapter.py");
+    let adapter = temp
+        .path()
+        .join(format!("adapter{}", std::env::consts::EXE_SUFFIX));
     let marker = temp.path().join("agent-started");
-    std::fs::write(
-        &adapter,
-        format!(
-            "from pathlib import Path\nPath({:?}).write_text('started')\n",
-            marker.to_str().unwrap()
-        ),
-    )
-    .unwrap();
+    fixture_support::install(&adapter, &["mark".into(), marker.to_str().unwrap().into()]);
     let args = Arguments::try_parse_from([
         "lazypencil".into(),
         "prompt".into(),

@@ -1,5 +1,5 @@
 {
-  "cargo_lock_sha256": "c4835b6ecfa12eb61656573c456cdcc9752a8bd59f5357b38ca2b926596e73ab",
+  "cargo_lock_sha256": "decab47092349ad1163bfdf6e367232e5a83ec7290f3ea404c8738f5203f211b",
   "format_version": 1,
   "license_references": [
     {
@@ -556,6 +556,54 @@
         "path_in_vcs": ""
       },
       "version": "3.7.0"
+    },
+    {
+      "archive_sha256": "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56",
+      "attribution_comments": [
+        {
+          "lines": [
+            {
+              "line": 1,
+              "text": "// Copyright 2012-2016 The Rust Project Developers. See the COPYRIGHT"
+            },
+            {
+              "line": 3,
+              "text": "// http://rust-lang.org/COPYRIGHT."
+            }
+          ],
+          "path": "src/char.rs"
+        }
+      ],
+      "authors": [
+        "bluss"
+      ],
+      "files": [
+        {
+          "blob": "texts/a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2.txt",
+          "kind": "archive",
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+        },
+        {
+          "blob": "texts/4da95ec4ecb65b738d470b7d762894ad9c97da93e6cbfb18b570fc2c96f4b871.txt",
+          "kind": "archive",
+          "path": "LICENSE-MIT",
+          "sha256": "4da95ec4ecb65b738d470b7d762894ad9c97da93e6cbfb18b570fc2c96f4b871"
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license_file": null,
+      "manifest_sha256": "20e9a4f27b17531ac0c3ab9f403e52c9d567eea254703df3b3b18ca36d5f7927",
+      "name": "arrayvec",
+      "repository": "https://github.com/bluss/arrayvec",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "0cb664cf505844348538230479b0040b44f3faf1"
+        },
+        "path_in_vcs": ""
+      },
+      "version": "0.7.8"
     },
     {
       "archive_sha256": "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53",
@@ -6633,7 +6681,7 @@
         }
       ],
       "license": "MIT",
-      "manifest_sha256": "db59252dd0f79708b059908ae7fde2200963ba8d59923d82f97c35ac8ef97f9a",
+      "manifest_sha256": "48db9eae88bb6d005ea2b736ac729bfd15d134d62666d72629bb88adbbeaa357",
       "name": "lazypencil",
       "source": "workspace",
       "version": "0.1.0-dev",
@@ -31511,6 +31559,79 @@
         "path_in_vcs": "crates/vsimd"
       },
       "version": "0.8.0"
+    },
+    {
+      "archive_sha256": "eb05cdd19ae8707bf6a0a269972c07e6358103a7079faec749dec318a5b3dc23",
+      "attribution_comments": [],
+      "authors": [
+        "Jesse Luehrs <doy@tozt.net>"
+      ],
+      "files": [
+        {
+          "blob": "texts/53a04b0a11073f3d0183c31a4b7bdf9a3f68d453adeec136e59e5a9d9a554370.txt",
+          "kind": "archive",
+          "path": "LICENSE",
+          "sha256": "53a04b0a11073f3d0183c31a4b7bdf9a3f68d453adeec136e59e5a9d9a554370"
+        }
+      ],
+      "license": "MIT",
+      "license_file": null,
+      "manifest_sha256": "a10ba76065151b1458f1a0d6ec2801045bd07941e43ff42b3ee871892fd32f51",
+      "name": "vt100",
+      "repository": "https://github.com/doy/vt100-rust",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "fb0f54ec7222f4805f33cd3ca530229e0a0fe6ad"
+        },
+        "path_in_vcs": ""
+      },
+      "version": "0.18.1"
+    },
+    {
+      "archive_sha256": "a5924018406ce0063cd67f8e008104968b74b563ee1b85dde3ed1f7cb87d3dbd",
+      "attribution_comments": [
+        {
+          "lines": [
+            {
+              "line": 1,
+              "text": "// SPDX-License-Identifier: Apache-2.0"
+            }
+          ],
+          "path": "src/ansi.rs"
+        }
+      ],
+      "authors": [
+        "Joe Wilm <joe@jwilm.com>",
+        "Christian Duerr <contact@christianduerr.com>"
+      ],
+      "files": [
+        {
+          "blob": "texts/62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a.txt",
+          "kind": "archive",
+          "path": "LICENSE-APACHE",
+          "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+        },
+        {
+          "blob": "texts/e4c9b06fa850cb9b540a5e400e9f6394cf15efcf4098144de477d1d3dae10150.txt",
+          "kind": "archive",
+          "path": "LICENSE-MIT",
+          "sha256": "e4c9b06fa850cb9b540a5e400e9f6394cf15efcf4098144de477d1d3dae10150"
+        }
+      ],
+      "license": "Apache-2.0 OR MIT",
+      "license_file": null,
+      "manifest_sha256": "06bfdd57dec95f9172d84e867e9fcdd02c46eb5008b5d7e75848d76cbfaa96ef",
+      "name": "vte",
+      "repository": "https://github.com/alacritty/vte",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "3b3da71c34cc1256c7e20981cf03f8eb95e08ffc"
+        },
+        "path_in_vcs": ""
+      },
+      "version": "0.15.0"
     },
     {
       "archive_sha256": "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b",

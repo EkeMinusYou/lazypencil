@@ -1,5 +1,4 @@
 name: Agent process integration
-
 on:
   workflow_dispatch:
     inputs:
@@ -7,55 +6,27 @@ on:
         description: Hosted platform for real agent process lifecycle tests
         type: choice
         default: ubuntu-24.04
-        options:
-          - ubuntu-24.04
-          - ubuntu-24.04-arm
-          - macos-15
-
+        options: [ubuntu-24.04, ubuntu-24.04-arm, macos-15]
 permissions:
   contents: read
-
 concurrency:
   group: process-${{ github.ref }}-${{ inputs.os }}
   cancel-in-progress: true
-
 env:
   CARGO_BUILD_JOBS: '1'
   CARGO_INCREMENTAL: '0'
   CARGO_TERM_COLOR: always
   CARGO_PROFILE_DEV_DEBUG: '0'
   CARGO_PROFILE_TEST_DEBUG: '0'
-  PYTHONUTF8: '1'
-  LAZYPENCIL_TEST_PYTHON: python
-
 jobs:
   process:
     runs-on: ${{ inputs.os }}
     timeout-minutes: 30
-    defaults:
-      run:
-        shell: bash
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: '3.12'
-      - name: Select hosted compilation and isolated user settings
-        run: |
-          python - <<'PY'
-          import os
-          from pathlib import Path
-          root = Path(os.environ["RUNNER_TEMP"])
-          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as stream:
-              stream.write(f"CARGO_TARGET_DIR={root / 'lazypencil-process-target'}\n")
-              stream.write(f"LAZYPENCIL_CONFIG_DIR={root / 'lazypencil-process-settings'}\n")
-          PY
-      - name: Install the declared minimum Rust toolchain
-        run: |
-          rustup toolchain install 1.94.0 --profile minimal --component rustfmt --component clippy
-          rustup default 1.94.0
+      - uses: ./.github/actions/xtask
       - name: Restore verified Cargo archives
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
@@ -64,63 +35,13 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/registry/index
           key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
-      - name: Verify and extract the complete source distribution
-        run: |
-          python scripts/dist.py source --output source.tar.gz
-          python scripts/dist.py verify-source source.tar.gz --extract "$RUNNER_TEMP/lazypencil-process-source"
-      - name: Verify formatting and dependency notices
-        working-directory: ${{ runner.temp }}/lazypencil-process-source
-        run: |
-          cargo fmt --all -- --check
-          python scripts/license_notices.py verify
-      - name: Build focused helper reproduction binaries without Skia
-        timeout-minutes: 15
-        working-directory: ${{ runner.temp }}/lazypencil-process-source
-        run: |
-          set -o pipefail
-          cargo test --locked --no-default-features --test agent --no-run 2>&1 | tee "$RUNNER_TEMP/process-build.log"
-      - name: Reproduce embedded helper startup and MCP edits first
-        timeout-minutes: 2
-        working-directory: ${{ runner.temp }}/lazypencil-process-source
-        run: |
-          set -o pipefail
-          cargo test --locked --no-default-features --test agent embedded_conversation_uses_the_real_helper_for_supervision_and_bound_mcp_edits -- --exact --nocapture 2>&1 | tee "$RUNNER_TEMP/process-reproduction.log"
-      - name: Run actual core CLI MCP and agent processes
-        timeout-minutes: 10
-        working-directory: ${{ runner.temp }}/lazypencil-process-source
-        run: |
-          set -o pipefail
-          cargo test --locked --no-default-features --no-fail-fast -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/process-tests.log"
-      - name: Check all core targets without building Skia
-        timeout-minutes: 10
-        working-directory: ${{ runner.temp }}/lazypencil-process-source
-        run: |
-          set -o pipefail
-          cargo clippy --locked --no-default-features --all-targets -- -D warnings 2>&1 | tee "$RUNNER_TEMP/process-clippy.log"
-      - name: Verify lifecycle cases and bind results to this source
-        working-directory: ${{ runner.temp }}/lazypencil-process-source
-        run: |
-          python - <<'PY'
-          import json, os, re, subprocess
-          from pathlib import Path
-          root = Path(os.environ["RUNNER_TEMP"])
-          log = (root / "process-tests.log").read_text(encoding="utf-8")
-          results = re.findall(r"test result: (\w+)\. (\d+) passed; (\d+) failed; (\d+) ignored", log)
-          assert results and all(status == "ok" and failed == "0" for status, passed, failed, ignored in results)
-          if os.environ["RUNNER_OS"] == "Windows":
-              cases = ["windows_host_close_reaps_its_whole_tree_and_preserves_another_session", "windows_uncooperative_cancellation_reaps_adapter_and_detached_descendants", "windows_force_killing_the_cli_reaps_the_live_adapter_tree", "windows_worker_without_a_live_owner_never_launches_the_adapter", "windows_missing_adapter_keeps_the_public_unavailable_error", "windows_dropping_host_and_runtime_reaps_the_owned_process_tree"]
-          else:
-              cases = ["closing_the_host_reaps_its_adapter_process_group"] + ["agent_ownership::" + name for name in ["close_reaps_the_owned_tree_without_stopping_another_session", "dropping_host_and_runtime_reaps_the_adapter_tree", "uncooperative_cancellation_reaps_the_adapter_tree", "killed_cli_owners_reap_their_tree_and_preserve_another_owner", "killed_cli_reaps_the_adapter_tree_with_an_undrained_event_pipe", "worker_without_a_live_owner_never_starts_the_adapter", "missing_adapter_preserves_the_public_unavailable_error"]]
-              if os.environ["RUNNER_OS"] == "Linux":
-                  cases.append("agent_ownership::linux_subreaper_cleans_detached_adapter_children_and_grandchildren")
-          for case in cases:
-              assert f"test {case} ... ok" in log, case
-          report = {"source_commit": os.environ["GITHUB_SHA"], "platform": os.environ["RUNNER_OS"], "rustc": subprocess.check_output(["rustc", "-vV"], text=True), "configuration": "no-default-features", "passed": sum(int(passed) for status, passed, failed, ignored in results), "required_cases": cases, "scope": "Actual deterministic CLI/MCP/agent processes; Windows job descendants and forced-parent-death cases where applicable. No Skia, model requests or subscription credentials."}
-          (root / "process-report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-          print(json.dumps(report, indent=2))
-          PY
+          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
+      - name: Verify and extract complete source
+        run: cargo xtask ci native source
+      - name: Verify distributed dependency notices
+        run: cargo xtask ci native notices
+      - name: Reproduce helper startup then verify all core process lifecycles
+        run: cargo xtask ci native process
       - name: Retain source-bound process evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -129,5 +50,6 @@ jobs:
           path: |
             ${{ runner.temp }}/process-*.log
             ${{ runner.temp }}/process-report.json
+            ${{ runner.temp }}/ci-timings.jsonl
           if-no-files-found: ignore
           retention-days: 3

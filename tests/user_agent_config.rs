@@ -4,10 +4,13 @@ use serde_json::Value;
 use serde_json::json;
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::{Command, Output},
 };
 use tempfile::TempDir;
+
+#[path = "support/fixture.rs"]
+mod fixture_support;
 
 struct Fixture {
     temp: TempDir,
@@ -33,12 +36,11 @@ impl Fixture {
         fs::write(self.user.join("config.toml"), body).unwrap();
     }
     fn peer(&self, agent: &str, mode: &str, extra: &str) -> String {
-        let python = std::env::var("LAZYPENCIL_TEST_PYTHON").unwrap_or_else(|_| "python3".into());
-        let peer = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/acp_fixture.py");
+        let helper = fixture_support::helper();
         format!(
             "[agents.{agent}]\nadapter={}\nadapter_args=[{},{}]\n{extra}\n",
-            quoted(&python),
-            quoted(peer.to_str().unwrap()),
+            quoted(helper.to_str().unwrap()),
+            quoted("acp"),
             quoted(mode)
         )
     }
@@ -208,12 +210,11 @@ fn reload_keeps_the_saved_agent_identity_and_rejects_changed_profile_arguments()
 fn explicit_adapter_replaces_the_configured_executable_and_its_entire_argument_list() {
     let f = Fixture::new();
     f.settings("[agents.codex]\nadapter='missing/never-launch-this'\nadapter_args=['DO_NOT_INHERIT']\nrequire_auth_status=true\n");
-    let python = std::env::var("LAZYPENCIL_TEST_PYTHON").unwrap_or_else(|_| "python3".into());
-    let peer = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/acp_fixture.py");
+    let helper = fixture_support::helper();
     let events = f.events(&[
         "--adapter",
-        &python,
-        &format!("--adapter-arg={}", peer.display()),
+        helper.to_str().unwrap(),
+        "--adapter-arg=acp",
         "--adapter-arg=auth-account",
     ]);
     assert_eq!(
@@ -339,20 +340,16 @@ fn relative_adapter_uses_the_physical_user_file_directory_across_nested_working_
     let f = Fixture::new();
     let physical = f.temp.path().join("physical settings");
     fs::create_dir_all(physical.join("bin")).unwrap();
-    let python = std::env::var("LAZYPENCIL_TEST_PYTHON").unwrap_or_else(|_| "python3".into());
-    let output = Command::new(python)
-        .args(["-c", "import sys; print(sys.executable)"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let executable = String::from_utf8(output.stdout).unwrap();
-    symlink(executable.trim(), physical.join("bin/peer")).unwrap();
-    let peer = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/acp_fixture.py");
+    symlink(
+        fixture_support::helper().canonicalize().unwrap(),
+        physical.join("bin/peer"),
+    )
+    .unwrap();
     fs::write(
         physical.join("config.toml"),
         format!(
             "[agents.codex]\nadapter='./bin/peer'\nadapter_args=[{},'normal']\n",
-            quoted(peer.to_str().unwrap())
+            quoted("acp")
         ),
     )
     .unwrap();

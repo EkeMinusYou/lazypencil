@@ -1,138 +1,76 @@
 name: Isolated shader preprocessing
-
 on:
   workflow_call:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 env:
   CARGO_BUILD_JOBS: '1'
   CARGO_INCREMENTAL: '0'
   CARGO_TERM_COLOR: always
-  PYTHONUTF8: '1'
-
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
 jobs:
   wasm:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    defaults:
-      run:
-        shell: bash
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: '3.12'
-      - name: Select hosted component build paths
-        run: |
-          python - <<'PY'
-          import os
-          from pathlib import Path
-          root=Path(os.environ["RUNNER_TEMP"])
-          cargo=Path.home()/".cargo"
-          flags=f"--remap-path-prefix={root}/lazypencil-wasm-source=/source --remap-path-prefix={cargo}=/cargo -C link-arg=--import-memory -C link-arg=--initial-memory=16777216 -C link-arg=--max-memory=67108864 -C link-arg=-z -C link-arg=stack-size=1048576"
-          with open(os.environ["GITHUB_ENV"],"a",encoding="utf-8") as stream:
-              stream.write(f"CARGO_TARGET_DIR={root}/lazypencil-wasm-target\nCARGO_HOME={cargo}\nRUSTFLAGS={flags}\n")
-          PY
-      - name: Install the pinned compiler and standalone Wasm target
-        run: |
-          rustup toolchain install 1.94.0 --profile minimal --component rustfmt --component clippy --component rust-docs --target wasm32-unknown-unknown
-          rustup default 1.94.0
-      - name: Restore verified component downloads
+      - uses: ./.github/actions/xtask
+      - name: Install the standalone Wasm target and original copyright documentation
+        run: rustup toolchain install 1.94.0 --profile minimal --component rust-docs --target wasm32-unknown-unknown
+      - name: Cache verified component downloads
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |
             ~/.cargo/registry/cache
             ~/.cargo/registry/index
           key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-shader-${{ hashFiles('src/shader/preprocessor/Cargo.lock') }}
-          restore-keys: |
-            cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
+          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
       - name: Restore standalone compiler dependencies
         id: wasm-cache
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: ${{ runner.temp }}/lazypencil-wasm-target
-          key: shader-wasm-v1-linux-x64-rust1.94.0-${{ hashFiles('src/shader/preprocessor/Cargo.lock', 'src/shader/preprocessor/Cargo.toml', 'src/shader/preprocessor/vendor/**', '.github/workflows/shader-preprocessor.yml') }}
+          key: shader-wasm-v1-linux-x64-rust1.94.0-${{ hashFiles('src/shader/preprocessor/Cargo.lock', 'src/shader/preprocessor/Cargo.toml', 'src/shader/preprocessor/vendor/**', 'xtask/src/ci/component.rs') }}
           restore-keys: shader-wasm-v1-linux-x64-rust1.94.0-
-      - name: Verify source and extract an isolated build
-        run: |
-          python scripts/dist.py source --output "$RUNNER_TEMP/shader-source.tar.gz"
-          python scripts/dist.py verify-source "$RUNNER_TEMP/shader-source.tar.gz" --extract "$RUNNER_TEMP/lazypencil-wasm-source"
-      - name: Check standalone formatting and fetch the exact locked inputs
-        working-directory: ${{ runner.temp }}/lazypencil-wasm-source
-        run: |
-          cargo fmt --manifest-path src/shader/preprocessor/Cargo.toml --all -- --check
-          cargo fetch --locked --manifest-path src/shader/preprocessor/Cargo.toml
-      - name: Rebuild the component and check its Wasm target
+      - name: Verify the isolated source and locked inputs
+        run: cargo xtask ci component source
+      - name: Rebuild and check the component
         id: compile
         timeout-minutes: 8
-        working-directory: ${{ runner.temp }}/lazypencil-wasm-source
         env:
           EXACT_COMPONENT_CACHE: ${{ steps.wasm-cache.outputs.cache-hit }}
-        run: |
-          set -o pipefail
-          cargo clean --release --manifest-path src/shader/preprocessor/Cargo.toml --target wasm32-unknown-unknown -p lazypencil-shader-preprocessor
-          if [ "$EXACT_COMPONENT_CACHE" != true ]; then
-            cargo clean --release --manifest-path src/shader/preprocessor/Cargo.toml --target wasm32-unknown-unknown -p glsl-lang-pp
-          fi
-          cargo clippy --locked --release --target wasm32-unknown-unknown --manifest-path src/shader/preprocessor/Cargo.toml -- -D warnings
-          cargo build --locked --release --target wasm32-unknown-unknown --manifest-path src/shader/preprocessor/Cargo.toml --message-format=json > "$RUNNER_TEMP/shader-build.jsonl"
-      - name: Reproduce macro semantics and memory exhaustion before native builds
+        run: cargo xtask ci component build
+      - name: Reproduce macro semantics and memory exhaustion in a JavaScript engine
         timeout-minutes: 2
-        working-directory: ${{ runner.temp }}/lazypencil-wasm-source
-        run: node tests/support/shader_preprocessor.mjs "$CARGO_TARGET_DIR/wasm32-unknown-unknown/release/lazypencil_shader_preprocessor.wasm" "$RUNNER_TEMP/shader-preprocessor-tests.json"
-      - name: Collect original package notices from exact source archives
-        working-directory: ${{ runner.temp }}/lazypencil-wasm-source
-        run: python scripts/ci/shader_preprocessor_notices.py --output "$RUNNER_TEMP/shader-notices"
-      - name: Collect standard-library evidence for the actual Wasm target
+        run: cargo xtask ci component test
+      - name: Collect original package notices
+        run: cargo xtask ci component notices
+      - name: Collect evidence for the actual Wasm standard-library target
         timeout-minutes: 8
-        working-directory: ${{ runner.temp }}/lazypencil-wasm-source
-        run: python scripts/ci/toolchain_evidence.py --target wasm32-unknown-unknown --output "$RUNNER_TEMP/shader-toolchain"
-      - name: Bind the compiled module and tests to these source inputs
-        working-directory: ${{ runner.temp }}/lazypencil-wasm-source
-        run: |
-          python - <<'PY'
-          import hashlib,json,os,shutil,subprocess
-          from pathlib import Path
-          root=Path(os.environ["RUNNER_TEMP"])
-          output=root/"shader-preprocessor-evidence"
-          output.mkdir()
-          binary=Path(os.environ["CARGO_TARGET_DIR"])/"wasm32-unknown-unknown/release/lazypencil_shader_preprocessor.wasm"
-          shutil.copyfile(binary,output/binary.name)
-          component=Path("src/shader/preprocessor")
-          files={str(path):hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(component.rglob("*")) if path.is_file()}
-          report={"format_version":1,"source_commit":os.environ["GITHUB_SHA"],"source_files":files,"wasm_sha256":hashlib.sha256(binary.read_bytes()).hexdigest(),"wasm_bytes":binary.stat().st_size,"target":"wasm32-unknown-unknown","rustc":subprocess.check_output(["rustc","-vV"],text=True),"rustflags":os.environ["RUSTFLAGS"],"memory_maximum_bytes":67108864,"release_ready":False,"scope":"Standalone bounded preprocessor evidence; not yet integrated with rendering or a finished release."}
-          (output/"build.json").write_text(json.dumps(report,indent=2)+"\n")
-          for name in ["shader-preprocessor-tests.json","shader-build.jsonl"]:shutil.copyfile(root/name,output/name)
-          shutil.copyfile(component/"Cargo.lock",output/"Cargo.lock")
-          shutil.copytree(root/"shader-notices",output/"notices")
-          shutil.copytree(root/"shader-toolchain",output/"toolchain")
-          PY
-      - name: Retain source-bound module and original notice evidence
+        run: cargo xtask ci component toolchain
+      - name: Bind the component and tests to the current source
+        run: cargo xtask ci component evidence
+      - name: Retain source-bound module and notice evidence
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: shader-preprocessor-${{ github.sha }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/shader-preprocessor-evidence
           if-no-files-found: error
           retention-days: 3
-      - name: Verify the stored module reproduces the compiled component
-        working-directory: ${{ runner.temp }}/lazypencil-wasm-source
-        run: python scripts/shader_preprocessor.py --rebuilt "$CARGO_TARGET_DIR/wasm32-unknown-unknown/release/lazypencil_shader_preprocessor.wasm"
-      - name: Keep only component dependencies in the build cache
+      - name: Verify the stored module matches the rebuilt component
+        run: cargo xtask ci component verify
+      - name: Keep only component dependencies
         id: prune
-        if: always()
-        working-directory: ${{ runner.temp }}/lazypencil-wasm-source
-        run: |
-          cargo clean --release --manifest-path src/shader/preprocessor/Cargo.toml --target wasm32-unknown-unknown -p lazypencil-shader-preprocessor
-          test ! -e "$CARGO_TARGET_DIR/wasm32-unknown-unknown/release/lazypencil_shader_preprocessor.wasm"
-      - name: Retain compiled dependencies after a later regression failure
+        if: always() && steps.compile.outcome == 'success'
+        run: cargo xtask ci component prune
+      - name: Retain compiled dependencies after later regression failures
         if: ${{ !cancelled() && steps.compile.outcome == 'success' && steps.prune.outcome == 'success' && steps.wasm-cache.outputs.cache-hit != 'true' }}
         continue-on-error: true
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: ${{ runner.temp }}/lazypencil-wasm-target
-          key: shader-wasm-v1-linux-x64-rust1.94.0-${{ hashFiles('src/shader/preprocessor/Cargo.lock', 'src/shader/preprocessor/Cargo.toml', 'src/shader/preprocessor/vendor/**', '.github/workflows/shader-preprocessor.yml') }}
+          key: ${{ steps.wasm-cache.outputs.cache-primary-key }}

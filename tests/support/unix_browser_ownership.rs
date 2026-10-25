@@ -1,4 +1,4 @@
-use super::python;
+use super::helper;
 use lazypencil::{
     cdp::{Browser, Budget, Purpose},
     runtime::InstalledBrowser,
@@ -8,7 +8,6 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     io::{Read, Seek, SeekFrom},
-    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     time::{Duration, Instant},
@@ -16,14 +15,8 @@ use std::{
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
-fn quote(value: &Path) -> String {
-    format!("'{}'", value.to_str().unwrap().replace('\'', "'\\''"))
-}
-
 fn launch_fake(directory: &Path, budget: &Budget<'_>) -> lazypencil::Result<Browser> {
     let executable = directory.join("browser fixture 日本語");
-    let fixture =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/browser_process_unix.py");
     let mode = if directory.join("exit").exists() {
         "exit"
     } else if directory.join("detach").exists() {
@@ -33,17 +26,15 @@ fn launch_fake(directory: &Path, budget: &Budget<'_>) -> lazypencil::Result<Brow
     } else {
         "group"
     };
-    fs::write(
+    super::fixture_support::install(
         &executable,
-        format!(
-            "#!/bin/sh\nexec {} {} {} {mode} root \"$@\"\n",
-            quote(&python()),
-            quote(&fixture),
-            quote(directory)
-        ),
-    )
-    .unwrap();
-    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+        &[
+            "browser-tree".into(),
+            directory.to_str().unwrap().into(),
+            mode.into(),
+            "root".into(),
+        ],
+    );
     Browser::launch_with_supervisor(
         &InstalledBrowser {
             executable,
@@ -274,11 +265,8 @@ fn a_worker_without_a_live_owner_never_launches_a_browser() {
         .current_dir(directory.path())
         .arg("__browser_process_worker")
         .arg("--")
-        .arg(python())
-        .args([
-            "-c",
-            "from pathlib import Path; Path('must-not-exist').touch()",
-        ])
+        .arg(helper())
+        .args(["mark", "must-not-exist"])
         .stdin(Stdio::null())
         .output()
         .unwrap();
@@ -299,19 +287,15 @@ fn browser_worker_status_is_bounded_and_observes_deadlines_and_cancellation() {
     ] {
         let directory = TempDir::new().unwrap();
         let helper = directory.path().join("status helper 日本語");
-        let fixture =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/browser_process_unix.py");
-        fs::write(
+        super::fixture_support::install(
             &helper,
-            format!(
-                "#!/bin/sh\nexec {} {} {} {mode} supervisor \"$@\"\n",
-                quote(&python()),
-                quote(&fixture),
-                quote(directory.path()),
-            ),
-        )
-        .unwrap();
-        fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
+            &[
+                "browser-tree".into(),
+                directory.path().to_str().unwrap().into(),
+                mode.into(),
+                "supervisor".into(),
+            ],
+        );
         let token = CancellationToken::new();
         let started = Instant::now();
         std::thread::scope(|scope| {

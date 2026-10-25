@@ -8,6 +8,9 @@ use std::{
 };
 use tempfile::TempDir;
 
+#[path = "support/fixture.rs"]
+mod fixture_support;
+
 struct Client {
     child: Child,
     input: Option<ChildStdin>,
@@ -495,9 +498,7 @@ fn owned_mcp_rejects_grants_after_the_host_is_killed_without_reviving_or_writing
         }
     }
     let (temp, file, data) = fixture();
-    let python = std::env::var_os("LAZYPENCIL_TEST_PYTHON").unwrap_or_else(|| "python3".into());
-    let peer =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/acp_fixture.py");
+    let helper = fixture_support::helper();
     let mut owner = Owner(
         Command::new(env!("CARGO_BIN_EXE_lazypencil"))
             .current_dir(temp.path())
@@ -506,8 +507,8 @@ fn owned_mcp_rejects_grants_after_the_host_is_killed_without_reviving_or_writing
             .args(["--json", "prompt"])
             .arg(&file)
             .args(["--non-interactive", "--timeout", "60", "--adapter"])
-            .arg(python)
-            .arg(format!("--adapter-arg={}", peer.display()))
+            .arg(helper)
+            .arg("--adapter-arg=acp")
             .arg("--adapter-arg=process-tree-hang")
             .arg("Wait until this test kills the host")
             .stdin(Stdio::null())

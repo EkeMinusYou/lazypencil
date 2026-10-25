@@ -1,0 +1,51 @@
+[package]
+name = "lazypencil-xtask"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+publish = false
+license = "MIT"
+
+# Keep development tools independent of the application and its native renderer.
+[workspace]
+
+[profile.dev]
+debug = 0
+incremental = false
+
+[[bin]]
+name = "xtask"
+path = "src/main.rs"
+
+[[bin]]
+name = "lazypencil-test-helper"
+path = "src/bin/test-helper.rs"
+
+[dependencies]
+anyhow = "1.0"
+base64 = "0.22"
+clap = { version = "4.6.7", features = ["derive", "env"] }
+flate2 = { version = "1.1.10", default-features = false, features = ["zlib-rs"] }
+html-escape = "0.2"
+lzma-rust2 = { version = "=0.23.0", default-features = false, features = ["std", "xz"] }
+regex = "1.12"
+roxmltree = "0.21.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+sha1 = "0.10"
+shell-words = "1.1.1"
+tar = { version = "0.4.46", default-features = false }
+tempfile = "3.27.0"
+toml = { version = "1.1.8", default-features = false, features = ["std", "serde", "parse"] }
+unicode-normalization = "0.1"
+unicode-casefold = "0.2"
+vt100 = "=0.18.1"
+ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
+zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.191"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_System_Console", "Win32_System_ProcessStatus"] }

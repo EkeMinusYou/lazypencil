@@ -25,68 +25,33 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_PROFILE_DEV_DEBUG: '0'
   CARGO_PROFILE_TEST_DEBUG: '0'
-  PYTHONUTF8: '1'
-  LAZYPENCIL_TEST_PYTHON: python
 
 jobs:
   ci-checks:
     name: Check changed CI and distribution inputs
     if: inputs.phase == 'focus' && inputs.suite == 'ci'
     runs-on: ${{ inputs.os }}
-    timeout-minutes: 5
-    defaults:
-      run:
-        shell: bash
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: '3.12'
-      - name: Reproduce CI selection, cache safety and command deadlines
-        timeout-minutes: 2
-        run: python -m unittest discover -s scripts -p 'test_*.py' -v
+      - uses: ./.github/actions/xtask
       - name: Verify the current source distribution
-        timeout-minutes: 2
-        run: |
-          python scripts/dist.py source --output "$RUNNER_TEMP/focus-source.tar.gz"
-          python scripts/dist.py verify-source "$RUNNER_TEMP/focus-source.tar.gz" --extract "$RUNNER_TEMP/focus-source"
+        run: cargo xtask ci native source
 
   verify:
     if: inputs.phase != 'focus' || inputs.suite != 'ci'
     timeout-minutes: ${{ inputs.phase == 'focus' && (inputs.suite == 'core' || inputs.suite == 'conversation') && 30 || 60 }}
     runs-on: ${{ inputs.os }}
-    defaults:
-      run:
-        shell: bash
+    env:
+      FOCUS_SUITE: ${{ inputs.suite }}
+      FOCUS_TARGETS: ${{ inputs.targets }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: '3.12'
-      - name: Use the hosted runner for compilation outputs
-        run: |
-          {
-            printf 'CARGO_TARGET_DIR=%s/lazypencil-target\n' "$RUNNER_TEMP"
-            printf 'LAZYPENCIL_CONFIG_DIR=%s/lazypencil-test-settings\n' "$RUNNER_TEMP"
-            printf 'LAZYPENCIL_TEST_TUI_ARTIFACTS=%s/tui-artifacts\n' "$RUNNER_TEMP"
-          } >> "$GITHUB_ENV"
-      - name: Identify the hosted runner image for dependency reuse
-        id: cache-image
-        run: |
-          python - <<'PY'
-          import os
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
-              stream.write("version=" + os.environ.get("ImageVersion", "unknown") + "\n")
-          PY
-      - name: Install the declared minimum Rust toolchain
-        timeout-minutes: 5
-        run: |
-          rustup toolchain install 1.94.0 --profile minimal --component clippy --component rustfmt
-          rustup default 1.94.0
+      - uses: ./.github/actions/xtask
       - name: Cache verified Cargo downloads
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
@@ -94,36 +59,21 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/registry/index
             ~/.cargo/git/db
-          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
+          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'xtask/Cargo.lock') }}
+          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
       - name: Install Linux native build dependencies
         if: runner.os == 'Linux' && (inputs.phase == 'full' || (inputs.suite != 'core' && inputs.suite != 'conversation'))
         timeout-minutes: 20
-        run: python scripts/ci/linux_dependencies.py
-      - name: Check focused CI selection
-        if: inputs.phase == 'focus'
-        timeout-minutes: 2
-        run: python -m unittest discover -s scripts -p 'test_*.py' -v
-      - name: Check source archive integrity handling
-        if: inputs.phase == 'full'
-        run: python -m unittest discover -s scripts -p 'test_*.py' -v
-      - name: Build a complete source distribution
-        run: python scripts/dist.py source --output source.tar.gz
-      - name: Verify and extract the distribution
-        run: python scripts/dist.py verify-source source.tar.gz --extract "$RUNNER_TEMP/lazypencil-source"
-      - name: Preserve Cargo freshness for verified extracted inputs
-        run: python scripts/ci/source_timestamps.py --source "$RUNNER_TEMP/lazypencil-source"
+        run: cargo xtask ci linux-dependencies
+      - name: Verify, extract and normalize the complete source distribution
+        run: cargo xtask ci native source
       - name: Identify compatible hosted dependency caches
         id: cache-key
         continue-on-error: true
-        env:
-          LAZYPENCIL_CACHE_PLATFORM: ${{ inputs.os }}
-          LAZYPENCIL_CACHE_IMAGE: ${{ steps.cache-image.outputs.version }}
-        run: python scripts/ci/native_cache.py --platform "$LAZYPENCIL_CACHE_PLATFORM" --image "$LAZYPENCIL_CACHE_IMAGE" --github-output "$GITHUB_OUTPUT"
+        run: cargo xtask ci cache native --platform '${{ inputs.os }}' --image "$ImageVersion"
       - name: Restore hosted dependency build artifacts
         id: native-cache
-        if: ${{ steps.cache-key.outcome == 'success' }}
+        if: steps.cache-key.outcome == 'success'
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
@@ -137,17 +87,13 @@ jobs:
             ${{ runner.temp }}/lazypencil-target
             ${{ runner.temp }}/lazypencil-source/vendor/skia-bindings/skia
             ${{ runner.temp }}/lazypencil-material-fonts
-      - name: Rebuild application code and render evidence from this source
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: sh scripts/ci/prune_application_cache.sh
+      - name: Remove application outputs from dependency fallback caches
+        run: cargo xtask ci cache prune
       - name: Identify source-bound application outputs
         id: application-key
         if: steps.cache-key.outcome == 'success'
         continue-on-error: true
-        env:
-          NATIVE_CACHE_KEY: ${{ steps.cache-key.outputs.primary }}
-        run: |
-          python scripts/ci/application_cache.py identify --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --native-key "$NATIVE_CACHE_KEY" --github-output "$GITHUB_OUTPUT"
+        run: cargo xtask ci cache application identify --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
       - name: Restore source-bound application outputs
         id: application-cache
         if: steps.application-key.outcome == 'success'
@@ -155,225 +101,40 @@ jobs:
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           key: ${{ steps.application-key.outputs.primary }}
-          restore-keys: |
-            ${{ steps.application-key.outputs.checkpoint }}
+          restore-keys: ${{ steps.application-key.outputs.checkpoint }}
           path: ${{ runner.temp }}/lazypencil-application-cache
       - name: Validate application reuse or keep a fresh build
         if: steps.application-key.outcome == 'success'
         timeout-minutes: 3
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        env:
-          NATIVE_CACHE_KEY: ${{ steps.cache-key.outputs.primary }}
-        run: |
-          if ! python scripts/ci/application_cache.py restore --source "$PWD" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --native-key "$NATIVE_CACHE_KEY"; then
-            sh scripts/ci/prune_application_cache.sh
-          fi
-      - name: Verify notices in the distributed sources
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          python scripts/license_notices.py verify
-          python scripts/skia_notice_inventory.py verify-upstream --upstream resources/licenses/native/upstream.json
-          python scripts/toolchain_notice_inventory.py verify-upstream --upstream resources/licenses/toolchain/upstream.json
-      - name: Check formatting in the distributed sources
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: cargo fmt --all -- --check
-      - name: Prepare cold focused dependencies before short lint deadlines
-        id: cold-build
-        if: inputs.phase == 'focus' && (steps.native-cache.outputs.cache-matched-key == '' || ((inputs.suite != 'core' && inputs.suite != 'conversation') && startsWith(steps.native-cache.outputs.cache-matched-key, 'core-')))
-        timeout-minutes: ${{ (inputs.suite == 'core' || inputs.suite == 'conversation') && 15 || 45 }}
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        env:
-          FOCUS_SUITE: ${{ inputs.suite }}
-          FOCUS_TARGETS: ${{ inputs.targets }}
-        run: |
-          set -o pipefail
-          python scripts/ci/focus.py build --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS" 2>&1 | tee "$RUNNER_TEMP/cold-build.log"
-      - name: Check focused core code before building test executables
-        if: inputs.phase == 'focus' && (inputs.suite == 'core' || inputs.suite == 'conversation')
-        timeout-minutes: 6
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        env:
-          FOCUS_TARGETS: ${{ inputs.targets }}
-        run: |
-          python - <<'PY'
-          import json, os, runpy
-          targets = json.loads(os.environ["FOCUS_TARGETS"])
-          allowed = runpy.run_path("scripts/ci/focus.py")["CORE_TESTS"]
-          assert isinstance(targets, list) and targets and all(target in allowed for target in targets)
-          selected = [argument for target in targets for argument in ("--test", target)]
-          run = runpy.run_path("scripts/ci/command.py")["run"]
-          run(["cargo", "clippy", "--locked", "--no-default-features", "--lib", *selected, "--", "-D", "warnings"], timeout=300)
-          PY
-      - name: Check focused rendering code before building test executables
-        if: inputs.phase == 'focus' && (inputs.suite == 'graphics' || inputs.suite == 'copy') && !contains(fromJSON(inputs.targets), 'native_layout')
-        timeout-minutes: 6
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        env:
-          FOCUS_TARGETS: ${{ inputs.targets }}
-        run: |
-          set -o pipefail
-          python - <<'PYTHON' 2>&1 | tee "$RUNNER_TEMP/focus-clippy.log"
-          import json, os, runpy
-          targets = json.loads(os.environ["FOCUS_TARGETS"])
-          allowed = runpy.run_path("scripts/ci/focus.py")["CORE_TESTS"]
-          assert isinstance(targets, list) and targets and all(target in allowed for target in targets)
-          selected = [argument for target in targets for argument in ("--test", target)]
-          run = runpy.run_path("scripts/ci/command.py")["run"]
-          run(["cargo", "clippy", "--locked", "--lib", *selected, "--", "-D", "warnings"], timeout=300)
-          PYTHON
-      - name: Check focused native calculation code
-        if: inputs.phase == 'focus' && contains(fromJSON(inputs.targets), 'native_layout')
-        timeout-minutes: 5
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        env:
-          FOCUS_TARGETS: ${{ inputs.targets }}
-        run: |
-          set -o pipefail
-          python - <<'PYTHON' 2>&1 | tee "$RUNNER_TEMP/chromium-native-layout-clippy.log"
-          import json, os, runpy
-          targets = json.loads(os.environ["FOCUS_TARGETS"])
-          allowed = runpy.run_path("scripts/ci/focus.py")["CORE_TESTS"]
-          assert isinstance(targets, list) and "native_layout" in targets and all(target in allowed for target in targets)
-          selected = [argument for target in targets for argument in ("--test", target)]
-          run = runpy.run_path("scripts/ci/command.py")["run"]
-          run(["cargo", "clippy", "--locked", "--lib", *selected, "--", "-D", "warnings"], timeout=240)
-          PYTHON
-      - name: Check focused dynamic code before acquiring Chromium
-        if: inputs.phase == 'focus' && inputs.suite == 'dynamic'
-        timeout-minutes: 5
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          python scripts/ci/command.py --timeout 240 cargo clippy --locked --lib --test dynamic_render --test shader_uniforms -- -D warnings 2>&1 | tee "$RUNNER_TEMP/chromium-runtime-clippy.log"
-      - name: Check focused shader code before acquiring Chromium
-        if: inputs.phase == 'focus' && inputs.suite == 'shader'
-        timeout-minutes: 5
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          python scripts/ci/command.py --timeout 240 cargo clippy --locked --test shader_uniforms -- -D warnings 2>&1 | tee "$RUNNER_TEMP/chromium-shader-clippy.log"
-      - name: Reproduce script worker compatibility before native rendering
-        if: inputs.phase == 'focus' && (inputs.suite == 'graphics' || inputs.suite == 'dynamic' || inputs.suite == 'copy') && contains(fromJSON(inputs.targets), 'scripts')
-        timeout-minutes: 15
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          cargo test --locked --no-default-features --test project --test scripts -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-script-core.log"
-      - name: Build focused test binaries
+        run: cargo xtask ci cache application restore-or-prune --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
+      - name: Verify distributed dependency notices
+        run: cargo xtask ci native notices
+      - name: Reproduce script compatibility before native rendering
+        if: inputs.phase == 'focus'
+        run: cargo xtask ci native focus-core --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
+      - name: Build affected test executables
         id: focus-build
-        if: inputs.phase == 'focus' && steps.cold-build.outcome != 'success'
+        if: inputs.phase == 'focus'
         timeout-minutes: ${{ (inputs.suite == 'core' || inputs.suite == 'conversation') && 15 || 45 }}
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        env:
-          FOCUS_SUITE: ${{ inputs.suite }}
-          FOCUS_TARGETS: ${{ inputs.targets }}
-        run: |
-          set -o pipefail
-          python scripts/ci/focus.py build --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS" 2>&1 | tee "$RUNNER_TEMP/focus-build.log"
-      - name: Validate native cancellation before acquiring Chromium
-        if: inputs.phase == 'focus' && inputs.suite == 'dynamic' && contains(fromJSON(inputs.targets), 'native_layout')
-        timeout-minutes: 2
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        env:
-          LAZYPENCIL_TEST_CODEC_DIR: ${{ runner.temp }}/codec-reference
-        run: |
-          set -o pipefail
-          cargo test --locked --lib native_cancellation -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-native-layout.log"
-          cargo test --locked --test native_layout -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/focus-native-layout.log"
-      - name: Reproduce saved log browsing before other tests and Chromium
-        if: inputs.phase == 'focus' && contains(fromJSON(inputs.targets), 'conversation_history') && inputs.suite != 'core' && inputs.suite != 'conversation'
-        timeout-minutes: 3
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        env:
-          HISTORY_TUI: ${{ contains(fromJSON(inputs.targets), 'tui') }}
-          HISTORY_AGENT: ${{ contains(fromJSON(inputs.targets), 'agent') }}
-          HISTORY_MCP: ${{ contains(fromJSON(inputs.targets), 'mcp') }}
-        run: |
-          set -o pipefail
-          cargo test --locked --no-default-features --lib conversation::management:: -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-history.log"
-          cargo test --locked --lib conversation::management:: -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
-          cargo test --locked --lib conversation::history:: -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
-          cargo test --locked --test conversation_history -- --test-threads=1 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
-          if [ "$HISTORY_AGENT" = true ]; then
-            cargo test --locked --test agent agent_ownership::killed_cli_revokes_grants_and_resume_preserves_images_and_transcripts -- --exact --test-threads=1 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
-          fi
-          if [ "$HISTORY_MCP" = true ]; then
-            cargo test --locked --test mcp owned_mcp_rejects_grants_after_the_host_is_killed_without_reviving_or_writing_journals -- --exact --test-threads=1 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
-          fi
-          if [ "$HISTORY_TUI" = true ]; then
-            cargo test --locked --lib tui::tests::saved_log_ -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
-            cargo test --locked --test tui real_pty_saved_logs_page_format_refresh_and_keep_the_unsent_draft_without_starting_an_agent -- --exact 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
-            cargo test --locked --test tui real_pty_deletes_only_reviewed_inactive_local_conversations_and_preserves_current_state -- --exact 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
-            cargo test --locked --test tui real_pty_reviewed_deletion_remains_readable_at_minimum_terminal_size -- --exact 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
-            cargo test --locked --test tui real_pty_selects_saved_conversations_and_keeps_both_drafts_without_starting_an_agent -- --exact 2>&1 | tee -a "$RUNNER_TEMP/focus-history.log"
-          fi
-      - name: Reproduce configured input before other tests and Chromium
-        if: inputs.phase == 'focus' && contains(fromJSON(inputs.targets), 'tui') && contains(fromJSON(inputs.targets), 'user_config')
-        timeout-minutes: 3
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          cargo test --locked --lib config::keys:: -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-input.log"
-          cargo test --locked --test user_config navigation_shortcuts_are_user_owned_replace_defaults_and_validate_scope_conflicts -- --exact 2>&1 | tee -a "$RUNNER_TEMP/focus-input.log"
-          cargo test --locked --test tui real_pty_custom_navigation_preserves_draft_and_changes_preview_pixels -- --exact 2>&1 | tee -a "$RUNNER_TEMP/focus-input.log"
-      - name: Reproduce script reference bindings before other tests and Chromium
-        if: inputs.phase == 'focus' && (inputs.suite == 'graphics' || inputs.suite == 'dynamic' || inputs.suite == 'copy') && contains(fromJSON(inputs.targets), 'script_scope')
-        timeout-minutes: 3
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          cargo test --locked --no-default-features --lib project::bindings:: -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-bindings.log"
-          cargo test --locked --no-default-features --lib project::import::scripts::composition::tests:: -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/focus-bindings.log"
-          cargo test --locked --test script_scope script_bindings:: -- --test-threads=1 2>&1 | tee -a "$RUNNER_TEMP/focus-bindings.log"
-          cargo test --locked --test script_scope script_copy:: -- --test-threads=1 2>&1 | tee -a "$RUNNER_TEMP/focus-bindings.log"
-      - name: Run focused reproduction and affected tests
-        if: inputs.phase == 'focus' && inputs.suite != 'dynamic' && inputs.suite != 'shader'
-        timeout-minutes: 10
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        env:
-          LAZYPENCIL_TEST_CODEC_DIR: ${{ runner.temp }}/codec-reference
-          FOCUS_SUITE: ${{ inputs.suite }}
-          FOCUS_TARGETS: ${{ inputs.targets }}
-        run: |
-          set -o pipefail
-          python scripts/ci/focus.py test --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS" 2>&1 | tee "$RUNNER_TEMP/focus-tests.log"
-      - name: Validate dynamic inputs and launch deadlines before acquiring Chromium
-        if: inputs.phase == 'focus' && inputs.suite == 'dynamic'
-        timeout-minutes: 2
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          cargo test --locked --test dynamic_render -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-dynamic-inputs.log"
-          cargo test --locked --lib dynamic:: -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/focus-dynamic-inputs.log"
-          cargo test --locked --lib shader::tests::prepared_declarations_bind_values_without_replacing_captured_shader_bytes -- --exact 2>&1 | tee -a "$RUNNER_TEMP/focus-dynamic-inputs.log"
-          cargo test --locked --lib shader::tests::preprocessing_preserves_directive_annotation_barriers_and_source_positions -- --exact 2>&1 | tee -a "$RUNNER_TEMP/focus-dynamic-inputs.log"
-          cargo test --locked --test shader_uniforms -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/focus-dynamic-inputs.log"
-      - name: Validate shader inputs before acquiring Chromium
-        if: inputs.phase == 'focus' && inputs.suite == 'shader'
-        timeout-minutes: 2
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          cargo test --locked --test shader_uniforms -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-tests.log"
+        run: cargo xtask ci native focus-build --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
+      - name: Check affected targets before Chromium acquisition
+        if: inputs.phase == 'focus'
+        timeout-minutes: 6
+        run: cargo xtask ci native focus-lint --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
+      - name: Reproduce affected failures before other tests and Chromium
+        if: inputs.phase == 'focus'
+        run: cargo xtask ci native focus-reproduce --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
       - name: Build core test binaries
-        id: core-build
         if: inputs.phase == 'full'
         timeout-minutes: 40
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          rustc -vV | tee "$RUNNER_TEMP/lazypencil-tests.log"
-          cargo test --locked --no-default-features --no-run 2>&1 | tee "$RUNNER_TEMP/core-build.log"
+        run: cargo xtask ci native core-build
       - name: Test core configuration
         id: core-tests
         if: inputs.phase == 'full'
         timeout-minutes: 15
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          cargo test --locked --no-default-features --no-fail-fast -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/lazypencil-tests.log"
-      - name: Publish a failed core reproduction before longer checks
-        if: ${{ failure() && inputs.phase == 'full' && steps.core-tests.outcome == 'failure' }}
+        run: cargo xtask ci native core-test
+      - name: Publish failed core evidence before longer checks
+        if: failure() && inputs.phase == 'full' && steps.core-tests.outcome == 'failure'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: core-failure-${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
@@ -383,339 +144,87 @@ jobs:
           if-no-files-found: error
           retention-days: 3
       - name: Check all core targets
-        if: ${{ success() && inputs.phase == 'full' }}
+        if: inputs.phase == 'full'
         timeout-minutes: 15
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          cargo clippy --locked --no-default-features --all-targets -- -D warnings 2>&1 | tee -a "$RUNNER_TEMP/lazypencil-tests.log"
-      - name: Build default test binaries and actual CLI helper
+        run: cargo xtask ci native core-lint
+      - name: Build default tests and record executable identities
         id: default-build
-        if: ${{ success() && inputs.phase == 'full' }}
+        if: inputs.phase == 'full'
         timeout-minutes: 45
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          cargo test --locked --no-run 2>&1 | tee "$RUNNER_TEMP/default-build.log"
-          cargo build --locked 2>&1 | tee -a "$RUNNER_TEMP/default-build.log"
-      - name: Reproduce embedded TUI conversation cases first
-        if: ${{ !cancelled() && inputs.phase == 'full' && steps.default-build.outcome == 'success' }}
-        timeout-minutes: 3
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          cargo test --locked --lib tui::tests:: -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/tui-reproduction.log" | tee -a "$RUNNER_TEMP/lazypencil-tests.log"
-      - name: Reproduce MCP script cancellation without competing tests
-        if: ${{ success() && inputs.phase == 'full' && steps.default-build.outcome == 'success' }}
-        timeout-minutes: 2
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          cargo test --locked --test mcp cancelling_a_running_script_unblocks_the_mcp_document_worker -- --exact --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-script-cancel.log" | tee -a "$RUNNER_TEMP/lazypencil-tests.log"
-      - name: Test default configuration
-        if: ${{ success() && inputs.phase == 'full' && steps.default-build.outcome == 'success' }}
+        run: cargo xtask ci native default-build
+      - name: Reproduce TUI and isolated MCP cancellation first
+        if: inputs.phase == 'full'
+        run: cargo xtask ci native reproduce
+      - name: Test default configuration without identical reproductions
+        if: inputs.phase == 'full'
         timeout-minutes: 15
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        env:
-          LAZYPENCIL_TEST_CODEC_DIR: ${{ runner.temp }}/codec-reference
-        run: |
-          set -o pipefail
-          cargo test --locked --no-fail-fast -- --test-threads=2 --skip tui::tests:: --skip cancelling_a_running_script_unblocks_the_mcp_document_worker 2>&1 | tee -a "$RUNNER_TEMP/lazypencil-tests.log"
-      - name: Install and verify the pinned Chromium runtime
+        run: cargo xtask ci native default-test
+      - name: Install and diagnose the verified sandboxed Chromium runtime
         if: inputs.phase == 'full' || inputs.suite == 'dynamic' || inputs.suite == 'shader' || inputs.suite == 'copy'
+        timeout-minutes: 15
+        run: cargo xtask ci native browser-setup
+      - name: Run affected tests and pixel reproductions
+        if: inputs.phase == 'focus'
         timeout-minutes: 10
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          lazypencil_binary="$CARGO_TARGET_DIR/debug/lazypencil"
-          if [ "$RUNNER_OS" = Windows ]; then lazypencil_binary="$lazypencil_binary.exe"; fi
-          "$lazypencil_binary" --json --data-dir "$RUNNER_TEMP/chromium-test-data" runtime setup chromium > "$RUNNER_TEMP/chromium-setup.json"
-          "$lazypencil_binary" --json --data-dir "$RUNNER_TEMP/chromium-test-data" runtime status > "$RUNNER_TEMP/chromium-status.json"
-          python - <<'PY'
-          import json, os
-          from pathlib import Path
-          status = json.loads((Path(os.environ["RUNNER_TEMP"]) / "chromium-status.json").read_text(encoding="utf-8"))
-          assert status["available"] and status["managed"] and status["integrity_verified"], status
-          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as stream:
-              stream.write("LAZYPENCIL_TEST_CHROMIUM=" + status["executable"] + "\n")
-          PY
-      - name: Permit the verified browser to create its Linux sandbox
-        timeout-minutes: 5
-        if: runner.os == 'Linux' && (inputs.phase == 'full' || inputs.suite == 'dynamic' || inputs.suite == 'shader' || inputs.suite == 'copy')
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          if [ ! -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ] || [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" != 1 ]; then
-            exit 0
-          fi
-          python - <<'PY'
-          import hashlib, json, os, re
-          from pathlib import Path
-          root = Path(os.environ["RUNNER_TEMP"]).resolve()
-          status = json.loads((root / "chromium-status.json").read_text(encoding="utf-8"))
-          assert status["available"] and status["managed"] and status["integrity_verified"], status
-          executable = Path(status["executable"]).resolve(strict=True)
-          executable.relative_to(root / "chromium-test-data" / "runtimes" / "chromium")
-          assert executable == Path(os.environ["LAZYPENCIL_TEST_CHROMIUM"]).resolve(strict=True)
-          assert re.fullmatch(r"/[A-Za-z0-9_./-]+", str(executable)), executable
-          policy = 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile lazypencil_ci_chromium "' + str(executable) + '" flags=(unconfined) {\n  userns,\n}\n'
-          profile = root / "chromium-userns.apparmor"
-          profile.write_text(policy, encoding="utf-8")
-          profile.chmod(0o600)
-          (root / "chromium-userns-policy.json").write_text(json.dumps({"executable":str(executable),"profile_sha256":hashlib.sha256(policy.encode()).hexdigest(),"kernel_restriction_before":1,"loaded":False}, indent=2) + "\n", encoding="utf-8")
-          PY
-          sudo -n /usr/sbin/apparmor_parser -r "$RUNNER_TEMP/chromium-userns.apparmor"
-          python - <<'PY'
-          import json, os
-          from pathlib import Path
-          report = Path(os.environ["RUNNER_TEMP"]) / "chromium-userns-policy.json"
-          data = json.loads(report.read_text(encoding="utf-8"))
-          data["kernel_restriction_after"] = int(Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns").read_text().strip())
-          assert data["kernel_restriction_after"] == data["kernel_restriction_before"] == 1
-          data["loaded"] = True
-          report.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-          PY
-      - name: Diagnose Linux browser startup with the OS sandbox enabled
-        timeout-minutes: 5
-        if: runner.os == 'Linux' && (inputs.phase == 'full' || inputs.suite == 'dynamic' || inputs.suite == 'shader' || inputs.suite == 'copy')
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          ulimit -c 0
-          lazypencil_profile="$(mktemp -d)"
-          trap 'rm -rf "$lazypencil_profile"' EXIT
-          {
-            id
-            for lazypencil_setting in /proc/sys/kernel/unprivileged_userns_clone /proc/sys/kernel/apparmor_restrict_unprivileged_userns /proc/sys/user/max_user_namespaces; do
-              if [ -f "$lazypencil_setting" ]; then
-                printf '%s: ' "$lazypencil_setting"
-                cat "$lazypencil_setting"
-              fi
-            done
-            ldd "$LAZYPENCIL_TEST_CHROMIUM"
-          } > "$RUNNER_TEMP/chromium-linux-environment.log" 2>&1
-          lazypencil_probe_status=0
-          timeout --kill-after=2s 15s "$LAZYPENCIL_TEST_CHROMIUM" --headless --no-first-run --no-default-browser-check --disable-background-networking --user-data-dir="$lazypencil_profile" --dump-dom about:blank > "$RUNNER_TEMP/chromium-startup-dom.log" 2> "$RUNNER_TEMP/chromium-startup-stderr.log" || lazypencil_probe_status=$?
-          python - <<'PY'
-          import os
-          from pathlib import Path
-          root = Path(os.environ["RUNNER_TEMP"])
-          for name in ["chromium-linux-environment.log", "chromium-startup-stderr.log"]:
-              with (root / name).open("rb") as stream:
-                  print(name + ":\n" + stream.read(65536).decode("utf-8", errors="replace"))
-          PY
-          exit "$lazypencil_probe_status"
-      - name: Run focused dynamic reproduction and affected pixels
-        if: inputs.phase == 'focus' && (inputs.suite == 'dynamic' || inputs.suite == 'shader')
-        timeout-minutes: 10
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        env:
-          FOCUS_SUITE: ${{ inputs.suite }}
-          FOCUS_TARGETS: ${{ inputs.targets }}
-          LAZYPENCIL_TEST_RETAINED_DIR: ${{ runner.temp }}
-          LAZYPENCIL_TEST_NATIVE_SHADER_DIR: ${{ runner.temp }}
-          LAZYPENCIL_TEST_CODEC_DIR: ${{ runner.temp }}/codec-reference
-        run: |
-          set -o pipefail
-          python scripts/ci/focus.py test --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS" 2>&1 | tee -a "$RUNNER_TEMP/focus-tests.log"
-      - name: Verify copied script shader pixels before the full matrix
-        if: inputs.phase == 'focus' && inputs.suite == 'copy'
-        timeout-minutes: 3
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          cargo test --locked --test script_scope script_copy:: -- --ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/focus-copy-shader.log"
-      - name: Verify real page shader and import pixels
+        run: cargo xtask ci native focus-test --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
+      - name: Verify real browser shader import and cancellation pixels
         if: inputs.phase == 'full'
         timeout-minutes: 20
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        env:
-          LAZYPENCIL_TEST_RETAINED_DIR: ${{ runner.temp }}
-          LAZYPENCIL_TEST_NATIVE_SHADER_DIR: ${{ runner.temp }}
-          LAZYPENCIL_TEST_CODEC_DIR: ${{ runner.temp }}/codec-reference
-        run: |
-          set -o pipefail
-          cargo test --locked --no-fail-fast --test dynamic_render --test browser_readiness --test shader_uniforms --test sampler_sources --test imports --test windows_agent --test script_scope -- --ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-render.log"
-          cargo test --locked --test agent browser_ownership::real_browser_drop_and_owner_death_reap_the_tree_and_preserve_other_owners -- --exact --ignored --test-threads=1 2>&1 | tee -a "$RUNNER_TEMP/chromium-render.log"
-      - name: Require retained shader and native cancellation images
+        run: cargo xtask ci native browser-test
+      - name: Verify MCP and supervised adapter dynamic image content
         if: inputs.phase == 'full'
-        timeout-minutes: 1
-        run: |
-          python - <<'PY'
-          import hashlib, itertools, json, os, struct
-          from pathlib import Path
-          root = Path(os.environ["RUNNER_TEMP"]) / "codec-reference"
-          source = os.environ["GITHUB_SHA"]
-          def report(name):
-              data = json.loads((root / name).read_text(encoding="utf-8"))
-              assert data["source_commit"] == source, name
-              return data
-          def png(name, digest, dimensions):
-              assert Path(name).name == name and name.startswith("codec-"), name
-              data = (root / name).read_bytes()
-              assert hashlib.sha256(data).hexdigest() == digest, name
-              assert data[:8] == b"\x89PNG\r\n\x1a\n" and data[-12:] == b"\x00\x00\x00\x00IEND\xaeB`\x82", name
-              assert struct.unpack(">II", data[16:24]) == dimensions, name
-              return data
-          versions = ["2.19", "2.21"]
-          structures = report("codec-shader-structures.json")["cases"]
-          assert len(structures) == 16 and {(r["document_version"], r["case"]) for r in structures} == set(itertools.product(versions, range(8)))
-          for r in structures:
-              png(f'codec-shader-structure-{r["document_version"]}-{r["case"]}.png', r["png_hash"], (32, 16))
-          expanded = report("codec-shader-preprocessed.json")["cases"]
-          assert len(expanded) == 64 and {(r["document_version"], r["case"], r["effect"], r["scale"]) for r in expanded} == set(itertools.product(versions, range(8), [False, True], [1, 2]))
-          for r in expanded:
-              name = f'codec-shader-preprocessed-{r["document_version"]}-{r["case"]}-{str(r["effect"]).lower()}-{r["scale"]}.png'
-              assert r["png"] == name
-              png(name, r["png_hash"], (32 * r["scale"], 16 * r["scale"]))
-          for version in versions:
-              prefix = f"codec-native-layout-cancellation-{version}"
-              r = report(prefix + ".json")
-              assert r["document_version"] == version and r["worker_process_id"] is None
-              assert r["before_snapshot_id"] == r["recovered_snapshot_id"]
-              before = png(prefix + "-before.png", r["before_png_hash"], (320, 80))
-              after = png(prefix + "-recovered.png", r["recovered_png_hash"], (320, 80))
-              assert before == after
-          print("Verified source identities, hashes and dimensions for 84 required PNGs")
-          PY
-      - name: Verify real MCP image content
+        run: cargo xtask ci native mcp
+      - name: Run independent lifecycle and Material suites in two lanes
         if: inputs.phase == 'full'
-        timeout-minutes: 5
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          cargo test --locked --test mcp real_mcp_shader_assets_uniform_edits_and_browser_refresh_return_image_content -- --ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-mcp.log"
-      - name: Verify supervised adapter and MCP dynamic pixels
-        if: inputs.phase == 'full'
-        timeout-minutes: 5
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        env:
-          LAZYPENCIL_TEST_SUPERVISION_DIR: ${{ runner.temp }}
-        run: |
-          set -o pipefail
-          cargo test --locked --test agent supervised_agent_mcp_renders_script_browser_and_shader_pixels -- --ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-supervision.log"
-      - name: Verify real MCP idle process cleanup
-        timeout-minutes: 5
-        if: runner.os != 'Windows' && (inputs.phase == 'full')
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          cargo test --locked --test mcp idle_mcp_reaps_script_page_and_shader_processes_without_another_request -- --ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-mcp-idle.log"
-      - name: Verify dynamic TUI input pixels and process cleanup
-        timeout-minutes: 5
-        if: runner.os != 'Windows' && (inputs.phase == 'full')
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          cargo test --locked --test tui -- --ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-tui.log"
+        run: cargo xtask ci native long-tests
       - name: Render the combined example for review
         if: inputs.phase == 'full'
-        timeout-minutes: 5
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          lazypencil_binary="$CARGO_TARGET_DIR/debug/lazypencil"
-          if [ "$RUNNER_OS" = Windows ]; then lazypencil_binary="$lazypencil_binary.exe"; fi
-          LAZYPENCIL_CHROMIUM="$LAZYPENCIL_TEST_CHROMIUM" "$lazypencil_binary" --json --data-dir "$RUNNER_TEMP/chromium-test-data" render examples/dynamic-panel.pen --time 0.5 --output "$RUNNER_TEMP/chromium-panel.png" > "$RUNNER_TEMP/chromium-panel.json"
-          python - <<'PY'
-          import hashlib, json, os, struct
-          from pathlib import Path
-          root = Path(os.environ["RUNNER_TEMP"])
-          report = json.loads((root / "chromium-panel.json").read_text(encoding="utf-8"))
-          png = (root / "chromium-panel.png").read_bytes()
-          assert (report["width"], report["height"]) == (1000, 640), report
-          assert report["diagnostics"] == [] and len(report["dynamic_artifacts"]) == 2, report
-          assert png[:8] == b"\x89PNG\r\n\x1a\n" and struct.unpack(">II", png[16:24]) == (1000, 640)
-          assert hashlib.sha256(png).hexdigest() == report["png_hash"]
-          PY
-      - name: Prepare pinned Material source fonts
-        if: inputs.phase == 'full'
-        id: material-sources
-        timeout-minutes: 5
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: python scripts/ci/prepare_material_fonts.py --output "$RUNNER_TEMP/lazypencil-material-fonts"
-      - name: Test every original Material glyph and continuous weights
-        if: inputs.phase == 'full'
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        env:
-          LAZYPENCIL_TEST_MATERIAL_DIR: ${{ runner.temp }}/lazypencil-material-fonts
-          LAZYPENCIL_CONFIG_DIR: ${{ runner.temp }}/lazypencil-material-settings
-        run: |
-          set -o pipefail
-          cargo test --locked --test optional_icons official_material_fonts -- --ignored --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/lazypencil-material-fonts.log"
-      - name: Test Material weight edits and stale snapshots through MCP
-        if: ${{ !cancelled() && inputs.phase == 'full' && steps.material-sources.outcome == 'success' }}
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        env:
-          LAZYPENCIL_TEST_MATERIAL_DIR: ${{ runner.temp }}/lazypencil-material-fonts
-          LAZYPENCIL_CONFIG_DIR: ${{ runner.temp }}/lazypencil-material-settings
-        run: |
-          set -o pipefail
-          cargo test --locked --test mcp real_mcp_material -- --ignored --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/lazypencil-material-mcp.log"
+        run: cargo xtask ci native panel
       - name: Check all default targets
-        if: ${{ success() && inputs.phase == 'full' }}
+        if: inputs.phase == 'full'
         timeout-minutes: 15
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          cargo clippy --locked --all-targets -- -D warnings 2>&1 | tee -a "$RUNNER_TEMP/lazypencil-tests.log"
-      - name: Build and smoke-test the release profile
+        run: cargo xtask ci native default-lint
+      - name: Build and smoke-test the release profile with isolated measurements
         id: release-smoke
         if: inputs.phase == 'full'
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: |
-          set -o pipefail
-          sh scripts/ci/release-smoke.sh 2>&1 | tee "$RUNNER_TEMP/lazypencil-release.log"
-      - name: Retain verification logs and rendered examples
+        run: cargo xtask ci native release
+      - name: Retain source-bound logs and rendered evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: ${{ inputs.phase == 'full' && 'verification' || 'focus' }}-${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/lazypencil-tests.log
-            ${{ runner.temp }}/*-build.log
-            ${{ runner.temp }}/focus-tests.log
-            ${{ runner.temp }}/focus-clippy.log
-            ${{ runner.temp }}/focus-input.log
-            ${{ runner.temp }}/focus-history.log
-            ${{ runner.temp }}/focus-bindings.log
-            ${{ runner.temp }}/focus-copy-shader.log
+            ${{ runner.temp }}/*.log
+            ${{ runner.temp }}/ci-timings.jsonl
+            ${{ runner.temp }}/test-executables.json
+            ${{ runner.temp }}/default-build.jsonl
             ${{ runner.temp }}/tui-artifacts/
-            ${{ runner.temp }}/focus-script-core.log
-            ${{ runner.temp }}/focus-dynamic-inputs.log
-            ${{ runner.temp }}/focus-native-layout.log
-            ${{ runner.temp }}/tui-reproduction.log
             ${{ runner.temp }}/chromium-*.json
-            ${{ runner.temp }}/chromium-*.log
             ${{ runner.temp }}/chromium-*.png
             ${{ runner.temp }}/chromium-userns.apparmor
             ${{ runner.temp }}/codec-reference/codec-*
-            ${{ runner.temp }}/lazypencil-release.log
-            ${{ runner.temp }}/lazypencil-material-fonts.log
-            ${{ runner.temp }}/lazypencil-material-mcp.log
             ${{ runner.temp }}/lazypencil-target/release-*.json
             ${{ runner.temp }}/lazypencil-target/release-*.png
           if-no-files-found: ignore
           retention-days: 3
-      - name: Prepare verified application outputs for reuse
+      - name: Stage verified application outputs for reuse
         id: application-save
-        if: ${{ success() && steps.application-key.outcome == 'success' && steps.application-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
+        if: success() && steps.application-key.outcome == 'success' && steps.application-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
         continue-on-error: true
         timeout-minutes: 3
-        env:
-          NATIVE_CACHE_KEY: ${{ steps.cache-key.outputs.primary }}
-        run: |
-          python scripts/ci/application_cache.py stage --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --native-key "$NATIVE_CACHE_KEY"
+        run: cargo xtask ci cache application stage --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
       - name: Save verified application outputs
-        if: ${{ success() && steps.application-save.outcome == 'success' }}
+        if: success() && steps.application-save.outcome == 'success'
         continue-on-error: true
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           key: ${{ inputs.phase == 'full' && steps.application-key.outputs.primary || steps.application-key.outputs.checkpoint }}
           path: ${{ runner.temp }}/lazypencil-application-cache
-      - name: Prune application outputs before saving dependency cache
+      - name: Keep dependencies when a later regression fails
         id: cache-prune
-        if: ${{ !cancelled() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true' && steps.native-cache.outputs.cache-matched-key != steps.cache-key.outputs.primary && (steps.cold-build.outcome == 'success' || steps.focus-build.outcome == 'success' || steps.default-build.outcome == 'success') }}
+        if: ${{ !cancelled() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true' && steps.native-cache.outputs.cache-matched-key != steps.cache-key.outputs.primary && (steps.focus-build.outcome == 'success' || steps.default-build.outcome == 'success') }}
         continue-on-error: true
-        working-directory: ${{ runner.temp }}/lazypencil-source
-        run: sh scripts/ci/prune_application_cache.sh
+        run: cargo xtask ci cache prune
       - name: Save compatible hosted dependency build artifacts
         if: ${{ !cancelled() && steps.cache-prune.outcome == 'success' && github.ref == 'refs/heads/main' }}
         continue-on-error: true

@@ -1,14 +1,14 @@
 {
   "files": [
     {
-      "bytes": 1149317,
+      "bytes": 1152576,
       "path": "RUST-NOTICES.txt",
-      "sha256": "6f6515c9d6d0a3258a5c8dd383c288eed8fdb8e4072c391e6235ff7b8f19368b"
+      "sha256": "abab3f8733baf6a69c5204842816f81a8c6ea044dc4460d22fa5245cabf6bdb9"
     },
     {
-      "bytes": 1177707,
+      "bytes": 1181738,
       "path": "index.json",
-      "sha256": "d0f3e2de5d6b3a2856b4affb64a2356e97614d6e053ab4871c1b21fe2e0a418c"
+      "sha256": "9d224ee8d74aa595e17c16a0959f5727887223aa8db2ad2db65109447c062163"
     },
     {
       "bytes": 11357,
@@ -381,6 +381,11 @@
       "sha256": "4cada0bd02ea3692eee6f16400d86c6508bbd3bafb2b65fed0419f36d4f83e8f"
     },
     {
+      "bytes": 1071,
+      "path": "texts/4da95ec4ecb65b738d470b7d762894ad9c97da93e6cbfb18b570fc2c96f4b871.txt",
+      "sha256": "4da95ec4ecb65b738d470b7d762894ad9c97da93e6cbfb18b570fc2c96f4b871"
+    },
+    {
       "bytes": 1065,
       "path": "texts/4dbda04344456f09a7a588140455413a9ac59b6b26a1ef7cdf9c800c012d87f0.txt",
       "sha256": "4dbda04344456f09a7a588140455413a9ac59b6b26a1ef7cdf9c800c012d87f0"
@@ -414,6 +419,11 @@
       "bytes": 1130,
       "path": "texts/523a42c25d245dde9c015f882cec7f4555aad883382a6cf19b4b7d9b2cd5419b.txt",
       "sha256": "523a42c25d245dde9c015f882cec7f4555aad883382a6cf19b4b7d9b2cd5419b"
+    },
+    {
+      "bytes": 1079,
+      "path": "texts/53a04b0a11073f3d0183c31a4b7bdf9a3f68d453adeec136e59e5a9d9a554370.txt",
+      "sha256": "53a04b0a11073f3d0183c31a4b7bdf9a3f68d453adeec136e59e5a9d9a554370"
     },
     {
       "bytes": 566,
