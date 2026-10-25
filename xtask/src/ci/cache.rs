@@ -477,7 +477,7 @@ pub fn application_identity(
     native_key: &str,
 ) -> Result<ApplicationIdentity> {
     let manifest: Manifest = util::json(&source.join(dist::MANIFEST))?;
-    let package: toml::Value = fs::read_to_string(source.join("Cargo.toml"))?.parse()?;
+    let package: toml::Value = toml::from_str(&fs::read_to_string(source.join("Cargo.toml"))?)?;
     ensure!(
         !source.join("build.rs").exists()
             && package["package"]

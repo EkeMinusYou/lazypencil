@@ -136,7 +136,7 @@ pub fn archive_record(
         }
         if relative == "Cargo.toml" {
             ensure!(data.len() as u64 <= util::MAX_FILE, "Oversized manifest");
-            manifest = Some(std::str::from_utf8(&data)?.parse::<toml::Value>()?);
+            manifest = Some(toml::from_str::<toml::Value>(std::str::from_utf8(&data)?)?);
             manifest_data = Some(data.clone());
         }
         if relative == ".cargo_vcs_info.json" {
@@ -224,7 +224,7 @@ pub fn local_record(
         "Local package escapes workspace"
     );
     let manifest = util::read(&path.join("Cargo.toml"), util::MAX_FILE)?;
-    let metadata: toml::Value = std::str::from_utf8(&manifest)?.parse()?;
+    let metadata: toml::Value = toml::from_str(std::str::from_utf8(&manifest)?)?;
     let metadata = serde_json::to_value(&metadata["package"])?;
     ensure!(
         metadata["name"] == package["name"] && metadata["version"] == package["version"],
@@ -461,7 +461,7 @@ pub fn render(index: &Value, texts: &Files) -> Result<Vec<u8>> {
 
 pub fn locked(root: &Path) -> Result<(Vec<u8>, BTreeMap<String, Value>)> {
     let bytes = util::read(&root.join("Cargo.lock"), util::MAX_FILE)?;
-    let lock: toml::Value = std::str::from_utf8(&bytes)?.parse()?;
+    let lock: toml::Value = toml::from_str(std::str::from_utf8(&bytes)?)?;
     let packages = serde_json::to_value(&lock["package"])?;
     let mut result = BTreeMap::new();
     for package in value_array(&packages)? {
@@ -497,7 +497,7 @@ pub fn collect(root: &Path, cargo: &Path, upstream: &Path, output: &Path) -> Res
         item["blob"] = json!(blob(data, &mut texts));
         references.push(item);
     }
-    let manifest: toml::Value = fs::read_to_string(root.join("Cargo.toml"))?.parse()?;
+    let manifest: toml::Value = toml::from_str(&fs::read_to_string(root.join("Cargo.toml"))?)?;
     let mut locations = BTreeMap::from([(
         manifest["package"]["name"].as_str().unwrap().to_owned(),
         ".".to_owned(),

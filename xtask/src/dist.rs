@@ -261,8 +261,9 @@ pub fn source_files(root: &Path, selected: Option<&BTreeSet<String>>) -> Result<
 }
 
 pub fn package_identity(files: &Files) -> Result<Value> {
-    let manifest: toml::Value =
-        std::str::from_utf8(&files.get("Cargo.toml").context("Missing Cargo.toml")?.0)?.parse()?;
+    let manifest: toml::Value = toml::from_str(std::str::from_utf8(
+        &files.get("Cargo.toml").context("Missing Cargo.toml")?.0,
+    )?)?;
     let package = &manifest["package"];
     let name = package["name"].as_str().context("Invalid package name")?;
     let version = package["version"]

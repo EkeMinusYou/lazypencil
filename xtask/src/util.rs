@@ -15,7 +15,7 @@ pub fn root() -> PathBuf {
         for candidate in current.ancestors() {
             let manifest = candidate.join("Cargo.toml");
             if let Ok(body) = fs::read_to_string(&manifest) {
-                if let Ok(value) = body.parse::<toml::Value>() {
+                if let Ok(value) = toml::from_str::<toml::Value>(&body) {
                     if value
                         .get("package")
                         .and_then(|p| p.get("name"))

@@ -57,12 +57,11 @@ pub fn tree(root: &Path) -> Result<Files> {
 }
 
 fn source_lock(files: &Files) -> Result<Vec<Value>> {
-    let lock: toml::Value = std::str::from_utf8(
+    let lock: toml::Value = toml::from_str(std::str::from_utf8(
         files
             .get("Cargo.lock")
             .context("Missing library lockfile")?,
-    )?
-    .parse()?;
+    )?)?;
     let packages = serde_json::to_value(
         lock.get("package")
             .context("Missing library locked packages")?,
@@ -94,7 +93,7 @@ pub fn vendor_packages(files: &Files) -> Result<(Vec<Value>, Vec<String>)> {
         let metadata = files
             .get(&manifest_path)
             .context("Missing standard-library vendor manifest")?;
-        let manifest: toml::Value = std::str::from_utf8(metadata)?.parse()?;
+        let manifest: toml::Value = toml::from_str(std::str::from_utf8(metadata)?)?;
         let manifest = serde_json::to_value(
             manifest
                 .get("package")
