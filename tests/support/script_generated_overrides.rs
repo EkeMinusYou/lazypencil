@@ -10,7 +10,7 @@ return [{type:'ref',ref:pencil.input.selected},
  {type:'ref',x:24,ref:'badge'}];
 "##;
 
-fn setup(version: &str, descendant: bool, mode: &str, count: usize) -> (TempDir, Store, String) {
+fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Store, String) {
     let temp = TempDir::new().unwrap();
     fs::create_dir(temp.path().join(".git")).unwrap();
     fs::create_dir(temp.path().join("library")).unwrap();
@@ -30,6 +30,7 @@ fn setup(version: &str, descendant: bool, mode: &str, count: usize) -> (TempDir,
     match mode {
         "literal" => changes["inputs"] = json!({"selected":"badge","stale":"$missing"}),
         "variable" => changes["inputs"] = json!({"selected":"$selection","stale":"$missing"}),
+        "bad-variable" => changes["inputs"] = json!({"selected":"$missing"}),
         "null" => changes["inputs"] = json!({"selected":null,"stale":"$missing"}),
         "metadata" => {
             changes["metadata"] = json!({"type":"test","keep":"generated","literal":"$tone"})
@@ -40,13 +41,18 @@ fn setup(version: &str, descendant: bool, mode: &str, count: usize) -> (TempDir,
         "inherit" => {}
         _ => panic!("Unknown generated override case"),
     }
-    let template = if descendant {
-        json!({"type":"ref","ref":"base:card","descendants":{"draw":changes}})
-    } else {
-        let mut node = changes;
-        node["type"] = json!("ref");
-        node["ref"] = json!("base:worker");
-        node
+    let direct = |mut changes: Value| {
+        changes["type"] = json!("ref");
+        changes["ref"] = json!("base:worker");
+        changes
+    };
+    let template = match style {
+        "direct" => direct(changes),
+        "descendant" => json!({"type":"ref","ref":"base:card","descendants":{"draw":changes}}),
+        "replacement" => {
+            json!({"type":"ref","ref":"base:card","descendants":{"draw":direct(changes)}})
+        }
+        _ => panic!("Unknown generated override address"),
     };
     let code = format!(
         "/* @schema 2.21 */\nconst template={template};return Array.from({{length:{count}}},(_,i)=>({{...template,id:'child-'+i}}));\n"
@@ -74,7 +80,7 @@ fn setup(version: &str, descendant: bool, mode: &str, count: usize) -> (TempDir,
     write(
         &temp.path().join("main.pen"),
         json!({"version":version,"imports":{"ui":"library/ui.pen"},
-        "variables":{"tone":{"type":"color","value":"#0000ff"},"selection":{"type":"string","value":"badge"}},
+        "variables":{"tone":{"type":"color","value":"#0000ff"},"selection":{"type":"string","value":"badge"},"missing":{"type":"string","value":"badge"}},
         "children":[
             {"id":"definitions","type":"frame","enabled":false,"children":[{"id":"badge","type":"rectangle","reusable":true,"width":10,"height":10,"fill":"#0000ff"}]},
             {"id":"use","type":"ref","ref":"ui:generator"}
@@ -167,9 +173,10 @@ fn preview(store: &Store, first: Color, metadata: &str) -> Vec<u8> {
 #[test]
 fn generated_script_code_overrides_keep_saved_input_ownership_after_copy_and_recopy() {
     for version in ["2.19", "2.21"] {
-        for descendant in [false, true] {
+        for style in ["direct", "descendant", "replacement"] {
             for mode in ["inherit", "literal", "variable", "null", "metadata"] {
-                let (temp, store, code) = setup(version, descendant, mode, 1);
+                eprintln!("Generated source: schema={version}, style={style}, mode={mode}");
+                let (temp, store, code) = setup(version, style, mode, 1);
                 let first = if ["inherit", "metadata"].contains(&mode) {
                     Color::RED
                 } else {
@@ -200,7 +207,7 @@ fn generated_script_code_overrides_keep_saved_input_ownership_after_copy_and_rec
                 assert_eq!(
                     preview(&store, first, metadata),
                     before,
-                    "{version}/{descendant}/{mode}/copy"
+                    "{version}/{style}/{mode}/copy"
                 );
                 let (second, _) =
                     fixture::recopy(&store, component, &temp.path().join("second"), "again_");
@@ -209,7 +216,7 @@ fn generated_script_code_overrides_keep_saved_input_ownership_after_copy_and_rec
                 assert_eq!(
                     preview(&second, first, metadata),
                     before,
-                    "{version}/{descendant}/{mode}/recopy"
+                    "{version}/{style}/{mode}/recopy"
                 );
             }
         }
@@ -221,9 +228,10 @@ fn generated_code_overrides_reject_unmanifested_sources_explicit_contexts_and_bi
     for (include_source, mode, count, expected) in [
         (false, "inherit", 1, "ASSET_NOT_FOUND"),
         (true, "explicit-context", 1, "UNSUPPORTED_FEATURE"),
+        (true, "bad-variable", 1, "INVALID_DOCUMENT"),
         (true, "inherit", 600, "INVALID_DOCUMENT"),
     ] {
-        let (temp, store, _) = setup("2.21", false, mode, count);
+        let (temp, store, _) = setup("2.21", "direct", mode, count);
         copy(&store, include_source);
         fs::remove_dir_all(temp.path().join("library")).unwrap();
         let bytes = fs::read(store.path()).unwrap();

@@ -326,6 +326,10 @@ impl Bound {
         Ok(())
     }
 
+    pub(super) fn declared_input(&self, value: &mut Value) -> Result<()> {
+        self.value(value)
+    }
+
     pub(super) fn inherited_output(
         &self,
         uri: &str,
@@ -379,7 +383,24 @@ impl Bound {
             }
             *theme = remapped;
         }
-        self.value(node)?;
+        // A replacement header determines which controls are active. Keep raw
+        // inputs until that captured header is available; stale controls must
+        // not bind to either the copied namespace or a same-named caller value.
+        let deferred_inputs = if self.values.assets.is_some()
+            && node.get("scriptUri").is_some()
+            && (node["type"] == "ref" || node.get("type").is_none())
+        {
+            node.as_object_mut().and_then(|node| node.remove("inputs"))
+        } else {
+            None
+        };
+        let rewritten = self.value(node);
+        if let Some(inputs) = deferred_inputs {
+            node.as_object_mut()
+                .expect("generated properties")
+                .insert("inputs".into(), inputs);
+        }
+        rewritten?;
         if let Some(children) = node.get_mut("children").and_then(Value::as_array_mut) {
             for child in children {
                 self.rewrite(child, handles, inherited_bytes)?;
