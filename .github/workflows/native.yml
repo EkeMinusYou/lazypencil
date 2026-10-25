@@ -176,7 +176,7 @@ jobs:
       - name: Verify MCP and supervised adapter dynamic image content
         if: inputs.phase == 'full'
         run: cargo xtask ci native mcp
-      - name: Run independent lifecycle and Material suites in two lanes
+      - name: Compile release alongside independent lifecycle and Material suites
         if: inputs.phase == 'full'
         run: cargo xtask ci native long-tests
       - name: Render the combined example for review
@@ -186,7 +186,7 @@ jobs:
         if: inputs.phase == 'full'
         timeout-minutes: 15
         run: cargo xtask ci native default-lint
-      - name: Build and smoke-test the release profile with isolated measurements
+      - name: Recheck release inputs and run isolated smoke tests and measurements
         id: release-smoke
         if: inputs.phase == 'full'
         run: cargo xtask ci native release

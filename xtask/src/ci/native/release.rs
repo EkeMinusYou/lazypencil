@@ -47,13 +47,14 @@ fn find<'a>(value: &'a mut Value, id: &str) -> Option<&'a mut Value> {
         .iter_mut()
         .find_map(|c| find(c, id))
 }
+pub fn compile(s: &Session, log: &str) -> Result<()> {
+    s.cargo(&["build", "--locked", "--release"], 3600, log, false)
+}
+
 pub fn smoke(s: &Session) -> Result<()> {
-    s.cargo(
-        &["build", "--locked", "--release"],
-        3600,
-        "lazypencil-release.log",
-        false,
-    )?;
+    // Recheck Cargo inputs even when the parallel lane already compiled this
+    // source. A warm build performs freshness checks without recompilation.
+    compile(s, "lazypencil-release-check.log")?;
     process::checked(
         Command::new(s.executable("release")).arg("--version"),
         Duration::from_secs(30),

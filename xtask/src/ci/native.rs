@@ -15,6 +15,7 @@ use std::{
 };
 
 pub mod browser;
+pub mod parallel;
 pub mod release;
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -744,65 +745,70 @@ impl Session {
                 "Test executable changed after compilation"
             );
         }
-        // At most two independent suites run together. Idle deadlines remain unchanged.
-        std::thread::scope(|scope| {
-            let lifecycle = scope.spawn(|| -> Result<()> {
-                for (target, filter, log) in [
-                    (
-                        "mcp",
-                        "idle_mcp_reaps_script_page_and_shader_processes_without_another_request",
-                        "chromium-mcp-idle.log",
-                    ),
-                    ("tui", "", "chromium-tui.log"),
-                ] {
-                    let mut args =
-                        vec![catalog.binaries[target].path.to_string_lossy().into_owned()];
-                    if !filter.is_empty() {
-                        args.push(filter.into());
+        // Only compilation overlaps the two test lanes. They execute immutable
+        // debug binaries, so no test waits for Cargo's release build lock.
+        // Joining every lane keeps subsequent smoke tests and measurements isolated.
+        parallel::run(vec![
+            (
+                "release compilation",
+                Box::new(|| release::compile(self, "lazypencil-release.log")),
+            ),
+            (
+                "process lifecycle",
+                Box::new(|| -> Result<()> {
+                    for (target, filter, log) in [
+                        (
+                            "mcp",
+                            "idle_mcp_reaps_script_page_and_shader_processes_without_another_request",
+                            "chromium-mcp-idle.log",
+                        ),
+                        ("tui", "", "chromium-tui.log"),
+                    ] {
+                        let mut args =
+                            vec![catalog.binaries[target].path.to_string_lossy().into_owned()];
+                        if !filter.is_empty() {
+                            args.push(filter.into());
+                        }
+                        args.extend(["--ignored".into(), "--test-threads=1".into()]);
+                        self.execute(&args, 300, log, false)?;
                     }
-                    args.extend(["--ignored".into(), "--test-threads=1".into()]);
-                    self.execute(&args, 300, log, false)?;
-                }
-                Ok(())
-            });
-            let material = scope.spawn(|| -> Result<()> {
-                for (target, filter, log) in [
-                    (
-                        "optional_icons",
-                        "official_material_fonts",
-                        "lazypencil-material-fonts.log",
-                    ),
-                    ("mcp", "real_mcp_material", "lazypencil-material-mcp.log"),
-                ] {
-                    let args = vec![
-                        catalog.binaries[target].path.to_string_lossy().into_owned(),
-                        filter.into(),
-                        "--ignored".into(),
-                        "--nocapture".into(),
-                        "--test-threads=1".into(),
-                    ];
-                    let mut command = self.command(&args);
-                    command
-                        .env(
-                            "LAZYPENCIL_TEST_MATERIAL_DIR",
-                            self.temporary.join("lazypencil-material-fonts"),
-                        )
-                        .env(
-                            "LAZYPENCIL_CONFIG_DIR",
-                            self.temporary.join("lazypencil-material-settings"),
-                        );
-                    self.execute_command(&args, &mut command, 3600, log, false)?;
-                }
-                Ok(())
-            });
-            let a = lifecycle
-                .join()
-                .map_err(|_| anyhow::anyhow!("Lifecycle task panicked"))?;
-            let b = material
-                .join()
-                .map_err(|_| anyhow::anyhow!("Material task panicked"))?;
-            a.and(b)
-        })
+                    Ok(())
+                }),
+            ),
+            (
+                "Material verification",
+                Box::new(|| -> Result<()> {
+                    for (target, filter, log) in [
+                        (
+                            "optional_icons",
+                            "official_material_fonts",
+                            "lazypencil-material-fonts.log",
+                        ),
+                        ("mcp", "real_mcp_material", "lazypencil-material-mcp.log"),
+                    ] {
+                        let args = vec![
+                            catalog.binaries[target].path.to_string_lossy().into_owned(),
+                            filter.into(),
+                            "--ignored".into(),
+                            "--nocapture".into(),
+                            "--test-threads=1".into(),
+                        ];
+                        let mut command = self.command(&args);
+                        command
+                            .env(
+                                "LAZYPENCIL_TEST_MATERIAL_DIR",
+                                self.temporary.join("lazypencil-material-fonts"),
+                            )
+                            .env(
+                                "LAZYPENCIL_CONFIG_DIR",
+                                self.temporary.join("lazypencil-material-settings"),
+                            );
+                        self.execute_command(&args, &mut command, 3600, log, false)?;
+                    }
+                    Ok(())
+                }),
+            ),
+        ])
     }
 }
 #[derive(Serialize, Deserialize)]

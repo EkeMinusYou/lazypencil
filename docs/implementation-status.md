@@ -1,5 +1,9 @@
 # lazypencil 実装と公開準備の状況
 
+2026-10-26: 共通のローカル Web 描画 `03fe238` は [GHA `40212537150`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40212537150) の先行 Linux・全3環境・監査・最終 source を成功した。通常／core は macOS 1,132件、Linux 各1,142件で、各環境365画像の必須確認と release の42回の書き出しを通した。新しい共通描画14枚と CLI／MCP 8枚は全3環境の73,728画素を独立照合し、素材 revision、保持 page の更新、元ディレクトリ削除後の bundle、CLI と MCP の PNG バイト一致を確認した。コピー128枚と script override 84枚も各環境で全画素一致し、静的 release 画像は以前の基準と一致した。配布ソース1,111ファイル・31,036,368バイトは Git の内容・サイズ・mode と一致した。本家の往復互換、ネイティブ file の全挙動、物理端末、統制した性能、最終バイナリーの帰属・配布などの完成条件は継続する。
+
+CI の次の変更では、計測済みの長い release コンパイルを既存の lifecycle／Material の2試験レーンと並行させる。試験は commit と hash を検査した不変の debug バイナリーを使い、Cargo のロックと release 出力先を共有しない。最大3レーンの全終了と失敗・panic の伝達を Rust で検査し、測定は join 後に隔離して実行する。試験・期限・最終基準は維持し、短縮効果は次の GHA の実測で確認する。ローカルは fmt・actionlint・差分検査に限定する。
+
 2026-10-26: 宣言済みのローカル Web 素材を共通描画入口へ接続する実装を追加する。`set_browser_resources` で所有文書の素材 root を編集し、既存 Project の許可 root と私有データの境界を維持する。捕捉元・内容 revision を cache と保持 page の識別子に含め、素材の変更・宣言解除では画面外の古い context も閉じる。描画取消では最初の確認で中止した場合も browser／shader と動的 cache を回収する。両形式の共通描画14画像と MCP／CLI の8画像を検査し、元ディレクトリ削除後の bundle の読取、古い依存 revision の拒否、親子 worker、未登録 host script の拒否、寸法変更時の DOM 維持、取消後の復帰を確認する。英語 guide は1.0.24。新実装は GHA 未検証であり、ネイティブ file の全挙動、本家の往復互換と製品全体の残件は維持する。ローカルで重い build は行わない。
 
 2026-10-26: Web 素材の管理 bundle `d0e74b7` は [GHA `40205037740`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40205037740) の先行 Linux・全3環境・監査・source を成功した。通常／core は macOS 1,113件、Linux 各1,123件で、各環境の215画像の必須確認、元素材を削除して保存済み bundle を読み直した後の CSS／画像／iframe／親子 worker と未登録 script の拒否を通した。拡張子なしファイルは通常の Chromium の MIME・実行状態・PNG と一致し、新画像の全3,072画素と配布ソース1,103ファイルを独立照合した。各環境の静的 release 画像と42回の書き出しも確認した。
