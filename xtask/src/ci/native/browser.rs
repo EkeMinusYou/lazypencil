@@ -385,7 +385,7 @@ pub fn required_images(root: &Path, commit: &str) -> Result<()> {
             && local["location_preserved"] == true
             && local["unsafe_host_file"] == false
             && local["sandbox"] == "enabled"
-            && local["stats"]["fulfilled"] == 6
+            && local["stats"]["fulfilled"] == 8
             && local["stats"]["denied"] == 1
             && local["stats"]["attached_targets"]
                 .as_u64()

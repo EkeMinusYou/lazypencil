@@ -141,6 +141,7 @@ enum Phase {
 
 struct Dispatch {
     session: String,
+    browser_level: bool,
     method: &'static str,
     params: Value,
     next: Phase,
@@ -150,6 +151,8 @@ struct Dispatch {
 pub(super) struct Interception {
     sessions: BTreeMap<String, Session>,
     pending: BTreeMap<u64, (String, Phase)>,
+    targets: BTreeMap<String, String>,
+    browser_enabled: bool,
 }
 
 fn enable() -> Value {
@@ -171,6 +174,8 @@ impl Browser {
     /// Install a captured inventory before navigating this isolated page.
     /// A fresh page is required when its resource snapshot changes. Frames and
     /// workers inherit the inventory before their paused startup is resumed.
+    /// After installation, browser-level requests from unowned targets are
+    /// denied for the remaining lifetime of this isolated browser process.
     pub fn intercept_local_files(
         &mut self,
         session: &str,
@@ -194,6 +199,13 @@ impl Browser {
             },
         );
         self.command(Some(session), "Fetch.enable", enable(), budget)?;
+        // Dedicated workers have Target and Network handlers, but no Fetch
+        // handler. Browser-level Fetch also wraps their loaders. Page handlers
+        // stay closer to the client and fulfill their own requests first.
+        if !self.local_files.browser_enabled {
+            self.local_files.browser_enabled = true;
+            self.command(None, "Fetch.enable", enable(), budget)?;
+        }
         self.command(Some(session), "Target.setAutoAttach", auto_attach(), budget)?;
         Ok(())
     }
@@ -212,7 +224,7 @@ impl Browser {
                 return Err(failed("Too many pending local browser responses"));
             }
             let id = self.send_command(
-                Some(&dispatch.session),
+                (!dispatch.browser_level).then_some(dispatch.session.as_str()),
                 dispatch.method,
                 dispatch.params,
                 budget,
@@ -241,34 +253,63 @@ impl Interception {
         }
         self.sessions.retain(|id, _| !removed.contains(id));
         self.pending.retain(|_, (id, _)| !removed.contains(id));
+        self.targets.retain(|_, id| !removed.contains(id));
     }
 
     fn observe(&mut self, value: &Value) -> Result<Option<Dispatch>> {
         if let Some(id) = value["id"].as_u64()
             && let Some((session, next)) = self.pending.remove(&id)
         {
-            if !self.sessions.contains_key(&session) {
+            if !session.is_empty() && !self.sessions.contains_key(&session) {
                 return Ok(None);
             }
             if value.get("error").is_some() {
                 // Never echo URLs, request headers, or page-provided error text.
-                return Err(failed("Local browser interception command failed"));
+                let stage = match next {
+                    Phase::AutoAttach => "fetch_enable",
+                    Phase::Resume => "target_auto_attach",
+                    Phase::Complete => "response_or_resume",
+                };
+                return Err(
+                    failed("Local browser interception command failed").details(json!({
+                        "stage":stage,"protocol_code":value["error"]["code"].as_i64()
+                    })),
+                );
             }
             return Ok(match next {
                 Phase::Complete => None,
                 Phase::AutoAttach => Some(Dispatch {
                     session,
+                    browser_level: false,
                     method: "Target.setAutoAttach",
                     params: auto_attach(),
                     next: Phase::Resume,
                 }),
                 Phase::Resume => Some(Dispatch {
                     session,
+                    browser_level: false,
                     method: "Runtime.runIfWaitingForDebugger",
                     params: json!({}),
                     next: Phase::Complete,
                 }),
             });
+        }
+        if value["sessionId"].is_null()
+            && value["method"] == "Fetch.requestPaused"
+            && self.browser_enabled
+        {
+            let frame = identifier(&value["params"]["frameId"])?;
+            if let Some(session) = self.targets.get(frame).cloned() {
+                return self.request(&session, &value["params"], true).map(Some);
+            }
+            // Never guess an inventory from a URL shared by different tabs.
+            return Ok(Some(Dispatch {
+                session: String::new(),
+                browser_level: true,
+                method: "Fetch.failRequest",
+                params: json!({"requestId":identifier(&value["params"]["requestId"])? ,"errorReason":"BlockedByClient"}),
+                next: Phase::Complete,
+            }));
         }
         let Some(parent) = value["sessionId"].as_str() else {
             return Ok(None);
@@ -277,29 +318,14 @@ impl Interception {
             return Ok(None);
         };
         match value["method"].as_str() {
-            Some("Fetch.requestPaused") => {
-                let owner = entry.owner.clone();
-                let (method, params, bytes) = entry.files.response(&value["params"])?;
-                let stats = &mut self
-                    .sessions
-                    .get_mut(&owner)
-                    .expect("inventory owner")
-                    .stats;
-                if method == "Fetch.fulfillRequest" {
-                    stats.fulfilled += 1;
-                    stats.response_bytes += bytes as u64;
-                } else {
-                    stats.denied += 1;
-                }
-                Ok(Some(Dispatch {
-                    session: parent.into(),
-                    method,
-                    params,
-                    next: Phase::Complete,
-                }))
-            }
+            Some("Fetch.requestPaused") => self.request(parent, &value["params"], false).map(Some),
             Some("Target.attachedToTarget") => {
                 let child = identifier(&value["params"]["sessionId"])?;
+                let target = identifier(&value["params"]["targetInfo"]["targetId"])?;
+                let page = matches!(
+                    value["params"]["targetInfo"]["type"].as_str(),
+                    Some("page" | "iframe")
+                );
                 if self.sessions.len() >= MAX_SESSIONS || self.sessions.contains_key(child) {
                     return Err(failed("Invalid or excessive local browser child sessions"));
                 }
@@ -315,11 +341,23 @@ impl Interception {
                     .stats
                     .attached_targets += 1;
                 self.sessions.insert(child.into(), entry);
+                if self.targets.insert(target.into(), child.into()).is_some() {
+                    return Err(failed("Duplicate local browser child target"));
+                }
                 Ok(Some(Dispatch {
                     session: child.into(),
-                    method: "Fetch.enable",
-                    params: enable(),
-                    next: Phase::AutoAttach,
+                    browser_level: false,
+                    method: if page {
+                        "Fetch.enable"
+                    } else {
+                        "Target.setAutoAttach"
+                    },
+                    params: if page { enable() } else { auto_attach() },
+                    next: if page {
+                        Phase::AutoAttach
+                    } else {
+                        Phase::Resume
+                    },
                 }))
             }
             Some("Target.detachedFromTarget") => {
@@ -335,6 +373,30 @@ impl Interception {
             }
             _ => Ok(None),
         }
+    }
+
+    fn request(&mut self, session: &str, params: &Value, browser_level: bool) -> Result<Dispatch> {
+        let entry = &self.sessions[session];
+        let owner = entry.owner.clone();
+        let (method, params, bytes) = entry.files.response(params)?;
+        let stats = &mut self
+            .sessions
+            .get_mut(&owner)
+            .expect("inventory owner")
+            .stats;
+        if method == "Fetch.fulfillRequest" {
+            stats.fulfilled += 1;
+            stats.response_bytes += bytes as u64;
+        } else {
+            stats.denied += 1;
+        }
+        Ok(Dispatch {
+            session: session.into(),
+            browser_level,
+            method,
+            params,
+            next: Phase::Complete,
+        })
     }
 }
 

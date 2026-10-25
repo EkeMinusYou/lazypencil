@@ -138,14 +138,23 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
             "app.js",
             "text/javascript",
             r#"window.addEventListener('message',e=>{if(e.data==='frame-ready')window.frameReady=true});
-            const nestedCode="postMessage('nested-ready')";
-            const workerCode=`const child=new Worker(URL.createObjectURL(new Blob([${JSON.stringify(nestedCode)}],{type:'text/javascript'})));
-                child.onmessage=e=>{postMessage(e.data);child.terminate()}`;
+            const libraryURL=JSON.stringify(new URL('worker-library.js',location.href).href);
+            const nestedCode=`importScripts(${libraryURL});postMessage(capturedWorkerValue)`;
+            const workerCode=`importScripts(${libraryURL});const child=new Worker(URL.createObjectURL(new Blob([${JSON.stringify(nestedCode)}],{type:'text/javascript'})));
+                child.onerror=e=>postMessage('worker-failure:'+e.message);
+                child.onmessage=e=>{postMessage(capturedWorkerValue+':'+e.data);child.terminate()}`;
             const worker=new Worker(URL.createObjectURL(new Blob([workerCode],{type:'text/javascript'})));
-            worker.onmessage=e=>{if(e.data==='nested-ready')window.workerReady=true;worker.terminate()};
+            worker.onerror=e=>window.workerFailure=e.message;
+            worker.onmessage=e=>{if(e.data==='worker-captured:worker-captured')window.workerReady=true;
+                else window.workerFailure=String(e.data);worker.terminate()};
             window.addEventListener('load',async()=>{await document.images[0].decode();window.localProbe={
             background:getComputedStyle(document.documentElement).backgroundColor,
             location:location.href,unsafe:window.unsafeHostFile===true,image:document.images[0].naturalWidth}});"#,
+        ),
+        (
+            "worker-library.js",
+            "text/javascript",
+            "self.capturedWorkerValue='worker-captured'",
         ),
         (
             "blue.svg",
@@ -216,7 +225,7 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
             let probe = loop {
                 let value = browser.evaluate(
                     session,
-                    "window.frameReady && window.workerReady && window.localProbe || null",
+                    "window.workerFailure ? {worker_failure:window.workerFailure} : window.frameReady && window.workerReady && window.localProbe || null",
                     &budget,
                 )?;
                 if !value.is_null() {
@@ -224,7 +233,7 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
                 }
                 std::thread::sleep(Duration::from_millis(20).min(budget.remaining()?));
             };
-            assert_eq!(probe["background"], "rgb(0, 255, 0)");
+            assert_eq!(probe["background"], "rgb(0, 255, 0)", "{probe}");
             assert_eq!(probe["image"], 8);
             assert_eq!(probe["unsafe"], false);
             assert_eq!(probe["location"], url.as_str());
@@ -243,9 +252,9 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
                 .decode(screenshot["data"].as_str().unwrap())
                 .unwrap();
             let stats = browser.local_file_stats(session).unwrap();
-            assert_eq!(stats.fulfilled, sources.len() as u64);
+            assert_eq!(stats.fulfilled, sources.len() as u64 + 1);
             assert_eq!(stats.denied, 1);
-            assert_eq!(stats.response_bytes, captured_bytes as u64);
+            assert_eq!(stats.response_bytes, (captured_bytes + sources.iter().find(|(name, _, _)| *name == "worker-library.js").unwrap().2.len()) as u64);
             assert!(stats.attached_targets >= 2);
             Ok((png, stats, probe))
         })

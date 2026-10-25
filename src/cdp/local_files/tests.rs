@@ -131,7 +131,7 @@ fn attach(state: &mut Interception, parent: &str, child: &str) -> Dispatch {
     state
         .observe(
             &json!({"sessionId":parent,"method":"Target.attachedToTarget",
-        "params":{"sessionId":child,"waitingForDebugger":true}}),
+        "params":{"sessionId":child,"waitingForDebugger":true,"targetInfo":{"type":"iframe","targetId":child}}}),
         )
         .unwrap()
         .unwrap()
@@ -240,5 +240,81 @@ fn interception_failures_are_bounded_and_do_not_echo_page_data() {
     for i in state.sessions.len()..MAX_SESSIONS {
         attach(&mut state, "root", &format!("child-{i}"));
     }
-    assert!(state.observe(&json!({"sessionId":"root","method":"Target.attachedToTarget","params":{"sessionId":"overflow"}})).is_err());
+    assert!(state.observe(&json!({"sessionId":"root","method":"Target.attachedToTarget","params":{"sessionId":"overflow","targetInfo":{"type":"worker","targetId":"overflow"}}})).is_err());
+}
+
+#[test]
+fn browser_worker_requests_use_target_ownership_instead_of_guessing_from_shared_urls() {
+    let mut state = state();
+    state.browser_enabled = true;
+    let other = Session {
+        owner: "other".into(),
+        parent: None,
+        files: Arc::new(
+            LocalFiles::new([(
+                "file:///original/site/index.html".into(),
+                "text/html".into(),
+                b"other copy".to_vec(),
+            )])
+            .unwrap(),
+        ),
+        stats: LocalFileStats::default(),
+    };
+    // Each root deliberately serves different bytes under the same original URL.
+    state.sessions.insert("other".into(), other);
+    for (owner, child) in [("root", "first-worker"), ("other", "second-worker")] {
+        let setup = state
+            .observe(
+                &json!({"sessionId":owner,"method":"Target.attachedToTarget",
+            "params":{"sessionId":child,"targetInfo":{"type":"worker","targetId":child}}}),
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(setup.method, "Target.setAutoAttach");
+        assert!(!setup.browser_level);
+    }
+    let request = |frame: &str| {
+        json!({"method":"Fetch.requestPaused","params":{
+        "frameId":frame,"requestId":"request","request":{"url":"file:///original/site/index.html","method":"GET"}}})
+    };
+    for child in ["first-worker", "second-worker"] {
+        let response = state.observe(&request(child)).unwrap().unwrap();
+        assert!(response.browser_level);
+        assert_eq!(response.session, child);
+        assert_eq!(response.method, "Fetch.fulfillRequest");
+        let bytes = STANDARD
+            .decode(response.params["body"].as_str().unwrap())
+            .unwrap();
+        assert_eq!(
+            bytes,
+            if child == "first-worker" {
+                b"captured".as_slice()
+            } else {
+                b"other copy".as_slice()
+            }
+        );
+    }
+    assert_eq!(state.sessions["root"].stats.fulfilled, 1);
+    assert_eq!(state.sessions["other"].stats.fulfilled, 1);
+    assert_eq!(
+        state.observe(&request("unknown")).unwrap().unwrap().method,
+        "Fetch.failRequest"
+    );
+    state.remove("root");
+    assert_eq!(
+        state
+            .observe(&request("first-worker"))
+            .unwrap()
+            .unwrap()
+            .method,
+        "Fetch.failRequest"
+    );
+    assert_eq!(
+        state
+            .observe(&request("second-worker"))
+            .unwrap()
+            .unwrap()
+            .method,
+        "Fetch.fulfillRequest"
+    );
 }
