@@ -127,7 +127,8 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     );
     let mac = paths.iter().any(|p| {
         let p = p.to_lowercase();
-        p.contains("macos") || p.contains("darwin")
+        // Exercise the shared PTY bridge against BSD libc and terminal restoration first.
+        p.contains("macos") || p.contains("darwin") || p.starts_with("tests/support/terminal/")
     });
     let platform = if platform == "auto" {
         if mac { "macos-15" } else { "ubuntu-24.04" }
@@ -196,6 +197,7 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         &[],
         &[
             "xtask/src/test_support/terminal",
+            "tests/support/terminal/",
             "tests/fixtures/terminal/",
         ],
     );
@@ -227,6 +229,7 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
                         "src/config/keys",
                         ".github/",
                         "tests/fixtures/terminal/",
+                        "tests/support/terminal/",
                         "xtask/src/test_support/terminal",
                         "xtask/src/test_support/pty",
                     ],

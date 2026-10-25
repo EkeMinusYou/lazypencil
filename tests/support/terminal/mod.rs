@@ -143,7 +143,7 @@ impl Harness {
             "halfblocks"
         };
         let (mut master, mut slave) = (-1, -1);
-        let size = libc::winsize {
+        let mut size = libc::winsize {
             ws_row: 34,
             ws_col: 130,
             ws_xpixel: 0,
@@ -154,8 +154,8 @@ impl Harness {
                 &mut master,
                 &mut slave,
                 std::ptr::null_mut(),
-                std::ptr::null(),
-                &size,
+                std::ptr::null_mut(),
+                &raw mut size,
             )
         } != 0
         {

@@ -22,6 +22,28 @@ fn focus_keeps_the_existing_reproduction_scope_for_every_source_module() {
 }
 
 #[test]
+fn rust_pty_bridge_changes_select_the_stricter_supported_host_and_all_frontend_reproductions() {
+    for path in [
+        "tests/support/terminal/mod.rs",
+        "tests/support/terminal/cases.rs",
+        "tests/support/terminal/cases/conversations.rs",
+    ] {
+        let plan = focus::select(&util::root(), &[path.into()], "auto").unwrap();
+        assert_eq!(plan.platform, "macos-15");
+        assert_eq!(plan.suite, "graphics");
+        for target in ["tui", "user_config", "conversation_history"] {
+            assert!(
+                plan.targets.iter().any(|value| value == target),
+                "{path}/{target}"
+            );
+        }
+        let explicit = focus::select(&util::root(), &[path.into()], "ubuntu-24.04").unwrap();
+        assert_eq!(explicit.platform, "ubuntu-24.04");
+        assert_eq!(explicit.targets, plan.targets);
+    }
+}
+
+#[test]
 fn tool_changes_only_bypass_focus_native_compilation_when_they_are_not_application_inputs() {
     for path in [
         "xtask/src/ci/cache.rs",
