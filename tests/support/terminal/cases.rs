@@ -435,12 +435,7 @@ fn basic(h: &mut Harness) -> Result {
     h.key(b"\x1b\r")?;
     h.wait("first completed turn", 15.0, |h| h.count("complete") == 1)?;
     h.wait("visible turn completion", 15.0, |h| {
-        h.screen
-            .text()
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .windows(2)
-            .any(|w| w == ["Request", "complete"])
+        h.screen.contains_words("Request", "complete")
     })?;
     h.paste("次の依頼")?;
     h.key(b"\x13")?;
@@ -548,12 +543,7 @@ fn restore(h: &mut Harness, checkpoint: &Value) -> Result {
         read_json(&h.document).is_some_and(|d| d["children"][0]["fill"] == "#22C55E")
     })?;
     h.wait("visible restoration", 15.0, |h| {
-        h.screen
-            .text()
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .windows(2)
-            .any(|w| w == ["Checkpoint", "restored"])
+        h.screen.contains_words("Checkpoint", "restored")
     })?;
     assert_eq!(state(h)["draft"], "復元しても保持する下書き");
     let entries = h.cli(&["history".as_ref(), h.document.as_os_str()])?["entries"]

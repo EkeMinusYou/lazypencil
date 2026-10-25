@@ -40,6 +40,13 @@ impl Screen {
         let (y, x) = self.parser.screen().cursor_position();
         (x, y)
     }
+    pub fn contains_words(&self, first: &str, second: &str) -> bool {
+        let text = self.text();
+        text.match_indices(first).any(|(position, _)| {
+            let suffix = &text[position + first.len()..];
+            suffix.starts_with(char::is_whitespace) && suffix.trim_start().starts_with(second)
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

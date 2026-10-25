@@ -51,6 +51,29 @@ fn real_macos_capture_preserves_spaces_and_streamed_utf8() {
 }
 
 #[test]
+fn visible_phrases_accept_adjacent_panel_borders_and_require_the_original_separator() {
+    for (input, expected) in [
+        ("│Request complete │", true),
+        ("│Request   complete│", true),
+        ("Request\r\ncomplete", true),
+        ("│Requestcomplete│", false),
+        ("│complete Request│", false),
+        ("│Request unrelated complete│", false),
+    ] {
+        let mut screen = Screen::new(60, 4);
+        screen.feed(input.as_bytes());
+        assert_eq!(
+            screen.contains_words("Request", "complete"),
+            expected,
+            "{input}"
+        );
+    }
+    let mut screen = Screen::new(60, 4);
+    screen.feed("│Checkpoint restored│".as_bytes());
+    assert!(screen.contains_words("Checkpoint", "restored"));
+}
+
+#[test]
 fn screen_resize_and_wide_cell_overwrites_do_not_leave_orphan_halves() {
     let mut screen = Screen::new(8, 3);
     screen.feed(b"\x1b[3;8H");

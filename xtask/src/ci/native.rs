@@ -10,6 +10,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     process::Command,
+    sync::Mutex,
     time::{Duration, Instant},
 };
 
@@ -61,6 +62,7 @@ pub struct Session {
     pub root: PathBuf,
     pub temporary: PathBuf,
     pub target: PathBuf,
+    timing_lock: Mutex<()>,
 }
 impl Session {
     pub fn hosted() -> Result<Self> {
@@ -81,6 +83,7 @@ impl Session {
             root: temporary.join("lazypencil-source"),
             temporary,
             target,
+            timing_lock: Mutex::new(()),
         })
     }
     pub fn executable(&self, profile: &str) -> PathBuf {
@@ -102,23 +105,53 @@ impl Session {
         log: &str,
         append: bool,
     ) -> Result<()> {
+        self.execute_command(
+            invocation,
+            &mut self.command(invocation),
+            seconds,
+            log,
+            append,
+        )
+    }
+    fn execute_command(
+        &self,
+        invocation: &[String],
+        command: &mut Command,
+        seconds: u64,
+        log: &str,
+        append: bool,
+    ) -> Result<()> {
         let started = Instant::now();
         let result = process::logged(
-            &mut self.command(invocation),
+            command,
             Duration::from_secs(seconds),
             &self.temporary.join(log),
             append,
         );
+        self.record_timing(invocation, started.elapsed(), result.is_ok(), log)?;
+        result
+    }
+    fn record_timing(
+        &self,
+        invocation: &[String],
+        elapsed: Duration,
+        success: bool,
+        log: &str,
+    ) -> Result<()> {
+        let line = format!(
+            "{}\n",
+            json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"command":invocation,"elapsed_seconds":elapsed.as_secs_f64(),"success":success,"log":log})
+        );
+        let _guard = self
+            .timing_lock
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Timing writer panicked"))?;
         let mut timings = fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(self.temporary.join("ci-timings.jsonl"))?;
-        writeln!(
-            timings,
-            "{}",
-            json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"command":invocation,"elapsed_seconds":started.elapsed().as_secs_f64(),"success":result.is_ok(),"log":log})
-        )?;
-        result
+        timings.write_all(line.as_bytes())?;
+        Ok(())
     }
     pub fn cargo(&self, args: &[&str], seconds: u64, log: &str, append: bool) -> Result<()> {
         self.execute(
@@ -713,15 +746,33 @@ impl Session {
                 }
                 Ok(())
             });
-            let material=scope.spawn(|| -> Result<()> {
-                for (target,filter,log) in [("optional_icons","official_material_fonts","lazypencil-material-fonts.log"),("mcp","real_mcp_material","lazypencil-material-mcp.log")] {
-                    let args=vec![catalog.binaries[target].path.to_string_lossy().into_owned(),filter.into(),"--ignored".into(),"--nocapture".into(),"--test-threads=1".into()];
-                    let mut command=self.command(&args);
-                    command.env("LAZYPENCIL_TEST_MATERIAL_DIR",self.temporary.join("lazypencil-material-fonts")).env("LAZYPENCIL_CONFIG_DIR",self.temporary.join("lazypencil-material-settings"));
-                    let started=Instant::now();
-                    let result=process::logged(&mut command,Duration::from_secs(3600),&self.temporary.join(log),false);
-                    fs::OpenOptions::new().create(true).append(true).open(self.temporary.join("ci-timings.jsonl"))?.write_all(format!("{}\n",json!({"command":args,"elapsed_seconds":started.elapsed().as_secs_f64(),"success":result.is_ok(),"log":log})).as_bytes())?;
-                    result?;
+            let material = scope.spawn(|| -> Result<()> {
+                for (target, filter, log) in [
+                    (
+                        "optional_icons",
+                        "official_material_fonts",
+                        "lazypencil-material-fonts.log",
+                    ),
+                    ("mcp", "real_mcp_material", "lazypencil-material-mcp.log"),
+                ] {
+                    let args = vec![
+                        catalog.binaries[target].path.to_string_lossy().into_owned(),
+                        filter.into(),
+                        "--ignored".into(),
+                        "--nocapture".into(),
+                        "--test-threads=1".into(),
+                    ];
+                    let mut command = self.command(&args);
+                    command
+                        .env(
+                            "LAZYPENCIL_TEST_MATERIAL_DIR",
+                            self.temporary.join("lazypencil-material-fonts"),
+                        )
+                        .env(
+                            "LAZYPENCIL_CONFIG_DIR",
+                            self.temporary.join("lazypencil-material-settings"),
+                        );
+                    self.execute_command(&args, &mut command, 3600, log, false)?;
                 }
                 Ok(())
             });
@@ -786,4 +837,54 @@ fn process_report(s: &Session) -> Result<()> {
         )?,
         false,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn parallel_timings_preserve_complete_records_and_their_source_identity() {
+        let temp = tempfile::tempdir().unwrap();
+        let session = Session {
+            root: temp.path().join("source"),
+            target: temp.path().join("target"),
+            temporary: temp.path().to_owned(),
+            timing_lock: Mutex::new(()),
+        };
+        let payload = "日本語🔍".repeat(512);
+        std::thread::scope(|scope| {
+            for worker in 0..8 {
+                let session = &session;
+                let payload = &payload;
+                scope.spawn(move || {
+                    for sample in 0..16 {
+                        session
+                            .record_timing(
+                                &[format!("{worker}:{sample}"), payload.clone()],
+                                Duration::from_millis(10),
+                                true,
+                                "parallel.log",
+                            )
+                            .unwrap();
+                    }
+                });
+            }
+        });
+        let lines = fs::read_to_string(temp.path().join("ci-timings.jsonl")).unwrap();
+        let mut identities = BTreeSet::new();
+        for line in lines.lines() {
+            let record: Value = serde_json::from_str(line).unwrap();
+            assert_eq!(record["command"][1], payload);
+            assert_eq!(
+                record["source_commit"],
+                json!(std::env::var("GITHUB_SHA").ok())
+            );
+            assert_eq!(record["elapsed_seconds"], 0.01);
+            assert_eq!(record["success"], true);
+            assert!(identities.insert(record["command"][0].as_str().unwrap().to_owned()));
+        }
+        assert_eq!(identities.len(), 128);
+    }
 }
