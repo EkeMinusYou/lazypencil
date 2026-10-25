@@ -157,7 +157,7 @@ fn fill(image: &mut Raster, contours: &[Vec<Point>], color: [u8; 4]) {
             }
             crossings.sort_by(|a, b| a.0.total_cmp(&b.0));
             let mut winding = 0;
-            let mut previous = 0.0;
+            let mut previous = 0.0f64;
             for &(position, direction) in &crossings {
                 if winding != 0 {
                     let left = previous.clamp(0.0, image.width as f64);
