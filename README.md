@@ -174,7 +174,7 @@ Child Cargo processes discard the caller's package metadata (`CARGO_MANIFEST_*` 
 
 Long idle lifecycle checks and exhaustive Material checks use two independent lanes after one prebuild. Their executable catalog binds each binary to this commit and its SHA-256; no concurrent Cargo compilation or cached test result is used. Each command records elapsed time in the existing verification artifact as `ci-timings.jsonl`. The real idle expiry, frame-rate checks and final three-platform gates remain required.
 
-After successful full verification, CI removes main-branch dependency checkpoints that have an exact full-cache counterpart. Application caches retain two full builds and one unmatched focused build per platform. Dependency, download and shader caches are otherwise preserved.
+After successful full verification, CI removes main-branch dependency checkpoints that have an exact full-cache counterpart. Application caches retain two full builds and one unmatched focused build per platform. Source-bound tool caches retain two generations per runner/compiler/cache format. Dependency, download and shader caches are otherwise preserved.
 
 Rust 1.94 or newer and a C compiler for QuickJS-NG are required to build from source. Skia uses prebuilt libraries where supported; otherwise its upstream build tools are required.
 

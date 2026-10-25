@@ -817,6 +817,18 @@ pub fn prune(source: &Path, target: &Path) -> Result<()> {
     Ok(())
 }
 
+fn older_than_latest(mut entries: Vec<&Value>, keep: usize, selected: &mut BTreeMap<u64, Value>) {
+    entries.sort_by(|a, b| {
+        b["created_at"]
+            .as_str()
+            .cmp(&a["created_at"].as_str())
+            .then_with(|| b["id"].as_u64().cmp(&a["id"].as_u64()))
+    });
+    for entry in entries.into_iter().skip(keep) {
+        selected.insert(entry["id"].as_u64().unwrap(), entry.clone());
+    }
+}
+
 pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Value>> {
     let entries = entries
         .iter()
@@ -836,10 +848,20 @@ pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Valu
     )?;
     let mut selected = BTreeMap::new();
     let mut groups = BTreeMap::<(String, String), Vec<&Value>>::new();
+    let tools = Regex::new(
+        r"^(xtask-v1-(?:Linux|macOS|Windows)-(?:X64|ARM64)-[A-Za-z0-9_.]+-rust[0-9.]+)-[0-9a-f]{64}$",
+    )?;
+    let mut tool_groups = BTreeMap::<(String, String), Vec<&Value>>::new();
     for entry in entries {
         let key = entry["key"].as_str().context("Invalid cache key")?;
         let version = entry["version"].as_str().context("Invalid cache version")?;
         let id = entry["id"].as_u64().context("Invalid cache id")?;
+        if let Some(caps) = tools.captures(key) {
+            tool_groups
+                .entry((caps[1].into(), version.into()))
+                .or_default()
+                .push(entry);
+        }
         if let Some(primary) = key.strip_prefix("checkpoint-native-v2-")
             && keys.contains(&(format!("native-v2-{primary}").as_str(), version))
         {
@@ -866,21 +888,18 @@ pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Valu
             }
         }
     }
-    for ((_, phase), mut entries) in groups {
-        entries.sort_by(|a, b| {
-            b["created_at"]
-                .as_str()
-                .cmp(&a["created_at"].as_str())
-                .then_with(|| b["id"].as_u64().cmp(&a["id"].as_u64()))
-        });
+    for ((_, phase), entries) in groups {
         let keep = if phase == "focus" || source_hash.is_some() {
             1
         } else {
             2
         };
-        for entry in entries.into_iter().skip(keep) {
-            selected.insert(entry["id"].as_u64().unwrap(), entry.clone());
-        }
+        older_than_latest(entries, keep, &mut selected);
+    }
+    // Source-bound tool binaries are disposable; keep two generations for each
+    // runner/compiler/cache format while preserving every dependency cache.
+    for entries in tool_groups.into_values() {
+        older_than_latest(entries, 2, &mut selected);
     }
     Ok(selected.into_values().collect())
 }

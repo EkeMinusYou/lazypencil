@@ -371,6 +371,56 @@ fn native_package_setup_keeps_signed_sources_scoped_and_stops_after_update_failu
     assert_eq!(fs::read_dir(temporary.path()).unwrap().count(), 0);
 }
 #[test]
+fn tool_retention_preserves_dependencies_and_two_generations_per_exact_environment() {
+    let mut entries = Vec::new();
+    let mut obsolete = Vec::new();
+    let mut id = 0;
+    for environment in [
+        "Linux-X64-image1-rust1.94.0",
+        "Linux-ARM64-image1-rust1.94.0",
+        "macOS-ARM64-image1-rust1.94.0",
+        "Linux-X64-image2-rust1.94.0",
+        "Linux-X64-image1-rust1.95.0",
+    ] {
+        for layout in ["layout1", "layout2"] {
+            for generation in 1..=4 {
+                id += 1;
+                entries.push(json!({"id":id,"ref":"refs/heads/main","version":layout,
+                    "key":format!("xtask-v1-{environment}-{}", generation.to_string().repeat(64)),
+                    "created_at":format!("2026-10-{generation:02}T00:00:00Z")}));
+                if generation <= 2 {
+                    obsolete.push(id);
+                }
+            }
+        }
+    }
+    for (key, reference) in [
+        (
+            format!("xtask-v1-Linux-X64-image1-rust1.94.0-{}", "0".repeat(64)),
+            "refs/pull/1/merge",
+        ),
+        (
+            "xtask-deps-v1-Linux-X64-image1-rust1.94.0-lock".into(),
+            "refs/heads/main",
+        ),
+        ("native-v2-Linux-current".into(), "refs/heads/main"),
+        ("cargo-downloads-current".into(), "refs/heads/main"),
+    ] {
+        id += 1;
+        entries.push(json!({"id":id,"key":key,"ref":reference,"version":"layout1","created_at":"2026-01-01T00:00:00Z"}));
+    }
+    entries.reverse();
+    assert_eq!(
+        cache::obsolete(&entries, None)
+            .unwrap()
+            .into_iter()
+            .map(|e| e["id"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        obsolete
+    );
+}
+
+#[test]
 fn dependency_checkpoint_and_application_retention_require_matching_main_layouts() {
     let entry = |id, key: String, reference: &str| json!({"id":id,"key":key,"ref":reference,"version":"layout","created_at":format!("2026-10-{id:02}T00:00:00Z")});
     let mut entries = vec![
