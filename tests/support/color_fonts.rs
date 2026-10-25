@@ -70,7 +70,7 @@ fn original_color_font_shapes_zwj_modifiers_and_variation_selectors_before_paint
         let mut request = spec(content, "LP Test Color");
         request.size = 100.0;
         request.color = Color::BLUE;
-        let block = fonts.layout(&request, None).unwrap();
+        let mut block = fonts.layout(&request, None).unwrap();
         let mut actual = Vec::new();
         block.paragraph.visit(|_, run| {
             if let Some(run) = run {
