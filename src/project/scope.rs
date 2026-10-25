@@ -133,19 +133,7 @@ impl Project {
             let alias = self.detached_scope(&context.origin)?;
             let mut context = context.values.clone();
             context.library = (!alias.is_empty()).then_some(alias);
-            let metadata = value
-                .as_object_mut()
-                .expect("script")
-                .entry("metadata")
-                .or_insert_with(|| json!({"type":"lazypencil"}))
-                .as_object_mut()
-                .ok_or_else(|| invalid("Script metadata must be an object"))?;
-            let namespace = metadata
-                .entry("lazypencil")
-                .or_insert_with(|| json!({}))
-                .as_object_mut()
-                .ok_or_else(|| invalid("The lazypencil namespace must be an object"))?;
-            namespace.insert(
+            metadata_namespace(value)?.insert(
                 "script_input_context".into(),
                 serde_json::to_value(context).expect("input context"),
             );
@@ -172,15 +160,14 @@ impl Project {
         } else {
             None
         };
-        if let Some(namespace) = value
+        if let Some(bindings) = retained {
+            metadata_namespace(value)?.insert("script_bindings".into(), bindings);
+        } else if let Some(namespace) = value
             .get_mut("metadata")
             .and_then(|v| v.get_mut("lazypencil"))
             .and_then(Value::as_object_mut)
         {
             namespace.remove("script_bindings");
-            if let Some(bindings) = retained {
-                namespace.insert("script_bindings".into(), bindings);
-            }
         }
         let origin = original.script_origin();
         let inputs_origin = original.script_input_origin();
@@ -204,24 +191,25 @@ impl Project {
                 })
                 .transpose()?,
         };
-        let metadata = value
-            .as_object_mut()
-            .expect("node")
-            .entry("metadata")
-            .or_insert_with(|| json!({"type":"lazypencil"}))
-            .as_object_mut()
-            .ok_or_else(|| invalid("Script scope metadata requires an object"))?;
-        let namespace = metadata
-            .entry("lazypencil")
-            .or_insert_with(|| json!({}))
-            .as_object_mut()
-            .ok_or_else(|| invalid("The lazypencil metadata namespace must be an object"))?;
-        namespace.insert(
+        metadata_namespace(value)?.insert(
             "script_scope".into(),
             serde_json::to_value(scope).expect("scope"),
         );
         Ok(())
     }
+}
+
+fn metadata_namespace(node: &mut Value) -> Result<&mut Map<String, Value>> {
+    node.as_object_mut()
+        .expect("node")
+        .entry("metadata")
+        .or_insert_with(|| json!({"type":"lazypencil"}))
+        .as_object_mut()
+        .ok_or_else(|| invalid("Script metadata must be an object"))?
+        .entry("lazypencil")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .ok_or_else(|| invalid("The lazypencil metadata namespace must be an object"))
 }
 
 fn value_hash(value: &Value) -> String {
