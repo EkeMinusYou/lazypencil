@@ -233,7 +233,7 @@ impl Project {
         })
     }
 
-    fn variable_key(&self, origin: &Path, name: &str) -> Result<Key> {
+    pub(super) fn variable_key(&self, origin: &Path, name: &str) -> Result<Key> {
         if self.documents[origin]
             .value()
             .get("variables")
@@ -795,7 +795,7 @@ impl Copier<'_> {
                 if let Some(values) = value.as_object_mut() {
                     for input in &header.inputs {
                         if let Some(value) = values.get_mut(&input.name) {
-                            *value = self.copied_input_value(origin, script, &input.name, value)?;
+                            *value = self.copied_input_value(script, &input.name, value)?;
                         }
                     }
                 }
@@ -929,7 +929,7 @@ impl Copier<'_> {
                 }
             }
         }
-        self.rewrite_script(origin, node, &mut result, script.as_ref())?;
+        self.rewrite_script(node, &mut result, script.as_ref())?;
         Ok(Value::Object(result))
     }
 }

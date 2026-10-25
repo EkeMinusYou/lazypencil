@@ -173,15 +173,19 @@ pub(crate) fn revoke<'a>(
         return Ok(());
     }
     let root = format!("{pointer}/metadata/lazypencil");
-    if document
-        .value()
-        .pointer(&format!("{root}/script_input_context"))
-        .is_none()
-        && document
+    if ![
+        "script_input_context",
+        "script_bindings",
+        "script_scope",
+        "script_override",
+    ]
+    .into_iter()
+    .any(|field| {
+        document
             .value()
-            .pointer(&format!("{root}/script_override"))
-            .is_none()
-    {
+            .pointer(&format!("{root}/{field}"))
+            .is_some()
+    }) {
         return Ok(());
     }
     for namespace in [
@@ -329,8 +333,12 @@ mod tests {
 
     #[test]
     fn overriding_code_and_inputs_together_revokes_all_contexts_without_changing_user_metadata() {
-        for carrier in [false, true] {
-            let namespace = json!({"script_input_context":context(),"script_bindings":{"inputs_hash":"old"},"script_scope":{"inputs":{}}});
+        for (carrier, input_context) in [(false, false), (false, true), (true, true)] {
+            let mut namespace =
+                json!({"script_bindings":{"inputs_hash":"old"},"script_scope":{"inputs":{}}});
+            if input_context {
+                namespace["script_input_context"] = context();
+            }
             let metadata = if carrier {
                 json!({"type":"lazypencil","lazypencil":{"script_override":{"version":1,"metadata":{"type":"test","keep":[1,2],"lazypencil":namespace},"input":context(),"output":{"version":1}}}})
             } else {

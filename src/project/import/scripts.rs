@@ -357,13 +357,7 @@ impl Copier<'_> {
         }
     }
 
-    pub(super) fn copied_input_value(
-        &self,
-        _origin: &Path,
-        info: &Info,
-        name: &str,
-        raw: &Value,
-    ) -> Result<Value> {
+    pub(super) fn copied_input_value(&self, info: &Info, name: &str, raw: &Value) -> Result<Value> {
         let node = &info.resolved;
         let (origin, value) =
             self.script_input_expression(node.property_source("inputs"), node, name, raw)?;
@@ -463,8 +457,7 @@ impl Copier<'_> {
         let values = values
             .iter()
             .map(|(name, value)| {
-                let value =
-                    self.copied_input_value(node.property_source("inputs"), info, name, value)?;
+                let value = self.copied_input_value(info, name, value)?;
                 budget.key(name)?;
                 budget.charge(value.to_string().len() + 4)?;
                 Ok((name.clone(), value))
@@ -519,7 +512,6 @@ impl Copier<'_> {
 
     pub(super) fn rewrite_script(
         &mut self,
-        _origin: &Path,
         node: &Value,
         result: &mut Map<String, Value>,
         info: Option<&Info>,
@@ -642,7 +634,6 @@ impl Copier<'_> {
         if let Some(context) = context {
             namespace.insert("script_input_context".into(), context);
         }
-        let _ = origin;
         Ok(())
     }
 }
