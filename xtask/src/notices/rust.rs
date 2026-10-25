@@ -9,6 +9,7 @@ use std::{
     fs,
     io::Read,
     path::Path,
+    sync::LazyLock,
 };
 
 pub fn identifier(package: &Value) -> Result<String> {
@@ -25,6 +26,10 @@ pub fn identifier(package: &Value) -> Result<String> {
 }
 
 pub fn is_notice(name: &str) -> bool {
+    static NAME: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?i)^(?:licen[cs]e|copying|copyright|notice|authors|unlicense)(?:[._-].*)?$")
+            .unwrap()
+    });
     let path = Path::new(name);
     let file = path
         .file_name()
@@ -38,10 +43,7 @@ pub fn is_notice(name: &str) -> bool {
     let code = [
         "rs", "py", "c", "h", "hpp", "cpp", "s", "asm", "toml", "json", "lock",
     ];
-    (Regex::new(r"(?i)^(?:licen[cs]e|copying|copyright|notice|authors|unlicense)(?:[._-].*)?$")
-        .unwrap()
-        .is_match(file)
-        && !code.contains(&extension.as_str()))
+    (NAME.is_match(file) && !code.contains(&extension.as_str()))
         || name
             .split('/')
             .rev()

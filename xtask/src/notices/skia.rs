@@ -208,6 +208,14 @@ fn lexical(path: &Path) -> PathBuf {
     out
 }
 
+fn notice_candidate(path: &Path) -> bool {
+    path.to_str().is_some_and(super::rust::is_notice)
+        || path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .is_some_and(|name| ["README.ijg", "README.chromium"].contains(&name))
+}
+
 pub fn build(source: &Path, directory: &Path, ninja: &str) -> Result<(Value, Files)> {
     let source = source.canonicalize()?;
     let directory = directory.canonicalize()?;
@@ -364,8 +372,12 @@ pub fn build_from_graph(
     for name in used.iter().filter(|s| s.as_str() != "skia") {
         let root = source.join("third_party/externals").join(name);
         let mut primary = false;
-        for path in util::walk_filtered(&root, |p| p.components().any(|c| c.as_os_str() == ".git"))?
-        {
+        for path in util::walk_filtered(&root, |p| {
+            p.components().any(|c| c.as_os_str() == ".git")
+                // Upstream trees contain unrelated aliases, such as Expat's README.md.
+                // Do not follow them; selected notices and observed inputs still reject links.
+                || (!notice_candidate(p) && root.join(p).is_symlink())
+        })? {
             let relative = path
                 .strip_prefix(&root)?
                 .to_str()
@@ -373,10 +385,7 @@ pub fn build_from_graph(
             if relative.split('/').any(|s| s == ".git") {
                 continue;
             }
-            if super::rust::is_notice(relative)
-                || ["README.ijg", "README.chromium"]
-                    .contains(&path.file_name().unwrap().to_str().unwrap_or_default())
-            {
+            if notice_candidate(Path::new(relative)) {
                 if !relative.contains('/') && super::rust::is_notice(relative) {
                     primary = true;
                 }

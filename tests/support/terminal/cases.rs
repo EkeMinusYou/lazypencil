@@ -371,9 +371,9 @@ fn keys(h: &mut Harness) -> Result {
     })?;
     assert!(
         read_json(&h.root.join("received-turn-1.json")).unwrap()["text"]
-            .as_str()
+            .as_array()
             .unwrap()
-            .contains(&expected)
+            .contains(&json!(expected))
     );
     assert_eq!(state(h)["draft"], "");
     fs::write(config(h), "[tui.keys]\nsubmit=['F6']\npaste=[]\n")?;
@@ -442,9 +442,9 @@ fn basic(h: &mut Harness) -> Result {
     h.wait("second completed turn", 15.0, |h| h.count("complete") == 2)?;
     assert!(
         read_json(&h.root.join("received-turn-1.json")).unwrap()["text"]
-            .as_str()
+            .as_array()
             .unwrap()
-            .contains(text)
+            .contains(&json!(text))
     );
     assert_eq!(state(h)["draft"], "");
     assert_eq!(state(h)["native_session_id"], "fixture-native");

@@ -518,6 +518,21 @@ fn missing_vendor_notices_report_findings_without_inventing_a_copyright_holder()
 }
 #[cfg(unix)]
 #[test]
+fn skia_ignores_unselected_upstream_aliases_without_following_them() {
+    use std::os::unix::fs::symlink;
+    let f = Fixture::new("skia");
+    let expected = f.skia().unwrap();
+    f.write("outside/NOTICE", "Unrelated alias must not be collected");
+    let component = f.path("source/third_party/externals/zlib");
+    symlink(f.path("outside/NOTICE"), component.join("README.md")).unwrap();
+    symlink(f.path("outside"), component.join("docs")).unwrap();
+    assert_eq!(f.skia().unwrap(), expected);
+    symlink(f.path("outside/NOTICE"), component.join("README.chromium")).unwrap();
+    assert!(f.skia().is_err());
+}
+
+#[cfg(unix)]
+#[test]
 fn source_notice_and_bundle_symlinks_are_rejected_even_when_the_bytes_match() {
     use std::os::unix::fs::symlink;
     for (family, name) in [
@@ -525,6 +540,7 @@ fn source_notice_and_bundle_symlinks_are_rejected_even_when_the_bytes_match() {
         ("rust", "LICENSE"),
         ("skia", "source/third_party/externals/zlib/native.h"),
         ("skia", "source/LICENSE"),
+        ("skia", "source/third_party/externals/zlib/LICENSE"),
         ("toolchain", "source/library/core.rs"),
     ] {
         let f = Fixture::new(family);
