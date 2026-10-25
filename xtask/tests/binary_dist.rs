@@ -184,6 +184,7 @@ fn candidates_reject_changed_sources_binaries_missing_notices_and_self_consisten
         "notice",
         "missing-notice",
         "unlisted",
+        "separator-alias",
     ] {
         let (_temp, arguments) = fixture("x86_64-unknown-linux-gnu");
         let build_path = arguments.evidence.join("build.json");
@@ -209,6 +210,13 @@ fn candidates_reject_changed_sources_binaries_missing_notices_and_self_consisten
             }
             "unlisted" => {
                 fs::write(arguments.evidence.join("extra"), "Unlisted").unwrap();
+            }
+            "separator-alias" => {
+                fs::write(
+                    arguments.evidence.join("rogue\\notice.txt"),
+                    "Non-portable name",
+                )
+                .unwrap();
             }
             _ => unreachable!(),
         }

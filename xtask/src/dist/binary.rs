@@ -63,13 +63,17 @@ fn evidence_files(root: &Path) -> Result<Files> {
     for path in paths {
         let name = path
             .strip_prefix(root)?
-            .to_str()
-            .context("Non-UTF-8 evidence path")?
-            .replace('\\', "/");
+            .components()
+            .map(|part| part.as_os_str().to_str().context("Non-UTF-8 evidence path"))
+            .collect::<Result<Vec<_>>>()?
+            .join("/");
         util::safe_path(&name)?;
         let bytes = util::read(&path, MAX_BYTES - total)?;
         total += bytes.len() as u64;
-        files.insert(name, (bytes, 0o644));
+        ensure!(
+            files.insert(name, (bytes, 0o644)).is_none(),
+            "Duplicate evidence filename"
+        );
     }
     validate_evidence(&files)?;
     Ok(files)
