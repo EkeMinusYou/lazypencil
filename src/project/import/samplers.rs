@@ -1,5 +1,7 @@
 use super::*;
 
+type ImageFiles = BTreeMap<String, Arc<[u8]>>;
+
 impl Copier<'_> {
     pub(super) fn scan_sampler_values(&mut self, origin: &Path, node: &Value) -> Result<()> {
         for property in ["fill", "stroke", "effect"] {
@@ -31,7 +33,7 @@ impl Copier<'_> {
     pub(super) fn prepare_sampler_bindings(&mut self) -> Result<()> {
         let mut queue = self.sampler_vars.iter().cloned().collect::<VecDeque<_>>();
         let mut seen = BTreeSet::new();
-        let mut images: BTreeMap<(PathBuf, bool), BTreeMap<String, Arc<[u8]>>> = BTreeMap::new();
+        let mut images: BTreeMap<(PathBuf, bool), ImageFiles> = BTreeMap::new();
         while let Some(key) = queue.pop_front() {
             self.project.check_cancelled()?;
             if !seen.insert(key.clone()) {
