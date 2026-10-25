@@ -191,34 +191,9 @@ pub fn canonical(path: impl AsRef<Path>) -> Result<PathBuf> {
             "Paths must be UTF-8 to be represented by the JSON API",
         ));
     }
+    // Preserve the selected directory entry. Resolving an opened descriptor again
+    // with F_GETPATH can return another hard link to the same inode on macOS.
     let canonical = std::fs::canonicalize(path).map_err(|e| crate::Error::io(path, e))?;
-    #[cfg(target_os = "macos")]
-    let canonical = {
-        use std::{
-            fs::OpenOptions,
-            os::{
-                fd::AsRawFd,
-                unix::{ffi::OsStringExt, fs::OpenOptionsExt},
-            },
-        };
-        let file = OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NONBLOCK)
-            .open(&canonical)
-            .map_err(|e| Error::io(path, e))?;
-        let mut buffer = vec![0u8; libc::PATH_MAX as usize];
-        // SAFETY: The descriptor is open and the buffer has PATH_MAX bytes, as F_GETPATH requires.
-        let result = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETPATH, buffer.as_mut_ptr()) };
-        if result < 0 {
-            return Err(Error::io(path, std::io::Error::last_os_error()));
-        }
-        let length = buffer
-            .iter()
-            .position(|b| *b == 0)
-            .ok_or_else(|| Error::new("IO_ERROR", "Canonical path exceeds PATH_MAX"))?;
-        buffer.truncate(length);
-        PathBuf::from(std::ffi::OsString::from_vec(buffer))
-    };
     if canonical.to_str().is_none() {
         return Err(Error::new(
             "INVALID_ARGUMENT",

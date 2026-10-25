@@ -185,7 +185,7 @@
       "src/paths.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "paths"
@@ -1844,7 +1844,7 @@
       "tests/paths.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "paths"

@@ -8,6 +8,8 @@
 
 移行後の source `8177c28` は [GHA `40178627693`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40178627693) で補助ツール81試験と Clippy、先行 Linux x64、対象3環境の通常／core・実描画・release・監査・配布ソース検証を成功した。追加の整理では旧 Python ファイル向けの CI 分類を削除し、独立 workspace／依存 lock と管理対象ディレクトリの補助スクリプト再導入を検査する Rust 統合試験を加える。この追加分は次の GHA で確認する。ローカル build tree は作らない。
 
+source `54ce426` の先行補助ツール83試験・Clippy・ソース検証と依存監査は成功した。全体検証では macOS の既存 hardlink 試験が、選択した `second.pen` を `first.pen` として解決する失敗を検出した。標準の canonicalize 後の不要な `F_GETPATH` 再解決を削除し、hardlink を持つ大文字小文字／Unicode 別名と、名前変更後の保存先・原本・履歴の分離を既存試験で検査する。関連変更は macOS の paths 試験を先行し、成功後に全3環境へ進む。試験の省略や期限変更は行わない。
+
 設計書 v0.10 の全体を実装対象とする。部分的な CLI や描画の試作だけで完成とは扱わない。以下は実際の実装・試験結果で更新する。
 
 初回リリースの完成判定は macOS Apple Silicon・Linux x64／arm64（glibc 系）の3環境に限定する。Intel Mac は対象外、Windows は既存実装・fixture を保持して後日対応とする。以下の過去の5環境検証や Windows／Intel の残件は、初回リリースの必須作業へ追加しない。機能・互換性・性能・実端末・ライセンス・配布の基準は [設計書の受け入れ条件](design.md#検証と受け入れ条件) に従う。

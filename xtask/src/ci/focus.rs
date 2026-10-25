@@ -127,7 +127,10 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     let mac = paths.iter().any(|p| {
         let p = p.to_lowercase();
         // Exercise the shared PTY bridge against BSD libc and terminal restoration first.
-        p.contains("macos") || p.contains("darwin") || p.starts_with("tests/support/terminal/")
+        p.contains("macos")
+            || p.contains("darwin")
+            || p.starts_with("tests/support/terminal/")
+            || ["src/paths.rs", "tests/paths.rs"].contains(&p.as_str())
     });
     let platform = if platform == "auto" {
         if mac { "macos-15" } else { "ubuntu-24.04" }

@@ -22,6 +22,16 @@ fn focus_keeps_the_existing_reproduction_scope_for_every_source_module() {
 }
 
 #[test]
+fn path_identity_changes_reproduce_macos_alias_and_hardlink_behavior_first() {
+    for path in ["src/paths.rs", "tests/paths.rs"] {
+        let plan = focus::select(&util::root(), &[path.into()], "auto").unwrap();
+        assert_eq!(plan.platform, "macos-15");
+        assert_eq!(plan.suite, "core");
+        assert_eq!(plan.targets, vec!["paths"]);
+    }
+}
+
+#[test]
 fn rust_pty_bridge_changes_select_the_stricter_supported_host_and_all_frontend_reproductions() {
     for path in [
         "tests/support/terminal/mod.rs",
