@@ -3,6 +3,9 @@ use serde_json::{Value, json};
 use std::{cell::Cell, fs, path::Path};
 use tempfile::TempDir;
 
+#[path = "support/script_copy_core.rs"]
+mod script_copy_core;
+
 fn write(path: &Path, value: Value) {
     fs::write(path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
 }

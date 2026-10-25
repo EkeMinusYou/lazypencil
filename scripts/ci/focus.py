@@ -29,6 +29,10 @@ SESSION_DELETION_PTY = "real_pty_deletes_only_reviewed_inactive_local_conversati
 SESSION_DELETION_SMALL_PTY = "real_pty_reviewed_deletion_remains_readable_at_minimum_terminal_size"
 SESSION_RECLAIM = "agent_ownership::killed_cli_revokes_grants_and_resume_preserves_images_and_transcripts"
 OWNED_MCP_RECLAIM = "owned_mcp_rejects_grants_after_the_host_is_killed_without_reviving_or_writing_journals"
+SCRIPT_COPY_CPU = (
+    "script_copy::independent_copy_keeps_namespace_nested_workers_and_live_choices_after_source_removal",
+    "script_copy::copy_rejects_unmanifested_generated_paths_without_using_consumer_files",
+)
 SHADER_REGRESSIONS = [
     "linked_constant_dimensions_validate_inputs_and_recover_after_an_error",
     "native_annotation_binding_matches_public_pencil_reference_pixels",
@@ -123,6 +127,10 @@ def select(paths, platform="auto"):
         if suite in ("core", "conversation"):
             suite = "graphics"
         targets = sorted(set(targets) | {"script_scope"})
+    if any(path in {"src/project/bindings.rs", "src/project/import/scripts.rs", "tests/support/script_copy.rs", "tests/support/script_copy_core.rs"} for path in paths):
+        if suite in ("core", "conversation", "graphics"):
+            suite = "copy"
+        targets = sorted(set(targets) | {"project", "scripts", "script_scope"})
     if operations_change:
         targets = sorted(set(targets) | {"operations_cli"})
     if "conversation_history" in stems or terminal_change or any(path.startswith("src/conversation/") for path in paths):
@@ -198,8 +206,9 @@ def commands(suite, targets):
     selected = [arg for target in targets for arg in ("--test", target)]
     common = ["cargo", "test", "--locked", *features]
     input_skip = [argument for name in ("config::keys::", *INPUT_REPRODUCTIONS) for argument in ("--skip", name)] if suite in ("graphics", "dynamic") and {"tui", "user_config"} <= set(targets) else []
-    if suite in ("graphics", "dynamic") and "script_scope" in targets:
+    if suite in ("graphics", "dynamic", "copy") and "script_scope" in targets:
         input_skip += ["--skip", "script_bindings::"]
+        input_skip += [argument for name in SCRIPT_COPY_CPU for argument in ("--skip", name)]
     shader_first = [
         [*common, "--test", "shader_uniforms", name, "--", "--ignored", "--exact", "--test-threads=1"]
         for name in SHADER_REGRESSIONS
@@ -231,10 +240,10 @@ def commands(suite, targets):
     history_ui_skip = ["--skip", "tui::tests::saved_log_", "--skip", SAVED_LOG_PTY, "--skip", SESSION_SELECTION_PTY, "--skip", SESSION_DELETION_PTY, "--skip", SESSION_DELETION_SMALL_PTY] if history and "tui" in targets else []
     history_ui_skip += ["--skip", SESSION_RECLAIM] if history and "agent" in targets and not core else []
     history_ui_skip += ["--skip", OWNED_MCP_RECLAIM] if history and "mcp" in targets else []
-    native = "native_layout" in targets and suite in ("graphics", "dynamic")
+    native = "native_layout" in targets and suite in ("graphics", "dynamic", "copy")
     if native:
         # Dynamic focus runs these CPU cases in the workflow before Chromium.
-        if suite == "graphics":
+        if suite in ("graphics", "copy"):
             checks.extend([
                 [*common, "--lib", "native_cancellation", "--", "--test-threads=2"],
                 [*common, "--test", "native_layout", "--", "--test-threads=2"],
@@ -277,7 +286,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("plan", "build", "test"))
     parser.add_argument("--platform", default="auto", choices=["auto", *PLATFORMS])
-    parser.add_argument("--suite", choices=("core", "conversation", "graphics", "dynamic", "shader"))
+    parser.add_argument("--suite", choices=("core", "conversation", "graphics", "dynamic", "shader", "copy"))
     parser.add_argument("--targets", default="[]")
     args = parser.parse_args()
     if args.mode == "plan":

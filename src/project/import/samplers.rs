@@ -233,7 +233,7 @@ impl Copier<'_> {
     }
 }
 
-fn definition_values(value: &Value) -> Vec<&Value> {
+pub(super) fn definition_values(value: &Value) -> Vec<&Value> {
     match value {
         Value::Array(values) => values
             .iter()

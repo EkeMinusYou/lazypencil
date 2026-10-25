@@ -10,7 +10,9 @@ use std::path::Path;
 use uuid::Uuid;
 
 mod import;
-pub use import::{ComponentSource, ImportMode, ImportOptions, NameResolution};
+pub use import::{
+    ComponentSource, ImportMode, ImportOptions, NameResolution, ScriptAsset, ScriptAssetKind,
+};
 
 pub(crate) struct PreparedBatch {
     pub document: Document,

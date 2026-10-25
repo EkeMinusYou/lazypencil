@@ -1606,7 +1606,10 @@ impl Project {
                 let (origin, reference) = if let Some(bindings) = &node.script_bindings
                     && (!saved || bindings.inputs_bound)
                 {
-                    (bindings.origin.as_path(), bindings.component(reference)?)
+                    (
+                        bindings.origin.as_path(),
+                        bindings.input_component(reference, saved)?,
+                    )
                 } else {
                     (origin, reference)
                 };
@@ -1648,16 +1651,20 @@ impl Project {
             .map(|bindings| bindings.origin.clone())
             .unwrap_or_else(|| script.script_origin().to_path_buf());
         let mut nodes = nodes.to_vec();
-        if let Some(bindings) = &script.script_bindings {
-            for node in &mut nodes {
-                self.check_cancelled()?;
-                bindings.rewrite(node, &self.runtime_refs)?;
-            }
-        }
         let mut counter = 0;
         let mut ids = BTreeSet::new();
         for node in &mut nodes {
             assign_generated_ids(node, &mut counter, &mut ids)?;
+        }
+        if let Some(bindings) = &script.script_bindings {
+            let mut inherited_bytes = 0;
+            for node in &mut nodes {
+                self.check_cancelled()?;
+                bindings.rewrite(node, &self.runtime_refs, &mut inherited_bytes)?;
+            }
+            for node in &mut nodes {
+                self.bind_generated_ref_inputs(node, bindings, &script.theme)?;
+            }
         }
         let mut count = 0;
         let mut result = Vec::new();
@@ -1687,6 +1694,119 @@ impl Project {
         }
         self.verify_unchanged()?;
         Ok(result)
+    }
+
+    #[cfg(feature = "rendering")]
+    fn bind_generated_ref_inputs(
+        &mut self,
+        node: &mut Value,
+        bindings: &bindings::Bound,
+        inherited: &BTreeMap<String, String>,
+    ) -> Result<()> {
+        self.check_cancelled()?;
+        let mut theme = inherited.clone();
+        if let Some(overrides) = node.get("theme").and_then(Value::as_object) {
+            for (axis, value) in overrides {
+                if let Some(value) = value.as_str() {
+                    theme.insert(axis.clone(), value.into());
+                }
+            }
+        }
+        if node["type"] == "ref"
+            && (node.get("inputs").is_some() || node.get("descendants").is_some())
+        {
+            let mut resolved =
+                self.expand(&bindings.origin, node, None, &[], &mut Vec::new(), &mut 0)?;
+            self.resolve_properties(&mut resolved, &theme)?;
+            if let Some(inputs) = node.get_mut("inputs") {
+                self.bind_generated_inputs(inputs, &resolved, bindings)?;
+            }
+            if let Some(changes) = node.get_mut("descendants").and_then(Value::as_object_mut) {
+                for (path, changes) in changes {
+                    if changes.get("type").is_none()
+                        && let Some(inputs) = changes.get_mut("inputs")
+                    {
+                        let target = find_descendant_mut(
+                            &mut resolved,
+                            &path.split('/').collect::<Vec<_>>(),
+                        )
+                        .ok_or_else(|| {
+                            invalid("A generated script input override target is missing")
+                        })?;
+                        self.bind_generated_inputs(inputs, target, bindings)?;
+                    }
+                }
+            }
+        }
+        if let Some(children) = node.get_mut("children").and_then(Value::as_array_mut) {
+            for child in children {
+                self.bind_generated_ref_inputs(child, bindings, &theme)?;
+            }
+        }
+        if let Some(changes) = node.get_mut("descendants").and_then(Value::as_object_mut) {
+            for changes in changes.values_mut() {
+                if changes.get("type").is_some() {
+                    self.bind_generated_ref_inputs(changes, bindings, &theme)?;
+                } else if let Some(children) =
+                    changes.get_mut("children").and_then(Value::as_array_mut)
+                {
+                    for child in children {
+                        self.bind_generated_ref_inputs(child, bindings, &theme)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "rendering")]
+    fn bind_generated_inputs(
+        &mut self,
+        inputs: &mut Value,
+        node: &ResolvedNode,
+        bindings: &bindings::Bound,
+    ) -> Result<()> {
+        if node.kind() != "script" {
+            return Ok(());
+        }
+        let uri = node
+            .properties
+            .get("scriptUri")
+            .and_then(Value::as_str)
+            .ok_or_else(|| invalid("A generated script reference needs scriptUri"))?;
+        let path = self.resolve_file(node.property_source("scriptUri"), uri)?;
+        let code = std::str::from_utf8(&self.asset(&path)?.bytes)
+            .map_err(|_| invalid("A generated script reference needs UTF-8 source"))?;
+        let header = crate::script::header::Header::parse(code)?;
+        for input in header.inputs {
+            if !matches!(input.kind, crate::script::header::InputKind::Ref) {
+                continue;
+            }
+            let Some(value) = inputs.get_mut(&input.name).filter(|value| !value.is_null()) else {
+                continue;
+            };
+            let resolved =
+                self.resolve_value(&bindings.origin, value, &node.theme, &mut Vec::new())?;
+            let name = resolved
+                .as_str()
+                .ok_or_else(|| invalid("A generated ref input must resolve to a component name"))?;
+            if name.is_empty() || self.runtime_refs.contains_key(name) {
+                continue;
+            }
+            let target = bindings.component(name)?;
+            let (source, definition) = self.lookup_node(&bindings.origin, target)?;
+            if definition["reusable"] != true {
+                return Err(invalid("A generated ref input target must be reusable"));
+            }
+            let id = definition["id"].as_str().expect("definition ID").to_owned();
+            let handle = format!(
+                "@runtime/component/{}",
+                hash(json!([source, id]).to_string().as_bytes())
+            );
+            self.runtime_refs.insert(handle.clone(), (source, id));
+            *value = json!(handle);
+        }
+        Ok(())
     }
 
     fn resolve_value(

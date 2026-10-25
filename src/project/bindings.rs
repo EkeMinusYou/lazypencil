@@ -12,12 +12,16 @@ struct Bindings {
     inputs_hash: Option<String>,
     #[serde(default)]
     components: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    input_components: Option<BTreeMap<String, String>>,
     #[serde(default)]
     variables: BTreeMap<String, String>,
     #[serde(default)]
     themes: BTreeMap<String, String>,
     #[serde(default)]
     descendants: BTreeMap<String, BTreeMap<String, String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    assets: Option<BTreeMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -56,7 +60,13 @@ pub(super) fn bind(project: &Project, node: &ResolvedNode) -> Result<Option<Boun
             "Unsupported script bindings version",
         ));
     }
-    let maps = [&values.components, &values.variables, &values.themes];
+    let mut maps = vec![&values.components, &values.variables, &values.themes];
+    if let Some(inputs) = &values.input_components {
+        maps.push(inputs);
+    }
+    if let Some(assets) = &values.assets {
+        maps.push(assets);
+    }
     let count = maps.iter().map(|map| map.len()).sum::<usize>()
         + values
             .descendants
@@ -101,6 +111,25 @@ pub(super) fn bind(project: &Project, node: &ResolvedNode) -> Result<Option<Boun
             ));
         }
     }
+    if let Some(inputs) = &values.input_components {
+        for target in inputs.values() {
+            if document.node(target)?["reusable"] != true {
+                return Err(invalid(
+                    "A saved input binding must target a local reusable component",
+                ));
+            }
+        }
+    }
+    if let Some(assets) = &values.assets {
+        for key in assets.keys() {
+            let (kind, uri) = key
+                .split_once(':')
+                .ok_or_else(|| invalid("A script asset binding needs a kind and URI"))?;
+            if asset_key(kind, uri)? != *key {
+                return Err(invalid("Script asset binding keys must be normalized"));
+            }
+        }
+    }
     for (section, names) in [("variables", &values.variables), ("themes", &values.themes)] {
         for target in names.values() {
             project.check_cancelled()?;
@@ -129,6 +158,92 @@ pub(super) fn bind(project: &Project, node: &ResolvedNode) -> Result<Option<Boun
 
 #[cfg(feature = "rendering")]
 impl Bound {
+    pub(super) fn input_component<'a>(&'a self, name: &'a str, saved: bool) -> Result<&'a str> {
+        if saved && let Some(map) = &self.values.input_components {
+            return map
+                .get(name)
+                .map(String::as_str)
+                .or_else(|| map.values().any(|value| value == name).then_some(name))
+                .ok_or_else(|| {
+                    invalid("A saved input reference is absent from the script bindings")
+                });
+        }
+        self.component(name)
+    }
+
+    fn asset(&self, kind: &str, uri: &str) -> Result<String> {
+        let Some(assets) = &self.values.assets else {
+            return Ok(uri.into());
+        };
+        if uri.is_empty() {
+            return Ok(uri.into());
+        }
+        assets.get(&asset_key(kind,uri)?).cloned()
+            .or_else(||assets.iter().any(|(key,target)|key.starts_with(&format!("{kind}:")) && target==uri).then(||uri.to_owned()))
+            .ok_or_else(||Error::new("ASSET_NOT_FOUND","A generated file is outside the copied script asset manifest; include it in script_assets when copying"))
+    }
+
+    fn assets(&self, node: &mut Value) -> Result<()> {
+        if self.values.assets.is_none() || node["enabled"] == false {
+            return Ok(());
+        }
+        if node["type"] == "browser"
+            && node
+                .get("href")
+                .and_then(Value::as_str)
+                .is_some_and(|uri| uri.starts_with("file:"))
+        {
+            return Err(Error::new(
+                "UNSUPPORTED_FEATURE",
+                "Copied file browser URLs need an independent page-resource closure",
+            ));
+        }
+        if node["type"] == "ref" && node.get("scriptUri").is_some() {
+            return Err(Error::new(
+                "UNSUPPORTED_FEATURE",
+                "Generated source overrides require a separate script binding scope",
+            ));
+        }
+        if let Some(uri) = node.get_mut("scriptUri")
+            && let Some(value) = uri.as_str()
+        {
+            *uri = json!(self.asset("script", value)?);
+        }
+        for property in ["fill", "stroke", "effect"] {
+            if let Some(value) = node.get_mut(property) {
+                for fill in shader_values_mut(value) {
+                    if fill["enabled"] == false {
+                        continue;
+                    }
+                    let kind = match fill["type"].as_str() {
+                        Some("image") => "image",
+                        Some("shader") => "shader",
+                        _ => continue,
+                    };
+                    if let Some(uri) = fill.get_mut("url")
+                        && let Some(value) = uri.as_str()
+                    {
+                        *uri = json!(self.asset(kind, value)?);
+                    }
+                    if kind == "shader"
+                        && let Some(uniforms) =
+                            fill.get_mut("uniforms").and_then(Value::as_object_mut)
+                    {
+                        for value in uniforms.values_mut().flat_map(shader_values_mut) {
+                            if let Some(uri) = value.as_str().filter(|uri| {
+                                !uri.is_empty()
+                                    && !uri.starts_with(['$', '#'])
+                                    && !uri.starts_with("pencil:")
+                            }) {
+                                *value = json!(self.asset("image", uri)?);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
     pub(super) fn component<'a>(&'a self, name: &'a str) -> Result<&'a str> {
         self.values
             .components
@@ -194,7 +309,9 @@ impl Bound {
         &self,
         node: &mut Value,
         handles: &BTreeMap<String, (PathBuf, String)>,
+        inherited_bytes: &mut usize,
     ) -> Result<()> {
+        self.assets(node)?;
         let original_reference = node.get("ref").and_then(Value::as_str).map(str::to_owned);
         if node["type"] == "ref" {
             let name = original_reference
@@ -217,7 +334,7 @@ impl Bound {
         self.value(node)?;
         if let Some(children) = node.get_mut("children").and_then(Value::as_array_mut) {
             for child in children {
-                self.rewrite(child, handles)?;
+                self.rewrite(child, handles, inherited_bytes)?;
             }
         }
         if let Some(slot) = node.get_mut("slot").and_then(Value::as_array_mut) {
@@ -249,7 +366,7 @@ impl Bound {
                 } else {
                     path
                 };
-                self.rewrite(&mut properties, handles)?;
+                self.rewrite(&mut properties, handles, inherited_bytes)?;
                 if rewritten.insert(path, properties).is_some() {
                     return Err(invalid(
                         "Generated override paths collide after script binding",
@@ -258,7 +375,125 @@ impl Bound {
             }
             *changes = rewritten;
         }
+        if node["type"] == "script" && self.values.assets.is_some() && node["enabled"] != false {
+            *inherited_bytes = inherited_bytes
+                .saturating_add(serde_json::to_vec(&self.values).expect("bindings").len())
+                .saturating_add(8192);
+            if *inherited_bytes > crate::script::MAX_OUTPUT_BYTES {
+                return Err(invalid(
+                    "Inherited script bindings exceed the generated output budget",
+                ));
+            }
+            let mut values = self.values.clone();
+            values.script_uri = node["scriptUri"]
+                .as_str()
+                .ok_or_else(|| invalid("A generated script needs scriptUri"))?
+                .into();
+            values.input_components = None;
+            values.inputs_hash = node.get("inputs").map(|value| {
+                let mut value = value.clone();
+                value.sort_all_objects();
+                hash(value.to_string().as_bytes())
+            });
+            let metadata = node
+                .as_object_mut()
+                .expect("script")
+                .entry("metadata")
+                .or_insert_with(|| json!({"type":"lazypencil"}))
+                .as_object_mut()
+                .ok_or_else(|| invalid("Generated script metadata must be an object"))?;
+            let namespace = metadata
+                .entry("lazypencil")
+                .or_insert_with(|| json!({}))
+                .as_object_mut()
+                .ok_or_else(|| invalid("Generated script namespace must be an object"))?;
+            if namespace.contains_key("script_scope") || namespace.contains_key("script_bindings") {
+                return Err(Error::new(
+                    "UNSUPPORTED_FEATURE",
+                    "Generated explicit script scopes need independent scope composition",
+                ));
+            }
+            namespace.insert(
+                "script_bindings".into(),
+                serde_json::to_value(values).expect("bindings"),
+            );
+        }
         Ok(())
+    }
+}
+
+pub(super) fn asset_key(kind: &str, uri: &str) -> Result<String> {
+    if !matches!(kind, "image" | "shader" | "script")
+        || !valid_name(uri)
+        || uri.contains("://")
+        || uri.starts_with("file:")
+    {
+        return Err(invalid(
+            "A copied script asset needs a local file URI and known kind",
+        ));
+    }
+    let path = Path::new(uri);
+    let mut parts = Vec::new();
+    for part in path.components() {
+        match part {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                // a/.. may follow a symlink. Preserve that traversal spelling;
+                // the copy planner separately records its verified target.
+                parts.push("..".to_owned());
+            }
+            std::path::Component::RootDir => {}
+            std::path::Component::Normal(value) => parts.push(
+                value
+                    .to_str()
+                    .ok_or_else(|| invalid("Script asset paths must be UTF-8"))?
+                    .to_owned(),
+            ),
+            _ => return Err(invalid("Unsupported script asset path prefix")),
+        }
+    }
+    Ok(format!(
+        "{kind}:{}{}",
+        if path.is_absolute() { "/" } else { "" },
+        parts.join("/")
+    ))
+}
+
+#[cfg(test)]
+mod asset_tests {
+    use super::*;
+
+    #[test]
+    fn asset_keys_remove_dot_spelling_without_merging_parent_traversal_origins() {
+        assert_eq!(
+            asset_key("image", "./pixel.png").unwrap(),
+            "image:pixel.png"
+        );
+        assert_eq!(
+            asset_key("script", "../nested.js").unwrap(),
+            "script:../nested.js"
+        );
+        assert_ne!(
+            asset_key("image", "a/../pixel.png").unwrap(),
+            asset_key("image", "pixel.png").unwrap()
+        );
+        assert_eq!(
+            asset_key("image", "a/../pixel.png").unwrap(),
+            "image:a/../pixel.png"
+        );
+    }
+
+    #[test]
+    fn asset_keys_do_not_grant_schemes_unknown_kinds_or_control_paths() {
+        for (kind, uri) in [
+            ("image", "https://example.com/image.png"),
+            ("script", "file:///outside.js"),
+            ("binary", "asset.bin"),
+            ("image", "bad\nname.png"),
+            ("image", ""),
+        ] {
+            assert!(asset_key(kind, uri).is_err());
+        }
     }
 }
 

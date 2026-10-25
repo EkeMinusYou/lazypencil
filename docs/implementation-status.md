@@ -671,6 +671,14 @@ source `36d1269` の専用 Chromium は macOS arm64 `40014476233`（97件）、L
 
 通常 CI の Linux x64 は20分の package step 上限に達し、Rust のコンパイル前に失敗した。ログでは Azure の mirror から11.2 MBの cmake・28.8 MBの libclang を繰り返し取得し、後者の1回目に約11分かかった。取得先をジョブ内の一時的な deb822 sources で公式 Ubuntu HTTPS archive／security に変更し、noble の同じ suite・component と既存の archive signing key を使う。package 一覧と20分の上限は維持し、runner 全体の source file は書き換えない。arm64 は既に成功した既存 source を使う。両 workflow は同じ helper を呼び、local invocation／未知 architecture の拒否、update 失敗の伝播、共通 source と一時ファイルの解放を4件の軽量試験で検査する。実際の x64 導入は次の GHA で確認する。Intel の実行は停止せず追跡する。
 
+### Script を含む copy の接続
+
+2026-10-25: 実行時対応 `b4bc7ee` は GHA `40147491465` の初回対象3環境・監査・source を成功した。通常／core は Linux 各1028件・macOS1018件で、実 worker の21 PNG・8400画素と配布ソース975ファイルを独立照合した。これを copy 操作へ接続し、現在の生成物に限定せず参照できる部品・変数・テーマを取り込み、JS の原文と宣言済み・追加指定の素材を管理アセットへコピーする。画像を指す文字列変数は本文・画像の両方で編集の連動を保つ。未登録の生成パスは同名のコピー先ファイルへ接続せず拒否する。追加の画像・shader・入れ子の JS は元 script の修飾キーごとの `script_assets` に指定する。
+
+新しい core 試験は preview・commit・元 source の削除後の namespace、素材指定の失敗・link の不正指定での不変、無限ループを含む JS を copy 中に実行しないことを検査する。実 worker では2.19／2.21の元画像と copy 後・元 source 削除後を比較し、未実行の部品／変数／画像を選ぶ入力、利用者の明示入力、入れ子・テーマ・編集後の画素を検査する。実 WebGL は画像と本文の文字列を共有する sampler とコピー先の画像への編集を検査する。先行 CI はこれらの CPU を先に実行し、Chromium 後は新しい shader の1件に絞ってから最終3環境へ進む。Rust／Skia は GHA のみで検証する。
+
+対応表を持つ script の再コピー・切り離し、一部の継承した入力・コード・metadata と変数 ref 上書き、生成する明示スコープ・file browser URL の閉包は未完成であり、拒否を維持する。追加素材の指定と原文の byte hash・元 source 削除後の実挙動は GHA の結果で確認する。全機能の完成、物理端末・性能・最低 OS・ライセンス・配布などの元の完成条件は維持する。
+
 ### Script の独立コピーに向けた実行時の参照対応
 
 2026-10-25: コピー後の JS を変更せずに生成物の部品・変数・テーマ・上書き経路をコピー先へ結ぶ `script_bindings` を追加する。保存済み入力の canonical JSON hash とコード URI、メタデータを所有する文書を固定し、同じ値の明示入力やコード上書きによる失効を区別する。ref 入力は実行時 handle へ変換し、生成した literal の参照と混同しない。対応状態を計算条件・実行記録へ含める。core/default の形式・対象・失効 unit と、元 source を削除した実 worker の画素、入力・null・変数・テーマ・descendant・literal metadata、別文書からの利用での同名衝突を検査する試験を追加する。先行1環境で新しい実 worker 試験を他の試験より先に実行し、同じ先行実行の後半では重複させない。実 Rust は GHA で検証する。

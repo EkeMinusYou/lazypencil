@@ -180,7 +180,7 @@ jobs:
           run(["cargo", "clippy", "--locked", "--no-default-features", "--lib", *selected, "--", "-D", "warnings"], timeout=300)
           PY
       - name: Check focused rendering code before building test executables
-        if: inputs.phase == 'focus' && inputs.suite == 'graphics' && !contains(fromJSON(inputs.targets), 'native_layout')
+        if: inputs.phase == 'focus' && (inputs.suite == 'graphics' || inputs.suite == 'copy') && !contains(fromJSON(inputs.targets), 'native_layout')
         timeout-minutes: 6
         working-directory: ${{ runner.temp }}/lazypencil-source
         env:
@@ -228,7 +228,7 @@ jobs:
           set -o pipefail
           python scripts/ci/command.py --timeout 240 cargo clippy --locked --test shader_uniforms -- -D warnings 2>&1 | tee "$RUNNER_TEMP/chromium-shader-clippy.log"
       - name: Reproduce script worker compatibility before native rendering
-        if: inputs.phase == 'focus' && (inputs.suite == 'graphics' || inputs.suite == 'dynamic') && contains(fromJSON(inputs.targets), 'scripts')
+        if: inputs.phase == 'focus' && (inputs.suite == 'graphics' || inputs.suite == 'dynamic' || inputs.suite == 'copy') && contains(fromJSON(inputs.targets), 'scripts')
         timeout-minutes: 15
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
@@ -292,13 +292,14 @@ jobs:
           cargo test --locked --test user_config navigation_shortcuts_are_user_owned_replace_defaults_and_validate_scope_conflicts -- --exact 2>&1 | tee -a "$RUNNER_TEMP/focus-input.log"
           cargo test --locked --test tui real_pty_custom_navigation_preserves_draft_and_changes_preview_pixels -- --exact 2>&1 | tee -a "$RUNNER_TEMP/focus-input.log"
       - name: Reproduce script reference bindings before other tests and Chromium
-        if: inputs.phase == 'focus' && (inputs.suite == 'graphics' || inputs.suite == 'dynamic') && contains(fromJSON(inputs.targets), 'script_scope')
+        if: inputs.phase == 'focus' && (inputs.suite == 'graphics' || inputs.suite == 'dynamic' || inputs.suite == 'copy') && contains(fromJSON(inputs.targets), 'script_scope')
         timeout-minutes: 3
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
           set -o pipefail
-          cargo test --locked --no-default-features --lib project::bindings::tests:: -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-bindings.log"
+          cargo test --locked --no-default-features --lib project::bindings:: -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/focus-bindings.log"
           cargo test --locked --test script_scope script_bindings:: -- --test-threads=1 2>&1 | tee -a "$RUNNER_TEMP/focus-bindings.log"
+          cargo test --locked --test script_scope script_copy:: -- --test-threads=1 2>&1 | tee -a "$RUNNER_TEMP/focus-bindings.log"
       - name: Run focused reproduction and affected tests
         if: inputs.phase == 'focus' && inputs.suite != 'dynamic' && inputs.suite != 'shader'
         timeout-minutes: 10
@@ -395,7 +396,7 @@ jobs:
           set -o pipefail
           cargo test --locked --no-fail-fast -- --test-threads=2 --skip tui::tests:: --skip cancelling_a_running_script_unblocks_the_mcp_document_worker 2>&1 | tee -a "$RUNNER_TEMP/lazypencil-tests.log"
       - name: Install and verify the pinned Chromium runtime
-        if: inputs.phase == 'full' || inputs.suite == 'dynamic' || inputs.suite == 'shader'
+        if: inputs.phase == 'full' || inputs.suite == 'dynamic' || inputs.suite == 'shader' || inputs.suite == 'copy'
         timeout-minutes: 10
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
@@ -414,7 +415,7 @@ jobs:
           PY
       - name: Permit the verified browser to create its Linux sandbox
         timeout-minutes: 5
-        if: runner.os == 'Linux' && (inputs.phase == 'full' || inputs.suite == 'dynamic' || inputs.suite == 'shader')
+        if: runner.os == 'Linux' && (inputs.phase == 'full' || inputs.suite == 'dynamic' || inputs.suite == 'shader' || inputs.suite == 'copy')
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
           if [ ! -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ] || [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" != 1 ]; then
@@ -449,7 +450,7 @@ jobs:
           PY
       - name: Diagnose Linux browser startup with the OS sandbox enabled
         timeout-minutes: 5
-        if: runner.os == 'Linux' && (inputs.phase == 'full' || inputs.suite == 'dynamic' || inputs.suite == 'shader')
+        if: runner.os == 'Linux' && (inputs.phase == 'full' || inputs.suite == 'dynamic' || inputs.suite == 'shader' || inputs.suite == 'copy')
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
           ulimit -c 0
@@ -489,6 +490,13 @@ jobs:
         run: |
           set -o pipefail
           python scripts/ci/focus.py test --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS" 2>&1 | tee -a "$RUNNER_TEMP/focus-tests.log"
+      - name: Verify copied script shader pixels before the full matrix
+        if: inputs.phase == 'focus' && inputs.suite == 'copy'
+        timeout-minutes: 3
+        working-directory: ${{ runner.temp }}/lazypencil-source
+        run: |
+          set -o pipefail
+          cargo test --locked --test script_scope script_copy::copied_script_shader_keeps_string_sampler_coupling_and_consumer_edits -- --exact --ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/focus-copy-shader.log"
       - name: Verify real page shader and import pixels
         if: inputs.phase == 'full'
         timeout-minutes: 20
@@ -499,7 +507,7 @@ jobs:
           LAZYPENCIL_TEST_CODEC_DIR: ${{ runner.temp }}/codec-reference
         run: |
           set -o pipefail
-          cargo test --locked --no-fail-fast --test dynamic_render --test browser_readiness --test shader_uniforms --test sampler_sources --test imports --test windows_agent -- --ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-render.log"
+          cargo test --locked --no-fail-fast --test dynamic_render --test browser_readiness --test shader_uniforms --test sampler_sources --test imports --test windows_agent --test script_scope -- --ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/chromium-render.log"
           cargo test --locked --test agent browser_ownership::real_browser_drop_and_owner_death_reap_the_tree_and_preserve_other_owners -- --exact --ignored --test-threads=1 2>&1 | tee -a "$RUNNER_TEMP/chromium-render.log"
       - name: Require retained shader and native cancellation images
         if: inputs.phase == 'full'
@@ -642,6 +650,7 @@ jobs:
             ${{ runner.temp }}/focus-input.log
             ${{ runner.temp }}/focus-history.log
             ${{ runner.temp }}/focus-bindings.log
+            ${{ runner.temp }}/focus-copy-shader.log
             ${{ runner.temp }}/tui-artifacts/
             ${{ runner.temp }}/focus-script-core.log
             ${{ runner.temp }}/focus-dynamic-inputs.log

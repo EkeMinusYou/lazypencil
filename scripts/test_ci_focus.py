@@ -18,15 +18,32 @@ class FocusTests(unittest.TestCase):
     def test_script_binding_changes_reproduce_core_validation_and_worker_pixels_once(self):
         for path in ("src/project/bindings.rs", "tests/support/script_bindings.rs"):
             result = focus.select([path])
-            self.assertEqual(result["suite"], "graphics")
+            self.assertEqual(result["suite"], "copy" if path=="src/project/bindings.rs" else "graphics")
             self.assertIn("script_scope", result["targets"])
             build, checks = focus.commands(result["suite"], result["targets"])
             self.assertTrue(any("--no-default-features" in command and "--lib" in command for command in build))
             self.assertEqual(checks[-1][checks[-1].index("script_bindings::") - 1], "--skip")
         native = (Path(__file__).resolve().parents[1] / ".github/workflows/native.yml").read_text()
         self.assertLess(native.index("Reproduce script reference bindings"), native.index("Run focused reproduction and affected tests"))
-        self.assertIn("cargo test --locked --no-default-features --lib project::bindings::tests::", native)
+        self.assertIn("cargo test --locked --no-default-features --lib project::bindings::", native)
         self.assertIn("cargo test --locked --test script_scope script_bindings::", native)
+
+    def test_script_copy_runs_cpu_reproductions_once_then_only_its_affected_shader_before_full_matrix(self):
+        for path in ("src/project/import/scripts.rs", "tests/support/script_copy.rs", "tests/support/script_copy_core.rs"):
+            result=focus.select([path])
+            self.assertEqual(result["suite"],"copy")
+            self.assertTrue({"project","scripts","script_scope"}<=set(result["targets"]))
+            _,checks=focus.commands(result["suite"],result["targets"])
+            for case in focus.SCRIPT_COPY_CPU:
+                self.assertEqual(checks[-1][checks[-1].index(case)-1],"--skip")
+        native=(Path(__file__).resolve().parents[1]/".github/workflows/native.yml").read_text()
+        self.assertLess(native.index("cargo test --locked --test script_scope script_copy:: --"),native.index("Install and verify the pinned Chromium runtime"))
+        self.assertIn("cargo test --locked --test script_scope script_copy::copied_script_shader_keeps_string_sampler_coupling_and_consumer_edits -- --exact --ignored",native)
+        self.assertIn("--test windows_agent --test script_scope -- --ignored",native)
+        self.assertIn("inputs.suite == 'copy'",native[native.index("Install and verify the pinned Chromium runtime"):native.index("Permit the verified browser")])
+        mixed=focus.select(["src/project/import/scripts.rs","src/shader.rs"])
+        self.assertEqual(mixed["suite"],"dynamic")
+        self.assertIn("script_scope",mixed["targets"])
 
     def test_saved_browser_only_changes_use_the_static_frontend_reproduction(self):
         for path in ["src/tui/saved.rs", "src/tui/checkpoints.rs"]:

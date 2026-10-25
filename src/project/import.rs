@@ -3,6 +3,7 @@ use crate::operations::{ImportOptions, NameResolution};
 use uuid::Uuid;
 
 mod samplers;
+mod scripts;
 
 type Key = (PathBuf, String);
 pub(crate) struct CopyPlan {
@@ -114,6 +115,9 @@ impl Project {
             used_components: BTreeSet::new(),
             used_variables: BTreeSet::new(),
             used_themes: BTreeSet::new(),
+            script_scopes: BTreeMap::new(),
+            script_images: BTreeSet::new(),
+            used_script_assets: BTreeSet::new(),
         };
         while let Some(key) = graph.queue.pop_front() {
             graph.project.check_cancelled()?;
@@ -164,7 +168,9 @@ impl Project {
                 .ids
                 .insert(key.clone(), format!("n{}", Uuid::new_v4().simple()));
         }
+        graph.capture_script_images()?;
         graph.prepare_sampler_bindings()?;
+        graph.prepare_script_assets()?;
         let mut definitions = Vec::new();
         for (origin, id) in &roots {
             let node = graph.project.documents[origin].node(id)?.clone();
@@ -186,6 +192,15 @@ impl Project {
                     "An import name resolution does not match a required source key",
                 ));
             }
+        }
+        if options
+            .script_assets
+            .keys()
+            .any(|key| !graph.used_script_assets.contains(key))
+        {
+            return Err(copy_error(
+                "Additional script assets must name a copied script source key",
+            ));
         }
         let component_id = graph.node_target(&selected)?;
         let mut map_bytes = 0usize;
@@ -281,6 +296,9 @@ struct Copier<'a> {
     used_components: BTreeSet<String>,
     used_variables: BTreeSet<String>,
     used_themes: BTreeSet<String>,
+    script_scopes: BTreeMap<PathBuf, scripts::Scope>,
+    script_images: BTreeSet<(PathBuf, String, String)>,
+    used_script_assets: BTreeSet<String>,
 }
 
 impl Copier<'_> {
@@ -512,12 +530,6 @@ impl Copier<'_> {
                 "An unknown node cannot be copied structurally",
             ));
         }
-        if kind == "script" {
-            return Err(Error::new(
-                "UNSUPPORTED_FEATURE",
-                "Copying scripts requires preserving generated component, variable, and asset scopes",
-            ));
-        }
         self.source_axes(origin)?;
         if node["reusable"] == true {
             let source = self.key(&key)?;
@@ -560,12 +572,20 @@ impl Copier<'_> {
         self.scan_properties(origin, node)
     }
     fn scan_properties(&mut self, origin: &Path, node: &Value) -> Result<()> {
+        let script = self.scan_script(origin, node)?;
         self.scan_sampler_values(origin, node)?;
         let object = node
             .as_object()
             .ok_or_else(|| copy_error("A copied node must be an object"))?;
         for (key, value) in object {
-            if !literal_property(key) && key != "children" {
+            if key == "inputs" && script.is_some() {
+                let header = &script.as_ref().expect("script").header;
+                for input in &header.inputs {
+                    if let Some(value) = value.get(&input.name) {
+                        self.scan_value(origin, value)?;
+                    }
+                }
+            } else if !literal_property(key) && key != "children" {
                 self.scan_value(origin, value)?;
             }
         }
@@ -601,6 +621,30 @@ impl Copier<'_> {
             .flatten()
         {
             self.scan_node(origin, child)?;
+        }
+        if node["type"] == "ref"
+            && let Some(overrides) = node.get("descendants").and_then(Value::as_object)
+        {
+            let mut expanded =
+                self.project
+                    .expand(origin, node, None, &[], &mut Vec::new(), &mut 0)?;
+            for (path, changes) in overrides {
+                if changes.get("type").is_none()
+                    && ["inputs", "scriptUri", "metadata"]
+                        .iter()
+                        .any(|key| changes.get(key).is_some())
+                {
+                    let target =
+                        find_descendant_mut(&mut expanded, &path.split('/').collect::<Vec<_>>())
+                            .ok_or_else(|| copy_error("A copied override target is missing"))?;
+                    if target.kind() == "script" {
+                        return Err(Error::new(
+                            "UNSUPPORTED_FEATURE",
+                            "Inherited script input, code and metadata overrides require an independently bound override scope",
+                        ));
+                    }
+                }
+            }
         }
         for changes in node
             .get("descendants")
@@ -679,6 +723,7 @@ impl Copier<'_> {
         let bytes = self.project.asset(&path)?.bytes.clone();
         let extension = match kind {
             "shader" => "glsl",
+            "script" => "js",
             "image" if bytes.starts_with(b"\x89PNG\r\n\x1a\n") => "png",
             "image" if bytes.starts_with(&[0xff, 0xd8, 0xff]) => "jpg",
             "image" if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") => "webp",
@@ -703,6 +748,7 @@ impl Copier<'_> {
     }
     fn rewrite_properties(&mut self, origin: &Path, node: &Value, is_node: bool) -> Result<Value> {
         self.project.check_cancelled()?;
+        let script = self.script_info(origin, node)?;
         let mut result = node
             .as_object()
             .ok_or_else(|| copy_error("A copied override must be an object"))?
@@ -722,7 +768,16 @@ impl Copier<'_> {
             }
         }
         for (key, value) in &mut result {
-            if key == "theme" || (!literal_property(key) && key != "children") {
+            if key == "inputs" && script.is_some() {
+                let header = &script.as_ref().expect("script").header;
+                if let Some(values) = value.as_object_mut() {
+                    for input in &header.inputs {
+                        if let Some(value) = values.get_mut(&input.name) {
+                            *value = self.rewrite_value(origin, value)?;
+                        }
+                    }
+                }
+            } else if key == "theme" || (!literal_property(key) && key != "children") {
                 let wrapper = json!({key.clone():value.clone()});
                 *value = self.rewrite_value(origin, &wrapper)?[key].clone();
             }
@@ -830,6 +885,7 @@ impl Copier<'_> {
                 }
             }
         }
+        self.rewrite_script(origin, node, &mut result, script.as_ref())?;
         Ok(Value::Object(result))
     }
 }

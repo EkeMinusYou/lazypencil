@@ -17,6 +17,8 @@ use tempfile::TempDir;
 
 #[path = "support/script_bindings.rs"]
 mod script_bindings;
+#[path = "support/script_copy.rs"]
+mod script_copy;
 
 fn write(path: &Path, value: Value) {
     fs::write(path, value.to_string()).unwrap();

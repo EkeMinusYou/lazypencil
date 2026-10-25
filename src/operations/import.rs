@@ -35,6 +35,21 @@ pub enum NameResolution {
     Reuse { target: String },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ScriptAssetKind {
+    Image,
+    Shader,
+    Script,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ScriptAsset {
+    pub uri: String,
+    pub kind: ScriptAssetKind,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct ImportOptions {
@@ -43,6 +58,8 @@ pub struct ImportOptions {
     pub variables: BTreeMap<String, NameResolution>,
     pub components: BTreeMap<String, NameResolution>,
     pub themes: BTreeMap<String, NameResolution>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub script_assets: BTreeMap<String, Vec<ScriptAsset>>,
 }
 
 impl Context<'_> {
@@ -195,6 +212,7 @@ pub(super) fn apply_import(
                 || !options.variables.is_empty()
                 || !options.components.is_empty()
                 || !options.themes.is_empty()
+                || !options.script_assets.is_empty()
             {
                 return Err(invalid("Name resolutions are only valid for copy imports"));
             }
