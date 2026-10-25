@@ -169,7 +169,7 @@ fn child_startup_waits_for_interception_then_recursive_auto_attach_before_resume
             .unwrap()
             .is_none()
     );
-    let request = state
+    let response = state
         .observe(&request(
             "worker",
             "GET",
@@ -177,8 +177,8 @@ fn child_startup_waits_for_interception_then_recursive_auto_attach_before_resume
         ))
         .unwrap()
         .unwrap();
-    assert_eq!(request.method, "Fetch.fulfillRequest");
-    assert_eq!(request.session, "worker");
+    assert_eq!(response.method, "Fetch.fulfillRequest");
+    assert_eq!(response.session, "worker");
     assert_eq!(state.sessions["root"].stats.fulfilled, 1);
     assert_eq!(state.sessions["root"].stats.response_bytes, 8);
     attach(&mut state, "worker", "grandchild");
