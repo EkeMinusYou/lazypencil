@@ -422,7 +422,8 @@ pub fn native_identity(
         // The tool migration adds only a terminal test dependency and a Cargo alias.
         // Production dependency declarations, native sources and build flags are unchanged.
         // Removing the retired Shell entry points does not change dependency build inputs.
-        "e709a9d463008b5dbad67c40766ddbc66cee8fa89f86c6c6b23d7a0d96b95475" => {
+        // New byte-preservation attributes apply only to xtask notice files.
+        "b8192b978f7a069656ed03fe0fc8bd0f97725ce33cd9f1787360534b73e8b397" => {
             Some("b24ec03467f4fe02cfb29f305f8a393d83c9588dd4729e01787a36e2b994c62d")
         }
         "c95e9172415f92d6f202a226bf3696f9f6ede08eaa66b81a612b892f8ca3bfc7" => {

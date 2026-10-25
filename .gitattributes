@@ -2,6 +2,7 @@
 
 # Preserve the exact upstream notice bytes; readable notices are generated separately.
 resources/licenses/rust/texts/*.txt binary
+xtask/notices/texts/*.txt binary
 resources/licenses/native/texts/*.txt binary
 resources/licenses/toolchain/texts/*.txt binary
 *.crate binary
@@ -14,6 +15,7 @@ resources/licenses/MPL-2.0.txt binary
 # Preserve upstream source and generated notice formatting without rewriting it.
 vendor/skia-bindings/** whitespace=-blank-at-eol,-blank-at-eof
 resources/licenses/rust/RUST-NOTICES.txt whitespace=-blank-at-eof
+xtask/notices/RUST-NOTICES.txt whitespace=-blank-at-eof
 *.ttf binary
 *.otf binary
 *.ttc binary
