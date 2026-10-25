@@ -148,10 +148,42 @@ fn portable_paths_reject_escape_drives_streams_reserved_names_and_aliases() {
     ] {
         assert!(util::safe_path(name).is_ok(), "{name:?}");
     }
-    let (_temp, root, archive) = fixture();
-    fs::write(root.join("src/straße.rs"), b"a").unwrap();
-    fs::write(root.join("src/STRASSE.rs"), b"b").unwrap();
-    assert!(dist::source(&root, &archive, 0, true).is_err());
+    let (temp, root, archive) = fixture();
+    dist::source(&root, &archive, 0, true).unwrap();
+    let output = temp.path().join("extracted");
+    dist::verify(&archive, Some(&output)).unwrap();
+    let mut manifest: Value = util::json(&output.join(dist::MANIFEST)).unwrap();
+    let mut members = dist::read_archive(&archive).unwrap();
+    // Case-insensitive hosts merge these files before the source builder sees
+    // them. Archive and manifest inputs retain both names on every platform.
+    for name in ["src/straße.rs", "src/STRASSE.rs"] {
+        fs::write(output.join(name), b"a").unwrap();
+        manifest["files"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "path":name,"sha256":util::digest(b"a"),"bytes":1,"mode":0o644,
+            }));
+        members.insert(format!("fixture-0.1.0/{name}"), (b"a".to_vec(), 0o644));
+    }
+    fs::write(
+        output.join(dist::MANIFEST),
+        util::encode(&manifest).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        dist::verify_tree(&output, None)
+            .unwrap_err()
+            .to_string()
+            .contains("Duplicate/reserved")
+    );
+    replace(&archive, &members);
+    assert!(
+        dist::read_archive(&archive)
+            .unwrap_err()
+            .to_string()
+            .contains("colliding archive path")
+    );
 }
 
 #[test]

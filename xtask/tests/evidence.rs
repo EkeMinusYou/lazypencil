@@ -16,8 +16,9 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let temp = tempfile::tempdir().unwrap();
-        let root = temp.path().join("source");
-        let target = temp.path().join("target");
+        let base = temp.path().canonicalize().unwrap();
+        let root = base.join("source");
+        let target = base.join("target");
         fs::create_dir_all(root.join("src")).unwrap();
         fs::create_dir(&target).unwrap();
         for (name, data) in [
