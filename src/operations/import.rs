@@ -63,7 +63,7 @@ pub struct ImportOptions {
 }
 
 impl Context<'_> {
-    fn record_source(&mut self, source: Project) -> Result<()> {
+    pub(super) fn record_source(&mut self, source: Project) -> Result<()> {
         crate::cancel::check(self.cancel)?;
         let identity = source.read_identity()?;
         for existing in &self.sources {
@@ -86,7 +86,7 @@ impl Context<'_> {
         self.sources.push(source);
         Ok(())
     }
-    fn stage(&mut self, file: crate::managed::File, publish: bool) -> Result<()> {
+    pub(super) fn stage(&mut self, file: crate::managed::File, publish: bool) -> Result<()> {
         crate::cancel::check(self.cancel)?;
         self.overlay.insert(file.path.clone(), file.clone());
         if self

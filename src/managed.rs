@@ -107,10 +107,10 @@ impl File {
         members: BTreeMap<String, Arc<[u8]>>,
         cancel: Option<&tokio_util::sync::CancellationToken>,
     ) -> Result<Vec<Self>> {
-        if members.is_empty() || members.len() > 4096 {
+        if members.is_empty() || members.len() > 4097 {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
-                "Managed bundles require 1–4096 members",
+                "Managed bundles require 1–4097 members including their resource catalogue",
             ));
         }
         let mut total_bytes = 0usize;
@@ -119,7 +119,7 @@ impl File {
         validate_bundle_names(members.keys().map(String::as_str), cancel)?;
         for (name, bytes) in &members {
             crate::cancel::check(cancel)?;
-            if bytes.is_empty() || bytes.len() > 64 * 1024 * 1024 {
+            if bytes.len() > 64 * 1024 * 1024 {
                 return Err(Error::new(
                     "INVALID_ARGUMENT",
                     "Invalid managed bundle member",

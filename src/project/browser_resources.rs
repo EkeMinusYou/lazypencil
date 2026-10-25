@@ -3,6 +3,7 @@
 use super::*;
 use std::fs;
 
+mod bundle;
 mod filesystem;
 use filesystem::Entry;
 
@@ -34,6 +35,8 @@ pub(super) struct Resources {
     responses: Option<Arc<crate::cdp::LocalFiles>>,
     logical_bytes: usize,
     private_roots: Vec<PathBuf>,
+    complete: bool,
+    catalog: Option<PathBuf>,
 }
 
 /// One document's captured URL namespace. It contains no filesystem fallback.
@@ -52,7 +55,10 @@ fn declarations(document: &Document) -> Result<Vec<Root>> {
     let object = value
         .as_object()
         .ok_or_else(|| invalid("Browser resources must be an object"))?;
-    if object.len() != 2 || !object.contains_key("version") || !object.contains_key("roots") {
+    if object.len() != 2
+        || !object.contains_key("version")
+        || !(object.contains_key("roots") || object.contains_key("bundle"))
+    {
         return Err(invalid("Invalid browser resource fields"));
     }
     if value["version"] != 1 {
@@ -60,6 +66,10 @@ fn declarations(document: &Document) -> Result<Vec<Root>> {
             "UNSUPPORTED_VERSION",
             "Unsupported browser resource version",
         ));
+    }
+    if let Some(value) = object.get("bundle") {
+        bundle::declaration(value)?;
+        return Ok(Vec::new());
     }
     let roots = value["roots"]
         .as_array()
@@ -115,6 +125,16 @@ pub(super) fn validate(document: &Document) -> Result<()> {
 impl Project {
     pub(super) fn capture_browser_resources(&mut self, origin: &Path) -> Result<()> {
         let roots = declarations(&self.documents[origin])?;
+        let packed = self.documents[origin]
+            .value()
+            .pointer("/metadata/lazypencil/browser_resources/bundle")
+            .cloned();
+        if let Some(value) = packed {
+            let mut resources = self.capture_browser_bundle(origin, &value)?;
+            resources.finish()?;
+            self.browser_resources.insert(origin.into(), resources);
+            return Ok(());
+        }
         if roots.is_empty() {
             return Ok(());
         }
@@ -125,6 +145,8 @@ impl Project {
             responses: None,
             logical_bytes: 0,
             private_roots: self.browser_private_roots()?,
+            complete: true,
+            catalog: None,
         };
         let mut names = 0usize;
         for root in roots {
@@ -134,6 +156,7 @@ impl Project {
                 .browser_reference(origin, &root.path, "browser_root", &resources.private_roots)?
                 .is_none()
             {
+                resources.complete = false;
                 continue;
             }
             self.capture_browser_directory(
@@ -145,17 +168,7 @@ impl Project {
                 &mut names,
             )?;
         }
-        let inventory = resources.files.iter().map(|(url, file)| {
-            json!({"url":url,"mime":file.mime,"bytes":file.bytes.len(),"sha256":hash(&file.bytes)})
-        }).collect::<Vec<_>>();
-        resources.revision = hash(&serde_json::to_vec(&inventory).expect("serializable inventory"));
-        if !resources.files.is_empty() {
-            let files = resources.files.iter().map(|(url, resource)| {
-                (url.clone(), resource.mime.clone(), resource.bytes.clone())
-            });
-            resources.responses =
-                Some(Arc::new(crate::cdp::LocalFiles::with_optional_mime(files)?));
-        }
+        resources.finish()?;
         self.browser_resources.insert(origin.into(), resources);
         Ok(())
     }
@@ -181,6 +194,7 @@ impl Project {
         let Some(canonical) =
             self.browser_reference(origin, uri, "browser_root", &resources.private_roots)?
         else {
+            resources.complete = false;
             return Ok(());
         };
         if !active.insert(canonical.clone()) {
@@ -218,6 +232,7 @@ impl Project {
                 &resources.private_roots,
             )?
             else {
+                resources.complete = false;
                 continue;
             };
             let metadata =
@@ -326,9 +341,9 @@ impl Project {
         }
         let private = self.browser_private_roots()?;
         for resources in self.browser_resources.values() {
-            for file in resources.files.values() {
+            for path in resources.paths() {
                 self.check_cancelled()?;
-                forbid_private(&file.path, &private).map_err(|_| {
+                forbid_private(path, &private).map_err(|_| {
                     Error::new(
                         "REVISION_CONFLICT",
                         "Browser private resource boundaries changed; reload the project",
@@ -417,6 +432,30 @@ impl Project {
     }
 }
 
+impl Resources {
+    fn paths(&self) -> impl Iterator<Item = &Path> {
+        self.files
+            .values()
+            .map(|file| file.path.as_path())
+            .chain(self.catalog.as_deref())
+    }
+
+    fn finish(&mut self) -> Result<()> {
+        let inventory = self.files.iter().map(|(url, file)| {
+            json!({"url":url,"mime":file.mime,"bytes":file.bytes.len(),"sha256":hash(&file.bytes)})
+        }).collect::<Vec<_>>();
+        self.revision = hash(&serde_json::to_vec(&inventory).expect("serializable inventory"));
+        if !self.files.is_empty() {
+            self.responses = Some(Arc::new(crate::cdp::LocalFiles::with_optional_mime(
+                self.files
+                    .iter()
+                    .map(|(url, file)| (url.clone(), file.mime.clone(), file.bytes.clone())),
+            )?));
+        }
+        Ok(())
+    }
+}
+
 fn forbid_private(path: &Path, private: &[PathBuf]) -> Result<()> {
     if private
         .iter()
@@ -445,7 +484,7 @@ pub(super) fn protected_paths(project: &Project) -> BTreeSet<&Path> {
     project
         .browser_resources
         .values()
-        .flat_map(|resources| resources.files.values().map(|file| file.path.as_path()))
+        .flat_map(|resources| resources.paths())
         .collect()
 }
 

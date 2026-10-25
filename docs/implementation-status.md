@@ -1,6 +1,8 @@
 # lazypencil 実装と公開準備の状況
 
-2026-10-25: CDP 基盤 `081cfbb` の [GHA `40195170298`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40195170298) は先行 Linux・全3環境・監査・source を成功した。各環境で元ディレクトリ削除後の CSS／画像／iframe／親子 worker と未登録 script の拒否、213画像の必須確認を通し、新画像の全3,072画素と配布ソース1,099ファイルを独立照合した。次に、文書ごとの明示的な Web root を Project の不変入力へ捕捉する層を追加する。ディレクトリの追加／削除・別名・リンク先、内容・入力 revision、私有データの範囲と容量を検査し、既存のストリーミング hash と共有 byte 配列を再利用する。実 Chromium の再現入力も Project から取得し、拡張子なし HTML の MIME 判定を含めて検証する。新しい入力層は GHA 未確認であり、CLI／MCP の file URL 有効化、管理 bundle・独立コピー／再コピー・cache 更新・文脈の継承との統合、および製品全体の残件は維持する。
+2026-10-26: Web root の不変入力 `dcf61f8` は [GHA `40202318517`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40202318517) の先行 Linux・全3環境・監査・source を成功した。通常／core は macOS 1,103件、Linux 各1,113件で、各環境の215画像の必須確認、元ディレクトリ削除後の CSS／画像／iframe／親子 worker と未登録 script の拒否を通した。拡張子なしファイルは通常の Chromium の MIME・実行状態・PNG と一致し、新画像の全3,072画素と配布ソース1,102ファイルを独立照合した。各環境の静的 release 画像と42回の書き出しも確認した。
+
+次に、宣言した Web 素材を元 URL のまま管理 bundle へ固定する共通編集操作 `pack_browser_resources` を追加する。内容で共有した payload と版付きカタログを、既存の管理素材・dry-run・原子的な文書保存へ結ぶ。空ファイル・バイナリ・別名・日本語と記号のファイル名、元素材の削除・移動後の再実行、欠損の修復と改変拒否を両形式で試験する。実 Chromium も元素材削除後に保存済み bundle を再読込する。新しい保存経路は GHA 未確認である。CLI／MCP の file URL 有効化、独立コピー／再コピー・cache 更新・文脈の継承・ユーザーの読取許可との統合、および製品全体の残件は維持する。
 
 2026-10-25: file URL の browser 素材閉包に向け、ファイルを読まない CDP の入力経路を追加する。呼び出し側が捕捉した URL／MIME／内容だけを応答し、未登録の file 要求や書き込みメソッドは拒否する。子 target は Fetch と再帰 auto-attach の設定応答後に起動を再開し、非同期の応答を通常コマンドと混同しない。URL 別名・バイナリー・HEAD・ヘッダー注入・容量／件数・子 session の破棄を Rust 単体試験で確認し、実 Chromium では元ディレクトリ削除後の HTML・CSS import・画像・JavaScript・iframe の全画素、元の query／fragment、ホスト上の未登録 script の拒否を検査する。新しい実装は GHA 未確認で、製品側の file URL はまだ有効にしない。宣言した素材 root の捕捉・管理 bundle・コピー／再コピー・キャッシュの改版との統合、実 worker／別 process frame の検証と本家の往復互換は引き続き必要である。ローカルの重いビルドは行わない。
 

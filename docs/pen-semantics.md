@@ -183,6 +183,7 @@ JavaScript の生成結果は手順の途中へ戻して同じ計測を行う。
 | --- | --- |
 | `add_import`・`remove_import` | ライブラリの別名と参照先。利用中の参照を壊す削除は拒否する |
 | `import_component` | 元の部品、link・copy、配置先、名前の衝突の扱い |
+| `pack_browser_resources` | 現在の文書が宣言したローカル Web 素材を管理 bundle に固定する |
 | `set_override`・`reset_override` | インスタンスの経路と属性。元部品を変更しない |
 | `replace_override` | 対象の経路と置換するサブツリー |
 | `set_slot_children` | インスタンス内のスロットと完全な子配列 |

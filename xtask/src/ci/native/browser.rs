@@ -382,6 +382,7 @@ pub fn required_images(root: &Path, commit: &str) -> Result<()> {
     let local = report("codec-browser-local-files.json")?;
     ensure!(
         local["source_removed"] == true
+            && local["managed_bundle_reloaded_after_source_removal"] == true
             && local["project_resource_revision"]
                 .as_str()
                 .is_some_and(|revision| revision.len() == 64

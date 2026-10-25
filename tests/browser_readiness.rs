@@ -114,6 +114,8 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
     use lazypencil::{
         cdp::{Browser, Budget, LocalFiles, Purpose},
         runtime::InstalledBrowser,
+        service,
+        store::Store,
     };
     let original = TempDir::new().unwrap();
     let site = original.path().join("site with spaces 日本語");
@@ -184,10 +186,16 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
     fs::write(&file, &document).unwrap();
     let project = Project::from_document(&file, Document::parse(document).unwrap(), &[]).unwrap();
     let captured = project
-        .browser_page_resources(&fs::canonicalize(file).unwrap(), url.as_str())
+        .browser_page_resources(&fs::canonicalize(&file).unwrap(), url.as_str())
         .unwrap();
     let resource_revision = captured.revision;
-    let files = captured.files;
+    let data = TempDir::new().unwrap();
+    let store = Store::open(&file, Some(data.path().to_path_buf())).unwrap();
+    let metadata = service::document_metadata(&store).unwrap();
+    let pack = serde_json::from_value(json!({"request_id":"pack-browser-probe",
+        "expected_revision":metadata["revision"],"expected_dependency_revision":metadata["dependency_revision"],
+        "operations":[{"op":"pack_browser_resources"}]})).unwrap();
+    service::apply_request(&store, &pack).unwrap();
 
     let installed = InstalledBrowser {
         executable: std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").unwrap().into(),
@@ -230,6 +238,15 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
     assert_eq!(native_probe["executed"], false);
     fs::remove_dir_all(&site).unwrap();
     assert!(!site.exists());
+    // Reload from published managed files after removing the source, rather
+    // than relying only on the first in-memory capture.
+    let packed = Project::load(&store).unwrap();
+    let reloaded = packed
+        .browser_page_resources(store.path(), url.as_str())
+        .unwrap();
+    assert_eq!(reloaded.revision, resource_revision);
+    packed.verify_unchanged().unwrap();
+    let files = reloaded.files;
     assert_eq!(
         project.verify_unchanged().unwrap_err().code,
         "REVISION_CONFLICT"
@@ -340,6 +357,7 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
             "png_hash":lazypencil::document::hash(&png),"stats":stats,"source_removed":true,
             "location_preserved":probe["location"]==url.as_str(),"unsafe_host_file":probe["unsafe"],
             "sandbox":"enabled","browser":browser.version,"project_resource_revision":resource_revision,
+            "managed_bundle_reloaded_after_source_removal":true,
             "extensionless":{"content_type":native_probe["content_type"],"executed":native_probe["executed"],
                 "text_sha256":lazypencil::document::hash(native_probe["text"].as_str().unwrap().as_bytes()),
                 "png_hash":lazypencil::document::hash(&native_plain),"equivalent":true}

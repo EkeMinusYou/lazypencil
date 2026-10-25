@@ -4,6 +4,293 @@ use std::sync::Arc;
 
 const BASE: &str = "file:///original/site/";
 
+fn edit(store: &Store, id: &str, operations: Value, dry_run: bool) -> EditRequest {
+    let project = Project::load(store).unwrap();
+    serde_json::from_value(json!({"request_id":id,
+        "expected_revision":project.root_document().revision(),
+        "expected_dependency_revision":project.dependency_revision(),
+        "operations":operations,"dry_run":dry_run}))
+    .unwrap()
+}
+
+#[test]
+fn packed_web_resources_keep_original_urls_empty_files_aliases_and_revision_after_relocation() {
+    for version in ["2.19", "2.21"] {
+        let (temp, store) = fixture();
+        fs::write(temp.path().join("web/alias.HTML"), "<html></html>").unwrap();
+        fs::write(temp.path().join("web/日本語 #?.css"), "body{}").unwrap();
+        let binary = (0..=255u8).collect::<Vec<_>>();
+        fs::write(temp.path().join("web/payload.bin"), &binary).unwrap();
+        let mut document: Value = serde_json::from_slice(&fs::read(store.path()).unwrap()).unwrap();
+        document["version"] = json!(version);
+        write(store.path(), document);
+        let original = Project::load(&store).unwrap();
+        let revision = original
+            .browser_page_resources(store.path(), &format!("{BASE}index.html"))
+            .unwrap()
+            .revision;
+        let operations = json!([{"op":"pack_browser_resources"}]);
+        let before = fs::read(store.path()).unwrap();
+        service::apply_request(
+            &store,
+            &edit(&store, "pack-preview", operations.clone(), true),
+        )
+        .unwrap();
+        assert_eq!(fs::read(store.path()).unwrap(), before);
+        assert!(!temp.path().join("assets").exists());
+        let result = service::apply_request(
+            &store,
+            &edit(&store, "pack-save", operations.clone(), false),
+        )
+        .unwrap();
+        let assets = result["generated_ids"]["0"]["assets"].as_array().unwrap();
+        // Four distinct bodies, one web catalogue, and the shared bundle index.
+        assert_eq!(assets.len(), 6);
+        assert!(assets.iter().any(|entry| entry["bytes"] == 0));
+        assert_eq!(store.read().unwrap().version(), version);
+        assert!(
+            store
+                .read()
+                .unwrap()
+                .value()
+                .pointer("/metadata/lazypencil/browser_resources/roots")
+                .is_none()
+        );
+        fs::remove_dir_all(temp.path().join("web")).unwrap();
+        let packed = Project::load(&store).unwrap();
+        for name in [
+            "index.html?query=1#hash",
+            "empty.css",
+            "alias.HTML",
+            "payload.bin",
+            "%E6%97%A5%E6%9C%AC%E8%AA%9E%20%23%3F.css",
+        ] {
+            assert_eq!(
+                packed
+                    .browser_page_resources(store.path(), &format!("{BASE}{name}"))
+                    .unwrap()
+                    .revision,
+                revision
+            );
+        }
+        packed.verify_unchanged().unwrap();
+        let payload = packed
+            .dependencies()
+            .into_iter()
+            .find(|entry| entry.revision == lazypencil::document::hash(&binary))
+            .unwrap();
+        assert_eq!(packed.asset(&payload.path).unwrap().bytes.as_ref(), binary);
+        let declaration =
+            store.read().unwrap().value()["metadata"]["lazypencil"]["browser_resources"].clone();
+        service::apply_request(
+            &store,
+            &edit(&store, "pack-repeat", operations.clone(), false),
+        )
+        .unwrap();
+        assert_eq!(
+            store.read().unwrap().value()["metadata"]["lazypencil"]["browser_resources"],
+            declaration
+        );
+        let moved = temp.path().join("relocated");
+        fs::create_dir(&moved).unwrap();
+        fs::rename(temp.path().join("assets"), moved.join("assets")).unwrap();
+        fs::rename(store.path(), moved.join("scene.pen")).unwrap();
+        let moved = Store::open(
+            moved.join("scene.pen"),
+            Some(temp.path().join("relocated-private")),
+        )
+        .unwrap();
+        let relocated = Project::load(&moved).unwrap();
+        assert_eq!(
+            relocated
+                .browser_page_resources(moved.path(), &format!("{BASE}index.html"))
+                .unwrap()
+                .revision,
+            revision
+        );
+        service::apply_request(&moved, &edit(&moved, "pack-relocated", operations, false)).unwrap();
+        Project::load(&moved).unwrap().verify_unchanged().unwrap();
+    }
+}
+
+#[test]
+fn packing_rolls_back_later_errors_and_rejects_missing_input_without_publishing() {
+    let (temp, store) = fixture();
+    let before = fs::read(store.path()).unwrap();
+    let request = edit(
+        &store,
+        "pack-rollback",
+        json!([
+            {"op":"pack_browser_resources"},
+            {"op":"update","target":"missing","set":{"x":1}}
+        ]),
+        false,
+    );
+    assert!(service::apply_request(&store, &request).is_err());
+    assert_eq!(fs::read(store.path()).unwrap(), before);
+    assert!(!temp.path().join("assets").exists());
+    fs::remove_dir_all(temp.path().join("web")).unwrap();
+    let request = edit(
+        &store,
+        "pack-missing",
+        json!([{"op":"pack_browser_resources"}]),
+        false,
+    );
+    assert_eq!(
+        service::apply_request(&store, &request).unwrap_err().code,
+        "ASSET_NOT_FOUND"
+    );
+    assert_eq!(fs::read(store.path()).unwrap(), before);
+    assert!(!temp.path().join("assets").exists());
+}
+
+#[test]
+fn packing_never_publishes_into_its_own_captured_source_directory() {
+    let temp = TempDir::new().unwrap();
+    let private = TempDir::new().unwrap();
+    fs::write(temp.path().join("index.html"), "<html></html>").unwrap();
+    let store = Store::init(
+        temp.path().join("scene.pen"),
+        Some(private.path().join("state")),
+    )
+    .unwrap();
+    write(store.path(), scene(json!([{"url":BASE,"path":"."}])));
+    let before = fs::read(store.path()).unwrap();
+    let request = edit(
+        &store,
+        "pack-source-overlap",
+        json!([{"op":"pack_browser_resources"}]),
+        false,
+    );
+    assert_eq!(
+        service::apply_request(&store, &request).unwrap_err().code,
+        "ASSET_CONFLICT"
+    );
+    assert_eq!(fs::read(store.path()).unwrap(), before);
+    assert!(!temp.path().join("assets").exists());
+}
+
+#[test]
+fn packed_catalogues_reject_invalid_names_versions_and_response_metadata() {
+    for case in [
+        "duplicate",
+        "remote",
+        "fragment",
+        "header",
+        "size",
+        "digest",
+        "version",
+        "field",
+    ] {
+        let (temp, store) = fixture();
+        service::apply_request(
+            &store,
+            &edit(
+                &store,
+                "pack-invalid-catalogue",
+                json!([{"op":"pack_browser_resources"}]),
+                false,
+            ),
+        )
+        .unwrap();
+        let mut document: Value = serde_json::from_slice(&fs::read(store.path()).unwrap()).unwrap();
+        let declaration = &mut document["metadata"]["lazypencil"]["browser_resources"]["bundle"];
+        let path = temp.path().join(declaration["uri"].as_str().unwrap());
+        let mut catalog: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        match case {
+            "duplicate" => {
+                let first = catalog["files"][0].clone();
+                catalog["files"].as_array_mut().unwrap().push(first);
+            }
+            "remote" => catalog["files"][0]["url"] = json!("https://example.com/index.html"),
+            "fragment" => catalog["files"][0]["url"] = json!(format!("{BASE}index.html#alias")),
+            "header" => catalog["files"][0]["mime"] = json!("text/html\r\nInjected: yes"),
+            "size" => catalog["files"][0]["bytes"] = json!(32 * 1024 * 1024 + 1),
+            "digest" => catalog["files"][0]["sha256"] = json!("../../private"),
+            "version" => catalog["version"] = json!(99),
+            "field" => catalog["files"][0]["path"] = json!("../../private"),
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec(&catalog).unwrap();
+        declaration["sha256"] = json!(lazypencil::document::hash(&bytes));
+        fs::write(path, bytes).unwrap();
+        write(store.path(), document);
+        assert!(Project::load(&store).is_err(), "accepted {case}");
+    }
+}
+
+#[test]
+fn packed_catalogue_and_payload_changes_are_rejected_and_missing_payloads_remain_repairable() {
+    for catalogue in [true, false] {
+        let (temp, store) = fixture();
+        let result = service::apply_request(
+            &store,
+            &edit(
+                &store,
+                "pack-immutable",
+                json!([{"op":"pack_browser_resources"}]),
+                false,
+            ),
+        )
+        .unwrap();
+        let assets = result["generated_ids"]["0"]["assets"].as_array().unwrap();
+        let entry = assets
+            .iter()
+            .find(|entry| {
+                let uri = entry["uri"].as_str().unwrap();
+                if catalogue {
+                    uri.ends_with("/resources.json")
+                } else {
+                    uri.ends_with(".blob") && entry["bytes"].as_u64().unwrap() > 0
+                }
+            })
+            .unwrap();
+        let path = temp.path().join(entry["uri"].as_str().unwrap());
+        let bytes = fs::read(&path).unwrap();
+        fs::write(&path, vec![b'x'; bytes.len()]).unwrap();
+        assert_eq!(Project::load(&store).err().unwrap().code, "ASSET_CONFLICT");
+        fs::write(&path, &bytes).unwrap();
+        let captured = Project::load(&store).unwrap();
+        fs::remove_file(&path).unwrap();
+        assert_eq!(
+            captured.verify_unchanged().unwrap_err().code,
+            "REVISION_CONFLICT"
+        );
+        let missing = Project::load(&store).unwrap();
+        assert!(!missing.assets_complete());
+        service::apply_request(
+            &store,
+            &edit(
+                &store,
+                "pack-repair-edit",
+                json!([
+                    {"op":"update","target":"page","set":{"x":3}}
+                ]),
+                false,
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            service::apply_request(
+                &store,
+                &edit(
+                    &store,
+                    "pack-incomplete",
+                    json!([{"op":"pack_browser_resources"}]),
+                    false
+                )
+            )
+            .unwrap_err()
+            .code,
+            "ASSET_NOT_FOUND"
+        );
+        fs::write(&path, &bytes).unwrap();
+        let repaired = Project::load(&store).unwrap();
+        assert!(repaired.assets_complete());
+        repaired.verify_unchanged().unwrap();
+    }
+}
+
 fn fixture() -> (TempDir, Store) {
     let temp = TempDir::new().unwrap();
     fs::create_dir(temp.path().join(".git")).unwrap();

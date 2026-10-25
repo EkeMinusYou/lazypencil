@@ -120,6 +120,8 @@ pub enum Operation {
     RemoveImport {
         alias: String,
     },
+    /// Capture this document's declared local web resources into portable assets.
+    PackBrowserResources {},
     SetOverride {
         target: Target,
         #[serde(default)]
@@ -259,6 +261,23 @@ fn apply_impl(
     for (index, operation) in operations.iter().enumerate() {
         crate::cancel::check(cancel)?;
         match operation {
+            Operation::PackBrowserResources {} => {
+                let path = context.path.ok_or_else(|| {
+                    invalid("Packing browser resources requires a bound document path")
+                })?;
+                let project = project_for(&edited, &context)?;
+                let (declaration, files) = project.pack_browser_resources(path, path)?;
+                let assets = files.iter().map(|file| json!({"uri":file.uri,"hash":hash(&file.bytes),"bytes":file.bytes.len()})).collect::<Vec<_>>();
+                for file in files {
+                    context.stage(file, true)?;
+                }
+                edited.set_property("/metadata/lazypencil", "browser_resources", &declaration)?;
+                generated.insert(
+                    index.to_string(),
+                    json!({"assets":assets,"browser_resources":declaration}),
+                );
+                context.record_source(project)?;
+            }
             Operation::ImportComponent {
                 source,
                 mode,
