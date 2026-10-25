@@ -113,7 +113,7 @@ impl Fixture {
         }
         fs::write(&self.events, data).unwrap();
     }
-    fn observe(&self) -> anyhow::Result<(PathBuf, std::collections::BTreeMap<String, Value>, u64)> {
+    fn observe(&self) -> anyhow::Result<evidence::CargoObservations> {
         evidence::cargo_observations(&self.events, &self.root, &self.target)
     }
 }
@@ -125,9 +125,15 @@ fn selected_native_inputs_pair_by_package_identity_without_copying_environment()
             .join("release/build/skia_bindings-newer-unselected"),
     )
     .unwrap();
-    let (binary, selected, ignored) = f.observe().unwrap();
+    let evidence::CargoObservations {
+        executable: binary,
+        native_packages: selected,
+        ignored_lines: ignored,
+        application_fresh,
+    } = f.observe().unwrap();
     assert_eq!(binary, f.target.join("release/lazypencil"));
     assert_eq!(ignored, 1);
+    assert!(!application_fresh);
     assert_eq!(selected["skia_bindings"]["fresh"], true);
     assert_eq!(selected["rquickjs_sys"]["fresh"], true);
     assert!(
@@ -142,18 +148,38 @@ fn selected_native_inputs_pair_by_package_identity_without_copying_environment()
     evidence::source_identity(&f.root, &"a".repeat(40)).unwrap();
     f.records[1]["fresh"] = false.into();
     f.save();
-    let (_, selected, _) = f.observe().unwrap();
+    let selected = f.observe().unwrap().native_packages;
     assert_eq!(selected["skia_bindings"]["fresh"], false);
     assert_eq!(selected["rquickjs_sys"]["fresh"], true);
 }
 #[test]
-fn incomplete_ambiguous_or_stale_cargo_artifacts_cannot_authorize_evidence() {
+fn a_successful_cargo_freshness_check_can_reuse_the_selected_release_executable() {
+    let mut f = Fixture::new();
+    for fresh in [false, true] {
+        f.records[0]["fresh"] = fresh.into();
+        f.save();
+        let observed = f.observe().unwrap();
+        assert_eq!(observed.application_fresh, fresh);
+        assert_eq!(observed.executable, f.target.join("release/lazypencil"));
+        assert_eq!(observed.native_packages.len(), 2);
+        assert_eq!(observed.ignored_lines, 1);
+
+        f.records[0]["manifest_path"] = json!(f.target.join("Cargo.toml"));
+        f.save();
+        assert!(f.observe().is_err());
+        f.records[0]["manifest_path"] = json!(f.root.join("Cargo.toml"));
+    }
+}
+
+#[test]
+fn incomplete_ambiguous_or_invalid_cargo_artifacts_cannot_authorize_evidence() {
     for mutation in [
         "failed",
         "missing-completion",
         "duplicate-completion",
         "post-completion",
-        "cached",
+        "missing-application-fresh",
+        "invalid-application-fresh",
         "test-profile",
         "debug-profile",
         "wrong-manifest",
@@ -175,7 +201,10 @@ fn incomplete_ambiguous_or_stale_cargo_artifacts_cannot_authorize_evidence() {
                 .records
                 .push(json!({"reason":"build-finished","success":true})),
             "post-completion" => f.records.push(f.records[0].clone()),
-            "cached" => f.records[0]["fresh"] = true.into(),
+            "missing-application-fresh" => {
+                f.records[0].as_object_mut().unwrap().remove("fresh");
+            }
+            "invalid-application-fresh" => f.records[0]["fresh"] = "true".into(),
             "test-profile" => f.records[0]["profile"]["test"] = true.into(),
             "debug-profile" => f.records[0]["profile"]["opt_level"] = "0".into(),
             "wrong-manifest" => f.records[0]["manifest_path"] = json!(f.target.join("Cargo.toml")),
@@ -207,7 +236,7 @@ fn incomplete_ambiguous_or_stale_cargo_artifacts_cannot_authorize_evidence() {
 fn native_archive_aliases_must_match_and_every_selected_library_must_exist() {
     for mutation in ["missing", "different-alias", "same-alias", "windows-search"] {
         let f = Fixture::new();
-        let (_, mut selected, _) = f.observe().unwrap();
+        let mut selected = f.observe().unwrap().native_packages;
         let directory = f.target.join("release/build/rquickjs_sys-selected/out");
         match mutation {
             "missing" => fs::remove_file(directory.join("libquickjs.a")).unwrap(),
@@ -287,9 +316,9 @@ fn linked_release_binary_native_archive_or_source_never_substitutes_external_byt
         if name.starts_with("source") {
             assert!(evidence::source_identity(&f.root, &"a".repeat(40)).is_err());
         } else {
-            let result = f
-                .observe()
-                .and_then(|(_, selected, _)| evidence::native_archives(&f.target, &selected));
+            let result = f.observe().and_then(|observed| {
+                evidence::native_archives(&f.target, &observed.native_packages)
+            });
             assert!(result.is_err());
         }
     }

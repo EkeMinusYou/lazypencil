@@ -1,5 +1,7 @@
 # lazypencil 実装と公開準備の状況
 
+2026-10-26: `2b9d12c` の [GHA `40237973288`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40237973288) は xtask 110試験と Clippy、Linux の先行 build／描画を成功したが、全3環境を開始する前の候補用 notice 収集で失敗した。release の Cargo 確認は0.17秒で既存成果物を再利用できていたものの、収集側に「新規コンパイルのみ」の古い条件が残っていた。正常終了した Cargo の再利用／新規コンパイルを双方受け入れ、実際の `fresh` を記録するよう修正する。manifest・profile・実行ファイル位置・native 入力・ソース・map の検査は維持し、欠落／不正な `fresh` と異なる manifest を拒否する。収集処理だけの変更も同じ候補ゲートの対象へ加える。修正後の Rust 実行と実候補作成は未検証である。
+
 2026-10-26: `b15bfa5` の [GHA `40234583740`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40234583740) は先行・全3環境・監査・source がすべて成功した。Linux 各1,148件・macOS 1,138件の通常／core、各407必須画像と42回の release 書き出しを通した。生成 browser の126画像・64,512画素と既存 contract の36画像・4,054,272画素、全3環境の map／実行ファイル／source／計測の対応を独立照合した。静的 release の9画像と6 scene hash は `fb05d40` と一致し、配布ソース1,113ファイル・31,071,034バイトも Git の全内容・サイズ・mode と一致した。所要時間は35分46秒で、先行11分14秒、全体 x64 16分13秒・ARM 23分1秒・macOS 20分50秒だった。次の CI は browser-only の先行範囲を絞り、配布変更では候補の実作成・展開・隔離 QuickJS 描画を代表1環境で先に確認する。最終3環境の試験と期限は維持する。新しい配布処理と対象選択はまだ実行未検証である。
 
 2026-10-26: 生成 browser の `b15bfa5` は [GHA `40234583740`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40234583740) の先行 Linux を成功した。非表示の保存用部品を除き、実際の生成ノードを検査する fixture に直した上で、両形式・7経路・元ファイル削除後と再コピー後の42画像を独立照合した。全21,504画素・86,016 RGBA 成分、PNG hash、前後のバイト列、素材 revision は一致した。宣言なしの同名 URL と、コピー先だけにある未知ページの拒否も通した。全3環境の最終検証は進行中である。

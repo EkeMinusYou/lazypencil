@@ -100,11 +100,14 @@ pub fn source_identity(root: &Path, revision: &str) -> Result<Value> {
     )
 }
 
-pub fn cargo_observations(
-    events: &Path,
-    root: &Path,
-    target: &Path,
-) -> Result<(PathBuf, BTreeMap<String, Value>, u64)> {
+pub struct CargoObservations {
+    pub executable: PathBuf,
+    pub application_fresh: bool,
+    pub native_packages: BTreeMap<String, Value>,
+    pub ignored_lines: u64,
+}
+
+pub fn cargo_observations(events: &Path, root: &Path, target: &Path) -> Result<CargoObservations> {
     ensure!(
         events.is_file() && !events.is_symlink() && fs::metadata(events)?.len() <= MAX_EVENTS,
         "Expected bounded Cargo JSON output"
@@ -173,8 +176,8 @@ pub fn cargo_observations(
         Path::new(string(&binary["manifest_path"])?).canonicalize()? == root.join("Cargo.toml")
             && binary["profile"]["test"] == false
             && binary["profile"]["opt_level"] == "3"
-            && binary["fresh"] == false,
-        "Expected newly compiled distributed release executable"
+            && binary["fresh"].is_boolean(),
+        "Expected distributed release executable with Cargo freshness"
     );
     let executable = inside(Path::new(string(&binary["executable"])?), target)?;
     ensure!(
@@ -225,7 +228,12 @@ pub fn cargo_observations(
         }
         selected.insert(name.into(),json!({"package_id":artifact["package_id"],"manifest_path":artifact["manifest_path"],"features":artifact["features"],"fresh":artifact["fresh"],"linked_libs":build["linked_libs"],"linked_paths":build["linked_paths"],"out_dir":out.strip_prefix(target)?.to_str().context("Invalid output path")?.replace('\\',"/")}));
     }
-    Ok((executable, selected, ignored))
+    Ok(CargoObservations {
+        executable,
+        application_fresh: binary["fresh"].as_bool().unwrap(),
+        native_packages: selected,
+        ignored_lines: ignored,
+    })
 }
 
 pub fn native_archives(
@@ -360,7 +368,12 @@ pub fn collect(arguments: &Arguments) -> Result<Value> {
     );
     let source = source_identity(&root, revision)?;
     let cargo_output = fingerprint(events, "cargo-build.jsonl", MAX_EVENTS)?;
-    let (executable, selected, ignored) = cargo_observations(events, &root, &target)?;
+    let CargoObservations {
+        executable,
+        application_fresh,
+        native_packages: selected,
+        ignored_lines: ignored,
+    } = cargo_observations(events, &root, &target)?;
     let binary = fingerprint(
         &executable,
         executable
@@ -517,7 +530,7 @@ pub fn collect(arguments: &Arguments) -> Result<Value> {
     .into_iter()
     .map(|s| (s, std::env::var(s).ok()))
     .collect::<BTreeMap<_, _>>();
-    let metadata = json!({"format_version":1,"release_ready":false,"source":source,"binary":binary,"compiler":compiler,"dynamic_linkage":dynamic_linkage,"static_link_map":static_link_map,"native_packages":selected,"native_archives":archives,"rust_notices":rust,"skia_notices":skia,"quickjs_notices":quickjs,"asset_notices":assets,"toolchain_notices":standard,"shader_preprocessor":shader,"cargo_output":cargo_output,"ignored_non_cargo_lines":ignored,"remaining_review":gaps,"hosted":hosted});
+    let metadata = json!({"format_version":1,"release_ready":false,"source":source,"binary":binary,"application_artifact_fresh":application_fresh,"compiler":compiler,"dynamic_linkage":dynamic_linkage,"static_link_map":static_link_map,"native_packages":selected,"native_archives":archives,"rust_notices":rust,"skia_notices":skia,"quickjs_notices":quickjs,"asset_notices":assets,"toolchain_notices":standard,"shader_preprocessor":shader,"cargo_output":cargo_output,"ignored_non_cargo_lines":ignored,"remaining_review":gaps,"hosted":hosted});
     util::publish(&stage.join("build.json"), &util::encode(&metadata)?, false)?;
     let files = util::walk(&stage)?
         .iter()

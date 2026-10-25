@@ -222,8 +222,10 @@ fn candidate_packaging_changes_run_a_real_candidate_gate_before_the_matrix() {
     for path in [
         "xtask/src/dist.rs",
         "xtask/src/dist/binary.rs",
+        "xtask/src/evidence.rs",
         "xtask/src/ci/native/candidate.rs",
         "xtask/tests/binary_dist.rs",
+        "xtask/tests/evidence.rs",
         ".github/workflows/release-evidence.yml",
     ] {
         let plan = focus::select(
