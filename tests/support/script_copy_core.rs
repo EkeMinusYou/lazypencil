@@ -64,7 +64,7 @@ fn script_copy_previews_without_publication_and_keeps_a_complete_namespace_after
             .filter(|entry| entry.kind == "document")
             .all(|entry| entry
                 .path
-                .starts_with(temp.path().join("assets/lazypencil")))
+                .starts_with(store.path().parent().unwrap().join("assets/lazypencil")))
     );
     assert!(store.history(10, None).unwrap().len() == 1);
 }
