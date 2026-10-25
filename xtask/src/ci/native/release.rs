@@ -74,6 +74,17 @@ pub fn invocation(s: &Session, json: bool) -> Result<Vec<String>> {
     crate::evidence::link_map::cargo_arguments(host, &s.target, json)
 }
 
+pub fn observe(s: &Session) -> Result<()> {
+    let invocation = invocation(s, true)?;
+    validate_cached_map(s, &invocation)?;
+    s.capture(&mut s.command(&invocation), 3600, "release-cargo.jsonl")?;
+    process::checked(
+        Command::new(s.executable("release")).arg("--version"),
+        Duration::from_secs(30),
+    )?;
+    Ok(())
+}
+
 pub fn smoke(s: &Session) -> Result<()> {
     // Recheck Cargo inputs even when the parallel lane already compiled this
     // source. A warm build performs freshness checks without recompilation.

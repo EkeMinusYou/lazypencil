@@ -42,6 +42,62 @@ impl Drop for Hidden {
     }
 }
 
+pub fn prepare(s: &Session) -> Result<()> {
+    s.execute(
+        &[
+            "rustup",
+            "toolchain",
+            "install",
+            "1.94.0",
+            "--profile",
+            "minimal",
+            "--component",
+            "rust-docs",
+        ]
+        .map(str::to_owned),
+        600,
+        "candidate-toolchain.log",
+        false,
+    )?;
+    super::super::toolchain::collect(&util::root(), &s.temporary.join("toolchain-evidence"), None)?;
+    release::observe(s)?;
+    let executable = std::env::current_exe()?;
+    s.execute(
+        &[
+            executable.to_str().context("Non-UTF-8 xtask path")?.into(),
+            "evidence".into(),
+            "--source".into(),
+            s.root.to_string_lossy().into(),
+            "--target".into(),
+            s.target.to_string_lossy().into(),
+            "--cargo-json".into(),
+            s.temporary
+                .join("release-cargo.jsonl")
+                .to_string_lossy()
+                .into(),
+            "--revision".into(),
+            std::env::var("GITHUB_SHA")?,
+            "--output".into(),
+            s.temporary
+                .join("release-evidence")
+                .to_string_lossy()
+                .into(),
+            "--toolchain-evidence".into(),
+            s.temporary
+                .join("toolchain-evidence")
+                .to_string_lossy()
+                .into(),
+            "--link-map".into(),
+            crate::evidence::link_map::path(&s.target)
+                .to_string_lossy()
+                .into(),
+        ],
+        600,
+        "candidate-notices.log",
+        false,
+    )
+}
+
 pub fn run(s: &Session) -> Result<()> {
     ensure!(
         !s.target.starts_with(&s.root) && !s.root.starts_with(&s.target),

@@ -170,9 +170,28 @@ jobs:
         timeout-minutes: 10
         run: cargo xtask ci native focus-test --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
       - name: Verify changed release build recipe before the full matrix
-        if: inputs.phase == 'focus' && inputs.suite == 'release'
+        if: inputs.phase == 'focus' && (inputs.suite == 'release' || inputs.suite == 'candidate')
         timeout-minutes: 60
         run: cargo xtask ci native focus-release
+      - name: Prepare source-bound original notices for the candidate
+        if: inputs.phase == 'focus' && inputs.suite == 'candidate'
+        timeout-minutes: 20
+        run: cargo xtask ci native candidate-prepare
+      - name: Verify the isolated binary candidate before the full matrix
+        if: inputs.phase == 'focus' && inputs.suite == 'candidate'
+        timeout-minutes: 10
+        run: cargo xtask ci native candidate
+      - name: Retain the focused binary candidate and isolated smoke proof
+        if: inputs.phase == 'focus' && inputs.suite == 'candidate'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: focus-candidate-${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/lazypencil-candidate.tar.gz
+            ${{ runner.temp }}/candidate-smoke.json
+            ${{ runner.temp }}/candidate-smoke.png
+          if-no-files-found: error
+          retention-days: 3
       - name: Verify real browser shader import and cancellation pixels
         if: inputs.phase == 'full'
         timeout-minutes: 20

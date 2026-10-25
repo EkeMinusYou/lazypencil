@@ -23,6 +23,7 @@ pub mod release;
 pub enum Stage {
     EvidenceBuild,
     Candidate,
+    CandidatePrepare,
     Source,
     Notices,
     FocusCore,
@@ -214,18 +215,9 @@ impl Session {
         let has = |s: &str| targets.iter().any(|t| t == s);
         let core = ["core", "conversation"].contains(&args.suite.as_str());
         match args.stage {
-            Stage::EvidenceBuild => {
-                let invocation = release::invocation(self, true)?;
-                release::validate_cached_map(self, &invocation)?;
-                let mut command = self.command(&invocation);
-                self.capture(&mut command, 3600, "release-cargo.jsonl")?;
-                process::checked(
-                    Command::new(self.executable("release")).arg("--version"),
-                    Duration::from_secs(30),
-                )?;
-                Ok(())
-            }
+            Stage::EvidenceBuild => release::observe(self),
             Stage::Candidate => candidate::run(self),
+            Stage::CandidatePrepare => candidate::prepare(self),
             Stage::Source => {
                 let archive = self.temporary.join("native-source.tar.gz");
                 dist::source(&util::root(), &archive, 0, false)?;

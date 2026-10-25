@@ -218,6 +218,29 @@ fn release_recipe_helpers_compile_on_one_platform_before_the_full_matrix() {
 }
 
 #[test]
+fn candidate_packaging_changes_run_a_real_candidate_gate_before_the_matrix() {
+    for path in [
+        "xtask/src/dist.rs",
+        "xtask/src/dist/binary.rs",
+        "xtask/src/ci/native/candidate.rs",
+        "xtask/tests/binary_dist.rs",
+        ".github/workflows/release-evidence.yml",
+    ] {
+        let plan = focus::select(
+            &util::root(),
+            &[path.into(), "xtask/src/ci/native.rs".into()],
+            "auto",
+        )
+        .unwrap();
+        assert_eq!(plan.platform, "ubuntu-24.04");
+        assert_eq!(plan.suite, "candidate");
+        assert_eq!(plan.targets, ["render"]);
+        let commands = ci::commands::plan(&util::root(), &plan.suite, &plan.targets).unwrap();
+        assert!(!commands.build.is_empty() && !commands.checks.is_empty());
+    }
+}
+
+#[test]
 fn release_gate_rejects_every_incomplete_or_malformed_result() {
     let valid = json!({"native":{"result":"success"},"audit":{"result":"success"}});
     assert!(ci::require_success(&valid).is_ok());

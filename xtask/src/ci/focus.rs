@@ -149,6 +149,27 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     let preprocessor = preprocessor_changed(paths);
     if paths
         .iter()
+        .all(|path| ci_only(path) || path.starts_with("resources/licenses/native/"))
+        && paths.iter().any(|path| {
+            [
+                "xtask/src/dist.rs",
+                "xtask/src/dist/binary.rs",
+                "xtask/src/ci/native/candidate.rs",
+                "xtask/tests/binary_dist.rs",
+                ".github/workflows/release-evidence.yml",
+            ]
+            .contains(&path.as_str())
+        })
+    {
+        return Ok(Plan {
+            platform,
+            suite: "candidate".into(),
+            targets: vec!["render".into()],
+            preprocessor,
+        });
+    }
+    if paths
+        .iter()
         .all(|p| ci_only(p) || p.starts_with("resources/licenses/native/"))
         && paths.iter().any(|p| {
             [
