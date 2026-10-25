@@ -509,7 +509,7 @@ mod tests {
         let state = tempfile::tempdir().unwrap();
         fs::create_dir(temp.path().join(".git")).unwrap();
         let store = Store::init(
-            &temp.path().join("scene.pen"),
+            temp.path().join("scene.pen"),
             Some(state.path().join("private")),
         )
         .unwrap();

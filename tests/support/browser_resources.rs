@@ -11,7 +11,7 @@ fn fixture() -> (TempDir, Store) {
     fs::write(temp.path().join("web/index.html"), "<html></html>").unwrap();
     fs::write(temp.path().join("web/empty.css"), "").unwrap();
     let store = Store::init(
-        &temp.path().join("scene.pen"),
+        temp.path().join("scene.pen"),
         Some(temp.path().join("private")),
     )
     .unwrap();
@@ -159,7 +159,7 @@ fn a_colocated_design_can_be_edited_when_private_state_is_outside_the_web_root()
     fs::create_dir(temp.path().join(".git")).unwrap();
     fs::write(temp.path().join("index.html"), "<!doctype html>").unwrap();
     let store = Store::init(
-        &temp.path().join("scene.pen"),
+        temp.path().join("scene.pen"),
         Some(state.path().join("private")),
     )
     .unwrap();
