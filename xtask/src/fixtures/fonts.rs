@@ -4,6 +4,7 @@ use anyhow::Result;
 use std::{collections::BTreeMap, fs, path::Path};
 
 type Tables = BTreeMap<[u8; 4], Vec<u8>>;
+pub mod color;
 fn u16s(values: &[u16]) -> Vec<u8> {
     values.iter().flat_map(|v| v.to_be_bytes()).collect()
 }

@@ -1,5 +1,8 @@
 #![cfg(feature = "rendering")]
 
+#[path = "support/color_fonts.rs"]
+mod color_fonts;
+
 use lazypencil::{
     document::hash,
     text::{DEFAULT_FONT_BYTES, DEFAULT_FONT_FAMILY, Fonts, TextBlock, TextSpec},

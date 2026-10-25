@@ -23,6 +23,43 @@ fn all_original_diagnostic_fonts_regenerate_byte_for_byte_in_rust() {
 }
 
 #[test]
+fn original_color_font_has_independent_sfnt_checksums_and_palette_tables() {
+    let bytes = fixtures::fonts::color::generate();
+    assert!(bytes.len() < 4096);
+    assert_eq!(bytes.len() % 4, 0);
+    let checksum = bytes.chunks_exact(4).fold(0u32, |sum, word| {
+        sum.wrapping_add(u32::from_be_bytes(word.try_into().unwrap()))
+    });
+    assert_eq!(checksum, 0xb1b0afba);
+    let count = u16::from_be_bytes(bytes[4..6].try_into().unwrap()) as usize;
+    let mut tables = std::collections::BTreeMap::new();
+    for row in bytes[12..12 + count * 16].chunks_exact(16) {
+        let start = u32::from_be_bytes(row[8..12].try_into().unwrap()) as usize;
+        let size = u32::from_be_bytes(row[12..16].try_into().unwrap()) as usize;
+        assert_eq!(start % 4, 0);
+        assert!(
+            tables
+                .insert(&row[..4], &bytes[start..start + size])
+                .is_none()
+        );
+    }
+    assert_eq!(tables[b"maxp".as_slice()][4..6], 10u16.to_be_bytes());
+    assert_eq!(tables[b"hhea".as_slice()][34..36], 10u16.to_be_bytes());
+    assert_eq!(
+        tables[b"CPAL".as_slice()][14..],
+        [0, 0, 255, 255, 0, 255, 0, 255]
+    );
+    assert_eq!(tables[b"COLR".as_slice()].len(), 84);
+    assert_eq!(tables[b"GSUB".as_slice()].len(), 90);
+    assert!(
+        tables[b"name".as_slice()]
+            .windows(8)
+            .any(|w| w == b"\0L\0P\0 \0T")
+    );
+    assert_eq!(bytes, fixtures::fonts::color::generate());
+}
+
+#[test]
 fn fixed_performance_inputs_keep_the_existing_source_and_asset_hashes() {
     let directory = util::root().join("tests/fixtures/performance");
     assert_eq!(

@@ -15,6 +15,7 @@ fn main() -> test_support::Result {
             "hold-tree",
             "hold-child",
             "render-fixture",
+            "font-fixture",
         ]
         .contains(&s.as_str())
     });
@@ -27,6 +28,14 @@ fn main() -> test_support::Result {
         }
     }
     match args.first().map(String::as_str) {
+        Some("font-fixture") => {
+            let destination = args.get(1).ok_or("Missing color-font output")?;
+            std::fs::write(
+                destination,
+                lazypencil_xtask::fixtures::fonts::color::generate(),
+            )?;
+            Ok(())
+        }
         Some("fixture-command") => test_support::command::response(&args[1..]),
         Some("hold-tree") => test_support::command::hold_tree(&args[1..]),
         Some("hold-child") => test_support::command::hold_child(),
