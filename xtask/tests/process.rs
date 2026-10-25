@@ -498,7 +498,7 @@ fn audit_cache_identity_and_observed_version_bind_the_actual_binary() {
 }
 
 #[test]
-fn nested_cargo_preserves_fresh_build_scripts_when_the_calling_package_directory_changes() {
+fn nested_cargo_preserves_fresh_build_scripts_when_the_calling_package_metadata_changes() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("project");
     let target = temp.path().join("target");
@@ -508,11 +508,13 @@ fn nested_cargo_preserves_fresh_build_scripts_when_the_calling_package_directory
         "[package]\nname='nested-cargo-fixture'\nversion='0.1.0'\nedition='2024'\n[workspace]\n",
     )
     .unwrap();
-    fs::write(root.join("src/lib.rs"), "pub const VALUE: usize = 1;\n").unwrap();
+    fs::write(root.join("src/lib.rs"), "#[cfg(not(nested_fixture))]\ncompile_error!(\"Configured RUSTFLAGS were lost\");\npub const VALUE: usize = 1;\n").unwrap();
     fs::write(
         root.join("build.rs"),
         r#"fn main() {
- println!("cargo:rerun-if-env-changed=CARGO_MANIFEST_DIR");
+ for name in ["CARGO_MANIFEST_DIR","CARGO_MANIFEST_PATH","CARGO_MANIFEST_LINKS","CARGO_PKG_NAME","CARGO_PKG_VERSION","CARGO_PRIMARY_PACKAGE","CARGO_CRATE_NAME","CARGO_BIN_NAME"] {
+  println!("cargo:rerun-if-env-changed={name}");
+ }
  let path=std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("counter");
  let count=std::fs::read_to_string(&path).ok().and_then(|s|s.parse::<u32>().ok()).unwrap_or(0);
  std::fs::write(path,(count+1).to_string()).unwrap();
@@ -524,10 +526,22 @@ fn nested_cargo_preserves_fresh_build_scripts_when_the_calling_package_directory
         command
             .current_dir(&root)
             .env("CARGO_TARGET_DIR", &target)
-            .env_remove("CARGO_MANIFEST_DIR")
+            .env("RUSTFLAGS", "--cfg nested_fixture")
+            .env("CARGO_BUILD_JOBS", "1")
             .args(["check", "--offline", "-vv"]);
         if let Some(outer) = outer {
-            command.env("CARGO_MANIFEST_DIR", outer);
+            for name in [
+                "CARGO_MANIFEST_DIR",
+                "CARGO_MANIFEST_PATH",
+                "CARGO_MANIFEST_LINKS",
+                "CARGO_PKG_NAME",
+                "CARGO_PKG_VERSION",
+                "CARGO_PRIMARY_PACKAGE",
+                "CARGO_CRATE_NAME",
+                "CARGO_BIN_NAME",
+            ] {
+                command.env(name, outer);
+            }
         }
         let output = process::output(&mut command, Duration::from_secs(60)).unwrap();
         assert!(

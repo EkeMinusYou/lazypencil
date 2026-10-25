@@ -15,9 +15,28 @@ pub fn output_limited(command: &mut Command, timeout: Duration, limit: u64) -> R
             .and_then(|s| s.to_str()),
         Some("cargo" | "cargo.exe")
     ) {
-        // cargo run exports its package directory. cc-rs build scripts can watch
-        // that ambient value and invalidate otherwise identical dependency builds.
-        command.env_remove("CARGO_MANIFEST_DIR");
+        // cargo run exports its package metadata. Build scripts can watch these
+        // ambient values and invalidate otherwise identical dependency builds.
+        // Preserve compiler flags, target paths and all other build settings.
+        let metadata = std::env::vars_os()
+            .map(|(name, _)| name)
+            .chain(command.get_envs().map(|(name, _)| name.to_owned()))
+            .filter(|name| {
+                name.to_str().is_some_and(|name| {
+                    name.starts_with("CARGO_PKG_")
+                        || name.starts_with("CARGO_MANIFEST_")
+                        || [
+                            "CARGO_PRIMARY_PACKAGE",
+                            "CARGO_CRATE_NAME",
+                            "CARGO_BIN_NAME",
+                        ]
+                        .contains(&name)
+                })
+            })
+            .collect::<Vec<_>>();
+        for name in metadata {
+            command.env_remove(name);
+        }
     }
     Ok(command_output::output(command, timeout, limit)?)
 }
