@@ -176,6 +176,46 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         });
     }
     let (all, rendering) = integration_targets(root)?;
+    let browser_copy = any(
+        paths,
+        &[
+            "src/project/browser_context.rs",
+            "src/project/import/browsers.rs",
+            "tests/support/script_browser_copy.rs",
+        ],
+        &[],
+    );
+    if browser_copy
+        && paths.iter().all(|path| {
+            ci_only(path)
+                || [
+                    "src/project/bindings.rs",
+                    "src/project/browser_context.rs",
+                    "src/project/generated_refs.rs",
+                    "src/project/import/browsers.rs",
+                    "src/project/import/scripts.rs",
+                    "src/project/import/scripts/composition.rs",
+                    "tests/support/script_browser_copy.rs",
+                    "tests/browser_readiness.rs",
+                    "tests/script_scope.rs",
+                ]
+                .contains(&path.as_str())
+        })
+    {
+        let targets = ["browser_readiness", "project", "script_scope"]
+            .map(str::to_owned)
+            .to_vec();
+        ensure!(
+            targets.iter().all(|target| all.contains(target)),
+            "Browser focus targets are missing"
+        );
+        return Ok(Plan {
+            platform,
+            suite: "browser".into(),
+            targets,
+            preprocessor,
+        });
+    }
     let modules =
         regex::Regex::new(r#"#\[cfg\(feature = "(?:rendering|tui)"\)\]\s+(?:pub )?mod (\w+);"#)?
             .captures_iter(&fs::read_to_string(root.join("src/lib.rs"))?)

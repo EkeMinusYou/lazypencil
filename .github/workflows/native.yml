@@ -162,7 +162,7 @@ jobs:
         timeout-minutes: 15
         run: cargo xtask ci native default-test
       - name: Install and diagnose the verified sandboxed Chromium runtime
-        if: inputs.phase == 'full' || inputs.suite == 'dynamic' || inputs.suite == 'shader' || inputs.suite == 'copy'
+        if: inputs.phase == 'full' || inputs.suite == 'dynamic' || inputs.suite == 'shader' || inputs.suite == 'copy' || inputs.suite == 'browser'
         timeout-minutes: 15
         run: cargo xtask ci native browser-setup
       - name: Run affected tests and pixel reproductions

@@ -1,5 +1,5 @@
 use lazypencil_xtask::{
-    ci::{cache, commands, setup},
+    ci::{cache, commands, focus, setup},
     download, performance, process, util,
 };
 use serde_json::{Value, json};
@@ -36,6 +36,85 @@ fn focused_scheduling_preserves_reproduction_order_and_excludes_only_repeated_co
             "{suite}/{targets:?}"
         );
     }
+}
+
+#[test]
+fn browser_copy_focus_keeps_each_browser_condition_and_excludes_only_early_reproductions() {
+    let targets = ["browser_readiness", "project", "script_scope"].map(str::to_owned);
+    let plan = commands::plan(&util::root(), "browser", &targets).unwrap();
+    let reproductions = [
+        focus::GENERATED_BROWSER,
+        focus::LOCAL_FILES,
+        focus::BROWSER_COPY,
+        focus::LOCAL_PAGES,
+    ];
+    assert!(
+        plan.checks[0]
+            .iter()
+            .any(|arg| arg == focus::GENERATED_BROWSER)
+    );
+    for (command, expected) in plan.checks.iter().zip(reproductions) {
+        assert!(command.iter().any(|arg| arg == expected));
+        for flag in ["--exact", "--ignored"] {
+            assert!(command.iter().any(|arg| arg == flag));
+        }
+    }
+    let rest = plan
+        .checks
+        .iter()
+        .find(|command| {
+            command.iter().any(|arg| arg == "browser_readiness")
+                && command.iter().any(|arg| arg == "--include-ignored")
+        })
+        .unwrap();
+    for name in reproductions {
+        assert_eq!(
+            rest.windows(2)
+                .filter(|pair| pair[0] == "--skip" && pair[1] == name)
+                .count(),
+            1
+        );
+    }
+    let scripts = plan
+        .checks
+        .iter()
+        .find(|command| command.iter().any(|arg| arg == "script_scope"))
+        .unwrap();
+    assert!(scripts.iter().any(|arg| arg == "--include-ignored"));
+    for name in ["script_bindings::", "generated_browser_"]
+        .into_iter()
+        .chain(focus::COPY_CPU.iter().copied())
+    {
+        assert!(
+            scripts
+                .windows(2)
+                .any(|pair| pair[0] == "--skip" && pair[1] == name)
+        );
+    }
+    assert_eq!(
+        plan.checks
+            .iter()
+            .filter(|command| command.iter().any(|arg| arg == "project"))
+            .count(),
+        1
+    );
+    assert!(
+        !plan.build.iter().chain(&plan.checks).flatten().any(|arg| [
+            "shader_uniforms",
+            "dynamic_render",
+            "tui"
+        ]
+        .contains(&arg.as_str()))
+    );
+    assert!(commands::plan(&util::root(), "browser", &targets[..2]).is_err());
+    assert!(
+        commands::plan(
+            &util::root(),
+            "browser",
+            &[targets.to_vec(), vec!["project".into()]].concat()
+        )
+        .is_err()
+    );
 }
 #[test]
 fn bounded_commands_preserve_exit_codes_output_and_failure_logs() {

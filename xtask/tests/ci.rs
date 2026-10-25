@@ -89,7 +89,7 @@ fn generated_browser_copy_changes_run_namespace_and_real_pixel_reproductions_fir
         "tests/support/script_browser_copy.rs",
     ] {
         let plan = focus::select(&util::root(), &[path.into()], "auto").unwrap();
-        assert_eq!(plan.suite, "dynamic");
+        assert_eq!(plan.suite, "browser");
         for target in ["script_scope", "browser_readiness"] {
             assert!(
                 plan.targets.iter().any(|value| value == target),
@@ -104,6 +104,41 @@ fn generated_browser_copy_changes_run_namespace_and_real_pixel_reproductions_fir
                 .any(|command| command.iter().any(|arg| arg == focus::GENERATED_BROWSER))
         );
     }
+    let paths = [
+        "src/project/bindings.rs",
+        "src/project/browser_context.rs",
+        "src/project/generated_refs.rs",
+        "src/project/import/browsers.rs",
+        "src/project/import/scripts.rs",
+        "src/project/import/scripts/composition.rs",
+        "tests/support/script_browser_copy.rs",
+        "tests/browser_readiness.rs",
+        "tests/script_scope.rs",
+        "xtask/src/ci/native.rs",
+        "README.md",
+    ]
+    .map(str::to_owned);
+    let plan = focus::select(&util::root(), &paths, "macos-15").unwrap();
+    assert_eq!(plan.platform, "macos-15");
+    assert_eq!(plan.suite, "browser");
+    assert_eq!(
+        plan.targets,
+        ["browser_readiness", "project", "script_scope"]
+    );
+    let broad = focus::select(
+        &util::root(),
+        &[
+            "src/project/browser_context.rs".into(),
+            "src/dynamic.rs".into(),
+        ],
+        "auto",
+    )
+    .unwrap();
+    assert_eq!(broad.suite, "dynamic");
+    assert!(
+        broad.targets.contains(&"shader_uniforms".into())
+            && broad.targets.contains(&"dynamic_render".into())
+    );
 }
 
 #[test]

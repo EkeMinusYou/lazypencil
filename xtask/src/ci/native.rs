@@ -253,7 +253,8 @@ impl Session {
                 Ok(())
             }
             Stage::FocusCore => {
-                if ["graphics", "dynamic", "copy"].contains(&args.suite.as_str()) && has("project")
+                if ["graphics", "dynamic", "copy", "browser"].contains(&args.suite.as_str())
+                    && has("project")
                 {
                     self.cargo(
                         &[
@@ -270,7 +271,7 @@ impl Session {
                         false,
                     )?;
                 }
-                if ["graphics", "dynamic", "copy"].contains(&args.suite.as_str())
+                if ["graphics", "dynamic", "copy", "browser"].contains(&args.suite.as_str())
                     && (has("scripts") || has("sampler_sources"))
                 {
                     let mut command = vec!["test", "--locked", "--no-default-features"];
@@ -421,12 +422,11 @@ impl Session {
                         "focus-input.log",
                     )?;
                 }
-                if ["graphics", "dynamic", "copy"].contains(&args.suite.as_str())
+                if ["graphics", "dynamic", "copy", "browser"].contains(&args.suite.as_str())
                     && has("script_scope")
                 {
                     for filter in [
                         "project::bindings::",
-                        "project::browser_context::",
                         "project::import::scripts::composition::tests::",
                     ] {
                         self.test(
@@ -437,6 +437,13 @@ impl Session {
                             "focus-bindings.log",
                         )?;
                     }
+                    self.test(
+                        true,
+                        "lib",
+                        "project::browser_context::",
+                        &["--test-threads=2"],
+                        "focus-bindings.log",
+                    )?;
                     for filter in ["generated_browser_", "script_bindings::", "script_copy::"] {
                         self.test(
                             true,

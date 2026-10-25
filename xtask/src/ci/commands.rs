@@ -45,6 +45,7 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
             "graphics",
             "copy",
             "dynamic",
+            "browser",
             "shader",
             "release"
         ]
@@ -130,6 +131,70 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
             "--lib",
             "--no-run",
         ]));
+    }
+    if suite == "browser" {
+        ensure!(
+            targets.len() == 3
+                && targets.iter().map(String::as_str).collect::<BTreeSet<_>>()
+                    == ["browser_readiness", "project", "script_scope"].into(),
+            "Browser focus requires the complete document/script/browser target set"
+        );
+        let reproductions = [
+            focus::GENERATED_BROWSER,
+            focus::LOCAL_FILES,
+            focus::BROWSER_COPY,
+            focus::LOCAL_PAGES,
+        ];
+        let mut checks = reproductions
+            .iter()
+            .map(|name| {
+                append(
+                    &common,
+                    &[
+                        "--test",
+                        "browser_readiness",
+                        name,
+                        "--",
+                        "--exact",
+                        "--ignored",
+                        "--test-threads=1",
+                    ],
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut browsers = append(
+            &common,
+            &[
+                "--test",
+                "browser_readiness",
+                "--",
+                "--include-ignored",
+                "--test-threads=1",
+            ],
+        );
+        browsers.extend(skips(reproductions));
+        checks.push(browsers);
+        let mut scripts = append(
+            &common,
+            &[
+                "--test",
+                "script_scope",
+                "--",
+                "--include-ignored",
+                "--test-threads=1",
+            ],
+        );
+        scripts.extend(skips(["script_bindings::", "generated_browser_"]));
+        scripts.extend(skips(focus::COPY_CPU));
+        checks.push(scripts);
+        checks.push(append(
+            &common,
+            &["--test", "project", "--", "--test-threads=2"],
+        ));
+        return Ok(Plan {
+            build: builds,
+            checks,
+        });
     }
     let mut checks = shader_first;
     let history = has("conversation_history");
