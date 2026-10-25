@@ -1,5 +1,7 @@
 use super::*;
 use lazypencil::{document::hash, dynamic::DynamicRuntime};
+#[path = "script_copy_detach.rs"]
+mod detach;
 #[path = "script_copy_fixture.rs"]
 mod fixture;
 

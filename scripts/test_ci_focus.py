@@ -61,7 +61,7 @@ class FocusTests(unittest.TestCase):
         self.assertIn("cargo test --locked --test script_scope script_bindings::", native)
 
     def test_script_copy_runs_cpu_reproductions_once_then_only_its_affected_shader_before_full_matrix(self):
-        for path in ("src/project/import/scripts.rs", "src/project/import/scripts/composition.rs",
+        for path in ("src/project/scope.rs", "src/project/detach.rs", "src/project/import/scripts.rs", "src/project/import/scripts/composition.rs",
                      "tests/support/script_copy.rs", "tests/support/script_copy_core.rs", "tests/support/script_copy_fixture.rs"):
             result=focus.select([path])
             self.assertEqual(result["suite"],"copy")
@@ -71,7 +71,7 @@ class FocusTests(unittest.TestCase):
                 self.assertEqual(checks[-1][checks[-1].index(case)-1],"--skip")
         native=(Path(__file__).resolve().parents[1]/".github/workflows/native.yml").read_text()
         self.assertLess(native.index("cargo test --locked --test script_scope script_copy:: --"),native.index("Install and verify the pinned Chromium runtime"))
-        self.assertIn("cargo test --locked --test script_scope script_copy::copied_script_shader_keeps_string_sampler_coupling_and_consumer_edits -- --exact --ignored",native)
+        self.assertIn("cargo test --locked --test script_scope script_copy:: -- --ignored --test-threads=1",native)
         self.assertIn("--test windows_agent --test script_scope -- --ignored",native)
         self.assertIn("inputs.suite == 'copy'",native[native.index("Install and verify the pinned Chromium runtime"):native.index("Permit the verified browser")])
         mixed=focus.select(["src/project/import/scripts.rs","src/shader.rs"])

@@ -522,7 +522,7 @@ jobs:
         working-directory: ${{ runner.temp }}/lazypencil-source
         run: |
           set -o pipefail
-          cargo test --locked --test script_scope script_copy::copied_script_shader_keeps_string_sampler_coupling_and_consumer_edits -- --exact --ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/focus-copy-shader.log"
+          cargo test --locked --test script_scope script_copy:: -- --ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/focus-copy-shader.log"
       - name: Verify real page shader and import pixels
         if: inputs.phase == 'full'
         timeout-minutes: 20

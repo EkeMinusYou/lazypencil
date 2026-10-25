@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 pub(super) struct Bindings {
     pub(super) version: u32,
     pub(super) script_uri: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) library: Option<String>,
     #[serde(default)]
     pub(super) inputs_hash: Option<String>,
     #[serde(default)]
@@ -73,6 +75,10 @@ pub(super) fn bind(project: &Project, node: &ResolvedNode) -> Result<Option<Boun
             .sum::<usize>();
     if count > MAX_NODES
         || !valid_name(&values.script_uri)
+        || values
+            .library
+            .as_ref()
+            .is_some_and(|alias| alias.len() > 4096 || alias.chars().any(char::is_control))
         || maps
             .iter()
             .flat_map(|map| map.iter())
@@ -99,7 +105,11 @@ pub(super) fn bind(project: &Project, node: &ResolvedNode) -> Result<Option<Boun
     {
         return Ok(None);
     }
-    let origin = node.property_source("metadata").to_path_buf();
+    let owner = node.property_source("metadata");
+    let origin = match &values.library {
+        Some(alias) => project.scope_document(owner, alias)?,
+        None => owner.to_path_buf(),
+    };
     let document = &project.documents[&origin];
     for target in values.components.values() {
         project.check_cancelled()?;
@@ -150,6 +160,19 @@ pub(super) fn bind(project: &Project, node: &ResolvedNode) -> Result<Option<Boun
         inputs_bound,
         values,
     }))
+}
+
+impl Bound {
+    pub(super) fn equivalent(&self, other: &Self) -> bool {
+        self.origin == other.origin
+            && self.inputs_bound == other.inputs_bound
+            && self.values.components == other.values.components
+            && self.values.input_components == other.values.input_components
+            && self.values.variables == other.values.variables
+            && self.values.themes == other.values.themes
+            && self.values.descendants == other.values.descendants
+            && self.values.assets == other.values.assets
+    }
 }
 
 #[cfg(feature = "rendering")]
@@ -381,6 +404,8 @@ impl Bound {
                 ));
             }
             let mut values = self.values.clone();
+            // Generated nodes already belong to the resolved namespace owner.
+            values.library = None;
             values.script_uri = node["scriptUri"]
                 .as_str()
                 .ok_or_else(|| invalid("A generated script needs scriptUri"))?
@@ -524,6 +549,18 @@ mod tests {
                 "INVALID_DOCUMENT",
             ),
             (
+                json!({"version":1,"script_uri":"draw.js","library":12}),
+                "INVALID_DOCUMENT",
+            ),
+            (
+                json!({"version":1,"script_uri":"draw.js","library":"missing"}),
+                "INVALID_DOCUMENT",
+            ),
+            (
+                json!({"version":1,"script_uri":"draw.js","library":"../outside.pen"}),
+                "INVALID_DOCUMENT",
+            ),
+            (
                 json!({"version":1,"script_uri":"draw.js","components":{"old":"missing"}}),
                 "INVALID_OPERATION",
             ),
@@ -568,6 +605,12 @@ mod tests {
         assert_eq!(
             project(value, "replacement.js").resolve().unwrap_err().code,
             "UNSUPPORTED_VERSION"
+        );
+        let mut value = bindings();
+        value["library"] = json!("bad\nalias");
+        assert_eq!(
+            project(value, "replacement.js").resolve().unwrap_err().code,
+            "INVALID_DOCUMENT"
         );
     }
 

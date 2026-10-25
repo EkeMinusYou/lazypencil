@@ -205,7 +205,7 @@ impl Project {
 
     pub(super) fn relocate_detached_node(&self, origin: &Path, node: &Value) -> Result<Value> {
         self.check_cancelled()?;
-        self.relocate_detached_properties(origin, node, true)
+        self.relocate_detached_properties(origin, node, true, None)
     }
 
     fn relocate_detached_properties(
@@ -213,6 +213,7 @@ impl Project {
         origin: &Path,
         node: &Value,
         is_node: bool,
+        resolved: Option<&ResolvedNode>,
     ) -> Result<Value> {
         let mut result = node
             .as_object()
@@ -224,8 +225,37 @@ impl Project {
                 .ok_or_else(|| invalid("A node needs an ID"))?;
             result.insert("id".into(), json!(self.detached_id(origin, id)));
         }
+        let expanded = if resolved.is_none()
+            && node.get("inputs").is_some()
+            && matches!(node["type"].as_str(), Some("script" | "ref"))
+        {
+            Some(self.expand(origin, node, None, &[], &mut Vec::new(), &mut 0)?)
+        } else {
+            None
+        };
+        let script = resolved
+            .or(expanded.as_ref())
+            .filter(|node| node.kind() == "script");
         for (key, value) in &mut result {
-            if !literal_property(key) && key != "children" {
+            if key == "inputs"
+                && let Some(script) = script
+            {
+                let uri = script.properties["scriptUri"]
+                    .as_str()
+                    .ok_or_else(|| invalid("A detached script requires scriptUri"))?;
+                let path = self.resolve_file(script.property_source("scriptUri"), uri)?;
+                let asset = self.asset(&path)?;
+                let code = std::str::from_utf8(&asset.bytes)
+                    .map_err(|_| invalid("Script source must be UTF-8"))?;
+                let header = crate::script::header::Header::parse(code)?;
+                if let Some(values) = value.as_object_mut() {
+                    for input in header.inputs {
+                        if let Some(value) = values.get_mut(&input.name) {
+                            *value = self.detached_variables(origin, value)?;
+                        }
+                    }
+                }
+            } else if !literal_property(key) && key != "children" {
                 *value = self.detached_variables(origin, value)?;
             }
         }
@@ -277,6 +307,7 @@ impl Project {
                         origin,
                         changes,
                         changes.get("type").is_some(),
+                        find_descendant_mut(&mut expanded, &parts).map(|node| &*node),
                     )?,
                 );
             }
@@ -493,9 +524,10 @@ impl Project {
 
     pub(crate) fn check_detached_semantics(
         &self,
-        after: &Project,
+        after: &mut Project,
         address: &NodeAddress,
     ) -> Result<()> {
+        after.capture_detached_scripts(address)?;
         fn find<'a>(nodes: &'a [ResolvedNode], address: &NodeAddress) -> Option<&'a ResolvedNode> {
             for node in nodes {
                 if node.address.node_id == address.node_id
@@ -520,6 +552,13 @@ impl Project {
         fn properties(project: &Project, node: &ResolvedNode) -> Result<Map<String, Value>> {
             let mut result = node.properties.clone();
             if node.kind() == "script" {
+                if let Some(namespace) = result
+                    .get_mut("metadata")
+                    .and_then(|v| v.get_mut("lazypencil"))
+                    .and_then(Value::as_object_mut)
+                {
+                    namespace.remove("script_bindings");
+                }
                 super::scope::without_script_scope(&mut result);
             }
             for key in ["id", "reusable", "slot", "theme"] {
@@ -566,6 +605,13 @@ impl Project {
             after: &Project,
             new: &ResolvedNode,
         ) -> Result<bool> {
+            if match (&old.script_bindings, &new.script_bindings) {
+                (Some(old), Some(new)) => !old.equivalent(new),
+                (None, None) => false,
+                _ => true,
+            } {
+                return Ok(false);
+            }
             if old.kind() == "script"
                 && (old.script_origin() != new.script_origin()
                     || old.properties.contains_key("inputs")

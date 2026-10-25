@@ -85,16 +85,6 @@ fn renamed_bindings_preserve_real_script_defaults_overrides_themes_and_live_edit
         .unwrap()
         .to_string();
     assert_eq!(revision.len(), 64);
-    let metadata = service::document_metadata(&store).unwrap();
-    let request: EditRequest = serde_json::from_value(json!({"request_id":"unsupported-bound-detach",
-        "expected_revision":metadata["revision"],"expected_dependency_revision":metadata["dependency_revision"],
-        "operations":[{"op":"detach_instance","target":"use"}]})).unwrap();
-    assert_eq!(
-        service::apply_request(&store, &request).unwrap_err().code,
-        "UNSUPPORTED_FEATURE"
-    );
-    assert_eq!(fs::read(store.path()).unwrap(), original_document);
-    assert!(store.history(10, None).unwrap().is_empty());
     for (x, color) in [
         (5, Color::BLUE),
         (25, Color::BLUE),
@@ -162,6 +152,46 @@ fn renamed_bindings_preserve_real_script_defaults_overrides_themes_and_live_edit
 
     assert_eq!(fs::read(temp.path().join("assets/draw.js")).unwrap(), code);
     assert!(!temp.path().join("original").exists());
+    {
+        let (_temp, local, _) = bindings_fixture();
+        let (_, _, before_detach) = snapshot(&local);
+        edit(
+            &local,
+            "local-bound-detach",
+            json!([{"op":"detach_instance","target":"use"}]),
+        );
+        let (_, _, after_detach) = snapshot(&local);
+        assert_eq!(before_detach, after_detach);
+        let document = local.read().unwrap();
+        assert_eq!(document.node("use").unwrap()["type"], "script");
+        assert!(
+            document.node("use").unwrap()["metadata"]["lazypencil"]["script_bindings"]
+                .get("library")
+                .is_none()
+        );
+    }
+    {
+        let (_temp, revoked, _) = bindings_fixture();
+        edit(
+            &revoked,
+            "revoke-before-detach",
+            json!([{"op":"update","target":"use","set":{"scriptUri":"assets/draw.js"}}]),
+        );
+        let (_, _, before_detach) = snapshot(&revoked);
+        edit(
+            &revoked,
+            "detach-revoked",
+            json!([{"op":"detach_instance","target":"use"}]),
+        );
+        let (_, result, after_detach) = snapshot(&revoked);
+        assert_eq!(before_detach, after_detach);
+        assert!(result.script_executions[0]["bindings_revision"].is_null());
+        assert!(
+            revoked.read().unwrap().node("use").unwrap()["metadata"]["lazypencil"]
+                .get("script_bindings")
+                .is_none()
+        );
+    }
     if let Some(root) = std::env::var_os("LAZYPENCIL_TEST_TUI_ARTIFACTS") {
         let path = std::path::PathBuf::from(root).join("script-bindings");
         fs::create_dir_all(&path).unwrap();

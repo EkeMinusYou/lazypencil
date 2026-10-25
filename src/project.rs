@@ -300,14 +300,40 @@ impl Project {
         Ok(())
     }
 
+    fn capture_detached_scripts(&mut self, address: &NodeAddress) -> Result<()> {
+        fn codes(node: &ResolvedNode, files: &mut BTreeSet<(PathBuf, String)>) {
+            if node.kind() == "script"
+                && let Some(uri) = node.properties.get("scriptUri").and_then(Value::as_str)
+            {
+                files.insert((node.property_source("scriptUri").into(), uri.into()));
+            }
+            for child in &node.children {
+                codes(child, files);
+            }
+        }
+        let root = self.expanded_node(&NodeAddress {
+            node_id: address.node_id.clone(),
+            instance_path: vec![],
+        })?;
+        let mut files = BTreeSet::new();
+        codes(&root, &mut files);
+        for (origin, uri) in files {
+            self.check_cancelled()?;
+            let path = self.resolve_file(&origin, &uri)?;
+            self.capture_asset(&path, "script")?;
+        }
+        Ok(())
+    }
+
     /// Materialize one instance boundary, including overrides from its ancestors.
-    pub(crate) fn detached_template(&self, address: &NodeAddress) -> Result<Value> {
+    pub(crate) fn detached_template(&mut self, address: &NodeAddress) -> Result<Value> {
         if !self.expanded_node(address)?.is_instance {
             return Err(Error::new(
                 "INVALID_OPERATION",
                 "Detach requires an instance",
             ));
         }
+        self.capture_detached_scripts(address)?;
         let instance =
             self.relocate_detached_node(&self.root, self.root_document().node(&address.node_id)?)?;
         let (mut value, mut aliases) = self.detach_instance_projection(&instance, 0)?;

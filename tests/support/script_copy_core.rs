@@ -130,6 +130,19 @@ fn script_copy_does_not_evaluate_javascript_during_preview_or_commit() {
         .unwrap();
     let uri = document.node(id).unwrap()["scriptUri"].as_str().unwrap();
     assert_eq!(fs::read_to_string(temp.path().join(uri)).unwrap(), code);
+    apply(
+        &store,
+        "nonexecuting-bound-detach",
+        json!([{"op":"detach_instance","target":result["bindings"]["copied"]}]),
+    );
+    assert_eq!(
+        store
+            .read()
+            .unwrap()
+            .node(result["bindings"]["copied"].as_str().unwrap())
+            .unwrap()["type"],
+        "script"
+    );
 }
 
 #[test]
@@ -169,4 +182,97 @@ fn bound_script_recopy_composes_names_and_assets_without_retaining_source_docume
             .iter()
             .all(|entry| entry.path.starts_with(second.path().parent().unwrap()))
     );
+}
+
+#[test]
+fn bound_script_detach_retains_declared_owner_and_can_be_copied_independently_again() {
+    let (temp, source) = fixture();
+    let copied = apply(&source, "copy-for-detach", operations());
+    let source_id = copied["generated_ids"]["0"]["component_id"]
+        .as_str()
+        .unwrap();
+    fs::remove_dir_all(temp.path().join("library")).unwrap();
+    let target = linked(&source, source_id, &temp.path().join("linked"));
+    let original = fs::read(target.path()).unwrap();
+    let edits = json!([{"op":"detach_instance","target":"use"}]);
+    service::apply_request(
+        &target,
+        &request(&target, "detach-preview", edits.clone(), true),
+    )
+    .unwrap();
+    assert_eq!(fs::read(target.path()).unwrap(), original);
+    assert!(target.history(10, None).unwrap().is_empty());
+    apply(&target, "detach", edits);
+    let document = target.read().unwrap();
+    let detached = document.node("use").unwrap();
+    assert_eq!(detached["type"], "script");
+    assert_eq!(detached["inputs"]["stale"], "$missing");
+    assert_eq!(detached["metadata"]["keep"], json!([1, 2, 3]));
+    assert_eq!(
+        detached["metadata"]["lazypencil"]["script_bindings"]["library"],
+        "source"
+    );
+    assert_eq!(
+        detached["metadata"]["lazypencil"]["script_scope"]["library"],
+        "source"
+    );
+    let unchanged = fs::read(target.path()).unwrap();
+    let error = service::apply_request(
+        &target,
+        &request(
+            &target,
+            "remove-owner",
+            json!([{"op":"remove_import","alias":"source"}]),
+            false,
+        ),
+    )
+    .unwrap_err();
+    assert_eq!(error.code, "INVALID_DOCUMENT");
+    assert_eq!(fs::read(target.path()).unwrap(), unchanged);
+    apply(
+        &target,
+        "make-detached-reusable",
+        json!([{"op":"update","target":"use","set":{"reusable":true}}]),
+    );
+    let (independent, _) = recopy(&target, "use", &temp.path().join("independent"), "last.");
+    fs::remove_dir_all(temp.path().join("linked")).unwrap();
+    fs::remove_file(source.path()).unwrap();
+    fs::remove_dir_all(temp.path().join("assets")).unwrap();
+    Project::load(&independent).unwrap().resolve().unwrap();
+}
+
+#[test]
+fn disabled_bound_detach_preserves_variable_controls_without_resolving_stale_controls() {
+    let (temp, source) = fixture();
+    let copied = apply(&source, "copy-for-disabled-detach", operations());
+    let source_id = copied["generated_ids"]["0"]["component_id"]
+        .as_str()
+        .unwrap();
+    let target = linked(&source, source_id, &temp.path().join("disabled"));
+    apply(
+        &target,
+        "disabled-controls",
+        json!([
+        {"op":"set_variable","name":"choice","definition":{"type":"string","value":"badge"}},
+        {"op":"update","target":"use","set":{"enabled":false,"inputs":{"selected":"$choice","stale":"$missing"}}}]),
+    );
+    apply(
+        &target,
+        "disabled-detach",
+        json!([{"op":"detach_instance","target":"use"}]),
+    );
+    let document = target.read().unwrap();
+    let node = document.node("use").unwrap();
+    assert_eq!(node["enabled"], false);
+    assert_eq!(
+        node["inputs"],
+        json!({"selected":"$choice","stale":"$missing"})
+    );
+    assert!(node["metadata"]["lazypencil"]["script_bindings"]["inputs_hash"].is_null());
+    apply(
+        &target,
+        "enable-detached",
+        json!([{"op":"update","target":"use","set":{"enabled":true}}]),
+    );
+    Project::load(&target).unwrap().resolve().unwrap();
 }

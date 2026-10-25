@@ -389,7 +389,7 @@ fn apply_impl(
             }
             Operation::DetachInstance { target, client_ref } => {
                 let address = resolve_address(target, &bindings)?;
-                let before_project = project_for(&edited, &context)?;
+                let mut before_project = project_for(&edited, &context)?;
                 let mut node = before_project.detached_template(&address)?;
                 ensure_known_subtree(&node)?;
                 let mut mapping = allocate_ids(&mut node)?;
@@ -426,8 +426,8 @@ fn apply_impl(
                     let pointer = edited.location(&id)?.pointer.clone();
                     patch_value(&mut edited, &pointer, &before, &node)?;
                 }
-                let after_project = project_for(&edited, &context)?;
-                before_project.check_detached_semantics(&after_project, &address)?;
+                let mut after_project = project_for(&edited, &context)?;
+                before_project.check_detached_semantics(&mut after_project, &address)?;
                 bind(client_ref, &id, &mut bindings)?;
                 let mut entry = json!({"id":id,"id_map":mapping});
                 if inherited {

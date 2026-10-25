@@ -19,7 +19,7 @@ struct InputScope {
 }
 
 impl Project {
-    fn scope_document(&self, owner: &Path, alias: &str) -> Result<PathBuf> {
+    pub(super) fn scope_document(&self, owner: &Path, alias: &str) -> Result<PathBuf> {
         if alias.len() > 4096 || alias.chars().any(char::is_control) {
             return Err(invalid("A script scope needs a declared library alias"));
         }
@@ -112,17 +112,32 @@ impl Project {
         if value["type"] != "script" {
             return Ok(());
         }
-        if original
-            .properties
-            .get("metadata")
-            .and_then(|value| value.get("lazypencil"))
-            .and_then(|value| value.get("script_bindings"))
-            .is_some()
+        let retained = if let Some(bound) = &original.script_bindings {
+            let mut values = bound.values.clone();
+            values.script_uri = value["scriptUri"]
+                .as_str()
+                .ok_or_else(|| invalid("A detached script requires scriptUri"))?
+                .into();
+            let scope = self.detached_scope(&bound.origin)?;
+            values.library = (!scope.is_empty()).then_some(scope);
+            // A revoked same-JSON input must not become bound again on save.
+            values.inputs_hash = bound
+                .inputs_bound
+                .then(|| value.get("inputs").map(value_hash))
+                .flatten();
+            Some(serde_json::to_value(values).expect("script bindings"))
+        } else {
+            None
+        };
+        if let Some(namespace) = value
+            .get_mut("metadata")
+            .and_then(|v| v.get_mut("lazypencil"))
+            .and_then(Value::as_object_mut)
         {
-            return Err(Error::new(
-                "UNSUPPORTED_FEATURE",
-                "Detaching a script binding requires relocating its complete target namespace",
-            ));
+            namespace.remove("script_bindings");
+            if let Some(bindings) = retained {
+                namespace.insert("script_bindings".into(), bindings);
+            }
         }
         let origin = original.script_origin();
         let inputs_origin = original.script_input_origin();

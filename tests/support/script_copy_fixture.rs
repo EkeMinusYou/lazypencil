@@ -115,3 +115,16 @@ pub(super) fn recopy(
         .to_owned();
     (target, id)
 }
+
+pub(super) fn linked(source: &Store, source_id: &str, destination: &Path) -> Store {
+    fs::create_dir_all(destination).unwrap();
+    write(
+        &destination.join("main.pen"),
+        json!({"version":source.read().unwrap().version(),
+        "imports":{"source":source.path().to_str().unwrap()},"children":[
+            {"id":"local-definitions","type":"frame","enabled":false,"children":[
+                {"id":"badge","type":"rectangle","reusable":true,"width":10,"height":10,"fill":"#ff00ff"}]},
+            {"id":"use","type":"ref","ref":format!("source:{source_id}")}]}),
+    );
+    Store::open(destination.join("main.pen"), Some(destination.join("data"))).unwrap()
+}
