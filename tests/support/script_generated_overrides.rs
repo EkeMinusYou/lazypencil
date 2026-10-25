@@ -5,6 +5,7 @@ const REPLACEMENT: &str = r##"/**
  * @schema 2.21
  * @input selected: ref = "badge"
  */
+if ('stale' in pencil.input) throw new Error('Stale control leaked');
 return [{type:'ref',ref:pencil.input.selected},
  {type:'rectangle',x:12,width:10,height:10,fill:'$tone'},
  {type:'ref',x:24,ref:'badge'}];
@@ -29,7 +30,9 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
     let mut changes = json!({"scriptUri":"override.js"});
     match mode {
         "literal" => changes["inputs"] = json!({"selected":"badge","stale":"$missing"}),
-        "variable" => changes["inputs"] = json!({"selected":"$selection","stale":"$missing"}),
+        "variable" | "themed-variable" => {
+            changes["inputs"] = json!({"selected":"$selection","stale":"$missing"})
+        }
         "bad-variable" => changes["inputs"] = json!({"selected":"$missing"}),
         "null" => changes["inputs"] = json!({"selected":null,"stale":"$missing"}),
         "metadata" => {
@@ -52,6 +55,7 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
         "replacement" => {
             json!({"type":"ref","ref":"base:card","descendants":{"draw":direct(changes)}})
         }
+        "children" => json!({"type":"ref","ref":"base:card","children":[direct(changes)]}),
         _ => panic!("Unknown generated override address"),
     };
     let code = format!(
@@ -86,6 +90,25 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
             {"id":"use","type":"ref","ref":"ui:generator"}
         ]}),
     );
+    if mode == "themed-variable" {
+        let path = temp.path().join("library/base.pen");
+        let mut base: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        base["themes"] = json!({"mode":["light","dark"]});
+        base["children"][2]["theme"] = json!({"mode":"dark"});
+        write(&path, base);
+        let path = temp.path().join("library/ui.pen");
+        let mut ui: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        ui["themes"] = json!({"mode":["light","dark"]});
+        ui["variables"]["selection"]["value"] = json!([
+            {"value":"badge"},{"theme":{"mode":"dark"},"value":"alternate"}
+        ]);
+        ui["children"].as_array_mut().unwrap().push(json!({"id":"alternate","name":"UI alternate","type":"rectangle","reusable":true,"width":10,"height":10,"fill":"#00ffff"}));
+        write(&path, ui);
+        let path = temp.path().join("main.pen");
+        let mut main: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        main["themes"] = json!({"copy_mode":["light","dark"]});
+        write(&path, main);
+    }
     let store = Store::open(temp.path().join("main.pen"), Some(temp.path().join("data"))).unwrap();
     (temp, store, code)
 }
@@ -101,6 +124,15 @@ fn copy(store: &Store, include_source: bool) -> Value {
         }
     }
     let mut options = json!({"component_prefix":"Copy ","variables":variables});
+    if store.read().unwrap().value()["themes"]
+        .get("copy_mode")
+        .is_some()
+    {
+        options["themes"] = json!({
+            "ui:mode":{"action":"reuse","target":"copy_mode"},
+            "ui:base:mode":{"action":"reuse","target":"copy_mode"}
+        });
+    }
     if include_source {
         options["script_assets"] = json!({"ui:generator":[{"kind":"script","uri":"override.js"}]});
     }
@@ -170,57 +202,99 @@ fn preview(store: &Store, first: Color, metadata: &str) -> Vec<u8> {
     image.png
 }
 
+fn independent_case(
+    version: &str,
+    style: &str,
+    mode: &str,
+    first: Color,
+) -> (TempDir, Store, Vec<u8>) {
+    eprintln!("Generated source: schema={version}, style={style}, mode={mode}");
+    let (temp, store, code) = setup(version, style, mode, 1);
+    let metadata = if mode == "metadata" {
+        "generated"
+    } else {
+        "base"
+    };
+    let before = preview(&store, first, metadata);
+    let response = copy(&store, true);
+    let component = response["generated_ids"]["0"]["component_id"]
+        .as_str()
+        .unwrap();
+    let document = store.read().unwrap();
+    let node = document.node(component).unwrap();
+    assert_eq!(
+        fs::read(temp.path().join(node["scriptUri"].as_str().unwrap())).unwrap(),
+        code.as_bytes()
+    );
+    let replacement =
+        node["metadata"]["lazypencil"]["script_bindings"]["assets"]["script:override.js"]
+            .as_str()
+            .unwrap();
+    assert_eq!(
+        fs::read(temp.path().join(replacement)).unwrap(),
+        REPLACEMENT.as_bytes()
+    );
+    fs::remove_dir_all(temp.path().join("library")).unwrap();
+    assert_eq!(
+        preview(&store, first, metadata),
+        before,
+        "{version}/{style}/{mode}/copy"
+    );
+    let (second, _) = fixture::recopy(&store, component, &temp.path().join("second"), "again_");
+    fs::remove_file(store.path()).unwrap();
+    fs::remove_dir_all(temp.path().join("assets")).unwrap();
+    assert_eq!(
+        preview(&second, first, metadata),
+        before,
+        "{version}/{style}/{mode}/recopy"
+    );
+
+    (temp, second, before)
+}
+
 #[test]
 fn generated_script_code_overrides_keep_saved_input_ownership_after_copy_and_recopy() {
-    for version in ["2.19", "2.21"] {
-        for style in ["direct", "descendant", "replacement"] {
-            for mode in ["inherit", "literal", "variable", "null", "metadata"] {
-                eprintln!("Generated source: schema={version}, style={style}, mode={mode}");
-                let (temp, store, code) = setup(version, style, mode, 1);
-                let first = if ["inherit", "metadata"].contains(&mode) {
-                    Color::RED
-                } else {
-                    Color::GREEN
-                };
-                let metadata = if mode == "metadata" {
-                    "generated"
-                } else {
-                    "base"
-                };
-                let before = preview(&store, first, metadata);
-                let response = copy(&store, true);
-                let component = response["generated_ids"]["0"]["component_id"]
-                    .as_str()
-                    .unwrap();
-                let document = store.read().unwrap();
-                let node = document.node(component).unwrap();
-                assert_eq!(
-                    fs::read(temp.path().join(node["scriptUri"].as_str().unwrap())).unwrap(),
-                    code.as_bytes()
-                );
-                let replacement = node["metadata"]["lazypencil"]["script_bindings"]["assets"]["script:override.js"].as_str().unwrap();
-                assert_eq!(
-                    fs::read(temp.path().join(replacement)).unwrap(),
-                    REPLACEMENT.as_bytes()
-                );
-                fs::remove_dir_all(temp.path().join("library")).unwrap();
-                assert_eq!(
-                    preview(&store, first, metadata),
-                    before,
-                    "{version}/{style}/{mode}/copy"
-                );
-                let (second, _) =
-                    fixture::recopy(&store, component, &temp.path().join("second"), "again_");
-                fs::remove_file(store.path()).unwrap();
-                fs::remove_dir_all(temp.path().join("assets")).unwrap();
-                assert_eq!(
-                    preview(&second, first, metadata),
-                    before,
-                    "{version}/{style}/{mode}/recopy"
-                );
-            }
+    // Each schema owns independent temporary projects, assets and JS processes.
+    // Keep both complete matrices while bounding their concurrency to two.
+    std::thread::scope(|threads| {
+        for version in ["2.19", "2.21"] {
+            threads.spawn(move || {
+                for style in ["direct", "descendant", "replacement"] {
+                    for mode in ["inherit", "literal", "variable", "null", "metadata"] {
+                        let first = if ["inherit", "metadata"].contains(&mode) {
+                            Color::RED
+                        } else {
+                            Color::GREEN
+                        };
+                        let _fixture = independent_case(version, style, mode, first);
+                    }
+                }
+            });
         }
-    }
+    });
+}
+
+#[test]
+fn generated_ref_inputs_follow_inherited_container_themes_after_copy_recopy_and_live_changes() {
+    std::thread::scope(|threads| {
+        for version in ["2.19", "2.21"] {
+            threads.spawn(move || {
+                for style in ["descendant", "replacement", "children"] {
+                    let (_temp, store, original) = independent_case(version, style, "themed-variable", Color::CYAN);
+                    let document = store.read().unwrap();
+                    let cards = document.locations().keys().filter(|id| {
+                        let node = document.node(id).unwrap();
+                        node["type"] == "frame" && node["reusable"] == true
+                    }).cloned().collect::<Vec<_>>();
+                    assert_eq!(cards.len(), 1, "Expected one reusable theme container");
+                    fixture::apply(&store, "container-light", json!([{"op":"update","target":cards[0],"set":{"theme":{"copy_mode":"light"}}}]));
+                    assert_ne!(preview(&store, Color::GREEN, "base"), original);
+                    fixture::apply(&store, "container-dark", json!([{"op":"update","target":cards[0],"set":{"theme":{"copy_mode":"dark"}}}]));
+                    assert_eq!(preview(&store, Color::CYAN, "base"), original);
+                }
+            });
+        }
+    });
 }
 
 #[test]
