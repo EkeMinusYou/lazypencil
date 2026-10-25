@@ -37,7 +37,7 @@ fn completed(mut child: Child, limit: Duration) -> ExitStatus {
     }
 }
 
-fn render_scene(
+pub(super) fn render_scene(
     directory: &Path,
     font: &PathBuf,
     version: &str,

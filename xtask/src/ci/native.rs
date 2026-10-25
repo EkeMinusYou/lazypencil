@@ -136,6 +136,37 @@ impl Session {
         self.record_timing(invocation, started.elapsed(), result.is_ok(), log)?;
         result
     }
+    fn real_emoji(&self, log: &str) -> Result<()> {
+        let output = self.temporary.join("emoji-fonts");
+        let started = Instant::now();
+        let result = crate::fixtures::emoji::prepare(
+            &self.root.join("tests/fixtures/fonts/emoji-upstream.json"),
+            &output,
+        );
+        self.record_timing(
+            &["prepare-pinned-emoji-fonts".into()],
+            started.elapsed(),
+            result.is_ok(),
+            log,
+        )?;
+        result?;
+        let invocation: Vec<String> = [
+            "cargo",
+            "test",
+            "--locked",
+            "--test",
+            "font_sources",
+            "real_emoji::",
+            "--",
+            "--ignored",
+            "--test-threads=1",
+        ]
+        .map(str::to_owned)
+        .into();
+        let mut command = self.command(&invocation);
+        command.env("LAZYPENCIL_TEST_EMOJI_DIR", output);
+        self.execute_command(&invocation, &mut command, 300, log, false)
+    }
     fn record_timing(
         &self,
         invocation: &[String],
@@ -322,6 +353,7 @@ impl Session {
             Stage::FocusReproduce => {
                 if let Some(command) = commands::color_font_reproduction(&args.suite, &targets) {
                     self.execute(&command, 300, "focus-color-fonts.log", false)?;
+                    self.real_emoji("focus-real-emoji.log")?;
                 }
                 if args.suite == "dynamic" && has("native_layout") {
                     self.test(
@@ -549,6 +581,7 @@ impl Session {
             ),
             Stage::DefaultBuild => self.build_catalog(),
             Stage::Reproduce => {
+                self.real_emoji("real-emoji.log")?;
                 self.test(
                     true,
                     "lib",
@@ -563,7 +596,11 @@ impl Session {
                     &["--exact", "--test-threads=1"],
                     "chromium-script-cancel.log",
                 )?;
-                for log in ["tui-reproduction.log", "chromium-script-cancel.log"] {
+                for log in [
+                    "real-emoji.log",
+                    "tui-reproduction.log",
+                    "chromium-script-cancel.log",
+                ] {
                     fs::OpenOptions::new()
                         .append(true)
                         .open(self.temporary.join("lazypencil-tests.log"))?

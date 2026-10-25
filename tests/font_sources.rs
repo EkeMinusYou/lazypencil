@@ -3,6 +3,9 @@
 #[path = "support/color_fonts.rs"]
 mod color_fonts;
 
+#[path = "support/real_emoji.rs"]
+mod real_emoji;
+
 use lazypencil::{
     document::hash,
     text::{DEFAULT_FONT_BYTES, DEFAULT_FONT_FAMILY, Fonts, TextBlock, TextSpec},

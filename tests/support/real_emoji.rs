@@ -1,0 +1,169 @@
+use super::*;
+use serde_json::json;
+use skia_safe::{Color, Data, Image};
+use std::collections::BTreeSet;
+
+fn pixels(png: &[u8]) -> Vec<[u8; 4]> {
+    let image = Image::from_encoded(Data::new_copy(png))
+        .unwrap()
+        .make_raster_image(None, None)
+        .unwrap();
+    assert_eq!((image.width(), image.height()), (400, 260));
+    let pixels = image.peek_pixels().unwrap();
+    let mut result = Vec::new();
+    for y in 0..image.height() {
+        for x in 0..image.width() {
+            let color = pixels.get_color((x, y));
+            result.push([color.r(), color.g(), color.b(), color.a()]);
+        }
+    }
+    result
+}
+
+#[test]
+#[ignore = "requires pinned upstream fonts prepared by cargo xtask fixtures emoji on GHA"]
+fn cbdt_preserves_composition_palettes_and_paragraph_pixels() {
+    verify_format(0);
+}
+
+#[test]
+#[ignore = "requires pinned upstream fonts prepared by cargo xtask fixtures emoji on GHA"]
+fn colrv1_preserves_composition_palettes_and_paragraph_pixels() {
+    verify_format(1);
+}
+
+fn verify_format(format_index: usize) {
+    let input = PathBuf::from(std::env::var_os("LAZYPENCIL_TEST_EMOJI_DIR").unwrap());
+    let output = PathBuf::from(std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR").unwrap());
+    fs::create_dir_all(&output).unwrap();
+    let source = fs::read(input.join("SOURCE.json")).unwrap();
+    let pin: Value = serde_json::from_slice(&source).unwrap();
+    let expected = fs::read(fixture("emoji-upstream.json")).unwrap();
+    assert_eq!(pin, serde_json::from_slice::<Value>(&expected).unwrap());
+    let license = fs::read(input.join("LICENSE")).unwrap();
+    assert_eq!(hash(&license), pin["license"]["sha256"]);
+    let mut reports = Vec::new();
+    {
+        let record = &pin["fonts"][format_index];
+        let path = Path::new(record["asset"]["path"].as_str().unwrap());
+        let font = input.join(path.file_name().unwrap());
+        let bytes = fs::read(&font).unwrap();
+        assert_eq!(hash(&bytes), record["asset"]["sha256"]);
+        assert_eq!(
+            bytes.len() as u64,
+            record["asset"]["bytes"].as_u64().unwrap()
+        );
+        let mut fonts = Fonts::new(std::slice::from_ref(&font))
+            .unwrap_or_else(|error| panic!("{} font loading: {error}", record["format"]));
+        for (case, content, family, expected_glyphs) in [
+            ("smile", "😀", "Noto Color Emoji", 1),
+            ("zwj", "👩‍💻", "Noto Color Emoji", 1),
+            ("modifier", "👩🏻", "Noto Color Emoji", 1),
+            ("selector", "❤️", "Noto Color Emoji", 1),
+            ("flag", "🇯🇵", "Noto Color Emoji", 1),
+            ("family", "👨‍👩‍👧‍👦", "Noto Color Emoji", 1),
+            ("japanese", "日👩‍💻", DEFAULT_FONT_FAMILY, 2),
+        ] {
+            let mut request = spec(content, family);
+            request.size = 100.0;
+            request.color = Color::BLUE;
+            let mut block = fonts
+                .layout(&request, Some(360.0))
+                .unwrap_or_else(|error| panic!("{} {case} shaping: {error}", record["format"]));
+            let mut glyphs = Vec::new();
+            block.paragraph.visit(|_, run| {
+                if let Some(run) = run {
+                    glyphs.extend_from_slice(run.glyphs());
+                }
+            });
+            assert_eq!(
+                glyphs.len(),
+                expected_glyphs,
+                "{} {case}: {glyphs:?}",
+                record["format"]
+            );
+            assert!(glyphs.iter().all(|glyph| *glyph != 0));
+            assert!(
+                block
+                    .metrics
+                    .fonts
+                    .iter()
+                    .any(|used| used.hash == record["asset"]["sha256"])
+            );
+            assert!(block.metrics.intrinsic_width > 0.0 && block.metrics.height > 0.0);
+            if case == "japanese" {
+                assert!(
+                    block
+                        .metrics
+                        .fonts
+                        .iter()
+                        .any(|used| used.hash == hash(DEFAULT_FONT_BYTES))
+                );
+            }
+            let mut surface = skia_safe::surfaces::raster_n32_premul((400, 260)).unwrap();
+            surface.canvas().clear(Color::TRANSPARENT);
+            block.paragraph.paint(surface.canvas(), (10.0, 10.0));
+            let reference = skia_safe::png_encoder::encode_image(
+                None,
+                &surface.image_snapshot(),
+                &Default::default(),
+            )
+            .unwrap()
+            .as_bytes()
+            .to_vec();
+            let reference_pixels = pixels(&reference);
+            let chromatic = reference_pixels
+                .iter()
+                .filter(|&&[r, g, b, a]| a > 200 && r.max(g).max(b) - r.min(g).min(b) > 30)
+                .count();
+            let colors = reference_pixels
+                .iter()
+                .copied()
+                .collect::<BTreeSet<_>>()
+                .len();
+            let intrinsic = reference_pixels
+                .iter()
+                .filter(|&&[r, _, b, a]| a > 200 && r.saturating_sub(b) > 30)
+                .count();
+            let reference_name = format!("codec-emoji-{format_index}-{case}-native.png");
+            fs::write(output.join(&reference_name), &reference).unwrap();
+            assert!(
+                chromatic > 100 && intrinsic > 100 && colors > 16,
+                "{} {case}: chromatic={chromatic}, intrinsic={intrinsic}, colors={colors}",
+                record["format"]
+            );
+            for version in ["2.19", "2.21"] {
+                let directory = tempfile::tempdir().unwrap();
+                let (rendered, _) = color_fonts::render_scene(
+                    directory.path(),
+                    &font,
+                    version,
+                    json!({"fontFamily":family,"content":content}),
+                    &Default::default(),
+                );
+                let name = format!("codec-emoji-{format_index}-{case}-{version}.png");
+                fs::write(output.join(&name), &rendered.png).unwrap();
+                let actual = pixels(&rendered.png);
+                let differences = actual
+                    .iter()
+                    .zip(&reference_pixels)
+                    .filter(|(a, b)| a != b)
+                    .count();
+                reports.push(json!({"format":record["format"],"font_sha256":record["asset"]["sha256"],
+                    "case":case,"content":content,"schema":version,"glyphs":glyphs,
+                    "metrics":block.metrics,"chromatic_pixels":chromatic,"intrinsic_palette_pixels":intrinsic,"distinct_colors":colors,
+                    "native_png":reference_name,"native_sha256":hash(&reference),
+                    "rendered_png":name,"rendered_sha256":hash(&rendered.png),"different_pixels":differences}));
+                fs::write(output.join(format!("codec-emoji-{format_index}-report.json")), serde_json::to_vec_pretty(&json!({
+                    "source_commit":std::env::var("GITHUB_SHA").ok(),"upstream":pin,"cases":reports,
+                })).unwrap()).unwrap();
+                assert_eq!(
+                    differences, 0,
+                    "{} {case} {version}: native paragraph / ordinary render",
+                    record["format"]
+                );
+            }
+        }
+    }
+    assert_eq!(reports.len(), 14);
+}

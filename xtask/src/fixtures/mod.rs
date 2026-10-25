@@ -8,6 +8,10 @@ use std::{
 
 #[derive(Subcommand)]
 pub enum Command {
+    Emoji {
+        #[arg(long)]
+        output: PathBuf,
+    },
     Fonts {
         #[arg(long)]
         output: PathBuf,
@@ -23,6 +27,10 @@ pub enum Command {
 impl Command {
     pub fn run(self) -> Result<()> {
         match self {
+            Self::Emoji { output } => emoji::prepare(
+                &util::root().join("tests/fixtures/fonts/emoji-upstream.json"),
+                &output,
+            ),
             Self::Fonts { output } => fonts::write(&output),
             Self::Performance { scene, output_dir } => {
                 util::print(&performance(&output_dir, &scene)?)
@@ -53,5 +61,6 @@ pub fn performance(output_dir: &Path, scene: &str) -> Result<serde_json::Value> 
     }
     Ok(report)
 }
+pub mod emoji;
 pub mod fonts;
 pub mod oracles;

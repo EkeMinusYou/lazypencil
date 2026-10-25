@@ -154,7 +154,7 @@ jobs:
         if: inputs.phase == 'full'
         timeout-minutes: 45
         run: cargo xtask ci native default-build
-      - name: Reproduce TUI and isolated MCP cancellation first
+      - name: Reproduce real emoji, TUI and isolated MCP cancellation first
         if: inputs.phase == 'full'
         run: cargo xtask ci native reproduce
       - name: Test default configuration without identical reproductions

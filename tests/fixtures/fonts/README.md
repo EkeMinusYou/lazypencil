@@ -1,6 +1,6 @@
 # Original diagnostic fonts
 
-All files in this directory are original lazypencil test assets, covered by the project's [MIT license](../../../LICENSE). No third-party glyph outlines, font names, or font-building libraries are included. Their rectangular glyphs exercise font selection; they are not intended for real design work.
+The seven font binaries in this directory are original lazypencil test assets, covered by the project's [MIT license](../../../LICENSE). No third-party glyph outlines or font-building libraries are included in these binaries. Their rectangular glyphs exercise font selection; they are not intended for real design work.
 
 | File | Contents |
 | --- | --- |
@@ -17,3 +17,5 @@ cargo xtask fixtures fonts --output /tmp/lazypencil-font-fixtures
 ```
 
 The generator fixes timestamps and names so that all seven binaries and the manifest reproduce byte-for-byte. Compare the temporary output with this directory before accepting changes. Collection extraction tests compare derived face hashes and PNG pixels with the standalone originals.
+
+`emoji-upstream.json` separately pins two unmodified, third-party Noto Emoji fonts (CBDT/CBLC and COLRv1) from the official Google Fonts repository. Their SIL OFL 1.1 license and embedded Google copyright remain upstream terms, distinct from the original MIT fixtures. `cargo xtask fixtures emoji --output ...` acquires the exact files and original license for hosted compatibility tests only; it verifies the revision, byte lengths and SHA-256 checksums. These font binaries are neither committed here nor added to the normal application distribution. The standard native GHA checks explicitly run the opt-in real-font test before Chromium setup and retain the rendered PNGs and source-bound report.

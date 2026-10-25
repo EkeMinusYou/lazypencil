@@ -1,0 +1,28 @@
+{
+  "repository": "googlefonts/noto-emoji",
+  "revision": "e20cbc2bbec1926686be9f9bee7d1d2cfa1fea0e",
+  "copyright": "Copyright 2022 Google Inc.",
+  "license": {
+    "path": "2D/fonts/LICENSE",
+    "bytes": 4301,
+    "sha256": "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2"
+  },
+  "fonts": [
+    {
+      "format": "CBDT/CBLC",
+      "asset": {
+        "path": "2D/fonts/NotoColorEmoji.ttf",
+        "bytes": 10730124,
+        "sha256": "15671215ab769fdc7162a045d56fd7d7e477c51b04e6b3c761d914d8fdd6cc44"
+      }
+    },
+    {
+      "format": "COLRv1",
+      "asset": {
+        "path": "2D/fonts/Noto-COLRv1.ttf",
+        "bytes": 5038236,
+        "sha256": "b8e25ea68db82f9e4d0aee921f4420be2be39887bd5c893a2ad98710531f9d0c"
+      }
+    }
+  ]
+}

@@ -3,6 +3,32 @@ use serde_json::{Value, json};
 use std::fs;
 
 #[test]
+fn upstream_emoji_pins_reject_mutable_sources_path_substitution_and_unbounded_assets() {
+    let original: Value =
+        util::json(&util::root().join("tests/fixtures/fonts/emoji-upstream.json")).unwrap();
+    let valid: fixtures::emoji::Pin = serde_json::from_value(original.clone()).unwrap();
+    valid.validate().unwrap();
+    for (field, value) in [
+        ("/revision", json!("main")),
+        ("/repository", json!("other/repository")),
+        ("/license/path", json!("../../LICENSE")),
+        ("/fonts/0/asset/path", json!("2D/fonts/Other.ttf")),
+        ("/fonts/1/format", json!("CBDT/CBLC")),
+        ("/fonts/0/asset/sha256", json!("0".repeat(63))),
+        ("/fonts/1/asset/bytes", json!(16 * 1024 * 1024 + 1)),
+        ("/license/bytes", json!(0)),
+    ] {
+        let mut changed = original.clone();
+        *changed.pointer_mut(field).unwrap() = value;
+        let pin: fixtures::emoji::Pin = serde_json::from_value(changed).unwrap();
+        assert!(pin.validate().is_err(), "{field}");
+    }
+    let mut unknown = original;
+    unknown["fonts"][0]["asset"]["url"] = json!("https://example.com/font.ttf");
+    assert!(serde_json::from_value::<fixtures::emoji::Pin>(unknown).is_err());
+}
+
+#[test]
 fn all_original_diagnostic_fonts_regenerate_byte_for_byte_in_rust() {
     let directory = util::root().join("tests/fixtures/fonts");
     let manifest: Value = util::json(&directory.join("manifest.json")).unwrap();
