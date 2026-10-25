@@ -211,7 +211,7 @@ fn copied_input_context_survives_nested_detach_and_another_independent_copy() {
         let target = fixture::active(&store, component).address;
         fixture::apply(
             &store,
-            "detach",
+            &format!("detach-{mode}"),
             json!([{"op":"detach_instance","target":target}]),
         );
         assert_eq!(rendered(&store), before);

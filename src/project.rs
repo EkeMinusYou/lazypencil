@@ -336,6 +336,75 @@ impl Project {
         })?;
         let mut files = BTreeSet::new();
         codes(&root, &mut files);
+        // Projection visits raw definitions before applying their outer overrides.
+        // Their headers are needed to relocate saved controls even when another
+        // code URI is effective in the final instance. Traverse only this source
+        // closure; capture bytes without executing any JavaScript.
+        fn raw_codes(
+            project: &Project,
+            origin: &Path,
+            value: &Value,
+            files: &mut BTreeSet<(PathBuf, String)>,
+            pending: &mut VecDeque<(PathBuf, String)>,
+            visited: &mut BTreeSet<(PathBuf, String)>,
+            count: &mut usize,
+        ) -> Result<()> {
+            project.check_cancelled()?;
+            if let Some(id) = value.get("id").and_then(Value::as_str)
+                && !visited.insert((origin.into(), id.into()))
+            {
+                return Ok(());
+            }
+            *count += 1;
+            if *count > MAX_NODES {
+                return Err(invalid("Detached source projection exceeds its node limit"));
+            }
+            if let Some(uri) = value.get("scriptUri").and_then(Value::as_str) {
+                files.insert((origin.into(), uri.into()));
+            }
+            if value["type"] == "ref"
+                && let Some(reference) = value.get("ref").and_then(Value::as_str)
+            {
+                let (source, definition) = project.lookup_node(origin, reference)?;
+                pending.push_back((
+                    source,
+                    definition["id"]
+                        .as_str()
+                        .expect("indexed definition")
+                        .into(),
+                ));
+            }
+            for child in value
+                .get("children")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .chain(
+                    value
+                        .get("descendants")
+                        .and_then(Value::as_object)
+                        .into_iter()
+                        .flat_map(Map::values),
+                )
+            {
+                raw_codes(project, origin, child, files, pending, visited, count)?;
+            }
+            Ok(())
+        }
+        let mut pending = VecDeque::from([(self.root.clone(), address.node_id.clone())]);
+        let mut visited = BTreeSet::new();
+        let mut count = 0;
+        while let Some((origin, id)) = pending.pop_front() {
+            raw_codes(
+                self,
+                &origin,
+                self.documents[&origin].node(&id)?,
+                &mut files,
+                &mut pending,
+                &mut visited,
+                &mut count,
+            )?;
+        }
         for (origin, uri) in files {
             self.check_cancelled()?;
             let path = self.resolve_file(&origin, &uri)?;

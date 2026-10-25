@@ -85,7 +85,8 @@ pub fn request(store: &Store, id: &str, operations: Value, dry_run: bool) -> Edi
     serde_json::from_value(json!({"request_id":id,"expected_revision":meta["revision"],"expected_dependency_revision":meta["dependency_revision"],"operations":operations,"dry_run":dry_run})).unwrap()
 }
 pub fn apply(store: &Store, id: &str, operations: Value) -> Value {
-    service::apply_request(store, &request(store, id, operations, false)).unwrap()
+    service::apply_request(store, &request(store, id, operations, false))
+        .unwrap_or_else(|error| panic!("request {id}: {error:?}"))
 }
 pub fn operations() -> Value {
     let mut variables = serde_json::Map::new();
