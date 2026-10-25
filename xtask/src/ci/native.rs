@@ -22,6 +22,7 @@ pub enum Stage {
     Source,
     Notices,
     FocusCore,
+    FocusPrepare,
     FocusBuild,
     FocusLint,
     FocusReproduce,
@@ -241,6 +242,22 @@ impl Session {
                         "focus-script-core.log",
                         false,
                     )?;
+                }
+                Ok(())
+            }
+            Stage::FocusPrepare => {
+                let cached = std::env::var("NATIVE_CACHE_MATCH").unwrap_or_default();
+                let stages = if super::focus::build_before_lint(&args.suite, &cached) {
+                    [Stage::FocusBuild, Stage::FocusLint]
+                } else {
+                    [Stage::FocusLint, Stage::FocusBuild]
+                };
+                for stage in stages {
+                    self.run(Arguments {
+                        stage,
+                        suite: args.suite.clone(),
+                        targets: args.targets.clone(),
+                    })?;
                 }
                 Ok(())
             }

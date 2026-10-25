@@ -27,6 +27,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/xtask
+        with:
+          verify: 'true'
       - name: Install original compiler copyright documentation
         run: rustup toolchain install 1.94.0 --profile minimal --component rust-docs
       - name: Install Linux native dependencies

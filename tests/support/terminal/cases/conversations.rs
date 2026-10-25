@@ -51,7 +51,7 @@ pub fn selection(h: &mut Harness) -> Result<Value> {
     let (second_path, second) = other_session(h, &first_path).unwrap();
     let second_id = second["id"].as_str().unwrap().to_owned();
     h.paste(second_draft)?;
-    h.wait("second conversation draft persisted", 15.0, |h| {
+    h.wait("second conversation draft persisted", 15.0, |_| {
         read_json(&second_path).is_some_and(|v| v["draft"] == second_draft)
     })?;
     for (name, id, draft) in [
@@ -105,7 +105,7 @@ pub fn deletion(h: &mut Harness) -> Result<Value> {
     let (current_path, current) = other_session(h, &archived_path).unwrap();
     let current_id = current["id"].as_str().unwrap().to_owned();
     h.paste(current_draft)?;
-    h.wait("current draft persisted", 15.0, |h| {
+    h.wait("current draft persisted", 15.0, |_| {
         read_json(&current_path).is_some_and(|v| v["draft"] == current_draft)
     })?;
     command(h, "Browse saved conversations", 6)?;
@@ -343,7 +343,7 @@ pub fn history(h: &mut Harness) -> Result<Value> {
     assert_eq!(
         files(metadata_path.parent().unwrap(), |s| s.starts_with("turn-")
             && s.ends_with(".jsonl")),
-        [history_path.clone()]
+        std::slice::from_ref(&history_path)
     );
     fs::copy(&history_path, h.root.join("saved-history-source.jsonl"))?;
     fs::write(h.root.join("saved-history-expected.txt"), &expected)?;

@@ -30,7 +30,7 @@ fn no_agent(h: &Harness) {
 }
 fn status(h: &Harness) -> String {
     let text = h.screen.text();
-    text.lines().rev().nth(1).unwrap_or_default().to_owned()
+    text.split('\n').rev().nth(1).unwrap_or_default().to_owned()
 }
 fn snapshot(h: &Harness, name: &str, offsets: &mut serde_json::Map<String, Value>) -> Result {
     offsets.insert(name.into(), h.output.len().into());

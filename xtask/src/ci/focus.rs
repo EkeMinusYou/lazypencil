@@ -561,3 +561,8 @@ pub fn changed_paths(root: &Path) -> Result<Vec<String>> {
         .map(str::to_owned)
         .collect())
 }
+
+pub fn build_before_lint(suite: &str, matched_key: &str) -> bool {
+    matched_key.is_empty()
+        || (matched_key.starts_with("core-") && !["core", "conversation"].contains(&suite))
+}

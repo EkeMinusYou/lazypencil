@@ -19,6 +19,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/xtask
+        with:
+          verify: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
       - name: Install the standalone Wasm target and original copyright documentation
         run: rustup toolchain install 1.94.0 --profile minimal --component rust-docs --target wasm32-unknown-unknown
       - name: Cache verified component downloads

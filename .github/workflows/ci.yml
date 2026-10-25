@@ -57,6 +57,8 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/xtask
+        with:
+          verify: 'true'
       - name: Select changes since the last fully verified baseline
         id: focus
         env:

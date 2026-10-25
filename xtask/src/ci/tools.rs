@@ -100,6 +100,7 @@ impl Command {
                     vec!["fmt", "--all", "--", "--check"],
                     vec![
                         "test",
+                        "-vv",
                         "--locked",
                         "--all-targets",
                         "--no-fail-fast",
@@ -108,6 +109,7 @@ impl Command {
                     ],
                     vec![
                         "clippy",
+                        "-vv",
                         "--locked",
                         "--all-targets",
                         "--",

@@ -26,6 +26,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/xtask
+        with:
+          verify: 'true'
       - name: Install original copyright documentation
         run: rustup toolchain install 1.94.0 --profile minimal --component rust-docs
       - name: Verify pinned standard-library supplements

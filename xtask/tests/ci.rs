@@ -574,3 +574,26 @@ fn cache_symlinks_cannot_redirect_source_or_overlay_destinations() {
         }
     }
 }
+
+#[test]
+fn warm_dependencies_put_lints_before_codegen_while_cold_rendering_keeps_its_build_budget() {
+    for suite in [
+        "core",
+        "conversation",
+        "graphics",
+        "copy",
+        "dynamic",
+        "shader",
+    ] {
+        assert!(focus::build_before_lint(suite, ""));
+        assert!(!focus::build_before_lint(suite, "native-v2-hosted"));
+        assert!(!focus::build_before_lint(
+            suite,
+            "checkpoint-native-v2-hosted"
+        ));
+        assert_eq!(
+            focus::build_before_lint(suite, "core-native-v2-hosted"),
+            !["core", "conversation"].contains(&suite)
+        );
+    }
+}

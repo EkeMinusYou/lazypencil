@@ -37,6 +37,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/xtask
+        with:
+          verify: 'true'
       - name: Verify the current source distribution
         run: cargo xtask ci native source
 
@@ -52,6 +54,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/xtask
+        with:
+          verify: 'true'
       - name: Cache verified Cargo downloads
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
@@ -112,15 +116,13 @@ jobs:
       - name: Reproduce script compatibility before native rendering
         if: inputs.phase == 'focus'
         run: cargo xtask ci native focus-core --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
-      - name: Build affected test executables
+      - name: Check affected code and build tests with cache-aware ordering
         id: focus-build
         if: inputs.phase == 'focus'
-        timeout-minutes: ${{ (inputs.suite == 'core' || inputs.suite == 'conversation') && 15 || 45 }}
-        run: cargo xtask ci native focus-build --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
-      - name: Check affected targets before Chromium acquisition
-        if: inputs.phase == 'focus'
-        timeout-minutes: 6
-        run: cargo xtask ci native focus-lint --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
+        timeout-minutes: ${{ (inputs.suite == 'core' || inputs.suite == 'conversation') && 21 || 51 }}
+        env:
+          NATIVE_CACHE_MATCH: ${{ steps.native-cache.outputs.cache-matched-key }}
+        run: cargo xtask ci native focus-prepare --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
       - name: Reproduce affected failures before other tests and Chromium
         if: inputs.phase == 'focus'
         run: cargo xtask ci native focus-reproduce --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"

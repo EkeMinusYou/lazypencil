@@ -13,6 +13,19 @@ license = "MIT"
 debug = 0
 incremental = false
 
+# Source verification processes large archives even in the development profile.
+# Optimize the small CPU-intensive dependencies without optimizing the tool crate.
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.sha1]
+opt-level = 3
+[profile.dev.package."lzma-rust2"]
+opt-level = 3
+[profile.dev.package."zlib-rs"]
+opt-level = 3
+[profile.dev.package."regex-automata"]
+opt-level = 3
+
 [[bin]]
 name = "xtask"
 path = "src/main.rs"
