@@ -125,13 +125,36 @@ fn verify_format(format_index: usize) {
                 .iter()
                 .filter(|&&[r, _, b, a]| a > 200 && r.saturating_sub(b) > 30)
                 .count();
+            // This upstream revision deliberately draws the family ligature
+            // with black, #BDBDBD, #E0E0E0 and white, rather than colored people.
+            // See its immutable 2D/svg/emoji_u1f468_200d_1f469_200d_1f467_200d_1f466.svg.
+            // Require the intrinsic gray palette; accepting the blue text paint
+            // would hide a failure to preserve native font colors.
+            let grayscale = (case == "family").then(|| {
+                [0, 189, 224, 255].map(|gray| {
+                    reference_pixels
+                        .iter()
+                        .filter(|&&pixel| pixel == [gray, gray, gray, 255])
+                        .count()
+                })
+            });
             let reference_name = format!("codec-emoji-{format_index}-{case}-native.png");
             fs::write(output.join(&reference_name), &reference).unwrap();
-            assert!(
-                chromatic > 100 && intrinsic > 100 && colors > 16,
-                "{} {case}: chromatic={chromatic}, intrinsic={intrinsic}, colors={colors}",
-                record["format"]
-            );
+            assert!(colors > 16, "{} {case}: colors={colors}", record["format"]);
+            if let Some(grayscale) = grayscale {
+                assert_eq!((chromatic, intrinsic), (0, 0));
+                assert!(
+                    grayscale.iter().all(|count| *count > 100),
+                    "{} {case}: intrinsic gray palette={grayscale:?}",
+                    record["format"]
+                );
+            } else {
+                assert!(
+                    chromatic > 100 && intrinsic > 100,
+                    "{} {case}: chromatic={chromatic}, intrinsic={intrinsic}",
+                    record["format"]
+                );
+            }
             for version in ["2.19", "2.21"] {
                 let directory = tempfile::tempdir().unwrap();
                 let (rendered, _) = color_fonts::render_scene(
@@ -151,7 +174,7 @@ fn verify_format(format_index: usize) {
                     .count();
                 reports.push(json!({"format":record["format"],"font_sha256":record["asset"]["sha256"],
                     "case":case,"content":content,"schema":version,"glyphs":glyphs,
-                    "metrics":block.metrics,"chromatic_pixels":chromatic,"intrinsic_palette_pixels":intrinsic,"distinct_colors":colors,
+                    "metrics":block.metrics,"chromatic_pixels":chromatic,"intrinsic_palette_pixels":intrinsic,"grayscale_palette_pixels":grayscale,"distinct_colors":colors,
                     "native_png":reference_name,"native_sha256":hash(&reference),
                     "rendered_png":name,"rendered_sha256":hash(&rendered.png),"different_pixels":differences}));
                 fs::write(output.join(format!("codec-emoji-{format_index}-report.json")), serde_json::to_vec_pretty(&json!({
