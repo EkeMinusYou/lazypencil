@@ -11,6 +11,10 @@ fn main() -> test_support::Result {
             "sleep",
             "input-worker",
             "mark",
+            "fixture-command",
+            "hold-tree",
+            "hold-child",
+            "render-fixture",
         ]
         .contains(&s.as_str())
     });
@@ -23,6 +27,10 @@ fn main() -> test_support::Result {
         }
     }
     match args.first().map(String::as_str) {
+        Some("fixture-command") => test_support::command::response(&args[1..]),
+        Some("hold-tree") => test_support::command::hold_tree(&args[1..]),
+        Some("hold-child") => test_support::command::hold_child(),
+        Some("render-fixture") => test_support::command::render(&args[1..]),
         Some("acp") => test_support::acp::run(args.get(1).ok_or("Missing ACP fixture mode")?),
         Some("agent-tree") => test_support::process_tree::agent(&args[1..]),
         Some("browser-tree") => test_support::process_tree::browser(&args[1..]),

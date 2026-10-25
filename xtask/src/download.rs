@@ -37,9 +37,25 @@ pub fn download(url: &str, sha: &str, path: &Path, maximum: u64) -> Result<u64> 
         .get(url)
         .header("User-Agent", "lazypencil-ci")
         .call()?;
+    validate_redirect(&uri, response.get_uri())?;
+    publish(response.body_mut().as_reader(), sha, path, maximum)
+}
+
+pub fn validate_redirect(original: &ureq::http::Uri, actual: &ureq::http::Uri) -> Result<()> {
     ensure!(
-        response.get_uri().scheme_str() == Some("https") && response.get_uri().host() == uri.host(),
+        original.scheme_str() == Some("https")
+            && actual.scheme_str() == Some("https")
+            && original.host().is_some()
+            && actual.host() == original.host(),
         "Unexpected upstream redirect"
+    );
+    Ok(())
+}
+
+pub fn publish(mut reader: impl Read, sha: &str, path: &Path, maximum: u64) -> Result<u64> {
+    ensure!(
+        !path.exists() && !path.is_symlink(),
+        "Download destination already exists"
     );
     let parent = path.parent().unwrap_or(Path::new("."));
     fs::create_dir_all(parent)?;
@@ -47,7 +63,6 @@ pub fn download(url: &str, sha: &str, path: &Path, maximum: u64) -> Result<u64> 
     let mut hash = Sha256::new();
     let mut size = 0u64;
     let mut buffer = [0; 65536];
-    let mut reader = response.body_mut().as_reader();
     loop {
         let count = reader.read(&mut buffer)?;
         if count == 0 {
@@ -59,8 +74,8 @@ pub fn download(url: &str, sha: &str, path: &Path, maximum: u64) -> Result<u64> 
         temporary.write_all(&buffer[..count])?;
     }
     ensure!(
-        format!("{:x}", hash.finalize()) == sha,
-        "Upstream checksum mismatch: {url}"
+        util::hex(hash.finalize()) == sha,
+        "Upstream checksum mismatch"
     );
     temporary.as_file().sync_all()?;
     temporary.persist_noclobber(path).map_err(|e| e.error)?;

@@ -7,7 +7,10 @@ mod conversations;
 mod dynamic;
 
 fn hash(bytes: impl AsRef<[u8]>) -> String {
-    format!("{:x}", Sha256::digest(bytes.as_ref()))
+    Sha256::digest(bytes.as_ref())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 fn source_commit() -> Value {
     std::env::var("GITHUB_SHA")

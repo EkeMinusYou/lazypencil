@@ -172,7 +172,7 @@ jobs:
       phase: full
 
   source:
-    if: ${{ !cancelled() && (inputs.os == 'all' || inputs.os == '') }}
+    if: ${{ !cancelled() && needs.native.result == 'success' && needs.audit.result == 'success' && (inputs.os == 'all' || inputs.os == '') }}
     name: Verified source artifact
     needs: [native, audit]
     permissions:

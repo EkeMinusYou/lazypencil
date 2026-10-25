@@ -1,4 +1,5 @@
 pub mod acp;
+pub mod command;
 pub mod process_tree;
 
 use std::{

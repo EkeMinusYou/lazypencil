@@ -35,7 +35,14 @@ pub fn root() -> PathBuf {
 }
 
 pub fn digest(data: impl AsRef<[u8]>) -> String {
-    format!("{:x}", Sha256::digest(data.as_ref()))
+    hex(Sha256::digest(data.as_ref()))
+}
+pub fn hex(bytes: impl AsRef<[u8]>) -> String {
+    bytes
+        .as_ref()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 pub fn file_digest(path: &Path) -> Result<String> {
@@ -53,7 +60,7 @@ pub fn file_digest(path: &Path) -> Result<String> {
         hasher.update(&buffer[..size]);
     }
     unchanged(path, &before, total)?;
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(hex(hasher.finalize()))
 }
 
 fn open_regular(path: &Path, limit: u64) -> Result<(fs::File, fs::Metadata)> {

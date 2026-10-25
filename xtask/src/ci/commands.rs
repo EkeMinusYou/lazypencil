@@ -32,7 +32,10 @@ pub struct Plan {
 pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
     let (allowed, _) = focus::integration_targets(root)?;
     ensure!(
-        !targets.is_empty() && targets.iter().all(|t| allowed.contains(t)),
+        !targets.is_empty()
+            && targets
+                .iter()
+                .all(|t| allowed.contains(t) && t != "agent_workflow"),
         "Expected existing integration test targets"
     );
     ensure!(
