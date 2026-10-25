@@ -192,10 +192,9 @@ fn roots_reject_cycles_external_links_private_state_and_non_regular_files() {
     use std::os::unix::fs::symlink;
     let (temp, store) = fixture();
     symlink(".", temp.path().join("web/loop")).unwrap();
-    assert_eq!(
-        Project::load(&store).err().unwrap().code,
-        "INVALID_ARGUMENT"
-    );
+    let cycle = Project::load(&store).err().unwrap();
+    assert_eq!(cycle.code, "INVALID_DOCUMENT", "{cycle:?}");
+    assert!(cycle.message.contains("symbolic-link cycle"), "{cycle:?}");
     fs::remove_file(temp.path().join("web/loop")).unwrap();
     let outside = TempDir::new().unwrap();
     fs::write(outside.path().join("secret.js"), "private").unwrap();
@@ -215,7 +214,7 @@ fn roots_reject_cycles_external_links_private_state_and_non_regular_files() {
     .unwrap();
     assert_eq!(
         Project::load(&store).err().unwrap().code,
-        "INVALID_ARGUMENT"
+        "INVALID_DOCUMENT"
     );
     fs::remove_file(temp.path().join("web/private.js")).unwrap();
     write(
@@ -224,12 +223,12 @@ fn roots_reject_cycles_external_links_private_state_and_non_regular_files() {
     );
     assert_eq!(
         Project::load(&store).err().unwrap().code,
-        "INVALID_ARGUMENT"
+        "INVALID_DOCUMENT"
     );
     write(store.path(), scene(json!([{"url":BASE,"path":"."}])));
     assert_eq!(
         Project::load(&store).err().unwrap().code,
-        "INVALID_ARGUMENT"
+        "INVALID_DOCUMENT"
     );
     write(store.path(), scene(json!([{"url":BASE,"path":"web"}])));
     let fifo = std::ffi::CString::new(temp.path().join("web/pipe").as_os_str().as_encoded_bytes())

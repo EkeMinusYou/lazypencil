@@ -251,21 +251,15 @@ impl Project {
                             .insert(target.clone(), bytes.clone());
                         bytes
                     }
+                } else if let Some(existing) = self.assets.get(&target) {
+                    // The final input verification checks the live file once;
+                    // URL aliases share an already captured immutable payload.
+                    existing.bytes.clone()
                 } else {
                     let bytes: Arc<[u8]> =
                         filesystem::read(&target, MAX_FILE, self.cancel.as_ref())?.into();
-                    if let Some(existing) = self.assets.get(&target) {
-                        if existing.bytes != bytes {
-                            return Err(Error::new(
-                                "REVISION_CONFLICT",
-                                "Browser resource changed while capturing project inputs",
-                            ));
-                        }
-                        existing.bytes.clone()
-                    } else {
-                        self.capture_bytes(target.clone(), "browser_resource", bytes.clone())?;
-                        bytes
-                    }
+                    self.capture_bytes(target.clone(), "browser_resource", bytes.clone())?;
+                    bytes
                 };
                 if bytes.len() > MAX_FILE {
                     return Err(invalid("A browser resource exceeds 32 MiB"));
