@@ -9,6 +9,16 @@ pub fn output(command: &mut Command, timeout: Duration) -> Result<Output> {
 }
 
 pub fn output_limited(command: &mut Command, timeout: Duration, limit: u64) -> Result<Output> {
+    if matches!(
+        Path::new(command.get_program())
+            .file_name()
+            .and_then(|s| s.to_str()),
+        Some("cargo" | "cargo.exe")
+    ) {
+        // cargo run exports its package directory. cc-rs build scripts can watch
+        // that ambient value and invalidate otherwise identical dependency builds.
+        command.env_remove("CARGO_MANIFEST_DIR");
+    }
     Ok(command_output::output(command, timeout, limit)?)
 }
 

@@ -1,5 +1,7 @@
 use super::{Result, append_json, spawn, write_json};
 use base64::{Engine, engine::general_purpose::STANDARD};
+use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -58,23 +60,34 @@ impl Mcp {
         input.flush()?;
         Ok(())
     }
-    fn read(&mut self) -> Result<Value> {
+    fn read_raw(&mut self) -> Result<String> {
         let mut line = String::new();
         if self.output.read_line(&mut line)? == 0 {
             return Err("MCP server terminated".into());
         }
-        Ok(serde_json::from_str(&line)?)
+        Ok(line)
+    }
+    fn read(&mut self) -> Result<Value> {
+        Ok(serde_json::from_str(&self.read_raw()?)?)
     }
     fn call(&mut self, name: &str, args: Value) -> Result<Value> {
+        Ok(serde_json::from_str(self.call_raw(name, args)?.get())?)
+    }
+    fn call_raw(&mut self, name: &str, args: Value) -> Result<Box<RawValue>> {
         let id = self.next_id;
         self.next_id += 1;
         self.send(&json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":name,"arguments":args}}))?;
         loop {
-            let response = self.read()?;
+            let line = self.read_raw()?;
+            let response: Value = serde_json::from_str(&line)?;
             if response["id"] == id {
                 assert!(response.get("error").is_none(), "{response}");
                 assert_ne!(response["result"]["isError"], true, "{response}");
-                return Ok(response["result"].clone());
+                #[derive(Deserialize)]
+                struct Envelope {
+                    result: Box<RawValue>,
+                }
+                return Ok(serde_json::from_str::<Envelope>(&line)?.result);
             }
         }
     }
@@ -412,14 +425,39 @@ impl<'a> Peer<'a> {
             assert_eq!(complete["id"], selected);
             assert_eq!(complete["hash"], style["hash"]);
             assert!(complete["example"].get("document").is_some());
-            let catalog = self.call("list_styles", json!({}))?["structuredContent"].clone();
+            #[derive(Deserialize)]
+            struct CatalogResponse {
+                #[serde(rename = "structuredContent")]
+                catalog: Box<RawValue>,
+            }
+            let raw = self
+                .mcp
+                .as_mut()
+                .ok_or("Fixture is not connected to MCP")?
+                .call_raw("list_styles", json!({}))?;
+            let catalog: CatalogResponse = serde_json::from_str(raw.get())?;
             let reference =
                 self.call("get_guidance", json!({"id":"project:reference"}))?["structuredContent"]
                     .clone();
             assert_eq!(reference["body"], "REFERENCE_NOT_AUTOMATIC");
+            #[derive(Serialize)]
+            struct Record<'a> {
+                text: &'a str,
+                workflow_hash: &'a Value,
+                style_hash: &'a Value,
+                reference_hash: &'a Value,
+                // The audit hashes the response serialization, including key order.
+                catalog: &'a RawValue,
+            }
             write_json(
                 "received-project-guidance.json",
-                &json!({"text":text,"workflow_hash":guidance["hash"],"style_hash":complete["hash"],"reference_hash":reference["hash"],"catalog":catalog}),
+                &Record {
+                    text: &text,
+                    workflow_hash: &guidance["hash"],
+                    style_hash: &complete["hash"],
+                    reference_hash: &reference["hash"],
+                    catalog: &catalog.catalog,
+                },
             )?;
         }
         if mode.starts_with("audit-") {
@@ -625,13 +663,27 @@ impl<'a> Peer<'a> {
 }
 
 pub fn run(mode: &str) -> Result {
-    let _errors = fs::OpenOptions::new()
+    let path = std::env::current_dir()?.join("fixture-errors.log");
+    let mut errors = fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open("fixture-errors.log")?;
-    let mut peer = Peer::new(mode);
-    for line in std::io::stdin().lock().lines() {
-        peer.message(serde_json::from_str(&line?)?)?;
+        .open(&path)?;
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if let Ok(mut file) = fs::OpenOptions::new().append(true).open(&path) {
+            let _ = writeln!(file, "{info}");
+        }
+        previous(info);
+    }));
+    let result = (|| {
+        let mut peer = Peer::new(mode);
+        for line in std::io::stdin().lock().lines() {
+            peer.message(serde_json::from_str(&line?)?)?;
+        }
+        Ok(())
+    })();
+    if let Err(error) = &result {
+        let _ = writeln!(errors, "{error}");
     }
-    Ok(())
+    result
 }

@@ -22,6 +22,7 @@ runs:
       with:
         path: xtask/target
         key: xtask-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LAZYPENCIL_RUNNER_IMAGE }}-rust1.94.0-${{ hashFiles('xtask/Cargo.lock', 'xtask/Cargo.toml') }}
+        restore-keys: xtask-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LAZYPENCIL_RUNNER_IMAGE }}-rust1.94.0-
     - name: Restore tools bound to these sources
       id: tools
       continue-on-error: true

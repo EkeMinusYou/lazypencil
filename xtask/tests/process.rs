@@ -58,6 +58,29 @@ fn bounded_commands_preserve_exit_codes_output_and_failure_logs() {
     assert!(process::logged(&mut make("bad"), Duration::from_secs(5), &log, false).is_err());
     assert_eq!(fs::read(log).unwrap(), b"partialfailed");
 }
+#[test]
+fn acp_fixture_preserves_unexpected_error_and_assertion_diagnostics() {
+    for input in [
+        "invalid-json\n",
+        "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":2}}\n",
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("input.jsonl");
+        fs::write(&path, input).unwrap();
+        let output = process::output(
+            Command::new(helper())
+                .args(["acp", "edit"])
+                .current_dir(temp.path())
+                .stdin(fs::File::open(&path).unwrap()),
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        assert!(!output.timed_out && !output.status.success());
+        let log = fs::read_to_string(temp.path().join("fixture-errors.log")).unwrap();
+        assert!(!log.trim().is_empty());
+        assert!(!output.stderr.is_empty());
+    }
+}
 #[cfg(unix)]
 #[test]
 fn deadlines_kill_a_term_ignoring_descendant_without_waiting_on_inherited_logs() {
@@ -471,5 +494,57 @@ fn audit_cache_identity_and_observed_version_bind_the_actual_binary() {
             assert_eq!(record["sha256"], util::file_digest(&path).unwrap());
             assert_eq!(record["fingerprint"], original);
         }
+    }
+}
+
+#[test]
+fn nested_cargo_preserves_fresh_build_scripts_when_the_calling_package_directory_changes() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("project");
+    let target = temp.path().join("target");
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname='nested-cargo-fixture'\nversion='0.1.0'\nedition='2024'\n[workspace]\n",
+    )
+    .unwrap();
+    fs::write(root.join("src/lib.rs"), "pub const VALUE: usize = 1;\n").unwrap();
+    fs::write(
+        root.join("build.rs"),
+        r#"fn main() {
+ println!("cargo:rerun-if-env-changed=CARGO_MANIFEST_DIR");
+ let path=std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("counter");
+ let count=std::fs::read_to_string(&path).ok().and_then(|s|s.parse::<u32>().ok()).unwrap_or(0);
+ std::fs::write(path,(count+1).to_string()).unwrap();
+}"#,
+    )
+    .unwrap();
+    for outer in [None, Some("/different/outer/cargo/package")] {
+        let mut command = Command::new("cargo");
+        command
+            .current_dir(&root)
+            .env("CARGO_TARGET_DIR", &target)
+            .env_remove("CARGO_MANIFEST_DIR")
+            .args(["check", "--offline", "-vv"]);
+        if let Some(outer) = outer {
+            command.env("CARGO_MANIFEST_DIR", outer);
+        }
+        let output = process::output(&mut command, Duration::from_secs(60)).unwrap();
+        assert!(
+            !output.timed_out && output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let counters = util::walk(&target)
+            .unwrap()
+            .into_iter()
+            .filter(|p| p.file_name().unwrap() == "counter")
+            .collect::<Vec<_>>();
+        assert_eq!(counters.len(), 1);
+        assert_eq!(
+            fs::read_to_string(&counters[0]).unwrap(),
+            "1",
+            "Caller Cargo context must not rerun dependency build scripts"
+        );
     }
 }

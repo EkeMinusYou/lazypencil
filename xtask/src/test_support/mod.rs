@@ -12,7 +12,7 @@ use std::{
 
 pub type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-pub fn write_json(path: impl AsRef<Path>, value: &serde_json::Value) -> Result {
+pub fn write_json(path: impl AsRef<Path>, value: &impl serde::Serialize) -> Result {
     let path = path.as_ref();
     let temporary = path.with_extension("tmp");
     fs::write(&temporary, serde_json::to_vec(value)?)?;
