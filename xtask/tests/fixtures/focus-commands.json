@@ -576,7 +576,7 @@
         "--locked",
         "--test",
         "shader_uniforms",
-        "native_annotation_binding_matches_public_pencil_reference_pixels",
+        "annotation_binding_matches_independent_contract_pixels",
         "--",
         "--ignored",
         "--exact",
@@ -650,7 +650,7 @@
         "--skip",
         "linked_constant_dimensions_validate_inputs_and_recover_after_an_error",
         "--skip",
-        "native_annotation_binding_matches_public_pencil_reference_pixels",
+        "annotation_binding_matches_independent_contract_pixels",
         "--skip",
         "config::keys::",
         "--skip",
@@ -708,7 +708,7 @@
         "--skip",
         "linked_constant_dimensions_validate_inputs_and_recover_after_an_error",
         "--skip",
-        "native_annotation_binding_matches_public_pencil_reference_pixels",
+        "annotation_binding_matches_independent_contract_pixels",
         "--skip",
         "config::keys::",
         "--skip",
@@ -783,7 +783,7 @@
         "--locked",
         "--test",
         "shader_uniforms",
-        "native_annotation_binding_matches_public_pencil_reference_pixels",
+        "annotation_binding_matches_independent_contract_pixels",
         "--",
         "--ignored",
         "--exact",
@@ -801,7 +801,7 @@
         "--skip",
         "linked_constant_dimensions_validate_inputs_and_recover_after_an_error",
         "--skip",
-        "native_annotation_binding_matches_public_pencil_reference_pixels"
+        "annotation_binding_matches_independent_contract_pixels"
       ]
     ]
   },
@@ -857,7 +857,7 @@
         "--locked",
         "--test",
         "shader_uniforms",
-        "native_annotation_binding_matches_public_pencil_reference_pixels",
+        "annotation_binding_matches_independent_contract_pixels",
         "--",
         "--ignored",
         "--exact",
@@ -953,7 +953,7 @@
         "--skip",
         "linked_constant_dimensions_validate_inputs_and_recover_after_an_error",
         "--skip",
-        "native_annotation_binding_matches_public_pencil_reference_pixels"
+        "annotation_binding_matches_independent_contract_pixels"
       ],
       [
         "cargo",
@@ -979,7 +979,7 @@
         "--skip",
         "linked_constant_dimensions_validate_inputs_and_recover_after_an_error",
         "--skip",
-        "native_annotation_binding_matches_public_pencil_reference_pixels"
+        "annotation_binding_matches_independent_contract_pixels"
       ]
     ]
   }

@@ -85,6 +85,7 @@ fn tool_changes_only_bypass_focus_native_compilation_when_they_are_not_applicati
     }
     for path in [
         "xtask/src/test_support/acp.rs",
+        "xtask/src/fixtures/oracles/shapes.rs",
         "xtask/src/bin/test-helper.rs",
         "resources/guidance/components.md",
         "docs/input.json",
@@ -483,6 +484,7 @@ fn source_fingerprints_exclude_only_ci_and_prose_and_are_independent_of_manifest
     }
     for path in [
         "tests/support/fixture.rs",
+        "xtask/src/fixtures/oracles/shapes.rs",
         "xtask/src/test_support/acp.rs",
         "xtask/src/bin/test-helper.rs",
         "docs/fixture.json",
@@ -501,6 +503,27 @@ fn source_fingerprints_exclude_only_ci_and_prose_and_are_independent_of_manifest
             cache::source_fingerprint(&changed).unwrap(),
             original,
             "{path}"
+        );
+    }
+}
+
+#[test]
+fn independent_oracle_changes_test_all_consumers_without_rebuilding_the_wasm_component() {
+    for path in [
+        "xtask/src/fixtures/oracles/shapes.rs",
+        "xtask/src/fixtures/oracles/shaders.rs",
+        "tests/fixtures/render-corpus/shader-logical-coordinates/logical-coordinates.pen",
+        "tests/fixtures/pencil-0.3.9/triangle.png",
+    ] {
+        let plan = focus::select(&util::root(), &[path.into()], "auto").unwrap();
+        assert_eq!(plan.suite, "dynamic", "{path}");
+        assert!(
+            !plan.preprocessor,
+            "Native-only corpus is not a Wasm compile input"
+        );
+        assert_eq!(
+            plan.targets,
+            ["graphics", "script_render", "scripts", "shader_uniforms"]
         );
     }
 }

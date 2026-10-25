@@ -1,5 +1,9 @@
 #![cfg(feature = "rendering")]
 
+#[allow(dead_code)]
+#[path = "../xtask/src/fixtures/oracles/mod.rs"]
+mod render_oracles;
+
 use lazypencil::{
     layout,
     project::Project,
@@ -620,18 +624,18 @@ fn tight_line_height_does_not_crop_glyphs_or_decorations_outside_the_line_box() 
 }
 
 #[test]
-fn native_pencil_219_triangle_matches_geometry_and_survives_an_edit_without_migration() {
+fn independent_contract_triangle_matches_geometry_and_survives_an_edit_without_migration() {
     use lazypencil::{operations::EditRequest, service};
     let directory = TempDir::new().unwrap();
     let file = directory.path().join("native.pen");
-    let source = include_str!("fixtures/pencil-0.3.9/triangle.pen");
+    let source = include_str!("fixtures/render-corpus/triangle.pen");
     fs::write(&file, source).unwrap();
     let store = Store::open(&file, Some(directory.path().join("data"))).unwrap();
     let output = render_file(&file).unwrap();
     assert_eq!((output.width, output.height), (144, 144));
     assert_native_pixels(
         &output,
-        include_bytes!("fixtures/pencil-0.3.9/triangle.png"),
+        &render_oracles::shapes::raster(&serde_json::from_str(source).unwrap(), 1),
         150,
     );
     assert_eq!(pixel(&output, 66, 25), Color::RED);
@@ -639,7 +643,7 @@ fn native_pencil_219_triangle_matches_geometry_and_survives_an_edit_without_migr
     let metadata = service::document_metadata(&store).unwrap();
     let request: EditRequest = serde_json::from_value(json!({"request_id":"native-219-edit",
         "expected_revision":metadata["revision"],"expected_dependency_revision":metadata["dependency_revision"],
-        "operations":[{"op":"update","target":"IDhJO","set":{"fill":"#0000ff"}}]})).unwrap();
+        "operations":[{"op":"update","target":"triangle","set":{"fill":"#0000ff"}}]})).unwrap();
     service::apply_request(&store, &request).unwrap();
     let saved = store.read().unwrap();
     assert_eq!(saved.version(), "2.19");
@@ -656,24 +660,24 @@ fn native_pencil_219_triangle_matches_geometry_and_survives_an_edit_without_migr
     }
 }
 
-fn assert_native_pixels(output: &render::RenderedImage, reference: &[u8], max_changed: usize) {
-    let expected = Image::from_encoded(Data::new_copy(reference))
-        .unwrap()
-        .make_raster_image(None, None)
-        .unwrap();
+fn assert_native_pixels(
+    output: &render::RenderedImage,
+    expected: &render_oracles::Raster,
+    max_changed: usize,
+) {
     assert_eq!(
-        (output.width as i32, output.height as i32),
-        (expected.width(), expected.height())
+        (output.width, output.height),
+        (expected.width, expected.height)
     );
     let actual = raster(output);
-    let expected_pixels = expected.peek_pixels().unwrap();
     let actual_pixels = actual.peek_pixels().unwrap();
     let mut difference = 0u64;
     let mut changed_pixels = 0;
-    for y in 0..expected.height() {
-        for x in 0..expected.width() {
+    for y in 0..expected.height as i32 {
+        for x in 0..expected.width as i32 {
             let a = actual_pixels.get_color((x, y));
-            let b = expected_pixels.get_color((x, y));
+            let [er, eg, eb, ea] = expected.pixel(x as u32, y as u32);
+            let b = Color::from_argb(ea, er, eg, eb);
             let channels = [
                 a.a().abs_diff(b.a()),
                 a.r().abs_diff(b.r()),
@@ -700,30 +704,26 @@ fn assert_native_pixels(output: &render::RenderedImage, reference: &[u8], max_ch
 }
 
 #[test]
-fn native_pencil_219_rounded_polygons_match_aspect_ratios_and_oversized_radii() {
-    for (name, source, reference, max_changed) in [
+fn independent_contract_rounded_polygons_match_aspect_ratios_and_oversized_radii() {
+    for (name, source, max_changed) in [
         (
             "rounded-polygons",
-            include_str!("fixtures/pencil-0.3.9/rounded-polygons.pen"),
-            include_bytes!("fixtures/pencil-0.3.9/rounded-polygons.png").as_slice(),
+            include_str!("fixtures/render-corpus/rounded-polygons.pen"),
             600,
         ),
         (
             "radius-triangles",
-            include_str!("fixtures/pencil-0.3.9/radius-triangles.pen"),
-            include_bytes!("fixtures/pencil-0.3.9/radius-triangles.png").as_slice(),
+            include_str!("fixtures/render-corpus/radius-triangles.pen"),
             900,
         ),
         (
             "rounded-large-aspects",
-            include_str!("fixtures/pencil-0.3.9/rounded-large-aspects.pen"),
-            include_bytes!("fixtures/pencil-0.3.9/rounded-large-aspects.png").as_slice(),
+            include_str!("fixtures/render-corpus/rounded-large-aspects.pen"),
             600,
         ),
         (
             "wide-radius-triangles",
-            include_str!("fixtures/pencil-0.3.9/wide-radius-triangles.pen"),
-            include_bytes!("fixtures/pencil-0.3.9/wide-radius-triangles.png").as_slice(),
+            include_str!("fixtures/render-corpus/wide-radius-triangles.pen"),
             750,
         ),
     ] {
@@ -733,7 +733,9 @@ fn native_pencil_219_rounded_polygons_match_aspect_ratios_and_oversized_radii() 
             let file = directory.path().join("native.pen");
             fs::write(&file, source.replace("2.19", version)).unwrap();
             let output = render_file(&file).unwrap();
-            assert_native_pixels(&output, reference, max_changed);
+            let expected =
+                render_oracles::shapes::raster(&serde_json::from_str(source).unwrap(), 1);
+            assert_native_pixels(&output, &expected, max_changed);
             if let Some(path) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
                 let path = std::path::PathBuf::from(path);
                 fs::create_dir_all(&path).unwrap();
@@ -748,16 +750,10 @@ fn native_pencil_219_rounded_polygons_match_aspect_ratios_and_oversized_radii() 
 }
 
 #[test]
-fn native_pencil_219_nonrectangular_side_strokes_match_top_width_reference() {
-    let source = include_str!("fixtures/pencil-0.3.9/nonrect-strokes.pen");
-    let reference = Image::from_encoded(Data::new_copy(include_bytes!(
-        "fixtures/pencil-0.3.9/nonrect-strokes.png"
-    )))
-    .unwrap()
-    .make_raster_image(None, None)
-    .unwrap();
-    let expected = reference.peek_pixels().unwrap();
-    assert_eq!((reference.width(), reference.height()), (1760, 480));
+fn independent_contract_nonrectangular_side_strokes_match_top_width_reference() {
+    let source = include_str!("fixtures/render-corpus/nonrect-strokes.pen");
+    let expected = render_oracles::shapes::raster(&serde_json::from_str(source).unwrap(), 2);
+    assert_eq!((expected.width, expected.height), (1760, 480));
     for version in ["2.19", "2.21"] {
         let directory = TempDir::new().unwrap();
         let file = directory.path().join("native.pen");
@@ -790,7 +786,8 @@ fn native_pencil_219_nonrectangular_side_strokes_match_top_width_reference() {
                 for y in row * 160..(row + 1) * 160 {
                     for x in column * 160..(column + 1) * 160 {
                         let a = actual.get_color((x, y));
-                        let b = expected.get_color((x, y));
+                        let [er, eg, eb, ea] = expected.pixel(x as u32, y as u32);
+                        let b = Color::from_argb(ea, er, eg, eb);
                         let deltas = [
                             a.a().abs_diff(b.a()),
                             a.r().abs_diff(b.r()),
@@ -815,7 +812,7 @@ fn native_pencil_219_nonrectangular_side_strokes_match_top_width_reference() {
             fs::write(path.join(format!("{name}.json")), json!({"source_commit":std::env::var("GITHUB_SHA").ok(),
                 "document_version":version,"width":output.width,"height":output.height,"diagnostics":diagnostics,
                 "png_hash":lazypencil::document::hash(&output.png),"cases":cases,
-                "native_producer":"@pen.dev/cli 0.3.9","reference_document_version":"2.19"}).to_string()).unwrap();
+                "oracle":"independent-contours-v1","oracle_rgba_sha256":lazypencil::document::hash(expected.pixels.as_flattened())}).to_string()).unwrap();
         }
         for case in cases {
             assert!(

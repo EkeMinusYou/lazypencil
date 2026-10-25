@@ -84,7 +84,7 @@ if (process.argv[3] === "--bomb") {
     assert(result.includes("vec4(0.25)"));
   });
   check("ten original native coordinate fixtures retain their builtin bindings", () => {
-    const directory = new URL("../fixtures/pencil-0.3.9/shader-logical-coordinates/", import.meta.url);
+    const directory = new URL("../fixtures/render-corpus/shader-logical-coordinates/", import.meta.url);
     const files = fs.readdirSync(directory).filter(name => name.endsWith(".glsl"));
     assert.equal(files.length, 10);
     for (const file of files) {

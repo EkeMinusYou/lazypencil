@@ -304,6 +304,8 @@ The [pinned toolchain inputs](resources/licenses/toolchain/upstream.json) supply
 
 An MPL-2.0 registry package also retains its complete, unmodified `.crate` under `sources/`, with its path, checksum, license, and source URL in the readable notice and inventory. Keep those sources together with their notices when assembling the eventual distribution. The inventory includes optional/test/platform dependencies and all installed target libraries, so it does not establish exact application linkage or source-to-binary provenance. Keep its findings for the final binary review. These tools run during release preparation; they add no application startup or rendering work.
 
+The [original rendering corpus](tests/fixtures/render-corpus/README.md) uses independently computed Rust expectations. Pencil-exported PNGs and decoded observation records are excluded from the current source because no individual written permission is available. Existing Git history and older CI artifacts remain unchanged; [permission/history review](docs/design-guidance.md) is still required before public release. Passing these tests does not establish Pencil pixel parity.
+
 ## License
 
 MIT. Bundled third-party assets and dependencies retain their respective licenses.

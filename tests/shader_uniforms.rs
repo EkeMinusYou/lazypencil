@@ -1,5 +1,9 @@
 #![cfg(feature = "rendering")]
 
+#[allow(dead_code)]
+#[path = "../xtask/src/fixtures/oracles/mod.rs"]
+mod render_oracles;
+
 use lazypencil::{document::Document, project::Project, shader};
 use serde_json::{Value, json};
 use std::fs;
@@ -202,7 +206,7 @@ fn array_defaults_mark_one_element_and_keep_short_explicit_overrides_invalid() {
 #[test]
 fn native_annotation_binding_cases_prepare_the_expected_inputs() {
     let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/pencil-0.3.9/shader-annotation-binding");
+        .join("tests/fixtures/render-corpus/shader-annotation-binding");
     let active = [
         "doc-direct",
         "plain-doc",
@@ -875,21 +879,16 @@ fn real_compiler_macros_and_scaled_shader_effects_keep_logical_coordinates() {
 
 #[test]
 #[ignore = "Requires sandboxed software WebGL Chromium"]
-fn native_logical_coordinates_and_macro_bindings_match_public_pencil_reference_pixels() {
+fn logical_coordinates_and_macro_bindings_match_independent_equations() {
     use lazypencil::{document::hash, render};
     use skia_safe::{Data, Image};
     let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/pencil-0.3.9/shader-logical-coordinates");
+        .join("tests/fixtures/render-corpus/shader-logical-coordinates");
     let source =
-        include_str!("fixtures/pencil-0.3.9/shader-logical-coordinates/logical-coordinates.pen");
-    let reference_bytes =
-        include_bytes!("fixtures/pencil-0.3.9/shader-logical-coordinates/logical-coordinates.png");
-    let reference = Image::from_encoded(Data::new_copy(reference_bytes))
-        .unwrap()
-        .make_raster_image(None, None)
-        .unwrap();
-    assert_eq!((reference.width(), reference.height()), (800, 40));
-    let expected = reference.peek_pixels().unwrap();
+        include_str!("fixtures/render-corpus/shader-logical-coordinates/logical-coordinates.pen");
+    let expected =
+        render_oracles::shaders::raster(render_oracles::shaders::Scene::LogicalCoordinates, 2);
+    assert_eq!((expected.width, expected.height), (800, 40));
     for version in ["2.19", "2.21"] {
         let root = TempDir::new().unwrap();
         for entry in fs::read_dir(&fixtures).unwrap() {
@@ -957,7 +956,8 @@ fn native_logical_coordinates_and_macro_bindings_match_public_pencil_reference_p
         for y in 0..40 {
             for x in 0..800 {
                 let a = actual.get_color((x, y));
-                let b = expected.get_color((x, y));
+                let [er, eg, eb, ea] = expected.pixel(x as u32, y as u32);
+                let b = skia_safe::Color::from_argb(ea, er, eg, eb);
                 for delta in [
                     a.r().abs_diff(b.r()),
                     a.g().abs_diff(b.g()),
@@ -988,9 +988,9 @@ fn native_logical_coordinates_and_macro_bindings_match_public_pencil_reference_p
             let stem = format!("chromium-native-logical-coordinates-{version}");
             fs::write(directory.join(format!("{stem}.png")), &output.png).unwrap();
             fs::write(directory.join(format!("{stem}.json")),json!({
-                "source_commit":std::env::var("GITHUB_SHA").ok(),"document_version":version,"native_document_version":"2.19",
+                "source_commit":std::env::var("GITHUB_SHA").ok(),"document_version":version,
                 "width":output.width,"height":output.height,"scale":2,"diagnostics":diagnostics,"verified_cases":10,
-                "native_producer":"@pen.dev/cli 0.3.9","png_hash":hash(&output.png),"reference_sha256":hash(reference_bytes),
+                "oracle":"independent-shader-equations-v1","png_hash":hash(&output.png),"oracle_rgba_sha256":hash(expected.pixels.as_flattened()),
                 "source_sha256":hash(source.as_bytes()),"maximum_channel_difference":maximum,"absolute_channel_difference":difference,
                 "preprocessor_sha256":hash(include_bytes!("../resources/shader-preprocessor/module.wasm"))
             }).to_string()).unwrap();
@@ -1004,22 +1004,18 @@ fn native_logical_coordinates_and_macro_bindings_match_public_pencil_reference_p
 
 #[test]
 #[ignore = "Requires sandboxed software WebGL Chromium"]
-fn native_annotation_binding_matches_public_pencil_reference_pixels() {
+fn annotation_binding_matches_independent_contract_pixels() {
     use lazypencil::{document::hash, render};
     use skia_safe::{Data, Image};
     let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/pencil-0.3.9/shader-annotation-binding");
+        .join("tests/fixtures/render-corpus/shader-annotation-binding");
     let source =
-        include_str!("fixtures/pencil-0.3.9/shader-annotation-binding/annotation-binding.pen");
-    let reference_bytes =
-        include_bytes!("fixtures/pencil-0.3.9/shader-annotation-binding/annotation-binding.png");
-    let reference = Image::from_encoded(Data::new_copy(reference_bytes))
-        .unwrap()
-        .make_raster_image(None, None)
-        .unwrap();
-    assert_eq!((reference.width(), reference.height()), (320, 240));
-    let expected = reference.peek_pixels().unwrap();
+        include_str!("fixtures/render-corpus/shader-annotation-binding/annotation-binding.pen");
     for (version, scale) in [("2.19", 1u32), ("2.21", 1), ("2.19", 2), ("2.21", 2)] {
+        let expected = render_oracles::shaders::raster(
+            render_oracles::shaders::Scene::AnnotationBinding,
+            scale,
+        );
         let root = TempDir::new().unwrap();
         for entry in fs::read_dir(&fixtures).unwrap() {
             let path = entry.unwrap().path();
@@ -1067,13 +1063,12 @@ fn native_annotation_binding_matches_public_pencil_reference_pixels() {
         let actual = image.peek_pixels().unwrap();
         let mut maximum = 0u8;
         let mut difference = 0u64;
-        // Constant-color native panels allow both output scales to be checked
-        // directly without interpolation or changing the original shader source.
-        let step = 2 / scale as i32;
+        // Evaluate the authored constant-color contract at the actual scale.
         for y in 0..(120 * scale) as i32 {
             for x in 0..(160 * scale) as i32 {
                 let a = actual.get_color((x, y));
-                let b = expected.get_color((x * step, y * step));
+                let [er, eg, eb, ea] = expected.pixel(x as u32, y as u32);
+                let b = skia_safe::Color::from_argb(ea, er, eg, eb);
                 for delta in [
                     a.r().abs_diff(b.r()),
                     a.g().abs_diff(b.g()),
@@ -1100,9 +1095,9 @@ fn native_annotation_binding_matches_public_pencil_reference_pixels() {
                 json!({
                     "source_commit":std::env::var("GITHUB_SHA").ok(), "document_version":version,
                     "width":output.width,"height":output.height,"scale":scale,"diagnostics":diagnostics,
-                    "png_hash":hash(&output.png),"reference_sha256":hash(reference_bytes),
-                    "source_sha256":hash(source.as_bytes()),"native_producer":"@pen.dev/cli 0.3.9",
-                    "native_document_version":"2.19","native_export_scale":2,"verified_cases":20,
+                    "png_hash":hash(&output.png),"oracle_rgba_sha256":hash(expected.pixels.as_flattened()),
+                    "source_sha256":hash(source.as_bytes()),"oracle":"independent-shader-equations-v1",
+                    "verified_cases":20,
                     "maximum_channel_difference":maximum,"absolute_channel_difference":difference
                 })
                 .to_string(),
@@ -1118,20 +1113,14 @@ fn native_annotation_binding_matches_public_pencil_reference_pixels() {
 
 #[test]
 #[ignore = "Requires sandboxed software WebGL Chromium"]
-fn native_documentation_defaults_match_public_pencil_reference_pixels() {
+fn documentation_defaults_match_independent_contract_pixels() {
     use lazypencil::{document::hash, render};
     use skia_safe::{Data, Image};
     let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/pencil-0.3.9/shader-defaults");
-    let source = include_str!("fixtures/pencil-0.3.9/shader-defaults/default-values.pen");
-    let reference_bytes =
-        include_bytes!("fixtures/pencil-0.3.9/shader-defaults/default-values.png");
-    let reference = Image::from_encoded(Data::new_copy(reference_bytes))
-        .unwrap()
-        .make_raster_image(None, None)
-        .unwrap();
-    let expected = reference.peek_pixels().unwrap();
-    assert_eq!((reference.width(), reference.height()), (560, 40));
+        .join("tests/fixtures/render-corpus/shader-defaults");
+    let source = include_str!("fixtures/render-corpus/shader-defaults/default-values.pen");
+    let expected = render_oracles::shaders::raster(render_oracles::shaders::Scene::Defaults, 2);
+    assert_eq!((expected.width, expected.height), (560, 40));
     for variant in ["literal", "constant"] {
         let root = TempDir::new().unwrap();
         for entry in fs::read_dir(&fixtures).unwrap() {
@@ -1189,7 +1178,8 @@ fn native_documentation_defaults_match_public_pencil_reference_pixels() {
         for y in 0..40 {
             for x in 0..560 {
                 let a = actual.get_color((x, y));
-                let b = expected.get_color((x, y));
+                let [er, eg, eb, ea] = expected.pixel(x as u32, y as u32);
+                let b = skia_safe::Color::from_argb(ea, er, eg, eb);
                 for delta in [
                     a.r().abs_diff(b.r()),
                     a.g().abs_diff(b.g()),
@@ -1216,8 +1206,8 @@ fn native_documentation_defaults_match_public_pencil_reference_pixels() {
                 json!({
                     "source_commit":std::env::var("GITHUB_SHA").ok(),"variant":variant,
                     "width":output.width,"height":output.height,"diagnostics":diagnostics,
-                    "png_hash":hash(&output.png),"reference_sha256":hash(reference_bytes),
-                    "source_sha256":hash(source.as_bytes()),"native_producer":"@pen.dev/cli 0.3.9",
+                    "png_hash":hash(&output.png),"oracle_rgba_sha256":hash(expected.pixels.as_flattened()),
+                    "source_sha256":hash(source.as_bytes()),"oracle":"independent-shader-equations-v1",
                     "document_version":"2.19","verified_cases":14,
                     "maximum_channel_difference":maximum,"absolute_channel_difference":difference
                 })

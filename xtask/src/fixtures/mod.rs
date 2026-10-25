@@ -54,3 +54,4 @@ pub fn performance(output_dir: &Path, scene: &str) -> Result<serde_json::Value> 
     Ok(report)
 }
 pub mod fonts;
+pub mod oracles;

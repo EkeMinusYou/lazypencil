@@ -1,3 +1,7 @@
+#[allow(dead_code)]
+#[path = "../xtask/src/fixtures/oracles/mod.rs"]
+mod render_oracles;
+
 use lazypencil::script::{ScriptRequest, ScriptRuntime, header::Header};
 use serde_json::json;
 use std::time::{Duration, Instant};
@@ -275,17 +279,14 @@ fn process_reuse_resets_the_js_context_and_random_sequence() {
 }
 
 #[test]
-fn original_native_random_vectors_match_legacy_headers_and_reset_for_each_script() {
-    let observations: serde_json::Value = serde_json::from_str(include_str!(
-        "fixtures/pencil-0.3.9/script-random/observations.json"
-    ))
-    .unwrap();
-    let words = observations["sample_words_u32"].as_array().unwrap();
+fn independent_random_vectors_match_legacy_headers_and_reset_for_each_script() {
+    let words = render_oracles::scripts::random_words();
+    let indices = render_oracles::scripts::sample_indices();
     let sources = [
-        include_str!("fixtures/pencil-0.3.9/script-random/random-0-2.11.js"),
-        include_str!("fixtures/pencil-0.3.9/script-random/random-1-2.19.js"),
-        include_str!("fixtures/pencil-0.3.9/script-random/random-2-2.21.js"),
-        include_str!("fixtures/pencil-0.3.9/script-random/random-3-2.19.js"),
+        include_str!("fixtures/render-corpus/script-random/random-0-2.11.js"),
+        include_str!("fixtures/render-corpus/script-random/random-1-2.19.js"),
+        include_str!("fixtures/render-corpus/script-random/random-2-2.21.js"),
+        include_str!("fixtures/render-corpus/script-random/random-3-2.19.js"),
     ];
     let mut worker = runtime();
     for (index, source) in sources.into_iter().enumerate() {
@@ -305,9 +306,9 @@ fn original_native_random_vectors_match_legacy_headers_and_reset_for_each_script
             };
             assert_eq!(
                 (color(0) << 24) | color(1),
-                expected.as_u64().unwrap() << 16,
+                u64::from(*expected) << 16,
                 "Native random mismatch in script {index}, draw {}",
-                observations["sample_draw_indices"][draw]
+                indices[draw]
             );
         }
         assert_eq!(input.code, source);
@@ -315,17 +316,13 @@ fn original_native_random_vectors_match_legacy_headers_and_reset_for_each_script
 }
 
 #[test]
-fn native_input_defaults_null_resets_and_stale_controls_match_original_observations() {
+fn input_defaults_null_resets_and_stale_controls_match_independent_contract() {
     let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/pencil-0.3.9/script-inputs");
-    let observations: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(fixtures.join("observations.json")).unwrap())
-            .unwrap();
+        .join("tests/fixtures/render-corpus/script-inputs");
     let mut worker = runtime();
-    for case in observations["cases"].as_array().unwrap() {
-        let code =
-            std::fs::read_to_string(fixtures.join(case["source"].as_str().unwrap())).unwrap();
-        let values = case["stored_inputs"].as_object().unwrap().clone();
+    for case in render_oracles::scripts::input_cases() {
+        let code = std::fs::read_to_string(fixtures.join(format!("{}.js", case.name))).unwrap();
+        let values = case.stored.as_object().unwrap().clone();
         let header = Header::parse(&code).unwrap();
         let before = serde_json::to_value(&header).unwrap();
         let prepared = header.prepare(&values).unwrap();
@@ -358,9 +355,10 @@ fn native_input_defaults_null_resets_and_stale_controls_match_original_observati
         let observed: serde_json::Value =
             serde_json::from_str(&String::from_utf16(&utf16).unwrap()).unwrap();
         assert_eq!(
-            observed, case["runtime_observation"],
+            observed,
+            case.observation(),
             "Native input mismatch: {}",
-            case["case"]
+            case.name
         );
         assert_eq!(request.inputs, values);
     }

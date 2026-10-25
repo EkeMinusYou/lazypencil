@@ -1,5 +1,9 @@
 #![cfg(feature = "rendering")]
 
+#[allow(dead_code)]
+#[path = "../xtask/src/fixtures/oracles/mod.rs"]
+mod render_oracles;
+
 use lazypencil::{
     document::Document,
     project::Project,
@@ -81,46 +85,29 @@ fn solid(path: &Path, color: Color) {
 }
 
 #[test]
-fn native_random_sequence_and_legacy_headers_match_reference_pixels_without_saving_generated_nodes()
-{
-    native_script_reference("script-random", "random-sequence", "codec-script-random");
+fn random_sequence_and_legacy_headers_match_independent_pixels_without_saving_generated_nodes() {
+    independent_script_contract("script-random", "random-sequence", "codec-script-random");
 }
 
 #[test]
-fn native_input_controls_match_reference_pixels_and_preserve_saved_nulls_and_stale_keys() {
-    native_script_reference("script-inputs", "input-controls", "codec-script-inputs");
+fn input_controls_match_independent_pixels_and_preserve_saved_nulls_and_stale_keys() {
+    independent_script_contract("script-inputs", "input-controls", "codec-script-inputs");
 }
 
-fn native_script_reference(corpus: &str, filename: &str, artifact_stem: &str) {
+fn independent_script_contract(corpus: &str, filename: &str, artifact_stem: &str) {
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/pencil-0.3.9")
+        .join("tests/fixtures/render-corpus")
         .join(corpus);
     let original = fs::read_to_string(fixtures.join(format!("{filename}.pen"))).unwrap();
-    let reference_bytes = fs::read(fixtures.join(format!("{filename}.png"))).unwrap();
-    let observations: Value =
-        serde_json::from_slice(&fs::read(fixtures.join("observations.json")).unwrap()).unwrap();
-    assert_eq!(
-        lazypencil::document::hash(&reference_bytes),
-        observations["reference_sha256"].as_str().unwrap()
-    );
-    assert_eq!(
-        lazypencil::document::hash(original.as_bytes()),
-        observations["source_sha256"].as_str().unwrap()
-    );
-    let cases = observations["script_cases"]
-        .as_u64()
-        .unwrap_or_else(|| observations["cases"].as_array().unwrap().len() as u64)
-        as usize;
-    let reference = raster(&reference_bytes);
-    let expected = reference.peek_pixels().unwrap();
-    let dimensions = (
-        observations["width"].as_u64().unwrap() as u32,
-        observations["height"].as_u64().unwrap() as u32,
-    );
-    assert_eq!(
-        (reference.width() as u32, reference.height() as u32),
-        dimensions
-    );
+    let (expected, cases) = match corpus {
+        "script-random" => (render_oracles::scripts::random_raster(2), 4),
+        "script-inputs" => (
+            render_oracles::scripts::input_raster(2),
+            render_oracles::scripts::input_cases().len(),
+        ),
+        _ => panic!("Unknown independent script corpus"),
+    };
+    let dimensions = (expected.width, expected.height);
     for version in ["2.19", "2.21"] {
         let root = TempDir::new().unwrap();
         let mut scripts = Vec::new();
@@ -156,10 +143,11 @@ fn native_script_reference(corpus: &str, filename: &str, artifact_stem: &str) {
         let pixels = actual.peek_pixels().unwrap();
         let mut maximum = 0u8;
         let mut difference = 0u64;
-        for y in 0..reference.height() {
-            for x in 0..reference.width() {
+        for y in 0..expected.height as i32 {
+            for x in 0..expected.width as i32 {
                 let a = pixels.get_color((x, y));
-                let b = expected.get_color((x, y));
+                let [er, eg, eb, ea] = expected.pixel(x as u32, y as u32);
+                let b = Color::from_argb(ea, er, eg, eb);
                 for delta in [
                     a.r().abs_diff(b.r()),
                     a.g().abs_diff(b.g()),
@@ -185,14 +173,15 @@ fn native_script_reference(corpus: &str, filename: &str, artifact_stem: &str) {
                 "source_commit":std::env::var("GITHUB_SHA").ok(),"document_version":version,
                 "width":output.width,"height":output.height,"scale":2,"diagnostics":diagnostics,
                 "png_hash":lazypencil::document::hash(&output.png),
-                "reference_sha256":lazypencil::document::hash(&reference_bytes),
+                "oracle_rgba_sha256":lazypencil::document::hash(expected.pixels.as_flattened()),
                 "source_sha256":lazypencil::document::hash(source.as_bytes()),
-                "native_producer":"@pen.dev/cli 0.3.9","native_document_version":"2.19",
+                "oracle":"independent-script-contract-v1",
                 "verified_script_cases":cases,
                 "maximum_channel_difference":maximum,"absolute_channel_difference":difference
             });
-            if let Some(words) = observations["sample_words_u32"].as_array() {
-                report["sampled_draws_per_script"] = json!(words.len());
+            if corpus == "script-random" {
+                report["sampled_draws_per_script"] =
+                    json!(render_oracles::scripts::sample_indices().len());
             }
             fs::write(directory.join(format!("{stem}.json")), report.to_string()).unwrap();
         }

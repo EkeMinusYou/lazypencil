@@ -36,7 +36,7 @@ pub const COPY_CPU: &[&str] = &[
 ];
 pub const SHADER_REGRESSIONS: &[&str] = &[
     "linked_constant_dimensions_validate_inputs_and_recover_after_an_error",
-    "native_annotation_binding_matches_public_pencil_reference_pixels",
+    "annotation_binding_matches_independent_contract_pixels",
 ];
 pub const HISTORY_PTY: &[&str] = &[
     "real_pty_saved_logs_page_format_refresh_and_keep_the_unsent_draft_without_starting_an_agent",
@@ -65,6 +65,7 @@ pub fn ci_only(path: &str) -> bool {
         || path.starts_with("scripts/ci/")
         || (path.starts_with("xtask/")
             && !path.starts_with("xtask/src/test_support/")
+            && !path.starts_with("xtask/src/fixtures/oracles/")
             && path != "xtask/src/bin/test-helper.rs")
         || (path.ends_with(".md") && (!path.contains('/') || path.starts_with("docs/")))
 }
@@ -77,7 +78,6 @@ pub fn preprocessor_changed(paths: &[String]) -> bool {
             "resources/licenses/shader-preprocessor/",
             "resources/licenses/rust/",
             "resources/licenses/toolchain/",
-            "tests/fixtures/pencil-0.3.9/shader-logical-coordinates/",
         ]
         .iter()
         .any(|prefix| p.starts_with(prefix))
@@ -252,7 +252,32 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         &["src/render.rs"],
         &["src/render/", "src/cdp/", "src/tui/"],
     );
-    let (mut suite, mut targets): (String, BTreeSet<String>) = if input_only {
+    let oracle_input = |p: &str| {
+        p.starts_with("xtask/src/fixtures/oracles/")
+            || p.starts_with("tests/fixtures/render-corpus/")
+            // Deletions of the retired corpus must select the same consumers.
+            || p.starts_with("tests/fixtures/pencil-0.3.9/")
+    };
+    let oracle_only = paths.iter().any(|p| oracle_input(p))
+        && paths.iter().all(|p| {
+            ci_only(p)
+                || oracle_input(p)
+                || [
+                    "tests/graphics.rs",
+                    "tests/scripts.rs",
+                    "tests/script_render.rs",
+                    "tests/shader_uniforms.rs",
+                ]
+                .contains(&p.as_str())
+        });
+    let (mut suite, mut targets): (String, BTreeSet<String>) = if oracle_only {
+        (
+            "dynamic".into(),
+            ["graphics", "scripts", "script_render", "shader_uniforms"]
+                .map(str::to_owned)
+                .into(),
+        )
+    } else if input_only {
         (
             "graphics".into(),
             ["tui", "user_config"].map(str::to_owned).into(),

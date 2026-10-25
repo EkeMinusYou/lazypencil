@@ -3,10 +3,10 @@
   "children": [
     {
       "type": "frame",
-      "id": "gkC1D",
+      "id": "root",
       "x": 0,
       "y": 0,
-      "name": "Reference",
+      "name": "Triangle contract",
       "width": 144,
       "height": 144,
       "fill": "#ffffff",
@@ -15,7 +15,7 @@
         {
           "type": "polygon",
           "polygonCount": 3,
-          "id": "IDhJO",
+          "id": "triangle",
           "x": 16,
           "y": 16,
           "fill": "#ff0000",
