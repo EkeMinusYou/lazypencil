@@ -112,7 +112,7 @@ fn assert_green(image: &RenderedImage) {
 #[ignore = "Requires sandboxed headless Chromium"]
 fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files() {
     use lazypencil::{
-        cdp::{Browser, Budget, Purpose},
+        cdp::{Browser, Budget, LocalFiles, Purpose},
         runtime::InstalledBrowser,
     };
     let original = TempDir::new().unwrap();
@@ -120,7 +120,7 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
     fs::create_dir(&site).unwrap();
     let sources = [
         (
-            "index",
+            "index.html",
             r#"<!doctype html><html><head>
             <link rel="icon" href="data:,"><link rel="stylesheet" href="style.css?v=1"><script src="app.js"></script>
             <script src="../unlisted.js"></script></head><body>
@@ -160,13 +160,21 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
             "frame.html",
             "<!doctype html><style>html{background:#ff0000}</style><script>parent.postMessage('frame-ready','*')</script>",
         ),
+        (
+            "extensionless",
+            "<!doctype html><script>window.nativeNoExtRan=true</script><p>original local contents</p>",
+        ),
     ];
     for (name, contents) in sources {
         let path = site.join(name);
         fs::write(&path, contents).unwrap();
     }
-    let captured_bytes: usize = sources.iter().map(|(_, contents)| contents.len()).sum();
-    let mut url = url::Url::from_file_path(site.join("index")).unwrap();
+    let captured_bytes: usize = sources
+        .iter()
+        .filter(|(name, _)| *name != "extensionless")
+        .map(|(_, contents)| contents.len())
+        .sum();
+    let mut url = url::Url::from_file_path(site.join("index.html")).unwrap();
     url.set_query(Some("theme=green"));
     url.set_fragment(Some("original-location"));
     let file = original.path().join("scene.pen");
@@ -180,18 +188,6 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
         .unwrap();
     let resource_revision = captured.revision;
     let files = captured.files;
-    fs::remove_dir_all(&site).unwrap();
-    assert!(!site.exists());
-    assert_eq!(
-        project.verify_unchanged().unwrap_err().code,
-        "REVISION_CONFLICT"
-    );
-    // This live file would execute if an unknown request reached the host.
-    fs::write(
-        original.path().join("unlisted.js"),
-        "window.unsafeHostFile=true",
-    )
-    .unwrap();
 
     let installed = InstalledBrowser {
         executable: std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").unwrap().into(),
@@ -206,6 +202,47 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
         std::path::Path::new(env!("CARGO_BIN_EXE_lazypencil")),
     )
     .unwrap();
+    let plain_url = url::Url::from_file_path(site.join("extensionless")).unwrap();
+    let plain_url_json = serde_json::to_string(plain_url.as_str()).unwrap();
+    let plain = |browser: &mut Browser, captured: Option<Arc<LocalFiles>>| {
+        let budget = Budget::new(Duration::from_secs(15), None);
+        browser.with_tab(&budget, |browser, session| {
+            browser.command(Some(session), "Page.enable", json!({}), &budget)?;
+            if let Some(files) = captured { browser.intercept_local_files(session, files, &budget)?; }
+            browser.command(Some(session), "Emulation.setDeviceMetricsOverride", json!({"width":64,"height":64,"deviceScaleFactor":1,"mobile":false}), &budget)?;
+            let navigation = browser.command(Some(session), "Page.navigate", json!({"url":plain_url.as_str()}), &budget)?;
+            assert!(navigation.get("errorText").is_none(), "{navigation}");
+            assert_ne!(navigation["isDownload"], true, "{navigation}");
+            let expression = format!("(()=>{{if(location.href!=={plain_url_json}||document.readyState!=='complete')return null;return {{content_type:document.contentType,text:document.body.textContent,executed:window.nativeNoExtRan===true}}}})()");
+            let probe = loop {
+                let value = browser.evaluate(session, &expression, &budget)?;
+                if !value.is_null() { break value; }
+                std::thread::sleep(Duration::from_millis(20).min(budget.remaining()?));
+            };
+            browser.evaluate(session, "(async()=>{await document.fonts.ready;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))));return true})()", &budget)?;
+            let screenshot = browser.command(Some(session), "Page.captureScreenshot", json!({"format":"png","captureBeyondViewport":false}), &budget)?;
+            let png = base64::engine::general_purpose::STANDARD.decode(screenshot["data"].as_str().unwrap()).unwrap();
+            Ok((png, probe))
+        }).unwrap()
+    };
+    let (native_plain, native_probe) = plain(&mut browser, None);
+    assert_eq!(native_probe["content_type"], "text/plain");
+    assert_eq!(native_probe["executed"], false);
+    fs::remove_dir_all(&site).unwrap();
+    assert!(!site.exists());
+    assert_eq!(
+        project.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    // This live file would execute if an unknown request reached the host.
+    fs::write(
+        original.path().join("unlisted.js"),
+        "window.unsafeHostFile=true",
+    )
+    .unwrap();
+    let (captured_plain, captured_probe) = plain(&mut browser, Some(files.clone()));
+    assert_eq!(native_probe, captured_probe);
+    assert_eq!(native_plain, captured_plain);
     let budget = Budget::new(Duration::from_secs(15), None);
     let (png, stats, probe) = browser
         .with_tab(&budget, |browser, session| {
@@ -254,7 +291,7 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
                 .decode(screenshot["data"].as_str().unwrap())
                 .unwrap();
             let stats = browser.local_file_stats(session).unwrap();
-            assert_eq!(stats.fulfilled, sources.len() as u64 + 1);
+            assert_eq!(stats.fulfilled, 8);
             assert_eq!(stats.denied, 1);
             assert_eq!(stats.response_bytes, (captured_bytes + sources.iter().find(|(name, _)| *name == "worker-library.js").unwrap().1.len()) as u64);
             assert!(stats.attached_targets >= 2);
@@ -288,11 +325,24 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
         let directory = std::path::PathBuf::from(directory);
         fs::create_dir_all(&directory).unwrap();
         fs::write(directory.join("codec-browser-local-files.png"), &png).unwrap();
+        fs::write(
+            directory.join("codec-browser-local-files-native-plain.png"),
+            &native_plain,
+        )
+        .unwrap();
+        fs::write(
+            directory.join("codec-browser-local-files-captured-plain.png"),
+            &captured_plain,
+        )
+        .unwrap();
         fs::write(directory.join("codec-browser-local-files.json"), serde_json::to_vec_pretty(&json!({
             "source_commit":std::env::var("GITHUB_SHA").ok(),"width":32,"height":32,
             "png_hash":lazypencil::document::hash(&png),"stats":stats,"source_removed":true,
             "location_preserved":probe["location"]==url.as_str(),"unsafe_host_file":probe["unsafe"],
-            "sandbox":"enabled","browser":browser.version,"project_resource_revision":resource_revision
+            "sandbox":"enabled","browser":browser.version,"project_resource_revision":resource_revision,
+            "extensionless":{"content_type":native_probe["content_type"],"executed":native_probe["executed"],
+                "text_sha256":lazypencil::document::hash(native_probe["text"].as_str().unwrap().as_bytes()),
+                "png_hash":lazypencil::document::hash(&native_plain),"equivalent":true}
         })).unwrap()).unwrap();
     }
 }

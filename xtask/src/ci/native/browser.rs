@@ -397,7 +397,30 @@ pub fn required_images(root: &Path, commit: &str) -> Result<()> {
         "Local browser resource isolation proof missing"
     );
     png("codec-browser-local-files.png", &local["png_hash"], 32, 32)?;
-    println!("Verified source identities, hashes and dimensions for 213 required PNGs");
+    let extensionless = &local["extensionless"];
+    ensure!(
+        extensionless["content_type"] == "text/plain"
+            && extensionless["executed"] == false
+            && extensionless["equivalent"] == true,
+        "Missing native extensionless-file comparison"
+    );
+    let native = png(
+        "codec-browser-local-files-native-plain.png",
+        &extensionless["png_hash"],
+        64,
+        64,
+    )?;
+    ensure!(
+        native
+            == png(
+                "codec-browser-local-files-captured-plain.png",
+                &extensionless["png_hash"],
+                64,
+                64
+            )?,
+        "Extensionless file pixels differ from native loading"
+    );
+    println!("Verified source identities, hashes and dimensions for 215 required PNGs");
     Ok(())
 }
 pub fn panel(s: &Session) -> Result<()> {
