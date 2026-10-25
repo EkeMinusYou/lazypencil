@@ -74,7 +74,6 @@ fn inherited_overrides_preserve_live_namespaces_metadata_and_pixels_after_two_in
             assert_eq!(pixel(&before, 5), selected, "{version}/{mode}/reference");
             assert_eq!(pixel(&before, 17), tone, "{version}/{mode}/output");
             let result = fixture::apply(&store, "copy", fixture::operations());
-            let id = result["generated_ids"]["0"]["id"].as_str().unwrap();
             let component = result["generated_ids"]["0"]["component_id"]
                 .as_str()
                 .unwrap();
