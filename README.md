@@ -170,6 +170,8 @@ The plan, focused native job and each final platform run the complete tool test/
 
 Small process stand-ins also use the native test helper: JSON response records describe PID/marker files, output streams, exit codes and wait behavior. Tests do not generate Shell or batch launchers.
 
+The tool integration tests also check the workspace boundary and reject Python or Shell helper files in the maintained tooling and test-support directories. Vendored upstream build tools and JavaScript runtime/ABI fixtures remain separate inputs.
+
 Child Cargo processes discard the caller's package metadata (`CARGO_MANIFEST_*` and `CARGO_PKG_*`), which otherwise invalidates dependencies whose build scripts watch those variables. A real build-script regression checks that changing the outer package metadata preserves fresh outputs while configured compiler flags and target paths remain effective. Tool dependency caches can fall back across lockfile changes within the same platform, runner image and compiler; these caches exclude the tool package itself. Complete tool outputs remain bound to their exact sources.
 
 Long idle lifecycle checks and exhaustive Material checks use two independent lanes after one prebuild. Their executable catalog binds each binary to this commit and its SHA-256; no concurrent Cargo compilation or cached test result is used. Each command records elapsed time in the existing verification artifact as `ci-timings.jsonl`. The real idle expiry, frame-rate checks and final three-platform gates remain required.

@@ -57,7 +57,6 @@ pub struct Plan {
 pub fn ci_only(path: &str) -> bool {
     path.starts_with(".github/")
         || path.starts_with("scripts/ci/")
-        || (path.starts_with("scripts/test_") && path.ends_with(".py"))
         || (path.starts_with("xtask/")
             && !path.starts_with("xtask/src/test_support/")
             && path != "xtask/src/bin/test-helper.rs")
