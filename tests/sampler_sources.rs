@@ -507,6 +507,9 @@ fn absolute_sampler_copy_preserves_text_themes_portability_and_future_edits() {
         .as_str()
         .unwrap()
         .to_owned();
+    let component = result["generated_ids"]["0"]["component_id"]
+        .as_str()
+        .unwrap();
     fs::remove_dir_all(temp.path().join("library")).unwrap();
     // Move the document and all managed files to a different project root.
     // Its displayed strings still contain the original, now missing paths.
@@ -559,7 +562,7 @@ fn absolute_sampler_copy_preserves_text_themes_portability_and_future_edits() {
         &store,
         "absolute-recopy",
         json!([
-            {"op":"import_component","source":{"node_id":target},"mode":"copy","options":{"variable_prefix":"again_"}},
+            {"op":"import_component","source":{"node_id":component},"mode":"copy","options":{"variable_prefix":"again_"}},
             {"op":"delete","target":target}
         ]),
     );
