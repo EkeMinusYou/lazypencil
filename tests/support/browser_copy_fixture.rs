@@ -46,7 +46,8 @@ pub fn apply(store: &Store, id: &str, operations: Value) -> Value {
     let request: EditRequest = serde_json::from_value(json!({"request_id":id,
         "expected_revision":project.root_document().revision(), "expected_dependency_revision":project.dependency_revision(),
         "operations":operations})).unwrap();
-    service::apply_request(store, &request).unwrap()
+    service::apply_request(store, &request)
+        .unwrap_or_else(|error| panic!("request {id}: {error:?}"))
 }
 
 fn resources(path: &str) -> Value {
@@ -225,6 +226,7 @@ pub fn capture(store: &Store, id: &str, stage: &'static str, mode: &str) -> Vec<
 }
 
 pub fn study(version: &str, mode: &str, detach_first: bool) -> (TempDir, Vec<Frame>) {
+    eprintln!("Browser copy case: version={version}, mode={mode}, detach_first={detach_first}");
     let (temp, store) = fixture(version, mode);
     let mut frames = capture(&store, "linked", "before", mode);
     let source = if detach_first {
@@ -295,7 +297,11 @@ pub fn study(version: &str, mode: &str, detach_first: bool) -> (TempDir, Vec<Fra
     fs::remove_dir_all(temp.path().join("consumer-web")).unwrap();
     frames.extend(capture(&second, second_id, "recopied", mode));
     for dependency in Project::load(&second).unwrap().dependencies() {
-        assert!(dependency.path.starts_with(&second_dir));
+        assert!(
+            dependency.path.starts_with(second.path().parent().unwrap()),
+            "Dependency escaped the canonical copied project: {}",
+            dependency.path.display()
+        );
     }
     apply(
         &second,

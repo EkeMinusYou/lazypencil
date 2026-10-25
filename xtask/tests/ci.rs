@@ -149,6 +149,40 @@ fn release_gate_rejects_every_incomplete_or_malformed_result() {
     }
 }
 
+#[test]
+fn parent_native_failures_prioritize_one_affected_platform_without_overriding_explicit_choices() {
+    let job = |name: &str, state: &str| json!({"name":name,"conclusion":state});
+    let mac = job("Full verification / macos-15 / verify", "failure");
+    let unrelated = job("Dependency policy and RustSec", "failure");
+    assert_eq!(focus::failed_platform(&json!({"jobs":[mac.clone(),unrelated.clone(),job("Full verification / ubuntu-24.04 / verify","success")]})).unwrap(),Some("macos-15".into()));
+    assert_eq!(
+        focus::failed_platform(
+            &json!({"jobs":[mac.clone(),job("Focused reproduction / macos-15 / verify","failure")]})
+        )
+        .unwrap(),
+        Some("macos-15".into())
+    );
+    assert_eq!(
+        focus::failed_platform(
+            &json!({"jobs":[mac,job("Full verification / ubuntu-24.04-arm / verify","timed_out")]})
+        )
+        .unwrap(),
+        None
+    );
+    assert_eq!(
+        focus::failed_platform(
+            &json!({"jobs":[unrelated,job("Full verification / macos-15 / verify","cancelled")]})
+        )
+        .unwrap(),
+        None
+    );
+    assert!(focus::failed_platform(&json!({"jobs":null})).is_err());
+    assert_eq!(
+        focus::retry_platform(std::path::Path::new("/nonexistent"), "ubuntu-24.04"),
+        "ubuntu-24.04"
+    );
+}
+
 fn flags() -> BTreeMap<String, String> {
     [
         ("CARGO_BUILD_JOBS", "1"),

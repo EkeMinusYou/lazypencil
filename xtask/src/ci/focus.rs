@@ -583,6 +583,77 @@ pub fn changed_paths(root: &Path) -> Result<Vec<String>> {
         .collect())
 }
 
+/// Prefer the platform with a concrete native failure on the direct parent.
+/// This also handles shared fixtures whose failure is specific to a host's
+/// canonical path representation, without growing path-name heuristics.
+pub fn retry_platform(root: &Path, requested: &str) -> String {
+    if requested != "auto" {
+        return requested.into();
+    }
+    fn previous(root: &Path) -> Result<Option<String>> {
+        let parent = process::text(
+            Command::new("git")
+                .current_dir(root)
+                .args(["rev-parse", "HEAD^"]),
+        )?;
+        let parent = parent.trim();
+        let repo = std::env::var("GITHUB_REPOSITORY")?;
+        let output = process::text(Command::new("gh").current_dir(root).args([
+            "api",
+            &format!("repos/{repo}/actions/workflows/ci.yml/runs?head_sha={parent}&per_page=10"),
+        ]))?;
+        let runs: Value = serde_json::from_str(&output)?;
+        for run in runs["workflow_runs"]
+            .as_array()
+            .context("Missing parent workflow runs")?
+        {
+            if run["head_sha"] != parent {
+                continue;
+            }
+            let id = run["id"].as_u64().context("Missing parent run identity")?;
+            let output = process::text(Command::new("gh").current_dir(root).args([
+                "api",
+                &format!("repos/{repo}/actions/runs/{id}/jobs?per_page=100"),
+            ]))?;
+            let jobs: Value = serde_json::from_str(&output)?;
+            return failed_platform(&jobs);
+        }
+        Ok(None)
+    }
+    match previous(root) {
+        Ok(Some(platform)) => {
+            println!("Prioritizing parent native failure on {platform}");
+            platform
+        }
+        Ok(None) => "auto".into(),
+        Err(error) => {
+            eprintln!("Keeping path-based focus: {error:#}");
+            "auto".into()
+        }
+    }
+}
+
+pub fn failed_platform(jobs: &Value) -> Result<Option<String>> {
+    let mut failed = BTreeSet::new();
+    for job in jobs["jobs"]
+        .as_array()
+        .context("Missing native job history")?
+    {
+        if !matches!(job["conclusion"].as_str(), Some("failure" | "timed_out")) {
+            continue;
+        }
+        for platform in PLATFORMS {
+            if ["Focused reproduction", "Full verification"]
+                .into_iter()
+                .any(|phase| job["name"] == format!("{phase} / {platform} / verify"))
+            {
+                failed.insert((*platform).to_owned());
+            }
+        }
+    }
+    Ok((failed.len() == 1).then(|| failed.into_iter().next().expect("one failed platform")))
+}
+
 pub fn build_before_lint(suite: &str, matched_key: &str) -> bool {
     matched_key.is_empty()
         || (matched_key.starts_with("core-") && !["core", "conversation"].contains(&suite))

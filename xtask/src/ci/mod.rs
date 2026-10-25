@@ -71,6 +71,7 @@ impl Command {
             Self::Plan { platform, matrix } => {
                 let root = util::root();
                 let paths = focus::changed_paths(&root);
+                let platform = focus::retry_platform(&root, &platform);
                 let plan = focus::select(&root, &paths?, &platform)?;
                 ensure!(
                     matrix == "all" || focus::PLATFORMS.contains(&matrix.as_str()),
