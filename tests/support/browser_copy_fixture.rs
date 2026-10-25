@@ -16,7 +16,7 @@ pub const BASE: &str = "file:///lazypencil/original-site/";
 pub const MODES: [&str; 8] = [
     "inherited",
     "literal",
-    "variable",
+    "query",
     "metadata",
     "combined",
     "descendant-url",
@@ -76,29 +76,33 @@ pub fn fixture(version: &str, mode: &str) -> (TempDir, Store) {
     site(&temp.path().join("library/base/web"), "#ff0000", "#0000ff");
     site(&temp.path().join("library/web"), "#00ff00", "#ffff00");
     site(&temp.path().join("consumer-web"), "#ff00ff", "#00ffff");
-    let variable = || json!({"type":"string","value":[{"value":format!("{BASE}index.html")},{"theme":{"mode":"dark"},"value":format!("{BASE}alternate.html")} ]});
-    let page = |id: &str| json!({"id":id,"type":"browser","width":32,"height":16,"url":"$base_url","metadata":{"type":"example","label":"base"}});
+    let variable = |light: u32, dark: u32| json!({"type":"number","value":[{"value":light},{"theme":{"mode":"dark"},"value":dark}]});
+    let page = |id: &str| json!({"id":id,"type":"browser","width":"$base_width","height":16,"url":format!("{BASE}index.html"),"metadata":{"type":"example","label":"base"}});
     let mut reusable = page("page");
     reusable["reusable"] = json!(true);
     write(
         &temp.path().join("library/base/base.lib.pen"),
         &json!({"version":version,
-        "metadata":resources("web"),"themes":{"mode":["light","dark"]},"variables":{"base_url":variable()},
+        "metadata":resources("web"),"themes":{"mode":["light","dark"]},"variables":{"base_width":variable(32,40)},
         "children":[reusable,{"id":"panel","type":"frame","reusable":true,"width":32,"height":16,"children":[page("inside")]}]}),
     );
     let mut inner = json!({"id":"inner","type":"ref","ref":"base:page"});
     match mode {
         "inherited" => {}
         "literal" => inner["url"] = json!(format!("{BASE}index.html")),
-        "variable" => inner["url"] = json!("$override_url"),
+        "query" => {
+            inner["url"] = json!(url(mode));
+            inner["width"] = json!("$override_width");
+        }
         "metadata" => inner["metadata"] = json!({"type":"example","label":"override"}),
         "combined" => {
-            inner["url"] = json!("$override_url");
+            inner["url"] = json!(url(mode));
+            inner["width"] = json!("$override_width");
             inner["metadata"] = json!({"type":"example","label":"override"});
         }
         "descendant-url" => {
             inner["ref"] = json!("base:panel");
-            inner["descendants"] = json!({"inside":{"url":"$override_url"}});
+            inner["descendants"] = json!({"inside":{"url":url(mode),"width":"$override_width"}});
         }
         "descendant-metadata" => {
             inner["ref"] = json!("base:panel");
@@ -108,7 +112,8 @@ pub fn fixture(version: &str, mode: &str) -> (TempDir, Store) {
         "replacement" => {
             inner["ref"] = json!("base:panel");
             let mut replacement = page("replacement");
-            replacement["url"] = json!("$override_url");
+            replacement["url"] = json!(url(mode));
+            replacement["width"] = json!("$override_width");
             inner["descendants"] = json!({"inside":replacement});
         }
         _ => panic!("unknown browser copy case"),
@@ -116,7 +121,7 @@ pub fn fixture(version: &str, mode: &str) -> (TempDir, Store) {
     write(
         &temp.path().join("library/ui.lib.pen"),
         &json!({"version":version,"imports":{"base":"base/base.lib.pen"},
-        "metadata":resources("web"),"themes":{"mode":["light","dark"]},"variables":{"override_url":variable()},
+        "metadata":resources("web"),"themes":{"mode":["light","dark"]},"variables":{"override_width":variable(48,56)},
         "children":[{"id":"widget","type":"frame","reusable":true,"width":32,"height":16,"children":[inner]}]}),
     );
     write(
@@ -157,19 +162,38 @@ pub struct Frame {
     pub revision: String,
     pub files: Arc<LocalFiles>,
     pub rgba: [u8; 4],
+    pub width: u32,
 }
 
-pub fn color(mode: &str, theme: &str) -> [u8; 4] {
-    let own = matches!(
-        mode,
-        "literal" | "variable" | "combined" | "descendant-url" | "replacement"
-    );
-    let dark = theme == "dark" && mode != "literal";
-    match (own, dark) {
-        (false, false) => [255, 0, 0, 255],
-        (false, true) => [0, 0, 255, 255],
-        (true, false) => [0, 255, 0, 255],
-        (true, true) => [255, 255, 0, 255],
+pub fn url(mode: &str) -> String {
+    let name = match mode {
+        "combined" | "descendant-url" => "alternate.html",
+        "query" => "index.html?theme=$mode#original-location",
+        _ => "index.html",
+    };
+    format!("{BASE}{name}")
+}
+
+pub fn width(mode: &str, theme: &str) -> u32 {
+    match (
+        matches!(
+            mode,
+            "query" | "combined" | "descendant-url" | "replacement"
+        ),
+        theme == "dark",
+    ) {
+        (false, false) => 32,
+        (false, true) => 40,
+        (true, false) => 48,
+        (true, true) => 56,
+    }
+}
+
+pub fn color(mode: &str, _theme: &str) -> [u8; 4] {
+    match mode {
+        "combined" | "descendant-url" => [255, 255, 0, 255],
+        "literal" | "query" | "replacement" => [0, 255, 0, 255],
+        _ => [255, 0, 0, 255],
     }
 }
 
@@ -185,12 +209,8 @@ pub fn capture(store: &Store, id: &str, stage: &'static str, mode: &str) -> Vec<
         let node = active(&project, id);
         let input = project.browser_node_resources(&node).unwrap();
         project.verify_unchanged().unwrap();
-        let expected = if theme == "dark" && mode != "literal" {
-            "alternate.html"
-        } else {
-            "index.html"
-        };
-        assert_eq!(node.properties["url"], format!("{BASE}{expected}"));
+        assert_eq!(node.properties["url"], url(mode));
+        assert_eq!(node.properties["width"], width(mode, theme));
         frames.push(Frame {
             stage,
             theme,
@@ -198,6 +218,7 @@ pub fn capture(store: &Store, id: &str, stage: &'static str, mode: &str) -> Vec<
             revision: input.revision,
             files: input.files,
             rgba: color(mode, theme),
+            width: node.properties["width"].as_f64().unwrap() as u32,
         });
     }
     frames
@@ -219,7 +240,7 @@ pub fn study(version: &str, mode: &str, detach_first: bool) -> (TempDir, Vec<Fra
     let themes = if detach_first {
         if matches!(
             mode,
-            "variable" | "combined" | "descendant-url" | "replacement"
+            "query" | "combined" | "descendant-url" | "replacement"
         ) {
             vec!["ui:mode", "ui:base:mode"]
         } else {

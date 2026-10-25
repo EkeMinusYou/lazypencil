@@ -164,7 +164,7 @@ impl Project {
             let url = if let Some(url) = result.get("url") {
                 url.clone()
             } else {
-                self.detached_variables(target.property_source("url"), &target.properties["url"])?
+                target.properties["url"].clone()
             };
             Some(Scope {
                 version: 1,
@@ -231,6 +231,24 @@ pub(crate) fn revoke<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn browser_urls_do_not_expand_dollar_prefixed_strings() {
+        let project = Project::local(
+            Document::parse(
+                json!({"version":"2.21","children":[
+                    {"id":"page","type":"browser","url":"$not_a_variable","width":32,"height":16}
+                ]})
+                .to_string(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            project.resolve().unwrap().roots[0].properties["url"],
+            "$not_a_variable"
+        );
+    }
 
     #[test]
     fn copied_scope_validates_versions_and_uses_declared_aliases_only_when_active() {

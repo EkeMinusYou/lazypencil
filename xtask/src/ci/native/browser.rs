@@ -437,7 +437,7 @@ pub fn required_images(root: &Path, commit: &str) -> Result<()> {
         for mode in [
             "inherited",
             "literal",
-            "variable",
+            "query",
             "metadata",
             "combined",
             "descendant-url",
@@ -458,8 +458,20 @@ pub fn required_images(root: &Path, commit: &str) -> Result<()> {
                     "Missing or duplicate browser copy condition"
                 );
                 let row = matching[0];
+                let width = match (
+                    matches!(
+                        mode,
+                        "query" | "combined" | "descendant-url" | "replacement"
+                    ),
+                    theme == "dark",
+                ) {
+                    (false, false) => 32,
+                    (false, true) => 40,
+                    (true, false) => 48,
+                    (true, true) => 56,
+                };
                 ensure!(
-                    row["sources_removed"] == true && dimensions(row)? == (32, 16),
+                    row["sources_removed"] == true && dimensions(row)? == (width, 16),
                     "Incomplete browser copy geometry/removal proof"
                 );
                 let stages = row["stages"]
@@ -483,7 +495,7 @@ pub fn required_images(root: &Path, commit: &str) -> Result<()> {
                     let entry = matching[0];
                     let name = format!("codec-browser-copy-{version}-{mode}-{theme}-{stage}.png");
                     ensure!(entry["name"] == name, "Wrong browser copy image name");
-                    let bytes = png(&name, &entry["png_hash"], 32, 16)?;
+                    let bytes = png(&name, &entry["png_hash"], width, 16)?;
                     let revision = entry["resource_revision"]
                         .as_str()
                         .context("Missing browser namespace revision")?;

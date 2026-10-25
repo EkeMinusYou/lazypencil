@@ -34,11 +34,17 @@ impl Copier<'_> {
                 .script_info_resolved(resolved, source)
                 .map(|info| Some(DynamicInfo::Script(info))),
             "browser" => {
-                let origin = self
-                    .project
-                    .browser_resources
-                    .contains_key(resolved.browser_origin())
-                    .then(|| resolved.browser_origin().to_path_buf());
+                let has_url = resolved
+                    .properties
+                    .get("url")
+                    .and_then(Value::as_str)
+                    .is_some_and(|url| !url.is_empty());
+                let origin = (has_url
+                    && self
+                        .project
+                        .browser_resources
+                        .contains_key(resolved.browser_origin()))
+                .then(|| resolved.browser_origin().to_path_buf());
                 if origin.is_none()
                     && (resolved.browser_scope.is_some()
                         || resolved
@@ -134,10 +140,7 @@ impl Copier<'_> {
             let url = if let Some(url) = result.get("url") {
                 url.clone()
             } else {
-                self.rewrite_value(
-                    info.resolved.property_source("url"),
-                    &info.resolved.properties["url"],
-                )?
+                info.resolved.properties["url"].clone()
             };
             Some(Scope {
                 version: 1,

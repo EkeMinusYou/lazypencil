@@ -63,7 +63,7 @@ fn copied_browser_namespaces_keep_pixels_across_removal_recopy_themes_and_detach
                 let png=browser.with_tab(&budget, |browser,session| {
                     browser.command(Some(session),"Page.enable",json!({}),&budget)?;
                     browser.intercept_local_files(session,frame.files.clone(),&budget)?;
-                    browser.command(Some(session),"Emulation.setDeviceMetricsOverride",json!({"width":32,"height":16,"deviceScaleFactor":1,"mobile":false}),&budget)?;
+                    browser.command(Some(session),"Emulation.setDeviceMetricsOverride",json!({"width":frame.width,"height":16,"deviceScaleFactor":1,"mobile":false}),&budget)?;
                     let navigation=browser.command(Some(session),"Page.navigate",json!({"url":frame.url}),&budget)?;
                     assert!(navigation.get("errorText").is_none(),"{navigation}");
                     let expression=format!("location.href==={}&&document.readyState==='complete'",serde_json::to_string(&frame.url).unwrap());
@@ -80,12 +80,12 @@ fn copied_browser_namespaces_keep_pixels_across_removal_recopy_themes_and_detach
                     .unwrap()
                     .make_raster_image(None, None)
                     .unwrap();
-                assert_eq!((image.width(), image.height()), (32, 16));
+                assert_eq!((image.width(), image.height()), (frame.width as i32, 16));
                 let pixels = image.peek_pixels().unwrap();
                 let expected =
                     Color::from_argb(frame.rgba[3], frame.rgba[0], frame.rgba[1], frame.rgba[2]);
                 for y in 0..16 {
-                    for x in 0..32 {
+                    for x in 0..frame.width as i32 {
                         assert_eq!(
                             pixels.get_color((x, y)),
                             expected,
@@ -114,7 +114,7 @@ fn copied_browser_namespaces_keep_pixels_across_removal_recopy_themes_and_detach
                 stages.entry(frame.theme).or_default().push(json!({"stage":frame.stage,"name":name,"png_hash":lazypencil::document::hash(&png),"resource_revision":frame.revision}));
             }
             for (theme, stages) in stages {
-                cases.push(json!({"document_version":version,"mode":mode,"theme":theme,"width":32,"height":16,
+                cases.push(json!({"document_version":version,"mode":mode,"theme":theme,"width":browser_copy_fixture::width(mode,theme),"height":16,
                 "rgba":browser_copy_fixture::color(mode,theme),"stages":stages,"sources_removed":true}));
             }
         }

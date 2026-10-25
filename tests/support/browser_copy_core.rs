@@ -3,6 +3,35 @@ use lazypencil::project::Project;
 use serde_json::json;
 
 #[test]
+fn empty_browser_prompts_copy_without_materializing_an_unused_resource_namespace() {
+    let (temp, store) = fixture::fixture("2.21", "inherited");
+    let path = temp.path().join("library/base/base.lib.pen");
+    let mut document: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    document["children"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("url");
+    fixture::write(&path, &document);
+    let result = fixture::apply(
+        &store,
+        "copy-empty-browser",
+        json!([{"op":"import_component","mode":"copy",
+        "source":{"library_alias":"ui","node_id":"widget"},"options":fixture::options("first.",&["ui:mode","ui:base:mode"])}]),
+    );
+    let id = result["generated_ids"]["0"]["id"].as_str().unwrap();
+    let project = Project::load(&store).unwrap();
+    let node = fixture::active(&project, id);
+    assert!(node.properties.get("url").is_none());
+    assert!(
+        result["generated_ids"]["0"]["assets"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
 fn stored_browser_metadata_edits_preserve_context_but_explicit_same_url_revokes_it() {
     let (_temp, store) = fixture::fixture("2.21", "inherited");
     let result = fixture::apply(
