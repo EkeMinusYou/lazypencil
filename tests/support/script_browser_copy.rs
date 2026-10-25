@@ -148,10 +148,11 @@ fn capture(store: &Store, stage: &'static str, style: &str) -> Frame {
     let nodes = layout
         .items
         .iter()
-        .filter(|item| item.node.kind() == "browser")
+        .filter(|item| item.enabled && item.node.kind() == "browser")
         .collect::<Vec<_>>();
     assert_eq!(nodes.len(), 1, "{style}/{stage}");
     let node = &nodes[0].node;
+    assert!(node.generated_by.is_some());
     let url = node.properties["url"].as_str().unwrap();
     assert_eq!(url, format!("{BASE}index.html?literal=$unchanged#anchor"));
     let label = if style == "inherited" {
@@ -185,6 +186,7 @@ fn capture(store: &Store, stage: &'static str, style: &str) -> Frame {
 }
 
 pub fn study(version: &str, style: &str) -> (TempDir, Vec<Frame>) {
+    eprintln!("Generated browser copy: schema={version}, style={style}");
     let (temp, store, code) = setup(version, style, true);
     let mut frames = vec![capture(&store, "before", style)];
     let response = copy(&store, style);
@@ -222,15 +224,20 @@ pub fn study(version: &str, style: &str) -> (TempDir, Vec<Frame>) {
         let page = &layout
             .items
             .iter()
-            .find(|item| item.node.kind() == "browser")
+            .find(|item| item.enabled && item.node.kind() == "browser")
             .unwrap()
             .node;
         let url = page.properties["url"].as_str().unwrap();
+        assert_eq!(url, format!("{BASE}unknown.html"));
+        assert!(page.generated_by.is_some());
         assert!(project.browser_page_resources(store.path(), url).is_ok());
-        assert_eq!(
-            project.browser_node_resources(page).err().unwrap().code,
-            "ASSET_NOT_FOUND"
-        );
+        match project.browser_node_resources(page) {
+            Err(error) => assert_eq!(error.code, "ASSET_NOT_FOUND"),
+            Ok(_) => panic!(
+                "Undeclared generated page was accepted: {url}, owner={}",
+                page.browser_origin().display()
+            ),
+        }
         fs::write(path, &code).unwrap();
     }
     fs::remove_dir_all(temp.path().join("library")).unwrap();
