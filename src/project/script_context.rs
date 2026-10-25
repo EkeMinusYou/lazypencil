@@ -225,6 +225,15 @@ pub(crate) fn revoke<'a>(
         }
     }
     let envelope = format!("{root}/script_override");
+    let output = format!("{envelope}/output");
+    if keys.contains("inputs")
+        && document
+            .value()
+            .pointer(&format!("{output}/inputs_hash"))
+            .is_some()
+    {
+        document.remove_property(&output, "inputs_hash")?;
+    }
     for (key, field) in [("inputs", "input"), ("scriptUri", "output")] {
         if keys.contains(key)
             && document
@@ -357,11 +366,18 @@ mod tests {
                 namespace["script_input_context"] = context();
             }
             let metadata = if carrier {
-                json!({"type":"lazypencil","lazypencil":{"script_override":{"version":1,"metadata":{"type":"test","keep":[1,2],"lazypencil":namespace},"input":context(),"output":{"version":1}}}})
+                json!({"type":"lazypencil","lazypencil":{"script_override":{"version":1,"metadata":{"type":"test","keep":[1,2],"lazypencil":namespace},"input":context(),"output":{"version":1,"inputs_hash":"old"}}}})
             } else {
                 json!({"type":"test","keep":[1,2],"lazypencil":namespace})
             };
             let mut document = Document::parse(json!({"version":"2.21","children":[{"id":"script","type":"script","scriptUri":"draw.js","width":10,"height":10,"metadata":metadata}]}).to_string()).unwrap();
+            revoke(&mut document, "/children/0", ["inputs"]).unwrap();
+            if carrier {
+                let output = &document.node("script").unwrap()["metadata"]["lazypencil"]["script_override"]
+                    ["output"];
+                assert_eq!(output["version"], 1);
+                assert!(output.get("inputs_hash").is_none());
+            }
             revoke(&mut document, "/children/0", ["inputs", "scriptUri"]).unwrap();
             let metadata = &document.node("script").unwrap()["metadata"];
             let ordinary = if carrier {
