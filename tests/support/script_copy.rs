@@ -3,7 +3,7 @@ use lazypencil::{document::hash, dynamic::DynamicRuntime};
 #[path = "script_copy_detach.rs"]
 mod detach;
 #[path = "script_copy_fixture.rs"]
-mod fixture;
+pub(super) mod fixture;
 
 fn image(path: &Path, color: Color) {
     let mut surface = skia_safe::surfaces::raster_n32_premul((2, 2)).unwrap();

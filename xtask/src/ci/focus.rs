@@ -438,7 +438,9 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         paths,
         &[
             "src/project/bindings.rs",
+            "src/project/generated_refs.rs",
             "tests/support/script_bindings.rs",
+            "tests/support/script_generated_overrides.rs",
         ],
         &[],
     ) {

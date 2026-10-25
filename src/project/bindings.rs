@@ -225,12 +225,6 @@ impl Bound {
                 "Copied file browser URLs need an independent page-resource closure",
             ));
         }
-        if node["type"] == "ref" && node.get("scriptUri").is_some() {
-            return Err(Error::new(
-                "UNSUPPORTED_FEATURE",
-                "Generated source overrides require a separate script binding scope",
-            ));
-        }
         if let Some(uri) = node.get_mut("scriptUri")
             && let Some(value) = uri.as_str()
         {
@@ -332,6 +326,33 @@ impl Bound {
         Ok(())
     }
 
+    pub(super) fn inherited_output(
+        &self,
+        uri: &str,
+        inputs: Option<&Value>,
+        inherited_bytes: &mut usize,
+    ) -> Result<Value> {
+        *inherited_bytes = inherited_bytes
+            .saturating_add(serde_json::to_vec(&self.values).expect("bindings").len())
+            .saturating_add(8192);
+        if *inherited_bytes > crate::script::MAX_OUTPUT_BYTES {
+            return Err(invalid(
+                "Inherited script bindings exceed the generated output budget",
+            ));
+        }
+        let mut values = self.values.clone();
+        // Generated nodes already belong to the resolved namespace owner.
+        values.library = None;
+        values.script_uri = uri.into();
+        values.input_components = None;
+        values.inputs_hash = inputs.map(|value| {
+            let mut value = value.clone();
+            value.sort_all_objects();
+            hash(value.to_string().as_bytes())
+        });
+        Ok(serde_json::to_value(values).expect("bindings"))
+    }
+
     pub(super) fn rewrite(
         &self,
         node: &mut Value,
@@ -403,27 +424,10 @@ impl Bound {
             *changes = rewritten;
         }
         if node["type"] == "script" && self.values.assets.is_some() && node["enabled"] != false {
-            *inherited_bytes = inherited_bytes
-                .saturating_add(serde_json::to_vec(&self.values).expect("bindings").len())
-                .saturating_add(8192);
-            if *inherited_bytes > crate::script::MAX_OUTPUT_BYTES {
-                return Err(invalid(
-                    "Inherited script bindings exceed the generated output budget",
-                ));
-            }
-            let mut values = self.values.clone();
-            // Generated nodes already belong to the resolved namespace owner.
-            values.library = None;
-            values.script_uri = node["scriptUri"]
+            let uri = node["scriptUri"]
                 .as_str()
-                .ok_or_else(|| invalid("A generated script needs scriptUri"))?
-                .into();
-            values.input_components = None;
-            values.inputs_hash = node.get("inputs").map(|value| {
-                let mut value = value.clone();
-                value.sort_all_objects();
-                hash(value.to_string().as_bytes())
-            });
+                .ok_or_else(|| invalid("A generated script needs scriptUri"))?;
+            let values = self.inherited_output(uri, node.get("inputs"), inherited_bytes)?;
             let metadata = node
                 .as_object_mut()
                 .expect("script")
@@ -442,10 +446,7 @@ impl Bound {
                     "Generated explicit script scopes need independent scope composition",
                 ));
             }
-            namespace.insert(
-                "script_bindings".into(),
-                serde_json::to_value(values).expect("bindings"),
-            );
+            namespace.insert("script_bindings".into(), values);
         }
         Ok(())
     }

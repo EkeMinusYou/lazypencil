@@ -68,6 +68,20 @@ fn native_command_fixture_changes_reproduce_their_browser_and_script_consumers_f
 }
 
 #[test]
+fn generated_reference_changes_reproduce_the_real_script_binding_cases_first() {
+    for path in [
+        "src/project/generated_refs.rs",
+        "tests/support/script_generated_overrides.rs",
+    ] {
+        let plan = focus::select(&util::root(), &[path.into()], "auto").unwrap();
+        assert_eq!(plan.platform, "ubuntu-24.04");
+        assert_eq!(plan.suite, "graphics");
+        assert!(plan.targets.iter().any(|target| target == "script_scope"));
+        assert!(!plan.preprocessor);
+    }
+}
+
+#[test]
 fn tool_changes_only_bypass_focus_native_compilation_when_they_are_not_application_inputs() {
     for path in [
         "xtask/src/ci/cache.rs",
