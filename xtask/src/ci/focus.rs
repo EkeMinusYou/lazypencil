@@ -480,6 +480,18 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         }
         targets.extend(["tui", "user_config"].map(str::to_owned));
     }
+    if paths
+        .iter()
+        .any(|p| p == "xtask/src/test_support/command.rs")
+    {
+        if ["core", "conversation"].contains(&suite.as_str()) {
+            suite = "graphics".into();
+        } else if suite == "shader" {
+            suite = "dynamic".into();
+        }
+        targets
+            .extend(["runtime", "runtime_config", "scripts", "dynamic_render"].map(str::to_owned));
+    }
     ensure!(
         !targets.contains("agent_workflow") && targets.iter().all(|s| all.contains(s)),
         "Focus may run only deterministic integration targets"

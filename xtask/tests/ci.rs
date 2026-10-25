@@ -44,6 +44,20 @@ fn rust_pty_bridge_changes_select_the_stricter_supported_host_and_all_frontend_r
 }
 
 #[test]
+fn native_command_fixture_changes_reproduce_their_browser_and_script_consumers_first() {
+    let plan = focus::select(
+        &util::root(),
+        &["xtask/src/test_support/command.rs".into()],
+        "auto",
+    )
+    .unwrap();
+    assert_eq!(plan.suite, "graphics");
+    for target in ["runtime", "runtime_config", "scripts", "dynamic_render"] {
+        assert!(plan.targets.iter().any(|value| value == target), "{target}");
+    }
+}
+
+#[test]
 fn tool_changes_only_bypass_focus_native_compilation_when_they_are_not_application_inputs() {
     for path in [
         "xtask/src/ci/cache.rs",

@@ -59,6 +59,43 @@ fn bounded_commands_preserve_exit_codes_output_and_failure_logs() {
     assert_eq!(fs::read(log).unwrap(), b"partialfailed");
 }
 #[test]
+fn native_process_records_preserve_markers_exit_codes_streams_and_deadline_cleanup() {
+    let temp = tempfile::tempdir().unwrap();
+    let table = temp.path().join("responses.json");
+    let pid = temp.path().join("pid");
+    let marker = temp.path().join("launched");
+    for sleeping in [false, true] {
+        fs::write(&table, serde_json::to_vec(&json!({"*":{
+            "pid_file":pid,"marker_file":marker,"stdout":"partial output","stderr":"private-value\n",
+            "sleep_ms":if sleeping {30000}else{0},"status":91
+        }})).unwrap()).unwrap();
+        let result = process::output(
+            Command::new(helper())
+                .arg("fixture-command")
+                .arg(&table)
+                .arg("--browser-or-worker-argument"),
+            if sleeping {
+                Duration::from_millis(800)
+            } else {
+                Duration::from_secs(5)
+            },
+        )
+        .unwrap();
+        assert_eq!(result.timed_out, sleeping);
+        if !sleeping {
+            assert_eq!(result.status.code(), Some(91));
+        }
+        assert_eq!(result.stdout, b"partial output");
+        assert_eq!(result.stderr, b"private-value\n");
+        let child: u32 = fs::read_to_string(&pid).unwrap().parse().unwrap();
+        assert_ne!(child, std::process::id());
+        assert_eq!(fs::read(&marker).unwrap(), b"");
+        #[cfg(unix)]
+        assert_eq!(unsafe { libc::kill(child as i32, 0) }, -1);
+    }
+}
+
+#[test]
 fn acp_fixture_preserves_unexpected_error_and_assertion_diagnostics() {
     for input in [
         "invalid-json\n",

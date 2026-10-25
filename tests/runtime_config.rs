@@ -5,6 +5,8 @@ use lazypencil::config::{
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf, process::Command};
 use tempfile::TempDir;
+#[path = "support/fixture.rs"]
+mod fixture_support;
 
 struct Fixture {
     temp: TempDir,
@@ -544,15 +546,13 @@ fn cli_layout_uses_configured_evaluation_pass_and_aggregate_limits_without_savin
 #[cfg(all(feature = "rendering", unix))]
 #[test]
 fn cli_render_applies_project_launch_policy_before_starting_a_page_worker() {
-    use std::{os::unix::fs::PermissionsExt, time::Instant};
+    use std::time::Instant;
     let f = Fixture::new();
     let executable = f.project.join("waiting-browser");
-    fs::write(
+    fixture_support::process(
         &executable,
-        "#!/bin/sh\nprintf '%s' \"$$\" > \"${0%/*}/pid\"\nexec sleep 60\n",
-    )
-    .unwrap();
-    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+        json!({"pid_file":f.project.join("pid"),"sleep_ms":60000}),
+    );
     let saved = json!({"version":"2.21","children":[{"id":"page","type":"browser","url":"about:blank","width":8,"height":8}]}).to_string();
     fs::write(&f.document, &saved).unwrap();
     fs::write(

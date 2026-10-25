@@ -1,6 +1,8 @@
 use lazypencil::script::{ScriptRequest, ScriptRuntime, header::Header};
 use serde_json::json;
 use std::time::{Duration, Instant};
+#[path = "support/fixture.rs"]
+mod fixture_support;
 
 fn request(body: &str) -> ScriptRequest {
     ScriptRequest {
@@ -499,11 +501,9 @@ fn cancelling_an_executing_worker_terminates_it_and_allows_a_new_request() {
 #[cfg(unix)]
 #[test]
 fn an_unresponsive_process_is_killed_by_the_parent_watchdog() {
-    use std::{fs, os::unix::fs::PermissionsExt};
     let temp = tempfile::TempDir::new().unwrap();
     let file = temp.path().join("unresponsive");
-    fs::write(&file, "#!/bin/sh\nexec /bin/sleep 30\n").unwrap();
-    fs::set_permissions(&file, fs::Permissions::from_mode(0o700)).unwrap();
+    fixture_support::process(&file, json!({"sleep_ms":30000}));
     let mut worker = ScriptRuntime::new(&file);
     let start = Instant::now();
     assert_eq!(

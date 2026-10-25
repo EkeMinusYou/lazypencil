@@ -14,9 +14,21 @@ pub fn response(args: &[String]) -> Result {
     let key = serde_json::to_string(&args[1..])?;
     let record = table
         .get(&key)
+        .or_else(|| table.get("*"))
         .ok_or_else(|| format!("Unexpected fixture invocation: {key}"))?;
+    if let Some(path) = record["pid_file"].as_str() {
+        fs::write(path, std::process::id().to_string())?;
+    }
+    if let Some(path) = record["marker_file"].as_str() {
+        fs::write(path, b"")?;
+    }
     std::io::stdout().write_all(record["stdout"].as_str().unwrap_or_default().as_bytes())?;
     std::io::stderr().write_all(record["stderr"].as_str().unwrap_or_default().as_bytes())?;
+    std::io::stdout().flush()?;
+    std::io::stderr().flush()?;
+    std::thread::sleep(Duration::from_millis(
+        record["sleep_ms"].as_u64().unwrap_or(0),
+    ));
     let code = record["status"].as_i64().unwrap_or(0);
     if code != 0 {
         std::process::exit(code as i32);

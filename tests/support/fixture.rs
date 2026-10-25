@@ -16,3 +16,16 @@ pub fn install(path: &std::path::Path, arguments: &[String]) {
     )
     .unwrap();
 }
+
+pub fn process(path: &std::path::Path, record: serde_json::Value) {
+    let table = path.with_extension("response.json");
+    std::fs::write(
+        &table,
+        serde_json::to_vec(&serde_json::json!({"*": record})).unwrap(),
+    )
+    .unwrap();
+    install(
+        path,
+        &["fixture-command".into(), table.to_str().unwrap().into()],
+    );
+}

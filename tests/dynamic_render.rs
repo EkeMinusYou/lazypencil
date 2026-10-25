@@ -678,17 +678,11 @@ fn uniform_annotations_bind_to_the_correct_declaration() {
 #[test]
 fn captured_page_shader_and_render_deadlines_cap_launch_and_reap_the_child() {
     use lazypencil::config::runtime::RuntimeSettings;
-    use std::os::unix::fs::PermissionsExt;
     let (temp, project, _) =
         scene(json!([{"id":"page","type":"browser","url":"about:blank","width":8,"height":8}]));
     let executable = temp.path().join("waiting-browser");
     let pid_file = temp.path().join("pid");
-    fs::write(
-        &executable,
-        "#!/bin/sh\nprintf '%s' \"$$\" > \"${0%/*}/pid\"\nexec sleep 60\n",
-    )
-    .unwrap();
-    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    fixture_support::process(&executable, json!({"pid_file":pid_file,"sleep_ms":60000}));
     let resolved = project.resolve().unwrap();
     for shader in [false, true] {
         for limiting_scope in ["launch", "operation", "render"] {

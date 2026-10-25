@@ -1,6 +1,8 @@
 use lazypencil::runtime;
 use std::{fs, process::Command};
 use tempfile::TempDir;
+#[path = "support/fixture.rs"]
+mod fixture_support;
 
 #[test]
 fn unknown_or_corrupted_archives_never_become_installed_runtimes() {
@@ -43,24 +45,14 @@ fn runtime_status_does_not_create_a_missing_data_directory_or_download_files() {
 fn doctor_and_runtime_status_do_not_launch_an_explicit_browser_or_create_local_state() {
     let temp = TempDir::new().unwrap();
     let browser = temp.path().join(if cfg!(windows) {
-        "fake-browser.cmd"
+        "fake-browser.exe"
     } else {
         "fake-browser"
     });
-    fs::write(
+    fixture_support::process(
         &browser,
-        if cfg!(windows) {
-            "@echo off\r\necho launched>\"%~dp0launched\"\r\nexit /b 91\r\n"
-        } else {
-            "#!/bin/sh\n: > \"${0%/*}/launched\"\nexit 91\n"
-        },
-    )
-    .unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&browser, fs::Permissions::from_mode(0o700)).unwrap();
-    }
+        serde_json::json!({"marker_file":temp.path().join("launched"),"status":91}),
+    );
     let data = temp.path().join("absent-data");
     let settings = temp.path().join("absent-settings");
     let locks = temp.path().join("absent-locks");
@@ -141,11 +133,13 @@ fn real_pinned_installation_is_reused_and_modification_is_detected() {
 #[test]
 fn startup_failures_report_the_stage_and_host_facts_without_raw_child_output() {
     use lazypencil::cdp::{Browser, Budget, Purpose};
-    use std::{os::unix::fs::PermissionsExt, time::Duration};
+    use std::time::Duration;
     let temp = TempDir::new().unwrap();
     let executable = temp.path().join("exiting-browser");
-    fs::write(&executable, "#!/bin/sh\necho private-value >&2\nexit 91\n").unwrap();
-    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    fixture_support::process(
+        &executable,
+        serde_json::json!({"stderr":"private-value\n","status":91}),
+    );
     let installed = runtime::InstalledBrowser {
         executable,
         version: "fixture".into(),
