@@ -198,6 +198,10 @@ pub fn cargo_observations(
             "Missing or ambiguous native artifact: {name}"
         );
         let artifact = matches[0];
+        ensure!(
+            artifact["fresh"].is_boolean(),
+            "Missing native Cargo artifact freshness: {name}"
+        );
         let candidates = builds
             .get(string(&artifact["package_id"])?)
             .context("Missing native build-script output")?;
@@ -219,7 +223,7 @@ pub fn cargo_observations(
                 "Invalid native link declarations"
             );
         }
-        selected.insert(name.into(),json!({"package_id":artifact["package_id"],"manifest_path":artifact["manifest_path"],"features":artifact["features"],"linked_libs":build["linked_libs"],"linked_paths":build["linked_paths"],"out_dir":out.strip_prefix(target)?.to_str().context("Invalid output path")?.replace('\\',"/")}));
+        selected.insert(name.into(),json!({"package_id":artifact["package_id"],"manifest_path":artifact["manifest_path"],"features":artifact["features"],"fresh":artifact["fresh"],"linked_libs":build["linked_libs"],"linked_paths":build["linked_paths"],"out_dir":out.strip_prefix(target)?.to_str().context("Invalid output path")?.replace('\\',"/")}));
     }
     Ok((executable, selected, ignored))
 }

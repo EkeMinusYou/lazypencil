@@ -90,7 +90,7 @@ impl Fixture {
                 )
                 .unwrap();
             }
-            records.push(json!({"reason":"compiler-artifact","package_id":format!("{name}#1.0.0"),"target":{"name":name,"kind":["lib"]},"manifest_path":root.join("Cargo.toml"),"profile":{"test":false},"features":["default"]}));
+            records.push(json!({"reason":"compiler-artifact","package_id":format!("{name}#1.0.0"),"target":{"name":name,"kind":["lib"]},"manifest_path":root.join("Cargo.toml"),"profile":{"test":false},"features":["default"],"fresh":true}));
             records.push(json!({"reason":"build-script-executed","package_id":format!("{name}#1.0.0"),"out_dir":out,"linked_libs":libraries.iter().map(|n|format!("static={n}")).collect::<Vec<_>>(),"linked_paths":[directory],"env":[["SECRET_FIXTURE","must not be copied"]]}));
         }
         records.push(json!({"reason":"build-finished","success":true}));
@@ -119,7 +119,7 @@ impl Fixture {
 }
 #[test]
 fn selected_native_inputs_pair_by_package_identity_without_copying_environment() {
-    let f = Fixture::new();
+    let mut f = Fixture::new();
     fs::create_dir(
         f.target
             .join("release/build/skia_bindings-newer-unselected"),
@@ -128,6 +128,8 @@ fn selected_native_inputs_pair_by_package_identity_without_copying_environment()
     let (binary, selected, ignored) = f.observe().unwrap();
     assert_eq!(binary, f.target.join("release/lazypencil"));
     assert_eq!(ignored, 1);
+    assert_eq!(selected["skia_bindings"]["fresh"], true);
+    assert_eq!(selected["rquickjs_sys"]["fresh"], true);
     assert!(
         !serde_json::to_string(&selected)
             .unwrap()
@@ -138,6 +140,11 @@ fn selected_native_inputs_pair_by_package_identity_without_copying_environment()
         6
     );
     evidence::source_identity(&f.root, &"a".repeat(40)).unwrap();
+    f.records[1]["fresh"] = false.into();
+    f.save();
+    let (_, selected, _) = f.observe().unwrap();
+    assert_eq!(selected["skia_bindings"]["fresh"], false);
+    assert_eq!(selected["rquickjs_sys"]["fresh"], true);
 }
 #[test]
 fn incomplete_ambiguous_or_stale_cargo_artifacts_cannot_authorize_evidence() {
@@ -156,6 +163,7 @@ fn incomplete_ambiguous_or_stale_cargo_artifacts_cannot_authorize_evidence() {
         "unpaired-native",
         "duplicate-native-build",
         "native-escape",
+        "missing-native-fresh",
     ] {
         let mut f = Fixture::new();
         match mutation {
@@ -182,6 +190,7 @@ fn incomplete_ambiguous_or_stale_cargo_artifacts_cannot_authorize_evidence() {
             "duplicate-native-build" => {
                 f.records.insert(3, f.records[2].clone());
             }
+            "missing-native-fresh" => f.records[1]["fresh"] = Value::Null,
             _ => f.records[2]["out_dir"] = json!(f.root),
         }
         f.save();
