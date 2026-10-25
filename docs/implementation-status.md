@@ -1,5 +1,7 @@
 # lazypencil 実装と公開準備の状況
 
+2026-10-26: 共通 release recipe の `fb05d40` は [GHA `40231164855`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40231164855) の先行検証・全3環境・監査・source を成功した。xtask 103件、通常／core は Linux 各1,145件・macOS 1,135件で、各環境の365必須画像と42回の release 書き出しを維持した。全3環境の raw map、直接ロード宣言、実行ファイルと benchmark の対応を独立照合し、静的9画像と6 scene hash は以前の基準と一致した。独自 contract の36画像・4,054,272画素と、配布ソース1,112ファイル・31,036,145バイトも照合した。先行 Linux の release コンパイル約194秒に対し、同じコミットの54ファイルを再利用した全体側の Cargo 確認は0.19秒、最終確認は0.21秒だった。全体は31分36秒であり、異なる runner 負荷から短縮の因果関係までは主張しない。アプリに埋め込まない native notice の確認資料をアプリキャッシュの識別から除外する追加変更を用意し、検査そのものと compiler dep-info の拒否条件は維持する。製品全体の完成条件は継続する。
+
 2026-10-26: 生成 browser の独立コピーで、script の宣言済み Web 素材 namespace を `browser_library` と既存 bundle に保持する実装を追加する。URL を所有する文脈、metadata の継承、ref／descendant／children の上書き、入れ子 script、再コピーを扱う。両形式の7経路と42画像、同じ URL の異なるコピー先素材、未宣言ページの拒否を試験に追加し、先行検証で早期に実行する。新しい実装は GHA 未検証である。進行中の `fb05d40` の release recipe 検証は先行 Linux が成功し、全3環境の終了を待ってから次の変更を送る。試験・終了待ちの基準と初回リリース対象は維持する。
 
 2026-10-26: 共通のローカル Web 描画 `03fe238` は [GHA `40212537150`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40212537150) の先行 Linux・全3環境・監査・最終 source を成功した。通常／core は macOS 1,132件、Linux 各1,142件で、各環境365画像の必須確認と release の42回の書き出しを通した。新しい共通描画14枚と CLI／MCP 8枚は全3環境の73,728画素を独立照合し、素材 revision、保持 page の更新、元ディレクトリ削除後の bundle、CLI と MCP の PNG バイト一致を確認した。コピー128枚と script override 84枚も各環境で全画素一致し、静的 release 画像は以前の基準と一致した。配布ソース1,111ファイル・31,036,368バイトは Git の内容・サイズ・mode と一致した。本家の往復互換、ネイティブ file の全挙動、物理端末、統制した性能、最終バイナリーの帰属・配布などの完成条件は継続する。
