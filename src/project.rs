@@ -17,6 +17,8 @@ const MAX_PROJECT_BYTES: usize = 128 * 1024 * 1024;
 const MAX_ASSET_BYTES: usize = 64 * 1024 * 1024;
 
 mod bindings;
+mod browser_resources;
+pub use browser_resources::BrowserResources;
 mod detach;
 #[cfg(feature = "rendering")]
 mod failed_code;
@@ -161,6 +163,8 @@ pub struct Project {
     documents: BTreeMap<PathBuf, Document>,
     imports: BTreeMap<PathBuf, BTreeMap<String, PathBuf>>,
     sampler_images: BTreeMap<PathBuf, BTreeMap<String, String>>,
+    browser_resources: BTreeMap<PathBuf, browser_resources::Resources>,
+    browser_document_bytes: BTreeMap<PathBuf, Arc<[u8]>>,
     allowed_roots: Vec<PathBuf>,
     assets: BTreeMap<PathBuf, Asset>,
     missing_assets: BTreeMap<(PathBuf, String), missing::MissingAsset>,
@@ -193,6 +197,7 @@ impl Project {
     }
 
     pub(crate) fn local(document: Document) -> Result<Self> {
+        browser_resources::validate(&document)?;
         if document
             .value()
             .get("imports")
@@ -214,6 +219,8 @@ impl Project {
             documents: [(root.clone(), document)].into_iter().collect(),
             imports: [(root, BTreeMap::new())].into_iter().collect(),
             sampler_images,
+            browser_resources: BTreeMap::new(),
+            browser_document_bytes: BTreeMap::new(),
             allowed_roots: Vec::new(),
             assets: BTreeMap::new(),
             missing_assets: BTreeMap::new(),
@@ -606,6 +613,8 @@ impl Project {
             documents: BTreeMap::new(),
             imports: BTreeMap::new(),
             sampler_images: BTreeMap::new(),
+            browser_resources: BTreeMap::new(),
+            browser_document_bytes: BTreeMap::new(),
             allowed_roots,
             assets: BTreeMap::new(),
             missing_assets: BTreeMap::new(),
@@ -746,6 +755,7 @@ impl Project {
         self.sampler_images
             .insert(path.into(), sampler_images::parse(&document)?);
         self.documents.insert(path.into(), document);
+        self.capture_browser_resources(path)?;
         active.insert(path.into());
         let mut imports = BTreeMap::new();
         for (alias, uri) in declarations {
@@ -846,6 +856,12 @@ impl Project {
     }
 
     pub fn dependency_revision(&self) -> String {
+        if let Some(resources) = browser_resources::revision(self) {
+            return hash(
+                &serde_json::to_vec(&(self.dependencies(), resources))
+                    .expect("serializable browser dependencies"),
+            );
+        }
         hash(
             serde_json::to_vec(&self.dependencies())
                 .expect("serializable dependencies")
@@ -932,6 +948,7 @@ impl Project {
             }
         }
         self.icons.verify_unchanged()?;
+        self.verify_browser_resources()?;
         for (path, document) in &self.documents {
             self.check_cancelled()?;
             if path == &self.root {
@@ -951,15 +968,19 @@ impl Project {
                 ));
             }
         }
+        let browser_paths = browser_resources::protected_paths(self);
         for (path, asset) in &self.assets {
             self.check_cancelled()?;
             if !self.overlay_published && self.overlay.contains_key(path) {
                 continue;
             }
             self.verify_published_overlay(path)?;
-            if crate::store::content::file_hash(path, MAX_ASSET_BYTES, self.cancel.as_ref())?
-                != asset.revision
-            {
+            let revision = if browser_paths.contains(path.as_path()) {
+                browser_resources::file_revision(path, self.cancel.as_ref())?
+            } else {
+                crate::store::content::file_hash(path, MAX_ASSET_BYTES, self.cancel.as_ref())?
+            };
+            if revision != asset.revision {
                 return Err(Error::new(
                     "REVISION_CONFLICT",
                     format!("Asset changed during the operation: {}", path.display()),
@@ -988,7 +1009,10 @@ impl Project {
         }
         let path = crate::paths::canonical(path)?;
         self.runtime_assets.remove(&path);
-        if self.assets.contains_key(&path) {
+        if let Some(asset) = self.assets.get_mut(&path) {
+            if asset.kind == "browser_resource" && kind != "browser_resource" {
+                asset.kind = kind.into();
+            }
             return Ok(());
         }
         let bytes = read_binary(&path)?;

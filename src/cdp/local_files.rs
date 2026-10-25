@@ -17,8 +17,8 @@ const MAX_SESSIONS: usize = 128;
 const MAX_PENDING: usize = 4096;
 
 struct File {
-    mime: String,
-    bytes: Vec<u8>,
+    mime: Option<String>,
+    bytes: Arc<[u8]>,
 }
 
 /// A bounded inventory of original local URLs and captured response bytes.
@@ -29,16 +29,34 @@ pub struct LocalFiles {
 }
 
 impl LocalFiles {
-    pub fn new(files: impl IntoIterator<Item = (String, String, Vec<u8>)>) -> Result<Self> {
+    pub fn new<B: Into<Arc<[u8]>>>(
+        files: impl IntoIterator<Item = (String, String, B)>,
+    ) -> Result<Self> {
+        Self::with_optional_mime(
+            files
+                .into_iter()
+                .map(|(url, mime, bytes)| (url, Some(mime), bytes)),
+        )
+    }
+
+    /// Omit an unknown MIME type so Chromium can apply its native sniffing.
+    /// A shared byte allocation is retained without copying its contents.
+    pub fn with_optional_mime<B: Into<Arc<[u8]>>>(
+        files: impl IntoIterator<Item = (String, Option<String>, B)>,
+    ) -> Result<Self> {
         let mut inventory = BTreeMap::new();
         let mut total = 0usize;
+        let mut names = 0usize;
         for (url, mime, bytes) in files {
+            let bytes = bytes.into();
             if inventory.len() >= MAX_FILES
                 || bytes.len() > MAX_FILE_BYTES
-                || mime.is_empty()
-                || mime.len() > 256
-                || !mime.is_ascii()
-                || mime.bytes().any(|byte| byte.is_ascii_control())
+                || mime.as_ref().is_some_and(|mime| {
+                    mime.is_empty()
+                        || mime.len() > 256
+                        || !mime.is_ascii()
+                        || mime.bytes().any(|byte| byte.is_ascii_control())
+                })
             {
                 return Err(invalid("Invalid or oversized local browser resource"));
             }
@@ -47,6 +65,12 @@ impl LocalFiles {
                 .filter(|total| *total <= MAX_TOTAL_BYTES)
                 .ok_or_else(|| invalid("Local browser inventory exceeds 128 MiB"))?;
             let key = local_key(&url)?;
+            names = names
+                .saturating_add(key.len())
+                .saturating_add(mime.as_ref().map_or(0, String::len));
+            if names > 4 * 1024 * 1024 {
+                return Err(invalid("Local browser URL metadata exceeds 4 MiB"));
+            }
             if inventory.insert(key, File { mime, bytes }).is_some() {
                 return Err(invalid("Local browser URLs identify the same file"));
             }
@@ -73,14 +97,18 @@ impl LocalFiles {
             } else {
                 &file.bytes
             };
+            let mut headers = Vec::new();
+            if let Some(mime) = &file.mime {
+                headers.push(json!({"name":"Content-Type","value":mime}));
+            }
+            headers.extend([
+                json!({"name":"Content-Length","value":file.bytes.len().to_string()}),
+                json!({"name":"Cache-Control","value":"no-store"}),
+            ]);
             return Ok((
                 "Fetch.fulfillRequest",
                 json!({"requestId":request_id,"responseCode":200,
-                    "responseHeaders":[
-                        {"name":"Content-Type","value":file.mime},
-                        {"name":"Content-Length","value":file.bytes.len().to_string()},
-                        {"name":"Cache-Control","value":"no-store"}
-                    ],"body":STANDARD.encode(bytes)}),
+                    "responseHeaders":headers,"body":STANDARD.encode(bytes)}),
                 bytes.len(),
             ));
         }
@@ -92,7 +120,7 @@ impl LocalFiles {
     }
 }
 
-fn local_key(value: &str) -> Result<String> {
+pub(crate) fn local_key(value: &str) -> Result<String> {
     if value.len() > 64 * 1024 {
         return Err(invalid("Local browser URL exceeds 64 KiB"));
     }

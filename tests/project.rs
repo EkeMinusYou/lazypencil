@@ -6,6 +6,10 @@ use tempfile::TempDir;
 #[path = "support/script_copy_core.rs"]
 mod script_copy_core;
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[path = "support/browser_resources.rs"]
+mod browser_resources;
+
 fn write(path: &Path, value: Value) {
     fs::write(path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
 }

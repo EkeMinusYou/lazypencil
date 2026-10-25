@@ -13,7 +13,7 @@ pub(crate) fn file_hash(
     hash_reader(super::open_regular_file(path)?, path, limit, cancel)
 }
 
-fn hash_reader(
+pub(crate) fn hash_reader(
     reader: impl Read,
     path: &Path,
     limit: usize,

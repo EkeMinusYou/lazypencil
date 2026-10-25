@@ -20,6 +20,7 @@ mod process;
 mod readiness;
 mod tabs;
 use lifecycle::PageLifecycle;
+pub(crate) use local_files::local_key as local_file_url;
 pub use local_files::{LocalFileStats, LocalFiles};
 #[cfg(any(windows, unix))]
 pub use process::serve_worker as serve_process_worker;

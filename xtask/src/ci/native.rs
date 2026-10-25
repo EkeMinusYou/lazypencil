@@ -257,6 +257,23 @@ impl Session {
                 Ok(())
             }
             Stage::FocusCore => {
+                if ["graphics", "dynamic", "copy"].contains(&args.suite.as_str()) && has("project")
+                {
+                    self.cargo(
+                        &[
+                            "test",
+                            "--locked",
+                            "--no-default-features",
+                            "--lib",
+                            "project::browser_resources::",
+                            "--",
+                            "--test-threads=2",
+                        ],
+                        900,
+                        "focus-browser-core.log",
+                        false,
+                    )?;
+                }
                 if ["graphics", "dynamic", "copy"].contains(&args.suite.as_str())
                     && (has("scripts") || has("sampler_sources"))
                 {

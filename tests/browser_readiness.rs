@@ -112,7 +112,7 @@ fn assert_green(image: &RenderedImage) {
 #[ignore = "Requires sandboxed headless Chromium"]
 fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files() {
     use lazypencil::{
-        cdp::{Browser, Budget, LocalFiles, Purpose},
+        cdp::{Browser, Budget, Purpose},
         runtime::InstalledBrowser,
     };
     let original = TempDir::new().unwrap();
@@ -120,8 +120,7 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
     fs::create_dir(&site).unwrap();
     let sources = [
         (
-            "index.html",
-            "text/html; charset=utf-8",
+            "index",
             r#"<!doctype html><html><head>
             <link rel="icon" href="data:,"><link rel="stylesheet" href="style.css?v=1"><script src="app.js"></script>
             <script src="../unlisted.js"></script></head><body>
@@ -130,13 +129,11 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
         ),
         (
             "style.css",
-            "text/css",
             "@import url('theme.css?theme=green');body{margin:0}img{position:absolute;left:0;top:0}iframe{position:absolute;left:8px;top:0;border:0}",
         ),
-        ("theme.css", "text/css", "html{background:#00ff00}"),
+        ("theme.css", "html{background:#00ff00}"),
         (
             "app.js",
-            "text/javascript",
             r#"window.addEventListener('message',e=>{if(e.data==='frame-ready')window.frameReady=true});
             const libraryURL=JSON.stringify(new URL('worker-library.js',location.href).href);
             const nestedCode=`importScripts(${libraryURL});postMessage(capturedWorkerValue)`;
@@ -153,37 +150,42 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
         ),
         (
             "worker-library.js",
-            "text/javascript",
             "self.capturedWorkerValue='worker-captured'",
         ),
         (
             "blue.svg",
-            "image/svg+xml",
             r#"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><path fill="blue" d="M0 0h8v8H0z"/></svg>"#,
         ),
         (
             "frame.html",
-            "text/html",
             "<!doctype html><style>html{background:#ff0000}</style><script>parent.postMessage('frame-ready','*')</script>",
         ),
     ];
-    let mut inventory = Vec::new();
-    for (name, mime, contents) in sources {
+    for (name, contents) in sources {
         let path = site.join(name);
         fs::write(&path, contents).unwrap();
-        inventory.push((
-            url::Url::from_file_path(&path).unwrap().to_string(),
-            mime.to_owned(),
-            fs::read(&path).unwrap(),
-        ));
     }
-    let captured_bytes: usize = inventory.iter().map(|(_, _, bytes)| bytes.len()).sum();
-    let mut url = url::Url::from_file_path(site.join("index.html")).unwrap();
+    let captured_bytes: usize = sources.iter().map(|(_, contents)| contents.len()).sum();
+    let mut url = url::Url::from_file_path(site.join("index")).unwrap();
     url.set_query(Some("theme=green"));
     url.set_fragment(Some("original-location"));
-    let files = Arc::new(LocalFiles::new(inventory).unwrap());
+    let file = original.path().join("scene.pen");
+    let document = json!({"version":"2.21","metadata":{"lazypencil":{"browser_resources":{
+        "version":1,"roots":[{"url":url::Url::from_directory_path(&site).unwrap().as_str(),"path":site.file_name().unwrap().to_str().unwrap()}]
+    }}},"children":[]}).to_string();
+    fs::write(&file, &document).unwrap();
+    let project = Project::from_document(&file, Document::parse(document).unwrap(), &[]).unwrap();
+    let captured = project
+        .browser_page_resources(&fs::canonicalize(file).unwrap(), url.as_str())
+        .unwrap();
+    let resource_revision = captured.revision;
+    let files = captured.files;
     fs::remove_dir_all(&site).unwrap();
     assert!(!site.exists());
+    assert_eq!(
+        project.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
     // This live file would execute if an unknown request reached the host.
     fs::write(
         original.path().join("unlisted.js"),
@@ -254,7 +256,7 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
             let stats = browser.local_file_stats(session).unwrap();
             assert_eq!(stats.fulfilled, sources.len() as u64 + 1);
             assert_eq!(stats.denied, 1);
-            assert_eq!(stats.response_bytes, (captured_bytes + sources.iter().find(|(name, _, _)| *name == "worker-library.js").unwrap().2.len()) as u64);
+            assert_eq!(stats.response_bytes, (captured_bytes + sources.iter().find(|(name, _)| *name == "worker-library.js").unwrap().1.len()) as u64);
             assert!(stats.attached_targets >= 2);
             Ok((png, stats, probe))
         })
@@ -290,7 +292,7 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
             "source_commit":std::env::var("GITHUB_SHA").ok(),"width":32,"height":32,
             "png_hash":lazypencil::document::hash(&png),"stats":stats,"source_removed":true,
             "location_preserved":probe["location"]==url.as_str(),"unsafe_host_file":probe["unsafe"],
-            "sandbox":"enabled","browser":browser.version
+            "sandbox":"enabled","browser":browser.version,"project_resource_revision":resource_revision
         })).unwrap()).unwrap();
     }
 }

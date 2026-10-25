@@ -33,56 +33,64 @@ impl Project {
         self.check_cancelled()?;
         match self.resolve_file(origin, uri) {
             Ok(path) => self.capture_asset(&path, kind),
-            Err(error) => {
-                if error.code != "IO_ERROR" {
-                    return Err(error);
-                }
-                let requested = self.reference_path(origin, uri)?;
-                let key = (requested.clone(), kind.to_owned());
-                if let Some(existing) = self.missing_assets.get(&key) {
-                    existing.path.verify()?;
-                    return Ok(());
-                }
-                let Some(path) = crate::paths::MissingPath::capture(&requested)? else {
-                    return Err(error);
-                };
-                if !self
-                    .allowed_roots
-                    .iter()
-                    .any(|root| path.target.starts_with(root))
-                {
-                    return Err(Error::new(
-                        "ASSET_NOT_FOUND",
-                        "A missing reference escapes the allowed project roots",
-                    ));
-                }
-                if self.missing_assets.len() >= 1024 {
-                    return Err(invalid(
-                        "A project may report at most 1024 missing asset references",
-                    ));
-                }
-                path.verify()?;
-                let bytes = serde_json::to_vec(&path)
-                    .expect("UTF-8 missing reference")
-                    .len()
-                    .saturating_add(uri.len())
-                    .saturating_add(origin.as_os_str().len());
-                self.byte_count = self.byte_count.saturating_add(bytes);
-                if self.byte_count > MAX_PROJECT_BYTES {
-                    return Err(invalid("Project dependencies exceed 128 MiB"));
-                }
-                self.missing_assets.insert(
-                    key,
-                    MissingAsset {
-                        path,
-                        kind: kind.into(),
-                        origin: origin.into(),
-                        uri: uri.into(),
-                    },
-                );
-                Ok(())
-            }
+            Err(error) => self.capture_missing_reference(origin, uri, kind, error),
         }
+    }
+
+    pub(super) fn capture_missing_reference(
+        &mut self,
+        origin: &Path,
+        uri: &str,
+        kind: &str,
+        error: Error,
+    ) -> Result<()> {
+        if error.code != "IO_ERROR" {
+            return Err(error);
+        }
+        let requested = self.reference_path(origin, uri)?;
+        let key = (requested.clone(), kind.to_owned());
+        if let Some(existing) = self.missing_assets.get(&key) {
+            existing.path.verify()?;
+            return Ok(());
+        }
+        let Some(path) = crate::paths::MissingPath::capture(&requested)? else {
+            return Err(error);
+        };
+        if !self
+            .allowed_roots
+            .iter()
+            .any(|root| path.target.starts_with(root))
+        {
+            return Err(Error::new(
+                "ASSET_NOT_FOUND",
+                "A missing reference escapes the allowed project roots",
+            ));
+        }
+        if self.missing_assets.len() >= 1024 {
+            return Err(invalid(
+                "A project may report at most 1024 missing asset references",
+            ));
+        }
+        path.verify()?;
+        let bytes = serde_json::to_vec(&path)
+            .expect("UTF-8 missing reference")
+            .len()
+            .saturating_add(uri.len())
+            .saturating_add(origin.as_os_str().len());
+        self.byte_count = self.byte_count.saturating_add(bytes);
+        if self.byte_count > MAX_PROJECT_BYTES {
+            return Err(invalid("Project dependencies exceed 128 MiB"));
+        }
+        self.missing_assets.insert(
+            key,
+            MissingAsset {
+                path,
+                kind: kind.into(),
+                origin: origin.into(),
+                uri: uri.into(),
+            },
+        );
+        Ok(())
     }
 
     pub fn asset_diagnostics(&self) -> Vec<Value> {

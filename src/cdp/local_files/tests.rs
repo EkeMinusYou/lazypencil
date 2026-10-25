@@ -62,6 +62,41 @@ fn captured_bytes_handle_queries_head_and_binary_without_reading_original_paths(
 }
 
 #[test]
+fn shared_resources_do_not_copy_payloads_and_unknown_mime_keeps_native_sniffing() {
+    let bytes: Arc<[u8]> = Arc::from(b"<!doctype html>captured".as_slice());
+    let files =
+        LocalFiles::with_optional_mime([("file:///no-extension".into(), None, bytes.clone())])
+            .unwrap();
+    assert!(Arc::ptr_eq(
+        &bytes,
+        &files.files["file:///no-extension"].bytes
+    ));
+    let (_, response, _) = files
+        .response(&request("root", "GET", "file:///no-extension")["params"])
+        .unwrap();
+    assert!(
+        !response["responseHeaders"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|header| header["name"] == "Content-Type")
+    );
+    assert_eq!(
+        STANDARD.decode(response["body"].as_str().unwrap()).unwrap(),
+        bytes.as_ref()
+    );
+    let long = "a".repeat(64000);
+    assert!(
+        LocalFiles::with_optional_mime((0..70).map(|index| (
+            format!("file:///{long}{index}"),
+            None,
+            Arc::<[u8]>::from([])
+        )))
+        .is_err()
+    );
+}
+
+#[test]
 fn unknown_files_methods_remote_hosts_and_credentialed_urls_never_fall_back() {
     for (method, url) in [
         ("GET", "file:///original/site/missing"),
@@ -108,7 +143,7 @@ fn inventories_reject_alias_collisions_header_injection_and_oversized_members() 
     for mime in ["", "text/html\r\nLocation: file:///other", "text/日本語"] {
         assert!(LocalFiles::new([("file:///a".into(), mime.into(), vec![])]).is_err());
     }
-    assert!(LocalFiles::new(std::iter::empty()).is_err());
+    assert!(LocalFiles::new(std::iter::empty::<(String, String, Vec<u8>)>()).is_err());
     assert!(
         LocalFiles::new([(
             "file:///a".into(),
