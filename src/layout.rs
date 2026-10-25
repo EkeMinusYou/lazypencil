@@ -11,7 +11,7 @@ use skia_safe::{Color, textlayout::TextAlign};
 use std::{collections::BTreeMap, path::PathBuf};
 
 const MAX_DIMENSION: f32 = 1_000_000.0;
-const ENGINE: &str = concat!("lazypencil/", env!("CARGO_PKG_VERSION"), "/layout-5");
+const ENGINE: &str = concat!("lazypencil/", env!("CARGO_PKG_VERSION"), "/layout-6");
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LayoutDiagnostic {

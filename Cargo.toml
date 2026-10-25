@@ -62,6 +62,10 @@ crossterm = { version = "0.29.0", features = ["use-dev-tty"], optional = true }
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# CoreText cannot render CBDT or COLRv1; keep a file-only FreeType manager for them.
+skia-safe = { version = "0.153.3", default-features = false, features = ["embed-freetype"], optional = true }
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

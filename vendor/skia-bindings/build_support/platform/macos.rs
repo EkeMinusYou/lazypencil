@@ -9,7 +9,9 @@ pub struct MacOs;
 
 impl PlatformDetails for MacOs {
     fn uses_freetype(&self) -> bool {
-        false
+        // CoreText remains the system manager. An explicitly requested embedded
+        // FreeType build also provides SkFontMgr_New_Custom_Empty for file fonts.
+        cfg!(feature = "embed-freetype")
     }
 
     fn gn_args(&self, _config: &BuildConfiguration, builder: &mut GnArgsBuilder) {

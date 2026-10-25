@@ -97,6 +97,8 @@ pub struct Fonts {
     provider: TypefaceFontProvider,
     pub(super) collection: FontCollection,
     system: FontMgr,
+    #[cfg(target_os = "macos")]
+    portable_color: Option<FontMgr>,
     families: BTreeMap<String, String>,
     explicit: BTreeSet<String>,
     registered: BTreeMap<u32, FontInfo>,
@@ -151,6 +153,8 @@ impl Fonts {
             provider: TypefaceFontProvider::new(),
             collection: FontCollection::new(),
             system: FontMgr::new(),
+            #[cfg(target_os = "macos")]
+            portable_color: None,
             families: BTreeMap::new(),
             explicit: BTreeSet::new(),
             registered: BTreeMap::new(),
@@ -207,8 +211,7 @@ impl Fonts {
             let face_hash = hash(&bytes);
             let size = bytes.len();
             let face = self
-                .system
-                .new_from_data(Data::new_copy(&bytes), Some(0))
+                .file_face(&bytes)?
                 .ok_or_else(|| invalid(format!("Cannot load font {source}, face {index}")))?;
             let family = alias
                 .map(str::to_string)
@@ -235,6 +238,26 @@ impl Fonts {
             families.push(self.families[&family.to_lowercase()].clone());
         }
         Ok(families)
+    }
+
+    fn file_face(&mut self, bytes: &[u8]) -> Result<Option<Typeface>> {
+        #[cfg(target_os = "macos")]
+        if super::container::requires_freetype_color(bytes)? {
+            if self.portable_color.is_none() {
+                self.portable_color = Some(FontMgr::custom_empty().ok_or_else(|| {
+                    Error::new(
+                        "RENDER_ERROR",
+                        "Skia's embedded FreeType font manager is unavailable",
+                    )
+                })?);
+            }
+            return Ok(self
+                .portable_color
+                .as_ref()
+                .expect("initialized color manager")
+                .new_from_data(Data::new_copy(bytes), Some(0)));
+        }
+        Ok(self.system.new_from_data(Data::new_copy(bytes), Some(0)))
     }
 
     fn add(&mut self, face: Typeface, info: FontInfo, size: usize) -> Result<()> {
@@ -313,8 +336,7 @@ impl Fonts {
         let normalized = super::container::extract(&bytes, index)?;
         let size = normalized.len();
         let frozen = self
-            .system
-            .new_from_data(Data::new_copy(&normalized), Some(0))
+            .file_face(&normalized)?
             .ok_or_else(|| invalid("Cannot load captured system font data"))?;
         self.add(
             frozen,

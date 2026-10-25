@@ -41,6 +41,33 @@ fn paint(block: &TextBlock) -> Vec<u8> {
         .to_vec()
 }
 
+fn paint_scene(block: &TextBlock) -> Vec<u8> {
+    let mut surface = skia_safe::surfaces::raster_n32_premul((400, 260)).unwrap();
+    surface.canvas().clear(skia_safe::Color::TRANSPARENT);
+    block.paragraph.paint(surface.canvas(), (10.0, 10.0));
+    skia_safe::png_encoder::encode_image(None, &surface.image_snapshot(), &Default::default())
+        .unwrap()
+        .as_bytes()
+        .to_vec()
+}
+
+fn scene_pixels(png: &[u8]) -> Vec<[u8; 4]> {
+    let image = skia_safe::Image::from_encoded(skia_safe::Data::new_copy(png))
+        .unwrap()
+        .make_raster_image(None, None)
+        .unwrap();
+    assert_eq!((image.width(), image.height()), (400, 260));
+    let pixels = image.peek_pixels().unwrap();
+    let mut result = Vec::new();
+    for y in 0..image.height() {
+        for x in 0..image.width() {
+            let color = pixels.get_color((x, y));
+            result.push([color.r(), color.g(), color.b(), color.a()]);
+        }
+    }
+    result
+}
+
 #[test]
 fn original_font_fixtures_have_pinned_contents_and_load_every_collection_face() {
     let manifest: Value =

@@ -18,6 +18,82 @@ fn word(bytes: &[u8], offset: usize) -> Result<u32> {
     Ok(u32::from_be_bytes(value.try_into().expect("four bytes")))
 }
 
+/// Route only the color formats that CoreText cannot paint to the file-only manager.
+#[cfg(any(target_os = "macos", test))]
+pub(super) fn requires_freetype_color(bytes: &[u8]) -> Result<bool> {
+    if !matches!(word(bytes, 0)?, 0x10000 | 0x4f54544f | 0x74727565) {
+        return Err(invalid("Unsupported standalone font format"));
+    }
+    let count = (word(bytes, 4)? >> 16) as usize;
+    if !(1..=4095).contains(&count) || 12 + count * 16 > bytes.len() {
+        return Err(invalid("Invalid font table directory"));
+    }
+    let mut required = false;
+    let mut seen = std::collections::BTreeSet::new();
+    for entry in 0..count {
+        let position = 12 + entry * 16;
+        let tag = word(bytes, position)?;
+        if ![u32::from_be_bytes(*b"CBDT"), u32::from_be_bytes(*b"COLR")].contains(&tag) {
+            continue;
+        }
+        if !seen.insert(tag) {
+            return Err(invalid("Font contains duplicate color tables"));
+        }
+        let start = word(bytes, position + 8)? as usize;
+        let length = word(bytes, position + 12)? as usize;
+        let end = start
+            .checked_add(length)
+            .filter(|end| *end <= bytes.len())
+            .ok_or_else(|| invalid("Color font table lies outside the file"))?;
+        let table = &bytes[start..end];
+        if tag == u32::from_be_bytes(*b"CBDT") {
+            required = true;
+        } else {
+            let version = table
+                .get(..2)
+                .ok_or_else(|| invalid("Truncated COLR version"))?;
+            required |= u16::from_be_bytes(version.try_into().expect("two bytes")) >= 1;
+        }
+    }
+    Ok(required)
+}
+
+#[cfg(test)]
+mod color_routing_tests {
+    use super::*;
+
+    fn face(tag: &[u8; 4], body: &[u8]) -> Vec<u8> {
+        let mut bytes = vec![0; 28];
+        bytes[..4].copy_from_slice(&0x10000u32.to_be_bytes());
+        bytes[4..6].copy_from_slice(&1u16.to_be_bytes());
+        bytes[12..16].copy_from_slice(tag);
+        bytes[20..24].copy_from_slice(&28u32.to_be_bytes());
+        bytes[24..28].copy_from_slice(&(body.len() as u32).to_be_bytes());
+        bytes.extend(body);
+        bytes
+    }
+
+    #[test]
+    fn color_routing_keeps_native_faces_and_rejects_truncated_or_unbounded_tables() {
+        assert!(!requires_freetype_color(super::super::DEFAULT_FONT_BYTES).unwrap());
+        assert!(!requires_freetype_color(&face(b"COLR", &[0, 0])).unwrap());
+        assert!(!requires_freetype_color(&face(b"sbix", &[0, 1])).unwrap());
+        assert!(requires_freetype_color(&face(b"COLR", &[0, 1])).unwrap());
+        assert!(requires_freetype_color(&face(b"CBDT", &[0, 3, 0, 0])).unwrap());
+        assert!(requires_freetype_color(&[]).is_err());
+        assert!(requires_freetype_color(&face(b"COLR", &[0])).is_err());
+        let mut malformed = face(b"COLR", &[0, 1]);
+        malformed[20..24].copy_from_slice(&u32::MAX.to_be_bytes());
+        assert!(requires_freetype_color(&malformed).is_err());
+        let mut malformed = face(b"CBDT", &[0, 3, 0, 0]);
+        malformed[24..28].copy_from_slice(&u32::MAX.to_be_bytes());
+        assert!(requires_freetype_color(&malformed).is_err());
+        let mut malformed = face(b"COLR", &[0, 1]);
+        malformed[4..6].copy_from_slice(&4096u16.to_be_bytes());
+        assert!(requires_freetype_color(&malformed).is_err());
+    }
+}
+
 pub(super) fn count(bytes: &[u8]) -> Result<u32> {
     if !bytes.starts_with(b"ttcf") {
         return Ok(1);

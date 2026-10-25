@@ -1,24 +1,7 @@
 use super::*;
 use serde_json::json;
-use skia_safe::{Color, Data, Image};
+use skia_safe::Color;
 use std::collections::BTreeSet;
-
-fn pixels(png: &[u8]) -> Vec<[u8; 4]> {
-    let image = Image::from_encoded(Data::new_copy(png))
-        .unwrap()
-        .make_raster_image(None, None)
-        .unwrap();
-    assert_eq!((image.width(), image.height()), (400, 260));
-    let pixels = image.peek_pixels().unwrap();
-    let mut result = Vec::new();
-    for y in 0..image.height() {
-        for x in 0..image.width() {
-            let color = pixels.get_color((x, y));
-            result.push([color.r(), color.g(), color.b(), color.a()]);
-        }
-    }
-    result
-}
 
 #[test]
 #[ignore = "requires pinned upstream fonts prepared by cargo xtask fixtures emoji on GHA"]
@@ -100,18 +83,8 @@ fn verify_format(format_index: usize) {
                         .any(|used| used.hash == hash(DEFAULT_FONT_BYTES))
                 );
             }
-            let mut surface = skia_safe::surfaces::raster_n32_premul((400, 260)).unwrap();
-            surface.canvas().clear(Color::TRANSPARENT);
-            block.paragraph.paint(surface.canvas(), (10.0, 10.0));
-            let reference = skia_safe::png_encoder::encode_image(
-                None,
-                &surface.image_snapshot(),
-                &Default::default(),
-            )
-            .unwrap()
-            .as_bytes()
-            .to_vec();
-            let reference_pixels = pixels(&reference);
+            let reference = paint_scene(&block);
+            let reference_pixels = scene_pixels(&reference);
             let chromatic = reference_pixels
                 .iter()
                 .filter(|&&[r, g, b, a]| a > 200 && r.max(g).max(b) - r.min(g).min(b) > 30)
@@ -166,7 +139,7 @@ fn verify_format(format_index: usize) {
                 );
                 let name = format!("codec-emoji-{format_index}-{case}-{version}.png");
                 fs::write(output.join(&name), &rendered.png).unwrap();
-                let actual = pixels(&rendered.png);
+                let actual = scene_pixels(&rendered.png);
                 let differences = actual
                     .iter()
                     .zip(&reference_pixels)

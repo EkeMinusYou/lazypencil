@@ -11,15 +11,112 @@ use std::{
 mod fixture_helper;
 
 fn color_font(directory: &Path) -> PathBuf {
-    let output = directory.join("color.ttf");
+    diagnostic_font(directory, "colr")
+}
+
+fn diagnostic_font(directory: &Path, format: &str) -> PathBuf {
+    let output = directory.join(format!("{format}.ttf"));
     let child = Command::new(fixture_helper::helper())
         .arg("font-fixture")
         .arg(&output)
+        .arg(format)
         .stdin(Stdio::null())
         .spawn()
         .unwrap();
     assert!(completed(child, Duration::from_secs(10)).success());
     output
+}
+
+#[test]
+fn original_sbix_bitmaps_preserve_palettes_composition_and_scaling_in_both_schemas() {
+    let directory = tempfile::tempdir().unwrap();
+    let font = diagnostic_font(directory.path(), "sbix");
+    let mut fonts = Fonts::new(std::slice::from_ref(&font)).unwrap();
+    let mut reports = Vec::new();
+    let retained = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR").map(PathBuf::from);
+    if let Some(root) = &retained {
+        fs::create_dir_all(root).unwrap();
+    }
+    let mut checked = 0;
+    for (case, content, glyph) in [
+        ("smile", "😀", 1u16),
+        ("woman", "👩", 4),
+        ("laptop", "💻", 6),
+        ("zwj", "👩‍💻", 1),
+        ("modifier", "👩🏻", 8),
+        ("selector", "☺️", 1),
+    ] {
+        for size in [50.0_f32, 100.0, 150.0] {
+            let mut request = spec(content, "LP Test Bitmap");
+            request.size = size;
+            request.color = Color::BLUE;
+            let mut block = fonts.layout(&request, None).unwrap();
+            let mut glyphs = Vec::new();
+            block.paragraph.visit(|_, run| {
+                if let Some(run) = run {
+                    glyphs.extend_from_slice(run.glyphs());
+                }
+            });
+            assert_eq!(glyphs, [glyph]);
+            assert_eq!(block.metrics.fonts.len(), 1);
+            assert_eq!(block.metrics.fonts[0].hash, hash(&fs::read(&font).unwrap()));
+            assert!((block.metrics.width - size * 0.8).abs() < 0.1);
+            let minimum = (size * size / 10.0) as usize;
+            let native = paint_scene(&block);
+            let native_name = format!("codec-sbix-{case}-{size}-native.png");
+            if let Some(root) = &retained {
+                fs::write(root.join(&native_name), &native).unwrap();
+            }
+            let reference = scene_pixels(&native);
+            let (red, green) = palette_pixels(&native);
+            assert!(
+                red > minimum && green > minimum,
+                "native {case} {size}: red={red}, green={green}"
+            );
+            for version in ["2.19", "2.21"] {
+                let (output, _) = render_scene(
+                    directory.path(),
+                    &font,
+                    version,
+                    json!({"fontFamily":"LP Test Bitmap","content":content,"fontSize":size}),
+                    &Default::default(),
+                );
+                let (red, green) = palette_pixels(&output.png);
+                let pixels = scene_pixels(&output.png);
+                let differences = pixels
+                    .iter()
+                    .zip(&reference)
+                    .filter(|(a, b)| a != b)
+                    .count();
+                if let Some(root) = &retained {
+                    let filename = format!("codec-sbix-{case}-{size}-{version}.png");
+                    fs::write(root.join(&filename), &output.png).unwrap();
+                    reports.push(json!({"case":case,"content":content,"schema":version,"font_size":size,
+                        "font_sha256":block.metrics.fonts[0].hash,"glyphs":glyphs,"metrics":block.metrics,
+                        "png":filename,"png_sha256":hash(&output.png),"native_png":native_name,"native_sha256":hash(&native),
+                        "different_pixels":differences,"red_pixels":red,"green_pixels":green,"minimum":minimum}));
+                    fs::write(
+                        root.join("codec-sbix-report.json"),
+                        serde_json::to_vec_pretty(&json!({
+                            "source_commit":std::env::var("GITHUB_SHA").ok(),"cases":reports,
+                        }))
+                        .unwrap(),
+                    )
+                    .unwrap();
+                }
+                assert!(
+                    red > minimum && green > minimum,
+                    "{version} {case} {size}: red={red}, green={green}"
+                );
+                assert_eq!(
+                    differences, 0,
+                    "{version} {case} {size}: native paragraph / ordinary render"
+                );
+                checked += 1;
+            }
+        }
+    }
+    assert_eq!(checked, 36);
 }
 
 fn completed(mut child: Child, limit: Duration) -> ExitStatus {

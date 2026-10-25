@@ -30,10 +30,12 @@ fn main() -> test_support::Result {
     match args.first().map(String::as_str) {
         Some("font-fixture") => {
             let destination = args.get(1).ok_or("Missing color-font output")?;
-            std::fs::write(
-                destination,
-                lazypencil_xtask::fixtures::fonts::color::generate(),
-            )?;
+            let bytes = match args.get(2).map(String::as_str).unwrap_or("colr") {
+                "colr" => lazypencil_xtask::fixtures::fonts::color::generate(),
+                "sbix" => lazypencil_xtask::fixtures::fonts::color::bitmap::generate()?,
+                _ => return Err("Unknown color-font fixture format".into()),
+            };
+            std::fs::write(destination, bytes)?;
             Ok(())
         }
         Some("fixture-command") => test_support::command::response(&args[1..]),

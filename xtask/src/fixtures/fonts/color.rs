@@ -3,6 +3,8 @@
 
 use super::*;
 
+pub mod bitmap;
+
 fn rectangle(left: i16, right: i16) -> Vec<u8> {
     padded(join(&[
         i16s(&[1, left, 0, right, 700]),
@@ -79,8 +81,8 @@ fn ligatures() -> Vec<u8> {
     ])
 }
 
-pub fn generate() -> Vec<u8> {
-    let mut font = tables("LP Test Color", "Regular", 400, 0x1f600, 800, false);
+fn base(family: &str) -> Tables {
+    let mut font = tables(family, "Regular", 400, 0x1f600, 800, false);
     let outlines = (0..10)
         .map(|glyph| match glyph {
             2 => rectangle(80, 400),
@@ -111,6 +113,11 @@ pub fn generate() -> Vec<u8> {
     font.get_mut(b"maxp").unwrap()[4..6].copy_from_slice(&10u16.to_be_bytes());
     font.insert(*b"cmap", character_map());
     font.insert(*b"GSUB", ligatures());
+    font
+}
+
+pub fn generate() -> Vec<u8> {
+    let mut font = base("LP Test Color");
     // Every base glyph uses the same two adjacent rectangular layers. The
     // modifier ligature reverses their palette entries to expose composition.
     let mut bases = Vec::new();
