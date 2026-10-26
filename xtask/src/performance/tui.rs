@@ -61,6 +61,19 @@ mod hosted {
         time::{Duration, Instant},
     };
 
+    #[derive(Clone, Copy, Default)]
+    struct ObserverTime {
+        screen_ms: f64,
+        graphics_ms: f64,
+        hash_ms: f64,
+        poll_ms: f64,
+    }
+    impl ObserverTime {
+        fn since(self, before: Self) -> Value {
+            json!({"screen_ms":self.screen_ms-before.screen_ms,"graphics_ms":self.graphics_ms-before.graphics_ms,"hash_ms":self.hash_ms-before.hash_ms,"poll_ms":self.poll_ms-before.poll_ms})
+        }
+    }
+
     struct Terminal {
         child: Child,
         master: fs::File,
@@ -70,7 +83,8 @@ mod hosted {
         received: u64,
         started: Instant,
         deadline: Instant,
-        last_frame: Option<(Instant, String, observer::Frame)>,
+        last_frame: Option<(Instant, String, observer::Frame, ObserverTime)>,
+        observer: ObserverTime,
     }
 
     impl Drop for Terminal {
@@ -163,6 +177,7 @@ mod hosted {
                 started,
                 deadline,
                 last_frame: None,
+                observer: ObserverTime::default(),
             })
         }
 
@@ -180,7 +195,9 @@ mod hosted {
                 events: libc::POLLIN,
                 revents: 0,
             };
+            let poll_started = Instant::now();
             let ready = unsafe { libc::poll(&mut descriptor, 1, 20) };
+            self.observer.poll_ms += poll_started.elapsed().as_secs_f64() * 1000.0;
             if ready < 0 {
                 let error = std::io::Error::last_os_error();
                 if error.kind() == std::io::ErrorKind::Interrupted {
@@ -197,17 +214,29 @@ mod hosted {
                 let count = self.master.read(&mut bytes)?;
                 ensure!(count > 0, "Measurement PTY closed");
                 let received = Instant::now();
+                let observer_at_receipt = self.observer;
                 self.received += count as u64;
                 ensure!(
                     self.received <= 512 * 1024 * 1024,
                     "Unbounded measured terminal output"
                 );
+                let screen_started = Instant::now();
                 self.screen.feed(&bytes[..count]);
+                self.observer.screen_ms += screen_started.elapsed().as_secs_f64() * 1000.0;
+                let graphics_started = Instant::now();
                 self.frames
                     .feed(&bytes[..count])
                     .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                self.observer.graphics_ms += graphics_started.elapsed().as_secs_f64() * 1000.0;
                 if let Some(frame) = self.frames.images.pop() {
-                    self.last_frame = Some((received, util::digest(&frame.rgba), frame));
+                    let hash_started = Instant::now();
+                    self.last_frame = Some((
+                        received,
+                        util::digest(&frame.rgba),
+                        frame,
+                        observer_at_receipt,
+                    ));
+                    self.observer.hash_ms += hash_started.elapsed().as_secs_f64() * 1000.0;
                     self.frames.images.clear();
                 }
             }
@@ -229,25 +258,27 @@ mod hosted {
             Ok(sent)
         }
 
-        fn changed_frame(&mut self, key: &[u8], previous: &str) -> Result<(f64, String)> {
+        fn changed_frame(&mut self, key: &[u8], previous: &str) -> Result<(f64, String, Value)> {
+            let before = self.observer;
             let sent = self.key(key)?;
             self.wait("changed preview frame", |t| {
                 t.last_frame
                     .as_ref()
-                    .is_some_and(|(when, hash, _)| *when >= sent && hash != previous)
+                    .is_some_and(|(when, hash, _, _)| *when >= sent && hash != previous)
             })?;
-            let (received, hash, _) = self
+            let (received, hash, _, at_receipt) = self
                 .last_frame
                 .as_ref()
                 .context("Missing changed preview")?;
             Ok((
                 received.duration_since(sent).as_secs_f64() * 1000.0,
                 hash.clone(),
+                json!({"before_output_receipt":at_receipt.since(before),"through_complete_parse":self.observer.since(before),"scope":"Wall-time counters before complete output receipt versus after parsing its final chunk; the latter includes work outside the measured receipt latency"}),
             ))
         }
 
         fn capture(&self, root: &Path, name: &str) -> Result<()> {
-            let (_, hash, frame) = self
+            let (_, hash, frame, _) = self
                 .last_frame
                 .as_ref()
                 .context("Missing diagnostic frame")?;
@@ -352,11 +383,11 @@ mod hosted {
             terminal.key(b"\t")?;
             let initial = terminal.last_frame.as_ref().unwrap().1.clone();
             terminal.capture(&root, "initial")?;
-            let (zoom_ms, zoomed) = terminal.changed_frame(b"+", &initial)?;
+            let (zoom_ms, zoomed, zoom_observer) = terminal.changed_frame(b"+", &initial)?;
             if sample == 0 {
                 terminal.capture(&root, "zoomed")?;
             }
-            let (unzoom_ms, restored) = terminal.changed_frame(b"-", &zoomed)?;
+            let (unzoom_ms, restored, unzoom_observer) = terminal.changed_frame(b"-", &zoomed)?;
             if sample == 0 || restored != initial {
                 terminal.capture(&root, "zoom-restored")?;
             }
@@ -364,11 +395,12 @@ mod hosted {
                 restored == initial,
                 "Zoom did not restore the original preview pixels"
             );
-            let (pan_ms, panned) = terminal.changed_frame(b"\x1b[C", &initial)?;
+            let (pan_ms, panned, pan_observer) = terminal.changed_frame(b"\x1b[C", &initial)?;
             if sample == 0 {
                 terminal.capture(&root, "panned-right")?;
             }
-            let (unpan_ms, restored) = terminal.changed_frame(b"\x1b[D", &panned)?;
+            let (unpan_ms, restored, unpan_observer) =
+                terminal.changed_frame(b"\x1b[D", &panned)?;
             if sample == 0 || restored != initial {
                 terminal.capture(&root, "pan-restored")?;
             }
@@ -377,7 +409,7 @@ mod hosted {
                 "Pan did not restore the original preview pixels"
             );
             let resources = resources::snapshot(terminal.child.id())?;
-            samples.push(json!({"input_ready_ms":input_ms,"first_preview_ms":preview_ms,"interaction_ms":[zoom_ms,unzoom_ms,pan_ms,unpan_ms],"processes":resources,"fixture":fixture,"terminal_bytes":terminal.received}));
+            samples.push(json!({"input_ready_ms":input_ms,"first_preview_ms":preview_ms,"interaction_ms":[zoom_ms,unzoom_ms,pan_ms,unpan_ms],"observer_wall_ms":[zoom_observer,unzoom_observer,pan_observer,unpan_observer],"processes":resources,"fixture":fixture,"terminal_bytes":terminal.received}));
             if sample + 1 == arguments.samples {
                 let before = resources::snapshot(terminal.child.id())?;
                 let idle_frame = terminal.last_frame.as_ref().map(|frame| frame.0);

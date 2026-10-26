@@ -16,6 +16,7 @@ use std::{
 
 pub mod browser;
 mod candidate;
+mod clipboard;
 pub mod parallel;
 pub mod release;
 
@@ -39,6 +40,7 @@ pub enum Stage {
     DefaultBuild,
     Reproduce,
     DefaultTest,
+    Clipboard,
     BrowserSetup,
     BrowserTest,
     Mcp,
@@ -246,6 +248,7 @@ impl Session {
         let has = |s: &str| targets.iter().any(|t| t == s);
         let core = ["core", "conversation"].contains(&args.suite.as_str());
         match args.stage {
+            Stage::Clipboard => clipboard::run(self),
             Stage::EvidenceBuild => release::observe(self),
             Stage::Candidate => candidate::run(self),
             Stage::CandidatePrepare => candidate::prepare(self),

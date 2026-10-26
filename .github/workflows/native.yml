@@ -18,6 +18,9 @@ on:
       measure_tui:
         type: boolean
         default: false
+      native_clipboard:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -47,7 +50,7 @@ jobs:
 
   verify:
     if: inputs.phase != 'focus' || inputs.suite != 'ci'
-    timeout-minutes: ${{ inputs.phase == 'focus' && !inputs.measure_tui && (inputs.suite == 'core' || inputs.suite == 'conversation') && 30 || 60 }}
+    timeout-minutes: ${{ inputs.phase == 'focus' && !(inputs.measure_tui || inputs.native_clipboard) && (inputs.suite == 'core' || inputs.suite == 'conversation') && 30 || 60 }}
     runs-on: ${{ inputs.os }}
     env:
       FOCUS_SUITE: ${{ inputs.suite }}
@@ -69,7 +72,7 @@ jobs:
           key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'xtask/Cargo.lock') }}
           restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
       - name: Install Linux native build dependencies
-        if: runner.os == 'Linux' && (inputs.phase == 'full' || inputs.measure_tui || (inputs.suite != 'core' && inputs.suite != 'conversation'))
+        if: runner.os == 'Linux' && (inputs.phase == 'full' || inputs.measure_tui || inputs.native_clipboard || (inputs.suite != 'core' && inputs.suite != 'conversation'))
         timeout-minutes: 20
         run: cargo xtask ci linux-dependencies
       - name: Verify, extract and normalize the complete source distribution
@@ -84,9 +87,9 @@ jobs:
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
-          key: ${{ inputs.phase == 'focus' && !inputs.measure_tui && (inputs.suite == 'core' || inputs.suite == 'conversation') && 'core-' || '' }}${{ steps.cache-key.outputs.primary }}
+          key: ${{ inputs.phase == 'focus' && !(inputs.measure_tui || inputs.native_clipboard) && (inputs.suite == 'core' || inputs.suite == 'conversation') && 'core-' || '' }}${{ steps.cache-key.outputs.primary }}
           restore-keys: |
-            ${{ inputs.phase == 'focus' && !inputs.measure_tui && (inputs.suite == 'core' || inputs.suite == 'conversation') && steps.cache-key.outputs.primary || '' }}
+            ${{ inputs.phase == 'focus' && !(inputs.measure_tui || inputs.native_clipboard) && (inputs.suite == 'core' || inputs.suite == 'conversation') && steps.cache-key.outputs.primary || '' }}
             ${{ format('checkpoint-{0}-', steps.cache-key.outputs.primary) }}
             ${{ format('checkpoint-{0}', steps.cache-key.outputs.primary) }}
             ${{ steps.cache-key.outputs.legacy }}
@@ -130,6 +133,11 @@ jobs:
       - name: Reproduce affected failures before other tests and Chromium
         if: inputs.phase == 'focus'
         run: cargo xtask ci native focus-reproduce --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
+      - name: Reproduce changed native clipboard input before longer tests
+        id: native-clipboard-focus
+        if: inputs.phase == 'focus' && inputs.native_clipboard
+        timeout-minutes: 10
+        run: cargo xtask ci native clipboard
       - name: Install real Linux terminal emulators for the early reproduction
         if: inputs.phase == 'focus' && inputs.suite == 'candidate' && runner.os == 'Linux'
         timeout-minutes: 20
@@ -186,6 +194,19 @@ jobs:
         if: inputs.phase == 'full'
         timeout-minutes: 15
         run: cargo xtask ci native default-test
+      - name: Verify fixture-owned native clipboard images and actual Ctrl+V delivery
+        id: native-clipboard
+        if: inputs.phase == 'full'
+        timeout-minutes: 10
+        run: cargo xtask ci native clipboard
+      - name: Retain native clipboard and PTY evidence
+        if: ${{ always() && (steps.native-clipboard.outcome == 'success' || steps.native-clipboard.outcome == 'failure' || steps.native-clipboard-focus.outcome == 'success' || steps.native-clipboard-focus.outcome == 'failure') }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: ${{ inputs.phase }}-clipboard-${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/clipboard-evidence
+          if-no-files-found: error
+          retention-days: 3
       - name: Install and diagnose the verified sandboxed Chromium runtime
         if: inputs.phase == 'full' || inputs.suite == 'dynamic' || inputs.suite == 'shader' || inputs.suite == 'copy' || inputs.suite == 'browser'
         timeout-minutes: 15
@@ -304,7 +325,7 @@ jobs:
         continue-on-error: true
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
-          key: ${{ (inputs.phase == 'full' && steps.release-smoke.outcome == 'success' || inputs.phase == 'focus' && !inputs.measure_tui && (inputs.suite == 'core' || inputs.suite == 'conversation')) && steps.native-cache.outputs.cache-primary-key || steps.cache-key.outputs.checkpoint }}
+          key: ${{ (inputs.phase == 'full' && steps.release-smoke.outcome == 'success' || inputs.phase == 'focus' && !(inputs.measure_tui || inputs.native_clipboard) && (inputs.suite == 'core' || inputs.suite == 'conversation')) && steps.native-cache.outputs.cache-primary-key || steps.cache-key.outputs.checkpoint }}
           path: |
             ${{ runner.temp }}/lazypencil-target
             ${{ runner.temp }}/lazypencil-source/vendor/skia-bindings/skia

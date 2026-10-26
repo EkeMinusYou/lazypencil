@@ -124,6 +124,19 @@ pub fn tui_measurement_changed(paths: &[String]) -> bool {
     })
 }
 
+pub fn native_clipboard_changed(paths: &[String]) -> bool {
+    paths.iter().any(|path| {
+        path.starts_with("tests/support/terminal/")
+            || [
+                "src/clipboard.rs",
+                "tests/tui.rs",
+                "xtask/src/ci/native/clipboard.rs",
+                "xtask/tests/native_clipboard.rs",
+            ]
+            .contains(&path.as_str())
+    })
+}
+
 fn has(stems: &BTreeSet<String>, names: &[&str]) -> bool {
     names.iter().any(|s| stems.contains(*s))
 }
@@ -202,6 +215,7 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         .iter()
         .all(|path| ci_only(path) || path.starts_with("resources/licenses/native/"))
         && (tui_measurement_changed(paths)
+            || native_clipboard_changed(paths)
             || paths.iter().any(|path| {
                 [
                     "xtask/src/dist.rs",

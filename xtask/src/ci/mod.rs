@@ -93,6 +93,10 @@ impl Command {
                     ("targets".into(), serde_json::to_string(&plan.targets)?),
                     ("preprocessor".into(), plan.preprocessor.to_string()),
                     (
+                        "native_clipboard".into(),
+                        focus::native_clipboard_changed(&paths).to_string(),
+                    ),
+                    (
                         "measure_tui".into(),
                         focus::tui_measurement_changed(&paths).to_string(),
                     ),
