@@ -240,7 +240,9 @@ impl Arguments {
                     let experiment = output.join(format!("{label}-sample-{index}.er"));
                     let raw = capture(
                         render(Path::new("gprofng"))
-                            .args(["collect", "app", "-p", "hi", "-a", "off", "-S", "off", "-o"])
+                            // Keep default resource sampling: gprofng 2.42 uses
+                            // that initialization path to prime its shared timer.
+                            .args(["collect", "app", "-p", "hi", "-a", "off", "-o"])
                             .arg(&experiment)
                             .arg(&binary)
                             .args(&arguments),
