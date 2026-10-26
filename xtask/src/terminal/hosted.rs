@@ -356,6 +356,7 @@ pub fn run(candidate: &Path, output: &Path) -> Result<()> {
     ensure!(helper.is_file(), "Missing independent ACP test helper");
     let binary = extracted.join("bin/lazypencil");
     let mut results = json!({});
+    let mut failed = Vec::new();
     for (protocol, program) in [
         ("kitty", "kitty"),
         ("auto-kitty", "kitty"),
@@ -380,8 +381,20 @@ pub fn run(candidate: &Path, output: &Path) -> Result<()> {
             !identity.trim().is_empty(),
             "Empty emulator version identity"
         );
-        let mut report =
-            Emulator::start(protocol, &binary, &helper, &output.join(protocol))?.verify()?;
+        // Each emulator owns its window and session. Keep the other reproductions
+        // after a failure, but run sequentially because XTest uses display focus.
+        let mut report = match Emulator::start(protocol, &binary, &helper, &output.join(protocol))
+            .and_then(Emulator::verify)
+        {
+            Ok(mut report) => {
+                report["status"] = json!("passed");
+                report
+            }
+            Err(error) => {
+                failed.push(protocol);
+                json!({"status":"failed","error":format!("{error:#}")})
+            }
+        };
         report["emulator_version"] = json!(identity.trim());
         results[protocol] = report;
     }
@@ -389,10 +402,15 @@ pub fn run(candidate: &Path, output: &Path) -> Result<()> {
         &output.join("report.json"),
         &util::encode(&json!({
             "format_version":1,"source_commit":revision,"candidate":verification,"target":target,
-            "display":"Xvfb 1600x1000x24; LIBGL_ALWAYS_SOFTWARE=1","protocols":results,
+            "display":"Xvfb 1600x1000x24; LIBGL_ALWAYS_SOFTWARE=1","protocols":results,"failed":&failed,
             "scope":"real-emulator rendered pixels and X11 keyboard/resize; not physical-monitor, IME, clipboard, tmux/SSH or performance acceptance"
         }))?,
         false,
     )?;
+    ensure!(
+        failed.is_empty(),
+        "Real-emulator reproductions failed: {}",
+        failed.join(", ")
+    );
     Ok(())
 }
