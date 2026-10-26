@@ -1,0 +1,74 @@
+{
+  "format_version": 1,
+  "package": {
+    "name": "skia-bindings",
+    "version": "0.153.3",
+    "license": "MIT"
+  },
+  "scope": "Reviewed vendored C++ wrapper translation units, owned header and build selection. The three CPU/textlayout units and owned header contain no separate copyright/license comments; retain the original package MIT license. Skia headers, their inline definitions, system headers and final used archive members remain part of the separate native/source-to-binary review. The optional GPU wrapper gl.cpp copies Skia code and is outside this reviewed feature set.",
+  "upstream": {
+    "repository": "https://github.com/rust-skia/rust-skia",
+    "revision": "b7f043e0b1e2a850e702245de811f01df1f6b0ff",
+    "path": "skia-bindings",
+    "vendored_changes": "Current vendored bytes are pinned below; this does not claim an unmodified upstream tree."
+  },
+  "compiled_sources": [
+    "src/bindings.cpp",
+    "src/shaper.cpp",
+    "src/paragraph.cpp"
+  ],
+  "required_features": [
+    "binary-cache",
+    "embed-icudtl",
+    "jpeg",
+    "jpeg-decode",
+    "jpeg-encode",
+    "textlayout",
+    "webp-decode"
+  ],
+  "optional_features": [
+    "embed-freetype"
+  ],
+  "files": [
+    {
+      "path": "LICENSE",
+      "bytes": 1123,
+      "sha256": "4b33ed5b329a3a79eb1243fd91373c68b0ae0b9df7503bfc50d0c5253adf1b9a"
+    },
+    {
+      "path": "build.rs",
+      "bytes": 8491,
+      "sha256": "436592627e66588d7f5113ff8e72de98a08c4aa8be991f0a0dd8d2b490820b36"
+    },
+    {
+      "path": "build_support/features.rs",
+      "bytes": 7370,
+      "sha256": "70939abeb303cb7682ba947af1cdb91410138c43905a0fb36fd9645774d51c53"
+    },
+    {
+      "path": "build_support/skia_bindgen.rs",
+      "bytes": 34277,
+      "sha256": "532e6d71ddc552c46fa4849c24a51692af694cf65d500d1e47736a51cf8d0f14"
+    },
+    {
+      "path": "src/bindings.cpp",
+      "bytes": 134556,
+      "sha256": "87a7d3e66a5063066e0829e2f2d3ce795cf6a439ee04d8acd9e372b35ef55ee7"
+    },
+    {
+      "path": "src/bindings.h",
+      "bytes": 1276,
+      "sha256": "90d7fd92fc081958f4ddb81cd6810c3fe6bebbd3effaa377ef2d90c21f60956c"
+    },
+    {
+      "path": "src/paragraph.cpp",
+      "bytes": 18733,
+      "sha256": "e1f4b9ddda19ec42f7b7b3410d9788105067c402eed966ed8fa4e72894333e5f"
+    },
+    {
+      "path": "src/shaper.cpp",
+      "bytes": 9432,
+      "sha256": "78a28e796b97aec8f5fcae54fe5f86a01787f6db6b62801dc8e4cd7e27dd01fc"
+    }
+  ]
+}

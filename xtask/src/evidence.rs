@@ -1,6 +1,6 @@
 use crate::{
     dist,
-    notices::{self, assets, quickjs, skia, toolchain},
+    notices::{self, assets, quickjs, skia, skia_wrapper, toolchain},
     process, shader, util,
 };
 use anyhow::{Context, Result, ensure};
@@ -22,7 +22,7 @@ pub mod linkage;
 const GAPS: &[&str] = &[
     "Cargo declarations and Skia graph inputs do not establish final binary linkage or used archive members.",
     "System-library attribution and final Rust source-to-binary/linkage verification remain required.",
-    "The skia-bindings wrapper still requires final native attribution review.",
+    "The wrapper's Skia/system inline headers remain part of final native source-to-binary review; its reviewed owned C++ inputs and original MIT notice are recorded separately.",
     "Font/icon source declarations and original notices are collected; final applicability, other assets, and optional runtimes still require review.",
     "Complete legal review, signed build provenance, packaging, signing, and publication remain required.",
 ];
@@ -453,6 +453,25 @@ pub fn collect(arguments: &Arguments) -> Result<Value> {
         ninja,
         Some(&upstream),
     )?;
+    let wrapper_features = array(&selected["skia_bindings"]["features"])?
+        .iter()
+        .map(|value| Ok(string(value)?.to_owned()))
+        .collect::<Result<Vec<_>>>()?;
+    let wrapper_out = target.join(string(&selected["skia_bindings"]["out_dir"])?);
+    let wrapper_stdout = inside(
+        &wrapper_out
+            .parent()
+            .context("Missing wrapper build directory")?
+            .join("output"),
+        &target,
+    )?;
+    let wrapper_stdout = util::read(&wrapper_stdout, 16 * 1024 * 1024)?;
+    let wrapper = skia_wrapper::collect(
+        &root,
+        &wrapper_features,
+        &wrapper_stdout,
+        &stage.join("skia-wrapper"),
+    )?;
     let quickjs = quickjs::collect(
         &root,
         &manifest,
@@ -530,7 +549,7 @@ pub fn collect(arguments: &Arguments) -> Result<Value> {
     .into_iter()
     .map(|s| (s, std::env::var(s).ok()))
     .collect::<BTreeMap<_, _>>();
-    let metadata = json!({"format_version":1,"release_ready":false,"source":source,"binary":binary,"application_artifact_fresh":application_fresh,"compiler":compiler,"dynamic_linkage":dynamic_linkage,"static_link_map":static_link_map,"native_packages":selected,"native_archives":archives,"rust_notices":rust,"skia_notices":skia,"quickjs_notices":quickjs,"asset_notices":assets,"toolchain_notices":standard,"shader_preprocessor":shader,"cargo_output":cargo_output,"ignored_non_cargo_lines":ignored,"remaining_review":gaps,"hosted":hosted});
+    let metadata = json!({"format_version":1,"release_ready":false,"source":source,"binary":binary,"application_artifact_fresh":application_fresh,"compiler":compiler,"dynamic_linkage":dynamic_linkage,"static_link_map":static_link_map,"native_packages":selected,"native_archives":archives,"rust_notices":rust,"skia_notices":skia,"skia_wrapper_notices":wrapper,"quickjs_notices":quickjs,"asset_notices":assets,"toolchain_notices":standard,"shader_preprocessor":shader,"cargo_output":cargo_output,"ignored_non_cargo_lines":ignored,"remaining_review":gaps,"hosted":hosted});
     util::publish(&stage.join("build.json"), &util::encode(&metadata)?, false)?;
     let files = util::walk(&stage)?
         .iter()

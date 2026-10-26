@@ -410,6 +410,8 @@ fn candidate_packaging_changes_run_a_real_candidate_gate_before_the_matrix() {
         "xtask/src/evidence.rs",
         "xtask/src/ci/native/candidate.rs",
         "xtask/src/notices/skia.rs",
+        "xtask/src/notices/skia_wrapper.rs",
+        "resources/licenses/native/skia-wrapper-review.json",
         "xtask/tests/binary_dist.rs",
         "xtask/tests/evidence.rs",
         ".github/workflows/release-evidence.yml",

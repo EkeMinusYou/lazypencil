@@ -12,6 +12,7 @@ const NOTICE_FILES: &[&str] = &[
     "licenses/shader-preprocessor/toolchain/inventory/TOOLCHAIN-NOTICES.txt",
     "quickjs/QUICKJS-NOTICES.txt",
     "skia/SKIA-NOTICES.txt",
+    "skia-wrapper/WRAPPER-NOTICES.txt",
     "assets/ASSET-NOTICES.txt",
     "toolchain/inventory/TOOLCHAIN-NOTICES.txt",
 ];

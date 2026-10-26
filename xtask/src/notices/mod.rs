@@ -2,6 +2,7 @@ pub mod assets;
 pub mod quickjs;
 pub mod rust;
 pub mod skia;
+pub mod skia_wrapper;
 pub mod toolchain;
 
 use crate::util;
