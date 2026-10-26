@@ -63,6 +63,8 @@ arboard の Wayland バックエンドには追加 feature とコンポジター
 
 Kitty・Sixel は画像を端末へ表示する手段であり、OS のクリップボードから画像を取得する機能ではない。画像表示プロトコルの有無から貼り付け可否を推定しない。
 
+source [`7e651fb` の GHA](https://github.com/EkeMinusYou/lazypencil/actions/runs/40277161584) では、macOS Apple Silicon・Linux x64・Linux arm64 の実 OS クリップボードから、実 PTY の `Ctrl+V`、画像ワーカー、疑似 ACP 受信までを確認した。試験が所有する2枚の画像について、各環境で全3,072画素・順序・日本語の下書き保持・送信後の文書不変・正常終了を検査し、取得した PNG も独立に復号して照合した。Linux は専用 Xvfb、macOS は disposable runner の native pasteboard を使い、ユーザーの既存のクリップボードを利用しない。物理キーボード・IME、端末ごとの方針と、貼り付けから実エージェントまでを通した検証は別途必要である。
+
 ## ACP と MCP への受け渡し
 
 Agent Host はテキストと画像を ACP のプロンプトへ含める。画像は `type: image`、MIME 型、Base64 のデータを使い、パスを書いただけで画像を送った扱いにはしない。初期化時に `promptCapabilities.image` を確認し、対応しない接続には画像付き要求を送信せず、理由を返す。[ACP の画像コンテンツ](https://agentclientprotocol.com/protocol/v1/content#image-content)
