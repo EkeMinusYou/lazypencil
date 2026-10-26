@@ -58,42 +58,6 @@ pub(super) fn requires_freetype_color(bytes: &[u8]) -> Result<bool> {
     Ok(required)
 }
 
-#[cfg(test)]
-mod color_routing_tests {
-    use super::*;
-
-    fn face(tag: &[u8; 4], body: &[u8]) -> Vec<u8> {
-        let mut bytes = vec![0; 28];
-        bytes[..4].copy_from_slice(&0x10000u32.to_be_bytes());
-        bytes[4..6].copy_from_slice(&1u16.to_be_bytes());
-        bytes[12..16].copy_from_slice(tag);
-        bytes[20..24].copy_from_slice(&28u32.to_be_bytes());
-        bytes[24..28].copy_from_slice(&(body.len() as u32).to_be_bytes());
-        bytes.extend(body);
-        bytes
-    }
-
-    #[test]
-    fn color_routing_keeps_native_faces_and_rejects_truncated_or_unbounded_tables() {
-        assert!(!requires_freetype_color(super::super::DEFAULT_FONT_BYTES).unwrap());
-        assert!(!requires_freetype_color(&face(b"COLR", &[0, 0])).unwrap());
-        assert!(!requires_freetype_color(&face(b"sbix", &[0, 1])).unwrap());
-        assert!(requires_freetype_color(&face(b"COLR", &[0, 1])).unwrap());
-        assert!(requires_freetype_color(&face(b"CBDT", &[0, 3, 0, 0])).unwrap());
-        assert!(requires_freetype_color(&[]).is_err());
-        assert!(requires_freetype_color(&face(b"COLR", &[0])).is_err());
-        let mut malformed = face(b"COLR", &[0, 1]);
-        malformed[20..24].copy_from_slice(&u32::MAX.to_be_bytes());
-        assert!(requires_freetype_color(&malformed).is_err());
-        let mut malformed = face(b"CBDT", &[0, 3, 0, 0]);
-        malformed[24..28].copy_from_slice(&u32::MAX.to_be_bytes());
-        assert!(requires_freetype_color(&malformed).is_err());
-        let mut malformed = face(b"COLR", &[0, 1]);
-        malformed[4..6].copy_from_slice(&4096u16.to_be_bytes());
-        assert!(requires_freetype_color(&malformed).is_err());
-    }
-}
-
 pub(super) fn count(bytes: &[u8]) -> Result<u32> {
     if !bytes.starts_with(b"ttcf") {
         return Ok(1);
@@ -221,4 +185,40 @@ pub(super) fn extract(bytes: &[u8], index: u32) -> Result<Cow<'_, [u8]>> {
     let adjustment = 0xb1b0afbau32.wrapping_sub(checksum(&output));
     output[head + 8..head + 12].copy_from_slice(&adjustment.to_be_bytes());
     Ok(Cow::Owned(output))
+}
+
+#[cfg(test)]
+mod color_routing_tests {
+    use super::*;
+
+    fn face(tag: &[u8; 4], body: &[u8]) -> Vec<u8> {
+        let mut bytes = vec![0; 28];
+        bytes[..4].copy_from_slice(&0x10000u32.to_be_bytes());
+        bytes[4..6].copy_from_slice(&1u16.to_be_bytes());
+        bytes[12..16].copy_from_slice(tag);
+        bytes[20..24].copy_from_slice(&28u32.to_be_bytes());
+        bytes[24..28].copy_from_slice(&(body.len() as u32).to_be_bytes());
+        bytes.extend(body);
+        bytes
+    }
+
+    #[test]
+    fn color_routing_keeps_native_faces_and_rejects_truncated_or_unbounded_tables() {
+        assert!(!requires_freetype_color(super::super::DEFAULT_FONT_BYTES).unwrap());
+        assert!(!requires_freetype_color(&face(b"COLR", &[0, 0])).unwrap());
+        assert!(!requires_freetype_color(&face(b"sbix", &[0, 1])).unwrap());
+        assert!(requires_freetype_color(&face(b"COLR", &[0, 1])).unwrap());
+        assert!(requires_freetype_color(&face(b"CBDT", &[0, 3, 0, 0])).unwrap());
+        assert!(requires_freetype_color(&[]).is_err());
+        assert!(requires_freetype_color(&face(b"COLR", &[0])).is_err());
+        let mut malformed = face(b"COLR", &[0, 1]);
+        malformed[20..24].copy_from_slice(&u32::MAX.to_be_bytes());
+        assert!(requires_freetype_color(&malformed).is_err());
+        let mut malformed = face(b"CBDT", &[0, 3, 0, 0]);
+        malformed[24..28].copy_from_slice(&u32::MAX.to_be_bytes());
+        assert!(requires_freetype_color(&malformed).is_err());
+        let mut malformed = face(b"COLR", &[0, 1]);
+        malformed[4..6].copy_from_slice(&4096u16.to_be_bytes());
+        assert!(requires_freetype_color(&malformed).is_err());
+    }
 }

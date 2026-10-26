@@ -157,6 +157,10 @@ jobs:
       - name: Reproduce real emoji, TUI and isolated MCP cancellation first
         if: inputs.phase == 'full'
         run: cargo xtask ci native reproduce
+      - name: Check all default targets before longer tests and release compilation
+        if: inputs.phase == 'full'
+        timeout-minutes: 15
+        run: cargo xtask ci native default-lint
       - name: Test default configuration without identical reproductions
         if: inputs.phase == 'full'
         timeout-minutes: 15
@@ -205,10 +209,6 @@ jobs:
       - name: Render the combined example for review
         if: inputs.phase == 'full'
         run: cargo xtask ci native panel
-      - name: Check all default targets
-        if: inputs.phase == 'full'
-        timeout-minutes: 15
-        run: cargo xtask ci native default-lint
       - name: Recheck release inputs and run isolated smoke tests and measurements
         id: release-smoke
         if: inputs.phase == 'full'
@@ -246,13 +246,13 @@ jobs:
         with:
           key: ${{ inputs.phase == 'full' && steps.application-key.outputs.primary || steps.application-key.outputs.checkpoint }}
           path: ${{ runner.temp }}/lazypencil-application-cache
-      - name: Keep dependencies when a later regression fails
+      - name: Keep completed dependencies after failure or cancellation
         id: cache-prune
-        if: ${{ !cancelled() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true' && steps.native-cache.outputs.cache-matched-key != steps.cache-key.outputs.primary && (steps.focus-build.outcome == 'success' || steps.default-build.outcome == 'success') }}
+        if: ${{ always() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true' && steps.native-cache.outputs.cache-matched-key != steps.cache-key.outputs.primary && (steps.focus-build.outcome == 'success' || steps.default-build.outcome == 'success') }}
         continue-on-error: true
         run: cargo xtask ci cache prune --source "$RUNNER_TEMP/lazypencil-source"
       - name: Save compatible hosted dependency build artifacts
-        if: ${{ !cancelled() && steps.cache-prune.outcome == 'success' && github.ref == 'refs/heads/main' }}
+        if: ${{ always() && steps.cache-prune.outcome == 'success' && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
