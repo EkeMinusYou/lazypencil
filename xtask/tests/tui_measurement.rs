@@ -13,7 +13,12 @@ fn direct_pixel_profiles_keep_legacy_reports_readable_and_require_the_new_phase_
         "verification_ms":4.0,"terminal_encode_ms":5.0,"metadata_ms":6.0
     }});
     let encode = |report: &serde_json::Value| format!("LAZYPENCIL_PREVIEW_TIMING {report}\n");
-    assert_eq!(preview_profiles(encode(&report).as_bytes()).unwrap(), [report.clone()]);
+    assert_eq!(
+        preview_profiles(encode(&report).as_bytes())
+            .unwrap()
+            .as_slice(),
+        std::slice::from_ref(&report)
+    );
     for version in [1, 2, 4] {
         let mut invalid = report.clone();
         invalid["format_version"] = json!(version);
