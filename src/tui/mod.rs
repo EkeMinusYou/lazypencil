@@ -833,15 +833,14 @@ impl App {
                     return Ok(false);
                 }
                 let zoom = self.view.zoom.unwrap_or(1.0);
-                let step = 64.0 / zoom;
                 if action(Nav::PanLeft) {
-                    self.view.center[0] -= step;
+                    self.view.pan([-64.0, 0.0]);
                 } else if action(Nav::PanRight) {
-                    self.view.center[0] += step;
+                    self.view.pan([64.0, 0.0]);
                 } else if action(Nav::PanUp) {
-                    self.view.center[1] -= step;
+                    self.view.pan([0.0, -64.0]);
                 } else if action(Nav::PanDown) {
-                    self.view.center[1] += step;
+                    self.view.pan([0.0, 64.0]);
                 } else if action(Nav::ZoomIn) {
                     self.view.zoom = Some((zoom * 1.25).min(16.0));
                 } else if action(Nav::ZoomOut) {

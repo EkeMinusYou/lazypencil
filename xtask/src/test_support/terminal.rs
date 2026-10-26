@@ -51,19 +51,32 @@ impl Screen {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {
+    pub width: usize,
+    pub height: usize,
     pub rgba: Vec<u8>,
     palette: BTreeSet<[u8; 4]>,
 }
 impl Frame {
-    pub fn new(rgba: Vec<u8>) -> Result<Self> {
-        if !rgba.len().is_multiple_of(4) {
-            return Err("Expected complete RGBA pixels".into());
+    pub fn new(width: usize, height: usize, rgba: Vec<u8>) -> Result<Self> {
+        if width == 0
+            || height == 0
+            || width > 8192
+            || height > 8192
+            || width * height > 16 * 1024 * 1024
+            || rgba.len() != width * height * 4
+        {
+            return Err("Expected complete bounded RGBA geometry and pixels".into());
         }
         let palette = rgba
             .chunks_exact(4)
             .map(|p| p.try_into().unwrap())
             .collect();
-        Ok(Self { rgba, palette })
+        Ok(Self {
+            width,
+            height,
+            rgba,
+            palette,
+        })
     }
     pub fn has_color(&self, color: [u8; 4]) -> bool {
         self.palette.contains(&color)
@@ -76,7 +89,7 @@ pub struct KittyFrames {
     pub deleted_resources: BTreeSet<u32>,
     pub pending: Vec<u8>,
     pub payload: Vec<u8>,
-    expected: Option<usize>,
+    dimensions: Option<(usize, usize)>,
 }
 impl KittyFrames {
     pub fn feed(&mut self, bytes: &[u8]) -> Result<()> {
@@ -131,7 +144,7 @@ impl KittyFrames {
                 );
             }
             if action == Some("T") {
-                if self.expected.is_some() {
+                if self.dimensions.is_some() {
                     return Err("A new Kitty frame interrupted an incomplete frame".into());
                 }
                 if fields.get("f") != Some(&"32") || fields.contains_key("o") {
@@ -153,12 +166,13 @@ impl KittyFrames {
                 {
                     return Err("Invalid Kitty dimensions".into());
                 }
-                self.expected = Some(width * height * 4);
+                self.dimensions = Some((width, height));
                 self.payload.clear();
             }
-            if let Some(expected) = self.expected
+            if let Some((width, height)) = self.dimensions
                 && (action.is_none() || action == Some("T"))
             {
+                let expected = width * height * 4;
                 let separator = split.ok_or("A Kitty image packet needs a payload separator")?;
                 let decoded = STANDARD.decode(&packet[separator + 1..])?;
                 if decoded.len() > expected - self.payload.len() {
@@ -171,9 +185,12 @@ impl KittyFrames {
                         if self.payload.len() != expected {
                             return Err("Incomplete Kitty pixel data".into());
                         }
-                        self.images
-                            .push(Frame::new(std::mem::take(&mut self.payload))?);
-                        self.expected = None;
+                        self.images.push(Frame::new(
+                            width,
+                            height,
+                            std::mem::take(&mut self.payload),
+                        )?);
+                        self.dimensions = None;
                     }
                     _ => return Err("Invalid Kitty continuation marker".into()),
                 }

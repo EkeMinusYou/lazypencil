@@ -70,7 +70,7 @@ mod hosted {
         received: u64,
         started: Instant,
         deadline: Instant,
-        last_frame: Option<(Instant, String)>,
+        last_frame: Option<(Instant, String, observer::Frame)>,
     }
 
     impl Drop for Terminal {
@@ -207,7 +207,7 @@ mod hosted {
                     .feed(&bytes[..count])
                     .map_err(|e| anyhow::anyhow!(e.to_string()))?;
                 if let Some(frame) = self.frames.images.pop() {
-                    self.last_frame = Some((received, util::digest(frame.rgba)));
+                    self.last_frame = Some((received, util::digest(&frame.rgba), frame));
                     self.frames.images.clear();
                 }
             }
@@ -234,9 +234,9 @@ mod hosted {
             self.wait("changed preview frame", |t| {
                 t.last_frame
                     .as_ref()
-                    .is_some_and(|(when, hash)| *when >= sent && hash != previous)
+                    .is_some_and(|(when, hash, _)| *when >= sent && hash != previous)
             })?;
-            let (received, hash) = self
+            let (received, hash, _) = self
                 .last_frame
                 .as_ref()
                 .context("Missing changed preview")?;
@@ -244,6 +244,37 @@ mod hosted {
                 received.duration_since(sent).as_secs_f64() * 1000.0,
                 hash.clone(),
             ))
+        }
+
+        fn capture(&self, root: &Path, name: &str) -> Result<()> {
+            let (_, hash, frame) = self
+                .last_frame
+                .as_ref()
+                .context("Missing diagnostic frame")?;
+            let raster = fixtures::oracles::Raster {
+                width: frame.width as u32,
+                height: frame.height as u32,
+                pixels: frame
+                    .rgba
+                    .chunks_exact(4)
+                    .map(|pixel| pixel.try_into().unwrap())
+                    .collect(),
+            };
+            let png = crate::terminal::raster::png(&raster)?;
+            util::publish(&root.join(format!("{name}.png")), &png, false)?;
+            util::publish(
+                &root.join(format!("{name}.json")),
+                &util::encode(
+                    &json!({"width":frame.width,"height":frame.height,"rgba_sha256":hash,"png_sha256":util::digest(&png)}),
+                )?,
+                false,
+            )?;
+            util::publish(
+                &root.join(format!("{name}.screen.txt")),
+                self.screen.text().as_bytes(),
+                false,
+            )?;
+            Ok(())
         }
 
         fn finish(&mut self) -> Result<()> {
@@ -320,14 +351,27 @@ mod hosted {
                 * 1000.0;
             terminal.key(b"\t")?;
             let initial = terminal.last_frame.as_ref().unwrap().1.clone();
+            terminal.capture(&root, "initial")?;
             let (zoom_ms, zoomed) = terminal.changed_frame(b"+", &initial)?;
+            if sample == 0 {
+                terminal.capture(&root, "zoomed")?;
+            }
             let (unzoom_ms, restored) = terminal.changed_frame(b"-", &zoomed)?;
+            if sample == 0 || restored != initial {
+                terminal.capture(&root, "zoom-restored")?;
+            }
             ensure!(
                 restored == initial,
                 "Zoom did not restore the original preview pixels"
             );
             let (pan_ms, panned) = terminal.changed_frame(b"\x1b[C", &initial)?;
+            if sample == 0 {
+                terminal.capture(&root, "panned-right")?;
+            }
             let (unpan_ms, restored) = terminal.changed_frame(b"\x1b[D", &panned)?;
+            if sample == 0 || restored != initial {
+                terminal.capture(&root, "pan-restored")?;
+            }
             ensure!(
                 restored == initial,
                 "Pan did not restore the original preview pixels"
@@ -336,7 +380,7 @@ mod hosted {
             samples.push(json!({"input_ready_ms":input_ms,"first_preview_ms":preview_ms,"interaction_ms":[zoom_ms,unzoom_ms,pan_ms,unpan_ms],"processes":resources,"fixture":fixture,"terminal_bytes":terminal.received}));
             if sample + 1 == arguments.samples {
                 let before = resources::snapshot(terminal.child.id())?;
-                let idle_frame = terminal.last_frame.clone();
+                let idle_frame = terminal.last_frame.as_ref().map(|frame| frame.0);
                 let started = Instant::now();
                 let mut checkpoints = Vec::new();
                 let mut next_sample = Instant::now();
@@ -350,7 +394,7 @@ mod hosted {
                 let elapsed = started.elapsed();
                 let after = resources::snapshot(terminal.child.id())?;
                 ensure!(
-                    terminal.last_frame == idle_frame,
+                    terminal.last_frame.as_ref().map(|frame| frame.0) == idle_frame,
                     "Static preview retransmitted during idle measurement"
                 );
                 let cpu = before.idle_cpu_upper_percent(&after, elapsed)?;

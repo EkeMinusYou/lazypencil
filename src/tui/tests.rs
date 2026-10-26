@@ -1166,7 +1166,7 @@ fn custom_navigation_preserves_typing_search_modals_and_moves_the_actual_preview
         press(&mut app, KeyCode::Char('h'), KeyModifiers::NONE, &worker).await;
         assert_eq!(app.view.center, center);
         press(&mut app, KeyCode::Char('a'), KeyModifiers::NONE, &worker).await;
-        assert_eq!(app.view.center[0], center[0] - 64.0 / zoom);
+        assert_eq!(app.view.center[0], center[0] - 64.0 / f64::from(zoom));
         press(&mut app, KeyCode::Char('z'), KeyModifiers::NONE, &worker).await;
         assert_eq!(app.view.zoom, Some((zoom * 1.25).min(16.0)));
         let zoomed = app.view.zoom;
@@ -1183,7 +1183,7 @@ fn custom_navigation_preserves_typing_search_modals_and_moves_the_actual_preview
         press(&mut app, KeyCode::F(8), KeyModifiers::NONE, &worker).await;
         assert!(app.help);
         press(&mut app, KeyCode::Char('a'), KeyModifiers::NONE, &worker).await;
-        assert_eq!(app.view.center[0], center[0] - 64.0 / zoom);
+        assert_eq!(app.view.center[0], center[0] - 64.0 / f64::from(zoom));
         press(&mut app, KeyCode::End, KeyModifiers::NONE, &worker).await;
         assert_eq!(app.help_scroll, u16::MAX);
         let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 36)).unwrap();

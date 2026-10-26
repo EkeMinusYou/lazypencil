@@ -351,6 +351,15 @@ impl Session {
                 self.execute(&command, 300, "focus-clippy.log", false)
             }
             Stage::FocusReproduce => {
+                if args.suite == "candidate" && has("tui") {
+                    self.test(
+                        false,
+                        "lib",
+                        "tui::preview::tests::fractional_fit_pan_round_trips_preserve_the_exact_render_region",
+                        &["--exact", "--test-threads=1"],
+                        "focus-camera-pan.log",
+                    )?;
+                }
                 if let Some(command) = commands::color_font_reproduction(&args.suite, &targets) {
                     self.execute(&command, 300, "focus-color-fonts.log", false)?;
                     self.real_emoji("focus-real-emoji.log")?;

@@ -176,19 +176,25 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     .to_owned();
     let preprocessor = preprocessor_changed(paths);
     let font_inputs = paths.iter().any(|path| font_input(path));
-    if paths
-        .iter()
-        .any(|path| ["src/tui/graphics.rs", "src/tui/terminal.rs"].contains(&path.as_str()))
-        && paths.iter().all(|path| {
-            ci_only(path)
-                || [
-                    "src/tui/graphics.rs",
-                    "src/tui/terminal.rs",
-                    "src/tui/mod.rs",
-                ]
-                .contains(&path.as_str())
-        })
-    {
+    if paths.iter().any(|path| {
+        [
+            "src/tui/graphics.rs",
+            "src/tui/terminal.rs",
+            "src/tui/preview.rs",
+        ]
+        .contains(&path.as_str())
+    }) && paths.iter().all(|path| {
+        ci_only(path)
+            || [
+                "src/tui/graphics.rs",
+                "src/tui/terminal.rs",
+                "src/tui/mod.rs",
+                "src/tui/preview.rs",
+                "src/tui/tests.rs",
+                "xtask/src/test_support/terminal.rs",
+            ]
+            .contains(&path.as_str())
+    }) {
         return Ok(Plan {
             platform,
             suite: "candidate".into(),

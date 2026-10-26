@@ -309,12 +309,18 @@ fn candidate_packaging_changes_run_a_real_candidate_gate_before_the_matrix() {
 
 #[test]
 fn terminal_protocol_fixes_reproduce_in_real_emulators_before_the_full_matrix() {
-    for path in ["src/tui/graphics.rs", "src/tui/terminal.rs"] {
+    for path in [
+        "src/tui/graphics.rs",
+        "src/tui/terminal.rs",
+        "src/tui/preview.rs",
+    ] {
         let plan = focus::select(
             &util::root(),
             &[
                 path.into(),
                 "src/tui/mod.rs".into(),
+                "src/tui/tests.rs".into(),
+                "xtask/src/test_support/terminal.rs".into(),
                 "xtask/src/terminal/hosted.rs".into(),
             ],
             "auto",

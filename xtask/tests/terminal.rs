@@ -98,10 +98,13 @@ fn screen_resize_and_wide_cell_overwrites_do_not_leave_orphan_halves() {
 fn pixel_color_matching_respects_rgba_boundaries_and_alpha() {
     let red = [255, 0, 0, 255].repeat(8);
     assert!(red.windows(4).any(|p| p == [0, 0, 255, 255]));
-    let f = Frame::new(red).unwrap();
+    let f = Frame::new(4, 2, red).unwrap();
     assert!(f.has_color([255, 0, 0, 255]));
     assert!(!f.has_color([0, 0, 255, 255]));
-    assert!(Frame::new(vec![0; 3]).is_err());
+    assert_eq!((f.width, f.height), (4, 2));
+    assert!(Frame::new(1, 1, vec![0; 3]).is_err());
+    assert!(Frame::new(0, 1, vec![]).is_err());
+    assert!(Frame::new(usize::MAX, 1, vec![]).is_err());
 }
 
 #[test]
@@ -133,6 +136,10 @@ fn split_kitty_packets_are_consumed_once_and_never_replay_old_pixels() {
         decoder.feed(part).unwrap();
     }
     assert_eq!(decoder.images[0].rgba, pixels);
+    assert_eq!(
+        (decoder.images[0].width, decoder.images[0].height),
+        (80, 80)
+    );
     for _ in 0..20 {
         decoder
             .feed(&b"ordinary terminal output".repeat(1000))

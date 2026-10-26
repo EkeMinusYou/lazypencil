@@ -21,7 +21,9 @@ use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct View {
-    pub center: [f32; 2],
+    // Accumulate camera movement in double precision; Skia regions remain f32.
+    // At fractional zoom, opposite f32 pan steps can leave a visible ULP drift.
+    pub center: [f64; 2],
     pub zoom: Option<f32>,
     pub time: f64,
 }
@@ -38,8 +40,8 @@ impl View {
     }
     pub fn fit(&mut self, bounds: Rect, pixels: [u32; 2]) {
         self.center = [
-            bounds.x + bounds.width / 2.0,
-            bounds.y + bounds.height / 2.0,
+            f64::from(bounds.x + bounds.width / 2.0),
+            f64::from(bounds.y + bounds.height / 2.0),
         ];
         self.zoom = Some(
             ((pixels[0] as f32 / bounds.width.max(1.0))
@@ -48,13 +50,18 @@ impl View {
                 .clamp(0.01, 16.0),
         );
     }
+    pub fn pan(&mut self, pixels: [f64; 2]) {
+        let scale = f64::from(self.zoom.unwrap_or(1.0));
+        self.center[0] += pixels[0] / scale;
+        self.center[1] += pixels[1] / scale;
+    }
     pub fn region(self, pixels: [u32; 2]) -> Rect {
         let scale = self.zoom.unwrap_or(1.0);
         let width = pixels[0] as f32 / scale;
         let height = pixels[1] as f32 / scale;
         Rect::new(
-            self.center[0] - width / 2.0,
-            self.center[1] - height / 2.0,
+            self.center[0] as f32 - width / 2.0,
+            self.center[1] as f32 - height / 2.0,
             width,
             height,
         )
@@ -397,6 +404,26 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
+    fn fractional_fit_pan_round_trips_preserve_the_exact_render_region() {
+        for bounds in [
+            Rect::new(0.0, 0.0, 1920.0, 1080.0),
+            Rect::new(-1920.0, -1080.0, 1920.0, 1080.0),
+        ] {
+            let pixels = [900, 640];
+            let mut view = View::default();
+            view.fit(bounds, pixels);
+            let original = view.region(pixels);
+            for _ in 0..1000 {
+                view.pan([64.0, 0.0]);
+                view.pan([-64.0, 0.0]);
+                view.pan([0.0, 64.0]);
+                view.pan([0.0, -64.0]);
+                assert_eq!(view.region(pixels), original);
+            }
+        }
+    }
+
+    #[test]
     fn automatic_frames_do_not_cancel_work_overwrite_pending_output_or_queue_a_backlog() {
         let shared = Arc::new(Shared {
             request: Mutex::new((None, false)),
@@ -708,7 +735,7 @@ mod tests {
             request.check_only = false;
             for generation in 2..=20 {
                 request.generation = generation;
-                request.view.center[0] = 500.0 + generation as f32;
+                request.view.center[0] = 500.0 + generation as f64;
                 worker.request(request.clone());
             }
             loop {
