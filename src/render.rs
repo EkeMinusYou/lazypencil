@@ -556,7 +556,7 @@ impl Renderer<'_> {
             let layer_bounds = transform
                 .inverse()
                 // Filtered/transparent parent layers can change Skia's color
-                // rounding when an inner layer's allocation origin changes.
+                // rounding when an inner layer's allocation changes.
                 // Preserve the original compositor throughout those subtrees.
                 .filter(|_| self.text_layer_hints)
                 .map(|inverse| {
