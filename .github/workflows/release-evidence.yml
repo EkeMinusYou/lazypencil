@@ -20,6 +20,10 @@ env:
   CARGO_PROFILE_TEST_DEBUG: '0'
 jobs:
   evidence:
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     runs-on: ${{ inputs.os }}
     timeout-minutes: 60
     steps:
@@ -127,5 +131,24 @@ jobs:
         with:
           name: terminal-${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/terminal-evidence
+          if-no-files-found: error
+          retention-days: 3
+      - name: Attest the verified candidate archive
+        id: candidate-attestation
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/lazypencil-candidate.tar.gz
+          create-storage-record: false
+      - name: Verify the candidate signer workflow and source revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: cargo xtask ci provenance --kind candidate --artifact "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/candidate-provenance/verification.json"
+      - name: Retain the signed candidate provenance
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: candidate-provenance-${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: |
+            ${{ steps.candidate-attestation.outputs.bundle-path }}
+            ${{ runner.temp }}/candidate-provenance
           if-no-files-found: error
           retention-days: 3

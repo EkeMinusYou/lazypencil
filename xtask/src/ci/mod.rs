@@ -3,6 +3,7 @@ pub mod commands;
 pub mod component;
 pub mod focus;
 pub mod native;
+pub mod provenance;
 pub mod setup;
 pub mod toolchain;
 pub mod tools;
@@ -20,6 +21,7 @@ pub enum Command {
         stage: component::Stage,
     },
     Native(native::Arguments),
+    Provenance(provenance::Arguments),
     Tools {
         #[command(subcommand)]
         command: tools::Command,
@@ -58,6 +60,7 @@ impl Command {
         match self {
             Self::Component { stage } => component::run(stage),
             Self::Native(arguments) => arguments.run(),
+            Self::Provenance(arguments) => arguments.run(),
             Self::Tools { command } => command.run(),
             Self::ToolchainEvidence { output, target } => util::print(&toolchain::collect(
                 &util::root(),

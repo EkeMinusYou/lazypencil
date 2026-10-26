@@ -193,9 +193,9 @@ Development verification includes macOS arm64 and a Debian 12 arm64 container us
 
 ## Source distributions and CI
 
-Linux candidate gates also configure real Kitty and xterm/Sixel checks under an isolated Xvfb display. `cargo xtask terminal --candidate ARCHIVE --output DIRECTORY` verifies and extracts the source-bound candidate, then observes actual window pixels while sending keyboard input and resizing the window. It records zoom, pan, restoration, resize and normal exit, with PNGs and source/binary/emulator identities. Hosted execution exposed input/display issues; fixes are under verification and terminal acceptance remains open. It complements the PTY tests; physical displays, IME, clipboard, tmux/SSH and performance acceptance remain separate checks.
+Linux candidate gates run real Kitty and xterm/Sixel checks under an isolated Xvfb display. `cargo xtask terminal --candidate ARCHIVE --output DIRECTORY` verifies and extracts the source-bound candidate, then observes actual window pixels while sending keyboard input and resizing the window. It records zoom, pan, restoration, resize and normal exit, with PNGs and source/binary/emulator identities. Hosted Linux x64 passed explicit and automatic Kitty 0.32.2 and xterm 390 with VT340/256-color configuration in both debug and packaged release builds. Physical displays, other platforms, IME, clipboard, tmux/SSH and performance acceptance remain separate checks.
 
-The focused Linux job also prepares an earlier `cargo xtask terminal --development-build --output DIRECTORY` reproduction using its existing debug executable. It checks the extracted source manifest and hashes that executable without invoking Cargo, before release compilation or notice collection. The packaged release check remains required afterwards. These two build profiles retain separate evidence and the same four emulator cases; the earlier gate awaits GHA verification.
+The focused Linux job runs an earlier `cargo xtask terminal --development-build --output DIRECTORY` reproduction using its existing debug executable. It checks the extracted source manifest and hashes that executable without invoking Cargo, before release compilation or notice collection. The packaged release check remains required afterwards. These two build profiles retain separate evidence and the same four emulator cases. The earlier gate and its input/source checks passed hosted Linux x64 verification.
 
 Dependency checkpoints include the phase, workflow run and retry so that a later completed build can be saved alongside an earlier partial checkpoint. Restore prefers the newest compatible generation and retains the old fixed key as a fallback. Rust cache maintenance keeps the newest checkpoint for each native input/cache layout and removes those superseded by a complete matching main cache. The Rust regressions have passed hosted gates; recovery from a later completed checkpoint awaits a qualifying hosted run.
 
@@ -226,6 +226,18 @@ cargo xtask dist verify-binary /tmp/lazypencil-candidate.tar.gz --extract /tmp/l
 ```
 
 The candidate contains `bin/lazypencil`, the matching complete project source archive, the original project license, every collected build/third-party notice, and a package manifest with file hashes and permissions. Creation and extraction verify complete membership, source/build/executable/map identities and the initial target's executable header. Existing outputs are preserved. The archive is deterministic for unchanged inputs. At source `44ad881`, native candidate assembly, extraction and isolated QuickJS smoke passed on all three initial-release targets, with independent source/notice/package integrity and pixel verification. Candidates retain `release_ready: false` and the build's remaining review; signing, minimum OS acceptance and final release review remain unfinished.
+
+Signed build provenance is being added for the fully verified source archive and the manual candidate workflow. The pinned official [attestation action](https://github.com/actions/attest) creates the signature; `cargo xtask ci provenance` calls the standard GitHub CLI verifier with the repository, signer workflow, source/signer commit, source ref and hosted-runner policy fixed. It retains the verification output and signature bundle. This addition awaits hosted execution. Build provenance, OS signing/notarization and release approval are separate checks.
+
+To verify a candidate with a reviewed source commit, replace `EXPECTED_COMMIT_SHA` below. For a source archive, use `.github/workflows/ci.yml` as the signer workflow instead.
+
+```sh
+gh attestation verify /path/to/lazypencil-candidate.tar.gz \
+  --repo EkeMinusYou/lazypencil \
+  --signer-workflow EkeMinusYou/lazypencil/.github/workflows/release-evidence.yml \
+  --source-digest EXPECTED_COMMIT_SHA --signer-digest EXPECTED_COMMIT_SHA \
+  --source-ref refs/heads/main --deny-self-hosted-runners
+```
 
 Candidate-packaging and build-evidence collector changes select a representative candidate gate before the full native matrix. It prepares original standard-library and dependency notices, rechecks the release executable/map, assembles and unpacks the candidate, then hides both native source and build trees while checking the installed version and a real QuickJS render with bounded process waits. The three-day focus artifact includes the archive and smoke PNG/report. The manual release-evidence workflow offers the same packaging/smoke path and restores validated source-bound executable/map pairs before its Cargo freshness check, avoiding a forced root rebuild. The collector records Cargo's application and native-dependency freshness, accepting both a successful new compile and a successful freshness check of reused outputs. Existing source, executable, map and notice checks still apply. All logic remains in xtask; workflows set up the environment and call the tasks. [The complete source-bound run](https://github.com/EkeMinusYou/lazypencil/actions/runs/40238504077) passed in 24 minutes 6 seconds; this observation is not an isolated performance benchmark.
 

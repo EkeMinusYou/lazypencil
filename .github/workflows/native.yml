@@ -192,6 +192,7 @@ jobs:
         timeout-minutes: 10
         run: cargo xtask ci native focus-test --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
       - name: Verify changed release build recipe before the full matrix
+        id: focus-release
         if: inputs.phase == 'focus' && (inputs.suite == 'release' || inputs.suite == 'candidate')
         timeout-minutes: 60
         run: cargo xtask ci native focus-release
@@ -266,12 +267,12 @@ jobs:
           retention-days: 3
       - name: Stage verified application outputs for reuse
         id: application-save
-        if: success() && steps.application-key.outcome == 'success' && steps.application-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        if: ${{ !cancelled() && (success() || inputs.phase == 'focus' && steps.focus-build.outcome == 'success' && steps.focus-release.outcome == 'success') && steps.application-key.outcome == 'success' && steps.application-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         timeout-minutes: 3
         run: cargo xtask ci cache application stage --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
       - name: Save verified application outputs
-        if: success() && steps.application-save.outcome == 'success'
+        if: ${{ !cancelled() && steps.application-save.outcome == 'success' }}
         continue-on-error: true
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
