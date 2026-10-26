@@ -631,18 +631,20 @@ impl Renderer<'_> {
                 }
             }
         } else if fill_enabled {
-            // Both passes only contribute inside the text's box/ink union.
-            // Bound their allocation hints instead of copying a full viewport
-            // for every label. Keep one device pixel for antialias coverage.
+            // Keep the color layer's original origin in enclosing effect
+            // passes. The alpha mask only needs the paragraph's box/ink union
+            // plus one device pixel for antialias coverage.
             let transform = self.viewport.then(item.record.transform);
-            let layer_bounds = self.allocation_hint(
+            let device_bounds =
                 Rect::new(bounds.left(), bounds.top(), bounds.width(), bounds.height())
                     .transformed(transform)
-                    .outset(1.0, 1.0),
-                transform,
-                !self.tight_text_layer_hints,
-                None,
-            );
+                    .outset(1.0, 1.0);
+            let mask_bounds = self.allocation_hint(device_bounds, transform, false, None);
+            let layer_bounds = if self.tight_text_layer_hints {
+                mask_bounds
+            } else {
+                self.allocation_hint(device_bounds, transform, true, None)
+            };
             let mut fill_layer = SaveLayerRec::default();
             if let Some(bounds) = &layer_bounds {
                 fill_layer = fill_layer.bounds(bounds);
@@ -652,7 +654,7 @@ impl Renderer<'_> {
             let mut mask = Paint::default();
             mask.set_blend_mode(BlendMode::DstIn);
             let mut mask_layer = SaveLayerRec::default().paint(&mask);
-            if let Some(bounds) = &layer_bounds {
+            if let Some(bounds) = &mask_bounds {
                 mask_layer = mask_layer.bounds(bounds);
             }
             self.canvas.save_layer(&mask_layer);
