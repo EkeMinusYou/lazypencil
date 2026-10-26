@@ -633,6 +633,9 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         }
         ("core".into(), targets)
     };
+    if any(paths, &["src/render.rs"], &["src/render/"]) {
+        targets.extend(["graphics", "render"].map(str::to_owned));
+    }
     if font_inputs {
         if suite == "shader" {
             suite = "dynamic".into();
