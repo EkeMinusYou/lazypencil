@@ -209,7 +209,6 @@ fn png_impl(
     }
     let padding = backdrop_padding(snapshot, options.scale)?;
     let background_nodes = background_nodes(snapshot);
-    let origin_sensitive_nodes = origin_sensitive_nodes(snapshot);
     let (working_width, working_height) =
         raster_dimensions(width + 2 * padding as u64, height + 2 * padding as u64)?;
     let rasters = Rc::new(backdrop::RasterBudget::default());
@@ -238,7 +237,6 @@ fn png_impl(
         external_backdrop: None,
         backdrop_padding: padding,
         background_nodes: &background_nodes,
-        origin_sensitive_nodes: &origin_sensitive_nodes,
         coverage: None,
         own_pass: None,
         tight_text_layer_hints: true,
@@ -304,7 +302,6 @@ struct Renderer<'a> {
     external_backdrop: Option<Backdrop>,
     backdrop_padding: u32,
     background_nodes: &'a [bool],
-    origin_sensitive_nodes: &'a [bool],
     coverage: Option<Image>,
     own_pass: Option<(usize, OwnPass)>,
     tight_text_layer_hints: bool,
@@ -335,30 +332,6 @@ struct NodeRaster {
     viewport: Affine,
     width: i32,
     height: i32,
-}
-
-fn origin_sensitive_nodes(snapshot: &LayoutSnapshot) -> Vec<bool> {
-    fn sensitive(value: &Value) -> bool {
-        match value {
-            Value::Object(object) => {
-                matches!(
-                    object.get("type").and_then(Value::as_str),
-                    Some("mesh_gradient" | "shader")
-                ) || object.values().any(sensitive)
-            }
-            Value::Array(values) => values.iter().any(sensitive),
-            _ => false,
-        }
-    }
-    // Layout items precede their children. Inspect each property's value once,
-    // then propagate sensitivity through ancestors without rescanning subtrees.
-    let mut flags = vec![false; snapshot.items.len()];
-    for index in (0..snapshot.items.len()).rev() {
-        let item = &snapshot.items[index];
-        flags[index] = item.node.properties.values().any(sensitive)
-            || item.children.iter().any(|child| flags[*child]);
-    }
-    flags
 }
 
 impl Renderer<'_> {
@@ -498,9 +471,7 @@ impl Renderer<'_> {
                     .transformed(self.viewport)
                     .outset(1.0, 1.0),
                 self.viewport.then(item.record.transform),
-                // Keep mesh/custom shader device origins; native filters can
-                // avoid blurring transparent pixels before a distant node.
-                filter.is_none() || self.origin_sensitive_nodes[index],
+                true,
                 filter.as_ref(),
             )
         } else {
@@ -1047,7 +1018,6 @@ impl Renderer<'_> {
             }),
             backdrop_padding: padding,
             background_nodes: self.background_nodes,
-            origin_sensitive_nodes: self.origin_sensitive_nodes,
             coverage: None,
             own_pass: None,
             tight_text_layer_hints: false,
