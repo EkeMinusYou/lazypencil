@@ -5,6 +5,23 @@ use std::{collections::BTreeSet, path::Path};
 
 pub type Invocation = Vec<String>;
 pub const COLOR_FONT_REPRODUCTION: &str = "color_fonts::";
+pub const NATIVE_CLIPBOARD_TEST: &str =
+    "real_native_clipboard_ctrl_v_preserves_two_images_and_delivers_their_pixels";
+
+/// Clipboard ownership belongs to its dedicated stage, outside the runtime lifecycle suite.
+pub fn lifecycle(binary: &Path, target: &str) -> Result<Invocation> {
+    ensure!(["mcp", "tui"].contains(&target), "Unknown lifecycle target");
+    let mut command = vec![binary.to_string_lossy().into_owned()];
+    if target == "mcp" {
+        command
+            .push("idle_mcp_reaps_script_page_and_shader_processes_without_another_request".into());
+    }
+    command.extend(words(&["--ignored", "--test-threads=1"]));
+    if target == "tui" {
+        command.extend(skips([NATIVE_CLIPBOARD_TEST]));
+    }
+    Ok(command)
+}
 
 pub fn color_font_reproduction(suite: &str, targets: &[String]) -> Option<Invocation> {
     (["graphics", "dynamic", "copy"].contains(&suite)
@@ -414,6 +431,9 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
             c.extend(shader_skip.clone());
             c.extend(input_skip.clone());
             c.extend(history_skip.clone());
+            if names.iter().any(|name| name == "tui") {
+                c.extend(skips([NATIVE_CLIPBOARD_TEST]));
+            }
             checks.push(c);
         }
         if has("font_sources") {

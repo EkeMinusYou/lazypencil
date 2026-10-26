@@ -820,20 +820,11 @@ impl Session {
             (
                 "process lifecycle",
                 Box::new(|| -> Result<()> {
-                    for (target, filter, log) in [
-                        (
-                            "mcp",
-                            "idle_mcp_reaps_script_page_and_shader_processes_without_another_request",
-                            "chromium-mcp-idle.log",
-                        ),
-                        ("tui", "", "chromium-tui.log"),
+                    for (target, log) in [
+                        ("mcp", "chromium-mcp-idle.log"),
+                        ("tui", "chromium-tui.log"),
                     ] {
-                        let mut args =
-                            vec![catalog.binaries[target].path.to_string_lossy().into_owned()];
-                        if !filter.is_empty() {
-                            args.push(filter.into());
-                        }
-                        args.extend(["--ignored".into(), "--test-threads=1".into()]);
+                        let args = commands::lifecycle(&catalog.binaries[target].path, target)?;
                         self.execute(&args, 300, log, false)?;
                     }
                     Ok(())

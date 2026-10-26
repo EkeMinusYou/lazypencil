@@ -39,7 +39,7 @@ pub fn run(session: &Session) -> Result<()> {
             "--locked",
             "--test",
             "tui",
-            "real_native_clipboard_ctrl_v_preserves_two_images_and_delivers_their_pixels",
+            commands::NATIVE_CLIPBOARD_TEST,
             "--",
             "--exact",
             "--ignored",

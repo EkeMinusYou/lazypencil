@@ -748,7 +748,9 @@
         "--skip",
         "agent_ownership::killed_cli_revokes_grants_and_resume_preserves_images_and_transcripts",
         "--skip",
-        "owned_mcp_rejects_grants_after_the_host_is_killed_without_reviving_or_writing_journals"
+        "owned_mcp_rejects_grants_after_the_host_is_killed_without_reviving_or_writing_journals",
+        "--skip",
+        "real_native_clipboard_ctrl_v_preserves_two_images_and_delivers_their_pixels"
       ]
     ]
   },

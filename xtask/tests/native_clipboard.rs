@@ -1,5 +1,31 @@
-use lazypencil_xtask::{ci::focus, util};
-use std::{fs, process::Command};
+use lazypencil_xtask::{
+    ci::{commands, focus},
+    util,
+};
+use std::{fs, path::Path, process::Command};
+
+#[test]
+fn isolated_clipboard_is_excluded_from_both_shared_ignored_tui_schedules() {
+    let clipboard = commands::NATIVE_CLIPBOARD_TEST;
+    let plan = commands::plan(&util::root(), "dynamic", &["tui".into()]).unwrap();
+    let tui = plan
+        .checks
+        .iter()
+        .find(|command| command.contains(&"--include-ignored".into()))
+        .unwrap();
+    let lifecycle = commands::lifecycle(Path::new("tui-test"), "tui").unwrap();
+    for command in [tui, &lifecycle] {
+        assert!(command.windows(2).any(|args| args == ["--skip", clipboard]));
+        assert!(!command.iter().any(|arg| arg
+            == "real_pty_dynamic_previews_survive_idle_cleanup_and_refresh_without_losing_drafts"));
+    }
+    let mcp = commands::lifecycle(Path::new("mcp-test"), "mcp").unwrap();
+    assert!(mcp.contains(
+        &"idle_mcp_reaps_script_page_and_shader_processes_without_another_request".into()
+    ));
+    assert!(!mcp.contains(&"--skip".into()));
+    assert!(commands::lifecycle(Path::new("unexpected"), "agent").is_err());
+}
 
 #[test]
 fn native_clipboard_checks_require_owned_hosted_execution_and_run_before_expansion() {
