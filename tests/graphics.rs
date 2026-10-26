@@ -86,22 +86,28 @@ fn text(properties: Value) -> Scene {
 fn text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations() {
     use lazypencil::geometry::Affine;
     use skia_safe::{BlendMode, Matrix, Paint, Path, Rect, canvas::SaveLayerRec};
-    for (rotation, flip, decoration, parent_opacity) in [
+    for ((rotation, flip, decoration, parent_opacity), nested) in [
         (0.0, false, false, 1.0),
         (17.0, false, true, 1.0),
         (-43.0, true, true, 1.0),
         (0.0, false, false, 0.63),
         (17.0, false, true, 0.63),
         (-43.0, true, true, 0.63),
-    ] {
-        let scene = Scene::new(
-            json!([{"id":"frame","type":"frame","layout":"none","width":300,"height":260,"clip":true,"opacity":parent_opacity,"children":[{
-                "id":"text","type":"text","x":74.25,"y":70.5,"width":180,"height":120,
-                "textGrowth":"fixed-width-height","content":"jÁg 日本語\nAV W","fontSize":26.25,
-                "fontStyle":"italic","textAlign":"center","lineHeight":1.4,"fill":"#FF0000B0",
-                "rotation":rotation,"flipX":flip,"underline":decoration,"strikethrough":decoration
-            }]}]),
-        );
+    ]
+    .into_iter()
+    .flat_map(|case| [(case, false), (case, true)])
+    {
+        let offset = if nested { [37.5, 44.25] } else { [0.0, 0.0] };
+        let mut children = json!([{"id":"frame","type":"frame","layout":"none","x":offset[0],"y":offset[1],"width":300,"height":260,"clip":true,"opacity":parent_opacity,"children":[{
+            "id":"text","type":"text","x":74.25,"y":70.5,"width":180,"height":120,
+            "textGrowth":"fixed-width-height","content":"jÁg 日本語\nAV W","fontSize":26.25,
+            "fontStyle":"italic","textAlign":"center","lineHeight":1.4,"fill":"#FF0000B0",
+            "rotation":rotation,"flipX":flip,"underline":decoration,"strikethrough":decoration
+        }]}]);
+        if nested {
+            children = json!([{"id":"canvas","type":"frame","layout":"none","width":580,"height":440,"clip":true,"children":children}]);
+        }
+        let scene = Scene::new(children);
         let file = scene.directory.path().join("scene.pen");
         fs::write(
             &file,
@@ -135,7 +141,14 @@ fn text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations() 
             canvas.clear(Color::TRANSPARENT);
             let viewport = Affine::scale(scale, scale)
                 .then(Affine::translation(-output.region.x, -output.region.y));
-            canvas.concat(&Matrix::from_affine(&viewport.0));
+            let parent = snapshot
+                .items
+                .iter()
+                .find(|item| item.record.id == "frame")
+                .unwrap();
+            canvas.concat(&Matrix::from_affine(
+                &viewport.then(parent.record.transform).0,
+            ));
             if parent_opacity < 1.0 {
                 let mut parent = Paint::default();
                 parent.set_alpha_f(parent_opacity);
@@ -187,7 +200,7 @@ fn text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations() 
                     assert_eq!(
                         color,
                         expected.get_color((x, y)),
-                        "scale={scale} rotation={rotation} flip={flip} parent_opacity={parent_opacity} at {x},{y}"
+                        "scale={scale} rotation={rotation} flip={flip} parent_opacity={parent_opacity} nested={nested} at {x},{y}"
                     );
                 }
             }

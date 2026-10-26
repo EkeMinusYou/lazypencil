@@ -424,8 +424,19 @@ impl Renderer<'_> {
         let tight_text_layer_hints = self.tight_text_layer_hints;
         self.tight_text_layer_hints &= !has_layer;
         if has_layer {
-            self.canvas
-                .save_layer(&SaveLayerRec::default().paint(&layer));
+            let bounds = self.allocation_hint(
+                item.record
+                    .visual_bounds
+                    .transformed(self.viewport)
+                    .outset(1.0, 1.0),
+                self.viewport.then(item.record.transform),
+                true,
+            );
+            let mut record = SaveLayerRec::default().paint(&layer);
+            if let Some(bounds) = &bounds {
+                record = record.bounds(bounds);
+            }
+            self.canvas.save_layer(&record);
         }
         let rect = SkRect::from_xywh(0.0, 0.0, item.record.rect.width, item.record.rect.height);
         let shape = shape(node, rect)?;
@@ -573,40 +584,13 @@ impl Renderer<'_> {
             // Bound their allocation hints instead of copying a full viewport
             // for every label. Keep one device pixel for antialias coverage.
             let transform = self.viewport.then(item.record.transform);
-            let layer_bounds = transform
-                .inverse()
-                .and_then(|inverse| {
-                    let mut device =
-                        Rect::new(bounds.left(), bounds.top(), bounds.width(), bounds.height())
-                            .transformed(transform)
-                            .outset(1.0, 1.0);
-                    if !self.tight_text_layer_hints {
-                        // Preserve the original device origin in filtered,
-                        // transparent and offscreen passes. Tight origins can
-                        // alter native text coverage/rounding in those layers.
-                        // Shrink only the opposite edges; the extra pixel lets
-                        // Skia clamp the origin to the unchanged device clip.
-                        let clip = self.canvas.device_clip_bounds()?;
-                        device = device.union(Rect::new(
-                            clip.left as f32 - 1.0,
-                            clip.top as f32 - 1.0,
-                            2.0,
-                            2.0,
-                        ));
-                    }
-                    let local = device.transformed(inverse);
-                    Some(SkRect::from_xywh(
-                        local.x,
-                        local.y,
-                        local.width,
-                        local.height,
-                    ))
-                })
-                .filter(|bounds| {
-                    [bounds.left(), bounds.top(), bounds.right(), bounds.bottom()]
-                        .into_iter()
-                        .all(f32::is_finite)
-                });
+            let layer_bounds = self.allocation_hint(
+                Rect::new(bounds.left(), bounds.top(), bounds.width(), bounds.height())
+                    .transformed(transform)
+                    .outset(1.0, 1.0),
+                transform,
+                !self.tight_text_layer_hints,
+            );
             let mut fill_layer = SaveLayerRec::default();
             if let Some(bounds) = &layer_bounds {
                 fill_layer = fill_layer.bounds(bounds);
@@ -628,6 +612,33 @@ impl Renderer<'_> {
             self.stroke(node, &outline.with_offset((0.0, offset)), rect)?;
         }
         Ok(())
+    }
+
+    fn allocation_hint(
+        &self,
+        mut device: Rect,
+        transform: Affine,
+        preserve_origin: bool,
+    ) -> Option<SkRect> {
+        let inverse = transform.inverse()?;
+        if preserve_origin {
+            // Keep the original device origin in filtered, transparent and
+            // offscreen passes. Shrink only the opposite edges; the extra
+            // pixel lets Skia clamp the origin to the unchanged device clip.
+            let clip = self.canvas.device_clip_bounds()?;
+            device = device.union(Rect::new(
+                clip.left as f32 - 1.0,
+                clip.top as f32 - 1.0,
+                2.0,
+                2.0,
+            ));
+        }
+        let local = device.transformed(inverse);
+        let hint = SkRect::from_xywh(local.x, local.y, local.width, local.height);
+        [hint.left(), hint.top(), hint.right(), hint.bottom()]
+            .into_iter()
+            .all(f32::is_finite)
+            .then_some(hint)
     }
 
     fn fills(
