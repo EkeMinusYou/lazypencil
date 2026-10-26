@@ -193,7 +193,7 @@ fn png_impl(
         background_nodes: &background_nodes,
         coverage: None,
         own_pass: None,
-        text_layer_hints: true,
+        tight_text_layer_hints: true,
         rasters,
     };
     // Node selection determines the viewport; compositing keeps scene context.
@@ -258,7 +258,7 @@ struct Renderer<'a> {
     background_nodes: &'a [bool],
     coverage: Option<Image>,
     own_pass: Option<(usize, OwnPass)>,
-    text_layer_hints: bool,
+    tight_text_layer_hints: bool,
     rasters: Rc<backdrop::RasterBudget>,
 }
 
@@ -421,8 +421,8 @@ impl Renderer<'_> {
         layer.set_alpha_f(opacity);
         layer.set_image_filter(filter);
         let has_layer = !skip_effect && (opacity < 1.0 || node.properties.contains_key("effect"));
-        let text_layer_hints = self.text_layer_hints;
-        self.text_layer_hints &= !has_layer;
+        let tight_text_layer_hints = self.tight_text_layer_hints;
+        self.tight_text_layer_hints &= !has_layer;
         if has_layer {
             self.canvas
                 .save_layer(&SaveLayerRec::default().paint(&layer));
@@ -490,7 +490,7 @@ impl Renderer<'_> {
         if has_layer {
             self.canvas.restore();
         }
-        self.text_layer_hints = text_layer_hints;
+        self.tight_text_layer_hints = tight_text_layer_hints;
         self.canvas.restore();
         Ok(())
     }
@@ -575,17 +575,32 @@ impl Renderer<'_> {
             let transform = self.viewport.then(item.record.transform);
             let layer_bounds = transform
                 .inverse()
-                // Filtered/transparent parent layers can change Skia's color
-                // rounding when an inner layer's allocation changes.
-                // Preserve the original compositor throughout those subtrees.
-                .filter(|_| self.text_layer_hints)
-                .map(|inverse| {
-                    let device =
+                .and_then(|inverse| {
+                    let mut device =
                         Rect::new(bounds.left(), bounds.top(), bounds.width(), bounds.height())
                             .transformed(transform)
                             .outset(1.0, 1.0);
+                    if !self.tight_text_layer_hints {
+                        // Preserve the original device origin in filtered,
+                        // transparent and offscreen passes. Tight origins can
+                        // alter native text coverage/rounding in those layers.
+                        // Shrink only the opposite edges; the extra pixel lets
+                        // Skia clamp the origin to the unchanged device clip.
+                        let clip = self.canvas.device_clip_bounds()?;
+                        device = device.union(Rect::new(
+                            clip.left as f32 - 1.0,
+                            clip.top as f32 - 1.0,
+                            2.0,
+                            2.0,
+                        ));
+                    }
                     let local = device.transformed(inverse);
-                    SkRect::from_xywh(local.x, local.y, local.width, local.height)
+                    Some(SkRect::from_xywh(
+                        local.x,
+                        local.y,
+                        local.width,
+                        local.height,
+                    ))
                 })
                 .filter(|bounds| {
                     [bounds.left(), bounds.top(), bounds.right(), bounds.bottom()]
@@ -925,7 +940,7 @@ impl Renderer<'_> {
             background_nodes: self.background_nodes,
             coverage: None,
             own_pass: None,
-            text_layer_hints: false,
+            tight_text_layer_hints: false,
             rasters: self.rasters.clone(),
         };
         nested.node(index)?;
