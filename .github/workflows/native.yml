@@ -127,6 +127,23 @@ jobs:
       - name: Reproduce affected failures before other tests and Chromium
         if: inputs.phase == 'focus'
         run: cargo xtask ci native focus-reproduce --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
+      - name: Install real Linux terminal emulators for the early reproduction
+        if: inputs.phase == 'focus' && inputs.suite == 'candidate' && runner.os == 'Linux'
+        timeout-minutes: 20
+        run: cargo xtask ci linux-terminal-dependencies
+      - name: Reproduce real terminal pixels with the existing focused debug build
+        id: terminal-reproduction
+        if: inputs.phase == 'focus' && inputs.suite == 'candidate' && runner.os == 'Linux'
+        timeout-minutes: 10
+        run: cargo xtask terminal --development-build --output "$RUNNER_TEMP/terminal-reproduction"
+      - name: Retain early real-terminal reproduction evidence
+        if: ${{ always() && (steps.terminal-reproduction.outcome == 'success' || steps.terminal-reproduction.outcome == 'failure') }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: terminal-reproduction-${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/terminal-reproduction
+          if-no-files-found: error
+          retention-days: 3
       - name: Build core test binaries
         if: inputs.phase == 'full'
         timeout-minutes: 40
@@ -201,10 +218,6 @@ jobs:
         if: inputs.phase == 'full'
         timeout-minutes: 20
         run: cargo xtask ci native browser-test
-      - name: Install real Linux terminal emulators for the candidate reproduction
-        if: inputs.phase == 'focus' && inputs.suite == 'candidate' && runner.os == 'Linux'
-        timeout-minutes: 20
-        run: cargo xtask ci linux-terminal-dependencies
       - name: Verify actual Kitty and Sixel window pixels and keyboard operations
         id: terminal-test
         if: inputs.phase == 'focus' && inputs.suite == 'candidate' && runner.os == 'Linux'

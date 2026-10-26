@@ -116,6 +116,8 @@ impl Emulator {
                 "vt340",
                 "-xrm",
                 "*decGraphicsID:340",
+                "-xrm",
+                "*numColorRegisters:256",
                 "-fa",
                 "monospace",
                 "-fs",
@@ -344,15 +346,25 @@ impl Emulator {
     }
 }
 
-pub fn run(candidate: &Path, output: &Path) -> Result<()> {
+pub fn run(candidate: Option<&Path>, output: &Path) -> Result<()> {
     ensure!(
         std::env::var_os("DISPLAY").is_some(),
         "Missing isolated X11 display"
     );
     let temp = tempfile::tempdir_in(output)?;
     let extracted = temp.path().join("candidate");
-    let verification = dist::binary::verify(candidate, Some(&extracted))?;
     let revision = std::env::var("GITHUB_SHA").context("Missing source identity")?;
+    let (binary, verification) = if let Some(candidate) = candidate {
+        (
+            extracted.join("bin/lazypencil"),
+            dist::binary::verify(candidate, Some(&extracted))?,
+        )
+    } else {
+        let build = crate::ci::native::Session::hosted()?;
+        let binary = build.executable("debug");
+        let verification = super::development_identity(&build.root, &binary, &revision)?;
+        (binary, verification)
+    };
     ensure!(
         verification["source_revision"] == revision,
         "Candidate belongs to another source"
@@ -368,7 +380,6 @@ pub fn run(candidate: &Path, output: &Path) -> Result<()> {
     );
     let helper = std::env::current_exe()?.with_file_name("lazypencil-test-helper");
     ensure!(helper.is_file(), "Missing independent ACP test helper");
-    let binary = extracted.join("bin/lazypencil");
     let mut results = json!({});
     let mut failed = Vec::new();
     for (protocol, program) in [
@@ -411,15 +422,16 @@ pub fn run(candidate: &Path, output: &Path) -> Result<()> {
         };
         report["emulator_version"] = json!(identity.trim());
         if program == "xterm" {
-            report["emulator_configuration"] =
-                json!({"decTerminalID":340,"decGraphicsID":340,"font":"monospace","font_size":11});
+            report["emulator_configuration"] = json!({"decTerminalID":340,"decGraphicsID":340,"numColorRegisters":256,"font":"monospace","font_size":11});
         }
         results[protocol] = report;
     }
     util::publish(
         &output.join("report.json"),
         &util::encode(&json!({
-            "format_version":1,"source_commit":revision,"candidate":verification,"target":target,
+            "format_version":1,"source_commit":revision,
+            "candidate":candidate.is_some().then_some(&verification),
+            "development_build":candidate.is_none().then_some(&verification),"target":target,
             "display":"Xvfb 1600x1000x24; LIBGL_ALWAYS_SOFTWARE=1","protocols":results,"failed":&failed,
             "scope":"real-emulator rendered pixels and X11 keyboard/resize; not physical-monitor, IME, clipboard, tmux/SSH or performance acceptance"
         }))?,
