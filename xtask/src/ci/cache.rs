@@ -73,6 +73,8 @@ pub enum Command {
         #[arg(value_parser = ["identify","stage","restore","restore-or-prune"])]
         operation: String,
         #[arg(long)]
+        release_only: bool,
+        #[arg(long)]
         source: PathBuf,
         #[arg(long)]
         target: PathBuf,
@@ -150,13 +152,15 @@ impl Command {
             }
             Self::Application {
                 operation,
+                release_only,
                 source,
                 target,
                 directory,
                 native_key,
                 github_output,
             } => {
-                let identity = application_identity(&source, &target, &native_key)?;
+                let identity =
+                    application_identity_for(&source, &target, &native_key, release_only)?;
                 let value = match operation.as_str() {
                     "identify" => {
                         let checkpoint = if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
@@ -187,12 +191,28 @@ impl Command {
                         Ok(report) => report,
                         Err(error) => {
                             eprintln!("Application cache rejected: {error:#}");
-                            prune(&source, &target)?;
+                            if release_only {
+                                prune_profiles(&source, &target, &["release"])?;
+                            } else {
+                                prune(&source, &target)?;
+                            }
                             json!({"reused":false})
                         }
                     },
                     _ => unreachable!(),
                 };
+                if operation.starts_with("restore") {
+                    util::github_output(
+                        github_output.as_deref(),
+                        &BTreeMap::from([(
+                            "release_reused".into(),
+                            (value["reused"] == true
+                                && target.join("release/lazypencil").is_file()
+                                && crate::evidence::link_map::path(&target).is_file())
+                            .to_string(),
+                        )]),
+                    )?;
+                }
                 util::print(&value)
             }
             Self::Retain {
@@ -488,7 +508,7 @@ fn valid_generation_id(value: &str) -> bool {
 /// Keep later completed focused outputs distinct from an older immutable cache.
 pub fn application_checkpoint(base: &str, run: &str, attempt: &str) -> Result<String> {
     ensure!(
-        Regex::new(r"^application-v2-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-[0-9a-f]{64}-[0-9a-f]{64}-focus$")?.is_match(base)
+        Regex::new(r"^(?:application-v2|release-v1)-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-[0-9a-f]{64}-[0-9a-f]{64}-focus$")?.is_match(base)
             && [run, attempt].into_iter().all(valid_generation_id),
         "Invalid application checkpoint identity"
     );
@@ -536,12 +556,30 @@ pub struct ApplicationIdentity {
     pub primary: String,
     pub checkpoint: String,
     pub tracked: BTreeMap<String, Entry>,
+    release_only: bool,
 }
 
 pub fn application_identity(
     source: &Path,
     target: &Path,
     native_key: &str,
+) -> Result<ApplicationIdentity> {
+    application_identity_for(source, target, native_key, false)
+}
+
+pub fn release_identity(
+    source: &Path,
+    target: &Path,
+    native_key: &str,
+) -> Result<ApplicationIdentity> {
+    application_identity_for(source, target, native_key, true)
+}
+
+fn application_identity_for(
+    source: &Path,
+    target: &Path,
+    native_key: &str,
+    release_only: bool,
 ) -> Result<ApplicationIdentity> {
     let manifest: Manifest = util::json(&source.join(dist::MANIFEST))?;
     let package: toml::Value = toml::from_str(&fs::read_to_string(source.join("Cargo.toml"))?)?;
@@ -561,21 +599,38 @@ pub fn application_identity(
         package["package"]["name"].as_str() == Some("lazypencil"),
         "Unknown application package"
     );
-    let inputs = compiled_inputs(&manifest);
+    let inputs = compiled_inputs(&manifest)
+        .into_iter()
+        .filter(|entry| {
+            !release_only
+                || (!entry.path.starts_with("tests/") && !entry.path.starts_with("xtask/"))
+        })
+        .collect::<Vec<_>>();
     let target = std::path::absolute(target)?;
-    let fingerprint = util::digest(stable_json(
-        &json!({"version":3,"release_recipe":crate::evidence::link_map::RECIPE,"inputs":inputs,"native":native_key,"source":source.canonicalize()?,"target":target}),
-    ));
-    let source_hash = source_fingerprint(&manifest)?;
+    // Preserve existing all-output cache identities while separating release
+    // files from test-only inputs. Actual compiler dep-info still rejects any
+    // excluded file that becomes a compiled release input.
+    let mut recipe = json!({"version":3,"release_recipe":crate::evidence::link_map::RECIPE,"inputs":inputs,"native":native_key,"source":source.canonicalize()?,"target":target});
+    if release_only {
+        recipe["scope"] = json!("release-v1");
+    }
+    let fingerprint = util::digest(stable_json(&recipe));
+    let source_hash = util::digest(stable_json(&serde_json::to_value(&inputs)?));
+    let namespace = if release_only {
+        "release-v1"
+    } else {
+        "application-v2"
+    };
     Ok(ApplicationIdentity {
         fingerprint: fingerprint.clone(),
         source_commit: manifest.git["revision"]
             .as_str()
             .context("Missing committed source")?
             .into(),
-        primary: format!("application-v2-{platform}-{source_hash}-{fingerprint}-full"),
-        checkpoint: format!("application-v2-{platform}-{source_hash}-{fingerprint}-focus"),
+        primary: format!("{namespace}-{platform}-{source_hash}-{fingerprint}-full"),
+        checkpoint: format!("{namespace}-{platform}-{source_hash}-{fingerprint}-focus"),
         tracked: inputs.into_iter().map(|e| (e.path.clone(), e)).collect(),
+        release_only,
     })
 }
 
@@ -760,7 +815,22 @@ pub fn stage(
     directory: &Path,
     identity: &ApplicationIdentity,
 ) -> Result<Value> {
-    let files = outputs(target)?;
+    let files = outputs(target)?
+        .into_iter()
+        .filter(|path| {
+            !identity.release_only
+                || path
+                    .strip_prefix(target)
+                    .is_ok_and(|p| p.starts_with("release"))
+        })
+        .collect::<Vec<_>>();
+    ensure!(
+        !identity.release_only
+            || files
+                .iter()
+                .any(|p| p == &target.join("release/lazypencil")),
+        "Release cache requires a completed mapped executable"
+    );
     let environment = input_environment(&files, source, &identity.tracked)?;
     if directory.exists() {
         fs::remove_dir_all(directory)?;
@@ -815,6 +885,7 @@ pub fn restore(
         let path = directory.join("files").join(&entry.path);
         ensure!(
             allowed(&entry.path)
+                && (!identity.release_only || entry.path.starts_with("release/"))
                 && names.insert(entry.path.clone())
                 && !path.is_symlink()
                 && path.is_file()
@@ -831,7 +902,8 @@ pub fn restore(
     }
     ensure!(
         names.contains("release/lazypencil")
-            == names.contains(crate::evidence::link_map::CACHE_PATH),
+            == names.contains(crate::evidence::link_map::CACHE_PATH)
+            && (!identity.release_only || names.contains("release/lazypencil")),
         "Cached release executable and map are incomplete"
     );
     ensure!(
@@ -862,6 +934,10 @@ pub fn restore(
 }
 
 pub fn prune(source: &Path, target: &Path) -> Result<()> {
+    prune_profiles(source, target, &["dev", "release"])
+}
+
+fn prune_profiles(source: &Path, target: &Path, profiles: &[&str]) -> Result<()> {
     ensure!(
         target.is_absolute() && target.parent().is_some(),
         "Explicit non-root target directory required"
@@ -883,7 +959,7 @@ pub fn prune(source: &Path, target: &Path) -> Result<()> {
             }
         }
     }
-    for profile in ["dev", "release"] {
+    for profile in profiles {
         process::checked(
             Process::new("cargo")
                 .current_dir(source)
@@ -930,6 +1006,9 @@ pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Valu
         .collect::<BTreeSet<_>>();
     let re = Regex::new(
         r"^application-v([12])-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-([0-9a-f]{64})(?:-([0-9a-f]{64}))?-(full|focus)(?:-[1-9][0-9]*-[1-9][0-9]*)?$",
+    )?;
+    let releases = Regex::new(
+        r"^release-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-[0-9a-f]{64}-[0-9a-f]{64}-(full|focus)(?:-[1-9][0-9]*-[1-9][0-9]*)?$",
     )?;
     let mut selected = BTreeMap::new();
     let mut groups = BTreeMap::<(String, String), Vec<&Value>>::new();
@@ -982,6 +1061,24 @@ pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Valu
             } else {
                 groups
                     .entry((caps[2].into(), phase.into()))
+                    .or_default()
+                    .push(entry);
+            }
+        }
+        if let Some(caps) = releases.captures(key) {
+            let phase = &caps[2];
+            if phase == "focus"
+                && keys.contains(&(
+                    format!("{}full", &key[..caps.get(2).unwrap().start()]).as_str(),
+                    version,
+                ))
+            {
+                selected.insert(id, entry.clone());
+            } else {
+                // The current all-output source hash includes tests and must
+                // not invalidate a compatible release-only checkpoint.
+                groups
+                    .entry((format!("release:{}", &caps[1]), phase.into()))
                     .or_default()
                     .push(entry);
             }

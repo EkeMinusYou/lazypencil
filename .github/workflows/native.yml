@@ -117,9 +117,31 @@ jobs:
             ${{ steps.application-key.outputs.checkpoint_legacy }}
           path: ${{ runner.temp }}/lazypencil-application-cache
       - name: Validate application reuse or keep a fresh build
+        id: application-reuse
         if: steps.application-key.outcome == 'success'
         timeout-minutes: 3
         run: cargo xtask ci cache application restore-or-prune --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
+      - name: Identify release outputs independently of test changes
+        id: release-key
+        if: steps.cache-key.outcome == 'success' && (inputs.phase == 'full' || inputs.suite == 'release' || inputs.suite == 'candidate' || inputs.measure_tui)
+        continue-on-error: true
+        run: cargo xtask ci cache application identify --release-only --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-release-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
+      - name: Restore compatible mapped release outputs
+        id: release-cache
+        if: steps.release-key.outcome == 'success'
+        continue-on-error: true
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          key: ${{ steps.release-key.outputs.primary }}
+          restore-keys: |
+            ${{ steps.release-key.outputs.checkpoint_prefix }}
+            ${{ steps.release-key.outputs.checkpoint_legacy }}
+          path: ${{ runner.temp }}/lazypencil-release-cache
+          lookup-only: ${{ steps.application-reuse.outputs.release_reused == 'true' }}
+      - name: Validate release reuse while keeping verified test outputs
+        if: steps.release-key.outcome == 'success' && steps.application-reuse.outputs.release_reused != 'true'
+        timeout-minutes: 3
+        run: cargo xtask ci cache application restore-or-prune --release-only --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-release-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
       - name: Verify distributed dependency notices
         run: cargo xtask ci native notices
       - name: Reproduce script compatibility before native rendering
@@ -318,6 +340,19 @@ jobs:
         with:
           key: ${{ inputs.phase == 'full' && steps.application-key.outputs.primary || steps.application-key.outputs.checkpoint }}
           path: ${{ runner.temp }}/lazypencil-application-cache
+      - name: Stage mapped release outputs independently of tests
+        id: release-save
+        if: ${{ success() && steps.release-key.outcome == 'success' && steps.release-cache.outputs.cache-hit != 'true' && (steps.release-smoke.outcome == 'success' || steps.focus-release.outcome == 'success') && github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        timeout-minutes: 3
+        run: cargo xtask ci cache application stage --release-only --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-release-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
+      - name: Save the verified release checkpoint
+        if: ${{ !cancelled() && steps.release-save.outcome == 'success' }}
+        continue-on-error: true
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          key: ${{ inputs.phase == 'full' && steps.release-key.outputs.primary || steps.release-key.outputs.checkpoint }}
+          path: ${{ runner.temp }}/lazypencil-release-cache
       - name: Keep completed dependencies after failure or cancellation
         id: cache-prune
         if: ${{ always() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true' && steps.native-cache.outputs.cache-matched-key != steps.cache-key.outputs.primary && (steps.focus-build.outcome == 'success' || steps.default-build.outcome == 'success') }}

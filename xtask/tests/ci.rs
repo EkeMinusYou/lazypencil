@@ -721,6 +721,47 @@ impl ApplicationFixture {
         cache::application_identity(&self.source, &self.target, "native-v2-ubuntu-24.04-fixture")
             .unwrap()
     }
+    fn write_source(&self, name: &str, bytes: &[u8]) {
+        let path = self.source.join(name);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, bytes).unwrap();
+        let mut manifest: Manifest = util::json(&self.source.join(dist::MANIFEST)).unwrap();
+        manifest.files.retain(|entry| entry.path != name);
+        manifest.files.push(Entry {
+            path: name.into(),
+            bytes: bytes.len() as u64,
+            sha256: util::file_digest(&path).unwrap(),
+            mode: 0o644,
+        });
+        fs::write(
+            self.source.join(dist::MANIFEST),
+            util::encode(&manifest).unwrap(),
+        )
+        .unwrap();
+    }
+    fn release(&self) -> cache::ApplicationIdentity {
+        let directory = self
+            .target
+            .join("release/.fingerprint/lazypencil-1234567890abcdef");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("bin-lazypencil.json"), b"{}").unwrap();
+        let directory = self.target.join("release/deps");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("lazypencil-1234567890abcdef"), b"executable").unwrap();
+        fs::write(
+            directory.join("lazypencil-1234567890abcdef.d"),
+            format!("binary: {}/src/lib.rs\n", self.source.display()),
+        )
+        .unwrap();
+        fs::write(self.target.join("release/lazypencil"), b"executable").unwrap();
+        fs::write(
+            lazypencil_xtask::evidence::link_map::path(&self.target),
+            b"mapped executable",
+        )
+        .unwrap();
+        cache::release_identity(&self.source, &self.target, "native-v2-ubuntu-24.04-fixture")
+            .unwrap()
+    }
     fn stage(&self) {
         cache::stage(
             &self.source,
@@ -730,6 +771,149 @@ impl ApplicationFixture {
         )
         .unwrap();
     }
+}
+
+#[test]
+fn release_reuse_survives_test_changes_without_restoring_test_outputs() {
+    let f = ApplicationFixture::new();
+    f.write_source("tests/render.rs", b"original test");
+    let all = f.identity();
+    let release = f.release();
+    assert_ne!(all.fingerprint, release.fingerprint);
+    cache::stage(&f.source, &f.target, &f.directory, &release).unwrap();
+    f.write_source("tests/render.rs", b"expanded regression");
+    f.write_source("xtask/src/test_support/fixture.rs", b"new fixture");
+    let current =
+        cache::release_identity(&f.source, &f.target, "native-v2-ubuntu-24.04-fixture").unwrap();
+    assert_eq!(current.primary, release.primary);
+    assert_ne!(f.identity().primary, all.primary);
+    fs::remove_dir_all(f.target.join("release")).unwrap();
+    fs::write(&f.library, b"current debug output").unwrap();
+    let value = cache::restore(&f.source, &f.target, &f.directory, &current).unwrap();
+    assert_eq!(value["reused"], true);
+    assert_eq!(fs::read(&f.library).unwrap(), b"current debug output");
+    let manifest: Value = util::json(&f.directory.join("manifest.json")).unwrap();
+    assert!(
+        manifest["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|v| v["path"].as_str().unwrap().starts_with("release/"))
+    );
+    assert_eq!(
+        fs::read(f.target.join("release/lazypencil")).unwrap(),
+        b"executable"
+    );
+}
+
+#[test]
+fn release_reuse_rejects_source_resource_recipe_and_scope_changes() {
+    for name in ["src/lib.rs", "resources/guidance/design.md", "Cargo.toml"] {
+        let f = ApplicationFixture::new();
+        if name != "Cargo.toml" {
+            f.write_source(name, b"original input");
+        }
+        let release = f.release();
+        cache::stage(&f.source, &f.target, &f.directory, &release).unwrap();
+        if name == "Cargo.toml" {
+            let original = fs::read_to_string(f.source.join(name)).unwrap();
+            f.write_source(
+                name,
+                format!("{original}\n[profile.release]\nlto='thin'\n").as_bytes(),
+            );
+        } else {
+            f.write_source(name, b"changed input");
+        }
+        let current =
+            cache::release_identity(&f.source, &f.target, "native-v2-ubuntu-24.04-fixture")
+                .unwrap();
+        assert!(
+            cache::restore(&f.source, &f.target, &f.directory, &current).is_err(),
+            "{name}"
+        );
+    }
+    let f = ApplicationFixture::new();
+    let release = f.release();
+    cache::stage(&f.source, &f.target, &f.directory, &release).unwrap();
+    let current =
+        cache::release_identity(&f.source, &f.target, "native-v2-ubuntu-24.04-other-build")
+            .unwrap();
+    assert!(cache::restore(&f.source, &f.target, &f.directory, &current).is_err());
+    assert!(cache::restore(&f.source, &f.target, &f.directory, &f.identity()).is_err());
+}
+
+#[test]
+fn release_cache_rejects_compiled_test_inputs_and_debug_entries_before_overlay() {
+    let f = ApplicationFixture::new();
+    f.write_source("tests/embedded.txt", b"embedded fixture");
+    let release = f.release();
+    let dep = f.target.join("release/deps/lazypencil-1234567890abcdef.d");
+    fs::write(
+        &dep,
+        format!("binary: {}/tests/embedded.txt\n", f.source.display()),
+    )
+    .unwrap();
+    assert!(cache::stage(&f.source, &f.target, &f.directory, &release).is_err());
+    f.release();
+    cache::stage(&f.source, &f.target, &f.directory, &release).unwrap();
+    let path = f.directory.join("manifest.json");
+    let mut report: Value = util::json(&path).unwrap();
+    report["files"].as_array_mut().unwrap().push(json!({"path":"debug/deps/liblazypencil-1234567890abcdef.rlib","sha256":"invalid","bytes":1,"mode":420}));
+    fs::write(&path, util::encode(&report).unwrap()).unwrap();
+    fs::remove_dir_all(f.target.join("release")).unwrap();
+    assert!(cache::restore(&f.source, &f.target, &f.directory, &release).is_err());
+    assert!(!f.target.join("release").exists());
+}
+
+#[test]
+fn rejected_release_cli_cache_does_not_prune_verified_debug_outputs() {
+    let f = ApplicationFixture::new();
+    f.write_source(
+        "Cargo.lock",
+        b"version = 4\n\n[[package]]\nname = \"lazypencil\"\nversion = \"0.1.0\"\n",
+    );
+    let release = f.release();
+    cache::stage(&f.source, &f.target, &f.directory, &release).unwrap();
+    fs::write(
+        f.directory.join("files/release/lazypencil.map"),
+        b"tampered",
+    )
+    .unwrap();
+    let output = f.directory.with_extension("outputs");
+    let result = Command::new(env!("CARGO_BIN_EXE_xtask"))
+        .args([
+            "ci",
+            "cache",
+            "application",
+            "restore-or-prune",
+            "--release-only",
+        ])
+        .arg("--source")
+        .arg(&f.source)
+        .arg("--target")
+        .arg(&f.target)
+        .arg("--directory")
+        .arg(&f.directory)
+        .args(["--native-key", "native-v2-ubuntu-24.04-fixture"])
+        .arg("--github-output")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&result.stdout).unwrap()["reused"],
+        false
+    );
+    assert_eq!(fs::read(&f.library).unwrap(), b"compiled fixture library");
+    assert_eq!(
+        fs::read_to_string(&output).unwrap(),
+        "release_reused=false\n"
+    );
+    assert!(!lazypencil_xtask::evidence::link_map::path(&f.target).exists());
 }
 
 #[test]
@@ -1189,6 +1373,7 @@ fn escaped_space_inputs_are_bound_and_compile_time_environment_changes_cannot_re
     let invoke = |operation: &str, value: &str| {
         Command::new(env!("CARGO_BIN_EXE_xtask"))
             .env("EXAMPLE_BUILD_SETTING", value)
+            .env_remove("GITHUB_OUTPUT")
             .args(["ci", "cache", "application", operation, "--source"])
             .arg(&f.source)
             .arg("--target")

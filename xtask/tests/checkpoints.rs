@@ -22,6 +22,53 @@ fn application_checkpoints_do_not_collide_across_later_focused_runs_or_retries()
     }
     assert!(cache::application_checkpoint(&base.replace("-focus", "-full"), "402", "1").is_err());
     assert!(cache::application_checkpoint("../application-v2-foreign", "402", "1").is_err());
+    let release = base.replace("application-v2", "release-v1");
+    assert_eq!(
+        cache::application_checkpoint(&release, "402", "1").unwrap(),
+        format!("{release}-402-1")
+    );
+}
+
+#[test]
+fn release_retention_is_independent_of_test_sources_and_application_cache_groups() {
+    let stem = format!(
+        "release-v1-ubuntu-24.04-{}-{}",
+        "a".repeat(64),
+        "b".repeat(64)
+    );
+    let entry = |id, key: String| json!({"id":id,"key":key,"version":"same-layout","ref":"refs/heads/main","created_at":format!("2026-10-{id:02}T00:00:00Z")});
+    let focus = format!("{stem}-focus");
+    let mut entries = vec![
+        entry(1, format!("{focus}-402-1")),
+        entry(2, format!("{focus}-403-1")),
+        entry(
+            3,
+            format!(
+                "application-v2-ubuntu-24.04-{}-{}-full",
+                "c".repeat(64),
+                "d".repeat(64)
+            ),
+        ),
+    ];
+    let removed = |entries: &[serde_json::Value]| {
+        cache::obsolete(entries, Some(&"f".repeat(64)))
+            .unwrap()
+            .into_iter()
+            .map(|e| e["id"].as_u64().unwrap())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(removed(&entries), [1]);
+    entries.push(entry(4, format!("{stem}-full")));
+    assert_eq!(removed(&entries), [1, 2]);
+    entries.push(entry(
+        5,
+        format!(
+            "release-v1-ubuntu-24.04-{}-{}-full",
+            "e".repeat(64),
+            "f".repeat(64)
+        ),
+    ));
+    assert_eq!(removed(&entries), [1, 2, 4]);
 }
 
 #[test]
