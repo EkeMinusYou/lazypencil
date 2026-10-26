@@ -171,6 +171,7 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
                 "xtask/src/dist.rs",
                 "xtask/src/dist/binary.rs",
                 "xtask/src/evidence.rs",
+                "xtask/src/notices/skia.rs",
                 "xtask/src/ci/native/candidate.rs",
                 "xtask/tests/binary_dist.rs",
                 "xtask/tests/evidence.rs",

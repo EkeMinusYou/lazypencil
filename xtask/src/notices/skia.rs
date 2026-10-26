@@ -30,6 +30,22 @@ const EXTERNALS: &[&str] = &[
 ];
 const ZLIB: &str = "https://chromium.googlesource.com/chromium/src/third_party/zlib";
 const PREFIX: &str = "third_party/externals/zlib/";
+// LICENSE.TXT delegates to these files, whose names do not match is_notice.
+// Preserve both license alternatives and the separately licensed contributions.
+const FREETYPE_TERMS: &[&str] = &[
+    "LICENSE.TXT",
+    "docs/FTL.TXT",
+    "docs/GPLv2.TXT",
+    "src/bdf/README",
+    "src/pcf/README",
+    "src/gzip/zlib.h",
+    "src/base/fthash.c",
+    "include/freetype/internal/fthash.h",
+    "src/autofit/ft-hb-ft.c",
+    "src/autofit/ft-hb-decls.h",
+    "src/autofit/ft-hb-types.h",
+    "src/autofit/hb-script-list.h",
+];
 
 fn sha(value: &Value, width: usize) -> bool {
     value.as_str().is_some_and(|s| {
@@ -371,6 +387,16 @@ pub fn build_from_graph(
     .collect::<BTreeSet<_>>();
     for name in used.iter().filter(|s| s.as_str() != "skia") {
         let root = source.join("third_party/externals").join(name);
+        if name == "freetype" {
+            for relative in FREETYPE_TERMS {
+                let path = root.join(relative);
+                ensure!(
+                    path.is_file() && !path.is_symlink(),
+                    "Missing original FreeType terms: {relative}"
+                );
+                candidates.insert(path);
+            }
+        }
         let mut primary = false;
         for path in util::walk_filtered(&root, |p| {
             p.components().any(|c| c.as_os_str() == ".git")
@@ -540,6 +566,19 @@ pub fn files(index: &Value, mut texts: Files) -> Result<Files> {
             .iter()
             .map(|v| v.as_str().unwrap().to_owned()),
     );
+    if index["components"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|v| v == "freetype")
+    {
+        lines.extend([
+            "".into(),
+            "FreeType is used under the FreeType License (FTL).".into(),
+            "This software is based in part on the work of the FreeType Team (https://freetype.org).".into(),
+            "The alternative GPLv2 text and separately licensed contributions are retained below.".into(),
+        ]);
+    }
     lines.push("".into());
     for record in index["notice_files"].as_array().unwrap() {
         lines.extend([

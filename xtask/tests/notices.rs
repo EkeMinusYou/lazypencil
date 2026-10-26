@@ -115,6 +115,71 @@ fn checked_in_rust_notices_match_workspace_manifests_and_original_license_bytes(
 }
 
 #[test]
+fn freetype_delegated_terms_are_complete_byte_exact_and_required() {
+    let mut f = Fixture::new("skia");
+    let paths = [
+        "LICENSE.TXT",
+        "docs/FTL.TXT",
+        "docs/GPLv2.TXT",
+        "src/bdf/README",
+        "src/pcf/README",
+        "src/gzip/zlib.h",
+        "src/base/fthash.c",
+        "include/freetype/internal/fthash.h",
+        "src/autofit/ft-hb-ft.c",
+        "src/autofit/ft-hb-decls.h",
+        "src/autofit/ft-hb-types.h",
+        "src/autofit/hb-script-list.h",
+    ];
+    let prefix = "source/third_party/externals/freetype/";
+    for path in paths {
+        f.write(
+            &format!("{prefix}{path}"),
+            format!("Original fixture terms for {path}\r\nCopyright fixture author\r\n"),
+        );
+    }
+    f.write(
+        &format!("{prefix}native.c"),
+        b"/* Fixture native input. */\n",
+    );
+    f.data["graph"] = json!(format!(
+        "{}../source/third_party/externals/freetype/native.c\n",
+        f.data["graph"].as_str().unwrap()
+    ));
+    let (index, texts) = f.skia().unwrap();
+    for path in paths {
+        let name = format!("third_party/externals/freetype/{path}");
+        let record = index["notice_files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|record| record["path"] == name)
+            .unwrap();
+        let bytes = fs::read(f.path(&format!("source/{name}"))).unwrap();
+        assert_eq!(record["sha256"], util::digest(&bytes));
+        assert_eq!(texts[record["blob"].as_str().unwrap()], bytes);
+    }
+    let files = skia::files(&index, texts).unwrap();
+    let rendered = String::from_utf8(files["SKIA-NOTICES.txt"].clone()).unwrap();
+    assert!(rendered.contains("FreeType is used under the FreeType License (FTL)."));
+    assert!(rendered.contains("based in part on the work of the FreeType Team"));
+    let output = f.path("published");
+    notices::publish_bundle(&output, &files).unwrap();
+    notices::verify_expected(&output, &files).unwrap();
+    for path in paths {
+        let original = f.path(&format!("{prefix}{path}"));
+        let bytes = fs::read(&original).unwrap();
+        fs::remove_file(&original).unwrap();
+        let error = f.skia().unwrap_err().to_string();
+        assert!(
+            error.contains("Missing original FreeType terms"),
+            "{path}: {error}"
+        );
+        fs::write(original, bytes).unwrap();
+    }
+}
+
+#[test]
 fn original_inventories_retain_every_notice_attribution_and_reference_byte() {
     for name in [
         "rust",
