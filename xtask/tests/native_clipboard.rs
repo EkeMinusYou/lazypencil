@@ -48,6 +48,24 @@ fn native_clipboard_checks_require_owned_hosted_execution_and_run_before_expansi
     )
     .unwrap();
     assert_eq!(plan.suite, "candidate");
+    let changed = [
+        "tests/tui.rs".into(),
+        "xtask/src/performance/tui.rs".into(),
+        "xtask/src/ci/native.rs".into(),
+    ];
+    let plan = focus::select(&util::root(), &changed, "auto").unwrap();
+    assert_eq!(plan.suite, "candidate");
+    assert_eq!(plan.targets, ["render", "tui"]);
+    let mut mixed = changed.to_vec();
+    mixed.push("src/runtime.rs".into());
+    let broader = focus::select(&util::root(), &mixed, "auto").unwrap();
+    assert_eq!(broader.suite, "dynamic");
+    assert!(
+        broader
+            .targets
+            .iter()
+            .any(|target| target == "dynamic_render")
+    );
     let result = Command::new(env!("CARGO_BIN_EXE_xtask"))
         .env_remove("GITHUB_ACTIONS")
         .args(["ci", "native", "clipboard"])

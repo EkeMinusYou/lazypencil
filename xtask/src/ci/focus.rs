@@ -211,6 +211,21 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
             preprocessor,
         });
     }
+    // TUI fixture/measurement changes need the actual TUI tests and candidate,
+    // rather than unrelated browser suites selected by the shared file stem.
+    if tui_measurement_changed(paths)
+        && native_clipboard_changed(paths)
+        && paths
+            .iter()
+            .all(|path| ci_only(path) || path == "tests/tui.rs")
+    {
+        return Ok(Plan {
+            platform,
+            suite: "candidate".into(),
+            targets: vec!["render".into(), "tui".into()],
+            preprocessor,
+        });
+    }
     if paths
         .iter()
         .all(|path| ci_only(path) || path.starts_with("resources/licenses/native/"))
