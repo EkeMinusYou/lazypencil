@@ -53,6 +53,30 @@ fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() 
     )
     .unwrap();
     assert_eq!(text_layers.suite, "render");
+    for policy in [
+        "resources/licenses/native/skia-wrapper-review.json",
+        "resources/licenses/native/quickjs-review.json",
+        "resources/licenses/native/upstream.json",
+    ] {
+        let mut paths = vec![
+            "src/render.rs".into(),
+            "src/render/backdrop.rs".into(),
+            "xtask/src/notices/skia_wrapper.rs".into(),
+            policy.into(),
+        ];
+        let plan = focus::select(&util::root(), &paths, "auto").unwrap();
+        assert_eq!(plan.suite, "render");
+        assert_eq!(plan.targets, text_layers.targets);
+        assert!(focus::tui_measurement_changed(&paths));
+        for source in ["src/dynamic.rs", "src/mcp.rs", "src/tui/mod.rs"] {
+            paths.push(source.into());
+            assert_ne!(
+                focus::select(&util::root(), &paths, "auto").unwrap().suite,
+                "render"
+            );
+            paths.pop();
+        }
+    }
     assert!(
         text_layers
             .targets

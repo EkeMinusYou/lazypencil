@@ -216,6 +216,7 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     if paths.iter().any(|path| renderer(path))
         && paths.iter().all(|path| {
             ci_only(path)
+                || path.starts_with("resources/licenses/native/")
                 || renderer(path)
                 || [
                     "tests/graphics.rs",
