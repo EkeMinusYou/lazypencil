@@ -47,7 +47,11 @@ fn normal_test_lane_requires_all_compiled_targets_and_preserves_the_existing_ski
         "cancelling_a_running_script_unblocks_the_mcp_document_worker",
     ];
     for args in checks {
-        assert_eq!(args[1..], flags);
+        let mut expected = flags.to_vec();
+        if Path::new(&args[0]) == binaries["lib"].as_path() {
+            expected.extend(["--skip", commands::MANAGEMENT_REPRODUCTION]);
+        }
+        assert_eq!(args[1..], expected);
     }
     let docs = commands::default_doctests();
     assert_eq!(
@@ -60,7 +64,9 @@ fn normal_test_lane_requires_all_compiled_targets_and_preserves_the_existing_ski
         cargo[..5],
         ["cargo", "test", "--locked", "--no-fail-fast", "--"]
     );
-    assert_eq!(cargo[5..], flags);
+    let mut expected = flags.to_vec();
+    expected.extend(["--skip", commands::MANAGEMENT_REPRODUCTION]);
+    assert_eq!(cargo[5..], expected);
     for missing in ["lib", "lazypencil", "mcp"] {
         let mut incomplete = binaries.clone();
         incomplete.remove(missing);
@@ -72,6 +78,50 @@ fn normal_test_lane_requires_all_compiled_targets_and_preserves_the_existing_ski
     let mut relative = binaries;
     relative.insert("lib".into(), PathBuf::from("relative-library-test"));
     assert!(commands::default_tests(&util::root(), &relative).is_err());
+}
+
+#[test]
+fn shared_cleanup_cases_run_once_in_each_feature_configuration_without_serializing_unrelated_tests()
+{
+    let names = [
+        "conversation::management::retention::tests::retention_counts_pending_cleanup_and_recovers_it_after_the_original_document_was_removed",
+        "conversation::management::deletion::tests::deletion_cleanup_recovers_partial_payloads_and_protects_busy_or_foreign_tombstones",
+        "conversation::management::cleanup::tests::cleanup_wait_observes_cancellation_and_deadline_without_waiting_for_filesystem_work",
+        "conversation::history::tests::record",
+        "conversation::management_extra::unrelated",
+    ];
+    for features in [false, true] {
+        let isolated = commands::management_tests(features);
+        assert_eq!(
+            isolated.contains(&"--no-default-features".into()),
+            !features
+        );
+        assert!(
+            isolated
+                .windows(2)
+                .any(|pair| pair == ["--lib", commands::MANAGEMENT_REPRODUCTION])
+        );
+        assert!(isolated.contains(&"--test-threads=1".into()));
+        assert!(!isolated.contains(&"--ignored".into()));
+        let rest = if features {
+            commands::default_cargo_tests()
+        } else {
+            commands::core_tests()
+        };
+        assert_eq!(rest.contains(&"--no-default-features".into()), !features);
+        assert!(rest.contains(&"--test-threads=2".into()));
+        assert!(rest.contains(&"--no-fail-fast".into()));
+        let skips = rest
+            .windows(2)
+            .filter(|pair| pair[0] == "--skip")
+            .map(|pair| pair[1].as_str())
+            .collect::<Vec<_>>();
+        for name in names {
+            let in_isolated = name.contains(commands::MANAGEMENT_REPRODUCTION);
+            let in_remaining = !skips.iter().any(|filter| name.contains(*filter));
+            assert_eq!(u8::from(in_isolated) + u8::from(in_remaining), 1, "{name}");
+        }
+    }
 }
 
 #[test]

@@ -20,6 +20,12 @@ pub fn run(s: &Session) -> Result<()> {
             .path,
     )?;
     let deadline = Instant::now() + Duration::from_secs(TEST_SECONDS);
+    let management = s.execute(
+        &commands::management_tests(true),
+        TEST_SECONDS,
+        "lazypencil-tests.log",
+        true,
+    );
     // Rustdoc needs Cargo too. Run it before starting the independent release
     // lane, and retain the original shared 15-minute test budget.
     s.execute(
@@ -28,7 +34,7 @@ pub fn run(s: &Session) -> Result<()> {
         "lazypencil-tests.log",
         true,
     )?;
-    parallel::run(vec![
+    let remaining = parallel::run(vec![
         (
             "release compilation",
             Box::new(|| release::compile(s, "lazypencil-release.log")),
@@ -41,7 +47,16 @@ pub fn run(s: &Session) -> Result<()> {
             "script-scope tests",
             Box::new(|| run_lane(s, &scripts, deadline, "lazypencil-script-scope.log")),
         ),
-    ])
+    ]);
+    let failures = [
+        ("shared cleanup worker tests", management),
+        ("remaining default tests", remaining),
+    ]
+    .into_iter()
+    .filter_map(|(name, result)| result.err().map(|error| format!("{name}: {error:#}")))
+    .collect::<Vec<_>>();
+    ensure!(failures.is_empty(), "{}", failures.join("\n"));
+    Ok(())
 }
 
 fn split_checks(
@@ -75,7 +90,7 @@ fn run_lane(
     })
 }
 
-fn run_checks(
+pub(super) fn run_checks(
     commands: &[commands::Invocation],
     deadline: Instant,
     mut execute: impl FnMut(&[String], u64) -> Result<()>,

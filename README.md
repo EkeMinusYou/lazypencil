@@ -176,6 +176,8 @@ The plan, focused native job and each final platform run the complete tool test/
 
 Small process stand-ins also use the native test helper: JSON response records describe PID/marker files, output streams, exit codes and wait behavior. Tests do not generate Shell or batch launchers.
 
+Conversation-management unit tests share a bounded process-global deletion worker. CI runs that namespace serially in its own harness process for both core and default features, then excludes exactly that namespace from the corresponding parallel library checks. Other targets retain their existing concurrency. The original assertions and combined 15-minute core/default test budgets remain; focused scheduler checks reproduce this resource group first. This avoids unrelated tests filling the cleanup queue and turning a valid retry response into a fixture failure.
+
 The tool integration tests also check the workspace boundary and reject Python or Shell helper files in the maintained tooling and test-support directories. Vendored upstream build tools and JavaScript runtime/ABI fixtures remain separate inputs.
 
 Child Cargo processes discard the caller's package metadata (`CARGO_MANIFEST_*` and `CARGO_PKG_*`), which otherwise invalidates dependencies whose build scripts watch those variables. A real build-script regression checks that changing the outer package metadata preserves fresh outputs while configured compiler flags and target paths remain effective. Tool dependency caches can fall back across lockfile changes within the same platform, runner image and compiler; these caches exclude the tool package itself. Complete tool outputs remain bound to their exact sources.

@@ -17,6 +17,7 @@ use std::{
 pub mod browser;
 mod candidate;
 mod clipboard;
+mod management;
 mod normal;
 pub mod parallel;
 pub mod release;
@@ -383,6 +384,9 @@ impl Session {
                 self.execute(&command, 300, "focus-clippy.log", false)
             }
             Stage::FocusReproduce => {
+                if std::env::var("RUNTIME_PARALLEL").as_deref() == Ok("true") {
+                    management::focus(self)?;
+                }
                 if let Some(command) = commands::terminal_reproduction(&args.suite, &targets) {
                     self.execute(&command, 300, "focus-terminal-modes.log", false)?;
                 }
@@ -613,19 +617,7 @@ impl Session {
                     false,
                 )
             }
-            Stage::CoreTest => self.cargo(
-                &[
-                    "test",
-                    "--locked",
-                    "--no-default-features",
-                    "--no-fail-fast",
-                    "--",
-                    "--test-threads=2",
-                ],
-                900,
-                "lazypencil-tests.log",
-                true,
-            ),
+            Stage::CoreTest => management::core(self),
             Stage::CoreLint => self.cargo(
                 &[
                     "clippy",
@@ -669,12 +661,7 @@ impl Session {
                 }
                 Ok(())
             }
-            Stage::DefaultTest => self.execute(
-                &commands::default_cargo_tests(),
-                900,
-                "lazypencil-tests.log",
-                true,
-            ),
+            Stage::DefaultTest => management::default(self),
             Stage::DefaultRelease => normal::run(self),
             Stage::BrowserSetup => browser::setup(self),
             Stage::BrowserTest => browser::tests(self),

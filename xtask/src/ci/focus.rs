@@ -155,6 +155,7 @@ pub fn runtime_scheduler_changed(paths: &[String]) -> bool {
             "xtask/src/ci/native.rs",
             "xtask/src/ci/native/browser.rs",
             "xtask/src/ci/native/parallel.rs",
+            "xtask/src/ci/native/management.rs",
             ".github/workflows/native.yml",
         ]
         .contains(&path.as_str())

@@ -8,6 +8,7 @@ use std::{
 
 pub type Invocation = Vec<String>;
 pub const COLOR_FONT_REPRODUCTION: &str = "color_fonts::";
+pub const MANAGEMENT_REPRODUCTION: &str = "conversation::management::";
 pub const NATIVE_CLIPBOARD_TEST: &str =
     "real_native_clipboard_ctrl_v_preserves_two_images_and_delivers_their_pixels";
 const DEFAULT_REPRODUCTIONS: [&str; 2] = [
@@ -30,6 +31,37 @@ pub fn default_doctests() -> Invocation {
 pub fn default_cargo_tests() -> Invocation {
     let mut command = words(&["cargo", "test", "--locked", "--no-fail-fast", "--"]);
     command.extend(default_flags());
+    command.extend(skips([MANAGEMENT_REPRODUCTION]));
+    command
+}
+
+/// These tests share one bounded process-global cleanup worker. Keep the
+/// resource in its own harness process while unrelated tests remain parallel.
+pub fn management_tests(features: bool) -> Invocation {
+    let mut command = words(&["cargo", "test", "--locked"]);
+    if !features {
+        command.push("--no-default-features".into());
+    }
+    command.extend(words(&[
+        "--lib",
+        MANAGEMENT_REPRODUCTION,
+        "--",
+        "--test-threads=1",
+    ]));
+    command
+}
+
+pub fn core_tests() -> Invocation {
+    let mut command = words(&[
+        "cargo",
+        "test",
+        "--locked",
+        "--no-default-features",
+        "--no-fail-fast",
+        "--",
+        "--test-threads=2",
+    ]);
+    command.extend(skips([MANAGEMENT_REPRODUCTION]));
     command
 }
 
@@ -50,6 +82,9 @@ pub fn default_tests(root: &Path, binaries: &BTreeMap<String, PathBuf>) -> Resul
             ensure!(path.is_absolute(), "Test executable must be absolute");
             let mut command = vec![path.to_string_lossy().into_owned()];
             command.extend(default_flags());
+            if name == "lib" {
+                command.extend(skips([MANAGEMENT_REPRODUCTION]));
+            }
             Ok(command)
         })
         .collect()
