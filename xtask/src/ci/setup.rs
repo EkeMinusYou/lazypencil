@@ -22,6 +22,14 @@ const PACKAGES: &[&str] = &[
 const SOURCES: &str = "Types: deb\nURIs: https://archive.ubuntu.com/ubuntu\nSuites: noble noble-updates noble-backports\nComponents: main restricted universe multiverse\nArchitectures: amd64\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n\nTypes: deb\nURIs: https://security.ubuntu.com/ubuntu\nSuites: noble-security\nComponents: main restricted universe multiverse\nArchitectures: amd64\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n";
 
 pub fn linux_dependencies() -> Result<()> {
+    hosted_linux_packages(PACKAGES)
+}
+
+pub fn linux_terminal_dependencies() -> Result<()> {
+    hosted_linux_packages(&["kitty", "xterm", "xvfb", "xauth", "xdotool", "x11-apps"])
+}
+
+fn hosted_linux_packages(packages: &[&str]) -> Result<()> {
     ensure!(
         std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
             && std::env::var("RUNNER_OS").as_deref() == Ok("Linux")
@@ -49,7 +57,7 @@ pub fn linux_dependencies() -> Result<()> {
         temporary.is_absolute() && temporary.is_dir(),
         "Expected hosted temporary directory"
     );
-    install_linux(&architecture, &temporary, |command| {
+    install_linux_packages(&architecture, &temporary, packages, |command| {
         let output = process::checked(command, Duration::from_secs(20 * 60))?;
         print!("{}", String::from_utf8_lossy(&output));
         Ok(())
@@ -59,6 +67,15 @@ pub fn linux_dependencies() -> Result<()> {
 pub fn install_linux(
     architecture: &str,
     temporary: &Path,
+    run: impl FnMut(&mut Command) -> Result<()>,
+) -> Result<()> {
+    install_linux_packages(architecture, temporary, PACKAGES, run)
+}
+
+fn install_linux_packages(
+    architecture: &str,
+    temporary: &Path,
+    packages: &[&str],
     mut run: impl FnMut(&mut Command) -> Result<()>,
 ) -> Result<()> {
     ensure!(
@@ -88,7 +105,7 @@ pub fn install_linux(
         vec!["update"],
         std::iter::once("install")
             .chain(std::iter::once("--yes"))
-            .chain(PACKAGES.iter().copied())
+            .chain(packages.iter().copied())
             .collect(),
     ] {
         run(Command::new("sudo")

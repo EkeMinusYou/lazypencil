@@ -21,6 +21,7 @@ enum Task {
     #[command(subcommand)]
     Fixtures(lazypencil_xtask::fixtures::Command),
     Measure(lazypencil_xtask::performance::Arguments),
+    Terminal(lazypencil_xtask::terminal::Arguments),
     #[command(subcommand)]
     Notices(lazypencil_xtask::notices::Command),
     #[command(subcommand)]
@@ -37,6 +38,7 @@ fn main() -> Result<()> {
         Task::Shader(arguments) => arguments.run(),
         Task::Fixtures(command) => command.run(),
         Task::Measure(arguments) => arguments.run(),
+        Task::Terminal(arguments) => arguments.run(),
         Task::Notices(command) => command.run(),
         Task::Ci(command) => command.run(),
         Task::Dist(command) => command.run(),

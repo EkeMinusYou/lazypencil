@@ -193,6 +193,10 @@ Development verification includes macOS arm64 and a Debian 12 arm64 container us
 
 ## Source distributions and CI
 
+Linux candidate gates also configure real Kitty and xterm/Sixel checks under an isolated Xvfb display. `cargo xtask terminal --candidate ARCHIVE --output DIRECTORY` verifies and extracts the source-bound candidate, then observes actual window pixels while sending keyboard input and resizing the window. It records zoom, pan, restoration, resize and normal exit, with PNGs and source/binary/emulator identities. This new gate awaits hosted execution. It complements the PTY tests; physical displays, IME, clipboard, tmux/SSH and performance acceptance remain separate checks.
+
+Dependency checkpoints include the phase, workflow run and retry so that a later completed build can be saved alongside an earlier partial checkpoint. Restore prefers the newest compatible generation and retains the old fixed key as a fallback. Rust cache maintenance keeps the newest checkpoint for each native input/cache layout and removes those superseded by a complete matching main cache. These new checkpoint rules and tests await GHA verification.
+
 Use the source distribution tool to retain the local Skia binding patch and the original Cargo manifests:
 
 ```sh

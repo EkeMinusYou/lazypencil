@@ -993,6 +993,10 @@ fn warm_dependencies_put_lints_before_codegen_while_cold_rendering_keeps_its_bui
             suite,
             "checkpoint-native-v2-hosted"
         ));
+        assert!(!focus::build_before_lint(
+            suite,
+            "checkpoint-native-v2-hosted-full-402-1"
+        ));
         assert_eq!(
             focus::build_before_lint(suite, "core-native-v2-hosted"),
             !["core", "conversation"].contains(&suite)

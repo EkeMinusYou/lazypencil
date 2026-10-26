@@ -64,6 +64,8 @@ pub enum Command {
         platform: String,
         #[arg(long)]
         image: String,
+        #[arg(long, default_value = "full", value_parser = ["focus", "full"])]
+        phase: String,
         #[arg(long, env = "GITHUB_OUTPUT")]
         github_output: Option<PathBuf>,
     },
@@ -111,23 +113,37 @@ impl Command {
             Self::Native {
                 platform,
                 image,
+                phase,
                 github_output,
             } => {
                 let root = util::root();
                 let compiler = process::text(Process::new("rustc").arg("-vV"))?;
                 let tree = dependency_tree(&root)?;
-                let report = native_identity(
+                let mut report = native_identity(
                     &platform,
                     &image,
                     &tree,
                     &compiler,
                     &std::env::vars().collect(),
                 )?;
+                let primary = report["primary"].as_str().unwrap();
+                let checkpoint = if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
+                    checkpoint_key(
+                        primary,
+                        &phase,
+                        &std::env::var("GITHUB_RUN_ID")?,
+                        &std::env::var("GITHUB_RUN_ATTEMPT")?,
+                    )?
+                } else {
+                    format!("checkpoint-{primary}")
+                };
+                report["checkpoint"] = json!(&checkpoint);
                 util::github_output(
                     github_output.as_deref(),
                     &BTreeMap::from([
                         ("primary".into(), report["primary"].as_str().unwrap().into()),
                         ("legacy".into(), report["legacy"].as_str().unwrap().into()),
+                        ("checkpoint".into(), checkpoint),
                     ]),
                 )?;
                 util::print(&report)
@@ -446,6 +462,24 @@ pub fn native_identity(
     Ok(
         json!({"primary":primary,"legacy":legacy,"dependency_fingerprint":tree,"build_fingerprint":hash(tree),"compile_flag_names":flags.keys().collect::<Vec<_>>()}),
     )
+}
+
+/// Cache entries are immutable; each completed phase needs its own checkpoint.
+pub fn checkpoint_key(primary: &str, phase: &str, run: &str, attempt: &str) -> Result<String> {
+    ensure!(
+        primary.starts_with("native-v2-")
+            && primary.len() <= 300
+            && Regex::new(r"^native-v2-[A-Za-z0-9_.-]+-[0-9a-f]{64}$")?.is_match(primary)
+            && ["focus", "full"].contains(&phase)
+            && [run, attempt].iter().all(|n| {
+                !n.is_empty()
+                    && !n.starts_with('0')
+                    && n.bytes().all(|b| b.is_ascii_digit())
+                    && n.parse::<u64>().is_ok_and(|n| n > 0)
+            }),
+        "Invalid native checkpoint identity"
+    );
+    Ok(format!("checkpoint-{primary}-{phase}-{run}-{attempt}"))
 }
 
 pub fn compiled_inputs(manifest: &Manifest) -> Vec<Entry> {
@@ -877,6 +911,9 @@ pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Valu
         r"^(xtask-v1-(?:Linux|macOS|Windows)-(?:X64|ARM64)-[A-Za-z0-9_.]+-rust[0-9.]+)-[0-9a-f]{64}$",
     )?;
     let mut tool_groups = BTreeMap::<(String, String), Vec<&Value>>::new();
+    let generations =
+        Regex::new(r"^(native-v2-.+-[0-9a-f]{64})-(?:focus|full)-[1-9][0-9]*-[1-9][0-9]*$")?;
+    let mut checkpoints = BTreeMap::<(String, String), Vec<&Value>>::new();
     for entry in entries {
         let key = entry["key"].as_str().context("Invalid cache key")?;
         let version = entry["version"].as_str().context("Invalid cache version")?;
@@ -887,10 +924,21 @@ pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Valu
                 .or_default()
                 .push(entry);
         }
-        if let Some(primary) = key.strip_prefix("checkpoint-native-v2-")
-            && keys.contains(&(format!("native-v2-{primary}").as_str(), version))
+        if let Some(suffix) = key
+            .strip_prefix("checkpoint-")
+            .filter(|s| s.starts_with("native-v2-"))
         {
-            selected.insert(id, entry.clone());
+            let primary = generations
+                .captures(suffix)
+                .map_or_else(|| suffix.to_owned(), |caps| caps[1].to_owned());
+            if keys.contains(&(primary.as_str(), version)) {
+                selected.insert(id, entry.clone());
+            } else {
+                checkpoints
+                    .entry((primary, version.into()))
+                    .or_default()
+                    .push(entry);
+            }
         }
         if let Some(caps) = re.captures(key) {
             if source_hash.is_some_and(|s| &caps[1] == "1" || s != &caps[3]) {
@@ -922,9 +970,12 @@ pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Valu
         older_than_latest(entries, keep, &mut selected);
     }
     // Source-bound tool binaries are disposable; keep two generations for each
-    // runner/compiler/cache format while preserving every dependency cache.
+    // runner/compiler/cache format while preserving complete dependency caches.
     for entries in tool_groups.into_values() {
         older_than_latest(entries, 2, &mut selected);
+    }
+    for entries in checkpoints.into_values() {
+        older_than_latest(entries, 1, &mut selected);
     }
     Ok(selected.into_values().collect())
 }

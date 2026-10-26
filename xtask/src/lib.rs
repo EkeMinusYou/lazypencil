@@ -9,4 +9,5 @@ pub mod notices;
 pub mod performance;
 pub mod process;
 pub mod shader;
+pub mod terminal;
 pub mod util;
