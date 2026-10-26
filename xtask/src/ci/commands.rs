@@ -244,10 +244,10 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
     }
     if suite == "render" {
         ensure!(
-            targets
+            targets.iter().map(String::as_str).eq(focus::RENDER_TARGETS
                 .iter()
-                .map(String::as_str)
-                .eq(focus::RENDER_TARGETS.iter().copied()),
+                .copied()
+                .chain(has("tui").then_some("tui"))),
             "Renderer focus requires its complete native and dynamic target set"
         );
         let mut normal = append(&common, &["--lib"]);

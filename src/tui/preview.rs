@@ -320,7 +320,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 ..Default::default()
             };
             timing.mark("snapshot_ms");
-            let image = crate::render::png_with_runtime_observed(
+            let image = crate::render::preview_png_with_runtime_observed(
                 project,
                 layout,
                 &options,

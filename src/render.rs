@@ -69,7 +69,7 @@ pub fn png(
     snapshot: &LayoutSnapshot,
     options: &RenderOptions,
 ) -> Result<RenderedImage> {
-    png_impl(project, snapshot, options, None, None)
+    png_impl(project, snapshot, options, None, None, &Default::default())
 }
 
 pub fn png_with_runtime(
@@ -90,12 +90,57 @@ pub(crate) fn png_with_runtime_observed(
     cancel: Option<tokio_util::sync::CancellationToken>,
     observer: Option<&mut dyn FnMut(&'static str)>,
 ) -> Result<RenderedImage> {
+    png_with_runtime_encoding(
+        project,
+        snapshot,
+        options,
+        runtime,
+        cancel,
+        observer,
+        &Default::default(),
+    )
+}
+
+#[cfg(feature = "tui")]
+pub(crate) fn preview_png_with_runtime_observed(
+    project: &Project,
+    snapshot: &LayoutSnapshot,
+    options: &RenderOptions,
+    runtime: &mut crate::dynamic::DynamicRuntime,
+    cancel: Option<tokio_util::sync::CancellationToken>,
+    observer: Option<&mut dyn FnMut(&'static str)>,
+) -> Result<RenderedImage> {
+    // Interactive previews favor fast lossless compression. Keep the same
+    // filters and pixels while reducing the cost before terminal encoding.
+    let mut encoding = skia_safe::png_encoder::Options::default();
+    encoding.z_lib_level = 1;
+    png_with_runtime_encoding(
+        project, snapshot, options, runtime, cancel, observer, &encoding,
+    )
+}
+
+fn png_with_runtime_encoding(
+    project: &Project,
+    snapshot: &LayoutSnapshot,
+    options: &RenderOptions,
+    runtime: &mut crate::dynamic::DynamicRuntime,
+    cancel: Option<tokio_util::sync::CancellationToken>,
+    observer: Option<&mut dyn FnMut(&'static str)>,
+    encoding: &skia_safe::png_encoder::Options,
+) -> Result<RenderedImage> {
     runtime.configure(project.runtime_settings())?;
     runtime.begin_render(cancel, options.refresh);
     if options.refresh_pages {
         runtime.refresh_pages();
     }
-    let result = png_impl(project, snapshot, options, Some(runtime), observer);
+    let result = png_impl(
+        project,
+        snapshot,
+        options,
+        Some(runtime),
+        observer,
+        encoding,
+    );
     runtime.render_result(result)
 }
 
@@ -105,6 +150,7 @@ fn png_impl(
     options: &RenderOptions,
     mut runtime: Option<&mut crate::dynamic::DynamicRuntime>,
     mut observer: Option<&mut dyn FnMut(&'static str)>,
+    encoding: &skia_safe::png_encoder::Options,
 ) -> Result<RenderedImage> {
     if let Some(runtime) = runtime.as_deref() {
         runtime.check()?;
@@ -223,7 +269,7 @@ fn png_impl(
     if let Some(observer) = observer.as_mut() {
         observer("render_raster_ms");
     }
-    let encoded = skia_safe::png_encoder::encode_image(None, &image, &Default::default())
+    let encoded = skia_safe::png_encoder::encode_image(None, &image, encoding)
         .ok_or_else(|| Error::new("RENDER_ERROR", "PNG encoding failed"))?;
     if let Some(observer) = observer.as_mut() {
         observer("render_png_encode_ms");
@@ -1734,7 +1780,7 @@ mod tests {
             &path,
             json!({"version":"2.21","children":[{
                 "id":"frame","type":"frame","layout":"none","width":80,"height":60,
-                "clip":true,"fill":"#E2E8F0","children":[{
+                "clip":true,"fill":"#E2E8F080","children":[{
                     "id":"shape","type":"ellipse","x":12.5,"y":8.25,"width":42,"height":30,
                     "fill":"#2563EB80","opacity":0.7,
                     "effect":{"type":"shadow","offset":{"x":2,"y":3},"blur":4,"color":"#00000040"}
@@ -1759,6 +1805,7 @@ mod tests {
             &options,
             None,
             Some(&mut |phase| phases.push(phase)),
+            &Default::default(),
         )
         .unwrap();
         assert_eq!(phases, ["render_raster_ms", "render_png_encode_ms"]);
@@ -1767,6 +1814,68 @@ mod tests {
             (original.width, original.height),
             (observed.width, observed.height)
         );
+        #[cfg(feature = "tui")]
+        {
+            let mut runtime = crate::dynamic::DynamicRuntime::new(store.data_dir());
+            let mut alpha_cases = [false; 2];
+            for variant in [
+                options.clone(),
+                RenderOptions {
+                    scale: 0.75,
+                    region: Some(Rect::new(-8.0, -8.0, 96.0, 76.0)),
+                    ..options.clone()
+                },
+            ] {
+                let balanced = png(&project, &snapshot, &variant).unwrap();
+                let mut preview_phases = Vec::new();
+                let fast = preview_png_with_runtime_observed(
+                    &project,
+                    &snapshot,
+                    &variant,
+                    &mut runtime,
+                    None,
+                    Some(&mut |phase| preview_phases.push(phase)),
+                )
+                .unwrap();
+                let unobserved = preview_png_with_runtime_observed(
+                    &project,
+                    &snapshot,
+                    &variant,
+                    &mut runtime,
+                    None,
+                    None,
+                )
+                .unwrap();
+                assert_eq!(preview_phases, ["render_raster_ms", "render_png_encode_ms"]);
+                assert_eq!(fast.png, unobserved.png);
+                assert_ne!(fast.png, balanced.png);
+                assert_eq!((fast.width, fast.height), (balanced.width, balanced.height));
+                assert_eq!(fast.snapshot_id, balanced.snapshot_id);
+                let decode = |png: &[u8]| {
+                    Image::from_encoded(Data::new_copy(png))
+                        .unwrap()
+                        .make_raster_image(None, None)
+                        .unwrap()
+                };
+                let expected = decode(&balanced.png);
+                let actual = decode(&fast.png);
+                let expected = expected.peek_pixels().unwrap();
+                let actual = actual.peek_pixels().unwrap();
+                for y in 0..fast.height as i32 {
+                    for x in 0..fast.width as i32 {
+                        assert_eq!(
+                            actual.get_color((x, y)),
+                            expected.get_color((x, y)),
+                            "Preview pixel at {x},{y}"
+                        );
+                        let alpha = expected.get_color((x, y)).a();
+                        alpha_cases[0] |= alpha == 0;
+                        alpha_cases[1] |= (1..=254).contains(&alpha);
+                    }
+                }
+            }
+            assert_eq!(alpha_cases, [true, true]);
+        }
         phases.clear();
         let invalid = RenderOptions {
             scale: f32::NAN,
@@ -1778,7 +1887,8 @@ mod tests {
                 &snapshot,
                 &invalid,
                 None,
-                Some(&mut |phase| phases.push(phase))
+                Some(&mut |phase| phases.push(phase)),
+                &Default::default(),
             )
             .is_err()
         );

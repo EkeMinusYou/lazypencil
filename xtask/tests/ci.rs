@@ -77,6 +77,24 @@ fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() 
             paths.pop();
         }
     }
+    let preview = focus::select(
+        &util::root(),
+        &["src/render.rs".into(), "src/tui/preview.rs".into()],
+        "auto",
+    )
+    .unwrap();
+    assert_eq!(preview.suite, "render");
+    let mut expected = text_layers.targets.clone();
+    expected.push("tui".into());
+    assert_eq!(preview.targets, expected);
+    assert!(ci::commands::terminal_reproduction(&preview.suite, &preview.targets).is_some());
+    let combined = ci::commands::plan(&util::root(), &preview.suite, &preview.targets).unwrap();
+    assert_eq!(combined.checks.len(), 3);
+    assert!(
+        combined.checks[0]
+            .windows(2)
+            .any(|pair| pair == ["--test", "tui"])
+    );
     assert!(
         text_layers
             .targets

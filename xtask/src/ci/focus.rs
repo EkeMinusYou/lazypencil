@@ -220,6 +220,7 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
             ci_only(path)
                 || path.starts_with("resources/licenses/native/")
                 || renderer(path)
+                || path == "src/tui/preview.rs"
                 || [
                     "tests/graphics.rs",
                     "tests/render.rs",
@@ -229,10 +230,17 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
                 .contains(&path.as_str())
         })
     {
+        let mut targets = RENDER_TARGETS
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect::<Vec<_>>();
+        if paths.iter().any(|path| path == "src/tui/preview.rs") {
+            targets.push("tui".into());
+        }
         return Ok(Plan {
             platform,
             suite: "render".into(),
-            targets: RENDER_TARGETS.iter().map(|name| (*name).into()).collect(),
+            targets,
             preprocessor,
         });
     }
