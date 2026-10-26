@@ -417,21 +417,26 @@ impl Renderer<'_> {
         } else {
             effects_filter(node)?
         };
-        let mut layer = Paint::default();
-        layer.set_alpha_f(opacity);
-        layer.set_image_filter(filter);
         let has_layer = !skip_effect && (opacity < 1.0 || node.properties.contains_key("effect"));
-        let tight_text_layer_hints = self.tight_text_layer_hints;
-        self.tight_text_layer_hints &= !has_layer;
-        if has_layer {
-            let bounds = self.allocation_hint(
+        let bounds = if has_layer {
+            self.allocation_hint(
                 item.record
                     .visual_bounds
                     .transformed(self.viewport)
                     .outset(1.0, 1.0),
                 self.viewport.then(item.record.transform),
                 true,
-            );
+                filter.as_ref(),
+            )
+        } else {
+            None
+        };
+        let mut layer = Paint::default();
+        layer.set_alpha_f(opacity);
+        layer.set_image_filter(filter);
+        let tight_text_layer_hints = self.tight_text_layer_hints;
+        self.tight_text_layer_hints &= !has_layer;
+        if has_layer {
             let mut record = SaveLayerRec::default().paint(&layer);
             if let Some(bounds) = &bounds {
                 record = record.bounds(bounds);
@@ -590,6 +595,7 @@ impl Renderer<'_> {
                     .outset(1.0, 1.0),
                 transform,
                 !self.tight_text_layer_hints,
+                None,
             );
             let mut fill_layer = SaveLayerRec::default();
             if let Some(bounds) = &layer_bounds {
@@ -619,13 +625,25 @@ impl Renderer<'_> {
         mut device: Rect,
         transform: Affine,
         preserve_origin: bool,
+        filter: Option<&ImageFilter>,
     ) -> Option<SkRect> {
         let inverse = transform.inverse()?;
         if preserve_origin {
             // Keep the original device origin in filtered, transparent and
             // offscreen passes. Shrink only the opposite edges; the extra
             // pixel lets Skia clamp the origin to the unchanged device clip.
-            let clip = self.canvas.device_clip_bounds()?;
+            let mut clip = self.canvas.device_clip_bounds()?;
+            if let Some(filter) = filter {
+                // A filtered layer can require input outside the visible clip.
+                // Preserve that expanded input origin before shrinking its
+                // opposite edges, matching the unbounded filter allocation.
+                clip = filter.filter_bounds(
+                    clip,
+                    &matrix(transform),
+                    skia_safe::image_filter::MapDirection::Reverse,
+                    None,
+                );
+            }
             device = device.union(Rect::new(
                 clip.left as f32 - 1.0,
                 clip.top as f32 - 1.0,
