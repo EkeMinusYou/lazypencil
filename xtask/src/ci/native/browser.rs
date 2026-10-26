@@ -158,9 +158,9 @@ pub fn tests(s: &Session) -> Result<()> {
         TEST_LANES
             .into_iter()
             .enumerate()
-            .map(|(index, targets)| {
+            .map(|(index, targets)| -> parallel::Task<'_> {
                 let catalog = &catalog;
-                let task: parallel::Task<'_> = (
+                (
                     ["browser readiness", "dynamic rendering and shaders"][index],
                     Box::new(move || {
                         let mut failures = Vec::new();
@@ -191,8 +191,7 @@ pub fn tests(s: &Session) -> Result<()> {
                         ensure!(failures.is_empty(), "{}", failures.join("\n"));
                         Ok(())
                     }),
-                );
-                task
+                )
             })
             .collect(),
     );
