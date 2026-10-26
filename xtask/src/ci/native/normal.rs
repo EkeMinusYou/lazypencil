@@ -122,7 +122,7 @@ mod tests {
         let mut all = others.clone();
         all.insert(1, scope.clone());
         let (scripts, rest) = split_checks(all, &script).unwrap();
-        assert_eq!(scripts, [scope.clone()]);
+        assert_eq!(scripts.as_slice(), std::slice::from_ref(&scope));
         assert_eq!(rest, others);
         assert!(split_checks(rest, &script).is_err());
         assert!(split_checks(vec![scope.clone(), scope], &script).is_err());
