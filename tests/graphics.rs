@@ -233,7 +233,29 @@ fn text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations() 
             rgba.extend_from_slice(&[color.r(), color.g(), color.b(), color.a()]);
         }
     }
-    assert_eq!(lazypencil::document::hash(&rgba), expected);
+    let actual = lazypencil::document::hash(&rgba);
+    if actual != expected
+        && std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
+        && let Some(temporary) = std::env::var_os("RUNNER_TEMP")
+    {
+        // Retain only this original example, never user document contents.
+        // Keep the exact oracle unchanged while diagnosing a failed hint.
+        let artifacts = std::path::PathBuf::from(temporary).join("render-regressions");
+        fs::create_dir_all(&artifacts).unwrap();
+        fs::write(artifacts.join("mesh-actual.png"), &output.png).unwrap();
+        fs::write(
+            artifacts.join("mesh-actual.json"),
+            serde_json::to_vec_pretty(&json!({
+                "source_revision":std::env::var("GITHUB_SHA").ok(),
+                "example":"examples/mesh-study.pen","width":output.width,"height":output.height,
+                "expected_rgba_sha256":expected,"actual_rgba_sha256":actual,
+                "png_sha256":lazypencil::document::hash(&output.png)
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    }
+    assert_eq!(actual, expected);
 }
 
 #[test]

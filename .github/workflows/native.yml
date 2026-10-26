@@ -295,6 +295,7 @@ jobs:
             ${{ runner.temp }}/test-executables.json
             ${{ runner.temp }}/default-build.jsonl
             ${{ runner.temp }}/tui-artifacts/
+            ${{ runner.temp }}/render-regressions/
             ${{ runner.temp }}/chromium-*.json
             ${{ runner.temp }}/chromium-*.png
             ${{ runner.temp }}/chromium-userns.apparmor
