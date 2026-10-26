@@ -85,7 +85,7 @@ impl Emulator {
         fs::create_dir(root)?;
         fs::write(root.join("lazypencil.toml"), b"version=1\n")?;
         let document = json!({"version":"2.21","children":[{
-            "id":"canvas","type":"frame","width":400,"height":300,"fill":"#f0f0f0",
+            "id":"canvas","type":"frame","layout":"none","width":400,"height":300,"fill":"#f0f0f0",
             "children":[
                 {"id":"red","type":"rectangle","x":100,"y":100,"width":60,"height":60,"fill":"#ff0000"},
                 {"id":"green","type":"rectangle","x":240,"y":100,"width":60,"height":60,"fill":"#00ff00"},
@@ -115,6 +115,8 @@ impl Emulator {
             c
         };
         launch
+            .args(["strace", "-f", "-s", "256", "-e", "trace=read", "-o"])
+            .arg(root.join("input.strace.log"))
             .arg(binary)
             .arg("--data-dir")
             .arg(root.join("data"))

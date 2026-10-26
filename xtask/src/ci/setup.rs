@@ -26,7 +26,9 @@ pub fn linux_dependencies() -> Result<()> {
 }
 
 pub fn linux_terminal_dependencies() -> Result<()> {
-    hosted_linux_packages(&["kitty", "xterm", "xvfb", "xauth", "xdotool", "x11-apps"])
+    hosted_linux_packages(&[
+        "kitty", "xterm", "xvfb", "xauth", "xdotool", "x11-apps", "strace",
+    ])
 }
 
 fn hosted_linux_packages(packages: &[&str]) -> Result<()> {
