@@ -17,6 +17,7 @@ use std::{
 pub mod browser;
 mod candidate;
 mod clipboard;
+mod normal;
 pub mod parallel;
 pub mod release;
 
@@ -40,10 +41,10 @@ pub enum Stage {
     DefaultBuild,
     Reproduce,
     DefaultTest,
+    DefaultRelease,
     Clipboard,
     BrowserSetup,
     BrowserTest,
-    BrowserRelease,
     Mcp,
     LongTests,
     Panel,
@@ -648,31 +649,15 @@ impl Session {
                 }
                 Ok(())
             }
-            Stage::DefaultTest => self.cargo(
-                &[
-                    "test",
-                    "--locked",
-                    "--no-fail-fast",
-                    "--",
-                    "--test-threads=2",
-                    "--skip",
-                    "tui::tests::",
-                    "--skip",
-                    "cancelling_a_running_script_unblocks_the_mcp_document_worker",
-                ],
+            Stage::DefaultTest => self.execute(
+                &commands::default_cargo_tests(),
                 900,
                 "lazypencil-tests.log",
                 true,
             ),
+            Stage::DefaultRelease => normal::run(self),
             Stage::BrowserSetup => browser::setup(self),
             Stage::BrowserTest => browser::tests(self),
-            Stage::BrowserRelease => parallel::run(vec![
-                (
-                    "release compilation",
-                    Box::new(|| release::compile(self, "lazypencil-release.log")),
-                ),
-                ("browser verification", Box::new(|| browser::tests(self))),
-            ]),
             Stage::Mcp => {
                 for test in [
                     "real_mcp_shader_assets_uniform_edits_and_browser_refresh_return_image_content",
@@ -837,7 +822,7 @@ impl Session {
             &self.temporary.join("lazypencil-material-fonts"),
         )?;
         let catalog = self.verified_catalog(&["mcp", "tui", "optional_icons"])?;
-        // Release compilation already joined the browser stage. These two
+        // Release compilation already joined the default-test stage. These two
         // independent lanes use immutable debug binaries, and both join before
         // subsequent smoke tests and resource measurements.
         parallel::run(vec![

@@ -14,6 +14,66 @@ mod install;
 fn helper() -> &'static str {
     env!("CARGO_BIN_EXE_lazypencil-test-helper")
 }
+
+#[test]
+fn normal_test_lane_requires_all_compiled_targets_and_preserves_the_existing_skips() {
+    use std::{
+        collections::BTreeMap,
+        path::{Path, PathBuf},
+    };
+    let temporary = tempfile::tempdir().unwrap();
+    let (integration, _) = focus::integration_targets(&util::root()).unwrap();
+    let names = ["lib".to_owned(), "lazypencil".to_owned()]
+        .into_iter()
+        .chain(integration)
+        .collect::<Vec<_>>();
+    let binaries: BTreeMap<_, _> = names
+        .iter()
+        .map(|name| (name.clone(), temporary.path().join(name)))
+        .collect();
+    let checks = commands::default_tests(&util::root(), &binaries).unwrap();
+    assert_eq!(
+        checks
+            .iter()
+            .map(|args| Path::new(&args[0]).file_name().unwrap().to_str().unwrap())
+            .collect::<Vec<_>>(),
+        names
+    );
+    let flags = [
+        "--test-threads=2",
+        "--skip",
+        "tui::tests::",
+        "--skip",
+        "cancelling_a_running_script_unblocks_the_mcp_document_worker",
+    ];
+    for args in checks {
+        assert_eq!(args[1..], flags);
+    }
+    let docs = commands::default_doctests();
+    assert_eq!(
+        docs[..6],
+        ["cargo", "test", "--locked", "--doc", "--no-fail-fast", "--"]
+    );
+    assert_eq!(docs[6..], flags);
+    let cargo = commands::default_cargo_tests();
+    assert_eq!(
+        cargo[..5],
+        ["cargo", "test", "--locked", "--no-fail-fast", "--"]
+    );
+    assert_eq!(cargo[5..], flags);
+    for missing in ["lib", "lazypencil", "mcp"] {
+        let mut incomplete = binaries.clone();
+        incomplete.remove(missing);
+        assert!(commands::default_tests(&util::root(), &incomplete).is_err());
+    }
+    let mut foreign = binaries.clone();
+    foreign.insert("undeclared".into(), temporary.path().join("undeclared"));
+    assert!(commands::default_tests(&util::root(), &foreign).is_err());
+    let mut relative = binaries;
+    relative.insert("lib".into(), PathBuf::from("relative-library-test"));
+    assert!(commands::default_tests(&util::root(), &relative).is_err());
+}
+
 #[test]
 fn focused_scheduling_preserves_reproduction_order_and_excludes_only_repeated_conditions() {
     let cases: Vec<Value> =

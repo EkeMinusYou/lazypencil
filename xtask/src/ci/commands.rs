@@ -1,12 +1,59 @@
 //! Conservative test scheduling; early reproductions are excluded only from later identical checks.
 use super::focus;
 use anyhow::{Result, ensure};
-use std::{collections::BTreeSet, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::{Path, PathBuf},
+};
 
 pub type Invocation = Vec<String>;
 pub const COLOR_FONT_REPRODUCTION: &str = "color_fonts::";
 pub const NATIVE_CLIPBOARD_TEST: &str =
     "real_native_clipboard_ctrl_v_preserves_two_images_and_delivers_their_pixels";
+const DEFAULT_REPRODUCTIONS: [&str; 2] = [
+    "tui::tests::",
+    "cancelling_a_running_script_unblocks_the_mcp_document_worker",
+];
+
+fn default_flags() -> Invocation {
+    let mut flags = words(&["--test-threads=2"]);
+    flags.extend(skips(DEFAULT_REPRODUCTIONS));
+    flags
+}
+
+pub fn default_doctests() -> Invocation {
+    let mut command = words(&["cargo", "test", "--locked", "--doc", "--no-fail-fast", "--"]);
+    command.extend(default_flags());
+    command
+}
+
+pub fn default_cargo_tests() -> Invocation {
+    let mut command = words(&["cargo", "test", "--locked", "--no-fail-fast", "--"]);
+    command.extend(default_flags());
+    command
+}
+
+/// Require every Cargo test target before running immutable binaries without its build lock.
+pub fn default_tests(root: &Path, binaries: &BTreeMap<String, PathBuf>) -> Result<Vec<Invocation>> {
+    let (integration, _) = focus::integration_targets(root)?;
+    let mut expected = integration.clone();
+    expected.extend(["lib".into(), "lazypencil".into()]);
+    ensure!(
+        binaries.keys().cloned().collect::<BTreeSet<_>>() == expected,
+        "Default verification requires the complete library, binary and integration test catalog"
+    );
+    ["lib".to_owned(), "lazypencil".to_owned()]
+        .into_iter()
+        .chain(integration)
+        .map(|name| {
+            let path = &binaries[&name];
+            ensure!(path.is_absolute(), "Test executable must be absolute");
+            let mut command = vec![path.to_string_lossy().into_owned()];
+            command.extend(default_flags());
+            Ok(command)
+        })
+        .collect()
+}
 
 /// Clipboard ownership belongs to its dedicated stage, outside the runtime lifecycle suite.
 pub fn lifecycle(binary: &Path, target: &str) -> Result<Invocation> {
