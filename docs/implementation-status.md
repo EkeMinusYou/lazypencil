@@ -1,5 +1,9 @@
 # lazypencil 実装と公開準備の状況
 
+2026-10-26: `d1f39c4` の [GHA `40252162690`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40252162690) は軽量118試験・先行・全3環境・監査・最終 source を成功した。通常／core は Linux 各1,156件・macOS 1,146件、各99サマリー。実 Noto Emoji 2形式と自作 sbix の288画像・19,968,000画素、生成 browser の126画像・64,512画素、独自 contract の36画像・4,054,272画素を独立に照合した。全3環境の map・実行ファイル・source・計測の対応、静的 release の9画像と6 scene hash の不変、配布ソース1,122ファイル・31,204,208バイトと Git の内容・mode の一致を確認した。macOS と Linux arm64 の別候補も、同じ実行ファイルを再コンパイルせず、全構成ファイルと隔離 QuickJS 描画を独立確認した。macOS に埋め込む FreeType は固定 upstream の原文12ファイル・178,787バイトと配布表示を照合し、Linux は実 ELF の system `libfreetype.so.6` と区別した。製品全体・実端末・性能・正式配布の完成判定とはしない。
+
+同実行は64分57秒で、全3環境の開始待ちは2〜4秒、Linux x64 の既定試験 build は798秒、release と独立試験の並列工程は1,167秒だった。失敗済み実行の後半で完成した依存を固定 checkpoint key に保存できない衝突も確認し、phase・run・retry ごとの immutable key と世代回収を Rust に追加した。`2b1076e` では追加分を含む軽量124試験・Clippy と候補作成が成功し、Linux x64 の配布候補は `d1f39c4` の実行ファイルを再利用した。ただし新しい実端末 gate は Kitty の拡大で失敗した。自作文書の絶対配置を明示した再現でも、一度の Tab が通常入力2件として届くことと、能力応答が下書きへ混入することを実際の read 記録で確認した。全キーの押下・解放を区別する要求、明示 protocol と直接 Kitty 接続での不要な照会の除去、明示／自動の両 Kitty・Sixel と空の下書きを検査する修正を追加した。修正版の実端末・全体 gate は検証中であり、キャッシュの速度改善と端末互換性の成功を先取りしない。
+
 2026-10-26: `6d6c105` の macOS 全体検証は、通常／core の1,146件・99サマリー、実フォント2形式、生成 browser、独自 contract、実 Chromium と並列の release compile／lifecycle／Material を成功したが、後続 Clippy の `items_after_test_module` で失敗した。配布画像・計測・link map の最終段には達しておらず、最終ゲート成功とは扱わない。取得した96フォント画像・6,656,000比較画素、42生成 browser画像・21,504画素、12 contract画像・1,351,424画素は独立に照合した。テストモジュールを末尾へ移し、同じ全対象 Clippy を早期再現試験の直後へ移す。fixture README が候補ゲートを外す分類も修正し、実 compiler 入力になった場合の cache 拒否は維持する。キャンセル時にも完了済み依存からアプリ成果物を除去して checkpoint 保存を試みるようにする。いずれも修正後の GHA 実行は未検証。Linux 両環境は core・既定 build・実フォント・通常試験を成功しており、既知の失敗がある実行の残りは通常の cancel を要求した。
 
 2026-10-26: FreeType の固定ソース `264b5fbf5b912b39f98d038bf75d39be0a73f21b` の `LICENSE.TXT` を確認し、一般的なファイル名判定で漏れる FTL／GPLv2 と別ライセンス部分の原文12ファイルを native notice 収集の必須入力にする。FTL を選択し、配布表示に FreeType Team の利用表記を加える。全原文のバイト保持・hash・公開束の照合と、各入力欠損時の拒否試験を追加する。収集処理の変更も実配布候補の先行ゲートへ送る。ローカルは整形・差分検査までで、追加した Rust 試験と実候補での収集は GHA 待ち。進行中の `6d6c105` 全3環境検証を中断せず、その終了後に送る。
@@ -312,7 +316,7 @@ source `cb5ba45` の先行104試験と、保存した2版各33ケースの独立
 
 ## 現在の検証環境
 
-現在の継続検証は対象3環境の GHA・Rust 1.94.0 で行い、ローカルでは native build を行わない。下表は独立に成果物を確認した source `8b28306` の結果であり、最新コミットの全検証や、物理端末・最低 OS の保証へ読み替えない。
+現在の継続検証は対象3環境の GHA・Rust 1.94.0 で行い、ローカルでは native build を行わない。下表は独立に成果物を確認した source `d1f39c4` の結果であり、後続の端末修正の全検証や、物理端末・最低 OS の保証へ読み替えない。
 
 | GHA 環境 | 通常・release CI | 同じ native job の Chromium 検証 |
 | --- | --- | --- |
@@ -320,7 +324,7 @@ source `cb5ba45` の先行104試験と、保存した2版各33ケースの独立
 | Ubuntu 24.04 x64 | 両構成・Clippy・Material・release 成功 | 実 page／shader・MCP 画像・60秒 idle・TUI／再生 PTY 成功 |
 | Ubuntu 24.04 arm64 | 両構成・Clippy・Material・release 成功 | 実 page／shader・MCP 画像・60秒 idle・TUI／再生 PTY 成功 |
 
-[3環境への変更後の CI `40064481508`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40064481508) は監査・対象3環境・ソース配布物の検証がすべて成功した。各環境のログ・画像・hash・各42回の benchmark と、633ファイルの配布ソースを Git の該当 revision に照合した。後続の通信・プロセス管理修正は別途検証する。Windows／Intel の過去の結果は下記の実装履歴と [runtime の検証記録](runtimes.md#hosted-integration-without-local-build-trees) に保持する。過去のローカル検証は macOS arm64・Rust 1.99.1 と Debian 12 arm64・Rust 1.94.0 で行った。対象3環境の物理端末・クリップボード・最低 OS・本家との互換性・公開品質全体の確認は残る。
+上記 `40252162690` の各環境のログ・画像・hash・各42回の benchmark と、1,122ファイルの配布ソースを Git の該当 revision に照合した。後続の端末修正は別途検証する。Windows／Intel の過去の結果は下記の実装履歴と [runtime の検証記録](runtimes.md#hosted-integration-without-local-build-trees) に保持する。過去のローカル検証は macOS arm64・Rust 1.99.1 と Debian 12 arm64・Rust 1.94.0 で行った。対象3環境の物理端末・クリップボード・最低 OS・互換性・公開品質全体の確認は残る。比較用成果物は利用条件を確認したものに限り、本家の出力利用を前提にしない。
 
 ## 実装記録
 
