@@ -109,6 +109,12 @@ impl Fixture {
     }
 }
 #[test]
+fn checked_in_rust_notices_match_workspace_manifests_and_original_license_bytes() {
+    let root = util::root();
+    rust::verify(&root, &root.join("resources/licenses/rust"), None).unwrap();
+}
+
+#[test]
 fn original_inventories_retain_every_notice_attribution_and_reference_byte() {
     for name in [
         "rust",
