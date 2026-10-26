@@ -2036,7 +2036,7 @@
         }
       ],
       "license": "MIT",
-      "manifest_sha256": "91bff360b2abe1205d1ee544a3109b72fda37c0c7497be180e4d721a6b2aad55",
+      "manifest_sha256": "6b9ca97691b0f484bc687a65db15744495362b976ce781382fe54bdfce04da0b",
       "name": "lazypencil-xtask",
       "source": "workspace",
       "version": "0.1.0",
