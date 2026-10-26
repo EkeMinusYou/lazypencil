@@ -115,7 +115,7 @@ pub fn development_identity(
     Ok(serde_json::json!({
         "kind":"focused-development-reproduction", "release_ready":false,
         "source_revision":revision, "source":source,
-        "target":evidence::linkage::initial_host()?,
+        "target":evidence::linkage::native_host()?,
         "binary_sha256":executable["sha256"], "binary_bytes":executable["bytes"],
         "scope":"Executable already compiled by this focused CI job; not packaged release acceptance"
     }))
