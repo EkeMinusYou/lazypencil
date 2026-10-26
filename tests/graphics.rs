@@ -86,6 +86,7 @@ fn text(properties: Value) -> Scene {
 fn text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations() {
     use lazypencil::geometry::Affine;
     use skia_safe::{BlendMode, Matrix, Paint, Path, Rect, canvas::SaveLayerRec};
+    assert_fitted_rounded_bar_shadows();
     for (((rotation, flip, decoration, parent_opacity), nested), parent_shadow) in [
         (0.0, false, false, 1.0),
         (17.0, false, true, 1.0),
@@ -271,6 +272,207 @@ fn text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations() 
         .unwrap();
     }
     assert_eq!(actual, expected);
+}
+
+fn assert_fitted_rounded_bar_shadows() {
+    use lazypencil::geometry::{Affine, Rect};
+    use skia_safe::{Matrix, Paint, Path, RRect, Rect as SkRect, canvas::SaveLayerRec};
+    // Keep the fractional bar coordinates from our original benchmark. The
+    // rejected leading-edge allocation changed these pixels despite passing
+    // the isolated text and mesh probes.
+    let fixture: Value =
+        serde_json::from_slice(include_bytes!("fixtures/performance/dashboard.pen")).unwrap();
+    let template = fixture["children"][0]["children"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| node["id"] == "project-card")
+        .unwrap();
+    let cards = (0..12)
+        .map(|index| {
+            let bars = template["children"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|node| node["id"].as_str().is_some_and(|id| id.starts_with("bar-")))
+                .enumerate()
+                .map(|(bar, node)| {
+                    let mut node = node.clone();
+                    node["id"] = json!(format!("card-{index}-bar-{bar}"));
+                    node["fill"] = json!("#2563EB");
+                    node
+                })
+                .collect::<Vec<_>>();
+            json!({"id":format!("card-{index}"),"type":"frame","layout":"none",
+            "x":24+468*(index%4),"y":232+272*(index/4),"width":450,"height":260,
+            "fill":"#FFFFFF","cornerRadius":12,"clip":true,"children":bars,
+            "effect":{"type":"shadow","offset":{"x":0,"y":2},"blur":4,"color":"#0F172A14"}})
+        })
+        .collect::<Vec<_>>();
+    let scene = Scene::new(
+        json!([{"id":"page","type":"frame","layout":"none","width":1920,"height":1080,"fill":"#F8FAFC","clip":true,"children":cards}]),
+    );
+    let file = scene.directory.path().join("scene.pen");
+    fs::write(
+        &file,
+        json!({"version":"2.21","children":scene.children}).to_string(),
+    )
+    .unwrap();
+    let store = Store::open(&file, None).unwrap();
+    let project = Project::load(&store).unwrap();
+    let snapshot =
+        layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap()).unwrap();
+    let page = &snapshot.items[snapshot.roots[0]];
+    let scale = (900.0_f32 / 1920.0).min(820.0 / 1080.0) * 0.94;
+    for pan in [0.0_f64, 64.0] {
+        // Match the fitted TUI camera, including its double-precision pan and
+        // f32 region boundary.
+        let width = 900.0 / scale;
+        let height = 820.0 / scale;
+        let region = Rect::new(
+            (960.0 + pan / f64::from(scale)) as f32 - width / 2.0,
+            540.0 - height / 2.0,
+            width,
+            height,
+        );
+        let output = render::png(
+            &project,
+            &snapshot,
+            &RenderOptions {
+                region: Some(region),
+                scale,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let viewport = Affine::scale(scale, scale).then(Affine::translation(-region.x, -region.y));
+        let reference = |tight: bool| {
+            let mut surface =
+                skia_safe::surfaces::raster_n32_premul((output.width as i32, output.height as i32))
+                    .unwrap();
+            let canvas = surface.canvas();
+            canvas.clear(Color::TRANSPARENT);
+            canvas.concat(&Matrix::from_affine(
+                &viewport.then(page.record.transform).0,
+            ));
+            let root = Path::rect(SkRect::from_xywh(0.0, 0.0, 1920.0, 1080.0), None);
+            let mut paint = Paint::default();
+            paint.set_anti_alias(true);
+            paint.set_color(Color::from_argb(255, 248, 250, 252));
+            canvas.draw_path(&root, &paint);
+            canvas.clip_path(&root, None, true);
+            for index in &page.children {
+                let card = &snapshot.items[*index];
+                let transform = viewport.then(card.record.transform);
+                canvas.save();
+                canvas.reset_matrix();
+                canvas.concat(&Matrix::from_affine(&transform.0));
+                let mut layer = Paint::default();
+                layer.set_image_filter(skia_safe::image_filters::drop_shadow(
+                    (0.0, 2.0),
+                    (2.0, 2.0),
+                    Color::from_argb(20, 15, 23, 42),
+                    None,
+                    None,
+                    None,
+                ));
+                let bounds = card
+                    .record
+                    .visual_bounds
+                    .transformed(viewport)
+                    .outset(1.0, 1.0)
+                    .transformed(transform.inverse().unwrap());
+                let bounds = SkRect::from_xywh(bounds.x, bounds.y, bounds.width, bounds.height);
+                let mut record = SaveLayerRec::default().paint(&layer);
+                if tight {
+                    record = record.bounds(&bounds);
+                }
+                canvas.save_layer(&record);
+                let shape = Path::rrect(
+                    RRect::new_rect_xy(SkRect::from_xywh(0.0, 0.0, 450.0, 260.0), 12.0, 12.0),
+                    None,
+                );
+                paint.set_color(Color::WHITE);
+                canvas.draw_path(&shape, &paint);
+                canvas.save();
+                canvas.clip_path(&shape, None, true);
+                paint.set_color(Color::from_argb(255, 37, 99, 235));
+                for child in &card.children {
+                    let bar = &snapshot.items[*child];
+                    canvas.save();
+                    canvas.reset_matrix();
+                    canvas.concat(&Matrix::from_affine(&viewport.then(bar.record.transform).0));
+                    let rect =
+                        SkRect::from_xywh(0.0, 0.0, bar.record.rect.width, bar.record.rect.height);
+                    canvas.draw_path(
+                        &Path::rrect(RRect::new_rect_xy(rect, 2.0, 2.0), None),
+                        &paint,
+                    );
+                    canvas.restore();
+                }
+                canvas.restore();
+                canvas.restore();
+                canvas.restore();
+            }
+            // Compare through the same lossless PNG conversion, so color
+            // premultiplication round trips cannot masquerade as layer drift.
+            let bytes = skia_safe::png_encoder::encode_image(
+                None,
+                &surface.image_snapshot(),
+                &Default::default(),
+            )
+            .unwrap();
+            let image = Image::from_encoded(bytes.clone())
+                .unwrap()
+                .make_raster_image(None, None)
+                .unwrap();
+            (image, bytes)
+        };
+        let (expected_image, expected_png) = reference(false);
+        let actual = raster(&output);
+        let expected = expected_image.peek_pixels().unwrap();
+        let actual = actual.peek_pixels().unwrap();
+        for y in 0..output.height as i32 {
+            for x in 0..output.width as i32 {
+                if actual.get_color((x, y)) != expected.get_color((x, y))
+                    && std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
+                    && let Some(temporary) = std::env::var_os("RUNNER_TEMP")
+                {
+                    let artifacts = std::path::PathBuf::from(temporary).join("render-regressions");
+                    fs::create_dir_all(&artifacts).unwrap();
+                    fs::write(
+                        artifacts.join(format!("fitted-bars-{pan}-actual.png")),
+                        &output.png,
+                    )
+                    .unwrap();
+                    fs::write(
+                        artifacts.join(format!("fitted-bars-{pan}-native.png")),
+                        expected_png.as_bytes(),
+                    )
+                    .unwrap();
+                    fs::copy(&file, artifacts.join("fitted-bars.pen")).unwrap();
+                }
+                assert_eq!(
+                    actual.get_color((x, y)),
+                    expected.get_color((x, y)),
+                    "fitted rounded bars pan={pan} at {x},{y}"
+                );
+            }
+        }
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        {
+            let (shifted, _) = reference(true);
+            let shifted = shifted.peek_pixels().unwrap();
+            let changed = (0..output.height as i32).any(|y| {
+                (0..output.width as i32)
+                    .any(|x| shifted.get_color((x, y)) != expected.get_color((x, y)))
+            });
+            assert!(
+                changed,
+                "negative control must reproduce the rejected layer-origin drift"
+            );
+        }
+    }
 }
 
 #[test]
