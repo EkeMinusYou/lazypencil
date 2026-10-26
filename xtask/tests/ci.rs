@@ -312,7 +312,11 @@ fn terminal_protocol_fixes_reproduce_in_real_emulators_before_the_full_matrix() 
     for path in ["src/tui/graphics.rs", "src/tui/terminal.rs"] {
         let plan = focus::select(
             &util::root(),
-            &[path.into(), "xtask/src/terminal/hosted.rs".into()],
+            &[
+                path.into(),
+                "src/tui/mod.rs".into(),
+                "xtask/src/terminal/hosted.rs".into(),
+            ],
             "auto",
         )
         .unwrap();

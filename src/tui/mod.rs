@@ -288,7 +288,11 @@ impl App {
                     None => { self.save_draft()?; return Ok(()); },
                 },
                 output = worker.next() => {
+                    let current = output.generation == self.generation;
                     self.accept_preview(output);
+                    // Replacing a Kitty image ID removes its placements. Resend
+                    // every placeholder instead of diffing unchanged image cells.
+                    if current { screen.redraw()?; }
                 },
                 _ = async {
                     if let Some(deadline) = playback_deadline {

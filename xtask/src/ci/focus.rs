@@ -168,7 +168,13 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         .iter()
         .any(|path| ["src/tui/graphics.rs", "src/tui/terminal.rs"].contains(&path.as_str()))
         && paths.iter().all(|path| {
-            ci_only(path) || ["src/tui/graphics.rs", "src/tui/terminal.rs"].contains(&path.as_str())
+            ci_only(path)
+                || [
+                    "src/tui/graphics.rs",
+                    "src/tui/terminal.rs",
+                    "src/tui/mod.rs",
+                ]
+                .contains(&path.as_str())
         })
     {
         return Ok(Plan {

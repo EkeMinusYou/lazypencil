@@ -109,9 +109,23 @@ impl Emulator {
             c
         } else {
             let mut c = Command::new("xterm");
-            c.arg("-title")
-                .arg(&title)
-                .args(["-geometry", "120x40", "-e"]);
+            c.arg("-title").arg(&title).args([
+                "-geometry",
+                "120x40",
+                "-ti",
+                "vt340",
+                "-xrm",
+                "*decGraphicsID:340",
+                "-fa",
+                "monospace",
+                "-fs",
+                "11",
+                "-bg",
+                "#101010",
+                "-fg",
+                "#eeeeee",
+                "-e",
+            ]);
             c
         };
         launch
@@ -396,6 +410,10 @@ pub fn run(candidate: &Path, output: &Path) -> Result<()> {
             }
         };
         report["emulator_version"] = json!(identity.trim());
+        if program == "xterm" {
+            report["emulator_configuration"] =
+                json!({"decTerminalID":340,"decGraphicsID":340,"font":"monospace","font_size":11});
+        }
         results[protocol] = report;
     }
     util::publish(
