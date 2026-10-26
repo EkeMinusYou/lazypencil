@@ -547,6 +547,63 @@ impl ApplicationFixture {
 }
 
 #[test]
+fn application_identify_cli_emits_unique_generation_keys_and_ordered_compatible_fallbacks() {
+    let fixture = ApplicationFixture::new();
+    let identity = fixture.identity();
+    let mut checkpoints = BTreeMap::new();
+    for attempt in ["1", "2"] {
+        let output = fixture.directory.with_extension(attempt);
+        let result = Command::new(env!("CARGO_BIN_EXE_xtask"))
+            .args(["ci", "cache", "application", "identify"])
+            .arg("--source")
+            .arg(&fixture.source)
+            .arg("--target")
+            .arg(&fixture.target)
+            .arg("--directory")
+            .arg(&fixture.directory)
+            .args(["--native-key", "native-v2-ubuntu-24.04-fixture"])
+            .arg("--github-output")
+            .arg(&output)
+            .env("GITHUB_ACTIONS", "true")
+            .env("GITHUB_RUN_ID", "402")
+            .env("GITHUB_RUN_ATTEMPT", attempt)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let report: Value = serde_json::from_slice(&result.stdout).unwrap();
+        assert_eq!(report["primary"], identity.primary);
+        assert_eq!(report["checkpoint_legacy"], identity.checkpoint);
+        assert_eq!(
+            report["checkpoint_prefix"],
+            format!("{}-", identity.checkpoint)
+        );
+        assert_eq!(
+            report["checkpoint"],
+            format!("{}-402-{attempt}", identity.checkpoint)
+        );
+        let outputs = fs::read_to_string(output).unwrap();
+        for key in [
+            "primary",
+            "checkpoint",
+            "checkpoint_prefix",
+            "checkpoint_legacy",
+        ] {
+            assert!(
+                outputs
+                    .lines()
+                    .any(|line| line == format!("{key}={}", report[key].as_str().unwrap()))
+            );
+        }
+        checkpoints.insert(attempt, report["checkpoint"].clone());
+    }
+    assert_ne!(checkpoints["1"], checkpoints["2"]);
+}
+
+#[test]
 fn application_reuse_checks_all_outputs_before_overlaying_and_never_reuses_images_or_dependencies()
 {
     let f = ApplicationFixture::new();

@@ -544,12 +544,38 @@ impl Renderer<'_> {
                 }
             }
         } else if fill_enabled {
-            self.canvas.save_layer(&SaveLayerRec::default());
+            // Both passes only contribute inside the text's box/ink union.
+            // Bound their allocation hints instead of copying a full viewport
+            // for every label. Keep one device pixel for antialias coverage.
+            let transform = self.viewport.then(item.record.transform);
+            let layer_bounds = transform
+                .inverse()
+                .map(|inverse| {
+                    let device =
+                        Rect::new(bounds.left(), bounds.top(), bounds.width(), bounds.height())
+                            .transformed(transform)
+                            .outset(1.0, 1.0);
+                    let local = device.transformed(inverse);
+                    SkRect::from_xywh(local.x, local.y, local.width, local.height)
+                })
+                .filter(|bounds| {
+                    [bounds.left(), bounds.top(), bounds.right(), bounds.bottom()]
+                        .into_iter()
+                        .all(f32::is_finite)
+                });
+            let mut fill_layer = SaveLayerRec::default();
+            if let Some(bounds) = &layer_bounds {
+                fill_layer = fill_layer.bounds(bounds);
+            }
+            self.canvas.save_layer(&fill_layer);
             self.fills(node, Some(fill), &Path::rect(bounds, None), rect, "fill")?;
             let mut mask = Paint::default();
             mask.set_blend_mode(BlendMode::DstIn);
-            self.canvas
-                .save_layer(&SaveLayerRec::default().paint(&mask));
+            let mut mask_layer = SaveLayerRec::default().paint(&mask);
+            if let Some(bounds) = &layer_bounds {
+                mask_layer = mask_layer.bounds(bounds);
+            }
+            self.canvas.save_layer(&mask_layer);
             block.paragraph.paint(self.canvas, (0.0, offset));
             self.canvas.restore();
             self.canvas.restore();

@@ -159,14 +159,27 @@ impl Command {
                 let identity = application_identity(&source, &target, &native_key)?;
                 let value = match operation.as_str() {
                     "identify" => {
+                        let checkpoint = if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
+                        {
+                            application_checkpoint(
+                                &identity.checkpoint,
+                                &std::env::var("GITHUB_RUN_ID")?,
+                                &std::env::var("GITHUB_RUN_ATTEMPT")?,
+                            )?
+                        } else {
+                            identity.checkpoint.clone()
+                        };
+                        let checkpoint_prefix = format!("{}-", identity.checkpoint);
                         util::github_output(
                             github_output.as_deref(),
                             &BTreeMap::from([
                                 ("primary".into(), identity.primary.clone()),
-                                ("checkpoint".into(), identity.checkpoint.clone()),
+                                ("checkpoint".into(), checkpoint.clone()),
+                                ("checkpoint_prefix".into(), checkpoint_prefix.clone()),
+                                ("checkpoint_legacy".into(), identity.checkpoint.clone()),
                             ]),
                         )?;
-                        json!({"primary":identity.primary,"checkpoint":identity.checkpoint,"source_commit":identity.source_commit})
+                        json!({"primary":identity.primary,"checkpoint":checkpoint,"checkpoint_prefix":checkpoint_prefix,"checkpoint_legacy":identity.checkpoint,"source_commit":identity.source_commit})
                     }
                     "stage" => stage(&source, &target, &directory, &identity)?,
                     "restore" => restore(&source, &target, &directory, &identity)?,
@@ -464,6 +477,24 @@ pub fn native_identity(
     )
 }
 
+// Hosted run IDs and retry numbers have one canonical positive integer spelling.
+fn valid_generation_id(value: &str) -> bool {
+    !value.is_empty()
+        && !value.starts_with('0')
+        && value.bytes().all(|b| b.is_ascii_digit())
+        && value.parse::<u64>().is_ok_and(|n| n > 0)
+}
+
+/// Keep later completed focused outputs distinct from an older immutable cache.
+pub fn application_checkpoint(base: &str, run: &str, attempt: &str) -> Result<String> {
+    ensure!(
+        Regex::new(r"^application-v2-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-[0-9a-f]{64}-[0-9a-f]{64}-focus$")?.is_match(base)
+            && [run, attempt].into_iter().all(valid_generation_id),
+        "Invalid application checkpoint identity"
+    );
+    Ok(format!("{base}-{run}-{attempt}"))
+}
+
 /// Cache entries are immutable; each completed phase needs its own checkpoint.
 pub fn checkpoint_key(primary: &str, phase: &str, run: &str, attempt: &str) -> Result<String> {
     ensure!(
@@ -471,12 +502,7 @@ pub fn checkpoint_key(primary: &str, phase: &str, run: &str, attempt: &str) -> R
             && primary.len() <= 300
             && Regex::new(r"^native-v2-[A-Za-z0-9_.-]+-[0-9a-f]{64}$")?.is_match(primary)
             && ["focus", "full"].contains(&phase)
-            && [run, attempt].iter().all(|n| {
-                !n.is_empty()
-                    && !n.starts_with('0')
-                    && n.bytes().all(|b| b.is_ascii_digit())
-                    && n.parse::<u64>().is_ok_and(|n| n > 0)
-            }),
+            && [run, attempt].into_iter().all(valid_generation_id),
         "Invalid native checkpoint identity"
     );
     Ok(format!("checkpoint-{primary}-{phase}-{run}-{attempt}"))
@@ -903,7 +929,7 @@ pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Valu
         })
         .collect::<BTreeSet<_>>();
     let re = Regex::new(
-        r"^application-v([12])-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-([0-9a-f]{64})(?:-([0-9a-f]{64}))?-(full|focus)$",
+        r"^application-v([12])-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-([0-9a-f]{64})(?:-([0-9a-f]{64}))?-(full|focus)(?:-[1-9][0-9]*-[1-9][0-9]*)?$",
     )?;
     let mut selected = BTreeMap::new();
     let mut groups = BTreeMap::<(String, String), Vec<&Value>>::new();
@@ -948,7 +974,7 @@ pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Valu
             let phase = &caps[5];
             if phase == "focus"
                 && keys.contains(&(
-                    format!("{}full", key.strip_suffix("focus").unwrap()).as_str(),
+                    format!("{}full", &key[..caps.get(5).unwrap().start()]).as_str(),
                     version,
                 ))
             {

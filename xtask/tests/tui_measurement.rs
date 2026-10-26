@@ -100,6 +100,42 @@ fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() 
         "docs/performance.md".into(),
         "xtask/src/notices/rust.rs".into()
     ]));
+    for path in ["src/render.rs", "src/render/backdrop.rs"] {
+        assert!(focus::tui_measurement_changed(&[path.into()]));
+    }
+    let text_layers = focus::select(
+        &util::root(),
+        &["src/render.rs".into(), "tests/graphics.rs".into()],
+        "auto",
+    )
+    .unwrap();
+    assert_eq!(text_layers.suite, "dynamic");
+    assert!(
+        text_layers
+            .targets
+            .iter()
+            .any(|target| target == "graphics")
+    );
+    let commands = lazypencil_xtask::ci::commands::plan(
+        &util::root(),
+        &text_layers.suite,
+        &text_layers.targets,
+    )
+    .unwrap();
+    let graphics = commands
+        .checks
+        .iter()
+        .find(|command| {
+            command
+                .windows(2)
+                .any(|args| args == ["--test", "graphics"])
+        })
+        .unwrap();
+    assert!(
+        graphics
+            .windows(2)
+            .any(|args| args == ["--skip", focus::TEXT_LAYER_REPRODUCTION])
+    );
     let mixed = vec!["src/store.rs".into(), "xtask/src/performance/tui.rs".into()];
     assert!(focus::tui_measurement_changed(&mixed));
     assert!(

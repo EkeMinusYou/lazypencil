@@ -83,6 +83,95 @@ fn text(properties: Value) -> Scene {
 }
 
 #[test]
+fn text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations() {
+    use lazypencil::geometry::Affine;
+    use skia_safe::{BlendMode, Matrix, Paint, Rect, canvas::SaveLayerRec};
+    for (rotation, flip, decoration) in [
+        (0.0, false, false),
+        (17.0, false, true),
+        (-43.0, true, true),
+    ] {
+        let scene = Scene::new(
+            json!([{"id":"frame","type":"frame","layout":"none","width":300,"height":260,"clip":true,"children":[{
+                "id":"text","type":"text","x":74.25,"y":70.5,"width":180,"height":120,
+                "textGrowth":"fixed-width-height","content":"jÁg 日本語\nAV W","fontSize":26.25,
+                "fontStyle":"italic","textAlign":"center","lineHeight":1.4,"fill":"#FF0000B0",
+                "rotation":rotation,"flipX":flip,"underline":decoration,"strikethrough":decoration
+            }]}]),
+        );
+        let file = scene.directory.path().join("scene.pen");
+        fs::write(
+            &file,
+            json!({"version":"2.21","children":scene.children}).to_string(),
+        )
+        .unwrap();
+        let store = Store::open(&file, None).unwrap();
+        let project = Project::load(&store).unwrap();
+        let snapshot =
+            layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap()).unwrap();
+        let index = snapshot
+            .items
+            .iter()
+            .position(|item| item.record.id == "text")
+            .unwrap();
+        let block = &snapshot.text_blocks[&index];
+        for scale in [0.25_f32, 0.75, 1.5] {
+            let output = render::png(
+                &project,
+                &snapshot,
+                &RenderOptions {
+                    scale,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let mut reference =
+                skia_safe::surfaces::raster_n32_premul((output.width as i32, output.height as i32))
+                    .unwrap();
+            let canvas = reference.canvas();
+            canvas.clear(Color::TRANSPARENT);
+            let viewport = Affine::scale(scale, scale)
+                .then(Affine::translation(-output.region.x, -output.region.y));
+            canvas.concat(&Matrix::from_affine(&viewport.0));
+            canvas.clip_rect(Rect::from_xywh(0.0, 0.0, 300.0, 260.0), None, true);
+            canvas.reset_matrix();
+            canvas.concat(&Matrix::from_affine(
+                &viewport.then(snapshot.items[index].record.transform).0,
+            ));
+            // Independent full-surface color/mask compositing is the reference;
+            // it has no text allocation bound and cannot truncate overhanging ink.
+            canvas.save_layer(&SaveLayerRec::default());
+            let mut fill = Paint::default();
+            fill.set_color(Color::from_argb(176, 255, 0, 0));
+            canvas.draw_paint(&fill);
+            let mut mask = Paint::default();
+            mask.set_blend_mode(BlendMode::DstIn);
+            canvas.save_layer(&SaveLayerRec::default().paint(&mask));
+            block.paragraph.paint(canvas, (0.0, 0.0));
+            canvas.restore();
+            canvas.restore();
+            let expected = reference.image_snapshot();
+            let expected = expected.peek_pixels().unwrap();
+            let image = raster(&output);
+            let actual = image.peek_pixels().unwrap();
+            let mut ink = 0;
+            for y in 0..output.height as i32 {
+                for x in 0..output.width as i32 {
+                    let color = actual.get_color((x, y));
+                    ink += usize::from(color.a() != 0);
+                    assert_eq!(
+                        color,
+                        expected.get_color((x, y)),
+                        "scale={scale} rotation={rotation} flip={flip} at {x},{y}"
+                    );
+                }
+            }
+            assert!(ink > 20);
+        }
+    }
+}
+
+#[test]
 fn decorations_add_ink_to_shaped_text_without_changing_line_layout() {
     let plain = text(json!({})).render().unwrap();
     let base = raster(&plain);

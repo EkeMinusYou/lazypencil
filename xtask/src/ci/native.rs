@@ -354,6 +354,15 @@ impl Session {
                 self.execute(&command, 300, "focus-clippy.log", false)
             }
             Stage::FocusReproduce => {
+                if !core && has("graphics") {
+                    self.test(
+                        true,
+                        "graphics",
+                        focus::TEXT_LAYER_REPRODUCTION,
+                        &["--exact", "--test-threads=1"],
+                        "focus-text-layers.log",
+                    )?;
+                }
                 if args.suite == "candidate" && has("tui") {
                     self.test(
                         true,

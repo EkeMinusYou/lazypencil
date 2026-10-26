@@ -47,6 +47,8 @@ pub const HISTORY_PTY: &[&str] = &[
     "real_pty_reviewed_deletion_remains_readable_at_minimum_terminal_size",
 ];
 pub const INPUT_PTY: &str = "real_pty_custom_navigation_preserves_draft_and_changes_preview_pixels";
+pub const TEXT_LAYER_REPRODUCTION: &str =
+    "text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations";
 pub const INPUT_CONFIG: &str =
     "navigation_shortcuts_are_user_owned_replace_defaults_and_validate_scope_conflicts";
 pub const RECLAIM: &str =
@@ -115,6 +117,8 @@ pub fn preprocessor_changed(paths: &[String]) -> bool {
 pub fn tui_measurement_changed(paths: &[String]) -> bool {
     paths.iter().any(|path| {
         path.starts_with("xtask/src/performance/")
+            || path == "src/render.rs"
+            || path.starts_with("src/render/")
             || [
                 "xtask/src/performance.rs",
                 "xtask/src/test_support/terminal.rs",

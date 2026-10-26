@@ -103,6 +103,9 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
     if color_font_reproduction(suite, targets).is_some() {
         input_skip.extend(skips([COLOR_FONT_REPRODUCTION]));
     }
+    if !core && has("graphics") {
+        input_skip.extend(skips([focus::TEXT_LAYER_REPRODUCTION]));
+    }
     if ["graphics", "dynamic", "copy"].contains(&suite) && has("script_scope") {
         input_skip.extend(skips(["script_bindings::", "generated_browser_"]));
         input_skip.extend(skips(focus::COPY_CPU));
