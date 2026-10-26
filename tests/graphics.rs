@@ -85,7 +85,7 @@ fn text(properties: Value) -> Scene {
 #[test]
 fn text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations() {
     use lazypencil::geometry::Affine;
-    use skia_safe::{BlendMode, Matrix, Paint, Rect, canvas::SaveLayerRec};
+    use skia_safe::{BlendMode, Matrix, Paint, Path, Rect, canvas::SaveLayerRec};
     for (rotation, flip, decoration) in [
         (0.0, false, false),
         (17.0, false, true),
@@ -138,12 +138,26 @@ fn text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations() 
             canvas.concat(&Matrix::from_affine(
                 &viewport.then(snapshot.items[index].record.transform).0,
             ));
-            // Independent full-surface color/mask compositing is the reference;
-            // it has no text allocation bound and cannot truncate overhanging ink.
+            // Preserve the original unbounded compositor, including its
+            // antialiased fill geometry. An infinite draw_paint would remove
+            // the original coverage multiplication along the fill boundary.
             canvas.save_layer(&SaveLayerRec::default());
             let mut fill = Paint::default();
             fill.set_color(Color::from_argb(176, 255, 0, 0));
-            canvas.draw_paint(&fill);
+            fill.set_anti_alias(true);
+            let ink_bounds = block.ink_bounds;
+            let fill_bounds = Rect::new(
+                0.0_f32.min(ink_bounds.x),
+                0.0_f32.min(ink_bounds.y),
+                snapshot.items[index]
+                    .record
+                    .rect
+                    .width
+                    .max(block.metrics.longest_line)
+                    .max(ink_bounds.right()),
+                block.metrics.height.max(ink_bounds.bottom()),
+            );
+            canvas.draw_path(&Path::rect(fill_bounds, None), &fill);
             let mut mask = Paint::default();
             mask.set_blend_mode(BlendMode::DstIn);
             canvas.save_layer(&SaveLayerRec::default().paint(&mask));
