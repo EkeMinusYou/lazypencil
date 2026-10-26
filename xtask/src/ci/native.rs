@@ -353,7 +353,7 @@ impl Session {
             Stage::FocusReproduce => {
                 if args.suite == "candidate" && has("tui") {
                     self.test(
-                        false,
+                        true,
                         "lib",
                         "tui::preview::tests::fractional_fit_pan_round_trips_preserve_the_exact_render_region",
                         &["--exact", "--test-threads=1"],

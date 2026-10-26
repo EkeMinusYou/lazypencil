@@ -177,12 +177,8 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     let preprocessor = preprocessor_changed(paths);
     let font_inputs = paths.iter().any(|path| font_input(path));
     if paths.iter().any(|path| {
-        [
-            "src/tui/graphics.rs",
-            "src/tui/terminal.rs",
-            "src/tui/preview.rs",
-        ]
-        .contains(&path.as_str())
+        ["src/tui/graphics.rs", "src/tui/terminal.rs"].contains(&path.as_str())
+            || path == "src/tui/preview.rs" && tui_measurement_changed(paths)
     }) && paths.iter().all(|path| {
         ci_only(path)
             || [
