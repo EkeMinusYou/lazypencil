@@ -22,7 +22,7 @@ pub mod linkage;
 const GAPS: &[&str] = &[
     "Cargo declarations and Skia graph inputs do not establish final binary linkage or used archive members.",
     "System-library attribution and final Rust source-to-binary/linkage verification remain required.",
-    "QuickJS source comment candidates and the skia-bindings wrapper still require final native attribution review.",
+    "The skia-bindings wrapper still requires final native attribution review.",
     "Font/icon source declarations and original notices are collected; final applicability, other assets, and optional runtimes still require review.",
     "Complete legal review, signed build provenance, packaging, signing, and publication remain required.",
 ];
