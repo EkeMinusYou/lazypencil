@@ -28,7 +28,7 @@ pub fn linux_dependencies() -> Result<()> {
 }
 
 pub fn linux_profile_dependencies() -> Result<()> {
-    hosted_linux_packages(&["binutils", "libfontconfig1", "libfreetype6"])
+    hosted_linux_packages(&["linux-tools-generic", "libfontconfig1", "libfreetype6"])
 }
 
 pub fn linux_terminal_dependencies() -> Result<()> {

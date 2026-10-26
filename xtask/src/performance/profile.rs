@@ -39,45 +39,44 @@ fn completed_source(run: &Value, repository: &str, revision: &str) -> Result<()>
     Ok(())
 }
 
-fn sampled_cpu(text: &str) -> Result<f64> {
-    let total = regex::Regex::new(r"(?m)^\s*([0-9]+\.[0-9]+)\s+([0-9]+\.[0-9]+)\s+<Total>\s*$")?;
-    let totals = total.captures_iter(text).collect::<Vec<_>>();
-    ensure!(totals.len() == 1, "Missing or repeated sampled CPU total");
-    let seconds: f64 = totals[0][1].parse()?;
-    ensure!(
-        seconds.is_finite() && seconds > 0.0,
-        "Profiler collected no CPU samples"
-    );
-    Ok(seconds)
+fn sample_count(text: &str) -> Result<usize> {
+    let mut count = 0;
+    for line in text.lines().map(str::trim).filter(|s| !s.is_empty()) {
+        ensure!(
+            line.len() <= 16 && line.bytes().all(|b| b.is_ascii_hexdigit()),
+            "Expected one user instruction pointer per CPU sample"
+        );
+        count += 1;
+    }
+    ensure!(count > 0, "Profiler collected no CPU samples");
+    Ok(count)
 }
 
-fn render_payload<'a>(bytes: &'a [u8], experiment: &Path) -> Result<&'a [u8]> {
-    let text = std::str::from_utf8(bytes)?;
-    let payload = if text.starts_with("Creating experiment directory ") {
-        let (notice, payload) = text
-            .split_once('\n')
-            .context("Incomplete collector notice")?;
-        let prefix = format!(
-            "Creating experiment directory {} (Process ID: ",
-            experiment.display()
-        );
-        let pid = notice
-            .strip_prefix(&prefix)
-            .and_then(|s| s.strip_suffix(") ..."))
-            .context("Unexpected collector notice")?;
-        ensure!(
-            pid.parse::<u32>().is_ok_and(|pid| pid > 0),
-            "Invalid collector PID"
-        );
-        payload
-    } else {
-        text
-    };
-    ensure!(
-        payload.trim_start().starts_with('{'),
-        "Missing native render JSON"
-    );
-    Ok(payload.as_bytes())
+fn perf_binary(root: &Path, kernel: &str) -> Result<std::path::PathBuf> {
+    let matching = root.join("linux-tools").join(kernel).join("perf");
+    if matching.is_file() {
+        return Ok(matching.canonicalize()?);
+    }
+    // Ubuntu's wrapper requires an exact kernel package; the generic userspace
+    // tool also understands software cpu-clock events on hosted Azure kernels.
+    let mut candidates = Vec::new();
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        if entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with("linux-tools-")
+        {
+            let binary = entry.path().join("perf");
+            if binary.is_file() {
+                candidates.push(binary.canonicalize()?);
+            }
+        }
+    }
+    candidates.sort();
+    candidates
+        .pop()
+        .context("Missing installed perf executable")
 }
 
 fn capture(command: &mut Command, output: &Path, seconds: u64) -> Result<Vec<u8>> {
@@ -183,7 +182,18 @@ impl Arguments {
         )?;
         let binary = package.join("bin/lazypencil");
         setup::linux_profile_dependencies()?;
-        let version = process::text(Command::new("gprofng").arg("--version"))?;
+        let kernel = process::text(Command::new("uname").arg("-r"))?;
+        let perf = perf_binary(Path::new("/usr/lib"), kernel.trim())?;
+        let version = process::text(Command::new(&perf).arg("--version"))?;
+        let paranoid: i32 = fs::read_to_string("/proc/sys/kernel/perf_event_paranoid")?
+            .trim()
+            .parse()?;
+        if paranoid > 2 {
+            process::checked(
+                Command::new("sudo").args(["sysctl", "-w", "kernel.perf_event_paranoid=2"]),
+                Duration::from_secs(30),
+            )?;
+        }
         let mut scenes = Vec::new();
         for name in ["dashboard", "shadow"] {
             for scale in [0.5_f32, 1.0] {
@@ -205,6 +215,7 @@ impl Arguments {
                         .env_remove("GH_TOKEN")
                         .env_remove("GITHUB_TOKEN")
                         .env("LC_ALL", "C")
+                        .env("DEBUGINFOD_URLS", "")
                         .env("LAZYPENCIL_CONFIG_DIR", scene.join("user"));
                     command
                 };
@@ -234,62 +245,93 @@ impl Arguments {
                     )
                 };
                 let expected = validate(&raw)?;
-                let mut experiments = Vec::new();
+                let mut samples = Vec::new();
                 for index in 0..3 {
                     fs::remove_file(&png)?;
-                    let experiment = output.join(format!("{label}-sample-{index}.er"));
+                    let sample = format!("{label}-sample-{index}");
+                    let experiment = output.join(format!("{sample}.data"));
                     let raw = capture(
-                        render(Path::new("gprofng"))
-                            // Keep default resource sampling: gprofng 2.42 uses
-                            // that initialization path to prime its shared timer.
-                            .args(["collect", "app", "-p", "hi", "-a", "off", "-o"])
+                        render(&perf)
+                            .args([
+                                "record",
+                                "-e",
+                                "cpu-clock:u",
+                                "-F",
+                                "997",
+                                "--call-graph",
+                                "dwarf,8192",
+                                "--no-buildid-cache",
+                                "-m",
+                                "128",
+                                "-o",
+                            ])
                             .arg(&experiment)
+                            .arg("--")
                             .arg(&binary)
                             .args(&arguments),
-                        &output.join(format!("{label}-sample-{index}.json")),
+                        &output.join(format!("{sample}.json")),
                         30,
                     )?;
                     ensure!(
-                        validate(render_payload(&raw, &experiment)?)? == expected,
+                        validate(&raw)? == expected,
                         "Profiling changed rendered PNG bytes"
                     );
-                    experiments.push(experiment);
+                    let ips = capture(
+                        Command::new(&perf)
+                            .env("LC_ALL", "C")
+                            .env("DEBUGINFOD_URLS", "")
+                            // Lost-event records deliberately fail the IP-only
+                            // validator instead of silently biasing the report.
+                            .args([
+                                "script",
+                                "--hide-call-graph",
+                                "--show-lost-events",
+                                "-F",
+                                "ip",
+                                "-i",
+                            ])
+                            .arg(&experiment),
+                        &output.join(format!("{sample}-ips.txt")),
+                        60,
+                    )?;
+                    let count = sample_count(std::str::from_utf8(&ips)?);
+                    for (kind, options) in [
+                        (
+                            "functions",
+                            [
+                                "--no-children",
+                                "--call-graph",
+                                "none",
+                                "--percent-limit",
+                                "0.1",
+                            ],
+                        ),
+                        (
+                            "calltree",
+                            [
+                                "--children",
+                                "--call-graph",
+                                "graph,1,caller",
+                                "--percent-limit",
+                                "1",
+                            ],
+                        ),
+                    ] {
+                        capture(
+                            Command::new(&perf)
+                                .env("LC_ALL", "C")
+                                .env("DEBUGINFOD_URLS", "")
+                                .env("PERF_PAGER", "cat")
+                                .args(["report", "--stdio", "-n", "--sort", "dso,symbol"])
+                                .args(options)
+                                .arg("-i")
+                                .arg(&experiment),
+                            &output.join(format!("{sample}-{kind}.txt")),
+                            60,
+                        )?;
+                    }
+                    samples.push(json!({"data":format!("{sample}.data"),"cpu_samples":count.as_ref().ok().copied(),"sampling_error":count.err().map(|e|e.to_string()),"functions":format!("{sample}-functions.txt"),"calltree":format!("{sample}-calltree.txt")}));
                 }
-                capture(
-                    Command::new("gprofng")
-                        .env("LC_ALL", "C")
-                        .args(["display", "text", "-header"])
-                        .args(&experiments),
-                    &output.join(format!("{label}-header.txt")),
-                    60,
-                )?;
-                let functions = capture(
-                    Command::new("gprofng")
-                        .env("LC_ALL", "C")
-                        .args([
-                            "display",
-                            "text",
-                            "-metrics",
-                            "e.totalcpu:i.totalcpu:name",
-                            "-sort",
-                            "e.totalcpu",
-                            "-limit",
-                            "80",
-                            "-functions",
-                        ])
-                        .args(&experiments),
-                    &output.join(format!("{label}-functions.txt")),
-                    60,
-                )?;
-                let cpu = sampled_cpu(std::str::from_utf8(&functions)?);
-                capture(
-                    Command::new("gprofng")
-                        .env("LC_ALL", "C")
-                        .args(["display", "text", "-limit", "300", "-calltree"])
-                        .args(&experiments),
-                    &output.join(format!("{label}-calltree.txt")),
-                    60,
-                )?;
                 fs::copy(&png, output.join(format!("{label}.png")))?;
                 let bytes = util::walk(&output)?
                     .iter()
@@ -297,7 +339,7 @@ impl Arguments {
                         Ok(n + fs::metadata(p)?.len())
                     })?;
                 ensure!(bytes <= 128 * 1024 * 1024, "Oversized profiler experiments");
-                scenes.push(json!({"name":name,"scale":scale,"document_sha256":util::file_digest(&document)?,"png_sha256":expected,"profiled_exports":3,"sampled_cpu_seconds":cpu.as_ref().ok().copied(),"sampling_error":cpu.err().map(|e|e.to_string()),"header":format!("{label}-header.txt"),"functions":format!("{label}-functions.txt"),"calltree":format!("{label}-calltree.txt")}));
+                scenes.push(json!({"name":name,"scale":scale,"document_sha256":util::file_digest(&document)?,"png_sha256":expected,"profiled_exports":3,"samples":samples}));
             }
         }
         ensure!(
@@ -305,15 +347,18 @@ impl Arguments {
             "Profiled executable changed"
         );
         let valid_samples = scenes.iter().all(|s| {
-            s["sampled_cpu_seconds"]
-                .as_f64()
-                .is_some_and(|cpu| cpu > 0.0)
+            s["samples"].as_array().is_some_and(|samples| {
+                samples.len() == 3
+                    && samples
+                        .iter()
+                        .all(|p| p["cpu_samples"].as_u64().is_some_and(|n| n > 0))
+            })
         });
-        let report = json!({"format_version":1,"source_run":self.run,"source_revision":self.revision,"collector_revision":std::env::var("GITHUB_SHA").ok(),"candidate":identity,"source":source_identity,"profiler":version.trim(),"requested_sampling_interval_ms":1,"valid_cpu_samples":valid_samples,"binary_archiving":false,"scenes":scenes,"scope":"Native CLI load/layout/render/PNG CPU samples at two scales; not TUI latency, controlled cold starts or complete performance acceptance. Optimized symbols and call stacks may be incomplete."});
+        let report = json!({"format_version":2,"source_run":self.run,"source_revision":self.revision,"collector_revision":std::env::var("GITHUB_SHA").ok(),"candidate":identity,"source":source_identity,"profiler":version.trim(),"profiler_path":perf,"kernel":kernel.trim(),"initial_perf_event_paranoid":paranoid,"requested_sampling_frequency_hz":997,"valid_cpu_samples":valid_samples,"binary_archiving":false,"scenes":scenes,"scope":"Native CLI user CPU samples covering load/layout/render/PNG at two scales; not TUI latency, controlled cold starts or complete performance acceptance. Optimized symbols and call stacks may be incomplete. Sample counts are not elapsed CPU seconds."});
         util::publish(&output.join("report.json"), &util::encode(&report)?, false)?;
         ensure!(
             valid_samples,
-            "CPU samples missing; inspect retained experiment headers and raw data"
+            "CPU samples missing; inspect retained reports and raw data"
         );
         util::print(&json!({"cpu_profile":"ok","scenes":4,"profiled_exports":12}))
     }
@@ -323,35 +368,39 @@ impl Arguments {
 mod tests {
     use super::*;
     #[test]
-    fn collector_notice_is_separated_without_accepting_arbitrary_stdout() {
-        let path = Path::new("/owned/sample.er");
-        let raw = b"Creating experiment directory /owned/sample.er (Process ID: 2837) ...\n{\"width\":960}\n";
-        assert_eq!(render_payload(raw, path).unwrap(), b"{\"width\":960}\n");
-        assert_eq!(render_payload(b"{}\n", path).unwrap(), b"{}\n");
-        for bad in [
-            "Creating experiment directory /another/sample.er (Process ID: 2837) ...\n{}",
-            "Creating experiment directory /owned/sample.er (Process ID: invalid) ...\n{}",
-            "Creating experiment directory ",
-            "unexpected output\n{}",
-        ] {
-            assert!(render_payload(bad.as_bytes(), path).is_err());
-        }
-    }
-    #[test]
-    fn cpu_samples_require_one_positive_total() {
+    fn cpu_samples_require_instruction_pointers() {
         assert_eq!(
-            sampled_cpu("Excl. Incl. Name\n 0.325 0.325 <Total>\n 0.2 0.3 SkCanvas::draw\n")
-                .unwrap(),
-            0.325
+            sample_count("  7f001234abcd\n\n  abcdef0123456789 \n").unwrap(),
+            2
         );
         for text in [
             "",
-            "0.000 0.000 <Total>\n",
-            "0.1 0.1 <Total>\n0.2 0.2 <Total>\n",
-            "NaN NaN <Total>\n",
+            "\n",
+            "sample lost\n",
+            "fffffffffffffffff\n",
+            "7f001234abcd extra\n",
         ] {
-            assert!(sampled_cpu(text).is_err());
+            assert!(sample_count(text).is_err());
         }
+    }
+    #[test]
+    fn perf_selection_prefers_kernel_match_then_installed_generic_tool() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(perf_binary(root.path(), "azure").is_err());
+        let generic = root.path().join("linux-tools-6.8-generic/perf");
+        fs::create_dir_all(generic.parent().unwrap()).unwrap();
+        fs::write(&generic, b"tool").unwrap();
+        assert_eq!(
+            perf_binary(root.path(), "azure").unwrap(),
+            generic.canonicalize().unwrap()
+        );
+        let exact = root.path().join("linux-tools/azure/perf");
+        fs::create_dir_all(exact.parent().unwrap()).unwrap();
+        fs::write(&exact, b"matching tool").unwrap();
+        assert_eq!(
+            perf_binary(root.path(), "azure").unwrap(),
+            exact.canonicalize().unwrap()
+        );
     }
     #[test]
     fn downloaded_candidate_requires_successful_matching_source_run() {
