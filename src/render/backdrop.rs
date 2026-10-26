@@ -140,6 +140,7 @@ impl Renderer<'_> {
             background_nodes: self.background_nodes,
             coverage: None,
             own_pass: pass.map(|pass| (index, pass)),
+            text_layer_hints: false,
             rasters: self.rasters.clone(),
         };
         painter.node(index)?;
@@ -236,6 +237,7 @@ impl Renderer<'_> {
                 background_nodes: self.background_nodes,
                 coverage: Some(coverage.image_snapshot()),
                 own_pass: None,
+                text_layer_hints: false,
                 rasters: self.rasters.clone(),
             };
             let layer = source.backdrop_layer(child)?;
@@ -280,6 +282,7 @@ impl Renderer<'_> {
                 background_nodes: self.background_nodes,
                 coverage: Some(coverage.image_snapshot()),
                 own_pass: None,
+                text_layer_hints: false,
                 rasters: self.rasters.clone(),
             };
             let mapping = Matrix::translate((padding as f32, padding as f32));

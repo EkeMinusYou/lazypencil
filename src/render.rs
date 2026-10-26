@@ -181,6 +181,7 @@ fn png_impl(
         background_nodes: &background_nodes,
         coverage: None,
         own_pass: None,
+        text_layer_hints: true,
         rasters,
     };
     // Node selection determines the viewport; compositing keeps scene context.
@@ -237,6 +238,7 @@ struct Renderer<'a> {
     background_nodes: &'a [bool],
     coverage: Option<Image>,
     own_pass: Option<(usize, OwnPass)>,
+    text_layer_hints: bool,
     rasters: Rc<backdrop::RasterBudget>,
 }
 
@@ -399,6 +401,8 @@ impl Renderer<'_> {
         layer.set_alpha_f(opacity);
         layer.set_image_filter(filter);
         let has_layer = !skip_effect && (opacity < 1.0 || node.properties.contains_key("effect"));
+        let text_layer_hints = self.text_layer_hints;
+        self.text_layer_hints &= !has_layer;
         if has_layer {
             self.canvas
                 .save_layer(&SaveLayerRec::default().paint(&layer));
@@ -466,6 +470,7 @@ impl Renderer<'_> {
         if has_layer {
             self.canvas.restore();
         }
+        self.text_layer_hints = text_layer_hints;
         self.canvas.restore();
         Ok(())
     }
@@ -550,6 +555,10 @@ impl Renderer<'_> {
             let transform = self.viewport.then(item.record.transform);
             let layer_bounds = transform
                 .inverse()
+                // Filtered/transparent parent layers can change Skia's color
+                // rounding when an inner layer's allocation origin changes.
+                // Preserve the original compositor throughout those subtrees.
+                .filter(|_| self.text_layer_hints)
                 .map(|inverse| {
                     let device =
                         Rect::new(bounds.left(), bounds.top(), bounds.width(), bounds.height())
@@ -896,6 +905,7 @@ impl Renderer<'_> {
             background_nodes: self.background_nodes,
             coverage: None,
             own_pass: None,
+            text_layer_hints: false,
             rasters: self.rasters.clone(),
         };
         nested.node(index)?;

@@ -1,5 +1,9 @@
 # lazypencil 実装と公開準備の状況
 
+最新の全3環境検証済みソースは `c355f19` の [GHA `40281460362`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40281460362)。軽量137試験・Clippy、先行検証、macOS Apple Silicon と Linux x64／arm64、依存監査、最終ソースと署名の検証を成功した。全3環境のフォント288画像・19,968,000画素、生成 browser 126画像・64,512画素、独自 contract 36画像・4,054,272画素と、実行ファイル・link map・ソース・計測の対応を独立に照合した。配布ソース1,135ファイル・31,339,532バイトは Git の内容・mode と実際の tar の全メンバーに一致した。全体は41分で、CI の所要時間目標は未達。
+
+文字合成の作業範囲を絞った `2123963` の [先行検証](https://github.com/EkeMinusYou/lazypencil/actions/runs/40288059187) は、従来の合成処理との全画素比較9条件、既存の描画・browser・shader 試験、隔離した候補と1,000ノードの TUI 計測を成功した。20起動・80操作の画像出力 p95 は490.03ms、描画・PNG生成の平均は257.50ms。保存画像・復元・100件の native 計測記録を独立に照合したが、100ms の目標は未達であり、全3環境の検証は進行中。追加の独立比較で影付き文字7,407画素に最大1の色差が見つかったため、この描画変更の完成判定は保留する。親の効果・半透明と offscreen 描画では従来の合成を維持する修正と、18条件および自制作例936,000画素の厳密な回帰比較を準備した。衝突していた先行成果物の cache key は run／retry ごとに分け、Linux 全体検証では同じコミットの157ファイルを再利用し、release 再確認が0.233秒で完了した。詳細と観測条件は [性能記録](performance.md) を参照。以下の日付付き段落は過去の実装・検証記録であり、この時点の完成判定は上記と末尾の必須要件に従う。
+
 2026-10-26: `d1f39c4` の [GHA `40252162690`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40252162690) は軽量118試験・先行・全3環境・監査・最終 source を成功した。通常／core は Linux 各1,156件・macOS 1,146件、各99サマリー。実 Noto Emoji 2形式と自作 sbix の288画像・19,968,000画素、生成 browser の126画像・64,512画素、独自 contract の36画像・4,054,272画素を独立に照合した。全3環境の map・実行ファイル・source・計測の対応、静的 release の9画像と6 scene hash の不変、配布ソース1,122ファイル・31,204,208バイトと Git の内容・mode の一致を確認した。macOS と Linux arm64 の別候補も、同じ実行ファイルを再コンパイルせず、全構成ファイルと隔離 QuickJS 描画を独立確認した。macOS に埋め込む FreeType は固定 upstream の原文12ファイル・178,787バイトと配布表示を照合し、Linux は実 ELF の system `libfreetype.so.6` と区別した。製品全体・実端末・性能・正式配布の完成判定とはしない。
 
 同実行は64分57秒で、全3環境の開始待ちは2〜4秒、Linux x64 の既定試験 build は798秒、release と独立試験の並列工程は1,167秒だった。失敗済み実行の後半で完成した依存を固定 checkpoint key に保存できない衝突も確認し、phase・run・retry ごとの immutable key と世代回収を Rust に追加した。`2b1076e` では追加分を含む軽量124試験・Clippy と候補作成が成功し、Linux x64 の配布候補は `d1f39c4` の実行ファイルを再利用した。ただし新しい実端末 gate は Kitty の拡大で失敗した。自作文書の絶対配置を明示した再現でも、一度の Tab が通常入力2件として届くことと、能力応答が下書きへ混入することを実際の read 記録で確認した。全キーの押下・解放を区別する要求、明示 protocol と直接 Kitty 接続での不要な照会の除去、明示／自動の両 Kitty・Sixel と空の下書きを検査する修正を追加した。修正版の実端末・全体 gate は検証中であり、キャッシュの速度改善と端末互換性の成功を先取りしない。
@@ -316,7 +320,7 @@ source `cb5ba45` の先行104試験と、保存した2版各33ケースの独立
 
 ## 現在の検証環境
 
-現在の継続検証は対象3環境の GHA・Rust 1.94.0 で行い、ローカルでは native build を行わない。下表は独立に成果物を確認した source `d1f39c4` の結果であり、後続の端末修正の全検証や、物理端末・最低 OS の保証へ読み替えない。
+現在の継続検証は対象3環境の GHA・Rust 1.94.0 で行い、ローカルでは native build を行わない。下表は独立に成果物を確認した source `c355f19` の結果であり、後続の描画変更の全検証や、物理端末・最低 OS の保証へ読み替えない。
 
 | GHA 環境 | 通常・release CI | 同じ native job の Chromium 検証 |
 | --- | --- | --- |
@@ -324,7 +328,7 @@ source `cb5ba45` の先行104試験と、保存した2版各33ケースの独立
 | Ubuntu 24.04 x64 | 両構成・Clippy・Material・release 成功 | 実 page／shader・MCP 画像・60秒 idle・TUI／再生 PTY 成功 |
 | Ubuntu 24.04 arm64 | 両構成・Clippy・Material・release 成功 | 実 page／shader・MCP 画像・60秒 idle・TUI／再生 PTY 成功 |
 
-上記 `40252162690` の各環境のログ・画像・hash・各42回の benchmark と、1,122ファイルの配布ソースを Git の該当 revision に照合した。後続の端末修正は別途検証する。Windows／Intel の過去の結果は下記の実装履歴と [runtime の検証記録](runtimes.md#hosted-integration-without-local-build-trees) に保持する。過去のローカル検証は macOS arm64・Rust 1.99.1 と Debian 12 arm64・Rust 1.94.0 で行った。対象3環境の物理端末・クリップボード・最低 OS・互換性・公開品質全体の確認は残る。比較用成果物は利用条件を確認したものに限り、本家の出力利用を前提にしない。
+上記 `40281460362` の各環境の画像・hash・各42回の benchmark・raw linkage と、1,135ファイルの配布ソースを Git の該当 revision に照合した。先行する `7e651fb` では、Linux の実 Kitty／xterm Sixel の明示・自動4モードと debug／release の64画像、および全3環境の隔離した native clipboard→Ctrl+V→ACP の画像入力も独立に確認した。これは物理 IME や各端末の clipboard 設定の保証とは区別する。Windows／Intel の過去の結果は下記の実装履歴と [runtime の検証記録](runtimes.md#hosted-integration-without-local-build-trees) に保持する。過去のローカル検証は macOS arm64・Rust 1.99.1 と Debian 12 arm64・Rust 1.94.0 で行った。対象3環境の実端末・最低 OS・互換性・性能・公開品質全体の確認は残る。比較用成果物は利用条件を確認したものに限り、本家の出力利用を前提にしない。
 
 ## 実装記録
 

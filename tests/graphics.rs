@@ -86,13 +86,16 @@ fn text(properties: Value) -> Scene {
 fn text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations() {
     use lazypencil::geometry::Affine;
     use skia_safe::{BlendMode, Matrix, Paint, Path, Rect, canvas::SaveLayerRec};
-    for (rotation, flip, decoration) in [
-        (0.0, false, false),
-        (17.0, false, true),
-        (-43.0, true, true),
+    for (rotation, flip, decoration, parent_opacity) in [
+        (0.0, false, false, 1.0),
+        (17.0, false, true, 1.0),
+        (-43.0, true, true, 1.0),
+        (0.0, false, false, 0.63),
+        (17.0, false, true, 0.63),
+        (-43.0, true, true, 0.63),
     ] {
         let scene = Scene::new(
-            json!([{"id":"frame","type":"frame","layout":"none","width":300,"height":260,"clip":true,"children":[{
+            json!([{"id":"frame","type":"frame","layout":"none","width":300,"height":260,"clip":true,"opacity":parent_opacity,"children":[{
                 "id":"text","type":"text","x":74.25,"y":70.5,"width":180,"height":120,
                 "textGrowth":"fixed-width-height","content":"jÁg 日本語\nAV W","fontSize":26.25,
                 "fontStyle":"italic","textAlign":"center","lineHeight":1.4,"fill":"#FF0000B0",
@@ -133,6 +136,11 @@ fn text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations() 
             let viewport = Affine::scale(scale, scale)
                 .then(Affine::translation(-output.region.x, -output.region.y));
             canvas.concat(&Matrix::from_affine(&viewport.0));
+            if parent_opacity < 1.0 {
+                let mut parent = Paint::default();
+                parent.set_alpha_f(parent_opacity);
+                canvas.save_layer(&SaveLayerRec::default().paint(&parent));
+            }
             canvas.clip_rect(Rect::from_xywh(0.0, 0.0, 300.0, 260.0), None, true);
             canvas.reset_matrix();
             canvas.concat(&Matrix::from_affine(
@@ -164,6 +172,9 @@ fn text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations() 
             block.paragraph.paint(canvas, (0.0, 0.0));
             canvas.restore();
             canvas.restore();
+            if parent_opacity < 1.0 {
+                canvas.restore();
+            }
             let expected = reference.image_snapshot();
             let expected = expected.peek_pixels().unwrap();
             let image = raster(&output);
@@ -176,13 +187,40 @@ fn text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations() 
                     assert_eq!(
                         color,
                         expected.get_color((x, y)),
-                        "scale={scale} rotation={rotation} flip={flip} at {x},{y}"
+                        "scale={scale} rotation={rotation} flip={flip} parent_opacity={parent_opacity} at {x},{y}"
                     );
                 }
             }
             assert!(ink > 20);
         }
     }
+    // Original lazypencil output, not a Pencil reference. The c355f19 hosted
+    // artifacts from run 40281460362 establish each platform's unchanged
+    // shadow/mesh/text compositor. Hash decoded RGBA rather than PNG encoding.
+    // This caught a one-channel rounding regression hidden by isolated text.
+    let expected = match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("linux", "x86_64") => "ff94788fec42537e375b5841f906bd4917d42b66deac893f7b6f080f0714fc13",
+        ("linux", "aarch64") => "c9bbe604900f14172516e644d6dd4a578df16e89092abf9bef6f45a4e4b6bf21",
+        ("macos", "aarch64") => "bae66e1b870d9953e08fc5600054b34aabadbb6b383671f53256f18911313c4e",
+        // Retain the existing Windows/Intel implementation without promising
+        // an original-pixel baseline outside the initial release platforms.
+        _ => return,
+    };
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("mesh-shadow.pen");
+    fs::write(&path, include_bytes!("../examples/mesh-study.pen")).unwrap();
+    let output = render_file(&path).unwrap();
+    assert_eq!((output.width, output.height), (1040, 900));
+    let image = raster(&output);
+    let pixels = image.peek_pixels().unwrap();
+    let mut rgba = Vec::with_capacity(1040 * 900 * 4);
+    for y in 0..900 {
+        for x in 0..1040 {
+            let color = pixels.get_color((x, y));
+            rgba.extend_from_slice(&[color.r(), color.g(), color.b(), color.a()]);
+        }
+    }
+    assert_eq!(lazypencil::document::hash(&rgba), expected);
 }
 
 #[test]
