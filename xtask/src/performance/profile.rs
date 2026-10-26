@@ -237,7 +237,7 @@ impl Arguments {
                 let mut experiments = Vec::new();
                 for index in 0..3 {
                     fs::remove_file(&png)?;
-                    let experiment = scene.join(format!("sample-{index}.er"));
+                    let experiment = output.join(format!("{label}-sample-{index}.er"));
                     let raw = capture(
                         render(Path::new("gprofng"))
                             .args(["collect", "app", "-p", "hi", "-a", "off", "-S", "off", "-o"])
@@ -253,12 +253,14 @@ impl Arguments {
                     );
                     experiments.push(experiment);
                 }
-                let bytes = util::walk(&scene)?
-                    .iter()
-                    .try_fold(0_u64, |n, p| -> Result<u64> {
-                        Ok(n + fs::metadata(p)?.len())
-                    })?;
-                ensure!(bytes <= 128 * 1024 * 1024, "Oversized profiler experiments");
+                capture(
+                    Command::new("gprofng")
+                        .env("LC_ALL", "C")
+                        .args(["display", "text", "-header"])
+                        .args(&experiments),
+                    &output.join(format!("{label}-header.txt")),
+                    60,
+                )?;
                 let functions = capture(
                     Command::new("gprofng")
                         .env("LC_ALL", "C")
@@ -277,7 +279,7 @@ impl Arguments {
                     &output.join(format!("{label}-functions.txt")),
                     60,
                 )?;
-                let cpu = sampled_cpu(std::str::from_utf8(&functions)?)?;
+                let cpu = sampled_cpu(std::str::from_utf8(&functions)?);
                 capture(
                     Command::new("gprofng")
                         .env("LC_ALL", "C")
@@ -287,15 +289,30 @@ impl Arguments {
                     60,
                 )?;
                 fs::copy(&png, output.join(format!("{label}.png")))?;
-                scenes.push(json!({"name":name,"scale":scale,"document_sha256":util::file_digest(&document)?,"png_sha256":expected,"profiled_exports":3,"sampled_cpu_seconds":cpu,"functions":format!("{label}-functions.txt"),"calltree":format!("{label}-calltree.txt")}));
+                let bytes = util::walk(&output)?
+                    .iter()
+                    .try_fold(0_u64, |n, p| -> Result<u64> {
+                        Ok(n + fs::metadata(p)?.len())
+                    })?;
+                ensure!(bytes <= 128 * 1024 * 1024, "Oversized profiler experiments");
+                scenes.push(json!({"name":name,"scale":scale,"document_sha256":util::file_digest(&document)?,"png_sha256":expected,"profiled_exports":3,"sampled_cpu_seconds":cpu.as_ref().ok().copied(),"sampling_error":cpu.err().map(|e|e.to_string()),"header":format!("{label}-header.txt"),"functions":format!("{label}-functions.txt"),"calltree":format!("{label}-calltree.txt")}));
             }
         }
         ensure!(
             util::file_digest(&binary)? == self.binary_sha256,
             "Profiled executable changed"
         );
-        let report = json!({"format_version":1,"source_run":self.run,"source_revision":self.revision,"collector_revision":std::env::var("GITHUB_SHA").ok(),"candidate":identity,"source":source_identity,"profiler":version.trim(),"sampling_interval_ms":1,"binary_archiving":false,"scenes":scenes,"scope":"Native CLI load/layout/render/PNG CPU samples at two scales; not TUI latency, controlled cold starts or complete performance acceptance. Optimized symbols and call stacks may be incomplete."});
+        let valid_samples = scenes.iter().all(|s| {
+            s["sampled_cpu_seconds"]
+                .as_f64()
+                .is_some_and(|cpu| cpu > 0.0)
+        });
+        let report = json!({"format_version":1,"source_run":self.run,"source_revision":self.revision,"collector_revision":std::env::var("GITHUB_SHA").ok(),"candidate":identity,"source":source_identity,"profiler":version.trim(),"requested_sampling_interval_ms":1,"valid_cpu_samples":valid_samples,"binary_archiving":false,"scenes":scenes,"scope":"Native CLI load/layout/render/PNG CPU samples at two scales; not TUI latency, controlled cold starts or complete performance acceptance. Optimized symbols and call stacks may be incomplete."});
         util::publish(&output.join("report.json"), &util::encode(&report)?, false)?;
+        ensure!(
+            valid_samples,
+            "CPU samples missing; inspect retained experiment headers and raw data"
+        );
         util::print(&json!({"cpu_profile":"ok","scenes":4,"profiled_exports":12}))
     }
 }
