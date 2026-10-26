@@ -18,6 +18,7 @@ pub struct Backend {
     font: FontSize,
     protocol: ProtocolType,
     tmux: bool,
+    kitty_compression: bool,
 }
 impl Backend {
     pub fn halfblocks() -> Self {
@@ -25,6 +26,7 @@ impl Backend {
             font: FontSize::new(10, 20),
             protocol: ProtocolType::Halfblocks,
             tmux: false,
+            kitty_compression: false,
         }
     }
     pub fn detect(selected: super::ImageProtocol) -> Result<(Self, String)> {
@@ -48,6 +50,9 @@ impl Backend {
             && std::env::var_os("KONSOLE_VERSION").is_none();
         if direct_kitty {
             backend.protocol = ProtocolType::Kitty;
+            // Direct Kitty supports ZLIB. Keep other Kitty-compatible terminals
+            // uncompressed without adding a late capability reply to stdin.
+            backend.kitty_compression = true;
         }
         // Explicit protocols and a direct Kitty terminal need no capability query.
         // A late APC reply otherwise reaches Crossterm as ordinary prompt text.
@@ -98,7 +103,7 @@ impl Backend {
         );
         let result = match self.protocol {
             ProtocolType::Kitty => {
-                Kitty::new(image, size, id, self.tmux, false).map(Protocol::Kitty)
+                Kitty::new(image, size, id, self.tmux, self.kitty_compression).map(Protocol::Kitty)
             }
             ProtocolType::Sixel => Sixel::new(image, size, self.tmux).map(Protocol::Sixel),
             _ => Halfblocks::new(image, size).map(Protocol::Halfblocks),
@@ -218,4 +223,68 @@ fn startup_text(bytes: &[u8]) -> String {
         .chars()
         .filter(|character| !character.is_control() || matches!(character, '\n' | '\t'))
         .collect()
+}
+
+#[cfg(test)]
+#[path = "../../xtask/src/test_support/terminal.rs"]
+#[allow(dead_code)]
+mod observer;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
+
+    #[test]
+    fn compressed_and_raw_kitty_transfers_preserve_identical_rgba_without_changing_placement() {
+        let colors = [
+            [255, 0, 0, 255],
+            [0, 255, 0, 127],
+            [0, 0, 255, 0],
+            [18, 52, 86, 200],
+        ];
+        let source = image::RgbaImage::from_fn(64, 32, |x, y| {
+            image::Rgba(colors[((x / 8 + y / 4) % 4) as usize])
+        });
+        let area = Rect::new(0, 0, 64, 32);
+        let size = Size::new(64, 32);
+        let mut lengths = Vec::new();
+        for compressed in [false, true] {
+            let backend = Backend {
+                font: FontSize::new(1, 1),
+                protocol: ProtocolType::Kitty,
+                tmux: false,
+                kitty_compression: compressed,
+            };
+            let protocol = backend
+                .encode(DynamicImage::ImageRgba8(source.clone()), size, 77)
+                .unwrap();
+            assert_eq!(protocol.size(), size);
+            let mut buffer = Buffer::empty(area);
+            ratatui_image::Image::new(&protocol).render(area, &mut buffer);
+            let mut wire = String::new();
+            for y in 0..area.height {
+                for x in 0..area.width {
+                    wire.push_str(buffer[(x, y)].symbol());
+                }
+            }
+            assert_eq!(wire.contains("o=z,"), compressed);
+            let mut decoder = observer::KittyFrames::default();
+            for bytes in wire.as_bytes().chunks(137) {
+                decoder.feed(bytes).unwrap();
+            }
+            assert_eq!(decoder.images.len(), 1);
+            assert_eq!(decoder.compressed_frames, usize::from(compressed));
+            assert_eq!(
+                (decoder.images[0].width, decoder.images[0].height),
+                (64, 32)
+            );
+            assert_eq!(&decoder.images[0].rgba, source.as_raw());
+            lengths.push(wire.len());
+        }
+        assert!(
+            lengths[1] < lengths[0],
+            "Compressed transport must reduce bytes"
+        );
+    }
 }

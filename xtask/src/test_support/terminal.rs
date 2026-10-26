@@ -86,10 +86,12 @@ impl Frame {
 #[derive(Default)]
 pub struct KittyFrames {
     pub images: Vec<Frame>,
+    pub compressed_frames: usize,
     pub deleted_resources: BTreeSet<u32>,
     pub pending: Vec<u8>,
     pub payload: Vec<u8>,
     dimensions: Option<(usize, usize)>,
+    compressed: bool,
 }
 impl KittyFrames {
     pub fn feed(&mut self, bytes: &[u8]) -> Result<()> {
@@ -147,9 +149,14 @@ impl KittyFrames {
                 if self.dimensions.is_some() {
                     return Err("A new Kitty frame interrupted an incomplete frame".into());
                 }
-                if fields.get("f") != Some(&"32") || fields.contains_key("o") {
-                    return Err("Expected uncompressed RGBA Kitty pixels".into());
+                if fields.get("f") != Some(&"32") {
+                    return Err("Expected RGBA Kitty pixels".into());
                 }
+                self.compressed = match fields.get("o").copied() {
+                    None => false,
+                    Some("z") => true,
+                    _ => return Err("Unknown Kitty compression".into()),
+                };
                 let width = fields
                     .get("s")
                     .ok_or("Missing Kitty width")?
@@ -166,6 +173,18 @@ impl KittyFrames {
                 {
                     return Err("Invalid Kitty dimensions".into());
                 }
+                let retained = self
+                    .images
+                    .iter()
+                    .try_fold(0usize, |bytes, frame| bytes.checked_add(frame.rgba.len()))
+                    .ok_or("Overflowed retained Kitty pixels")?;
+                const RETAINED_BYTES: usize = 64 * 1024 * 1024;
+                if self.images.len() >= 4096
+                    || retained > RETAINED_BYTES
+                    || width * height * 4 > RETAINED_BYTES - retained
+                {
+                    return Err("Retained Kitty images exceed observer limits".into());
+                }
                 self.dimensions = Some((width, height));
                 self.payload.clear();
             }
@@ -173,24 +192,54 @@ impl KittyFrames {
                 && (action.is_none() || action == Some("T"))
             {
                 let expected = width * height * 4;
+                if action.is_none() && fields.contains_key("o") {
+                    return Err("Kitty compression must be declared in the first chunk".into());
+                }
                 let separator = split.ok_or("A Kitty image packet needs a payload separator")?;
                 let decoded = STANDARD.decode(&packet[separator + 1..])?;
-                if decoded.len() > expected - self.payload.len() {
+                // Incompressible ZLIB has a small encoding overhead. Bound both
+                // the wire payload and the independently declared decoded size.
+                let limit = if self.compressed {
+                    expected + expected / 8 + 64
+                } else {
+                    expected
+                };
+                if decoded.len() > limit - self.payload.len() {
                     return Err("Kitty pixels exceed declared dimensions".into());
                 }
                 self.payload.extend_from_slice(&decoded);
                 match fields.get("m").copied().unwrap_or("0") {
                     "1" => {}
                     "0" => {
-                        if self.payload.len() != expected {
+                        let payload = std::mem::take(&mut self.payload);
+                        let pixels = if self.compressed {
+                            // Require one complete stream, its checksum, exact
+                            // dimensions, and no trailing or concatenated data.
+                            let mut decoder = flate2::Decompress::new(true);
+                            let mut pixels = vec![0; expected + 1];
+                            let status = decoder.decompress(
+                                &payload,
+                                &mut pixels,
+                                flate2::FlushDecompress::Finish,
+                            )?;
+                            if status != flate2::Status::StreamEnd
+                                || decoder.total_in() != payload.len() as u64
+                                || decoder.total_out() != expected as u64
+                            {
+                                return Err("Incomplete or oversized Kitty ZLIB stream".into());
+                            }
+                            pixels.truncate(expected);
+                            pixels
+                        } else {
+                            payload
+                        };
+                        if pixels.len() != expected {
                             return Err("Incomplete Kitty pixel data".into());
                         }
-                        self.images.push(Frame::new(
-                            width,
-                            height,
-                            std::mem::take(&mut self.payload),
-                        )?);
+                        self.images.push(Frame::new(width, height, pixels)?);
+                        self.compressed_frames += usize::from(self.compressed);
                         self.dimensions = None;
+                        self.compressed = false;
                     }
                     _ => return Err("Invalid Kitty continuation marker".into()),
                 }

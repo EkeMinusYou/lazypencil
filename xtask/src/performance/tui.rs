@@ -479,7 +479,7 @@ mod hosted {
                 "Pan did not restore the original preview pixels"
             );
             let resources = resources::snapshot(terminal.child.id())?;
-            samples.push(json!({"input_ready_ms":input_ms,"first_preview_ms":preview_ms,"interaction_ms":[zoom_ms,unzoom_ms,pan_ms,unpan_ms],"observer_wall_ms":[zoom_observer,unzoom_observer,pan_observer,unpan_observer],"processes":resources,"fixture":fixture,"terminal_bytes":terminal.received}));
+            samples.push(json!({"input_ready_ms":input_ms,"first_preview_ms":preview_ms,"interaction_ms":[zoom_ms,unzoom_ms,pan_ms,unpan_ms],"observer_wall_ms":[zoom_observer,unzoom_observer,pan_observer,unpan_observer],"processes":resources,"fixture":fixture,"terminal_bytes":terminal.received,"compressed_kitty_frames":terminal.frames.compressed_frames}));
             if sample + 1 == arguments.samples {
                 let before = resources::snapshot(terminal.child.id())?;
                 let idle_frame = terminal.last_frame.as_ref().map(|frame| frame.0);

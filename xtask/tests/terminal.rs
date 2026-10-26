@@ -5,12 +5,26 @@ use lazypencil_xtask::util;
 use serde_json::Value;
 use terminal::{Frame, KittyFrames, Screen};
 
+// Fixed RFC 1950 bytes produced independently of the Rust codec.
+const COMPRESSED_RGBA: &str = "eAH7z8Dwn+E/QwOIEjIJO/EfjQ8Ax3QLwQ==";
+
 fn frame(pixels: &[u8], width: usize, height: usize, chunk: usize) -> Vec<u8> {
+    encoded_frame(pixels, width, height, chunk, false)
+}
+
+fn encoded_frame(
+    payload: &[u8],
+    width: usize,
+    height: usize,
+    chunk: usize,
+    compressed: bool,
+) -> Vec<u8> {
     let mut out = Vec::new();
-    let parts = pixels.chunks(chunk).collect::<Vec<_>>();
+    let parts = payload.chunks(chunk).collect::<Vec<_>>();
     for (index, part) in parts.iter().enumerate() {
         let parameters = if index == 0 {
-            format!("a=T,f=32,s={width},v={height},")
+            let encoding = if compressed { "o=z," } else { "" };
+            format!("a=T,f=32,{encoding}s={width},v={height},")
         } else {
             String::new()
         };
@@ -24,6 +38,113 @@ fn frame(pixels: &[u8], width: usize, height: usize, chunk: usize) -> Vec<u8> {
         );
     }
     out
+}
+
+#[test]
+fn compressed_kitty_streams_preserve_every_rgba_byte_across_chunk_boundaries() {
+    let payload = STANDARD.decode(COMPRESSED_RGBA).unwrap();
+    let pixels = [
+        255, 0, 0, 255, 0, 255, 0, 128, 0, 0, 255, 0, 18, 52, 86, 200,
+    ]
+    .repeat(2);
+    for chunk in [1, 7, payload.len()] {
+        let wire = encoded_frame(&payload, 4, 2, chunk, true);
+        for received in [1, 5, wire.len()] {
+            let mut decoder = KittyFrames::default();
+            for bytes in wire.chunks(received) {
+                decoder.feed(bytes).unwrap();
+            }
+            decoder.feed(&frame(&pixels, 4, 2, 7)).unwrap();
+            decoder.feed(&wire).unwrap();
+            assert_eq!(decoder.images.len(), 3);
+            assert_eq!(decoder.compressed_frames, 2);
+            for image in &decoder.images {
+                assert_eq!((image.width, image.height), (4, 2));
+                assert_eq!(image.rgba, pixels);
+                assert!(image.has_color([0, 0, 255, 0]));
+                assert!(image.has_color([0, 255, 0, 128]));
+            }
+            assert!(decoder.payload.is_empty());
+            assert!(decoder.pending.len() <= 2);
+        }
+    }
+}
+
+#[test]
+fn compressed_kitty_rejects_truncation_checksums_trailing_data_and_expansion_beyond_dimensions() {
+    use std::io::Write;
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+    encoder.write_all(&[17; 512]).unwrap();
+    let payload = encoder.finish().unwrap();
+    let mut bad_checksum = payload.clone();
+    *bad_checksum.last_mut().unwrap() ^= 1;
+    let mut trailing = payload.clone();
+    trailing.push(0);
+    let mut concatenated = payload.clone();
+    concatenated.extend_from_slice(&payload);
+    for malformed in [
+        payload[..payload.len() - 1].to_vec(),
+        payload[..payload.len() - 4].to_vec(),
+        bad_checksum,
+        trailing,
+        concatenated,
+    ] {
+        let mut decoder = KittyFrames::default();
+        assert!(
+            decoder
+                .feed(&encoded_frame(&malformed, 8, 16, 7, true))
+                .is_err()
+        );
+        assert!(decoder.images.is_empty());
+    }
+    for (width, height) in [(1, 1), (16, 16)] {
+        let mut decoder = KittyFrames::default();
+        assert!(
+            decoder
+                .feed(&encoded_frame(&payload, width, height, 7, true))
+                .is_err()
+        );
+        assert!(decoder.images.is_empty());
+    }
+    let mut decoder = KittyFrames::default();
+    let oversized_wire = encoded_frame(&[0; 69], 1, 1, 7, true);
+    assert!(
+        decoder
+            .feed(&oversized_wire)
+            .unwrap_err()
+            .to_string()
+            .contains("exceed declared")
+    );
+    assert!(decoder.images.is_empty());
+    let mut decoder = KittyFrames::default();
+    decoder
+        .feed(b"\x1b_Ga=T,f=32,o=z,s=8,v=16,m=1;eA==\x1b\\")
+        .unwrap();
+    assert!(decoder.feed(b"\x1b_Go=z,m=0;AAAA\x1b\\").is_err());
+    assert!(decoder.images.is_empty());
+    assert!(
+        KittyFrames::default()
+            .feed(b"\x1b_Ga=T,f=32,o=unknown,s=1,v=1;AAAA\x1b\\")
+            .is_err()
+    );
+}
+
+#[test]
+fn compressed_kitty_cannot_bypass_aggregate_retained_pixel_and_frame_limits() {
+    let payload = STANDARD.decode(COMPRESSED_RGBA).unwrap();
+    let wire = encoded_frame(&payload, 4, 2, 7, true);
+    for frames in [
+        vec![Frame::new(128, 64, vec![17; 128 * 64 * 4]).unwrap(); 2048],
+        vec![Frame::new(1, 1, vec![17; 4]).unwrap(); 4096],
+    ] {
+        let count = frames.len();
+        let mut decoder = KittyFrames::default();
+        decoder.images.extend(frames);
+        let error = decoder.feed(&wire).unwrap_err();
+        assert!(error.to_string().contains("Retained Kitty images"));
+        assert_eq!(decoder.images.len(), count);
+        assert_eq!(decoder.compressed_frames, 0);
+    }
 }
 
 #[test]
