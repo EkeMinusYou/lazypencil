@@ -666,7 +666,7 @@ fn dependency_checkpoint_and_application_retention_require_matching_main_layouts
             .iter()
             .map(|v| v["id"].as_u64().unwrap())
             .collect::<Vec<_>>(),
-        [1, 2, 3, 5]
+        [1, 3, 5]
     );
     entries[4]["version"] = "another-layout".into();
     assert_eq!(
@@ -675,7 +675,7 @@ fn dependency_checkpoint_and_application_retention_require_matching_main_layouts
             .iter()
             .map(|v| v["id"].as_u64().unwrap())
             .collect::<Vec<_>>(),
-        [1, 2, 3]
+        [1, 3]
     );
     let mut entries = Vec::new();
     let mut id = 0;

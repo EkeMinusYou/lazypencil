@@ -222,9 +222,13 @@ impl Harness {
     }
 
     pub fn pump(&mut self) -> Result {
+        self.pump_with_limit(65536)
+    }
+
+    fn pump_with_limit(&mut self, limit: usize) -> Result {
         if ready(self.master.as_raw_fd(), 20) {
             let mut bytes = [0; 65536];
-            let count = match self.master.read(&mut bytes) {
+            let count = match self.master.read(&mut bytes[..limit]) {
                 Ok(n) => n,
                 Err(e) if e.raw_os_error() == Some(libc::EIO) => 0,
                 Err(e) => return Err(e.into()),
@@ -429,11 +433,17 @@ impl Harness {
         let mut input = [0; 1024];
         let count = self.slave.read(&mut input)?;
         assert_eq!(&input[..count], b"mode-restored\n");
-        self.pump()?;
+        // PTYs may deliver the echoed text before its final CRLF. Exercise
+        // fragmented reads deliberately while retaining the exact echo check.
+        let echo = b"mode-restored\r\n";
+        let end = Instant::now() + Duration::from_secs(1);
+        while Instant::now() < end && !self.output[start..].windows(echo.len()).any(|b| b == echo) {
+            self.pump_with_limit(1)?;
+        }
         assert!(
-            self.output[start..]
-                .windows(15)
-                .any(|b| b == b"mode-restored\r\n")
+            self.output[start..].windows(echo.len()).any(|b| b == echo),
+            "Terminal echo must include the restored CRLF: {:?}",
+            &self.output[start..]
         );
         assert!(
             self.contains_bytes(b"\x1b[?1049l"),

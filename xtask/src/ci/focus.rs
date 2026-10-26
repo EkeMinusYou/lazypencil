@@ -47,6 +47,8 @@ pub const HISTORY_PTY: &[&str] = &[
     "real_pty_reviewed_deletion_remains_readable_at_minimum_terminal_size",
 ];
 pub const INPUT_PTY: &str = "real_pty_custom_navigation_preserves_draft_and_changes_preview_pixels";
+pub const TERMINAL_MODES: &str =
+    "real_pty_handles_japanese_input_live_turns_resize_and_image_protocols";
 pub const TEXT_LAYER_REPRODUCTION: &str =
     "text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations";
 pub const BROWSER_CI_TARGETS: &[&str] = &[

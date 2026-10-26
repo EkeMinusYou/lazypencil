@@ -967,11 +967,11 @@ pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Valu
             }
         }
         if let Some(caps) = re.captures(key) {
-            if source_hash.is_some_and(|s| &caps[1] == "1" || s != &caps[3]) {
+            let phase = &caps[5];
+            if source_hash.is_some_and(|s| &caps[1] == "1" || phase == "focus" && s != &caps[3]) {
                 selected.insert(id, entry.clone());
                 continue;
             }
-            let phase = &caps[5];
             if phase == "focus"
                 && keys.contains(&(
                     format!("{}full", &key[..caps.get(5).unwrap().start()]).as_str(),
@@ -988,6 +988,9 @@ pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Valu
         }
     }
     for ((_, phase), entries) in groups {
+        // A new push must not discard the last full build before its replacement
+        // exists: a release-evidence job may still request that exact source.
+        // Restore continues to require matching source and compiler identities.
         let keep = if phase == "focus" || source_hash.is_some() {
             1
         } else {

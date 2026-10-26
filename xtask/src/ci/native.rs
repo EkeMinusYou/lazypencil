@@ -367,6 +367,9 @@ impl Session {
                 self.execute(&command, 300, "focus-clippy.log", false)
             }
             Stage::FocusReproduce => {
+                if let Some(command) = commands::terminal_reproduction(&args.suite, &targets) {
+                    self.execute(&command, 300, "focus-terminal-modes.log", false)?;
+                }
                 if !core && has("graphics") {
                     self.test(
                         true,

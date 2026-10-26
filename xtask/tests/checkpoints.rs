@@ -64,6 +64,20 @@ fn application_retention_keeps_the_latest_generation_then_retires_it_after_full_
             .iter()
             .map(|e| e["id"].as_u64().unwrap())
             .collect::<Vec<_>>(),
+        [1, 2, 3]
+    );
+    let replacement = format!(
+        "application-v2-ubuntu-24.04-{}-{}-full",
+        "c".repeat(64),
+        "d".repeat(64)
+    );
+    entries.push(entry(6, replacement, "refs/heads/main"));
+    assert_eq!(
+        cache::obsolete(&entries, Some(&"c".repeat(64)))
+            .unwrap()
+            .iter()
+            .map(|e| e["id"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
         [1, 2, 3, 5]
     );
     for workflow in ["native.yml", "release-evidence.yml"] {

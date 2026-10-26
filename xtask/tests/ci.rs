@@ -248,6 +248,15 @@ fn rust_pty_bridge_changes_select_the_stricter_supported_host_and_all_frontend_r
         let plan = focus::select(&util::root(), &[path.into()], "auto").unwrap();
         assert_eq!(plan.platform, "macos-15");
         assert_eq!(plan.suite, "graphics");
+        let early = ci::commands::terminal_reproduction(&plan.suite, &plan.targets).unwrap();
+        assert!(early.iter().any(|arg| arg == focus::TERMINAL_MODES));
+        assert!(early.iter().any(|arg| arg == "--exact"));
+        let commands = ci::commands::plan(&util::root(), &plan.suite, &plan.targets).unwrap();
+        assert!(commands.checks.iter().any(|command| {
+            command
+                .windows(2)
+                .any(|args| args == ["--skip", focus::TERMINAL_MODES])
+        }));
         for target in ["tui", "user_config", "conversation_history"] {
             assert!(
                 plan.targets.iter().any(|value| value == target),

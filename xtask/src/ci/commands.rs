@@ -39,6 +39,23 @@ pub fn color_font_reproduction(suite: &str, targets: &[String]) -> Option<Invoca
         ])
     })
 }
+
+pub fn terminal_reproduction(suite: &str, targets: &[String]) -> Option<Invocation> {
+    (!["core", "conversation"].contains(&suite) && targets.iter().any(|target| target == "tui"))
+        .then(|| {
+            words(&[
+                "cargo",
+                "test",
+                "--locked",
+                "--test",
+                "tui",
+                focus::TERMINAL_MODES,
+                "--",
+                "--exact",
+                "--test-threads=1",
+            ])
+        })
+}
 fn words(values: &[&str]) -> Invocation {
     values.iter().map(|s| (*s).into()).collect()
 }
@@ -103,6 +120,9 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
         };
     if color_font_reproduction(suite, targets).is_some() {
         input_skip.extend(skips([COLOR_FONT_REPRODUCTION]));
+    }
+    if terminal_reproduction(suite, targets).is_some() {
+        input_skip.extend(skips([focus::TERMINAL_MODES]));
     }
     if !core && has("graphics") {
         input_skip.extend(skips([focus::TEXT_LAYER_REPRODUCTION]));
