@@ -21,6 +21,9 @@ on:
       native_clipboard:
         type: boolean
         default: false
+      runtime_parallel:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -49,12 +52,16 @@ jobs:
         run: cargo xtask ci native source
 
   verify:
+    permissions:
+      contents: read
+      actions: write
     if: inputs.phase != 'focus' || inputs.suite != 'ci'
-    timeout-minutes: ${{ inputs.phase == 'focus' && !(inputs.measure_tui || inputs.native_clipboard) && (inputs.suite == 'core' || inputs.suite == 'conversation') && 30 || 60 }}
+    timeout-minutes: ${{ inputs.phase == 'focus' && !(inputs.measure_tui || inputs.native_clipboard || inputs.runtime_parallel) && (inputs.suite == 'core' || inputs.suite == 'conversation') && 30 || 60 }}
     runs-on: ${{ inputs.os }}
     env:
       FOCUS_SUITE: ${{ inputs.suite }}
       FOCUS_TARGETS: ${{ inputs.targets }}
+      RUNTIME_PARALLEL: ${{ inputs.runtime_parallel }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -72,7 +79,7 @@ jobs:
           key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'xtask/Cargo.lock') }}
           restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
       - name: Install Linux native build dependencies
-        if: runner.os == 'Linux' && (inputs.phase == 'full' || inputs.measure_tui || inputs.native_clipboard || (inputs.suite != 'core' && inputs.suite != 'conversation'))
+        if: runner.os == 'Linux' && (inputs.phase == 'full' || inputs.measure_tui || inputs.native_clipboard || inputs.runtime_parallel || (inputs.suite != 'core' && inputs.suite != 'conversation'))
         timeout-minutes: 20
         run: cargo xtask ci linux-dependencies
       - name: Verify, extract and normalize the complete source distribution
@@ -87,9 +94,9 @@ jobs:
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
-          key: ${{ inputs.phase == 'focus' && !(inputs.measure_tui || inputs.native_clipboard) && (inputs.suite == 'core' || inputs.suite == 'conversation') && 'core-' || '' }}${{ steps.cache-key.outputs.primary }}
+          key: ${{ inputs.phase == 'focus' && !(inputs.measure_tui || inputs.native_clipboard || inputs.runtime_parallel) && (inputs.suite == 'core' || inputs.suite == 'conversation') && 'core-' || '' }}${{ steps.cache-key.outputs.primary }}
           restore-keys: |
-            ${{ inputs.phase == 'focus' && !(inputs.measure_tui || inputs.native_clipboard) && (inputs.suite == 'core' || inputs.suite == 'conversation') && steps.cache-key.outputs.primary || '' }}
+            ${{ inputs.phase == 'focus' && !(inputs.measure_tui || inputs.native_clipboard || inputs.runtime_parallel) && (inputs.suite == 'core' || inputs.suite == 'conversation') && steps.cache-key.outputs.primary || '' }}
             ${{ format('checkpoint-{0}-', steps.cache-key.outputs.primary) }}
             ${{ format('checkpoint-{0}', steps.cache-key.outputs.primary) }}
             ${{ steps.cache-key.outputs.legacy }}
@@ -242,13 +249,17 @@ jobs:
           if-no-files-found: error
           retention-days: 3
       - name: Install and diagnose the verified sandboxed Chromium runtime
-        if: inputs.phase == 'full' || inputs.suite == 'dynamic' || inputs.suite == 'shader' || inputs.suite == 'copy' || inputs.suite == 'browser' || inputs.suite == 'browser-ci' || inputs.suite == 'render'
+        if: inputs.phase == 'full' || inputs.runtime_parallel || inputs.suite == 'dynamic' || inputs.suite == 'shader' || inputs.suite == 'copy' || inputs.suite == 'browser' || inputs.suite == 'browser-ci' || inputs.suite == 'render'
         timeout-minutes: 15
         run: cargo xtask ci native browser-setup
       - name: Run affected tests and pixel reproductions
         if: inputs.phase == 'focus'
         timeout-minutes: ${{ inputs.suite == 'browser-ci' && 25 || 10 }}
         run: cargo xtask ci native focus-test --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
+      - name: Reproduce changed runtime scheduling before the full matrix
+        if: inputs.phase == 'focus' && inputs.runtime_parallel
+        timeout-minutes: 60
+        run: cargo xtask ci native runtime-tests --suite focus
       - name: Verify changed release build recipe before the full matrix
         id: focus-release
         if: inputs.phase == 'focus' && (inputs.suite == 'release' || inputs.suite == 'candidate' || inputs.measure_tui)
@@ -273,10 +284,10 @@ jobs:
             ${{ runner.temp }}/candidate-smoke.png
           if-no-files-found: error
           retention-days: 3
-      - name: Verify browser pixels with compiled test binaries
+      - name: Verify independent browser, MCP, lifecycle and Material suites
         if: inputs.phase == 'full'
         timeout-minutes: 60
-        run: cargo xtask ci native browser-test
+        run: cargo xtask ci native runtime-tests
       - name: Verify actual Kitty and Sixel window pixels and keyboard operations
         id: terminal-test
         if: inputs.phase == 'focus' && inputs.suite == 'candidate' && runner.os == 'Linux'
@@ -290,9 +301,6 @@ jobs:
           path: ${{ runner.temp }}/terminal-evidence
           if-no-files-found: error
           retention-days: 3
-      - name: Verify MCP and supervised adapter dynamic image content
-        if: inputs.phase == 'full'
-        run: cargo xtask ci native mcp
       - name: Measure changed TUI performance code before the full matrix
         id: tui-measurement
         if: inputs.phase == 'focus' && inputs.measure_tui
@@ -306,9 +314,6 @@ jobs:
           path: ${{ runner.temp }}/tui-measurement
           if-no-files-found: error
           retention-days: 3
-      - name: Verify independent lifecycle and Material suites
-        if: inputs.phase == 'full'
-        run: cargo xtask ci native long-tests
       - name: Render the combined example for review
         if: inputs.phase == 'full'
         run: cargo xtask ci native panel
@@ -339,16 +344,16 @@ jobs:
           retention-days: 3
       - name: Stage verified application outputs for reuse
         id: application-save
-        if: ${{ !cancelled() && (success() || inputs.phase == 'focus' && steps.focus-build.outcome == 'success' && steps.focus-release.outcome == 'success') && steps.application-key.outcome == 'success' && steps.application-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
+        if: ${{ !cancelled() && inputs.phase == 'focus' && (success() || steps.focus-build.outcome == 'success' && steps.focus-release.outcome == 'success') && steps.application-key.outcome == 'success' && steps.application-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         timeout-minutes: 3
-        run: cargo xtask ci cache application stage --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
+        run: cargo xtask ci cache application stage-focused --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --compatible-directory "$RUNNER_TEMP/lazypencil-compatible-cache" --matched-key '${{ steps.compatible-cache.outputs.cache-matched-key }}' --native-key '${{ steps.cache-key.outputs.primary }}'
       - name: Save verified application outputs
-        if: ${{ !cancelled() && steps.application-save.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.application-save.outcome == 'success' && steps.application-save.outputs.staged == 'true' }}
         continue-on-error: true
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
-          key: ${{ inputs.phase == 'full' && steps.application-key.outputs.primary || steps.application-key.outputs.checkpoint }}
+          key: ${{ steps.application-key.outputs.checkpoint }}
           path: ${{ runner.temp }}/lazypencil-application-cache
       - name: Stage mapped release outputs independently of tests
         id: release-save
@@ -370,12 +375,20 @@ jobs:
         timeout-minutes: 3
         run: cargo xtask ci cache application stage --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-compatible-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
       - name: Save the complete integration-test checkpoint
+        id: compatible-published
         if: ${{ !cancelled() && steps.compatible-save.outcome == 'success' }}
         continue-on-error: true
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           key: ${{ steps.application-key.outputs.compatible_primary }}
           path: ${{ runner.temp }}/lazypencil-compatible-cache
+      - name: Retire replaced payloads before they evict native dependencies
+        if: ${{ !cancelled() && steps.compatible-published.outcome == 'success' && github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: cargo xtask ci cache retain --platform '${{ inputs.os }}' --manifest "$RUNNER_TEMP/lazypencil-source/SOURCE-MANIFEST.json" --delete
       - name: Keep completed dependencies after failure or cancellation
         id: cache-prune
         if: ${{ always() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true' && steps.native-cache.outputs.cache-matched-key != steps.cache-key.outputs.primary && (steps.focus-build.outcome == 'success' || steps.default-build.outcome == 'success') }}
@@ -386,7 +399,7 @@ jobs:
         continue-on-error: true
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
-          key: ${{ (inputs.phase == 'full' && steps.release-smoke.outcome == 'success' || inputs.phase == 'focus' && !(inputs.measure_tui || inputs.native_clipboard) && (inputs.suite == 'core' || inputs.suite == 'conversation')) && steps.native-cache.outputs.cache-primary-key || steps.cache-key.outputs.checkpoint }}
+          key: ${{ (inputs.phase == 'full' && steps.release-smoke.outcome == 'success' || inputs.phase == 'focus' && !(inputs.measure_tui || inputs.native_clipboard || inputs.runtime_parallel) && (inputs.suite == 'core' || inputs.suite == 'conversation')) && steps.native-cache.outputs.cache-primary-key || steps.cache-key.outputs.checkpoint }}
           path: |
             ${{ runner.temp }}/lazypencil-target
             ${{ runner.temp }}/lazypencil-source/vendor/skia-bindings/skia

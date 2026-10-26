@@ -149,6 +149,18 @@ pub fn tui_measurement_changed(paths: &[String]) -> bool {
     })
 }
 
+pub fn runtime_scheduler_changed(paths: &[String]) -> bool {
+    paths.iter().any(|path| {
+        [
+            "xtask/src/ci/native.rs",
+            "xtask/src/ci/native/browser.rs",
+            "xtask/src/ci/native/parallel.rs",
+            ".github/workflows/native.yml",
+        ]
+        .contains(&path.as_str())
+    })
+}
+
 pub fn native_clipboard_changed(paths: &[String]) -> bool {
     paths.iter().any(|path| {
         path.starts_with("tests/support/terminal/")

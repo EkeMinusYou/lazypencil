@@ -33,6 +33,12 @@ impl Fixture {
         };
         fs::create_dir_all(f.source.join("src")).unwrap();
         fs::create_dir_all(f.source.join("tests")).unwrap();
+        fs::create_dir_all(f.source.join("examples")).unwrap();
+        fs::write(
+            f.source.join("examples/preview.rs"),
+            "fn main() { assert_eq!(lazypencil::fixture(), 1); }\n",
+        )
+        .unwrap();
         fs::write(
             f.source.join("Cargo.toml"),
             "[package]\nname='lazypencil'\nversion='0.1.0'\nedition='2024'\n[workspace]\n",
@@ -65,6 +71,7 @@ impl Fixture {
             "src/lib.rs",
             "tests/one.rs",
             "tests/two.rs",
+            "examples/preview.rs",
         ]
         .into_iter()
         .map(|name| {
@@ -126,7 +133,8 @@ impl Fixture {
             .lines()
             .map(|line| serde_json::from_str::<Value>(line).unwrap())
             .filter(|v| {
-                v["reason"] == "compiler-artifact" && v["target"]["kind"] == json!(["test"])
+                v["reason"] == "compiler-artifact"
+                    && [json!(["test"]), json!(["example"])].contains(&v["target"]["kind"])
             })
             .map(|v| {
                 (
@@ -156,9 +164,23 @@ impl Fixture {
 fn real_cargo_rebuilds_only_the_edited_test_and_accepts_same_source_focused_outputs() {
     for focused in [false, true] {
         let f = Fixture::new();
-        assert_eq!(f.build(&[]).len(), 2);
+        assert_eq!(f.build(&[]).len(), 3);
         let old = f.identity();
         cache::stage(&f.source, &f.target, &f.full, &old).unwrap();
+        let empty = cache::stage_focused(
+            &f.source,
+            &f.target,
+            &f.exact,
+            &f.full,
+            &old.compatible_primary,
+            &old,
+        )
+        .unwrap();
+        assert_eq!(
+            empty["files"], 0,
+            "An unchanged full payload must not be saved twice"
+        );
+        assert!(!f.exact.exists());
         f.edit();
         f.clear();
         let current = f.identity();
@@ -166,7 +188,23 @@ fn real_cargo_rebuilds_only_the_edited_test_and_accepts_same_source_focused_outp
         assert_eq!(old.compatible_prefix, current.compatible_prefix);
         if focused {
             assert_eq!(f.build(&["--test", "one"]).len(), 1);
-            cache::stage(&f.source, &f.target, &f.exact, &current).unwrap();
+            cache::stage_focused(
+                &f.source,
+                &f.target,
+                &f.exact,
+                &f.full,
+                &old.compatible_primary,
+                &current,
+            )
+            .unwrap();
+            let delta: Value = util::json(&f.exact.join("manifest.json")).unwrap();
+            assert!(
+                delta["files"].as_array().unwrap().iter().all(|entry| {
+                    let path = entry["path"].as_str().unwrap();
+                    !path.contains("/deps/liblazypencil-") && !path.contains("/deps/two-")
+                }),
+                "Focused cache copied unchanged full outputs"
+            );
             f.clear();
             let report = cache::restore_combined(
                 &f.source,
@@ -179,9 +217,10 @@ fn real_cargo_rebuilds_only_the_edited_test_and_accepts_same_source_focused_outp
             .unwrap();
             assert!(report["compatible"]["invalidated_files"].as_u64().unwrap() > 0);
         } else {
-            let report = cache::restore_compatible(
+            let report = cache::restore_combined(
                 &f.source,
                 &f.target,
+                &f.exact,
                 &f.full,
                 &old.compatible_primary,
                 &current,
@@ -190,8 +229,9 @@ fn real_cargo_rebuilds_only_the_edited_test_and_accepts_same_source_focused_outp
             assert!(report["invalidated_files"].as_u64().unwrap() > 0);
         }
         let built = f.build(&[]);
-        assert_eq!(built.len(), 2);
+        assert_eq!(built.len(), 3);
         assert!(built["two"].0, "The untouched integration test was rebuilt");
+        assert!(built["preview"].0, "The untouched example was rebuilt");
         assert_eq!(
             built["one"].0, focused,
             "The edited test reused stale code or lost the focused build"
@@ -304,7 +344,7 @@ fn compatible_reuse_rejects_unbound_inputs_recipes_and_non_test_units_before_ove
 #[test]
 fn compatible_cache_retention_is_bounded_and_preserves_other_platforms_and_versions() {
     let entries = (1..=4).map(|id| json!({"id":id,"key":format!("tests-v1-ubuntu-24.04-{}-full-{:064x}", "a".repeat(64), id),
-        "ref":"refs/heads/main","version":"one","last_accessed_at":format!("2026-10-{id:02}")})).collect::<Vec<_>>();
+        "ref":"refs/heads/main","version":"one","created_at":format!("2026-10-{id:02}")})).collect::<Vec<_>>();
     assert_eq!(cache::obsolete(&entries, None).unwrap().len(), 2);
     assert_eq!(
         cache::obsolete(&entries, Some(&"a".repeat(64)))
@@ -320,7 +360,7 @@ fn compatible_cache_retention_is_bounded_and_preserves_other_platforms_and_versi
     ] {
         others.push(
             json!({"id":id,"key":format!("tests-v1-{platform}-{}-full-{:064x}", "a".repeat(64), id),
-            "ref":reference,"version":version,"last_accessed_at":"2026-10-20"}),
+            "ref":reference,"version":version,"created_at":"2026-10-20"}),
         );
     }
     assert!(
@@ -328,5 +368,48 @@ fn compatible_cache_retention_is_bounded_and_preserves_other_platforms_and_versi
             .unwrap()
             .iter()
             .all(|v| v["id"].as_u64().unwrap() <= 2)
+    );
+}
+
+#[test]
+fn full_compatible_checkpoint_replaces_duplicate_legacy_payloads_only_after_it_exists() {
+    let entry = |id, key: String, reference: &str| {
+        json!({"id":id,"key":key,
+        "ref":reference,"version":"format","created_at":"2026-10-26"})
+    };
+    let source = "b".repeat(64);
+    let old = |platform: &str, phase: &str| {
+        format!(
+            "application-v2-{platform}-{source}-{}-{phase}",
+            "c".repeat(64)
+        )
+    };
+    let mut entries = vec![
+        entry(1, old("ubuntu-24.04", "full"), "refs/heads/main"),
+        entry(2, old("ubuntu-24.04", "focus-401-1"), "refs/heads/main"),
+        entry(3, old("macos-15", "full"), "refs/heads/main"),
+        entry(4, old("ubuntu-24.04", "full"), "refs/pull/1/merge"),
+    ];
+    // The matching old full build already makes its focus checkpoint redundant.
+    assert_eq!(
+        cache::obsolete(&entries, Some(&source))
+            .unwrap()
+            .iter()
+            .map(|v| v["id"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        [2]
+    );
+    entries.push(entry(
+        5,
+        format!("tests-v1-ubuntu-24.04-{}-full-{source}", "a".repeat(64)),
+        "refs/heads/main",
+    ));
+    assert_eq!(
+        cache::obsolete(&entries, Some(&source))
+            .unwrap()
+            .iter()
+            .map(|v| v["id"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        [1, 2]
     );
 }

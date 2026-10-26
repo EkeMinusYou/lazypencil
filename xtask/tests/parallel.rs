@@ -94,6 +94,64 @@ fn assert_lane_completion(names: &[&'static str]) {
 }
 
 #[test]
+fn nested_runtime_groups_overlap_and_join_all_failures_before_ownership_cleanup() {
+    use std::sync::{Condvar, Mutex};
+    let (entered, arrivals) = mpsc::channel();
+    let gate = Arc::new((Mutex::new(false), Condvar::new()));
+    let finished = Arc::new(AtomicUsize::new(0));
+    let leaf = |name: &'static str, bit: usize| -> parallel::Task<'static> {
+        let entered = entered.clone();
+        let gate = gate.clone();
+        let finished = finished.clone();
+        (
+            name,
+            Box::new(move || {
+                entered.send(name)?;
+                let (lock, wake) = &*gate;
+                let (_guard, deadline) = wake
+                    .wait_timeout_while(lock.lock().unwrap(), Duration::from_secs(5), |ready| {
+                        !*ready
+                    })
+                    .unwrap();
+                anyhow::ensure!(!deadline.timed_out(), "Runtime lanes were serialized");
+                finished.fetch_or(bit, Ordering::SeqCst);
+                anyhow::ensure!(bit != 1 && bit != 16, "Expected {name} failure");
+                Ok(())
+            }),
+        )
+    };
+    let browser = vec![leaf("browser readiness", 1), leaf("dynamic pixels", 2)];
+    let lifecycle = vec![leaf("idle lifecycle", 4), leaf("Material", 8)];
+    let mcp = leaf("MCP", 16);
+    let controller = std::thread::spawn(move || -> anyhow::Result<()> {
+        for _ in 0..5 {
+            arrivals.recv_timeout(Duration::from_secs(5))?;
+        }
+        let (lock, wake) = &*gate;
+        *lock.lock().unwrap() = true;
+        wake.notify_all();
+        Ok(())
+    });
+    let result = parallel::run(vec![
+        ("browser", Box::new(|| parallel::run(browser))),
+        mcp,
+        (
+            "lifecycle and Material",
+            Box::new(|| parallel::run(lifecycle)),
+        ),
+    ]);
+    controller.join().unwrap().unwrap();
+    // Ownership/destruction and performance checks may begin only after every
+    // already-started process owner has completed, including failed groups.
+    assert_eq!(finished.load(Ordering::SeqCst), 31);
+    let error = format!("{:#}", result.unwrap_err());
+    assert!(
+        error.contains("browser readiness") && error.contains("MCP"),
+        "{error}"
+    );
+}
+
+#[test]
 fn a_panicking_lane_cannot_hide_a_failed_lane_or_skip_another_completion() {
     let finished = AtomicUsize::new(0);
     let result = parallel::run(vec![

@@ -434,7 +434,9 @@ fn assert_fitted_rounded_bar_shadows() {
         let actual = actual.peek_pixels().unwrap();
         for y in 0..output.height as i32 {
             for x in 0..output.width as i32 {
-                if actual.get_color((x, y)) != expected.get_color((x, y))
+                let actual_color = actual.get_color((x, y));
+                let expected_color = expected.get_color((x, y));
+                if actual_color != expected_color
                     && std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
                     && let Some(temporary) = std::env::var_os("RUNNER_TEMP")
                 {
@@ -453,8 +455,7 @@ fn assert_fitted_rounded_bar_shadows() {
                     fs::copy(&file, artifacts.join("fitted-bars.pen")).unwrap();
                 }
                 assert_eq!(
-                    actual.get_color((x, y)),
-                    expected.get_color((x, y)),
+                    actual_color, expected_color,
                     "fitted rounded bars pan={pan} at {x},{y}"
                 );
             }

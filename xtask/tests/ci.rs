@@ -168,6 +168,16 @@ fn focus_keeps_the_existing_reproduction_scope_for_every_source_module() {
 
 #[test]
 fn browser_scheduler_changes_execute_the_actual_two_lanes_before_the_full_matrix() {
+    assert!(focus::runtime_scheduler_changed(&[
+        "xtask/src/ci/native.rs".into()
+    ]));
+    assert!(focus::runtime_scheduler_changed(&[
+        "xtask/src/ci/native/browser.rs".into()
+    ]));
+    assert!(!focus::runtime_scheduler_changed(&[
+        "tests/graphics.rs".into(),
+        "xtask/src/ci/cache.rs".into()
+    ]));
     let paths = [
         "xtask/src/ci/native/browser.rs",
         "xtask/src/ci/native.rs",
@@ -1087,6 +1097,7 @@ fn application_reuse_rejects_changed_sources_external_dep_info_and_compiled_excl
         "debug/deps/../../outside",
         "debug/build/anything",
         "release-smoke.png",
+        "debug/examples/report.png",
     ] {
         assert!(!cache::allowed(name));
     }

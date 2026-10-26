@@ -150,6 +150,11 @@ pub const TEST_LANES: [&[&str]; 2] = [
 ];
 
 pub fn tests(s: &Session) -> Result<()> {
+    lanes(s)?;
+    ownership(s)
+}
+
+pub fn lanes(s: &Session) -> Result<()> {
     let mut required: Vec<_> = TEST_LANES.into_iter().flatten().copied().collect();
     required.push("agent");
     let catalog = s.verified_catalog(&required)?;
@@ -205,7 +210,11 @@ pub fn tests(s: &Session) -> Result<()> {
             combined.write_all(&fs::read(path)?)?;
         }
     }
-    result?;
+    result
+}
+
+pub fn ownership(s: &Session) -> Result<()> {
+    let catalog = s.verified_catalog(&["agent"])?;
     s.execute(
         &[
             catalog.binaries["agent"].path.to_string_lossy().into_owned(),

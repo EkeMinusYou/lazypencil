@@ -93,6 +93,10 @@ impl Command {
                     ("targets".into(), serde_json::to_string(&plan.targets)?),
                     ("preprocessor".into(), plan.preprocessor.to_string()),
                     (
+                        "runtime_parallel".into(),
+                        focus::runtime_scheduler_changed(&paths).to_string(),
+                    ),
+                    (
                         "native_clipboard".into(),
                         focus::native_clipboard_changed(&paths).to_string(),
                     ),

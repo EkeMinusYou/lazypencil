@@ -15,11 +15,30 @@ pub fn restore_compatible(
     matched_key: &str,
     identity: &ApplicationIdentity,
 ) -> Result<Value> {
+    let directory = directory.canonicalize()?;
+    let (report, old, changed) = compatible_inputs(&directory, matched_key, identity)?;
+    let names = report
+        .files
+        .iter()
+        .map(|entry| entry.path.clone())
+        .collect();
+    let (invalid, covered) = affected_outputs(source, &directory.join("files"), &names, &changed)?;
+    ensure!(covered == changed, "Changed tests lack compiler dep-info");
+    let mut result = restore_filtered(source, target, &directory, &old, &invalid)?;
+    result["invalidated_files"] = json!(invalid.len());
+    result["changed_tests"] = json!(changed);
+    Ok(result)
+}
+
+fn compatible_inputs(
+    directory: &Path,
+    matched_key: &str,
+    identity: &ApplicationIdentity,
+) -> Result<(ApplicationReport, ApplicationIdentity, BTreeSet<String>)> {
     ensure!(
         !identity.release_only,
         "Test reuse requires all-output identity"
     );
-    let directory = directory.canonicalize()?;
     let report: ApplicationReport = util::json(&directory.join("manifest.json"))?;
     let inputs = report
         .inputs
@@ -59,35 +78,43 @@ pub fn restore_compatible(
             changed.insert(name.clone());
         }
     }
+    Ok((report, old, changed))
+}
+
+fn affected_outputs(
+    source: &Path,
+    root: &Path,
+    names: &BTreeSet<String>,
+    changed: &BTreeSet<String>,
+) -> Result<(BTreeSet<String>, BTreeSet<String>)> {
     let unit = Regex::new(r"^(debug|release)/deps/([A-Za-z0-9_]+)-([0-9a-f]{16})\.d$")?;
     let mut invalid = BTreeSet::new();
     let mut covered = BTreeSet::new();
-    for entry in &report.files {
-        ensure!(allowed(&entry.path), "Unsafe cached output");
-        if !entry.path.ends_with(".d") {
+    for name in names {
+        ensure!(allowed(name), "Unsafe cached output");
+        if !name.ends_with(".d") {
             continue;
         }
-        let path = directory.join("files").join(&entry.path);
+        let path = root.join(name);
         ensure!(
             !path.is_symlink() && path.canonicalize()? == std::path::absolute(&path)?,
             "Linked cached dep-info"
         );
         let affected = compiler_inputs(&path, source)?
-            .intersection(&changed)
+            .intersection(changed)
             .cloned()
             .collect::<BTreeSet<_>>();
         if affected.is_empty() {
             continue;
         }
         let captures = unit
-            .captures(&entry.path)
+            .captures(name)
             .context("Unsupported affected compiler unit")?;
         let (profile, name, suffix) = (&captures[1], &captures[2], &captures[3]);
         let prefix = format!("{profile}/.fingerprint/lazypencil-{suffix}/");
         ensure!(
-            report.files.iter().any(|entry| {
+            names.iter().any(|entry| {
                 entry
-                    .path
                     .strip_prefix(&prefix)
                     .and_then(|name| name.strip_prefix("test-integration-test-"))
                     .and_then(|name| name.strip_suffix(".json"))
@@ -97,26 +124,50 @@ pub fn restore_compatible(
         );
         let artifact = format!("{profile}/deps/{name}-{suffix}");
         let library = format!("{profile}/deps/lib{name}-{suffix}");
-        for entry in &report.files {
-            if entry.path.starts_with(&prefix)
+        for entry in names {
+            if entry.starts_with(&prefix)
                 || [artifact.as_str(), library.as_str()].iter().any(|prefix| {
-                    entry.path == *prefix
+                    entry.as_str() == *prefix
                         || entry
-                            .path
                             .strip_prefix(*prefix)
                             .is_some_and(|suffix| suffix.starts_with('.'))
                 })
             {
-                invalid.insert(entry.path.clone());
+                invalid.insert(entry.clone());
             }
         }
         covered.extend(affected);
     }
-    ensure!(covered == changed, "Changed tests lack compiler dep-info");
-    let mut result = restore_filtered(source, target, &directory, &old, &invalid)?;
-    result["invalidated_files"] = json!(invalid.len());
-    result["changed_tests"] = json!(changed);
-    Ok(result)
+    Ok((invalid, covered))
+}
+
+/// Focus checkpoints contain complete changed units, never a second copy of
+/// the unchanged full payload. Shared fingerprint metadata belongs to its unit
+/// even when its bytes happen to match the previous build.
+pub fn stage_focused(
+    source: &Path,
+    target: &Path,
+    directory: &Path,
+    compatible: &Path,
+    matched_key: &str,
+    identity: &ApplicationIdentity,
+) -> Result<Value> {
+    let (_, _, changed) = match compatible_inputs(compatible, matched_key, identity) {
+        Ok(inputs) => inputs,
+        Err(_) => return stage(source, target, directory, identity),
+    };
+    let names = outputs(target)?
+        .into_iter()
+        .map(|path| {
+            Ok(path
+                .strip_prefix(target)?
+                .to_str()
+                .context("Invalid output filename")?
+                .to_owned())
+        })
+        .collect::<Result<BTreeSet<_>>>()?;
+    let (selected, _) = affected_outputs(source, &target.canonicalize()?, &names, &changed)?;
+    stage_filtered(source, target, directory, identity, Some(&selected))
 }
 
 /// A valid same-source focused build overlays a compatible full build last.
@@ -137,6 +188,11 @@ pub fn restore_combined(
             None
         }
     };
+    if !exact.join("manifest.json").exists()
+        && let Some(report) = &retained
+    {
+        return Ok(report.clone());
+    }
     match restore(source, target, exact, identity) {
         Ok(mut report) => {
             report["compatible"] = json!(retained);

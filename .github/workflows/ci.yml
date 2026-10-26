@@ -52,6 +52,7 @@ jobs:
       preprocessor: ${{ steps.focus.outputs.preprocessor }}
       measure_tui: ${{ steps.focus.outputs.measure_tui }}
       native_clipboard: ${{ steps.focus.outputs.native_clipboard }}
+      runtime_parallel: ${{ steps.focus.outputs.runtime_parallel }}
       matrix: ${{ steps.focus.outputs.matrix }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -155,6 +156,9 @@ jobs:
 
   focus:
     name: Focused reproduction / ${{ needs.plan.outputs.platform }}
+    permissions:
+      contents: read
+      actions: write
     needs: [plan, cache-maintenance]
     if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.cache-maintenance.result == 'success' || needs.cache-maintenance.result == 'skipped') }}
     uses: ./.github/workflows/native.yml
@@ -165,9 +169,13 @@ jobs:
       targets: ${{ needs.plan.outputs.targets }}
       measure_tui: ${{ needs.plan.outputs.measure_tui == 'true' }}
       native_clipboard: ${{ needs.plan.outputs.native_clipboard == 'true' }}
+      runtime_parallel: ${{ needs.plan.outputs.runtime_parallel == 'true' }}
 
   native:
     name: Full verification / ${{ matrix.os }}
+    permissions:
+      contents: read
+      actions: write
     needs: [plan, focus, shader-preprocessor]
     if: ${{ !cancelled() && needs.plan.result == 'success' && needs.focus.result == 'success' && (needs.shader-preprocessor.result == 'success' || needs.shader-preprocessor.result == 'skipped') }}
     strategy:

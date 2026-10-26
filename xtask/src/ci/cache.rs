@@ -58,7 +58,7 @@ const FLAG_PREFIXES: &[&str] = &[
 ];
 
 mod compatible;
-pub use compatible::{restore_combined, restore_compatible};
+pub use compatible::{restore_combined, restore_compatible, stage_focused};
 
 #[derive(Subcommand)]
 pub enum Command {
@@ -73,7 +73,7 @@ pub enum Command {
         github_output: Option<PathBuf>,
     },
     Application {
-        #[arg(value_parser = ["identify","stage","restore","restore-or-prune","restore-compatible"])]
+        #[arg(value_parser = ["identify","stage","stage-focused","restore","restore-or-prune","restore-compatible"])]
         operation: String,
         #[arg(long)]
         compatible_directory: Option<PathBuf>,
@@ -95,6 +95,8 @@ pub enum Command {
     Retain {
         #[arg(long)]
         delete: bool,
+        #[arg(long, value_parser = ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-15"])]
+        platform: Option<String>,
         #[arg(long, env = "GITHUB_REPOSITORY")]
         repository: String,
         #[arg(long)]
@@ -203,6 +205,16 @@ impl Command {
                         json!({"primary":identity.primary,"checkpoint":checkpoint,"checkpoint_prefix":checkpoint_prefix,"checkpoint_legacy":identity.checkpoint,"source_commit":identity.source_commit})
                     }
                     "stage" => stage(&source, &target, &directory, &identity)?,
+                    "stage-focused" => stage_focused(
+                        &source,
+                        &target,
+                        &directory,
+                        compatible_directory
+                            .as_deref()
+                            .context("Missing compatible directory")?,
+                        &matched_key,
+                        &identity,
+                    )?,
                     "restore" => restore(&source, &target, &directory, &identity)?,
                     "restore-compatible" => restore_combined(
                         &source,
@@ -228,6 +240,15 @@ impl Command {
                     },
                     _ => unreachable!(),
                 };
+                if operation.starts_with("stage") {
+                    util::github_output(
+                        github_output.as_deref(),
+                        &BTreeMap::from([(
+                            "staged".into(),
+                            (value["files"].as_u64().unwrap_or(0) > 0).to_string(),
+                        )]),
+                    )?;
+                }
                 if operation.starts_with("restore") {
                     util::github_output(
                         github_output.as_deref(),
@@ -244,6 +265,7 @@ impl Command {
             }
             Self::Retain {
                 delete,
+                platform,
                 repository,
                 manifest,
             } => {
@@ -271,7 +293,18 @@ impl Command {
                 let source_hash = manifest
                     .map(|p| -> Result<_> { source_fingerprint(&util::json::<Manifest>(&p)?) })
                     .transpose()?;
-                let obsolete = obsolete(&entries, source_hash.as_deref())?;
+                let mut obsolete = obsolete(&entries, source_hash.as_deref())?;
+                if let Some(platform) = platform {
+                    // Each finished platform retires only its own application
+                    // payloads; parallel jobs never race over dependency/tool caches.
+                    let owned = Regex::new(&format!(
+                        r"^(?:tests-v1|application-v2)-{}-[0-9a-f]{{64}}-",
+                        regex::escape(&platform)
+                    ))?;
+                    obsolete.retain(|entry| {
+                        entry["key"].as_str().is_some_and(|key| owned.is_match(key))
+                    });
+                }
                 util::print(
                     &json!({"delete":delete,"bytes":obsolete.iter().filter_map(|v|v["size_in_bytes"].as_u64()).sum::<u64>(),"caches":obsolete}),
                 )?;
@@ -709,6 +742,9 @@ pub fn allowed(name: &str) -> bool {
                 .unwrap()
                 .is_match(file)
         }
+        ["examples", file] => Regex::new(r"^[A-Za-z0-9_]+(?:-[0-9a-f]{16})?(?:\.(?:d|rmeta))?$")
+            .unwrap()
+            .is_match(file),
         _ => false,
     }
 }
@@ -716,7 +752,7 @@ pub fn allowed(name: &str) -> bool {
 pub fn outputs(target: &Path) -> Result<Vec<PathBuf>> {
     let mut files = BTreeSet::new();
     let marker = Regex::new(
-        r"^(?:test-integration-test-|test-bin-|test-lib-|bin-|lib-)([A-Za-z0-9_-]+)\.json$",
+        r"^(?:test-integration-test-|test-bin-|test-lib-|bin-|lib-|example-)([A-Za-z0-9_-]+)\.json$",
     )?;
     let fingerprint = Regex::new(r"^lazypencil-([0-9a-f]{16})$")?;
     for profile in ["debug", "release"] {
@@ -736,13 +772,19 @@ pub fn outputs(target: &Path) -> Result<Vec<PathBuf>> {
                     let name = item.file_name();
                     let name = name.to_string_lossy();
                     if let Some(captures) = marker.captures(&name) {
+                        let example = name.starts_with("example-");
                         let name = captures[1].replace('-', "_");
-                        for item in fs::read_dir(root.join("deps"))? {
+                        let artifacts = root.join(if example { "examples" } else { "deps" });
+                        if !artifacts.is_dir() {
+                            continue;
+                        }
+                        for item in fs::read_dir(artifacts)? {
                             let item = item?;
                             let file = item.file_name();
                             let file = file.to_string_lossy();
                             if file.starts_with(&format!("{name}-{suffix}"))
                                 || file.starts_with(&format!("lib{name}-{suffix}"))
+                                || example && (file == name || file == format!("{name}.d"))
                             {
                                 files.insert(item.path());
                             }
@@ -876,15 +918,38 @@ pub fn stage(
     directory: &Path,
     identity: &ApplicationIdentity,
 ) -> Result<Value> {
+    stage_filtered(source, target, directory, identity, None)
+}
+
+fn stage_filtered(
+    source: &Path,
+    target: &Path,
+    directory: &Path,
+    identity: &ApplicationIdentity,
+    selected: Option<&BTreeSet<String>>,
+) -> Result<Value> {
     let files = outputs(target)?
         .into_iter()
         .filter(|path| {
-            !identity.release_only
+            selected.is_none_or(|names| {
+                names.contains(
+                    path.strip_prefix(target)
+                        .unwrap()
+                        .to_str()
+                        .unwrap_or_default(),
+                )
+            }) && (!identity.release_only
                 || path
                     .strip_prefix(target)
-                    .is_ok_and(|p| p.starts_with("release"))
+                    .is_ok_and(|p| p.starts_with("release")))
         })
         .collect::<Vec<_>>();
+    if files.is_empty() && selected.is_some() {
+        if directory.exists() {
+            fs::remove_dir_all(directory)?;
+        }
+        return Ok(json!({"files":0,"bytes":0}));
+    }
     ensure!(
         !identity.release_only
             || files
@@ -1098,8 +1163,13 @@ pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Valu
         r"^release-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-[0-9a-f]{64}-[0-9a-f]{64}-(full|focus)(?:-[1-9][0-9]*-[1-9][0-9]*)?$",
     )?;
     let tests = Regex::new(
-        r"^tests-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-[0-9a-f]{64}-full-[0-9a-f]{64}$",
+        r"^tests-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-[0-9a-f]{64}-full-([0-9a-f]{64})$",
     )?;
+    let compatible_sources = keys
+        .iter()
+        .filter_map(|(key, _)| tests.captures(key))
+        .map(|caps| (caps[1].to_owned(), caps[2].to_owned()))
+        .collect::<BTreeSet<_>>();
     let mut selected = BTreeMap::new();
     let mut groups = BTreeMap::<(String, String), Vec<&Value>>::new();
     let tools = Regex::new(
@@ -1137,6 +1207,13 @@ pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Valu
         }
         if let Some(caps) = re.captures(key) {
             let phase = &caps[5];
+            // Full compatible payloads replace the old full cache and any
+            // same-source focus checkpoints, rather than duplicating gigabytes
+            // of identical binaries. Never delete the old fallback first.
+            if &caps[1] == "2" && compatible_sources.contains(&(caps[2].into(), caps[3].into())) {
+                selected.insert(id, entry.clone());
+                continue;
+            }
             if source_hash.is_some_and(|s| &caps[1] == "1" || phase == "focus" && s != &caps[3]) {
                 selected.insert(id, entry.clone());
                 continue;

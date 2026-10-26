@@ -45,6 +45,7 @@ pub enum Stage {
     Clipboard,
     BrowserSetup,
     BrowserTest,
+    RuntimeTests,
     Mcp,
     LongTests,
     Panel,
@@ -229,10 +230,24 @@ impl Session {
         self.cargo(&args, 300, log, true)
     }
     pub fn capture(&self, command: &mut Command, seconds: u64, path: &str) -> Result<Vec<u8>> {
+        let invocation = std::iter::once(command.get_program())
+            .chain(command.get_args())
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        let started = Instant::now();
         let result = process::output(
             command.current_dir(&self.root),
             Duration::from_secs(seconds),
+        );
+        self.record_timing(
+            &invocation,
+            started.elapsed(),
+            result
+                .as_ref()
+                .is_ok_and(|result| !result.timed_out && result.status.success()),
+            path,
         )?;
+        let result = result?;
         fs::write(self.temporary.join(path), &result.stdout)?;
         fs::write(
             self.temporary.join(format!("{path}.stderr.log")),
@@ -548,6 +563,11 @@ impl Session {
             }
             Stage::FocusTest => {
                 if args.suite == "browser-ci" {
+                    if std::env::var("RUNTIME_PARALLEL").as_deref() == Ok("true") {
+                        // The following focused runtime stage runs these exact
+                        // lanes together with MCP, lifecycle and Material.
+                        return Ok(());
+                    }
                     return browser::tests(self);
                 }
                 for command in commands::plan(&self.root, &args.suite, &targets)?.checks {
@@ -658,31 +678,37 @@ impl Session {
             Stage::DefaultRelease => normal::run(self),
             Stage::BrowserSetup => browser::setup(self),
             Stage::BrowserTest => browser::tests(self),
-            Stage::Mcp => {
-                for test in [
-                    "real_mcp_shader_assets_uniform_edits_and_browser_refresh_return_image_content",
-                    "local_pages::real_mcp_and_cli_local_pages_declare_edit_pack_and_render_after_source_removal",
-                ] {
-                    self.test(
-                        true,
-                        "mcp",
-                        test,
-                        &["--exact", "--ignored", "--test-threads=1"],
-                        "chromium-mcp.log",
+            Stage::RuntimeTests => {
+                if args.suite == "focus" {
+                    let targets = focus::BROWSER_CI_TARGETS
+                        .iter()
+                        .copied()
+                        .chain(["mcp", "optional_icons", "tui"])
+                        .collect::<std::collections::BTreeSet<_>>();
+                    self.build_catalog(
+                        &targets.into_iter().map(str::to_owned).collect::<Vec<_>>(),
                     )?;
                 }
-                browser::local_page_mcp_images(
-                    &self.temporary.join("codec-reference"),
-                    &std::env::var("GITHUB_SHA")?,
-                )?;
-                self.test(
-                    true,
-                    "agent",
-                    "supervised_agent_mcp_renders_script_browser_and_shader_pixels",
-                    &["--ignored", "--test-threads=1"],
-                    "chromium-supervision.log",
-                )
+                // Browser ownership tests never overlap these lanes. MCP and idle
+                // lifecycle clients own separate documents, process trees and
+                // automatic CDP ports. Material uses its own settings path.
+                // Every started lane joins before isolated release measurements.
+                let result = parallel::run(vec![
+                    ("browser pixels", Box::new(|| browser::lanes(self))),
+                    ("MCP dynamic images", Box::new(|| self.mcp_tests())),
+                    ("lifecycle and Material", Box::new(|| self.long_tests())),
+                ]);
+                let ownership = browser::ownership(self);
+                let failures = [("runtime lanes", result), ("browser ownership", ownership)]
+                    .into_iter()
+                    .filter_map(|(name, result)| {
+                        result.err().map(|error| format!("{name}: {error:#}"))
+                    })
+                    .collect::<Vec<_>>();
+                ensure!(failures.is_empty(), "{}", failures.join("\n"));
+                Ok(())
             }
+            Stage::Mcp => self.mcp_tests(),
             Stage::LongTests => self.long_tests(),
             Stage::Panel => browser::panel(self),
             Stage::DefaultLint => self.cargo(
@@ -816,32 +842,100 @@ impl Session {
         )?;
         self.cargo(&["build", "--locked"], 2700, "default-build.log", false)
     }
+    fn mcp_tests(&self) -> Result<()> {
+        let catalog = self.verified_catalog(&["mcp", "agent"])?;
+        let mut failures = Vec::new();
+        for test in [
+            "real_mcp_shader_assets_uniform_edits_and_browser_refresh_return_image_content",
+            "local_pages::real_mcp_and_cli_local_pages_declare_edit_pack_and_render_after_source_removal",
+        ] {
+            if let Err(error) = self.mcp_check(&catalog, "mcp", test, true, "chromium-mcp.log") {
+                failures.push(format!("{test}: {error:#}"));
+            }
+        }
+        if let Err(error) = browser::local_page_mcp_images(
+            &self.temporary.join("codec-reference"),
+            &std::env::var("GITHUB_SHA")?,
+        ) {
+            failures.push(format!("MCP image evidence: {error:#}"));
+        }
+        if let Err(error) = self.mcp_check(
+            &catalog,
+            "agent",
+            "supervised_agent_mcp_renders_script_browser_and_shader_pixels",
+            false,
+            "chromium-supervision.log",
+        ) {
+            failures.push(format!("Supervised MCP images: {error:#}"));
+        }
+        ensure!(failures.is_empty(), "{}", failures.join("\n"));
+        Ok(())
+    }
+
+    fn mcp_check(
+        &self,
+        catalog: &Catalog,
+        target: &str,
+        filter: &str,
+        exact: bool,
+        log: &str,
+    ) -> Result<()> {
+        let mut args = vec![
+            catalog.binaries[target].path.to_string_lossy().into_owned(),
+            filter.into(),
+        ];
+        if exact {
+            args.push("--exact".into());
+        }
+        args.extend(["--ignored", "--test-threads=1"].map(str::to_owned));
+        let mut command = self.command(&args);
+        command
+            .env("CARGO_MANIFEST_DIR", &self.root)
+            .env("CARGO_MANIFEST_PATH", self.root.join("Cargo.toml"))
+            .env(
+                "LAZYPENCIL_CONFIG_DIR",
+                self.temporary.join("runtime-mcp-settings"),
+            );
+        self.execute_command(&args, &mut command, 300, log, true)
+    }
+
     fn long_tests(&self) -> Result<()> {
         super::setup::material_fonts(
             &self.root.join("resources/icons/catalogue.json"),
             &self.temporary.join("lazypencil-material-fonts"),
         )?;
         let catalog = self.verified_catalog(&["mcp", "tui", "optional_icons"])?;
-        // Release compilation already joined the default-test stage. These two
-        // independent lanes use immutable debug binaries, and both join before
-        // subsequent smoke tests and resource measurements.
+        // These independent lanes use immutable debug binaries and both join
+        // before subsequent smoke tests and resource measurements.
         parallel::run(vec![
             (
                 "process lifecycle",
                 Box::new(|| -> Result<()> {
+                    let mut failures = Vec::new();
                     for (target, log) in [
                         ("mcp", "chromium-mcp-idle.log"),
                         ("tui", "chromium-tui.log"),
                     ] {
                         let args = commands::lifecycle(&catalog.binaries[target].path, target)?;
-                        self.execute(&args, 300, log, false)?;
+                        let mut command = self.command(&args);
+                        command.env(
+                            "LAZYPENCIL_CONFIG_DIR",
+                            self.temporary.join("runtime-lifecycle-settings"),
+                        );
+                        if let Err(error) =
+                            self.execute_command(&args, &mut command, 300, log, false)
+                        {
+                            failures.push(format!("{target}: {error:#}"));
+                        }
                     }
+                    ensure!(failures.is_empty(), "{}", failures.join("\n"));
                     Ok(())
                 }),
             ),
             (
                 "Material verification",
                 Box::new(|| -> Result<()> {
+                    let mut failures = Vec::new();
                     for (target, filter, log) in [
                         (
                             "optional_icons",
@@ -867,8 +961,13 @@ impl Session {
                                 "LAZYPENCIL_CONFIG_DIR",
                                 self.temporary.join("lazypencil-material-settings"),
                             );
-                        self.execute_command(&args, &mut command, 3600, log, false)?;
+                        if let Err(error) =
+                            self.execute_command(&args, &mut command, 3600, log, false)
+                        {
+                            failures.push(format!("{target}: {error:#}"));
+                        }
                     }
+                    ensure!(failures.is_empty(), "{}", failures.join("\n"));
                     Ok(())
                 }),
             ),
