@@ -23,9 +23,18 @@ pub struct Arguments {
 /// Bounded, content-free worker observations from the explicitly owned child.
 pub fn preview_profiles(bytes: &[u8]) -> Result<Vec<serde_json::Value>> {
     use anyhow::Context;
-    let phases = [
+    let legacy_phases = [
         "snapshot_ms",
         "render_png_ms",
+        "verification_ms",
+        "decode_png_ms",
+        "terminal_encode_ms",
+        "metadata_ms",
+    ];
+    let phases = [
+        "snapshot_ms",
+        "render_raster_ms",
+        "render_png_encode_ms",
         "verification_ms",
         "decode_png_ms",
         "terminal_encode_ms",
@@ -40,6 +49,11 @@ pub fn preview_profiles(bytes: &[u8]) -> Result<Vec<serde_json::Value>> {
         };
         ensure!(reports.len() < 128, "Too many preview profiles");
         let report: serde_json::Value = serde_json::from_str(line)?;
+        let phases: &[&str] = match report["format_version"].as_u64() {
+            Some(1) => &legacy_phases,
+            Some(2) => &phases,
+            _ => anyhow::bail!("Unsupported preview profile version"),
+        };
         let generation = report["generation"]
             .as_u64()
             .context("Missing preview generation")?;
@@ -47,14 +61,13 @@ pub fn preview_profiles(bytes: &[u8]) -> Result<Vec<serde_json::Value>> {
             .as_object()
             .context("Missing preview phases")?;
         ensure!(
-            report["format_version"] == 1
-                && report.as_object().is_some_and(|fields| fields.len() == 4)
+            report.as_object().is_some_and(|fields| fields.len() == 4)
                 && previous.is_none_or(|previous| generation > previous)
                 && fields.len() == phases.len(),
             "Invalid preview profile version, order or phase membership"
         );
         let mut sum = 0.0;
-        for phase in phases {
+        for &phase in phases {
             let value = fields
                 .get(phase)
                 .and_then(serde_json::Value::as_f64)

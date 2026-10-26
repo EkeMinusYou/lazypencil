@@ -320,14 +320,14 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 ..Default::default()
             };
             timing.mark("snapshot_ms");
-            let image = crate::render::png_with_runtime(
+            let image = crate::render::png_with_runtime_observed(
                 project,
                 layout,
                 &options,
                 &mut dynamic,
                 Some(cancel.clone()),
+                Some(&mut |phase| timing.mark(phase)),
             )?;
-            timing.mark("render_png_ms");
             crate::store::require_revision(&store.read()?, &layout.revision)?;
             project.verify_unchanged()?;
             if cancel.is_cancelled() {
@@ -418,7 +418,7 @@ impl PreviewTiming {
     }
     fn report(&self, generation: u64) -> Option<Value> {
         self.clocks.map(|(started, _)| {
-            json!({"format_version":1,"generation":generation,"phases_ms":self.phases,"worker_total_ms":started.elapsed().as_secs_f64()*1000.0})
+            json!({"format_version":2,"generation":generation,"phases_ms":self.phases,"worker_total_ms":started.elapsed().as_secs_f64()*1000.0})
         })
     }
 }
@@ -457,14 +457,19 @@ mod tests {
         assert!(disabled.report(1).is_none());
         assert!(disabled.phases.is_empty());
         let mut enabled = PreviewTiming::new(true);
-        for phase in ["snapshot_ms", "render_png_ms", "metadata_ms"] {
+        for phase in [
+            "snapshot_ms",
+            "render_raster_ms",
+            "render_png_encode_ms",
+            "metadata_ms",
+        ] {
             enabled.mark(phase);
         }
         let report = enabled.report(7).unwrap();
         assert_eq!(report["generation"], 7);
-        assert_eq!(report["format_version"], 1);
+        assert_eq!(report["format_version"], 2);
         let phases = report["phases_ms"].as_object().unwrap();
-        assert_eq!(phases.len(), 3);
+        assert_eq!(phases.len(), 4);
         let sum = phases
             .values()
             .map(|value| {

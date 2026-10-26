@@ -5,6 +5,38 @@ use std::process::Command;
 use std::time::Duration;
 
 #[test]
+fn split_raster_and_png_profiles_preserve_strict_phase_and_interval_validation() {
+    use lazypencil_xtask::performance::tui::preview_profiles;
+    use serde_json::json;
+    let report = json!({"format_version":2,"generation":1,"worker_total_ms":22.0,"phases_ms":{
+        "snapshot_ms":1.0,"render_raster_ms":1.5,"render_png_encode_ms":0.5,
+        "verification_ms":3.0,"decode_png_ms":4.0,"terminal_encode_ms":5.0,"metadata_ms":6.0
+    }});
+    let encode = |report: &serde_json::Value| format!("LAZYPENCIL_PREVIEW_TIMING {report}\n");
+    assert_eq!(
+        preview_profiles(encode(&report).as_bytes()).unwrap(),
+        [report.clone()]
+    );
+    for (field, value) in [
+        ("format_version", json!(1)),
+        ("format_version", json!(3)),
+        ("worker_total_ms", json!(20.0)),
+    ] {
+        let mut invalid = report.clone();
+        invalid[field] = value;
+        assert!(preview_profiles(encode(&invalid).as_bytes()).is_err());
+    }
+    for phase in ["render_raster_ms", "render_png_encode_ms"] {
+        let mut invalid = report.clone();
+        invalid["phases_ms"][phase] = json!(-1.0);
+        assert!(preview_profiles(encode(&invalid).as_bytes()).is_err());
+        invalid["phases_ms"].as_object_mut().unwrap().remove(phase);
+        invalid["phases_ms"]["render_png_ms"] = json!(0.0);
+        assert!(preview_profiles(encode(&invalid).as_bytes()).is_err());
+    }
+}
+
+#[test]
 fn worker_profiles_require_complete_bounded_monotonic_intervals_without_extra_data() {
     use lazypencil_xtask::performance::tui::preview_profiles;
     use serde_json::{Value, json};

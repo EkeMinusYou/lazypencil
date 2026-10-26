@@ -69,7 +69,7 @@ pub fn png(
     snapshot: &LayoutSnapshot,
     options: &RenderOptions,
 ) -> Result<RenderedImage> {
-    png_impl(project, snapshot, options, None)
+    png_impl(project, snapshot, options, None, None)
 }
 
 pub fn png_with_runtime(
@@ -79,12 +79,23 @@ pub fn png_with_runtime(
     runtime: &mut crate::dynamic::DynamicRuntime,
     cancel: Option<tokio_util::sync::CancellationToken>,
 ) -> Result<RenderedImage> {
+    png_with_runtime_observed(project, snapshot, options, runtime, cancel, None)
+}
+
+pub(crate) fn png_with_runtime_observed(
+    project: &Project,
+    snapshot: &LayoutSnapshot,
+    options: &RenderOptions,
+    runtime: &mut crate::dynamic::DynamicRuntime,
+    cancel: Option<tokio_util::sync::CancellationToken>,
+    observer: Option<&mut dyn FnMut(&'static str)>,
+) -> Result<RenderedImage> {
     runtime.configure(project.runtime_settings())?;
     runtime.begin_render(cancel, options.refresh);
     if options.refresh_pages {
         runtime.refresh_pages();
     }
-    let result = png_impl(project, snapshot, options, Some(runtime));
+    let result = png_impl(project, snapshot, options, Some(runtime), observer);
     runtime.render_result(result)
 }
 
@@ -93,6 +104,7 @@ fn png_impl(
     snapshot: &LayoutSnapshot,
     options: &RenderOptions,
     mut runtime: Option<&mut crate::dynamic::DynamicRuntime>,
+    mut observer: Option<&mut dyn FnMut(&'static str)>,
 ) -> Result<RenderedImage> {
     if let Some(runtime) = runtime.as_deref() {
         runtime.check()?;
@@ -206,8 +218,16 @@ fn png_impl(
         width as u32,
         height as u32,
     )?;
+    // This interval includes setup, asset checks and cropping, and separates
+    // final PNG encoding from the rest of the render request.
+    if let Some(observer) = observer.as_mut() {
+        observer("render_raster_ms");
+    }
     let encoded = skia_safe::png_encoder::encode_image(None, &image, &Default::default())
         .ok_or_else(|| Error::new("RENDER_ERROR", "PNG encoding failed"))?;
+    if let Some(observer) = observer.as_mut() {
+        observer("render_png_encode_ms");
+    }
     if let Some(runtime) = runtime.as_deref() {
         runtime.check()?;
     }
@@ -1656,4 +1676,68 @@ fn invalid(message: impl Into<String>) -> Error {
 }
 fn unsupported(node: &ResolvedNode, message: impl Into<String>) -> Error {
     Error::new("UNSUPPORTED_FEATURE", message).details(json!({"node_id":node.id()}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn render_phase_observation_preserves_png_bytes_and_rejects_invalid_input_before_reporting() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let path = directory.path().join("scene.pen");
+        std::fs::write(
+            &path,
+            json!({"version":"2.21","children":[{
+                "id":"frame","type":"frame","layout":"none","width":80,"height":60,
+                "clip":true,"fill":"#E2E8F0","children":[{
+                    "id":"shape","type":"ellipse","x":12.5,"y":8.25,"width":42,"height":30,
+                    "fill":"#2563EB80","opacity":0.7,
+                    "effect":{"type":"shadow","offset":{"x":2,"y":3},"blur":4,"color":"#00000040"}
+                }]
+            }]})
+            .to_string(),
+        )
+        .unwrap();
+        let store = crate::store::Store::open(&path, Some(directory.path().join("data"))).unwrap();
+        let project = Project::load(&store).unwrap();
+        let snapshot = crate::layout::compute(
+            project.resolve().unwrap(),
+            &mut crate::text::Fonts::new(&[]).unwrap(),
+        )
+        .unwrap();
+        let options = RenderOptions::default();
+        let original = png(&project, &snapshot, &options).unwrap();
+        let mut phases = Vec::new();
+        let observed = png_impl(
+            &project,
+            &snapshot,
+            &options,
+            None,
+            Some(&mut |phase| phases.push(phase)),
+        )
+        .unwrap();
+        assert_eq!(phases, ["render_raster_ms", "render_png_encode_ms"]);
+        assert_eq!(original.png, observed.png);
+        assert_eq!(
+            (original.width, original.height),
+            (observed.width, observed.height)
+        );
+        phases.clear();
+        let invalid = RenderOptions {
+            scale: f32::NAN,
+            ..options
+        };
+        assert!(
+            png_impl(
+                &project,
+                &snapshot,
+                &invalid,
+                None,
+                Some(&mut |phase| phases.push(phase))
+            )
+            .is_err()
+        );
+        assert!(phases.is_empty());
+    }
 }
