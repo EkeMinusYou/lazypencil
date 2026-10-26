@@ -697,13 +697,10 @@
     ],
     "expected": {
       "platform": "ubuntu-24.04",
-      "suite": "dynamic",
+      "suite": "candidate",
       "targets": [
-        "browser_readiness",
-        "dynamic_render",
-        "imports",
-        "sampler_sources",
-        "shader_uniforms"
+        "render",
+        "tui"
       ],
       "preprocessor": false
     }
@@ -731,14 +728,10 @@
     ],
     "expected": {
       "platform": "ubuntu-24.04",
-      "suite": "dynamic",
+      "suite": "candidate",
       "targets": [
-        "browser_readiness",
-        "dynamic_render",
-        "graphics",
-        "imports",
-        "sampler_sources",
-        "shader_uniforms"
+        "render",
+        "tui"
       ],
       "preprocessor": false
     }
