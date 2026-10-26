@@ -245,6 +245,15 @@ impl Session {
     }
     pub fn run(&self, args: Arguments) -> Result<()> {
         let targets: Vec<String> = serde_json::from_str(&args.targets)?;
+        if args.suite == "browser-ci" {
+            ensure!(
+                targets
+                    .iter()
+                    .map(String::as_str)
+                    .eq(focus::BROWSER_CI_TARGETS.iter().copied()),
+                "Browser CI reproduction requires its complete test target set"
+            );
+        }
         let has = |s: &str| targets.iter().any(|t| t == s);
         let core = ["core", "conversation"].contains(&args.suite.as_str());
         match args.stage {
@@ -328,6 +337,9 @@ impl Session {
                 Ok(())
             }
             Stage::FocusBuild => {
+                if args.suite == "browser-ci" {
+                    return self.build_catalog(&targets);
+                }
                 let plan = commands::plan(&self.root, &args.suite, &targets)?;
                 for command in plan.build {
                     self.execute(
@@ -530,6 +542,9 @@ impl Session {
                 Ok(())
             }
             Stage::FocusTest => {
+                if args.suite == "browser-ci" {
+                    return browser::tests(self);
+                }
                 for command in commands::plan(&self.root, &args.suite, &targets)?.checks {
                     self.execute(&command, 300, "focus-tests.log", true)?;
                 }
@@ -600,7 +615,7 @@ impl Session {
                 "lazypencil-tests.log",
                 true,
             ),
-            Stage::DefaultBuild => self.build_catalog(),
+            Stage::DefaultBuild => self.build_catalog(&[]),
             Stage::Reproduce => {
                 self.real_emoji("real-emoji.log")?;
                 self.test(
@@ -734,17 +749,18 @@ impl Session {
             }
         }
     }
-    fn build_catalog(&self) -> Result<()> {
-        let raw = self.capture(
-            Command::new("cargo").args([
-                "test",
-                "--locked",
-                "--no-run",
-                "--message-format=json-render-diagnostics",
-            ]),
-            2700,
-            "default-build.jsonl",
-        )?;
+    fn build_catalog(&self, targets: &[String]) -> Result<()> {
+        let mut command = Command::new("cargo");
+        command.args([
+            "test",
+            "--locked",
+            "--no-run",
+            "--message-format=json-render-diagnostics",
+        ]);
+        for target in targets {
+            command.args(["--test", target]);
+        }
+        let raw = self.capture(&mut command, 2700, "default-build.jsonl")?;
         let mut binaries = BTreeMap::new();
         for line in raw.split(|b| *b == b'\n').filter(|l| !l.is_empty()) {
             let event: Value = serde_json::from_slice(line)?;
@@ -785,10 +801,13 @@ impl Session {
                 );
             }
         }
+        let required: Vec<_> = if targets.is_empty() {
+            vec!["mcp", "tui", "optional_icons"]
+        } else {
+            targets.iter().map(String::as_str).collect()
+        };
         ensure!(
-            ["mcp", "tui", "optional_icons"]
-                .iter()
-                .all(|s| binaries.contains_key(*s)),
+            required.iter().all(|s| binaries.contains_key(*s)),
             "Missing parallel test binaries"
         );
         util::publish(
@@ -806,18 +825,7 @@ impl Session {
             &self.root.join("resources/icons/catalogue.json"),
             &self.temporary.join("lazypencil-material-fonts"),
         )?;
-        let catalog: Catalog = util::json(&self.temporary.join("test-executables.json"))?;
-        ensure!(
-            catalog.source_commit == std::env::var("GITHUB_SHA")?,
-            "Test executables belong to another commit"
-        );
-        for binary in catalog.binaries.values() {
-            ensure!(
-                binary.path.starts_with(self.target.join("debug/deps"))
-                    && util::file_digest(&binary.path)? == binary.sha256,
-                "Test executable changed after compilation"
-            );
-        }
+        let catalog = self.verified_catalog(&["mcp", "tui", "optional_icons"])?;
         // Only compilation overlaps the two test lanes. They execute immutable
         // debug binaries, so no test waits for Cargo's release build lock.
         // Joining every lane keeps subsequent smoke tests and measurements isolated.
@@ -874,6 +882,12 @@ impl Session {
             ),
         ])
     }
+
+    fn verified_catalog(&self, required: &[&str]) -> Result<Catalog> {
+        let catalog: Catalog = util::json(&self.temporary.join("test-executables.json"))?;
+        catalog.validate(&self.target, &std::env::var("GITHUB_SHA")?, required)?;
+        Ok(catalog)
+    }
 }
 #[derive(Serialize, Deserialize)]
 struct Binary {
@@ -884,6 +898,28 @@ struct Binary {
 struct Catalog {
     source_commit: String,
     binaries: BTreeMap<String, Binary>,
+}
+impl Catalog {
+    fn validate(&self, target: &Path, commit: &str, required: &[&str]) -> Result<()> {
+        ensure!(
+            self.source_commit == commit,
+            "Test executables belong to another commit"
+        );
+        ensure!(
+            required
+                .iter()
+                .all(|name| self.binaries.contains_key(*name)),
+            "Required test executable missing"
+        );
+        for binary in self.binaries.values() {
+            ensure!(
+                binary.path.parent() == Some(target.join("debug/deps").as_path())
+                    && util::file_digest(&binary.path)? == binary.sha256,
+                "Test executable changed after compilation"
+            );
+        }
+        Ok(())
+    }
 }
 fn process_report(s: &Session) -> Result<()> {
     let log = fs::read_to_string(s.temporary.join("process-tests.log"))?;
@@ -932,6 +968,54 @@ fn process_report(s: &Session) -> Result<()> {
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn reused_test_catalog_rejects_missing_mutated_foreign_and_outside_binaries() {
+        let temp = tempfile::tempdir().unwrap();
+        let target = temp.path().join("target");
+        let deps = target.join("debug/deps");
+        fs::create_dir_all(&deps).unwrap();
+        let path = deps.join("browser-fixture");
+        fs::write(&path, b"owned compiled fixture").unwrap();
+        let mut catalog = Catalog {
+            source_commit: "fixture-source".into(),
+            binaries: BTreeMap::from([(
+                "browser_readiness".into(),
+                Binary {
+                    sha256: util::file_digest(&path).unwrap(),
+                    path: path.clone(),
+                },
+            )]),
+        };
+        let required = ["browser_readiness"];
+        catalog
+            .validate(&target, "fixture-source", &required)
+            .unwrap();
+        assert!(
+            catalog
+                .validate(&target, "other-source", &required)
+                .is_err()
+        );
+        assert!(
+            catalog
+                .validate(&target, "fixture-source", &["missing"])
+                .is_err()
+        );
+        fs::write(&path, b"modified fixture").unwrap();
+        assert!(
+            catalog
+                .validate(&target, "fixture-source", &required)
+                .is_err()
+        );
+        let outside = temp.path().join("outside");
+        fs::write(&outside, b"owned compiled fixture").unwrap();
+        catalog.binaries.get_mut("browser_readiness").unwrap().path = outside;
+        assert!(
+            catalog
+                .validate(&target, "fixture-source", &required)
+                .is_err()
+        );
+    }
 
     #[test]
     fn parallel_timings_preserve_complete_records_and_their_source_identity() {

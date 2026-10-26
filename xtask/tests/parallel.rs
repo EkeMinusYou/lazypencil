@@ -9,6 +9,35 @@ use std::{
 };
 
 #[test]
+fn browser_lanes_preserve_every_existing_target_once_without_intra_target_parallelism() {
+    use lazypencil_xtask::ci::native::browser::TEST_LANES;
+    use std::collections::BTreeSet;
+    let targets = TEST_LANES
+        .into_iter()
+        .flatten()
+        .copied()
+        .collect::<Vec<_>>();
+    let unique = targets.iter().copied().collect::<BTreeSet<_>>();
+    assert_eq!(unique.len(), targets.len());
+    assert_eq!(
+        unique,
+        BTreeSet::from([
+            "browser_readiness",
+            "dynamic_render",
+            "imports",
+            "sampler_sources",
+            "script_scope",
+            "shader_uniforms",
+            "windows_agent",
+        ])
+    );
+    // Readiness owns browser-* outputs; its partner owns retained-* and
+    // shader/sampler outputs. Ownership/destruction is checked after joining.
+    assert_eq!(TEST_LANES[0], ["browser_readiness"]);
+    assert!(!targets.contains(&"agent"));
+}
+
+#[test]
 fn ci_lanes_overlap_join_every_completion_and_report_a_build_failure() {
     let (entered, arrivals) = mpsc::channel();
     let finished = Arc::new(AtomicUsize::new(0));

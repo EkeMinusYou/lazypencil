@@ -22,6 +22,36 @@ fn focus_keeps_the_existing_reproduction_scope_for_every_source_module() {
 }
 
 #[test]
+fn browser_scheduler_changes_execute_the_actual_two_lanes_before_the_full_matrix() {
+    let paths = [
+        "xtask/src/ci/native/browser.rs",
+        "xtask/src/ci/native.rs",
+        "xtask/src/ci/focus.rs",
+        "xtask/tests/parallel.rs",
+        ".github/workflows/native.yml",
+        "docs/performance.md",
+    ]
+    .map(str::to_owned);
+    let plan = focus::select(&util::root(), &paths, "auto").unwrap();
+    assert_eq!(plan.platform, "ubuntu-24.04");
+    assert_eq!(plan.suite, "browser-ci");
+    assert_eq!(plan.targets, focus::BROWSER_CI_TARGETS);
+    let actual: std::collections::BTreeSet<_> = ci::native::browser::TEST_LANES
+        .into_iter()
+        .flatten()
+        .copied()
+        .chain(["agent"])
+        .collect();
+    assert_eq!(actual, focus::BROWSER_CI_TARGETS.iter().copied().collect());
+    let mut mixed = paths.to_vec();
+    mixed.push("src/render.rs".into());
+    let mixed_plan = focus::select(&util::root(), &mixed, "auto").unwrap();
+    assert_eq!(mixed_plan.suite, "dynamic");
+    assert!(mixed_plan.targets.iter().any(|target| target == "graphics"));
+    assert!(focus::tui_measurement_changed(&mixed));
+}
+
+#[test]
 fn font_sources_generators_and_pins_select_native_color_reproductions_before_the_full_matrix() {
     for path in [
         "tests/support/color_fonts.rs",

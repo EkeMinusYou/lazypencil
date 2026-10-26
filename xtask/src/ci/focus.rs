@@ -49,6 +49,16 @@ pub const HISTORY_PTY: &[&str] = &[
 pub const INPUT_PTY: &str = "real_pty_custom_navigation_preserves_draft_and_changes_preview_pixels";
 pub const TEXT_LAYER_REPRODUCTION: &str =
     "text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations";
+pub const BROWSER_CI_TARGETS: &[&str] = &[
+    "agent",
+    "browser_readiness",
+    "dynamic_render",
+    "imports",
+    "sampler_sources",
+    "script_scope",
+    "shader_uniforms",
+    "windows_agent",
+];
 pub const INPUT_CONFIG: &str =
     "navigation_shortcuts_are_user_owned_replace_defaults_and_validate_scope_conflicts";
 pub const RECLAIM: &str =
@@ -193,6 +203,21 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     .to_owned();
     let preprocessor = preprocessor_changed(paths);
     let font_inputs = paths.iter().any(|path| font_input(path));
+    if paths.iter().all(|path| ci_only(path))
+        && paths
+            .iter()
+            .any(|path| path == "xtask/src/ci/native/browser.rs")
+    {
+        return Ok(Plan {
+            platform,
+            suite: "browser-ci".into(),
+            targets: BROWSER_CI_TARGETS
+                .iter()
+                .map(|name| (*name).into())
+                .collect(),
+            preprocessor,
+        });
+    }
     if paths.iter().any(|path| {
         ["src/tui/graphics.rs", "src/tui/terminal.rs"].contains(&path.as_str())
             || path == "src/tui/preview.rs" && tui_measurement_changed(paths)

@@ -134,35 +134,91 @@ fn sandbox(s: &Session, executable: &Path) -> Result<()> {
         false,
     )
 }
+// Each target owns its temporary documents, browser profiles and process groups.
+// Their retained filenames occupy separate namespaces. Keep tests within each
+// target serial, and keep the ownership/destruction test after both lanes join.
+pub const TEST_LANES: [&[&str]; 2] = [
+    &["browser_readiness"],
+    &[
+        "dynamic_render",
+        "shader_uniforms",
+        "sampler_sources",
+        "imports",
+        "windows_agent",
+        "script_scope",
+    ],
+];
+
 pub fn tests(s: &Session) -> Result<()> {
-    s.cargo(
+    let mut required: Vec<_> = TEST_LANES.into_iter().flatten().copied().collect();
+    required.push("agent");
+    let catalog = s.verified_catalog(&required)?;
+    let deadline = Instant::now() + Duration::from_secs(1200);
+    let result = parallel::run(
+        TEST_LANES
+            .into_iter()
+            .enumerate()
+            .map(|(index, targets)| {
+                let catalog = &catalog;
+                let task: parallel::Task<'_> = (
+                    ["browser readiness", "dynamic rendering and shaders"][index],
+                    Box::new(move || {
+                        let mut failures = Vec::new();
+                        for target in targets {
+                            let remaining = deadline.saturating_duration_since(Instant::now());
+                            let outcome = if remaining.is_zero() {
+                                Err(anyhow::anyhow!("Browser suite deadline exceeded"))
+                            } else {
+                                let args = vec![
+                                    catalog.binaries[*target]
+                                        .path
+                                        .to_string_lossy()
+                                        .into_owned(),
+                                    "--ignored".into(),
+                                    "--test-threads=1".into(),
+                                ];
+                                s.execute(
+                                    &args,
+                                    remaining.as_secs() + u64::from(remaining.subsec_nanos() != 0),
+                                    &format!("chromium-suite-{target}.log"),
+                                    false,
+                                )
+                            };
+                            if let Err(error) = outcome {
+                                failures.push(format!("{target}: {error:#}"));
+                            }
+                        }
+                        ensure!(failures.is_empty(), "{}", failures.join("\n"));
+                        Ok(())
+                    }),
+                );
+                task
+            })
+            .collect(),
+    );
+    // Preserve the existing combined evidence even when a lane fails. Timing
+    // records and individual logs retain each target's independent duration.
+    let mut combined = fs::File::create(s.temporary.join("chromium-render.log"))?;
+    for target in required {
+        let path = s.temporary.join(format!("chromium-suite-{target}.log"));
+        if path.exists() {
+            writeln!(combined, "\nBrowser test target: {target}")?;
+            combined.write_all(&fs::read(path)?)?;
+        }
+    }
+    result?;
+    s.execute(
         &[
-            "test",
-            "--locked",
-            "--no-fail-fast",
-            "--test",
-            "dynamic_render",
-            "--test",
-            "browser_readiness",
-            "--test",
-            "shader_uniforms",
-            "--test",
-            "sampler_sources",
-            "--test",
-            "imports",
-            "--test",
-            "windows_agent",
-            "--test",
-            "script_scope",
-            "--",
-            "--ignored",
-            "--test-threads=1",
+            catalog.binaries["agent"].path.to_string_lossy().into_owned(),
+            "browser_ownership::real_browser_drop_and_owner_death_reap_the_tree_and_preserve_other_owners".into(),
+            "--exact".into(),
+            "--ignored".into(),
+            "--test-threads=1".into(),
         ],
-        1200,
+        300,
         "chromium-render.log",
-        false,
+        true,
     )?;
-    s.test(true,"agent","browser_ownership::real_browser_drop_and_owner_death_reap_the_tree_and_preserve_other_owners",&["--exact","--ignored","--test-threads=1"],"chromium-render.log")?;
     required_images(
         &s.temporary.join("codec-reference"),
         &std::env::var("GITHUB_SHA")?,
