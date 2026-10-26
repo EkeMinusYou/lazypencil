@@ -15,6 +15,9 @@ on:
       targets:
         type: string
         default: '["document_store", "mcp"]'
+      measure_tui:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -44,7 +47,7 @@ jobs:
 
   verify:
     if: inputs.phase != 'focus' || inputs.suite != 'ci'
-    timeout-minutes: ${{ inputs.phase == 'focus' && (inputs.suite == 'core' || inputs.suite == 'conversation') && 30 || 60 }}
+    timeout-minutes: ${{ inputs.phase == 'focus' && !inputs.measure_tui && (inputs.suite == 'core' || inputs.suite == 'conversation') && 30 || 60 }}
     runs-on: ${{ inputs.os }}
     env:
       FOCUS_SUITE: ${{ inputs.suite }}
@@ -66,7 +69,7 @@ jobs:
           key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'xtask/Cargo.lock') }}
           restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
       - name: Install Linux native build dependencies
-        if: runner.os == 'Linux' && (inputs.phase == 'full' || (inputs.suite != 'core' && inputs.suite != 'conversation'))
+        if: runner.os == 'Linux' && (inputs.phase == 'full' || inputs.measure_tui || (inputs.suite != 'core' && inputs.suite != 'conversation'))
         timeout-minutes: 20
         run: cargo xtask ci linux-dependencies
       - name: Verify, extract and normalize the complete source distribution
@@ -81,9 +84,9 @@ jobs:
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
-          key: ${{ inputs.phase == 'focus' && (inputs.suite == 'core' || inputs.suite == 'conversation') && 'core-' || '' }}${{ steps.cache-key.outputs.primary }}
+          key: ${{ inputs.phase == 'focus' && !inputs.measure_tui && (inputs.suite == 'core' || inputs.suite == 'conversation') && 'core-' || '' }}${{ steps.cache-key.outputs.primary }}
           restore-keys: |
-            ${{ inputs.phase == 'focus' && (inputs.suite == 'core' || inputs.suite == 'conversation') && steps.cache-key.outputs.primary || '' }}
+            ${{ inputs.phase == 'focus' && !inputs.measure_tui && (inputs.suite == 'core' || inputs.suite == 'conversation') && steps.cache-key.outputs.primary || '' }}
             ${{ format('checkpoint-{0}-', steps.cache-key.outputs.primary) }}
             ${{ format('checkpoint-{0}', steps.cache-key.outputs.primary) }}
             ${{ steps.cache-key.outputs.legacy }}
@@ -193,19 +196,19 @@ jobs:
         run: cargo xtask ci native focus-test --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
       - name: Verify changed release build recipe before the full matrix
         id: focus-release
-        if: inputs.phase == 'focus' && (inputs.suite == 'release' || inputs.suite == 'candidate')
+        if: inputs.phase == 'focus' && (inputs.suite == 'release' || inputs.suite == 'candidate' || inputs.measure_tui)
         timeout-minutes: 60
         run: cargo xtask ci native focus-release
       - name: Prepare source-bound original notices for the candidate
-        if: inputs.phase == 'focus' && inputs.suite == 'candidate'
+        if: inputs.phase == 'focus' && (inputs.suite == 'candidate' || inputs.measure_tui)
         timeout-minutes: 20
         run: cargo xtask ci native candidate-prepare
       - name: Verify the isolated binary candidate before the full matrix
-        if: inputs.phase == 'focus' && inputs.suite == 'candidate'
+        if: inputs.phase == 'focus' && (inputs.suite == 'candidate' || inputs.measure_tui)
         timeout-minutes: 10
         run: cargo xtask ci native candidate
       - name: Retain the focused binary candidate and isolated smoke proof
-        if: inputs.phase == 'focus' && inputs.suite == 'candidate'
+        if: inputs.phase == 'focus' && (inputs.suite == 'candidate' || inputs.measure_tui)
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: focus-candidate-${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
@@ -235,6 +238,19 @@ jobs:
       - name: Verify MCP and supervised adapter dynamic image content
         if: inputs.phase == 'full'
         run: cargo xtask ci native mcp
+      - name: Measure changed TUI performance code before the full matrix
+        id: tui-measurement
+        if: inputs.phase == 'focus' && inputs.measure_tui
+        timeout-minutes: 15
+        run: cargo xtask measure-tui --candidate "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/tui-measurement"
+      - name: Retain focused TUI measurements and diagnostic logs
+        if: ${{ always() && (steps.tui-measurement.outcome == 'success' || steps.tui-measurement.outcome == 'failure') }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: tui-measurement-${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/tui-measurement
+          if-no-files-found: error
+          retention-days: 3
       - name: Compile release alongside independent lifecycle and Material suites
         if: inputs.phase == 'full'
         run: cargo xtask ci native long-tests
@@ -288,7 +304,7 @@ jobs:
         continue-on-error: true
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
-          key: ${{ (inputs.phase == 'full' && steps.release-smoke.outcome == 'success' || inputs.phase == 'focus' && (inputs.suite == 'core' || inputs.suite == 'conversation')) && steps.native-cache.outputs.cache-primary-key || steps.cache-key.outputs.checkpoint }}
+          key: ${{ (inputs.phase == 'full' && steps.release-smoke.outcome == 'success' || inputs.phase == 'focus' && !inputs.measure_tui && (inputs.suite == 'core' || inputs.suite == 'conversation')) && steps.native-cache.outputs.cache-primary-key || steps.cache-key.outputs.checkpoint }}
           path: |
             ${{ runner.temp }}/lazypencil-target
             ${{ runner.temp }}/lazypencil-source/vendor/skia-bindings/skia

@@ -112,6 +112,18 @@ pub fn preprocessor_changed(paths: &[String]) -> bool {
     })
 }
 
+pub fn tui_measurement_changed(paths: &[String]) -> bool {
+    paths.iter().any(|path| {
+        path.starts_with("xtask/src/performance/")
+            || [
+                "xtask/src/performance.rs",
+                "xtask/src/test_support/terminal.rs",
+                "xtask/tests/tui_measurement.rs",
+            ]
+            .contains(&path.as_str())
+    })
+}
+
 fn has(stems: &BTreeSet<String>, names: &[&str]) -> bool {
     names.iter().any(|s| stems.contains(*s))
 }
@@ -187,19 +199,20 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     if paths
         .iter()
         .all(|path| ci_only(path) || path.starts_with("resources/licenses/native/"))
-        && paths.iter().any(|path| {
-            [
-                "xtask/src/dist.rs",
-                "xtask/src/dist/binary.rs",
-                "xtask/src/evidence.rs",
-                "xtask/src/notices/skia.rs",
-                "xtask/src/ci/native/candidate.rs",
-                "xtask/tests/binary_dist.rs",
-                "xtask/tests/evidence.rs",
-                ".github/workflows/release-evidence.yml",
-            ]
-            .contains(&path.as_str())
-        })
+        && (tui_measurement_changed(paths)
+            || paths.iter().any(|path| {
+                [
+                    "xtask/src/dist.rs",
+                    "xtask/src/dist/binary.rs",
+                    "xtask/src/evidence.rs",
+                    "xtask/src/notices/skia.rs",
+                    "xtask/src/ci/native/candidate.rs",
+                    "xtask/tests/binary_dist.rs",
+                    "xtask/tests/evidence.rs",
+                    ".github/workflows/release-evidence.yml",
+                ]
+                .contains(&path.as_str())
+            }))
     {
         return Ok(Plan {
             platform,

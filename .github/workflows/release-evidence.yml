@@ -7,6 +7,10 @@ on:
         type: choice
         default: ubuntu-24.04-arm
         options: [ubuntu-24.04, ubuntu-24.04-arm, macos-15]
+      measure_tui:
+        description: Measure the packaged TUI after all builds and other checks finish
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -150,5 +154,18 @@ jobs:
           path: |
             ${{ steps.candidate-attestation.outputs.bundle-path }}
             ${{ runner.temp }}/candidate-provenance
+          if-no-files-found: error
+          retention-days: 3
+      - name: Measure source-bound TUI input, output and idle resources
+        id: tui-measurement
+        if: inputs.measure_tui
+        timeout-minutes: 15
+        run: cargo xtask measure-tui --candidate "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/tui-measurement"
+      - name: Retain TUI measurements and diagnostic logs
+        if: ${{ always() && (steps.tui-measurement.outcome == 'success' || steps.tui-measurement.outcome == 'failure') }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: tui-measurement-${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/tui-measurement
           if-no-files-found: error
           retention-days: 3

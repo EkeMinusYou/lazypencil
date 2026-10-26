@@ -11,6 +11,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(unix)]
+pub mod resources;
+pub mod tui;
+
 #[derive(Args)]
 pub struct Arguments {
     #[arg(long)]
@@ -198,8 +202,26 @@ fn windows_usage(child: &std::process::Child, elapsed: Duration) -> Result<Value
     )
 }
 
+pub fn sample_statistics(values: &[f64]) -> Result<Value> {
+    ensure!(!values.is_empty(), "Expected repeated samples");
+    ensure!(
+        values.iter().all(|v| v.is_finite() && *v >= 0.0),
+        "Non-finite or negative measurement"
+    );
+    let mut values = values.to_vec();
+    values.sort_by(f64::total_cmp);
+    let n = values.len();
+    let median = if n.is_multiple_of(2) {
+        (values[n / 2 - 1] + values[n / 2]) / 2.0
+    } else {
+        values[n / 2]
+    };
+    Ok(
+        json!({"min":values[0],"median":median,"p95_nearest_rank":values[(n*95).div_ceil(100)-1],"max":values[n-1]}),
+    )
+}
+
 pub fn summarize(samples: &[Value]) -> Result<Value> {
-    ensure!(!samples.is_empty(), "Expected repeated samples");
     let mut result = json!({});
     for field in [
         "elapsed_ms",
@@ -207,22 +229,11 @@ pub fn summarize(samples: &[Value]) -> Result<Value> {
         "user_cpu_ms",
         "system_cpu_ms",
     ] {
-        let mut values = samples
+        let values = samples
             .iter()
             .map(|s| s[field].as_f64().context("Invalid measurement"))
             .collect::<Result<Vec<_>>>()?;
-        ensure!(
-            values.iter().all(|v| v.is_finite() && *v >= 0.0),
-            "Non-finite or negative measurement"
-        );
-        values.sort_by(f64::total_cmp);
-        let n = values.len();
-        let median = if n % 2 == 0 {
-            (values[n / 2 - 1] + values[n / 2]) / 2.0
-        } else {
-            values[n / 2]
-        };
-        result[field] = json!({"min":values[0],"median":median,"p95_nearest_rank":values[(n*95).div_ceil(100)-1],"max":values[n-1]});
+        result[field] = sample_statistics(&values)?;
     }
     Ok(result)
 }

@@ -2,6 +2,10 @@
 
 These are preliminary observations, not a completed release benchmark or acceptance of the design's performance targets. The target workload remains 1,000 nodes at 1920×1080, with rendering, process-group memory, interaction latency, and idle CPU measured separately.
 
+The independent Rust task `cargo xtask measure-tui --candidate ARCHIVE --output DIRECTORY` is being added for isolated GHA runners. Changes to its code select one representative candidate and run the measurement before the full native matrix. The manual release-evidence workflow opts in with `measure_tui: true` for other environments, after compilation, packaging and other checks have finished. It uses the original 1,000-node dashboard, a fresh data directory for each of 20 startup/input/preview samples, reversible zoom and pan operations, and a final 30-second idle interval. It reuses the packaged executable and the existing Kitty stream observer; it does not link or build the application. The report binds the candidate source, binary and helper, retains individual observations, and rejects changed process membership or identity while comparing idle CPU clocks.
+
+These are PTY input-echo and complete-image-output observations, including observer backpressure. They do not measure physical terminal presentation, controlled cold starts, transient peak RSS, or external agent/emulator resources. The report labels sampled process-tree RSS and includes CPU clock quantization in its idle upper bound. This task still awaits hosted compilation and execution; it does not yet establish that the performance targets are met.
+
 ## Native backdrop example, 2026-10-23
 
 Environment: macOS arm64, debug build. Input: original `examples/backdrop-panel.pen`, 35 nodes, 1000×680 output, bundled Noto Sans JP, background blur and a shadow, no external assets or Chromium. Each run starts a fresh CLI process; the OS file cache already exists. This is not a controlled cold-start measurement.

@@ -75,9 +75,9 @@ impl Command {
             )?),
             Self::Plan { platform, matrix } => {
                 let root = util::root();
-                let paths = focus::changed_paths(&root);
+                let paths = focus::changed_paths(&root)?;
                 let platform = focus::retry_platform(&root, &platform);
-                let plan = focus::select(&root, &paths?, &platform)?;
+                let plan = focus::select(&root, &paths, &platform)?;
                 ensure!(
                     matrix == "all" || focus::PLATFORMS.contains(&matrix.as_str()),
                     "Unsupported release platform"
@@ -92,6 +92,10 @@ impl Command {
                     ("suite".into(), plan.suite.clone()),
                     ("targets".into(), serde_json::to_string(&plan.targets)?),
                     ("preprocessor".into(), plan.preprocessor.to_string()),
+                    (
+                        "measure_tui".into(),
+                        focus::tui_measurement_changed(&paths).to_string(),
+                    ),
                     ("matrix".into(), serde_json::to_string(&platforms)?),
                 ]);
                 util::print(&outputs)?;

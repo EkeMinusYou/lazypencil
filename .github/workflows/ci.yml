@@ -50,6 +50,7 @@ jobs:
       suite: ${{ steps.focus.outputs.suite }}
       targets: ${{ steps.focus.outputs.targets }}
       preprocessor: ${{ steps.focus.outputs.preprocessor }}
+      measure_tui: ${{ steps.focus.outputs.measure_tui }}
       matrix: ${{ steps.focus.outputs.matrix }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -161,6 +162,7 @@ jobs:
       phase: focus
       suite: ${{ needs.plan.outputs.suite }}
       targets: ${{ needs.plan.outputs.targets }}
+      measure_tui: ${{ needs.plan.outputs.measure_tui == 'true' }}
 
   native:
     name: Full verification / ${{ matrix.os }}
