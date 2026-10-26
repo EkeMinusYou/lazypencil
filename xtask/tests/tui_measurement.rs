@@ -14,8 +14,10 @@ fn split_raster_and_png_profiles_preserve_strict_phase_and_interval_validation()
     }});
     let encode = |report: &serde_json::Value| format!("LAZYPENCIL_PREVIEW_TIMING {report}\n");
     assert_eq!(
-        preview_profiles(encode(&report).as_bytes()).unwrap(),
-        [report.clone()]
+        preview_profiles(encode(&report).as_bytes())
+            .unwrap()
+            .as_slice(),
+        std::slice::from_ref(&report)
     );
     for (field, value) in [
         ("format_version", json!(1)),
