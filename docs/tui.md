@@ -4,6 +4,8 @@ The initial release targets macOS Apple Silicon and Linux x64/arm64. Intel Mac i
 
 The default build includes `lazypencil tui`, using the same document, renderer, attachment service, permissions, and live ACP conversations as the CLI. It provides viewing and prompting, without manual drawing or property editing.
 
+Document previews pass owned raster pixels directly to the terminal encoder. PNG compression is deferred until `/open-preview` or `o` requests an export; the worker does not compress and decompress each frame. Preview pixels stay bounded by the existing window-size limit, are replaced with the displayed frame, and contain no thread-bound Skia objects. Attachment previews retain their original PNG bytes.
+
 ```sh
 lazypencil tui design.pen
 lazypencil tui new.pen --create --agent claude --image reference.png

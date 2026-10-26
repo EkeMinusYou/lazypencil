@@ -5,6 +5,36 @@ use std::process::Command;
 use std::time::Duration;
 
 #[test]
+fn direct_pixel_profiles_keep_legacy_reports_readable_and_require_the_new_phase_set() {
+    use lazypencil_xtask::performance::tui::preview_profiles;
+    use serde_json::json;
+    let report = json!({"format_version":3,"generation":1,"worker_total_ms":22.0,"phases_ms":{
+        "snapshot_ms":1.0,"render_raster_ms":2.0,"render_pixel_copy_ms":3.0,
+        "verification_ms":4.0,"terminal_encode_ms":5.0,"metadata_ms":6.0
+    }});
+    let encode = |report: &serde_json::Value| format!("LAZYPENCIL_PREVIEW_TIMING {report}\n");
+    assert_eq!(preview_profiles(encode(&report).as_bytes()).unwrap(), [report.clone()]);
+    for version in [1, 2, 4] {
+        let mut invalid = report.clone();
+        invalid["format_version"] = json!(version);
+        assert!(preview_profiles(encode(&invalid).as_bytes()).is_err());
+    }
+    for value in [json!(-1.0), json!("3"), json!(null)] {
+        let mut invalid = report.clone();
+        invalid["phases_ms"]["render_pixel_copy_ms"] = value;
+        assert!(preview_profiles(encode(&invalid).as_bytes()).is_err());
+    }
+    for obsolete in ["render_png_encode_ms", "decode_png_ms"] {
+        let mut invalid = report.clone();
+        invalid["phases_ms"][obsolete] = json!(0.0);
+        assert!(preview_profiles(encode(&invalid).as_bytes()).is_err());
+    }
+    let mut invalid = report;
+    invalid["worker_total_ms"] = json!(20.0);
+    assert!(preview_profiles(encode(&invalid).as_bytes()).is_err());
+}
+
+#[test]
 fn split_raster_and_png_profiles_preserve_strict_phase_and_interval_validation() {
     use lazypencil_xtask::performance::tui::preview_profiles;
     use serde_json::json;

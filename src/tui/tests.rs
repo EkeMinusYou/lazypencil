@@ -316,12 +316,13 @@ fn periodic_preview_checks_retry_a_captured_layout_after_render_failure() {
             let preview = output.result.unwrap();
             assert_eq!(preview.nodes.len(), 1);
             assert_eq!(preview.nodes[0].id, "red");
-            let pixels = image::load_from_memory(&preview.png).unwrap().to_rgba8();
+            let png = preview.image.png().unwrap().into_owned();
+            let pixels = image::load_from_memory(&png).unwrap().to_rgba8();
             assert!(pixels.pixels().any(|pixel| pixel.0 == [255, 0, 0, 255]));
             if let Some(previous) = &successful_png {
-                assert_eq!(previous, &preview.png);
+                assert_eq!(previous, &png);
             }
-            successful_png = Some(preview.png);
+            successful_png = Some(png);
             // A current, published image still avoids periodic re-encoding.
             worker.request(request);
             assert!(

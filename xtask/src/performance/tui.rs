@@ -40,6 +40,14 @@ pub fn preview_profiles(bytes: &[u8]) -> Result<Vec<serde_json::Value>> {
         "terminal_encode_ms",
         "metadata_ms",
     ];
+    let pixel_phases = [
+        "snapshot_ms",
+        "render_raster_ms",
+        "render_pixel_copy_ms",
+        "verification_ms",
+        "terminal_encode_ms",
+        "metadata_ms",
+    ];
     ensure!(bytes.len() <= 64 * 1024, "Unbounded preview profile log");
     let mut reports = Vec::new();
     let mut previous = None;
@@ -52,6 +60,7 @@ pub fn preview_profiles(bytes: &[u8]) -> Result<Vec<serde_json::Value>> {
         let phases: &[&str] = match report["format_version"].as_u64() {
             Some(1) => &legacy_phases,
             Some(2) => &phases,
+            Some(3) => &pixel_phases,
             _ => anyhow::bail!("Unsupported preview profile version"),
         };
         let generation = report["generation"]

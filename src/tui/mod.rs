@@ -1140,7 +1140,7 @@ impl App {
         let directory = self.conversation.directory().join("previews");
         crate::store::create_private_directory(&directory)?;
         let path = directory.join(format!("{}.png", uuid::Uuid::new_v4()));
-        crate::store::atomic_replace(&path, &preview.png)?;
+        crate::store::atomic_replace(&path, &preview.image.png()?)?;
         #[cfg(target_os = "macos")]
         let mut command = std::process::Command::new("open");
         #[cfg(target_os = "windows")]

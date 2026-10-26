@@ -64,6 +64,19 @@ pub struct RenderedImage {
     pub dynamic_artifacts: Vec<Value>,
 }
 
+struct RenderedRaster {
+    image: Image,
+    region: Rect,
+    snapshot_id: String,
+    assets: Vec<ImageDependency>,
+    dynamic_artifacts: Vec<Value>,
+}
+
+#[cfg(feature = "tui")]
+mod preview;
+#[cfg(feature = "tui")]
+pub(crate) use preview::{PreviewPixels, preview_with_runtime_observed};
+
 pub fn png(
     project: &Project,
     snapshot: &LayoutSnapshot,
@@ -101,7 +114,7 @@ pub(crate) fn png_with_runtime_observed(
     )
 }
 
-#[cfg(feature = "tui")]
+#[cfg(all(feature = "tui", test))]
 pub(crate) fn preview_png_with_runtime_observed(
     project: &Project,
     snapshot: &LayoutSnapshot,
@@ -152,6 +165,35 @@ fn png_impl(
     mut observer: Option<&mut dyn FnMut(&'static str)>,
     encoding: &skia_safe::png_encoder::Options,
 ) -> Result<RenderedImage> {
+    let raster = raster_impl(project, snapshot, options, runtime.as_deref_mut())?;
+    if let Some(observer) = observer.as_mut() {
+        observer("render_raster_ms");
+    }
+    let encoded = skia_safe::png_encoder::encode_image(None, &raster.image, encoding)
+        .ok_or_else(|| Error::new("RENDER_ERROR", "PNG encoding failed"))?;
+    if let Some(observer) = observer.as_mut() {
+        observer("render_png_encode_ms");
+    }
+    if let Some(runtime) = runtime.as_deref() {
+        runtime.check()?;
+    }
+    Ok(RenderedImage {
+        png: encoded.as_bytes().into(),
+        width: raster.image.width() as u32,
+        height: raster.image.height() as u32,
+        region: raster.region,
+        snapshot_id: raster.snapshot_id,
+        assets: raster.assets,
+        dynamic_artifacts: raster.dynamic_artifacts,
+    })
+}
+
+fn raster_impl(
+    project: &Project,
+    snapshot: &LayoutSnapshot,
+    options: &RenderOptions,
+    mut runtime: Option<&mut crate::dynamic::DynamicRuntime>,
+) -> Result<RenderedRaster> {
     if let Some(runtime) = runtime.as_deref() {
         runtime.check()?;
     }
@@ -264,23 +306,11 @@ fn png_impl(
         width as u32,
         height as u32,
     )?;
-    // This interval includes setup, asset checks and cropping, and separates
-    // final PNG encoding from the rest of the render request.
-    if let Some(observer) = observer.as_mut() {
-        observer("render_raster_ms");
-    }
-    let encoded = skia_safe::png_encoder::encode_image(None, &image, encoding)
-        .ok_or_else(|| Error::new("RENDER_ERROR", "PNG encoding failed"))?;
-    if let Some(observer) = observer.as_mut() {
-        observer("render_png_encode_ms");
-    }
     if let Some(runtime) = runtime.as_deref() {
         runtime.check()?;
     }
-    Ok(RenderedImage {
-        png: encoded.as_bytes().into(),
-        width: width as u32,
-        height: height as u32,
+    Ok(RenderedRaster {
+        image,
         region,
         snapshot_id: snapshot.id.clone(),
         assets,
@@ -1777,6 +1807,76 @@ fn unsupported(node: &ResolvedNode, message: impl Into<String>) -> Error {
 mod tests {
     use super::*;
 
+    #[cfg(feature = "tui")]
+    #[test]
+    fn preview_pixel_transfer_matches_png_for_every_alpha_and_premultiplied_channel() {
+        // Exhaust every legal (alpha, premultiplied channel) pair. Include
+        // zero alpha, nontrivial colors and both native channel orders.
+        let mut rgba = Vec::new();
+        for alpha in 0_u8..=255 {
+            for channel in 0_u8..=255 {
+                let channel = channel.min(alpha);
+                rgba.extend([channel, alpha - channel, alpha / 3, alpha]);
+            }
+        }
+        let info = skia_safe::ImageInfo::new(
+            (256, 256),
+            skia_safe::ColorType::RGBA8888,
+            skia_safe::AlphaType::Premul,
+            None,
+        );
+        let original =
+            skia_safe::images::raster_from_data(&info, Data::new_copy(&rgba), 256 * 4).unwrap();
+        for color_type in [
+            skia_safe::ColorType::RGBA8888,
+            skia_safe::ColorType::BGRA8888,
+        ] {
+            let info = info.with_color_type(color_type);
+            let mut native = vec![0_u8; rgba.len()];
+            assert!(original.read_pixels(
+                &info,
+                &mut native,
+                256 * 4,
+                (0, 0),
+                skia_safe::image::CachingHint::Disallow,
+            ));
+            let image =
+                skia_safe::images::raster_from_data(&info, Data::new_copy(&native), 256 * 4)
+                    .unwrap();
+            let mut options = skia_safe::png_encoder::Options::default();
+            options.z_lib_level = 1;
+            let encoded = skia_safe::png_encoder::encode_image(None, &image, &options).unwrap();
+            let expected = image::load_from_memory(encoded.as_bytes())
+                .unwrap()
+                .to_rgba8();
+            let (pixels, bitmap) = PreviewPixels::from_image(&image).unwrap();
+            let actual = bitmap.into_rgba8();
+            assert_eq!(actual.dimensions(), expected.dimensions());
+            assert_eq!(
+                actual
+                    .as_raw()
+                    .iter()
+                    .zip(expected.as_raw())
+                    .position(|(a, b)| a != b),
+                None,
+                "Direct pixel channel mismatch: {color_type:?}"
+            );
+            assert!(
+                pixels.png().unwrap() == encoded.as_bytes(),
+                "PNG mismatch: {color_type:?}"
+            );
+            // Export owns its pixels and remains valid after Skia's raster dies.
+            drop(image);
+            let restored = image::load_from_memory(&pixels.png().unwrap())
+                .unwrap()
+                .to_rgba8();
+            assert!(
+                restored == expected,
+                "Export lost owned pixels: {color_type:?}"
+            );
+        }
+    }
+
     #[test]
     fn render_phase_observation_preserves_png_bytes_and_rejects_invalid_input_before_reporting() {
         let directory = tempfile::TempDir::new().unwrap();
@@ -1851,6 +1951,21 @@ mod tests {
                     None,
                 )
                 .unwrap();
+                let mut pixel_phases = Vec::new();
+                let direct = preview_with_runtime_observed(
+                    &project,
+                    &snapshot,
+                    &variant,
+                    &mut runtime,
+                    None,
+                    Some(&mut |phase| pixel_phases.push(phase)),
+                )
+                .unwrap();
+                assert_eq!(pixel_phases, ["render_raster_ms", "render_pixel_copy_ms"]);
+                assert_eq!(direct.pixels.png().unwrap(), fast.png);
+                let old_bitmap = image::load_from_memory(&fast.png).unwrap().to_rgba8();
+                assert_eq!(direct.bitmap.into_rgba8(), old_bitmap);
+                assert_eq!(direct.dynamic_artifacts, fast.dynamic_artifacts);
                 assert_eq!(preview_phases, ["render_raster_ms", "render_png_encode_ms"]);
                 assert_eq!(fast.png, unobserved.png);
                 assert_ne!(fast.png, balanced.png);

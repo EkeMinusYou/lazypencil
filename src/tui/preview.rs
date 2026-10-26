@@ -80,13 +80,25 @@ pub struct Request {
 }
 pub struct Preview {
     pub protocol: Protocol,
-    pub png: Vec<u8>,
+    pub(crate) image: PreviewImage,
     pub view: View,
     pub nodes: Vec<Node>,
     pub summary: Value,
     pub attachment: bool,
     pub time_dependent: bool,
     pub live_pages: bool,
+}
+pub(crate) enum PreviewImage {
+    Png(Vec<u8>),
+    Pixels(crate::render::PreviewPixels),
+}
+impl PreviewImage {
+    pub fn png(&self) -> Result<std::borrow::Cow<'_, [u8]>> {
+        match self {
+            Self::Png(png) => Ok(std::borrow::Cow::Borrowed(png)),
+            Self::Pixels(pixels) => pixels.png().map(std::borrow::Cow::Owned),
+        }
+    }
 }
 pub struct Node {
     pub id: String,
@@ -268,7 +280,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 let protocol = encode(picker, image, request.cells, image_id)?;
                 return Ok(Some(Preview {
                     protocol,
-                    png,
+                    image: PreviewImage::Png(png),
                     view: request.view,
                     nodes: vec![],
                     summary: json!({"attachment":attachment}),
@@ -320,7 +332,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 ..Default::default()
             };
             timing.mark("snapshot_ms");
-            let image = crate::render::preview_png_with_runtime_observed(
+            let image = crate::render::preview_with_runtime_observed(
                 project,
                 layout,
                 &options,
@@ -334,10 +346,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 return Ok(None);
             }
             timing.mark("verification_ms");
-            let bitmap = image::load_from_memory_with_format(&image.png, image::ImageFormat::Png)
-                .map_err(|error| Error::new("RENDER_ERROR", error.to_string()))?;
-            timing.mark("decode_png_ms");
-            let protocol = encode(picker, bitmap, request.cells, image_id)?;
+            let protocol = encode(picker, image.bitmap, request.cells, image_id)?;
             timing.mark("terminal_encode_ms");
             let nodes = layout.items.iter().map(|item| Node {
                 id: item.record.id.clone(), name: item.node.properties.get("name").and_then(Value::as_str).unwrap_or(&item.record.id).into(), bounds: item.record.visual_bounds,
@@ -356,7 +365,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             timing.mark("metadata_ms");
             Ok(Some(Preview {
                 protocol,
-                png: image.png,
+                image: PreviewImage::Pixels(image.pixels),
                 view,
                 nodes,
                 summary,
@@ -418,7 +427,7 @@ impl PreviewTiming {
     }
     fn report(&self, generation: u64) -> Option<Value> {
         self.clocks.map(|(started, _)| {
-            json!({"format_version":2,"generation":generation,"phases_ms":self.phases,"worker_total_ms":started.elapsed().as_secs_f64()*1000.0})
+            json!({"format_version":3,"generation":generation,"phases_ms":self.phases,"worker_total_ms":started.elapsed().as_secs_f64()*1000.0})
         })
     }
 }
@@ -460,14 +469,14 @@ mod tests {
         for phase in [
             "snapshot_ms",
             "render_raster_ms",
-            "render_png_encode_ms",
+            "render_pixel_copy_ms",
             "metadata_ms",
         ] {
             enabled.mark(phase);
         }
         let report = enabled.report(7).unwrap();
         assert_eq!(report["generation"], 7);
-        assert_eq!(report["format_version"], 2);
+        assert_eq!(report["format_version"], 3);
         let phases = report["phases_ms"].as_object().unwrap();
         assert_eq!(phases.len(), 4);
         let sum = phases
@@ -608,7 +617,7 @@ mod tests {
                 changed.summary["snapshot_id"],
                 initial.summary["snapshot_id"]
             );
-            assert_eq!(changed.png, initial.png);
+            assert_eq!(changed.image.png().unwrap(), initial.image.png().unwrap());
             worker.request(request);
             assert!(
                 tokio::time::timeout(Duration::from_millis(200), worker.next())
@@ -662,7 +671,7 @@ mod tests {
                 .unwrap()
                 .result
                 .unwrap();
-            assert_eq!(initial.png, changed.png);
+            assert_eq!(initial.image.png().unwrap(), changed.image.png().unwrap());
             assert_ne!(
                 initial.summary["snapshot_id"],
                 changed.summary["snapshot_id"]
@@ -738,7 +747,8 @@ mod tests {
                 .result
                 .unwrap();
             assert_ne!(
-                initial.png, changed.png,
+                initial.image.png().unwrap(),
+                changed.image.png().unwrap(),
                 "The new CFF default must replace TrueType pixels"
             );
             assert_eq!(initial.nodes[0].id, changed.nodes[0].id);
@@ -788,7 +798,9 @@ mod tests {
                 .result
                 .unwrap();
             assert_eq!(first.view.center, [-60.0, -30.0]);
-            let bitmap = image::load_from_memory(&first.png).unwrap().to_rgba8();
+            let bitmap = image::load_from_memory(&first.image.png().unwrap())
+                .unwrap()
+                .to_rgba8();
             assert_eq!(
                 bitmap.get_pixel(bitmap.width() / 2, bitmap.height() / 2).0,
                 [255, 0, 0, 255]
@@ -805,7 +817,9 @@ mod tests {
                 .result
                 .unwrap();
             assert_eq!(store.read().unwrap().revision(), original_revision);
-            let bitmap = image::load_from_memory(&changed.png).unwrap().to_rgba8();
+            let bitmap = image::load_from_memory(&changed.image.png().unwrap())
+                .unwrap()
+                .to_rgba8();
             assert_eq!(
                 bitmap.get_pixel(bitmap.width() / 2, bitmap.height() / 2).0,
                 [0, 0, 255, 255]
@@ -821,9 +835,10 @@ mod tests {
                     .await
                     .unwrap();
                 if output.generation == 20 {
-                    let bitmap = image::load_from_memory(&output.result.unwrap().png)
-                        .unwrap()
-                        .to_rgba8();
+                    let bitmap =
+                        image::load_from_memory(&output.result.unwrap().image.png().unwrap())
+                            .unwrap()
+                            .to_rgba8();
                     assert!(
                         !bitmap.pixels().any(|pixel| pixel.0 == [0, 0, 255, 255]),
                         "The final panned view must replace earlier requests"
