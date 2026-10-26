@@ -59,6 +59,15 @@ pub const BROWSER_CI_TARGETS: &[&str] = &[
     "shader_uniforms",
     "windows_agent",
 ];
+pub const RENDER_TARGETS: &[&str] = &[
+    "blends",
+    "dynamic_render",
+    "graphics",
+    "mesh",
+    "render",
+    "shader_uniforms",
+];
+pub const RENDER_BROWSER: &str = "browser_pixels_are_captured_composited_and_reused_until_refresh";
 pub const INPUT_CONFIG: &str =
     "navigation_shortcuts_are_user_owned_replace_defaults_and_validate_scope_conflicts";
 pub const RECLAIM: &str =
@@ -203,6 +212,27 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     .to_owned();
     let preprocessor = preprocessor_changed(paths);
     let font_inputs = paths.iter().any(|path| font_input(path));
+    let renderer = |path: &str| path == "src/render.rs" || path.starts_with("src/render/");
+    if paths.iter().any(|path| renderer(path))
+        && paths.iter().all(|path| {
+            ci_only(path)
+                || renderer(path)
+                || [
+                    "tests/graphics.rs",
+                    "tests/render.rs",
+                    "tests/blends.rs",
+                    "tests/mesh.rs",
+                ]
+                .contains(&path.as_str())
+        })
+    {
+        return Ok(Plan {
+            platform,
+            suite: "render".into(),
+            targets: RENDER_TARGETS.iter().map(|name| (*name).into()).collect(),
+            preprocessor,
+        });
+    }
     if paths.iter().all(|path| ci_only(path))
         && paths
             .iter()

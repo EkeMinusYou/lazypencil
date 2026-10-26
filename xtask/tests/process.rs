@@ -39,6 +39,57 @@ fn focused_scheduling_preserves_reproduction_order_and_excludes_only_repeated_co
 }
 
 #[test]
+fn renderer_focus_runs_native_cases_and_exact_dynamic_pixels_before_the_full_scope() {
+    let targets = focus::RENDER_TARGETS
+        .iter()
+        .map(|s| (*s).into())
+        .collect::<Vec<_>>();
+    let plan = commands::plan(&util::root(), "render", &targets).unwrap();
+    assert_eq!(plan.checks.len(), 3);
+    let normal = &plan.checks[0];
+    assert!(normal.iter().any(|arg| arg == "--lib"));
+    let selected = normal
+        .windows(2)
+        .filter(|pair| pair[0] == "--test")
+        .map(|pair| pair[1].as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(selected, focus::RENDER_TARGETS);
+    assert!(
+        normal
+            .windows(2)
+            .any(|pair| pair == ["--skip", focus::TEXT_LAYER_REPRODUCTION])
+    );
+    assert!(
+        !normal
+            .iter()
+            .any(|arg| ["--ignored", "--include-ignored"].contains(&arg.as_str()))
+    );
+    for (command, (target, filter)) in plan.checks[1..].iter().zip([
+        ("dynamic_render", focus::RENDER_BROWSER),
+        ("shader_uniforms", focus::SHADER_REGRESSIONS[1]),
+    ]) {
+        assert!(command.windows(2).any(|pair| pair == ["--test", target]));
+        assert!(command.iter().any(|arg| arg == filter));
+        for arg in ["--ignored", "--exact", "--test-threads=1"] {
+            assert!(command.iter().any(|actual| actual == arg));
+        }
+    }
+    assert!(commands::plan(&util::root(), "render", &["render".into()]).is_err());
+    let mixed = focus::select(
+        &util::root(),
+        &["src/render.rs".into(), "src/script.rs".into()],
+        "auto",
+    )
+    .unwrap();
+    assert_eq!(mixed.suite, "dynamic");
+    assert!(mixed.targets.iter().any(|target| target == "script_scope"));
+    assert_eq!(
+        focus::PLATFORMS,
+        ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-15"]
+    );
+}
+
+#[test]
 fn color_font_reproductions_run_before_chromium_and_are_excluded_only_afterwards() {
     for suite in ["graphics", "dynamic", "copy"] {
         let targets = vec!["font_sources".into(), "render".into()];

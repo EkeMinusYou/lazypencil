@@ -109,7 +109,7 @@ fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() 
         "auto",
     )
     .unwrap();
-    assert_eq!(text_layers.suite, "dynamic");
+    assert_eq!(text_layers.suite, "render");
     assert!(
         text_layers
             .targets

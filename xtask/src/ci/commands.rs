@@ -83,7 +83,8 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
             "browser",
             "shader",
             "release",
-            "candidate"
+            "candidate",
+            "render"
         ]
         .contains(&suite),
         "Invalid focused suite"
@@ -173,6 +174,41 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
             "--lib",
             "--no-run",
         ]));
+    }
+    if suite == "render" {
+        ensure!(
+            targets
+                .iter()
+                .map(String::as_str)
+                .eq(focus::RENDER_TARGETS.iter().copied()),
+            "Renderer focus requires its complete native and dynamic target set"
+        );
+        let mut normal = append(&common, &["--lib"]);
+        normal.extend(selected(targets, &[]));
+        normal.extend(words(&["--", "--test-threads=2"]));
+        normal.extend(input_skip);
+        let mut checks = vec![normal];
+        for (target, name) in [
+            ("dynamic_render", focus::RENDER_BROWSER),
+            ("shader_uniforms", focus::SHADER_REGRESSIONS[1]),
+        ] {
+            checks.push(append(
+                &common,
+                &[
+                    "--test",
+                    target,
+                    name,
+                    "--",
+                    "--ignored",
+                    "--exact",
+                    "--test-threads=1",
+                ],
+            ));
+        }
+        return Ok(Plan {
+            build: builds,
+            checks,
+        });
     }
     if suite == "browser" {
         ensure!(

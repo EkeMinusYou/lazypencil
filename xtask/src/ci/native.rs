@@ -43,6 +43,7 @@ pub enum Stage {
     Clipboard,
     BrowserSetup,
     BrowserTest,
+    BrowserRelease,
     Mcp,
     LongTests,
     Panel,
@@ -662,6 +663,13 @@ impl Session {
             ),
             Stage::BrowserSetup => browser::setup(self),
             Stage::BrowserTest => browser::tests(self),
+            Stage::BrowserRelease => parallel::run(vec![
+                (
+                    "release compilation",
+                    Box::new(|| release::compile(self, "lazypencil-release.log")),
+                ),
+                ("browser verification", Box::new(|| browser::tests(self))),
+            ]),
             Stage::Mcp => {
                 for test in [
                     "real_mcp_shader_assets_uniform_edits_and_browser_refresh_return_image_content",
@@ -826,14 +834,10 @@ impl Session {
             &self.temporary.join("lazypencil-material-fonts"),
         )?;
         let catalog = self.verified_catalog(&["mcp", "tui", "optional_icons"])?;
-        // Only compilation overlaps the two test lanes. They execute immutable
-        // debug binaries, so no test waits for Cargo's release build lock.
-        // Joining every lane keeps subsequent smoke tests and measurements isolated.
+        // Release compilation already joined the browser stage. These two
+        // independent lanes use immutable debug binaries, and both join before
+        // subsequent smoke tests and resource measurements.
         parallel::run(vec![
-            (
-                "release compilation",
-                Box::new(|| release::compile(self, "lazypencil-release.log")),
-            ),
             (
                 "process lifecycle",
                 Box::new(|| -> Result<()> {

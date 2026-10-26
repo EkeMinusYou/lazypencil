@@ -139,15 +139,13 @@
     ],
     "expected": {
       "platform": "ubuntu-24.04",
-      "suite": "dynamic",
+      "suite": "render",
       "targets": [
-        "browser_readiness",
+        "blends",
         "dynamic_render",
         "graphics",
-        "imports",
-        "native_layout",
+        "mesh",
         "render",
-        "sampler_sources",
         "shader_uniforms"
       ],
       "preprocessor": false
@@ -822,16 +820,13 @@
     ],
     "expected": {
       "platform": "ubuntu-24.04",
-      "suite": "dynamic",
+      "suite": "render",
       "targets": [
-        "browser_readiness",
+        "blends",
         "dynamic_render",
         "graphics",
-        "imports",
         "mesh",
-        "native_layout",
         "render",
-        "sampler_sources",
         "shader_uniforms"
       ],
       "preprocessor": false
@@ -843,15 +838,13 @@
     ],
     "expected": {
       "platform": "ubuntu-24.04",
-      "suite": "dynamic",
+      "suite": "render",
       "targets": [
-        "browser_readiness",
+        "blends",
         "dynamic_render",
         "graphics",
-        "imports",
-        "native_layout",
+        "mesh",
         "render",
-        "sampler_sources",
         "shader_uniforms"
       ],
       "preprocessor": false
@@ -863,15 +856,13 @@
     ],
     "expected": {
       "platform": "ubuntu-24.04",
-      "suite": "dynamic",
+      "suite": "render",
       "targets": [
-        "browser_readiness",
+        "blends",
         "dynamic_render",
         "graphics",
-        "imports",
-        "native_layout",
+        "mesh",
         "render",
-        "sampler_sources",
         "shader_uniforms"
       ],
       "preprocessor": false
@@ -883,15 +874,13 @@
     ],
     "expected": {
       "platform": "ubuntu-24.04",
-      "suite": "dynamic",
+      "suite": "render",
       "targets": [
-        "browser_readiness",
+        "blends",
         "dynamic_render",
         "graphics",
-        "imports",
-        "native_layout",
+        "mesh",
         "render",
-        "sampler_sources",
         "shader_uniforms"
       ],
       "preprocessor": false

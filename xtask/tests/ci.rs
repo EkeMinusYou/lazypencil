@@ -46,7 +46,7 @@ fn browser_scheduler_changes_execute_the_actual_two_lanes_before_the_full_matrix
     let mut mixed = paths.to_vec();
     mixed.push("src/render.rs".into());
     let mixed_plan = focus::select(&util::root(), &mixed, "auto").unwrap();
-    assert_eq!(mixed_plan.suite, "dynamic");
+    assert_eq!(mixed_plan.suite, "render");
     assert!(mixed_plan.targets.iter().any(|target| target == "graphics"));
     assert!(focus::tui_measurement_changed(&mixed));
 }

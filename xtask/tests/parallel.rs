@@ -39,14 +39,20 @@ fn browser_lanes_preserve_every_existing_target_once_without_intra_target_parall
 
 #[test]
 fn ci_lanes_overlap_join_every_completion_and_report_a_build_failure() {
+    for names in [
+        &["release compilation", "browser verification"][..],
+        &["release compilation", "lifecycle", "Material"][..],
+    ] {
+        assert_lane_completion(names);
+    }
+}
+
+fn assert_lane_completion(names: &[&'static str]) {
     let (entered, arrivals) = mpsc::channel();
     let finished = Arc::new(AtomicUsize::new(0));
     let mut releases = Vec::new();
     let mut tasks: Vec<parallel::Task<'_>> = Vec::new();
-    for (index, name) in ["release compilation", "lifecycle", "Material"]
-        .into_iter()
-        .enumerate()
-    {
+    for (index, &name) in names.iter().enumerate() {
         let (release, gate) = mpsc::channel();
         releases.push(release);
         let entered = entered.clone();
@@ -65,9 +71,10 @@ fn ci_lanes_overlap_join_every_completion_and_report_a_build_failure() {
     drop(entered);
     // None of the lanes can finish until every lane has started. The bounded
     // channels make accidental serialization fail without an unbounded wait.
+    let count = names.len();
     let controller = std::thread::spawn(move || -> anyhow::Result<Vec<&'static str>> {
         let mut seen = Vec::new();
-        for _ in 0..3 {
+        for _ in 0..count {
             seen.push(arrivals.recv_timeout(Duration::from_secs(5))?);
         }
         for release in releases {
@@ -77,8 +84,8 @@ fn ci_lanes_overlap_join_every_completion_and_report_a_build_failure() {
     });
     let result = parallel::run(tasks);
     let seen = controller.join().unwrap().unwrap();
-    assert_eq!(seen.len(), 3);
-    assert_eq!(finished.load(Ordering::SeqCst), 7);
+    assert_eq!(seen.len(), count);
+    assert_eq!(finished.load(Ordering::SeqCst), (1 << count) - 1);
     let error = format!("{:#}", result.unwrap_err());
     assert!(
         error.contains("release compilation") && error.contains("compiler fixture failed"),

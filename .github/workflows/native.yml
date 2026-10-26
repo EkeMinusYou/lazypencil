@@ -210,7 +210,7 @@ jobs:
           if-no-files-found: error
           retention-days: 3
       - name: Install and diagnose the verified sandboxed Chromium runtime
-        if: inputs.phase == 'full' || inputs.suite == 'dynamic' || inputs.suite == 'shader' || inputs.suite == 'copy' || inputs.suite == 'browser' || inputs.suite == 'browser-ci'
+        if: inputs.phase == 'full' || inputs.suite == 'dynamic' || inputs.suite == 'shader' || inputs.suite == 'copy' || inputs.suite == 'browser' || inputs.suite == 'browser-ci' || inputs.suite == 'render'
         timeout-minutes: 15
         run: cargo xtask ci native browser-setup
       - name: Run affected tests and pixel reproductions
@@ -241,10 +241,10 @@ jobs:
             ${{ runner.temp }}/candidate-smoke.png
           if-no-files-found: error
           retention-days: 3
-      - name: Verify real browser shader import and cancellation pixels
+      - name: Verify browser pixels alongside release compilation
         if: inputs.phase == 'full'
-        timeout-minutes: 20
-        run: cargo xtask ci native browser-test
+        timeout-minutes: 60
+        run: cargo xtask ci native browser-release
       - name: Verify actual Kitty and Sixel window pixels and keyboard operations
         id: terminal-test
         if: inputs.phase == 'focus' && inputs.suite == 'candidate' && runner.os == 'Linux'
@@ -274,7 +274,7 @@ jobs:
           path: ${{ runner.temp }}/tui-measurement
           if-no-files-found: error
           retention-days: 3
-      - name: Compile release alongside independent lifecycle and Material suites
+      - name: Verify independent lifecycle and Material suites
         if: inputs.phase == 'full'
         run: cargo xtask ci native long-tests
       - name: Render the combined example for review
