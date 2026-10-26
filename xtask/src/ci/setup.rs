@@ -27,6 +27,10 @@ pub fn linux_dependencies() -> Result<()> {
     hosted_linux_packages(PACKAGES)
 }
 
+pub fn linux_profile_dependencies() -> Result<()> {
+    hosted_linux_packages(&["binutils", "libfontconfig1", "libfreetype6"])
+}
+
 pub fn linux_terminal_dependencies() -> Result<()> {
     hosted_linux_packages(&[
         "kitty", "xterm", "xvfb", "xauth", "xdotool", "x11-apps", "strace",

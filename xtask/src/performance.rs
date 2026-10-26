@@ -11,6 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub mod profile;
 #[cfg(unix)]
 pub mod resources;
 pub mod tui;
@@ -54,10 +55,20 @@ pub fn png(path: &Path, report: &Value, width: u32, height: u32) -> Result<Vec<u
 }
 
 pub fn validate_render(raw: &[u8], output: &Path, asset_count: usize) -> Result<String> {
+    validate_render_dimensions(raw, output, asset_count, 1920, 1080)
+}
+
+pub fn validate_render_dimensions(
+    raw: &[u8],
+    output: &Path,
+    asset_count: usize,
+    width: u32,
+    height: u32,
+) -> Result<String> {
     let report: Value = serde_json::from_slice(raw)?;
     ensure!(
-        report["width"] == 1920 && report["height"] == 1080 && report["node_count"] == 1000,
-        "Benchmark requires exactly 1000 nodes at 1920x1080"
+        report["width"] == width && report["height"] == height && report["node_count"] == 1000,
+        "Benchmark node count or dimensions differ"
     );
     ensure!(
         report["diagnostics"] == json!([])
@@ -68,7 +79,7 @@ pub fn validate_render(raw: &[u8], output: &Path, asset_count: usize) -> Result<
             && report["script_executions"] == json!([]),
         "Unexpected benchmark diagnostics, assets or dynamic work"
     );
-    Ok(util::digest(png(output, &report, 1920, 1080)?))
+    Ok(util::digest(png(output, &report, width, height)?))
 }
 
 pub fn measure(command: &mut Command, timeout: f64) -> Result<(Value, Vec<u8>)> {

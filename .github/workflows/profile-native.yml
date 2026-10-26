@@ -1,0 +1,55 @@
+name: Native CPU profile
+on:
+  workflow_dispatch:
+    inputs:
+      source_run:
+        description: Successful CI run containing the Linux x64 candidate
+        default: '40365442184'
+        required: true
+        type: string
+      revision:
+        description: Candidate source revision
+        default: 9c07383461d9f50200c7486a36a739837982ceb3
+        required: true
+        type: string
+      archive_sha256:
+        description: Verified candidate tar SHA-256
+        default: 998ef9cce3bc0bb6d4fc63a599154c00975125e18be5455e6a258f1115f3acd7
+        required: true
+        type: string
+      binary_sha256:
+        description: Verified executable SHA-256
+        default: 6a1c9ab3f7a1ae2bb6fb20602437f2e3ebd2e116337c69cb80579b10dfa66bbd
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: native-cpu-profile-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  profile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/xtask
+      - name: Sample the verified release candidate without native compilation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ inputs.source_run }}
+          SOURCE_REVISION: ${{ inputs.revision }}
+          ARCHIVE_SHA256: ${{ inputs.archive_sha256 }}
+          BINARY_SHA256: ${{ inputs.binary_sha256 }}
+        run: cargo xtask profile-native --run "$SOURCE_RUN" --revision "$SOURCE_REVISION" --archive-sha256 "$ARCHIVE_SHA256" --binary-sha256 "$BINARY_SHA256" --output "$RUNNER_TEMP/native-profile"
+      - name: Retain CPU samples and unchanged rendered output
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: native-profile-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/native-profile
+          if-no-files-found: error
+          retention-days: 3
