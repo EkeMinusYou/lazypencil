@@ -86,7 +86,7 @@ fn text(properties: Value) -> Scene {
 fn text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations() {
     use lazypencil::geometry::Affine;
     use skia_safe::{BlendMode, Matrix, Paint, Path, Rect, canvas::SaveLayerRec};
-    for ((rotation, flip, decoration, parent_opacity), nested) in [
+    for (((rotation, flip, decoration, parent_opacity), nested), parent_shadow) in [
         (0.0, false, false, 1.0),
         (17.0, false, true, 1.0),
         (-43.0, true, true, 1.0),
@@ -96,6 +96,7 @@ fn text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations() 
     ]
     .into_iter()
     .flat_map(|case| [(case, false), (case, true)])
+    .flat_map(|case| [(case, false), (case, true)])
     {
         let offset = if nested { [37.5, 44.25] } else { [0.0, 0.0] };
         let mut children = json!([{"id":"frame","type":"frame","layout":"none","x":offset[0],"y":offset[1],"width":300,"height":260,"clip":true,"opacity":parent_opacity,"children":[{
@@ -104,6 +105,10 @@ fn text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations() 
             "fontStyle":"italic","textAlign":"center","lineHeight":1.4,"fill":"#FF0000B0",
             "rotation":rotation,"flipX":flip,"underline":decoration,"strikethrough":decoration
         }]}]);
+        if parent_shadow {
+            children[0]["effect"] =
+                json!({"type":"shadow","offset":{"x":2,"y":3},"blur":4,"color":"#00000060"});
+        }
         if nested {
             children = json!([{"id":"canvas","type":"frame","layout":"none","width":580,"height":440,"clip":true,"children":children}]);
         }
@@ -149,9 +154,19 @@ fn text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations() 
             canvas.concat(&Matrix::from_affine(
                 &viewport.then(parent.record.transform).0,
             ));
-            if parent_opacity < 1.0 {
+            if parent_opacity < 1.0 || parent_shadow {
                 let mut parent = Paint::default();
                 parent.set_alpha_f(parent_opacity);
+                if parent_shadow {
+                    parent.set_image_filter(skia_safe::image_filters::drop_shadow(
+                        (2.0, 3.0),
+                        (2.0, 2.0),
+                        Color::from_argb(96, 0, 0, 0),
+                        None,
+                        None,
+                        None,
+                    ));
+                }
                 canvas.save_layer(&SaveLayerRec::default().paint(&parent));
             }
             canvas.clip_rect(Rect::from_xywh(0.0, 0.0, 300.0, 260.0), None, true);
@@ -185,7 +200,7 @@ fn text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations() 
             block.paragraph.paint(canvas, (0.0, 0.0));
             canvas.restore();
             canvas.restore();
-            if parent_opacity < 1.0 {
+            if parent_opacity < 1.0 || parent_shadow {
                 canvas.restore();
             }
             let expected = reference.image_snapshot();
@@ -200,7 +215,7 @@ fn text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations() 
                     assert_eq!(
                         color,
                         expected.get_color((x, y)),
-                        "scale={scale} rotation={rotation} flip={flip} parent_opacity={parent_opacity} nested={nested} at {x},{y}"
+                        "scale={scale} rotation={rotation} flip={flip} parent_opacity={parent_opacity} parent_shadow={parent_shadow} nested={nested} at {x},{y}"
                     );
                 }
             }
