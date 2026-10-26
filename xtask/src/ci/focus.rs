@@ -137,7 +137,7 @@ pub fn preprocessor_changed(paths: &[String]) -> bool {
 
 pub fn tui_measurement_changed(paths: &[String]) -> bool {
     paths.iter().any(|path| {
-        path.starts_with("xtask/src/performance/")
+        path.starts_with("xtask/src/performance/") && path != "xtask/src/performance/profile.rs"
             || path.starts_with("src/tui/") && path != "src/tui/tests.rs"
             || path == "src/render.rs"
             || path.starts_with("src/render/")

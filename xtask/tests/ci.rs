@@ -29,6 +29,14 @@ fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() 
         "docs/performance.md".into(),
         "xtask/src/notices/rust.rs".into()
     ]));
+    let cpu_profile_only = vec!["xtask/src/performance/profile.rs".into()];
+    assert!(!focus::tui_measurement_changed(&cpu_profile_only));
+    assert_eq!(
+        focus::select(&util::root(), &cpu_profile_only, "auto")
+            .unwrap()
+            .suite,
+        "ci"
+    );
     for path in [
         "src/tui/mod.rs",
         "src/tui/preview.rs",

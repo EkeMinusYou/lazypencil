@@ -51,6 +51,35 @@ fn sampled_cpu(text: &str) -> Result<f64> {
     Ok(seconds)
 }
 
+fn render_payload<'a>(bytes: &'a [u8], experiment: &Path) -> Result<&'a [u8]> {
+    let text = std::str::from_utf8(bytes)?;
+    let payload = if text.starts_with("Creating experiment directory ") {
+        let (notice, payload) = text
+            .split_once('\n')
+            .context("Incomplete collector notice")?;
+        let prefix = format!(
+            "Creating experiment directory {} (Process ID: ",
+            experiment.display()
+        );
+        let pid = notice
+            .strip_prefix(&prefix)
+            .and_then(|s| s.strip_suffix(") ..."))
+            .context("Unexpected collector notice")?;
+        ensure!(
+            pid.parse::<u32>().is_ok_and(|pid| pid > 0),
+            "Invalid collector PID"
+        );
+        payload
+    } else {
+        text
+    };
+    ensure!(
+        payload.trim_start().starts_with('{'),
+        "Missing native render JSON"
+    );
+    Ok(payload.as_bytes())
+}
+
 fn capture(command: &mut Command, output: &Path, seconds: u64) -> Result<Vec<u8>> {
     let result = process::output_limited(command, Duration::from_secs(seconds), 4 * 1024 * 1024)?;
     fs::write(output, &result.stdout)?;
@@ -219,7 +248,7 @@ impl Arguments {
                         30,
                     )?;
                     ensure!(
-                        validate(&raw)? == expected,
+                        validate(render_payload(&raw, &experiment)?)? == expected,
                         "Profiling changed rendered PNG bytes"
                     );
                     experiments.push(experiment);
@@ -274,6 +303,21 @@ impl Arguments {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn collector_notice_is_separated_without_accepting_arbitrary_stdout() {
+        let path = Path::new("/owned/sample.er");
+        let raw = b"Creating experiment directory /owned/sample.er (Process ID: 2837) ...\n{\"width\":960}\n";
+        assert_eq!(render_payload(raw, path).unwrap(), b"{\"width\":960}\n");
+        assert_eq!(render_payload(b"{}\n", path).unwrap(), b"{}\n");
+        for bad in [
+            "Creating experiment directory /another/sample.er (Process ID: 2837) ...\n{}",
+            "Creating experiment directory /owned/sample.er (Process ID: invalid) ...\n{}",
+            "Creating experiment directory ",
+            "unexpected output\n{}",
+        ] {
+            assert!(render_payload(bad.as_bytes(), path).is_err());
+        }
+    }
     #[test]
     fn cpu_samples_require_one_positive_total() {
         assert_eq!(
