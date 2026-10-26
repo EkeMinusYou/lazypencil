@@ -57,6 +57,9 @@ const FLAG_PREFIXES: &[&str] = &[
     "CXXFLAGS_",
 ];
 
+mod compatible;
+pub use compatible::{restore_combined, restore_compatible};
+
 #[derive(Subcommand)]
 pub enum Command {
     Native {
@@ -70,8 +73,12 @@ pub enum Command {
         github_output: Option<PathBuf>,
     },
     Application {
-        #[arg(value_parser = ["identify","stage","restore","restore-or-prune"])]
+        #[arg(value_parser = ["identify","stage","restore","restore-or-prune","restore-compatible"])]
         operation: String,
+        #[arg(long)]
+        compatible_directory: Option<PathBuf>,
+        #[arg(long, default_value = "")]
+        matched_key: String,
         #[arg(long)]
         release_only: bool,
         #[arg(long)]
@@ -152,6 +159,8 @@ impl Command {
             }
             Self::Application {
                 operation,
+                compatible_directory,
+                matched_key,
                 release_only,
                 source,
                 target,
@@ -181,12 +190,30 @@ impl Command {
                                 ("checkpoint".into(), checkpoint.clone()),
                                 ("checkpoint_prefix".into(), checkpoint_prefix.clone()),
                                 ("checkpoint_legacy".into(), identity.checkpoint.clone()),
+                                (
+                                    "compatible_primary".into(),
+                                    identity.compatible_primary.clone(),
+                                ),
+                                (
+                                    "compatible_prefix".into(),
+                                    identity.compatible_prefix.clone(),
+                                ),
                             ]),
                         )?;
                         json!({"primary":identity.primary,"checkpoint":checkpoint,"checkpoint_prefix":checkpoint_prefix,"checkpoint_legacy":identity.checkpoint,"source_commit":identity.source_commit})
                     }
                     "stage" => stage(&source, &target, &directory, &identity)?,
                     "restore" => restore(&source, &target, &directory, &identity)?,
+                    "restore-compatible" => restore_combined(
+                        &source,
+                        &target,
+                        &directory,
+                        compatible_directory
+                            .as_deref()
+                            .context("Missing compatible directory")?,
+                        &matched_key,
+                        &identity,
+                    )?,
                     "restore-or-prune" => match restore(&source, &target, &directory, &identity) {
                         Ok(report) => report,
                         Err(error) => {
@@ -550,12 +577,16 @@ pub fn source_fingerprint(manifest: &Manifest) -> Result<String> {
     )?)))
 }
 
+#[derive(Clone)]
 pub struct ApplicationIdentity {
     pub fingerprint: String,
     pub source_commit: String,
     pub primary: String,
     pub checkpoint: String,
     pub tracked: BTreeMap<String, Entry>,
+    pub compatible_primary: String,
+    pub compatible_prefix: String,
+    recipe: Value,
     release_only: bool,
 }
 
@@ -621,6 +652,18 @@ fn application_identity_for(
     } else {
         "application-v2"
     };
+    let mut common = recipe.clone();
+    common["inputs"] = serde_json::to_value(
+        inputs
+            .iter()
+            .filter(|entry| !compatible::test_source(&entry.path))
+            .collect::<Vec<_>>(),
+    )?;
+    common["scope"] = json!("integration-tests-v1");
+    let compatible_prefix = format!(
+        "tests-v1-{platform}-{}-full-",
+        util::digest(stable_json(&common))
+    );
     Ok(ApplicationIdentity {
         fingerprint: fingerprint.clone(),
         source_commit: manifest.git["revision"]
@@ -630,6 +673,9 @@ fn application_identity_for(
         primary: format!("{namespace}-{platform}-{source_hash}-{fingerprint}-full"),
         checkpoint: format!("{namespace}-{platform}-{source_hash}-{fingerprint}-focus"),
         tracked: inputs.into_iter().map(|e| (e.path.clone(), e)).collect(),
+        compatible_primary: format!("{compatible_prefix}{source_hash}"),
+        compatible_prefix,
+        recipe,
         release_only,
     })
 }
@@ -762,36 +808,49 @@ pub fn input_environment(
                         )?)),
                     );
                 }
-            } else if !line.starts_with('#')
-                && let Some((_, deps)) = line.split_once(": ")
-            {
-                for token in shell_words::split(deps)? {
-                    let path = PathBuf::from(token);
-                    let path = if path.is_absolute() {
-                        path
-                    } else {
-                        source.join(path)
-                    };
-                    let resolved = path.canonicalize()?;
-                    let relative = resolved
-                        .strip_prefix(source.canonicalize()?)
-                        .context("External compiler input")?
-                        .to_str()
-                        .context("Invalid compiler path")?
-                        .to_owned();
-                    let entry = tracked.get(&relative).context("Unbound compiler input")?;
-                    if checked.insert(relative) {
-                        ensure!(
-                            !path.is_symlink() && util::file_digest(&path)? == entry.sha256,
-                            "Compiler source input changed"
-                        );
-                    }
-                }
+            }
+        }
+        for relative in compiler_inputs(path, source)? {
+            let entry = tracked.get(&relative).context("Unbound compiler input")?;
+            if checked.insert(relative.clone()) {
+                ensure!(
+                    util::file_digest(&source.join(relative))? == entry.sha256,
+                    "Compiler source input changed"
+                );
             }
         }
     }
     ensure!(count > 0, "Application reuse requires compiler dep-info");
     Ok(environment)
+}
+
+fn compiler_inputs(path: &Path, source: &Path) -> Result<BTreeSet<String>> {
+    let root = source.canonicalize()?;
+    let mut inputs = BTreeSet::new();
+    for line in fs::read_to_string(path)?.replace("\\\n", "").lines() {
+        if !line.starts_with('#')
+            && let Some((_, deps)) = line.split_once(": ")
+        {
+            for token in shell_words::split(deps)? {
+                let path = PathBuf::from(token);
+                let path = if path.is_absolute() {
+                    path
+                } else {
+                    source.join(path)
+                };
+                ensure!(!path.is_symlink(), "Linked compiler input");
+                inputs.insert(
+                    path.canonicalize()?
+                        .strip_prefix(&root)
+                        .context("External compiler input")?
+                        .to_str()
+                        .context("Invalid compiler path")?
+                        .to_owned(),
+                );
+            }
+        }
+    }
+    Ok(inputs)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -807,6 +866,8 @@ struct ApplicationReport {
     source_commit: String,
     environment: BTreeMap<String, String>,
     files: Vec<OutputEntry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    inputs: Option<Vec<Entry>>,
 }
 
 pub fn stage(
@@ -861,6 +922,7 @@ pub fn stage(
             source_commit: identity.source_commit.clone(),
             environment,
             files: entries,
+            inputs: (!identity.release_only).then(|| identity.tracked.values().cloned().collect()),
         })?,
         false,
     )?;
@@ -872,6 +934,16 @@ pub fn restore(
     target: &Path,
     directory: &Path,
     identity: &ApplicationIdentity,
+) -> Result<Value> {
+    restore_filtered(source, target, directory, identity, &BTreeSet::new())
+}
+
+fn restore_filtered(
+    source: &Path,
+    target: &Path,
+    directory: &Path,
+    identity: &ApplicationIdentity,
+    excluded: &BTreeSet<String>,
 ) -> Result<Value> {
     let report: ApplicationReport = util::json(&directory.join("manifest.json"))?;
     ensure!(
@@ -898,7 +970,9 @@ pub fn restore(
                 && util::file_digest(&path)? == entry.sha256,
             "Cached output integrity changed"
         );
-        files.push(path);
+        if !excluded.contains(&entry.path) {
+            files.push(path);
+        }
     }
     ensure!(
         names.contains("release/lazypencil")
@@ -920,10 +994,23 @@ pub fn restore(
         }
         ensure!(!destination.is_symlink(), "Linked cache destination");
     }
+    for name in excluded {
+        let destination = target.join(name);
+        if destination.exists() {
+            fs::remove_file(destination)?;
+        }
+    }
     for path in &files {
         let destination = target.join(path.strip_prefix(directory.join("files"))?);
         fs::create_dir_all(destination.parent().unwrap())?;
         if destination.exists() {
+            // Identical focused outputs must not invalidate compatible dependants
+            // merely by replacing their library with a newer filesystem timestamp.
+            if util::raw_mode(&destination)? == util::raw_mode(path)?
+                && util::file_digest(&destination)? == util::file_digest(path)?
+            {
+                continue;
+            }
             fs::remove_file(&destination)?;
         }
         fs::hard_link(path, &destination)?;
@@ -1010,6 +1097,9 @@ pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Valu
     let releases = Regex::new(
         r"^release-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-[0-9a-f]{64}-[0-9a-f]{64}-(full|focus)(?:-[1-9][0-9]*-[1-9][0-9]*)?$",
     )?;
+    let tests = Regex::new(
+        r"^tests-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-[0-9a-f]{64}-full-[0-9a-f]{64}$",
+    )?;
     let mut selected = BTreeMap::new();
     let mut groups = BTreeMap::<(String, String), Vec<&Value>>::new();
     let tools = Regex::new(
@@ -1082,6 +1172,12 @@ pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Valu
                     .or_default()
                     .push(entry);
             }
+        }
+        if let Some(caps) = tests.captures(key) {
+            groups
+                .entry((format!("tests:{}:{version}", &caps[1]), "full".into()))
+                .or_default()
+                .push(entry);
         }
     }
     for ((_, phase), entries) in groups {

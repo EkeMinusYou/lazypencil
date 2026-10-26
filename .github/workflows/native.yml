@@ -116,11 +116,21 @@ jobs:
             ${{ steps.application-key.outputs.checkpoint_prefix }}
             ${{ steps.application-key.outputs.checkpoint_legacy }}
           path: ${{ runner.temp }}/lazypencil-application-cache
+      - name: Restore unchanged integration-test outputs from a full build
+        id: compatible-cache
+        if: steps.application-key.outcome == 'success'
+        continue-on-error: true
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          key: ${{ steps.application-key.outputs.compatible_primary }}
+          restore-keys: ${{ steps.application-key.outputs.compatible_prefix }}
+          path: ${{ runner.temp }}/lazypencil-compatible-cache
+          lookup-only: ${{ steps.application-cache.outputs.cache-hit == 'true' }}
       - name: Validate application reuse or keep a fresh build
         id: application-reuse
         if: steps.application-key.outcome == 'success'
         timeout-minutes: 3
-        run: cargo xtask ci cache application restore-or-prune --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
+        run: cargo xtask ci cache application restore-compatible --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --compatible-directory "$RUNNER_TEMP/lazypencil-compatible-cache" --matched-key '${{ steps.compatible-cache.outputs.cache-matched-key }}' --native-key '${{ steps.cache-key.outputs.primary }}'
       - name: Identify release outputs independently of test changes
         id: release-key
         if: steps.cache-key.outcome == 'success' && (inputs.phase == 'full' || inputs.suite == 'release' || inputs.suite == 'candidate' || inputs.measure_tui)
@@ -353,6 +363,19 @@ jobs:
         with:
           key: ${{ inputs.phase == 'full' && steps.release-key.outputs.primary || steps.release-key.outputs.checkpoint }}
           path: ${{ runner.temp }}/lazypencil-release-cache
+      - name: Stage a complete build for unchanged integration-test reuse
+        id: compatible-save
+        if: ${{ success() && inputs.phase == 'full' && steps.application-key.outcome == 'success' && steps.compatible-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        timeout-minutes: 3
+        run: cargo xtask ci cache application stage --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-compatible-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
+      - name: Save the complete integration-test checkpoint
+        if: ${{ !cancelled() && steps.compatible-save.outcome == 'success' }}
+        continue-on-error: true
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          key: ${{ steps.application-key.outputs.compatible_primary }}
+          path: ${{ runner.temp }}/lazypencil-compatible-cache
       - name: Keep completed dependencies after failure or cancellation
         id: cache-prune
         if: ${{ always() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true' && steps.native-cache.outputs.cache-matched-key != steps.cache-key.outputs.primary && (steps.focus-build.outcome == 'success' || steps.default-build.outcome == 'success') }}
