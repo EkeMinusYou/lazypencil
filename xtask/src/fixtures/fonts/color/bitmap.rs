@@ -15,17 +15,15 @@ fn chunk(output: &mut Vec<u8>, tag: [u8; 4], bytes: &[u8]) {
 }
 
 fn png(reversed: bool) -> Result<Vec<u8>> {
-    let mut scanlines = Vec::new();
-    for _ in 0..70 {
-        scanlines.push(0);
-        for x in 0..64 {
-            scanlines.extend(if (x < 32) != reversed {
-                [255, 0, 0, 255]
-            } else {
-                [0, 255, 0, 255]
-            });
-        }
+    let mut row = vec![0u8];
+    for x in 0..64 {
+        row.extend(if (x < 32) != reversed {
+            [255, 0, 0, 255]
+        } else {
+            [0, 255, 0, 255]
+        });
     }
+    let scanlines = row.repeat(70);
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::best());
     encoder.write_all(&scanlines)?;
     let mut output = b"\x89PNG\r\n\x1a\n".to_vec();
