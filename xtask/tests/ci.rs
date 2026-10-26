@@ -7,6 +7,101 @@ use serde_json::{Value, json};
 use std::{collections::BTreeMap, fs, path::PathBuf, process::Command};
 
 #[test]
+fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() {
+    for path in [
+        "xtask/src/performance.rs",
+        "xtask/src/performance/tui.rs",
+        "xtask/src/performance/resources.rs",
+    ] {
+        let paths = vec![path.into()];
+        assert!(focus::tui_measurement_changed(&paths));
+        let plan = focus::select(&util::root(), &paths, "auto").unwrap();
+        assert_eq!(plan.platform, "ubuntu-24.04");
+        assert_eq!(plan.suite, "candidate");
+        assert_eq!(plan.targets, ["render"]);
+    }
+    assert!(focus::tui_measurement_changed(&[
+        "xtask/src/test_support/terminal.rs".into()
+    ]));
+    assert!(!focus::tui_measurement_changed(&[
+        "xtask/tests/tui_measurement.rs".into(),
+        "src/tui/tests.rs".into(),
+        "docs/performance.md".into(),
+        "xtask/src/notices/rust.rs".into()
+    ]));
+    for path in [
+        "src/tui/mod.rs",
+        "src/tui/preview.rs",
+        "src/tui/graphics.rs",
+    ] {
+        assert!(focus::tui_measurement_changed(&[path.into()]));
+    }
+    let tests_only = vec!["xtask/tests/tui_measurement.rs".into()];
+    assert_eq!(
+        focus::select(&util::root(), &tests_only, "auto")
+            .unwrap()
+            .suite,
+        "ci"
+    );
+    for path in ["src/render.rs", "src/render/backdrop.rs"] {
+        assert!(focus::tui_measurement_changed(&[path.into()]));
+    }
+    let text_layers = focus::select(
+        &util::root(),
+        &["src/render.rs".into(), "tests/graphics.rs".into()],
+        "auto",
+    )
+    .unwrap();
+    assert_eq!(text_layers.suite, "render");
+    assert!(
+        text_layers
+            .targets
+            .iter()
+            .any(|target| target == "graphics")
+    );
+    let commands = lazypencil_xtask::ci::commands::plan(
+        &util::root(),
+        &text_layers.suite,
+        &text_layers.targets,
+    )
+    .unwrap();
+    let graphics = commands
+        .checks
+        .iter()
+        .find(|command| {
+            command
+                .windows(2)
+                .any(|args| args == ["--test", "graphics"])
+        })
+        .unwrap();
+    assert!(
+        graphics
+            .windows(2)
+            .any(|args| args == ["--skip", focus::TEXT_LAYER_REPRODUCTION])
+    );
+    let mixed = vec!["src/store.rs".into(), "xtask/src/performance/tui.rs".into()];
+    assert!(focus::tui_measurement_changed(&mixed));
+    assert!(
+        !["ci", "candidate"].contains(
+            &focus::select(&util::root(), &mixed, "auto")
+                .unwrap()
+                .suite
+                .as_str()
+        )
+    );
+    let workflow =
+        std::fs::read_to_string(util::root().join(".github/workflows/native.yml")).unwrap();
+    assert!(
+        workflow.find("native candidate\n").unwrap()
+            < workflow.find("cargo xtask measure-tui").unwrap()
+    );
+    assert!(workflow.contains("if: inputs.phase == 'focus' && inputs.measure_tui"));
+    let ci = std::fs::read_to_string(util::root().join(".github/workflows/ci.yml")).unwrap();
+    assert!(ci.contains("measure_tui: ${{ needs.plan.outputs.measure_tui == 'true' }}"));
+    assert!(ci.contains("needs: [plan, focus, shader-preprocessor]"));
+}
+
+#[test]
 fn focus_keeps_the_existing_reproduction_scope_for_every_source_module() {
     let cases: Vec<Value> = serde_json::from_str(include_str!("fixtures/focus.json")).unwrap();
     for case in cases {
