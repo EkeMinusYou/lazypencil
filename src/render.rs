@@ -632,8 +632,9 @@ impl Renderer<'_> {
             }
         } else if fill_enabled {
             // Keep the color layer's original origin in enclosing effect
-            // passes. The alpha mask only needs the paragraph's box/ink union
-            // plus one device pixel for antialias coverage.
+            // passes. DstIn ignores saveLayer bounds, so clip the mask to the
+            // box/ink union plus one device pixel of antialias support. Color
+            // outside this conservative rectangle is already transparent.
             let transform = self.viewport.then(item.record.transform);
             let device_bounds =
                 Rect::new(bounds.left(), bounds.top(), bounds.width(), bounds.height())
@@ -653,12 +654,14 @@ impl Renderer<'_> {
             self.fills(node, Some(fill), &Path::rect(bounds, None), rect, "fill")?;
             let mut mask = Paint::default();
             mask.set_blend_mode(BlendMode::DstIn);
-            let mut mask_layer = SaveLayerRec::default().paint(&mask);
+            self.canvas.save();
             if let Some(bounds) = &mask_bounds {
-                mask_layer = mask_layer.bounds(bounds);
+                self.canvas.clip_rect(bounds, ClipOp::Intersect, false);
             }
-            self.canvas.save_layer(&mask_layer);
+            self.canvas
+                .save_layer(&SaveLayerRec::default().paint(&mask));
             block.paragraph.paint(self.canvas, (0.0, offset));
+            self.canvas.restore();
             self.canvas.restore();
             self.canvas.restore();
         }
