@@ -683,11 +683,12 @@ impl Session {
                     let targets = focus::BROWSER_CI_TARGETS
                         .iter()
                         .copied()
-                        .chain(["mcp", "optional_icons", "tui"])
+                        .chain(["mcp", "native_layout", "optional_icons", "tui"])
                         .collect::<std::collections::BTreeSet<_>>();
                     self.build_catalog(
                         &targets.into_iter().map(str::to_owned).collect::<Vec<_>>(),
                     )?;
+                    browser::focus_inputs(self)?;
                 }
                 // Browser ownership tests never overlap these lanes. MCP and idle
                 // lifecycle clients own separate documents, process trees and

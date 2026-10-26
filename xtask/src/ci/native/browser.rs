@@ -154,6 +154,55 @@ pub fn tests(s: &Session) -> Result<()> {
     ownership(s)
 }
 
+/// The full job already ran these normal tests. A focused runtime-only catalog
+/// must generate their required comparison inputs before the shared PNG gate.
+pub fn focus_inputs(s: &Session) -> Result<()> {
+    let catalog = s.verified_catalog(&["native_layout", "script_scope"])?;
+    let commit = std::env::var("GITHUB_SHA")?;
+    let mut failures = Vec::new();
+    for (target, filter, reports) in [
+        (
+            "native_layout",
+            "native_cancellation_static_runtime_computation_stops_and_recovers_without_a_worker",
+            &[
+                "codec-native-layout-cancellation-2.19.json",
+                "codec-native-layout-cancellation-2.21.json",
+            ][..],
+        ),
+        (
+            "script_scope",
+            "script_bindings::overrides::inherited_overrides_preserve_live_namespaces_metadata_and_pixels_after_two_independent_copies",
+            &["codec-script-overrides.json"][..],
+        ),
+    ] {
+        // Earlier focused checks may have already produced these inputs in the
+        // same job. The final shared gate still checks every PNG and its hash.
+        if reports.iter().all(|name| {
+            util::json::<Value>(&s.temporary.join("codec-reference").join(name))
+                .is_ok_and(|report| report["source_commit"] == commit)
+        }) {
+            continue;
+        }
+        let args = vec![
+            catalog.binaries[target].path.to_string_lossy().into_owned(),
+            filter.into(),
+            "--exact".into(),
+            "--test-threads=2".into(),
+        ];
+        let mut command = s.command(&args);
+        command
+            .env("CARGO_MANIFEST_DIR", &s.root)
+            .env("CARGO_MANIFEST_PATH", s.root.join("Cargo.toml"));
+        if let Err(error) =
+            s.execute_command(&args, &mut command, 300, "focus-runtime-inputs.log", true)
+        {
+            failures.push(format!("{target}: {error:#}"));
+        }
+    }
+    ensure!(failures.is_empty(), "{}", failures.join("\n"));
+    Ok(())
+}
+
 pub fn lanes(s: &Session) -> Result<()> {
     let mut required: Vec<_> = TEST_LANES.into_iter().flatten().copied().collect();
     required.push("agent");
@@ -234,7 +283,8 @@ pub fn ownership(s: &Session) -> Result<()> {
 }
 pub fn required_images(root: &Path, commit: &str) -> Result<()> {
     let report = |name: &str| -> Result<Value> {
-        let v: Value = util::json(&root.join(name))?;
+        let v: Value = util::json(&root.join(name))
+            .with_context(|| format!("Browser evidence report: {name}"))?;
         ensure!(v["source_commit"] == commit, "Wrong source: {name}");
         Ok(v)
     };
