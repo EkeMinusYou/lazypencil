@@ -204,6 +204,7 @@ fn tool_changes_only_bypass_focus_native_compilation_when_they_are_not_applicati
     for path in [
         "xtask/Cargo.lock",
         "docs/design.md",
+        "tests/fixtures/fonts/README.md",
         ".github/workflows/native.yml",
     ] {
         assert!(focus::ci_only(path), "{path}");
@@ -221,6 +222,7 @@ fn tool_changes_only_bypass_focus_native_compilation_when_they_are_not_applicati
         "resources/guidance/components.md",
         "docs/input.json",
         "tests/fixtures/performance/shadow.pen",
+        "tests/fixtures/fonts/input.md",
     ] {
         assert!(!focus::ci_only(path), "{path}");
     }
@@ -289,7 +291,11 @@ fn candidate_packaging_changes_run_a_real_candidate_gate_before_the_matrix() {
     ] {
         let plan = focus::select(
             &util::root(),
-            &[path.into(), "xtask/src/ci/native.rs".into()],
+            &[
+                path.into(),
+                "xtask/src/ci/native.rs".into(),
+                "tests/fixtures/fonts/README.md".into(),
+            ],
             "auto",
         )
         .unwrap();
@@ -590,7 +596,11 @@ fn release_cache_keeps_the_mapped_executable_and_rejects_partial_or_changed_pair
 
 #[test]
 fn application_reuse_rejects_changed_sources_external_dep_info_and_compiled_excluded_files() {
-    for dependency in ["outside.rs", ".github/workflows/ci.yml"] {
+    for dependency in [
+        "outside.rs",
+        ".github/workflows/ci.yml",
+        "tests/fixtures/fonts/README.md",
+    ] {
         let f = ApplicationFixture::new();
         let path = if dependency == "outside.rs" {
             f.source.parent().unwrap().join(dependency)
@@ -599,6 +609,17 @@ fn application_reuse_rejects_changed_sources_external_dep_info_and_compiled_excl
         };
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, b"input").unwrap();
+        if dependency != "outside.rs" {
+            let manifest_path = f.source.join(dist::MANIFEST);
+            let mut manifest: Manifest = util::json(&manifest_path).unwrap();
+            manifest.files.push(Entry {
+                path: dependency.into(),
+                bytes: 5,
+                sha256: util::digest(b"input"),
+                mode: 0o644,
+            });
+            fs::write(manifest_path, util::encode(&manifest).unwrap()).unwrap();
+        }
         fs::write(&f.dep_info, format!("library: {}\n", path.display())).unwrap();
         assert!(cache::stage(&f.source, &f.target, &f.directory, &f.identity()).is_err());
     }
@@ -703,6 +724,7 @@ fn source_fingerprints_exclude_ci_prose_and_native_review_data_and_ignore_manife
         "AGENTS.md",
         "docs/design.md",
         "docs/nested/guide.md",
+        "tests/fixtures/fonts/README.md",
         ".github/actions/xtask/action.yml",
         "xtask/src/ci/cache.rs",
         "resources/licenses/native/quickjs-review.json",
@@ -729,6 +751,7 @@ fn source_fingerprints_exclude_ci_prose_and_native_review_data_and_ignore_manife
         "docs/fixture.json",
         "resources/guidance/prompt.md",
         "tests/fixture.md",
+        "tests/fixtures/fonts/input.md",
         "scripts/test_input.json",
     ] {
         let mut changed = manifest.clone();

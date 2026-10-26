@@ -85,6 +85,7 @@ pub fn ci_only(path: &str) -> bool {
             && !path.starts_with("xtask/src/fixtures/oracles/")
             && path != "xtask/src/bin/test-helper.rs")
         || (path.ends_with(".md") && (!path.contains('/') || path.starts_with("docs/")))
+        || (path.starts_with("tests/fixtures/") && path.ends_with("/README.md"))
 }
 
 pub fn preprocessor_changed(paths: &[String]) -> bool {
