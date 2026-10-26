@@ -20,6 +20,62 @@ pub struct Arguments {
     pub idle_seconds: u32,
 }
 
+/// Bounded, content-free worker observations from the explicitly owned child.
+pub fn preview_profiles(bytes: &[u8]) -> Result<Vec<serde_json::Value>> {
+    use anyhow::Context;
+    let phases = [
+        "snapshot_ms",
+        "render_png_ms",
+        "verification_ms",
+        "decode_png_ms",
+        "terminal_encode_ms",
+        "metadata_ms",
+    ];
+    ensure!(bytes.len() <= 64 * 1024, "Unbounded preview profile log");
+    let mut reports = Vec::new();
+    let mut previous = None;
+    for line in std::str::from_utf8(bytes)?.lines() {
+        let Some(line) = line.strip_prefix("LAZYPENCIL_PREVIEW_TIMING ") else {
+            continue;
+        };
+        ensure!(reports.len() < 128, "Too many preview profiles");
+        let report: serde_json::Value = serde_json::from_str(line)?;
+        let generation = report["generation"]
+            .as_u64()
+            .context("Missing preview generation")?;
+        let fields = report["phases_ms"]
+            .as_object()
+            .context("Missing preview phases")?;
+        ensure!(
+            report["format_version"] == 1
+                && report.as_object().is_some_and(|fields| fields.len() == 4)
+                && previous.is_none_or(|previous| generation > previous)
+                && fields.len() == phases.len(),
+            "Invalid preview profile version, order or phase membership"
+        );
+        let mut sum = 0.0;
+        for phase in phases {
+            let value = fields
+                .get(phase)
+                .and_then(serde_json::Value::as_f64)
+                .context("Missing preview phase duration")?;
+            ensure!(value.is_finite() && value >= 0.0, "Invalid phase duration");
+            sum += value;
+        }
+        let total = report["worker_total_ms"]
+            .as_f64()
+            .context("Missing preview total duration")?;
+        ensure!(
+            total.is_finite() && total >= 0.0 && sum <= total + 0.001,
+            "Preview phases exceed the worker interval"
+        );
+        previous = Some(generation);
+        reports.push(report);
+    }
+    ensure!(!reports.is_empty(), "Missing owned native preview profiles");
+    Ok(reports)
+}
+
 impl Arguments {
     pub fn run(self) -> Result<()> {
         ensure!(
@@ -137,6 +193,7 @@ mod hosted {
                 .current_dir(root)
                 .env("TERM", "xterm-kitty")
                 .env("COLORTERM", "truecolor")
+                .env("LAZYPENCIL_PROFILE_PREVIEW", "owned-gha-measurement")
                 .env_remove("TERM_PROGRAM")
                 .env_remove("TMUX")
                 .env_remove("WEZTERM_EXECUTABLE")
@@ -465,6 +522,16 @@ mod hosted {
             sample["normal_exit"] = json!(true);
             sample["prompt_draft_empty"] = json!(true);
             sample["agent_started"] = json!(false);
+            let profiles =
+                super::preview_profiles(&util::read(&root.join("stderr.log"), 64 * 1024)?)?;
+            ensure!(
+                profiles.len() >= 5,
+                "Missing startup or interaction profiles"
+            );
+            sample["native_preview_worker_profiles"] = json!(profiles);
+            sample["native_preview_profile_scope"] = json!(
+                "Completed worker requests before UI delivery; may include superseded results. No per-image transport/presentation correlation or application-only end-to-end latency claim."
+            );
         }
         let input = samples
             .iter()

@@ -5,6 +5,79 @@ use std::process::Command;
 use std::time::Duration;
 
 #[test]
+fn worker_profiles_require_complete_bounded_monotonic_intervals_without_extra_data() {
+    use lazypencil_xtask::performance::tui::preview_profiles;
+    use serde_json::{Value, json};
+    let report = json!({"format_version":1,"generation":1,"worker_total_ms":22.0,"phases_ms":{
+        "snapshot_ms":1.0,"render_png_ms":2.0,"verification_ms":3.0,
+        "decode_png_ms":4.0,"terminal_encode_ms":5.0,"metadata_ms":6.0
+    }});
+    let encode = |report: &Value| format!("LAZYPENCIL_PREVIEW_TIMING {report}\n");
+    let mut next = report.clone();
+    next["generation"] = json!(3);
+    let input = format!("unrelated stderr\n{}{}", encode(&report), encode(&next));
+    assert_eq!(
+        preview_profiles(input.as_bytes()).unwrap(),
+        [report.clone(), next]
+    );
+    for invalid in [
+        json!({}),
+        {
+            let mut v = report.clone();
+            v["phases_ms"]
+                .as_object_mut()
+                .unwrap()
+                .remove("decode_png_ms");
+            v
+        },
+        {
+            let mut v = report.clone();
+            v["phases_ms"]["metadata_ms"] = json!(-1.0);
+            v
+        },
+        {
+            let mut v = report.clone();
+            v["worker_total_ms"] = json!(20.0);
+            v
+        },
+        {
+            let mut v = report.clone();
+            v["generation"] = json!(-1);
+            v
+        },
+        {
+            let mut v = report.clone();
+            v["document"] = json!("must not enter the profile");
+            v
+        },
+        {
+            let mut v = report.clone();
+            v["phases_ms"]["unexpected"] = json!(1.0);
+            v
+        },
+    ] {
+        assert!(
+            preview_profiles(encode(&invalid).as_bytes()).is_err(),
+            "{invalid}"
+        );
+    }
+    assert!(
+        preview_profiles(format!("{}{}", encode(&report), encode(&report)).as_bytes()).is_err()
+    );
+    assert!(preview_profiles(b"unrelated stderr\n").is_err());
+    assert!(preview_profiles(b"LAZYPENCIL_PREVIEW_TIMING {broken}\n").is_err());
+    let oversized = vec![b'x'; 64 * 1024 + 1];
+    assert!(preview_profiles(&oversized).is_err());
+    let mut excessive = String::new();
+    for generation in 0..129 {
+        let mut report = report.clone();
+        report["generation"] = json!(generation);
+        excessive.push_str(&encode(&report));
+    }
+    assert!(preview_profiles(excessive.as_bytes()).is_err());
+}
+
+#[test]
 fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() {
     use lazypencil_xtask::{ci::focus, util};
     for path in [

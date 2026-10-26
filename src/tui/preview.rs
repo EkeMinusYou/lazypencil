@@ -211,6 +211,11 @@ impl Drop for Worker {
 fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, image_id: u32) {
     let mut cached: Option<(Project, crate::layout::LayoutSnapshot)> = None;
     let mut document_preview_time = None;
+    // Owned hosted measurements retain stderr separately from terminal output.
+    // Never log document contents, file paths, or settings; cap completed reports.
+    let profile = std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
+        && std::env::var("LAZYPENCIL_PROFILE_PREVIEW").as_deref() == Ok("owned-gha-measurement");
+    let mut profile_reports = 0;
     let mut script =
         crate::script::ScriptRuntime::new(std::env::current_exe().expect("current executable"));
     let mut dynamic =
@@ -245,6 +250,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
         *shared.active.lock().unwrap() = Some(cancel.clone());
         drop(state);
         script.set_cancellation(Some(cancel.clone()));
+        let mut timing = PreviewTiming::new(profile && profile_reports < 128);
         let result = (|| -> Result<Option<Preview>> {
             if let Some((attachment, directory)) = &request.attachment {
                 if request.check_only {
@@ -313,6 +319,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 time: view.time,
                 ..Default::default()
             };
+            timing.mark("snapshot_ms");
             let image = crate::render::png_with_runtime(
                 project,
                 layout,
@@ -320,14 +327,18 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 &mut dynamic,
                 Some(cancel.clone()),
             )?;
+            timing.mark("render_png_ms");
             crate::store::require_revision(&store.read()?, &layout.revision)?;
             project.verify_unchanged()?;
             if cancel.is_cancelled() {
                 return Ok(None);
             }
+            timing.mark("verification_ms");
             let bitmap = image::load_from_memory_with_format(&image.png, image::ImageFormat::Png)
                 .map_err(|error| Error::new("RENDER_ERROR", error.to_string()))?;
+            timing.mark("decode_png_ms");
             let protocol = encode(picker, bitmap, request.cells, image_id)?;
+            timing.mark("terminal_encode_ms");
             let nodes = layout.items.iter().map(|item| Node {
                 id: item.record.id.clone(), name: item.node.properties.get("name").and_then(Value::as_str).unwrap_or(&item.record.id).into(), bounds: item.record.visual_bounds,
                 target: json!({"id":item.record.id,"address":item.record.address,"source_id":item.record.source_id,"source_path":item.record.source_path,"generated_by":item.record.generated_by}),
@@ -342,6 +353,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 .any(|artifact| artifact["acquisition"]["kind"] == "browser");
             let mut summary = layout.summary();
             summary["dynamic_artifacts"] = Value::Array(image.dynamic_artifacts);
+            timing.mark("metadata_ms");
             Ok(Some(Preview {
                 protocol,
                 png: image.png,
@@ -362,6 +374,10 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             Ok(Some(preview)) => {
                 if !preview.attachment {
                     document_preview_time = Some(preview.view.time);
+                    if let Some(report) = timing.report(request.generation) {
+                        eprintln!("LAZYPENCIL_PREVIEW_TIMING {report}");
+                        profile_reports += 1;
+                    }
                 }
                 Ok(preview)
             }
@@ -373,6 +389,37 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             result,
         });
         shared.notify.notify_one();
+    }
+}
+
+struct PreviewTiming {
+    clocks: Option<(Instant, Instant)>,
+    phases: serde_json::Map<String, Value>,
+}
+impl PreviewTiming {
+    fn new(enabled: bool) -> Self {
+        Self {
+            clocks: enabled.then(|| {
+                let now = Instant::now();
+                (now, now)
+            }),
+            phases: serde_json::Map::new(),
+        }
+    }
+    fn mark(&mut self, name: &str) {
+        if let Some((_, previous)) = &mut self.clocks {
+            let now = Instant::now();
+            self.phases.insert(
+                name.into(),
+                json!(now.duration_since(*previous).as_secs_f64() * 1000.0),
+            );
+            *previous = now;
+        }
+    }
+    fn report(&self, generation: u64) -> Option<Value> {
+        self.clocks.map(|(started, _)| {
+            json!({"format_version":1,"generation":generation,"phases_ms":self.phases,"worker_total_ms":started.elapsed().as_secs_f64()*1000.0})
+        })
     }
 }
 
@@ -402,6 +449,32 @@ mod tests {
     use super::*;
     use std::time::Duration;
     use tempfile::TempDir;
+
+    #[test]
+    fn preview_worker_profiling_is_opt_in_and_partitions_one_monotonic_interval() {
+        let mut disabled = PreviewTiming::new(false);
+        disabled.mark("snapshot_ms");
+        assert!(disabled.report(1).is_none());
+        assert!(disabled.phases.is_empty());
+        let mut enabled = PreviewTiming::new(true);
+        for phase in ["snapshot_ms", "render_png_ms", "metadata_ms"] {
+            enabled.mark(phase);
+        }
+        let report = enabled.report(7).unwrap();
+        assert_eq!(report["generation"], 7);
+        assert_eq!(report["format_version"], 1);
+        let phases = report["phases_ms"].as_object().unwrap();
+        assert_eq!(phases.len(), 3);
+        let sum = phases
+            .values()
+            .map(|value| {
+                let value = value.as_f64().unwrap();
+                assert!(value.is_finite() && value >= 0.0);
+                value
+            })
+            .sum::<f64>();
+        assert!(report["worker_total_ms"].as_f64().unwrap() >= sum);
+    }
 
     #[test]
     fn fractional_fit_pan_round_trips_preserve_the_exact_render_region() {
