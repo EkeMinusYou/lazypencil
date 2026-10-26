@@ -2,6 +2,7 @@
 use super::*;
 
 const TEST_SECONDS: u64 = 900;
+const INDEPENDENT: [&str; 3] = ["script_scope", "graphics", "mesh"];
 
 pub fn run(s: &Session) -> Result<()> {
     let catalog = s.verified_catalog(&[])?;
@@ -11,14 +12,17 @@ pub fn run(s: &Session) -> Result<()> {
         .map(|(name, binary)| (name.clone(), binary.path.clone()))
         .collect();
     let checks = commands::default_tests(&s.root, &binaries)?;
-    let (scripts, checks) = split_checks(
-        checks,
-        &catalog
-            .binaries
-            .get("script_scope")
-            .context("Missing script-scope test executable")?
-            .path,
-    )?;
+    let independent = INDEPENDENT
+        .map(|name| {
+            catalog
+                .binaries
+                .get(name)
+                .map(|binary| binary.path.as_path())
+                .with_context(|| format!("Missing {name} test executable"))
+        })
+        .into_iter()
+        .collect::<Result<Vec<_>>>()?;
+    let (scripts, checks) = split_checks(checks, &independent)?;
     let deadline = Instant::now() + Duration::from_secs(TEST_SECONDS);
     let management = s.execute(
         &commands::management_tests(true),
@@ -44,7 +48,7 @@ pub fn run(s: &Session) -> Result<()> {
             Box::new(|| run_lane(s, &checks, deadline, "lazypencil-tests.log")),
         ),
         (
-            "script-scope tests",
+            "script-scope and native pixel tests",
             Box::new(|| run_lane(s, &scripts, deadline, "lazypencil-script-scope.log")),
         ),
     ]);
@@ -61,17 +65,30 @@ pub fn run(s: &Session) -> Result<()> {
 
 fn split_checks(
     checks: Vec<commands::Invocation>,
-    script: &Path,
+    independent: &[&Path],
 ) -> Result<(Vec<commands::Invocation>, Vec<commands::Invocation>)> {
-    // This target owns temporary documents/data and exclusive artifact paths.
-    // Select its verified catalog path, never an executable-name prefix.
-    let (scripts, checks): (Vec<_>, Vec<_>) = checks
-        .into_iter()
-        .partition(|args| args.first().is_some_and(|path| Path::new(path) == script));
-    ensure!(
-        scripts.len() == 1,
-        "Expected exactly one script-scope check"
-    );
+    // These targets own temporary documents and distinct retained image names.
+    // Fill the existing script lane after its long first target; retain exactly
+    // two test processes and their original per-process thread limits.
+    let mut checks = checks;
+    let mut scripts = Vec::new();
+    for path in independent {
+        let positions = checks
+            .iter()
+            .enumerate()
+            .filter_map(|(index, args)| {
+                args.first()
+                    .is_some_and(|name| Path::new(name) == *path)
+                    .then_some(index)
+            })
+            .collect::<Vec<_>>();
+        ensure!(
+            positions.len() == 1,
+            "Expected exactly one check for {}",
+            path.display()
+        );
+        scripts.push(checks.remove(positions[0]));
+    }
     Ok((scripts, checks))
 }
 
@@ -119,7 +136,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn split_preserves_each_command_and_rejects_missing_or_repeated_script_checks() {
+    fn balanced_lanes_preserve_commands_and_reject_missing_or_repeated_targets() {
         let root = std::env::temp_dir();
         let script = root.join("verified-script-test");
         let named = |name: &str| vec![root.join(name).to_string_lossy().into_owned()];
@@ -136,11 +153,26 @@ mod tests {
         ];
         let mut all = others.clone();
         all.insert(1, scope.clone());
-        let (scripts, rest) = split_checks(all, &script).unwrap();
-        assert_eq!(scripts.as_slice(), std::slice::from_ref(&scope));
+        let graphics = root.join("verified-graphics-test");
+        let mesh = root.join("verified-mesh-test");
+        let native = [named("verified-graphics-test"), named("verified-mesh-test")];
+        all.extend(native.clone());
+        let paths = [script.as_path(), graphics.as_path(), mesh.as_path()];
+        let (scripts, rest) = split_checks(all, &paths).unwrap();
+        assert_eq!(scripts, [vec![scope.clone()], native.to_vec()].concat());
         assert_eq!(rest, others);
-        assert!(split_checks(rest, &script).is_err());
-        assert!(split_checks(vec![scope.clone(), scope], &script).is_err());
+        for index in 0..scripts.len() {
+            let mut missing = scripts.clone();
+            missing.remove(index);
+            missing.extend(others.clone());
+            assert!(split_checks(missing, &paths).is_err());
+            let mut repeated = scripts.clone();
+            repeated.push(scripts[index].clone());
+            repeated.extend(others.clone());
+            assert!(split_checks(repeated, &paths).is_err());
+        }
+        assert!(split_checks(rest, &paths).is_err());
+        assert!(split_checks(vec![scope.clone(), scope], &paths).is_err());
     }
 
     #[test]

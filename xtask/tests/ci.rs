@@ -207,6 +207,40 @@ fn browser_scheduler_changes_execute_the_actual_two_lanes_before_the_full_matrix
 }
 
 #[test]
+fn normal_scheduler_changes_reproduce_the_complete_catalog_before_the_matrix() {
+    let paths = [
+        "xtask/src/ci/native/normal.rs",
+        "xtask/src/ci/native.rs",
+        "xtask/src/ci/focus.rs",
+        "xtask/src/ci/mod.rs",
+        ".github/workflows/native.yml",
+        "README.md",
+    ]
+    .map(str::to_owned);
+    let plan = focus::select(&util::root(), &paths, "auto").unwrap();
+    assert_eq!(plan.platform, "ubuntu-24.04");
+    assert_eq!(plan.suite, "normal-ci");
+    assert!(
+        plan.targets.is_empty(),
+        "The catalog builder must include every default target"
+    );
+    let mut mixed = paths.to_vec();
+    mixed.push("src/render.rs".into());
+    assert_eq!(
+        focus::select(&util::root(), &mixed, "auto").unwrap().suite,
+        "render"
+    );
+    let mut browser = paths.to_vec();
+    browser.push("xtask/src/ci/native/browser.rs".into());
+    assert_eq!(
+        focus::select(&util::root(), &browser, "auto")
+            .unwrap()
+            .suite,
+        "browser-ci"
+    );
+}
+
+#[test]
 fn font_sources_generators_and_pins_select_native_color_reproductions_before_the_full_matrix() {
     for path in [
         "tests/support/color_fonts.rs",

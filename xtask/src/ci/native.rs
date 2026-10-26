@@ -263,6 +263,12 @@ impl Session {
     }
     pub fn run(&self, args: Arguments) -> Result<()> {
         let targets: Vec<String> = serde_json::from_str(&args.targets)?;
+        if args.suite == "normal-ci" {
+            ensure!(
+                targets.is_empty(),
+                "Normal CI scheduler checks require the complete default catalog"
+            );
+        }
         if args.suite == "browser-ci" {
             ensure!(
                 targets
@@ -355,6 +361,9 @@ impl Session {
                 Ok(())
             }
             Stage::FocusBuild => {
+                if args.suite == "normal-ci" {
+                    return self.build_catalog(&[]);
+                }
                 if args.suite == "browser-ci" {
                     return self.build_catalog(&targets);
                 }
@@ -566,6 +575,9 @@ impl Session {
                 Ok(())
             }
             Stage::FocusTest => {
+                if args.suite == "normal-ci" {
+                    return normal::run(self);
+                }
                 if args.suite == "browser-ci" {
                     if std::env::var("RUNTIME_PARALLEL").as_deref() == Ok("true") {
                         // The following focused runtime stage runs these exact

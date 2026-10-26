@@ -254,7 +254,7 @@ jobs:
         run: cargo xtask ci native browser-setup
       - name: Run affected tests and pixel reproductions
         if: inputs.phase == 'focus'
-        timeout-minutes: ${{ inputs.suite == 'browser-ci' && 25 || 10 }}
+        timeout-minutes: ${{ inputs.suite == 'normal-ci' && 60 || inputs.suite == 'browser-ci' && 25 || 10 }}
         run: cargo xtask ci native focus-test --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
       - name: Reproduce changed runtime scheduling before the full matrix
         if: inputs.phase == 'focus' && inputs.runtime_parallel

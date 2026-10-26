@@ -260,6 +260,26 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     if paths.iter().all(|path| ci_only(path))
         && paths
             .iter()
+            .any(|path| path == "xtask/src/ci/native/normal.rs")
+        && !paths.iter().any(|path| {
+            [
+                "xtask/src/ci/native/browser.rs",
+                "xtask/src/ci/native/management.rs",
+                "xtask/src/ci/native/parallel.rs",
+            ]
+            .contains(&path.as_str())
+        })
+    {
+        return Ok(Plan {
+            platform,
+            suite: "normal-ci".into(),
+            targets: Vec::new(),
+            preprocessor,
+        });
+    }
+    if paths.iter().all(|path| ci_only(path))
+        && paths
+            .iter()
             .any(|path| path == "xtask/src/ci/native/browser.rs")
     {
         return Ok(Plan {

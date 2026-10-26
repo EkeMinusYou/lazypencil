@@ -94,7 +94,8 @@ impl Command {
                     ("preprocessor".into(), plan.preprocessor.to_string()),
                     (
                         "runtime_parallel".into(),
-                        focus::runtime_scheduler_changed(&paths).to_string(),
+                        (plan.suite != "normal-ci" && focus::runtime_scheduler_changed(&paths))
+                            .to_string(),
                     ),
                     (
                         "native_clipboard".into(),
