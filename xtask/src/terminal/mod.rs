@@ -60,7 +60,7 @@ impl Arguments {
                 self.output.display()
             );
             return util::print(
-                &serde_json::json!({"real_emulators":"passed","protocols":["kitty","sixel"]}),
+                &serde_json::json!({"real_emulators":"passed","protocols":["kitty","auto-kitty","sixel","auto-sixel"]}),
             );
         }
         #[cfg(target_os = "linux")]

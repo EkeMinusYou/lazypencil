@@ -308,6 +308,23 @@ fn candidate_packaging_changes_run_a_real_candidate_gate_before_the_matrix() {
 }
 
 #[test]
+fn terminal_protocol_fixes_reproduce_in_real_emulators_before_the_full_matrix() {
+    for path in ["src/tui/graphics.rs", "src/tui/terminal.rs"] {
+        let plan = focus::select(
+            &util::root(),
+            &[path.into(), "xtask/src/terminal/hosted.rs".into()],
+            "auto",
+        )
+        .unwrap();
+        assert_eq!(plan.platform, "ubuntu-24.04");
+        assert_eq!(plan.suite, "candidate");
+        assert_eq!(plan.targets, ["render", "tui"]);
+        let commands = ci::commands::plan(&util::root(), &plan.suite, &plan.targets).unwrap();
+        assert!(!commands.build.is_empty() && !commands.checks.is_empty());
+    }
+}
+
+#[test]
 fn release_gate_rejects_every_incomplete_or_malformed_result() {
     let valid = json!({"native":{"result":"success"},"audit":{"result":"success"}});
     assert!(ci::require_success(&valid).is_ok());

@@ -166,6 +166,20 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     let font_inputs = paths.iter().any(|path| font_input(path));
     if paths
         .iter()
+        .any(|path| ["src/tui/graphics.rs", "src/tui/terminal.rs"].contains(&path.as_str()))
+        && paths.iter().all(|path| {
+            ci_only(path) || ["src/tui/graphics.rs", "src/tui/terminal.rs"].contains(&path.as_str())
+        })
+    {
+        return Ok(Plan {
+            platform,
+            suite: "candidate".into(),
+            targets: vec!["render".into(), "tui".into()],
+            preprocessor,
+        });
+    }
+    if paths
+        .iter()
         .all(|path| ci_only(path) || path.starts_with("resources/licenses/native/"))
         && paths.iter().any(|path| {
             [

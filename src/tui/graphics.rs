@@ -42,7 +42,16 @@ impl Backend {
             }
         }
         let mut startup = String::new();
-        if selected != super::ImageProtocol::Halfblocks {
+        let direct_kitty = !backend.tmux
+            && std::env::var("TERM").as_deref() == Ok("xterm-kitty")
+            && std::env::var_os("WEZTERM_EXECUTABLE").is_none()
+            && std::env::var_os("KONSOLE_VERSION").is_none();
+        if direct_kitty {
+            backend.protocol = ProtocolType::Kitty;
+        }
+        // Explicit protocols and a direct Kitty terminal need no capability query.
+        // A late APC reply otherwise reaches Crossterm as ordinary prompt text.
+        if selected == super::ImageProtocol::Auto && !direct_kitty {
             let (responses, input) = probe(backend.tmux)?;
             startup = input;
             for response in &responses {

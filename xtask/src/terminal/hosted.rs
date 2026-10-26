@@ -94,7 +94,7 @@ impl Emulator {
         }]});
         fs::write(root.join("design.pen"), util::encode(&document)?)?;
         let title = format!("lazypencil-owned-{protocol}-{}", std::process::id());
-        let mut launch = if protocol == "kitty" {
+        let mut launch = if protocol.ends_with("kitty") {
             let config = root.join("kitty.conf");
             fs::write(
                 &config,
@@ -128,7 +128,11 @@ impl Emulator {
                 "--adapter-arg=acp",
                 "--adapter-arg=image-inspect",
                 "--image-protocol",
-                protocol,
+                if protocol.starts_with("auto-") {
+                    "auto"
+                } else {
+                    protocol
+                },
             ])
             .current_dir(root)
             .env("LAZYPENCIL_CONFIG_DIR", root.join("user"))
@@ -290,12 +294,38 @@ impl Emulator {
             );
             thread::sleep(Duration::from_millis(20));
         }
+        fn only_directory(path: &Path) -> Result<PathBuf> {
+            let directories = fs::read_dir(path)?
+                .map(|entry| -> Result<Option<PathBuf>> {
+                    let entry = entry?;
+                    Ok(entry.file_type()?.is_dir().then(|| entry.path()))
+                })
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
+            ensure!(directories.len() == 1, "Ambiguous owned test session");
+            Ok(directories[0].clone())
+        }
+        let document = only_directory(&self.root.join("data/documents"))?;
+        let session = only_directory(&document.join("conversations"))?;
+        let session: Value =
+            serde_json::from_slice(&util::read(&session.join("session.json"), 65536)?)?;
+        ensure!(
+            session["draft"] == "",
+            "Terminal replies or navigation polluted the prompt"
+        );
+        ensure!(
+            session["native_session_id"].is_null(),
+            "Viewing unexpectedly started an agent"
+        );
         Ok(
             json!({"screen_capture":"XWD v7 TrueColor from real X11 window",
             "document_sha256":util::file_digest(&self.root.join("design.pen"))?,
             "markers":"three connected primary-color regions, at least 1024 pixels each",
             "phases":["loaded","initial","zoomed","panned-right","pan-restored","zoom-restored","resized","size-restored"],
-            "keyboard_exit":"success","physical_display_or_ime_acceptance":false,"latency_benchmark":false}),
+            "keyboard_exit":"success","prompt_draft_empty":true,"agent_started":false,
+            "physical_display_or_ime_acceptance":false,"latency_benchmark":false}),
         )
     }
 }
@@ -326,7 +356,12 @@ pub fn run(candidate: &Path, output: &Path) -> Result<()> {
     ensure!(helper.is_file(), "Missing independent ACP test helper");
     let binary = extracted.join("bin/lazypencil");
     let mut results = json!({});
-    for (protocol, program) in [("kitty", "kitty"), ("sixel", "xterm")] {
+    for (protocol, program) in [
+        ("kitty", "kitty"),
+        ("auto-kitty", "kitty"),
+        ("sixel", "xterm"),
+        ("auto-sixel", "xterm"),
+    ] {
         let version = command(
             program,
             &[if program == "kitty" {
