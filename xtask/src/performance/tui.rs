@@ -1,5 +1,5 @@
 //! Source-bound PTY observations; physical terminal presentation is measured separately.
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use clap::Args;
 use std::path::PathBuf;
 
@@ -21,6 +21,29 @@ pub struct Arguments {
     /// Observe real page/shader Chromium trees after the original trials.
     #[arg(long)]
     pub chromium_resources: bool,
+    /// Fail after retaining all observations if ordinary bound RSS exceeds 200 MiB.
+    #[arg(long)]
+    pub enforce_memory_target: bool,
+}
+
+pub fn require_memory_target(report: &serde_json::Value) -> Result<()> {
+    let mut peak = 0;
+    for path in [
+        "/bound_resources/trace/maximum_observed_application_rss_bytes",
+        "/bound_resources/idle/maximum_sampled_application_rss_bytes",
+    ] {
+        peak = peak.max(
+            report
+                .pointer(path)
+                .and_then(serde_json::Value::as_u64)
+                .context("Missing ordinary bound application RSS observation")?,
+        );
+    }
+    ensure!(
+        peak <= 200 * 1024 * 1024,
+        "Ordinary bound application RSS exceeded 200 MiB: {peak} bytes; complete observations retained"
+    );
+    Ok(())
 }
 
 /// Bounded, content-free worker observations from the explicitly owned child.
@@ -1182,6 +1205,9 @@ mod hosted {
             );
             report["chromium_runtime"] = runtime;
             util::publish(&output.join("report.json"), &util::encode(&report)?, true)?;
+        }
+        if arguments.enforce_memory_target {
+            require_memory_target(&report)?;
         }
         util::print(
             &json!({"tui_measurement":"recorded","samples":arguments.samples,"output":output}),

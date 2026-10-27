@@ -421,6 +421,14 @@ pub fn collect(arguments: &Arguments) -> Result<Value> {
         .as_deref()
         .map(|path| link_map::collect(path, &stage.join("link-map.map")))
         .transpose()?;
+    let static_link_inputs = if static_link_map.is_some() {
+        Some(link_map::collect_inputs(
+            &stage.join("link-map.map"),
+            &stage.join("link-map-inputs.json"),
+        )?)
+    } else {
+        None
+    };
     let dynamic_linkage = if [
         "aarch64-apple-darwin",
         "x86_64-unknown-linux-gnu",
@@ -549,7 +557,7 @@ pub fn collect(arguments: &Arguments) -> Result<Value> {
     .into_iter()
     .map(|s| (s, std::env::var(s).ok()))
     .collect::<BTreeMap<_, _>>();
-    let metadata = json!({"format_version":1,"release_ready":false,"source":source,"binary":binary,"application_artifact_fresh":application_fresh,"compiler":compiler,"dynamic_linkage":dynamic_linkage,"static_link_map":static_link_map,"native_packages":selected,"native_archives":archives,"rust_notices":rust,"skia_notices":skia,"skia_wrapper_notices":wrapper,"quickjs_notices":quickjs,"asset_notices":assets,"toolchain_notices":standard,"shader_preprocessor":shader,"cargo_output":cargo_output,"ignored_non_cargo_lines":ignored,"remaining_review":gaps,"hosted":hosted});
+    let metadata = json!({"format_version":1,"release_ready":false,"source":source,"binary":binary,"application_artifact_fresh":application_fresh,"compiler":compiler,"dynamic_linkage":dynamic_linkage,"static_link_map":static_link_map,"static_link_inputs":static_link_inputs,"native_packages":selected,"native_archives":archives,"rust_notices":rust,"skia_notices":skia,"skia_wrapper_notices":wrapper,"quickjs_notices":quickjs,"asset_notices":assets,"toolchain_notices":standard,"shader_preprocessor":shader,"cargo_output":cargo_output,"ignored_non_cargo_lines":ignored,"remaining_review":gaps,"hosted":hosted});
     util::publish(&stage.join("build.json"), &util::encode(&metadata)?, false)?;
     let files = util::walk(&stage)?
         .iter()

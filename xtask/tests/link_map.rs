@@ -2,6 +2,70 @@ use lazypencil_xtask::{evidence::link_map, util};
 use std::{fs, path::Path};
 
 #[test]
+fn archive_inventories_distinguish_linker_records_from_symbols_and_discarded_tables() {
+    let header = "             VMA              LMA     Size Align Out     In      Symbol";
+    let prefix = "          c50b40           c50b40       20    32         ";
+    let archive = "/build with spaces/libnative.a";
+    let lld = format!(
+        "{header}\n{prefix}{archive}(one.o):(.text)\n{prefix}{archive}(one.o):(.rodata)\n{prefix}{archive}(two.o):(.text)\n{prefix}        /not/an/input.a(symbol.o)\n"
+    );
+    let mac = format!(
+        "# Path: /build/app\n# Arch: arm64\n# Object files:\n[  0] linker synthesized\n[  1] {archive}(two.o)\n[  2] {archive}(one.o)\n# Sections:\n# Symbols:\n[  3] /not/an/input.a(symbol.o)\n"
+    );
+    let gnu = format!(
+        "Archive member included to satisfy reference by file (symbol)\n\n{archive}(two.o)    /build/referrer.a(ignored.o) (symbol)\n{archive}(one.o)\n                              /build/entry.o (symbol)\n\nAs-needed library included to satisfy reference by file (symbol)\n/not/an/input.a(symbol.o)\nDiscarded input sections\n/not/an/input.a(discarded.o)\nLinker script and memory map\n"
+    );
+    for (format, text) in [("elf_lld", lld), ("macos_ld64", mac), ("elf_gnu", gnu)] {
+        for text in [text.clone(), text.replace('\n', "\r\n")] {
+            let report = link_map::archive_references(text.as_bytes()).unwrap();
+            assert_eq!(report["format"], format);
+            assert_eq!(report["map_sha256"], util::digest(text.as_bytes()));
+            assert_eq!(report["map_bytes"], text.len());
+            assert_eq!(report["archive_member_pairs"], 2);
+            assert_eq!(
+                report["archives"],
+                serde_json::json!([{"archive":archive,"members":["one.o","two.o"]}])
+            );
+            assert!(report["scope"].as_str().unwrap().contains("discarded"));
+        }
+    }
+}
+
+#[test]
+fn malformed_linker_records_never_produce_an_incomplete_success_inventory() {
+    for text in [
+        "",
+        "Unknown map",
+        "# Object files:\n[  0] linker synthesized\n# Sections:\n",
+        "# Object files:\n[  1] /build/lib.a(member.o)\n",
+        "# Object files:\n[  1] /build/lib.a(one.o)\n[  1] /build/lib.a(two.o)\n# Sections:\n",
+        "# Object files:\n[  1] /build/lib.a()\n# Sections:\n",
+        "# Object files:\n[  1] /build/lib.a(one.o\n# Sections:\n",
+        "# Object files:\n[  1] relative/lib.a(one.o)\n# Sections:\n",
+    ] {
+        assert!(
+            link_map::archive_references(text.as_bytes()).is_err(),
+            "{text}"
+        );
+    }
+    assert!(link_map::archive_references(b"\xff").is_err());
+}
+
+#[test]
+fn persisted_linker_inventories_are_bound_to_original_bytes_and_never_overwrite() {
+    let temp = tempfile::tempdir().unwrap();
+    let map = temp.path().join("raw.map");
+    let output = temp.path().join("inputs.json");
+    let raw = b"# Object files:\n[  1] /build/libnative.a(native.o)\n# Sections:\n";
+    fs::write(&map, raw).unwrap();
+    let report = link_map::collect_inputs(&map, &output).unwrap();
+    assert_eq!(util::json::<serde_json::Value>(&output).unwrap(), report);
+    assert_eq!(report["map_sha256"], util::digest(raw));
+    assert!(link_map::collect_inputs(&map, &output).is_err());
+    assert_eq!(fs::read(&map).unwrap(), raw);
+}
+
+#[test]
 fn normal_and_evidence_builds_share_every_compiler_and_linker_argument() {
     let temp = tempfile::tempdir().unwrap();
     let target = temp.path().canonicalize().unwrap();

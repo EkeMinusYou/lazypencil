@@ -235,6 +235,46 @@ fn candidates_reject_changed_sources_binaries_missing_notices_and_self_consisten
 }
 
 #[test]
+fn candidates_recompute_archive_inventories_and_reject_orphaned_or_self_consistent_forged_records()
+{
+    for case in ["valid", "forged", "missing", "orphan"] {
+        let (_temp, arguments) = fixture("x86_64-unknown-linux-gnu");
+        let map = b"             VMA              LMA     Size Align Out     In      Symbol\n          c50b40           c50b40       20    32         /build/libnative.a(native.o):(.text)\n";
+        fs::write(arguments.evidence.join("link-map.map"), map).unwrap();
+        let mut inputs = lazypencil_xtask::evidence::link_map::archive_references(map).unwrap();
+        if case == "forged" {
+            inputs["archives"][0]["members"][0] = json!("other.o");
+        }
+        let build_path = arguments.evidence.join("build.json");
+        let mut build: Value = util::json(&build_path).unwrap();
+        build["static_link_map"] = json!({"sha256":util::digest(map),"bytes":map.len()});
+        if case != "orphan" {
+            build["static_link_inputs"] = inputs.clone();
+        }
+        if case != "missing" {
+            fs::write(
+                arguments.evidence.join("link-map-inputs.json"),
+                util::encode(&inputs).unwrap(),
+            )
+            .unwrap();
+        }
+        fs::write(build_path, util::encode(&build).unwrap()).unwrap();
+        index(&arguments.evidence);
+        let result = binary::create(&arguments);
+        if case == "valid" {
+            result.unwrap();
+            binary::verify(&arguments.output, None).unwrap();
+        } else {
+            assert!(result.is_err(), "{case}");
+            assert!(
+                !arguments.output.exists(),
+                "Invalid inventory published: {case}"
+            );
+        }
+    }
+}
+
+#[test]
 fn damaged_archives_and_release_status_substitution_never_publish_an_extraction() {
     for case in ["binary", "unlisted", "release-ready"] {
         let (temp, arguments) = fixture("aarch64-apple-darwin");

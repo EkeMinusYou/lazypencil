@@ -277,6 +277,20 @@ fn validate(files: &Files, package: &Package) -> Result<()> {
             && build["static_link_map"]["bytes"] == map.len(),
         "Linker map identity mismatch"
     );
+    let inputs = build
+        .get("static_link_inputs")
+        .filter(|value| !value.is_null());
+    ensure!(
+        inputs.is_some() == evidence.contains_key("link-map-inputs.json"),
+        "Missing link-map archive inventory binding"
+    );
+    if let Some(inputs) = inputs {
+        ensure!(
+            json_file(&evidence, "link-map-inputs.json")? == *inputs
+                && crate::evidence::link_map::archive_references(map)? == *inputs,
+            "Link-map archive inventory mismatch"
+        );
+    }
     let license = &source_members
         .get(&format!("{source_prefix}/LICENSE"))
         .context("Missing original project license")?

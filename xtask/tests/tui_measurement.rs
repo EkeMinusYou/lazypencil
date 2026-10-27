@@ -1,6 +1,26 @@
 #[cfg(unix)]
 use lazypencil_xtask::performance::resources::{self, Process};
 use std::process::Command;
+
+#[test]
+fn ordinary_memory_gate_includes_active_and_idle_bound_workers_and_requires_observations() {
+    use lazypencil_xtask::performance::tui::require_memory_target;
+    use serde_json::json;
+    let limit = 200 * 1024 * 1024_u64;
+    let report = |active, idle| {
+        json!({"bound_resources":{
+        "trace":{"maximum_observed_application_rss_bytes":active},
+        "idle":{"maximum_sampled_application_rss_bytes":idle}
+    },"chromium_resources":{"trace":{"maximum_observed_application_rss_bytes":4*limit}}})
+    };
+    require_memory_target(&report(limit, limit)).unwrap();
+    assert!(require_memory_target(&report(limit + 1, limit)).is_err());
+    assert!(require_memory_target(&report(limit, limit + 1)).is_err());
+    assert!(require_memory_target(&json!({})).is_err());
+    let mut missing = report(limit, limit);
+    missing["bound_resources"]["idle"]["maximum_sampled_application_rss_bytes"] = json!(null);
+    assert!(require_memory_target(&missing).is_err());
+}
 #[cfg(unix)]
 use std::time::Duration;
 

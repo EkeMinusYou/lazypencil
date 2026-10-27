@@ -708,6 +708,17 @@ impl Renderer<'_> {
         preserve_origin: bool,
         filter: Option<&ImageFilter>,
     ) -> Option<SkRect> {
+        #[cfg(target_os = "macos")]
+        if preserve_origin {
+            // Reuse a fixed native clip size instead of leaving differently
+            // sized freed layers in macOS's large-allocation cache. Keep this
+            // tradeoff bounded to 16 MiB per layer; large canvases retain hints.
+            // Independently clipped text masks still use their tight bounds.
+            let info = self.canvas.image_info();
+            if (info.width() as u64) * (info.height() as u64) <= 4 * 1024 * 1024 {
+                return None;
+            }
+        }
         let inverse = transform.inverse()?;
         if preserve_origin {
             // Keep the original device origin in filtered, transparent and

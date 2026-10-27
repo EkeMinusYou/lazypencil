@@ -99,10 +99,14 @@ pub fn smoke(s: &Session) -> Result<()> {
         &crate::evidence::link_map::path(&s.target),
         &linkage_dir.join("link-map.map"),
     )?;
+    let inputs = crate::evidence::link_map::collect_inputs(
+        &linkage_dir.join("link-map.map"),
+        &linkage_dir.join("link-map-inputs.json"),
+    )?;
     util::publish(
         &linkage_dir.join("ci.json"),
         &util::encode(
-            &json!({"source_commit":std::env::var("GITHUB_SHA")?,"binary_sha256":linkage["binary_sha256"],"static_link_map":map,"release_recipe":crate::evidence::link_map::RECIPE,"scope":"Link map and direct dynamic-load declarations for this CI release executable; no minimum-OS runtime acceptance or complete attribution."}),
+            &json!({"source_commit":std::env::var("GITHUB_SHA")?,"binary_sha256":linkage["binary_sha256"],"static_link_map":map,"static_link_inputs":inputs,"release_recipe":crate::evidence::link_map::RECIPE,"scope":"Link map and direct dynamic-load declarations for this CI release executable; no minimum-OS runtime acceptance or complete attribution."}),
         )?,
         false,
     )?;
