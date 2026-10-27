@@ -70,7 +70,8 @@ fn run_pty_case(case: &str) {
         && (!success
             || matches!(
                 case,
-                "user-navigation-config"
+                "ime-commit"
+                    | "user-navigation-config"
                     | "saved-history"
                     | "session-selection"
                     | "session-deletion"
@@ -83,6 +84,7 @@ fn run_pty_case(case: &str) {
             "terminal-output.bin",
             "terminal-screen.txt",
             "terminal-errors.log",
+            "ime-commit-report.json",
             "navigation-report.json",
             "saved-history-report.json",
             "saved-history-source.jsonl",

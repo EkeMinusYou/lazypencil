@@ -1332,14 +1332,23 @@ impl App {
             },
             self.focus == Focus::Prompt,
         ));
-        self.editor.set_cursor_style(
-            if self.focus == Focus::Prompt && !self.conversation.active() {
-                Style::default().add_modifier(Modifier::REVERSED)
-            } else {
-                Style::default()
-            },
-        );
         frame.render_widget(&self.editor, sections[3]);
+        if self.focus == Focus::Prompt && !self.conversation.active() && !self.has_modal() {
+            // IMEs anchor their preedit and candidate windows to the terminal
+            // cursor, not the textarea's styled cursor cell. Read its display
+            // coordinates after rendering has updated wrapping and scrolling.
+            let inner = self.editor.block().unwrap().inner(sections[3]);
+            let cursor = self.editor.screen_cursor();
+            let (top, left) = self.editor.scroll_offset();
+            if let (Some(row), Some(col)) = (
+                cursor.row.checked_sub(usize::from(top)),
+                cursor.col.checked_sub(usize::from(left)),
+            ) && row < usize::from(inner.height)
+                && col < usize::from(inner.width)
+            {
+                frame.set_cursor_position((inner.x + col as u16, inner.y + row as u16));
+            }
+        }
         frame.render_widget(
             Paragraph::new(Text::from(vec![
                 Line::from(self.status.clone()),
@@ -1428,6 +1437,7 @@ impl App {
 fn editor(text: &str) -> TextArea<'static> {
     let mut editor = TextArea::new(text.split('\n').map(str::to_string).collect());
     editor.set_max_histories(100);
+    editor.set_cursor_style(Style::default());
     editor.set_cursor_line_style(Style::default());
     editor.move_cursor(CursorMove::Bottom);
     editor.move_cursor(CursorMove::End);

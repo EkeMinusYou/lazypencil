@@ -332,6 +332,26 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
         h.pump()?;
     }
     h.draft(first)?;
+    h.wait(
+        "IME anchor follows the committed Japanese text",
+        15.0,
+        |h| {
+            h.screen
+                .text()
+                .lines()
+                .position(|line| line.contains(first))
+                .is_some_and(|row| h.screen.cursor() == (17, row as u16))
+        },
+    )?;
+    let first_cursor = h.screen.cursor();
+    h.key(b"\x1b[D")?;
+    h.wait("IME anchor follows editing in wide text", 15.0, |h| {
+        h.screen.cursor() == (15, first_cursor.1)
+    })?;
+    h.key(b"\x1b[C")?;
+    h.wait("IME anchor returns to the insertion point", 15.0, |h| {
+        h.screen.cursor() == first_cursor
+    })?;
     assert_eq!(
         negotiated & 7,
         7,
@@ -346,7 +366,7 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
     no_agent(h);
     assert_eq!(fs::read(&h.document)?, original);
     Ok(
-        json!({"source_commit":source_commit(),"keyboard_flags":negotiated,
+        json!({"source_commit":source_commit(),"keyboard_flags":negotiated,"japanese_cursor":first_cursor,
         "draft":expected,"draft_sha256":hash(expected.as_bytes()),"document_unchanged":true,
         "agent_started":false,"scope":"Real PTY plus Kitty keyboard-mode/IME-commit protocol model; physical IME confirmation is separate"}),
     )

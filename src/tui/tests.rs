@@ -48,6 +48,84 @@ fn runtime() -> tokio::runtime::Runtime {
 }
 
 #[test]
+fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes() {
+    use ratatui::{Terminal, backend::TestBackend, layout::Position};
+
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let mut terminal = Terminal::new(TestBackend::new(100, 36)).unwrap();
+        for (text, expected) in [
+            ("ちょっと".to_owned(), Position::new(9, 30)),
+            ("か\u{3099} 😀".to_owned(), Position::new(6, 30)),
+            ("日".repeat(80), Position::new(98, 30)),
+            ("一\n二\n三\n四\n五".to_owned(), Position::new(3, 32)),
+        ] {
+            app.editor = editor(&text);
+            terminal
+                .draw(|frame| {
+                    app.draw(frame);
+                })
+                .unwrap();
+            assert!(terminal.backend().cursor_visible(), "{text:?}");
+            assert_eq!(terminal.backend().cursor_position(), expected, "{text:?}");
+            let cell = &terminal.backend().buffer()[expected];
+            assert!(
+                !cell.modifier.contains(Modifier::REVERSED),
+                "Use the native cursor, not a second inverse cell"
+            );
+            assert_eq!(app.editor.lines().join("\n"), text);
+        }
+        terminal.backend_mut().resize(50, 16);
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        assert_eq!(terminal.backend().cursor_position(), Position::new(3, 12));
+        app.editor = editor(&"日".repeat(80));
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        assert_eq!(terminal.backend().cursor_position(), Position::new(48, 10));
+        let draft = app.editor.lines().join("\n");
+        app.help = true;
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        assert!(!terminal.backend().cursor_visible());
+        app.help = false;
+        app.focus = Focus::Preview;
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        assert!(!terminal.backend().cursor_visible());
+        app.focus = Focus::Prompt;
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        assert!(terminal.backend().cursor_visible());
+        terminal.backend_mut().resize(49, 15);
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        assert!(!terminal.backend().cursor_visible());
+        assert_eq!(app.editor.lines().join("\n"), draft);
+        assert!(!app.conversation.active());
+    });
+}
+
+#[test]
 fn playback_preserves_input_pauses_on_seek_errors_and_static_output_and_drops_late_frames() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {

@@ -13,6 +13,12 @@ use std::{
 };
 
 const COLORS: [[u8; 4]; 3] = [[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255]];
+const CURSOR: [u8; 4] = [255, 0, 255, 255];
+
+fn cursor(frame: &Raster) -> Option<Region> {
+    let mut regions = raster::regions(frame, CURSOR, 8);
+    (regions.len() == 1).then(|| regions.remove(0))
+}
 
 fn command(program: &str, args: &[&str]) -> Result<process::Output> {
     process::output_limited(
@@ -98,7 +104,7 @@ impl Emulator {
             let config = root.join("kitty.conf");
             fs::write(
                 &config,
-                "linux_display_server x11\nfont_size 11\ninitial_window_width 120c\ninitial_window_height 40c\nwindow_padding_width 0\nbackground_opacity 1\nsync_to_monitor no\n",
+                "linux_display_server x11\nfont_size 11\ninitial_window_width 120c\ninitial_window_height 40c\nwindow_padding_width 0\nbackground_opacity 1\nsync_to_monitor no\ncursor #ff00ff\ncursor_text_color #000000\ncursor_shape block\ncursor_blink_interval 0\n",
             )?;
             let mut c = Command::new("kitty");
             c.arg("--debug-rendering")
@@ -126,6 +132,10 @@ impl Emulator {
                 "#101010",
                 "-fg",
                 "#eeeeee",
+                "-cr",
+                "#ff00ff",
+                "-xrm",
+                "*cursorBlink:false",
                 "-e",
             ]);
             c
@@ -237,7 +247,7 @@ impl Emulator {
                     util::publish(
                         &self.root.join(format!("{name}.json")),
                         &util::encode(&json!({
-                            "width":frame.width,"height":frame.height,"markers":regions,
+                            "width":frame.width,"height":frame.height,"markers":regions,"cursor":cursor(&frame),
                             "png_sha256":util::digest(&png)
                         }))?,
                         false,
@@ -257,9 +267,27 @@ impl Emulator {
     }
 
     fn verify(mut self) -> Result<Value> {
-        self.phase("loaded", |_, _| true)?;
+        self.phase("loaded", |_, frame| cursor(frame).is_some())?;
+        let initial_cursor = cursor(&raster::decode(&util::read(
+            &self.root.join("latest.xwd"),
+            20 * 1024 * 1024,
+        )?)?)
+        .context("Missing initial native prompt cursor")?;
+        self.key("a")?;
+        self.phase("typed-cursor", |_, frame| {
+            cursor(frame).is_some_and(|current| {
+                current.left == initial_cursor.right + 1
+                    && current.right - current.left == initial_cursor.right - initial_cursor.left
+                    && current.top == initial_cursor.top
+                    && current.bottom == initial_cursor.bottom
+            })
+        })?;
+        self.key("BackSpace")?;
+        self.phase("prompt-restored", |_, frame| {
+            cursor(frame).as_ref() == Some(&initial_cursor)
+        })?;
         self.key("Tab")?;
-        let (initial, width, height) = self.phase("initial", |_, _| true)?;
+        let (initial, width, height) = self.phase("initial", |_, frame| cursor(frame).is_none())?;
         self.key("plus")?;
         let (zoomed, _, _) = self.phase("zoomed", |r, _| {
             r.iter().zip(&initial).all(|(a, b)| {
@@ -343,7 +371,8 @@ impl Emulator {
             json!({"screen_capture":"XWD v7 TrueColor from real X11 window",
             "document_sha256":util::file_digest(&self.root.join("design.pen"))?,
             "markers":"three connected primary-color regions, at least 1024 pixels each",
-            "phases":["loaded","initial","zoomed","panned-right","pan-restored","zoom-restored","resized","size-restored"],
+            "phases":["loaded","typed-cursor","prompt-restored","initial","zoomed","panned-right","pan-restored","zoom-restored","resized","size-restored"],
+            "native_prompt_cursor":{"initial":initial_cursor,"typed_one_cell_right":true,"backspace_restored":true,"hidden_outside_prompt":true},
             "keyboard_exit":"success","prompt_draft_empty":true,"agent_started":false,
             "physical_display_or_ime_acceptance":false,"latency_benchmark":false}),
         )
