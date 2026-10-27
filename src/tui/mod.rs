@@ -1356,6 +1356,20 @@ impl App {
                     }
                 }
             }
+            // Paragraph clipping can drop the caret span at a wide-glyph
+            // boundary. Retain the widget's visible viewport position then.
+            if cursor.is_none() {
+                let logical = self.editor.screen_cursor();
+                let (top, left) = self.editor.scroll_offset();
+                if let (Some(row), Some(col)) = (
+                    logical.row.checked_sub(usize::from(top)),
+                    logical.col.checked_sub(usize::from(left)),
+                ) && row < usize::from(inner.height)
+                    && col < usize::from(inner.width)
+                {
+                    cursor = Some((inner.x + col as u16, inner.y + row as u16));
+                }
+            }
             if let Some(position) = cursor {
                 frame.set_cursor_position(position);
             }

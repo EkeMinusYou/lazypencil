@@ -8,6 +8,8 @@
 
 `30c105f` の macOS先行437件・68サマリーと配布候補・元の20起動／80操作を成功し、入力レポートの文字・座標・未送信・文書保持を独立照合した。元Noto78 PNGも全byte一致した。追加確認で、pinned textareaの論理列がZWJ成分を別々に数えることを確認した。描画済みcaretを一時的なcell属性で識別し、flush前に属性を除去してnative cursorを同じcellへ置く。独自のUnicode幅計算やforkを追加せず、結合絵文字・旗・家族・tab・選択範囲と属性非漏洩を試験へ加える。元の全条件と期限は維持し、有用な進行中CIを中断せず追加修正をまとめて検証する。
 
+`091ca6e` は macOSの日本語／結合文字・ZWJの実PTY再現、Clippyとnative clipboardを通過したが、元の長い日本語行でcaret spanが横スクロールの広字境界から切れ、native cursorが消えることを既存条件の試験が検出した。全環境とreleaseには進めていない。描画spanが取れない時だけwidgetのviewport座標で表示位置を保持する。元の98列／48列の位置・resize・全文保持と新しいUnicode／選択／非漏洩条件を変更せず再検証する。
+
 `67e799b` の [GHA `40442963340`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40442963340) は3環境・監査・最終ソース検証を20分4秒で成功した。元のケース名・実行回数を照合し、追加回帰を含めLinux各1,394件・macOS1,384件、各144サマリーを確認した。各1,221ファイルを再利用し、core／既定buildは0〜5秒、並列runtimeは150〜227秒、releaseのCargo確認は0.18〜0.56秒だった。native依存3件と完全成果物3件を保持し、旧形式重複は0件。別走行のmacOS／arm64配布計測も元の20起動・80操作と追加資源観測を成功し、raw記録・画素・会話を照合した。物理表示・全性能・製品全体の完成とはしない。
 
 カラー／bitmap書体の文字の線は `869f0e5` の Linux 先行402試験・39サマリーを通過した。macOS／arm64の全体も各1,387／1,397件・144サマリーで成功し、元ケースと回数を照合した。3組の18画像、合計5,616,000画素のhash・穴・低alpha部分・paintとschema一致を独立に確認した。通常vector輪郭とnativeの色塗りを維持し、layout identityは7である。最終Linux x64は試験用Notoフォントの取得中に30秒のper-read timeoutで停止し、描画失敗とは区別する。他の有用な実行は終了まで保持した。追加バッチでは元の実Noto14比較／形式を維持し、CBDT／COLRv1の線を18条件／形式で検査する。固定フォントと原licenseの3ファイルだけを共通cacheへ置き、既存Rust処理で毎回サイズ・SHAを再確認する。cache破損・symlinkの拒否も実CLIで検査する。取得の既存300秒global／30秒per-read条件とnative全試験を維持し、取得を重い依存cache復元より前へ移す。失敗した入力名も診断に残す。追加差分はGHA未検証であり、全3環境と最終source gateの成功はまだ示さない。
