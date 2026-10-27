@@ -878,6 +878,11 @@ mod hosted {
             if allocation_diagnostics {
                 idle["allocation_diagnostics"] =
                     crate::performance::allocations::capture(&root, &roles)?;
+                util::publish(
+                    &root.join("completed-idle-diagnostics.json"),
+                    &util::encode(&idle)?,
+                    false,
+                )?;
             }
             fs::write(root.join("bound-render-release"), b"complete")?;
             terminal.wait("completed resource turn", |t| {
@@ -889,7 +894,9 @@ mod hosted {
                         .next()
                         .is_some_and(|line| line.contains("idle"))
             })?;
-            let trace = terminal.activity.take().unwrap().finish_bound(&roles)?;
+            // Retain the raw trace on failure, including identity mismatches.
+            let trace = terminal.activity.as_mut().unwrap().finish_bound(&roles)?;
+            terminal.activity.take();
             let observed_pids = trace["points"]
                 .as_array()
                 .unwrap()
@@ -1178,6 +1185,10 @@ mod hosted {
         let preview = crate::performance::sample_statistics(&preview)?;
         let interactions = crate::performance::sample_statistics(&interactions)?;
         let activity = active_resources_trial(&binary, &helper, &output, deadline)?;
+        let report = json!({"format_version":1,"candidate":identity,"helper":helper_identity,"target":evidence::linkage::native_host()?,"pty":{"columns":160,"rows":54,"pixel_width":1920,"pixel_height":1080,"protocol":"kitty","display_emulator":false},"cache_condition":"Fresh app/data directories per sample; OS page/font caches uncontrolled, individual samples retained with first at index 0; no concurrent tasks in this job","samples":samples,"input_ready_ms":input,"first_preview_ms":preview,"interaction_output_ms":interactions,"idle":idle,"active_resources":activity,"scope":"PTY input echo and complete Kitty output receipt, including observer backpressure; sampled process trees can miss short-lived descendants. Not physical presentation, a controlled cold-start benchmark, transient peak RSS, external AI/adapter/terminal resource usage or full performance acceptance"});
+        let mut report = report;
+        // Retain all completed original trials even if a later resource check fails.
+        util::publish(&output.join("report.json"), &util::encode(&report)?, false)?;
         let bound_activity = bound_resources_trial(
             &binary,
             &helper,
@@ -1191,12 +1202,10 @@ mod hosted {
             None,
             arguments.allocation_diagnostics,
         )?;
-        let report = json!({"format_version":1,"candidate":identity,"helper":helper_identity,"target":evidence::linkage::native_host()?,"pty":{"columns":160,"rows":54,"pixel_width":1920,"pixel_height":1080,"protocol":"kitty","display_emulator":false},"cache_condition":"Fresh app/data directories per sample; OS page/font caches uncontrolled, individual samples retained with first at index 0; no concurrent tasks in this job","samples":samples,"input_ready_ms":input,"first_preview_ms":preview,"interaction_output_ms":interactions,"idle":idle,"active_resources":activity,"scope":"PTY input echo and complete Kitty output receipt, including observer backpressure; sampled process trees can miss short-lived descendants. Not physical presentation, a controlled cold-start benchmark, transient peak RSS, external AI/adapter/terminal resource usage or full performance acceptance"});
-        let mut report = report;
         report["bound_resources"] = bound_activity;
         // Publish the unchanged original observations before the opt-in phase,
         // so a Chromium failure cannot hide the completed baseline evidence.
-        util::publish(&output.join("report.json"), &util::encode(&report)?, false)?;
+        util::publish(&output.join("report.json"), &util::encode(&report)?, true)?;
         if arguments.chromium_resources {
             let (chromium, runtime) = verified_chromium(&binary)?;
             report["chromium_resources"] = bound_resources_trial(

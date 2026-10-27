@@ -4,6 +4,31 @@ use std::process::Command;
 
 #[cfg(unix)]
 #[test]
+fn failed_bound_accounting_keeps_the_original_process_trace_available() {
+    use std::collections::BTreeMap;
+    let pid = std::process::id();
+    let mut trace = resources::ActiveTrace::new(pid).unwrap();
+    let mut expected = resources::snapshot(pid).unwrap().processes[&pid].clone();
+    expected.parent = u32::MAX;
+    let roles = resources::BoundRoles {
+        processes: BTreeMap::from([("tui", expected)]),
+    };
+    let error = trace.finish_bound(&roles).unwrap_err();
+    let details = format!("{error:#}");
+    assert!(details.contains("Resource accounting failed at"));
+    assert!(details.contains("changed identity for tui"));
+    assert!(details.contains("expected") && details.contains("observed"));
+    let raw = trace.finish().unwrap();
+    let points = raw["points"].as_array().unwrap();
+    assert!(points.len() >= 3);
+    assert!(points.iter().all(|point| {
+        point["snapshot"]["processes"][pid.to_string()]["pid"] == pid
+    }));
+    assert!(raw.get("accounted_points").is_none());
+}
+
+#[cfg(unix)]
+#[test]
 fn allocation_diagnostics_accept_only_distinct_unchanged_owned_process_identities() {
     use lazypencil_xtask::performance::{
         allocations,

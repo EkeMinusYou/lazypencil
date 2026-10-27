@@ -17,6 +17,8 @@ const MAX_PIXELS: u64 = 32 * 1024 * 1024;
 
 mod backdrop;
 mod blending;
+#[cfg(target_os = "macos")]
+mod macos;
 mod mesh;
 mod polygon;
 use backdrop::{background_nodes, composite_layer};
@@ -165,6 +167,8 @@ fn png_impl(
     mut observer: Option<&mut dyn FnMut(&'static str)>,
     encoding: &skia_safe::png_encoder::Options,
 ) -> Result<RenderedImage> {
+    #[cfg(target_os = "macos")]
+    let _scratch = macos::ReleaseScratch;
     let raster = raster_impl(project, snapshot, options, runtime.as_deref_mut())?;
     if let Some(observer) = observer.as_mut() {
         observer("render_raster_ms");

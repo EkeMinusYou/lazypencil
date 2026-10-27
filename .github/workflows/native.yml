@@ -259,6 +259,7 @@ jobs:
         timeout-minutes: 15
         run: cargo xtask ci native default-lint
       - name: Test default configuration alongside release compilation
+        id: default-release
         if: inputs.phase == 'full'
         timeout-minutes: 60
         run: cargo xtask ci native default-release
@@ -384,7 +385,7 @@ jobs:
           path: ${{ runner.temp }}/lazypencil-application-cache
       - name: Stage mapped release outputs independently of tests
         id: release-save
-        if: ${{ success() && steps.release-key.outcome == 'success' && steps.release-cache.outputs.cache-hit != 'true' && (steps.release-smoke.outcome == 'success' || steps.focus-release.outcome == 'success') && github.ref == 'refs/heads/main' }}
+        if: ${{ !cancelled() && steps.release-key.outcome == 'success' && steps.release-cache.outputs.cache-hit != 'true' && (steps.release-smoke.outcome == 'success' || steps.focus-release.outcome == 'success' || steps.default-release.outcome == 'success') && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         timeout-minutes: 3
         run: cargo xtask ci cache application stage --release-only --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-release-cache" --native-key '${{ steps.cache-key.outputs.primary }}'

@@ -67,12 +67,16 @@ impl ActiveTrace {
         self.observe()
     }
 
-    pub fn finish_bound(mut self, roles: &BoundRoles) -> Result<serde_json::Value> {
+    pub fn finish_bound(&mut self, roles: &BoundRoles) -> Result<serde_json::Value> {
         self.observe()?;
         let accounted = self
             .points
             .iter()
-            .map(|point| roles.account(&point.snapshot))
+            .map(|point| {
+                roles.account(&point.snapshot).with_context(|| {
+                    format!("Resource accounting failed at {:.3}ms", point.elapsed_ms)
+                })
+            })
             .collect::<Result<Vec<_>>>()?;
         ensure!(
             accounted.iter().any(|point| point["present_roles"]
@@ -113,7 +117,7 @@ impl ActiveTrace {
         self.report()
     }
 
-    fn report(self) -> Result<serde_json::Value> {
+    fn report(&self) -> Result<serde_json::Value> {
         let maximum_rss = self
             .points
             .iter()
@@ -324,13 +328,13 @@ impl BoundRoles {
 
     pub fn account(&self, snapshot: &Snapshot) -> Result<serde_json::Value> {
         let adapter = &self.processes["adapter"];
-        for expected in self.processes.values() {
+        for (role, expected) in &self.processes {
             if let Some(actual) = snapshot.processes.get(&expected.pid) {
                 ensure!(
                     actual.parent == expected.parent
                         && actual.group == expected.group
                         && actual.start_ticks == expected.start_ticks,
-                    "A sampled resource PID changed identity"
+                    "A sampled resource PID changed identity for {role}: expected {expected:?}, observed {actual:?}"
                 );
             }
         }
