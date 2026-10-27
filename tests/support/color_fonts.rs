@@ -254,6 +254,19 @@ pub(super) fn render_scene(
     properties: Value,
     options: &render::RenderOptions,
 ) -> (render::RenderedImage, PathBuf) {
+    let mut fonts = Fonts::new(std::slice::from_ref(font)).unwrap();
+    render_scene_with_fonts(directory, version, properties, options, &mut fonts)
+}
+
+/// Geometry matrices can reuse immutable font inputs; the ordinary helper
+/// retains a fresh loader for every native-fill compatibility comparison.
+pub(super) fn render_scene_with_fonts(
+    directory: &Path,
+    version: &str,
+    properties: Value,
+    options: &render::RenderOptions,
+    fonts: &mut Fonts,
+) -> (render::RenderedImage, PathBuf) {
     let mut node = json!({"id":"emoji","type":"text","x":10,"y":10,"width":360,"height":240,
         "textGrowth":"fixed-width-height","fontFamily":"LP Test Color","fontSize":100,
         "content":"\u{1f600}","fill":"#0000ff"});
@@ -271,11 +284,7 @@ pub(super) fn render_scene(
     .unwrap();
     let store = Store::open(&file, Some(directory.join("data"))).unwrap();
     let project = Project::load(&store).unwrap();
-    let snapshot = layout::compute(
-        project.resolve().unwrap(),
-        &mut Fonts::new(std::slice::from_ref(font)).unwrap(),
-    )
-    .unwrap();
+    let snapshot = layout::compute(project.resolve().unwrap(), fonts).unwrap();
     (render::png(&project, &snapshot, options).unwrap(), file)
 }
 

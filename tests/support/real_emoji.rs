@@ -39,6 +39,9 @@ fn verify_format(format_index: usize) {
         );
         let mut fonts = Fonts::new(std::slice::from_ref(&font))
             .unwrap_or_else(|error| panic!("{} font loading: {error}", record["format"]));
+        // Keep the stroke loader separate from the native reference. Its first
+        // stroke is cold; subsequent geometry cases reuse identical font data.
+        let mut stroke_fonts = Fonts::new(std::slice::from_ref(&font)).unwrap();
         for (case, content, family, expected_glyphs) in [
             ("smile", "😀", "Noto Color Emoji", 1),
             ("zwj", "👩‍💻", "Noto Color Emoji", 1),
@@ -164,13 +167,13 @@ fn verify_format(format_index: usize) {
                 for version in ["2.19", "2.21"] {
                     for alignment in ["inner", "center", "outer"] {
                         let directory = tempfile::tempdir().unwrap();
-                        let (rendered, _) = color_fonts::render_scene(
+                        let (rendered, _) = color_fonts::render_scene_with_fonts(
                             directory.path(),
-                            &font,
                             version,
                             json!({"fontFamily":family,"content":content,"fill":[],
                                 "stroke":"#0000ff80","strokeWidth":3,"strokeAlignment":alignment}),
                             &Default::default(),
+                            &mut stroke_fonts,
                         );
                         let pixels = scene_pixels(&rendered.png);
                         let mut ink = 0;
