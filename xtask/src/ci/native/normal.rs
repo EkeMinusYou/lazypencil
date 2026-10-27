@@ -11,7 +11,16 @@ pub fn run(s: &Session) -> Result<()> {
         .iter()
         .map(|(name, binary)| (name.clone(), binary.path.clone()))
         .collect();
-    let checks = commands::default_tests(&s.root, &binaries)?;
+    let mut checks = commands::default_tests(&s.root, &binaries)?;
+    let tui = catalog
+        .binaries
+        .get("tui")
+        .context("Missing TUI test executable")?;
+    let terminal = checks
+        .iter()
+        .position(|args| args.first().is_some_and(|path| Path::new(path) == tui.path))
+        .context("Missing complete TUI test invocation")?;
+    let terminal_reproduction = checks.remove(terminal);
     let independent = INDEPENDENT
         .map(|name| {
             catalog
@@ -32,12 +41,31 @@ pub fn run(s: &Session) -> Result<()> {
     );
     // Rustdoc needs Cargo too. Run it before starting the independent release
     // lane, and retain the original shared 15-minute test budget.
-    s.execute(
+    let doctests = s.execute(
         &commands::default_doctests(),
         TEST_SECONDS,
         "lazypencil-tests.log",
         true,
-    )?;
+    );
+    // The TUI target deliberately changes a two-second script deadline.
+    // Run its unchanged complete invocation before CPU-heavy release
+    // compilation, then remove it from the later parallel lane.
+    // Its elapsed time still consumes the original shared test budget.
+    let terminal = run_lane(
+        s,
+        &[terminal_reproduction],
+        deadline,
+        "lazypencil-tests.log",
+    );
+    let failures = [
+        ("shared cleanup worker tests", management),
+        ("default doctests", doctests),
+        ("terminal script policy reproduction", terminal),
+    ]
+    .into_iter()
+    .filter_map(|(name, result)| result.err().map(|error| format!("{name}: {error:#}")))
+    .collect::<Vec<_>>();
+    ensure!(failures.is_empty(), "{}", failures.join("\n"));
     let remaining = parallel::run(vec![
         (
             "release compilation",
@@ -52,15 +80,7 @@ pub fn run(s: &Session) -> Result<()> {
             Box::new(|| run_lane(s, &scripts, deadline, "lazypencil-script-scope.log")),
         ),
     ]);
-    let failures = [
-        ("shared cleanup worker tests", management),
-        ("remaining default tests", remaining),
-    ]
-    .into_iter()
-    .filter_map(|(name, result)| result.err().map(|error| format!("{name}: {error:#}")))
-    .collect::<Vec<_>>();
-    ensure!(failures.is_empty(), "{}", failures.join("\n"));
-    Ok(())
+    remaining.context("Remaining default tests and release compilation failed")
 }
 
 fn split_checks(
