@@ -134,6 +134,119 @@ fn completed(mut child: Child, limit: Duration) -> ExitStatus {
     }
 }
 
+#[test]
+fn bitmap_strokes_follow_native_holes_islands_and_not_color_seams_or_base_paths() {
+    let directory = tempfile::tempdir().unwrap();
+    let font = diagnostic_font(directory.path(), "sbix-contours");
+    let retained = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR").map(PathBuf::from);
+    let mut reports = Vec::new();
+    for size in [50.0_f32, 100.0, 150.0] {
+        let mut request = spec("😀", "LP Test Bitmap Contours");
+        request.size = size;
+        let block = Fonts::new(std::slice::from_ref(&font))
+            .unwrap()
+            .layout(&request, None)
+            .unwrap();
+        let native = scene_pixels(&paint_scene(&block));
+        let occupied = native
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c[3] > 0)
+            .map(|(i, _)| (i % 400, i / 400))
+            .collect::<Vec<_>>();
+        let left = occupied.iter().map(|p| p.0).min().unwrap();
+        let right = occupied.iter().map(|p| p.0).max().unwrap();
+        let top = occupied.iter().map(|p| p.1).min().unwrap();
+        let middle = (left + right) / 2;
+        let hole_y = top + (25.0 * size / 100.0) as usize;
+        let island_y = top + (59.0 * size / 100.0) as usize;
+        assert_eq!(native[hole_y * 400 + middle][3], 0);
+        assert!((1..128).contains(&native[island_y * 400 + middle][3]));
+        for version in ["2.19", "2.21"] {
+            for alignment in ["inner", "center", "outer"] {
+                let (output, _) = render_scene(
+                    directory.path(),
+                    &font,
+                    version,
+                    json!({"fontFamily":"LP Test Bitmap Contours", "fontSize":size,
+                        "fill":[], "stroke":"#0000ff80", "strokeWidth":4, "strokeAlignment":alignment}),
+                    &Default::default(),
+                );
+                let pixels = scene_pixels(&output.png);
+                assert_eq!(
+                    pixels[hole_y * 400 + middle][3],
+                    0,
+                    "Hole filled: {version}/{size}/{alignment}"
+                );
+                let mut ink = 0;
+                let mut island = 0;
+                for y in 2..258 {
+                    for x in 2..398 {
+                        let color = pixels[y * 400 + x];
+                        assert!(color[3] <= 128, "Stroke accumulated alpha");
+                        if color[3] == 0 {
+                            continue;
+                        }
+                        assert_eq!(&color[..3], &[0, 0, 255]);
+                        ink += 1;
+                        if (y as isize - island_y as isize).unsigned_abs()
+                            <= (5.0 * size / 100.0) as usize
+                        {
+                            island += 1;
+                        }
+                        let mut any_ink = false;
+                        let mut all_solid = true;
+                        for yy in y - 2..=y + 2 {
+                            for xx in x - 2..=x + 2 {
+                                any_ink |= native[yy * 400 + xx][3] > 0;
+                                all_solid &= native[yy * 400 + xx][3] == 255;
+                            }
+                        }
+                        if alignment == "inner" {
+                            assert!(any_ink, "Inner stroke detached from native mask at {x},{y}");
+                        }
+                        if alignment == "outer" {
+                            assert!(
+                                !all_solid,
+                                "Outer stroke entered solid native ink at {x},{y}"
+                            );
+                        }
+                    }
+                }
+                assert!(
+                    ink > 100 && island > 10,
+                    "{version}/{size}/{alignment}: ink={ink}, island={island}"
+                );
+                if size >= 100.0 {
+                    let seam_y = top + (6.0 * size / 100.0) as usize;
+                    assert!(native[seam_y * 400 + middle][3] > 200);
+                    assert_eq!(
+                        pixels[seam_y * 400 + middle][3],
+                        0,
+                        "Palette seam became a stroke"
+                    );
+                }
+                if let Some(root) = &retained {
+                    fs::create_dir_all(root).unwrap();
+                    let name = format!("codec-bitmap-stroke-{version}-{size}-{alignment}.png");
+                    fs::write(root.join(&name), &output.png).unwrap();
+                    reports.push(json!({"schema":version,"size":size,"alignment":alignment,"png":name,"png_sha256":hash(&output.png),"font_sha256":hash(&fs::read(&font).unwrap()),"ink_pixels":ink,"island_pixels":island,"hole":[middle,hole_y],"hole_alpha":pixels[hole_y * 400 + middle][3]}));
+                }
+            }
+        }
+    }
+    if let Some(root) = retained {
+        fs::write(
+            root.join("codec-bitmap-stroke-report.json"),
+            serde_json::to_vec_pretty(
+                &json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"cases":reports}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    }
+}
+
 pub(super) fn render_scene(
     directory: &Path,
     font: &PathBuf,

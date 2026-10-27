@@ -33,6 +33,11 @@ fn main() -> test_support::Result {
             let bytes = match args.get(2).map(String::as_str).unwrap_or("colr") {
                 "colr" => lazypencil_xtask::fixtures::fonts::color::generate(),
                 "sbix" => lazypencil_xtask::fixtures::fonts::color::bitmap::generate()?,
+                "sbix-contours" => {
+                    lazypencil_xtask::fixtures::fonts::color::bitmap::generate_with_silhouette(
+                        true,
+                    )?
+                }
                 _ => return Err("Unknown color-font fixture format".into()),
             };
             std::fs::write(destination, bytes)?;

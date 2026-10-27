@@ -12,6 +12,7 @@ use skia_safe::{
 pub const DEFAULT_FONT_FAMILY: &str = "Noto Sans JP";
 pub const DEFAULT_FONT_BYTES: &[u8] = include_bytes!("../resources/fonts/NotoSansJP.ttf");
 
+mod bitmap;
 mod container;
 mod decorations;
 mod fonts;
@@ -146,7 +147,7 @@ impl Fonts {
             .collect::<Vec<_>>();
         let mut ink_bounds: Option<crate::geometry::Rect> = None;
         let mut outline = spec.outline_required.then(PathBuilder::new);
-        let mut unsupported = false;
+        let mut bitmap_budget = bitmap::Budget::default();
         let mut interrupted = None;
         // Visit the exact positioned glyph runs used by Paragraph::paint.
         paragraph.visit(|line, info| {
@@ -159,15 +160,15 @@ impl Fonts {
             }
             if let Some(info) = info {
                 let font = info.font();
+                let color_font = [*b"COLR", *b"sbix", *b"CBDT", *b"SVG "].iter().any(|tag| {
+                    font.typeface()
+                        .get_table_size(u32::from_be_bytes(*tag))
+                        .is_some_and(|size| size > 0)
+                });
                 if info.count() > 0 {
                     let id = font.typeface().unique_id();
                     if used_ids.insert(id) {
-                        native_color |=
-                            [*b"COLR", *b"sbix", *b"CBDT", *b"SVG "].iter().any(|tag| {
-                                font.typeface()
-                                    .get_table_size(u32::from_be_bytes(*tag))
-                                    .is_some_and(|size| size > 0)
-                            });
+                        native_color |= color_font;
                         if let Some(information) = resolved.information.get(&id) {
                             let mut information = information.clone();
                             information.synthetic_bold |= font.is_embolden();
@@ -181,6 +182,9 @@ impl Fonts {
                 let origin = info.origin();
                 let mut bounds = vec![skia_safe::Rect::default(); info.count()];
                 font.get_bounds(info.glyphs(), &mut bounds, None);
+                // A run has one immutable font configuration. Repeated glyphs
+                // reuse its recovered silhouette without another native raster.
+                let mut silhouettes = std::collections::BTreeMap::new();
                 let mut include = |rect: crate::geometry::Rect| {
                     ink_bounds = Some(ink_bounds.map_or(rect, |current| current.union(rect)));
                 };
@@ -209,10 +213,25 @@ impl Fonts {
                         ));
                     }
                     if let Some(builder) = &mut outline {
-                        if let Some(path) = font.get_path(*glyph) {
+                        let vector = (!color_font).then(|| font.get_path(*glyph)).flatten();
+                        if let Some(path) = vector {
                             builder.add_path_with_offset(&path, position, None);
                         } else if !bounds.is_empty() {
-                            unsupported = true;
+                            if let std::collections::btree_map::Entry::Vacant(entry) =
+                                silhouettes.entry(*glyph)
+                            {
+                                match bitmap::glyph(font, *glyph, bounds, &mut bitmap_budget, check)
+                                {
+                                    Ok(path) => {
+                                        entry.insert(path);
+                                    }
+                                    Err(error) => {
+                                        interrupted = Some(error);
+                                        return;
+                                    }
+                                }
+                            }
+                            builder.add_path_with_offset(&silhouettes[glyph], position, None);
                         }
                     }
                 }
@@ -287,12 +306,6 @@ impl Fonts {
             line_count: paragraph.line_number(),
             fonts: used,
         };
-        if unsupported {
-            return Err(Error::new(
-                "UNSUPPORTED_FEATURE",
-                "The selected font has visible glyphs without vector outlines; text strokes cannot be drawn faithfully",
-            ));
-        }
         let outline = outline.map(|mut builder| builder.detach());
         let ink_bounds = ink_bounds
             .map(|bounds| bounds.outset(1.0, 1.0))

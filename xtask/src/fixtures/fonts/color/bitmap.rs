@@ -14,16 +14,34 @@ fn chunk(output: &mut Vec<u8>, tag: [u8; 4], bytes: &[u8]) {
     output.extend(crc.sum().to_be_bytes());
 }
 
-fn png(reversed: bool) -> Result<Vec<u8>> {
-    let mut row = vec![0u8];
-    for x in 0..64 {
-        row.extend(if (x < 32) != reversed {
-            [255, 0, 0, 255]
-        } else {
-            [0, 255, 0, 255]
-        });
+fn png(reversed: bool, silhouette: bool) -> Result<Vec<u8>> {
+    let mut scanlines = Vec::new();
+    for y in 0..70 {
+        scanlines.push(0);
+        for x in 0..64 {
+            let mut color = if (x < 32) != reversed {
+                [255, 0, 0, 255]
+            } else {
+                [0, 255, 0, 255]
+            };
+            if silhouette {
+                // A hollow rectangular ring and a detached translucent island.
+                // Neither the hole nor the island exists in the base glyf path.
+                let ring = (4..60).contains(&x)
+                    && (4..54).contains(&y)
+                    && !((16..48).contains(&x) && (16..42).contains(&y));
+                let island = (24..40).contains(&x) && (60..66).contains(&y);
+                color[3] = if ring {
+                    255
+                } else if island {
+                    64
+                } else {
+                    0
+                };
+            }
+            scanlines.extend(color);
+        }
     }
-    let scanlines = row.repeat(70);
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::best());
     encoder.write_all(&scanlines)?;
     let mut output = b"\x89PNG\r\n\x1a\n".to_vec();
@@ -38,9 +56,17 @@ fn png(reversed: bool) -> Result<Vec<u8>> {
 }
 
 pub fn generate() -> Result<Vec<u8>> {
-    let mut font = base("LP Test Bitmap");
-    let normal = png(false)?;
-    let reversed = png(true)?;
+    generate_with_silhouette(false)
+}
+
+pub fn generate_with_silhouette(silhouette: bool) -> Result<Vec<u8>> {
+    let mut font = base(if silhouette {
+        "LP Test Bitmap Contours"
+    } else {
+        "LP Test Bitmap"
+    });
+    let normal = png(false, silhouette)?;
+    let reversed = png(true, silhouette)?;
     let mut data = Vec::new();
     let mut offsets = Vec::new();
     // One strike at 100 PPEM. Each bitmap covers 640 x 700 design units,

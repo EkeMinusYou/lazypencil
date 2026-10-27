@@ -95,78 +95,97 @@ fn font_tables(bytes: &[u8]) -> std::collections::BTreeMap<&[u8], &[u8]> {
 #[test]
 fn original_sbix_font_has_valid_strike_offsets_duplicate_records_and_exact_rgba_bitmaps() {
     use std::io::Read;
-    let bytes = fixtures::fonts::color::bitmap::generate().unwrap();
-    assert!(bytes.len() < 8192);
-    assert_eq!(bytes, fixtures::fonts::color::bitmap::generate().unwrap());
-    let tables = font_tables(&bytes);
-    assert!(!tables.contains_key(b"COLR".as_slice()));
-    assert!(!tables.contains_key(b"CPAL".as_slice()));
-    assert_eq!(tables[b"maxp".as_slice()][4..6], 10u16.to_be_bytes());
-    let sbix = tables[b"sbix".as_slice()];
-    assert_eq!(&sbix[..12], &[0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 12]);
-    let strike = &sbix[12..];
-    assert_eq!(&strike[..4], &[0, 100, 0, 72]);
-    let offsets = strike[4..48]
-        .chunks_exact(4)
-        .map(|b| u32::from_be_bytes(b.try_into().unwrap()) as usize)
-        .collect::<Vec<_>>();
-    assert_eq!(offsets[0], 48);
-    assert_eq!(offsets[10], strike.len());
-    for (glyph, pair) in offsets.windows(2).enumerate() {
-        assert!(pair[0] <= pair[1]);
-        let record = &strike[pair[0]..pair[1]];
-        if [4, 6, 7].contains(&glyph) {
-            assert_eq!(record, &[0, 0, 0, 0, b'd', b'u', b'p', b'e', 0, 1]);
-        } else if [1, 8].contains(&glyph) {
-            assert_eq!(&record[..8], &[0, 0, 0, 0, b'p', b'n', b'g', b' ']);
-            let png = &record[8..];
-            assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
-            let mut compressed = Vec::new();
-            let mut cursor = 8;
-            let mut tags = Vec::new();
-            while cursor < png.len() {
-                let size = u32::from_be_bytes(png[cursor..cursor + 4].try_into().unwrap()) as usize;
-                let tag = &png[cursor + 4..cursor + 8];
-                let data = &png[cursor + 8..cursor + 8 + size];
-                let mut crc = flate2::Crc::new();
-                crc.update(tag);
-                crc.update(data);
+    for silhouette in [false, true] {
+        let bytes = fixtures::fonts::color::bitmap::generate_with_silhouette(silhouette).unwrap();
+        assert!(bytes.len() < 8192);
+        assert_eq!(
+            bytes,
+            fixtures::fonts::color::bitmap::generate_with_silhouette(silhouette).unwrap()
+        );
+        let tables = font_tables(&bytes);
+        assert!(!tables.contains_key(b"COLR".as_slice()));
+        assert!(!tables.contains_key(b"CPAL".as_slice()));
+        assert_eq!(tables[b"maxp".as_slice()][4..6], 10u16.to_be_bytes());
+        let sbix = tables[b"sbix".as_slice()];
+        assert_eq!(&sbix[..12], &[0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 12]);
+        let strike = &sbix[12..];
+        assert_eq!(&strike[..4], &[0, 100, 0, 72]);
+        let offsets = strike[4..48]
+            .chunks_exact(4)
+            .map(|b| u32::from_be_bytes(b.try_into().unwrap()) as usize)
+            .collect::<Vec<_>>();
+        assert_eq!(offsets[0], 48);
+        assert_eq!(offsets[10], strike.len());
+        for (glyph, pair) in offsets.windows(2).enumerate() {
+            assert!(pair[0] <= pair[1]);
+            let record = &strike[pair[0]..pair[1]];
+            if [4, 6, 7].contains(&glyph) {
+                assert_eq!(record, &[0, 0, 0, 0, b'd', b'u', b'p', b'e', 0, 1]);
+            } else if [1, 8].contains(&glyph) {
+                assert_eq!(&record[..8], &[0, 0, 0, 0, b'p', b'n', b'g', b' ']);
+                let png = &record[8..];
+                assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+                let mut compressed = Vec::new();
+                let mut cursor = 8;
+                let mut tags = Vec::new();
+                while cursor < png.len() {
+                    let size =
+                        u32::from_be_bytes(png[cursor..cursor + 4].try_into().unwrap()) as usize;
+                    let tag = &png[cursor + 4..cursor + 8];
+                    let data = &png[cursor + 8..cursor + 8 + size];
+                    let mut crc = flate2::Crc::new();
+                    crc.update(tag);
+                    crc.update(data);
+                    assert_eq!(
+                        crc.sum().to_be_bytes(),
+                        png[cursor + 8 + size..cursor + 12 + size]
+                    );
+                    tags.push(tag);
+                    if tag == b"IHDR" {
+                        assert_eq!(data, &[0, 0, 0, 64, 0, 0, 0, 70, 8, 6, 0, 0, 0]);
+                    } else if tag == b"IDAT" {
+                        compressed.extend(data);
+                    } else {
+                        assert_eq!(tag, b"IEND");
+                        assert!(data.is_empty());
+                    }
+                    cursor += size + 12;
+                }
                 assert_eq!(
-                    crc.sum().to_be_bytes(),
-                    png[cursor + 8 + size..cursor + 12 + size]
+                    tags,
+                    [b"IHDR".as_slice(), b"IDAT".as_slice(), b"IEND".as_slice()]
                 );
-                tags.push(tag);
-                if tag == b"IHDR" {
-                    assert_eq!(data, &[0, 0, 0, 64, 0, 0, 0, 70, 8, 6, 0, 0, 0]);
-                } else if tag == b"IDAT" {
-                    compressed.extend(data);
-                } else {
-                    assert_eq!(tag, b"IEND");
-                    assert!(data.is_empty());
+                let mut raw = Vec::new();
+                flate2::read::ZlibDecoder::new(compressed.as_slice())
+                    .read_to_end(&mut raw)
+                    .unwrap();
+                assert_eq!(raw.len(), 70 * (64 * 4 + 1));
+                for (y, row) in raw.chunks_exact(64 * 4 + 1).enumerate() {
+                    assert_eq!(row[0], 0);
+                    for (x, pixel) in row[1..].chunks_exact(4).enumerate() {
+                        let mut expected = match (glyph, x < 32) {
+                            (1, true) | (8, false) => [255, 0, 0, 255],
+                            _ => [0, 255, 0, 255],
+                        };
+                        if silhouette {
+                            let ring = (4..60).contains(&x)
+                                && (4..54).contains(&y)
+                                && !((16..48).contains(&x) && (16..42).contains(&y));
+                            let island = (24..40).contains(&x) && (60..66).contains(&y);
+                            expected[3] = if ring {
+                                255
+                            } else if island {
+                                64
+                            } else {
+                                0
+                            };
+                        }
+                        assert_eq!(pixel, expected);
+                    }
                 }
-                cursor += size + 12;
+            } else {
+                assert!(record.is_empty(), "Unexpected bitmap for glyph {glyph}");
             }
-            assert_eq!(
-                tags,
-                [b"IHDR".as_slice(), b"IDAT".as_slice(), b"IEND".as_slice()]
-            );
-            let mut raw = Vec::new();
-            flate2::read::ZlibDecoder::new(compressed.as_slice())
-                .read_to_end(&mut raw)
-                .unwrap();
-            assert_eq!(raw.len(), 70 * (64 * 4 + 1));
-            for row in raw.chunks_exact(64 * 4 + 1) {
-                assert_eq!(row[0], 0);
-                for (x, pixel) in row[1..].chunks_exact(4).enumerate() {
-                    let expected = match (glyph, x < 32) {
-                        (1, true) | (8, false) => [255, 0, 0, 255],
-                        _ => [0, 255, 0, 255],
-                    };
-                    assert_eq!(pixel, expected);
-                }
-            }
-        } else {
-            assert!(record.is_empty(), "Unexpected bitmap for glyph {glyph}");
         }
     }
 }
