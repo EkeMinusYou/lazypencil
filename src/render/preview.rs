@@ -94,8 +94,6 @@ pub(crate) fn preview_with_runtime_observed(
     cancel: Option<tokio_util::sync::CancellationToken>,
     mut observer: Option<&mut dyn FnMut(&'static str)>,
 ) -> Result<RenderedPreview> {
-    #[cfg(target_os = "macos")]
-    let _scratch = super::macos::ReleaseScratch;
     runtime.configure(project.runtime_settings())?;
     runtime.begin_render(cancel, options.refresh);
     if options.refresh_pages {

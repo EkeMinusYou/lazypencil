@@ -455,12 +455,16 @@ impl Conversation {
             )?,
         )];
         if cfg!(target_os = "macos") {
-            // Keep freed raster layers out of the child's large-allocation
-            // cache. Apply this before its allocator starts, without changing
-            // the host or adapter environment. Honor explicit user overrides.
-            let value = std::env::var_os("MallocSpaceEfficient").unwrap_or_else(|| "1".into());
-            if let Some(value) = value.to_str() {
-                environment.push(EnvVariable::new("MallocSpaceEfficient", value));
+            // Avoid retained large/medium scratch in the bound child. Apply
+            // before its allocator starts, without changing host or adapter
+            // settings. Apple's macOS 15 allocator keeps the medium magazine
+            // enabled under SpaceEfficient; each explicit override wins.
+            // https://github.com/apple-oss-distributions/libmalloc/blob/libmalloc-715.140.5/src/malloc.c
+            for (name, default) in [("MallocSpaceEfficient", "1"), ("MallocMediumZone", "0")] {
+                let value = std::env::var_os(name).unwrap_or_else(|| default.into());
+                if let Some(value) = value.to_str() {
+                    environment.push(EnvVariable::new(name, value));
+                }
             }
         }
         options.mcp_servers = vec![McpServer::Stdio(

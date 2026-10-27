@@ -225,7 +225,7 @@ impl<'a> Peer<'a> {
                 if mode == "mcp-environment" {
                     write_json(
                         "received-mcp-environment.json",
-                        &json!({"servers":params["mcpServers"],"adapter_malloc_space_efficient":std::env::var("MallocSpaceEfficient").ok()}),
+                        &json!({"servers":params["mcpServers"],"adapter_malloc_space_efficient":std::env::var("MallocSpaceEfficient").ok(),"adapter_malloc_medium_zone":std::env::var("MallocMediumZone").ok()}),
                     )?;
                 }
                 assert!(
