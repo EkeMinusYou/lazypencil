@@ -16,6 +16,115 @@ fn helper() -> &'static str {
 }
 
 #[test]
+fn normal_build_before_test_catalog_avoids_rebuilds_without_merging_feature_conditions() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().canonicalize().unwrap();
+    for path in ["src", "tests", "shared/src"] {
+        fs::create_dir_all(root.join(path)).unwrap();
+    }
+    for (path, content) in [
+        (
+            "Cargo.toml",
+            "[package]\nname='lazypencil'\nversion='0.0.0'\nedition='2024'\n[workspace]\n[dependencies]\nshared={path='shared',default-features=false}\n[dev-dependencies]\nshared={path='shared',default-features=false,features=['enhanced']}\n",
+        ),
+        (
+            "shared/Cargo.toml",
+            "[package]\nname='shared'\nversion='0.0.0'\nedition='2024'\n[features]\nenhanced=[]\n",
+        ),
+        (
+            "shared/src/lib.rs",
+            "pub const VALUE:u8=if cfg!(feature=\"enhanced\"){2}else{1};\n",
+        ),
+        ("src/lib.rs", "pub fn value()->u8{shared::VALUE}\n"),
+        (
+            "src/main.rs",
+            "fn main(){println!(\"{}\",lazypencil::value());}\n",
+        ),
+        (
+            "tests/identity.rs",
+            "#[test] fn test_graph_and_binary_match(){assert_eq!(lazypencil::value(),2);let output=std::process::Command::new(env!(\"CARGO_BIN_EXE_lazypencil\")).output().unwrap();assert!(output.status.success());assert_eq!(String::from_utf8(output.stdout).unwrap().trim(),\"2\");}\n",
+        ),
+    ] {
+        fs::write(root.join(path), content).unwrap();
+    }
+    let target = root.join("target");
+    let command = |arguments: &[String]| {
+        let mut command = Command::new(&arguments[0]);
+        command
+            .args(&arguments[1..])
+            .current_dir(&root)
+            .env("CARGO_TARGET_DIR", &target)
+            .env("CARGO_INCREMENTAL", "0");
+        command
+    };
+    process::checked(
+        &mut command(&[
+            "cargo".into(),
+            "generate-lockfile".into(),
+            "--offline".into(),
+        ]),
+        Duration::from_secs(30),
+    )
+    .unwrap();
+    let build = |arguments: &[String]| {
+        let mut command = command(arguments);
+        command.arg("--offline");
+        if !arguments
+            .iter()
+            .any(|arg| arg.starts_with("--message-format="))
+        {
+            command.arg("--message-format=json-render-diagnostics");
+        }
+        let output = process::checked(&mut command, Duration::from_secs(45)).unwrap();
+        output
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.is_empty())
+            .map(|line| serde_json::from_slice::<Value>(line).unwrap())
+            .filter(|event| {
+                event["reason"] == "compiler-artifact"
+                    && event["package_id"]
+                        .as_str()
+                        .is_some_and(|id| id.contains("#lazypencil@"))
+            })
+            .collect::<Vec<_>>()
+    };
+    let executable = target.join("debug").join(if cfg!(windows) {
+        "lazypencil.exe"
+    } else {
+        "lazypencil"
+    });
+    let [normal, tests] = commands::catalog_builds(&["identity".into()]);
+    assert!(!build(&normal).is_empty());
+    assert_eq!(
+        process::text(&mut Command::new(&executable))
+            .unwrap()
+            .trim(),
+        "1"
+    );
+    assert!(!build(&tests).is_empty());
+    assert_eq!(
+        process::text(&mut Command::new(&executable))
+            .unwrap()
+            .trim(),
+        "2"
+    );
+    let repeated = build(&tests);
+    assert!(!repeated.is_empty());
+    assert!(repeated.iter().all(|event| event["fresh"] == true));
+    let test = repeated
+        .iter()
+        .find(|event| event["target"]["name"] == "identity")
+        .unwrap()["executable"]
+        .as_str()
+        .unwrap();
+    process::checked(
+        Command::new(test).arg("--test-threads=2"),
+        Duration::from_secs(15),
+    )
+    .unwrap();
+}
+
+#[test]
 fn normal_test_lane_requires_all_compiled_targets_and_preserves_the_existing_skips() {
     use std::{
         collections::BTreeMap,

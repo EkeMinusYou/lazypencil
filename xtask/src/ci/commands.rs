@@ -7,6 +7,24 @@ use std::{
 };
 
 pub type Invocation = Vec<String>;
+
+/// Keep both normal and test build configurations, ending in the test graph
+/// that the following reproductions consume. Do not switch back between them.
+pub fn catalog_builds(targets: &[String]) -> [Invocation; 2] {
+    let normal = words(&["cargo", "build", "--locked"]);
+    let mut tests = words(&[
+        "cargo",
+        "test",
+        "--locked",
+        "--no-run",
+        "--message-format=json-render-diagnostics",
+    ]);
+    for target in targets {
+        tests.extend(["--test".into(), target.clone()]);
+    }
+    [normal, tests]
+}
+
 pub const COLOR_FONT_REPRODUCTION: &str = "color_fonts::";
 pub const MANAGEMENT_REPRODUCTION: &str = "conversation::management::";
 pub const PREVIEW_REPRODUCTIONS: [&str; 3] = [

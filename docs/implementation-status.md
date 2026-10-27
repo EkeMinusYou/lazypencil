@@ -10,6 +10,8 @@ arm64の実Kitty／xtermは4モード×10phase・40画像を成功し、native c
 
 キャッシュ一覧では補助ツールの完全成果物が9件・約1.33GBを占めていた。同じrunner／compiler／cache形式ごとに最新1世代を保持し、古い補助ツールのソースは別に保持した依存cacheから再ビルドする候補を用意した。現在の一覧では古い4世代・590,992,236バイトが削減対象になるが、まだ削除とGHA検証は行っていない。環境・compiler・cache形式の分離、PRと依存cacheの保持は元の回帰試験で検査し、試験件数や機能の条件は減らさない。Mac向け描画改善と同じpushにまとめる。
 
+`74748c6` のLinux x64全体も1,405件・144サマリーを成功し、元のケース名と回数を照合した。新しいimageでは依存cacheがなく、release compileは713秒、最後のCargo確認は0.13秒だった。JSONのtest build 407.92秒の後にnormal build 24.05秒がSkia bindings等をコンパイルし、次のTUI再現でも本体を13.89秒コンパイルしていた。通常・testの両構成と元のコマンド・期限を保ち、normal buildを先に置く候補を同じpushへ加える。実Cargoの回帰は、normal／devの依存featureを異なる値で検査し、testの再build判定がfreshになることと実行成功を確かめる。新しい順序と回帰はGHA未検証である。
+
 Macの配布CLIを隔離した追加観測では、描画後に約92〜94MiBの解放済み大領域がmallocに保持されていた。次の候補は、描画の作業領域がdropした後にAppleの公開APIで未使用allocatorページの返却を要求する。保持中の画像・layout・font・runtimeの所有権は保つ。効果・遅延・画素は未検証であり、有用な進行中CIの終了後にMac先行で確認する。元の試験・期限・性能目標は変えない。
 
 `2d39f79` の [GHA `40470633331`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40470633331) は軽量181件・Clippy、対象3環境・監査・署名付きsourceを成功した。Linux各1,400件・macOS1,390件、各144サマリーと元ケースの回数を照合し、全3環境でflags5・日本語確定・結合文字／ZWJ・native cursor座標・未送信・文書保持と端末復元を確認した。Linux実Kitty／xtermは4モード×10phaseの画面をdebug／配布候補とも通過した。Mac候補 `40474611969` は同コミットのrelease15ファイルを再利用し、梱包・署名付き証跡・元の20起動／80操作も成功した。macSKKの候補ウィンドウ自体は未確認で、利用者への再試験依頼は繰り返さない。

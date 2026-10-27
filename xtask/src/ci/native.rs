@@ -781,16 +781,9 @@ impl Session {
         }
     }
     fn build_catalog(&self, targets: &[String]) -> Result<()> {
-        let mut command = Command::new("cargo");
-        command.args([
-            "test",
-            "--locked",
-            "--no-run",
-            "--message-format=json-render-diagnostics",
-        ]);
-        for target in targets {
-            command.args(["--test", target]);
-        }
+        let [normal, tests] = commands::catalog_builds(targets);
+        self.execute(&normal, 2700, "default-build.log", false)?;
+        let mut command = self.command(&tests);
         let raw = self.capture(&mut command, 2700, "default-build.jsonl")?;
         let mut binaries = BTreeMap::new();
         for line in raw.split(|b| *b == b'\n').filter(|l| !l.is_empty()) {
@@ -849,7 +842,7 @@ impl Session {
             })?,
             false,
         )?;
-        self.cargo(&["build", "--locked"], 2700, "default-build.log", false)
+        Ok(())
     }
     fn mcp_tests(&self) -> Result<()> {
         let catalog = self.verified_catalog(&["mcp", "agent"])?;
