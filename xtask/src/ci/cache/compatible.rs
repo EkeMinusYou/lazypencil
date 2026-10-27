@@ -25,7 +25,7 @@ pub fn restore_compatible(
     identity: &ApplicationIdentity,
 ) -> Result<Value> {
     let directory = directory.canonicalize()?;
-    let (report, old, changed) = compatible_inputs(&directory, matched_key, identity)?;
+    let (report, old, changed, debug_only) = compatible_inputs(&directory, matched_key, identity)?;
     let names = report
         .files
         .iter()
@@ -48,7 +48,18 @@ pub fn restore_compatible(
             );
         }
     }
-    let (invalid, covered) = affected_outputs(source, &directory.join("files"), &names, &changed)?;
+    let (mut invalid, covered) =
+        affected_outputs(source, &directory.join("files"), &names, &changed)?;
+    if debug_only {
+        // The old release used different compiler settings. Keep none of its
+        // binary, library, fingerprint or map files, even when source matches.
+        invalid.extend(
+            names
+                .iter()
+                .filter(|name| name.starts_with("release/"))
+                .cloned(),
+        );
+    }
     // Runtime-only helpers (for example the external ACP fixture) need no
     // application rebuild when no cached compiler unit consumes their source.
     // Missing unit dep-info was rejected above; production consumers still
@@ -58,6 +69,7 @@ pub fn restore_compatible(
     result["invalidated_files"] = json!(invalid.len());
     result["changed_tests"] = json!(changed);
     result["uncompiled_helpers"] = json!(uncompiled);
+    result["release_recipe_changed"] = json!(debug_only);
     Ok(result)
 }
 
@@ -65,7 +77,12 @@ fn compatible_inputs(
     directory: &Path,
     matched_key: &str,
     identity: &ApplicationIdentity,
-) -> Result<(ApplicationReport, ApplicationIdentity, BTreeSet<String>)> {
+) -> Result<(
+    ApplicationReport,
+    ApplicationIdentity,
+    BTreeSet<String>,
+    bool,
+)> {
     ensure!(
         !identity.release_only,
         "Test reuse requires all-output identity"
@@ -75,12 +92,19 @@ fn compatible_inputs(
         .inputs
         .as_ref()
         .context("Missing cached source inputs")?;
-    let expected_key = format!(
-        "{}{}",
-        identity.compatible_prefix,
-        util::digest(stable_json(&serde_json::to_value(inputs)?))
-    );
-    ensure!(matched_key == expected_key, "Compatible cache key changed");
+    let source_hash = util::digest(stable_json(&serde_json::to_value(inputs)?));
+    let mut old = identity.clone();
+    let mut debug_only = false;
+    if matched_key != format!("{}{source_hash}", identity.compatible_prefix) {
+        old = identity
+            .previous_debug_identity()?
+            .context("Compatible cache key changed")?;
+        ensure!(
+            matched_key == format!("{}{source_hash}", old.compatible_prefix),
+            "Compatible cache key changed"
+        );
+        debug_only = true;
+    }
     let cached = inputs
         .iter()
         .map(|entry| (entry.path.clone(), entry.clone()))
@@ -90,7 +114,6 @@ fn compatible_inputs(
             && cached.keys().eq(identity.tracked.keys()),
         "Cached source set changed"
     );
-    let mut old = identity.clone();
     old.recipe["inputs"] = serde_json::to_value(inputs)?;
     old.fingerprint = util::digest(stable_json(&old.recipe));
     ensure!(
@@ -109,7 +132,7 @@ fn compatible_inputs(
             changed.insert(name.clone());
         }
     }
-    Ok((report, old, changed))
+    Ok((report, old, changed, debug_only))
 }
 
 fn affected_outputs(
@@ -187,7 +210,7 @@ pub fn stage_focused(
     matched_key: &str,
     identity: &ApplicationIdentity,
 ) -> Result<Value> {
-    let (_, _, changed) = match compatible_inputs(compatible, matched_key, identity) {
+    let (_, _, changed, debug_only) = match compatible_inputs(compatible, matched_key, identity) {
         Ok(inputs) => inputs,
         Err(_) => return stage(source, target, directory, identity),
     };
@@ -201,12 +224,21 @@ pub fn stage_focused(
                 .to_owned())
         })
         .collect::<Result<BTreeSet<_>>>()?;
-    let selected = match affected_outputs(source, &target.canonicalize()?, &names, &changed) {
+    let mut selected = match affected_outputs(source, &target.canonicalize()?, &names, &changed) {
         Ok((selected, _)) => selected,
         // A nominal test helper can also be a production compiler input.
         // Keep the verified same-source build without offering cross-source reuse.
         Err(_) => return stage(source, target, directory, identity),
     };
+    if debug_only {
+        // Delta contains the newly compiled release, never a second full copy
+        // of the verified default/test artifacts inherited from the old build.
+        selected.extend(
+            names
+                .into_iter()
+                .filter(|name| name.starts_with("release/")),
+        );
+    }
     stage_filtered(source, target, directory, identity, Some(&selected))
 }
 

@@ -1,6 +1,6 @@
 # lazypencil 実装と公開準備の状況
 
-`9e735a2` の [macOS 先行 `40570655215`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40570655215) は補助・機能556件／60サマリーと候補検査を成功し、元の全計測後に通常 RSS 219.734375MiBで不合格となった。20起動／80操作・100 worker profile・通常6役割／Chromium14役割・完全な各30秒 idleを独立照合し、65 PNG・36,344,288画素は `35e959f` と全 byte 一致した。回収要求の効果は確認できず、その変更を削除する。次の候補は従来の描画を保ち、文書専用 MCP のみ `MallocMediumZone=0` を既定で渡す。macOS 15の元 allocator は省メモリ設定だけでは medium を無効にせず、これを別に読む。両設定の独立 override・adapter環境保持を既存の早期再現試験で拡張し、実際の効果はGHAで確認する。失敗後にも検証済み release 15ファイルの保存が成功し、保存漏れの修正を確認した。release 6分56秒と実 runtime 試験の重なり、最後のCargo再確認0.72秒も実ログで確認した。全3環境・200MiB・公開品質は引き続き未達である。
+`0a8f336` の [macOS 先行 `40574081272`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40574081272) は補助・機能519件／56サマリー、候補検査、元の通常メモリゲートを成功した。20起動／80操作・100 worker profile・通常6役割／Chromium14役割と各完全な30秒 idleを独立照合し、通常最大 RSS 175.171875MiB、cached feedback p95 28.87ms、通常 idle CPU 上限0.433%だった。65 PNG・36,344,288画素は `35e959f` と全 byte 一致した。追加Chromiumは最大1,255.17MiB、2.091秒の membership settling後に30.135秒 idleを保持した。効果のなかった回収要求を削除し、従来の renderer と文書専用MCPの medium設定だけで確認した。独立overrideとadapter環境保持も早期再現を成功した。候補631／evidence626／ソース1,150ファイル、原map4 archive／904 member、FreeType原文12点とJPEG原文2点・謝辞も照合した。releaseの実コンパイル7分21秒とruntimeの並行、最後のCargo再確認0.89秒を確認した。Mac全体も18分57秒・1,412件／144サマリーで成功し、同じcommitの150ファイル、実行ファイル／mapの同一hash、release再確認1.69秒／1.01秒を照合した。671画像と実clipboardの2画像・3,072画素も確認した。Linux x64／arm64も各1,423件／144サマリーで成功し、元の試験名・回数、各671画像、42描画計測、実clipboardの3,072画素を独立照合した。全体はx64 47分17秒、arm64 37分20秒で、両方とも異なるrunner imageのnative cache missだった。ソース1,150ファイルの全Git blob・mode・archive checksumと署名済みprovenanceのsource／workflow／run／digest対応も確認した。統制した性能・物理端末・公開品質全体は完了扱いにしない。
 
 `6225841` の [macOS 先行 `40563884709`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40563884709) は環境設定の早期再現・関連試験・候補と原文通知を成功し、元の全計測後に通常 RSS 216.65625MiBで失敗した。TUI 約106.78MiB・MCP 約93.20MiBが残る。20起動／80操作・100 worker profile・通常6役割／Chromium14役割を独立照合し、65 PNG・36,344,288画素は `35e959f` と全 byte 一致した。候補631ファイル・ソース1,149ファイル・map4 archive／904 member・FreeType原文12点とJPEG原文2点・製品謝辞を確認した。全3環境へは進めていない。次はアプリを再ビルドせず既存候補を再利用する macOS の任意診断を用意し、元の30秒 idle 後に所有するTUI／MCPの allocator summary を取得する。原計測・期限・200MiBは保つ。追加のRustと実GHA診断は未検証である。
 
@@ -381,9 +381,9 @@ source `cb5ba45` の先行104試験と、保存した2版各33ケースの独立
 以下は macOS Apple Silicon・Linux x64／arm64 の3環境について満たす。Windows の追加対応と Intel Mac のサポートは初回の必須要件に含めない。
 
 - [ ] Rust の CLI と共通サービス。機械向け JSON、終了コード、取消、設定と診断。
-- [ ] コメント・未知フィールド・数値表記を保持する JSONC の読み書きと、形式の版の管理。
-- [ ] 原子的な編集バッチ、ID の再割り当て、参照・型の検証、要求 ID による重複防止。
-- [ ] ファイルロック、期待リビジョン、依存の競合、同一ディレクトリでの置換、履歴とクラッシュ復旧。
+- [x] コメント・未知フィールド・数値表記を保持する JSONC の読み書きと、形式の版の管理。`tests/document_store.rs` の保持・保存／復元・拒否の4試験を [全3環境の両構成](https://github.com/EkeMinusYou/lazypencil/actions/runs/40543956605) で確認し、現在の該当ソース・試験との一致を照合した。対応版は2.19／2.21、その他の版は読み取り専用。
+- [x] 原子的な編集バッチ、ID の再割り当て、参照・型の検証、要求 ID による重複防止。`tests/operations_cli.rs`／`tests/document_store.rs` の関連9試験を同じ全3環境・両構成のログに照合し、現在の operations／service／store と試験の一致を確認した。
+- [x] ファイルロック、期待リビジョン、依存の競合、同一ディレクトリでの置換、履歴とクラッシュ復旧。`tests/document_store.rs`／`tests/project.rs` の関連13試験を同じ全3環境・両構成のログに照合し、現在の store／service／project・試験・コンパイル設定との一致を確認した。同一ディレクトリの一時ファイル、置換前の file sync、置換後の directory sync と journal の復旧分岐も実装で確認した。
 - [ ] ローカル・外部部品、スロット、上書き・置換・切り離し、変数・テーマ・別名。
 - [ ] 固定・内容・親に従う寸法、自動・絶対配置、文字の成長方式、計算結果とあふれの取得。
 - [ ] Skia CPU・SkParagraph による図形・パス・文字・画像・塗り・線・効果の PNG 出力。

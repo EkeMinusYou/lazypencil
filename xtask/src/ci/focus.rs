@@ -147,6 +147,7 @@ pub fn tui_measurement_changed(paths: &[String]) -> bool {
             || [
                 "xtask/src/performance.rs",
                 "xtask/src/test_support/terminal.rs",
+                "xtask/src/evidence/release_build.rs",
             ]
             .contains(&path.as_str())
     })
@@ -371,6 +372,7 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
                     "xtask/src/dist.rs",
                     "xtask/src/dist/binary.rs",
                     "xtask/src/evidence.rs",
+                    "xtask/src/evidence/release_build.rs",
                     "xtask/src/notices/skia.rs",
                     "xtask/src/notices/skia_wrapper.rs",
                     "resources/licenses/native/skia-wrapper-review.json",

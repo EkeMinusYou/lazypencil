@@ -20,7 +20,208 @@ struct Fixture {
     exact: PathBuf,
 }
 
+#[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
+#[test]
+fn release_codegen_override_rebuilds_only_application_units_and_keeps_test_edits_fresh() {
+    use lazypencil_xtask::evidence::link_map;
+    let f = Fixture::new();
+    fs::create_dir_all(f.source.join("dependency/src")).unwrap();
+    fs::write(
+        f.source.join("dependency/Cargo.toml"),
+        "[package]\nname='unchanged_dependency'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
+    fs::write(
+        f.source.join("dependency/src/lib.rs"),
+        "pub fn value() -> u8 { 1 }\n",
+    )
+    .unwrap();
+    fs::write(
+        f.source.join("Cargo.toml"),
+        "[package]\nname='lazypencil'\nversion='0.1.0'\nedition='2024'\n[workspace]\n[dependencies]\nunchanged_dependency={path='dependency'}\n[profile.release]\ncodegen-units=1\nlto='thin'\n",
+    )
+    .unwrap();
+    fs::write(
+        f.source.join("src/lib.rs"),
+        "pub fn fixture() -> u8 { unchanged_dependency::value() }\n",
+    )
+    .unwrap();
+    fs::write(
+        f.source.join("src/main.rs"),
+        "fn main() { println!(\"{}\", lazypencil::fixture()); }\n",
+    )
+    .unwrap();
+    process::checked(
+        Command::new("cargo")
+            .current_dir(&f.source)
+            .args(["generate-lockfile", "--offline"]),
+        Duration::from_secs(120),
+    )
+    .unwrap();
+    let compiler = process::text(Command::new("rustc").arg("-vV")).unwrap();
+    let host = compiler
+        .lines()
+        .find_map(|line| line.strip_prefix("host: "))
+        .unwrap();
+    let current = link_map::cargo_arguments(host, &f.target, true).unwrap();
+    let mut baseline = current.clone();
+    let config = baseline.iter().position(|arg| arg == "--config").unwrap();
+    drop(baseline.drain(config..config + 2));
+    let (before, _) = f.release_units(&baseline);
+    assert_eq!(before.len(), 3);
+    assert!(before.values().all(|fresh| !fresh));
+    let (changed, compiler_commands) = f.release_units(&current);
+    assert!(changed["unchanged_dependency:lib"]);
+    assert!(!changed["lazypencil:lib"] && !changed["lazypencil:bin"]);
+    assert_eq!(compiler_commands.matches("codegen-units=16").count(), 2);
+    assert!(!compiler_commands.contains("--crate-name unchanged_dependency"));
+    assert!(link_map::path(&f.target).is_file());
+    fs::write(
+        f.source.join("tests/one.rs"),
+        "#[test] fn changed_test_only() { assert_eq!(lazypencil::fixture(), 1); }\n",
+    )
+    .unwrap();
+    let (unchanged, _) = f.release_units(&current);
+    assert!(unchanged.values().all(|fresh| *fresh));
+    assert_eq!(
+        process::checked(
+            &mut Command::new(f.target.join("release/lazypencil")),
+            Duration::from_secs(15),
+        )
+        .unwrap(),
+        b"1\n"
+    );
+}
+
+#[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
+#[test]
+fn release_recipe_transition_reuses_debug_only_and_overlays_the_new_release_delta() {
+    use lazypencil_xtask::evidence::link_map;
+    let f = Fixture::new();
+    fs::write(
+        f.source.join("Cargo.toml"),
+        "[package]\nname='lazypencil'\nversion='0.1.0'\nedition='2024'\n[workspace]\n[profile.release]\ncodegen-units=1\nlto='thin'\n",
+    )
+    .unwrap();
+    fs::write(
+        f.source.join("src/main.rs"),
+        "fn main() { println!(\"{}\", lazypencil::fixture()); }\n",
+    )
+    .unwrap();
+    f.manifest();
+    let compiler = process::text(Command::new("rustc").arg("-vV")).unwrap();
+    let host = compiler
+        .lines()
+        .find_map(|line| line.strip_prefix("host: "))
+        .unwrap();
+    let current_command = link_map::cargo_arguments(host, &f.target, true).unwrap();
+    let mut old_command = current_command.clone();
+    let config = old_command
+        .iter()
+        .position(|arg| arg == "--config")
+        .unwrap();
+    drop(old_command.drain(config..config + 2));
+    f.build(&[]);
+    f.release_units(&old_command);
+    let current = f.identity();
+    let old = current.previous_debug_identity().unwrap().unwrap();
+    cache::stage(&f.source, &f.target, &f.full, &old).unwrap();
+    f.clear();
+    let incompatible =
+        cache::application_identity(&f.source, &f.target, "native-v2-ubuntu-24.04-other-sdk")
+            .unwrap();
+    assert!(
+        cache::restore_compatible(
+            &f.source,
+            &f.target,
+            &f.full,
+            &old.compatible_primary,
+            &incompatible,
+        )
+        .is_err()
+    );
+    assert!(!f.target.exists());
+    let retained = cache::restore_compatible(
+        &f.source,
+        &f.target,
+        &f.full,
+        &old.compatible_primary,
+        &current,
+    )
+    .unwrap();
+    assert_eq!(retained["release_recipe_changed"], true);
+    assert!(!f.target.join("release/lazypencil").exists());
+    assert!(!link_map::path(&f.target).exists());
+    assert!(f.build(&[]).values().all(|(fresh, _)| *fresh));
+    assert!(
+        f.release_units(&current_command)
+            .0
+            .values()
+            .all(|fresh| !fresh)
+    );
+    cache::stage_focused(
+        &f.source,
+        &f.target,
+        &f.exact,
+        &f.full,
+        &old.compatible_primary,
+        &current,
+    )
+    .unwrap();
+    let delta: Value = util::json(&f.exact.join("manifest.json")).unwrap();
+    let files = delta["files"].as_array().unwrap();
+    assert!(!files.is_empty());
+    assert!(
+        files
+            .iter()
+            .all(|entry| entry["path"].as_str().unwrap().starts_with("release/"))
+    );
+    f.clear();
+    cache::restore_combined(
+        &f.source,
+        &f.target,
+        &f.exact,
+        &f.full,
+        &old.compatible_primary,
+        &current,
+    )
+    .unwrap();
+    assert!(f.build(&[]).values().all(|(fresh, _)| *fresh));
+    let (release, _) = f.release_units(&current_command);
+    assert!(release.values().all(|fresh| *fresh));
+}
+
 impl Fixture {
+    #[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
+    fn release_units(&self, arguments: &[String]) -> (BTreeMap<String, bool>, String) {
+        let output = process::output(
+            Command::new(&arguments[0])
+                .current_dir(&self.source)
+                .env("CARGO_TARGET_DIR", &self.target)
+                .args(&arguments[1..]),
+            Duration::from_secs(120),
+        )
+        .unwrap();
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(!output.timed_out && output.status.success(), "{stderr}");
+        let mut units = BTreeMap::new();
+        for line in output.stdout.split(|&byte| byte == b'\n') {
+            let Ok(event) = serde_json::from_slice::<Value>(line) else {
+                continue;
+            };
+            if event["reason"] == "compiler-artifact" {
+                let key = format!(
+                    "{}:{}",
+                    event["target"]["name"].as_str().unwrap(),
+                    event["target"]["kind"][0].as_str().unwrap()
+                );
+                units.insert(key, event["fresh"].as_bool().unwrap());
+            }
+        }
+        assert!(!units.is_empty(), "Cargo reported no compiler units");
+        (units, stderr)
+    }
+
     fn new() -> Self {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().canonicalize().unwrap();
@@ -74,6 +275,7 @@ impl Fixture {
             "examples/preview.rs",
         ];
         for extra in [
+            "src/main.rs",
             "tests/three.rs",
             "tests/support/common.rs",
             "xtask/src/test_support/terminal.rs",

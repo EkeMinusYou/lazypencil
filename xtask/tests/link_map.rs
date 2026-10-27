@@ -126,6 +126,15 @@ fn normal_and_evidence_builds_share_every_compiler_and_linker_argument() {
                 "lazypencil"
             ]
         );
+        assert_eq!(
+            &normal[6..9],
+            [
+                "--verbose",
+                "--config",
+                "profile.release.package.lazypencil.codegen-units=16"
+            ]
+        );
+        assert_eq!(normal.iter().filter(|arg| *arg == "--config").count(), 1);
         assert_eq!(normal.iter().filter(|arg| *arg == "--").count(), 1);
         assert!(normal.last().unwrap().ends_with(link_map::CACHE_PATH));
     }

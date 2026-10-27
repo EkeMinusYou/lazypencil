@@ -174,6 +174,7 @@ impl Command {
                     application_identity_for(&source, &target, &native_key, release_only)?;
                 let value = match operation.as_str() {
                     "identify" => {
+                        let previous_debug = identity.previous_debug_identity()?;
                         let checkpoint = if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
                         {
                             application_checkpoint(
@@ -199,6 +200,18 @@ impl Command {
                                 (
                                     "compatible_prefix".into(),
                                     identity.compatible_prefix.clone(),
+                                ),
+                                (
+                                    "previous_debug_primary".into(),
+                                    previous_debug.as_ref().map_or_else(String::new, |old| {
+                                        old.compatible_primary.clone()
+                                    }),
+                                ),
+                                (
+                                    "previous_debug_prefix".into(),
+                                    previous_debug.as_ref().map_or_else(String::new, |old| {
+                                        old.compatible_prefix.clone()
+                                    }),
                                 ),
                             ]),
                         )?;
@@ -623,6 +636,46 @@ pub struct ApplicationIdentity {
     release_only: bool,
 }
 
+impl ApplicationIdentity {
+    /// One reviewed release-only transition. All native/default/test inputs
+    /// remain bound to the old fingerprint; callers may restore debug only.
+    pub fn previous_debug_identity(&self) -> Result<Option<Self>> {
+        if self.release_only
+            || self.recipe["release_recipe"] != "root-rustc-release-map-app-cgu16-v2"
+        {
+            return Ok(None);
+        }
+        let mut old = self.clone();
+        old.recipe["release_recipe"] = json!("root-rustc-release-map-v1");
+        old.fingerprint = util::digest(stable_json(&old.recipe));
+        old.primary = self.primary.replace(&self.fingerprint, &old.fingerprint);
+        old.checkpoint = self.checkpoint.replace(&self.fingerprint, &old.fingerprint);
+        let suffix = format!("{}-full-", compatible_fingerprint(&self.recipe)?);
+        let prefix = self
+            .compatible_prefix
+            .strip_suffix(&suffix)
+            .context("Invalid compatible prefix")?;
+        old.compatible_prefix = format!("{prefix}{}-full-", compatible_fingerprint(&old.recipe)?);
+        old.compatible_primary =
+            self.compatible_primary
+                .replacen(&self.compatible_prefix, &old.compatible_prefix, 1);
+        Ok(Some(old))
+    }
+}
+
+fn compatible_fingerprint(recipe: &Value) -> Result<String> {
+    let inputs: Vec<Entry> = serde_json::from_value(recipe["inputs"].clone())?;
+    let mut common = recipe.clone();
+    common["inputs"] = serde_json::to_value(
+        inputs
+            .iter()
+            .filter(|entry| !compatible::test_source(&entry.path))
+            .collect::<Vec<_>>(),
+    )?;
+    common["scope"] = json!("integration-tests-v1");
+    Ok(util::digest(stable_json(&common)))
+}
+
 pub fn application_identity(
     source: &Path,
     target: &Path,
@@ -685,17 +738,9 @@ fn application_identity_for(
     } else {
         "application-v2"
     };
-    let mut common = recipe.clone();
-    common["inputs"] = serde_json::to_value(
-        inputs
-            .iter()
-            .filter(|entry| !compatible::test_source(&entry.path))
-            .collect::<Vec<_>>(),
-    )?;
-    common["scope"] = json!("integration-tests-v1");
     let compatible_prefix = format!(
         "tests-v1-{platform}-{}-full-",
-        util::digest(stable_json(&common))
+        compatible_fingerprint(&recipe)?
     );
     Ok(ApplicationIdentity {
         fingerprint: fingerprint.clone(),

@@ -19,6 +19,7 @@ const MAX_EVENTS: u64 = 64 * 1024 * 1024;
 const MAX_LINE: usize = 4 * 1024 * 1024;
 pub mod link_map;
 pub mod linkage;
+mod release_build;
 const GAPS: &[&str] = &[
     "Cargo declarations and Skia graph inputs do not establish final binary linkage or used archive members.",
     "System-library attribution and final Rust source-to-binary/linkage verification remain required.",
