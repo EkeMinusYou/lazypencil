@@ -65,36 +65,46 @@ impl Fixture {
         f
     }
     fn manifest(&self) {
-        let files = [
+        let mut names = vec![
             "Cargo.toml",
             "Cargo.lock",
             "src/lib.rs",
             "tests/one.rs",
             "tests/two.rs",
             "examples/preview.rs",
-        ]
-        .into_iter()
-        .map(|name| {
-            let path = self.source.join(name);
-            // CI normalizes mtimes. The regression must be detected by
-            // content, even when the edited file retains this old timestamp.
-            fs::File::options()
-                .write(true)
-                .open(&path)
-                .unwrap()
-                .set_times(
-                    fs::FileTimes::new()
-                        .set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(1)),
-                )
-                .unwrap();
-            Entry {
-                path: name.into(),
-                sha256: util::file_digest(&path).unwrap(),
-                bytes: fs::metadata(&path).unwrap().len(),
-                mode: util::raw_mode(&path).unwrap(),
+        ];
+        for extra in [
+            "tests/three.rs",
+            "tests/support/common.rs",
+            "xtask/src/test_support/terminal.rs",
+        ] {
+            if self.source.join(extra).is_file() {
+                names.push(extra);
             }
-        })
-        .collect();
+        }
+        let files = names
+            .into_iter()
+            .map(|name| {
+                let path = self.source.join(name);
+                // CI normalizes mtimes. The regression must be detected by
+                // content, even when the edited file retains this old timestamp.
+                fs::File::options()
+                    .write(true)
+                    .open(&path)
+                    .unwrap()
+                    .set_times(
+                        fs::FileTimes::new()
+                            .set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(1)),
+                    )
+                    .unwrap();
+                Entry {
+                    path: name.into(),
+                    sha256: util::file_digest(&path).unwrap(),
+                    bytes: fs::metadata(&path).unwrap().len(),
+                    mode: util::raw_mode(&path).unwrap(),
+                }
+            })
+            .collect();
         let manifest = Manifest {
             format_version: 1,
             package: json!({}),
@@ -134,14 +144,20 @@ impl Fixture {
             .map(|line| serde_json::from_str::<Value>(line).unwrap())
             .filter(|v| {
                 v["reason"] == "compiler-artifact"
-                    && [json!(["test"]), json!(["example"])].contains(&v["target"]["kind"])
+                    && ([json!(["test"]), json!(["example"])].contains(&v["target"]["kind"])
+                        || (v["target"]["kind"] == json!(["lib"]) && v["profile"]["test"] == false))
             })
             .map(|v| {
                 (
                     v["target"]["name"].as_str().unwrap().into(),
                     (
                         v["fresh"].as_bool().unwrap(),
-                        PathBuf::from(v["executable"].as_str().unwrap()),
+                        PathBuf::from(
+                            v["executable"]
+                                .as_str()
+                                .or_else(|| v["filenames"][0].as_str())
+                                .unwrap(),
+                        ),
                     ),
                 )
             })
@@ -164,7 +180,7 @@ impl Fixture {
 fn real_cargo_rebuilds_only_the_edited_test_and_accepts_same_source_focused_outputs() {
     for focused in [false, true] {
         let f = Fixture::new();
-        assert_eq!(f.build(&[]).len(), 3);
+        assert_eq!(f.build(&[]).len(), 4);
         let old = f.identity();
         cache::stage(&f.source, &f.target, &f.full, &old).unwrap();
         let empty = cache::stage_focused(
@@ -187,7 +203,7 @@ fn real_cargo_rebuilds_only_the_edited_test_and_accepts_same_source_focused_outp
         assert_ne!(old.primary, current.primary);
         assert_eq!(old.compatible_prefix, current.compatible_prefix);
         if focused {
-            assert_eq!(f.build(&["--test", "one"]).len(), 1);
+            assert_eq!(f.build(&["--test", "one"]).len(), 2);
             cache::stage_focused(
                 &f.source,
                 &f.target,
@@ -229,7 +245,8 @@ fn real_cargo_rebuilds_only_the_edited_test_and_accepts_same_source_focused_outp
             assert!(report["invalidated_files"].as_u64().unwrap() > 0);
         }
         let built = f.build(&[]);
-        assert_eq!(built.len(), 3);
+        assert_eq!(built.len(), 4);
+        assert!(built["lazypencil"].0, "The production library was rebuilt");
         assert!(built["two"].0, "The untouched integration test was rebuilt");
         assert!(built["preview"].0, "The untouched example was rebuilt");
         assert_eq!(
@@ -242,6 +259,172 @@ fn real_cargo_rebuilds_only_the_edited_test_and_accepts_same_source_focused_outp
             !output.timed_out && !output.status.success(),
             "The changed assertion must actually execute"
         );
+    }
+}
+
+#[test]
+fn shared_helpers_invalidate_every_consumer_without_rebuilding_unrelated_outputs() {
+    for helper in [
+        "tests/support/common.rs",
+        "xtask/src/test_support/terminal.rs",
+    ] {
+        for focused in [false, true] {
+            let f = Fixture::new();
+            let path = f.source.join(helper);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, "pub const VALUE: u8 = 1;\n").unwrap();
+            for name in ["one", "three"] {
+                fs::write(f.source.join(format!("tests/{name}.rs")), format!(
+                    "#[path=\"../{helper}\"] mod helper;\n#[test] fn value() {{ assert_eq!(lazypencil::fixture(), 1); assert_eq!(helper::VALUE, 1); }}\n"
+                )).unwrap();
+            }
+            f.manifest();
+            assert_eq!(f.build(&[]).len(), 5);
+            let old = f.identity();
+            cache::stage(&f.source, &f.target, &f.full, &old).unwrap();
+            fs::write(&path, "pub const VALUE: u8 = 2;\n").unwrap();
+            f.manifest();
+            f.clear();
+            let current = f.identity();
+            assert_eq!(old.compatible_prefix, current.compatible_prefix);
+            assert_ne!(old.primary, current.primary);
+            if focused {
+                assert_eq!(f.build(&["--test", "one", "--test", "three"]).len(), 3);
+                cache::stage_focused(
+                    &f.source,
+                    &f.target,
+                    &f.exact,
+                    &f.full,
+                    &old.compatible_primary,
+                    &current,
+                )
+                .unwrap();
+                let delta: Value = util::json(&f.exact.join("manifest.json")).unwrap();
+                assert!(delta["files"].as_array().unwrap().iter().all(|entry| {
+                    let path = entry["path"].as_str().unwrap();
+                    !path.contains("lazypencil-") || path.contains("/.fingerprint/")
+                }));
+                assert!(
+                    delta["files"].as_array().unwrap().iter().all(|entry| {
+                        let path = entry["path"].as_str().unwrap();
+                        !path.contains("/deps/two-") && !path.contains("/examples/")
+                    }),
+                    "Focused delta copied unrelated outputs"
+                );
+                f.clear();
+            }
+            cache::restore_combined(
+                &f.source,
+                &f.target,
+                &f.exact,
+                &f.full,
+                &old.compatible_primary,
+                &current,
+            )
+            .unwrap();
+            let built = f.build(&[]);
+            assert_eq!(built.len(), 5);
+            for name in ["lazypencil", "two", "preview"] {
+                assert!(built[name].0, "{helper}: unrelated {name} rebuilt");
+            }
+            for name in ["one", "three"] {
+                assert_eq!(built[name].0, focused, "{helper}: {name}");
+                let output =
+                    process::output(&mut Command::new(&built[name].1), Duration::from_secs(15))
+                        .unwrap();
+                assert!(
+                    !output.timed_out && !output.status.success(),
+                    "Stale shared-helper code executed"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn helper_reuse_rejects_production_consumers_and_incomplete_unit_dep_info() {
+    for production in [false, true] {
+        let f = Fixture::new();
+        let path = f.source.join("tests/support/common.rs");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "pub const VALUE: u8 = 1;\n").unwrap();
+        for name in ["one", "two"] {
+            fs::write(f.source.join(format!("tests/{name}.rs")),
+                "#[path=\"support/common.rs\"] mod helper;\n#[test] fn value() { assert_eq!(helper::VALUE, lazypencil::fixture()); }\n").unwrap();
+        }
+        if production {
+            fs::write(f.source.join("src/lib.rs"),
+                "#[path=\"../tests/support/common.rs\"] mod helper;\npub fn fixture() -> u8 { helper::VALUE }\n").unwrap();
+        }
+        f.manifest();
+        f.build(&[]);
+        let old = f.identity();
+        cache::stage(&f.source, &f.target, &f.full, &old).unwrap();
+        if !production {
+            let manifest = f.full.join("manifest.json");
+            let mut report: Value = util::json(&manifest).unwrap();
+            let entries = report["files"].as_array_mut().unwrap();
+            let index = entries
+                .iter()
+                .position(|entry| {
+                    let name = entry["path"].as_str().unwrap();
+                    name.starts_with("debug/deps/two-") && name.ends_with(".d")
+                })
+                .unwrap();
+            let omitted = entries.remove(index);
+            fs::remove_file(f.full.join("files").join(omitted["path"].as_str().unwrap())).unwrap();
+            fs::write(manifest, util::encode(&report).unwrap()).unwrap();
+        }
+        fs::write(&path, "pub const VALUE: u8 = 2;\n").unwrap();
+        f.manifest();
+        f.clear();
+        let current = f.identity();
+        assert_eq!(old.compatible_prefix, current.compatible_prefix);
+        assert!(
+            cache::restore_compatible(
+                &f.source,
+                &f.target,
+                &f.full,
+                &old.compatible_primary,
+                &current
+            )
+            .is_err()
+        );
+        assert!(
+            !f.target.exists(),
+            "Rejected helper payload overlaid outputs"
+        );
+        if production {
+            f.build(&[]);
+            cache::stage_focused(
+                &f.source,
+                &f.target,
+                &f.exact,
+                &f.full,
+                &old.compatible_primary,
+                &current,
+            )
+            .unwrap();
+            let staged: Value = util::json(&f.exact.join("manifest.json")).unwrap();
+            assert_eq!(
+                staged["files"].as_array().unwrap().len(),
+                cache::outputs(&f.target).unwrap().len()
+            );
+            f.clear();
+            cache::restore_combined(
+                &f.source,
+                &f.target,
+                &f.exact,
+                &f.full,
+                &old.compatible_primary,
+                &current,
+            )
+            .unwrap();
+            assert!(
+                f.build(&[]).values().all(|(fresh, _)| *fresh),
+                "The verified same-source fallback was lost"
+            );
+        }
     }
 }
 

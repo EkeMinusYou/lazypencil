@@ -1,13 +1,21 @@
 use super::*;
 
 pub(super) fn test_source(name: &str) -> bool {
-    name.strip_prefix("tests/")
-        .is_some_and(|name| !name.contains('/') && name.ends_with(".rs"))
+    name.ends_with(".rs")
+        && !name.contains('\\')
+        && name.split('/').all(|part| !matches!(part, "" | "." | ".."))
+        && (name
+            .strip_prefix("tests/")
+            .is_some_and(|name| !name.contains('/'))
+            || name.starts_with("tests/support/")
+            || name.starts_with("xtask/src/test_support/"))
 }
 
-/// Only edits to existing integration-test roots may reuse a full older build.
-/// Compiler dep-info identifies affected units; Cargo still validates every
-/// retained artifact and runs the complete test catalog after restoration.
+/// Existing integration roots and shared Rust test helpers are candidates.
+/// Every changed file must be covered by real compiler dep-info, and every
+/// affected unit must be an integration test. A helper used by a library,
+/// example or executable rejects reuse, regardless of its directory name.
+/// Cargo still validates retained artifacts and runs the complete test catalog.
 pub fn restore_compatible(
     source: &Path,
     target: &Path,
@@ -21,7 +29,24 @@ pub fn restore_compatible(
         .files
         .iter()
         .map(|entry| entry.path.clone())
-        .collect();
+        .collect::<BTreeSet<_>>();
+    // A shared input can occur in several units. Coverage by one unit must
+    // never conceal a missing dep-info file for another retained unit.
+    let fingerprint = Regex::new(
+        r"^(debug|release)/\.fingerprint/lazypencil-([0-9a-f]{16})/(?:test-integration-test-|(?:test-)?(?:lib|bin|example)-).+\.json$",
+    )?;
+    for name in &names {
+        if let Some(captures) = fingerprint.captures(name) {
+            let profile = format!("{}/", &captures[1]);
+            let suffix = format!("-{}.d", &captures[2]);
+            ensure!(
+                names
+                    .iter()
+                    .any(|path| path.starts_with(&profile) && path.ends_with(&suffix)),
+                "Cached compiler unit lacks dep-info"
+            );
+        }
+    }
     let (invalid, covered) = affected_outputs(source, &directory.join("files"), &names, &changed)?;
     ensure!(covered == changed, "Changed tests lack compiler dep-info");
     let mut result = restore_filtered(source, target, &directory, &old, &invalid)?;
@@ -73,7 +98,7 @@ fn compatible_inputs(
         if entry != current {
             ensure!(
                 test_source(name) && entry.mode == current.mode,
-                "Only existing integration-test source edits are compatible"
+                "Only existing integration-test or Rust helper source edits are compatible"
             );
             changed.insert(name.clone());
         }
@@ -166,7 +191,12 @@ pub fn stage_focused(
                 .to_owned())
         })
         .collect::<Result<BTreeSet<_>>>()?;
-    let (selected, _) = affected_outputs(source, &target.canonicalize()?, &names, &changed)?;
+    let selected = match affected_outputs(source, &target.canonicalize()?, &names, &changed) {
+        Ok((selected, _)) => selected,
+        // A nominal test helper can also be a production compiler input.
+        // Keep the verified same-source build without offering cross-source reuse.
+        Err(_) => return stage(source, target, directory, identity),
+    };
     stage_filtered(source, target, directory, identity, Some(&selected))
 }
 

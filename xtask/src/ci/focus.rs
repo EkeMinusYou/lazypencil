@@ -298,6 +298,7 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
             "src/tui/terminal.rs",
             "src/tui/camera.rs",
             "src/render/preview.rs",
+            "xtask/src/test_support/terminal.rs",
         ]
         .contains(&path.as_str())
             || path == "src/tui/preview.rs" && tui_measurement_changed(paths)

@@ -23,6 +23,15 @@ fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() 
     assert!(focus::tui_measurement_changed(&[
         "xtask/src/test_support/terminal.rs".into()
     ]));
+    let helper = focus::select(
+        &util::root(),
+        &["xtask/src/test_support/terminal.rs".into()],
+        "auto",
+    )
+    .unwrap();
+    assert_eq!(helper.platform, "ubuntu-24.04");
+    assert_eq!(helper.suite, "candidate");
+    assert_eq!(helper.targets, ["render", "tui"]);
     assert!(!focus::tui_measurement_changed(&[
         "xtask/tests/tui_measurement.rs".into(),
         "src/tui/tests.rs".into(),

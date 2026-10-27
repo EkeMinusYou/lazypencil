@@ -9,6 +9,20 @@ use terminal::{Frame, KittyFrames, Screen};
 const COMPRESSED_RGBA: &str = "eAH7z8Dwn+E/QwOIEjIJO/EfjQ8Ax3QLwQ==";
 
 #[test]
+fn frame_color_queries_follow_current_aligned_rgba_bytes_and_alpha() {
+    let mut frame = Frame::new(2, 1, vec![1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
+    assert!(frame.has_color([1, 2, 3, 4]));
+    assert!(frame.has_color([5, 6, 7, 8]));
+    assert!(!frame.has_color([2, 3, 4, 5]));
+    assert!(!frame.has_color([1, 2, 3, 255]));
+    frame.rgba[..4].copy_from_slice(&[9, 10, 11, 0]);
+    assert!(!frame.has_color([1, 2, 3, 4]));
+    assert!(frame.has_color([9, 10, 11, 0]));
+    assert!(!frame.has_color([9, 10, 11, 255]));
+    assert_eq!(frame, Frame::new(2, 1, frame.rgba.clone()).unwrap());
+}
+
+#[test]
 fn owned_camera_feedback_never_satisfies_exact_frame_observations() {
     let wire = |id, pixels: &[u8]| {
         String::from_utf8(frame(pixels, 1, 1, 4))

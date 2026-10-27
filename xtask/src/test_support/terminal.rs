@@ -54,7 +54,6 @@ pub struct Frame {
     pub width: usize,
     pub height: usize,
     pub rgba: Vec<u8>,
-    palette: BTreeSet<[u8; 4]>,
 }
 impl Frame {
     pub fn new(width: usize, height: usize, rgba: Vec<u8>) -> Result<Self> {
@@ -67,19 +66,16 @@ impl Frame {
         {
             return Err("Expected complete bounded RGBA geometry and pixels".into());
         }
-        let palette = rgba
-            .chunks_exact(4)
-            .map(|p| p.try_into().unwrap())
-            .collect();
         Ok(Self {
             width,
             height,
             rgba,
-            palette,
         })
     }
     pub fn has_color(&self, color: [u8; 4]) -> bool {
-        self.palette.contains(&color)
+        // Performance observations need pixels, not a sorted color index.
+        // Query the authoritative RGBA bytes only when a test needs a color.
+        self.rgba.chunks_exact(4).any(|pixel| pixel == color)
     }
 }
 
