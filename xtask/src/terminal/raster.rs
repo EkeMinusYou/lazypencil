@@ -112,6 +112,7 @@ pub fn png(frame: &Raster) -> Result<Vec<u8>> {
     Ok(out)
 }
 
+/// Pixel bounds with inclusive left/top and exclusive right/bottom edges.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Region {
     pub left: u32,

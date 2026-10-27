@@ -10,6 +10,8 @@
 
 `091ca6e` は macOSの日本語／結合文字・ZWJの実PTY再現、Clippyとnative clipboardを通過したが、元の長い日本語行でcaret spanが横スクロールの広字境界から切れ、native cursorが消えることを既存条件の試験が検出した。全環境とreleaseには進めていない。描画spanが取れない時だけwidgetのviewport座標で表示位置を保持する。元の98列／48列の位置・resize・全文保持と新しいUnicode／選択／非漏洩条件を変更せず再検証する。
 
+`9abd444` は先行379件・44サマリー、全3環境（Linux各1,399件／Mac1,389件・各144サマリー）、監査・source gateを成功した。配布候補と入力文字・日本語／ZWJ位置・無送信・文書保持を独立照合した。Linux実端末の追加検査は全4モードのtyped-cursorで停止したが、PNGはカーソルが正しく9画素（1cell）動いたことを示した。検査側がright/bottomのexclusive境界をinclusiveとして扱った誤りである。正しい境界規約に修正し、元のサイズ・色・入力・geometry・終了条件と期限を保つ。アプリ本体の差分は追加せず、同一コンパイラー入力の配布成果物を再利用して検証する。
+
 `67e799b` の [GHA `40442963340`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40442963340) は3環境・監査・最終ソース検証を20分4秒で成功した。元のケース名・実行回数を照合し、追加回帰を含めLinux各1,394件・macOS1,384件、各144サマリーを確認した。各1,221ファイルを再利用し、core／既定buildは0〜5秒、並列runtimeは150〜227秒、releaseのCargo確認は0.18〜0.56秒だった。native依存3件と完全成果物3件を保持し、旧形式重複は0件。別走行のmacOS／arm64配布計測も元の20起動・80操作と追加資源観測を成功し、raw記録・画素・会話を照合した。物理表示・全性能・製品全体の完成とはしない。
 
 カラー／bitmap書体の文字の線は `869f0e5` の Linux 先行402試験・39サマリーを通過した。macOS／arm64の全体も各1,387／1,397件・144サマリーで成功し、元ケースと回数を照合した。3組の18画像、合計5,616,000画素のhash・穴・低alpha部分・paintとschema一致を独立に確認した。通常vector輪郭とnativeの色塗りを維持し、layout identityは7である。最終Linux x64は試験用Notoフォントの取得中に30秒のper-read timeoutで停止し、描画失敗とは区別する。他の有用な実行は終了まで保持した。追加バッチでは元の実Noto14比較／形式を維持し、CBDT／COLRv1の線を18条件／形式で検査する。固定フォントと原licenseの3ファイルだけを共通cacheへ置き、既存Rust処理で毎回サイズ・SHAを再確認する。cache破損・symlinkの拒否も実CLIで検査する。取得の既存300秒global／30秒per-read条件とnative全試験を維持し、取得を重い依存cache復元より前へ移す。失敗した入力名も診断に残す。追加差分はGHA未検証であり、全3環境と最終source gateの成功はまだ示さない。

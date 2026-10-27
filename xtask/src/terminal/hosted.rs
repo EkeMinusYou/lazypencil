@@ -276,7 +276,7 @@ impl Emulator {
         self.key("a")?;
         self.phase("typed-cursor", |_, frame| {
             cursor(frame).is_some_and(|current| {
-                current.left == initial_cursor.right + 1
+                current.left == initial_cursor.right
                     && current.right - current.left == initial_cursor.right - initial_cursor.left
                     && current.top == initial_cursor.top
                     && current.bottom == initial_cursor.bottom
