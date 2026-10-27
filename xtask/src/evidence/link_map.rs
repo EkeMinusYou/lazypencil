@@ -12,18 +12,26 @@ use std::{
 /// Keep an inclusive declaration inventory: dead stripping does not revoke notices.
 pub fn archive_references(bytes: &[u8]) -> Result<Value> {
     ensure!(bytes.len() <= 64 * 1024 * 1024, "Link map exceeds 64 MiB");
-    let text = std::str::from_utf8(bytes).context("Link map must be UTF-8")?;
+    // ld64 writes literal string bytes in its symbol table. Only archive paths
+    // and member names need UTF-8; unrelated symbols are opaque linker output.
+    let lines = || {
+        bytes
+            .split(|byte| *byte == b'\n')
+            .map(|line| line.strip_suffix(b"\r").unwrap_or(line))
+    };
     let mut archives = BTreeMap::<String, BTreeSet<String>>::new();
     let mut pairs = 0usize;
-    let mut add = |input: &str, inclusion: bool| -> Result<()> {
-        let positions = [".rlib(", ".a("].into_iter().filter_map(|suffix| {
-            let position = if inclusion {
-                input.find(suffix)
-            } else {
-                input.rfind(suffix)
-            };
-            position.map(|start| (start, suffix))
-        });
+    let mut add = |input: &[u8], inclusion: bool| -> Result<()> {
+        let positions = [b".rlib(".as_slice(), b".a(".as_slice()]
+            .into_iter()
+            .filter_map(|suffix| {
+                let position = if inclusion {
+                    input.windows(suffix.len()).position(|part| part == suffix)
+                } else {
+                    input.windows(suffix.len()).rposition(|part| part == suffix)
+                };
+                position.map(|start| (start, suffix))
+            });
         // GNU can put the referring file (itself an archive member) on this line.
         let position = if inclusion {
             positions.min_by_key(|(start, _)| *start)
@@ -34,10 +42,14 @@ pub fn archive_references(bytes: &[u8]) -> Result<Value> {
             return Ok(());
         };
         let (archive, member) = input.split_at(start + suffix.len() - 1);
-        let (member, tail) = member
-            .strip_prefix('(')
-            .and_then(|member| member.split_once(')'))
+        let member = &member[1..];
+        let end = member
+            .iter()
+            .position(|byte| *byte == b')')
             .context("Malformed archive-member declaration")?;
+        let tail = &member[end + 1..];
+        let archive = std::str::from_utf8(archive).context("Archive path must be UTF-8")?;
+        let member = std::str::from_utf8(&member[..end]).context("Archive member must be UTF-8")?;
         ensure!(
             archive.starts_with('/')
                 && archive.len() <= 32768
@@ -45,7 +57,7 @@ pub fn archive_references(bytes: &[u8]) -> Result<Value> {
                 && !member.is_empty()
                 && member.len() <= 8192
                 && (tail.is_empty()
-                    || inclusion && tail.chars().next().is_some_and(char::is_whitespace))
+                    || inclusion && tail.first().is_some_and(u8::is_ascii_whitespace))
                 && !member
                     .chars()
                     .any(|c| c.is_control() || c == '(' || c == ')'),
@@ -61,51 +73,63 @@ pub fn archive_references(bytes: &[u8]) -> Result<Value> {
         }
         Ok(())
     };
-    let first = text.lines().next().unwrap_or_default();
-    let format = if text.lines().any(|line| line == "# Object files:") {
-        let (_, objects) = text.split_once("# Object files:").unwrap();
-        let (objects, _) = objects
-            .split_once("# Sections:")
-            .context("Missing ld64 section table")?;
+    let first = lines().next().unwrap_or_default();
+    let header = std::str::from_utf8(first).unwrap_or_default();
+    let format = if let Some(start) = lines().position(|line| line == b"# Object files:") {
         let mut ids = BTreeSet::new();
-        for line in objects.lines().filter(|line| !line.is_empty()) {
-            let (id, input) = line
-                .strip_prefix('[')
-                .and_then(|line| line.split_once("] "))
+        let mut sections = false;
+        for line in lines().skip(start + 1).filter(|line| !line.is_empty()) {
+            if line == b"# Sections:" {
+                sections = true;
+                break;
+            }
+            let line = line
+                .strip_prefix(b"[")
                 .context("Malformed ld64 object record")?;
-            let id: u32 = id.trim().parse()?;
+            let end = line
+                .windows(2)
+                .position(|part| part == b"] ")
+                .context("Malformed ld64 object record")?;
+            let id: u32 = std::str::from_utf8(&line[..end])?.trim().parse()?;
             ensure!(ids.insert(id), "Duplicate ld64 object index");
-            add(input, false)?;
+            add(&line[end + 2..], false)?;
         }
+        ensure!(sections, "Missing ld64 section table");
         "macos_ld64"
-    } else if first
+    } else if header
         .split_whitespace()
         .eq(["VMA", "LMA", "Size", "Align", "Out", "In", "Symbol"])
     {
-        let column = first.find("In").unwrap();
-        for line in text.lines().skip(1) {
+        let column = header.find("In").unwrap();
+        for line in lines().skip(1) {
             let Some(input) = line.get(column..) else {
                 continue;
             };
             // Symbols are indented beyond In; output sections start before it.
-            if !input.starts_with('/') || line[..column].split_whitespace().count() != 4 {
+            if !input.starts_with(b"/")
+                || line[..column]
+                    .split(u8::is_ascii_whitespace)
+                    .filter(|part| !part.is_empty())
+                    .count()
+                    != 4
+            {
                 continue;
             }
-            if let Some((input, section)) = input.rsplit_once(":(") {
-                ensure!(section.ends_with(')'), "Malformed lld input section");
-                add(input, false)?;
+            if let Some(end) = input.windows(2).rposition(|part| part == b":(") {
+                ensure!(input.ends_with(b")"), "Malformed lld input section");
+                add(&input[..end], false)?;
             }
         }
         "elf_lld"
-    } else if first == "Archive member included to satisfy reference by file (symbol)" {
-        for line in text.lines().skip(1).take_while(|line| {
-            !line.starts_with("As-needed library included")
-                && *line != "Discarded input sections"
-                && *line != "Memory Configuration"
-                && *line != "Linker script and memory map"
+    } else if first == b"Archive member included to satisfy reference by file (symbol)" {
+        for line in lines().skip(1).take_while(|line| {
+            !line.starts_with(b"As-needed library included")
+                && *line != b"Discarded input sections"
+                && *line != b"Memory Configuration"
+                && *line != b"Linker script and memory map"
         }) {
             // The following indented record explains the referring symbol.
-            if line.starts_with('/') {
+            if line.starts_with(b"/") {
                 add(line, true)?;
             }
         }

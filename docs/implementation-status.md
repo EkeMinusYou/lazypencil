@@ -1,5 +1,7 @@
 # lazypencil 実装と公開準備の状況
 
+`4d6f200` の [macOS 先行 `40556268470`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40556268470) は機能試験と release build を通過したが、候補の証跡収集がリンクマップ全体を UTF-8 と仮定して失敗した。全3環境とメモリ計測は開始していない。以前の実マップでも、169,027バイトの object table は有効な UTF-8 だが、後方の literal-string symbol に非 UTF-8 byte があることを確認した。元マップの全 byte／hash を保持し、使用する archive・member だけを厳密に復号する修正と、3形式の opaque symbol／不正な入力パスの回帰試験を準備した。先行 runtime 3分35秒と後続 release 4分30秒を重ねる変更も準備し、両方の回収後に ownership と計測へ進む。Rust の追加差分は GHA 待ちである。
+
 `35e959f` の全3環境・監査・署名付きソースが成功した。各144サマリーの全試験名・回数を照合し、Linux 各1,412件、macOS 1,401件（軽量ツールの新しい scheduling 試験1件を含む）を確認した。ソース1,149ファイル・32,058,232バイトの内容・mode と署名対象を独立照合した。Linux の全体は18分12秒、macOS は20分44秒、arm64 は39分15秒で、arm64 は ImageVersion `20261026.166.1` に更新され、通常 build 6分36秒・release 12分58秒を要した。Linux は同一 commit の先行211ファイルを再利用し、通常 build 0.85秒・catalog 20.49秒・release 0.26秒だった。異なる SDK／cache 条件を混ぜた速度向上とは表現しない。
 
 Mac の別候補 [GHA `40551198843`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40551198843) は15ファイルの release 再利用、配布・署名検証・元の計測を成功したが、通常の最大標本 RSS は255.09MiBで200MiB未達だった。65 PNG・36,344,288画素は前候補と全バイト一致した。検証済み CLI の隔離した headless MCP をローカルで診断し、同じ PNG を3回生成して正常終了した。`vmmap` は約92MiBの解放済み large 領域を示した。可変寸法の native layer を再利用しやすくする Mac 専用の修正候補を準備し、16MiBを超える layer は従来の allocation hint を維持する。すべての元計測を保存した後に通常 bound group の200MiBを判定する CI gate と、リンクマップ由来の archive 一覧・配布時の再計算検査も準備した。新しい Rust のビルド・画素・実測効果は GHA 待ちであり、公開準備全体は未完了である。

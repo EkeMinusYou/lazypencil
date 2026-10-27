@@ -52,11 +52,48 @@ fn malformed_linker_records_never_produce_an_incomplete_success_inventory() {
 }
 
 #[test]
+fn opaque_symbol_bytes_do_not_change_or_corrupt_selected_archive_paths() {
+    let maps: &[&[u8]] = &[
+        b"# Object files:\n[  0] linker synthesized\n[  1] /build/lib.a(one.o)\n# Sections:\n# Symbols:\n0x100E98B63\t0x14\t[  1] literal string: \x0fmissing field `\xc0\x01`\n",
+        b"             VMA              LMA     Size Align Out     In      Symbol\n          c50b40           c50b40       20    32         /build/lib.a(one.o):(.rodata.\xff)\n          c50b40           c50b40       20    32                 \xffsymbol\n",
+        b"Archive member included to satisfy reference by file (symbol)\n\n/build/lib.a(one.o)    /build/referrer.a(\xff.o) (\xffsymbol)\nDiscarded input sections\n/ignored.a(\xff.o)\n",
+    ];
+    for raw in maps {
+        let mut crlf = Vec::new();
+        for byte in *raw {
+            if *byte == b'\n' {
+                crlf.push(b'\r');
+            }
+            crlf.push(*byte);
+        }
+        for raw in [raw.to_vec(), crlf] {
+            let report = link_map::archive_references(&raw).unwrap();
+            assert_eq!(report["map_sha256"], util::digest(&raw));
+            assert_eq!(report["map_bytes"], raw.len());
+            assert_eq!(report["archive_member_pairs"], 1);
+            assert_eq!(
+                report["archives"],
+                serde_json::json!([{"archive":"/build/lib.a","members":["one.o"]}])
+            );
+        }
+    }
+    for raw in [
+        b"# Object files:\n[  1] /build/lib\xff.a(one.o)\n# Sections:\n".as_slice(),
+        b"# Object files:\n[  1] /build/lib.a(one\xff.o)\n# Sections:\n".as_slice(),
+    ] {
+        assert!(link_map::archive_references(raw).is_err());
+    }
+    let literal_replacement = "# Object files:\n[  1] /build/lib\u{fffd}.a(one.o)\n# Sections:\n";
+    let report = link_map::archive_references(literal_replacement.as_bytes()).unwrap();
+    assert_eq!(report["archives"][0]["archive"], "/build/lib\u{fffd}.a");
+}
+
+#[test]
 fn persisted_linker_inventories_are_bound_to_original_bytes_and_never_overwrite() {
     let temp = tempfile::tempdir().unwrap();
     let map = temp.path().join("raw.map");
     let output = temp.path().join("inputs.json");
-    let raw = b"# Object files:\n[  1] /build/libnative.a(native.o)\n# Sections:\n";
+    let raw = b"# Object files:\n[  1] /build/libnative.a(native.o)\n# Sections:\n# Symbols:\nopaque \xff\xfe\n";
     fs::write(&map, raw).unwrap();
     let report = link_map::collect_inputs(&map, &output).unwrap();
     assert_eq!(util::json::<serde_json::Value>(&output).unwrap(), report);

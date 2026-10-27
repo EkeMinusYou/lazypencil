@@ -36,6 +36,7 @@ pub enum Stage {
     FocusReproduce,
     FocusTest,
     FocusRelease,
+    FocusRuntimeRelease,
     CoreBuild,
     CoreTest,
     CoreLint,
@@ -693,8 +694,9 @@ impl Session {
                 }
             }
             Stage::BrowserTest => browser::tests(self),
-            Stage::RuntimeTests => {
-                if args.suite == "focus" {
+            Stage::RuntimeTests | Stage::FocusRuntimeRelease => {
+                let compile_release = matches!(args.stage, Stage::FocusRuntimeRelease);
+                if args.suite == "focus" || compile_release {
                     let targets = focus::BROWSER_CI_TARGETS
                         .iter()
                         .copied()
@@ -705,15 +707,21 @@ impl Session {
                     )?;
                     browser::focus_inputs(self)?;
                 }
-                // Browser ownership tests never overlap these lanes. MCP and idle
-                // lifecycle clients own separate documents, process trees and
-                // automatic CDP ports. Material uses its own settings path.
-                // Every started lane joins before isolated release measurements.
-                let result = parallel::run(vec![
-                    ("browser pixels", Box::new(|| browser::lanes(self))),
-                    ("MCP dynamic images", Box::new(|| self.mcp_tests())),
-                    ("lifecycle and Material", Box::new(|| self.long_tests())),
-                ]);
+                // Prepare every debug executable before release Cargo takes its
+                // build lock. Runtime tests execute immutable binaries directly;
+                // release writes a separate profile and retained log. Join both
+                // groups before ownership checks or resource measurements.
+                let result = if compile_release {
+                    parallel::run(vec![
+                        (
+                            "release compilation",
+                            Box::new(|| release::compile(self, "focus-release-parallel.log")),
+                        ),
+                        ("runtime suites", Box::new(|| self.runtime_lanes())),
+                    ])
+                } else {
+                    self.runtime_lanes()
+                };
                 let ownership = browser::ownership(self);
                 let failures = [("runtime lanes", result), ("browser ownership", ownership)]
                     .into_iter()
@@ -851,6 +859,16 @@ impl Session {
         )?;
         Ok(())
     }
+    fn runtime_lanes(&self) -> Result<()> {
+        // MCP and idle lifecycle clients own separate documents, process trees
+        // and automatic CDP ports. Material has an independent settings path.
+        parallel::run(vec![
+            ("browser pixels", Box::new(|| browser::lanes(self))),
+            ("MCP dynamic images", Box::new(|| self.mcp_tests())),
+            ("lifecycle and Material", Box::new(|| self.long_tests())),
+        ])
+    }
+
     fn mcp_tests(&self) -> Result<()> {
         let catalog = self.verified_catalog(&["mcp", "agent"])?;
         let mut failures = Vec::new();

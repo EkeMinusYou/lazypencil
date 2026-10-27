@@ -115,7 +115,10 @@ fn nested_runtime_groups_overlap_and_join_all_failures_before_ownership_cleanup(
                     .unwrap();
                 anyhow::ensure!(!deadline.timed_out(), "Runtime lanes were serialized");
                 finished.fetch_or(bit, Ordering::SeqCst);
-                anyhow::ensure!(bit != 1 && bit != 16, "Expected {name} failure");
+                anyhow::ensure!(
+                    bit != 1 && bit != 16 && bit != 32,
+                    "Expected {name} failure"
+                );
                 Ok(())
             }),
         )
@@ -123,8 +126,9 @@ fn nested_runtime_groups_overlap_and_join_all_failures_before_ownership_cleanup(
     let browser = vec![leaf("browser readiness", 1), leaf("dynamic pixels", 2)];
     let lifecycle = vec![leaf("idle lifecycle", 4), leaf("Material", 8)];
     let mcp = leaf("MCP", 16);
+    let release = leaf("release compilation", 32);
     let controller = std::thread::spawn(move || -> anyhow::Result<()> {
-        for _ in 0..5 {
+        for _ in 0..6 {
             arrivals.recv_timeout(Duration::from_secs(5))?;
         }
         let (lock, wake) = &*gate;
@@ -132,21 +136,27 @@ fn nested_runtime_groups_overlap_and_join_all_failures_before_ownership_cleanup(
         wake.notify_all();
         Ok(())
     });
-    let result = parallel::run(vec![
+    let runtime: Vec<parallel::Task<'_>> = vec![
         ("browser", Box::new(|| parallel::run(browser))),
         mcp,
         (
             "lifecycle and Material",
             Box::new(|| parallel::run(lifecycle)),
         ),
+    ];
+    let result = parallel::run(vec![
+        release,
+        ("runtime suites", Box::new(|| parallel::run(runtime))),
     ]);
     controller.join().unwrap().unwrap();
     // Ownership/destruction and performance checks may begin only after every
     // already-started process owner has completed, including failed groups.
-    assert_eq!(finished.load(Ordering::SeqCst), 31);
+    assert_eq!(finished.load(Ordering::SeqCst), 63);
     let error = format!("{:#}", result.unwrap_err());
     assert!(
-        error.contains("browser readiness") && error.contains("MCP"),
+        error.contains("browser readiness")
+            && error.contains("MCP")
+            && error.contains("release compilation"),
         "{error}"
     );
 }

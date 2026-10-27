@@ -62,6 +62,7 @@ jobs:
       FOCUS_SUITE: ${{ inputs.suite }}
       FOCUS_TARGETS: ${{ inputs.targets }}
       RUNTIME_PARALLEL: ${{ inputs.runtime_parallel }}
+      FOCUS_RUNTIME_STAGE: ${{ (inputs.suite == 'release' || inputs.suite == 'candidate' || inputs.measure_tui) && 'focus-runtime-release' || 'runtime-tests' }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -282,10 +283,10 @@ jobs:
         if: inputs.phase == 'focus'
         timeout-minutes: ${{ inputs.suite == 'normal-ci' && 60 || inputs.suite == 'browser-ci' && 25 || 10 }}
         run: cargo xtask ci native focus-test --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
-      - name: Reproduce changed runtime scheduling before the full matrix
+      - name: Reproduce runtime scheduling alongside a required release build
         if: inputs.phase == 'focus' && inputs.runtime_parallel
         timeout-minutes: 60
-        run: cargo xtask ci native runtime-tests --suite focus
+        run: cargo xtask ci native "$FOCUS_RUNTIME_STAGE" --suite focus
       - name: Verify changed release build recipe before the full matrix
         id: focus-release
         if: inputs.phase == 'focus' && (inputs.suite == 'release' || inputs.suite == 'candidate' || inputs.measure_tui)
