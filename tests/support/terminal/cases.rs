@@ -528,6 +528,19 @@ fn agent(h: &mut Harness, design: &Value) -> Result {
     Ok(())
 }
 fn project_agent(h: &mut Harness, design: &Value) -> Result {
+    fn closed(h: &mut Harness, label: &str) -> Result {
+        // Keep draining Kitty output between process observations. Synchronous
+        // ps on every read can fill the PTY and block the application's redraw.
+        let mut next = Instant::now();
+        let mut gone = false;
+        h.wait(label, 15.0, |h| {
+            if Instant::now() >= next {
+                gone = dynamic::children(h).is_empty();
+                next = Instant::now() + Duration::from_millis(200);
+            }
+            gone
+        })
+    }
     assert_eq!(state(h)["agent"], "claude");
     h.wait("untrusted project still renders", 15.0, |h| {
         !h.frames.images.is_empty()
@@ -536,6 +549,7 @@ fn project_agent(h: &mut Harness, design: &Value) -> Result {
     h.cli(&["config".as_ref(), "trust".as_ref(), h.document.as_os_str()])?;
     let draft = "実行許可まで保持する下書き";
     h.paste(draft)?;
+    h.draft(draft)?;
     h.key(b"\x13")?;
     h.wait(
         "design grant does not authorize project executables",
@@ -562,12 +576,9 @@ fn project_agent(h: &mut Harness, design: &Value) -> Result {
     ])?;
     let draft = "許可を取り消しても保持する下書き";
     h.paste(draft)?;
+    h.draft(draft)?;
     h.key(b"\x13")?;
-    h.wait(
-        "revoked project grant closes the existing adapter",
-        15.0,
-        |h| dynamic::children(h).is_empty(),
-    )?;
+    closed(h, "revoked project grant closes the existing adapter")?;
     assert_eq!(state(h)["draft"], draft);
     assert_eq!(h.count("start"), 1);
     h.cli(&[
@@ -592,12 +603,9 @@ fn project_agent(h: &mut Harness, design: &Value) -> Result {
     ])?;
     let draft = "変更前の設定では送信しない";
     h.paste(draft)?;
+    h.draft(draft)?;
     h.key(b"\x13")?;
-    h.wait(
-        "changed settings do not reuse the earlier selection",
-        15.0,
-        |h| dynamic::children(h).is_empty(),
-    )?;
+    closed(h, "changed settings do not reuse the earlier selection")?;
     assert_eq!(state(h)["draft"], draft);
     assert_eq!(h.count("start"), 2);
     assert_eq!(&read_json(&h.document).unwrap(), design);
