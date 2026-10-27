@@ -17,6 +17,8 @@ const MAX_PIXELS: u64 = 32 * 1024 * 1024;
 
 mod backdrop;
 mod blending;
+#[cfg(target_os = "macos")]
+mod macos;
 mod mesh;
 mod polygon;
 use backdrop::{background_nodes, composite_layer};
@@ -253,6 +255,8 @@ fn raster_impl(
     let background_nodes = background_nodes(snapshot);
     let (working_width, working_height) =
         raster_dimensions(width + 2 * padding as u64, height + 2 * padding as u64)?;
+    #[cfg(target_os = "macos")]
+    let _scratch = macos::ReleaseScratch;
     let rasters = Rc::new(backdrop::RasterBudget::default());
     if let Some(runtime) = runtime.as_deref() {
         runtime.check()?;
