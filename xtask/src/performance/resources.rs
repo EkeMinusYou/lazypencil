@@ -77,7 +77,7 @@ impl ActiveTrace {
         ensure!(
             accounted.iter().any(|point| point["present_roles"]
                 .as_array()
-                .is_some_and(|roles| roles.len() == 6)),
+                .is_some_and(|present| present.len() == roles.processes.len())),
             "No sample contains all required resource processes"
         );
         let application_peak = accounted
@@ -100,6 +100,11 @@ impl ActiveTrace {
         report["accounted_points"] = serde_json::json!(accounted);
         report["maximum_observed_application_rss_bytes"] = serde_json::json!(application_peak);
         report["maximum_observed_adapter_rss_bytes"] = serde_json::json!(adapter_peak);
+        if roles.processes.len() == 14 {
+            report["scope"] = serde_json::json!(
+                "Additional Chromium-inclusive TUI and bound MCP resource turn; both script workers, four page/shader guardians, four Chromium roots and every observed owned descendant included; only the identified external ACP helper excluded"
+            );
+        }
         Ok(report)
     }
 
@@ -141,7 +146,7 @@ impl ActiveTrace {
     }
 }
 
-/// Identities observed while all six processes are simultaneously alive. Unknown
+/// Identities observed while all required processes are simultaneously alive. Unknown
 /// owned descendants remain included; only this exact external adapter is excluded.
 pub struct BoundRoles {
     pub processes: BTreeMap<&'static str, Process>,
@@ -155,6 +160,23 @@ impl BoundRoles {
         mcp: u32,
         tui_script: u32,
     ) -> Result<Self> {
+        let children = snapshot
+            .processes
+            .values()
+            .filter(|process| process.parent == mcp)
+            .collect::<Vec<_>>();
+        ensure!(children.len() == 1, "Ambiguous MCP script worker");
+        Self::capture_scripts(snapshot, root, adapter, mcp, tui_script, children[0].pid)
+    }
+
+    fn capture_scripts(
+        snapshot: &Snapshot,
+        root: u32,
+        adapter: u32,
+        mcp: u32,
+        tui_script: u32,
+        mcp_script: u32,
+    ) -> Result<Self> {
         let get = |pid| {
             snapshot
                 .processes
@@ -167,16 +189,11 @@ impl BoundRoles {
         let mcp = get(mcp)?;
         let tui_script = get(tui_script)?;
         let supervisor = get(adapter.parent)?;
-        let children = snapshot
-            .processes
-            .values()
-            .filter(|process| process.parent == mcp.pid)
-            .collect::<Vec<_>>();
-        ensure!(children.len() == 1, "Ambiguous MCP script worker");
-        let mcp_script = (*children[0]).clone();
+        let mcp_script = get(mcp_script)?;
         ensure!(
             tui.parent != adapter.pid
                 && tui_script.parent == root
+                && mcp_script.parent == mcp.pid
                 && supervisor.parent == root
                 && mcp.parent == adapter.pid,
             "Resource process topology differs from the owned fixture"
@@ -195,6 +212,104 @@ impl BoundRoles {
             .collect::<std::collections::BTreeSet<_>>();
         ensure!(ids.len() == 6, "Resource roles alias the same process");
         Ok(Self { processes })
+    }
+
+    /// Require both page/shader guardians and their actual Chromium roots for
+    /// each host. Other Chromium descendants remain in the raw owned total.
+    pub fn capture_chromium(
+        snapshot: &Snapshot,
+        root: u32,
+        adapter: u32,
+        mcp: u32,
+        tui_script: u32,
+        binary: &std::path::Path,
+        chromium: &std::path::Path,
+    ) -> Result<Self> {
+        let scripts = snapshot
+            .processes
+            .values()
+            .filter(|process| {
+                process.parent == mcp && require_script_worker(process.pid, binary).is_ok()
+            })
+            .collect::<Vec<_>>();
+        ensure!(
+            scripts.len() == 1,
+            "Ambiguous MCP script worker with Chromium"
+        );
+        let mut roles =
+            Self::capture_scripts(snapshot, root, adapter, mcp, tui_script, scripts[0].pid)?;
+        let prefix = format!(
+            "{} __browser_process_worker -- {} ",
+            binary.display(),
+            chromium.display()
+        );
+        for (host, names) in [
+            (
+                root,
+                [
+                    ("tui_page_guardian", "tui_page_chromium"),
+                    ("tui_shader_guardian", "tui_shader_chromium"),
+                ],
+            ),
+            (
+                mcp,
+                [
+                    ("mcp_page_guardian", "mcp_page_chromium"),
+                    ("mcp_shader_guardian", "mcp_shader_chromium"),
+                ],
+            ),
+        ] {
+            let mut found = [false; 2];
+            for guardian in snapshot
+                .processes
+                .values()
+                .filter(|process| process.parent == host)
+            {
+                let command = command_text(guardian.pid)?;
+                if !command.starts_with(&prefix) {
+                    continue;
+                }
+                ensure!(
+                    !command.split_whitespace().any(|arg| arg == "--no-sandbox"),
+                    "Unsandboxed Chromium is outside the measurement contract"
+                );
+                let kind = usize::from(
+                    command
+                        .split_whitespace()
+                        .any(|arg| arg == "--enable-unsafe-swiftshader"),
+                );
+                ensure!(!found[kind], "Duplicate Chromium guardian for one purpose");
+                found[kind] = true;
+                let children = snapshot
+                    .processes
+                    .values()
+                    .filter(|process| process.parent == guardian.pid)
+                    .collect::<Vec<_>>();
+                ensure!(children.len() == 1, "Ambiguous owned Chromium root");
+                let browser = children[0];
+                ensure!(
+                    command_text(browser.pid)?.starts_with(&format!("{} ", chromium.display())),
+                    "Guardian child is not the verified Chromium executable"
+                );
+                roles.processes.insert(names[kind].0, guardian.clone());
+                roles.processes.insert(names[kind].1, browser.clone());
+            }
+            ensure!(
+                found == [true, true],
+                "Missing live page or shader Chromium guardian"
+            );
+        }
+        ensure!(
+            roles
+                .processes
+                .values()
+                .map(|process| process.pid)
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                == 14,
+            "Chromium roles alias a process"
+        );
+        Ok(roles)
     }
 
     pub fn account(&self, snapshot: &Snapshot) -> Result<serde_json::Value> {
@@ -220,6 +335,23 @@ impl BoundRoles {
             "present_roles":self.processes.iter().filter(|(_,process)|snapshot.processes.contains_key(&process.pid)).map(|(role,_)|*role).collect::<Vec<_>>()
         }))
     }
+}
+
+#[cfg(unix)]
+fn command_text(pid: u32) -> Result<String> {
+    let bytes = crate::process::checked(
+        std::process::Command::new("ps")
+            .args(["-ww", "-p", &pid.to_string(), "-o", "command="])
+            .env("LC_ALL", "C"),
+        Duration::from_secs(10),
+    )?;
+    ensure!(bytes.len() <= 65536, "Oversized resource process command");
+    Ok(std::str::from_utf8(&bytes)?.trim().to_owned())
+}
+
+#[cfg(not(unix))]
+fn command_text(_pid: u32) -> Result<String> {
+    anyhow::bail!("Chromium resource process identification requires Unix")
 }
 
 pub fn require_script_worker(pid: u32, binary: &std::path::Path) -> Result<()> {

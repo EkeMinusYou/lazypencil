@@ -2,10 +2,13 @@ use super::*;
 use crate::performance;
 
 pub fn setup(s: &Session) -> Result<()> {
-    let binary = s.executable("debug");
+    setup_binary(s, &s.executable("debug"))
+}
+
+pub fn setup_binary(s: &Session, binary: &Path) -> Result<()> {
     let data = s.temporary.join("chromium-test-data");
     s.capture(
-        Command::new(&binary)
+        Command::new(binary)
             .arg("--json")
             .arg("--data-dir")
             .arg(&data)
@@ -14,7 +17,7 @@ pub fn setup(s: &Session) -> Result<()> {
         "chromium-setup.json",
     )?;
     let raw = s.capture(
-        Command::new(&binary)
+        Command::new(binary)
             .arg("--json")
             .arg("--data-dir")
             .arg(&data)

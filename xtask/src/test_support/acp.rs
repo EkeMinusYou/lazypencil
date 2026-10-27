@@ -245,6 +245,7 @@ impl<'a> Peer<'a> {
                     "user-config",
                     "supervised-dynamic",
                     "resource-observation",
+                    "dynamic-resource-observation",
                 ]
                 .contains(&mode)
                     || ["project-guidance", "audit-", "resume-"]
@@ -546,7 +547,8 @@ impl<'a> Peer<'a> {
             )?;
             write_json("supervised-dynamic.json", &preview["structuredContent"])?;
         }
-        if mode == "resource-observation" {
+        if ["resource-observation", "dynamic-resource-observation"].contains(&mode) {
+            let dynamic = mode == "dynamic-resource-observation";
             let doc = self.call("get_document", json!({}))?["structuredContent"].clone();
             for round in 0..2 {
                 if round == 1 {
@@ -554,14 +556,22 @@ impl<'a> Peer<'a> {
                 }
                 // Omit snapshot_id so the second request executes JavaScript
                 // again while retaining the real document-bound MCP process.
-                let preview = self.call("render", json!({"expected_revision":doc["revision"],"expected_dependency_revision":doc["dependency_revision"]}))?;
+                let mut arguments = json!({"expected_revision":doc["revision"],"expected_dependency_revision":doc["dependency_revision"]});
+                if dynamic {
+                    arguments["refresh"] = json!(true);
+                }
+                let preview = self.call("render", arguments)?;
                 let metadata = &preview["structuredContent"];
                 assert_eq!(metadata["node_count"], 1000);
                 assert_eq!(metadata["width"], 1920);
                 assert_eq!(metadata["height"], 1080);
                 assert_eq!(metadata["diagnostics"], json!([]));
                 assert_eq!(metadata["script_executions"].as_array().unwrap().len(), 1);
-                assert_eq!(metadata["dynamic_artifacts"], json!([]));
+                if dynamic {
+                    assert_eq!(metadata["dynamic_artifacts"].as_array().unwrap().len(), 2);
+                } else {
+                    assert_eq!(metadata["dynamic_artifacts"], json!([]));
+                }
                 let image = preview["content"]
                     .as_array()
                     .unwrap()

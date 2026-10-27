@@ -684,7 +684,16 @@ impl Session {
             }
             Stage::DefaultTest => management::default(self),
             Stage::DefaultRelease => normal::run(self),
-            Stage::BrowserSetup => browser::setup(self),
+            Stage::BrowserSetup => {
+                if args.suite == "candidate" {
+                    browser::setup_binary(
+                        self,
+                        &self.temporary.join("candidate-install/bin/lazypencil"),
+                    )
+                } else {
+                    browser::setup(self)
+                }
+            }
             Stage::BrowserTest => browser::tests(self),
             Stage::RuntimeTests => {
                 if args.suite == "focus" {

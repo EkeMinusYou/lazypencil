@@ -353,6 +353,90 @@ fn resource_dashboard_moves_the_same_header_children_into_a_separate_script() {
 }
 
 #[test]
+fn dynamic_resource_dashboard_changes_only_two_backgrounds_and_pins_owned_code() {
+    use base64::Engine;
+    let temporary = tempfile::tempdir().unwrap();
+    let static_root = temporary.path().join("static");
+    let dynamic_root = temporary.path().join("dynamic");
+    let static_report = fixtures::performance_with_script(&static_root).unwrap();
+    let dynamic_report = fixtures::performance_with_dynamic(&dynamic_root).unwrap();
+    assert_eq!(
+        fs::read(static_root.join("dashboard.pen")).unwrap(),
+        fs::read(dynamic_root.join("dashboard.pen")).unwrap()
+    );
+    assert_eq!(
+        static_report["document_sha256"],
+        dynamic_report["document_sha256"]
+    );
+    assert_eq!(
+        static_report["asset_sha256"],
+        dynamic_report["asset_sha256"]
+    );
+    let children = |root: &std::path::Path| {
+        let script = fs::read_to_string(root.join("resource-header.js")).unwrap();
+        let value = script
+            .strip_prefix("/**\n * @schema 2.21\n */\nreturn ")
+            .unwrap()
+            .strip_suffix(";\n")
+            .unwrap();
+        serde_json::from_str::<Vec<Value>>(value).unwrap()
+    };
+    let original = children(&static_root);
+    let mut dynamic = children(&dynamic_root);
+    assert_eq!(original.len(), dynamic.len());
+    // The runtime replaces source IDs with these generated child addresses.
+    assert_eq!(dynamic[4]["id"], "nav-0");
+    assert_eq!(dynamic[7]["id"], "nav-1");
+    for (expected, node) in original.iter().zip(&mut dynamic) {
+        match node["id"].as_str().unwrap() {
+            "nav-0" => {
+                assert_eq!(node["type"], "browser");
+                assert!(node.get("fill").is_none());
+                let page = base64::engine::general_purpose::STANDARD
+                    .decode(
+                        node["url"]
+                            .as_str()
+                            .unwrap()
+                            .strip_prefix("data:text/html;base64,")
+                            .unwrap(),
+                    )
+                    .unwrap();
+                assert_eq!(dynamic_report["page_sha256"], util::digest(&page));
+                assert!(
+                    std::str::from_utf8(&page)
+                        .unwrap()
+                        .contains("style.width='72%'")
+                );
+                node.as_object_mut().unwrap().remove("url");
+                node["type"] = json!("rectangle");
+                node["fill"] = expected["fill"].clone();
+            }
+            "nav-1" => {
+                assert_eq!(
+                    node["fill"],
+                    json!({"type":"shader","url":"resource-nav.glsl"})
+                );
+                let shader = fs::read(dynamic_root.join("resource-nav.glsl")).unwrap();
+                assert_eq!(dynamic_report["shader_sha256"], util::digest(&shader));
+                assert!(!std::str::from_utf8(&shader).unwrap().contains("@time"));
+                node["fill"] = expected["fill"].clone();
+            }
+            _ => {}
+        }
+        assert_eq!(&*node, expected);
+    }
+    assert_ne!(
+        static_report["script_sha256"],
+        dynamic_report["script_sha256"]
+    );
+    assert_eq!(
+        dynamic_report["script_sha256"],
+        util::file_digest(&dynamic_root.join("resource-header.js")).unwrap()
+    );
+    assert!(!static_root.join("resource-nav.glsl").exists());
+}
+
+#[test]
 fn repeated_measurements_use_observed_nearest_rank_p95_and_keep_first_invocations_separate() {
     let samples = (1..=20)
         .map(|n| json!({"elapsed_ms":n,"peak_rss_bytes":n,"user_cpu_ms":n,"system_cpu_ms":n}))

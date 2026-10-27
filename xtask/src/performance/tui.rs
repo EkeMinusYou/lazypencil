@@ -18,6 +18,9 @@ pub struct Arguments {
     pub samples: u32,
     #[arg(long, default_value_t = 30, value_parser = clap::value_parser!(u32).range(30..=300))]
     pub idle_seconds: u32,
+    /// Observe real page/shader Chromium trees after the original trials.
+    #[arg(long)]
+    pub chromium_resources: bool,
 }
 
 /// Bounded, content-free worker observations from the explicitly owned child.
@@ -202,6 +205,17 @@ mod hosted {
             deadline: Instant,
             mode: &str,
         ) -> Result<Self> {
+            Self::start_runtime(binary, helper, root, deadline, mode, None)
+        }
+
+        fn start_runtime(
+            binary: &Path,
+            helper: &Path,
+            root: &Path,
+            deadline: Instant,
+            mode: &str,
+            chromium: Option<&Path>,
+        ) -> Result<Self> {
             let (mut master, mut slave) = (-1, -1);
             let mut size = libc::winsize {
                 ws_row: 54,
@@ -249,6 +263,9 @@ mod hosted {
                 .stdin(Stdio::from(slave.try_clone()?))
                 .stdout(Stdio::from(slave.try_clone()?))
                 .stderr(Stdio::from(fs::File::create(root.join("stderr.log"))?));
+            if let Some(chromium) = chromium {
+                command.env("LAZYPENCIL_CHROMIUM", chromium);
+            }
             unsafe {
                 command.pre_exec(|| {
                     if libc::setsid() < 0 {
@@ -541,20 +558,43 @@ mod hosted {
         helper: &Path,
         output: &Path,
         deadline: Instant,
-        static_hash: &str,
+        static_hash: Option<&str>,
+        chromium: Option<&Path>,
     ) -> Result<Value> {
-        let root = output.join("bound-resource-observation");
-        let fixture = fixtures::performance_with_script(&root)?;
+        let root = output.join(if chromium.is_some() {
+            "chromium-resource-observation"
+        } else {
+            "bound-resource-observation"
+        });
+        let fixture = if chromium.is_some() {
+            fixtures::performance_with_dynamic(&root)?
+        } else {
+            fixtures::performance_with_script(&root)?
+        };
         fs::write(root.join("lazypencil.toml"), b"version=1\n")?;
-        let mut terminal =
-            Terminal::start_mode(binary, helper, &root, deadline, "resource-observation")?;
+        let mut terminal = Terminal::start_runtime(
+            binary,
+            helper,
+            &root,
+            deadline,
+            if chromium.is_some() {
+                "dynamic-resource-observation"
+            } else {
+                "resource-observation"
+            },
+            chromium,
+        )?;
         terminal.activity = Some(resources::ActiveTrace::new(terminal.child.id())?);
         let result = (|| -> Result<Value> {
             terminal.wait("script dashboard preview", |t| t.last_frame.is_some())?;
-            ensure!(
-                terminal.last_frame.as_ref().unwrap().1 == static_hash,
-                "Script header changed dashboard pixels"
-            );
+            let initial_hash = terminal.last_frame.as_ref().unwrap().1.clone();
+            if let Some(static_hash) = static_hash {
+                ensure!(
+                    initial_hash == static_hash,
+                    "Script header changed dashboard pixels"
+                );
+            }
+            let static_hash = initial_hash.as_str();
             terminal.capture(&root, "initial")?;
             let before = resources::snapshot(terminal.child.id())?;
             let children = before
@@ -562,12 +602,22 @@ mod hosted {
                 .values()
                 .filter(|process| process.parent == terminal.child.id())
                 .collect::<Vec<_>>();
-            ensure!(
-                children.len() == 1 && before.processes.len() == 2,
-                "Unexpected viewer children before the agent request"
-            );
-            let tui_script = (*children[0]).clone();
-            resources::require_script_worker(tui_script.pid, binary)?;
+            let tui_script = if chromium.is_some() {
+                let scripts = children
+                    .iter()
+                    .filter(|process| resources::require_script_worker(process.pid, binary).is_ok())
+                    .collect::<Vec<_>>();
+                ensure!(scripts.len() == 1, "Ambiguous viewer script worker");
+                (**scripts[0]).clone()
+            } else {
+                ensure!(
+                    children.len() == 1 && before.processes.len() == 2,
+                    "Unexpected viewer children before the agent request"
+                );
+                let script = (*children[0]).clone();
+                resources::require_script_worker(script.pid, binary)?;
+                script
+            };
             terminal.key(b"Measure this owned document through MCP.\x13")?;
             terminal.wait("bound MCP render", |_| {
                 root.join("bound-render-0.json").is_file()
@@ -579,13 +629,25 @@ mod hosted {
                 )?)
             };
             let snapshot = resources::snapshot(terminal.child.id())?;
-            let roles = resources::BoundRoles::capture(
-                &snapshot,
-                terminal.child.id(),
-                pid("adapter_pid")?,
-                pid("mcp_pid")?,
-                tui_script.pid,
-            )?;
+            let roles = if let Some(chromium) = chromium {
+                resources::BoundRoles::capture_chromium(
+                    &snapshot,
+                    terminal.child.id(),
+                    pid("adapter_pid")?,
+                    pid("mcp_pid")?,
+                    tui_script.pid,
+                    binary,
+                    chromium,
+                )?
+            } else {
+                resources::BoundRoles::capture(
+                    &snapshot,
+                    terminal.child.id(),
+                    pid("adapter_pid")?,
+                    pid("mcp_pid")?,
+                    tui_script.pid,
+                )?
+            };
             ensure!(
                 roles.processes["tui_script"].start_ticks == tui_script.start_ticks,
                 "Viewer script worker changed identity"
@@ -643,6 +705,43 @@ mod hosted {
                 first["render"]["png_hash"] == second["render"]["png_hash"],
                 "Repeated bound render changed pixels"
             );
+            if chromium.is_some() {
+                for metadata in [&first, &second] {
+                    let artifacts = metadata["render"]["dynamic_artifacts"]
+                        .as_array()
+                        .context("Missing Chromium artifacts")?;
+                    ensure!(
+                        artifacts.len() == 2,
+                        "Missing real browser or shader acquisition"
+                    );
+                    ensure!(
+                        artifacts
+                            .iter()
+                            .any(|artifact| artifact["node_id"] == "header/$generated/4"
+                                && artifact["acquisition"]["kind"] == "browser")
+                            && artifacts
+                                .iter()
+                                .any(|artifact| artifact["node_id"] == "header/$generated/7"
+                                    && artifact["acquisition"]["kind"] == "shader"),
+                        "Unexpected dynamic node identities"
+                    );
+                }
+                for artifact in first["render"]["dynamic_artifacts"].as_array().unwrap() {
+                    if artifact["acquisition"]["kind"] == "browser" {
+                        let refreshed = second["render"]["dynamic_artifacts"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .find(|entry| entry["acquisition"]["kind"] == "browser")
+                            .unwrap();
+                        ensure!(
+                            artifact["acquisition"]["acquisition_id"]
+                                != refreshed["acquisition"]["acquisition_id"],
+                            "Second MCP page render reused its acquisition"
+                        );
+                    }
+                }
+            }
             let idle_before = resources::snapshot(terminal.child.id())?;
             let idle_started = Instant::now();
             let idle_frame = terminal.last_frame.as_ref().unwrap().0;
@@ -681,6 +780,12 @@ mod hosted {
                         .unwrap(),
                 );
             }
+            if chromium.is_some() {
+                ensure!(
+                    util::file_digest(&root.join("resource-nav.glsl"))? == fixture["shader_sha256"],
+                    "Resource shader changed during the turn"
+                );
+            }
             ensure!(
                 terminal.last_frame.as_ref().unwrap().0 == idle_frame,
                 "Unchanged bound dashboard repainted during idle observation"
@@ -689,6 +794,12 @@ mod hosted {
                 "application_cpu_upper_percent":app_cpu,"adapter_cpu_upper_percent":adapter_cpu,"raw_owned_cpu_upper_percent":raw_cpu,
                 "maximum_sampled_application_rss_bytes":idle_maximum,"no_preview_image_update":true,
                 "scope":"Separate 30-second idle interval with the bound MCP, both JavaScript workers and supervisor still alive; explicit ACP helper excluded only from application accounting"});
+            let mut idle = idle;
+            if chromium.is_some() {
+                idle["scope"] = json!(
+                    "Additional 30-second Chromium-inclusive idle interval; raw stable process membership and counters retained; only the identified external ACP helper excluded from application accounting"
+                );
+            }
             fs::write(root.join("bound-render-release"), b"complete")?;
             terminal.wait("completed resource turn", |t| {
                 root.join("bound-render-closed.json").is_file()
@@ -736,12 +847,16 @@ mod hosted {
                 session["draft"] == "" && session["native_session_id"] == "fixture-native",
                 "Resource request did not complete its own conversation"
             );
-            Ok(
-                json!({"fixture":fixture,"trace":trace,"idle":idle,"mcp_renders":[first,second],
+            let mut report = json!({"fixture":fixture,"trace":trace,"idle":idle,"mcp_renders":[first,second],
                 "complete_interactions":4,"initial_rgba_sha256":static_hash,"restored_rgba_sha256":restored,
                 "normal_exit":true,"owned_processes_gone":true,"observed_owned_pids":observed_pids,"document_and_script_unchanged":true,
-                "scope":"Separate resource-only turn after all original trials; actual bound MCP and JavaScript, deterministic ACP helper only, no real provider request; excluded from original latency distributions"}),
-            )
+                "scope":"Separate resource-only turn after all original trials; actual bound MCP and JavaScript, deterministic ACP helper only, no real provider request; excluded from original latency distributions"});
+            if chromium.is_some() {
+                report["scope"] = json!(
+                    "Additional Chromium-inclusive resource turn after every original trial; actual offline page JavaScript, software shader, bound MCP and both script workers; only the explicit external ACP helper excluded; no provider or latency acceptance claim"
+                );
+            }
+            Ok(report)
         })();
         if result.is_err() {
             let _ = fs::write(root.join("failure-screen.txt"), terminal.screen.text());
@@ -757,6 +872,47 @@ mod hosted {
             }
         }
         result
+    }
+
+    fn verified_chromium(binary: &Path) -> Result<(PathBuf, Value)> {
+        let temporary = PathBuf::from(
+            std::env::var_os("RUNNER_TEMP").context("Missing hosted temporary directory")?,
+        );
+        let data = temporary.join("chromium-test-data");
+        let raw = crate::process::checked(
+            Command::new(binary)
+                .env_remove("LAZYPENCIL_CHROMIUM")
+                .arg("--json")
+                .arg("--data-dir")
+                .arg(&data)
+                .args(["runtime", "status"]),
+            Duration::from_secs(300),
+        )?;
+        let status: Value = serde_json::from_slice(&raw)?;
+        ensure!(
+            status["available"] == true
+                && status["managed"] == true
+                && status["integrity_verified"] == true,
+            "Chromium resource measurement requires a verified managed runtime"
+        );
+        let executable = PathBuf::from(
+            status["executable"]
+                .as_str()
+                .context("Missing managed Chromium executable")?,
+        )
+        .canonicalize()?;
+        let configured = PathBuf::from(
+            std::env::var_os("LAZYPENCIL_TEST_CHROMIUM")
+                .context("Install the hosted Chromium runtime before measuring it")?,
+        )
+        .canonicalize()?;
+        ensure!(
+            executable == configured
+                && executable.starts_with(data.join("runtimes/chromium").canonicalize()?),
+            "Chromium resource runtime differs from the verified setup"
+        );
+        let identity = json!({"status":status,"executable_sha256":util::file_digest(&executable)?,"scope":"Managed runtime integrity rechecked by the packaged executable immediately before the separate Chromium observation"});
+        Ok((executable, identity))
     }
 
     pub(super) fn run(arguments: Arguments) -> Result<()> {
@@ -948,14 +1104,37 @@ mod hosted {
             &helper,
             &output,
             deadline,
-            activity["initial_rgba_sha256"]
-                .as_str()
-                .context("Missing static resource pixels")?,
+            Some(
+                activity["initial_rgba_sha256"]
+                    .as_str()
+                    .context("Missing static resource pixels")?,
+            ),
+            None,
         )?;
         let report = json!({"format_version":1,"candidate":identity,"helper":helper_identity,"target":evidence::linkage::native_host()?,"pty":{"columns":160,"rows":54,"pixel_width":1920,"pixel_height":1080,"protocol":"kitty","display_emulator":false},"cache_condition":"Fresh app/data directories per sample; OS page/font caches uncontrolled, individual samples retained with first at index 0; no concurrent tasks in this job","samples":samples,"input_ready_ms":input,"first_preview_ms":preview,"interaction_output_ms":interactions,"idle":idle,"active_resources":activity,"scope":"PTY input echo and complete Kitty output receipt, including observer backpressure; sampled process trees can miss short-lived descendants. Not physical presentation, a controlled cold-start benchmark, transient peak RSS, external AI/adapter/terminal resource usage or full performance acceptance"});
         let mut report = report;
         report["bound_resources"] = bound_activity;
+        // Publish the unchanged original observations before the opt-in phase,
+        // so a Chromium failure cannot hide the completed baseline evidence.
         util::publish(&output.join("report.json"), &util::encode(&report)?, false)?;
+        if arguments.chromium_resources {
+            let (chromium, runtime) = verified_chromium(&binary)?;
+            report["chromium_resources"] = bound_resources_trial(
+                &binary,
+                &helper,
+                &output,
+                Instant::now() + Duration::from_secs(300),
+                None,
+                Some(&chromium),
+            )?;
+            let (after, verified) = verified_chromium(&binary)?;
+            ensure!(
+                after == chromium && runtime == verified,
+                "Managed Chromium changed during resource measurement"
+            );
+            report["chromium_runtime"] = runtime;
+            util::publish(&output.join("report.json"), &util::encode(&report)?, true)?;
+        }
         util::print(
             &json!({"tui_measurement":"recorded","samples":arguments.samples,"output":output}),
         )

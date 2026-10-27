@@ -275,7 +275,7 @@ jobs:
           if-no-files-found: error
           retention-days: 3
       - name: Install and diagnose the verified sandboxed Chromium runtime
-        if: inputs.phase == 'full' || inputs.runtime_parallel || inputs.suite == 'dynamic' || inputs.suite == 'shader' || inputs.suite == 'copy' || inputs.suite == 'browser' || inputs.suite == 'browser-ci' || inputs.suite == 'render' || (inputs.suite == 'candidate' && contains(fromJSON(inputs.targets), 'dynamic_render'))
+        if: inputs.phase == 'full' || inputs.measure_tui || inputs.runtime_parallel || inputs.suite == 'dynamic' || inputs.suite == 'shader' || inputs.suite == 'copy' || inputs.suite == 'browser' || inputs.suite == 'browser-ci' || inputs.suite == 'render' || (inputs.suite == 'candidate' && contains(fromJSON(inputs.targets), 'dynamic_render'))
         timeout-minutes: 15
         run: cargo xtask ci native browser-setup
       - name: Run affected tests and pixel reproductions
@@ -331,7 +331,7 @@ jobs:
         id: tui-measurement
         if: inputs.phase == 'focus' && inputs.measure_tui
         timeout-minutes: 15
-        run: cargo xtask measure-tui --candidate "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/tui-measurement"
+        run: cargo xtask measure-tui --candidate "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/tui-measurement" --chromium-resources
       - name: Retain focused TUI measurements and diagnostic logs
         if: ${{ always() && (steps.tui-measurement.outcome == 'success' || steps.tui-measurement.outcome == 'failure') }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
