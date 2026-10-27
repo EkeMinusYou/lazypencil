@@ -338,14 +338,23 @@ fn normal_scheduler_changes_reproduce_the_complete_catalog_before_the_matrix() {
         focus::select(&util::root(), &mixed, "auto").unwrap().suite,
         "render"
     );
-    let mut browser = paths.to_vec();
-    browser.push("xtask/src/ci/native/browser.rs".into());
-    assert_eq!(
-        focus::select(&util::root(), &browser, "auto")
-            .unwrap()
-            .suite,
-        "browser-ci"
-    );
+    for scheduler in [
+        "xtask/src/ci/native/browser.rs",
+        "xtask/src/ci/native/management.rs",
+        "xtask/src/ci/native/parallel.rs",
+    ] {
+        let mut mixed = paths.to_vec();
+        mixed.extend([scheduler.into(), "xtask/src/test_support/acp.rs".into()]);
+        let plan = focus::select(&util::root(), &mixed, "auto").unwrap();
+        assert_eq!(plan.suite, "normal-ci");
+        assert!(plan.targets.is_empty());
+        assert!(focus::runtime_scheduler_changed(&mixed));
+    }
+    let mut helper = paths.to_vec();
+    helper.push("xtask/src/test_support/acp.rs".into());
+    let plan = focus::select(&util::root(), &helper, "auto").unwrap();
+    assert_eq!(plan.suite, "normal-ci");
+    assert!(plan.targets.is_empty());
 }
 
 #[test]

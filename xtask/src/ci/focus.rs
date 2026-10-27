@@ -271,18 +271,16 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
             preprocessor,
         });
     }
-    if paths.iter().all(|path| ci_only(path))
+    // The complete normal catalog also covers the runtime-only ACP helper's
+    // normal consumers. Mixed scheduler changes must not fall back to a small
+    // agent-only suite; changed runtime schedulers additionally enable their
+    // existing complete runtime reproduction before the final matrix.
+    if paths
+        .iter()
+        .all(|path| ci_only(path) || path == "xtask/src/test_support/acp.rs")
         && paths
             .iter()
             .any(|path| path == "xtask/src/ci/native/normal.rs")
-        && !paths.iter().any(|path| {
-            [
-                "xtask/src/ci/native/browser.rs",
-                "xtask/src/ci/native/management.rs",
-                "xtask/src/ci/native/parallel.rs",
-            ]
-            .contains(&path.as_str())
-        })
     {
         return Ok(Plan {
             platform,
