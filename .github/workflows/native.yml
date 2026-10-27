@@ -405,6 +405,13 @@ jobs:
         continue-on-error: true
         timeout-minutes: 3
         run: cargo xtask ci cache application stage --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-compatible-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
+      - name: Reserve room for the staged successful replacement
+        if: ${{ success() && steps.compatible-save.outcome == 'success' && github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: cargo xtask ci cache retain --before-replacement --platform '${{ inputs.os }}' --manifest "$RUNNER_TEMP/lazypencil-source/SOURCE-MANIFEST.json" --delete
       - name: Save the complete integration-test checkpoint
         id: compatible-published
         if: ${{ !cancelled() && steps.compatible-save.outcome == 'success' }}
@@ -413,7 +420,7 @@ jobs:
         with:
           key: ${{ steps.application-key.outputs.compatible_primary }}
           path: ${{ runner.temp }}/lazypencil-compatible-cache
-      - name: Retire replaced payloads before they evict native dependencies
+      - name: Retire superseded checkpoints after publication
         if: ${{ !cancelled() && steps.compatible-published.outcome == 'success' && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         timeout-minutes: 3

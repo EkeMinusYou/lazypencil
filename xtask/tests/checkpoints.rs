@@ -3,6 +3,189 @@ use serde_json::json;
 use std::collections::BTreeSet;
 
 #[test]
+fn manifest_retention_expires_old_release_sources_but_preserves_test_only_changes() {
+    use lazypencil_xtask::dist::{Entry, Manifest};
+    let mut manifest = Manifest {
+        format_version: 1,
+        package: json!({}),
+        source_date_epoch: 1,
+        git: json!({"revision":"a".repeat(40),"dirty":false}),
+        files: ["src/lib.rs", "tests/one.rs"]
+            .into_iter()
+            .enumerate()
+            .map(|(index, path)| Entry {
+                path: path.into(),
+                sha256: format!("{}", index + 1).repeat(64),
+                bytes: 1,
+                mode: 0o644,
+            })
+            .collect(),
+    };
+    let production = cache::release_source_fingerprint(&manifest).unwrap();
+    let source = cache::source_fingerprint(&manifest).unwrap();
+    let old = "f".repeat(64);
+    let context = "b".repeat(64);
+    let entry = |id, key: String, reference: &str| json!({"id":id,"key":key,"ref":reference,"version":"layout","created_at":"2026-10-01"});
+    let entries = vec![
+        entry(
+            1,
+            format!(
+                "release-v1-ubuntu-24.04-{old}-{}-focus-401-1",
+                "c".repeat(64)
+            ),
+            "refs/heads/main",
+        ),
+        entry(
+            2,
+            format!("release-v1-ubuntu-24.04-{production}-{context}-full"),
+            "refs/heads/main",
+        ),
+        entry(
+            3,
+            format!("release-v1-ubuntu-24.04-{old}-{context}-full"),
+            "refs/heads/main",
+        ),
+        entry(
+            4,
+            format!("tests-v1-ubuntu-24.04-{context}-full-{source}"),
+            "refs/heads/main",
+        ),
+        entry(
+            5,
+            format!("native-v2-ubuntu-24.04-{context}"),
+            "refs/heads/main",
+        ),
+        entry(
+            6,
+            format!("release-v1-ubuntu-24.04-{old}-{context}-full"),
+            "refs/pull/1/merge",
+        ),
+        entry(
+            7,
+            format!("release-v2-ubuntu-24.04-{old}-{context}-full"),
+            "refs/heads/main",
+        ),
+    ];
+    assert!(cache::obsolete(&entries, None).unwrap().is_empty());
+    let removed = |manifest: &Manifest| {
+        cache::obsolete_for_manifest(&entries, manifest)
+            .unwrap()
+            .iter()
+            .map(|entry| entry["id"].as_u64().unwrap())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(removed(&manifest), [1, 3]);
+    manifest.files[1].sha256 = "3".repeat(64);
+    assert_ne!(cache::source_fingerprint(&manifest).unwrap(), source);
+    assert_eq!(
+        cache::release_source_fingerprint(&manifest).unwrap(),
+        production
+    );
+    assert_eq!(removed(&manifest), [1, 3]);
+    manifest.files[0].sha256 = "4".repeat(64);
+    assert_ne!(
+        cache::release_source_fingerprint(&manifest).unwrap(),
+        production
+    );
+    assert_eq!(removed(&manifest), [1, 2, 3]);
+}
+
+#[test]
+fn replacement_reservation_requires_both_platform_and_source_before_any_remote_operation() {
+    let output = lazypencil_xtask::process::output(
+        std::process::Command::new(env!("CARGO_BIN_EXE_xtask")).args([
+            "ci",
+            "cache",
+            "retain",
+            "--before-replacement",
+            "--repository",
+            "owner/repository",
+        ]),
+        std::time::Duration::from_secs(15),
+    )
+    .unwrap();
+    assert!(!output.timed_out);
+    assert_eq!(output.status.code(), Some(2));
+    let error = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        error.contains("--platform") && error.contains("--manifest"),
+        "{error}"
+    );
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
+fn replacement_reservation_retires_only_older_application_sources_on_the_owned_platform() {
+    let current = "a".repeat(64);
+    let old = "b".repeat(64);
+    let context = "c".repeat(64);
+    let entry = |id, key: String, reference: &str| json!({"id":id,"key":key,"ref":reference,"version":"layout"});
+    let entries = vec![
+        entry(
+            1,
+            format!("tests-v1-ubuntu-24.04-{context}-full-{old}"),
+            "refs/heads/main",
+        ),
+        entry(
+            2,
+            format!("application-v2-ubuntu-24.04-{old}-{context}-focus-402-1"),
+            "refs/heads/main",
+        ),
+        entry(
+            3,
+            format!("tests-v1-ubuntu-24.04-{context}-full-{current}"),
+            "refs/heads/main",
+        ),
+        entry(
+            4,
+            format!("application-v2-ubuntu-24.04-{current}-{context}-focus-403-1"),
+            "refs/heads/main",
+        ),
+        entry(
+            5,
+            format!("release-v1-ubuntu-24.04-{old}-{context}-full"),
+            "refs/heads/main",
+        ),
+        entry(
+            6,
+            format!("tests-v1-ubuntu-24.04-arm-{context}-full-{old}"),
+            "refs/heads/main",
+        ),
+        entry(
+            7,
+            format!("tests-v1-ubuntu-24.04-{context}-full-{old}"),
+            "refs/pull/1/merge",
+        ),
+        entry(
+            8,
+            format!("native-v2-ubuntu-24.04-{context}"),
+            "refs/heads/main",
+        ),
+        entry(
+            9,
+            format!("xtask-v1-Linux-X64-image-rust1.94.0-{context}"),
+            "refs/heads/main",
+        ),
+        entry(
+            10,
+            format!("tests-v2-ubuntu-24.04-{context}-full-{old}"),
+            "refs/heads/main",
+        ),
+    ];
+    let selected = cache::obsolete_before_replacement(&entries, "ubuntu-24.04", &current).unwrap();
+    assert_eq!(
+        selected
+            .iter()
+            .map(|entry| entry["id"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        [1, 2]
+    );
+    assert!(cache::obsolete_before_replacement(&entries, "ubuntu-24.04.*", &current).is_err());
+    assert!(cache::obsolete_before_replacement(&entries, "ubuntu-24.04", "").is_err());
+    assert!(cache::obsolete_before_replacement(&entries, "ubuntu-24.04", &"a".repeat(63)).is_err());
+}
+
+#[test]
 fn application_checkpoints_do_not_collide_across_later_focused_runs_or_retries() {
     let base = format!(
         "application-v2-ubuntu-24.04-{}-{}-focus",

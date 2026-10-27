@@ -95,6 +95,10 @@ pub enum Command {
     Retain {
         #[arg(long)]
         delete: bool,
+        /// Retire older application sources after staging a successful full build,
+        /// before uploading its replacement. Upload failure may lose app reuse.
+        #[arg(long, requires_all = ["platform", "manifest"])]
+        before_replacement: bool,
         #[arg(long, value_parser = ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-15"])]
         platform: Option<String>,
         #[arg(long, env = "GITHUB_REPOSITORY")]
@@ -217,7 +221,8 @@ impl Command {
                         )?;
                         json!({"primary":identity.primary,"checkpoint":checkpoint,"checkpoint_prefix":checkpoint_prefix,"checkpoint_legacy":identity.checkpoint,"source_commit":identity.source_commit})
                     }
-                    "stage" => stage(&source, &target, &directory, &identity)?,
+                    "stage" if release_only => stage(&source, &target, &directory, &identity)?,
+                    "stage" => stage_tests(&source, &target, &directory, &identity)?,
                     "stage-focused" => stage_focused(
                         &source,
                         &target,
@@ -278,6 +283,7 @@ impl Command {
             }
             Self::Retain {
                 delete,
+                before_replacement,
                 platform,
                 repository,
                 manifest,
@@ -303,15 +309,28 @@ impl Command {
                             .cloned()
                     })
                     .collect::<Vec<_>>();
-                let source_hash = manifest
-                    .map(|p| -> Result<_> { source_fingerprint(&util::json::<Manifest>(&p)?) })
-                    .transpose()?;
-                let mut obsolete = obsolete(&entries, source_hash.as_deref())?;
+                let manifest = manifest.map(|p| util::json::<Manifest>(&p)).transpose()?;
+                let source_hash = manifest.as_ref().map(source_fingerprint).transpose()?;
+                let mut obsolete = if before_replacement {
+                    obsolete_before_replacement(
+                        &entries,
+                        platform
+                            .as_deref()
+                            .context("Replacement platform required")?,
+                        source_hash
+                            .as_deref()
+                            .context("Replacement source required")?,
+                    )?
+                } else if let Some(manifest) = manifest.as_ref() {
+                    obsolete_for_manifest(&entries, manifest)?
+                } else {
+                    obsolete(&entries, source_hash.as_deref())?
+                };
                 if let Some(platform) = platform {
                     // Each finished platform retires only its own application
                     // payloads; parallel jobs never race over dependency/tool caches.
                     let owned = Regex::new(&format!(
-                        r"^(?:tests-v1|application-v2)-{}-[0-9a-f]{{64}}-",
+                        r"^(?:tests-v1|application-v2|release-v1)-{}-[0-9a-f]{{64}}-",
                         regex::escape(&platform)
                     ))?;
                     obsolete.retain(|entry| {
@@ -623,6 +642,22 @@ pub fn source_fingerprint(manifest: &Manifest) -> Result<String> {
     )?)))
 }
 
+fn scoped_inputs(manifest: &Manifest, release_only: bool) -> Vec<Entry> {
+    compiled_inputs(manifest)
+        .into_iter()
+        .filter(|entry| {
+            !release_only
+                || (!entry.path.starts_with("tests/") && !entry.path.starts_with("xtask/"))
+        })
+        .collect()
+}
+
+pub fn release_source_fingerprint(manifest: &Manifest) -> Result<String> {
+    Ok(util::digest(stable_json(&serde_json::to_value(
+        scoped_inputs(manifest, true),
+    )?)))
+}
+
 #[derive(Clone)]
 pub struct ApplicationIdentity {
     pub fingerprint: String,
@@ -716,13 +751,7 @@ fn application_identity_for(
         package["package"]["name"].as_str() == Some("lazypencil"),
         "Unknown application package"
     );
-    let inputs = compiled_inputs(&manifest)
-        .into_iter()
-        .filter(|entry| {
-            !release_only
-                || (!entry.path.starts_with("tests/") && !entry.path.starts_with("xtask/"))
-        })
-        .collect::<Vec<_>>();
+    let inputs = scoped_inputs(&manifest, release_only);
     let target = std::path::absolute(target)?;
     // Preserve existing all-output cache identities while separating release
     // files from test-only inputs. Actual compiler dep-info still rejects any
@@ -963,7 +992,17 @@ pub fn stage(
     directory: &Path,
     identity: &ApplicationIdentity,
 ) -> Result<Value> {
-    stage_filtered(source, target, directory, identity, None)
+    stage_filtered(source, target, directory, identity, None, false)
+}
+
+/// Debug/test checkpoints do not duplicate the separately keyed release payload.
+pub fn stage_tests(
+    source: &Path,
+    target: &Path,
+    directory: &Path,
+    identity: &ApplicationIdentity,
+) -> Result<Value> {
+    stage_filtered(source, target, directory, identity, None, true)
 }
 
 fn stage_filtered(
@@ -972,9 +1011,11 @@ fn stage_filtered(
     directory: &Path,
     identity: &ApplicationIdentity,
     selected: Option<&BTreeSet<String>>,
+    debug_only: bool,
 ) -> Result<Value> {
     let files = outputs(target)?
         .into_iter()
+        .filter(|path| !debug_only || !path.strip_prefix(target).unwrap().starts_with("release"))
         .filter(|path| {
             selected.is_none_or(|names| {
                 names.contains(
@@ -1187,7 +1228,59 @@ fn older_than_latest(mut entries: Vec<&Value>, keep: usize, selected: &mut BTree
     }
 }
 
+/// Only rebuildable application snapshots are retired before publishing a
+/// locally staged, successful replacement. Dependency caches are never selected.
+pub fn obsolete_before_replacement(
+    entries: &[Value],
+    platform: &str,
+    source_hash: &str,
+) -> Result<Vec<Value>> {
+    ensure!(
+        ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-15"].contains(&platform)
+            && Regex::new(r"^[0-9a-f]{64}$")?.is_match(source_hash),
+        "Invalid replacement identity"
+    );
+    let tests = Regex::new(&format!(
+        r"^tests-v1-{}-[0-9a-f]{{64}}-full-([0-9a-f]{{64}})$",
+        regex::escape(platform)
+    ))?;
+    let application = Regex::new(&format!(
+        r"^application-v2-{}-([0-9a-f]{{64}})-[0-9a-f]{{64}}-(?:full|focus(?:-[1-9][0-9]*-[1-9][0-9]*)?)$",
+        regex::escape(platform)
+    ))?;
+    Ok(entries
+        .iter()
+        .filter(|entry| {
+            entry["ref"] == "refs/heads/main"
+                && entry["id"].as_u64().is_some()
+                && entry["key"].as_str().is_some_and(|key| {
+                    tests
+                        .captures(key)
+                        .or_else(|| application.captures(key))
+                        .is_some_and(|captures| &captures[1] != source_hash)
+                })
+        })
+        .cloned()
+        .collect())
+}
+
 pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Value>> {
+    obsolete_with_sources(entries, source_hash, None)
+}
+
+pub fn obsolete_for_manifest(entries: &[Value], manifest: &Manifest) -> Result<Vec<Value>> {
+    obsolete_with_sources(
+        entries,
+        Some(&source_fingerprint(manifest)?),
+        Some(&release_source_fingerprint(manifest)?),
+    )
+}
+
+fn obsolete_with_sources(
+    entries: &[Value],
+    source_hash: Option<&str>,
+    release_source_hash: Option<&str>,
+) -> Result<Vec<Value>> {
     let entries = entries
         .iter()
         .filter(|e| e["ref"] == "refs/heads/main")
@@ -1205,7 +1298,7 @@ pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Valu
         r"^application-v([12])-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-([0-9a-f]{64})(?:-([0-9a-f]{64}))?-(full|focus)(?:-[1-9][0-9]*-[1-9][0-9]*)?$",
     )?;
     let releases = Regex::new(
-        r"^release-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-[0-9a-f]{64}-[0-9a-f]{64}-(full|focus)(?:-[1-9][0-9]*-[1-9][0-9]*)?$",
+        r"^release-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-([0-9a-f]{64})-[0-9a-f]{64}-(full|focus)(?:-[1-9][0-9]*-[1-9][0-9]*)?$",
     )?;
     let tests = Regex::new(
         r"^tests-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-[0-9a-f]{64}-full-([0-9a-f]{64})$",
@@ -1291,10 +1384,14 @@ pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Valu
             }
         }
         if let Some(caps) = releases.captures(key) {
-            let phase = &caps[2];
+            if release_source_hash.is_some_and(|hash| hash != &caps[2]) {
+                selected.insert(id, entry.clone());
+                continue;
+            }
+            let phase = &caps[3];
             if phase == "focus"
                 && keys.contains(&(
-                    format!("{}full", &key[..caps.get(2).unwrap().start()]).as_str(),
+                    format!("{}full", &key[..caps.get(3).unwrap().start()]).as_str(),
                     version,
                 ))
             {

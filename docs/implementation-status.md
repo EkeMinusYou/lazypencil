@@ -1,8 +1,14 @@
 # lazypencil 実装と公開準備の状況
 
-最新の [GHA `40585104571`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40585104571)、source `7fe854b` は先行・全3環境・監査・署名付きソースまで成功した。Mac全体14分28秒／1,414件、Linux arm64 13分29秒／1,425件、Linux x64 43分49秒／1,425件、各144サマリー。旧ケース名と実行回数に新しい実Cargo回帰2件を加えたことを照合した。Macは旧debug/test 1,206ファイルと同commitのrelease差分を再利用し、全体のrelease確認は各1秒未満だった。x64はrunner imageが旧版へ戻りnative cacheがなく、通常build 609.87秒・release 1,109.67秒を要したため、全体高速化の達成とは扱わない。各671画像・42描画計測・実clipboardを独立照合し、ソース1,151ファイルの全Git blob・mode・archive hashとDSSE署名・source／workflow／run対応も確認した。Macの元20起動／80操作／100 workerと通常200MiBゲートは維持して成功した。物理macSKKの未確定表示と最低OSなどの残件は維持し、ユーザーへ実機確認を繰り返し依頼しない。
+`e249f07` の [GHA `40595368880`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40595368880) は軽量202件・Clippy、core先行381件／33サマリー、全3環境・RustSec・署名付きソースまで成功した。Linux各1,434件・Mac1,423件、各144サマリーで、元の全ケース名と回数に追加9実行を加えたことを照合した。x64全体16分50秒・Mac21分43秒・arm64 35分20秒。x64は同commit・環境の先行75ファイルを再利用し、core追加build 9.34秒・通常16.86秒・catalog 41.53秒・release 224.77秒・再確認0.22秒だった。arm64はimage `20261026.166.1` への切替でnative／tool cacheがなく、通常381.04秒・catalog159.14秒・release684.48秒を要した。SDK条件は緩めない。各671画像・42描画計測・実clipboard3,072画素を独立照合し、667画像は前ソースとbyte一致、4 sampler画像は全画素を式から再計算した。ソース1,151ファイル・31,889,601バイトの全Git blob／modeとarchive・DSSEのsource／workflow／runを照合した。重複tool依存4件と旧tool完全成果物1件の500,121,791バイトを整理し、完了後は5つのnative SDK cacheが残っていた。全体性能・物理IME・最低OS・公開品質全体の残件は維持する。
 
-次のバッチは、補助ツールの完全cacheを先に復元し、成功時の依存cache二重保存と再buildを除く。旧ソースのfallbackはCargoのpackage単位cleanで古い試験本体を破棄してからbuildし、依存は残す。SDK・compiler・cache形式ごとに、より新しい完全cacheがある依存fallbackだけを整理する。古いmtimeの変更が未対処では見逃されるnegative controlと、変更後assertionの実行を実Cargoで検査する。runtime導入はFIFO・そのsymlink・directoryを即時拒否し、hash読み取りを固定sizeへ制限し、導入lock待機へ既存installerと同じ60秒上限を付ける。共有lock抽出は文書の既存5秒と取消を保つ。対象core再現を最初に実行し、成功後に元の3環境検証へ進める。新しいRustとCI変更はGHA未検証である。
+次のバッチは試験cacheからreleaseの二重保存を除き、成功した完全buildのstage後・upload前に同platformの旧application sourceだけを整理する。旧形式の復元、独立releaseのCargo Fresh、test変更後のconsumerだけの再build、platform／manifest必須・他platform／ref／native保持を回帰へ加えた。upload失敗時はapplication cacheを再buildする可能性がある。release専用keyと同じ入力集合で旧production sourceのcheckpointを整理し、試験だけの変更では現releaseを保持する。SDK／compiler／完成条件は維持する。独立に計算した本番749入力のhashも既存release keyと一致した。追加RustはGHA未検証である。
+
+同じバッチで実PTYの日本語確定後に80×24・最小50×16・145×38へサイズ変更し、各カーソル・下書きと追加入力を確認して画面を保存する。古い画面の残存で成功しないようprompt行の更新も待つ。本体コード・既存ケース・期限は維持し、共有試験ヘルパーの実consumerだけの再buildをGHAで照合する。
+
+先行する [GHA `40585104571`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40585104571)、source `7fe854b` は先行・全3環境・監査・署名付きソースまで成功した。Mac全体14分28秒／1,414件、Linux arm64 13分29秒／1,425件、Linux x64 43分49秒／1,425件、各144サマリー。旧ケース名と実行回数に新しい実Cargo回帰2件を加えたことを照合した。Macは旧debug/test 1,206ファイルと同commitのrelease差分を再利用し、全体のrelease確認は各1秒未満だった。x64はrunner imageが旧版へ戻りnative cacheがなく、通常build 609.87秒・release 1,109.67秒を要したため、全体高速化の達成とは扱わない。各671画像・42描画計測・実clipboardを独立照合し、ソース1,151ファイルの全Git blob・mode・archive hashとDSSE署名・source／workflow／run対応も確認した。Macの元20起動／80操作／100 workerと通常200MiBゲートは維持して成功した。物理macSKKの未確定表示と最低OSなどの残件は維持し、ユーザーへ実機確認を繰り返し依頼しない。
+
+`e249f07` で検証した補助ツールの完全cacheを先に復元し、成功時の依存cache二重保存と再buildを除く。旧ソースのfallbackはCargoのpackage単位cleanで古い試験本体を破棄してからbuildし、依存は残す。SDK・compiler・cache形式ごとに、より新しい完全cacheがある依存fallbackだけを整理する。古いmtimeの変更が未対処では見逃されるnegative controlと、変更後assertionの実行を実Cargoで検査する。runtime導入はFIFO・そのsymlink・directoryを即時拒否し、hash読み取りを固定sizeへ制限し、導入lock待機へ既存installerと同じ60秒上限を付ける。共有lock抽出は文書の既存5秒と取消を保つ。対象core再現を最初に実行し、成功後に元の3環境検証へ進める。このtool方針・導入回帰は上記の全3環境で検証済みである。
 
 `0a8f336` の [macOS 先行 `40574081272`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40574081272) は補助・機能519件／56サマリー、候補検査、元の通常メモリゲートを成功した。20起動／80操作・100 worker profile・通常6役割／Chromium14役割と各完全な30秒 idleを独立照合し、通常最大 RSS 175.171875MiB、cached feedback p95 28.87ms、通常 idle CPU 上限0.433%だった。65 PNG・36,344,288画素は `35e959f` と全 byte 一致した。追加Chromiumは最大1,255.17MiB、2.091秒の membership settling後に30.135秒 idleを保持した。効果のなかった回収要求を削除し、従来の renderer と文書専用MCPの medium設定だけで確認した。独立overrideとadapter環境保持も早期再現を成功した。候補631／evidence626／ソース1,150ファイル、原map4 archive／904 member、FreeType原文12点とJPEG原文2点・謝辞も照合した。releaseの実コンパイル7分21秒とruntimeの並行、最後のCargo再確認0.89秒を確認した。Mac全体も18分57秒・1,412件／144サマリーで成功し、同じcommitの150ファイル、実行ファイル／mapの同一hash、release再確認1.69秒／1.01秒を照合した。671画像と実clipboardの2画像・3,072画素も確認した。Linux x64／arm64も各1,423件／144サマリーで成功し、元の試験名・回数、各671画像、42描画計測、実clipboardの3,072画素を独立照合した。全体はx64 47分17秒、arm64 37分20秒で、両方とも異なるrunner imageのnative cache missだった。ソース1,150ファイルの全Git blob・mode・archive checksumと署名済みprovenanceのsource／workflow／run／digest対応も確認した。統制した性能・物理端末・公開品質全体は完了扱いにしない。
 
@@ -385,13 +391,13 @@ source `cb5ba45` の先行104試験と、保存した2版各33ケースの独立
 以下は macOS Apple Silicon・Linux x64／arm64 の3環境について満たす。Windows の追加対応と Intel Mac のサポートは初回の必須要件に含めない。
 
 - [ ] Rust の CLI と共通サービス。機械向け JSON、終了コード、取消、設定と診断。
-- [x] コメント・未知フィールド・数値表記を保持する JSONC の読み書きと、形式の版の管理。`tests/document_store.rs` の保持・保存／復元・拒否の4試験を [全3環境の両構成](https://github.com/EkeMinusYou/lazypencil/actions/runs/40543956605) で確認し、現在の該当ソース・試験との一致を照合した。対応版は2.19／2.21、その他の版は読み取り専用。
+- [x] コメント・未知フィールド・数値表記を保持する JSONC の読み書きと、形式の版の管理。`tests/document_store.rs` の保持・保存／復元・拒否の4試験を [全3環境の両構成](https://github.com/EkeMinusYou/lazypencil/actions/runs/40595368880) で確認し、現在の該当ソース・試験との一致を照合した。対応版は2.19／2.21、その他の版は読み取り専用。
 - [x] 原子的な編集バッチ、ID の再割り当て、参照・型の検証、要求 ID による重複防止。`tests/operations_cli.rs`／`tests/document_store.rs` の関連9試験を同じ全3環境・両構成のログに照合し、現在の operations／service／store と試験の一致を確認した。
 - [x] ファイルロック、期待リビジョン、依存の競合、同一ディレクトリでの置換、履歴とクラッシュ復旧。`tests/document_store.rs`／`tests/project.rs` の関連13試験を同じ全3環境・両構成のログに照合し、現在の store／service／project・試験・コンパイル設定との一致を確認した。同一ディレクトリの一時ファイル、置換前の file sync、置換後の directory sync と journal の復旧分岐も実装で確認した。
 - [ ] ローカル・外部部品、スロット、上書き・置換・切り離し、変数・テーマ・別名。
 - [ ] 固定・内容・親に従う寸法、自動・絶対配置、文字の成長方式、計算結果とあふれの取得。
 - [ ] Skia CPU・SkParagraph による図形・パス・文字・画像・塗り・線・効果の PNG 出力。
-- [ ] 同梱 Noto Sans JP、追加フォント、代替と欠損の診断、固定したライセンスとハッシュ。
+- [x] 同梱 Noto Sans JP、追加フォント、代替と欠損の診断、固定したライセンスとハッシュ。読込・shaping・代替・欠損・固定入力・CLI／MCP／設定の19試験を [全3環境の検証済みソース `e249f07`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40595368880) の実ログに照合し、該当実装・試験が現在も一致することを確認した。同梱フォント・OFL・metadataの3ファイルは固定したGoogle Fonts原本と全byte・size・SHA-256が一致した。追加形式・制限と、別途残る任意フォントの互換性・遅延探索・再現性の範囲は [フォント](fonts.md) に記載する。
 - [ ] Lucide 基本パックと追加アイコンパック、素材の管理とライセンス表示。
 - [ ] 隔離した軽量 JS ワーカーによる script ノードの実行と編集。
 - [ ] 明示取得する固定版 Chromium、browser ノード、GLSL の塗り・効果、ソフトウェア WebGL。

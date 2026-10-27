@@ -210,9 +210,9 @@ pub fn stage_focused(
     matched_key: &str,
     identity: &ApplicationIdentity,
 ) -> Result<Value> {
-    let (_, _, changed, debug_only) = match compatible_inputs(compatible, matched_key, identity) {
+    let (_, _, changed, _) = match compatible_inputs(compatible, matched_key, identity) {
         Ok(inputs) => inputs,
-        Err(_) => return stage(source, target, directory, identity),
+        Err(_) => return stage_tests(source, target, directory, identity),
     };
     let names = outputs(target)?
         .into_iter()
@@ -224,22 +224,13 @@ pub fn stage_focused(
                 .to_owned())
         })
         .collect::<Result<BTreeSet<_>>>()?;
-    let mut selected = match affected_outputs(source, &target.canonicalize()?, &names, &changed) {
+    let selected = match affected_outputs(source, &target.canonicalize()?, &names, &changed) {
         Ok((selected, _)) => selected,
         // A nominal test helper can also be a production compiler input.
         // Keep the verified same-source build without offering cross-source reuse.
-        Err(_) => return stage(source, target, directory, identity),
+        Err(_) => return stage_tests(source, target, directory, identity),
     };
-    if debug_only {
-        // Delta contains the newly compiled release, never a second full copy
-        // of the verified default/test artifacts inherited from the old build.
-        selected.extend(
-            names
-                .into_iter()
-                .filter(|name| name.starts_with("release/")),
-        );
-    }
-    stage_filtered(source, target, directory, identity, Some(&selected))
+    stage_filtered(source, target, directory, identity, Some(&selected), true)
 }
 
 /// A valid same-source focused build overlays a compatible full build last.

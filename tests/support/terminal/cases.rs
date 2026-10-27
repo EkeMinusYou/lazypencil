@@ -367,7 +367,7 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
     h.key(b"\r")?;
     let second = "か\u{3099} 👩‍💻";
     h.key(&commit(negotiated, second))?;
-    let expected = format!("{first}\n{second}");
+    let mut expected = format!("{first}\n{second}");
     h.draft(&expected)?;
     h.wait(
         "IME anchor follows a rendered combining/ZWJ cluster",
@@ -375,10 +375,36 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
         |h| h.screen.cursor() == (6, first_cursor.1 + 1),
     )?;
     let second_cursor = h.screen.cursor();
+    let mut resize_cursors = Vec::new();
+    for (columns, rows) in [(80, 24), (50, 16), (145, 38)] {
+        let previous = h.screen.cursor();
+        h.resize(columns, rows)?;
+        h.wait("IME anchor follows the resized prompt", 15.0, |h| {
+            h.screen.cursor().1 != previous.1
+                && h.screen
+                    .text()
+                    .lines()
+                    .position(|line| line.contains(first))
+                    .is_some_and(|row| h.screen.cursor() == (6, row as u16 + 1))
+        })?;
+        h.draft(&expected)?;
+        h.save_screen(&format!("ime-commit-{columns}x{rows}-screen.txt"))?;
+        resize_cursors.push(json!({"columns":columns,"rows":rows,"cursor":h.screen.cursor()}));
+    }
+    let row = h.screen.cursor().1;
+    let suffix = " 続行";
+    h.key(&commit(negotiated, suffix))?;
+    expected.push_str(suffix);
+    h.draft(&expected)?;
+    h.wait("IME commit remains usable after resizing", 15.0, |h| {
+        h.screen.cursor() == (11, row)
+    })?;
+    h.save_screen("ime-commit-resumed-screen.txt")?;
     no_agent(h);
     assert_eq!(fs::read(&h.document)?, original);
     Ok(
         json!({"source_commit":source_commit(),"keyboard_flags":negotiated,"japanese_cursor":first_cursor,"combining_zwj_cursor":second_cursor,
+        "resize_cursors":resize_cursors,"resumed_cursor":h.screen.cursor(),
         "draft":expected,"draft_sha256":hash(expected.as_bytes()),"document_unchanged":true,
         "agent_started":false,"scope":"Real PTY plus Kitty keyboard-mode/IME-commit protocol model; physical IME confirmation is separate"}),
     )

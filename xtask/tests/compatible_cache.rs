@@ -116,6 +116,14 @@ fn release_recipe_transition_reuses_debug_only_and_overlays_the_new_release_delt
     let current = f.identity();
     let old = current.previous_debug_identity().unwrap().unwrap();
     cache::stage(&f.source, &f.target, &f.full, &old).unwrap();
+    let legacy: Value = util::json(&f.full.join("manifest.json")).unwrap();
+    assert!(
+        legacy["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| { entry["path"].as_str().unwrap().starts_with("release/") })
+    );
     f.clear();
     let incompatible =
         cache::application_identity(&f.source, &f.target, "native-v2-ubuntu-24.04-other-sdk")
@@ -149,7 +157,11 @@ fn release_recipe_transition_reuses_debug_only_and_overlays_the_new_release_delt
             .values()
             .all(|fresh| !fresh)
     );
-    cache::stage_focused(
+    let release_cache = f._temp.path().join("release-cache");
+    let release =
+        cache::release_identity(&f.source, &f.target, "native-v2-ubuntu-24.04-fixture").unwrap();
+    cache::stage(&f.source, &f.target, &release_cache, &release).unwrap();
+    let delta = cache::stage_focused(
         &f.source,
         &f.target,
         &f.exact,
@@ -158,14 +170,11 @@ fn release_recipe_transition_reuses_debug_only_and_overlays_the_new_release_delt
         &current,
     )
     .unwrap();
-    let delta: Value = util::json(&f.exact.join("manifest.json")).unwrap();
-    let files = delta["files"].as_array().unwrap();
-    assert!(!files.is_empty());
-    assert!(
-        files
-            .iter()
-            .all(|entry| entry["path"].as_str().unwrap().starts_with("release/"))
+    assert_eq!(
+        delta["files"], 0,
+        "Release already has a separate checkpoint"
     );
+    assert!(!f.exact.exists());
     f.clear();
     cache::restore_combined(
         &f.source,
@@ -176,9 +185,55 @@ fn release_recipe_transition_reuses_debug_only_and_overlays_the_new_release_delt
         &current,
     )
     .unwrap();
+    assert!(!f.target.join("release/lazypencil").exists());
+    cache::restore(&f.source, &f.target, &release_cache, &release).unwrap();
     assert!(f.build(&[]).values().all(|(fresh, _)| *fresh));
     let (release, _) = f.cargo_units(&current_command);
     assert!(release.values().all(|fresh| *fresh));
+
+    // New complete and fallback test checkpoints never duplicate the release.
+    cache::stage_tests(&f.source, &f.target, &f.full, &current).unwrap();
+    cache::stage_focused(
+        &f.source,
+        &f.target,
+        &f.exact,
+        &f._temp.path().join("missing-cache"),
+        "",
+        &current,
+    )
+    .unwrap();
+    for directory in [&f.full, &f.exact] {
+        let report: Value = util::json(&directory.join("manifest.json")).unwrap();
+        let files = report["files"].as_array().unwrap();
+        assert!(!files.is_empty());
+        assert!(
+            files
+                .iter()
+                .all(|entry| { entry["path"].as_str().unwrap().starts_with("debug/") })
+        );
+    }
+    f.edit();
+    let edited = f.identity();
+    let release =
+        cache::release_identity(&f.source, &f.target, "native-v2-ubuntu-24.04-fixture").unwrap();
+    f.clear();
+    cache::restore_compatible(
+        &f.source,
+        &f.target,
+        &f.full,
+        &current.compatible_primary,
+        &edited,
+    )
+    .unwrap();
+    cache::restore(&f.source, &f.target, &release_cache, &release).unwrap();
+    let debug = f.build(&[]);
+    assert!(!debug["one"].0 && debug["two"].0);
+    assert!(
+        f.cargo_units(&current_command)
+            .0
+            .values()
+            .all(|fresh| *fresh)
+    );
 }
 
 #[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
