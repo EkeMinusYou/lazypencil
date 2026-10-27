@@ -575,6 +575,18 @@ impl Session {
                 Ok(())
             }
             Stage::FocusTest => {
+                if args.suite == "candidate"
+                    && has("dynamic_render")
+                    && std::env::var("RUNTIME_PARALLEL").as_deref() != Ok("true")
+                {
+                    self.test(
+                        true,
+                        "dynamic_render",
+                        focus::RETAINED_PAGE,
+                        &["--exact", "--ignored", "--test-threads=1"],
+                        "focus-page-playback.log",
+                    )?;
+                }
                 if args.suite == "normal-ci" {
                     return normal::run(self);
                 }
@@ -693,8 +705,12 @@ impl Session {
                 // lifecycle clients own separate documents, process trees and
                 // automatic CDP ports. Material uses its own settings path.
                 // Every started lane joins before isolated release measurements.
+                let browser_deadline = browser::playback(self)?;
                 let result = parallel::run(vec![
-                    ("browser pixels", Box::new(|| browser::lanes(self))),
+                    (
+                        "browser pixels",
+                        Box::new(|| browser::lanes(self, browser_deadline)),
+                    ),
                     ("MCP dynamic images", Box::new(|| self.mcp_tests())),
                     ("lifecycle and Material", Box::new(|| self.long_tests())),
                 ]);

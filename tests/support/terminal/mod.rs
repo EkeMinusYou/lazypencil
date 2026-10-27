@@ -288,7 +288,13 @@ impl Harness {
                 .into());
             }
         }
-        Err(format!("Timed out: {label}\n{}", self.screen.text()).into())
+        Err(format!(
+            "Timed out: {label}; complete_frames={}; camera_frames={}; pending_graphics_bytes={}; draft={:?}\n{}",
+            self.frames.images.len(), self.frames.camera_frames,
+            self.frames.pending.len() + self.frames.payload.len(),
+            self.session().and_then(|session| session["draft"].as_str().map(str::to_owned)),
+            self.screen.text()
+        ).into())
     }
     pub fn visible(&mut self, text: &str) -> Result {
         self.wait(text, 15.0, |h| h.screen.text().contains(text))

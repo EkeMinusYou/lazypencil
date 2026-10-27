@@ -150,7 +150,8 @@ pub const TEST_LANES: [&[&str]; 2] = [
 ];
 
 pub fn tests(s: &Session) -> Result<()> {
-    lanes(s)?;
+    let deadline = playback(s)?;
+    lanes(s, deadline)?;
     ownership(s)
 }
 
@@ -203,11 +204,42 @@ pub fn focus_inputs(s: &Session) -> Result<()> {
     Ok(())
 }
 
-pub fn lanes(s: &Session) -> Result<()> {
+/// The PTY playback assertion has a real interactive deadline. Keep it clear
+/// of concurrent Chromium/MCP/lifecycle load, with its original 15-second waits.
+pub fn playback(s: &Session) -> Result<Instant> {
+    let deadline = Instant::now() + Duration::from_secs(1200);
+    let catalog = s.verified_catalog(&["dynamic_render"])?;
+    let args = playback_args(&catalog.binaries["dynamic_render"].path);
+    s.execute(&args, 1200, "chromium-page-playback.log", false)?;
+    Ok(deadline)
+}
+
+pub fn playback_args(executable: &Path) -> commands::Invocation {
+    vec![
+        executable.to_string_lossy().into_owned(),
+        focus::RETAINED_PAGE.into(),
+        "--exact".into(),
+        "--ignored".into(),
+        "--test-threads=1".into(),
+    ]
+}
+
+pub fn lane_args(target: &str, executable: &Path) -> commands::Invocation {
+    let mut args = vec![
+        executable.to_string_lossy().into_owned(),
+        "--ignored".into(),
+        "--test-threads=1".into(),
+    ];
+    if target == "dynamic_render" {
+        args.extend(["--skip".into(), focus::RETAINED_PAGE.into()]);
+    }
+    args
+}
+
+pub fn lanes(s: &Session, deadline: Instant) -> Result<()> {
     let mut required: Vec<_> = TEST_LANES.into_iter().flatten().copied().collect();
     required.push("agent");
     let catalog = s.verified_catalog(&required)?;
-    let deadline = Instant::now() + Duration::from_secs(1200);
     let result = parallel::run(
         TEST_LANES
             .into_iter()
@@ -223,14 +255,7 @@ pub fn lanes(s: &Session) -> Result<()> {
                             let outcome = if remaining.is_zero() {
                                 Err(anyhow::anyhow!("Browser suite deadline exceeded"))
                             } else {
-                                let args = vec![
-                                    catalog.binaries[*target]
-                                        .path
-                                        .to_string_lossy()
-                                        .into_owned(),
-                                    "--ignored".into(),
-                                    "--test-threads=1".into(),
-                                ];
+                                let args = lane_args(target, &catalog.binaries[*target].path);
                                 s.execute(
                                     &args,
                                     remaining.as_secs() + u64::from(remaining.subsec_nanos() != 0),

@@ -29,9 +29,9 @@ fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() 
         "auto",
     )
     .unwrap();
-    assert_eq!(helper.platform, "ubuntu-24.04");
+    assert_eq!(helper.platform, "macos-15");
     assert_eq!(helper.suite, "candidate");
-    assert_eq!(helper.targets, ["render", "tui"]);
+    assert_eq!(helper.targets, ["render", "tui", "dynamic_render"]);
     assert!(!focus::tui_measurement_changed(&[
         "xtask/tests/tui_measurement.rs".into(),
         "src/tui/tests.rs".into(),
@@ -215,7 +215,7 @@ fn static_camera_and_pixel_transfer_changes_use_the_complete_tui_candidate_gate(
     let plan = focus::select(&util::root(), &paths, "auto").unwrap();
     assert_eq!(plan.platform, "macos-15");
     assert_eq!(plan.suite, "candidate");
-    assert_eq!(plan.targets, ["render", "tui"]);
+    assert_eq!(plan.targets, ["render", "tui", "dynamic_render"]);
     assert!(focus::tui_measurement_changed(&paths));
     assert!(focus::native_clipboard_changed(&paths));
     assert!(!focus::runtime_scheduler_changed(&paths));
@@ -622,7 +622,7 @@ fn candidate_packaging_changes_run_a_real_candidate_gate_before_the_matrix() {
 }
 
 #[test]
-fn terminal_protocol_fixes_reproduce_in_real_emulators_before_the_full_matrix() {
+fn terminal_protocol_and_observer_changes_reproduce_the_bsd_browser_consumer_first() {
     for path in [
         "src/tui/graphics.rs",
         "src/tui/terminal.rs",
@@ -640,9 +640,9 @@ fn terminal_protocol_fixes_reproduce_in_real_emulators_before_the_full_matrix() 
             "auto",
         )
         .unwrap();
-        assert_eq!(plan.platform, "ubuntu-24.04");
+        assert_eq!(plan.platform, "macos-15");
         assert_eq!(plan.suite, "candidate");
-        assert_eq!(plan.targets, ["render", "tui"]);
+        assert_eq!(plan.targets, ["render", "tui", "dynamic_render"]);
         let commands = ci::commands::plan(&util::root(), &plan.suite, &plan.targets).unwrap();
         assert!(!commands.build.is_empty() && !commands.checks.is_empty());
     }

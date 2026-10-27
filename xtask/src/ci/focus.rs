@@ -49,6 +49,8 @@ pub const HISTORY_PTY: &[&str] = &[
 pub const INPUT_PTY: &str = "real_pty_custom_navigation_preserves_draft_and_changes_preview_pixels";
 pub const TERMINAL_MODES: &str =
     "real_pty_handles_japanese_input_live_turns_resize_and_image_protocols";
+pub const RETAINED_PAGE: &str =
+    "retained_page_frame_capture_preserves_layout_dom_and_static_shader_acquisitions";
 pub const TEXT_LAYER_REPRODUCTION: &str =
     "text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations";
 pub const BROWSER_CI_TARGETS: &[&str] = &[
@@ -217,6 +219,7 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         p.contains("macos")
             || p.contains("darwin")
             || p.starts_with("tests/support/terminal/")
+            || p == "xtask/src/test_support/terminal.rs"
             || ["src/paths.rs", "tests/paths.rs"].contains(&p.as_str())
     });
     let platform = if platform == "auto" {
@@ -322,7 +325,14 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         return Ok(Plan {
             platform,
             suite: "candidate".into(),
-            targets: vec!["render".into(), "tui".into()],
+            targets: if paths.iter().any(|path| {
+                path == "xtask/src/test_support/terminal.rs"
+                    || path.starts_with("tests/support/terminal/")
+            }) {
+                vec!["render".into(), "tui".into(), "dynamic_render".into()]
+            } else {
+                vec!["render".into(), "tui".into()]
+            },
             preprocessor,
         });
     }
