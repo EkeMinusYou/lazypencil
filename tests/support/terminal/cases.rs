@@ -305,7 +305,7 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
                 }
                 std::str::from_utf8(&rest[..end]).ok()?.parse().ok()
             })
-            .last()
+            .next_back()
     }
     fn commit(flags: u16, text: &str) -> Vec<u8> {
         if flags & 8 == 0 {
