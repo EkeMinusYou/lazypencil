@@ -9,9 +9,13 @@ fn failed_bound_accounting_keeps_the_original_process_trace_available() {
     let pid = std::process::id();
     let mut trace = resources::ActiveTrace::new(pid).unwrap();
     let mut expected = resources::snapshot(pid).unwrap().processes[&pid].clone();
+    let adapter = Process {
+        pid: u32::MAX,
+        ..expected.clone()
+    };
     expected.parent = u32::MAX;
     let roles = resources::BoundRoles {
-        processes: BTreeMap::from([("tui", expected)]),
+        processes: BTreeMap::from([("tui", expected), ("adapter", adapter)]),
     };
     let error = trace.finish_bound(&roles).unwrap_err();
     let details = format!("{error:#}");
@@ -21,9 +25,11 @@ fn failed_bound_accounting_keeps_the_original_process_trace_available() {
     let raw = trace.finish().unwrap();
     let points = raw["points"].as_array().unwrap();
     assert!(points.len() >= 3);
-    assert!(points.iter().all(|point| {
-        point["snapshot"]["processes"][pid.to_string()]["pid"] == pid
-    }));
+    assert!(
+        points
+            .iter()
+            .all(|point| { point["snapshot"]["processes"][pid.to_string()]["pid"] == pid })
+    );
     assert!(raw.get("accounted_points").is_none());
 }
 
