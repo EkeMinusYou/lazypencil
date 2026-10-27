@@ -55,8 +55,10 @@ impl Arguments {
         std::fs::create_dir_all(&self.output)?;
         if !self.under_display {
             let mut command = Command::new("xvfb-run");
+            // Terminals are sequential clients of one owned display. Do not
+            // reset the server between closing one and connecting the next.
             command
-                .args(["-a", "-s", "-screen 0 1600x1000x24 -nolisten tcp"])
+                .args(["-a", "-s", "-screen 0 1600x1000x24 -nolisten tcp -noreset"])
                 .arg(std::env::current_exe()?)
                 .arg("terminal");
             if let Some(candidate) = &self.candidate {

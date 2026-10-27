@@ -170,10 +170,14 @@ impl Emulator {
         };
         let deadline = Instant::now() + Duration::from_secs(30);
         loop {
-            ensure!(
-                state.child.try_wait()?.is_none(),
-                "Emulator exited before opening its window"
-            );
+            if let Some(status) = state.child.try_wait()? {
+                let stderr = util::read(&root.join("emulator.stderr.log"), 8192)
+                    .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+                    .unwrap_or_else(|error| {
+                        format!("Cannot read bounded emulator stderr: {error}")
+                    });
+                anyhow::bail!("Emulator exited before opening its window ({status}): {stderr}");
+            }
             let result = command(
                 "xdotool",
                 &["search", "--onlyvisible", "--name", &format!("^{title}$")],
