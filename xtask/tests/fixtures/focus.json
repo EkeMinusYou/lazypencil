@@ -22,13 +22,9 @@
     ],
     "expected": {
       "platform": "ubuntu-24.04",
-      "suite": "dynamic",
+      "suite": "core",
       "targets": [
-        "browser_readiness",
-        "dynamic_render",
-        "imports",
-        "sampler_sources",
-        "shader_uniforms"
+        "runtime"
       ],
       "preprocessor": false
     }
@@ -1673,14 +1669,9 @@
     ],
     "expected": {
       "platform": "ubuntu-24.04",
-      "suite": "dynamic",
+      "suite": "core",
       "targets": [
-        "browser_readiness",
-        "dynamic_render",
-        "imports",
-        "runtime",
-        "sampler_sources",
-        "shader_uniforms"
+        "runtime"
       ],
       "preprocessor": false
     }

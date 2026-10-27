@@ -18,6 +18,7 @@ fn installer_only_changes_reproduce_without_native_features_and_mixed_changes_st
         "xtask/src/ci/cache.rs",
         "xtask/tests/checkpoints.rs",
         "xtask/tests/compatible_cache.rs",
+        "xtask/tests/fixtures/focus.json",
         "docs/fonts.md",
         "docs/runtimes.md",
         "docs/implementation-status.md",

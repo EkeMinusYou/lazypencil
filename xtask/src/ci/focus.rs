@@ -257,6 +257,7 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
                 "xtask/src/ci/cache.rs",
                 "xtask/tests/checkpoints.rs",
                 "xtask/tests/compatible_cache.rs",
+                "xtask/tests/fixtures/focus.json",
                 "README.md",
             ]
             .contains(&path.as_str())
