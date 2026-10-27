@@ -363,10 +363,16 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
     h.key(&commit(negotiated, second))?;
     let expected = format!("{first}\n{second}");
     h.draft(&expected)?;
+    h.wait(
+        "IME anchor follows a rendered combining/ZWJ cluster",
+        15.0,
+        |h| h.screen.cursor() == (6, first_cursor.1 + 1),
+    )?;
+    let second_cursor = h.screen.cursor();
     no_agent(h);
     assert_eq!(fs::read(&h.document)?, original);
     Ok(
-        json!({"source_commit":source_commit(),"keyboard_flags":negotiated,"japanese_cursor":first_cursor,
+        json!({"source_commit":source_commit(),"keyboard_flags":negotiated,"japanese_cursor":first_cursor,"combining_zwj_cursor":second_cursor,
         "draft":expected,"draft_sha256":hash(expected.as_bytes()),"document_unchanged":true,
         "agent_started":false,"scope":"Real PTY plus Kitty keyboard-mode/IME-commit protocol model; physical IME confirmation is separate"}),
     )

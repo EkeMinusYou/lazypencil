@@ -58,6 +58,10 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
         for (text, expected) in [
             ("ちょっと".to_owned(), Position::new(9, 30)),
             ("か\u{3099} 😀".to_owned(), Position::new(6, 30)),
+            ("か\u{3099} 👩‍💻".to_owned(), Position::new(6, 30)),
+            ("🇯🇵".to_owned(), Position::new(3, 30)),
+            ("👨‍👩‍👧‍👦".to_owned(), Position::new(3, 30)),
+            ("日\tA".to_owned(), Position::new(6, 30)),
             ("日".repeat(80), Position::new(98, 30)),
             ("一\n二\n三\n四\n五".to_owned(), Position::new(3, 32)),
         ] {
@@ -74,8 +78,39 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
                 !cell.modifier.contains(Modifier::REVERSED),
                 "Use the native cursor, not a second inverse cell"
             );
+            assert!(
+                terminal
+                    .backend()
+                    .buffer()
+                    .content
+                    .iter()
+                    .all(|cell| !cell.modifier.contains(Modifier::HIDDEN)),
+                "The temporary caret marker must never reach the terminal"
+            );
             assert_eq!(app.editor.lines().join("\n"), text);
         }
+        let saved_editor = std::mem::replace(&mut app.editor, editor("abc"));
+        app.editor.move_cursor(CursorMove::Head);
+        app.editor.start_selection();
+        app.editor.move_cursor(CursorMove::Forward);
+        app.editor.move_cursor(CursorMove::Forward);
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        assert_eq!(terminal.backend().cursor_position(), Position::new(3, 30));
+        assert_eq!(terminal.backend().buffer()[(1, 30)].bg, Color::LightBlue);
+        assert_eq!(terminal.backend().buffer()[(2, 30)].bg, Color::LightBlue);
+        assert!(
+            terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .all(|cell| !cell.modifier.contains(Modifier::HIDDEN))
+        );
+        app.editor = saved_editor;
         terminal.backend_mut().resize(50, 16);
         terminal
             .draw(|frame| {

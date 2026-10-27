@@ -1332,21 +1332,32 @@ impl App {
             },
             self.focus == Focus::Prompt,
         ));
+        let editing =
+            self.focus == Focus::Prompt && !self.conversation.active() && !self.has_modal();
+        // The pinned widget's logical columns count ZWJ components separately.
+        // Mark its rendered caret instead of repeating that width calculation.
+        // Remove the private marker before the frame reaches the terminal.
+        self.editor.set_cursor_style(if editing {
+            Style::default().add_modifier(Modifier::HIDDEN)
+        } else {
+            Style::default()
+        });
         frame.render_widget(&self.editor, sections[3]);
-        if self.focus == Focus::Prompt && !self.conversation.active() && !self.has_modal() {
-            // IMEs anchor their preedit and candidate windows to the terminal
-            // cursor, not the textarea's styled cursor cell. Read its display
-            // coordinates after rendering has updated wrapping and scrolling.
+        if editing {
             let inner = self.editor.block().unwrap().inner(sections[3]);
-            let cursor = self.editor.screen_cursor();
-            let (top, left) = self.editor.scroll_offset();
-            if let (Some(row), Some(col)) = (
-                cursor.row.checked_sub(usize::from(top)),
-                cursor.col.checked_sub(usize::from(left)),
-            ) && row < usize::from(inner.height)
-                && col < usize::from(inner.width)
-            {
-                frame.set_cursor_position((inner.x + col as u16, inner.y + row as u16));
+            let mut cursor = None;
+            let buffer = frame.buffer_mut();
+            for y in inner.y..inner.bottom() {
+                for x in inner.x..inner.right() {
+                    let cell = &mut buffer[(x, y)];
+                    if cell.modifier.contains(Modifier::HIDDEN) {
+                        cursor.get_or_insert((x, y));
+                        cell.modifier.remove(Modifier::HIDDEN);
+                    }
+                }
+            }
+            if let Some(position) = cursor {
+                frame.set_cursor_position(position);
             }
         }
         frame.render_widget(
