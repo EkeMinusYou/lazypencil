@@ -13,8 +13,9 @@ pub(super) fn test_source(name: &str) -> bool {
 
 /// Existing integration roots and shared Rust test helpers are candidates.
 /// Every changed file must be covered by real compiler dep-info, and every
-/// affected unit must be an integration test. A helper used by a library,
-/// example or executable rejects reuse, regardless of its directory name.
+/// affected unit must be an integration, library-test or binary-test unit.
+/// A helper used by a production library, example or executable rejects reuse,
+/// regardless of its directory name.
 /// Cargo still validates retained artifacts and runs the complete test catalog.
 pub fn restore_compatible(
     source: &Path,
@@ -141,11 +142,15 @@ fn affected_outputs(
             names.iter().any(|entry| {
                 entry
                     .strip_prefix(&prefix)
-                    .and_then(|name| name.strip_prefix("test-integration-test-"))
+                    .and_then(|name| {
+                        ["test-integration-test-", "test-lib-", "test-bin-"]
+                            .into_iter()
+                            .find_map(|prefix| name.strip_prefix(prefix))
+                    })
                     .and_then(|name| name.strip_suffix(".json"))
                     .is_some_and(|target| target.replace('-', "_") == name)
             }),
-            "Changed test is compiled into a non-integration unit"
+            "Changed test is compiled into a production or unsupported unit"
         );
         let artifact = format!("{profile}/deps/{name}-{suffix}");
         let library = format!("{profile}/deps/lib{name}-{suffix}");

@@ -640,7 +640,7 @@ fn navigation(h: &mut Harness) -> Result<Value> {
     ] {
         frames.insert(
             name.into(),
-            json!({"index":index,"sha256":hash(&frame.rgba),"rgba_bytes":frame.rgba.len()}),
+            json!({"index":index,"sha256":hash(frame.rgba()),"rgba_bytes":frame.rgba().len()}),
         );
     }
     Ok(

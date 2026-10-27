@@ -315,7 +315,7 @@ mod hosted {
                     let hash_started = Instant::now();
                     self.last_camera = Some((
                         received,
-                        util::digest(&frame.rgba),
+                        util::digest(frame.rgba()),
                         frame,
                         observer_at_receipt,
                     ));
@@ -325,7 +325,7 @@ mod hosted {
                     let hash_started = Instant::now();
                     self.last_frame = Some((
                         received,
-                        util::digest(&frame.rgba),
+                        util::digest(frame.rgba()),
                         frame,
                         observer_at_receipt,
                     ));
@@ -401,7 +401,7 @@ mod hosted {
                 width: frame.width as u32,
                 height: frame.height as u32,
                 pixels: frame
-                    .rgba
+                    .rgba()
                     .chunks_exact(4)
                     .map(|pixel| pixel.try_into().unwrap())
                     .collect(),

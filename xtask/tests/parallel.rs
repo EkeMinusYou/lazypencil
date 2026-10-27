@@ -9,50 +9,6 @@ use std::{
 };
 
 #[test]
-fn isolated_playback_and_parallel_browser_filters_partition_the_same_ignored_catalog() {
-    use lazypencil_xtask::ci::{focus, native::browser};
-    let executable = std::path::Path::new("/verified/dynamic_render");
-    let isolated = browser::playback_args(executable);
-    let remaining = browser::lane_args("dynamic_render", executable);
-    assert!(isolated.iter().any(|arg| arg == "--exact"));
-    assert!(isolated.iter().any(|arg| arg == "--ignored"));
-    assert!(remaining.iter().any(|arg| arg == "--ignored"));
-    let skip = remaining
-        .windows(2)
-        .filter(|pair| pair[0] == "--skip")
-        .map(|pair| pair[1].as_str())
-        .collect::<Vec<_>>();
-    assert_eq!(skip, [focus::RETAINED_PAGE]);
-    for name in [
-        focus::RETAINED_PAGE,
-        "retained_page_refresh_preserves_dom_isolates_nodes_and_resets_changed_or_removed_state",
-        "software_webgl_pixels_follow_resolution_time_and_color_uniforms",
-    ] {
-        let selected_early = isolated[1] == name;
-        let selected_later = !skip.iter().any(|filter| name.contains(*filter));
-        assert_eq!(
-            usize::from(selected_early) + usize::from(selected_later),
-            1,
-            "{name}"
-        );
-    }
-    for target in browser::TEST_LANES
-        .into_iter()
-        .flatten()
-        .filter(|target| **target != "dynamic_render")
-    {
-        assert_eq!(
-            browser::lane_args(target, executable),
-            [
-                executable.to_string_lossy().into_owned(),
-                "--ignored".into(),
-                "--test-threads=1".into()
-            ]
-        );
-    }
-}
-
-#[test]
 fn browser_lanes_preserve_every_existing_target_once_without_intra_target_parallelism() {
     use lazypencil_xtask::ci::native::browser::TEST_LANES;
     use std::collections::BTreeSet;

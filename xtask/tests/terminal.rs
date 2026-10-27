@@ -9,17 +9,18 @@ use terminal::{Frame, KittyFrames, Screen};
 const COMPRESSED_RGBA: &str = "eAH7z8Dwn+E/QwOIEjIJO/EfjQ8Ax3QLwQ==";
 
 #[test]
-fn frame_color_queries_follow_current_aligned_rgba_bytes_and_alpha() {
-    let mut frame = Frame::new(2, 1, vec![1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
+fn frame_color_queries_preserve_aligned_pixels_alpha_and_cache_independent_equality() {
+    let frame = Frame::new(2, 1, vec![1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
     assert!(frame.has_color([1, 2, 3, 4]));
     assert!(frame.has_color([5, 6, 7, 8]));
     assert!(!frame.has_color([2, 3, 4, 5]));
     assert!(!frame.has_color([1, 2, 3, 255]));
-    frame.rgba[..4].copy_from_slice(&[9, 10, 11, 0]);
-    assert!(!frame.has_color([1, 2, 3, 4]));
-    assert!(frame.has_color([9, 10, 11, 0]));
-    assert!(!frame.has_color([9, 10, 11, 255]));
-    assert_eq!(frame, Frame::new(2, 1, frame.rgba.clone()).unwrap());
+    for _ in 0..1000 {
+        assert!(!frame.has_color([9, 10, 11, 0]));
+    }
+    assert_eq!(frame, Frame::new(2, 1, frame.rgba().to_vec()).unwrap());
+    assert_eq!(frame, frame.clone());
+    assert_eq!(frame.rgba(), [1, 2, 3, 4, 5, 6, 7, 8]);
 }
 
 #[test]
@@ -43,8 +44,8 @@ fn owned_camera_feedback_never_satisfies_exact_frame_observations() {
                 observer.feed(bytes).unwrap();
             }
             assert_eq!(observer.images.len(), 2);
-            assert_eq!(observer.images[0].rgba, [255, 0, 0, 255]);
-            assert_eq!(observer.images[1].rgba, [0, 0, 255, 255]);
+            assert_eq!(observer.images[0].rgba(), [255, 0, 0, 255]);
+            assert_eq!(observer.images[1].rgba(), [0, 0, 255, 255]);
             assert_eq!(observer.camera_frames, 1);
             assert_eq!(observer.transmitted_resources.len(), 2);
             assert!(observer.transmitted_resources.contains(&exact));
@@ -53,7 +54,7 @@ fn owned_camera_feedback_never_satisfies_exact_frame_observations() {
                     .transmitted_resources
                     .contains(&(exact ^ 0x8000_0000))
             );
-            assert_eq!(observer.last_camera.unwrap().rgba, [0, 255, 0, 255]);
+            assert_eq!(observer.last_camera.unwrap().rgba(), [0, 255, 0, 255]);
         }
         let mut observer = KittyFrames::for_lazypencil();
         observer.feed(&wire(exact, &[255, 0, 0, 255])).unwrap();
@@ -145,7 +146,7 @@ fn compressed_kitty_streams_preserve_every_rgba_byte_across_chunk_boundaries() {
             assert_eq!(decoder.compressed_frames, 2);
             for image in &decoder.images {
                 assert_eq!((image.width, image.height), (4, 2));
-                assert_eq!(image.rgba, pixels);
+                assert_eq!(image.rgba(), pixels);
                 assert!(image.has_color([0, 0, 255, 0]));
                 assert!(image.has_color([0, 255, 0, 128]));
             }
@@ -327,8 +328,8 @@ fn split_kitty_packets_are_consumed_once_and_never_replay_old_pixels() {
         decoder.feed(&[byte]).unwrap();
     }
     assert_eq!(
-        decoder.images.iter().map(|f| &f.rgba).collect::<Vec<_>>(),
-        [&red, &blue]
+        decoder.images.iter().map(|f| f.rgba()).collect::<Vec<_>>(),
+        [red.as_slice(), blue.as_slice()]
     );
     for _ in 0..100 {
         decoder.feed(b"").unwrap();
@@ -341,7 +342,7 @@ fn split_kitty_packets_are_consumed_once_and_never_replay_old_pixels() {
     for part in frame(&pixels, 80, 80, 3072).chunks(4095) {
         decoder.feed(part).unwrap();
     }
-    assert_eq!(decoder.images[0].rgba, pixels);
+    assert_eq!(decoder.images[0].rgba(), pixels);
     assert_eq!(
         (decoder.images[0].width, decoder.images[0].height),
         (80, 80)

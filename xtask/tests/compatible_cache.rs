@@ -145,11 +145,15 @@ impl Fixture {
             .filter(|v| {
                 v["reason"] == "compiler-artifact"
                     && ([json!(["test"]), json!(["example"])].contains(&v["target"]["kind"])
-                        || (v["target"]["kind"] == json!(["lib"]) && v["profile"]["test"] == false))
+                        || v["target"]["kind"] == json!(["lib"]))
             })
             .map(|v| {
                 (
-                    v["target"]["name"].as_str().unwrap().into(),
+                    if v["target"]["kind"] == json!(["lib"]) && v["profile"]["test"] == true {
+                        "library-tests".into()
+                    } else {
+                        v["target"]["name"].as_str().unwrap().into()
+                    },
                     (
                         v["fresh"].as_bool().unwrap(),
                         PathBuf::from(
@@ -180,7 +184,7 @@ impl Fixture {
 fn real_cargo_rebuilds_only_the_edited_test_and_accepts_same_source_focused_outputs() {
     for focused in [false, true] {
         let f = Fixture::new();
-        assert_eq!(f.build(&[]).len(), 4);
+        assert_eq!(f.build(&[]).len(), 5);
         let old = f.identity();
         cache::stage(&f.source, &f.target, &f.full, &old).unwrap();
         let empty = cache::stage_focused(
@@ -245,8 +249,12 @@ fn real_cargo_rebuilds_only_the_edited_test_and_accepts_same_source_focused_outp
             assert!(report["invalidated_files"].as_u64().unwrap() > 0);
         }
         let built = f.build(&[]);
-        assert_eq!(built.len(), 4);
+        assert_eq!(built.len(), 5);
         assert!(built["lazypencil"].0, "The production library was rebuilt");
+        assert!(
+            built["library-tests"].0,
+            "The unrelated library tests were rebuilt"
+        );
         assert!(built["two"].0, "The untouched integration test was rebuilt");
         assert!(built["preview"].0, "The untouched example was rebuilt");
         assert_eq!(
@@ -278,8 +286,11 @@ fn shared_helpers_invalidate_every_consumer_without_rebuilding_unrelated_outputs
                     "#[path=\"../{helper}\"] mod helper;\n#[test] fn value() {{ assert_eq!(lazypencil::fixture(), 1); assert_eq!(helper::VALUE, 1); }}\n"
                 )).unwrap();
             }
+            fs::write(f.source.join("src/lib.rs"), format!(
+                "pub fn fixture() -> u8 {{ 1 }}\n#[cfg(test)] #[path=\"../{helper}\"] mod helper;\n#[cfg(test)] #[test] fn shared_value() {{ assert_eq!(helper::VALUE, 1); }}\n"
+            )).unwrap();
             f.manifest();
-            assert_eq!(f.build(&[]).len(), 5);
+            assert_eq!(f.build(&[]).len(), 6);
             let old = f.identity();
             cache::stage(&f.source, &f.target, &f.full, &old).unwrap();
             fs::write(&path, "pub const VALUE: u8 = 2;\n").unwrap();
@@ -323,12 +334,16 @@ fn shared_helpers_invalidate_every_consumer_without_rebuilding_unrelated_outputs
             )
             .unwrap();
             let built = f.build(&[]);
-            assert_eq!(built.len(), 5);
+            assert_eq!(built.len(), 6);
             for name in ["lazypencil", "two", "preview"] {
                 assert!(built[name].0, "{helper}: unrelated {name} rebuilt");
             }
-            for name in ["one", "three"] {
-                assert_eq!(built[name].0, focused, "{helper}: {name}");
+            for name in ["one", "three", "library-tests"] {
+                assert_eq!(
+                    built[name].0,
+                    focused && name != "library-tests",
+                    "{helper}: {name}"
+                );
                 let output =
                     process::output(&mut Command::new(&built[name].1), Duration::from_secs(15))
                         .unwrap();

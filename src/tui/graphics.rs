@@ -279,7 +279,7 @@ mod tests {
                 (decoder.images[0].width, decoder.images[0].height),
                 (64, 32)
             );
-            assert_eq!(&decoder.images[0].rgba, source.as_raw());
+            assert_eq!(decoder.images[0].rgba(), source.as_raw().as_slice());
             lengths.push(wire.len());
         }
         assert!(

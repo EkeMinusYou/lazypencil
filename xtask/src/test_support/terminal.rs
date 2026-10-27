@@ -2,6 +2,7 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use std::{
     collections::{BTreeMap, BTreeSet},
     num::NonZeroU16,
+    sync::OnceLock,
 };
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -49,12 +50,19 @@ impl Screen {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Frame {
     pub width: usize,
     pub height: usize,
-    pub rgba: Vec<u8>,
+    rgba: Vec<u8>,
+    palette: OnceLock<BTreeSet<[u8; 4]>>,
 }
+impl PartialEq for Frame {
+    fn eq(&self, other: &Self) -> bool {
+        (self.width, self.height) == (other.width, other.height) && self.rgba == other.rgba
+    }
+}
+impl Eq for Frame {}
 impl Frame {
     pub fn new(width: usize, height: usize, rgba: Vec<u8>) -> Result<Self> {
         if width == 0
@@ -70,12 +78,24 @@ impl Frame {
             width,
             height,
             rgba,
+            palette: OnceLock::new(),
         })
     }
+    pub fn rgba(&self) -> &[u8] {
+        &self.rgba
+    }
     pub fn has_color(&self, color: [u8; 4]) -> bool {
-        // Performance observations need pixels, not a sorted color index.
-        // Query the authoritative RGBA bytes only when a test needs a color.
-        self.rgba.chunks_exact(4).any(|pixel| pixel == color)
+        // Performance observations never need a palette. PTY predicates do:
+        // scanning every pixel after each small BSD read can starve the drain.
+        // Pixels are immutable, so this index remains valid for the frame.
+        self.palette
+            .get_or_init(|| {
+                self.rgba
+                    .chunks_exact(4)
+                    .map(|pixel| pixel.try_into().unwrap())
+                    .collect()
+            })
+            .contains(&color)
     }
 }
 
