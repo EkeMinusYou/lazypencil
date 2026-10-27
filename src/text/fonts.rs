@@ -96,7 +96,7 @@ impl FontInfo {
 pub struct Fonts {
     provider: TypefaceFontProvider,
     pub(super) collection: FontCollection,
-    system: FontMgr,
+    system: Option<FontMgr>,
     #[cfg(target_os = "macos")]
     portable_color: Option<FontMgr>,
     families: BTreeMap<String, String>,
@@ -152,7 +152,7 @@ impl Fonts {
         let mut fonts = Self {
             provider: TypefaceFontProvider::new(),
             collection: FontCollection::new(),
-            system: FontMgr::new(),
+            system: None,
             #[cfg(target_os = "macos")]
             portable_color: None,
             families: BTreeMap::new(),
@@ -293,7 +293,13 @@ impl Fonts {
                 .expect("initialized color manager")
                 .new_from_data(data, Some(0)));
         }
-        Ok(self.system.new_from_data(data, Some(0)))
+        Ok(self.system().new_from_data(data, Some(0)))
+    }
+
+    fn system(&mut self) -> &FontMgr {
+        // A cached bundled typeface does not need another OS font manager.
+        // Keep each real system/file lookup fresh within its own Fonts context.
+        self.system.get_or_insert_with(FontMgr::new)
     }
 
     fn add(&mut self, face: Typeface, info: FontInfo, size: usize) -> Result<()> {
@@ -337,7 +343,7 @@ impl Fonts {
             return Ok(self.families[&key].clone());
         }
         let actual = self
-            .system
+            .system()
             .family_names()
             .find(|name| name.to_lowercase() == key)
             .ok_or_else(|| {
@@ -349,7 +355,7 @@ impl Fonts {
                 )
             })?;
         let face = self
-            .system
+            .system()
             .match_family_style(&actual, style)
             .ok_or_else(|| {
                 Error::new(
@@ -556,6 +562,7 @@ mod sharing_tests {
                         )];
                         let mut fonts = Fonts::from_sources(&sources).unwrap();
                         let block = fonts.layout(&spec, Some(340.0)).unwrap();
+                        assert!(fonts.system.is_some());
                         assert!(!block.metrics.fonts.is_empty());
                         assert!(
                             block
@@ -594,5 +601,26 @@ mod sharing_tests {
                 });
             }
         });
+        // Once initialized, the bundled face can shape Japanese in a new
+        // context without constructing its operating-system font manager.
+        let mut fonts = Fonts::new(&[]).unwrap();
+        assert!(fonts.system.is_none());
+        let block = fonts
+            .layout(
+                &TextSpec {
+                    content: "日本語 ABC 123".into(),
+                    ..Default::default()
+                },
+                Some(340.0),
+            )
+            .unwrap();
+        assert!(fonts.system.is_none());
+        assert!(
+            block
+                .metrics
+                .fonts
+                .iter()
+                .all(|info| info.source == "bundled")
+        );
     }
 }
