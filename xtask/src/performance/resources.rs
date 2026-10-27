@@ -554,6 +554,18 @@ pub fn owned(
 }
 
 impl Snapshot {
+    /// Membership and identity only: CPU activity and RSS do not affect settling.
+    pub fn same_processes(&self, other: &Self) -> bool {
+        self.processes.len() == other.processes.len()
+            && self.processes.iter().all(|(pid, process)| {
+                other.processes.get(pid).is_some_and(|other| {
+                    process.parent == other.parent
+                        && process.group == other.group
+                        && process.start_ticks == other.start_ticks
+                })
+            })
+    }
+
     pub fn rss_bytes(&self) -> Result<u64> {
         self.processes.values().try_fold(0u64, |sum, process| {
             sum.checked_add(process.rss_bytes)

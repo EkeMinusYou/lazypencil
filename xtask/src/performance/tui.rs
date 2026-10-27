@@ -754,7 +754,42 @@ mod hosted {
                     }
                 }
             }
-            let idle_before = resources::snapshot(terminal.child.id())?;
+            let mut idle_before = resources::snapshot(terminal.child.id())?;
+            let mut settling = Value::Null;
+            if chromium.is_some() {
+                // Closing an acquired page can leave a renderer alive briefly.
+                // Keep this cleanup in the full resource trace, then measure an
+                // unchanged complete 30-second idle interval. Never select an
+                // interval based on low CPU or RSS, or restart a failed one.
+                let started = Instant::now();
+                let mut stable_since = started;
+                let mut next = started + Duration::from_secs(1);
+                let mut checks = vec![json!({"elapsed_ms":0.0,"snapshot":idle_before})];
+                loop {
+                    terminal.pump()?;
+                    if Instant::now() < next {
+                        continue;
+                    }
+                    let current = resources::snapshot(terminal.child.id())?;
+                    let accounted = roles.account(&current)?;
+                    ensure!(
+                        accounted["present_roles"].as_array().unwrap().len()
+                            == roles.processes.len(),
+                        "A required bound resource process exited before idle measurement"
+                    );
+                    if !idle_before.same_processes(&current) {
+                        stable_since = Instant::now();
+                    }
+                    checks.push(json!({"elapsed_ms":started.elapsed().as_secs_f64()*1000.0,"snapshot":current}));
+                    idle_before = current;
+                    if stable_since.elapsed() >= Duration::from_secs(2) {
+                        break;
+                    }
+                    next = Instant::now() + Duration::from_secs(1);
+                }
+                settling = json!({"seconds":started.elapsed().as_secs_f64(),"required_stable_seconds":2,
+                    "checks":checks,"scope":"Chromium post-acquisition process cleanup before the full idle interval; every sample remains in the full resource trace; CPU and RSS are not settling criteria"});
+            }
             let idle_started = Instant::now();
             let idle_frame = terminal.last_frame.as_ref().unwrap().0;
             let mut idle_checkpoints = Vec::new();
@@ -808,6 +843,7 @@ mod hosted {
                 "scope":"Separate 30-second idle interval with the bound MCP, both JavaScript workers and supervisor still alive; explicit ACP helper excluded only from application accounting"});
             let mut idle = idle;
             if chromium.is_some() {
+                idle["settling"] = settling;
                 idle["scope"] = json!(
                     "Additional 30-second Chromium-inclusive idle interval; raw stable process membership and counters retained; only the identified external ACP helper excluded from application accounting"
                 );

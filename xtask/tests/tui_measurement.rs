@@ -327,13 +327,17 @@ fn owned_tree_retains_reparented_group_members_and_bounds_idle_clock_uncertainty
         [2, 40, 100, 150]
     );
     assert_eq!(before.rss_bytes().unwrap(), 4096);
+    assert!(before.same_processes(&before));
     let mut after = before.clone();
     after.processes.get_mut(&100).unwrap().cpu_ms += 20.0;
+    after.processes.get_mut(&100).unwrap().rss_bytes += 4096;
+    assert!(before.same_processes(&after));
     let percent = before
         .idle_cpu_upper_percent(&after, Duration::from_secs(30))
         .unwrap();
     assert!((percent - 100.0 / 300.0).abs() < 0.0001);
     after.processes.get_mut(&100).unwrap().start_ticks = Some(999);
+    assert!(!before.same_processes(&after));
     assert!(
         before
             .idle_cpu_upper_percent(&after, Duration::from_secs(30))
@@ -341,6 +345,7 @@ fn owned_tree_retains_reparented_group_members_and_bounds_idle_clock_uncertainty
     );
     after = before.clone();
     after.processes.remove(&40);
+    assert!(!before.same_processes(&after));
     assert!(
         before
             .idle_cpu_upper_percent(&after, Duration::from_secs(30))
@@ -348,11 +353,18 @@ fn owned_tree_retains_reparented_group_members_and_bounds_idle_clock_uncertainty
     );
     after = before.clone();
     after.processes.get_mut(&2).unwrap().cpu_ms = 0.0;
+    assert!(before.same_processes(&after));
     assert!(
         before
             .idle_cpu_upper_percent(&after, Duration::from_secs(30))
             .is_err()
     );
+    after = before.clone();
+    after.processes.insert(666, row(666, 100, 666));
+    assert!(!before.same_processes(&after));
+    after = before.clone();
+    after.processes.get_mut(&2).unwrap().parent = 100;
+    assert!(!before.same_processes(&after));
     assert!(
         before
             .idle_cpu_upper_percent(&before, Duration::ZERO)
