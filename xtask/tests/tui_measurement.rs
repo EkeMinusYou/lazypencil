@@ -4,6 +4,42 @@ use std::process::Command;
 #[cfg(unix)]
 use std::time::Duration;
 
+#[cfg(unix)]
+#[test]
+fn active_resource_trace_keeps_raw_owned_counters_and_excludes_latency_claims() {
+    let root = std::process::id();
+    assert!(resources::ActiveTrace::new(0).is_err());
+    let mut trace = resources::ActiveTrace::new(root).unwrap();
+    trace.observe_if_due().unwrap();
+    let report = trace.finish().unwrap();
+    let points = report["points"].as_array().unwrap();
+    assert!(points.len() >= 2);
+    assert_eq!(report["root_pid"], root);
+    assert_eq!(report["included_in_latency_distributions"], false);
+    assert_eq!(report["transient_kernel_peak_established"], false);
+    let mut peak = 0;
+    let mut previous = 0.0;
+    let mut maximum_gap: f64 = 0.0;
+    for (index, point) in points.iter().enumerate() {
+        let time = point["elapsed_ms"].as_f64().unwrap();
+        assert!(time.is_finite() && time >= previous);
+        assert!(point["observation_ms"].as_f64().unwrap() >= 0.0);
+        if index > 0 {
+            maximum_gap = maximum_gap.max(time - previous);
+        }
+        previous = time;
+        let processes = point["snapshot"]["processes"].as_object().unwrap();
+        assert_eq!(processes[&root.to_string()]["pid"], root);
+        let rss = processes
+            .values()
+            .map(|process| process["rss_bytes"].as_u64().unwrap())
+            .sum::<u64>();
+        peak = peak.max(rss);
+    }
+    assert_eq!(report["maximum_observed_process_tree_rss_bytes"], peak);
+    assert_eq!(report["actual_maximum_sampling_gap_ms"], maximum_gap);
+}
+
 #[test]
 fn direct_pixel_profiles_keep_legacy_reports_readable_and_require_the_new_phase_set() {
     use lazypencil_xtask::performance::tui::preview_profiles;

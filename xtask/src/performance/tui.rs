@@ -165,6 +165,7 @@ mod hosted {
         last_camera: Option<(Instant, String, observer::Frame, ObserverTime)>,
         camera_interactions: Vec<Value>,
         observer: ObserverTime,
+        activity: Option<resources::ActiveTrace>,
     }
 
     impl Drop for Terminal {
@@ -261,6 +262,7 @@ mod hosted {
                 last_camera: None,
                 camera_interactions: Vec::new(),
                 observer: ObserverTime::default(),
+                activity: None,
             })
         }
 
@@ -273,6 +275,9 @@ mod hosted {
                 self.child.try_wait()?.is_none(),
                 "TUI exited during measurement"
             );
+            if let Some(activity) = &mut self.activity {
+                activity.observe_if_due()?;
+            }
             let mut descriptor = libc::pollfd {
                 fd: self.master.as_raw_fd(),
                 events: libc::POLLIN,
@@ -447,6 +452,80 @@ mod hosted {
         }
     }
 
+    fn verify_empty_conversation(root: &Path) -> Result<()> {
+        let files = util::walk(&root.join("data"))?;
+        let sessions = files
+            .iter()
+            .filter(|path| path.file_name().is_some_and(|name| name == "session.json"))
+            .collect::<Vec<_>>();
+        ensure!(sessions.len() == 1, "Ambiguous measurement conversation");
+        let session: Value = util::json(sessions[0])?;
+        ensure!(
+            session["draft"] == "" && session["native_session_id"].is_null(),
+            "Measurement left prompt text or started an agent"
+        );
+        ensure!(
+            !files.iter().any(|path| path
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("turn-"))),
+            "Measurement unexpectedly created a conversation turn"
+        );
+        Ok(())
+    }
+
+    fn active_resources_trial(
+        binary: &Path,
+        helper: &Path,
+        output: &Path,
+        deadline: Instant,
+    ) -> Result<Value> {
+        let root = output.join("resource-observation");
+        let fixture = fixtures::performance(&root, "dashboard")?;
+        fs::write(root.join("lazypencil.toml"), b"version=1\n")?;
+        let mut terminal = Terminal::start(binary, helper, &root, deadline)?;
+        let sampling_start_delay_ms = terminal.started.elapsed().as_secs_f64() * 1000.0;
+        terminal.activity = Some(resources::ActiveTrace::new(terminal.child.id())?);
+        terminal.wait("resource trial prompt", |t| {
+            t.screen.text().contains("Prompt")
+        })?;
+        terminal.wait("resource trial complete preview", |t| {
+            t.last_frame.is_some()
+        })?;
+        let initial = terminal.last_frame.as_ref().unwrap().1.clone();
+        terminal.key(b"\t")?;
+        let (_, zoomed, _) = terminal.changed_frame(b"+", &initial)?;
+        let (_, unzoomed, _) = terminal.changed_frame(b"-", &zoomed)?;
+        ensure!(
+            unzoomed == initial,
+            "Resource trial zoom changed original pixels"
+        );
+        let (_, panned, _) = terminal.changed_frame(b"\x1b[C", &initial)?;
+        let (_, unpanned, _) = terminal.changed_frame(b"\x1b[D", &panned)?;
+        ensure!(
+            unpanned == initial,
+            "Resource trial pan changed original pixels"
+        );
+        let trace = terminal
+            .activity
+            .take()
+            .context("Missing activity trace")?
+            .finish()?;
+        terminal.finish()?;
+        verify_empty_conversation(&root)?;
+        let profiles = super::preview_profiles(&util::read(&root.join("stderr.log"), 64 * 1024)?)?;
+        ensure!(
+            profiles.len() >= 5,
+            "Resource trial lacks complete worker profiles"
+        );
+        Ok(
+            json!({"fixture":fixture,"sampling_start_delay_ms":sampling_start_delay_ms,
+            "trace":trace,"initial_rgba_sha256":initial,"restored_rgba_sha256":unpanned,
+            "native_preview_worker_profiles":profiles,
+            "complete_interactions":4,"normal_exit":true,"agent_started":false,
+            "scope":"Additional resource-only run after all original startup/interaction/idle trials; not added to latency statistics"}),
+        )
+    }
+
     pub(super) fn run(arguments: Arguments) -> Result<()> {
         let deadline = Instant::now() + Duration::from_secs(600);
         let candidate = std::path::absolute(arguments.candidate)?;
@@ -593,23 +672,7 @@ mod hosted {
                 idle = json!({"seconds":elapsed.as_secs_f64(),"cpu_upper_percent_including_clock_quantization":cpu,"maximum_sampled_process_tree_rss_bytes":rss,"before":before,"after":after,"checkpoints":checkpoints});
             }
             terminal.finish()?;
-            let files = util::walk(&root.join("data"))?;
-            let sessions = files
-                .iter()
-                .filter(|p| p.file_name().is_some_and(|n| n == "session.json"))
-                .collect::<Vec<_>>();
-            ensure!(sessions.len() == 1, "Ambiguous measurement conversation");
-            let session: Value = util::json(sessions[0])?;
-            ensure!(
-                session["draft"] == "" && session["native_session_id"].is_null(),
-                "Measurement left prompt text or started an agent"
-            );
-            ensure!(
-                !files.iter().any(|p| p
-                    .file_name()
-                    .is_some_and(|n| n.to_string_lossy().starts_with("turn-"))),
-                "Measurement unexpectedly created a conversation turn"
-            );
+            verify_empty_conversation(&root)?;
             let sample = samples.last_mut().context("Missing measurement sample")?;
             sample["normal_exit"] = json!(true);
             sample["prompt_draft_empty"] = json!(true);
@@ -646,7 +709,8 @@ mod hosted {
         let input = crate::performance::sample_statistics(&input)?;
         let preview = crate::performance::sample_statistics(&preview)?;
         let interactions = crate::performance::sample_statistics(&interactions)?;
-        let report = json!({"format_version":1,"candidate":identity,"helper":helper_identity,"target":evidence::linkage::native_host()?,"pty":{"columns":160,"rows":54,"pixel_width":1920,"pixel_height":1080,"protocol":"kitty","display_emulator":false},"cache_condition":"Fresh app/data directories per sample; OS page/font caches uncontrolled, individual samples retained with first at index 0; no concurrent tasks in this job","samples":samples,"input_ready_ms":input,"first_preview_ms":preview,"interaction_output_ms":interactions,"idle":idle,"scope":"PTY input echo and complete Kitty output receipt, including observer backpressure; sampled persistent process trees can miss short-lived descendants. Not physical presentation, a controlled cold-start benchmark, transient peak RSS, external AI/adapter/terminal resource usage or full performance acceptance"});
+        let activity = active_resources_trial(&binary, &helper, &output, deadline)?;
+        let report = json!({"format_version":1,"candidate":identity,"helper":helper_identity,"target":evidence::linkage::native_host()?,"pty":{"columns":160,"rows":54,"pixel_width":1920,"pixel_height":1080,"protocol":"kitty","display_emulator":false},"cache_condition":"Fresh app/data directories per sample; OS page/font caches uncontrolled, individual samples retained with first at index 0; no concurrent tasks in this job","samples":samples,"input_ready_ms":input,"first_preview_ms":preview,"interaction_output_ms":interactions,"idle":idle,"active_resources":activity,"scope":"PTY input echo and complete Kitty output receipt, including observer backpressure; sampled process trees can miss short-lived descendants. Not physical presentation, a controlled cold-start benchmark, transient peak RSS, external AI/adapter/terminal resource usage or full performance acceptance"});
         util::publish(&output.join("report.json"), &util::encode(&report)?, false)?;
         util::print(
             &json!({"tui_measurement":"recorded","samples":arguments.samples,"output":output}),

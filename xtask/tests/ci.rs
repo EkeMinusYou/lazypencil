@@ -12,6 +12,7 @@ fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() 
         "xtask/src/performance.rs",
         "xtask/src/performance/tui.rs",
         "xtask/src/performance/resources.rs",
+        "xtask/src/performance/resources.rs",
     ] {
         let paths = vec![path.into()];
         assert!(focus::tui_measurement_changed(&paths));
@@ -592,6 +593,9 @@ fn release_recipe_helpers_compile_on_one_platform_before_the_full_matrix() {
 #[test]
 fn candidate_packaging_changes_run_a_real_candidate_gate_before_the_matrix() {
     for path in [
+        "xtask/src/terminal/mod.rs",
+        "xtask/src/terminal/hosted.rs",
+        "xtask/src/terminal/raster.rs",
         "xtask/src/dist.rs",
         "xtask/src/dist/binary.rs",
         "xtask/src/evidence.rs",

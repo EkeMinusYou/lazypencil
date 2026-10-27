@@ -370,6 +370,7 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
                     ".github/workflows/release-evidence.yml",
                 ]
                 .contains(&path.as_str())
+                    || path.starts_with("xtask/src/terminal/")
             }))
     {
         return Ok(Plan {

@@ -3,7 +3,99 @@ use anyhow::{Context, Result, ensure};
 use serde::Serialize;
 #[cfg(target_os = "macos")]
 use std::process::Command;
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::BTreeMap,
+    time::{Duration, Instant},
+};
+
+/// A separate activity observation, never enabled in the latency trials.
+/// A sampling interval is not a guarantee of observing transient kernel peaks.
+pub struct ActiveTrace {
+    root: u32,
+    started: Instant,
+    next: Instant,
+    points: Vec<ActivePoint>,
+}
+
+#[derive(Serialize)]
+struct ActivePoint {
+    elapsed_ms: f64,
+    observation_ms: f64,
+    snapshot: Snapshot,
+}
+
+impl ActiveTrace {
+    const INTERVAL: Duration = Duration::from_millis(50);
+
+    pub fn new(root: u32) -> Result<Self> {
+        ensure!(root > 0, "Invalid activity root");
+        let now = Instant::now();
+        let mut trace = Self {
+            root,
+            started: now,
+            next: now,
+            points: Vec::new(),
+        };
+        trace.observe()?;
+        Ok(trace)
+    }
+
+    fn observe(&mut self) -> Result<()> {
+        ensure!(
+            self.points.len() < 16384,
+            "Activity observation exceeded its sample bound"
+        );
+        let before = Instant::now();
+        let snapshot = snapshot(self.root)?;
+        self.points.push(ActivePoint {
+            elapsed_ms: before.duration_since(self.started).as_secs_f64() * 1000.0,
+            observation_ms: before.elapsed().as_secs_f64() * 1000.0,
+            snapshot,
+        });
+        self.next = Instant::now() + Self::INTERVAL;
+        Ok(())
+    }
+
+    pub fn observe_if_due(&mut self) -> Result<()> {
+        if Instant::now() >= self.next {
+            self.observe()?;
+        }
+        Ok(())
+    }
+
+    pub fn finish(mut self) -> Result<serde_json::Value> {
+        self.observe()?;
+        let maximum_rss = self
+            .points
+            .iter()
+            .map(|point| point.snapshot.rss_bytes())
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .max()
+            .context("No activity observations")?;
+        let maximum_gap = self
+            .points
+            .windows(2)
+            .map(|points| points[1].elapsed_ms - points[0].elapsed_ms)
+            .fold(0.0, f64::max);
+        let maximum_processes = self
+            .points
+            .iter()
+            .map(|point| point.snapshot.processes.len())
+            .max()
+            .unwrap();
+        Ok(serde_json::json!({
+            "scope":"Separate native TUI startup and four complete pan/zoom operations; no agent request",
+            "root_pid":self.root, "periodic_sampling_interval_ms":Self::INTERVAL.as_millis(),
+            "actual_maximum_sampling_gap_ms":maximum_gap,
+            "maximum_observed_process_tree_rss_bytes":maximum_rss,
+            "maximum_observed_processes":maximum_processes,
+            "transient_kernel_peak_established":false,
+            "included_in_latency_distributions":false,
+            "points":self.points
+        }))
+    }
+}
 #[cfg(target_os = "linux")]
 use std::{fs, io::Read};
 
