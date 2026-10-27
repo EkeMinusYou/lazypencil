@@ -4,6 +4,17 @@ use std::process::Command;
 #[cfg(unix)]
 use std::time::Duration;
 
+#[cfg(target_os = "linux")]
+#[test]
+fn live_proc_arguments_are_read_despite_zero_reported_file_size() {
+    assert_eq!(std::fs::metadata("/proc/self/cmdline").unwrap().len(), 0);
+    assert_eq!(
+        resources::linux_arguments(std::process::id()).unwrap(),
+        std::env::args_os().collect::<Vec<_>>()
+    );
+    assert!(resources::linux_arguments(0).is_err());
+}
+
 #[cfg(unix)]
 #[test]
 fn active_resource_trace_keeps_raw_owned_counters_and_excludes_latency_claims() {

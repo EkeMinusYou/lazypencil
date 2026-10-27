@@ -226,17 +226,8 @@ pub fn require_script_worker(pid: u32, binary: &std::path::Path) -> Result<()> {
     let binary = binary.canonicalize()?;
     #[cfg(target_os = "linux")]
     {
-        let bytes = crate::util::read(
-            &std::path::PathBuf::from(format!("/proc/{pid}/cmdline")),
-            65536,
-        )?;
-        let arguments = bytes
-            .split(|byte| *byte == 0)
-            .filter(|part| !part.is_empty())
-            .collect::<Vec<_>>();
-        use std::os::unix::ffi::OsStrExt;
         ensure!(
-            arguments == [binary.as_os_str().as_bytes(), b"__script_worker"],
+            linux_arguments(pid)? == [binary.into_os_string(), "__script_worker".into()],
             "Unexpected owned script command"
         );
     }
@@ -260,6 +251,25 @@ pub fn require_script_worker(pid: u32, binary: &std::path::Path) -> Result<()> {
     }
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+pub fn linux_arguments(pid: u32) -> Result<Vec<std::ffi::OsString>> {
+    use std::os::unix::ffi::OsStringExt;
+    // procfs reports size zero for cmdline. Bound actual bytes instead of using
+    // the immutable regular-file reader's metadata-length contract.
+    let mut bytes = Vec::new();
+    fs::File::open(format!("/proc/{pid}/cmdline"))?
+        .take(65537)
+        .read_to_end(&mut bytes)?;
+    ensure!(
+        !bytes.is_empty() && bytes.len() <= 65536 && bytes.last() == Some(&0),
+        "Incomplete or oversized process arguments"
+    );
+    Ok(bytes[..bytes.len() - 1]
+        .split(|byte| *byte == 0)
+        .map(|argument| std::ffi::OsString::from_vec(argument.to_vec()))
+        .collect())
 }
 #[cfg(target_os = "linux")]
 use std::{fs, io::Read};
