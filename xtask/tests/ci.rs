@@ -7,6 +7,56 @@ use serde_json::{Value, json};
 use std::{collections::BTreeMap, fs, path::PathBuf, process::Command};
 
 #[test]
+fn installer_only_changes_reproduce_without_native_features_and_mixed_changes_stay_broad() {
+    let root = util::root();
+    let paths: Vec<String> = [
+        "src/runtime.rs",
+        "tests/runtime.rs",
+        "xtask/src/ci/focus.rs",
+        "xtask/tests/ci.rs",
+        ".github/actions/xtask/action.yml",
+        "xtask/src/ci/cache.rs",
+        "xtask/tests/checkpoints.rs",
+        "xtask/tests/compatible_cache.rs",
+        "docs/fonts.md",
+        "docs/runtimes.md",
+        "docs/implementation-status.md",
+        "docs/performance.md",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    let plan = focus::select(&root, &paths, "auto").unwrap();
+    assert_eq!(plan.platform, "ubuntu-24.04");
+    assert_eq!(plan.suite, "core");
+    assert_eq!(plan.targets, ["runtime"]);
+    let commands = ci::commands::plan(&root, &plan.suite, &plan.targets).unwrap();
+    assert!(
+        commands
+            .build
+            .iter()
+            .chain(&commands.checks)
+            .all(|command| command.iter().any(|arg| arg == "--no-default-features"))
+    );
+    let mut shared_lock = paths.clone();
+    shared_lock.push("src/store.rs".into());
+    let shared_lock = focus::select(&root, &shared_lock, "auto").unwrap();
+    assert_eq!(shared_lock.suite, "core");
+    assert_eq!(
+        shared_lock.targets,
+        ["document_store", "operations_cli", "project", "runtime"]
+    );
+    for extra in [
+        "src/cdp.rs",
+        "src/runtime/diagnostics.rs",
+        "tests/dynamic_render.rs",
+    ] {
+        let mut mixed = paths.clone();
+        mixed.push(extra.into());
+        assert_ne!(focus::select(&root, &mixed, "auto").unwrap().suite, "core");
+    }
+}
+
+#[test]
 fn hosted_terminal_changes_select_linux_before_shared_bsd_bridge_checks() {
     for path in [
         "src/tui/graphics.rs",

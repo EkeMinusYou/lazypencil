@@ -218,3 +218,68 @@ fn newest_compatible_checkpoint_survives_until_a_complete_main_cache_replaces_it
     entries.push(entry(7, primary, "layout-a", "refs/heads/main"));
     assert_eq!(removed(&entries), [1, 2, 3]);
 }
+#[test]
+fn tool_dependencies_retire_only_after_a_newer_complete_matching_sdk_and_format() {
+    let entry = |id, key: String, date, version, reference| serde_json::json!({"id":id,"key":key,"created_at":date,"version":version,"ref":reference});
+    let prefix = "Linux-ARM64-image_one-rust1.94.0";
+    let dependency = |prefix: &str| format!("xtask-deps-v1-{prefix}-{}", "a".repeat(64));
+    let source = format!("xtask-v1-{prefix}-{}", "b".repeat(64));
+    let entries = vec![
+        entry(
+            1,
+            dependency(prefix),
+            "2026-10-01",
+            "one",
+            "refs/heads/main",
+        ),
+        entry(2, source, "2026-10-02", "one", "refs/heads/main"),
+        entry(
+            3,
+            dependency(prefix),
+            "2026-10-03",
+            "one",
+            "refs/heads/main",
+        ),
+        entry(
+            4,
+            dependency(prefix),
+            "2026-10-01",
+            "two",
+            "refs/heads/main",
+        ),
+        entry(
+            5,
+            dependency("Linux-ARM64-image_two-rust1.94.0"),
+            "2026-10-01",
+            "one",
+            "refs/heads/main",
+        ),
+        entry(
+            6,
+            dependency(prefix),
+            "2026-10-01",
+            "one",
+            "refs/pull/1/merge",
+        ),
+        entry(
+            7,
+            format!("native-v2-ubuntu-24.04-arm-image_one-{}", "a".repeat(64)),
+            "2026-10-01",
+            "one",
+            "refs/heads/main",
+        ),
+    ];
+    let removed = cache::obsolete(&entries, None).unwrap();
+    assert_eq!(
+        removed
+            .iter()
+            .map(|r| r["id"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        [1]
+    );
+    let without_source = entries
+        .into_iter()
+        .filter(|r| r["id"] != 2)
+        .collect::<Vec<_>>();
+    assert!(cache::obsolete(&without_source, None).unwrap().is_empty());
+}

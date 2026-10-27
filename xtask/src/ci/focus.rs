@@ -242,6 +242,40 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     }
     .to_owned();
     let preprocessor = preprocessor_changed(paths);
+    // Installation and file verification have no rendering feature dependency.
+    // Reproduce these failures before native compilation and browser setup;
+    // mixed rendering/CDP changes retain the broader existing plan.
+    if any(paths, &["src/runtime.rs", "tests/runtime.rs"], &[])
+        && paths.iter().all(|path| {
+            [
+                "src/runtime.rs",
+                "src/store.rs",
+                "tests/runtime.rs",
+                "xtask/src/ci/focus.rs",
+                "xtask/tests/ci.rs",
+                ".github/actions/xtask/action.yml",
+                "xtask/src/ci/cache.rs",
+                "xtask/tests/checkpoints.rs",
+                "xtask/tests/compatible_cache.rs",
+                "README.md",
+            ]
+            .contains(&path.as_str())
+                || path.starts_with("docs/") && path.ends_with(".md")
+        })
+    {
+        return Ok(Plan {
+            platform,
+            suite: "core".into(),
+            targets: if paths.iter().any(|path| path == "src/store.rs") {
+                ["document_store", "operations_cli", "project", "runtime"]
+                    .map(str::to_owned)
+                    .to_vec()
+            } else {
+                vec!["runtime".into()]
+            },
+            preprocessor,
+        });
+    }
     let font_inputs = paths.iter().any(|path| font_input(path));
     let renderer = |path: &str| path == "src/render.rs" || path.starts_with("src/render/");
     if paths.iter().any(|path| renderer(path))

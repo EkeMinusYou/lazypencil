@@ -25,17 +25,7 @@ struct Fixture {
 fn release_codegen_override_rebuilds_only_application_units_and_keeps_test_edits_fresh() {
     use lazypencil_xtask::evidence::link_map;
     let f = Fixture::new();
-    fs::create_dir_all(f.source.join("dependency/src")).unwrap();
-    fs::write(
-        f.source.join("dependency/Cargo.toml"),
-        "[package]\nname='unchanged_dependency'\nversion='0.1.0'\nedition='2024'\n",
-    )
-    .unwrap();
-    fs::write(
-        f.source.join("dependency/src/lib.rs"),
-        "pub fn value() -> u8 { 1 }\n",
-    )
-    .unwrap();
+    f.add_dependency();
     fs::write(
         f.source.join("Cargo.toml"),
         "[package]\nname='lazypencil'\nversion='0.1.0'\nedition='2024'\n[workspace]\n[dependencies]\nunchanged_dependency={path='dependency'}\n[profile.release]\ncodegen-units=1\nlto='thin'\n",
@@ -67,10 +57,10 @@ fn release_codegen_override_rebuilds_only_application_units_and_keeps_test_edits
     let mut baseline = current.clone();
     let config = baseline.iter().position(|arg| arg == "--config").unwrap();
     drop(baseline.drain(config..config + 2));
-    let (before, _) = f.release_units(&baseline);
+    let (before, _) = f.cargo_units(&baseline);
     assert_eq!(before.len(), 3);
     assert!(before.values().all(|fresh| !fresh));
-    let (changed, compiler_commands) = f.release_units(&current);
+    let (changed, compiler_commands) = f.cargo_units(&current);
     assert!(changed["unchanged_dependency:lib"]);
     assert!(!changed["lazypencil:lib"] && !changed["lazypencil:bin"]);
     assert_eq!(compiler_commands.matches("codegen-units=16").count(), 2);
@@ -81,7 +71,7 @@ fn release_codegen_override_rebuilds_only_application_units_and_keeps_test_edits
         "#[test] fn changed_test_only() { assert_eq!(lazypencil::fixture(), 1); }\n",
     )
     .unwrap();
-    let (unchanged, _) = f.release_units(&current);
+    let (unchanged, _) = f.cargo_units(&current);
     assert!(unchanged.values().all(|fresh| *fresh));
     assert_eq!(
         process::checked(
@@ -122,7 +112,7 @@ fn release_recipe_transition_reuses_debug_only_and_overlays_the_new_release_delt
         .unwrap();
     drop(old_command.drain(config..config + 2));
     f.build(&[]);
-    f.release_units(&old_command);
+    f.cargo_units(&old_command);
     let current = f.identity();
     let old = current.previous_debug_identity().unwrap().unwrap();
     cache::stage(&f.source, &f.target, &f.full, &old).unwrap();
@@ -154,7 +144,7 @@ fn release_recipe_transition_reuses_debug_only_and_overlays_the_new_release_delt
     assert!(!link_map::path(&f.target).exists());
     assert!(f.build(&[]).values().all(|(fresh, _)| *fresh));
     assert!(
-        f.release_units(&current_command)
+        f.cargo_units(&current_command)
             .0
             .values()
             .all(|fresh| !fresh)
@@ -187,13 +177,92 @@ fn release_recipe_transition_reuses_debug_only_and_overlays_the_new_release_delt
     )
     .unwrap();
     assert!(f.build(&[]).values().all(|(fresh, _)| *fresh));
-    let (release, _) = f.release_units(&current_command);
+    let (release, _) = f.cargo_units(&current_command);
     assert!(release.values().all(|fresh| *fresh));
+}
+
+#[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
+#[test]
+fn source_fallback_uses_cargo_ownership_to_discard_stale_tests_and_keep_unchanged_dependencies() {
+    let f = Fixture::new();
+    f.add_dependency();
+    fs::write(f.source.join("Cargo.toml"), "[package]\nname='lazypencil'\nversion='0.1.0'\nedition='2024'\n[workspace]\n[dependencies]\nunchanged_dependency={path='dependency'}\n").unwrap();
+    fs::write(
+        f.source.join("src/lib.rs"),
+        "pub fn fixture() -> u8 { unchanged_dependency::value() }\n",
+    )
+    .unwrap();
+    fs::write(
+        f.source.join("src/main.rs"),
+        "fn main() { println!(\"{}\", lazypencil::fixture()); }\n",
+    )
+    .unwrap();
+    process::checked(
+        Command::new("cargo")
+            .current_dir(&f.source)
+            .args(["generate-lockfile", "--offline"]),
+        Duration::from_secs(120),
+    )
+    .unwrap();
+    f.manifest();
+    f.build(&[]);
+    f.edit();
+    // A complete older source checkpoint contains test binaries too. Without
+    // cleaning this package, normalized source mtimes conceal the edited test.
+    let stale = f.build(&[]);
+    assert!(stale["one"].0);
+    let run = |path: &std::path::Path| {
+        process::output(&mut Command::new(path), Duration::from_secs(15)).unwrap()
+    };
+    let stale_result = run(&stale["one"].1);
+    assert!(!stale_result.timed_out && stale_result.status.success());
+    process::checked(
+        Command::new("cargo")
+            .current_dir(&f.source)
+            .env("CARGO_TARGET_DIR", &f.target)
+            .args(["clean", "--locked", "--package", "lazypencil"]),
+        Duration::from_secs(120),
+    )
+    .unwrap();
+    let arguments = [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--bins",
+        "--message-format=json",
+    ]
+    .map(str::to_owned);
+    let (units, _) = f.cargo_units(&arguments);
+    assert!(units["unchanged_dependency:lib"]);
+    assert!(!units["lazypencil:lib"] && !units["lazypencil:bin"]);
+    let rebuilt = f.build(&[]);
+    assert!(rebuilt["unchanged_dependency"].0);
+    assert!(!rebuilt["one"].0);
+    let updated = run(&rebuilt["one"].1);
+    assert!(
+        !updated.timed_out && !updated.status.success(),
+        "The edited assertion was not executed"
+    );
 }
 
 impl Fixture {
     #[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
-    fn release_units(&self, arguments: &[String]) -> (BTreeMap<String, bool>, String) {
+    fn add_dependency(&self) {
+        fs::create_dir_all(self.source.join("dependency/src")).unwrap();
+        fs::write(
+            self.source.join("dependency/Cargo.toml"),
+            "[package]\nname='unchanged_dependency'\nversion='0.1.0'\nedition='2024'\n",
+        )
+        .unwrap();
+        fs::write(
+            self.source.join("dependency/src/lib.rs"),
+            "pub fn value() -> u8 { 1 }\n",
+        )
+        .unwrap();
+    }
+    #[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
+    fn cargo_units(&self, arguments: &[String]) -> (BTreeMap<String, bool>, String) {
         let output = process::output(
             Command::new(&arguments[0])
                 .current_dir(&self.source)

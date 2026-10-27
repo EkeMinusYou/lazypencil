@@ -4,6 +4,70 @@ use tempfile::TempDir;
 #[path = "support/fixture.rs"]
 mod fixture_support;
 
+#[cfg(unix)]
+#[test]
+fn local_runtime_archives_reject_nonregular_inputs_without_blocking_or_leaving_staging_files() {
+    use std::{os::unix::fs::symlink, process::Stdio, time::Duration};
+    let temp = TempDir::new().unwrap();
+    let fifo = temp.path().join("archive.zip");
+    assert!(
+        Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let alias = temp.path().join("archive-alias.zip");
+    symlink(&fifo, &alias).unwrap();
+    for (index, archive) in [fifo.as_path(), alias.as_path(), temp.path()]
+        .into_iter()
+        .enumerate()
+    {
+        let data = temp.path().join(format!("data-{index}"));
+        let mut child = Command::new(env!("CARGO_BIN_EXE_lazypencil"))
+            .args(["--json", "--data-dir"])
+            .arg(&data)
+            .args(["runtime", "setup", "chromium", "--archive"])
+            .arg(archive)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let started = std::time::Instant::now();
+        while child.try_wait().unwrap().is_none() {
+            if started.elapsed() > Duration::from_secs(10) {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("Runtime archive input blocked: {}", archive.display());
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let output = child.wait_with_output().unwrap();
+        assert!(!output.status.success());
+        let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(value["error"]["code"], "RUNTIME_INTEGRITY");
+        let version: serde_json::Value =
+            serde_json::from_str(include_str!("../resources/runtimes/chromium.json")).unwrap();
+        let parent = data
+            .join("runtimes/chromium")
+            .join(version["version"].as_str().unwrap());
+        let remaining = fs::read_dir(parent)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            remaining.len(),
+            1,
+            "Partial runtime files survived rejection"
+        );
+        assert_eq!(
+            remaining[0],
+            std::ffi::OsString::from(format!(".{}.lock", runtime::platform().unwrap()))
+        );
+    }
+}
+
 #[test]
 fn unknown_or_corrupted_archives_never_become_installed_runtimes() {
     let temp = TempDir::new().unwrap();

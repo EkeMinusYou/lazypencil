@@ -537,18 +537,29 @@ fn lock_path(
     let file = options
         .open(&path)
         .map_err(|error| Error::io(&path, error))?;
+    wait_for_file_lock(&file, resource, shared, cancel, Duration::from_secs(5))?;
+    Ok(file)
+}
+
+pub(crate) fn wait_for_file_lock(
+    file: &File,
+    resource: &Path,
+    shared: bool,
+    cancel: Option<&tokio_util::sync::CancellationToken>,
+    timeout: Duration,
+) -> Result<()> {
     let start = Instant::now();
     let mut reported = false;
     loop {
         crate::cancel::check(cancel)?;
         let result = if shared {
-            FileExt::try_lock_shared(&file)
+            FileExt::try_lock_shared(file)
         } else {
-            FileExt::try_lock_exclusive(&file)
+            FileExt::try_lock_exclusive(file)
         };
         match result {
-            Ok(()) => return Ok(file),
-            Err(error) if lock_contended(&error) && start.elapsed() < Duration::from_secs(5) => {
+            Ok(()) => return Ok(()),
+            Err(error) if lock_contended(&error) && start.elapsed() < timeout => {
                 if !reported && crate::cancel::cli_handler_installed() {
                     eprintln!("Waiting for file lock: {}", resource.display());
                     reported = true;

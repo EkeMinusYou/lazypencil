@@ -1,13 +1,12 @@
 //! Explicit installation and verification of version-pinned browser artifacts.
 
 use crate::{Error, Result};
-use fs2::FileExt;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
-    fs::{self, File, OpenOptions},
+    fs::{self, OpenOptions},
     io::{Read, Write},
     path::{Component, Path, PathBuf},
     time::Duration,
@@ -117,8 +116,9 @@ pub fn setup(data: &Path, archive: Option<&Path>) -> Result<Value> {
         .write(true)
         .open(&lock_path)
         .map_err(|e| Error::io(&lock_path, e))?;
-    lock.lock_exclusive()
-        .map_err(|e| Error::io(&lock_path, e))?;
+    // Match the existing icon-installer contention budget; downloads retain
+    // their separate 180-second limit. Do not wait forever for another setup.
+    crate::store::wait_for_file_lock(&lock, &lock_path, false, None, Duration::from_secs(60))?;
     if directory.exists() {
         verify(&directory, artifact)?;
         return Ok(
@@ -128,7 +128,13 @@ pub fn setup(data: &Path, archive: Option<&Path>) -> Result<Value> {
     let mut temporary =
         tempfile::NamedTempFile::new_in(parent).map_err(|e| Error::io(parent, e))?;
     if let Some(path) = archive {
-        let file = File::open(path).map_err(|e| Error::io(path, e))?;
+        let file = crate::store::open_regular_file(path).map_err(|error| {
+            if error.code == "INVALID_DOCUMENT" {
+                integrity("Runtime archive must be a regular file")
+            } else {
+                error
+            }
+        })?;
         std::io::copy(&mut file.take(artifact.bytes + 1), &mut temporary)
             .map_err(|e| Error::io(path, e))?;
     } else {
@@ -156,7 +162,7 @@ pub fn setup(data: &Path, archive: Option<&Path>) -> Result<Value> {
         .map_err(|e| Error::io(temporary.path(), e))?
         .len()
         != artifact.bytes
-        || digest(temporary.path())? != artifact.sha256
+        || digest(temporary.path(), artifact.bytes)? != artifact.sha256
     {
         return Err(integrity(
             "Chromium archive does not match its pinned SHA-256 and size",
@@ -270,7 +276,7 @@ fn verify(directory: &Path, artifact: &Artifact) -> Result<()> {
         if !metadata.is_file()
             || metadata.file_type().is_symlink()
             || metadata.len() != pinned.bytes
-            || digest(&path)? != pinned.sha256
+            || digest(&path, pinned.bytes)? != pinned.sha256
         {
             return Err(integrity(format!(
                 "Installed runtime file differs from its pin: {relative}"
@@ -320,16 +326,21 @@ fn verify_contents(
     }
     Ok(())
 }
-fn digest(path: &Path) -> Result<String> {
-    let mut file = File::open(path).map_err(|e| Error::io(path, e))?;
+fn digest(path: &Path, expected_bytes: u64) -> Result<String> {
+    let mut file = crate::store::open_regular_file(path)?.take(expected_bytes.saturating_add(1));
     let mut digest = Sha256::new();
     let mut buffer = [0u8; 65536];
+    let mut bytes = 0;
     loop {
         let count = file.read(&mut buffer).map_err(|e| Error::io(path, e))?;
         if count == 0 {
             break;
         }
+        bytes += count as u64;
         digest.update(&buffer[..count]);
+    }
+    if bytes != expected_bytes {
+        return Err(integrity("Runtime file size changed while hashing"));
     }
     Ok(digest
         .finalize()
@@ -342,4 +353,43 @@ fn unavailable(message: impl Into<String>) -> Error {
 }
 fn integrity(message: impl Into<String>) -> Error {
     Error::new("RUNTIME_INTEGRITY", message)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn runtime_installation_lock_preserves_holder_and_observes_exhausted_budget() {
+        let holder = tempfile::NamedTempFile::new().unwrap();
+        let waiter = holder.reopen().unwrap();
+        fs2::FileExt::lock_exclusive(holder.as_file()).unwrap();
+        let acquire = || {
+            crate::store::wait_for_file_lock(
+                &waiter,
+                holder.path(),
+                false,
+                None,
+                std::time::Duration::ZERO,
+            )
+        };
+        assert_eq!(acquire().unwrap_err().code, "LOCK_UNAVAILABLE");
+        assert!(fs2::FileExt::try_lock_exclusive(&waiter).is_err());
+        fs2::FileExt::unlock(holder.as_file()).unwrap();
+        acquire().unwrap();
+    }
+
+    #[test]
+    fn runtime_hash_requires_the_exact_pinned_length() {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        std::io::Write::write_all(&mut file, b"abc").unwrap();
+        assert_eq!(
+            super::digest(file.path(), 3).unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        for expected in [0, 2, 4] {
+            assert_eq!(
+                super::digest(file.path(), expected).unwrap_err().code,
+                "RUNTIME_INTEGRITY"
+            );
+        }
+    }
 }

@@ -15,14 +15,6 @@ runs:
       run: |
         rustup toolchain install 1.94.0 --profile minimal --component clippy --component rustfmt
         rustup default 1.94.0
-    - name: Restore compiled tool dependencies
-      id: dependencies
-      continue-on-error: true
-      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
-      with:
-        path: xtask/target
-        key: xtask-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LAZYPENCIL_RUNNER_IMAGE }}-rust1.94.0-${{ hashFiles('xtask/Cargo.lock', 'xtask/Cargo.toml') }}
-        restore-keys: xtask-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LAZYPENCIL_RUNNER_IMAGE }}-rust1.94.0-
     - name: Restore tools bound to these sources
       id: tools
       continue-on-error: true
@@ -30,7 +22,22 @@ runs:
       with:
         path: xtask/target
         key: xtask-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LAZYPENCIL_RUNNER_IMAGE }}-rust1.94.0-${{ hashFiles('xtask/**', '!xtask/target/**', '.github/actions/xtask/action.yml') }}
+        restore-keys: xtask-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LAZYPENCIL_RUNNER_IMAGE }}-rust1.94.0-
+    - name: Restore dependencies retained from a failed tool gate
+      id: dependencies
+      if: steps.tools.outputs.cache-hit != 'true'
+      continue-on-error: true
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: xtask/target
+        key: xtask-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LAZYPENCIL_RUNNER_IMAGE }}-rust1.94.0-${{ hashFiles('xtask/Cargo.lock', 'xtask/Cargo.toml') }}
+        restore-keys: xtask-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LAZYPENCIL_RUNNER_IMAGE }}-rust1.94.0-
+    - name: Discard old tool units while retaining Cargo-owned dependencies
+      if: steps.tools.outputs.cache-hit != 'true'
+      shell: bash
+      run: cargo clean --locked --manifest-path xtask/Cargo.toml --target-dir xtask/target --package lazypencil-xtask
     - name: Build the lightweight tools and native fixtures
+      id: build
       if: steps.tools.outputs.cache-hit != 'true'
       shell: bash
       run: cargo build --locked --manifest-path xtask/Cargo.toml --target-dir xtask/target --bins
@@ -48,18 +55,15 @@ runs:
       with:
         path: xtask/target
         key: ${{ steps.tools.outputs.cache-primary-key }}
-    - name: Keep only dependencies in fallback caches
-      if: ${{ !cancelled() && steps.dependencies.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
+    - name: Keep completed dependencies when the tool gate fails
+      id: failed-dependencies
+      if: ${{ failure() && steps.build.outcome == 'success' && steps.dependencies.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
       shell: bash
       run: cargo clean --locked --manifest-path xtask/Cargo.toml --target-dir xtask/target --package lazypencil-xtask
-    - name: Save reusable tool dependencies
-      if: ${{ !cancelled() && steps.dependencies.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
+    - name: Save the failed gate dependency checkpoint
+      if: ${{ failure() && steps.failed-dependencies.outcome == 'success' && github.ref == 'refs/heads/main' }}
       continue-on-error: true
       uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
       with:
         path: xtask/target
         key: ${{ steps.dependencies.outputs.cache-primary-key }}
-    - name: Restore the tools after dependency-only staging
-      if: success() && steps.dependencies.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
-      shell: bash
-      run: cargo build --locked --manifest-path xtask/Cargo.toml --target-dir xtask/target --bins

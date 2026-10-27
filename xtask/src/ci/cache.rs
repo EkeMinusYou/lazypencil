@@ -1221,6 +1221,10 @@ pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Valu
         r"^(xtask-v1-(?:Linux|macOS|Windows)-(?:X64|ARM64)-[A-Za-z0-9_.]+-rust[0-9.]+)-[0-9a-f]{64}$",
     )?;
     let mut tool_groups = BTreeMap::<(String, String), Vec<&Value>>::new();
+    let tool_dependencies = Regex::new(
+        r"^(xtask-deps-v1-(?:Linux|macOS|Windows)-(?:X64|ARM64)-[A-Za-z0-9_.]+-rust[0-9.]+)-[0-9a-f]{64}$",
+    )?;
+    let mut tool_fallbacks = Vec::new();
     let generations =
         Regex::new(r"^(native-v2-.+-[0-9a-f]{64})-(?:focus|full)-[1-9][0-9]*-[1-9][0-9]*$")?;
     let mut checkpoints = BTreeMap::<(String, String), Vec<&Value>>::new();
@@ -1233,6 +1237,15 @@ pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Valu
                 .entry((caps[1].into(), version.into()))
                 .or_default()
                 .push(entry);
+        }
+        if let Some(caps) = tool_dependencies.captures(key) {
+            tool_fallbacks.push((
+                (
+                    caps[1].replacen("xtask-deps-v1-", "xtask-v1-", 1),
+                    version.to_owned(),
+                ),
+                entry,
+            ));
         }
         if let Some(suffix) = key
             .strip_prefix("checkpoint-")
@@ -1313,7 +1326,22 @@ pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Valu
         };
         older_than_latest(entries, keep, &mut selected);
     }
-    // Old tool sources can rebuild against their retained dependency cache.
+    // A successful complete tool checkpoint already contains its dependencies.
+    // Keep newer failed-gate fallbacks and every other SDK/cache format.
+    for (group, fallback) in tool_fallbacks {
+        if let Some(created) = fallback["created_at"].as_str().filter(|s| !s.is_empty())
+            && tool_groups.get(&group).is_some_and(|sources| {
+                sources.iter().any(|source| {
+                    source["created_at"]
+                        .as_str()
+                        .is_some_and(|date| !date.is_empty() && date >= created)
+                })
+            })
+        {
+            selected.insert(fallback["id"].as_u64().unwrap(), fallback.clone());
+        }
+    }
+    // Other tool sources can rebuild against the newest complete checkpoint.
     // Keep one complete generation per runner/compiler/cache format so cheap
     // tool outputs do not evict expensive native dependencies.
     for entries in tool_groups.into_values() {
