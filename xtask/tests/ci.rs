@@ -798,6 +798,45 @@ const COMPILER: &str = "rustc 1.94.0\nrelease: 1.94.0\ncommit-hash: 4a4ef493e3a1
 const TREE: &str = "b24ec03467f4fe02cfb29f305f8a393d83c9588dd4729e01787a36e2b994c62d";
 
 #[test]
+fn native_build_scheduling_preserves_compiler_arguments_and_test_execution() {
+    let words = |args: &[&str]| args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>();
+    for args in [
+        words(&["cargo", "build", "--locked"]),
+        words(&["cargo", "test", "--locked", "--no-run"]),
+        words(&[
+            "cargo",
+            "rustc",
+            "--release",
+            "--",
+            "-C",
+            "link-arg=-Wl,-Map=/tmp/output.map",
+        ]),
+    ] {
+        let scheduled = ci::commands::build_jobs(&args, true);
+        assert_eq!(&scheduled[..2], &args[..2]);
+        assert_eq!(&scheduled[2..4], &["--jobs", "2"]);
+        assert_eq!(&scheduled[4..], &args[2..]);
+        assert_eq!(ci::commands::build_jobs(&args, false), args);
+        assert_eq!(ci::commands::build_jobs(&scheduled, true), scheduled);
+    }
+    for args in [
+        &["cargo", "test", "--locked", "--", "--no-run"][..],
+        &["cargo", "test", "--locked", "--", "--test-threads=2"],
+        &["cargo", "clippy", "--all-targets", "--", "-D", "warnings"],
+        &["cargo", "build", "--jobs=1"],
+        &["cargo", "build", "-j1"],
+        &["cargo", "build", "-j", "1"],
+        &["cargo", "build", "--jobs", "1"],
+        &["cargo"],
+        &[],
+        &["/tmp/cargo", "build"],
+    ] {
+        let args = words(args);
+        assert_eq!(ci::commands::build_jobs(&args, true), args);
+    }
+}
+
+#[test]
 fn native_identity_binds_compiler_image_flags_and_dependency_tree_but_not_scheduling() {
     let original =
         cache::native_identity("ubuntu-24.04", "20261012.334.1", TREE, COMPILER, &flags()).unwrap();

@@ -105,6 +105,7 @@ impl Session {
         })
     }
     pub fn command(&self, invocation: &[String]) -> Command {
+        let invocation = commands::build_jobs(invocation, cfg!(target_os = "linux"));
         let mut command = Command::new(&invocation[0]);
         command.args(&invocation[1..]).current_dir(&self.root);
         command
@@ -116,22 +117,19 @@ impl Session {
         log: &str,
         append: bool,
     ) -> Result<()> {
-        self.execute_command(
-            invocation,
-            &mut self.command(invocation),
-            seconds,
-            log,
-            append,
-        )
+        self.execute_command(&mut self.command(invocation), seconds, log, append)
     }
     fn execute_command(
         &self,
-        invocation: &[String],
         command: &mut Command,
         seconds: u64,
         log: &str,
         append: bool,
     ) -> Result<()> {
+        let invocation = std::iter::once(command.get_program())
+            .chain(command.get_args())
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
         let started = Instant::now();
         let result = process::logged(
             command,
@@ -139,7 +137,7 @@ impl Session {
             &self.temporary.join(log),
             append,
         );
-        self.record_timing(invocation, started.elapsed(), result.is_ok(), log)?;
+        self.record_timing(&invocation, started.elapsed(), result.is_ok(), log)?;
         result
     }
     fn real_emoji(&self, log: &str) -> Result<()> {
@@ -171,7 +169,7 @@ impl Session {
         .into();
         let mut command = self.command(&invocation);
         command.env("LAZYPENCIL_TEST_EMOJI_DIR", output);
-        self.execute_command(&invocation, &mut command, 300, log, false)
+        self.execute_command(&mut command, 300, log, false)
     }
     fn record_timing(
         &self,
@@ -907,7 +905,7 @@ impl Session {
                 "LAZYPENCIL_CONFIG_DIR",
                 self.temporary.join("runtime-mcp-settings"),
             );
-        self.execute_command(&args, &mut command, 300, log, true)
+        self.execute_command(&mut command, 300, log, true)
     }
 
     fn long_tests(&self) -> Result<()> {
@@ -933,9 +931,7 @@ impl Session {
                             "LAZYPENCIL_CONFIG_DIR",
                             self.temporary.join("runtime-lifecycle-settings"),
                         );
-                        if let Err(error) =
-                            self.execute_command(&args, &mut command, 300, log, false)
-                        {
+                        if let Err(error) = self.execute_command(&mut command, 300, log, false) {
                             failures.push(format!("{target}: {error:#}"));
                         }
                     }
@@ -972,9 +968,7 @@ impl Session {
                                 "LAZYPENCIL_CONFIG_DIR",
                                 self.temporary.join("lazypencil-material-settings"),
                             );
-                        if let Err(error) =
-                            self.execute_command(&args, &mut command, 3600, log, false)
-                        {
+                        if let Err(error) = self.execute_command(&mut command, 3600, log, false) {
                             failures.push(format!("{target}: {error:#}"));
                         }
                     }

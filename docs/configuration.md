@@ -1,6 +1,6 @@
 # User and project configuration
 
-User `config.toml` persists font preferences, runtime limits, and per-agent ACP preferences across projects. Project `lazypencil.toml` overrides individual font/runtime fields and adds project design guides, style catalogues, and a default style. CLI, MCP, and TUI use the same captured document settings; CLI and TUI resolve the same user agent profiles. Project instructions require an explicit local user grant. Project executable settings, browser authentication/network/wait policy, asset/library and other resource-limit settings remain unfinished. Prompt, clipboard, global and viewing shortcuts are user-configurable; see [TUI controls](tui.md#viewing-and-global-shortcuts).
+User `config.toml` persists font preferences, runtime limits, and per-agent ACP preferences across projects. Project `lazypencil.toml` overrides individual font/runtime fields and adds project design guides, style catalogues, and a default style. CLI, MCP, and TUI use the same captured document settings; CLI and TUI resolve the same merged user/project agent profiles. Project instructions and agent execution use separate explicit local grants, described below. Browser wait/selector policies are configurable; browser authentication profiles, request restrictions, asset/library and other resource-limit settings remain unfinished. Prompt, clipboard, global and viewing shortcuts are user-configurable; see [TUI controls](tui.md#viewing-and-global-shortcuts).
 
 ## Local conversation retention
 
@@ -208,7 +208,7 @@ A grant is required when project settings change the effective invocation after 
 
 `config untrust FILE` revokes both local grant purposes, including when the configuration has been removed or is malformed. Grants are bound to the canonical project root and physical configuration path as well as the table, so sharing a configuration symlink does not share authorization between project roots. Empty agent tables inherit without requiring a grant. Grant files reject mismatched scopes, malformed content and symlinks.
 
-This authorization covers the reviewed settings, not executable bytes or transitive code. Replacing a binary or script at an approved path is outside the fingerprint. User profiles remain local preferences; neither scope installs adapters, alters external agent configuration, proves a billing route, or adds executable operations to MCP. The implementation and new CLI/PTY regressions await the next GHA validation.
+This authorization covers the reviewed settings, not executable bytes or transitive code. Replacing a binary or script at an approved path is outside the fingerprint. User profiles remain local preferences; neither scope installs adapters, alters external agent configuration, proves a billing route, or adds executable operations to MCP. The project-agent CLI and real-PTY regressions passed on all three initial-release platforms at `3bfa2f1` in [GHA 40531196449](https://github.com/EkeMinusYou/lazypencil/actions/runs/40531196449).
 
 ## Project guides and styles
 

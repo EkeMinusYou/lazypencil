@@ -196,9 +196,7 @@ pub fn focus_inputs(s: &Session) -> Result<()> {
         command
             .env("CARGO_MANIFEST_DIR", &s.root)
             .env("CARGO_MANIFEST_PATH", s.root.join("Cargo.toml"));
-        if let Err(error) =
-            s.execute_command(&args, &mut command, 300, "focus-runtime-inputs.log", true)
-        {
+        if let Err(error) = s.execute_command(&mut command, 300, "focus-runtime-inputs.log", true) {
             failures.push(format!("{target}: {error:#}"));
         }
     }

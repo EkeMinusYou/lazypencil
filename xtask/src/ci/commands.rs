@@ -8,6 +8,29 @@ use std::{
 
 pub type Invocation = Vec<String>;
 
+/// Change Cargo's scheduling without changing compiler-visible environment or flags.
+pub fn build_jobs(invocation: &[String], linux: bool) -> Invocation {
+    let mut scheduled = invocation.to_vec();
+    let cargo_end = invocation
+        .iter()
+        .position(|argument| argument == "--")
+        .unwrap_or(invocation.len());
+    let cargo = &invocation[..cargo_end];
+    let compiles = cargo.first().is_some_and(|argument| argument == "cargo")
+        && match cargo.get(1).map(String::as_str) {
+            Some("build" | "rustc") => true,
+            Some("test") => cargo.iter().any(|argument| argument == "--no-run"),
+            _ => false,
+        };
+    let explicit = cargo.iter().skip(2).any(|argument| {
+        argument == "--jobs" || argument.starts_with("--jobs=") || argument.starts_with("-j")
+    });
+    if linux && compiles && !explicit {
+        scheduled.splice(2..2, ["--jobs".into(), "2".into()]);
+    }
+    scheduled
+}
+
 /// Keep both normal and test build configurations, ending in the test graph
 /// that the following reproductions consume. Do not switch back between them.
 pub fn catalog_builds(targets: &[String]) -> [Invocation; 2] {

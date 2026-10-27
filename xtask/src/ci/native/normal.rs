@@ -123,7 +123,7 @@ fn run_lane(
         command
             .env("CARGO_MANIFEST_DIR", &s.root)
             .env("CARGO_MANIFEST_PATH", s.root.join("Cargo.toml"));
-        s.execute_command(args, &mut command, seconds, log, true)
+        s.execute_command(&mut command, seconds, log, true)
     })
 }
 
