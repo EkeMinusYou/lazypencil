@@ -123,6 +123,7 @@ impl Harness {
     ) -> Result<Self> {
         let image_case = if [
             "dynamic-idle",
+            "project-agent-config",
             "page-playback",
             "font-config",
             "user-font-config",
@@ -178,7 +179,7 @@ impl Harness {
             .arg(root.join("data"))
             .arg("tui")
             .arg(document);
-        if case != "user-agent-config" {
+        if !["user-agent-config", "project-agent-config"].contains(&case) {
             command
                 .arg("--adapter")
                 .arg(crate::fixture_support::helper())

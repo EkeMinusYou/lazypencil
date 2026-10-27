@@ -104,7 +104,7 @@ impl Conversation {
             .adapter
             .clone()
             .unwrap_or_else(|| PathBuf::from(args.agent.command()));
-        let command = if command.components().count() > 1 {
+        let command = if command.components().count() > 1 && args.project_execution.is_none() {
             crate::paths::canonical(&command)?
         } else {
             command
@@ -256,19 +256,26 @@ impl Conversation {
         self.require_idle()?;
         let result = self.send_inner(selection).await;
         if let Err(error) = &result
-            && self.active()
+            && (self.active()
+                || error.code == "PROJECT_NOT_TRUSTED" && self.args.project_execution.is_some())
         {
+            let active = self.active();
             self.cancel();
             if let Some(host) = self.host.take() {
                 let _ = host.close().await;
             }
             self.ready = false;
             self.grant.take();
-            self.finish(Err(error.clone()))?;
+            if active {
+                self.finish(Err(error.clone()))?;
+            } else {
+                self.usage.take();
+            }
         }
         result
     }
     async fn send_inner(&mut self, selection: Option<Value>) -> Result<()> {
+        self.require_project_agent()?;
         if self.draft().trim().is_empty() && self.images().is_empty() {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
@@ -364,6 +371,7 @@ impl Conversation {
         self.result = None;
         let start = json!({"type":"start","session":self.id(),"turn":turn,"native_session_id":self.session.state.native_session_id,"document":self.store.path(),
             "before_revision":before,"agent":self.args.agent,"requested_auth":self.args.auth,"billing_source":"unknown",
+            "project_agent_execution":self.args.project_execution.as_ref().map(|selection| selection.metadata()),
             "guidance":{"id":guidance["id"],"version":guidance["version"],"hash":guidance["hash"],"project_design":guidance.get("project_design"),"project_guides":guidance["project_guides"].as_array().map(|guides|guides.iter().map(|guide|json!({"id":guide["id"],"version":guide["version"],"hash":guide["hash"],"language":guide["language"]})).collect::<Vec<_>>())},
             "style":style.as_ref().map(|style| json!({"id":style["id"],"version":style["version"],"hash":style["hash"]})),"attachments":self.images(),"selection":selection});
         self.message(start)?;
@@ -390,7 +398,20 @@ impl Conversation {
         }
         Ok(())
     }
+    fn require_project_agent(&self) -> Result<()> {
+        if let Some(selection) = &self.args.project_execution {
+            selection.verify(&self.store)?;
+        }
+        Ok(())
+    }
+
     fn agent_options(&self) -> Result<AgentOptions> {
+        self.require_project_agent()?;
+        let command = if self.command.components().count() > 1 {
+            crate::paths::canonical(&self.command)?
+        } else {
+            self.command.clone()
+        };
         let mut args = vec![
             "--data-dir".into(),
             utf8(self.store.data_dir())?,
@@ -406,7 +427,7 @@ impl Conversation {
             args.extend(["--font".into(), utf8(font)?]);
         }
         let mut options = AgentOptions::new(
-            self.command.clone(),
+            command,
             self.store.path().parent().expect("document parent"),
         );
         options.args = self.args.adapter_args.clone();
@@ -440,6 +461,7 @@ impl Conversation {
         Ok(options)
     }
     async fn submit(&mut self) -> Result<()> {
+        self.require_project_agent()?;
         let active = self.active.as_mut().expect("active turn");
         let content = active
             .content

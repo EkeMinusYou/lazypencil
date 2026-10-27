@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    io::{Read, Write},
+    io::Read,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -356,37 +356,16 @@ impl ProjectCatalog {
         Ok(())
     }
 
-    fn grant_path(&self, data: &Path) -> PathBuf {
-        data.join("trusted-projects").join(format!(
-            "{}.json",
-            hash(self.root.as_os_str().as_encoded_bytes())
-        ))
-    }
     pub fn trusted(&self, data: &Path) -> Result<bool> {
         if !self.configured() {
             return Ok(true);
         }
-        let path = self.grant_path(data);
-        if !fs::symlink_metadata(&path)
-            .is_ok_and(|metadata| metadata.is_file() && !metadata.file_type().is_symlink())
-        {
-            return Ok(false);
-        }
-        let file = match crate::store::open_regular_file(&path) {
-            Ok(file) => file,
-            Err(_) => return Ok(false),
-        };
-        let mut bytes = Vec::new();
-        file.take(4097)
-            .read_to_end(&mut bytes)
-            .map_err(|e| Error::io(&path, e))?;
-        if bytes.len() > 4096 {
-            return Ok(false);
-        }
-        let grant: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-        Ok(grant["version"] == 1
-            && grant["scope"] == "design_instructions"
-            && grant["fingerprint"] == self.trust_fingerprint)
+        crate::config::trust::trusted(
+            data,
+            &self.root,
+            crate::config::trust::Kind::DesignInstructions,
+            &self.trust_fingerprint,
+        )
     }
     pub fn require_trusted(&self, data: &Path) -> Result<()> {
         if self.trusted(data)? {
@@ -406,52 +385,20 @@ impl ProjectCatalog {
             return Self::revoke(&self.root, data);
         }
         self.verify_unchanged()?;
-        let path = self.grant_path(data);
-        let _lock = crate::store::Store::lock_configuration(&path)?;
-        if trusted {
-            fs::create_dir_all(path.parent().expect("grant parent"))
-                .map_err(|e| Error::io(&path, e))?;
-            let mut file = tempfile::NamedTempFile::new_in(path.parent().expect("grant parent"))
-                .map_err(|e| Error::io(&path, e))?;
-            file.write_all(
-                json!({"version":1,"scope":"design_instructions","fingerprint":self.trust_fingerprint})
-                    .to_string()
-                    .as_bytes(),
-            )
-            .map_err(|e| Error::io(&path, e))?;
-            file.as_file().sync_all().map_err(|e| Error::io(&path, e))?;
-            self.verify_unchanged()?;
-            crate::cancel::check(Some(&crate::cancel::token()))?;
-            file.persist(&path).map_err(|e| Error::io(&path, e.error))?;
-            crate::store::sync_directory(path.parent().expect("grant parent"))?;
-        } else {
-            match fs::remove_file(&path) {
-                Ok(()) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => return Err(Error::io(&path, e)),
-            }
-        }
+        let path = crate::config::trust::record(
+            data,
+            &self.root,
+            crate::config::trust::Kind::DesignInstructions,
+            &self.trust_fingerprint,
+            || self.verify_unchanged(),
+        )?;
         Ok(
             json!({"trusted":trusted,"fingerprint":self.fingerprint,"trust_fingerprint":self.trust_fingerprint,"root":self.root,"grant_path":path}),
         )
     }
 
     pub fn revoke(root: &Path, data: &Path) -> Result<Value> {
-        let root = crate::paths::canonical(root)?;
-        let path = data.join("trusted-projects").join(format!(
-            "{}.json",
-            hash(root.as_os_str().as_encoded_bytes())
-        ));
-        let _lock = crate::store::Store::lock_configuration(&path)?;
-        let removed = match fs::remove_file(&path) {
-            Ok(()) => {
-                crate::store::sync_directory(path.parent().expect("grant parent"))?;
-                true
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
-            Err(error) => return Err(Error::io(&path, error)),
-        };
-        Ok(json!({"trusted":false,"removed":removed,"root":root,"grant_path":path}))
+        crate::config::trust::revoke(data, root, crate::config::trust::Kind::DesignInstructions)
     }
 
     pub fn guidance(&self, id: Option<&str>, data: &Path) -> Result<Value> {

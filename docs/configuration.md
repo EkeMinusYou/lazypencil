@@ -41,7 +41,7 @@ lazypencil fonts list --file design.pen
 
 `config init [PATH]` creates `lazypencil.toml` atomically and never overwrites an existing file. A supplied path must have that filename and an existing parent directory. `config show FILE` resolves project settings for that document path without executing scripts, launching a browser/agent, or decoding font glyphs. It can inspect configuration even when the document's contents are invalid. `config schema` returns the JSON Schema for supported settings, including version and array limits. Parsing also enforces byte/path/language limits.
 
-`config init --user` explicitly creates the user configuration and missing parent directories; it also never overwrites an existing file. Ordinary reads do not create those directories. `config show --user` and `config schema --user` need no document and inspect only user settings. The templates leave optional fields commented so a newly initialized project inherits user preferences. User scope accepts `version`, `[fonts]`, `[runtime]`, `[agents]` and `[tui.keys]`; project design instructions are rejected there. Only the user scope accepts agent executables and prompt shortcut settings. See [TUI keys](tui.md#keys-and-commands) for replacement, validation and focus rules. `show --user` reports the effective prompt keys and `schema --user` describes them, including builds without TUI support.
+`config init --user` explicitly creates the user configuration and missing parent directories; it also never overwrites an existing file. Ordinary reads do not create those directories. `config show --user` and `config schema --user` need no document and inspect only user settings. The templates leave optional fields commented so a newly initialized project inherits user preferences. User scope accepts `version`, `[fonts]`, `[runtime]`, `[agents]` and `[tui.keys]`; project design instructions are rejected there. Project agent preferences require the separate execution grant described below. Shortcut settings remain user-only. See [TUI keys](tui.md#keys-and-commands) for replacement, validation and focus rules. `show --user` reports the effective prompt keys and `schema --user` describes them, including builds without TUI support.
 
 The default user location comes from the platform's configuration directory: `~/Library/Application Support/dev.lazypencil.lazypencil/config.toml` on macOS, `$XDG_CONFIG_HOME/lazypencil/config.toml` (normally `~/.config/lazypencil/config.toml`) on Linux, and `%APPDATA%\\lazypencil\\lazypencil\\config\\config.toml` on Windows. `LAZYPENCIL_CONFIG_DIR` overrides the directory, not the filename. A relative override resolves against the invoking directory. `doctor` reports the selected path; `config show --user` reports the requested/physical paths and source hash. The actual Windows path and native operation still require platform verification.
 
@@ -68,7 +68,7 @@ Project discovery starts at the canonical document's directory and walks upward.
 
 File and search-directory paths resolve against the physical parent of the configuration that supplied that field, including when the configuration itself is a symlink. Inherited user paths therefore stay relative to the user file. Absolute local paths are accepted. Home-directory and environment-variable expansions are not performed, and URLs are not font-file paths. Configured external font files can be used without copying them into the project. Canonical configuration and font paths must be UTF-8. The user configuration directory does not extend the document's allowed import/asset roots.
 
-These font paths are explicit data inputs. Project configuration has no executable/argument settings; unsupported tables are rejected. Design trust authorizes instruction use, and does not enable project-selected adapters or arbitrary commands. Trust for future executable settings remains unfinished.
+These font paths are explicit data inputs. Design trust authorizes instruction use; it never authorizes project-selected adapters. Project agent settings use a separate local execution grant, as described below. Unsupported tables are rejected.
 
 `--data-dir` and `LAZYPENCIL_DATA_DIR` resolve relative paths against the invoking directory before child processes change their working directory. ACP adapters and their bound MCP processes therefore use the same local grants, history, and attachments.
 
@@ -181,7 +181,7 @@ require_auth_status = true
 mode = "default"
 ```
 
-`prompt` and `tui` resolve these preferences once at invocation, before creating a document or conversation. The selected agent is explicit `--agent`, then `agents.default`, then built-in `codex`. Only that agent's profile supplies defaults; fields never leak from the other profile. Each remaining field follows explicit CLI value, selected user profile value, then built-in behavior. An explicitly supplied value equal to the built-in default still overrides the user profile, including `--timeout 600`, `--auth subscription`, and `--document-tools allow`.
+`prompt` and `tui` resolve these preferences once at invocation, before creating a document or conversation. Without project overrides, the selected agent is explicit `--agent`, then user `agents.default`, then built-in `codex`. Only that agent's profile supplies defaults; fields never leak from the other profile. Each remaining field follows explicit CLI value, selected user profile value, then built-in behavior. An explicitly supplied value equal to the built-in default still overrides the profile, including `--timeout 600`, `--auth subscription`, and `--document-tools allow`.
 
 `--require-auth-status` enables strict authentication reporting; `--require-auth-status=false` explicitly overrides a true user default. Disabling this flag does not disable an adapter's advertised authentication-status requirements or permit a conflicting reported route. Authentication, model/mode negotiation, document-tool permissions, and timeout cancellation retain the same behavior as their CLI options. Credentials remain in the external agent's stores. A profile is a set of preferences, not evidence that an adapter is installed or that a model/API account can execute a request.
 
@@ -191,7 +191,24 @@ An explicit `--adapter` replaces both the configured executable and its entire `
 
 Changing user preferences affects the next CLI/TUI invocation; an existing connection keeps its resolved settings. Session reload still verifies the agent, requested authentication route, and command/argument fingerprint. It refuses a changed adapter rather than silently switching a saved conversation. Programmatic `Conversation::open` callers supply complete `PromptArgs`; they do not implicitly reapply CLI preferences.
 
-Project `lazypencil.toml` continues to reject `[agents]`. A design-instruction grant does not authorize project-selected executables. Project executable-setting trust remains separate unfinished work. User preferences do not add executable operations to MCP or alter the external agent's own configuration files.
+## Project agent profiles
+
+Project `lazypencil.toml` accepts the same `[agents]`, `[agents.codex]` and `[agents.claude]` fields. Each field follows **explicit CLI > project profile > user profile > built-in**. The selected default agent follows the same order, and only that agent's merged profile applies. Replacing an adapter replaces its entire argument vector, including an empty vector. Inherited adapters keep the physical base directory of their supplying configuration; project adapters use the physical project configuration directory. Argument strings remain unchanged. Both scopes retain the validation and authentication rules above.
+
+Review and authorize the project table explicitly:
+
+```sh
+lazypencil config show design.pen --executables
+lazypencil config trust design.pen --executables --expected-fingerprint SHA256_FROM_SHOW
+```
+
+`show --executables` reads only project configuration metadata and agent settings, without font discovery or loading design resources. It reports the physical source, selected project root, settings and `agent_execution` fingerprint/trust status. Ordinary `config show FILE` also exposes this metadata. Reads never grant permission or launch adapters. The execution grant uses its own `agent_execution` scope and storage; `config trust FILE` without this flag remains a design-instruction grant. MCP cannot create either grant. Agents must not authorize their own project settings.
+
+A grant is required when project settings change the effective invocation after CLI overrides. An unused profile or a project value completely overridden by CLI does not require a grant. TUI inspection, preview and draft recovery remain available before authorization; attempting to send retains the draft and returns `PROJECT_NOT_TRUSTED` before starting the adapter. An unchanged selection can be granted while the TUI is open. Each turn and adapter launch recheck the selected root, table fingerprint and current grant. Revocation stops reuse of an existing connection on the next attempted turn. Changing the agent table requires reviewing and granting the new table and reopening the CLI/TUI; a grant for new settings cannot authorize an old captured selection. Changing fonts or design data alone does not invalidate the agent-table grant.
+
+`config untrust FILE` revokes both local grant purposes, including when the configuration has been removed or is malformed. Grants are bound to the canonical project root and physical configuration path as well as the table, so sharing a configuration symlink does not share authorization between project roots. Empty agent tables inherit without requiring a grant. Grant files reject mismatched scopes, malformed content and symlinks.
+
+This authorization covers the reviewed settings, not executable bytes or transitive code. Replacing a binary or script at an approved path is outside the fingerprint. User profiles remain local preferences; neither scope installs adapters, alters external agent configuration, proves a billing route, or adds executable operations to MCP. The implementation and new CLI/PTY regressions await the next GHA validation.
 
 ## Project guides and styles
 

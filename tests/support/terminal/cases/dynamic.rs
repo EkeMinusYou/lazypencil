@@ -5,7 +5,7 @@ const BLUE: [u8; 4] = [0, 0, 255, 255];
 const YELLOW: [u8; 4] = [255, 255, 0, 255];
 const MAGENTA: [u8; 4] = [255, 0, 255, 255];
 
-fn children(h: &Harness) -> Vec<i32> {
+pub(super) fn children(h: &Harness) -> Vec<i32> {
     let result = command_output::output(
         Command::new("ps").args(["-axo", "pid=,ppid="]),
         Duration::from_secs(30),

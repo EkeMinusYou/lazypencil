@@ -119,6 +119,7 @@ pub fn run(
             | "user-font-config"
             | "script-config"
             | "user-agent-config"
+            | "project-agent-config"
             | "user-key-config"
             | "user-navigation-config"
     ) {
@@ -147,7 +148,7 @@ pub fn run(
                 design = json!({"version":"2.21","children":[{"type":"script","id":"script","width":180,"height":90,"scriptUri":"generated.js"}]});
                 "[runtime.javascript]\ntimeout_ms=100\nheap_mib=8\nidle_seconds=0\nlayout_timeout_ms=5000\nmax_evaluations=8\nmax_passes=4\n".to_owned()
             }
-            "user-agent-config" => format!(
+            "user-agent-config" | "project-agent-config" => format!(
                 "[agents]\ndefault='claude'\n[agents.claude]\nadapter={}\nadapter_args=['acp','settings-auth-check']\nmodel='fixture-model-2'\nmode='workspace-write'\nauth_method='fixture-auth'\ntimeout=7\n",
                 serde_json::to_string(&crate::fixture_support::helper())?
             ),
@@ -239,6 +240,10 @@ pub fn run(
         }
         "user-agent-config" => {
             agent(&mut h, &design)?;
+            Value::Null
+        }
+        "project-agent-config" => {
+            project_agent(&mut h, &design)?;
             Value::Null
         }
         "user-key-config" => {
@@ -522,6 +527,83 @@ fn agent(h: &mut Harness, design: &Value) -> Result {
     assert_eq!(&read_json(&h.document).unwrap(), design);
     Ok(())
 }
+fn project_agent(h: &mut Harness, design: &Value) -> Result {
+    assert_eq!(state(h)["agent"], "claude");
+    h.wait("untrusted project still renders", 15.0, |h| {
+        !h.frames.images.is_empty()
+    })?;
+    no_agent(h);
+    h.cli(&["config".as_ref(), "trust".as_ref(), h.document.as_os_str()])?;
+    let draft = "実行許可まで保持する下書き";
+    h.paste(draft)?;
+    h.key(b"\x13")?;
+    h.wait(
+        "design grant does not authorize project executables",
+        15.0,
+        |h| h.screen.text().contains("PROJECT_NOT_TRUSTED"),
+    )?;
+    assert_eq!(state(h)["draft"], draft);
+    no_agent(h);
+    h.cli(&[
+        "config".as_ref(),
+        "trust".as_ref(),
+        h.document.as_os_str(),
+        "--executables".as_ref(),
+    ])?;
+    h.key(b"\x13")?;
+    h.wait("project grant permits the pending turn", 15.0, |h| {
+        h.count("complete") == 1
+    })?;
+    assert!(!dynamic::children(h).is_empty());
+    h.cli(&[
+        "config".as_ref(),
+        "untrust".as_ref(),
+        h.document.as_os_str(),
+    ])?;
+    let draft = "許可を取り消しても保持する下書き";
+    h.paste(draft)?;
+    h.key(b"\x13")?;
+    h.wait(
+        "revoked project grant closes the existing adapter",
+        15.0,
+        |h| dynamic::children(h).is_empty(),
+    )?;
+    assert_eq!(state(h)["draft"], draft);
+    assert_eq!(h.count("start"), 1);
+    h.cli(&[
+        "config".as_ref(),
+        "trust".as_ref(),
+        h.document.as_os_str(),
+        "--executables".as_ref(),
+    ])?;
+    h.key(b"\x13")?;
+    h.wait("regrant resumes the same conversation", 15.0, |h| {
+        h.count("complete") == 2
+    })?;
+    assert_eq!(h.count("ready"), 2);
+    let configuration =
+        fs::read_to_string(config(h))?.replace("model='fixture-model-2'", "model='fixture-model'");
+    fs::write(config(h), configuration)?;
+    h.cli(&[
+        "config".as_ref(),
+        "trust".as_ref(),
+        h.document.as_os_str(),
+        "--executables".as_ref(),
+    ])?;
+    let draft = "変更前の設定では送信しない";
+    h.paste(draft)?;
+    h.key(b"\x13")?;
+    h.wait(
+        "changed settings do not reuse the earlier selection",
+        15.0,
+        |h| dynamic::children(h).is_empty(),
+    )?;
+    assert_eq!(state(h)["draft"], draft);
+    assert_eq!(h.count("start"), 2);
+    assert_eq!(&read_json(&h.document).unwrap(), design);
+    Ok(())
+}
+
 fn basic(h: &mut Harness) -> Result {
     let text = "日本語の入力\nhjkl + - q は本文です";
     h.paste(text)?;

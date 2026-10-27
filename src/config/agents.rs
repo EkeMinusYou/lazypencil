@@ -1,4 +1,4 @@
-//! User-owned ACP preferences. Project files never select executables.
+//! ACP preferences; project overrides require a separate local execution grant.
 
 use super::{UserSource, invalid, user_config_path};
 use crate::{
@@ -11,8 +11,9 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 pub(super) const TEMPLATE: &str = "\n# User-owned agent preferences; CLI options take precedence.\n# [agents]\n# default = \"codex\"\n# [agents.codex]\n# adapter = \"codex-acp\"\n# adapter_args = []\n# auth = \"subscription\"\n# require_auth_status = true\n# model = \"an-adapter-advertised-model\"\n# timeout = 600\n# [agents.claude]\n# adapter = \"claude-agent-acp\"\n# auth = \"subscription\"\n";
+pub(super) const PROJECT_TEMPLATE: &str = "\n# Project agent settings override user preferences only after a separate local grant.\n# Review: lazypencil config show FILE --executables\n# Authorize: lazypencil config trust FILE --executables\n# [agents]\n# default = \"codex\"\n# [agents.codex]\n# adapter = \"codex-acp\"\n# adapter_args = []\n";
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct AgentSettings {
     pub default: Option<AgentName>,
@@ -20,10 +21,10 @@ pub struct AgentSettings {
     pub claude: AgentProfile,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct AgentProfile {
-    /// A PATH command or a local path relative to the physical user configuration.
+    /// A PATH command or a local path relative to its physical configuration file.
     pub adapter: Option<PathBuf>,
     #[schemars(length(max = 128))]
     pub adapter_args: Vec<String>,
@@ -41,6 +42,10 @@ pub struct AgentProfile {
 }
 
 impl AgentSettings {
+    pub(super) fn configured(&self) -> bool {
+        self != &Self::default()
+    }
+
     pub(super) fn validate(&self) -> Result<()> {
         for profile in [&self.codex, &self.claude] {
             if let Some(adapter) = &profile.adapter {
@@ -92,6 +97,32 @@ impl AgentSettings {
             }
         }
         Ok(())
+    }
+
+    fn resolved(&self, base: Option<&Path>) -> Self {
+        let mut result = self.clone();
+        for profile in [&mut result.codex, &mut result.claude] {
+            if let Some(adapter) = &profile.adapter
+                && adapter.is_relative()
+                && adapter
+                    .file_name()
+                    .is_none_or(|name| name != adapter.as_os_str())
+            {
+                profile.adapter = Some(
+                    base.expect("Configured profiles have a physical source")
+                        .join(adapter),
+                );
+            }
+        }
+        result
+    }
+
+    fn overlay(&self, higher: &Self) -> Self {
+        Self {
+            default: higher.default.or(self.default),
+            codex: self.codex.overlay(&higher.codex),
+            claude: self.claude.overlay(&higher.claude),
+        }
     }
 
     fn apply(&self, args: &mut PromptArgs, matches: &ArgMatches, base: Option<&Path>) {
@@ -166,6 +197,42 @@ impl AgentSettings {
     }
 }
 
+impl AgentProfile {
+    fn overlay(&self, higher: &Self) -> Self {
+        Self {
+            adapter: higher.adapter.clone().or_else(|| self.adapter.clone()),
+            adapter_args: if higher.adapter.is_some() {
+                higher.adapter_args.clone()
+            } else {
+                self.adapter_args.clone()
+            },
+            auth: higher.auth.or(self.auth),
+            auth_method: higher
+                .auth_method
+                .clone()
+                .or_else(|| self.auth_method.clone()),
+            require_auth_status: higher.require_auth_status.or(self.require_auth_status),
+            model: higher.model.clone().or_else(|| self.model.clone()),
+            mode: higher.mode.clone().or_else(|| self.mode.clone()),
+            document_tools: higher.document_tools.or(self.document_tools),
+            timeout: higher.timeout.or(self.timeout),
+        }
+    }
+}
+
+fn same_preferences(a: &PromptArgs, b: &PromptArgs) -> bool {
+    a.agent == b.agent
+        && a.adapter == b.adapter
+        && a.adapter_args == b.adapter_args
+        && a.auth == b.auth
+        && a.auth_method == b.auth_method
+        && a.require_auth_status == b.require_auth_status
+        && a.model == b.model
+        && a.mode == b.mode
+        && a.document_tools == b.document_tools
+        && a.timeout == b.timeout
+}
+
 /// Resolve preferences once, at the CLI boundary, before creating a conversation.
 /// Programmatic callers already supply their complete `PromptArgs` explicitly.
 pub fn resolve_arguments(
@@ -179,11 +246,26 @@ pub fn resolve_arguments(
         _ => return Ok(()),
     };
     let source = UserSource::load(Some(user_config_path()?), true)?;
-    source.settings.agents.apply(
-        args,
-        matches.subcommand().expect("Prompt subcommand").1,
-        source.base(),
-    );
+    let project = super::agent_execution::Project::load(&args.file)?;
+    let matches = matches.subcommand().expect("Prompt subcommand").1;
+    if let Some(settings) = &project.settings {
+        let original = args.clone();
+        let user = source.settings.agents.resolved(source.base());
+        user.apply(args, matches, None);
+        let baseline = args.clone();
+        *args = original;
+        user.overlay(&settings.resolved(Some(project.base())))
+            .apply(args, matches, None);
+        if !same_preferences(&baseline, args) {
+            // TUI viewing and draft recovery do not authorize or start an
+            // executable. The shared conversation host checks this selection
+            // immediately before each turn and adapter launch.
+            args.project_execution = Some(project.selection()?);
+        }
+    } else {
+        source.settings.agents.apply(args, matches, source.base());
+    }
+    project.verify_unchanged()?;
     source.verify()
 }
 

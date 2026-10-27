@@ -23,6 +23,7 @@ fn real_pty_handles_japanese_input_live_turns_resize_and_image_protocols() {
         "font-config",
         "user-font-config",
         "user-agent-config",
+        "project-agent-config",
         "user-key-config",
         "script-config",
     ] {

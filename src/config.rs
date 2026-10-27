@@ -13,10 +13,12 @@ use std::{
 };
 
 const MAX_BYTES: usize = 256 * 1024;
+pub mod agent_execution;
 pub mod agents;
 pub mod conversations;
 pub mod keys;
 pub mod runtime;
+pub(crate) mod trust;
 const TEMPLATE: &str = "version = 1\n\n[fonts]\n# Omitted fields inherit lower-priority settings.\n# Paths resolve relative to this configuration file.\n# files = []\n# search_paths = []\n# default_family = \"Noto Sans JP\"\n# locale = \"ja\"\n# Set fallbacks explicitly to replace the default glyph fallback chain.\n# fallbacks = [\"Noto Sans JP\"]\n";
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -27,6 +29,8 @@ pub struct ProjectConfig {
     pub fonts: FontSettings,
     pub runtime: runtime::RuntimeSettings,
     pub design: crate::guidance::DesignSettings,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agents: Option<agents::AgentSettings>,
 }
 impl Default for ProjectConfig {
     fn default() -> Self {
@@ -35,6 +39,7 @@ impl Default for ProjectConfig {
             fonts: FontSettings::default(),
             runtime: Default::default(),
             design: Default::default(),
+            agents: None,
         }
     }
 }
@@ -137,6 +142,7 @@ struct ProjectFile {
     fonts: FontOverrides,
     runtime: runtime::RuntimeOverrides,
     design: crate::guidance::DesignSettings,
+    agents: Option<agents::AgentSettings>,
 }
 impl Default for ProjectFile {
     fn default() -> Self {
@@ -145,6 +151,7 @@ impl Default for ProjectFile {
             fonts: Default::default(),
             runtime: Default::default(),
             design: Default::default(),
+            agents: None,
         }
     }
 }
@@ -325,6 +332,28 @@ fn parse<T: serde::de::DeserializeOwned>(bytes: &[u8], path: &Path) -> Result<T>
         invalid("Invalid configuration; expected version 1 and supported fields for this scope")
             .details(json!({"path":path,"byte_start":span.start,"byte_end":span.end,"line":line}))
     })
+}
+
+fn verify_project_source(
+    document: &Path,
+    discovery: &Discovery,
+    source: &Option<(PathBuf, Arc<[u8]>)>,
+) -> Result<()> {
+    if locate(document).map_err(|_| conflict())? != *discovery {
+        return Err(conflict());
+    }
+    if let Some((path, expected)) = source {
+        let mut bytes = Vec::new();
+        crate::store::open_regular_file(path)
+            .map_err(|_| conflict())?
+            .take(MAX_BYTES as u64 + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|_| conflict())?;
+        if hash(&bytes) != hash(expected) {
+            return Err(conflict());
+        }
+    }
+    Ok(())
 }
 
 fn validate_version(version: u32) -> Result<()> {
@@ -737,6 +766,9 @@ impl Snapshot {
             .transpose()?
             .unwrap_or_default();
         validate_version(project.version)?;
+        if let Some(agents) = &project.agents {
+            agents.validate()?;
+        }
         let mut project_fonts = FontSettings::default();
         project
             .fonts
@@ -751,6 +783,7 @@ impl Snapshot {
             .fonts
             .apply(&mut settings.fonts, &mut font_origins, "project");
         settings.design = project.design;
+        settings.agents = project.agents;
         validate_fonts(&settings.fonts)?;
         let mut runtime_origins = runtime::origins();
         user.runtime
@@ -803,20 +836,7 @@ impl Snapshot {
         if let Ok(design) = &self.design {
             design.verify_unchanged()?;
         }
-        if locate(&self.document).map_err(|_| conflict())? != self.discovery {
-            return Err(conflict());
-        }
-        if let Some((path, expected)) = &self.source {
-            let mut bytes = Vec::new();
-            crate::store::open_regular_file(path)
-                .map_err(|_| conflict())?
-                .take(MAX_BYTES as u64 + 1)
-                .read_to_end(&mut bytes)
-                .map_err(|_| conflict())?;
-            if hash(&bytes) != hash(expected) {
-                return Err(conflict());
-            }
-        }
+        verify_project_source(&self.document, &self.discovery, &self.source)?;
         verify_fonts(&self.bindings, &self.directories)
     }
     pub fn summary(&self) -> Value {
@@ -898,7 +918,11 @@ fn write_configuration(path: &Path, scope: &str) -> Result<Value> {
             conversations::TEMPLATE
         )
     } else {
-        format!("{TEMPLATE}{}", runtime::TEMPLATE)
+        format!(
+            "{TEMPLATE}{}{}",
+            runtime::TEMPLATE,
+            agents::PROJECT_TEMPLATE
+        )
     };
     file.write_all(template.as_bytes())
         .map_err(|error| Error::io(path, error))?;
@@ -918,14 +942,28 @@ fn write_configuration(path: &Path, scope: &str) -> Result<Value> {
 }
 
 pub fn revoke_design_trust(document: &Path, data: &Path) -> Result<Value> {
+    revoke_grants(document, data, &[trust::Kind::DesignInstructions])
+}
+
+pub fn revoke_project_trust(document: &Path, data: &Path) -> Result<Value> {
+    revoke_grants(
+        document,
+        data,
+        &[trust::Kind::DesignInstructions, trust::Kind::AgentExecution],
+    )
+}
+
+fn revoke_grants(document: &Path, data: &Path, kinds: &[trust::Kind]) -> Result<Value> {
     let parent = document
         .parent()
         .ok_or_else(|| invalid("Document has no configuration directory"))?;
     let mut removed = 0usize;
     for directory in parent.ancestors() {
-        let result = crate::guidance::ProjectCatalog::revoke(directory, data)?;
-        if result["removed"] == true {
-            removed += 1;
+        for kind in kinds {
+            let result = trust::revoke(data, directory, *kind)?;
+            if result["removed"] == true {
+                removed += 1;
+            }
         }
         if directory.join(".git").exists() {
             break;

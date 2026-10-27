@@ -222,14 +222,20 @@ pub enum ConfigCommand {
         file: Option<PathBuf>,
         #[arg(long, conflicts_with = "file")]
         user: bool,
+        /// Inspect project agent settings without font or design-resource loading.
+        #[arg(long, conflicts_with = "user")]
+        executables: bool,
     },
-    /// Trust exactly the current project design resources for instruction use.
+    /// Authorize current project design instructions, or agent settings with --executables.
     Trust {
         file: PathBuf,
         #[arg(long)]
         expected_fingerprint: Option<String>,
+        /// Authorize exactly the project agent settings, separately from design instructions.
+        #[arg(long)]
+        executables: bool,
     },
-    /// Revoke the locally stored project design grant.
+    /// Revoke local project design and agent-execution grants.
     Untrust { file: PathBuf },
     /// Return the JSON Schema for project or user settings.
     Schema {
@@ -465,6 +471,20 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
                 configuration.verify_unchanged()?;
                 Ok(configuration.summary())
             }
+            ConfigCommand::Show {
+                file,
+                executables: true,
+                ..
+            } => {
+                let store =
+                    open(file.as_ref().ok_or_else(|| {
+                        Error::new("INVALID_ARGUMENT", "Supply a document file")
+                    })?)?;
+                let configuration = crate::config::agent_execution::Project::load(store.path())?;
+                let value = configuration.summary(store.data_dir())?;
+                configuration.verify_unchanged()?;
+                Ok(value)
+            }
             ConfigCommand::Show { file, .. } => {
                 let store = open(file.as_ref().ok_or_else(|| {
                     Error::new("INVALID_ARGUMENT", "Supply a document file or --user")
@@ -478,11 +498,26 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
                         .and_then(|design| design.trusted(store.data_dir()))
                         .unwrap_or(false)
                 );
+                value["agent_execution"] =
+                    configuration.agent_execution_metadata(store.data_dir())?;
                 Ok(value)
             }
             ConfigCommand::Trust {
                 file,
                 expected_fingerprint,
+                executables: true,
+            } => {
+                let store = open(file)?;
+                let configuration = crate::config::agent_execution::Project::load(store.path())?;
+                let value = configuration
+                    .trust_agent_execution(store.data_dir(), expected_fingerprint.as_deref())?;
+                configuration.verify_unchanged()?;
+                Ok(value)
+            }
+            ConfigCommand::Trust {
+                file,
+                expected_fingerprint,
+                ..
             } => {
                 let store = open(file)?;
                 let configuration = crate::config::Snapshot::load(store.path())?;
@@ -497,7 +532,7 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
             }
             ConfigCommand::Untrust { file } => {
                 let store = open(file)?;
-                crate::config::revoke_design_trust(store.path(), store.data_dir())
+                crate::config::revoke_project_trust(store.path(), store.data_dir())
             }
             ConfigCommand::Schema { user: false } => {
                 serde_json::to_value(schemars::schema_for!(crate::config::ProjectConfig))

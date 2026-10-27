@@ -288,7 +288,7 @@ fn invalid_profiles_are_rejected_even_when_unselected_and_errors_do_not_quote_va
 }
 
 #[test]
-fn config_schema_and_template_expose_only_user_owned_agent_preferences() {
+fn config_schema_and_template_separate_user_preferences_from_project_execution() {
     let f = Fixture::new();
     let output = f
         .command()
@@ -315,7 +315,7 @@ fn config_schema_and_template_expose_only_user_owned_agent_preferences() {
     assert!(text.contains("# [agents.codex]"));
     let output = f.command().args(["config", "schema"]).output().unwrap();
     let schema: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert!(schema["properties"].get("agents").is_none());
+    assert!(schema["properties"]["agents"].is_object());
     fs::write(
         f.temp.path().join("project/lazypencil.toml"),
         "[agents.codex]\nadapter='SECRET_PROJECT_EXECUTABLE'\n",
@@ -327,10 +327,255 @@ fn config_schema_and_template_expose_only_user_owned_agent_preferences() {
         .arg(&f.document)
         .output()
         .unwrap();
+    assert!(output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["agent_execution"]["trusted"], false);
+    assert_eq!(
+        value["settings"]["agents"]["codex"]["adapter"],
+        "SECRET_PROJECT_EXECUTABLE"
+    );
+    assert!(
+        !f.temp.path().join("data").exists(),
+        "Reading project settings must not create grants"
+    );
+    let output = f.prompt(&[]);
     assert!(!output.status.success());
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["error"]["code"], "CONFIGURATION_ERROR");
+    assert_eq!(value["error"]["code"], "PROJECT_NOT_TRUSTED");
     assert!(!value.to_string().contains("SECRET"));
+}
+
+#[test]
+fn project_profiles_require_a_separate_grant_and_preserve_user_and_cli_precedence() {
+    let f = Fixture::new();
+    f.settings(&format!(
+        "[agents]\ndefault='codex'\n[agents.codex]\nadapter='missing/never-launch-this'\n{}",
+        f.peer(
+            "claude",
+            "settings-auth-check",
+            "mode='workspace-write'\nauth_method='fixture-auth'"
+        )
+    ));
+    let configuration = f.temp.path().join("project/lazypencil.toml");
+    fs::write(
+        &configuration,
+        "[agents]\ndefault='claude'\n[agents.claude]\nmodel='fixture-model-2'\n",
+    )
+    .unwrap();
+    let show = f
+        .command()
+        .args(["config", "show"])
+        .arg(&f.document)
+        .arg("--executables")
+        .output()
+        .unwrap();
+    assert!(show.status.success());
+    let shown: Value = serde_json::from_slice(&show.stdout).unwrap();
+    let fingerprint = shown["agent_execution"]["fingerprint"].as_str().unwrap();
+    assert_eq!(shown["agent_execution"]["trusted"], false);
+    let design_grant = f
+        .command()
+        .args(["config", "trust"])
+        .arg(&f.document)
+        .output()
+        .unwrap();
+    assert!(design_grant.status.success());
+    let denied = f.prompt(&[]);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&denied.stdout).unwrap()["error"]["code"],
+        "PROJECT_NOT_TRUSTED"
+    );
+    let stale = f
+        .command()
+        .args(["config", "trust"])
+        .arg(&f.document)
+        .args(["--executables", "--expected-fingerprint", &"0".repeat(64)])
+        .output()
+        .unwrap();
+    assert!(!stale.status.success());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&stale.stdout).unwrap()["error"]["code"],
+        "REVISION_CONFLICT"
+    );
+    let granted = f
+        .command()
+        .args(["config", "trust"])
+        .arg(&f.document)
+        .args(["--executables", "--expected-fingerprint", fingerprint])
+        .output()
+        .unwrap();
+    assert!(granted.status.success());
+    let original = fs::read(&f.document).unwrap();
+    let events = f.events(&[]);
+    assert_eq!(event(&events, "start")["agent"], "claude");
+    assert_eq!(
+        event(&events, "start")["project_agent_execution"]["fingerprint"],
+        fingerprint
+    );
+    assert_eq!(
+        event(&events, "start")["project_agent_execution"]["scope"],
+        "agent_execution"
+    );
+    assert_eq!(
+        event(&events, "ready")["response"]["configOptions"][0]["currentValue"],
+        "fixture-model-2"
+    );
+    assert_eq!(
+        event(&events, "ready")["response"]["modes"]["currentModeId"],
+        "workspace-write"
+    );
+    let revoked = f
+        .command()
+        .args(["config", "untrust"])
+        .arg(&f.document)
+        .output()
+        .unwrap();
+    assert!(revoked.status.success());
+    assert!(
+        serde_json::from_slice::<Value>(&revoked.stdout).unwrap()["removed_grants"]
+            .as_u64()
+            .unwrap()
+            >= 2
+    );
+    let denied = f.prompt(&[]);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&denied.stdout).unwrap()["error"]["code"],
+        "PROJECT_NOT_TRUSTED"
+    );
+    let helper = fixture_support::helper();
+    let explicit = f.events(&[
+        "--agent",
+        "codex",
+        "--adapter",
+        helper.to_str().unwrap(),
+        "--adapter-arg=acp",
+        "--adapter-arg=normal",
+    ]);
+    assert_eq!(event(&explicit, "start")["agent"], "codex");
+    assert!(event(&explicit, "start")["project_agent_execution"].is_null());
+    assert_eq!(fs::read(&f.document).unwrap(), original);
+
+    fs::write(&configuration, "[agents]\n").unwrap();
+    let output = f
+        .command()
+        .args(["config", "show"])
+        .arg(&f.document)
+        .arg("--executables")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["agent_execution"]["configured"], false);
+    assert_eq!(value["agent_execution"]["trusted"], true);
+    assert!(value["agent_execution"]["fingerprint"].is_null());
+
+    fs::write(
+        &configuration,
+        "[fonts]\nfiles=['missing-font.ttf']\n[agents.codex]\nadapter='never-execute'\n",
+    )
+    .unwrap();
+    let output = f
+        .command()
+        .args(["config", "show"])
+        .arg(&f.document)
+        .arg("--executables")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "Agent review must not require font loading: {output:?}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn project_execution_grants_bind_physical_configuration_and_do_not_cross_project_roots() {
+    use std::os::unix::fs::symlink;
+    let f = Fixture::new();
+    let physical = f.temp.path().join("physical project settings");
+    fs::create_dir_all(physical.join("bin")).unwrap();
+    symlink(
+        fixture_support::helper().canonicalize().unwrap(),
+        physical.join("bin/peer"),
+    )
+    .unwrap();
+    let body = "[agents]\ndefault='claude'\n[agents.claude]\nadapter='bin/peer'\nadapter_args=['acp','settings-auth-check']\nmodel='fixture-model-2'\nmode='workspace-write'\nauth_method='fixture-auth'\n";
+    let source = physical.join("actual.toml");
+    fs::write(&source, body).unwrap();
+    symlink(&source, f.temp.path().join("project/lazypencil.toml")).unwrap();
+    let output = f
+        .command()
+        .args(["config", "trust"])
+        .arg(&f.document)
+        .arg("--executables")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let granted: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let grant_path = PathBuf::from(granted["grant_path"].as_str().unwrap());
+    // Unrelated data settings do not broaden or invalidate the execution grant.
+    fs::write(&source, format!("{body}[fonts]\nlocale='en'\n")).unwrap();
+    let events = f.events(&[]);
+    assert_eq!(event(&events, "start")["agent"], "claude");
+    assert_eq!(
+        event(&events, "ready")["response"]["configOptions"][0]["currentValue"],
+        "fixture-model-2"
+    );
+    let second = f.temp.path().join("second");
+    fs::create_dir_all(second.join(".git")).unwrap();
+    let document = second.join("design.pen");
+    fs::copy(&f.document, &document).unwrap();
+    symlink(&source, second.join("lazypencil.toml")).unwrap();
+    let denied = f
+        .command()
+        .arg("prompt")
+        .arg(&document)
+        .args(["do not execute", "--non-interactive"])
+        .output()
+        .unwrap();
+    assert!(!denied.status.success());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&denied.stdout).unwrap()["error"]["code"],
+        "PROJECT_NOT_TRUSTED"
+    );
+    let mut wrong_scope: Value = serde_json::from_slice(&fs::read(&grant_path).unwrap()).unwrap();
+    wrong_scope["scope"] = Value::String("design_instructions".into());
+    fs::write(&grant_path, wrong_scope.to_string()).unwrap();
+    let denied = f.prompt(&[]);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&denied.stdout).unwrap()["error"]["code"],
+        "PROJECT_NOT_TRUSTED"
+    );
+    let output = f
+        .command()
+        .args(["config", "trust"])
+        .arg(&f.document)
+        .arg("--executables")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    fs::write(
+        &source,
+        body.replace("model='fixture-model-2'", "model='fixture-model'"),
+    )
+    .unwrap();
+    let denied = f.prompt(&[]);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&denied.stdout).unwrap()["error"]["code"],
+        "PROJECT_NOT_TRUSTED"
+    );
+    fs::write(&source, "[invalid configuration").unwrap();
+    let output = f
+        .command()
+        .args(["config", "untrust"])
+        .arg(&f.document)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "Revocation must work with broken project settings"
+    );
+    assert!(!grant_path.exists());
 }
 
 #[cfg(unix)]
