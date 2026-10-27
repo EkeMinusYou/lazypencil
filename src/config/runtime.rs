@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 pub(super) const TEMPLATE: &str = concat!(
     "\n# Omitted runtime fields inherit user preferences and built-in limits.\n",
     "# [runtime.javascript]\n# timeout_ms = 2000\n# heap_mib = 64\n# idle_seconds = 60\n# layout_timeout_ms = 10000\n# max_evaluations = 128\n# max_passes = 8\n",
-    "\n# [runtime.browser]\n# timeout_ms = 30000\n# launch_timeout_ms = 15000\n# idle_seconds = 60\n# wait_until = \"load\"\n# ready_selector = \"\"\n# selector_state = \"visible\"\n",
+    "\n# [runtime.browser]\n# timeout_ms = 30000\n# launch_timeout_ms = 15000\n# idle_seconds = 60\n# wait_until = \"load\"\n# ready_selector = \"\"\n# selector_state = \"visible\"\n# additional_wait_ms = 0\n",
     "\n# [runtime.shader]\n# timeout_ms = 15000\n# launch_timeout_ms = 15000\n# idle_seconds = 60\n",
     "\n# [runtime.dynamic]\n# render_timeout_ms = 45000\n# cache_mib = 64\n# cache_entries = 32\n",
 );
@@ -96,6 +96,9 @@ pub struct BrowserSettings {
     #[schemars(length(max = 512))]
     pub ready_selector: String,
     pub selector_state: PageSelectorState,
+    /// Additional host-timed wait after readiness and before final asset decoding.
+    #[schemars(range(min = 0, max = 60000))]
+    pub additional_wait_ms: u64,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -123,6 +126,7 @@ impl Default for BrowserSettings {
             wait_until: PageWaitUntil::Load,
             ready_selector: String::new(),
             selector_state: PageSelectorState::Visible,
+            additional_wait_ms: 0,
         }
     }
 }
@@ -135,6 +139,11 @@ impl BrowserSettings {
             self.launch_timeout_ms,
             self.idle_seconds,
         )?;
+        if self.additional_wait_ms > 60000 {
+            return Err(invalid(
+                "runtime.browser.additional_wait_ms must be within 0..60000",
+            ));
+        }
         if self.ready_selector.chars().count() > 512 || self.ready_selector.contains('\0') {
             return Err(invalid(
                 "runtime.browser.ready_selector must contain at most 512 Unicode characters without NUL",
@@ -252,6 +261,7 @@ struct BrowserOverrides {
     wait_until: Option<PageWaitUntil>,
     ready_selector: Option<String>,
     selector_state: Option<PageSelectorState>,
+    additional_wait_ms: Option<u64>,
 }
 
 #[derive(Default, Deserialize)]
@@ -295,6 +305,7 @@ pub(super) fn origins() -> BTreeMap<&'static str, &'static str> {
         "browser.wait_until",
         "browser.ready_selector",
         "browser.selector_state",
+        "browser.additional_wait_ms",
         "shader.timeout_ms",
         "shader.launch_timeout_ms",
         "shader.idle_seconds",
@@ -341,6 +352,7 @@ impl RuntimeOverrides {
         apply!(browser, wait_until);
         apply!(browser, ready_selector);
         apply!(browser, selector_state);
+        apply!(browser, additional_wait_ms);
         apply!(shader, timeout_ms);
         apply!(shader, launch_timeout_ms);
         apply!(shader, idle_seconds);

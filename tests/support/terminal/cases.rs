@@ -380,14 +380,21 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
         let previous = h.screen.cursor();
         h.resize(columns, rows)?;
         h.wait("IME anchor follows the resized prompt", 15.0, |h| {
+            let text = h.screen.text();
+            let lines = text.lines().collect::<Vec<_>>();
             h.screen.cursor().1 != previous.1
-                && h.screen
-                    .text()
-                    .lines()
+                && lines
+                    .iter()
                     .position(|line| line.contains(first))
-                    .is_some_and(|row| h.screen.cursor() == (6, row as u16 + 1))
+                    .is_some_and(|row| {
+                        h.screen.cursor() == (6, row as u16 + 1)
+                            && lines.get(row + 1).is_some_and(|line| line.contains(second))
+                    })
+                && h.session()
+                    .is_some_and(|session| session["draft"] == expected)
         })?;
-        h.draft(&expected)?;
+        // Snapshot the same observed frame; another pump can read the clear
+        // belonging to a second resize redraw before its text arrives.
         h.save_screen(&format!("ime-commit-{columns}x{rows}-screen.txt"))?;
         resize_cursors.push(json!({"columns":columns,"rows":rows,"cursor":h.screen.cursor()}));
     }
@@ -398,6 +405,11 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
     h.draft(&expected)?;
     h.wait("IME commit remains usable after resizing", 15.0, |h| {
         h.screen.cursor() == (11, row)
+            && h.screen
+                .text()
+                .lines()
+                .nth(row as usize)
+                .is_some_and(|line| line.contains("か\u{3099}") && line.contains("続行"))
     })?;
     h.save_screen("ime-commit-resumed-screen.txt")?;
     no_agent(h);
@@ -405,6 +417,7 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
     Ok(
         json!({"source_commit":source_commit(),"keyboard_flags":negotiated,"japanese_cursor":first_cursor,"combining_zwj_cursor":second_cursor,
         "resize_cursors":resize_cursors,"resumed_cursor":h.screen.cursor(),
+        "screen_model":"VT100 cell model; CJK rows and native cursor are checked, ZWJ glyph appearance requires real-emulator evidence",
         "draft":expected,"draft_sha256":hash(expected.as_bytes()),"document_unchanged":true,
         "agent_started":false,"scope":"Real PTY plus Kitty keyboard-mode/IME-commit protocol model; physical IME confirmation is separate"}),
     )

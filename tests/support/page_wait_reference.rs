@@ -125,6 +125,21 @@ fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool) {
             0,
         ),
         "/color" => ("text/plain", "#00ff00", 1200),
+        "/wait-image-page" => (
+            "text/html",
+            "<style>html{background:#f00;overflow:hidden}body{margin:0}img{display:block}</style><script>addEventListener('load',()=>setTimeout(()=>{const image=new Image();image.src='/wait-image.svg';document.body.appendChild(image)},50));</script>",
+            0,
+        ),
+        "/wait-image.svg" => (
+            "image/svg+xml",
+            "<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'><path fill='#00ff00' d='M0 0h32v32H0z'/></svg>",
+            1200,
+        ),
+        "/additional-wait-cancel" => (
+            "text/html",
+            "<style>#ready{width:1px;height:1px}</style><div id='ready'></div><script>const query=document.querySelector.bind(document);let polled=false;document.querySelector=selector=>{if(selector==='#ready'&&!polled){polled=true;fetch('/polled')}return query(selector)};</script>",
+            0,
+        ),
         "/never" => ("text/plain", "ok", 10000),
         _ => ("text/plain", "", 0),
     };

@@ -2,9 +2,30 @@
 
 use super::{Browser, Budget};
 use crate::{Error, Result, config::runtime::PageSelectorState};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 impl Browser {
+    /// A page cannot shorten the wait by replacing its timers. Small CDP
+    /// round trips keep captured-file requests flowing under the same budget.
+    pub fn wait_before_capture(
+        &mut self,
+        session: &str,
+        duration: Duration,
+        budget: &Budget<'_>,
+    ) -> Result<()> {
+        let started = Instant::now();
+        while started.elapsed() < duration {
+            self.evaluate(session, "true", budget)?;
+            let remaining = duration.saturating_sub(started.elapsed());
+            std::thread::sleep(
+                remaining
+                    .min(Duration::from_millis(20))
+                    .min(budget.remaining()?),
+            );
+        }
+        budget.check()
+    }
+
     pub fn wait_for_selector(
         &mut self,
         session: &str,

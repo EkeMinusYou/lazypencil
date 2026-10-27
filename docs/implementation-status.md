@@ -1,10 +1,13 @@
 # lazypencil 実装と公開準備の状況
 
+`327c1db` のmacOS先行は成功し、変更した試験helperからの再buildを独立照合した。旧ソースから1,185ファイルを保持・36ファイルを失効させ、アプリの通常library／CLIはCargoのJSONでFreshだった。対象build 4.64秒、通常build 0.25／0.36秒、追加catalog 3.68秒。新しいIME報告は80×24／50×16／145×38のcursorが(6,19)／(6,11)／(6,33)、追加入力後(11,33)と完全な下書きを保持した。ただし保存画面2枚は描画途中の空白で、VT100モデルはZWJのglyph幅を完全再現しないことも独立照合で判明した。下書き・表示文字・cursorを同一の観測フレームで確認して保存する修正を準備する。全3環境と署名付きsourceまで完了してから次の差分を送る。
+
+次のバッチは、この観測修正と設計の追加待機をまとめる。`additional_wait_ms` を設定・schema・template・継承・取得metadata・共通browser経路へ加えた。host時計で待機し、既存期限／取消を確認しながらCDPの捕捉済みfile要求も処理する。遅れて追加される画像のdecode順序、ページtimerの置換、deadline、実際にreadyへ達した後の取消・worker回収・復帰を実browser試験へ加えた。新しい本体・試験はGHA未検証であり、現在のCI終了後に変更対象から確認する。認証profile・通信／animation制御など、他の必須残件は維持する。
+
+`327c1db` の [GHA `40600734818`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40600734818) は軽量205件・Clippy、Mac先行7分54秒、全3環境・RustSec・署名付きsourceまで成功した。全体はMac12分17秒／1,426件、arm64 17分46秒／1,437件、x64 26分29秒／1,437件で、各144サマリーと前走の全ケース名・回数を保持した。Macは旧1,185ファイルと同commit先行差分18ファイルを復元し、release確認0.58／0.82秒・実行ファイルとmapのhash一致を確認した。debug/test完全cacheはrelease15ファイルを除き1,206ファイルとなり、upload前に旧Mac application約1.19GBを整理した。arm64はnative cache HIT、x64は同SDK keyのnative cache MISSで通常build310.50秒・release613.35秒となった。cache消失の原因は断定せず、cold走行をwarm高速化とは扱わない。全3組の671 PNG・42描画計測・実clipboard3,072画素、source1,151ファイル・31,907,456バイトのGit blob／mode・archive hashとDSSE署名を独立照合した。物理IMEの候補表示、最低OSと製品全体の残件は維持する。
+
 `e249f07` の [GHA `40595368880`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40595368880) は軽量202件・Clippy、core先行381件／33サマリー、全3環境・RustSec・署名付きソースまで成功した。Linux各1,434件・Mac1,423件、各144サマリーで、元の全ケース名と回数に追加9実行を加えたことを照合した。x64全体16分50秒・Mac21分43秒・arm64 35分20秒。x64は同commit・環境の先行75ファイルを再利用し、core追加build 9.34秒・通常16.86秒・catalog 41.53秒・release 224.77秒・再確認0.22秒だった。arm64はimage `20261026.166.1` への切替でnative／tool cacheがなく、通常381.04秒・catalog159.14秒・release684.48秒を要した。SDK条件は緩めない。各671画像・42描画計測・実clipboard3,072画素を独立照合し、667画像は前ソースとbyte一致、4 sampler画像は全画素を式から再計算した。ソース1,151ファイル・31,889,601バイトの全Git blob／modeとarchive・DSSEのsource／workflow／runを照合した。重複tool依存4件と旧tool完全成果物1件の500,121,791バイトを整理し、完了後は5つのnative SDK cacheが残っていた。全体性能・物理IME・最低OS・公開品質全体の残件は維持する。
 
-次のバッチは試験cacheからreleaseの二重保存を除き、成功した完全buildのstage後・upload前に同platformの旧application sourceだけを整理する。旧形式の復元、独立releaseのCargo Fresh、test変更後のconsumerだけの再build、platform／manifest必須・他platform／ref／native保持を回帰へ加えた。upload失敗時はapplication cacheを再buildする可能性がある。release専用keyと同じ入力集合で旧production sourceのcheckpointを整理し、試験だけの変更では現releaseを保持する。SDK／compiler／完成条件は維持する。独立に計算した本番749入力のhashも既存release keyと一致した。追加RustはGHA未検証である。
-
-同じバッチで実PTYの日本語確定後に80×24・最小50×16・145×38へサイズ変更し、各カーソル・下書きと追加入力を確認して画面を保存する。古い画面の残存で成功しないようprompt行の更新も待つ。本体コード・既存ケース・期限は維持し、共有試験ヘルパーの実consumerだけの再buildをGHAで照合する。
 
 先行する [GHA `40585104571`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40585104571)、source `7fe854b` は先行・全3環境・監査・署名付きソースまで成功した。Mac全体14分28秒／1,414件、Linux arm64 13分29秒／1,425件、Linux x64 43分49秒／1,425件、各144サマリー。旧ケース名と実行回数に新しい実Cargo回帰2件を加えたことを照合した。Macは旧debug/test 1,206ファイルと同commitのrelease差分を再利用し、全体のrelease確認は各1秒未満だった。x64はrunner imageが旧版へ戻りnative cacheがなく、通常build 609.87秒・release 1,109.67秒を要したため、全体高速化の達成とは扱わない。各671画像・42描画計測・実clipboardを独立照合し、ソース1,151ファイルの全Git blob・mode・archive hashとDSSE署名・source／workflow／run対応も確認した。Macの元20起動／80操作／100 workerと通常200MiBゲートは維持して成功した。物理macSKKの未確定表示と最低OSなどの残件は維持し、ユーザーへ実機確認を繰り返し依頼しない。
 

@@ -429,6 +429,7 @@ impl DynamicRuntime {
         let wait_until = self.browser_settings.wait_until;
         let ready_selector = self.browser_settings.ready_selector.clone();
         let selector_state = self.browser_settings.selector_state;
+        let additional_wait_ms = self.browser_settings.additional_wait_ms;
         let load_condition = if wait_until == PageWaitUntil::NetworkIdle {
             "load, main-frame networkIdle lifecycle"
         } else {
@@ -439,8 +440,13 @@ impl DynamicRuntime {
             (false, PageSelectorState::Attached) => ", attached CSS selector",
             (false, PageSelectorState::Visible) => ", visible CSS selector",
         };
+        let extra_condition = if additional_wait_ms == 0 {
+            String::new()
+        } else {
+            format!(", additional wait {additional_wait_ms}ms")
+        };
         let ready_condition = format!(
-            "{load_condition}{selector_condition}, fonts, decoded images, two animation frames"
+            "{load_condition}{selector_condition}{extra_condition}, fonts, decoded images, two animation frames"
         );
         let duration = self
             .remaining()?
@@ -473,6 +479,7 @@ impl DynamicRuntime {
             }
             browser.command(Some(session),"Emulation.setPageScaleFactor",json!({"pageScaleFactor":zoom}),&budget)?;
             browser.wait_for_selector(session, &ready_selector, selector_state, (scroll_x,scroll_y), &budget)?;
+            browser.wait_before_capture(session, Duration::from_millis(additional_wait_ms), &budget)?;
             let expression=format!("(async()=>{{await document.fonts.ready;await Promise.all([...document.images].map(image=>image.decode()));window.scrollTo({{left:{scroll_x},top:{scroll_y},behavior:'instant'}});await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));return {{url:window.location.href,scrollX:window.scrollX,scrollY:window.scrollY}};}})()");
             let state=browser.evaluate(session,&expression,&budget)?;
             let screenshot=browser.command(Some(session),"Page.captureScreenshot",json!({"format":"png","fromSurface":true,"captureBeyondViewport":false}),&budget)?;
@@ -480,7 +487,7 @@ impl DynamicRuntime {
             let mut metadata=json!({"kind":"browser","acquisition_id":uuid::Uuid::new_v4().to_string(),"requested_url":redacted_url(url),"url_hash":hash(url.as_bytes()),
                 "final_url":state["url"].as_str().map(redacted_url),"browser_version":version,"viewport_width":width,"viewport_height":height,"pixel_width":pixel_width,"pixel_height":pixel_height,
                 "scale":scale,"zoom":zoom,"scroll_x":state["scrollX"],"scroll_y":state["scrollY"],"device_id":device,
-                "wait_until":wait_until,"ready_selector":ready_selector,"selector_state":selector_state,"ready_condition":ready_condition,"acquired_at":timestamp(),"png_hash":hash(&png),"limits":limits,"page_state":page_state});
+                "wait_until":wait_until,"ready_selector":ready_selector,"selector_state":selector_state,"additional_wait_ms":additional_wait_ms,"ready_condition":ready_condition,"acquired_at":timestamp(),"png_hash":hash(&png),"limits":limits,"page_state":page_state});
             if let Some(identity)=&input.identity {
                 metadata["resources"]=identity.clone();
                 metadata["local_files"]=serde_json::to_value(browser.local_file_stats(session)

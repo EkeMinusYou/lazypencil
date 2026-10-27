@@ -253,6 +253,12 @@ impl Fixture {
         let state = json!(state);
         fs::write(self.0.path().join("lazypencil.toml"), format!("[runtime.browser]\nwait_until='load'\nready_selector={selector}\nselector_state={state}\ntimeout_ms={timeout}\n")).unwrap();
     }
+    fn extra_wait(&self, millis: u64) {
+        self.policy("", "visible", 5000);
+        let path = self.0.path().join("lazypencil.toml");
+        let settings = fs::read_to_string(&path).unwrap();
+        fs::write(path, format!("{settings}additional_wait_ms={millis}\n")).unwrap();
+    }
     fn project(&self) -> Project {
         let file = self.0.path().join("scene.pen");
         Project::from_document(
@@ -619,6 +625,138 @@ fn visible_selector_waits_for_post_load_content_and_keeps_selector_text_as_data(
     let quoted = f.capture(&mut runtime, None).unwrap();
     assert_green(&quoted);
     assert_eq!(acquisition(&quoted)["ready_selector"], selector);
+}
+
+#[test]
+#[ignore = "Requires sandboxed headless Chromium"]
+fn additional_page_wait_precedes_late_image_decoding_and_invalidates_acquisition_cache() {
+    let server = reference::Server::new();
+    let f = Fixture::new(&format!("http://{}/wait-image-page", server.address));
+    let mut runtime = f.runtime();
+    let before = f.capture(&mut runtime, None).unwrap();
+    let captured = f.project();
+    f.extra_wait(250);
+    assert_eq!(
+        captured.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    let image = f.capture(&mut runtime, None).unwrap();
+    assert_green(&image);
+    let data = acquisition(&image);
+    assert_eq!(data["additional_wait_ms"], 250);
+    assert_eq!(data["limits"]["browser"]["additional_wait_ms"], 250);
+    assert!(
+        data["ready_condition"]
+            .as_str()
+            .unwrap()
+            .contains("additional wait 250ms, fonts, decoded images")
+    );
+    assert_ne!(
+        data["acquisition_id"],
+        acquisition(&before)["acquisition_id"]
+    );
+    let cached = f.capture(&mut runtime, None).unwrap();
+    assert_eq!(cached.dynamic_artifacts, image.dynamic_artifacts);
+    f.extra_wait(0);
+    let zero = f.capture(&mut runtime, None).unwrap();
+    assert_eq!(acquisition(&zero)["additional_wait_ms"], 0);
+    assert_ne!(acquisition(&zero)["acquisition_id"], data["acquisition_id"]);
+}
+
+#[test]
+#[ignore = "Requires sandboxed headless Chromium"]
+fn additional_wait_uses_host_time_and_observes_the_shared_deadline_and_cancellation() {
+    use lazypencil::{
+        cdp::{Browser, Budget, Purpose},
+        runtime::InstalledBrowser,
+    };
+    let installed = InstalledBrowser {
+        executable: std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").unwrap().into(),
+        version: "test-managed-runtime".into(),
+        platform: lazypencil::runtime::platform().unwrap().into(),
+    };
+    let mut browser = Browser::launch_with_supervisor(
+        &installed,
+        Purpose::Page,
+        &Budget::new(Duration::from_secs(30), None),
+        std::path::Path::new(env!("CARGO_BIN_EXE_lazypencil")),
+    )
+    .unwrap();
+    let budget = Budget::new(Duration::from_secs(10), None);
+    browser
+        .with_tab(&budget, |browser, session| {
+            browser.command(Some(session), "Page.enable", json!({}), &budget)?;
+            browser.evaluate(session, "window.setTimeout=()=>0;true", &budget)?;
+            let started = Instant::now();
+            browser.wait_before_capture(session, Duration::from_millis(150), &budget)?;
+            assert!(started.elapsed() >= Duration::from_millis(150));
+            let started = Instant::now();
+            let error = browser
+                .wait_before_capture(
+                    session,
+                    Duration::from_secs(1),
+                    &Budget::new(Duration::from_millis(60), None),
+                )
+                .unwrap_err();
+            assert_eq!(error.code, "RENDER_TIMEOUT");
+            assert!(started.elapsed() < Duration::from_secs(2));
+            let cancel = CancellationToken::new();
+            let cancellation = cancel.clone();
+            let task = std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(50));
+                cancellation.cancel();
+            });
+            let started = Instant::now();
+            let result = browser.wait_before_capture(
+                session,
+                Duration::from_secs(5),
+                &Budget::new(Duration::from_secs(6), Some(&cancel)),
+            );
+            task.join().unwrap();
+            assert_eq!(result.unwrap_err().code, "CANCELLED");
+            assert!(started.elapsed() < Duration::from_secs(2));
+            assert_eq!(browser.evaluate(session, "6*7", &budget)?, 42);
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+#[ignore = "Requires sandboxed headless Chromium"]
+fn cancelling_a_ready_page_with_extra_wait_reaps_the_runtime_and_recovers() {
+    let probe = Arc::new(AtomicBool::new(false));
+    let server = reference::Server::with_selector_probe(probe.clone());
+    let f = Fixture::new(&format!("http://{}/additional-wait-cancel", server.address));
+    let mut runtime = f.runtime();
+    f.capture(&mut runtime, None).unwrap();
+    f.policy("#ready", "visible", 15000);
+    let path = f.0.path().join("lazypencil.toml");
+    let settings = fs::read_to_string(&path).unwrap();
+    fs::write(path, format!("{settings}additional_wait_ms=5000\n")).unwrap();
+    let cancel = CancellationToken::new();
+    let cancellation = cancel.clone();
+    let task = std::thread::spawn(move || {
+        let until = Instant::now() + Duration::from_secs(15);
+        while !probe.load(Ordering::SeqCst) && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let observed = probe.load(Ordering::SeqCst);
+        if observed {
+            cancellation.cancel();
+        }
+        observed
+    });
+    let result = f.capture(&mut runtime, Some(cancel));
+    let observed = task.join().unwrap();
+    assert!(
+        observed,
+        "The page never reached readiness before the extra wait"
+    );
+    assert_eq!(result.err().unwrap().code, "CANCELLED");
+    assert!(runtime.process_ids().is_empty());
+    f.url(&page("<style>html{background:#0f0}</style>"));
+    f.extra_wait(0);
+    assert_green(&f.capture(&mut runtime, None).unwrap());
 }
 
 #[test]

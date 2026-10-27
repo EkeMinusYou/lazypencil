@@ -318,6 +318,73 @@ fn page_wait_policy_inherits_invalidates_and_rejects_unknown_or_shader_values() 
 }
 
 #[test]
+fn additional_page_wait_inherits_and_explicit_zero_invalidates_the_captured_policy() {
+    let f = Fixture::new();
+    assert_eq!(
+        f.snapshot()
+            .unwrap()
+            .settings
+            .runtime
+            .browser
+            .additional_wait_ms,
+        0
+    );
+    fs::write(
+        f.user.join("config.toml"),
+        "[runtime.browser]\nadditional_wait_ms=250\n",
+    )
+    .unwrap();
+    let captured = f.snapshot().unwrap();
+    assert_eq!(captured.settings.runtime.browser.additional_wait_ms, 250);
+    assert_eq!(
+        captured.summary()["runtime_origins"]["browser.additional_wait_ms"],
+        "user"
+    );
+    fs::write(
+        f.project.join("lazypencil.toml"),
+        "[runtime.browser]\nadditional_wait_ms=0\n",
+    )
+    .unwrap();
+    assert_eq!(
+        captured.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    let current = f.snapshot().unwrap();
+    assert_eq!(current.settings.runtime.browser.additional_wait_ms, 0);
+    assert_eq!(
+        current.summary()["runtime_origins"]["browser.additional_wait_ms"],
+        "project"
+    );
+    assert_eq!(captured.settings.runtime.browser.additional_wait_ms, 250);
+    for invalid in [
+        "[runtime.browser]\nadditional_wait_ms=60001\n",
+        "[runtime.browser]\nadditional_wait_ms=-1\n",
+        "[runtime.browser]\nadditional_wait_ms='private-value'\n",
+        "[runtime.shader]\nadditional_wait_ms=1\n",
+    ] {
+        fs::write(f.user.join("config.toml"), invalid).unwrap();
+        let error = f.snapshot().err().unwrap();
+        assert_eq!(error.code, "CONFIGURATION_ERROR");
+        assert!(!error.message.contains("private-value"));
+    }
+    fs::write(
+        f.user.join("config.toml"),
+        "[runtime.browser]\nadditional_wait_ms=60000\n",
+    )
+    .unwrap();
+    fs::remove_file(f.project.join("lazypencil.toml")).unwrap();
+    assert_eq!(
+        f.snapshot()
+            .unwrap()
+            .settings
+            .runtime
+            .browser
+            .additional_wait_ms,
+        60000
+    );
+}
+
+#[test]
 fn selector_policy_inherits_independently_and_an_empty_string_clears_it() {
     let f = Fixture::new();
     let defaults = f.snapshot().unwrap().settings.runtime.browser;
@@ -450,6 +517,9 @@ fn runtime_schema_and_templates_expose_limits_without_overriding_inheritance() {
             schema["$defs"]["BrowserSettings"]["properties"]["ready_selector"]["maxLength"],
             512
         );
+        let wait = &schema["$defs"]["BrowserSettings"]["properties"]["additional_wait_ms"];
+        assert_eq!(wait["minimum"].as_f64(), Some(0.0));
+        assert_eq!(wait["maximum"].as_f64(), Some(60000.0));
         assert!(
             schema["$defs"]["ShaderSettings"]["properties"]
                 .get("wait_until")
@@ -463,6 +533,7 @@ fn runtime_schema_and_templates_expose_limits_without_overriding_inheritance() {
     assert!(template.contains("# wait_until = \"load\""));
     assert!(template.contains("# ready_selector = \"\""));
     assert!(template.contains("# selector_state = \"visible\""));
+    assert!(template.contains("# additional_wait_ms = 0"));
     assert!(template.contains("# [runtime.shader]"));
     assert!(template.contains("# [runtime.dynamic]"));
     assert_eq!(
