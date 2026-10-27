@@ -702,7 +702,9 @@ impl<'a> Peer<'a> {
     }
 
     fn resource_barrier(&self, name: &str) -> Result {
-        let deadline = Instant::now() + Duration::from_secs(30);
+        // Permit the separate 30-second all-process idle observation plus
+        // bounded rendering/observer work before the owner releases the turn.
+        let deadline = Instant::now() + Duration::from_secs(60);
         while !Path::new(name).is_file() {
             if Instant::now() >= deadline {
                 return Err(format!("Resource observer did not release {name}").into());

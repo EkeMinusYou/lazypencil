@@ -600,17 +600,21 @@ mod hosted {
             fs::write(root.join("bound-render-again"), b"observe")?;
             terminal.key(b"\t")?;
             let (_, zoomed, _) = terminal.changed_frame(b"+", static_hash)?;
+            terminal.capture(&root, "zoomed")?;
             let (_, restored, _) = terminal.changed_frame(b"-", &zoomed)?;
             ensure!(
                 restored == static_hash,
                 "Bound resource zoom changed dashboard pixels"
             );
+            terminal.capture(&root, "zoom-restored")?;
             let (_, panned, _) = terminal.changed_frame(b"\x1b[C", static_hash)?;
+            terminal.capture(&root, "panned-right")?;
             let (_, restored, _) = terminal.changed_frame(b"\x1b[D", &panned)?;
             ensure!(
                 restored == static_hash,
                 "Bound resource pan changed dashboard pixels"
             );
+            terminal.capture(&root, "pan-restored")?;
             terminal.wait("second bound MCP render", |_| {
                 root.join("bound-render-1.json").is_file()
             })?;
@@ -639,6 +643,52 @@ mod hosted {
                 first["render"]["png_hash"] == second["render"]["png_hash"],
                 "Repeated bound render changed pixels"
             );
+            let idle_before = resources::snapshot(terminal.child.id())?;
+            let idle_started = Instant::now();
+            let idle_frame = terminal.last_frame.as_ref().unwrap().0;
+            let mut idle_checkpoints = Vec::new();
+            let mut next_checkpoint = Instant::now() + Duration::from_secs(1);
+            while idle_started.elapsed() < Duration::from_secs(30) {
+                terminal.pump()?;
+                if Instant::now() >= next_checkpoint {
+                    idle_checkpoints.push(resources::snapshot(terminal.child.id())?);
+                    next_checkpoint = Instant::now() + Duration::from_secs(1);
+                }
+            }
+            let idle_after = resources::snapshot(terminal.child.id())?;
+            let idle_elapsed = idle_started.elapsed();
+            let raw_cpu = idle_before.idle_cpu_upper_percent(&idle_after, idle_elapsed)?;
+            let adapter = roles.processes["adapter"].pid;
+            let mut app_before = idle_before.clone();
+            let mut app_after = idle_after.clone();
+            app_before.processes.remove(&adapter);
+            app_after.processes.remove(&adapter);
+            let app_cpu = app_before.idle_cpu_upper_percent(&app_after, idle_elapsed)?;
+            let adapter_cpu = (idle_after.processes[&adapter].cpu_ms
+                - idle_before.processes[&adapter].cpu_ms
+                + idle_before.cpu_quantum_ms)
+                / idle_elapsed.as_secs_f64()
+                / 10.0;
+            let mut idle_maximum = 0;
+            for snapshot in std::iter::once(&idle_before)
+                .chain(&idle_checkpoints)
+                .chain(std::iter::once(&idle_after))
+            {
+                idle_before.idle_cpu_upper_percent(snapshot, idle_elapsed)?;
+                idle_maximum = idle_maximum.max(
+                    roles.account(snapshot)?["application_rss_bytes"]
+                        .as_u64()
+                        .unwrap(),
+                );
+            }
+            ensure!(
+                terminal.last_frame.as_ref().unwrap().0 == idle_frame,
+                "Unchanged bound dashboard repainted during idle observation"
+            );
+            let idle = json!({"seconds":idle_elapsed.as_secs_f64(),"before":idle_before,"checkpoints":idle_checkpoints,"after":idle_after,
+                "application_cpu_upper_percent":app_cpu,"adapter_cpu_upper_percent":adapter_cpu,"raw_owned_cpu_upper_percent":raw_cpu,
+                "maximum_sampled_application_rss_bytes":idle_maximum,"no_preview_image_update":true,
+                "scope":"Separate 30-second idle interval with the bound MCP, both JavaScript workers and supervisor still alive; explicit ACP helper excluded only from application accounting"});
             fs::write(root.join("bound-render-release"), b"complete")?;
             terminal.wait("completed resource turn", |t| {
                 root.join("bound-render-closed.json").is_file()
@@ -687,7 +737,7 @@ mod hosted {
                 "Resource request did not complete its own conversation"
             );
             Ok(
-                json!({"fixture":fixture,"trace":trace,"mcp_renders":[first,second],
+                json!({"fixture":fixture,"trace":trace,"idle":idle,"mcp_renders":[first,second],
                 "complete_interactions":4,"initial_rgba_sha256":static_hash,"restored_rgba_sha256":restored,
                 "normal_exit":true,"owned_processes_gone":true,"observed_owned_pids":observed_pids,"document_and_script_unchanged":true,
                 "scope":"Separate resource-only turn after all original trials; actual bound MCP and JavaScript, deterministic ACP helper only, no real provider request; excluded from original latency distributions"}),

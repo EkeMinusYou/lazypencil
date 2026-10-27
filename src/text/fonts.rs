@@ -10,7 +10,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     io::Read,
     path::PathBuf,
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 const MAX_FONT_BYTES: usize = 64 * 1024 * 1024;
@@ -166,7 +166,7 @@ impl Fonts {
         };
         let mut additional = Vec::new();
         for (path, bytes) in sources {
-            for family in fonts.register(bytes, &path.display().to_string(), None)? {
+            for family in fonts.register(bytes, &path.display().to_string(), None, None)? {
                 if !additional.contains(&family) {
                     additional.push(family);
                 }
@@ -176,7 +176,13 @@ impl Fonts {
             .families
             .contains_key(&DEFAULT_FONT_FAMILY.to_lowercase())
         {
-            fonts.register(DEFAULT_FONT_BYTES, "bundled", Some(DEFAULT_FONT_FAMILY))?;
+            let face = fonts.bundled_face()?;
+            fonts.register(
+                DEFAULT_FONT_BYTES,
+                "bundled",
+                Some(DEFAULT_FONT_FAMILY),
+                Some(&face),
+            )?;
         }
         fonts.fallbacks.push(DEFAULT_FONT_FAMILY.into());
         fonts.fallbacks.extend(
@@ -191,11 +197,20 @@ impl Fonts {
         Ok(fonts)
     }
 
-    fn register(&mut self, bytes: &[u8], source: &str, alias: Option<&str>) -> Result<Vec<String>> {
+    fn register(
+        &mut self,
+        bytes: &[u8],
+        source: &str,
+        alias: Option<&str>,
+        shared_face: Option<&Typeface>,
+    ) -> Result<Vec<String>> {
         if bytes.len() > MAX_FONT_BYTES {
             return Err(invalid("A font file exceeds 64 MiB"));
         }
         let count = super::container::count(bytes)?;
+        if shared_face.is_some() && count != 1 {
+            return Err(invalid("A shared bundled typeface needs exactly one face"));
+        }
         let digest = hash(bytes);
         let mut families = Vec::new();
         for index in 0..count {
@@ -210,9 +225,12 @@ impl Fonts {
             let bytes = super::container::extract(bytes, index)?;
             let face_hash = hash(&bytes);
             let size = bytes.len();
-            let face = self
-                .file_face(&bytes)?
-                .ok_or_else(|| invalid(format!("Cannot load font {source}, face {index}")))?;
+            let face = match shared_face {
+                Some(face) => face.clone(),
+                None => self
+                    .file_face(&bytes)?
+                    .ok_or_else(|| invalid(format!("Cannot load font {source}, face {index}")))?,
+            };
             let family = alias
                 .map(str::to_string)
                 .unwrap_or_else(|| face.family_name());
@@ -241,6 +259,24 @@ impl Fonts {
     }
 
     fn file_face(&mut self, bytes: &[u8]) -> Result<Option<Typeface>> {
+        self.file_face_data(bytes, Data::new_copy(bytes))
+    }
+
+    fn bundled_face(&mut self) -> Result<Typeface> {
+        static FACE: OnceLock<Result<Typeface>> = OnceLock::new();
+        FACE.get_or_init(|| {
+            // SAFETY: include_bytes! provides immutable program-lifetime storage.
+            // The shared Data and Typeface may outlive every Fonts collection.
+            let data = unsafe { Data::new_bytes(DEFAULT_FONT_BYTES) };
+            self.file_face_data(DEFAULT_FONT_BYTES, data)?
+                .ok_or_else(|| invalid("Cannot load bundled Noto Sans JP"))
+        })
+        .clone()
+    }
+
+    fn file_face_data(&mut self, bytes: &[u8], data: Data) -> Result<Option<Typeface>> {
+        #[cfg(not(target_os = "macos"))]
+        let _ = bytes;
         #[cfg(target_os = "macos")]
         if super::container::requires_freetype_color(bytes)? {
             if self.portable_color.is_none() {
@@ -255,9 +291,9 @@ impl Fonts {
                 .portable_color
                 .as_ref()
                 .expect("initialized color manager")
-                .new_from_data(Data::new_copy(bytes), Some(0)));
+                .new_from_data(data, Some(0)));
         }
-        Ok(self.system.new_from_data(Data::new_copy(bytes), Some(0)))
+        Ok(self.system.new_from_data(data, Some(0)))
     }
 
     fn add(&mut self, face: Typeface, info: FontInfo, size: usize) -> Result<()> {
@@ -483,4 +519,80 @@ impl Fonts {
 
 fn invalid(message: impl Into<String>) -> Error {
     Error::new("INVALID_ARGUMENT", message)
+}
+
+#[cfg(test)]
+mod sharing_tests {
+    use super::*;
+    use crate::text::{TextBlock, TextSpec};
+
+    fn raster(block: TextBlock) -> Vec<u8> {
+        let mut surface = skia_safe::surfaces::raster_n32_premul((360, 100)).unwrap();
+        surface.canvas().clear(skia_safe::Color::WHITE);
+        block.paragraph.paint(surface.canvas(), (4.0, 4.0));
+        skia_safe::png_encoder::encode_image(None, &surface.image_snapshot(), &Default::default())
+            .unwrap()
+            .as_bytes()
+            .to_vec()
+    }
+
+    #[test]
+    fn shared_bundled_faces_match_owned_font_sources_after_contexts_drop_and_across_threads() {
+        std::thread::scope(|scope| {
+            for weight in [100, 400, 700, 900] {
+                scope.spawn(move || {
+                    let spec = TextSpec {
+                        content: "日本語 ABC 123".into(),
+                        size: 26.0,
+                        weight,
+                        ..Default::default()
+                    };
+                    let copied = {
+                        // Configured fonts retain their independent owned-data
+                        // path, providing the pre-sharing rendering reference.
+                        let sources = [(
+                            PathBuf::from("configured.ttf"),
+                            Arc::from(DEFAULT_FONT_BYTES),
+                        )];
+                        let mut fonts = Fonts::from_sources(&sources).unwrap();
+                        let block = fonts.layout(&spec, Some(340.0)).unwrap();
+                        assert!(!block.metrics.fonts.is_empty());
+                        assert!(
+                            block
+                                .metrics
+                                .fonts
+                                .iter()
+                                .all(|info| info.source == "configured.ttf")
+                        );
+                        block
+                    };
+                    let shared = {
+                        let mut fonts = Fonts::new(&[]).unwrap();
+                        let block = fonts.layout(&spec, Some(340.0)).unwrap();
+                        assert!(
+                            block
+                                .metrics
+                                .fonts
+                                .iter()
+                                .all(|info| info.source == "bundled")
+                        );
+                        block
+                    };
+                    assert_eq!(
+                        (
+                            copied.metrics.width,
+                            copied.metrics.height,
+                            copied.metrics.intrinsic_width
+                        ),
+                        (
+                            shared.metrics.width,
+                            shared.metrics.height,
+                            shared.metrics.intrinsic_width
+                        )
+                    );
+                    assert_eq!(hash(&raster(copied)), hash(&raster(shared)));
+                });
+            }
+        });
+    }
 }
