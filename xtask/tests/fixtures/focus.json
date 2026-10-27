@@ -1678,6 +1678,7 @@
         "browser_readiness",
         "dynamic_render",
         "imports",
+        "runtime",
         "sampler_sources",
         "shader_uniforms"
       ],
@@ -1890,6 +1891,7 @@
         "browser_readiness",
         "dynamic_render",
         "imports",
+        "runtime_config",
         "sampler_sources",
         "shader_uniforms"
       ],
@@ -2115,7 +2117,8 @@
         "dynamic_render",
         "imports",
         "sampler_sources",
-        "shader_uniforms"
+        "shader_uniforms",
+        "tui"
       ],
       "preprocessor": false
     }

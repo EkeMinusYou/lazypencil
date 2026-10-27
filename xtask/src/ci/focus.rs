@@ -878,7 +878,9 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
             }
             path.file_stem()?.to_str().map(str::to_owned)
         })
-        .filter(|name| name != "agent_workflow" && all.contains(name))
+        .filter(|name| {
+            !["agent_workflow", "windows_agent"].contains(&name.as_str()) && all.contains(name)
+        })
         .collect();
     if !changed_tests.is_subset(&targets) && ["core", "conversation"].contains(&suite.as_str()) {
         suite = "graphics".into();
