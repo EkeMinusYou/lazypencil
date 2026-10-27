@@ -7,6 +7,21 @@ use serde_json::{Value, json};
 use std::{collections::BTreeMap, fs, path::PathBuf, process::Command};
 
 #[test]
+fn hosted_terminal_changes_select_linux_before_shared_bsd_bridge_checks() {
+    let paths = vec![
+        "xtask/src/terminal/hosted.rs".into(),
+        "src/tui/terminal.rs".into(),
+        "tests/support/terminal/cases.rs".into(),
+    ];
+    let plan = focus::select(&util::root(), &paths, "auto").unwrap();
+    assert_eq!(plan.platform, "ubuntu-24.04");
+    assert_eq!(plan.suite, "candidate");
+    assert_eq!(plan.targets, ["render", "tui", "dynamic_render"]);
+    let override_plan = focus::select(&util::root(), &paths, "macos-15").unwrap();
+    assert_eq!(override_plan.platform, "macos-15");
+}
+
+#[test]
 fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() {
     for path in [
         "xtask/src/performance.rs",

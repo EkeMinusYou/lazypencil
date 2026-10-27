@@ -353,10 +353,11 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
         h.screen.cursor() == first_cursor
     })?;
     assert_eq!(
-        negotiated & 7,
-        7,
-        "Keep modified-key, release and alternate-key reporting"
+        negotiated & 5,
+        5,
+        "Keep modified-key disambiguation and alternate-key reporting"
     );
+    assert_eq!(negotiated & 2, 0, "Do not duplicate legacy key releases");
     assert_eq!(negotiated & 8, 0, "Keep native IME text on the UTF-8 path");
     h.key(b"\r")?;
     let second = "か\u{3099} 👩‍💻";

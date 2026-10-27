@@ -45,10 +45,10 @@ impl Screen {
             EnableBracketedPaste,
             // Preserve UTF-8 text commits from IMEs. Crossterm exposes key codes,
             // not Kitty's associated-text payload for key-number-zero events.
-            // Modified keys and release events still use enhanced reporting.
+            // Keep enhanced modified/alternate keys, but do not request key-up
+            // reports: older Kitty emits legacy Tab/Backspace on release too.
             PushKeyboardEnhancementFlags(
                 KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-                    | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
                     | KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
             )
         )

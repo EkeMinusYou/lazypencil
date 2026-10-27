@@ -223,7 +223,18 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
             || ["src/paths.rs", "tests/paths.rs"].contains(&p.as_str())
     });
     let platform = if platform == "auto" {
-        if mac { "macos-15" } else { "ubuntu-24.04" }
+        // The X11 emulator runner exists only on Linux. Exercise it before
+        // expanding mixed keyboard/PTY changes to the complete platform set.
+        if paths
+            .iter()
+            .any(|path| path.starts_with("xtask/src/terminal/"))
+        {
+            "ubuntu-24.04"
+        } else if mac {
+            "macos-15"
+        } else {
+            "ubuntu-24.04"
+        }
     } else {
         platform
     }
