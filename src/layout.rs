@@ -180,7 +180,7 @@ pub(crate) fn compute_checked(
     })
 }
 
-/// Preserve the original canonical JSON hash without cloning the entire scene
+/// Preserve the original JSON hash without cloning the entire scene
 /// into another JSON object graph and a complete serialization buffer.
 fn snapshot_identity(revision: &str, dependency_revision: &str, items: &[LayoutItem]) -> String {
     use serde::ser::SerializeSeq;
@@ -196,8 +196,8 @@ fn snapshot_identity(revision: &str, dependency_revision: &str, items: &[LayoutI
         ) -> std::result::Result<S::Ok, S::Error> {
             let mut sequence = serializer.serialize_seq(Some(self.items.len()))?;
             for item in self.items {
-                // Value retains the original recursively sorted map keys, but
-                // only one item's temporary allocations are alive at a time.
+                // Preserve Value's original number conversion and map order,
+                // with only one item's temporary allocations alive at a time.
                 let value = if self.nodes {
                     serde_json::to_value(&item.node)
                 } else {
@@ -211,12 +211,12 @@ fn snapshot_identity(revision: &str, dependency_revision: &str, items: &[LayoutI
     }
     #[derive(Serialize)]
     struct Identity<'a> {
-        // The original serde_json::Value object emits these keys in this order.
-        dependency_revision: &'a str,
+        // serde_json's preserve_order feature retains the original json! order.
         engine: &'static str,
-        nodes: Rows<'a>,
-        records: Rows<'a>,
         revision: &'a str,
+        dependency_revision: &'a str,
+        records: Rows<'a>,
+        nodes: Rows<'a>,
     }
     struct Writer<'a>(&'a mut Sha256);
     impl std::io::Write for Writer<'_> {
