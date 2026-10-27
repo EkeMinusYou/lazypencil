@@ -802,6 +802,7 @@ fn native_identity_binds_compiler_image_flags_and_dependency_tree_but_not_schedu
     let original =
         cache::native_identity("ubuntu-24.04", "20261012.334.1", TREE, COMPILER, &flags()).unwrap();
     for (name, value) in [
+        ("CARGO_BUILD_JOBS", "2"),
         ("RUSTFLAGS", "--cfg changed"),
         ("CARGO_PROFILE_RELEASE_LTO", "thin"),
         ("SKIA_SOURCE_DIR", "/changed"),
