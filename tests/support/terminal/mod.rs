@@ -128,6 +128,7 @@ impl Harness {
             "user-font-config",
             "script-config",
             "user-navigation-config",
+            "ime-commit",
         ]
         .contains(&case)
         {

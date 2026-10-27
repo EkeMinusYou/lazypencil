@@ -11,6 +11,7 @@ mod terminal;
 #[test]
 fn real_pty_handles_japanese_input_live_turns_resize_and_image_protocols() {
     for case in [
+        "ime-commit",
         "basic",
         "kitty",
         "sixel",

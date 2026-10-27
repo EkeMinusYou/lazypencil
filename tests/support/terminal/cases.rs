@@ -212,6 +212,7 @@ pub fn run(
         )
     })?;
     let mut report = match case {
+        "ime-commit" => ime_commit(&mut h)?,
         "user-navigation-config" => navigation(&mut h)?,
         "session-selection" => conversations::selection(&mut h)?,
         "session-deletion" | "session-deletion-small" => conversations::deletion(&mut h)?,
@@ -264,6 +265,7 @@ pub fn run(
         report["exit_code"] = 0.into();
         report["terminal_modes_restored"] = true.into();
         let filename = match case {
+            "ime-commit" => "ime-commit-report.json",
             "user-navigation-config" => "navigation-report.json",
             "saved-history" => "saved-history-report.json",
             "session-selection" => "session-selection-report.json",
@@ -282,6 +284,72 @@ pub fn run(
         json!({"case":case,"terminal_bytes":h.output.len(),"exit_code":0})
     );
     Ok(())
+}
+
+fn ime_commit(h: &mut Harness) -> Result<Value> {
+    // Model the documented Kitty pure-text event, not bracketed paste. With
+    // report-all-keys but no associated text, an IME commit has key number zero
+    // and its actual characters are absent from the byte stream.
+    fn flags(bytes: &[u8]) -> Option<u16> {
+        bytes
+            .windows(3)
+            .enumerate()
+            .filter_map(|(start, prefix)| {
+                if prefix != b"\x1b[>" {
+                    return None;
+                }
+                let rest = &bytes[start + 3..];
+                let end = rest.iter().position(|byte| !byte.is_ascii_digit())?;
+                if end == 0 || rest[end] != b'u' {
+                    return None;
+                }
+                std::str::from_utf8(&rest[..end]).ok()?.parse().ok()
+            })
+            .last()
+    }
+    fn commit(flags: u16, text: &str) -> Vec<u8> {
+        if flags & 8 == 0 {
+            return text.as_bytes().to_vec();
+        }
+        if flags & 16 != 0 {
+            let codepoints = text
+                .chars()
+                .map(|c| (c as u32).to_string())
+                .collect::<Vec<_>>()
+                .join(":");
+            return format!("\x1b[0;1;{codepoints}u").into_bytes();
+        }
+        b"\x1b[0;1u".to_vec()
+    }
+    let original = fs::read(&h.document)?;
+    h.wait("negotiated keyboard text mode", 15.0, |h| {
+        flags(&h.output).is_some()
+    })?;
+    let negotiated = flags(&h.output).unwrap();
+    let first = "日本語の変換確定";
+    for part in commit(negotiated, first).chunks(2) {
+        h.key(part)?;
+        h.pump()?;
+    }
+    h.draft(first)?;
+    assert_eq!(
+        negotiated & 7,
+        7,
+        "Keep modified-key, release and alternate-key reporting"
+    );
+    assert_eq!(negotiated & 8, 0, "Keep native IME text on the UTF-8 path");
+    h.key(b"\r")?;
+    let second = "か\u{3099} 👩‍💻";
+    h.key(&commit(negotiated, second))?;
+    let expected = format!("{first}\n{second}");
+    h.draft(&expected)?;
+    no_agent(h);
+    assert_eq!(fs::read(&h.document)?, original);
+    Ok(
+        json!({"source_commit":source_commit(),"keyboard_flags":negotiated,
+        "draft":expected,"draft_sha256":hash(expected.as_bytes()),"document_unchanged":true,
+        "agent_started":false,"scope":"Real PTY plus Kitty keyboard-mode/IME-commit protocol model; physical IME confirmation is separate"}),
+    )
 }
 
 fn encoded(h: &mut Harness) -> Result {
