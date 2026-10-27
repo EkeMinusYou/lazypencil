@@ -244,6 +244,7 @@ impl<'a> Peer<'a> {
                     "image-inspect-audit",
                     "user-config",
                     "supervised-dynamic",
+                    "resource-observation",
                 ]
                 .contains(&mode)
                     || ["project-guidance", "audit-", "resume-"]
@@ -545,6 +546,45 @@ impl<'a> Peer<'a> {
             )?;
             write_json("supervised-dynamic.json", &preview["structuredContent"])?;
         }
+        if mode == "resource-observation" {
+            let doc = self.call("get_document", json!({}))?["structuredContent"].clone();
+            for round in 0..2 {
+                if round == 1 {
+                    self.resource_barrier("bound-render-again")?;
+                }
+                // Omit snapshot_id so the second request executes JavaScript
+                // again while retaining the real document-bound MCP process.
+                let preview = self.call("render", json!({"expected_revision":doc["revision"],"expected_dependency_revision":doc["dependency_revision"]}))?;
+                let metadata = &preview["structuredContent"];
+                assert_eq!(metadata["node_count"], 1000);
+                assert_eq!(metadata["width"], 1920);
+                assert_eq!(metadata["height"], 1080);
+                assert_eq!(metadata["diagnostics"], json!([]));
+                assert_eq!(metadata["script_executions"].as_array().unwrap().len(), 1);
+                assert_eq!(metadata["dynamic_artifacts"], json!([]));
+                let image = preview["content"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|value| value["type"] == "image")
+                    .ok_or("Missing resource preview")?;
+                assert_eq!(image["mimeType"], "image/png");
+                fs::write(
+                    format!("bound-render-{round}.png"),
+                    STANDARD.decode(image["data"].as_str().unwrap())?,
+                )?;
+                write_json(
+                    format!("bound-render-{round}.json"),
+                    &json!({
+                        "adapter_pid":std::process::id(), "mcp_pid":self.mcp.as_ref().unwrap().child.id(),
+                        "render":metadata
+                    }),
+                )?;
+            }
+            self.resource_barrier("bound-render-release")?;
+            self.mcp.take();
+            write_json("bound-render-closed.json", &json!({"mcp_reaped":true}))?;
+        }
         if mode == "process-tree-pressure" {
             for _ in 0..4096 {
                 self.notify(json!({"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"x".repeat(32768)}}))?;
@@ -658,6 +698,17 @@ impl<'a> Peer<'a> {
             self.pending.as_ref().unwrap(),
             json!({"stopReason":"end_turn"}),
         )?;
+        Ok(())
+    }
+
+    fn resource_barrier(&self, name: &str) -> Result {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while !Path::new(name).is_file() {
+            if Instant::now() >= deadline {
+                return Err(format!("Resource observer did not release {name}").into());
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
         Ok(())
     }
 }

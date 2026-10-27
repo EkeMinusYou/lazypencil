@@ -63,8 +63,52 @@ impl ActiveTrace {
         Ok(())
     }
 
+    pub fn observe_now(&mut self) -> Result<()> {
+        self.observe()
+    }
+
+    pub fn finish_bound(mut self, roles: &BoundRoles) -> Result<serde_json::Value> {
+        self.observe()?;
+        let accounted = self
+            .points
+            .iter()
+            .map(|point| roles.account(&point.snapshot))
+            .collect::<Result<Vec<_>>>()?;
+        ensure!(
+            accounted.iter().any(|point| point["present_roles"]
+                .as_array()
+                .is_some_and(|roles| roles.len() == 6)),
+            "No sample contains all required resource processes"
+        );
+        let application_peak = accounted
+            .iter()
+            .map(|point| point["application_rss_bytes"].as_u64().unwrap())
+            .max()
+            .unwrap();
+        let adapter_peak = accounted
+            .iter()
+            .map(|point| point["adapter_rss_bytes"].as_u64().unwrap())
+            .max()
+            .unwrap();
+        // The ordinary trace includes the final observation too. Do not sample a
+        // second time after calculating its corresponding accounting rows.
+        let mut report = self.report()?;
+        report["scope"] = serde_json::json!(
+            "Separate resource-only TUI plus bound MCP render with both live JavaScript workers; raw owned total retained, only the identified ACP adapter excluded from application accounting"
+        );
+        report["roles"] = serde_json::to_value(&roles.processes)?;
+        report["accounted_points"] = serde_json::json!(accounted);
+        report["maximum_observed_application_rss_bytes"] = serde_json::json!(application_peak);
+        report["maximum_observed_adapter_rss_bytes"] = serde_json::json!(adapter_peak);
+        Ok(report)
+    }
+
     pub fn finish(mut self) -> Result<serde_json::Value> {
         self.observe()?;
+        self.report()
+    }
+
+    fn report(self) -> Result<serde_json::Value> {
         let maximum_rss = self
             .points
             .iter()
@@ -95,6 +139,127 @@ impl ActiveTrace {
             "points":self.points
         }))
     }
+}
+
+/// Identities observed while all six processes are simultaneously alive. Unknown
+/// owned descendants remain included; only this exact external adapter is excluded.
+pub struct BoundRoles {
+    pub processes: BTreeMap<&'static str, Process>,
+}
+
+impl BoundRoles {
+    pub fn capture(
+        snapshot: &Snapshot,
+        root: u32,
+        adapter: u32,
+        mcp: u32,
+        tui_script: u32,
+    ) -> Result<Self> {
+        let get = |pid| {
+            snapshot
+                .processes
+                .get(&pid)
+                .cloned()
+                .context("Missing required resource process")
+        };
+        let tui = get(root)?;
+        let adapter = get(adapter)?;
+        let mcp = get(mcp)?;
+        let tui_script = get(tui_script)?;
+        let supervisor = get(adapter.parent)?;
+        let children = snapshot
+            .processes
+            .values()
+            .filter(|process| process.parent == mcp.pid)
+            .collect::<Vec<_>>();
+        ensure!(children.len() == 1, "Ambiguous MCP script worker");
+        let mcp_script = (*children[0]).clone();
+        ensure!(
+            tui.parent != adapter.pid
+                && tui_script.parent == root
+                && supervisor.parent == root
+                && mcp.parent == adapter.pid,
+            "Resource process topology differs from the owned fixture"
+        );
+        let processes = BTreeMap::from([
+            ("tui", tui),
+            ("tui_script", tui_script),
+            ("supervisor", supervisor),
+            ("adapter", adapter),
+            ("mcp", mcp),
+            ("mcp_script", mcp_script),
+        ]);
+        let ids = processes
+            .values()
+            .map(|process| process.pid)
+            .collect::<std::collections::BTreeSet<_>>();
+        ensure!(ids.len() == 6, "Resource roles alias the same process");
+        Ok(Self { processes })
+    }
+
+    pub fn account(&self, snapshot: &Snapshot) -> Result<serde_json::Value> {
+        let adapter = &self.processes["adapter"];
+        for expected in self.processes.values() {
+            if let Some(actual) = snapshot.processes.get(&expected.pid) {
+                ensure!(
+                    actual.parent == expected.parent
+                        && actual.group == expected.group
+                        && actual.start_ticks == expected.start_ticks,
+                    "A sampled resource PID changed identity"
+                );
+            }
+        }
+        let adapter_rss = snapshot
+            .processes
+            .get(&adapter.pid)
+            .map_or(0, |process| process.rss_bytes);
+        let total = snapshot.rss_bytes()?;
+        Ok(serde_json::json!({
+            "application_rss_bytes":total.checked_sub(adapter_rss).context("Invalid adapter accounting")?,
+            "adapter_rss_bytes":adapter_rss, "owned_total_rss_bytes":total,
+            "present_roles":self.processes.iter().filter(|(_,process)|snapshot.processes.contains_key(&process.pid)).map(|(role,_)|*role).collect::<Vec<_>>()
+        }))
+    }
+}
+
+pub fn require_script_worker(pid: u32, binary: &std::path::Path) -> Result<()> {
+    let binary = binary.canonicalize()?;
+    #[cfg(target_os = "linux")]
+    {
+        let bytes = crate::util::read(
+            &std::path::PathBuf::from(format!("/proc/{pid}/cmdline")),
+            65536,
+        )?;
+        let arguments = bytes
+            .split(|byte| *byte == 0)
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>();
+        use std::os::unix::ffi::OsStrExt;
+        ensure!(
+            arguments == [binary.as_os_str().as_bytes(), b"__script_worker"],
+            "Unexpected owned script command"
+        );
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let bytes = crate::process::checked(
+            Command::new("ps")
+                .args(["-ww", "-p", &pid.to_string(), "-o", "command="])
+                .env("LC_ALL", "C"),
+            Duration::from_secs(10),
+        )?;
+        ensure!(
+            std::str::from_utf8(&bytes)?.trim() == format!("{} __script_worker", binary.display()),
+            "Unexpected owned script command"
+        );
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        let _ = (pid, binary);
+        anyhow::bail!("Script process identification is unavailable on this target");
+    }
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    Ok(())
 }
 #[cfg(target_os = "linux")]
 use std::{fs, io::Read};

@@ -192,6 +192,16 @@ mod hosted {
 
     impl Terminal {
         fn start(binary: &Path, helper: &Path, root: &Path, deadline: Instant) -> Result<Self> {
+            Self::start_mode(binary, helper, root, deadline, "image-inspect")
+        }
+
+        fn start_mode(
+            binary: &Path,
+            helper: &Path,
+            root: &Path,
+            deadline: Instant,
+            mode: &str,
+        ) -> Result<Self> {
             let (mut master, mut slave) = (-1, -1);
             let mut size = libc::winsize {
                 ws_row: 54,
@@ -232,7 +242,7 @@ mod hosted {
                 .arg(helper)
                 .args([
                     "--adapter-arg=acp",
-                    "--adapter-arg=image-inspect",
+                    &format!("--adapter-arg={mode}"),
                     "--image-protocol",
                     "kitty",
                 ])
@@ -526,6 +536,179 @@ mod hosted {
         )
     }
 
+    fn bound_resources_trial(
+        binary: &Path,
+        helper: &Path,
+        output: &Path,
+        deadline: Instant,
+        static_hash: &str,
+    ) -> Result<Value> {
+        let root = output.join("bound-resource-observation");
+        let fixture = fixtures::performance_with_script(&root)?;
+        fs::write(root.join("lazypencil.toml"), b"version=1\n")?;
+        let mut terminal =
+            Terminal::start_mode(binary, helper, &root, deadline, "resource-observation")?;
+        terminal.activity = Some(resources::ActiveTrace::new(terminal.child.id())?);
+        let result = (|| -> Result<Value> {
+            terminal.wait("script dashboard preview", |t| t.last_frame.is_some())?;
+            ensure!(
+                terminal.last_frame.as_ref().unwrap().1 == static_hash,
+                "Script header changed dashboard pixels"
+            );
+            terminal.capture(&root, "initial")?;
+            let before = resources::snapshot(terminal.child.id())?;
+            let children = before
+                .processes
+                .values()
+                .filter(|process| process.parent == terminal.child.id())
+                .collect::<Vec<_>>();
+            ensure!(
+                children.len() == 1 && before.processes.len() == 2,
+                "Unexpected viewer children before the agent request"
+            );
+            let tui_script = (*children[0]).clone();
+            resources::require_script_worker(tui_script.pid, binary)?;
+            terminal.key(b"Measure this owned document through MCP.\x13")?;
+            terminal.wait("bound MCP render", |_| {
+                root.join("bound-render-0.json").is_file()
+            })?;
+            let first: Value = util::json(&root.join("bound-render-0.json"))?;
+            let pid = |key: &str| -> Result<u32> {
+                Ok(u32::try_from(
+                    first[key].as_u64().context("Missing resource PID")?,
+                )?)
+            };
+            let snapshot = resources::snapshot(terminal.child.id())?;
+            let roles = resources::BoundRoles::capture(
+                &snapshot,
+                terminal.child.id(),
+                pid("adapter_pid")?,
+                pid("mcp_pid")?,
+                tui_script.pid,
+            )?;
+            ensure!(
+                roles.processes["tui_script"].start_ticks == tui_script.start_ticks,
+                "Viewer script worker changed identity"
+            );
+            resources::require_script_worker(roles.processes["mcp_script"].pid, binary)?;
+            util::publish(
+                &root.join("roles.json"),
+                &util::encode(&roles.processes)?,
+                false,
+            )?;
+            terminal.activity.as_mut().unwrap().observe_now()?;
+            fs::write(root.join("bound-render-again"), b"observe")?;
+            terminal.key(b"\t")?;
+            let (_, zoomed, _) = terminal.changed_frame(b"+", static_hash)?;
+            let (_, restored, _) = terminal.changed_frame(b"-", &zoomed)?;
+            ensure!(
+                restored == static_hash,
+                "Bound resource zoom changed dashboard pixels"
+            );
+            let (_, panned, _) = terminal.changed_frame(b"\x1b[C", static_hash)?;
+            let (_, restored, _) = terminal.changed_frame(b"\x1b[D", &panned)?;
+            ensure!(
+                restored == static_hash,
+                "Bound resource pan changed dashboard pixels"
+            );
+            terminal.wait("second bound MCP render", |_| {
+                root.join("bound-render-1.json").is_file()
+            })?;
+            terminal.activity.as_mut().unwrap().observe_now()?;
+            let second: Value = util::json(&root.join("bound-render-1.json"))?;
+            ensure!(
+                first["adapter_pid"] == second["adapter_pid"]
+                    && first["mcp_pid"] == second["mcp_pid"],
+                "Bound processes were replaced"
+            );
+            for (round, metadata) in [&first, &second].into_iter().enumerate() {
+                let png = util::read(
+                    &root.join(format!("bound-render-{round}.png")),
+                    8 * 1024 * 1024,
+                )?;
+                ensure!(
+                    metadata["render"]["png_hash"] == util::digest(png)
+                        && metadata["render"]["node_count"] == 1000
+                        && metadata["render"]["script_executions"]
+                            .as_array()
+                            .is_some_and(|items| items.len() == 1),
+                    "Incomplete script MCP render evidence"
+                );
+            }
+            ensure!(
+                first["render"]["png_hash"] == second["render"]["png_hash"],
+                "Repeated bound render changed pixels"
+            );
+            fs::write(root.join("bound-render-release"), b"complete")?;
+            terminal.wait("completed resource turn", |t| {
+                root.join("bound-render-closed.json").is_file()
+                    && t.screen.text().contains("完了 1")
+                    && t.screen
+                        .text()
+                        .lines()
+                        .next()
+                        .is_some_and(|line| line.contains("idle"))
+            })?;
+            let trace = terminal.activity.take().unwrap().finish_bound(&roles)?;
+            let observed_pids = trace["points"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .flat_map(|point| point["snapshot"]["processes"].as_object().unwrap().values())
+                .map(|process| process["pid"].as_u64().unwrap() as u32)
+                .collect::<std::collections::BTreeSet<_>>();
+            terminal.finish()?;
+            let cleanup = Instant::now() + Duration::from_secs(10);
+            while observed_pids
+                .iter()
+                .any(|&pid| unsafe { libc::kill(pid as i32, 0) } == 0)
+            {
+                ensure!(
+                    Instant::now() < cleanup,
+                    "Bound resource processes survived normal TUI exit"
+                );
+                thread::sleep(Duration::from_millis(10));
+            }
+            ensure!(
+                util::file_digest(&root.join("dashboard.pen"))? == fixture["document_sha256"]
+                    && util::file_digest(&root.join("resource-header.js"))?
+                        == fixture["script_sha256"],
+                "Resource fixture changed during the turn"
+            );
+            let files = util::walk(&root.join("data"))?;
+            let sessions = files
+                .iter()
+                .filter(|path| path.file_name().is_some_and(|name| name == "session.json"))
+                .collect::<Vec<_>>();
+            ensure!(sessions.len() == 1, "Ambiguous bound resource conversation");
+            let session: Value = util::json(sessions[0])?;
+            ensure!(
+                session["draft"] == "" && session["native_session_id"] == "fixture-native",
+                "Resource request did not complete its own conversation"
+            );
+            Ok(
+                json!({"fixture":fixture,"trace":trace,"mcp_renders":[first,second],
+                "complete_interactions":4,"initial_rgba_sha256":static_hash,"restored_rgba_sha256":restored,
+                "normal_exit":true,"owned_processes_gone":true,"observed_owned_pids":observed_pids,"document_and_script_unchanged":true,
+                "scope":"Separate resource-only turn after all original trials; actual bound MCP and JavaScript, deterministic ACP helper only, no real provider request; excluded from original latency distributions"}),
+            )
+        })();
+        if result.is_err() {
+            let _ = fs::write(root.join("failure-screen.txt"), terminal.screen.text());
+            if let Some(activity) = terminal.activity.take()
+                && let Ok(mut trace) = activity.finish()
+            {
+                trace["scope"] = json!(
+                    "Partial failed bound-resource trial; no acceptance or complete-process accounting claim"
+                );
+                let _ = util::encode(&trace).and_then(|bytes| {
+                    util::publish(&root.join("failure-trace.json"), &bytes, false)
+                });
+            }
+        }
+        result
+    }
+
     pub(super) fn run(arguments: Arguments) -> Result<()> {
         let deadline = Instant::now() + Duration::from_secs(600);
         let candidate = std::path::absolute(arguments.candidate)?;
@@ -710,7 +893,18 @@ mod hosted {
         let preview = crate::performance::sample_statistics(&preview)?;
         let interactions = crate::performance::sample_statistics(&interactions)?;
         let activity = active_resources_trial(&binary, &helper, &output, deadline)?;
+        let bound_activity = bound_resources_trial(
+            &binary,
+            &helper,
+            &output,
+            deadline,
+            activity["initial_rgba_sha256"]
+                .as_str()
+                .context("Missing static resource pixels")?,
+        )?;
         let report = json!({"format_version":1,"candidate":identity,"helper":helper_identity,"target":evidence::linkage::native_host()?,"pty":{"columns":160,"rows":54,"pixel_width":1920,"pixel_height":1080,"protocol":"kitty","display_emulator":false},"cache_condition":"Fresh app/data directories per sample; OS page/font caches uncontrolled, individual samples retained with first at index 0; no concurrent tasks in this job","samples":samples,"input_ready_ms":input,"first_preview_ms":preview,"interaction_output_ms":interactions,"idle":idle,"active_resources":activity,"scope":"PTY input echo and complete Kitty output receipt, including observer backpressure; sampled process trees can miss short-lived descendants. Not physical presentation, a controlled cold-start benchmark, transient peak RSS, external AI/adapter/terminal resource usage or full performance acceptance"});
+        let mut report = report;
+        report["bound_resources"] = bound_activity;
         util::publish(&output.join("report.json"), &util::encode(&report)?, false)?;
         util::print(
             &json!({"tui_measurement":"recorded","samples":arguments.samples,"output":output}),

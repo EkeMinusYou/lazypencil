@@ -40,6 +40,59 @@ fn active_resource_trace_keeps_raw_owned_counters_and_excludes_latency_claims() 
     assert_eq!(report["actual_maximum_sampling_gap_ms"], maximum_gap);
 }
 
+#[cfg(unix)]
+#[test]
+fn bound_accounting_includes_mcp_both_scripts_supervisor_and_unknown_owned_children() {
+    let row = |pid, parent| Process {
+        pid,
+        parent,
+        group: 100,
+        start_ticks: Some(u64::from(pid)),
+        rss_bytes: u64::from(pid),
+        cpu_ms: 0.0,
+    };
+    let snapshot = resources::owned(
+        100,
+        vec![
+            row(100, 9),
+            row(110, 100),
+            row(120, 100),
+            row(130, 120),
+            row(140, 130),
+            row(150, 140),
+            row(160, 130),
+        ],
+        20.0,
+        "fixture",
+    )
+    .unwrap();
+    let roles = resources::BoundRoles::capture(&snapshot, 100, 130, 140, 110).unwrap();
+    assert_eq!(roles.processes["supervisor"].pid, 120);
+    assert_eq!(roles.processes["mcp_script"].pid, 150);
+    let accounted = roles.account(&snapshot).unwrap();
+    assert_eq!(accounted["owned_total_rss_bytes"], 910);
+    assert_eq!(accounted["application_rss_bytes"], 780);
+    assert_eq!(accounted["adapter_rss_bytes"], 130);
+    assert_eq!(accounted["present_roles"].as_array().unwrap().len(), 6);
+    let mut early = snapshot.clone();
+    early.processes.retain(|&pid, _| [100, 110].contains(&pid));
+    assert_eq!(roles.account(&early).unwrap()["application_rss_bytes"], 210);
+    assert_eq!(roles.account(&early).unwrap()["adapter_rss_bytes"], 0);
+    for pid in [100, 110, 120, 130, 140, 150] {
+        let mut reused = snapshot.clone();
+        reused.processes.get_mut(&pid).unwrap().start_ticks = Some(999);
+        assert!(roles.account(&reused).is_err());
+    }
+    assert!(resources::BoundRoles::capture(&snapshot, 100, 130, 140, 100).is_err());
+    assert!(resources::BoundRoles::capture(&snapshot, 100, 999, 140, 110).is_err());
+    let mut ambiguous = snapshot.clone();
+    ambiguous.processes.get_mut(&160).unwrap().parent = 140;
+    assert!(resources::BoundRoles::capture(&ambiguous, 100, 130, 140, 110).is_err());
+    let mut wrong_parent = snapshot;
+    wrong_parent.processes.get_mut(&140).unwrap().parent = 100;
+    assert!(resources::BoundRoles::capture(&wrong_parent, 100, 130, 140, 110).is_err());
+}
+
 #[test]
 fn direct_pixel_profiles_keep_legacy_reports_readable_and_require_the_new_phase_set() {
     use lazypencil_xtask::performance::tui::preview_profiles;

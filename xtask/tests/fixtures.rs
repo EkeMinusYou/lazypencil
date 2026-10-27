@@ -313,6 +313,46 @@ fn fixed_performance_inputs_keep_the_existing_source_and_asset_hashes() {
 }
 
 #[test]
+fn resource_dashboard_moves_the_same_header_children_into_a_separate_script() {
+    let temporary = tempfile::tempdir().unwrap();
+    let output = temporary.path().join("bound");
+    let report = fixtures::performance_with_script(&output).unwrap();
+    let original: Value =
+        util::json(&util::root().join("tests/fixtures/performance/dashboard.pen")).unwrap();
+    let document: Value = util::json(&output.join("dashboard.pen")).unwrap();
+    let mut header = original["children"][0]["children"][0].clone();
+    let children = header.as_object_mut().unwrap().remove("children").unwrap();
+    header["type"] = json!("script");
+    header["scriptUri"] = json!("resource-header.js");
+    assert_eq!(document["children"][0]["children"][0], header);
+    assert_eq!(
+        &document["children"][0]["children"].as_array().unwrap()[1..],
+        &original["children"][0]["children"].as_array().unwrap()[1..]
+    );
+    assert_eq!(document["variables"], original["variables"]);
+    let script = fs::read_to_string(output.join("resource-header.js")).unwrap();
+    let encoded = script
+        .strip_prefix("/**\n * @schema 2.21\n */\nreturn ")
+        .unwrap()
+        .strip_suffix(";\n")
+        .unwrap();
+    assert_eq!(serde_json::from_str::<Value>(encoded).unwrap(), children);
+    assert_eq!(report["script_sha256"], util::digest(script));
+    assert_eq!(
+        report["document_sha256"],
+        util::file_digest(&output.join("dashboard.pen")).unwrap()
+    );
+    assert_eq!(
+        report["static_document_sha256"],
+        "c55bcf8727afc04d31646ea1a259e17723fe9be03e3cb4fd2dccbf8512764da7"
+    );
+    assert_eq!(
+        report["asset_sha256"],
+        util::file_digest(&output.join("avatar.png")).unwrap()
+    );
+}
+
+#[test]
 fn repeated_measurements_use_observed_nearest_rank_p95_and_keep_first_invocations_separate() {
     let samples = (1..=20)
         .map(|n| json!({"elapsed_ms":n,"peak_rss_bytes":n,"user_cpu_ms":n,"system_cpu_ms":n}))
