@@ -454,6 +454,32 @@ fn rust_pty_bridge_changes_select_the_stricter_supported_host_and_all_frontend_r
         assert_eq!(explicit.platform, "ubuntu-24.04");
         assert_eq!(explicit.targets, plan.targets);
     }
+    for companion in [
+        "tests/user_agent_config.rs",
+        "tests/config.rs",
+        "tests/graphics.rs",
+    ] {
+        let plan = focus::select(
+            &util::root(),
+            &[
+                "src/conversation/mod.rs".into(),
+                "tests/support/terminal/cases.rs".into(),
+                companion.into(),
+            ],
+            "auto",
+        )
+        .unwrap();
+        let name = std::path::Path::new(companion)
+            .file_stem()
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert_eq!(plan.suite, "graphics");
+        assert!(plan.targets.iter().any(|target| target == name));
+        assert!(plan.targets.iter().any(|target| target == "tui"));
+        assert!(plan.targets.iter().any(|target| target == "agent"));
+        assert!(!plan.targets.iter().any(|target| target == "agent_workflow"));
+    }
 }
 
 #[test]

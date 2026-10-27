@@ -864,6 +864,26 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         targets
             .extend(["runtime", "runtime_config", "scripts", "dynamic_render"].map(str::to_owned));
     }
+    // A specialized source/helper branch must not discard independently changed
+    // integration targets. New targets use default features when the narrower
+    // source suite cannot establish their required feature configuration.
+    let changed_tests: BTreeSet<String> = paths
+        .iter()
+        .filter_map(|path| {
+            let path = Path::new(path);
+            if path.parent() != Some(Path::new("tests"))
+                || path.extension().is_none_or(|extension| extension != "rs")
+            {
+                return None;
+            }
+            path.file_stem()?.to_str().map(str::to_owned)
+        })
+        .filter(|name| name != "agent_workflow" && all.contains(name))
+        .collect();
+    if !changed_tests.is_subset(&targets) && ["core", "conversation"].contains(&suite.as_str()) {
+        suite = "graphics".into();
+    }
+    targets.extend(changed_tests);
     ensure!(
         !targets.contains("agent_workflow") && targets.iter().all(|s| all.contains(s)),
         "Focus may run only deterministic integration targets"
