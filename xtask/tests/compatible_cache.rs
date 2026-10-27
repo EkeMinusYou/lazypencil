@@ -77,6 +77,7 @@ impl Fixture {
             "tests/three.rs",
             "tests/support/common.rs",
             "xtask/src/test_support/terminal.rs",
+            "xtask/src/test_support/acp.rs",
         ] {
             if self.source.join(extra).is_file() {
                 names.push(extra);
@@ -353,6 +354,82 @@ fn shared_helpers_invalidate_every_consumer_without_rebuilding_unrelated_outputs
                 );
             }
         }
+    }
+}
+
+#[test]
+fn runtime_only_helper_edits_keep_real_cargo_outputs_fresh_without_a_duplicate_checkpoint() {
+    for incomplete in [false, true] {
+        let f = Fixture::new();
+        let helper = "xtask/src/test_support/acp.rs";
+        let path = f.source.join(helper);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "pub const VERSION: u8 = 1;\n").unwrap();
+        f.manifest();
+        assert_eq!(f.build(&[]).len(), 5);
+        let old = f.identity();
+        cache::stage(&f.source, &f.target, &f.full, &old).unwrap();
+        if incomplete {
+            let manifest = f.full.join("manifest.json");
+            let mut report: Value = util::json(&manifest).unwrap();
+            let entries = report["files"].as_array_mut().unwrap();
+            let index = entries
+                .iter()
+                .position(|entry| {
+                    let name = entry["path"].as_str().unwrap();
+                    name.starts_with("debug/deps/lazypencil-") && name.ends_with(".d")
+                })
+                .unwrap();
+            let omitted = entries.remove(index);
+            fs::remove_file(f.full.join("files").join(omitted["path"].as_str().unwrap())).unwrap();
+            fs::write(manifest, util::encode(&report).unwrap()).unwrap();
+        }
+        fs::write(&path, "pub const VERSION: u8 = 2;\n").unwrap();
+        f.manifest();
+        f.clear();
+        let current = f.identity();
+        assert_eq!(old.compatible_prefix, current.compatible_prefix);
+        assert_ne!(old.primary, current.primary);
+        let restored = cache::restore_compatible(
+            &f.source,
+            &f.target,
+            &f.full,
+            &old.compatible_primary,
+            &current,
+        );
+        if incomplete {
+            assert!(
+                restored.is_err(),
+                "Missing dep-info cannot establish zero compiler consumers"
+            );
+            assert!(!f.target.exists());
+            continue;
+        }
+        let restored = restored.unwrap();
+        assert_eq!(restored["invalidated_files"], 0);
+        assert_eq!(restored["uncompiled_helpers"], json!([helper]));
+        let built = f.build(&[]);
+        assert_eq!(built.len(), 5);
+        assert!(
+            built.values().all(|(fresh, _)| *fresh),
+            "Runtime-only source changes rebuilt application outputs"
+        );
+        for name in ["library-tests", "one", "two"] {
+            process::checked(&mut Command::new(&built[name].1), Duration::from_secs(15)).unwrap();
+        }
+        fs::create_dir(&f.exact).unwrap();
+        fs::write(f.exact.join("obsolete"), b"must not be saved").unwrap();
+        let staged = cache::stage_focused(
+            &f.source,
+            &f.target,
+            &f.exact,
+            &f.full,
+            &old.compatible_primary,
+            &current,
+        )
+        .unwrap();
+        assert_eq!(staged["files"], 0);
+        assert!(!f.exact.exists(), "Unchanged full outputs were saved again");
     }
 }
 

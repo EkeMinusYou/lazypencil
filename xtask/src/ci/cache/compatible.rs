@@ -12,8 +12,8 @@ pub(super) fn test_source(name: &str) -> bool {
 }
 
 /// Existing integration roots and shared Rust test helpers are candidates.
-/// Every changed file must be covered by real compiler dep-info, and every
-/// affected unit must be an integration, library-test or binary-test unit.
+/// The complete cached compiler-unit inventory determines actual consumers.
+/// Every affected unit must be an integration, library-test or binary-test unit.
 /// A helper used by a production library, example or executable rejects reuse,
 /// regardless of its directory name.
 /// Cargo still validates retained artifacts and runs the complete test catalog.
@@ -49,10 +49,15 @@ pub fn restore_compatible(
         }
     }
     let (invalid, covered) = affected_outputs(source, &directory.join("files"), &names, &changed)?;
-    ensure!(covered == changed, "Changed tests lack compiler dep-info");
+    // Runtime-only helpers (for example the external ACP fixture) need no
+    // application rebuild when no cached compiler unit consumes their source.
+    // Missing unit dep-info was rejected above; production consumers still
+    // reject reuse in affected_outputs, and Cargo validates retained outputs.
+    let uncompiled = changed.difference(&covered).cloned().collect::<Vec<_>>();
     let mut result = restore_filtered(source, target, &directory, &old, &invalid)?;
     result["invalidated_files"] = json!(invalid.len());
     result["changed_tests"] = json!(changed);
+    result["uncompiled_helpers"] = json!(uncompiled);
     Ok(result)
 }
 
