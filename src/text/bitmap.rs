@@ -62,7 +62,7 @@ pub(super) fn glyph(
         .set_color(skia_safe::Color::WHITE);
     canvas.draw_glyphs_at(
         &[glyph],
-        &[skia_safe::Point::default()],
+        &[skia_safe::Point::default()][..],
         (0.0, 0.0),
         font,
         &paint,
