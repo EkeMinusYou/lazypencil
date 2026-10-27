@@ -211,7 +211,7 @@ impl Harness {
             image_case: image_case.into(),
             configuration,
             output: Vec::new(),
-            frames: KittyFrames::default(),
+            frames: KittyFrames::for_lazypencil(),
             screen: Screen::new(130, 34),
             child,
             master,
@@ -455,6 +455,12 @@ impl Harness {
                 "Delete this application's Kitty resource"
             );
             assert!(!self.contains_bytes(b"d=A"));
+            assert!(
+                self.frames
+                    .transmitted_resources
+                    .is_subset(&self.frames.deleted_resources),
+                "Delete every transmitted exact and temporary image resource"
+            );
         }
         Ok(())
     }

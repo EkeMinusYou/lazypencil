@@ -7,6 +7,9 @@ pub(crate) struct PreviewPixels {
     // Preserve premultiplied pixels for on-demand PNG export. No Skia object
     // crosses the preview worker's thread boundary.
     rgba: Vec<u8>,
+    // Only the displayed frame retains a reusable straight-alpha copy. Large
+    // windows keep the ordinary render path without another large allocation.
+    camera_pixels: Option<image::RgbaImage>,
 }
 
 impl PreviewPixels {
@@ -45,9 +48,15 @@ impl PreviewPixels {
                 width,
                 height,
                 rgba,
+                camera_pixels: (u64::from(width) * u64::from(height) * 4 <= 16 * 1024 * 1024)
+                    .then(|| bitmap.clone()),
             },
             image::DynamicImage::ImageRgba8(bitmap),
         ))
+    }
+
+    pub(crate) fn camera_pixels(&self) -> Option<&image::RgbaImage> {
+        self.camera_pixels.as_ref()
     }
 
     pub(crate) fn png(&self) -> Result<Vec<u8>> {

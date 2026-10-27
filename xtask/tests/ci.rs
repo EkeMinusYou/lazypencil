@@ -152,6 +152,81 @@ fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() 
 }
 
 #[test]
+fn release_evidence_restores_only_mapped_release_outputs_before_cargo_verification() {
+    let workflow =
+        fs::read_to_string(util::root().join(".github/workflows/release-evidence.yml")).unwrap();
+    let identify = workflow
+        .find("application identify --release-only")
+        .unwrap();
+    let restore = workflow
+        .find("application restore-or-prune --release-only")
+        .unwrap();
+    let compile = workflow
+        .find("cargo xtask ci native evidence-build")
+        .unwrap();
+    assert!(identify < restore && restore < compile);
+    assert!(workflow.contains("steps.release-key.outputs.primary"));
+    assert!(workflow.contains("lazypencil-release-cache"));
+    assert!(!workflow.contains("lazypencil-application-cache"));
+    for required in [
+        "cargo xtask evidence",
+        "cargo xtask ci native candidate",
+        "cargo xtask terminal --candidate",
+        "cargo xtask ci provenance",
+        "cargo xtask measure-tui",
+    ] {
+        assert!(workflow.contains(required), "{required}");
+    }
+}
+
+#[test]
+fn static_camera_and_pixel_transfer_changes_use_the_complete_tui_candidate_gate() {
+    let paths = [
+        "src/tui/camera.rs",
+        "src/tui/mod.rs",
+        "src/tui/terminal.rs",
+        "src/render/preview.rs",
+        "src/tui/tests.rs",
+        "tests/support/terminal/cases.rs",
+        "tests/support/terminal/mod.rs",
+        "xtask/src/performance/tui.rs",
+        "xtask/src/test_support/terminal.rs",
+        "xtask/src/ci/commands.rs",
+        "xtask/src/ci/focus.rs",
+        "xtask/tests/terminal.rs",
+        "xtask/tests/process.rs",
+        "xtask/tests/ci.rs",
+        "xtask/tests/fixtures/focus-commands.json",
+        "docs/performance.md",
+        "docs/tui.md",
+        "docs/implementation-status.md",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    let plan = focus::select(&util::root(), &paths, "auto").unwrap();
+    assert_eq!(plan.platform, "macos-15");
+    assert_eq!(plan.suite, "candidate");
+    assert_eq!(plan.targets, ["render", "tui"]);
+    assert!(focus::tui_measurement_changed(&paths));
+    assert!(focus::native_clipboard_changed(&paths));
+    assert!(!focus::runtime_scheduler_changed(&paths));
+    for shared in [
+        "src/render.rs",
+        "src/render/backdrop.rs",
+        "src/dynamic/pages.rs",
+        "src/agent.rs",
+    ] {
+        let mut mixed = paths.clone();
+        mixed.push(shared.into());
+        assert_ne!(
+            focus::select(&util::root(), &mixed, "auto").unwrap().suite,
+            "candidate",
+            "{shared}"
+        );
+    }
+}
+
+#[test]
 fn focus_keeps_the_existing_reproduction_scope_for_every_source_module() {
     let cases: Vec<Value> = serde_json::from_str(include_str!("fixtures/focus.json")).unwrap();
     for case in cases {

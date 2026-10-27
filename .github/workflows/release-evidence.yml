@@ -77,25 +77,25 @@ jobs:
         run: cargo xtask ci toolchain-evidence --output "$RUNNER_TEMP/toolchain-evidence"
       - name: Remove application outputs from dependency fallback caches
         run: cargo xtask ci cache prune --source "$RUNNER_TEMP/lazypencil-source"
-      - name: Identify source-bound application outputs
-        id: application-key
+      - name: Identify source-bound mapped release outputs
+        id: release-key
         if: steps.cache-key.outcome == 'success'
         continue-on-error: true
-        run: cargo xtask ci cache application identify --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
-      - name: Restore source-bound application outputs
-        if: steps.application-key.outcome == 'success'
+        run: cargo xtask ci cache application identify --release-only --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-release-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
+      - name: Restore verified release outputs from native CI
+        if: steps.release-key.outcome == 'success'
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
-          key: ${{ steps.application-key.outputs.primary }}
+          key: ${{ steps.release-key.outputs.primary }}
           restore-keys: |
-            ${{ steps.application-key.outputs.checkpoint_prefix }}
-            ${{ steps.application-key.outputs.checkpoint_legacy }}
-          path: ${{ runner.temp }}/lazypencil-application-cache
-      - name: Validate application reuse or keep a fresh build
-        if: steps.application-key.outcome == 'success'
+            ${{ steps.release-key.outputs.checkpoint_prefix }}
+            ${{ steps.release-key.outputs.checkpoint_legacy }}
+          path: ${{ runner.temp }}/lazypencil-release-cache
+      - name: Validate release reuse or keep a fresh build
+        if: steps.release-key.outcome == 'success'
         timeout-minutes: 3
-        run: cargo xtask ci cache application restore-or-prune --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
+        run: cargo xtask ci cache application restore-or-prune --release-only --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-release-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
       - name: Compile the release executable and record selected Cargo artifacts
         run: cargo xtask ci native evidence-build
       - name: Collect and reverify original notices against this build

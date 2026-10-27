@@ -9,6 +9,11 @@ use std::{
 pub type Invocation = Vec<String>;
 pub const COLOR_FONT_REPRODUCTION: &str = "color_fonts::";
 pub const MANAGEMENT_REPRODUCTION: &str = "conversation::management::";
+pub const PREVIEW_REPRODUCTIONS: [&str; 3] = [
+    "render::tests::",
+    "tui::camera::tests::",
+    "tui::tests::cached_camera_feedback_keeps_exact_exports_and_generation_ownership_separate",
+];
 pub const NATIVE_CLIPBOARD_TEST: &str =
     "real_native_clipboard_ctrl_v_preserves_two_images_and_delivers_their_pixels";
 const DEFAULT_REPRODUCTIONS: [&str; 2] = [
@@ -377,6 +382,13 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
         });
     }
     let mut checks = shader_first;
+    // Dynamic focus otherwise selects only CDP/pages/TUI library namespaces.
+    // Exercise the native pixel transfer and camera math before browser work.
+    if suite == "dynamic" && has("tui") {
+        let preview = PREVIEW_REPRODUCTIONS
+            .map(|filter| append(&common, &["--lib", filter, "--", "--test-threads=1"]));
+        checks.splice(0..0, preview);
+    }
     let history = has("conversation_history");
     if history && core {
         checks.push(append(
@@ -504,6 +516,9 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
             &["--lib", "tui::tests::", "--", "--test-threads=2"],
         );
         tui.extend(history_skip.clone());
+        if has("tui") {
+            tui.extend(skips([PREVIEW_REPRODUCTIONS[2]]));
+        }
         checks.push(tui);
         if has("dynamic_render") {
             checks.push(append(
@@ -594,8 +609,15 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
             excluded.insert("native_layout");
         }
         let mut c = append(&common, &["--lib"]);
+        let isolated_management = suite == "candidate" && has("tui") && !history;
+        if isolated_management {
+            checks.push(management_tests(true));
+        }
         c.extend(selected(targets, &excluded.into_iter().collect::<Vec<_>>()));
         c.extend(words(&["--", "--test-threads=2"]));
+        if isolated_management {
+            c.extend(skips([MANAGEMENT_REPRODUCTION]));
+        }
         c.extend(input_skip);
         c.extend(history_skip);
         if history {

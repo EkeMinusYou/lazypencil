@@ -568,6 +568,33 @@
         "cargo",
         "test",
         "--locked",
+        "--lib",
+        "render::tests::",
+        "--",
+        "--test-threads=1"
+      ],
+      [
+        "cargo",
+        "test",
+        "--locked",
+        "--lib",
+        "tui::camera::tests::",
+        "--",
+        "--test-threads=1"
+      ],
+      [
+        "cargo",
+        "test",
+        "--locked",
+        "--lib",
+        "tui::tests::cached_camera_feedback_keeps_exact_exports_and_generation_ownership_separate",
+        "--",
+        "--test-threads=1"
+      ],
+      [
+        "cargo",
+        "test",
+        "--locked",
         "--test",
         "shader_uniforms",
         "linked_constant_dimensions_validate_inputs_and_recover_after_an_error",
@@ -627,7 +654,9 @@
         "--skip",
         "agent_ownership::killed_cli_revokes_grants_and_resume_preserves_images_and_transcripts",
         "--skip",
-        "owned_mcp_rejects_grants_after_the_host_is_killed_without_reviving_or_writing_journals"
+        "owned_mcp_rejects_grants_after_the_host_is_killed_without_reviving_or_writing_journals",
+        "--skip",
+        "tui::tests::cached_camera_feedback_keeps_exact_exports_and_generation_ownership_separate"
       ],
       [
         "cargo",

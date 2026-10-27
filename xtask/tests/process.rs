@@ -149,6 +149,72 @@ fn focused_scheduling_preserves_reproduction_order_and_excludes_only_repeated_co
 }
 
 #[test]
+fn tui_candidate_tests_isolate_the_process_global_cleanup_worker_without_omitting_the_library() {
+    let plan =
+        commands::plan(&util::root(), "candidate", &["render".into(), "tui".into()]).unwrap();
+    assert_eq!(plan.checks.len(), 2);
+    assert_eq!(plan.checks[0], commands::management_tests(true));
+    let remaining = &plan.checks[1];
+    assert!(remaining.iter().any(|arg| arg == "--lib"));
+    assert!(remaining.iter().any(|arg| arg == "--test-threads=2"));
+    assert!(
+        remaining.iter().position(|arg| arg == "--").unwrap()
+            < remaining.iter().position(|arg| arg == "--skip").unwrap()
+    );
+    assert!(
+        remaining
+            .windows(2)
+            .any(|args| args == ["--skip", commands::MANAGEMENT_REPRODUCTION])
+    );
+    for target in ["render", "tui"] {
+        assert!(remaining.windows(2).any(|args| args == ["--test", target]));
+    }
+}
+
+#[test]
+fn focused_dynamic_preview_regressions_run_before_browser_work_and_are_not_repeated() {
+    let targets = ["tui", "user_config", "dynamic_render", "shader_uniforms"].map(str::to_owned);
+    let plan = commands::plan(&util::root(), "dynamic", &targets).unwrap();
+    for (command, filter) in plan.checks.iter().zip(commands::PREVIEW_REPRODUCTIONS) {
+        assert_eq!(
+            command,
+            &[
+                "cargo",
+                "test",
+                "--locked",
+                "--lib",
+                filter,
+                "--",
+                "--test-threads=1"
+            ]
+        );
+    }
+    let later = plan
+        .checks
+        .iter()
+        .skip(3)
+        .find(|command| command.iter().any(|arg| arg == "tui::tests::"))
+        .unwrap();
+    assert!(
+        later
+            .windows(2)
+            .any(|args| args == ["--skip", commands::PREVIEW_REPRODUCTIONS[2]])
+    );
+    for filter in commands::PREVIEW_REPRODUCTIONS {
+        assert_eq!(
+            plan.checks
+                .iter()
+                .filter(|command| command
+                    .iter()
+                    .position(|arg| arg == "--lib")
+                    .is_some_and(|index| command.get(index + 1).is_some_and(|arg| arg == filter)))
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
 fn renderer_focus_runs_native_cases_and_exact_dynamic_pixels_before_the_full_scope() {
     let targets = focus::RENDER_TARGETS
         .iter()

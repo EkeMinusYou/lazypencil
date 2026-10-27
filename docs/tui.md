@@ -6,6 +6,8 @@ The default build includes `lazypencil tui`, using the same document, renderer, 
 
 Document previews pass owned raster pixels directly to the terminal encoder. PNG compression is deferred until `/open-preview` or `o` requests an export; the worker does not compress and decompress each frame. Preview pixels stay bounded by the existing window-size limit, are replaced with the displayed frame, and contain no thread-bound Skia objects. Attachment previews retain their original PNG bytes.
 
+For static document previews, camera gestures immediately reproject the last complete frame while the worker renders the requested view. The panel shows `updating` and the status says `Cached preview`; uncovered areas use the preview background, and temporary zooming uses nearest-neighbor sampling. Each gesture reads the last complete frame, so repeated operations do not compound resampling. The exact render replaces this feedback and remains the export source; opening a PNG while temporary feedback is displayed requires waiting for completion. The extra reusable pixel copy is capped at 16 MiB and retains only the displayed complete frame. Larger previews and dynamic/page playback keep the normal exact-render path. Refresh, time changes, attachments, errors and accepted replacement frames clear temporary feedback; stale worker generations cannot replace it.
+
 ```sh
 lazypencil tui design.pen
 lazypencil tui new.pen --create --agent claude --image reference.png

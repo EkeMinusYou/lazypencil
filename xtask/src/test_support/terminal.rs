@@ -88,12 +88,26 @@ pub struct KittyFrames {
     pub images: Vec<Frame>,
     pub compressed_frames: usize,
     pub deleted_resources: BTreeSet<u32>,
+    pub transmitted_resources: BTreeSet<u32>,
     pub pending: Vec<u8>,
     pub payload: Vec<u8>,
+    pub camera_frames: usize,
+    pub last_camera: Option<Frame>,
     dimensions: Option<(usize, usize)>,
     compressed: bool,
+    image_id: Option<u32>,
+    split_camera_frames: bool,
+    exact_image_id: Option<u32>,
 }
 impl KittyFrames {
+    /// Lazypencil owns paired IDs. Keep temporary feedback separate so it can
+    /// never satisfy the existing exact-frame tests or latency measurements.
+    pub fn for_lazypencil() -> Self {
+        Self {
+            split_camera_frames: true,
+            ..Default::default()
+        }
+    }
     pub fn feed(&mut self, bytes: &[u8]) -> Result<()> {
         self.pending.extend_from_slice(bytes);
         let mut offset = 0;
@@ -157,6 +171,20 @@ impl KittyFrames {
                     Some("z") => true,
                     _ => return Err("Unknown Kitty compression".into()),
                 };
+                self.image_id = fields.get("i").map(|id| id.parse()).transpose()?;
+                if let Some(id) = self.image_id.filter(|id| *id != 0) {
+                    self.transmitted_resources.insert(id);
+                }
+                if self.split_camera_frames {
+                    let id = self
+                        .image_id
+                        .filter(|id| *id != 0)
+                        .ok_or("Missing owned image ID")?;
+                    let exact = *self.exact_image_id.get_or_insert(id);
+                    if id != exact && id != (exact ^ 0x8000_0000) {
+                        return Err("Unexpected image ID outside the owned frame pair".into());
+                    }
+                }
                 let width = fields
                     .get("s")
                     .ok_or("Missing Kitty width")?
@@ -178,6 +206,13 @@ impl KittyFrames {
                     .iter()
                     .try_fold(0usize, |bytes, frame| bytes.checked_add(frame.rgba.len()))
                     .ok_or("Overflowed retained Kitty pixels")?;
+                let retained = retained
+                    .checked_add(
+                        self.last_camera
+                            .as_ref()
+                            .map_or(0, |frame| frame.rgba.len()),
+                    )
+                    .ok_or("Overflowed retained camera pixels")?;
                 const RETAINED_BYTES: usize = 64 * 1024 * 1024;
                 if self.images.len() >= 4096
                     || retained > RETAINED_BYTES
@@ -194,6 +229,12 @@ impl KittyFrames {
                 let expected = width * height * 4;
                 if action.is_none() && fields.contains_key("o") {
                     return Err("Kitty compression must be declared in the first chunk".into());
+                }
+                if action.is_none()
+                    && let Some(id) = fields.get("i")
+                    && Some(id.parse::<u32>()?) != self.image_id
+                {
+                    return Err("Kitty image ID changed during a frame".into());
                 }
                 let separator = split.ok_or("A Kitty image packet needs a payload separator")?;
                 let decoded = STANDARD.decode(&packet[separator + 1..])?;
@@ -236,10 +277,20 @@ impl KittyFrames {
                         if pixels.len() != expected {
                             return Err("Incomplete Kitty pixel data".into());
                         }
-                        self.images.push(Frame::new(width, height, pixels)?);
+                        let frame = Frame::new(width, height, pixels)?;
+                        if self.split_camera_frames && self.image_id != self.exact_image_id {
+                            self.camera_frames = self
+                                .camera_frames
+                                .checked_add(1)
+                                .ok_or("Overflowed camera frame count")?;
+                            self.last_camera = Some(frame);
+                        } else {
+                            self.images.push(frame);
+                        }
                         self.compressed_frames += usize::from(self.compressed);
                         self.dimensions = None;
                         self.compressed = false;
+                        self.image_id = None;
                     }
                     _ => return Err("Invalid Kitty continuation marker".into()),
                 }

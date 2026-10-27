@@ -588,16 +588,26 @@ fn navigation(h: &mut Harness) -> Result<Value> {
     h.visible("/clear-images")?;
     h.key(b"\x1b")?;
     h.hidden("/clear-images")?;
+    let cameras = h.frames.camera_frames;
     h.key(b"a")?;
     h.wait("remapped pan actual pixels", 15.0, |h| {
         h.frames.images.last() != Some(&before)
     })?;
+    assert!(
+        h.frames.camera_frames > cameras,
+        "Pan must display separate cached feedback before the exact frame"
+    );
     let panned_index = h.frames.images.len() - 1;
     let panned = h.frames.images[panned_index].clone();
+    let cameras = h.frames.camera_frames;
     h.key(b"z")?;
     h.wait("remapped zoom actual pixels", 15.0, |h| {
         h.frames.images.last() != Some(&panned)
     })?;
+    assert!(
+        h.frames.camera_frames > cameras,
+        "Zoom must display separate cached feedback before the exact frame"
+    );
     let zoomed_index = h.frames.images.len() - 1;
     let zoomed = h.frames.images[zoomed_index].clone();
     assert!(panned.has_color([255, 0, 0, 255]) && zoomed.has_color([255, 0, 0, 255]));

@@ -293,16 +293,27 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         });
     }
     if paths.iter().any(|path| {
-        ["src/tui/graphics.rs", "src/tui/terminal.rs"].contains(&path.as_str())
+        [
+            "src/tui/graphics.rs",
+            "src/tui/terminal.rs",
+            "src/tui/camera.rs",
+            "src/render/preview.rs",
+        ]
+        .contains(&path.as_str())
             || path == "src/tui/preview.rs" && tui_measurement_changed(paths)
     }) && paths.iter().all(|path| {
         ci_only(path)
             || [
                 "src/tui/graphics.rs",
                 "src/tui/terminal.rs",
+                "src/tui/camera.rs",
+                "src/render/preview.rs",
                 "src/tui/mod.rs",
                 "src/tui/preview.rs",
                 "src/tui/tests.rs",
+                "tests/support/terminal/cases.rs",
+                "tests/support/terminal/mod.rs",
+                "tests/tui.rs",
                 "xtask/src/test_support/terminal.rs",
             ]
             .contains(&path.as_str())

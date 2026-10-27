@@ -1125,6 +1125,89 @@ fn custom_prompt_keys_keep_focus_and_modal_precedence_and_send_actual_images() {
 }
 
 #[test]
+fn cached_camera_feedback_keeps_exact_exports_and_generation_ownership_separate() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let store = app.conversation.store().clone();
+        std::fs::write(store.path(), json!({"version":"2.21","children":[
+            {"type":"rectangle","id":"shape","x":24,"y":16,"width":120,"height":80,"fill":"#2563EB"}
+        ]}).to_string()).unwrap();
+        let saved = std::fs::read(store.path()).unwrap();
+        let picker = Backend::halfblocks();
+        let worker = Worker::start(store, vec![], picker.clone(), 157).unwrap();
+        app.cells = Size::new(20, 8);
+        app.view = View {
+            center: [100.0, 80.0],
+            zoom: Some(1.0),
+            time: 0.0,
+        };
+        app.request(&worker, false, false);
+        app.accept_preview(
+            tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap(),
+        );
+        let exact = app
+            .preview
+            .as_ref()
+            .unwrap()
+            .image
+            .png()
+            .unwrap()
+            .into_owned();
+        let original_view = app.preview.as_ref().unwrap().view;
+        app.focus = Focus::Preview;
+        press(&mut app, KeyCode::Right, KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.camera.as_ref().unwrap().generation, app.generation);
+        assert!(app.status.contains("Cached preview"));
+        assert_eq!(
+            app.preview.as_ref().unwrap().image.png().unwrap().as_ref(),
+            exact
+        );
+        assert_eq!(
+            app.preview.as_ref().unwrap().view.center,
+            original_view.center
+        );
+        assert!(
+            app.open_preview()
+                .unwrap_err()
+                .message
+                .contains("complete image")
+        );
+        app.accept_preview(preview::Output {
+            generation: app.generation - 1,
+            result: Err(Error::new("RENDER_ERROR", "Superseded frame")),
+        });
+        assert!(app.camera.is_some());
+        app.accept_preview(
+            tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap(),
+        );
+        assert!(app.camera.is_none());
+        assert_eq!(app.preview.as_ref().unwrap().view.center, app.view.center);
+        assert_ne!(
+            app.preview.as_ref().unwrap().image.png().unwrap().as_ref(),
+            exact
+        );
+        // Another camera gesture can be superseded by a time change or explicit refresh.
+        press(&mut app, KeyCode::Left, KeyModifiers::NONE, &worker).await;
+        assert!(app.camera.is_some());
+        app.view.set_time(1.0).unwrap();
+        app.request(&worker, false, false);
+        app.camera_feedback(&picker).unwrap();
+        assert!(app.camera.is_none());
+        assert_eq!(
+            std::fs::read(app.conversation.store().path()).unwrap(),
+            saved
+        );
+        assert!(!app.conversation.active());
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
 fn custom_navigation_preserves_typing_search_modals_and_moves_the_actual_preview() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {

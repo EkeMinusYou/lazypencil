@@ -162,6 +162,8 @@ mod hosted {
         started: Instant,
         deadline: Instant,
         last_frame: Option<(Instant, String, observer::Frame, ObserverTime)>,
+        last_camera: Option<(Instant, String, observer::Frame, ObserverTime)>,
+        camera_interactions: Vec<Value>,
         observer: ObserverTime,
     }
 
@@ -251,11 +253,13 @@ mod hosted {
                 master,
                 _slave: slave,
                 screen: observer::Screen::new(160, 54),
-                frames: observer::KittyFrames::default(),
+                frames: observer::KittyFrames::for_lazypencil(),
                 received: 0,
                 started,
                 deadline,
                 last_frame: None,
+                last_camera: None,
+                camera_interactions: Vec::new(),
                 observer: ObserverTime::default(),
             })
         }
@@ -307,6 +311,16 @@ mod hosted {
                     .feed(&bytes[..count])
                     .map_err(|e| anyhow::anyhow!(e.to_string()))?;
                 self.observer.graphics_ms += graphics_started.elapsed().as_secs_f64() * 1000.0;
+                if let Some(frame) = self.frames.last_camera.take() {
+                    let hash_started = Instant::now();
+                    self.last_camera = Some((
+                        received,
+                        util::digest(&frame.rgba),
+                        frame,
+                        observer_at_receipt,
+                    ));
+                    self.observer.hash_ms += hash_started.elapsed().as_secs_f64() * 1000.0;
+                }
                 if let Some(frame) = self.frames.images.pop() {
                     let hash_started = Instant::now();
                     self.last_frame = Some((
@@ -349,6 +363,18 @@ mod hosted {
                 .last_frame
                 .as_ref()
                 .context("Missing changed preview")?;
+            self.camera_interactions.push(
+                self.last_camera
+                    .as_ref()
+                    .filter(|(when, _, _, _)| *when >= sent && *when <= *received)
+                    .map_or(Value::Null, |(when, hash, frame, _)| {
+                        json!({
+                            "elapsed_ms":when.duration_since(sent).as_secs_f64()*1000.0,
+                            "rgba_sha256":hash,"width":frame.width,"height":frame.height,
+                            "scope":"Temporary cached camera output, not the complete render"
+                        })
+                    }),
+            );
             Ok((
                 received.duration_since(sent).as_secs_f64() * 1000.0,
                 hash.clone(),
@@ -357,10 +383,20 @@ mod hosted {
         }
 
         fn capture(&self, root: &Path, name: &str) -> Result<()> {
-            let (_, hash, frame, _) = self
-                .last_frame
-                .as_ref()
-                .context("Missing diagnostic frame")?;
+            self.capture_frame(root, name, &self.last_frame)
+        }
+
+        fn capture_camera(&self, root: &Path, name: &str) -> Result<()> {
+            self.capture_frame(root, name, &self.last_camera)
+        }
+
+        fn capture_frame(
+            &self,
+            root: &Path,
+            name: &str,
+            frame: &Option<(Instant, String, observer::Frame, ObserverTime)>,
+        ) -> Result<()> {
+            let (_, hash, frame, _) = frame.as_ref().context("Missing diagnostic frame")?;
             let raster = fixtures::oracles::Raster {
                 width: frame.width as u32,
                 height: frame.height as u32,
@@ -465,10 +501,25 @@ mod hosted {
             let (zoom_ms, zoomed, zoom_observer) = terminal.changed_frame(b"+", &initial)?;
             if sample == 0 {
                 terminal.capture(&root, "zoomed")?;
+                if terminal
+                    .camera_interactions
+                    .last()
+                    .is_some_and(|frame| !frame.is_null())
+                {
+                    terminal.capture_camera(&root, "camera-zoomed")?;
+                }
             }
             let (unzoom_ms, restored, unzoom_observer) = terminal.changed_frame(b"-", &zoomed)?;
             if sample == 0 || restored != initial {
                 terminal.capture(&root, "zoom-restored")?;
+                if sample == 0
+                    && terminal
+                        .camera_interactions
+                        .last()
+                        .is_some_and(|frame| !frame.is_null())
+                {
+                    terminal.capture_camera(&root, "camera-zoom-restored")?;
+                }
             }
             ensure!(
                 restored == initial,
@@ -477,11 +528,26 @@ mod hosted {
             let (pan_ms, panned, pan_observer) = terminal.changed_frame(b"\x1b[C", &initial)?;
             if sample == 0 {
                 terminal.capture(&root, "panned-right")?;
+                if terminal
+                    .camera_interactions
+                    .last()
+                    .is_some_and(|frame| !frame.is_null())
+                {
+                    terminal.capture_camera(&root, "camera-panned-right")?;
+                }
             }
             let (unpan_ms, restored, unpan_observer) =
                 terminal.changed_frame(b"\x1b[D", &panned)?;
             if sample == 0 || restored != initial {
                 terminal.capture(&root, "pan-restored")?;
+                if sample == 0
+                    && terminal
+                        .camera_interactions
+                        .last()
+                        .is_some_and(|frame| !frame.is_null())
+                {
+                    terminal.capture_camera(&root, "camera-pan-restored")?;
+                }
             }
             ensure!(
                 restored == initial,
@@ -489,6 +555,10 @@ mod hosted {
             );
             let resources = resources::snapshot(terminal.child.id())?;
             samples.push(json!({"input_ready_ms":input_ms,"first_preview_ms":preview_ms,"interaction_ms":[zoom_ms,unzoom_ms,pan_ms,unpan_ms],"observer_wall_ms":[zoom_observer,unzoom_observer,pan_observer,unpan_observer],"processes":resources,"fixture":fixture,"terminal_bytes":terminal.received,"compressed_kitty_frames":terminal.frames.compressed_frames}));
+            samples.last_mut().unwrap()["cached_camera_interaction_outputs"] =
+                json!(terminal.camera_interactions);
+            samples.last_mut().unwrap()["cached_camera_frames"] =
+                json!(terminal.frames.camera_frames);
             if sample + 1 == arguments.samples {
                 let before = resources::snapshot(terminal.child.id())?;
                 let idle_frame = terminal.last_frame.as_ref().map(|frame| frame.0);

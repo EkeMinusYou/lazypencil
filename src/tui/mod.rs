@@ -1,5 +1,6 @@
 //! Terminal viewing and prompting, sharing the same document and ACP services as CLI.
 
+mod camera;
 mod checkpoints;
 mod graphics;
 mod playback;
@@ -114,7 +115,9 @@ pub fn run(args: &TuiArgs, data: Option<PathBuf>, json_output: bool) -> Result<(
     for image in &args.prompt.images {
         conversation.attach_file(image)?;
     }
-    let id = (uuid::Uuid::new_v4().as_u128() as u32).max(1);
+    // Own a pair of image IDs: exact frames use the low half, temporary camera
+    // feedback uses the corresponding high bit. Both are released on exit.
+    let id = (uuid::Uuid::new_v4().as_u128() as u32 & 0x7fff_ffff).max(1);
     let mut screen = terminal::Screen::enter(args.image_protocol, id)?;
     let worker = Worker::start(
         conversation.store().clone(),
@@ -169,6 +172,8 @@ struct App {
     view: View,
     playback: playback::Playback,
     preview: Option<Preview>,
+    camera: Option<camera::Camera>,
+    camera_id: u32,
     generation: u64,
     cells: Size,
     nodes: ListState,
@@ -208,6 +213,8 @@ impl App {
             view: View::default(),
             playback: playback::Playback::default(),
             preview: None,
+            camera: None,
+            camera_id: 0x8000_0001,
             generation: 0,
             cells: Size::new(0, 0),
             nodes: ListState::default(),
@@ -238,6 +245,7 @@ impl App {
     async fn event_loop(&mut self, screen: &mut terminal::Screen, worker: &Worker) -> Result<()> {
         let mut events = EventStream::new();
         self.protocol = format!("{:?}", screen.picker.protocol_type());
+        self.camera_id = screen.camera_image_id();
         let mut timer = tokio::time::interval(Duration::from_secs(1));
         timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut termination = Box::pin(termination());
@@ -272,11 +280,12 @@ impl App {
                 event = events.next() => match event {
                     Some(Ok(Event::Key(key))) if key.kind != KeyEventKind::Release => {
                         let modal = self.has_modal();
+                        let camera = self.camera.as_ref().map(|camera| camera.generation);
                         match self.key(key, &screen.picker, worker).await {
                             Ok(true) => { self.save_draft()?; return Ok(()); },
                             Ok(false) => {}, Err(error) => self.error(error),
                         }
-                        if modal && !self.has_modal() { screen.redraw()?; }
+                        if modal && !self.has_modal() || camera != self.camera.as_ref().map(|camera| camera.generation) { screen.redraw()?; }
                         self.dirty = true;
                     },
                     Some(Ok(Event::Paste(text))) if self.focus == Focus::Prompt && !self.conversation.active() && !self.has_modal() => {
@@ -343,6 +352,9 @@ impl App {
             return;
         }
         if !check_only {
+            if self.camera.take().is_some() {
+                self.status = "Rendering requested preview".into();
+            }
             self.generation += 1;
         }
         let attachment = if self.focus == Focus::Attachments {
@@ -367,6 +379,7 @@ impl App {
         if output.generation != self.generation {
             return;
         }
+        self.camera = None;
         match output.result {
             Ok(mut preview) => {
                 if !preview.attachment {
@@ -859,6 +872,7 @@ impl App {
                     return Ok(false);
                 }
                 self.request(worker, false, false);
+                self.camera_feedback(picker)?;
             }
             Focus::Nodes => {
                 let count = self.filtered_nodes().len();
@@ -877,6 +891,7 @@ impl App {
                     self.fit_selected(picker)?;
                     self.focus = Focus::Preview;
                     self.request(worker, false, false);
+                    self.camera_feedback(picker)?;
                 }
             }
             Focus::Attachments => {
@@ -1133,6 +1148,12 @@ impl App {
         Ok(())
     }
     fn open_preview(&mut self) -> Result<()> {
+        if self.camera.is_some() {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "The camera preview is updating; wait for the complete image before exporting",
+            ));
+        }
         let preview = self
             .preview
             .as_ref()
@@ -1233,7 +1254,12 @@ impl App {
         );
         let block = panel(
             format!(
-                "Preview · {} · {} / {} zoom",
+                "Preview{} · {} · {} / {} zoom",
+                if self.camera.is_some() {
+                    " · updating"
+                } else {
+                    ""
+                },
                 self.protocol,
                 self.navigation.label(Nav::ZoomIn),
                 self.navigation.label(Nav::ZoomOut)
@@ -1242,7 +1268,9 @@ impl App {
         );
         let inner = block.inner(panes[1]);
         frame.render_widget(block, panes[1]);
-        if let Some(preview) = &self.preview {
+        if let Some(camera) = &self.camera {
+            frame.render_widget(ratatui_image::Image::new(&camera.protocol), inner);
+        } else if let Some(preview) = &self.preview {
             frame.render_widget(ratatui_image::Image::new(&preview.protocol), inner);
         } else {
             frame.render_widget(

@@ -27,6 +27,9 @@ impl Drop for Restore {
     }
 }
 impl Screen {
+    pub fn camera_image_id(&self) -> u32 {
+        self.id ^ 0x8000_0000
+    }
     pub fn redraw(&mut self) -> Result<()> {
         // Terminal::clear queries the cursor and races EventStream's stdin reader.
         // A fullscreen resize also invalidates the back buffer without reading stdin.
@@ -67,7 +70,9 @@ impl Drop for Screen {
 }
 fn restore(id: u32, tmux: bool) {
     let mut stdout = std::io::stdout();
-    let deletion = format!("\x1b_Ga=d,d=I,i={id},q=2\x1b\\");
+    let deletion = [id, id ^ 0x8000_0000]
+        .map(|id| format!("\x1b_Ga=d,d=I,i={id},q=2\x1b\\"))
+        .concat();
     if tmux {
         let _ = write!(
             stdout,

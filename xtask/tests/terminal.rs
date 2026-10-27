@@ -8,6 +8,77 @@ use terminal::{Frame, KittyFrames, Screen};
 // Fixed RFC 1950 bytes produced independently of the Rust codec.
 const COMPRESSED_RGBA: &str = "eAH7z8Dwn+E/QwOIEjIJO/EfjQ8Ax3QLwQ==";
 
+#[test]
+fn owned_camera_feedback_never_satisfies_exact_frame_observations() {
+    let wire = |id, pixels: &[u8]| {
+        String::from_utf8(frame(pixels, 1, 1, 4))
+            .unwrap()
+            .replacen("a=T,", &format!("a=T,i={id},"), 1)
+            .into_bytes()
+    };
+    for exact in [7_u32, 0x8000_0007] {
+        let stream = [
+            wire(exact, &[255, 0, 0, 255]),
+            wire(exact ^ 0x8000_0000, &[0, 255, 0, 255]),
+            wire(exact, &[0, 0, 255, 255]),
+        ]
+        .concat();
+        for split in [1, 7, stream.len()] {
+            let mut observer = KittyFrames::for_lazypencil();
+            for bytes in stream.chunks(split) {
+                observer.feed(bytes).unwrap();
+            }
+            assert_eq!(observer.images.len(), 2);
+            assert_eq!(observer.images[0].rgba, [255, 0, 0, 255]);
+            assert_eq!(observer.images[1].rgba, [0, 0, 255, 255]);
+            assert_eq!(observer.camera_frames, 1);
+            assert_eq!(observer.transmitted_resources.len(), 2);
+            assert!(observer.transmitted_resources.contains(&exact));
+            assert!(
+                observer
+                    .transmitted_resources
+                    .contains(&(exact ^ 0x8000_0000))
+            );
+            assert_eq!(observer.last_camera.unwrap().rgba, [0, 255, 0, 255]);
+        }
+        let mut observer = KittyFrames::for_lazypencil();
+        observer.feed(&wire(exact, &[255, 0, 0, 255])).unwrap();
+        assert!(observer.feed(&wire(exact + 1, &[0, 0, 0, 255])).is_err());
+    }
+    assert!(
+        KittyFrames::for_lazypencil()
+            .feed(&frame(&[0, 0, 0, 255], 1, 1, 4))
+            .is_err()
+    );
+    assert!(
+        KittyFrames::for_lazypencil()
+            .feed(&wire(0, &[0, 0, 0, 255]))
+            .is_err()
+    );
+    let interrupted = String::from_utf8(frame(&[0; 8], 2, 1, 4))
+        .unwrap()
+        .replacen("a=T,", "a=T,i=7,", 1)
+        .replacen("\x1b_Gm=0", "\x1b_Gi=8,m=0", 1);
+    assert!(
+        KittyFrames::for_lazypencil()
+            .feed(interrupted.as_bytes())
+            .is_err()
+    );
+    // The generic decoder continues accepting arbitrary valid Kitty IDs.
+    let mut generic = KittyFrames::default();
+    generic
+        .feed(
+            &[
+                wire(7, &[255, 0, 0, 255]),
+                wire(0x8000_0007_u32, &[0, 255, 0, 255]),
+            ]
+            .concat(),
+        )
+        .unwrap();
+    assert_eq!(generic.images.len(), 2);
+    assert_eq!(generic.camera_frames, 0);
+}
+
 fn frame(pixels: &[u8], width: usize, height: usize, chunk: usize) -> Vec<u8> {
     encoded_frame(pixels, width, height, chunk, false)
 }
