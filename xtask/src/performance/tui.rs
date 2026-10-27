@@ -725,6 +725,18 @@ mod hosted {
                                     && artifact["acquisition"]["kind"] == "shader"),
                         "Unexpected dynamic node identities"
                     );
+                    let shader = &artifacts
+                        .iter()
+                        .find(|artifact| artifact["acquisition"]["kind"] == "shader")
+                        .unwrap()["acquisition"];
+                    ensure!(
+                        shader["source_hash"] == fixture["shader_sha256"]
+                            && shader["time_dependent"] == false
+                            && shader["renderer"]
+                                .as_str()
+                                .is_some_and(|renderer| renderer.contains("SwiftShader")),
+                        "Resource shader source or software renderer differs"
+                    );
                 }
                 for artifact in first["render"]["dynamic_artifacts"].as_array().unwrap() {
                     if artifact["acquisition"]["kind"] == "browser" {
