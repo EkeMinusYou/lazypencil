@@ -163,11 +163,8 @@ pub(crate) fn compute_checked(
         .map(|i| solver.items[*i].record.visual_bounds)
         .reduce(Rect::union)
         .unwrap_or_default();
-    let identity = json!({"engine":ENGINE,"revision":scene.revision,"dependency_revision":scene.dependency_revision,
-        "records":solver.items.iter().map(|i| &i.record).collect::<Vec<_>>(),
-        "nodes":solver.items.iter().map(|i| &i.node).collect::<Vec<_>>()});
     check()?;
-    let id = hash(identity.to_string().as_bytes());
+    let id = snapshot_identity(&scene.revision, &scene.dependency_revision, &solver.items);
     check()?;
     Ok(LayoutSnapshot {
         id,
@@ -181,6 +178,73 @@ pub(crate) fn compute_checked(
         runtime_dependencies: Vec::new(),
         script_executions: Vec::new(),
     })
+}
+
+/// Preserve the original canonical JSON hash without cloning the entire scene
+/// into another JSON object graph and a complete serialization buffer.
+fn snapshot_identity(revision: &str, dependency_revision: &str, items: &[LayoutItem]) -> String {
+    use serde::ser::SerializeSeq;
+    use sha2::{Digest, Sha256};
+    struct Rows<'a> {
+        items: &'a [LayoutItem],
+        nodes: bool,
+    }
+    impl Serialize for Rows<'_> {
+        fn serialize<S: serde::Serializer>(
+            &self,
+            serializer: S,
+        ) -> std::result::Result<S::Ok, S::Error> {
+            let mut sequence = serializer.serialize_seq(Some(self.items.len()))?;
+            for item in self.items {
+                // Value retains the original recursively sorted map keys, but
+                // only one item's temporary allocations are alive at a time.
+                let value = if self.nodes {
+                    serde_json::to_value(&item.node)
+                } else {
+                    serde_json::to_value(&item.record)
+                }
+                .expect("Serializable layout identity");
+                sequence.serialize_element(&value)?;
+            }
+            sequence.end()
+        }
+    }
+    #[derive(Serialize)]
+    struct Identity<'a> {
+        // The original serde_json::Value object emits these keys in this order.
+        dependency_revision: &'a str,
+        engine: &'static str,
+        nodes: Rows<'a>,
+        records: Rows<'a>,
+        revision: &'a str,
+    }
+    struct Writer<'a>(&'a mut Sha256);
+    impl std::io::Write for Writer<'_> {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.update(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let identity = Identity {
+        dependency_revision,
+        engine: ENGINE,
+        nodes: Rows { items, nodes: true },
+        records: Rows {
+            items,
+            nodes: false,
+        },
+        revision,
+    };
+    let mut digest = Sha256::new();
+    {
+        let mut writer = std::io::BufWriter::with_capacity(64 * 1024, Writer(&mut digest));
+        serde_json::to_writer(&mut writer, &identity).expect("Serializable layout identity");
+        std::io::Write::flush(&mut writer).expect("In-memory identity hash");
+    }
+    format!("{:x}", digest.finalize())
 }
 
 struct Solver<'a> {
@@ -984,6 +1048,10 @@ mod cancellation_tests {
             Ok(())
         })
         .unwrap();
+        let original_identity = json!({"engine":ENGINE,"revision":baseline.revision,"dependency_revision":baseline.dependency_revision,
+            "records":baseline.items.iter().map(|item| &item.record).collect::<Vec<_>>(),
+            "nodes":baseline.items.iter().map(|item| &item.node).collect::<Vec<_>>()});
+        assert_eq!(baseline.id, hash(original_identity.to_string().as_bytes()));
         let total = count.get();
         assert!(
             total > 400,

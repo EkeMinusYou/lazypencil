@@ -84,7 +84,7 @@ fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() 
             .suite,
         "ci"
     );
-    for path in ["src/render.rs", "src/render/backdrop.rs"] {
+    for path in ["src/render.rs", "src/render/backdrop.rs", "src/layout.rs"] {
         assert!(focus::tui_measurement_changed(&[path.into()]));
     }
     let text_layers = focus::select(

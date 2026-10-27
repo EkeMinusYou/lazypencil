@@ -142,6 +142,7 @@ pub fn tui_measurement_changed(paths: &[String]) -> bool {
         path.starts_with("xtask/src/performance/") && path != "xtask/src/performance/profile.rs"
             || path.starts_with("src/tui/") && path != "src/tui/tests.rs"
             || path == "src/render.rs"
+            || path == "src/layout.rs"
             || path.starts_with("src/render/")
             || [
                 "xtask/src/performance.rs",
