@@ -280,17 +280,27 @@ impl BoundRoles {
                 );
                 ensure!(!found[kind], "Duplicate Chromium guardian for one purpose");
                 found[kind] = true;
+                // The guardian is a subreaper: orphaned crash handlers and
+                // renderer helpers can also become direct children. Identify
+                // the browser root without excluding these owned processes
+                // from the raw resource accounting.
+                let browser_prefix = format!("{} ", chromium.display());
                 let children = snapshot
                     .processes
                     .values()
                     .filter(|process| process.parent == guardian.pid)
+                    .filter(|process| {
+                        command_text(process.pid).is_ok_and(|command| {
+                            command.starts_with(&browser_prefix)
+                                && command.split_whitespace().any(|arg| arg == "--headless")
+                                && !command
+                                    .split_whitespace()
+                                    .any(|arg| arg.starts_with("--type="))
+                        })
+                    })
                     .collect::<Vec<_>>();
                 ensure!(children.len() == 1, "Ambiguous owned Chromium root");
                 let browser = children[0];
-                ensure!(
-                    command_text(browser.pid)?.starts_with(&format!("{} ", chromium.display())),
-                    "Guardian child is not the verified Chromium executable"
-                );
                 roles.processes.insert(names[kind].0, guardian.clone());
                 roles.processes.insert(names[kind].1, browser.clone());
             }
