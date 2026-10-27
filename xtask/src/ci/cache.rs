@@ -1268,10 +1268,11 @@ pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Valu
         };
         older_than_latest(entries, keep, &mut selected);
     }
-    // Source-bound tool binaries are disposable; keep two generations for each
-    // runner/compiler/cache format while preserving complete dependency caches.
+    // Old tool sources can rebuild against their retained dependency cache.
+    // Keep one complete generation per runner/compiler/cache format so cheap
+    // tool outputs do not evict expensive native dependencies.
     for entries in tool_groups.into_values() {
-        older_than_latest(entries, 2, &mut selected);
+        older_than_latest(entries, 1, &mut selected);
     }
     for entries in checkpoints.into_values() {
         older_than_latest(entries, 1, &mut selected);

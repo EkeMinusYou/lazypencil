@@ -730,7 +730,7 @@ fn native_package_setup_keeps_signed_sources_scoped_and_stops_after_update_failu
     assert_eq!(fs::read_dir(temporary.path()).unwrap().count(), 0);
 }
 #[test]
-fn tool_retention_preserves_dependencies_and_two_generations_per_exact_environment() {
+fn tool_retention_preserves_dependencies_and_latest_generation_per_exact_environment() {
     let mut entries = Vec::new();
     let mut obsolete = Vec::new();
     let mut id = 0;
@@ -747,7 +747,7 @@ fn tool_retention_preserves_dependencies_and_two_generations_per_exact_environme
                 entries.push(json!({"id":id,"ref":"refs/heads/main","version":layout,
                     "key":format!("xtask-v1-{environment}-{}", generation.to_string().repeat(64)),
                     "created_at":format!("2026-10-{generation:02}T00:00:00Z")}));
-                if generation <= 2 {
+                if generation < 4 {
                     obsolete.push(id);
                 }
             }
