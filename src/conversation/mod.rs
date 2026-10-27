@@ -446,17 +446,27 @@ impl Conversation {
         options.allow_session_restart = true;
         options.restart_session = self.args.restart_session && options.session_id.is_some();
         options.turn_timeout = Duration::from_secs(self.args.timeout);
+        let mut environment = vec![EnvVariable::new(
+            "LAZYPENCIL_CONFIG_DIR",
+            utf8(
+                crate::config::user_config_path()?
+                    .parent()
+                    .expect("user configuration parent"),
+            )?,
+        )];
+        if cfg!(target_os = "macos") {
+            // Keep freed raster layers out of the child's large-allocation
+            // cache. Apply this before its allocator starts, without changing
+            // the host or adapter environment. Honor explicit user overrides.
+            let value = std::env::var_os("MallocSpaceEfficient").unwrap_or_else(|| "1".into());
+            if let Some(value) = value.to_str() {
+                environment.push(EnvVariable::new("MallocSpaceEfficient", value));
+            }
+        }
         options.mcp_servers = vec![McpServer::Stdio(
             McpServerStdio::new("lazypencil", self.executable.clone())
                 .args(args)
-                .env(vec![EnvVariable::new(
-                    "LAZYPENCIL_CONFIG_DIR",
-                    utf8(
-                        crate::config::user_config_path()?
-                            .parent()
-                            .expect("user configuration parent"),
-                    )?,
-                )]),
+                .env(environment),
         )];
         Ok(options)
     }

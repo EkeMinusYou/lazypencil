@@ -157,6 +157,8 @@ Local work is limited to formatting, workflow linting and source review; native 
 
 ## User agent profiles
 
+On macOS, newly configured bound MCP servers receive `MallocSpaceEfficient=1` unless the launching user's environment explicitly supplies another value. This reduces the native allocator's retention of freed raster buffers in the MCP process. The setting is sent through the standard ACP server environment; it does not change the TUI/CLI parent's or ACP adapter's environment. MCP descendants can inherit it. Linux and the retained Windows implementation add no allocator setting. `MallocSpaceEfficient=0` disables this application default for that invocation. The policy is prepared for hosted verification and is not a general memory ceiling or a claim about external MCP clients.
+
 Add preferences to the selected **user** `config.toml`:
 
 ```toml

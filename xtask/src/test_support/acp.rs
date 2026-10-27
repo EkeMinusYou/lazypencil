@@ -222,6 +222,12 @@ impl<'a> Peer<'a> {
                         "Authentication must precede session creation"
                     );
                 }
+                if mode == "mcp-environment" {
+                    write_json(
+                        "received-mcp-environment.json",
+                        &json!({"servers":params["mcpServers"],"adapter_malloc_space_efficient":std::env::var("MallocSpaceEfficient").ok()}),
+                    )?;
+                }
                 assert!(
                     Path::new(params["cwd"].as_str().ok_or("Missing session cwd")?).is_absolute()
                 );

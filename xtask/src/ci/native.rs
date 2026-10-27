@@ -392,6 +392,15 @@ impl Session {
                 self.execute(&command, 300, "focus-clippy.log", false)
             }
             Stage::FocusReproduce => {
+                if has("user_agent_config") {
+                    self.test(
+                        !core,
+                        "user_agent_config",
+                        "bound_mcp_memory_policy_is_platform_scoped_preserves_overrides_and_never_changes_the_adapter",
+                        &["--exact", "--test-threads=1"],
+                        "focus-agent-environment.log",
+                    )?;
+                }
                 if std::env::var("RUNTIME_PARALLEL").as_deref() == Ok("true") {
                     management::focus(self)?;
                 }

@@ -115,6 +115,61 @@ fn checked_in_rust_notices_match_workspace_manifests_and_original_license_bytes(
 }
 
 #[test]
+fn jpeg_delegated_terms_and_product_credit_are_explicit_and_required() {
+    let mut f = Fixture::new("skia");
+    let (index, texts) = f.skia().unwrap();
+    let original = skia::files(&index, texts).unwrap();
+    let credit = "This software is based in part on the work of the Independent JPEG Group.";
+    assert!(!String::from_utf8_lossy(&original["SKIA-NOTICES.txt"]).contains(credit));
+    let paths = ["LICENSE.md", "README.ijg"];
+    let prefix = "source/third_party/externals/libjpeg-turbo/";
+    for path in paths {
+        f.write(
+            &format!("{prefix}{path}"),
+            format!("Original fixture terms for {path}\r\nCopyright fixture author\r\n"),
+        );
+    }
+    f.write(
+        &format!("{prefix}native.c"),
+        b"/* Fixture native input. */\n",
+    );
+    f.data["graph"] = json!(format!(
+        "{}../source/third_party/externals/libjpeg-turbo/native.c\n",
+        f.data["graph"].as_str().unwrap()
+    ));
+    let (index, texts) = f.skia().unwrap();
+    for path in paths {
+        let name = format!("third_party/externals/libjpeg-turbo/{path}");
+        let record = index["notice_files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|record| record["path"] == name)
+            .unwrap();
+        let bytes = fs::read(f.path(&format!("source/{name}"))).unwrap();
+        assert_eq!(record["sha256"], util::digest(&bytes));
+        assert_eq!(texts[record["blob"].as_str().unwrap()], bytes);
+    }
+    let files = skia::files(&index, texts).unwrap();
+    let rendered = String::from_utf8(files["SKIA-NOTICES.txt"].clone()).unwrap();
+    assert!(rendered.split_once("\n====").unwrap().0.contains(credit));
+    let output = f.path("published");
+    notices::publish_bundle(&output, &files).unwrap();
+    notices::verify_expected(&output, &files).unwrap();
+    for path in paths {
+        let original = f.path(&format!("{prefix}{path}"));
+        let bytes = fs::read(&original).unwrap();
+        fs::remove_file(&original).unwrap();
+        let error = f.skia().unwrap_err().to_string();
+        assert!(
+            error.contains("Missing original libjpeg-turbo terms"),
+            "{path}: {error}"
+        );
+        fs::write(original, bytes).unwrap();
+    }
+}
+
+#[test]
 fn freetype_delegated_terms_are_complete_byte_exact_and_required() {
     let mut f = Fixture::new("skia");
     let paths = [

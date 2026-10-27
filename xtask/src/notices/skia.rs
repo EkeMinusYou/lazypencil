@@ -46,6 +46,8 @@ const FREETYPE_TERMS: &[&str] = &[
     "src/autofit/ft-hb-types.h",
     "src/autofit/hb-script-list.h",
 ];
+// The primary libjpeg-turbo notice delegates its IJG terms to README.ijg.
+const JPEG_TERMS: &[&str] = &["LICENSE.md", "README.ijg"];
 
 fn sha(value: &Value, width: usize) -> bool {
     value.as_str().is_some_and(|s| {
@@ -387,15 +389,18 @@ pub fn build_from_graph(
     .collect::<BTreeSet<_>>();
     for name in used.iter().filter(|s| s.as_str() != "skia") {
         let root = source.join("third_party/externals").join(name);
-        if name == "freetype" {
-            for relative in FREETYPE_TERMS {
-                let path = root.join(relative);
-                ensure!(
-                    path.is_file() && !path.is_symlink(),
-                    "Missing original FreeType terms: {relative}"
-                );
-                candidates.insert(path);
-            }
+        let (label, required): (&str, &[&str]) = match name.as_str() {
+            "freetype" => ("FreeType", FREETYPE_TERMS),
+            "libjpeg-turbo" => ("libjpeg-turbo", JPEG_TERMS),
+            _ => ("", &[]),
+        };
+        for relative in required {
+            let path = root.join(relative);
+            ensure!(
+                path.is_file() && !path.is_symlink(),
+                "Missing original {label} terms: {relative}"
+            );
+            candidates.insert(path);
         }
         let mut primary = false;
         for path in util::walk_filtered(&root, |p| {
@@ -577,6 +582,17 @@ pub fn files(index: &Value, mut texts: Files) -> Result<Files> {
             "FreeType is used under the FreeType License (FTL).".into(),
             "This software is based in part on the work of the FreeType Team (https://freetype.org).".into(),
             "The alternative GPLv2 text and separately licensed contributions are retained below.".into(),
+        ]);
+    }
+    if index["components"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|v| v == "libjpeg-turbo")
+    {
+        lines.extend([
+            "".into(),
+            "This software is based in part on the work of the Independent JPEG Group.".into(),
         ]);
     }
     lines.push("".into());
