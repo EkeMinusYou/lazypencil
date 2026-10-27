@@ -8,17 +8,25 @@ use std::{collections::BTreeMap, fs, path::PathBuf, process::Command};
 
 #[test]
 fn hosted_terminal_changes_select_linux_before_shared_bsd_bridge_checks() {
-    let paths = vec![
-        "xtask/src/terminal/hosted.rs".into(),
-        "src/tui/terminal.rs".into(),
-        "tests/support/terminal/cases.rs".into(),
-    ];
-    let plan = focus::select(&util::root(), &paths, "auto").unwrap();
-    assert_eq!(plan.platform, "ubuntu-24.04");
-    assert_eq!(plan.suite, "candidate");
-    assert_eq!(plan.targets, ["render", "tui", "dynamic_render"]);
-    let override_plan = focus::select(&util::root(), &paths, "macos-15").unwrap();
-    assert_eq!(override_plan.platform, "macos-15");
+    for path in [
+        "src/tui/graphics.rs",
+        "src/tui/terminal.rs",
+        "src/tui/preview.rs",
+    ] {
+        let paths = vec![
+            "xtask/src/terminal/hosted.rs".into(),
+            path.into(),
+            "src/tui/mod.rs".into(),
+            "src/tui/tests.rs".into(),
+            "xtask/src/test_support/terminal.rs".into(),
+        ];
+        let plan = focus::select(&util::root(), &paths, "auto").unwrap();
+        assert_eq!(plan.platform, "ubuntu-24.04");
+        assert_eq!(plan.suite, "candidate");
+        assert_eq!(plan.targets, ["render", "tui", "dynamic_render"]);
+        let override_plan = focus::select(&util::root(), &paths, "macos-15").unwrap();
+        assert_eq!(override_plan.platform, "macos-15");
+    }
 }
 
 #[test]
@@ -654,7 +662,6 @@ fn terminal_protocol_and_observer_changes_reproduce_the_bsd_browser_consumer_fir
                 "src/tui/mod.rs".into(),
                 "src/tui/tests.rs".into(),
                 "xtask/src/test_support/terminal.rs".into(),
-                "xtask/src/terminal/hosted.rs".into(),
             ],
             "auto",
         )
