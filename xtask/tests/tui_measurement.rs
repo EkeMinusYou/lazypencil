@@ -2,6 +2,74 @@
 use lazypencil_xtask::performance::resources::{self, Process};
 use std::process::Command;
 
+#[cfg(unix)]
+#[test]
+fn allocation_diagnostics_accept_only_distinct_unchanged_owned_process_identities() {
+    use lazypencil_xtask::performance::{
+        allocations,
+        resources::{BoundRoles, Snapshot},
+    };
+    use std::collections::BTreeMap;
+    let tui = Process {
+        pid: 42,
+        parent: 7,
+        group: 42,
+        start_ticks: Some(10),
+        rss_bytes: 100,
+        cpu_ms: 0.0,
+    };
+    let mcp = Process {
+        pid: 51,
+        parent: 50,
+        group: 50,
+        start_ticks: Some(12),
+        rss_bytes: 200,
+        cpu_ms: 0.0,
+    };
+    let mut roles = BoundRoles {
+        processes: BTreeMap::from([("tui", tui.clone()), ("mcp", mcp.clone())]),
+    };
+    let snapshot = Snapshot {
+        processes: BTreeMap::from([(tui.pid, tui.clone()), (mcp.pid, mcp.clone())]),
+        cpu_quantum_ms: 10.0,
+        method: "owned fixture",
+    };
+    assert_eq!(
+        allocations::targets(&roles, &snapshot).unwrap(),
+        [("tui", 42), ("mcp", 51)]
+    );
+    let mut counters = snapshot.clone();
+    counters.processes.get_mut(&51).unwrap().rss_bytes += 1024;
+    counters.processes.get_mut(&51).unwrap().cpu_ms += 30.0;
+    assert!(allocations::targets(&roles, &counters).is_ok());
+    for field in ["pid", "parent", "group", "start", "missing"] {
+        let mut changed = snapshot.clone();
+        match field {
+            "pid" => changed.processes.get_mut(&51).unwrap().pid += 1,
+            "parent" => changed.processes.get_mut(&51).unwrap().parent += 1,
+            "group" => changed.processes.get_mut(&51).unwrap().group += 1,
+            "start" => changed.processes.get_mut(&51).unwrap().start_ticks = Some(99),
+            _ => {
+                changed.processes.remove(&51);
+            }
+        }
+        assert!(allocations::targets(&roles, &changed).is_err(), "{field}");
+    }
+    roles.processes.insert("mcp", tui.clone());
+    assert!(allocations::targets(&roles, &snapshot).is_err());
+    roles.processes.remove("mcp");
+    assert!(allocations::targets(&roles, &snapshot).is_err());
+    for pid in [0, 1] {
+        let mut invalid = snapshot.clone();
+        let mut process = tui.clone();
+        process.pid = pid;
+        invalid.processes.insert(pid, process.clone());
+        roles.processes.insert("tui", process);
+        roles.processes.insert("mcp", mcp.clone());
+        assert!(allocations::targets(&roles, &invalid).is_err());
+    }
+}
+
 #[test]
 fn ordinary_memory_gate_includes_active_and_idle_bound_workers_and_requires_observations() {
     use lazypencil_xtask::performance::tui::require_memory_target;

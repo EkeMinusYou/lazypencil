@@ -11,6 +11,10 @@ on:
         description: Measure the packaged TUI after all builds and other checks finish
         type: boolean
         default: false
+      allocation_diagnostics:
+        description: Capture owned macOS allocator summaries after the original TUI idle interval
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -166,7 +170,9 @@ jobs:
         id: tui-measurement
         if: inputs.measure_tui
         timeout-minutes: 15
-        run: cargo xtask measure-tui --candidate "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/tui-measurement" --chromium-resources --enforce-memory-target
+        env:
+          ALLOCATION_DIAGNOSTICS: ${{ inputs.allocation_diagnostics }}
+        run: cargo xtask measure-tui --candidate "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/tui-measurement" --chromium-resources --enforce-memory-target --allocation-diagnostics "$ALLOCATION_DIAGNOSTICS"
       - name: Retain TUI measurements and diagnostic logs
         if: ${{ always() && (steps.tui-measurement.outcome == 'success' || steps.tui-measurement.outcome == 'failure') }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6

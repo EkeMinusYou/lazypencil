@@ -11,6 +11,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(unix)]
+pub mod allocations;
 pub mod profile;
 #[cfg(unix)]
 pub mod resources;

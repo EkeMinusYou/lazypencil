@@ -24,6 +24,9 @@ pub struct Arguments {
     /// Fail after retaining all observations if ordinary bound RSS exceeds 200 MiB.
     #[arg(long)]
     pub enforce_memory_target: bool,
+    /// Capture owned macOS allocator summaries after the original idle interval.
+    #[arg(long, action = clap::ArgAction::Set, default_value_t = false)]
+    pub allocation_diagnostics: bool,
 }
 
 pub fn require_memory_target(report: &serde_json::Value) -> Result<()> {
@@ -583,6 +586,7 @@ mod hosted {
         deadline: Instant,
         static_hash: Option<&str>,
         chromium: Option<&Path>,
+        allocation_diagnostics: bool,
     ) -> Result<Value> {
         let root = output.join(if chromium.is_some() {
             "chromium-resource-observation"
@@ -870,6 +874,10 @@ mod hosted {
                 idle["scope"] = json!(
                     "Additional 30-second Chromium-inclusive idle interval; raw stable process membership and counters retained; only the identified external ACP helper excluded from application accounting"
                 );
+            }
+            if allocation_diagnostics {
+                idle["allocation_diagnostics"] =
+                    crate::performance::allocations::capture(&root, &roles)?;
             }
             fs::write(root.join("bound-render-release"), b"complete")?;
             terminal.wait("completed resource turn", |t| {
@@ -1181,6 +1189,7 @@ mod hosted {
                     .context("Missing static resource pixels")?,
             ),
             None,
+            arguments.allocation_diagnostics,
         )?;
         let report = json!({"format_version":1,"candidate":identity,"helper":helper_identity,"target":evidence::linkage::native_host()?,"pty":{"columns":160,"rows":54,"pixel_width":1920,"pixel_height":1080,"protocol":"kitty","display_emulator":false},"cache_condition":"Fresh app/data directories per sample; OS page/font caches uncontrolled, individual samples retained with first at index 0; no concurrent tasks in this job","samples":samples,"input_ready_ms":input,"first_preview_ms":preview,"interaction_output_ms":interactions,"idle":idle,"active_resources":activity,"scope":"PTY input echo and complete Kitty output receipt, including observer backpressure; sampled process trees can miss short-lived descendants. Not physical presentation, a controlled cold-start benchmark, transient peak RSS, external AI/adapter/terminal resource usage or full performance acceptance"});
         let mut report = report;
@@ -1197,6 +1206,7 @@ mod hosted {
                 Instant::now() + Duration::from_secs(300),
                 None,
                 Some(&chromium),
+                false,
             )?;
             let (after, verified) = verified_chromium(&binary)?;
             ensure!(

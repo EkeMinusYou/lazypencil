@@ -1,5 +1,7 @@
 # lazypencil 実装と公開準備の状況
 
+`6225841` の [macOS 先行 `40563884709`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40563884709) は環境設定の早期再現・関連試験・候補と原文通知を成功し、元の全計測後に通常 RSS 216.65625MiBで失敗した。TUI 約106.78MiB・MCP 約93.20MiBが残る。20起動／80操作・100 worker profile・通常6役割／Chromium14役割を独立照合し、65 PNG・36,344,288画素は `35e959f` と全 byte 一致した。候補631ファイル・ソース1,149ファイル・map4 archive／904 member・FreeType原文12点とJPEG原文2点・製品謝辞を確認した。全3環境へは進めていない。次はアプリを再ビルドせず既存候補を再利用する macOS の任意診断を用意し、元の30秒 idle 後に所有するTUI／MCPの allocator summary を取得する。原計測・期限・200MiBは保つ。追加のRustと実GHA診断は未検証である。
+
 `9010cf6` の [macOS 先行 `40560551846`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40560551846) は補助ツール194件・機能試験・候補の展開と隔離 smoke を通過し、元の20起動／80操作・通常6役割／Chromium14役割の全観測を保存した後、通常 RSS 236.50MiBで200MiBゲートに失敗した。全3環境には進んでいない。候補631ファイル・ソース1,149ファイル・原文通知と、元 ld64 map の4 archive／904 memberを独立照合した。65 PNG・36,344,288画素は `35e959f` と全 byte 一致した。固定 clip の試行は戻し、Mac の文書専用 MCP の ACP environment に省メモリ方針を渡す候補を準備する。明示 override と adapter の環境保持を両 provider の実 CLI／疑似 ACP で早期再現し、元の計測・期限・200MiBを維持する。JPEG の原文2ファイルは固定 upstream と一致し、別途必要な製品謝辞と欠損拒否も準備した。新しい Rust 差分は GHA 待ちである。
 
 `4d6f200` の [macOS 先行 `40556268470`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40556268470) は機能試験と release build を通過したが、候補の証跡収集がリンクマップ全体を UTF-8 と仮定して失敗した。全3環境とメモリ計測は開始していない。以前の実マップでも、169,027バイトの object table は有効な UTF-8 だが、後方の literal-string symbol に非 UTF-8 byte があることを確認した。元マップの全 byte／hash を保持し、使用する archive・member だけを厳密に復号する修正と、3形式の opaque symbol／不正な入力パスの回帰試験を準備した。先行 runtime 3分35秒と後続 release 4分30秒を重ねる変更も準備し、両方の回収後に ownership と計測へ進む。Rust の追加差分は GHA 待ちである。
