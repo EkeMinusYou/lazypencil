@@ -29,6 +29,98 @@ fn upstream_emoji_pins_reject_mutable_sources_path_substitution_and_unbounded_as
 }
 
 #[test]
+fn cached_emoji_inputs_are_reverified_without_network_or_mutating_bad_bytes() {
+    use std::{path::Path, process::Command, time::Duration};
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path();
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname='lazypencil'\nversion='0.0.0'\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("tests/fixtures/fonts")).unwrap();
+    let output = root.join("cache");
+    fs::create_dir(&output).unwrap();
+    let mut pin: Value =
+        util::json(&util::root().join("tests/fixtures/fonts/emoji-upstream.json")).unwrap();
+    // Small owned inputs exercise the real acquisition CLI's cache path. They
+    // are not font compatibility fixtures and never require an HTTP request.
+    let mut originals = Vec::new();
+    for (i, pointer) in ["/license", "/fonts/0/asset", "/fonts/1/asset"]
+        .into_iter()
+        .enumerate()
+    {
+        let asset = pin.pointer_mut(pointer).unwrap();
+        let bytes = format!("Owned cached input {i}\n").into_bytes();
+        asset["bytes"] = json!(bytes.len());
+        asset["sha256"] = json!(util::digest(&bytes));
+        let name = Path::new(asset["path"].as_str().unwrap())
+            .file_name()
+            .unwrap();
+        let file = output.join(name);
+        fs::write(&file, &bytes).unwrap();
+        originals.push((file, bytes));
+    }
+    fs::write(
+        root.join("tests/fixtures/fonts/emoji-upstream.json"),
+        util::encode(&pin).unwrap(),
+    )
+    .unwrap();
+    let run = |hosted: bool| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_xtask"));
+        command
+            .current_dir(root)
+            .args(["fixtures", "emoji", "--output"])
+            .arg(&output);
+        if hosted {
+            command.env("GITHUB_ACTIONS", "true");
+        } else {
+            command.env_remove("GITHUB_ACTIONS");
+        }
+        lazypencil_xtask::process::output(&mut command, Duration::from_secs(10)).unwrap()
+    };
+    assert!(
+        !run(false).status.success(),
+        "The hosted acquisition guard must remain intact"
+    );
+    assert!(run(true).status.success());
+    assert_eq!(
+        util::json::<Value>(&output.join("SOURCE.json")).unwrap(),
+        pin
+    );
+    let stamp = fs::read(output.join("SOURCE.json")).unwrap();
+    for (file, original) in &originals {
+        let mut changed = original.clone();
+        changed[0] ^= 1;
+        fs::write(file, &changed).unwrap();
+        let result = run(true);
+        assert!(!result.status.success());
+        assert!(String::from_utf8_lossy(&result.stderr).contains("Cached input checksum mismatch"));
+        assert!(
+            String::from_utf8_lossy(&result.stderr)
+                .contains(file.file_name().unwrap().to_str().unwrap())
+        );
+        assert_eq!(fs::read(file).unwrap(), changed);
+        assert_eq!(fs::read(output.join("SOURCE.json")).unwrap(), stamp);
+        fs::write(file, original).unwrap();
+    }
+    #[cfg(unix)]
+    {
+        let (file, original) = &originals[1];
+        let foreign = root.join("foreign");
+        fs::write(&foreign, original).unwrap();
+        fs::remove_file(file).unwrap();
+        std::os::unix::fs::symlink(&foreign, file).unwrap();
+        assert!(!run(true).status.success());
+        assert_eq!(fs::read(&foreign).unwrap(), *original);
+        fs::remove_file(file).unwrap();
+        fs::write(file, original).unwrap();
+    }
+    assert!(run(true).status.success());
+    assert_eq!(fs::read(output.join("SOURCE.json")).unwrap(), stamp);
+}
+
+#[test]
 fn all_original_diagnostic_fonts_regenerate_byte_for_byte_in_rust() {
     let directory = util::root().join("tests/fixtures/fonts");
     let manifest: Value = util::json(&directory.join("manifest.json")).unwrap();

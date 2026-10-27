@@ -1,6 +1,6 @@
 //! Immutable, unmodified OFL fonts acquired only for hosted compatibility tests.
 use crate::{download, util};
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
 
@@ -84,14 +84,15 @@ pub fn prepare(catalogue: &Path, output: &Path) -> Result<()> {
             .expect("validated source path");
         let target = output.join(filename);
         let bytes = if target.exists() || target.is_symlink() {
-            download::verify_file(&target, &asset.sha256, asset.bytes)?
+            download::verify_file(&target, &asset.sha256, asset.bytes)
         } else {
             let url = format!(
                 "https://raw.githubusercontent.com/{}/{}/{}",
                 pin.repository, pin.revision, asset.path
             );
-            download::download(&url, &asset.sha256, &target, asset.bytes)?
-        };
+            download::download(&url, &asset.sha256, &target, asset.bytes)
+        }
+        .with_context(|| format!("Preparing pinned emoji input {}", asset.path))?;
         ensure!(bytes == asset.bytes, "Emoji asset byte length mismatch");
     }
     // Keep the original standalone license beside the unmodified fonts. Their

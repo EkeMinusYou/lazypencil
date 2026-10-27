@@ -26,6 +26,7 @@ fn verify_format(format_index: usize) {
     let license = fs::read(input.join("LICENSE")).unwrap();
     assert_eq!(hash(&license), pin["license"]["sha256"]);
     let mut reports = Vec::new();
+    let mut stroke_reports = Vec::new();
     {
         let record = &pin["fonts"][format_index];
         let path = Path::new(record["asset"]["path"].as_str().unwrap());
@@ -159,7 +160,82 @@ fn verify_format(format_index: usize) {
                     record["format"]
                 );
             }
+            if ["smile", "zwj", "japanese"].contains(&case) {
+                for version in ["2.19", "2.21"] {
+                    for alignment in ["inner", "center", "outer"] {
+                        let directory = tempfile::tempdir().unwrap();
+                        let (rendered, _) = color_fonts::render_scene(
+                            directory.path(),
+                            &font,
+                            version,
+                            json!({"fontFamily":family,"content":content,"fill":[],
+                                "stroke":"#0000ff80","strokeWidth":3,"strokeAlignment":alignment}),
+                            &Default::default(),
+                        );
+                        let pixels = scene_pixels(&rendered.png);
+                        let mut ink = 0;
+                        let mut outside = 0;
+                        for y in 2..258 {
+                            for x in 2..398 {
+                                let color = pixels[y * 400 + x];
+                                assert!(
+                                    color[3] <= 128,
+                                    "{} {case}/{version}/{alignment}: repeated stroke paint",
+                                    record["format"]
+                                );
+                                if color[3] == 0 {
+                                    continue;
+                                }
+                                assert_eq!(&color[..3], &[0, 0, 255]);
+                                ink += 1;
+                                outside += usize::from(reference_pixels[y * 400 + x][3] == 0);
+                                let mut any_ink = false;
+                                let mut all_solid = true;
+                                for yy in y - 2..=y + 2 {
+                                    for xx in x - 2..=x + 2 {
+                                        any_ink |= reference_pixels[yy * 400 + xx][3] > 0;
+                                        all_solid &= reference_pixels[yy * 400 + xx][3] == 255;
+                                    }
+                                }
+                                if alignment == "inner" {
+                                    assert!(
+                                        any_ink,
+                                        "{} {case}: inner stroke outside native ink at {x},{y}",
+                                        record["format"]
+                                    );
+                                }
+                                if alignment == "outer" {
+                                    assert!(
+                                        !all_solid,
+                                        "{} {case}: outer stroke inside solid native ink at {x},{y}",
+                                        record["format"]
+                                    );
+                                }
+                            }
+                        }
+                        assert!(
+                            ink > 100,
+                            "{} {case}/{version}/{alignment}: missing stroke",
+                            record["format"]
+                        );
+                        if alignment != "inner" {
+                            assert!(
+                                outside > 20,
+                                "{} {case}/{version}/{alignment}: missing outside stroke",
+                                record["format"]
+                            );
+                        }
+                        let name = format!(
+                            "codec-emoji-{format_index}-stroke-{case}-{version}-{alignment}.png"
+                        );
+                        fs::write(output.join(&name), &rendered.png).unwrap();
+                        stroke_reports.push(json!({"format":record["format"],"font_sha256":record["asset"]["sha256"],"case":case,"content":content,"schema":version,"alignment":alignment,"png":name,"png_sha256":hash(&rendered.png),"native_png":reference_name,"native_sha256":hash(&reference),"ink_pixels":ink,"outside_native_pixels":outside}));
+                        fs::write(output.join(format!("codec-emoji-{format_index}-stroke-report.json")), serde_json::to_vec_pretty(&json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"upstream":pin,"cases":stroke_reports})).unwrap()).unwrap();
+                    }
+                }
+            }
         }
     }
     assert_eq!(reports.len(), 14);
+    assert_eq!(stroke_reports.len(), 18);
 }

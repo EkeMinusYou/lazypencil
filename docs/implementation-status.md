@@ -2,7 +2,7 @@
 
 `67e799b` の [GHA `40442963340`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40442963340) は3環境・監査・最終ソース検証を20分4秒で成功した。元のケース名・実行回数を照合し、追加回帰を含めLinux各1,394件・macOS1,384件、各144サマリーを確認した。各1,221ファイルを再利用し、core／既定buildは0〜5秒、並列runtimeは150〜227秒、releaseのCargo確認は0.18〜0.56秒だった。native依存3件と完全成果物3件を保持し、旧形式重複は0件。別走行のmacOS／arm64配布計測も元の20起動・80操作と追加資源観測を成功し、raw記録・画素・会話を照合した。物理表示・全性能・製品全体の完成とはしない。
 
-次の機能差分はカラー／bitmap書体の文字の線である。実際のnativeアルファから、ベースのvector輪郭にない穴・離れた半透明部分を含むsilhouetteを取り出し、通常の線・配置・paintへ渡す候補を準備した。通常vector書体とnativeの色塗りは維持する。自作sbix fixture、全saddle配置、取消・処理量上限、両schema・3サイズ・inner／center／outer・色の境界・半透明paintを検査する。layout identityは7へ進める。ローカルは整形・差分確認のみで、Rustとnativeの検証はGHA待ちである。
+カラー／bitmap書体の文字の線は `869f0e5` の Linux 先行402試験・39サマリーを通過した。macOS／arm64の全体も各1,387／1,397件・144サマリーで成功し、元ケースと回数を照合した。3組の18画像、合計5,616,000画素のhash・穴・低alpha部分・paintとschema一致を独立に確認した。通常vector輪郭とnativeの色塗りを維持し、layout identityは7である。最終Linux x64は試験用Notoフォントの取得中に30秒のper-read timeoutで停止し、描画失敗とは区別する。他の有用な実行は終了まで保持した。追加バッチでは元の実Noto14比較／形式を維持し、CBDT／COLRv1の線を18条件／形式で検査する。固定フォントと原licenseの3ファイルだけを共通cacheへ置き、既存Rust処理で毎回サイズ・SHAを再確認する。cache破損・symlinkの拒否も実CLIで検査する。取得の既存300秒global／30秒per-read条件とnative全試験を維持し、取得を重い依存cache復元より前へ移す。失敗した入力名も診断に残す。追加差分はGHA未検証であり、全3環境と最終source gateの成功はまだ示さない。
 
 配布検証の `40440434615`（macOS）と `40440440922`（Linux arm64）は、候補をメモリ内で展開し、ソース1,146ファイル・全構成ファイル・mode・SHAと隔離QuickJSの256画素を独立照合した。macOSの埋め込みFreeType原文12件・178,787バイトと表示、Linuxのsystem FreeTypeを区別した。各20起動・80操作・100個の元worker記録と診断画像を照合し、キャッシュ画像のPTY受信p95は38.11ms／14.27ms、完全画像は278.90ms／219.85msだった。物理表示や全性能条件の合格とはしない。Xvfb修正後の Linux x64 `40441668699` は4端末モード・署名付き候補・計測まで成功した。追加照合を進める。
 
