@@ -358,9 +358,12 @@ mod tests {
         let png = crate::image_input::from_rgba8(1, 1, &[255, 0, 0, 255])
             .unwrap()
             .png;
+        // Source encoding and normalized send encoding can have different
+        // lengths even for an unchanged one-pixel image.
+        let send_bytes = crate::image_input::normalize(&png, None).unwrap().png.len();
         let options = AttachmentOptions {
             limits: crate::config::attachments::AttachmentSettings {
-                max_total_send_bytes: png.len() * 2 - 1,
+                max_total_send_bytes: send_bytes * 2 - 1,
                 ..Default::default()
             },
             ..Default::default()
