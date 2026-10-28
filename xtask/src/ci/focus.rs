@@ -174,20 +174,49 @@ pub fn preprocessor_changed(paths: &[String]) -> bool {
     })
 }
 
+fn image_input_only(paths: &[String]) -> bool {
+    paths.iter().any(|path| path == "src/clipboard.rs")
+        && paths.iter().all(|path| {
+            (ci_only(path) && !font_input(path) && !tui_measurement_source(path))
+                || [
+                    "src/attachments.rs",
+                    "src/image_input.rs",
+                    "src/clipboard.rs",
+                    "src/conversation/mod.rs",
+                    "src/conversation/management.rs",
+                    "src/conversation/management/retention/tests.rs",
+                    "src/prompt.rs",
+                    "src/tui/mod.rs",
+                    "src/tui/images.rs",
+                    "src/tui/tests.rs",
+                    "tests/attachments.rs",
+                ]
+                .contains(&path.as_str())
+        })
+}
+
 pub fn tui_measurement_changed(paths: &[String]) -> bool {
-    paths.iter().any(|path| {
-        path.starts_with("xtask/src/performance/") && path != "xtask/src/performance/profile.rs"
-            || path.starts_with("src/tui/") && path != "src/tui/tests.rs"
-            || path == "src/render.rs"
-            || path == "src/layout.rs"
-            || path.starts_with("src/render/")
-            || [
-                "xtask/src/performance.rs",
-                "xtask/src/test_support/terminal.rs",
-                "xtask/src/evidence/release_build.rs",
-            ]
-            .contains(&path.as_str())
-    })
+    // Input-only work has a small real consumer reproduction. Keep the same
+    // packaged performance acceptance in the full job rather than duplicate it
+    // in focus. Changes to preview/rendering or measurement tools keep that gate.
+    if image_input_only(paths) {
+        return false;
+    }
+    paths.iter().any(|path| tui_measurement_source(path))
+}
+
+fn tui_measurement_source(path: &str) -> bool {
+    path.starts_with("xtask/src/performance/") && path != "xtask/src/performance/profile.rs"
+        || path.starts_with("src/tui/") && path != "src/tui/tests.rs"
+        || path == "src/render.rs"
+        || path == "src/layout.rs"
+        || path.starts_with("src/render/")
+        || [
+            "xtask/src/performance.rs",
+            "xtask/src/test_support/terminal.rs",
+            "xtask/src/evidence/release_build.rs",
+        ]
+        .contains(&path)
 }
 
 pub fn runtime_scheduler_changed(paths: &[String]) -> bool {
@@ -293,25 +322,15 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     // The clipboard worker and attachment persistence share the encoded image
     // boundary. Their real consumer needs rendering, even when conversation
     // metadata changes would otherwise select the core-only ownership suite.
-    if paths.iter().any(|path| path == "src/clipboard.rs")
-        && paths.iter().all(|path| {
-            ci_only(path)
-                || [
-                    "src/attachments.rs",
-                    "src/image_input.rs",
-                    "src/clipboard.rs",
-                    "src/conversation/mod.rs",
-                    "src/conversation/management.rs",
-                    "src/conversation/management/retention/tests.rs",
-                    "tests/attachments.rs",
-                ]
-                .contains(&path.as_str())
-        })
-    {
+    if image_input_only(paths) {
         return Ok(Plan {
             platform,
             suite: "graphics".into(),
-            targets: vec!["attachments".into()],
+            targets: if paths.iter().any(|path| path.starts_with("src/tui/")) {
+                vec!["attachments".into(), "tui".into()]
+            } else {
+                vec!["attachments".into()]
+            },
             preprocessor,
         });
     }

@@ -51,6 +51,14 @@ pub struct InputImage {
 
 impl InputImage {
     pub fn store(self, directory: &Path) -> Result<Attachment> {
+        self.store_with_bounds(directory, None)
+    }
+
+    pub fn store_with_bounds(
+        self,
+        directory: &Path,
+        bounds: Option<image_input::ImageBounds>,
+    ) -> Result<Attachment> {
         if self.data.len() > image_input::MAX_SOURCE_BYTES.div_ceil(3) * 4
             || self.source_bytes > image_input::MAX_SOURCE_BYTES
         {
@@ -68,23 +76,41 @@ impl InputImage {
                 "Image worker source size does not match its data",
             ));
         }
-        Attachment::from_bytes(directory, &bytes, &self.name)
+        Attachment::from_bytes_with_bounds(directory, &bytes, &self.name, bounds)
     }
 }
 
 pub fn read_clipboard(executable: &Path, cancel: &CancellationToken) -> Result<InputContent> {
-    read_worker(executable, None, cancel)
+    read_clipboard_with_bounds(executable, None, cancel)
+}
+
+pub fn read_clipboard_with_bounds(
+    executable: &Path,
+    bounds: Option<image_input::ImageBounds>,
+    cancel: &CancellationToken,
+) -> Result<InputContent> {
+    read_worker(executable, None, bounds, cancel)
 }
 pub fn read_image(
     executable: &Path,
     path: &Path,
     cancel: &CancellationToken,
 ) -> Result<InputContent> {
-    read_worker(executable, Some(path), cancel)
+    read_image_with_bounds(executable, path, None, cancel)
+}
+
+pub fn read_image_with_bounds(
+    executable: &Path,
+    path: &Path,
+    bounds: Option<image_input::ImageBounds>,
+    cancel: &CancellationToken,
+) -> Result<InputContent> {
+    read_worker(executable, Some(path), bounds, cancel)
 }
 fn read_worker(
     executable: &Path,
     path: Option<&Path>,
+    bounds: Option<image_input::ImageBounds>,
     cancel: &CancellationToken,
 ) -> Result<InputContent> {
     if cancel.is_cancelled() {
@@ -105,6 +131,9 @@ fn read_worker(
         command.arg("--file").arg(path);
     } else {
         command.arg("--clipboard");
+    }
+    if let Some(bounds) = bounds {
+        command.arg("--max-size").arg(bounds.to_string());
     }
     let mut child = command.spawn().map_err(|error| {
         Error::new(
@@ -231,17 +260,30 @@ fn check_input_deadline(cancel: &CancellationToken, deadline: Instant) -> Result
 }
 
 pub fn serve_worker() -> Result<()> {
-    let args: Vec<_> = std::env::args_os().skip(2).collect();
-    let result = if args.len() == 2 && args[0] == "--file" {
-        file_images(&[PathBuf::from(&args[1])])
-    } else if args.len() == 1 && args[0] == "--clipboard" {
-        native_read()
-    } else {
-        Err(Error::new(
-            "INVALID_ARGUMENT",
-            "Invalid image input worker arguments",
-        ))
-    };
+    let result = (|| {
+        let mut args: Vec<_> = std::env::args_os().skip(2).collect();
+        let bounds = if args.len() >= 2 && args[args.len() - 2] == "--max-size" {
+            let bounds = args
+                .last()
+                .and_then(|arg| arg.to_str())
+                .ok_or_else(|| Error::new("INVALID_ARGUMENT", "Image bounds must be UTF-8"))?
+                .parse()?;
+            args.truncate(args.len() - 2);
+            Some(bounds)
+        } else {
+            None
+        };
+        if args.len() == 2 && args[0] == "--file" {
+            file_images(&[PathBuf::from(&args[1])], bounds)
+        } else if args.len() == 1 && args[0] == "--clipboard" {
+            native_read(bounds)
+        } else {
+            Err(Error::new(
+                "INVALID_ARGUMENT",
+                "Invalid image input worker arguments",
+            ))
+        }
+    })();
     let value = match result {
         Ok(content) => json!({"content":content}),
         Err(error) => json!({"error":error}),
@@ -253,7 +295,10 @@ pub fn serve_worker() -> Result<()> {
         .map_err(|error| Error::new("IO_ERROR", error.to_string()))
 }
 
-fn file_images(paths: &[PathBuf]) -> Result<InputContent> {
+fn file_images(
+    paths: &[PathBuf],
+    bounds: Option<image_input::ImageBounds>,
+) -> Result<InputContent> {
     if paths.is_empty() || paths.len() > 8 {
         return Err(Error::new(
             "ATTACHMENT_INVALID",
@@ -266,7 +311,7 @@ fn file_images(paths: &[PathBuf]) -> Result<InputContent> {
     for path in paths {
         let bytes = read_bounded(path, image_input::MAX_SOURCE_BYTES)?;
         original += bytes.len();
-        let image = image_input::normalize(&bytes, None)?;
+        let image = image_input::normalize_with_bounds(&bytes, None, bounds)?;
         normalized += image.png.len();
         if original > crate::attachments::MAX_REQUEST_BYTES
             || normalized > crate::attachments::MAX_REQUEST_BYTES
@@ -290,7 +335,7 @@ fn file_images(paths: &[PathBuf]) -> Result<InputContent> {
     }
     Ok(InputContent::Images { images })
 }
-fn native_read() -> Result<InputContent> {
+fn native_read(bounds: Option<image_input::ImageBounds>) -> Result<InputContent> {
     let mut clipboard = arboard::Clipboard::new().map_err(|error| unavailable(&error))?;
     match clipboard.get_image() {
         Ok(image) => {
@@ -308,7 +353,7 @@ fn native_read() -> Result<InputContent> {
         Err(error) => return Err(unavailable(&error)),
     }
     match clipboard.get().file_list() {
-        Ok(files) if !files.is_empty() => return file_images(&files),
+        Ok(files) if !files.is_empty() => return file_images(&files, bounds),
         Ok(_) | Err(arboard::Error::ContentNotAvailable) => {}
         Err(error) => return Err(unavailable(&error)),
     }

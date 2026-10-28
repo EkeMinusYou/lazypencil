@@ -449,6 +449,15 @@ fn periodic_preview_checks_retry_a_captured_layout_after_render_failure() {
     });
 }
 
+fn fake_input(
+    executable: &Path,
+    path: Option<&Path>,
+    _: Option<crate::image_input::ImageBounds>,
+    cancel: &CancellationToken,
+) -> Result<InputContent> {
+    fake_clipboard(executable, path, cancel)
+}
+
 fn fake_clipboard(_: &Path, path: Option<&Path>, _: &CancellationToken) -> Result<InputContent> {
     assert!(path.is_none());
     let mut images = vec![];
@@ -465,6 +474,185 @@ fn fake_clipboard(_: &Path, path: Option<&Path>, _: &CancellationToken) -> Resul
     }
     Ok(InputContent::Images { images })
 }
+
+#[test]
+fn explicit_send_resize_preserves_the_draft_original_and_persisted_dimensions() {
+    use crate::image_input::ImageBounds;
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        app.conversation
+            .attach_file(
+                &Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/assets/crop-source.png"),
+            )
+            .unwrap();
+        let original = app.conversation.images()[0].clone();
+        let bytes = original
+            .read_original(app.conversation.directory())
+            .unwrap();
+        app.editor = editor("日本語の下書きを保持");
+        app.start_resize(0, Some(ImageBounds::new(80, 80).unwrap()))
+            .unwrap();
+        assert_eq!(
+            (
+                app.conversation.images()[0].width,
+                app.conversation.images()[0].height
+            ),
+            (320, 160)
+        );
+        assert!(
+            app.start_resize(0, Some(ImageBounds::new(40, 40).unwrap()))
+                .is_err()
+        );
+        let content = tokio::time::timeout(
+            Duration::from_secs(5),
+            &mut app.input.as_mut().unwrap().receiver,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        app.input.take();
+        app.accept_prepared(content);
+        let resized = &app.conversation.images()[0];
+        assert_eq!((resized.width, resized.height), (80, 40));
+        assert_eq!(
+            resized.read_original(app.conversation.directory()).unwrap(),
+            bytes
+        );
+        assert!(super::images::label(resized, 0).contains("320×160 → 80×40"));
+        assert_eq!(app.editor.lines().join("\n"), "日本語の下書きを保持");
+        let saved: Value = serde_json::from_slice(
+            &std::fs::read(app.conversation.directory().join("session.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(saved["pending_attachments"][0]["width"], 80);
+        assert_eq!(saved["pending_attachments"][0]["original"]["width"], 320);
+        app.start_resize(0, None).unwrap();
+        let content = tokio::time::timeout(
+            Duration::from_secs(5),
+            &mut app.input.as_mut().unwrap().receiver,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        app.input.take();
+        app.accept_prepared(content);
+        assert_eq!(app.conversation.images()[0].id, original.id);
+    });
+}
+
+#[test]
+fn cancelling_a_prepared_resize_reclaims_only_the_unadopted_send_variant() {
+    use crate::image_input::ImageBounds;
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        app.conversation
+            .attach_file(
+                &Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/assets/crop-source.png"),
+            )
+            .unwrap();
+        let original = app.conversation.images()[0].clone();
+        let directory = app.conversation.directory().join("attachments");
+        let names = || {
+            std::fs::read_dir(&directory)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect::<std::collections::BTreeSet<_>>()
+        };
+        let before = names();
+        app.start_resize(0, Some(ImageBounds::new(80, 80).unwrap()))
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !app.input.as_ref().unwrap().is_finished() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(names().len() > before.len());
+        app.input.take();
+        assert_eq!(names(), before);
+        assert_eq!(app.conversation.images()[0].id, original.id);
+        original
+            .read_original(app.conversation.directory())
+            .unwrap();
+        original.read(app.conversation.directory()).unwrap();
+    });
+}
+
+fn incomplete_image_batch(
+    _: &Path,
+    _: Option<&Path>,
+    _: Option<crate::image_input::ImageBounds>,
+    _: &CancellationToken,
+) -> Result<InputContent> {
+    assert_eq!(std::thread::current().name(), Some("lazypencil-input"));
+    let image = crate::image_input::from_rgba8(1, 1, &[0, 255, 0, 255])?;
+    Ok(InputContent::Images {
+        images: vec![
+            crate::clipboard::InputImage {
+                name: "green.png".into(),
+                source_bytes: image.png.len(),
+                data: base64::engine::general_purpose::STANDARD.encode(image.png),
+            },
+            crate::clipboard::InputImage {
+                name: "invalid.png".into(),
+                source_bytes: 1,
+                data: "invalid".into(),
+            },
+        ],
+    })
+}
+
+#[test]
+fn failed_background_image_batches_leave_existing_images_and_blobs_unchanged() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        app.accept_input(fake_clipboard(
+            Path::new("unused"),
+            None,
+            &CancellationToken::new(),
+        ));
+        let directory = app.conversation.directory().join("attachments");
+        let names = || {
+            std::fs::read_dir(&directory)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect::<std::collections::BTreeSet<_>>()
+        };
+        let before = names();
+        let ids = app
+            .conversation
+            .images()
+            .iter()
+            .map(|image| image.id.clone())
+            .collect::<Vec<_>>();
+        app.input_reader = incomplete_image_batch;
+        app.start_input(None).unwrap();
+        let content = tokio::time::timeout(
+            Duration::from_secs(5),
+            &mut app.input.as_mut().unwrap().receiver,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        app.input.take();
+        app.accept_prepared(content);
+        assert!(app.status.contains("ATTACHMENT_INVALID"));
+        assert_eq!(names(), before);
+        assert_eq!(
+            app.conversation
+                .images()
+                .iter()
+                .map(|image| image.id.clone())
+                .collect::<Vec<_>>(),
+            ids
+        );
+    });
+}
+
 async fn complete(app: &mut App) -> Vec<Value> {
     tokio::time::timeout(Duration::from_secs(10), async {
         let mut events = vec![];
@@ -490,7 +678,7 @@ fn control_v_attaches_ordered_rgba_images_and_two_turns_share_one_agent() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {
         let mut app = app(&temp, "image-inspect");
-        app.input_reader = fake_clipboard;
+        app.input_reader = fake_input;
         let picker = Backend::halfblocks();
         let worker = Worker::start(
             app.conversation.store().clone(),
@@ -526,7 +714,7 @@ fn control_v_attaches_ordered_rgba_images_and_two_turns_share_one_agent() {
         assert_eq!(app.conversation.images().len(), 0);
         let content = (&mut app.input.as_mut().unwrap().receiver).await.unwrap();
         app.input.take();
-        app.accept_input(content);
+        app.accept_prepared(content);
         assert_eq!(app.conversation.images().len(), 2);
         // Removing a pending image never changes its source; re-paste preserves order.
         app.conversation.remove_image(0).unwrap();
@@ -660,7 +848,7 @@ fn permission_modal_can_answer_and_cancel_without_blocking_the_event_loop() {
                 ..Default::default()
             };
             app.navigation.validate(&app.keys).unwrap();
-            app.input_reader = fake_clipboard;
+            app.input_reader = fake_input;
             let worker = Worker::start(
                 app.conversation.store().clone(),
                 vec![],
@@ -1172,7 +1360,7 @@ fn custom_prompt_keys_keep_focus_and_modal_precedence_and_send_actual_images() {
             paste: vec!["F6".into()],
         };
         app.keys.validate().unwrap();
-        app.input_reader = fake_clipboard;
+        app.input_reader = fake_input;
         let worker = Worker::start(
             app.conversation.store().clone(),
             vec![],
@@ -1221,7 +1409,7 @@ fn custom_prompt_keys_keep_focus_and_modal_precedence_and_send_actual_images() {
         press(&mut app, KeyCode::F(6), KeyModifiers::NONE, &worker).await;
         let content = (&mut app.input.as_mut().unwrap().receiver).await.unwrap();
         app.input.take();
-        app.accept_input(content);
+        app.accept_prepared(content);
         assert_eq!(app.conversation.images().len(), 2);
         press(&mut app, KeyCode::F(5), KeyModifiers::NONE, &worker).await;
         let events = complete(&mut app).await;

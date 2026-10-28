@@ -7,6 +7,31 @@ use lazypencil::{
 use std::path::Path;
 use tempfile::TempDir;
 
+#[cfg(feature = "rendering")]
+#[path = "support/fixture.rs"]
+mod fixture_support;
+
+#[test]
+fn send_image_bounds_are_explicit_positive_and_bounded() {
+    use lazypencil::image_input::ImageBounds;
+    assert_eq!(
+        "1024x768".parse::<ImageBounds>().unwrap(),
+        ImageBounds::new(1024, 768).unwrap()
+    );
+    for invalid in [
+        "",
+        "1024",
+        "0x768",
+        "1024x0",
+        "-1x2",
+        "1x2x3",
+        "5000x5000",
+        "4294967296x1",
+    ] {
+        assert!(invalid.parse::<ImageBounds>().is_err(), "{invalid}");
+    }
+}
+
 #[test]
 fn legacy_attachment_records_preserve_png_access_without_inventing_an_original() {
     use lazypencil::{attachments::Attachment, document::hash};
@@ -63,6 +88,203 @@ mod originals {
     }
 
     #[test]
+    fn explicit_send_sizes_use_original_orientation_and_never_compound_or_upscale() {
+        use lazypencil::image_input::ImageBounds;
+        let temp = TempDir::new().unwrap();
+        let source = jpeg();
+        let original = Attachment::from_bytes(temp.path(), &source, "reference.jpg").unwrap();
+        let small = original
+            .resized(temp.path(), ImageBounds::new(10, 10).unwrap())
+            .unwrap();
+        assert_eq!((small.width, small.height), (5, 10));
+        assert_eq!(small.original, original.original);
+        assert_eq!(small.read_original(temp.path()).unwrap(), source);
+        assert_ne!(small.id, original.id);
+        let medium = small
+            .resized(temp.path(), ImageBounds::new(12, 30).unwrap())
+            .unwrap();
+        assert_eq!((medium.width, medium.height), (12, 24));
+        let restored = small
+            .resized(temp.path(), ImageBounds::new(100, 100).unwrap())
+            .unwrap();
+        assert_eq!((restored.width, restored.height), (20, 40));
+        assert_eq!(restored.id, original.id);
+        assert_eq!(
+            restored.read(temp.path()).unwrap(),
+            original.read(temp.path()).unwrap()
+        );
+        let direct = Attachment::from_bytes_with_bounds(
+            temp.path(),
+            &source,
+            "direct.jpg",
+            Some(ImageBounds::new(10, 10).unwrap()),
+        )
+        .unwrap();
+        assert_eq!(direct.id, small.id);
+        assert_eq!(
+            direct
+                .original
+                .as_ref()
+                .map(|source| (source.width, source.height)),
+            Some((20, 40))
+        );
+    }
+
+    #[test]
+    fn resized_png_uses_premultiplied_linear_sampling_without_transparent_color_bleed() {
+        use lazypencil::image_input::{self, ImageBounds};
+        let rgba = [255, 0, 0, 255, 255, 0, 0, 255, 0, 0, 255, 0, 0, 0, 255, 0];
+        let original = image_input::from_rgba8(2, 2, &rgba).unwrap();
+        let image = image_input::normalize_with_bounds(
+            &original.png,
+            None,
+            Some(ImageBounds::new(1, 1).unwrap()),
+        )
+        .unwrap();
+        assert_eq!(
+            (
+                image.source_width,
+                image.source_height,
+                image.width,
+                image.height
+            ),
+            (2, 2, 1, 1)
+        );
+        let decoded = image::load_from_memory(&image.png).unwrap().to_rgba8();
+        let pixel = decoded.get_pixel(0, 0).0;
+        assert!(
+            pixel[0] >= 254 && pixel[1] <= 1 && pixel[2] <= 1,
+            "{pixel:?}"
+        );
+        assert!(pixel[3].abs_diff(128) <= 1, "{pixel:?}");
+    }
+
+    #[cfg(feature = "tui")]
+    #[test]
+    fn resized_worker_input_and_pending_replacement_preserve_the_selected_source() {
+        use lazypencil::{
+            clipboard::{self, InputContent},
+            image_input::ImageBounds,
+        };
+        let temp = TempDir::new().unwrap();
+        let source = temp.path().join("reference.jpg");
+        let bytes = jpeg();
+        std::fs::write(&source, &bytes).unwrap();
+        let bounds = ImageBounds::new(10, 10).unwrap();
+        let InputContent::Images { mut images } = clipboard::read_image_with_bounds(
+            Path::new(env!("CARGO_BIN_EXE_lazypencil")),
+            &source,
+            Some(bounds),
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .unwrap() else {
+            panic!("Expected image");
+        };
+        let mut conversation = conversation(&temp);
+        let original = Attachment::from_file(conversation.directory(), &source).unwrap();
+        conversation.add_image(original.clone()).unwrap();
+        let image = images
+            .pop()
+            .unwrap()
+            .store_with_bounds(conversation.directory(), Some(bounds))
+            .unwrap();
+        assert_eq!((image.width, image.height), (5, 10));
+        assert_eq!(
+            conversation
+                .replace_image(0, "stale-image", image.clone())
+                .unwrap_err()
+                .code,
+            "REVISION_CONFLICT"
+        );
+        assert_eq!(conversation.images()[0].id, original.id);
+        conversation
+            .replace_image(0, &original.id, image.clone())
+            .unwrap();
+        assert_eq!(conversation.images()[0].id, image.id);
+        assert_eq!(
+            image.read_original(conversation.directory()).unwrap(),
+            bytes
+        );
+        let saved: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(conversation.directory().join("session.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(saved["pending_attachments"][0]["width"], 5);
+        assert_eq!(saved["pending_attachments"][0]["original"]["width"], 20);
+        conversation.clear_images().unwrap();
+        assert!(image.read_original(conversation.directory()).is_err());
+    }
+
+    #[test]
+    fn parsed_cli_send_bounds_reach_the_actual_acp_image_without_changing_the_original() {
+        use clap::Parser;
+        use lazypencil::conversation::{Conversation, ConversationEvent};
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("reference.jpg");
+        let source = jpeg();
+        std::fs::write(&path, &source).unwrap();
+        let args = lazypencil::cli::Arguments::try_parse_from([
+            "lazypencil".into(),
+            "prompt".into(),
+            temp.path().join("design.pen").into_os_string(),
+            "--create".into(),
+            "--adapter".into(),
+            fixture_support::helper().into_os_string(),
+            "--adapter-arg=acp".into(),
+            "--adapter-arg=image-inspect".into(),
+            "--image-max-size=10x10".into(),
+            "--non-interactive".into(),
+            "--timeout=5".into(),
+        ])
+        .unwrap();
+        let lazypencil::cli::Command::Prompt(args) = args.command else {
+            unreachable!()
+        };
+        let mut conversation = Conversation::open_with_executable(
+            args,
+            Some(temp.path().join("data")),
+            env!("CARGO_BIN_EXE_lazypencil").into(),
+        )
+        .unwrap();
+        conversation.attach_file(&path).unwrap();
+        let image = conversation.images()[0].clone();
+        assert_eq!((image.width, image.height), (5, 10));
+        conversation.set_draft("日本語の参考画像".into()).unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let result = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                conversation.send(None).await?;
+                loop {
+                    if let ConversationEvent::Message(event) = conversation.next_event().await?
+                        && matches!(event["type"].as_str(), Some("complete" | "failed"))
+                    {
+                        return conversation.result().cloned().expect("completed turn");
+                    }
+                }
+            })
+            .await;
+            conversation.close().await.unwrap();
+            result.unwrap().unwrap();
+        });
+        let received = std::fs::read(temp.path().join("received-image-1-0.png")).unwrap();
+        assert_eq!(
+            image::load_from_memory(&received)
+                .unwrap()
+                .to_rgba8()
+                .dimensions(),
+            (5, 10)
+        );
+        assert_eq!(received, image.read(conversation.directory()).unwrap());
+        assert_eq!(
+            image.read_original(conversation.directory()).unwrap(),
+            source
+        );
+    }
+
+    #[test]
     fn exact_original_survives_source_edits_and_metadata_roundtrip_but_is_never_sent() {
         let temp = TempDir::new().unwrap();
         let source = temp.path().join("reference.jpg");
@@ -106,6 +328,7 @@ mod originals {
         assert_eq!(std::fs::read(&captured).unwrap(), b"changed");
     }
 
+    #[cfg(feature = "tui")]
     #[test]
     fn file_worker_preserves_jpeg_encoding_and_rejects_inconsistent_source_counts() {
         use lazypencil::clipboard::{self, InputContent};

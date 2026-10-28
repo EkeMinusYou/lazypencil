@@ -20,7 +20,7 @@ pub const MAX_REQUEST_BYTES: usize = 50 * 1024 * 1024;
 const MAX_GRANT_BYTES: usize = 512 * 1024;
 
 /// The encoded input is retained privately; only the normalized PNG is sent.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OriginalImage {
     pub hash: String,
@@ -68,29 +68,47 @@ pub struct Attachment {
 
 impl Attachment {
     pub fn from_file(directory: &Path, source: &Path) -> Result<Self> {
+        Self::from_file_with_bounds(directory, source, None)
+    }
+
+    pub fn from_file_with_bounds(
+        directory: &Path,
+        source: &Path,
+        bounds: Option<crate::image_input::ImageBounds>,
+    ) -> Result<Self> {
         let bytes = read_bounded(source, crate::image_input::MAX_SOURCE_BYTES)?;
-        Self::from_bytes(
+        Self::from_bytes_with_bounds(
             directory,
             &bytes,
             &source.file_name().unwrap_or_default().to_string_lossy(),
+            bounds,
         )
     }
 
     pub fn from_bytes(directory: &Path, source: &[u8], display_name: &str) -> Result<Self> {
+        Self::from_bytes_with_bounds(directory, source, display_name, None)
+    }
+
+    pub fn from_bytes_with_bounds(
+        directory: &Path,
+        source: &[u8],
+        display_name: &str,
+        bounds: Option<crate::image_input::ImageBounds>,
+    ) -> Result<Self> {
         if display_name.len() > 1024 {
             return Err(invalid(
                 "Attachment display names must not exceed 1024 bytes",
             ));
         }
-        let image = crate::image_input::normalize(source, None)?;
+        let image = crate::image_input::normalize_with_bounds(source, None, bounds)?;
         let hash = hash(&image.png);
         create_private_directory(&directory.join("attachments"))?;
         let original = OriginalImage {
             hash: crate::document::hash(source),
             mime_type: image.source_mime.into(),
             bytes: source.len(),
-            width: image.width,
-            height: image.height,
+            width: image.source_width,
+            height: image.source_height,
         };
         let attachment = Self {
             id: identity(&hash, Some(&original)),
@@ -114,6 +132,33 @@ impl Attachment {
         )?;
         persist_image(&attachment.path(directory)?, &image.png)?;
         Ok(attachment)
+    }
+
+    /// Always sample the captured original, so repeated choices do not compound
+    /// loss and a larger choice can restore detail from an earlier downscale.
+    pub fn resized(
+        &self,
+        directory: &Path,
+        bounds: crate::image_input::ImageBounds,
+    ) -> Result<Self> {
+        let bytes = self.read_original(directory)?;
+        let original = self.original.as_ref().expect("captured original");
+        let image = crate::image_input::normalize_with_bounds(
+            &bytes,
+            Some(&original.mime_type),
+            Some(bounds),
+        )?;
+        if (image.source_width, image.source_height) != (original.width, original.height) {
+            return Err(invalid("The original image dimensions changed"));
+        }
+        let mut result = self.clone();
+        result.hash = hash(&image.png);
+        result.id = identity(&result.hash, result.original.as_ref());
+        result.width = image.width;
+        result.height = image.height;
+        result.bytes = image.png.len();
+        persist_image(&result.path(directory)?, &image.png)?;
+        Ok(result)
     }
 
     fn path(&self, directory: &Path) -> Result<PathBuf> {

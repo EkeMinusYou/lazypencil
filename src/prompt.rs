@@ -69,6 +69,9 @@ pub struct PromptArgs {
     pub restart_session: bool,
     #[arg(long = "image")]
     pub images: Vec<PathBuf>,
+    /// Explicitly fit send images within WIDTHxHEIGHT; keep captured originals.
+    #[arg(long = "image-max-size")]
+    pub image_bounds: Option<crate::image_input::ImageBounds>,
     #[arg(long = "font")]
     pub fonts: Vec<PathBuf>,
     #[arg(long)]

@@ -3,6 +3,7 @@
 mod camera;
 mod checkpoints;
 mod graphics;
+mod images;
 mod playback;
 mod preview;
 mod saved;
@@ -21,6 +22,7 @@ use agent_client_protocol::schema::v1::RequestPermissionRequest;
 use clap::{Args, ValueEnum};
 use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use futures::StreamExt;
+use images::InputJob;
 use preview::{Preview, Request, View, Worker};
 use ratatui::{
     Frame,
@@ -83,20 +85,6 @@ struct Permission {
     selected: usize,
     scroll: u16,
 }
-struct InputJob {
-    cancel: CancellationToken,
-    receiver: tokio::sync::oneshot::Receiver<Result<InputContent>>,
-    thread: Option<std::thread::JoinHandle<()>>,
-}
-impl Drop for InputJob {
-    fn drop(&mut self) {
-        self.cancel.cancel();
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
-    }
-}
-
 pub fn run(args: &TuiArgs, data: Option<PathBuf>, json_output: bool) -> Result<()> {
     if json_output {
         return Err(Error::new(
@@ -198,7 +186,12 @@ struct App {
     draft_changed: bool,
     turn_pending: bool,
     last_draft_save: std::time::Instant,
-    input_reader: fn(&Path, Option<&Path>, &CancellationToken) -> Result<InputContent>,
+    input_reader: fn(
+        &Path,
+        Option<&Path>,
+        Option<crate::image_input::ImageBounds>,
+        &CancellationToken,
+    ) -> Result<InputContent>,
 }
 impl App {
     fn new(conversation: Conversation) -> Self {
@@ -331,7 +324,7 @@ impl App {
                 },
                 content = async { (&mut self.input.as_mut().unwrap().receiver).await.unwrap_or_else(|error| Err(Error::new("CLIPBOARD_UNAVAILABLE", error.to_string()))) }, if self.input.is_some() => {
                     self.input.take();
-                    self.accept_input(content);
+                    if self.accept_prepared(content) { self.request(worker, false, false); }
                     self.dirty = true;
                 },
                 output = async { (&mut self.document_task.as_mut().unwrap().receiver).await.unwrap_or_else(|error| Err(Error::new("IO_ERROR", format!("Document worker stopped: {error}")))) }, if self.document_task.is_some() => {
@@ -518,62 +511,6 @@ impl App {
         }
         self.editor.insert_str(text);
         self.draft_changed = true;
-    }
-    fn start_input(&mut self, path: Option<PathBuf>) -> Result<()> {
-        if self.conversation.active() {
-            return Err(Error::new(
-                "INVALID_ARGUMENT",
-                "Wait for the active turn or cancel it before attaching images",
-            ));
-        }
-        if self.input.is_some() {
-            return Err(Error::new(
-                "INVALID_ARGUMENT",
-                "Image input is already running",
-            ));
-        }
-        let executable = std::env::current_exe().map_err(terminal::io)?;
-        let cancel = CancellationToken::new();
-        let token = cancel.clone();
-        let reader = self.input_reader;
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-        let thread = std::thread::Builder::new()
-            .name("lazypencil-input".into())
-            .spawn(move || {
-                let result = reader(&executable, path.as_deref(), &token);
-                let _ = sender.send(result);
-            })
-            .map_err(terminal::io)?;
-        self.input = Some(InputJob {
-            cancel,
-            receiver,
-            thread: Some(thread),
-        });
-        self.status = "Reading image input…".into();
-        Ok(())
-    }
-    fn accept_input(&mut self, content: Result<InputContent>) {
-        match content {
-            Ok(InputContent::Text { text }) => {
-                self.insert_text(&text);
-                self.status = "Pasted text".into();
-            }
-            Ok(InputContent::Images { images }) => {
-                let images = images
-                    .into_iter()
-                    .map(|image| image.store(self.conversation.directory()))
-                    .collect::<Result<Vec<_>>>();
-                if let Err(error) = images.and_then(|images| self.conversation.add_images(images)) {
-                    self.error(error);
-                    return;
-                }
-                self.status = format!(
-                    "{} images attached · Tab to Attachments to review or remove",
-                    self.conversation.images().len()
-                );
-            }
-            Err(error) => self.error(error),
-        }
     }
     fn error(&mut self, error: Error) {
         self.status = clean(&error.to_string());
@@ -906,6 +843,12 @@ impl App {
                             .min(count.saturating_sub(1)),
                     ));
                 } else if action(Nav::RemoveAttachment) {
+                    if self.input.is_some() {
+                        return Err(Error::new(
+                            "INVALID_ARGUMENT",
+                            "Finish or cancel image conversion before removing an attachment",
+                        ));
+                    }
                     if let Some(index) = self.attachments.selected() {
                         self.conversation.remove_image(index)?;
                         self.attachments.select(if count > 1 {
@@ -942,7 +885,7 @@ impl App {
             self.keys.submit_label(),
             self.keys.paste_label()
         );
-        text.push_str("/attach <quoted path>: attach PNG, JPEG or WebP\n/paste-image: explicitly read this host's clipboard\n/clear-images: remove pending images\n");
+        text.push_str("/attach <quoted path>: attach PNG, JPEG or WebP\n/paste-image: explicitly read this host's clipboard\n/resize-image <number> <WIDTHxHEIGHT|original>: choose send size\n/clear-images: remove pending images\n");
         for (action, description) in [
             (Nav::Help, "show or hide help outside dialogs"),
             (Nav::PanLeft, "Preview: pan left"),
@@ -1063,6 +1006,24 @@ impl App {
                 self.start_input(Some(PathBuf::from(&words[1])))?
             }
             Some("/paste-image") if words.len() == 1 => self.start_input(None)?,
+            Some("/resize-image") if words.len() == 3 => {
+                let index = words[1]
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(|index| index.checked_sub(1))
+                    .ok_or_else(|| {
+                        Error::new(
+                            "INVALID_ARGUMENT",
+                            "Use /resize-image <image number from 1> <WIDTHxHEIGHT|original>",
+                        )
+                    })?;
+                let bounds = if words[2] == "original" {
+                    None
+                } else {
+                    Some(words[2].parse()?)
+                };
+                self.start_resize(index, bounds)?;
+            }
             Some("/help") if words.len() == 1 => self.show_help(),
             Some("/commands") if words.len() == 1 => {
                 self.modal = Some(checkpoints::Modal::commands())
@@ -1075,6 +1036,12 @@ impl App {
                 self.open_saved(saved::Page::sessions(self.conversation.id().into()), None)?
             }
             Some("/clear-images") if words.len() == 1 => {
+                if self.input.is_some() {
+                    return Err(Error::new(
+                        "INVALID_ARGUMENT",
+                        "Finish or cancel image input before clearing attachments",
+                    ));
+                }
                 self.conversation.clear_images()?;
                 self.request(worker, false, false);
             }
@@ -1104,7 +1071,7 @@ impl App {
             _ => {
                 return Err(Error::new(
                     "INVALID_ARGUMENT",
-                    "Commands: /attach <quoted path>, /paste-image, /clear-images, /open-preview, /time <nonnegative seconds>, /play [fps], /pause, /commands, /history, /logs, /conversations, /help, /quit",
+                    "Commands: /attach <quoted path>, /paste-image, /resize-image <number> <WIDTHxHEIGHT|original>, /clear-images, /open-preview, /time <nonnegative seconds>, /play [fps], /pause, /commands, /history, /logs, /conversations, /help, /quit",
                 ));
             }
         }
@@ -1299,15 +1266,7 @@ impl App {
             .images()
             .iter()
             .enumerate()
-            .map(|(index, image)| {
-                ListItem::new(format!(
-                    "[Image {}] {} · {}×{} · PNG",
-                    index + 1,
-                    clean(&image.display_name),
-                    image.width,
-                    image.height
-                ))
-            })
+            .map(|(index, image)| ListItem::new(images::label(image, index)))
             .collect::<Vec<_>>();
         frame.render_stateful_widget(
             List::new(attachments)
@@ -1496,12 +1455,13 @@ fn clean(text: &str) -> String {
 fn read_input(
     executable: &Path,
     path: Option<&Path>,
+    bounds: Option<crate::image_input::ImageBounds>,
     cancel: &CancellationToken,
 ) -> Result<InputContent> {
     if let Some(path) = path {
-        clipboard::read_image(executable, path, cancel)
+        clipboard::read_image_with_bounds(executable, path, bounds, cancel)
     } else {
-        clipboard::read_clipboard(executable, cancel)
+        clipboard::read_clipboard_with_bounds(executable, bounds, cancel)
     }
 }
 

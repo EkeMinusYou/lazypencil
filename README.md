@@ -130,6 +130,7 @@ With an ACP adapter explicitly installed and its runtime authenticated:
 ```sh
 cargo run -- prompt new.pen --create --agent codex "日本語の設定画面を作って"
 cargo run -- prompt new.pen --agent claude --image reference.png "Improve this design"
+cargo run -- prompt new.pen --image reference.jpg --image-max-size 1024x768 "Use this reference"
 ```
 
 The host supports ACP v1, image blocks, document-bound MCP, native session reload, permissions, and cancellation. It checks adapter-reported authentication against the requested subscription/API route and cancels a conflicting change. `--model` and `--mode` select advertised options; document-tool preauthorization does not approve shell or unrelated file operations. `--json prompt` streams NDJSON.

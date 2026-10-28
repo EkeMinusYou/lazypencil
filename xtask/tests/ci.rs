@@ -23,6 +23,39 @@ fn encoded_clipboard_inputs_reproduce_in_the_rendering_attachment_consumer() {
     let plan = focus::select(&root, &paths, "auto").unwrap();
     assert_eq!(plan.suite, "graphics");
     assert_eq!(plan.targets, ["attachments"]);
+    let mut tui_paths = paths.to_vec();
+    tui_paths.extend(
+        [
+            "src/tui/mod.rs",
+            "src/tui/images.rs",
+            "src/tui/tests.rs",
+            "src/prompt.rs",
+        ]
+        .map(str::to_owned),
+    );
+    assert_eq!(
+        focus::select(&root, &tui_paths, "auto").unwrap().targets,
+        ["attachments", "tui"]
+    );
+    assert!(!focus::tui_measurement_changed(&tui_paths));
+    for additional in [
+        "src/render.rs",
+        "src/tui/preview.rs",
+        "xtask/src/performance.rs",
+    ] {
+        let mut changed = tui_paths.clone();
+        changed.push(additional.into());
+        assert!(focus::tui_measurement_changed(&changed), "{additional}");
+    }
+    let mut fonts = tui_paths.clone();
+    fonts.push("xtask/src/fixtures/fonts.rs".into());
+    assert!(
+        focus::select(&root, &fonts, "auto")
+            .unwrap()
+            .targets
+            .iter()
+            .any(|target| target == "font_sources")
+    );
     let commands = ci::commands::plan(&root, &plan.suite, &plan.targets).unwrap();
     assert!(
         commands

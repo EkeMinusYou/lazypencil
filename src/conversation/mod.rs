@@ -210,8 +210,79 @@ impl Conversation {
                 "A request accepts at most eight images",
             ));
         }
-        let image = Attachment::from_file(self.directory(), path)?;
+        let image =
+            Attachment::from_file_with_bounds(self.directory(), path, self.args.image_bounds)?;
         self.add_image(image)
+    }
+    pub fn replace_image(
+        &mut self,
+        index: usize,
+        expected_id: &str,
+        image: Attachment,
+    ) -> Result<()> {
+        self.require_idle()?;
+        let previous = self
+            .images()
+            .get(index)
+            .filter(|previous| previous.id == expected_id)
+            .ok_or_else(|| {
+                Error::new(
+                    "REVISION_CONFLICT",
+                    "The pending image changed during conversion",
+                )
+            })?;
+        image.read(self.directory())?;
+        if previous.original.is_none()
+            || previous.original != image.original
+            || previous.source_bytes != image.source_bytes
+        {
+            return Err(Error::new(
+                "ATTACHMENT_INVALID",
+                "A resize must retain the same captured original",
+            ));
+        }
+        let total = self
+            .images()
+            .iter()
+            .enumerate()
+            .map(|(position, current)| {
+                if position == index {
+                    image.bytes
+                } else {
+                    current.bytes
+                }
+            })
+            .sum::<usize>();
+        if total > MAX_REQUEST_BYTES {
+            return Err(Error::new(
+                "ATTACHMENT_INVALID",
+                "Request images exceed 50 MiB",
+            ));
+        }
+        let previous = std::mem::replace(&mut self.session.state.pending_attachments[index], image);
+        if let Err(error) = self.session.save() {
+            self.session.state.pending_attachments[index] = previous;
+            return Err(error);
+        }
+        self.discard_image(&previous)
+    }
+
+    pub(crate) fn discard_image(&self, image: &Attachment) -> Result<()> {
+        image.reclaim_files(
+            self.directory(),
+            self.session.state.attachments.iter().chain(self.images()),
+        )
+    }
+
+    #[cfg(feature = "tui")]
+    pub(crate) fn image_references(&self) -> Vec<Attachment> {
+        self.session
+            .state
+            .attachments
+            .iter()
+            .chain(self.images())
+            .cloned()
+            .collect()
     }
     pub fn remove_image(&mut self, index: usize) -> Result<()> {
         self.require_idle()?;
