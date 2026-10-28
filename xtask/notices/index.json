@@ -1,5 +1,5 @@
 {
-  "cargo_lock_sha256": "e3bcc5c186f6bd4bfdadc9bb91dd83ad99d588b2250f4da354582dcca326a25d",
+  "cargo_lock_sha256": "49593daa18d27d4e8eac25945f01b90c0401f50b47812e31f935e0e02d3cb8c1",
   "format_version": 1,
   "license_references": [
     {
@@ -11,6 +11,47 @@
     }
   ],
   "packages": [
+    {
+      "archive_sha256": "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa",
+      "attribution_comments": [],
+      "authors": [
+        "Jonas Schievink <jonasschievink@gmail.com>",
+        "oyvindln <oyvindln@users.noreply.github.com>"
+      ],
+      "files": [
+        {
+          "blob": "texts/861399f8c21c042b110517e76dc6b63a2b334276c8cf17412fc3c8908ca8dc17.txt",
+          "kind": "archive",
+          "path": "LICENSE-0BSD",
+          "sha256": "861399f8c21c042b110517e76dc6b63a2b334276c8cf17412fc3c8908ca8dc17"
+        },
+        {
+          "blob": "texts/8ada45cd9f843acf64e4722ae262c622a2b3b3007c7310ef36ac1061a30f6adb.txt",
+          "kind": "archive",
+          "path": "LICENSE-APACHE",
+          "sha256": "8ada45cd9f843acf64e4722ae262c622a2b3b3007c7310ef36ac1061a30f6adb"
+        },
+        {
+          "blob": "texts/23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3.txt",
+          "kind": "archive",
+          "path": "LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+        }
+      ],
+      "license": "0BSD OR MIT OR Apache-2.0",
+      "license_file": null,
+      "manifest_sha256": "8f30dbd092f3acc475b9d339736cd7b64c6489bc47cd234a7f2232fc52e2d490",
+      "name": "adler2",
+      "repository": "https://github.com/oyvindln/adler2",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "89a031a0f42eeff31c70dc598b398cbf31f1680f"
+        },
+        "path_in_vcs": ""
+      },
+      "version": "2.0.1"
+    },
     {
       "archive_sha256": "c982642fa9e8606056828ee9a8505737230110bb1099153c79efe865c59d12ba",
       "attribution_comments": [],
@@ -1430,6 +1471,40 @@
       "version": "2.5.0"
     },
     {
+      "archive_sha256": "1e6853b52649d4ac5c0bd02320cddc5ba956bdb407c4b75a2c6b75bf51500f8c",
+      "attribution_comments": [],
+      "authors": [
+        "The image-rs Developers"
+      ],
+      "files": [
+        {
+          "blob": "texts/0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594.txt",
+          "kind": "archive",
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594"
+        },
+        {
+          "blob": "texts/c77a4cf9da729987d0fe7ccd811e3bd27393914ddf3d23467c18cc22954513b3.txt",
+          "kind": "archive",
+          "path": "LICENSE-MIT",
+          "sha256": "c77a4cf9da729987d0fe7ccd811e3bd27393914ddf3d23467c18cc22954513b3"
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license_file": null,
+      "manifest_sha256": "d5f832103c61c132a406b738c55d0fbc31de926186ded715816bc56ee04e3c53",
+      "name": "fdeflate",
+      "repository": "https://github.com/image-rs/fdeflate",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "c365c7e6ffa81feb2e1fb762eed7299f05c9b0ca"
+        },
+        "path_in_vcs": ""
+      },
+      "version": "0.3.7"
+    },
+    {
       "archive_sha256": "5c287a33c7f0a620c38e641e7f60827713987b3c0f26e8ddc9462cc69cf75759",
       "attribution_comments": [],
       "authors": [
@@ -2036,7 +2111,7 @@
         }
       ],
       "license": "MIT",
-      "manifest_sha256": "6b9ca97691b0f484bc687a65db15744495362b976ce781382fe54bdfce04da0b",
+      "manifest_sha256": "33500ad2d540adabdea6562155aa2513c0ad70b8b7ee51c5dcc50cbe59d23dfc",
       "name": "lazypencil-xtask",
       "source": "workspace",
       "version": "0.1.0",
@@ -2259,6 +2334,102 @@
       "version": "2.8.3"
     },
     {
+      "archive_sha256": "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316",
+      "attribution_comments": [],
+      "authors": [
+        "Frommi <daniil.liferenko@gmail.com>",
+        "oyvindln <oyvindln@users.noreply.github.com>",
+        "Rich Geldreich richgel99@gmail.com"
+      ],
+      "files": [
+        {
+          "blob": "texts/4108245a1f2df9d4e94df8abed5b4ba0759bb2f9b40a6b939f1be141077ae50b.txt",
+          "kind": "archive",
+          "path": "LICENSE",
+          "sha256": "4108245a1f2df9d4e94df8abed5b4ba0759bb2f9b40a6b939f1be141077ae50b"
+        },
+        {
+          "blob": "texts/0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594.txt",
+          "kind": "archive",
+          "path": "LICENSE-APACHE.md",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594"
+        },
+        {
+          "blob": "texts/799e9ca9d179295ef372f25d3769cdda7d25bb2668add6a6a1e22d1e4c678b8d.txt",
+          "kind": "archive",
+          "path": "LICENSE-MIT.md",
+          "sha256": "799e9ca9d179295ef372f25d3769cdda7d25bb2668add6a6a1e22d1e4c678b8d"
+        },
+        {
+          "blob": "texts/0a54e647fe54104658b5e563c04c6f9edf251710e47bce692e0bd990a4ddaa39.txt",
+          "kind": "archive",
+          "path": "LICENSE-ZLIB.md",
+          "sha256": "0a54e647fe54104658b5e563c04c6f9edf251710e47bce692e0bd990a4ddaa39"
+        }
+      ],
+      "license": "MIT OR Zlib OR Apache-2.0",
+      "license_file": null,
+      "manifest_sha256": "f0d2683434f1c0d3cd9b8080031e82aa5089c9be1779cc5101e065883258d77d",
+      "name": "miniz_oxide",
+      "repository": "https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "44e43c7786e379b2b1a7fde4aa0e63be719e583d"
+        },
+        "path_in_vcs": "miniz_oxide"
+      },
+      "version": "0.8.9"
+    },
+    {
+      "archive_sha256": "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c",
+      "attribution_comments": [],
+      "authors": [
+        "Frommi <daniil.liferenko@gmail.com>",
+        "oyvindln <oyvindln@users.noreply.github.com>",
+        "Rich Geldreich richgel99@gmail.com"
+      ],
+      "files": [
+        {
+          "blob": "texts/4108245a1f2df9d4e94df8abed5b4ba0759bb2f9b40a6b939f1be141077ae50b.txt",
+          "kind": "archive",
+          "path": "LICENSE",
+          "sha256": "4108245a1f2df9d4e94df8abed5b4ba0759bb2f9b40a6b939f1be141077ae50b"
+        },
+        {
+          "blob": "texts/0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594.txt",
+          "kind": "archive",
+          "path": "LICENSE-APACHE.md",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594"
+        },
+        {
+          "blob": "texts/799e9ca9d179295ef372f25d3769cdda7d25bb2668add6a6a1e22d1e4c678b8d.txt",
+          "kind": "archive",
+          "path": "LICENSE-MIT.md",
+          "sha256": "799e9ca9d179295ef372f25d3769cdda7d25bb2668add6a6a1e22d1e4c678b8d"
+        },
+        {
+          "blob": "texts/0a54e647fe54104658b5e563c04c6f9edf251710e47bce692e0bd990a4ddaa39.txt",
+          "kind": "archive",
+          "path": "LICENSE-ZLIB.md",
+          "sha256": "0a54e647fe54104658b5e563c04c6f9edf251710e47bce692e0bd990a4ddaa39"
+        }
+      ],
+      "license": "MIT OR Zlib OR Apache-2.0",
+      "license_file": null,
+      "manifest_sha256": "50b7813993bf57d2ece90fa780a330d1d5177723b8606c7d214f51d265d30c74",
+      "name": "miniz_oxide",
+      "repository": "https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "4e582392df3a739d2b0dfd2c537dc33e8942be38"
+        },
+        "path_in_vcs": "miniz_oxide"
+      },
+      "version": "0.9.1"
+    },
+    {
       "archive_sha256": "cf20d2fde8ff38632c426f1165ed7436270b44f199fc55284c38276f9db47c3d",
       "attribution_comments": [
         {
@@ -2413,6 +2584,40 @@
         "path_in_vcs": "percent_encoding"
       },
       "version": "2.3.2"
+    },
+    {
+      "archive_sha256": "60769b8b31b2a9f263dae2776c37b1b28ae246943cf719eb6946a1db05128a61",
+      "attribution_comments": [],
+      "authors": [
+        "The image-rs Developers"
+      ],
+      "files": [
+        {
+          "blob": "texts/a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2.txt",
+          "kind": "archive",
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+        },
+        {
+          "blob": "texts/eaf40297c75da471f7cda1f3458e8d91b4b2ec866e609527a13acfa93b638652.txt",
+          "kind": "archive",
+          "path": "LICENSE-MIT",
+          "sha256": "eaf40297c75da471f7cda1f3458e8d91b4b2ec866e609527a13acfa93b638652"
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license_file": null,
+      "manifest_sha256": "642c5d3c2bf538404cf1d5c4aac254d033e0854af844610435fd13e910bf93aa",
+      "name": "png",
+      "repository": "https://github.com/image-rs/image-png",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "2a3f980245e3ae38b82ade96533e7b450e8477bb"
+        },
+        "path_in_vcs": ""
+      },
+      "version": "0.18.1"
     },
     {
       "archive_sha256": "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9",
@@ -5970,6 +6175,34 @@
         "path_in_vcs": ""
       },
       "version": "2.0.1"
+    },
+    {
+      "archive_sha256": "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea",
+      "attribution_comments": [],
+      "authors": [
+        "Marvin Countryman <me@maar.vin>"
+      ],
+      "files": [
+        {
+          "blob": "texts/42a35170233e83e18856792e748de4c1ce4a63b2afce9a370c89ef3fe23f9f2d.txt",
+          "kind": "archive",
+          "path": "LICENSE.md",
+          "sha256": "42a35170233e83e18856792e748de4c1ce4a63b2afce9a370c89ef3fe23f9f2d"
+        }
+      ],
+      "license": "MIT",
+      "license_file": null,
+      "manifest_sha256": "6981052c018f374476e9dd4186c0df3f4f5f0108a6c6b627409a2644b06e925b",
+      "name": "simd-adler32",
+      "repository": "https://github.com/mcountryman/simd-adler32",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "d93164f98d7fe2daf883f2e1bec82778dd26199a"
+        },
+        "path_in_vcs": ""
+      },
+      "version": "0.3.10"
     },
     {
       "archive_sha256": "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f",
