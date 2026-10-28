@@ -149,7 +149,7 @@ CLI は取得条件を満たした一時点の PNG を出力する。TUI は同�
 
 アニメーションや外部の更新を含むページは、実際に取得した時点の状態として扱う。別の時刻の再取得が同じピクセルになるとは保証しない。ネットワークに依存しない互換試験では、ローカルのテストページとフォントを固定する。
 
-`[runtime.browser].network_policy` は既定 `online`。準備中の `offline` はHTTP(S)／WebSocketをcontext単位で拒否し、localhost・worker・子frameにも適用する。宣言済みの捕捉したローカル素材・data・about:blankは既存のファイル境界内で利用でき、外部の主文書が必要な取得は診断を返す。明示したprojectのonlineはuserのofflineを上書きする。取得metadataとlimitsへ含め、設定変更時はcacheと保持contextを更新する。既定onlineではlistener／threadを開始しない。WebRTC／UDP・WebTransportなどの非proxy protocol制御は残る。Rust実装・HTTP／WS成功対照・HTTPS／WSS接続試行対照・拒否・worker／frame・新context・cache・回復試験はGHA未検証である。
+`[runtime.browser].network_policy` は既定 `online`。準備中の `offline` はHTTP(S)／WebSocketをcontext単位で拒否し、localhost・worker・子frameにも適用する。宣言済みの捕捉したローカル素材・data・about:blankは既存のファイル境界内で利用でき、外部の主文書が必要な取得は診断を返す。明示したprojectのonlineはuserのofflineを上書きする。取得metadataとlimitsへ含め、設定変更時はcacheと保持contextを更新する。既定onlineではlistener／threadを開始しない。8e9c3b8の先行・初回3環境の全体検証でHTTP／WS成功対照・HTTPS／WSS接続試行対照・拒否・worker／frame・新context・cache・回復を通過した。次の差分ではページ用プロセスの起動時にWebRTCをproxy経由へ制限し、network方針の変更時は通常取得と保持取得の両方でプロセスを更新する。STUN／TURN(TCP)・ページ／workerのWebTransportについて、所有sinkへの正の接続対照、1500msの観測、拒否、refreshとonline復帰をRust試験に加える。sinkは接続を完了せず、正常なmedia／contentの対照とはしない。この追加Rustと固定GHA版は未検証であり、さらに広いprotocol／host全体の通信制御は残る。
 
 通常利用するブラウザープロファイルを流用せず、文書用の分離されたコンテキストを使う。認証が必要なページは明示的に設定した専用プロファイルを使い、認証情報を `.pen`・会話ログ・公開する描画メタデータへ書き出さない。
 

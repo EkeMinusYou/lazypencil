@@ -1,6 +1,6 @@
 //! A local, synchronous Chrome DevTools Protocol transport with cancellation.
 
-use crate::{Error, Result, runtime::InstalledBrowser};
+use crate::{Error, Result, config::runtime::PageNetworkPolicy, runtime::InstalledBrowser};
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, VecDeque},
@@ -102,7 +102,7 @@ impl Browser {
         purpose: Purpose,
         budget: &Budget<'_>,
     ) -> Result<Self> {
-        Self::launch_inner(browser, purpose, budget, None)
+        Self::launch_inner(browser, purpose, budget, None, PageNetworkPolicy::Online)
     }
 
     /// Supply the actual lazypencil CLI when embedding this library in another executable.
@@ -112,7 +112,24 @@ impl Browser {
         budget: &Budget<'_>,
         supervisor: &Path,
     ) -> Result<Self> {
-        Self::launch_inner(browser, purpose, budget, Some(supervisor))
+        Self::launch_inner(
+            browser,
+            purpose,
+            budget,
+            Some(supervisor),
+            PageNetworkPolicy::Online,
+        )
+    }
+
+    #[cfg(feature = "rendering")]
+    pub(crate) fn launch_for_runtime(
+        browser: &InstalledBrowser,
+        purpose: Purpose,
+        policy: PageNetworkPolicy,
+        budget: &Budget<'_>,
+        supervisor: Option<&Path>,
+    ) -> Result<Self> {
+        Self::launch_inner(browser, purpose, budget, supervisor, policy)
     }
 
     fn launch_inner(
@@ -120,8 +137,11 @@ impl Browser {
         purpose: Purpose,
         budget: &Budget<'_>,
         supervisor: Option<&Path>,
+        policy: PageNetworkPolicy,
     ) -> Result<Self> {
         budget.check()?;
+        let offline = purpose == Purpose::Page && policy == PageNetworkPolicy::Offline;
+        let deny_proxy = offline.then(network::DenyProxy::new).transpose()?;
         #[cfg(unix)]
         let profile: Option<tempfile::TempDir> = None;
         #[cfg(not(unix))]
@@ -154,6 +174,13 @@ impl Browser {
                 "--use-gl=angle",
                 "--use-angle=swiftshader-webgl",
                 "--enable-unsafe-swiftshader",
+            ]);
+        }
+        if offline {
+            // Chrome and headless-shell expose different switches for this preference.
+            command.args([
+                "--webrtc-ip-handling-policy=disable_non_proxied_udp",
+                "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
             ]);
         }
         command
@@ -218,7 +245,7 @@ impl Browser {
             retained_tabs: VecDeque::new(),
             local_files: local_files::Interception::default(),
             purpose,
-            deny_proxy: None,
+            deny_proxy,
             _profile: profile,
         };
         let version = browser.command(None, "Browser.getVersion", json!({}), budget)?;

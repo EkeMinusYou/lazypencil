@@ -324,7 +324,11 @@ fn focused_dynamic_preview_regressions_run_before_browser_work_and_are_not_repea
     let mut browser_targets = targets.to_vec();
     browser_targets.push("browser_readiness".into());
     let browser = commands::plan(&util::root(), "dynamic", &browser_targets).unwrap();
-    for reproduction in [focus::NATIVE_ANIMATION, focus::OFFLINE_NETWORK] {
+    for reproduction in [
+        focus::NATIVE_ANIMATION,
+        focus::OFFLINE_NETWORK,
+        focus::OFFLINE_TRANSPORT,
+    ] {
         let native = browser
             .checks
             .iter()

@@ -535,6 +535,7 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
             for reproduction in [
                 focus::NATIVE_ANIMATION,
                 focus::OFFLINE_NETWORK,
+                focus::OFFLINE_TRANSPORT,
                 focus::GENERATED_BROWSER,
                 focus::LOCAL_FILES,
                 focus::BROWSER_COPY,
@@ -621,7 +622,11 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
             ]));
             if names.iter().any(|name| name == "browser_readiness") {
                 if suite == "dynamic" {
-                    c.extend(skips([focus::NATIVE_ANIMATION, focus::OFFLINE_NETWORK]));
+                    c.extend(skips([
+                        focus::NATIVE_ANIMATION,
+                        focus::OFFLINE_NETWORK,
+                        focus::OFFLINE_TRANSPORT,
+                    ]));
                 }
                 c.extend(skips([
                     focus::LOCAL_FILES,

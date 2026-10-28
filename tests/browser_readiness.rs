@@ -741,6 +741,7 @@ fn reference_server_keeps_speculative_connections_until_headers_and_stops_when_i
         .unwrap();
     counted.read_to_end(&mut Vec::new()).unwrap();
     assert_eq!(server.network_counts(), (1, 0, 0));
+    assert_eq!(server.turn_requests(), 0);
     let _idle = TcpStream::connect(server.address).unwrap();
     let started = Instant::now();
     drop(server);

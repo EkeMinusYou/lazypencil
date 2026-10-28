@@ -3,6 +3,11 @@
 use super::*;
 use lazypencil::{geometry::Rect, render::RenderOptions, store::Store};
 
+#[path = "offline_transport.rs"]
+mod offline_transport;
+#[path = "transport_reference.rs"]
+mod transport_reference;
+
 const APP: &str = r#"
 const libraryURL=JSON.stringify(new URL('worker-library.js',location.href).href);
 const nestedCode=`importScripts(${libraryURL});postMessage(capturedColor)`;

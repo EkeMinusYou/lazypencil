@@ -27,9 +27,18 @@ struct NetworkCounts {
     http: AtomicUsize,
     websocket: AtomicUsize,
     tls: AtomicUsize,
+    turn: AtomicUsize,
 }
 
 impl Server {
+    #[allow(
+        dead_code,
+        reason = "Used by browser_readiness, not the shared dynamic_render fixture"
+    )]
+    pub fn turn_requests(&self) -> usize {
+        self.network.turn.load(Ordering::SeqCst)
+    }
+
     #[allow(
         dead_code,
         reason = "Used by browser_readiness, not the shared dynamic_render fixture"
@@ -130,6 +139,10 @@ fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool, network: 
                     return;
                 }
                 header.extend_from_slice(&buffer[..count]);
+                if header.len() >= 20 && header[4..8] == [0x21, 0x12, 0xa4, 0x42] {
+                    network.turn.fetch_add(1, Ordering::SeqCst);
+                    return;
+                }
             }
         }
     }

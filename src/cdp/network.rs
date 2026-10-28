@@ -1,12 +1,12 @@
-//! A context-scoped, non-forwarding HTTP proxy. No request bytes are retained.
+//! An owned, non-forwarding proxy for isolated page contexts. No requests are retained.
 
-#[cfg(all(unix, any(feature = "rendering", test)))]
+#[cfg(unix)]
 use super::failed;
 use super::{Browser, Budget};
 use crate::{Result, config::runtime::PageNetworkPolicy};
 use std::net::SocketAddr;
 
-#[cfg(all(unix, any(feature = "rendering", test)))]
+#[cfg(unix)]
 const REJECTION: &[u8] = b"HTTP/1.1 502 Offline\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
 
 pub(super) struct DenyProxy {
@@ -66,31 +66,11 @@ impl Browser {
         }
         Ok(())
     }
-
-    #[cfg(feature = "rendering")]
-    pub(crate) fn configure_page_network(
-        &mut self,
-        policy: PageNetworkPolicy,
-        budget: &Budget<'_>,
-    ) -> Result<()> {
-        budget.check()?;
-        let offline = policy == PageNetworkPolicy::Offline;
-        if offline != self.deny_proxy.is_some() {
-            let proxy = if offline {
-                Some(DenyProxy::new()?)
-            } else {
-                None
-            };
-            self.retain_page_keys(&Default::default(), budget)?;
-            self.deny_proxy = proxy;
-        }
-        budget.check()
-    }
 }
 
-#[cfg(all(unix, any(feature = "rendering", test)))]
+#[cfg(unix)]
 impl DenyProxy {
-    fn new() -> Result<Self> {
+    pub(super) fn new() -> Result<Self> {
         use std::{
             io::Write, net::TcpListener, os::fd::AsRawFd, os::unix::net::UnixStream, time::Duration,
         };
@@ -176,9 +156,9 @@ impl DenyProxy {
     }
 }
 
-#[cfg(all(not(unix), feature = "rendering"))]
+#[cfg(not(unix))]
 impl DenyProxy {
-    fn new() -> Result<Self> {
+    pub(super) fn new() -> Result<Self> {
         Err(crate::Error::new(
             "UNSUPPORTED_FEATURE",
             "Offline web acquisition is available on macOS and Linux",

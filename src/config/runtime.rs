@@ -100,7 +100,7 @@ pub struct BrowserSettings {
     #[schemars(range(min = 0, max = 60000))]
     pub additional_wait_ms: u64,
     pub animation_policy: PageAnimationPolicy,
-    /// HTTP(S) and WebSocket requests; other protocol controls are separate.
+    /// Web requests and proxied WebRTC routes; broader egress controls are separate.
     pub network_policy: PageNetworkPolicy,
 }
 

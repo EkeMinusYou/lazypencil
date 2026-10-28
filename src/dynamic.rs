@@ -182,7 +182,9 @@ impl DynamicRuntime {
     /// Apply captured data-only limits without launching a process.
     pub fn configure(&mut self, settings: RuntimeSettings) -> Result<()> {
         settings.validate()?;
-        if self.page_scope.is_some() && self.browser_settings != settings.browser {
+        if (self.page_scope.is_some() && self.browser_settings != settings.browser)
+            || self.browser_settings.network_policy != settings.browser.network_policy
+        {
             self.pages.take();
             self.page_used = None;
         }
@@ -303,12 +305,13 @@ impl DynamicRuntime {
             } else {
                 crate::runtime::installed(&self.data)?
             };
-            *slot = Some(match &self.supervisor {
-                Some(helper) => {
-                    Browser::launch_with_supervisor(&browser, purpose, &launch_budget, helper)?
-                }
-                None => Browser::launch(&browser, purpose, &launch_budget)?,
-            });
+            *slot = Some(Browser::launch_for_runtime(
+                &browser,
+                purpose,
+                self.browser_settings.network_policy,
+                &launch_budget,
+                self.supervisor.as_deref(),
+            )?);
         }
         Ok(slot.as_mut().expect("browser initialized"))
     }
@@ -462,7 +465,6 @@ impl DynamicRuntime {
             .min(Duration::from_millis(self.browser_settings.timeout_ms));
         let budget = Budget::new(duration, cancel.as_ref());
         let browser = self.browser(Purpose::Page, &budget)?;
-        browser.configure_page_network(network_policy, &budget)?;
         let version = browser.version.clone();
         let retained = identity.as_deref().map(|key| (key, signature.as_str()));
         let result=browser.with_page(retained,&budget,|browser,session,page_state| {
