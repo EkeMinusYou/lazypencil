@@ -353,9 +353,9 @@ jobs:
         if: inputs.phase == 'full'
         timeout-minutes: 60
         run: cargo xtask ci native runtime-tests
-      - name: Verify actual Kitty and Sixel window pixels and keyboard operations
+      - name: Verify packaged real-terminal pixels and keyboard operations
         id: terminal-test
-        if: inputs.phase == 'focus' && inputs.suite == 'candidate' && runner.os == 'Linux'
+        if: inputs.phase == 'focus' && inputs.suite == 'candidate'
         timeout-minutes: 10
         run: cargo xtask terminal --candidate "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/terminal-evidence"
       - name: Retain the real-emulator screenshots and source-bound report

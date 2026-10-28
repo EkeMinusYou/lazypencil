@@ -105,7 +105,7 @@ fn terminal_inputs_are_exclusive_and_never_launch_outside_hosted_linux() {
             .unwrap();
         assert_eq!(result.status.code(), Some(code));
         if code == 1 {
-            assert!(String::from_utf8_lossy(&result.stderr).contains("isolated Linux GHA runner"));
+            assert!(String::from_utf8_lossy(&result.stderr).contains("owned supported GHA runner"));
         }
     }
     let workflow = fs::read_to_string(util::root().join(".github/workflows/native.yml")).unwrap();
