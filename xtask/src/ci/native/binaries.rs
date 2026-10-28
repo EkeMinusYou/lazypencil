@@ -173,7 +173,7 @@ fn unpack(s: &Session, targets: Option<&std::collections::BTreeSet<&str>>) -> Re
     let path = work.path().join("catalog.tar");
     s.execute_command(
         Command::new("zstd")
-            .args(["-d", "-M256", "--no-progress", "-o"])
+            .args(["-d", "-M256MB", "--no-progress", "-o"])
             .arg(&path)
             .arg(directory(s).join(ARCHIVE)),
         300,
