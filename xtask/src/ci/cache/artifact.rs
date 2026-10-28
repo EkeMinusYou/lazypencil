@@ -146,9 +146,20 @@ pub fn pack(directory: &Path, output: &Path) -> Result<Value> {
     list.flush()?;
     fs::create_dir_all(output.parent().context("Archive parent required")?)?;
     let temporary = tempfile::NamedTempFile::new_in(output.parent().unwrap())?;
-    tar(Process::new("tar")
-        .env("COPYFILE_DISABLE", "1")
-        .args(["--format=pax", "--no-recursion", "-czf"])
+    let mut command = Process::new("tar");
+    command.env("COPYFILE_DISABLE", "1");
+    if cfg!(target_os = "linux") {
+        // GNU tar accepts a fixed compressor and its arguments. No input path
+        // is interpolated into the compressor command.
+        command.args(["--use-compress-program", "gzip --fast"]);
+    } else {
+        command.arg("-z");
+        if cfg!(target_os = "macos") {
+            command.arg("--options=gzip:compression-level=1");
+        }
+    }
+    tar(command
+        .args(["--format=pax", "--no-recursion", "-cf"])
         .arg(temporary.path().canonicalize()?)
         .arg("-C")
         .arg(directory)
@@ -159,7 +170,7 @@ pub fn pack(directory: &Path, output: &Path) -> Result<Value> {
         .persist_noclobber(output)
         .map_err(|error| error.error)?;
     Ok(
-        json!({"files":files,"source_commit":report.source_commit,"uncompressed_bytes":total,"archive_bytes":fs::metadata(output)?.len(),"archive_sha256":util::file_digest(output)?,"elapsed_seconds":started.elapsed().as_secs_f64()}),
+        json!({"files":files,"source_commit":report.source_commit,"uncompressed_bytes":total,"archive_bytes":fs::metadata(output)?.len(),"archive_sha256":util::file_digest(output)?,"gzip_level":if cfg!(any(target_os="linux",target_os="macos")){1}else{6},"elapsed_seconds":started.elapsed().as_secs_f64()}),
     )
 }
 
