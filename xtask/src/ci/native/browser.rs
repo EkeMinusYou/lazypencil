@@ -155,6 +155,48 @@ pub const TEST_LANES: [&[&str]; 2] = [
     ],
 ];
 
+pub fn binding_commands(binary: &Path) -> [Vec<String>; 3] {
+    ["generated_browser_", "script_bindings::", "script_copy::"].map(|filter| {
+        vec![
+            binary.to_string_lossy().into_owned(),
+            filter.into(),
+            "--test-threads=1".into(),
+        ]
+    })
+}
+
+/// These CPU/layout checks own distinct temporary projects and script workers.
+/// Only the script-bindings group writes codec-script-overrides artifacts.
+pub fn focus_bindings(s: &Session) -> Result<()> {
+    let catalog = s.verified_catalog(&["script_scope"])?;
+    let checks = binding_commands(&catalog.binaries["script_scope"].path);
+    let execute = |index: usize, log: &str| {
+        let mut command = s.command(&checks[index]);
+        command
+            .env("CARGO_MANIFEST_DIR", &s.root)
+            .env("CARGO_MANIFEST_PATH", s.root.join("Cargo.toml"));
+        s.execute_command(&mut command, 300, log, false)
+    };
+    let groups = parallel::run(vec![
+        (
+            "generated browser layouts",
+            Box::new(|| execute(0, "focus-browser-bindings.log")),
+        ),
+        (
+            "script bindings and overrides",
+            Box::new(|| execute(1, "focus-script-bindings.log")),
+        ),
+    ]);
+    // Preserve the final legacy-copy check even if either joined group failed.
+    let copies = execute(2, "focus-copy-bindings.log");
+    let failures = [("binding groups", groups), ("legacy script copies", copies)]
+        .into_iter()
+        .filter_map(|(name, result)| result.err().map(|error| format!("{name}: {error:#}")))
+        .collect::<Vec<_>>();
+    ensure!(failures.is_empty(), "{}", failures.join("\n"));
+    Ok(())
+}
+
 pub fn tests(s: &Session) -> Result<()> {
     lanes(s)?;
     ownership(s)

@@ -35,6 +35,21 @@ fn browser_lanes_preserve_every_existing_target_once_without_intra_target_parall
     // shader/sampler outputs. Ownership/destruction is checked after joining.
     assert_eq!(TEST_LANES[0], ["browser_readiness"]);
     assert!(!targets.contains(&"agent"));
+    let binary = std::env::temp_dir().join("verified-script-scope");
+    let bindings = lazypencil_xtask::ci::native::browser::binding_commands(&binary);
+    assert_eq!(
+        bindings
+            .iter()
+            .map(|command| command[1].as_str())
+            .collect::<Vec<_>>(),
+        ["generated_browser_", "script_bindings::", "script_copy::"],
+        "Keep every original default-feature binding filter"
+    );
+    for command in bindings {
+        assert_eq!(std::path::Path::new(&command[0]), binary.as_path());
+        assert_eq!(command.len(), 3);
+        assert_eq!(command[2], "--test-threads=1");
+    }
 }
 
 #[test]

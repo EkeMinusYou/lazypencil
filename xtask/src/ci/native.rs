@@ -545,15 +545,14 @@ impl Session {
                         &["--test-threads=2"],
                         "focus-bindings.log",
                     )?;
-                    for filter in ["generated_browser_", "script_bindings::", "script_copy::"] {
-                        self.test(
-                            true,
-                            "script_scope",
-                            filter,
-                            &["--test-threads=1"],
-                            "focus-bindings.log",
-                        )?;
-                    }
+                    self.test(
+                        true,
+                        "lib",
+                        "project::bindings::asset_tests::",
+                        &["--test-threads=2"],
+                        "focus-bindings.log",
+                    )?;
+                    browser::focus_bindings(self)?;
                 }
                 if args.suite == "dynamic" {
                     self.test(
