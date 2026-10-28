@@ -1,7 +1,10 @@
 //! Share one compiled catalog without carrying duplicate Cargo build trees.
 use super::*;
+use std::io::Read;
 
 const LIMIT: u64 = 256 * 1024 * 1024;
+const ARCHIVE: &str = "catalog.tar.zst";
+const ARCHIVE_LIMIT: u64 = 8 * 1024 * 1024 * 1024;
 
 #[derive(Serialize, Deserialize)]
 struct Receipt {
@@ -116,12 +119,132 @@ pub(super) fn stage(s: &Session, elapsed: Duration) -> Result<()> {
         cargo_seconds: elapsed.as_secs_f64(),
     };
     stage_record(s, &receipt, &directory(s), None)?;
-    stage_record(
-        s,
-        &receipt,
-        &s.temporary.join("native-runtime-binaries"),
-        Some(&runtime_targets()),
-    )
+    pack(s, &directory(s))?;
+    let runtime = s.temporary.join("native-runtime-binaries");
+    stage_record(s, &receipt, &runtime, Some(&runtime_targets()))?;
+    pack(s, &runtime)
+}
+
+fn pack(s: &Session, directory: &Path) -> Result<()> {
+    let work = tempfile::tempdir_in(&s.temporary)?;
+    let path = work.path().join("catalog.tar");
+    let mut tar = tar::Builder::new(fs::File::create_new(&path)?);
+    // The receipt comes first so consumers can restrict every later member.
+    let receipt = directory.join("receipt.json");
+    let files = std::iter::once(receipt.clone()).chain(
+        util::walk(directory)?
+            .into_iter()
+            .filter(|path| path != &receipt),
+    );
+    let mut total = 0u64;
+    for path in files {
+        let size = fs::metadata(&path)?.len();
+        total = total
+            .checked_add(size)
+            .context("Executable size overflow")?;
+        ensure!(
+            size <= LIMIT && total <= ARCHIVE_LIMIT,
+            "Executable archive too large"
+        );
+        tar.append_path_with_name(&path, path.strip_prefix(directory)?)?;
+    }
+    tar.finish()?;
+    drop(tar);
+    // A 128 MiB matching window covers common statically linked code across
+    // test executables; individual ZIP members cannot share this dictionary.
+    s.execute_command(
+        Command::new("zstd")
+            .args(["-3", "--long=27", "--single-thread", "--no-progress", "-o"])
+            .arg(directory.join(ARCHIVE))
+            .arg(&path),
+        300,
+        "executable-transport.log",
+        true,
+    )?;
+    println!(
+        "Executable transport: {total} bytes -> {} bytes",
+        fs::metadata(directory.join(ARCHIVE))?.len()
+    );
+    Ok(())
+}
+
+fn unpack(s: &Session, targets: Option<&std::collections::BTreeSet<&str>>) -> Result<()> {
+    let work = tempfile::tempdir_in(&s.temporary)?;
+    let path = work.path().join("catalog.tar");
+    s.execute_command(
+        Command::new("zstd")
+            .args(["-d", "-M256", "--no-progress", "-o"])
+            .arg(&path)
+            .arg(directory(s).join(ARCHIVE)),
+        300,
+        "executable-transport.log",
+        true,
+    )?;
+    ensure!(
+        fs::metadata(&path)?.len() <= ARCHIVE_LIMIT,
+        "Executable archive too large"
+    );
+    unpack_tar(s, &path, targets)
+}
+
+fn unpack_tar(
+    s: &Session,
+    path: &Path,
+    targets: Option<&std::collections::BTreeSet<&str>>,
+) -> Result<()> {
+    let mut tar = tar::Archive::new(fs::File::open(path)?);
+    let mut entries = tar.entries()?;
+    let mut first = entries.next().context("Executable receipt missing")??;
+    ensure!(
+        first.path_bytes().as_ref() == b"receipt.json"
+            && first.header().entry_type().is_file()
+            && first.size() <= util::MAX_FILE,
+        "Invalid executable receipt"
+    );
+    let mut bytes = Vec::new();
+    first.read_to_end(&mut bytes)?;
+    let receipt: Receipt = serde_json::from_slice(&bytes)?;
+    util::publish(&directory(s).join("receipt.json"), &bytes, false)?;
+    drop(first);
+    let mut expected = std::collections::BTreeSet::new();
+    for binary in receipt
+        .catalog
+        .binaries
+        .iter()
+        .filter(|(name, _)| targets.is_none_or(|targets| targets.contains(name.as_str())))
+        .map(|(_, binary)| binary)
+        .chain([&receipt.application])
+    {
+        let name_in_tar = relative(s, binary)?.to_string_lossy().replace('\\', "/");
+        ensure!(expected.insert(name_in_tar), "Duplicate executable member");
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for entry in entries {
+        let mut entry = entry?;
+        let name = String::from_utf8(entry.path_bytes().into_owned())?;
+        util::safe_path(&name)?;
+        ensure!(
+            entry.header().entry_type().is_file()
+                && entry.size() <= LIMIT
+                && seen.insert(name.clone()),
+            "Invalid executable member"
+        );
+        ensure!(expected.contains(&name), "Unexpected executable member");
+        let mut bytes = Vec::new();
+        entry.read_to_end(&mut bytes)?;
+        util::publish(&directory(s).join(&name), &bytes, false)?;
+    }
+    ensure!(
+        seen.len() == expected.len(),
+        "Incomplete executable archive"
+    );
+    let mut tail = Vec::new();
+    tar.into_inner().take(10241).read_to_end(&mut tail)?;
+    ensure!(
+        tail.len() <= 10240 && tail.iter().all(|byte| *byte == 0),
+        "Trailing executable data"
+    );
+    Ok(())
 }
 
 fn restore_record(
@@ -194,6 +317,7 @@ fn restore_record(
 
 pub(super) fn restore(s: &Session, runtime: bool) -> Result<Duration> {
     let targets = runtime.then(runtime_targets);
+    unpack(s, targets.as_ref())?;
     restore_record(s, &identity(s)?, targets.as_ref())
 }
 
@@ -317,6 +441,12 @@ mod tests {
             cargo_seconds: 2.5,
         };
         stage_record(&s, &receipt, &directory(&s), None).unwrap();
+        pack(&s, &directory(&s)).unwrap();
+        let packed = s.temporary.join("packed");
+        fs::rename(directory(&s), &packed).unwrap();
+        fs::create_dir(directory(&s)).unwrap();
+        fs::copy(packed.join(ARCHIVE), directory(&s).join(ARCHIVE)).unwrap();
+        unpack(&s, None).unwrap();
         fs::remove_dir_all(&s.target).unwrap();
         assert!(
             restore_record(
@@ -354,13 +484,16 @@ mod tests {
         let partial = s.temporary.join("partial");
         let targets = std::collections::BTreeSet::from(["probe"]);
         stage_record(&s, &receipt, &partial, Some(&targets)).unwrap();
+        pack(&s, &partial).unwrap();
         assert_eq!(
             util::file_digest(&partial.join("receipt.json")).unwrap(),
             util::file_digest(&directory(&s).join("receipt.json")).unwrap()
         );
         fs::remove_dir_all(&s.target).unwrap();
         fs::remove_dir_all(directory(&s)).unwrap();
-        fs::rename(partial, directory(&s)).unwrap();
+        fs::create_dir(directory(&s)).unwrap();
+        fs::copy(partial.join(ARCHIVE), directory(&s).join(ARCHIVE)).unwrap();
+        unpack(&s, Some(&targets)).unwrap();
         for name in [
             "test-executables.json",
             "binary-receipt.json",
@@ -377,5 +510,29 @@ mod tests {
         partial_catalog
             .validate(&s.target, "source", &["probe"])
             .unwrap();
+
+        let bad = s.temporary.join("unexpected.tar");
+        let mut tar = tar::Builder::new(fs::File::create_new(&bad).unwrap());
+        tar.append_path_with_name(partial.join("receipt.json"), "receipt.json")
+            .unwrap();
+        let mut header = tar::Header::new_gnu();
+        header.set_size(1);
+        header.set_mode(0o600);
+        header.set_cksum();
+        tar.append_data(&mut header, "unexpected", std::io::Cursor::new(b"x"))
+            .unwrap();
+        tar.finish().unwrap();
+        drop(tar);
+        let invalid = Session {
+            temporary: s.temporary.join("invalid"),
+            ..s
+        };
+        fs::create_dir_all(directory(&invalid)).unwrap();
+        assert!(
+            unpack_tar(&invalid, &bad, Some(&targets))
+                .unwrap_err()
+                .to_string()
+                .contains("Unexpected executable member")
+        );
     }
 }

@@ -312,8 +312,8 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: native-executables-${{ github.sha }}
-          path: ${{ runner.temp }}/native-binaries
-          compression-level: 1
+          path: ${{ runner.temp }}/native-binaries/catalog.tar.zst
+          compression-level: 0
           retention-days: 1
           overwrite: true
           if-no-files-found: error
@@ -323,8 +323,8 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: native-runtime-executables-${{ github.sha }}
-          path: ${{ runner.temp }}/native-runtime-binaries
-          compression-level: 1
+          path: ${{ runner.temp }}/native-runtime-binaries/catalog.tar.zst
+          compression-level: 0
           retention-days: 1
           overwrite: true
           if-no-files-found: error

@@ -289,11 +289,51 @@ pub fn focus_inputs(s: &Session) -> Result<()> {
     Ok(())
 }
 
-pub fn lanes(s: &Session) -> Result<()> {
+const HEADED_LOGIN: &str = "browser_profiles::headed_login_closes_normally_and_preserves_storage_for_the_same_full_browser";
+const HEADED_LOG: &str = "chromium-headed-login.log";
+
+pub(super) struct Prepared {
+    catalog: Catalog,
+    deadline: Instant,
+}
+
+fn required_targets() -> Vec<&'static str> {
     let mut required: Vec<_> = TEST_LANES.into_iter().flatten().copied().collect();
     required.push("agent");
+    required
+}
+
+pub(super) fn prepare(s: &Session) -> Result<Prepared> {
+    let required = required_targets();
     let catalog = s.verified_catalog(&required)?;
     let deadline = Instant::now() + Duration::from_secs(1200);
+    // Full Chrome window/profile restoration has its own short render deadline.
+    // Complete it before any other runtime producer starts, keeping the same
+    // test, browser, assertions, and shared browser-suite budget.
+    s.execute(
+        &[
+            catalog.binaries["browser_readiness"]
+                .path
+                .to_string_lossy()
+                .into_owned(),
+            HEADED_LOGIN.into(),
+            "--exact".into(),
+            "--ignored".into(),
+            "--test-threads=1".into(),
+        ],
+        1200,
+        HEADED_LOG,
+        false,
+    )?;
+    Ok(Prepared { catalog, deadline })
+}
+
+pub fn lanes(s: &Session) -> Result<()> {
+    run_prepared(s, prepare(s)?)
+}
+
+pub(super) fn run_prepared(s: &Session, prepared: Prepared) -> Result<()> {
+    let Prepared { catalog, deadline } = prepared;
     let result = parallel::run(
         TEST_LANES
             .into_iter()
@@ -313,7 +353,7 @@ pub fn lanes(s: &Session) -> Result<()> {
                             let outcome = if remaining.is_zero() {
                                 Err(anyhow::anyhow!("Browser suite deadline exceeded"))
                             } else {
-                                let args = vec![
+                                let mut args = vec![
                                     catalog.binaries[*target]
                                         .path
                                         .to_string_lossy()
@@ -321,6 +361,9 @@ pub fn lanes(s: &Session) -> Result<()> {
                                     "--ignored".into(),
                                     format!("--test-threads={}", test_threads(target)),
                                 ];
+                                if *target == "browser_readiness" {
+                                    args.extend(["--skip".into(), HEADED_LOGIN.into()]);
+                                }
                                 s.execute(
                                     &args,
                                     remaining.as_secs() + u64::from(remaining.subsec_nanos() != 0),
@@ -342,7 +385,8 @@ pub fn lanes(s: &Session) -> Result<()> {
     // Preserve the existing combined evidence even when a lane fails. Timing
     // records and individual logs retain each target's independent duration.
     let mut combined = fs::File::create(s.temporary.join("chromium-render.log"))?;
-    for target in required {
+    combined.write_all(&fs::read(s.temporary.join(HEADED_LOG))?)?;
+    for target in required_targets() {
         let path = s.temporary.join(format!("chromium-suite-{target}.log"));
         if path.exists() {
             writeln!(combined, "\nBrowser test target: {target}")?;

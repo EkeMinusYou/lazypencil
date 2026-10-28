@@ -1015,10 +1015,14 @@ impl Session {
         })
     }
     fn runtime_lanes(&self) -> Result<()> {
+        let prepared_browser = browser::prepare(self)?;
         // MCP and idle lifecycle clients own separate documents, process trees
         // and automatic CDP ports. Material has an independent settings path.
         parallel::run(vec![
-            ("browser pixels", Box::new(|| browser::lanes(self))),
+            (
+                "browser pixels",
+                Box::new(|| browser::run_prepared(self, prepared_browser)),
+            ),
             ("MCP dynamic images", Box::new(|| self.mcp_tests())),
             ("lifecycle and Material", Box::new(|| self.long_tests())),
         ])
