@@ -7,6 +7,7 @@ use skia_safe::{
     textlayout::{FontArguments, FontCollection, TypefaceFontProvider},
 };
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, BTreeSet},
     io::Read,
     path::PathBuf,
@@ -211,7 +212,14 @@ impl Fonts {
         if shared_face.is_some() && count != 1 {
             return Err(invalid("A shared bundled typeface needs exactly one face"));
         }
-        let digest = hash(bytes);
+        // Only embedded, immutable program storage can retain its digest across
+        // font collections. User-supplied bytes are hashed on every load.
+        let digest = if std::ptr::eq(bytes, DEFAULT_FONT_BYTES) {
+            static DIGEST: OnceLock<String> = OnceLock::new();
+            DIGEST.get_or_init(|| hash(DEFAULT_FONT_BYTES)).clone()
+        } else {
+            hash(bytes)
+        };
         let mut families = Vec::new();
         for index in 0..count {
             if let Some(existing) = self
@@ -223,7 +231,12 @@ impl Fonts {
                 continue;
             }
             let bytes = super::container::extract(bytes, index)?;
-            let face_hash = hash(&bytes);
+            // A standalone font is borrowed without changing a byte. Collections
+            // produce a new normalized face and require its independent digest.
+            let face_hash = match &bytes {
+                Cow::Borrowed(_) => digest.clone(),
+                Cow::Owned(_) => hash(&bytes),
+            };
             let size = bytes.len();
             let face = match shared_face {
                 Some(face) => face.clone(),
@@ -597,6 +610,15 @@ mod sharing_tests {
                             shared.metrics.intrinsic_width
                         )
                     );
+                    let identities = |block: &TextBlock| {
+                        block
+                            .metrics
+                            .fonts
+                            .iter()
+                            .map(|font| (font.hash.clone(), font.face_hash.clone()))
+                            .collect::<Vec<_>>()
+                    };
+                    assert_eq!(identities(&copied), identities(&shared));
                     assert_eq!(hash(&raster(copied)), hash(&raster(shared)));
                 });
             }
