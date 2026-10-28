@@ -474,6 +474,8 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     if browser_copy
         && paths.iter().all(|path| {
             ci_only(path)
+                || path == "src/guidance.rs"
+                || path.starts_with("resources/guidance/")
                 || [
                     "src/project/bindings.rs",
                     "src/project/browser_context.rs",
@@ -488,9 +490,15 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
                 .contains(&path.as_str())
         })
     {
-        let targets = ["browser_readiness", "project", "script_scope"]
+        let mut targets = ["browser_readiness", "project", "script_scope"]
             .map(str::to_owned)
             .to_vec();
+        if paths
+            .iter()
+            .any(|path| path == "src/guidance.rs" || path.starts_with("resources/guidance/"))
+        {
+            targets.push("guidance".into());
+        }
         ensure!(
             targets.iter().all(|target| all.contains(target)),
             "Browser focus targets are missing"

@@ -359,10 +359,14 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
         });
     }
     if suite == "browser" {
+        let required: BTreeSet<_> = ["browser_readiness", "project", "script_scope"].into();
+        let selected = targets.iter().map(String::as_str).collect::<BTreeSet<_>>();
         ensure!(
-            targets.len() == 3
-                && targets.iter().map(String::as_str).collect::<BTreeSet<_>>()
-                    == ["browser_readiness", "project", "script_scope"].into(),
+            targets.len() == selected.len()
+                && required.is_subset(&selected)
+                && selected
+                    .iter()
+                    .all(|name| required.contains(name) || *name == "guidance"),
             "Browser focus requires the complete document/script/browser target set"
         );
         let reproductions = [
@@ -388,6 +392,12 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
                 )
             })
             .collect::<Vec<_>>();
+        if has("guidance") {
+            checks.insert(
+                0,
+                append(&common, &["--test", "guidance", "--", "--test-threads=2"]),
+            );
+        }
         let mut browsers = append(
             &common,
             &[

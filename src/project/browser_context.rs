@@ -11,6 +11,66 @@ pub(super) struct Scope {
     pub library: String,
 }
 
+impl Scope {
+    fn validate(&self) -> Result<()> {
+        if self.version != 1 {
+            return Err(Error::new(
+                "UNSUPPORTED_VERSION",
+                "Unsupported copied browser scope version",
+            ));
+        }
+        if self.url.is_empty() || self.url.len() > 1024 * 1024 {
+            return Err(invalid("Invalid copied browser URL binding"));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(feature = "rendering")]
+pub(super) fn has_context(node: &Value) -> bool {
+    node.pointer("/metadata/lazypencil")
+        .is_some_and(|namespace| {
+            namespace.get("browser_scope").is_some() || namespace.get("browser_override").is_some()
+        })
+}
+
+/// Reference preparation derives target types/themes before granting any
+/// generated browser scope. Full nodes have already been remapped by rewrite.
+#[cfg(feature = "rendering")]
+pub(super) fn has_preview_contexts(node: &Value) -> bool {
+    ((node["type"] == "ref" || node.get("type").is_none()) && has_context(node))
+        || node
+            .get("children")
+            .and_then(Value::as_array)
+            .is_some_and(|children| children.iter().any(has_preview_contexts))
+        || node
+            .get("descendants")
+            .and_then(Value::as_object)
+            .is_some_and(|changes| changes.values().any(has_preview_contexts))
+}
+
+#[cfg(feature = "rendering")]
+pub(super) fn clear_preview_contexts(node: &mut Value) {
+    if (node["type"] == "ref" || node.get("type").is_none())
+        && let Some(properties) = node.as_object_mut()
+    {
+        super::override_context::remove_metadata_fields(
+            properties,
+            &["browser_scope", "browser_override"],
+        );
+    }
+    if let Some(children) = node.get_mut("children").and_then(Value::as_array_mut) {
+        for child in children {
+            clear_preview_contexts(child);
+        }
+    }
+    if let Some(changes) = node.get_mut("descendants").and_then(Value::as_object_mut) {
+        for change in changes.values_mut() {
+            clear_preview_contexts(change);
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Override {
@@ -38,31 +98,73 @@ impl bindings::Bound {
         full: bool,
         inherited_bytes: &mut usize,
     ) -> Result<()> {
+        self.generated_browser_context_at(node, full, None, inherited_bytes)
+    }
+
+    pub(super) fn generated_browser_context_at(
+        &self,
+        node: &mut Value,
+        full: bool,
+        inherited_url: Option<&str>,
+        inherited_bytes: &mut usize,
+    ) -> Result<()> {
         if self.values.assets.is_none() || node["enabled"] == false {
             return Ok(());
         }
-        let Some(url) = node.get("url") else {
+        if node.get("url").is_none() && !has_context(node) {
             return Ok(());
-        };
-        let url = url
-            .as_str()
-            .ok_or_else(|| invalid("A generated browser needs a URL string"))?
-            .to_owned();
-        let metadata = node.get("metadata").cloned();
+        }
+        let owns_url = node.get("url").is_some();
+        let url = match node.get("url") {
+            Some(value) => value.as_str(),
+            None => inherited_url,
+        }
+        .ok_or_else(|| invalid("A generated browser needs a URL string"))?
+        .to_owned();
+        let old = override_value(node.as_object().expect("generated browser properties"))?;
+        if full && old.is_some() {
+            return Err(invalid(
+                "Copied browser override envelopes require a ref node",
+            ));
+        }
+        let mut metadata = old.as_ref().map_or_else(
+            || node.get("metadata").cloned(),
+            |value| value.metadata.clone(),
+        );
+        let mut explicit = None;
         if let Some(metadata) = &metadata {
             if !metadata.is_object() {
                 return Err(invalid("Generated browser metadata must be an object"));
             }
-            if metadata.pointer("/lazypencil/browser_scope").is_some()
-                || metadata.pointer("/lazypencil/browser_override").is_some()
-            {
-                return Err(Error::new(
-                    "UNSUPPORTED_FEATURE",
-                    "Generated explicit browser contexts require independent scope composition",
-                ));
+            if let Some(value) = metadata.pointer("/lazypencil/browser_scope") {
+                let scope: Scope = serde_json::from_value(value.clone())
+                    .map_err(|_| invalid("Invalid copied browser scope"))?;
+                scope.validate()?;
+                explicit = Some(scope);
             }
         }
-        let scope = if let Some(library) = &self.values.browser_library {
+        if let Some(scope) = old.and_then(|value| value.scope) {
+            scope.validate()?;
+            explicit = Some(scope);
+        }
+        if !owns_url && explicit.is_none() {
+            return Ok(());
+        }
+        if !owns_url && explicit.as_ref().is_some_and(|scope| scope.url != url) {
+            return Err(Error::new(
+                "UNSUPPORTED_FEATURE",
+                "An inactive generated metadata-only browser scope needs the original URL ownership context",
+            ));
+        }
+        let scope = if let Some(mut scope) = explicit.filter(|scope| scope.url == url) {
+            let map = self.values.browser_libraries.as_ref().ok_or_else(|| Error::new(
+                    "UNSUPPORTED_FEATURE", "This copied script predates explicit browser scope capture; copy it again from its source"
+                ))?;
+            scope.library = map.get(&scope.library).cloned().or_else(|| {
+                    map.values().any(|alias| alias == &scope.library).then(|| scope.library.clone())
+                }).ok_or_else(|| Error::new("ASSET_NOT_FOUND", "A generated browser scope is outside the copied script resource namespaces"))?;
+            Some(scope)
+        } else if let Some(library) = &self.values.browser_library {
             Some(Scope {
                 version: 1,
                 url: url.clone(),
@@ -77,6 +179,16 @@ impl bindings::Bound {
             }
             None
         };
+        if let Some(user_metadata) = metadata.take() {
+            let mut properties = Map::from_iter([("metadata".into(), user_metadata)]);
+            super::override_context::remove_metadata_fields(
+                &mut properties,
+                &["browser_scope", "browser_override"],
+            );
+            // The envelope retains the user's metadata; reserved contexts are
+            // carried separately and cannot be resolved in the caller's scope.
+            metadata = properties.remove("metadata");
+        }
         if let Some(scope) = &scope {
             *inherited_bytes = inherited_bytes
                 .saturating_add(serde_json::to_vec(scope).expect("browser scope").len() + 256);
@@ -87,6 +199,12 @@ impl bindings::Bound {
             }
         }
         if full {
+            let properties = node.as_object_mut().expect("generated browser properties");
+            if let Some(metadata) = metadata {
+                properties.insert("metadata".into(), metadata);
+            } else {
+                properties.remove("metadata");
+            }
             if let Some(scope) = scope {
                 super::scope::metadata_namespace(node)?.insert(
                     "browser_scope".into(),
@@ -155,15 +273,7 @@ impl Project {
         scope: &Scope,
         owner: &Path,
     ) -> Result<Option<PathBuf>> {
-        if scope.version != 1 {
-            return Err(Error::new(
-                "UNSUPPORTED_VERSION",
-                "Unsupported copied browser scope version",
-            ));
-        }
-        if scope.url.is_empty() || scope.url.len() > 1024 * 1024 {
-            return Err(invalid("Invalid copied browser URL binding"));
-        }
+        scope.validate()?;
         if node.properties.get("url").and_then(Value::as_str) != Some(scope.url.as_str()) {
             return Ok(None);
         }
@@ -374,6 +484,111 @@ mod tests {
                 .unwrap_err()
                 .code,
             "UNSUPPORTED_FEATURE"
+        );
+    }
+
+    #[cfg(feature = "rendering")]
+    #[test]
+    fn explicit_generated_browser_contexts_keep_alias_authority_and_inactive_url_semantics() {
+        let bound = bindings::Bound {
+            origin: PathBuf::from("/project/main.pen"),
+            inputs_bound: false,
+            values: serde_json::from_value(json!({"version":1,"script_uri":"draw.js","assets":{},
+                "browser_library":"root-copy","browser_libraries":{"":"root-copy","base:leaf":"leaf-copy"}})).unwrap(),
+        };
+        let url = "file:///page.html?literal=$keep#anchor";
+        for alias in ["base:leaf", "leaf-copy", ""] {
+            let scope = json!({"version":1,"url":url,"library":alias});
+            for envelope in [false, true] {
+                let metadata = json!({"type":"test","keep":"$literal"});
+                let mut changes = if envelope {
+                    json!({"metadata":{"type":"lazypencil","lazypencil":{"browser_override":{"version":1,"metadata":metadata,"scope":scope}}}})
+                } else {
+                    json!({"metadata":{"type":"test","keep":"$literal","lazypencil":{"browser_scope":scope}}})
+                };
+                bound
+                    .generated_browser_context_at(&mut changes, false, Some(url), &mut 0)
+                    .unwrap();
+                let rewritten = override_value(changes.as_object().unwrap())
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(rewritten.metadata.unwrap(), metadata);
+                let scope = rewritten.scope.unwrap();
+                assert_eq!(scope.url, url);
+                assert_eq!(
+                    scope.library,
+                    if alias.is_empty() {
+                        "root-copy"
+                    } else {
+                        "leaf-copy"
+                    }
+                );
+            }
+        }
+        let mut stale = json!({"metadata":{"type":"test","lazypencil":{"browser_scope":{"version":1,"url":"file:///old.html","library":"not-declared"}}}});
+        assert_eq!(
+            bound
+                .generated_browser_context_at(&mut stale, false, Some(url), &mut 0)
+                .unwrap_err()
+                .code,
+            "UNSUPPORTED_FEATURE"
+        );
+        stale["url"] = json!(url);
+        bound
+            .generated_browser_context(&mut stale, false, &mut 0)
+            .unwrap();
+        assert_eq!(
+            override_value(stale.as_object().unwrap())
+                .unwrap()
+                .unwrap()
+                .scope
+                .unwrap()
+                .library,
+            "root-copy"
+        );
+        for (scope, code) in [
+            (
+                json!({"version":1,"url":url,"library":"not-declared"}),
+                "ASSET_NOT_FOUND",
+            ),
+            (
+                json!({"version":1,"url":url,"library":"../outside.pen"}),
+                "ASSET_NOT_FOUND",
+            ),
+            (
+                json!({"version":2,"url":"file:///old.html","library":""}),
+                "UNSUPPORTED_VERSION",
+            ),
+            (
+                json!({"version":1,"url":"","library":""}),
+                "INVALID_DOCUMENT",
+            ),
+        ] {
+            let mut node = json!({"type":"browser","url":url,"metadata":{"lazypencil":{"browser_scope":scope}}});
+            assert_eq!(
+                bound
+                    .generated_browser_context(&mut node, true, &mut 0)
+                    .unwrap_err()
+                    .code,
+                code
+            );
+        }
+        let mut node = json!({"type":"browser","url":url,"metadata":{"type":"lazypencil","lazypencil":{"browser_override":{"version":1,"scope":null,"metadata":null}}}});
+        assert_eq!(
+            bound
+                .generated_browser_context(&mut node, true, &mut 0)
+                .unwrap_err()
+                .code,
+            "INVALID_DOCUMENT"
+        );
+        let mut node = json!({"type":"browser","url":url,"metadata":{"lazypencil":{"browser_scope":{"version":1,"url":url,"library":"base:leaf"}}}});
+        let mut bytes = crate::script::MAX_OUTPUT_BYTES;
+        assert_eq!(
+            bound
+                .generated_browser_context(&mut node, true, &mut bytes)
+                .unwrap_err()
+                .code,
+            "INVALID_DOCUMENT"
         );
     }
 

@@ -615,6 +615,35 @@ fn generated_browser_copy_changes_run_namespace_and_real_pixel_reproductions_fir
         plan.targets,
         ["browser_readiness", "project", "script_scope"]
     );
+    let mut with_guides = paths.to_vec();
+    with_guides.extend(["src/guidance.rs", "resources/guidance/components.md"].map(str::to_owned));
+    let guided = focus::select(&util::root(), &with_guides, "auto").unwrap();
+    assert_eq!(guided.suite, "browser");
+    assert_eq!(
+        guided.targets,
+        ["browser_readiness", "project", "script_scope", "guidance"]
+    );
+    let guided_commands =
+        ci::commands::plan(&util::root(), &guided.suite, &guided.targets).unwrap();
+    assert!(
+        guided_commands
+            .build
+            .iter()
+            .flatten()
+            .any(|arg| arg == "guidance")
+    );
+    assert!(
+        guided_commands.checks[0]
+            .windows(2)
+            .any(|pair| pair == ["--test", "guidance"])
+    );
+    with_guides.push("src/guidance/project.rs".into());
+    assert_ne!(
+        focus::select(&util::root(), &with_guides, "auto")
+            .unwrap()
+            .suite,
+        "browser"
+    );
     let broad = focus::select(
         &util::root(),
         &[

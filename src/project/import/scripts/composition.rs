@@ -70,6 +70,22 @@ pub(super) fn mapped(
 }
 
 impl Copier<'_> {
+    pub(super) fn copy_browser_libraries(
+        &mut self,
+        origin: &Path,
+        budget: &mut Budget,
+    ) -> Result<Value> {
+        let sources = self.script_scopes[origin].browsers.clone();
+        let mut result = Map::new();
+        for (name, source) in sources {
+            self.project.check_cancelled()?;
+            let target = self.copied_browser_scope(&source)?;
+            budget.pair(&name, &target)?;
+            result.insert(name, json!(target));
+        }
+        Ok(Value::Object(result))
+    }
+
     pub(super) fn compose_bindings(
         &mut self,
         bound: &Bound,
@@ -207,6 +223,17 @@ impl Copier<'_> {
             let alias = self.copied_browser_scope(&origin)?;
             budget.pair("browser_library", &alias)?;
             values["browser_library"] = json!(alias);
+        }
+        // Preserve original names and the previous copy's names, matching the
+        // identity fallback used by the generated runtime. Never import an
+        // unrelated destination namespace as a replacement for a missing name.
+        if let Some(old) = &bound.values.browser_libraries {
+            values["browser_libraries"] = Value::Object(mapped(old, budget, |alias| {
+                let origin = self.project.scope_document(&bound.origin, alias)?;
+                self.copied_browser_scope(&origin)
+            })?);
+        } else if bound.values.assets.is_none() {
+            values["browser_libraries"] = self.copy_browser_libraries(&bound.origin, budget)?;
         }
         Ok(values)
     }

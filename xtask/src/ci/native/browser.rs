@@ -645,8 +645,8 @@ pub fn required_images(root: &Path, commit: &str) -> Result<()> {
         .as_array()
         .context("Missing generated browser cases")?;
     ensure!(
-        rows.len() == 14,
-        "Expected both schemas and seven generated browser contexts"
+        rows.len() == 44,
+        "Expected both schemas and all 22 generated browser contexts"
     );
     for version in ["2.19", "2.21"] {
         for style in [
@@ -657,6 +657,21 @@ pub fn required_images(root: &Path, commit: &str) -> Result<()> {
             "children",
             "inherited",
             "nested",
+            "scope-direct",
+            "scope-reference",
+            "scope-descendant",
+            "scope-replacement",
+            "scope-children",
+            "scope-metadata",
+            "scope-descendant-metadata",
+            "scope-envelope",
+            "scope-descendant-envelope",
+            "scope-envelope-metadata",
+            "scope-descendant-envelope-metadata",
+            "scope-empty",
+            "scope-qualified",
+            "scope-nested",
+            "scope-stale",
         ] {
             let matching = rows
                 .iter()
@@ -667,10 +682,18 @@ pub fn required_images(root: &Path, commit: &str) -> Result<()> {
                 "Missing or duplicated generated browser case"
             );
             let row = matching[0];
-            let expected = if style == "inherited" {
-                json!([255, 0, 0, 255])
-            } else {
-                json!([0, 255, 0, 255])
+            let expected = match style {
+                "inherited"
+                | "scope-direct"
+                | "scope-reference"
+                | "scope-descendant"
+                | "scope-replacement"
+                | "scope-children"
+                | "scope-envelope"
+                | "scope-descendant-envelope"
+                | "scope-nested" => json!([255, 0, 0, 255]),
+                "scope-qualified" => json!([0, 0, 255, 255]),
+                _ => json!([0, 255, 0, 255]),
             };
             ensure!(
                 row["rgba"] == expected && row["sources_removed"] == true,

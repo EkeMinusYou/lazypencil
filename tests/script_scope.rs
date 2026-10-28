@@ -37,6 +37,11 @@ fn generated_browser_urls_cannot_borrow_a_callers_matching_namespace() {
     script_browser_copy::reject_missing_namespace();
 }
 
+#[test]
+fn generated_browser_explicit_scopes_cannot_borrow_a_consumers_declared_library() {
+    script_browser_copy::reject_uncaptured_explicit_namespace();
+}
+
 fn write(path: &Path, value: Value) {
     fs::write(path, value.to_string()).unwrap();
 }

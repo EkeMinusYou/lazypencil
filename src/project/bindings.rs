@@ -12,6 +12,8 @@ pub(super) struct Bindings {
     pub(super) library: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) browser_library: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) browser_libraries: Option<BTreeMap<String, String>>,
     #[serde(default)]
     pub(super) inputs_hash: Option<String>,
     #[serde(default)]
@@ -84,7 +86,7 @@ pub(super) fn bind_value(
             .values()
             .map(BTreeMap::len)
             .sum::<usize>();
-    if count > MAX_NODES
+    if count + values.browser_libraries.as_ref().map_or(0, BTreeMap::len) > MAX_NODES
         || !valid_name(&values.script_uri)
         || values
             .library
@@ -94,6 +96,11 @@ pub(super) fn bind_value(
             .browser_library
             .as_ref()
             .is_some_and(|alias| !valid_name(alias))
+        || values.browser_libraries.as_ref().is_some_and(|map| {
+            map.iter().any(|(name, target)| {
+                (!name.is_empty() && !valid_name(name)) || !valid_name(target)
+            })
+        })
         || maps
             .iter()
             .flat_map(|map| map.iter())
@@ -130,6 +137,15 @@ pub(super) fn bind_value(
         if !project.browser_resources.contains_key(&browser_origin) {
             return Err(invalid(
                 "A script browser binding needs a captured resource namespace",
+            ));
+        }
+    }
+    for alias in values.browser_libraries.iter().flat_map(BTreeMap::values) {
+        project.check_cancelled()?;
+        let browser_origin = project.scope_document(&origin, alias)?;
+        if !project.browser_resources.contains_key(&browser_origin) {
+            return Err(invalid(
+                "A script browser scope map needs captured resource namespaces",
             ));
         }
     }
@@ -195,6 +211,7 @@ impl Bound {
             && self.values.descendants == other.values.descendants
             && self.values.assets == other.values.assets
             && self.values.browser_library == other.values.browser_library
+            && self.values.browser_libraries == other.values.browser_libraries
     }
 }
 
@@ -603,6 +620,18 @@ mod tests {
             ),
             (
                 json!({"version":1,"script_uri":"draw.js","browser_library":""}),
+                "INVALID_DOCUMENT",
+            ),
+            (
+                json!({"version":1,"script_uri":"draw.js","browser_libraries":{"base":"missing"}}),
+                "INVALID_DOCUMENT",
+            ),
+            (
+                json!({"version":1,"script_uri":"draw.js","browser_libraries":{"":""}}),
+                "INVALID_DOCUMENT",
+            ),
+            (
+                json!({"version":1,"script_uri":"draw.js","browser_libraries":{"\u{0001}":"copy"}}),
                 "INVALID_DOCUMENT",
             ),
             (

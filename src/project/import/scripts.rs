@@ -9,6 +9,7 @@ pub(super) struct Scope {
     components: BTreeMap<String, Key>,
     variables: BTreeMap<String, Key>,
     pub(super) assets: BTreeMap<String, String>,
+    browsers: BTreeMap<String, PathBuf>,
 }
 
 pub(super) struct Info {
@@ -94,6 +95,7 @@ impl Copier<'_> {
         let mut documents = BTreeSet::new();
         let mut component_names = BTreeSet::new();
         let mut variable_names = BTreeSet::new();
+        let mut browsers = BTreeMap::new();
         let mut bytes = 0usize;
         let mut paths = 0usize;
         while let Some((path, prefix, mut active)) = queue.pop_front() {
@@ -110,6 +112,9 @@ impl Copier<'_> {
             }
             documents.insert(path.clone());
             let document = &self.project.documents[&path];
+            if self.project.browser_resources.contains_key(&path) {
+                browsers.insert(prefix.trim_end_matches(':').into(), path.clone());
+            }
             for id in document.locations().keys() {
                 if document.node(id)?["reusable"] == true {
                     component_names.insert(id.clone());
@@ -190,6 +195,7 @@ impl Copier<'_> {
                 components,
                 variables,
                 assets: BTreeMap::new(),
+                browsers,
             },
         );
         for path in documents {
@@ -596,6 +602,7 @@ impl Copier<'_> {
                 budget.pair("browser_library", &alias)?;
                 values["browser_library"] = json!(alias);
             }
+            values["browser_libraries"] = self.copy_browser_libraries(output_scope, &mut budget)?;
             values
         };
         let inputs_hash = result.get("inputs").map(|value| {

@@ -27,10 +27,26 @@ impl Project {
                 || node.get("descendants").is_some()
                 || node.get("scriptUri").is_some()
                 || node.get("url").is_some()
+                || browser_context::has_context(node)
                 || node.get("children").is_some())
         {
-            let mut resolved =
-                self.expand(&bindings.origin, node, None, &[], &mut Vec::new(), &mut 0)?;
+            let preview = if bindings.values.assets.is_some()
+                && browser_context::has_preview_contexts(node)
+            {
+                let mut preview = node.clone();
+                browser_context::clear_preview_contexts(&mut preview);
+                std::borrow::Cow::Owned(preview)
+            } else {
+                std::borrow::Cow::Borrowed(&*node)
+            };
+            let mut resolved = self.expand(
+                &bindings.origin,
+                &preview,
+                None,
+                &[],
+                &mut Vec::new(),
+                &mut 0,
+            )?;
             // Input handles depend on the effective theme at their target,
             // including selections inside the referenced component. Derive
             // only themes here; raw controls still await their own header.
@@ -80,14 +96,20 @@ impl Project {
         if let Some(mut resolved) = reference {
             self.bind_generated_source(node, &mut resolved, bindings, inherited_bytes)?;
             if resolved.kind() == "browser" {
-                bindings.generated_browser_context(node, false, inherited_bytes)?;
+                bindings.generated_browser_context_at(
+                    node,
+                    false,
+                    resolved.properties.get("url").and_then(Value::as_str),
+                    inherited_bytes,
+                )?;
             }
             if let Some(changes) = node.get_mut("descendants").and_then(Value::as_object_mut) {
                 for (path, changes) in changes {
                     if changes.get("type").is_none()
                         && (changes.get("inputs").is_some()
                             || changes.get("scriptUri").is_some()
-                            || changes.get("url").is_some())
+                            || changes.get("url").is_some()
+                            || browser_context::has_context(changes))
                     {
                         let target = find_descendant_mut(
                             &mut resolved,
@@ -96,7 +118,12 @@ impl Project {
                         .ok_or_else(|| invalid("A generated script override target is missing"))?;
                         self.bind_generated_source(changes, target, bindings, inherited_bytes)?;
                         if target.kind() == "browser" {
-                            bindings.generated_browser_context(changes, false, inherited_bytes)?;
+                            bindings.generated_browser_context_at(
+                                changes,
+                                false,
+                                target.properties.get("url").and_then(Value::as_str),
+                                inherited_bytes,
+                            )?;
                         }
                     }
                 }

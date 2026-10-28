@@ -111,7 +111,7 @@ fn generated_browser_namespaces_keep_pixels_after_source_removal_and_recopy() {
                 }
                 stages.push(json!({"stage":frame.stage,"name":name,"png_hash":lazypencil::document::hash(&png),"resource_revision":frame.revision}));
             }
-            cases.push(json!({"document_version":version,"style":style,"rgba":if style=="inherited" {[255,0,0,255]} else {[0,255,0,255]},"stages":stages,"sources_removed":true}));
+            cases.push(json!({"document_version":version,"style":style,"rgba":script_browser_copy::rgba(style),"stages":stages,"sources_removed":true}));
         }
     }
     if let Some(directory) = directory {
