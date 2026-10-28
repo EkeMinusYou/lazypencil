@@ -15,6 +15,10 @@ on:
         description: Capture owned macOS allocator summaries after the original TUI idle interval
         type: boolean
         default: false
+      macos_terminal_gui:
+        description: Require native Kitty pixels on a billable GPU Mac runner (macos-15 only)
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -32,7 +36,7 @@ jobs:
       contents: read
       id-token: write
       attestations: write
-    runs-on: ${{ inputs.os }}
+    runs-on: ${{ inputs.os == 'macos-15' && inputs.macos_terminal_gui && 'macos-15-xlarge' || inputs.os }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -131,11 +135,12 @@ jobs:
         timeout-minutes: 20
         run: cargo xtask ci linux-terminal-dependencies
       - name: Prepare pinned Kitty for owned macOS terminal windows
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && inputs.macos_terminal_gui
         timeout-minutes: 15
         run: cargo xtask fixtures kitty-ui --output "$RUNNER_TEMP/kitty-ui.app"
       - name: Verify real-terminal pixels, committed text and keyboard operations
         id: terminal-test
+        if: runner.os == 'Linux' || inputs.macos_terminal_gui
         timeout-minutes: 10
         run: cargo xtask terminal --candidate "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/terminal-evidence"
       - name: Retain real-emulator screenshots and source-bound report

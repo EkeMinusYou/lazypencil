@@ -197,15 +197,13 @@ pub fn terminal_harness_changed(paths: &[String]) -> bool {
 
 pub fn terminal_reproduction_stages(paths: &[String], plan: &Plan) -> (bool, bool) {
     let changed = terminal_harness_changed(paths);
-    let available = (plan.platform.starts_with("ubuntu-") || plan.platform == "macos-15")
+    let available = plan.platform.starts_with("ubuntu-")
         && !["core", "conversation", "ci"].contains(&plan.suite.as_str());
     // A core-only build has no TUI. Keep that focused check small and use the
-    // full jobs' already-required default binaries for the reproduction. A Mac
-    // focused check covers native Kitty; retain both Linux/X11 full checks too.
-    (
-        changed && available,
-        changed && (!available || plan.platform == "macos-15"),
-    )
+    // full jobs' already-required default binaries for the reproduction. Standard
+    // macOS VMs lack Kitty's OpenGL context: verify their native PTY first and
+    // retain both Linux/X11 pixel checks. Native Mac pixels need a GPU runner.
+    (changed && available, changed && !available)
 }
 
 fn has(stems: &BTreeSet<String>, names: &[&str]) -> bool {
@@ -459,7 +457,11 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         return Ok(Plan {
             platform,
             suite: "candidate".into(),
-            targets: vec!["render".into()],
+            targets: if terminal_harness_changed(paths) {
+                vec!["render".into(), "tui".into()]
+            } else {
+                vec!["render".into()]
+            },
             preprocessor,
         });
     }

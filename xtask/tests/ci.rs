@@ -475,9 +475,11 @@ fn macos_kitty_fixtures_reproduce_on_macos_before_preserving_linux_terminal_cove
         let plan = focus::select(&util::root(), &paths, "auto").unwrap();
         assert_eq!(plan.platform, "macos-15");
         assert_eq!(plan.suite, "candidate");
+        assert!(plan.targets.iter().any(|target| target == "tui"));
+        assert!(ci::commands::terminal_reproduction(&plan.suite, &plan.targets).is_some());
         assert_eq!(
             focus::terminal_reproduction_stages(&paths, &plan),
-            (true, true)
+            (false, true)
         );
     }
 }
@@ -493,7 +495,7 @@ fn terminal_harness_changes_keep_their_reproduction_in_mixed_application_changes
         (true, false)
     );
     for (platform, suite, expected) in [
-        ("macos-15", "dynamic", (true, true)),
+        ("macos-15", "dynamic", (false, true)),
         ("ubuntu-24.04", "core", (false, true)),
         ("ubuntu-24.04", "ci", (false, true)),
         ("ubuntu-24.04-arm", "conversation", (false, true)),

@@ -24,9 +24,6 @@ on:
       terminal_reproduction:
         type: boolean
         default: false
-      terminal_focus_platform:
-        type: string
-        default: ''
       runtime_parallel:
         type: boolean
         default: false
@@ -274,13 +271,9 @@ jobs:
         if: runner.os == 'Linux' && (inputs.terminal_reproduction || inputs.phase == 'focus' && inputs.suite == 'candidate')
         timeout-minutes: 20
         run: cargo xtask ci linux-terminal-dependencies
-      - name: Prepare pinned Kitty for owned macOS terminal windows
-        if: runner.os == 'macOS' && ((inputs.terminal_reproduction && inputs.terminal_focus_platform != inputs.os) || inputs.phase == 'focus' && inputs.suite == 'candidate')
-        timeout-minutes: 15
-        run: cargo xtask fixtures kitty-ui --output "$RUNNER_TEMP/kitty-ui.app"
       - name: Reproduce real terminal pixels with the existing verified debug build
         id: terminal-reproduction
-        if: (inputs.terminal_reproduction && inputs.terminal_focus_platform != inputs.os) || inputs.phase == 'focus' && inputs.suite == 'candidate'
+        if: runner.os == 'Linux' && (inputs.terminal_reproduction || inputs.phase == 'focus' && inputs.suite == 'candidate')
         timeout-minutes: 10
         run: cargo xtask terminal --development-build --output "$RUNNER_TEMP/terminal-reproduction"
       - name: Retain early real-terminal reproduction evidence
@@ -355,7 +348,7 @@ jobs:
         run: cargo xtask ci native runtime-tests
       - name: Verify packaged real-terminal pixels and keyboard operations
         id: terminal-test
-        if: inputs.phase == 'focus' && inputs.suite == 'candidate'
+        if: runner.os == 'Linux' && inputs.phase == 'focus' && inputs.suite == 'candidate'
         timeout-minutes: 10
         run: cargo xtask terminal --candidate "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/terminal-evidence"
       - name: Retain the real-emulator screenshots and source-bound report
