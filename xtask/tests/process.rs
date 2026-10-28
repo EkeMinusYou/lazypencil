@@ -157,9 +157,6 @@ fn normal_test_lane_requires_all_compiled_targets_and_preserves_the_existing_ski
     ];
     for args in checks {
         let mut expected = flags.to_vec();
-        if Path::new(&args[0]) == binaries["script_scope"].as_path() {
-            expected[0] = "--test-threads=4";
-        }
         if Path::new(&args[0]) == binaries["lib"].as_path() {
             expected.extend(["--skip", commands::MANAGEMENT_REPRODUCTION]);
         }

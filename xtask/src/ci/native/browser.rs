@@ -175,9 +175,8 @@ fn sandbox_named(s: &Session, executable: &Path, name: &str) -> Result<()> {
     )
 }
 // Each target owns its temporary documents, browser profiles and process groups.
-// Their retained filenames occupy separate namespaces. Readiness cases also
-// have independent profile/output names; other targets remain serial.
-// Keep ownership/destruction after every lane and normal producer has joined.
+// Their retained filenames occupy separate namespaces. Keep tests within each
+// target serial, and keep the ownership/destruction test after both lanes join.
 pub const TEST_LANES: [&[&str]; 3] = [
     &["browser_readiness"],
     &["dynamic_render", "script_scope"],
@@ -188,10 +187,6 @@ pub const TEST_LANES: [&[&str]; 3] = [
         "windows_agent",
     ],
 ];
-
-pub fn test_threads(target: &str) -> usize {
-    if target == "browser_readiness" { 2 } else { 1 }
-}
 
 pub fn binding_commands(binary: &Path) -> [Vec<String>; 3] {
     ["generated_browser_", "script_bindings::", "script_copy::"].map(|filter| {
@@ -319,7 +314,7 @@ pub fn lanes(s: &Session) -> Result<()> {
                                         .to_string_lossy()
                                         .into_owned(),
                                     "--ignored".into(),
-                                    format!("--test-threads={}", test_threads(target)),
+                                    "--test-threads=1".into(),
                                 ];
                                 s.execute(
                                     &args,

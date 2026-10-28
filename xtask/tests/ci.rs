@@ -1233,6 +1233,46 @@ const COMPILER: &str = "rustc 1.94.0\nrelease: 1.94.0\ncommit-hash: 4a4ef493e3a1
 const TREE: &str = "b24ec03467f4fe02cfb29f305f8a393d83c9588dd4729e01787a36e2b994c62d";
 
 #[test]
+fn optimized_test_commands_keep_runtime_filters_checks_and_other_profiles() {
+    let words = |s: &[&str]| s.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+    let original = words(&[
+        "cargo",
+        "test",
+        "--locked",
+        "--no-run",
+        "--",
+        "--ignored",
+        "--test-threads=2",
+    ]);
+    let configured = ci::commands::test_profile(&original, true);
+    assert_eq!(&configured[..2], &original[..2]);
+    assert_eq!(&configured[8..], &original[2..]);
+    assert!(
+        configured
+            .iter()
+            .any(|s| s == "profile.test.package.lazypencil.debug-assertions=true")
+    );
+    assert!(
+        configured
+            .iter()
+            .any(|s| s == "profile.test.package.lazypencil.overflow-checks=true")
+    );
+    assert_eq!(ci::commands::test_profile(&original, false), original);
+    for args in [
+        &["cargo", "build"][..],
+        &["cargo", "rustc", "--release"],
+        &["cargo", "test", "--release"],
+        &["cargo", "test", "--profile=release"],
+        &["cargo", "test", "--profile", "custom"],
+        &["cargo"],
+        &[],
+    ] {
+        let args = words(args);
+        assert_eq!(ci::commands::test_profile(&args, true), args);
+    }
+}
+
+#[test]
 fn native_build_scheduling_preserves_compiler_arguments_and_test_execution() {
     let words = |args: &[&str]| args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>();
     for args in [
@@ -1329,6 +1369,44 @@ struct ApplicationFixture {
     directory: PathBuf,
     library: PathBuf,
     dep_info: PathBuf,
+}
+
+#[test]
+fn test_profile_changes_only_application_cache_identity_and_preserves_release_reuse() {
+    let f = ApplicationFixture::new();
+    let identify = |optimized: bool, release: bool| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_xtask"));
+        command
+            .args(["ci", "cache", "application", "identify", "--source"])
+            .arg(&f.source)
+            .arg("--target")
+            .arg(&f.target)
+            .arg("--directory")
+            .arg(&f.directory)
+            .args([
+                "--native-key",
+                "native-v2-ubuntu-24.04-fixture",
+                "--github-output",
+            ])
+            .arg(f.source.join("identity-output"));
+        if optimized {
+            command.env(ci::commands::TEST_PROFILE_ENV, "optimized-debug-v1");
+        } else {
+            command.env_remove(ci::commands::TEST_PROFILE_ENV);
+        }
+        if release {
+            command.arg("--release-only");
+        }
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()["primary"].clone()
+    };
+    assert_ne!(identify(false, false), identify(true, false));
+    assert_eq!(identify(false, true), identify(true, true));
 }
 impl ApplicationFixture {
     fn new() -> Self {

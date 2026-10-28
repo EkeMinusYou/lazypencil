@@ -18,7 +18,9 @@
 
 `112f5aa` の [CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40750278112) は軽量224件・Clippy・全native試験・依存監査・署名付きsourceを成功した。coreは5分21秒（build35秒）、releaseは3分57秒（実compile2分05秒、`reused:false`）、defaultは11分01秒だった。可視consoleを構成別に照合し、同じアプリ実装の `99cc153` とcore462・default838実行の全named caseの回数が一致した。画像の共通gateと42回の性能測定も成功したが、全artifactの独立した監査とは区別する。旧構成の完全job30分56秒・release compile14分22秒より短縮したものの、全体10分以内は未達である。初回のdefault／releaseは15分02秒のrunner割当待ち後にGitHub側で終了され、未実行2jobだけの再実行を行った。defaultの再実行も10分05秒待機してから開始した。annotationはmacOS arm64のcapacity constraintsを明記しており、待機を処理時間へ混ぜない。有用な旧CIはconcurrency groupを分けて中断せず完了した。
 
-次の短縮は同runの計測（readiness351秒・script scope247秒・Material218秒）を根拠に行う。独立したreadinessを2、script scopeを4並列とし、通常のfont／project／graphics／meshを別レーンへ移す。Materialの3書体はそれぞれ専用の一時Storeと導入先で検査し、元フォント・全4304 codepoint・既存の全weightケース・破損検出のassertionを維持する。real emojiはCargoを再実行せず検査済みの同じbinary catalogを使い、他の生成側とjoin後に画像gateへ進む。2秒のscript設定を含むTUI一式は従来どおり並列browserの前に行う。これらの追加調整はまだGHAで未確認であり、timeoutや最終条件は変更していない。
+追加の並列化 `1190c6b` は [CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40758991448) で失敗した。readiness2・script scope4・Material3書体とreal emojiの同時実行を重ねると、既存のMCP応答30秒とemoji検査300秒に抵触した。全処理をjoinし、成功扱いやsource公開はせず、timeoutも変更しなかった。これらは通過済み `112f5aa` の並列構成へ戻す。
+
+次の調整ではGHAのテスト用ビルドだけ、lazypencil packageをopt-level 1とし、debug assertion・整数overflow検査を明示的に有効に保つ。通常dev、依存・Skia、releaseの設定は変更しない。実際のCargo設定3項目をアプリ成果物のidentityへ含め、従来のtest binaryを新条件へ誤再利用しない。依存とreleaseのcache identityは維持する。初回のテスト用再ビルドと、成果物が揃った後の時間を分けて計測する。この調整と全体10分以内は、まだGHAで未確認である。
 
 計画・依存監査・Wasm・ソース梱包などの軽量Linux jobは実行ホストとして残す。Linuxアプリのnative buildは通常CIに含めず、既存の手動診断経路を明示した場合だけ実行できる。manual workflowの既定値もMacへ揃えた。`7413a94` の [Mac限定CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40698680065) は軽量220件・Clippy、Mac先行・完全検証、監査・署名付きソースまで成功した。
 

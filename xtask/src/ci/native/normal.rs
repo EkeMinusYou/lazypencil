@@ -2,8 +2,7 @@
 use super::*;
 
 const TEST_SECONDS: u64 = 900;
-const INDEPENDENT: [&str; 1] = ["script_scope"];
-const RESOURCES: [&str; 4] = ["font_sources", "project", "graphics", "mesh"];
+const INDEPENDENT: [&str; 3] = ["script_scope", "graphics", "mesh"];
 
 pub fn run(s: &Session) -> Result<()> {
     let prepared = prepare(s)?;
@@ -13,7 +12,6 @@ pub fn run(s: &Session) -> Result<()> {
 pub(super) struct Prepared {
     checks: Vec<commands::Invocation>,
     scripts: Vec<commands::Invocation>,
-    resources: Vec<commands::Invocation>,
     deadline: Instant,
 }
 
@@ -45,8 +43,6 @@ pub(super) fn prepare(s: &Session) -> Result<Prepared> {
         .into_iter()
         .collect::<Result<Vec<_>>>()?;
     let (scripts, checks) = split_checks(checks, &independent)?;
-    let paths = RESOURCES.map(|name| catalog.binaries[name].path.as_path());
-    let (resources, checks) = split_checks(checks, &paths)?;
     let deadline = Instant::now() + Duration::from_secs(TEST_SECONDS);
     let management = s.execute(
         &commands::management_tests(true),
@@ -84,7 +80,6 @@ pub(super) fn prepare(s: &Session) -> Result<Prepared> {
     Ok(Prepared {
         checks,
         scripts,
-        resources,
         deadline,
     })
 }
@@ -93,20 +88,12 @@ pub(super) fn remaining(s: &Session, prepared: &Prepared, compile_release: bool)
     let Prepared {
         checks,
         scripts,
-        resources,
         deadline,
     } = prepared;
-    // The legacy combined release stage keeps two test processes. The split
-    // pipeline uses its third slot for independent font/project/pixel checks.
-    let checks = if compile_release {
-        [checks.as_slice(), resources.as_slice()].concat()
-    } else {
-        checks.clone()
-    };
     let mut tasks: Vec<parallel::Task<'_>> = vec![
         (
             "default tests",
-            Box::new(|| run_lane(s, &checks, *deadline, "lazypencil-tests.log")),
+            Box::new(|| run_lane(s, checks, *deadline, "lazypencil-tests.log")),
         ),
         (
             "script-scope and native pixel tests",
@@ -118,11 +105,6 @@ pub(super) fn remaining(s: &Session, prepared: &Prepared, compile_release: bool)
             "release compilation",
             Box::new(|| release::compile(s, "lazypencil-release.log")),
         ));
-    } else {
-        tasks.push((
-            "font, project and native pixels",
-            Box::new(|| run_lane(s, resources, *deadline, "lazypencil-native-pixels.log")),
-        ));
     }
     let remaining = parallel::run(tasks);
     remaining.context("Remaining default tests and release compilation failed")
@@ -132,8 +114,9 @@ fn split_checks(
     checks: Vec<commands::Invocation>,
     independent: &[&Path],
 ) -> Result<(Vec<commands::Invocation>, Vec<commands::Invocation>)> {
-    // Each target owns temporary documents and distinct retained image names.
-    // Moving complete invocations preserves their filters and shared deadline.
+    // These targets own temporary documents and distinct retained image names.
+    // Fill the existing script lane after its long first target; retain exactly
+    // two test processes and their original per-process thread limits.
     let mut checks = checks;
     let mut scripts = Vec::new();
     for path in independent {

@@ -8,6 +8,48 @@ use std::{
 
 pub type Invocation = Vec<String>;
 
+pub const TEST_PROFILE_ENV: &str = "LAZYPENCIL_CI_TEST_PROFILE";
+pub const TEST_PROFILE_CONFIG: [&str; 3] = [
+    "profile.test.package.lazypencil.opt-level=1",
+    "profile.test.package.lazypencil.debug-assertions=true",
+    "profile.test.package.lazypencil.overflow-checks=true",
+];
+
+pub fn optimized_tests() -> Result<bool> {
+    let value = std::env::var(TEST_PROFILE_ENV).unwrap_or_default();
+    ensure!(
+        value.is_empty() || value == "optimized-debug-v1",
+        "Unknown CI test profile"
+    );
+    Ok(!value.is_empty())
+}
+
+/// Tune only our test package, retaining both development checks. Registry,
+/// native, normal-development and release profiles keep their existing flags.
+pub fn test_profile(invocation: &[String], enabled: bool) -> Invocation {
+    let end = invocation
+        .iter()
+        .position(|arg| arg == "--")
+        .unwrap_or(invocation.len());
+    let cargo = &invocation[..end];
+    let mut configured = invocation.to_vec();
+    if enabled
+        && cargo.first().is_some_and(|arg| arg == "cargo")
+        && cargo.get(1).is_some_and(|arg| arg == "test")
+        && !cargo
+            .iter()
+            .any(|arg| arg == "--release" || arg == "--profile" || arg.starts_with("--profile="))
+    {
+        configured.splice(
+            2..2,
+            TEST_PROFILE_CONFIG
+                .into_iter()
+                .flat_map(|option| ["--config".into(), option.into()]),
+        );
+    }
+    configured
+}
+
 /// Change Cargo's scheduling without changing compiler-visible environment or flags.
 pub fn build_jobs(invocation: &[String], linux: bool) -> Invocation {
     build_jobs_for(invocation, if linux { 2 } else { 1 })
@@ -132,10 +174,6 @@ pub fn default_tests(root: &Path, binaries: &BTreeMap<String, PathBuf>) -> Resul
             ensure!(path.is_absolute(), "Test executable must be absolute");
             let mut command = vec![path.to_string_lossy().into_owned()];
             command.extend(default_flags());
-            if name == "script_scope" {
-                // Cases own their project, script worker and retained output.
-                command[1] = "--test-threads=4".into();
-            }
             if name == "lib" {
                 command.extend(skips([MANAGEMENT_REPRODUCTION]));
             }

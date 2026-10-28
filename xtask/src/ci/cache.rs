@@ -1,4 +1,4 @@
-use super::focus;
+use super::{commands, focus};
 use crate::{
     dist::{self, Entry, Manifest},
     process, util,
@@ -797,6 +797,10 @@ fn application_identity_for(
     let mut recipe = json!({"version":3,"release_recipe":crate::evidence::link_map::RECIPE,"inputs":inputs,"native":native_key,"source":source.canonicalize()?,"target":target});
     if release_only {
         recipe["scope"] = json!("release-v1");
+    } else if commands::optimized_tests()? {
+        // Bind the actual Cargo options, rather than only a mode label.
+        // Release and dependency identities intentionally remain unchanged.
+        recipe["test_profile"] = json!(commands::TEST_PROFILE_CONFIG);
     }
     let fingerprint = util::digest(stable_json(&recipe));
     let source_hash = util::digest(stable_json(&serde_json::to_value(&inputs)?));

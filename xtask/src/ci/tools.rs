@@ -121,6 +121,7 @@ impl Command {
                     command
                         .current_dir(&workspace)
                         .args(&arguments)
+                        .env_remove(super::commands::TEST_PROFILE_ENV)
                         .env("CARGO_TARGET_DIR", &target);
                     if let Err(error) = process::logged(
                         &mut command,
