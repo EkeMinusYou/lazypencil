@@ -271,6 +271,14 @@ pub fn integration_targets(root: &Path) -> Result<(BTreeSet<String>, BTreeSet<St
 }
 
 pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
+    // Repository prose has no compiler consumers. Remove it before specialized
+    // subset checks as well as stem matching; embedded resources remain inputs.
+    let inputs: Vec<_> = paths
+        .iter()
+        .filter(|path| !documentation_only(path))
+        .cloned()
+        .collect();
+    let paths = inputs.as_slice();
     ensure!(
         platform == "auto" || PLATFORMS.contains(&platform),
         "Unsupported focus platform"
@@ -587,11 +595,6 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         stems.insert("browser_readiness".into());
     }
     for p in paths {
-        // A prose filename such as docs/tui.md is not the TUI module. Keep
-        // compiler inputs under resources/ and real test fixtures significant.
-        if documentation_only(p) {
-            continue;
-        }
         if let Some(stem) = Path::new(p).file_stem().and_then(|s| s.to_str()) {
             stems.insert(stem.into());
         }
