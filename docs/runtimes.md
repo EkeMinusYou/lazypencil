@@ -53,7 +53,7 @@ This explicit override is reported as `external-unverified`, with `managed: fals
 
 ## Dedicated authentication profiles
 
-The dedicated-profile implementation is awaiting hosted Rust/Chromium verification. Ordinary rendering still uses temporary, isolated browser contexts. No personal Chrome profile is adopted.
+Persistent stores, user selection, owner cleanup and login deadline/recovery passed on all three initial-release targets in [the `65dcc15` gate](https://github.com/EkeMinusYou/lazypencil/actions/runs/40646818773). The added canonical-browser binding below still awaits hosted verification. Ordinary rendering uses temporary, isolated browser contexts. No personal Chrome profile is adopted.
 
 ```sh
 lazypencil runtime profile create work
@@ -77,7 +77,7 @@ The same captured setting applies to CLI, MCP and TUI page acquisitions. A proje
 
 Profiles live under `browser-profiles/<name>` in the selected data directory, with private ownership markers and an exclusive lease held by the browser guardian. Persistent cookies, localStorage, IndexedDB and Cache Storage remain there. Per-acquisition tabs close normally; retained TUI tabs keep their existing DOM lifetime. Shader workers never use these profiles. Acquisition metadata and serialized runtime limits omit the profile name; credentials are not imported into `.pen` files or conversation records. The guardian preserves persistent data after host death and releases its lease only after collecting the browser's children.
 
-Concurrent independent browser processes cannot use one profile. This includes a TUI preview and a separate bound MCP process: their joint authenticated-session behavior still needs integration before release acceptance. The pending tests cover exclusive ownership, replaced identities, abrupt owner death, all four persistent storage kinds, fresh/retained isolation and restoration, offline acquisition, real CLI selection and login deadline/recovery. Visible login UI and the complete three-platform result are not yet verified.
+Concurrent independent browser processes cannot use one profile. This includes a TUI preview and a separate bound MCP process: their joint authenticated-session behavior still needs integration before release acceptance. The completed tests cover exclusive ownership, replaced identities, abrupt owner death, all four persistent storage kinds, fresh/retained isolation and restoration, offline acquisition, real CLI selection and login deadline/recovery. Visible full-browser login UI and the new executable-binding regressions remain unverified.
 
 ## Execution and licensing
 
