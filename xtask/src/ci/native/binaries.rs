@@ -34,14 +34,7 @@ fn runtime_targets() -> std::collections::BTreeSet<&'static str> {
         .into_iter()
         .flatten()
         .copied()
-        .chain([
-            "mcp",
-            "agent",
-            "tui",
-            "optional_icons",
-            "font_sources",
-            "lib",
-        ])
+        .chain(["mcp", "agent", "tui", "optional_icons", "lib"])
         .collect()
 }
 
@@ -234,6 +227,19 @@ pub(super) fn gate(s: &Session) -> Result<()> {
         let digest = result["binaries"]
             .as_str()
             .context("Binary receipt missing")?;
+        let receipt_path = root.join("binary-receipt.json");
+        ensure!(
+            util::file_digest(&receipt_path)? == digest,
+            "Consumer receipt changed"
+        );
+        let receipt: Receipt = util::json(&receipt_path)?;
+        ensure!(
+            receipt.identity["commit"] == commit
+                && receipt.identity["run"] == run
+                && receipt.identity["os"] == "macos"
+                && receipt.identity["arch"] == "aarch64",
+            "Expected evidence from the initial Mac Apple Silicon release target"
+        );
         ensure!(
             digest.len() == 64
                 && binaries
@@ -258,7 +264,8 @@ pub(super) fn gate(s: &Session) -> Result<()> {
             )?;
         }
     }
-    browser::required_images(&output, &commit)
+    // Validate the producer's pinned browser, independent of this light host.
+    browser::required_images_for(&output, &commit, "mac-arm64")
 }
 
 #[cfg(test)]

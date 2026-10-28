@@ -2,7 +2,7 @@ use super::*;
 use crate::performance;
 
 mod evidence;
-pub use evidence::{local_page_mcp_images, required_images};
+pub use evidence::{local_page_mcp_images, required_images, required_images_for};
 
 pub fn setup(s: &Session) -> Result<()> {
     setup_binary(s, &s.executable("debug"))?;

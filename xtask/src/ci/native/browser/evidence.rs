@@ -4,6 +4,17 @@ use super::*;
 use crate::performance;
 
 pub fn required_images(root: &Path, commit: &str) -> Result<()> {
+    let platform = if cfg!(target_os = "macos") {
+        "mac-arm64"
+    } else if cfg!(target_arch = "aarch64") {
+        "linux-arm64"
+    } else {
+        "linux64"
+    };
+    required_images_for(root, commit, platform)
+}
+
+pub fn required_images_for(root: &Path, commit: &str, platform: &str) -> Result<()> {
     let report = |name: &str| -> Result<Value> {
         let v: Value = util::json(&root.join(name))
             .with_context(|| format!("Browser evidence report: {name}"))?;
@@ -658,13 +669,6 @@ pub fn required_images(root: &Path, commit: &str) -> Result<()> {
     let observation = &headed["headed_observation"];
     let catalogue: Value =
         util::json(&util::root().join("tests/fixtures/browser-ui/chromium.json"))?;
-    let platform = if cfg!(target_os = "macos") {
-        "mac-arm64"
-    } else if cfg!(target_arch = "aarch64") {
-        "linux-arm64"
-    } else {
-        "linux64"
-    };
     let pin = catalogue["artifacts"]
         .as_array()
         .context("Missing full browser pins")?

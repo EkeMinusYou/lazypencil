@@ -191,6 +191,40 @@ impl Session {
             .env("CARGO_MANIFEST_PATH", self.root.join("Cargo.toml"));
         self.execute_command(&mut command, 300, log, false)
     }
+    fn reproduce_inputs(&self, emoji: bool) -> Result<()> {
+        if emoji {
+            self.real_emoji("real-emoji.log")?;
+        }
+        self.test(
+            true,
+            "lib",
+            "tui::tests::",
+            &["--test-threads=2"],
+            "tui-reproduction.log",
+        )?;
+        self.test(
+            true,
+            "mcp",
+            "cancelling_a_running_script_unblocks_the_mcp_document_worker",
+            &["--exact", "--test-threads=1"],
+            "chromium-script-cancel.log",
+        )?;
+        for log in [
+            "real-emoji.log",
+            "tui-reproduction.log",
+            "chromium-script-cancel.log",
+        ] {
+            if !emoji && log == "real-emoji.log" {
+                continue;
+            }
+            fs::OpenOptions::new()
+                .append(true)
+                .open(self.temporary.join("lazypencil-tests.log"))?
+                .write_all(&fs::read(self.temporary.join(log))?)?;
+        }
+        Ok(())
+    }
+
     fn record_timing(
         &self,
         invocation: &[String],
@@ -345,17 +379,14 @@ impl Session {
             }
             Stage::NormalConsumer => {
                 let elapsed = binaries::restore(self, false)?;
+                self.real_emoji("real-emoji.log")?;
                 let prepared = normal::prepare_consumed(self, elapsed)?;
                 normal::remaining(self, &prepared, false)?;
                 binaries::completed(self, "normal")
             }
             Stage::RuntimePrepare => {
                 let _ = binaries::restore(self, true)?;
-                self.run(Arguments {
-                    stage: Stage::Reproduce,
-                    suite: "pipeline".into(),
-                    targets: "[]".into(),
-                })?;
+                self.reproduce_inputs(false)?;
                 // Browser preparation publishes GITHUB_ENV values. Consumers
                 // run in the next Actions step so both Chromium paths exist.
                 browser::setup(self)
@@ -772,34 +803,7 @@ impl Session {
                 }
                 self.build_catalog(&[])
             }
-            Stage::Reproduce => {
-                self.real_emoji("real-emoji.log")?;
-                self.test(
-                    true,
-                    "lib",
-                    "tui::tests::",
-                    &["--test-threads=2"],
-                    "tui-reproduction.log",
-                )?;
-                self.test(
-                    true,
-                    "mcp",
-                    "cancelling_a_running_script_unblocks_the_mcp_document_worker",
-                    &["--exact", "--test-threads=1"],
-                    "chromium-script-cancel.log",
-                )?;
-                for log in [
-                    "real-emoji.log",
-                    "tui-reproduction.log",
-                    "chromium-script-cancel.log",
-                ] {
-                    fs::OpenOptions::new()
-                        .append(true)
-                        .open(self.temporary.join("lazypencil-tests.log"))?
-                        .write_all(&fs::read(self.temporary.join(log))?)?;
-                }
-                Ok(())
-            }
+            Stage::Reproduce => self.reproduce_inputs(true),
             Stage::DefaultTest => management::default(self),
             Stage::DefaultRelease => normal::run(self),
             Stage::CompleteTests => {
