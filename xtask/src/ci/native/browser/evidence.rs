@@ -575,7 +575,88 @@ pub fn required_images(root: &Path, commit: &str) -> Result<()> {
             "Stale local page context"
         );
     }
-    println!("Verified source identities, hashes and dimensions for 399 required PNGs");
+    let profiles = report("codec-dedicated-profiles.json")?;
+    ensure!(
+        profiles["sandbox"] == "enabled"
+            && profiles["exclusive_owner"] == true
+            && profiles["login_navigation_before_deadline"] == true
+            && profiles["cli_png_hash"] == profiles["post_login_png_hash"]
+            && profiles["storage"]
+                == json!([
+                    "http_only_cookie",
+                    "local_storage",
+                    "indexed_db",
+                    "cache_storage"
+                ]),
+        "Incomplete dedicated-profile storage/ownership proof"
+    );
+    let cases = profiles["cases"]
+        .as_array()
+        .context("Missing dedicated-profile captures")?;
+    ensure!(
+        cases.len() == 12,
+        "Expected fresh/retained profile captures for all six stages"
+    );
+    for retained in [false, true] {
+        for stage in [
+            "restarted",
+            "isolated",
+            "anonymous",
+            "restored",
+            "offline-local",
+            "online-restored",
+        ] {
+            let rows = cases
+                .iter()
+                .filter(|row| row["retained"] == retained && row["stage"] == stage)
+                .collect::<Vec<_>>();
+            ensure!(
+                rows.len() == 1,
+                "Missing or duplicate dedicated-profile capture"
+            );
+            let row = rows[0];
+            let name = format!("codec-dedicated-profiles-{retained}-{stage}.png");
+            let rgba = if matches!(stage, "isolated" | "anonymous") {
+                json!([255, 0, 0, 255])
+            } else {
+                json!([0, 255, 0, 255])
+            };
+            ensure!(
+                row["png"] == name && row["rgba"] == rgba,
+                "Wrong dedicated-profile capture identity"
+            );
+            let metadata = &row["metadata"];
+            ensure!(
+                metadata["kind"] == "browser"
+                    && metadata["page_state"]["retained"] == retained
+                    && metadata["network_policy"]
+                        == if stage == "offline-local" {
+                            "offline"
+                        } else {
+                            "online"
+                        }
+                    && metadata["limits"]["browser"].get("profile").is_none(),
+                "Incomplete or nonprivate profile metadata"
+            );
+            png(&name, &row["png_hash"], 32, 32)?;
+        }
+    }
+    ensure!(
+        !profiles.to_string().contains("profile-fixture-secret")
+            && !profiles
+                .to_string()
+                .contains("authentication-fixture-private"),
+        "Private fixture state escaped into public profile evidence"
+    );
+    png(
+        "codec-dedicated-profiles-cli.png",
+        &profiles["cli_png_hash"],
+        32,
+        32,
+    )?;
+    println!(
+        "Verified required PNG source identities, hashes and dimensions, including thirteen dedicated-profile captures"
+    );
     Ok(())
 }
 

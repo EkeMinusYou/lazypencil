@@ -1,5 +1,9 @@
 # lazypencil 実装と公開準備の状況
 
+進行中の `a94852e` の先行は646件／83サマリー・Clippyで成功した。無効な生成scopeの実worker回帰、ページ診断の通常／保持取得での失敗・復帰、既存namespaceの162画像／82,944画素と素材revisionを照合した。早期のCargo通常build／JSON一覧確認は各0.223秒、生成layout群104.86秒とbinding群165.36秒、続くcopy群46.64秒だった。gzip level1のpackは209 member・1,618,717,112バイトから483,768,036バイトへ23.35秒。元の70.01秒とは対象バイト数も異なるため、圧縮率・全体時間の統制比較とはしない。全3環境と最終sourceは実行中であり、中断しない。
+
+次の差分として、明示作成する認証専用profile、user限定の選択・projectによる無効化、guardianの排他leaseと永続data保持、loginの版確認・期限と終了を準備中。CookieだけでなくlocalStorage／IndexedDB／Cache Storage、通常／保持取得の切替・offline・CLI・親の強制終了と別ownerの保持・identity差替えの試験を追加した。取得metadataへprofile名や資格情報を出さず、shaderは使わない。整形以外のRust検証は未実施で、現在のCIへは送っていない。TUI previewと別MCPが同じprofileを使う際の統合・可視login・全3環境の受け入れは残る。
+
 `487ffb2` の軽量ゲートでは、実Cargoを使う早期一覧の回帰（一覧なしでの起動・後段一覧の保持・変更した失敗assertionの実行）が成功した。計209件中208件が成功し、固定の期待コマンド一覧1件だけが新しいページ診断の先行実行を含んでいなかった。元の9ケース・全コマンドは維持し、新規再現と同条件での後段skipだけを一覧へ追加する。Clippyは成功、nativeと全環境は開始していない。アプリ本体・実Chromium・圧縮と時間効果は引き続き未確認である。
 
 `5b329f6` の [先行検証](https://github.com/EkeMinusYou/lazypencil/actions/runs/40639764508) は軽量208件・Clippy、対象build／Clippyと生成URIの失効判定の単体試験を通過し、binding群の開始前に停止した。並列化した早期試験が、後段のruntime stageで初めて保存する `test-executables.json` を読もうとしていた。次の修正では既存のCargo JSON解析を共用し、早期の対象だけをその場でコンパイラーへ確認してhash検査する。一覧はメモリ内だけで保持し、後段の完全な一覧を上書きしない。全環境・署名付きsourceは開始しておらず、時間短縮・gzip・新しいworker回帰の成功は未確認である。

@@ -14,6 +14,7 @@ use std::{
 
 mod diagnostics;
 pub(crate) use diagnostics::host_status;
+pub mod profiles;
 
 #[derive(Deserialize)]
 struct Manifest {

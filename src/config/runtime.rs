@@ -10,6 +10,7 @@ pub(super) const TEMPLATE: &str = concat!(
     "\n# Omitted runtime fields inherit user preferences and built-in limits.\n",
     "# [runtime.javascript]\n# timeout_ms = 2000\n# heap_mib = 64\n# idle_seconds = 60\n# layout_timeout_ms = 10000\n# max_evaluations = 128\n# max_passes = 8\n",
     "\n# [runtime.browser]\n# timeout_ms = 30000\n# launch_timeout_ms = 15000\n# idle_seconds = 60\n# wait_until = \"load\"\n# ready_selector = \"\"\n# selector_state = \"visible\"\n# additional_wait_ms = 0\n# animation_policy = \"running\"\n# network_policy = \"online\"\n",
+    "# User configuration only: profile = \"work\" selects dedicated authentication state.\n# profile = \"\"\n",
     "\n# [runtime.shader]\n# timeout_ms = 15000\n# launch_timeout_ms = 15000\n# idle_seconds = 60\n",
     "\n# [runtime.dynamic]\n# render_timeout_ms = 45000\n# cache_mib = 64\n# cache_entries = 32\n",
 );
@@ -102,6 +103,11 @@ pub struct BrowserSettings {
     pub animation_policy: PageAnimationPolicy,
     /// Web requests and proxied WebRTC routes; broader egress controls are separate.
     pub network_policy: PageNetworkPolicy,
+    /// Only user configuration may select a dedicated authentication profile.
+    /// Never publish the name in acquisition metadata or serialized limits.
+    #[serde(skip_serializing)]
+    #[schemars(length(max = 64))]
+    pub profile: String,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -148,12 +154,18 @@ impl Default for BrowserSettings {
             additional_wait_ms: 0,
             animation_policy: PageAnimationPolicy::Running,
             network_policy: PageNetworkPolicy::Online,
+            profile: String::new(),
         }
     }
 }
 
 impl BrowserSettings {
     pub fn validate(&self) -> Result<()> {
+        if !self.profile.is_empty() && !crate::runtime::profiles::valid_name(&self.profile) {
+            return Err(invalid(
+                "runtime.browser.profile must be empty or a dedicated profile name",
+            ));
+        }
         validate_browser_limits(
             "browser",
             self.timeout_ms,
@@ -285,6 +297,7 @@ struct BrowserOverrides {
     additional_wait_ms: Option<u64>,
     animation_policy: Option<PageAnimationPolicy>,
     network_policy: Option<PageNetworkPolicy>,
+    profile: Option<String>,
 }
 
 #[derive(Default, Deserialize)]
@@ -331,6 +344,7 @@ pub(super) fn origins() -> BTreeMap<&'static str, &'static str> {
         "browser.additional_wait_ms",
         "browser.animation_policy",
         "browser.network_policy",
+        "browser.profile",
         "shader.timeout_ms",
         "shader.launch_timeout_ms",
         "shader.idle_seconds",
@@ -350,6 +364,17 @@ impl RuntimeOverrides {
         origins: &mut BTreeMap<&'static str, &'static str>,
         origin: &'static str,
     ) -> Result<()> {
+        if origin == "project"
+            && self
+                .browser
+                .profile
+                .as_ref()
+                .is_some_and(|profile| !profile.is_empty())
+        {
+            return Err(invalid(
+                "Only user configuration may select a dedicated browser profile; project configuration may disable one with profile=''",
+            ));
+        }
         // Validate each declared scope before merging so a higher-priority
         // setting cannot hide an invalid lower-priority value.
         let mut declared = RuntimeSettings::default();
@@ -380,6 +405,7 @@ impl RuntimeOverrides {
         apply!(browser, additional_wait_ms);
         apply!(browser, animation_policy);
         apply!(browser, network_policy);
+        apply!(browser, profile);
         apply!(shader, timeout_ms);
         apply!(shader, launch_timeout_ms);
         apply!(shader, idle_seconds);

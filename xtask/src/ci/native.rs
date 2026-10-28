@@ -395,6 +395,10 @@ impl Session {
                 self.execute(&command, 300, "focus-clippy.log", false)
             }
             Stage::FocusReproduce => {
+                if args.suite == "dynamic" && has("agent") {
+                    self.test(false,"agent","browser_ownership::killed_profile_owners_reap_children_preserve_persistent_data_and_release_only_their_lease",
+                        &["--exact","--test-threads=1"],"focus-profile-ownership.log")?;
+                }
                 if has("user_agent_config") {
                     self.test(
                         !core,

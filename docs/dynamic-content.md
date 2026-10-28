@@ -161,7 +161,7 @@ CLI は取得条件を満たした一時点の PNG を出力する。TUI は同�
 
 通常利用するブラウザープロファイルを流用せず、文書用の分離されたコンテキストを使う。認証が必要なページは明示的に設定した専用プロファイルを使い、認証情報を `.pen`・会話ログ・公開する描画メタデータへ書き出さない。
 
-ページ側の例外文やCDPの自由形式のエラー本文も、資格情報やページ内容を含み得る。次の変更では、ページ内JavaScriptの失敗を `PAGE_LOAD_FAILED` と `details.stage=page_evaluation`、CDPの失敗を操作名・数値code・`details.stage=browser_protocol` で返す。取得先の秘密を含む本文・stack・CDP dataは返さない。自作GLSLの編集用の上限付き診断は維持する。ページAPIを置き換えて例外を発生させる通常／保持contextの実取得・終了・復帰試験を追加したが、この変更のRust実行結果はGHA待ちである。専用認証プロファイルは引き続き未実装である。
+ページ側の例外文やCDPの自由形式のエラー本文も、資格情報やページ内容を含み得る。次の変更では、ページ内JavaScriptの失敗を `PAGE_LOAD_FAILED` と `details.stage=page_evaluation`、CDPの失敗を操作名・数値code・`details.stage=browser_protocol` で返す。取得先の秘密を含む本文・stack・CDP dataは返さない。自作GLSLの編集用の上限付き診断は維持する。ページAPIを置き換えて例外を発生させる通常／保持contextの実取得・終了・復帰試験を追加したが、この変更のRust実行結果はGHA待ちである。専用認証プロファイルの実装・試験は手元で準備中であり、GHA検証と複数クライアントの統合は未完了である。
 
 ## シェーダー
 
@@ -284,7 +284,7 @@ Rust の別プロセスへ `rquickjs` 0.14.0 と、その配布ソースが含�
 
 Chrome for Testing headless shell 156.0.8078.47 の版別公式 ZIP と全ファイルのサイズ・ハッシュを固定した。専用コマンドから HTTPS 取得または固定したローカル ZIP の導入・検査・再利用を行い、変更された導入先は上書きせず拒否する。[全3環境の検証 `d6c5808`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40633683855) では、macOS Apple Silicon・Linux x64／arm64 の管理runtimeを実際に導入・検査し、sandboxを有効にしたpage／shader・MCP・PTY試験を実行した。過去のWindows結果は初回リリースの対象へ含めない。[導入と試験手順](runtimes.md)
 
-Browser ノードは HTTP(S)・HTML data URL・about:blank、寸法・ズーム・スクロール・基本の desktop/phone/tablet を扱う。読み込み・フォント・画像デコード・2回の描画フレームを待ち、取得条件・時刻・画像 ID・版・画像ハッシュを記録する。URL の query・fragment・資格情報・HTML 本文を取得メタデータから除く。CLI・MCP は取得ごとに新しい隔離コンテキストを用意し、取得画像を容量・件数制限のあるメモリキャッシュから再利用する。`refresh` で明示取得し直せる。TUI は文書・ノードの address/source に結び付けた隔離 context を最大8件保持し、明示再取得で DOM を引き継ぐ。寸法・scale・zoom・scroll 変更では再利用し、URL/device 変更は作り直す。LRU で上限を保ち、削除・無効化されたノードは次の有効 snapshot で閉じる。viewport 外に移動しただけでは捨てない。snapshot 変更時には TUI の動的 raster cache を失効させ、以前の URL の古い画像が復活するのを防ぐ。browser 方針の変更・文書の結び直し・待機回収・実行失敗・eviction では状態を失い得る。`page_state` に retained/id/reused/retained_limit を記録し、cache metadata は元の取得時を示す。TUI preview も取得 metadata を保持する。状態保持と周期的なページ取得は実装済みで、`35e959f` の初回3環境の実 Chromium／PTY 検証が成功した。`/play` は既定5fps・最大10fpsで既存 DOM を取得し、停止後は開始済みの1フレームを除いて周期取得しない。専用認証profileと本家の全device IDは未実装である。追加待機・selector・animation・networkの現在の取得方針と検証範囲は上記を参照する。
+Browser ノードは HTTP(S)・HTML data URL・about:blank、寸法・ズーム・スクロール・基本の desktop/phone/tablet を扱う。読み込み・フォント・画像デコード・2回の描画フレームを待ち、取得条件・時刻・画像 ID・版・画像ハッシュを記録する。URL の query・fragment・資格情報・HTML 本文を取得メタデータから除く。CLI・MCP は既定では取得ごとに新しい隔離コンテキストを用意し、取得画像を容量・件数制限のあるメモリキャッシュから再利用する。`refresh` で明示取得し直せる。TUI は文書・ノードの address/source に結び付けた隔離 context を最大8件保持し、明示再取得で DOM を引き継ぐ。寸法・scale・zoom・scroll 変更では再利用し、URL/device 変更は作り直す。LRU で上限を保ち、削除・無効化されたノードは次の有効 snapshot で閉じる。viewport 外に移動しただけでは捨てない。snapshot 変更時には TUI の動的 raster cache を失効させ、以前の URL の古い画像が復活するのを防ぐ。browser 方針の変更・文書の結び直し・待機回収・実行失敗・eviction では状態を失い得る。`page_state` に retained/id/reused/retained_limit を記録し、cache metadata は元の取得時を示す。TUI preview も取得 metadata を保持する。状態保持と周期的なページ取得は実装済みで、`35e959f` の初回3環境の実 Chromium／PTY 検証が成功した。`/play` は既定5fps・最大10fpsで既存 DOM を取得し、停止後は開始済みの1フレームを除いて周期取得しない。専用認証profileは実装を準備中で、複数クライアントの統合とGHA検証は未完了である。本家の全device IDは未実装である。追加待機・selector・animation・networkの現在の取得方針と検証範囲は上記を参照する。
 
 GLSL は通常ページと別プロセスで明示的に SwiftShader WebGL を選ぶ。Chromium 自身の OS sandbox は維持し、シェーダー用コンテキストで HTTP(S)・file・FTP の取得を拒否する。塗り・線・効果、対象画像・背景・時刻・解像度、数値・色・ベクトル・行列・配列・構造体の入力とmacro展開を共通経路で扱う。上記「宣言と数値入力」に対応する制限と原式による検証条件を記す。`d6c5808` の全3環境では構造体16ケース・前処理64ケースを含む実WebGL試験が成功し、保存画像と取得条件を独立に照合した。本家との総合的な出力比較と全仕様の互換性が完了したという意味ではない。
 

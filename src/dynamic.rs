@@ -184,6 +184,7 @@ impl DynamicRuntime {
         settings.validate()?;
         if (self.page_scope.is_some() && self.browser_settings != settings.browser)
             || self.browser_settings.network_policy != settings.browser.network_policy
+            || self.browser_settings.profile != settings.browser.profile
         {
             self.pages.take();
             self.page_used = None;
@@ -305,12 +306,21 @@ impl DynamicRuntime {
             } else {
                 crate::runtime::installed(&self.data)?
             };
+            let profile = if purpose == Purpose::Page && !self.browser_settings.profile.is_empty() {
+                Some(crate::runtime::profiles::Profile::open(
+                    &self.data,
+                    &self.browser_settings.profile,
+                )?)
+            } else {
+                None
+            };
             *slot = Some(Browser::launch_for_runtime(
                 &browser,
                 purpose,
                 self.browser_settings.network_policy,
                 &launch_budget,
                 self.supervisor.as_deref(),
+                profile.as_ref(),
             )?);
         }
         Ok(slot.as_mut().expect("browser initialized"))

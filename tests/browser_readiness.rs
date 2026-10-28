@@ -225,6 +225,10 @@ fn copied_browser_namespaces_keep_pixels_across_removal_recopy_themes_and_detach
 #[path = "support/page_wait_reference.rs"]
 mod reference;
 
+#[cfg(unix)]
+#[path = "support/browser_profiles.rs"]
+mod browser_profiles;
+
 struct Fixture(TempDir);
 impl Fixture {
     fn new(url: &str) -> Self {

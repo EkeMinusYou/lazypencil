@@ -51,9 +51,36 @@ LAZYPENCIL_CHROMIUM=/absolute/path/to/chrome-headless-shell lazypencil render de
 
 This explicit override is reported as `external-unverified`, with `managed: false` and `integrity_verified: false`. The actual running browser version is included in acquisition metadata. Its installation, supporting libraries, licensing, CDP compatibility, and software WebGL capability are the caller's responsibility. No existing personal browser profile is reused.
 
+## Dedicated authentication profiles
+
+The dedicated-profile implementation is awaiting hosted Rust/Chromium verification. Ordinary rendering still uses temporary, isolated browser contexts. No personal Chrome profile is adopted.
+
+```sh
+lazypencil runtime setup chromium
+lazypencil runtime profile create work
+lazypencil runtime profile login work \
+  --browser /absolute/path/to/full-chromium \
+  --url https://example.com/login
+```
+
+Login requires a full browser with a visible UI. The managed headless shell remains the acquisition runtime; login probes a temporary profile first and requires the same Chromium major version. An explicitly configured `LAZYPENCIL_CHROMIUM` may supply the acquisition browser instead. Close the dedicated login tab/window, or quit that browser, to return. Ctrl+C or `--timeout-seconds` (default 600, range 1–3,600) closes the owned browser through the normal cleanup path.
+
+Select the name in **user** configuration:
+
+```toml
+[runtime.browser]
+profile = "work"
+```
+
+The same captured setting applies to CLI, MCP and TUI page acquisitions. A project can disable it with `profile = ""`, but cannot select a nonempty name. Profile names use 1–64 lowercase ASCII letters, digits or hyphens and start with a letter or digit. `runtime profile path work` explicitly returns its private data directory for local management.
+
+Profiles live under `browser-profiles/<name>` in the selected data directory, with private ownership markers and an exclusive lease held by the browser guardian. Persistent cookies, localStorage, IndexedDB and Cache Storage remain there. Per-acquisition tabs close normally; retained TUI tabs keep their existing DOM lifetime. Shader workers never use these profiles. Acquisition metadata and serialized runtime limits omit the profile name; credentials are not imported into `.pen` files or conversation records. The guardian preserves persistent data after host death and releases its lease only after collecting the browser's children.
+
+Concurrent independent browser processes cannot use one profile. This includes a TUI preview and a separate bound MCP process: their joint authenticated-session behavior still needs integration before release acceptance. The pending tests cover exclusive ownership, replaced identities, abrupt owner death, all four persistent storage kinds, fresh/retained isolation and restoration, offline acquisition, real CLI selection and login deadline/recovery. Visible login UI and the complete three-platform result are not yet verified.
+
 ## Execution and licensing
 
-Rust connects directly to a loopback Chrome DevTools Protocol socket. Node.js and Puppeteer are not needed for this rendering path. Each process uses a temporary private browser profile. CLI/MCP acquisitions and shader jobs use fresh isolated contexts with downloads denied. The TUI opts into up to eight isolated page contexts tied to its document and nodes; capture refresh preserves their DOM, while URL/device changes, eviction, idle expiry, failure or browser-policy changes can reset them. Downloads remain denied. The retained-context isolation, eviction, DOM-preserving refresh and periodic-frame/PTY path passed on all three initial-release targets in [the `0a8f336` full gate](https://github.com/EkeMinusYou/lazypencil/actions/runs/40574081272). This does not establish physical-display timing or authenticated-page profile support. Page and shader jobs use separate processes. Browser JavaScript is enabled for page captures.
+Rust connects directly to a loopback Chrome DevTools Protocol socket. Node.js and Puppeteer are not needed for this rendering path. The default page process and every shader process use temporary private profiles. Without an explicitly selected dedicated profile, CLI/MCP acquisitions use fresh isolated contexts with downloads denied. The TUI opts into up to eight isolated page contexts tied to its document and nodes; capture refresh preserves their DOM, while URL/device changes, eviction, idle expiry, failure or browser-policy changes can reset them. Downloads remain denied. The retained-context isolation, eviction, DOM-preserving refresh and periodic-frame/PTY path passed on all three initial-release targets in [the `0a8f336` full gate](https://github.com/EkeMinusYou/lazypencil/actions/runs/40574081272). This does not establish physical-display timing or authenticated-page profile support. Page and shader jobs use separate processes. Browser JavaScript is enabled for page captures.
 
 The shader process explicitly selects `--use-gl=angle --use-angle=swiftshader-webgl --enable-unsafe-swiftshader`. Chromium documents that this software WebGL opt-in has weaker security guarantees than its normal GPU path. It is restricted here to the shader process, which receives captured GLSL and image data and blocks HTTP(S), file, and FTP requests. The ordinary page process does not receive these flags. Chromium's own OS sandbox remains enabled; lazypencil does not add `--no-sandbox`. See [Chromium's SwiftShader documentation](https://chromium.googlesource.com/chromium/src/+/HEAD/docs/gpu/swiftshader.md).
 

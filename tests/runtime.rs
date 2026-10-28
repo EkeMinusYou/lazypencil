@@ -6,6 +6,71 @@ mod fixture_support;
 
 #[cfg(unix)]
 #[test]
+fn profile_commands_require_explicit_creation_and_never_launch_a_browser() {
+    let temp = TempDir::new().unwrap();
+    let data = temp.path().join("data");
+    let invoke = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_lazypencil"))
+            .args(["--json", "--data-dir"])
+            .arg(&data)
+            .args(["runtime", "profile"])
+            .args(args)
+            .env("LAZYPENCIL_CONFIG_DIR", temp.path().join("config"))
+            .output()
+            .unwrap()
+    };
+    assert!(!invoke(&["path", "work"]).status.success());
+    assert!(!data.exists());
+    for _ in 0..2 {
+        let output = invoke(&["create", "work"]);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(value["profile"], "work");
+    }
+    let output = invoke(&["path", "work"]);
+    assert!(output.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        std::path::Path::new(value["directory"].as_str().unwrap()),
+        fs::canonicalize(data.join("browser-profiles/work")).unwrap()
+    );
+    assert_eq!(
+        fs::read_dir(data.join("browser-profiles/work"))
+            .unwrap()
+            .count(),
+        1
+    );
+    for args in [
+        vec!["create", "../outside"],
+        vec![
+            "login",
+            "work",
+            "--browser",
+            "unused",
+            "--url",
+            "file:///secret",
+        ],
+        vec![
+            "login",
+            "work",
+            "--browser",
+            "unused",
+            "--url",
+            "https://example.invalid",
+            "--timeout-seconds",
+            "0",
+        ],
+    ] {
+        assert!(!invoke(&args).status.success());
+    }
+}
+
+#[cfg(unix)]
+#[test]
 fn local_runtime_archives_reject_nonregular_inputs_without_blocking_or_leaving_staging_files() {
     use std::{os::unix::fs::symlink, process::Stdio, time::Duration};
     let temp = TempDir::new().unwrap();

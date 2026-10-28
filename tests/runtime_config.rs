@@ -17,6 +17,73 @@ struct Fixture {
     document: PathBuf,
 }
 
+#[test]
+fn dedicated_browser_profiles_are_user_selected_redacted_and_project_disable_only() {
+    let f = Fixture::new();
+    assert!(
+        f.snapshot()
+            .unwrap()
+            .settings
+            .runtime
+            .browser
+            .profile
+            .is_empty()
+    );
+    fs::write(
+        f.user.join("config.toml"),
+        "[runtime.browser]\nprofile='work-private-profile-14'\n",
+    )
+    .unwrap();
+    let captured = f.snapshot().unwrap();
+    assert_eq!(
+        captured.settings.runtime.browser.profile,
+        "work-private-profile-14"
+    );
+    assert!(
+        !serde_json::to_string(&captured.settings.runtime)
+            .unwrap()
+            .contains("work-private-profile-14")
+    );
+    assert!(
+        !captured
+            .summary()
+            .to_string()
+            .contains("work-private-profile-14")
+    );
+    fs::write(
+        f.project.join("lazypencil.toml"),
+        "[runtime.browser]\nprofile='work-private-profile-14'\n",
+    )
+    .unwrap();
+    assert!(f.snapshot().is_err());
+    fs::write(
+        f.project.join("lazypencil.toml"),
+        "[runtime.browser]\nprofile=''\n",
+    )
+    .unwrap();
+    assert!(
+        f.snapshot()
+            .unwrap()
+            .settings
+            .runtime
+            .browser
+            .profile
+            .is_empty()
+    );
+    assert_eq!(
+        captured.settings.runtime.browser.profile,
+        "work-private-profile-14"
+    );
+    for name in ["../outside", "/private", "Other", "-work"] {
+        fs::write(
+            f.user.join("config.toml"),
+            format!("[runtime.browser]\nprofile={}\n", json!(name)),
+        )
+        .unwrap();
+        assert!(f.snapshot().is_err());
+    }
+}
+
 impl Fixture {
     fn new() -> Self {
         let temp = TempDir::new().unwrap();

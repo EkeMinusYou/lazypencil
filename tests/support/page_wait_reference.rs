@@ -28,9 +28,17 @@ struct NetworkCounts {
     websocket: AtomicUsize,
     tls: AtomicUsize,
     turn: AtomicUsize,
+    profiles: AtomicUsize,
 }
 
 impl Server {
+    #[allow(
+        dead_code,
+        reason = "Observed only by the dedicated-profile integration"
+    )]
+    pub fn profile_requests(&self) -> usize {
+        self.network.profiles.load(Ordering::SeqCst)
+    }
     #[allow(
         dead_code,
         reason = "Used by browser_readiness, not the shared dynamic_render fixture"
@@ -151,6 +159,9 @@ fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool, network: 
     }
     let request = String::from_utf8_lossy(&header);
     let path = request.split_whitespace().nth(1).unwrap_or("");
+    if path == "/profile-state" {
+        network.profiles.fetch_add(1, Ordering::SeqCst);
+    }
     if path.starts_with("/network/socket")
         && let Some(key) = request
             .lines()
@@ -177,6 +188,23 @@ fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool, network: 
         probe.store(true, Ordering::SeqCst);
     }
     let (kind, body, delay) = match path {
+        "/profile-state"
+            if request.lines().any(|line| {
+                line.starts_with("Cookie:")
+                    && line.contains("lp-profile-cookie=profile-fixture-secret")
+            }) =>
+        {
+            (
+                "text/html",
+                r#"<style>html{height:100%;background:#f00}</style><script>(async()=>{const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('lp-auth-state',1);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)});const value=await new Promise((resolve,reject)=>{const request=db.transaction('state').objectStore('state').get('auth');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)});db.close();const cache=await caches.open('lp-auth-cache'),response=await cache.match('/profile-cache-entry');if(localStorage.getItem('lp-auth')==='profile-fixture-secret'&&value==='profile-fixture-secret'&&response&&await response.text()==='profile-fixture-secret'){document.documentElement.style.background='#00ff00';document.documentElement.dataset.profileReady='yes'}})()</script>"#,
+                0,
+            )
+        }
+        "/profile-state" => (
+            "text/html",
+            "<html data-profile-ready='yes' style='height:100%;background:#ff0000'></html>",
+            0,
+        ),
         "/delayed" => (
             "text/html",
             "<style>html{background:#f00}</style><script>addEventListener('load',()=>fetch('/color').then(r=>r.text()).then(color=>document.documentElement.style.background=color));</script>",

@@ -29,6 +29,7 @@ const MAX_STATUS: usize = 4096;
 pub(super) fn spawn(
     command: Command,
     supervisor: Option<&Path>,
+    persistent: Option<(&Path, &str)>,
     budget: &Budget<'_>,
 ) -> Result<Owned> {
     let current;
@@ -44,8 +45,16 @@ pub(super) fn spawn(
             "An absolute lazypencil browser supervisor executable is required",
         ));
     }
-    let child = Command::new(helper)
-        .arg("__browser_process_worker")
+    let mut worker = Command::new(helper);
+    worker.arg("__browser_process_worker");
+    if let Some((profile, identity)) = persistent {
+        worker
+            .arg("--persistent-profile")
+            .arg(profile)
+            .arg("--profile-identity")
+            .arg(identity);
+    }
+    let child = worker
         .arg("--")
         .arg(command.get_program())
         .args(command.get_args())
@@ -164,9 +173,27 @@ pub(super) fn stop(mut child: Child) {
 
 pub fn serve_worker() -> Result<bool> {
     let mut args = std::env::args_os().skip(2);
-    if args.next().as_deref() != Some(std::ffi::OsStr::new("--")) {
+    let first = args.next();
+    let persistent = if first.as_deref() == Some(std::ffi::OsStr::new("--persistent-profile")) {
+        let path = args
+            .next()
+            .ok_or_else(|| failed("Missing dedicated profile path"))?;
+        if args.next().as_deref() != Some(std::ffi::OsStr::new("--profile-identity")) {
+            return Err(failed("Missing dedicated profile identity"));
+        }
+        let identity = args
+            .next()
+            .and_then(|value| value.into_string().ok())
+            .ok_or_else(|| failed("Invalid dedicated profile identity"))?;
+        if args.next().as_deref() != Some(std::ffi::OsStr::new("--")) {
+            return Err(failed("Invalid browser worker arguments"));
+        }
+        Some((std::path::PathBuf::from(path), identity))
+    } else if first.as_deref() == Some(std::ffi::OsStr::new("--")) {
+        None
+    } else {
         return Err(failed("Invalid browser worker arguments"));
-    }
+    };
     let command = args
         .next()
         .ok_or_else(|| failed("Missing browser executable"))?;
@@ -208,14 +235,50 @@ pub fn serve_worker() -> Result<bool> {
                 io::Error::from(io::ErrorKind::BrokenPipe),
             ));
         }
-        // This worker creates and owns the directory it will remove. No
-        // caller-supplied path is ever adopted for recursive cleanup.
-        let profile = tempfile::Builder::new()
-            .prefix("lazypencil-chromium-")
-            .tempdir()
-            .map_err(|e| failure("browser_profile", e))?;
+        let persistent = persistent
+            .as_ref()
+            .map(|(path, identity)| {
+                let profile = crate::runtime::profiles::Profile::from_directory(path)?;
+                if profile.identity() != identity {
+                    return Err(Error::new(
+                        "RUNTIME_UNAVAILABLE",
+                        "Dedicated profile identity changed",
+                    )
+                    .details(json!({"stage":"profile_identity"})));
+                }
+                Ok(profile)
+            })
+            .transpose()?;
+        let _lease = persistent
+            .as_ref()
+            .map(crate::runtime::profiles::Profile::lease)
+            .transpose()?;
+        // Only freshly created ephemeral directories are recursively removed.
+        // A persistent profile and its lease outlive the complete browser group.
+        let profile = if persistent.is_none() {
+            Some(
+                tempfile::Builder::new()
+                    .prefix("lazypencil-chromium-")
+                    .tempdir()
+                    .map_err(|e| failure("browser_profile", e))?,
+            )
+        } else {
+            None
+        };
+        let directory = persistent
+            .as_ref()
+            .map(crate::runtime::profiles::Profile::directory)
+            .or_else(|| profile.as_ref().map(tempfile::TempDir::path))
+            .expect("browser profile");
+        if persistent.is_some() {
+            match fs::remove_file(directory.join("DevToolsActivePort")) {
+                Ok(()) => {}
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(failure("profile_port_cleanup", error)),
+            }
+        }
         let child = Command::new(command)
-            .arg(format!("--user-data-dir={}", profile.path().display()))
+            .arg(format!("--user-data-dir={}", directory.display()))
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -235,19 +298,21 @@ pub fn serve_worker() -> Result<bool> {
         if lost.load(Ordering::Acquire) {
             stop_group(&group.control);
         }
-        publish(&json!({"pid":group.child.id(),"profile":profile.path()}))?;
+        publish(&json!({"pid":group.child.id(),"profile":directory}))?;
         announced = true;
         group
             .wait_for_root()
             .map_err(|e| failure("browser_wait", e))?;
         let status = group.finish().map_err(|e| failure("browser_wait", e))?;
-        profile.close().map_err(|e| failure("profile_cleanup", e))?;
+        if let Some(profile) = profile {
+            profile.close().map_err(|e| failure("profile_cleanup", e))?;
+        }
         Ok(status.success())
     })();
     if !announced && let Err(error) = &result {
         let details = error.details.as_ref();
         let _ = publish(
-            &json!({"phase":details.and_then(|d| d["supervisor_phase"].as_str()).unwrap_or("supervisor_status"),"os_error":details.and_then(|d| d["os_error"].as_i64()).unwrap_or(0)}),
+            &json!({"phase":details.and_then(|d| d["supervisor_phase"].as_str().or_else(|| d["stage"].as_str())).unwrap_or("supervisor_status"),"os_error":details.and_then(|d| d["os_error"].as_i64()).unwrap_or(0)}),
         );
     }
     result

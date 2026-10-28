@@ -45,6 +45,7 @@ pub struct Browser {
     retained_tabs: VecDeque<tabs::RetainedTab>,
     local_files: local_files::Interception,
     purpose: Purpose,
+    persistent_profile: bool,
     deny_proxy: Option<network::DenyProxy>,
     _profile: Option<tempfile::TempDir>,
 }
@@ -83,8 +84,8 @@ impl Browser {
         self.child.id()
     }
 
-    /// The ephemeral Chromium profile, for lifecycle diagnostics. On Unix,
-    /// its private guardian owns cleanup even after this host is terminated.
+    /// The owned Chromium profile, for private lifecycle diagnostics. The Unix
+    /// guardian removes only ephemeral profiles after this host is terminated.
     pub fn profile_path(&self) -> &Path {
         #[cfg(unix)]
         {
@@ -103,7 +104,15 @@ impl Browser {
         purpose: Purpose,
         budget: &Budget<'_>,
     ) -> Result<Self> {
-        Self::launch_inner(browser, purpose, budget, None, PageNetworkPolicy::Online)
+        Self::launch_inner(
+            browser,
+            purpose,
+            budget,
+            None,
+            PageNetworkPolicy::Online,
+            None,
+            false,
+        )
     }
 
     /// Supply the actual lazypencil CLI when embedding this library in another executable.
@@ -119,7 +128,36 @@ impl Browser {
             budget,
             Some(supervisor),
             PageNetworkPolicy::Online,
+            None,
+            false,
         )
+    }
+
+    /// Opt into a profile explicitly created by lazypencil. Visible mode is
+    /// reserved for an explicit login command; render workers remain headless.
+    pub fn launch_profile(
+        browser: &InstalledBrowser,
+        profile: &crate::runtime::profiles::Profile,
+        budget: &Budget<'_>,
+        supervisor: Option<&Path>,
+        visible: bool,
+    ) -> Result<Self> {
+        Self::launch_inner(
+            browser,
+            Purpose::Page,
+            budget,
+            supervisor,
+            PageNetworkPolicy::Online,
+            Some(profile),
+            visible,
+        )
+    }
+
+    pub fn has_exited(&mut self) -> Result<bool> {
+        self.child
+            .try_wait()
+            .map(|status| status.is_some())
+            .map_err(|_| failed("Cannot observe browser process"))
     }
 
     #[cfg(feature = "rendering")]
@@ -129,8 +167,9 @@ impl Browser {
         policy: PageNetworkPolicy,
         budget: &Budget<'_>,
         supervisor: Option<&Path>,
+        profile: Option<&crate::runtime::profiles::Profile>,
     ) -> Result<Self> {
-        Self::launch_inner(browser, purpose, budget, supervisor, policy)
+        Self::launch_inner(browser, purpose, budget, supervisor, policy, profile, false)
     }
 
     fn launch_inner(
@@ -139,8 +178,16 @@ impl Browser {
         budget: &Budget<'_>,
         supervisor: Option<&Path>,
         policy: PageNetworkPolicy,
+        selected_profile: Option<&crate::runtime::profiles::Profile>,
+        visible: bool,
     ) -> Result<Self> {
         budget.check()?;
+        if selected_profile.is_some() && purpose != Purpose::Page {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "Dedicated profiles are only available for page acquisition",
+            ));
+        }
         let offline = purpose == Purpose::Page && policy == PageNetworkPolicy::Offline;
         let deny_proxy = offline.then(network::DenyProxy::new).transpose()?;
         #[cfg(unix)]
@@ -154,7 +201,6 @@ impl Browser {
         );
         let mut command = Command::new(&browser.executable);
         command.args([
-            "--headless",
             "--remote-debugging-port=0",
             "--remote-debugging-address=127.0.0.1",
             "--no-first-run",
@@ -167,6 +213,9 @@ impl Browser {
             "--hide-scrollbars",
             "--mute-audio",
         ]);
+        if !visible {
+            command.arg("--headless");
+        }
         if let Some(profile) = &profile {
             command.arg(format!("--user-data-dir={}", profile.path().display()));
         }
@@ -183,6 +232,13 @@ impl Browser {
                 "--webrtc-ip-handling-policy=disable_non_proxied_udp",
                 "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
             ]);
+            if selected_profile.is_some()
+                && let Some(proxy) = &deny_proxy
+            {
+                command
+                    .arg(format!("--proxy-server=http://{}", proxy.address))
+                    .arg("--proxy-bypass-list=<-loopback>");
+            }
         }
         command
             .arg("about:blank")
@@ -193,6 +249,7 @@ impl Browser {
             command,
             supervisor,
             profile.as_ref().map(tempfile::TempDir::path),
+            selected_profile.map(|profile| (profile.directory(), profile.identity())),
             budget,
         )
         .map_err(|error| budget.check().err().unwrap_or(error))?;
@@ -246,6 +303,7 @@ impl Browser {
             retained_tabs: VecDeque::new(),
             local_files: local_files::Interception::default(),
             purpose,
+            persistent_profile: selected_profile.is_some(),
             deny_proxy,
             _profile: profile,
         };
@@ -399,6 +457,17 @@ impl Drop for Browser {
             json!({}),
             &Budget::new(Duration::from_millis(200), None),
         );
+        if self.persistent_profile {
+            // Give Chromium's normal close a bounded opportunity to flush its
+            // profile before the guardian's existing forced cleanup path.
+            let end = Instant::now() + Duration::from_secs(3);
+            while Instant::now() < end {
+                if self.child.try_wait().is_ok_and(|status| status.is_some()) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
         self.child.stop();
     }
 }

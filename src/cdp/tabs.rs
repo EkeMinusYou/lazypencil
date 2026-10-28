@@ -17,7 +17,8 @@ pub struct PageState {
 }
 
 struct Tab {
-    context: String,
+    context: Option<String>,
+    target: String,
     session: String,
 }
 
@@ -29,6 +30,75 @@ pub(super) struct RetainedTab {
 }
 
 impl Browser {
+    /// A deliberate login keeps its page open until the user closes the browser
+    /// or the shared deadline/cancellation ends it. Credentials remain on disk.
+    pub fn login(&mut self, url: &str, budget: &Budget<'_>) -> Result<()> {
+        if !self.persistent_profile {
+            return Err(crate::Error::new(
+                "INVALID_ARGUMENT",
+                "Login requires an explicit dedicated browser profile",
+            ));
+        }
+        let tab = self.create_tab(budget)?;
+        let mut closed = false;
+        let result = (|| {
+            let navigation = self.command(
+                Some(&tab.session),
+                "Page.navigate",
+                json!({"url":url}),
+                budget,
+            )?;
+            if navigation.get("errorText").is_some() {
+                return Err(crate::Error::new(
+                    "PAGE_LOAD_FAILED",
+                    "Login page navigation failed",
+                ));
+            }
+            loop {
+                budget.check()?;
+                if self.has_exited()? {
+                    return Ok(());
+                }
+                let targets = match self.command(None, "Target.getTargets", json!({}), budget) {
+                    Ok(targets) => targets,
+                    Err(error) => {
+                        // Closing the last window can close CDP before the
+                        // guardian finishes collecting Chromium's children.
+                        let end = std::time::Instant::now()
+                            + budget.remaining()?.min(Duration::from_secs(3));
+                        loop {
+                            budget.check()?;
+                            if self.has_exited()? {
+                                return Ok(());
+                            }
+                            if std::time::Instant::now() >= end {
+                                return Err(error);
+                            }
+                            std::thread::sleep(Duration::from_millis(20).min(budget.remaining()?));
+                        }
+                    }
+                };
+                let targets = targets["targetInfos"]
+                    .as_array()
+                    .ok_or_else(|| failed("Cannot observe the login target"))?;
+                if !targets
+                    .iter()
+                    .any(|target| target["targetId"] == tab.target)
+                {
+                    closed = true;
+                    return Ok(());
+                }
+                std::thread::sleep(Duration::from_millis(100).min(budget.remaining()?));
+            }
+        })();
+        if closed || self.has_exited().unwrap_or(false) {
+            result
+        } else {
+            let disposed = self.dispose_tab(tab);
+            result.and_then(|()| disposed)
+        }
+    }
+
     #[cfg(feature = "rendering")]
     pub(crate) fn retained_page_count(&self) -> usize {
         self.retained_tabs.len()
@@ -151,22 +221,24 @@ impl Browser {
             // Chromium otherwise bypasses proxies for localhost/link-local URLs.
             options["proxyBypassList"] = "<-loopback>".into();
         }
-        let context = self.command(None, "Target.createBrowserContext", options, budget)?;
-        let context = identifier(&context, "browserContextId")?;
+        let context = if self.persistent_profile {
+            None
+        } else {
+            let context = self.command(None, "Target.createBrowserContext", options, budget)?;
+            Some(identifier(&context, "browserContextId")?)
+        };
+        let mut created_target = None;
         let result = (|| {
-            self.command(
-                None,
-                "Browser.setDownloadBehavior",
-                json!({"behavior":"deny","browserContextId":context}),
-                budget,
-            )?;
-            let target = self.command(
-                None,
-                "Target.createTarget",
-                json!({"url":"about:blank","browserContextId":context}),
-                budget,
-            )?;
+            let mut download = json!({"behavior":"deny"});
+            let mut target_options = json!({"url":"about:blank"});
+            if let Some(context) = &context {
+                download["browserContextId"] = context.clone().into();
+                target_options["browserContextId"] = context.clone().into();
+            }
+            self.command(None, "Browser.setDownloadBehavior", download, budget)?;
+            let target = self.command(None, "Target.createTarget", target_options, budget)?;
             let target = identifier(&target, "targetId")?;
+            created_target = Some(target.clone());
             let attached = self.command(
                 None,
                 "Target.attachToTarget",
@@ -176,24 +248,44 @@ impl Browser {
             identifier(&attached, "sessionId")
         })();
         match result {
-            Ok(session) => Ok(Tab { context, session }),
+            Ok(session) => Ok(Tab {
+                context,
+                session,
+                target: created_target.expect("created target"),
+            }),
             Err(error) => {
-                let _ = self.command(
-                    None,
-                    "Target.disposeBrowserContext",
-                    json!({"browserContextId":context}),
-                    &Budget::new(Duration::from_millis(500), None),
-                );
+                if let Some(context) = &context {
+                    let _ = self.command(
+                        None,
+                        "Target.disposeBrowserContext",
+                        json!({"browserContextId":context}),
+                        &Budget::new(Duration::from_millis(500), None),
+                    );
+                } else if let Some(target) = created_target {
+                    let _ = self.command(
+                        None,
+                        "Target.closeTarget",
+                        json!({"targetId":target}),
+                        &Budget::new(Duration::from_millis(500), None),
+                    );
+                }
                 Err(error)
             }
         }
     }
 
     fn dispose_tab(&mut self, tab: Tab) -> Result<()> {
+        let (method, options) = match &tab.context {
+            Some(context) => (
+                "Target.disposeBrowserContext",
+                json!({"browserContextId":context}),
+            ),
+            None => ("Target.closeTarget", json!({"targetId":tab.target})),
+        };
         let disposed = self.command(
             None,
-            "Target.disposeBrowserContext",
-            json!({"browserContextId":tab.context}),
+            method,
+            options,
             &Budget::new(Duration::from_millis(500), None),
         );
         self.local_files.remove(&tab.session);

@@ -349,6 +349,31 @@ pub enum RuntimeCommand {
     },
     /// Verify the installed Chromium files and report their status.
     Status,
+    /// Explicitly create or authenticate a dedicated page profile.
+    Profile {
+        #[command(subcommand)]
+        command: BrowserProfileCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum BrowserProfileCommand {
+    /// Create private browser data without adopting an existing browser profile.
+    Create { name: String },
+    /// Show the path of an explicitly created profile, without reading credentials.
+    Path { name: String },
+    /// Open a supplied full Chromium browser for interactive authentication.
+    Login {
+        name: String,
+        #[arg(long)]
+        browser: PathBuf,
+        #[arg(long)]
+        url: String,
+        #[arg(long, default_value_t = 600, value_parser = clap::value_parser!(u64).range(1..=3600))]
+        timeout_seconds: u64,
+        #[arg(long, hide = true)]
+        headless: bool,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -954,6 +979,33 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
                     crate::runtime::setup(&data, archive.as_deref())
                 }
                 RuntimeCommand::Status => Ok(crate::runtime::status(&data)),
+                RuntimeCommand::Profile { command } => match command {
+                    BrowserProfileCommand::Create { name } => {
+                        crate::runtime::profiles::Profile::create(&data, name)?;
+                        Ok(json!({"profile":name,"created":true}))
+                    }
+                    BrowserProfileCommand::Path { name } => {
+                        let profile = crate::runtime::profiles::Profile::open(&data, name)?;
+                        Ok(json!({"profile":name,"directory":profile.directory()}))
+                    }
+                    BrowserProfileCommand::Login {
+                        name,
+                        browser,
+                        url,
+                        timeout_seconds,
+                        headless,
+                    } => {
+                        crate::runtime::profiles::login(
+                            &data,
+                            name,
+                            browser,
+                            url,
+                            *timeout_seconds,
+                            *headless,
+                        )?;
+                        Ok(json!({"profile":name,"browser_closed":true}))
+                    }
+                },
             }
         }
         Command::Recover { file } => {

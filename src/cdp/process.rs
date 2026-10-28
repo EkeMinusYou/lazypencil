@@ -36,9 +36,16 @@ impl Owned {
         command: Command,
         supervisor: Option<&Path>,
         profile: Option<&Path>,
+        persistent: Option<(&Path, &str)>,
         budget: &Budget<'_>,
     ) -> Result<Self> {
         budget.check()?;
+        if persistent.is_some() && !cfg!(unix) {
+            return Err(crate::Error::new(
+                "UNSUPPORTED_FEATURE",
+                "Dedicated browser profiles require a supported Unix host",
+            ));
+        }
         #[cfg(windows)]
         {
             windows::spawn(
@@ -51,7 +58,7 @@ impl Owned {
         #[cfg(unix)]
         {
             debug_assert!(profile.is_none());
-            unix::spawn(command, supervisor, budget)
+            unix::spawn(command, supervisor, persistent, budget)
         }
         #[cfg(not(any(windows, unix)))]
         {

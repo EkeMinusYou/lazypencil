@@ -105,6 +105,8 @@ The host sends a versioned policy envelope separately from script inputs and the
 
 ## Browser, shader and raster-cache limits
 
+User configuration may additionally select `runtime.browser.profile = "work"` after explicit profile creation and login. Project configuration can set it to `""` to disable it, but cannot select a profile. The private name is omitted from serialized settings and acquisition limits. See [dedicated authentication profiles](runtimes.md#dedicated-authentication-profiles) for lifecycle, current concurrency limits and pending verification.
+
 Both scopes accept the following defaults, with the same per-field inheritance, validation, `runtime_origins`, and captured dependency rules as JavaScript:
 
 ```toml

@@ -35,12 +35,23 @@ fn launch_fake(directory: &Path, budget: &Budget<'_>) -> lazypencil::Result<Brow
             "root".into(),
         ],
     );
+    let installed = InstalledBrowser {
+        executable,
+        version: "fixture".into(),
+        platform: "fixture".into(),
+    };
+    if directory.join("persistent").exists() {
+        let profile = lazypencil::runtime::profiles::Profile::open(directory, "work")?;
+        return Browser::launch_profile(
+            &installed,
+            &profile,
+            budget,
+            Some(Path::new(env!("CARGO_BIN_EXE_lazypencil"))),
+            false,
+        );
+    }
     Browser::launch_with_supervisor(
-        &InstalledBrowser {
-            executable,
-            version: "fixture".into(),
-            platform: "fixture".into(),
-        },
+        &installed,
         Purpose::Page,
         budget,
         Path::new(env!("CARGO_BIN_EXE_lazypencil")),
@@ -214,6 +225,88 @@ fn killed_owners_reap_browser_descendants_without_stopping_another_owner() {
     terminate(&mut second_owner);
     gone(&second_tree);
     assert!(!second_profile.exists());
+}
+
+#[test]
+fn killed_profile_owners_reap_children_preserve_persistent_data_and_release_only_their_lease() {
+    let first = TempDir::new().unwrap();
+    let second = TempDir::new().unwrap();
+    for directory in [first.path(), second.path()] {
+        lazypencil::runtime::profiles::Profile::create(directory, "work").unwrap();
+        fs::write(directory.join("persistent"), b"explicit").unwrap();
+    }
+    let mut first_owner = owner(first.path(), false);
+    let mut second_owner = owner(second.path(), false);
+    ready(&mut first_owner, first.path(), "browser-tree.json");
+    ready(&mut second_owner, second.path(), "browser-tree.json");
+    let first_tree = fake_pids(first.path());
+    let second_tree = fake_pids(second.path());
+    let first_profile = fake_profile(first.path());
+    let second_profile = fake_profile(second.path());
+    let open_lock = |path: &Path| {
+        fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path.join("lazypencil-profile.lock"))
+            .unwrap()
+    };
+    let first_lock = open_lock(&first_profile);
+    let second_lock = open_lock(&second_profile);
+    assert!(fs2::FileExt::try_lock_exclusive(&first_lock).is_err());
+    assert!(fs2::FileExt::try_lock_exclusive(&second_lock).is_err());
+    terminate(&mut first_owner);
+    gone(&first_tree);
+    assert_eq!(
+        fs::read(first_profile.join("fixture-cache")).unwrap(),
+        b"owned-profile\n"
+    );
+    assert!(first_profile.join("lazypencil-profile.json").is_file());
+    fs2::FileExt::try_lock_exclusive(&first_lock).unwrap();
+    assert!(second_tree.iter().copied().all(alive));
+    assert!(fs2::FileExt::try_lock_exclusive(&second_lock).is_err());
+    terminate(&mut second_owner);
+    gone(&second_tree);
+    fs2::FileExt::try_lock_exclusive(&second_lock).unwrap();
+    assert_eq!(
+        fs::read(second_profile.join("fixture-cache")).unwrap(),
+        b"owned-profile\n"
+    );
+}
+
+#[test]
+fn a_replaced_profile_identity_cannot_start_a_browser_through_an_older_selection() {
+    let directory = TempDir::new().unwrap();
+    let profile = lazypencil::runtime::profiles::Profile::create(directory.path(), "work").unwrap();
+    let marker = profile.directory().join("lazypencil-profile.json");
+    let replacement = json!({"version":1,"id":uuid::Uuid::new_v4().to_string()}).to_string();
+    fs::write(&marker, &replacement).unwrap();
+    let executable = directory.path().join("must-not-start");
+    super::fixture_support::install(
+        &executable,
+        &[
+            "mark".into(),
+            directory.path().join("launched").to_str().unwrap().into(),
+        ],
+    );
+    let error = Browser::launch_profile(
+        &InstalledBrowser {
+            executable,
+            version: "fixture".into(),
+            platform: "fixture".into(),
+        },
+        &profile,
+        &Budget::new(Duration::from_secs(5), None),
+        Some(Path::new(env!("CARGO_BIN_EXE_lazypencil"))),
+        false,
+    )
+    .err()
+    .expect("The selected profile identity was replaced");
+    assert_eq!(
+        error.details.as_ref().unwrap()["supervisor_phase"],
+        "profile_identity"
+    );
+    assert!(!directory.path().join("launched").exists());
+    assert_eq!(fs::read_to_string(marker).unwrap(), replacement);
 }
 
 #[cfg(target_os = "linux")]
