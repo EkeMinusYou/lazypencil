@@ -379,9 +379,7 @@ impl Session {
             }
             Stage::NormalConsumer => {
                 let elapsed = binaries::restore(self, false)?;
-                self.real_emoji("real-emoji.log")?;
-                let prepared = normal::prepare_consumed(self, elapsed)?;
-                normal::remaining(self, &prepared, false)?;
+                normal::consume(self, elapsed)?;
                 binaries::completed(self, "normal")
             }
             Stage::RuntimePrepare => {
