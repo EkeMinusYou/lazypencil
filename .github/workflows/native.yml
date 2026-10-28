@@ -270,9 +270,9 @@ jobs:
         if: ${{ (inputs.lane == 'all' || inputs.lane == 'default') && (inputs.phase != 'focus') }}
         timeout-minutes: 45
         run: cargo xtask ci native default-build
-      - name: Reproduce real emoji, TUI and isolated MCP cancellation first
+      - name: Reproduce TUI and isolated MCP cancellation before longer tests
         if: ${{ (inputs.lane == 'all' || inputs.lane == 'default') && (inputs.phase != 'focus') }}
-        run: cargo xtask ci native reproduce
+        run: cargo xtask ci native reproduce --suite "${{ inputs.lane == 'all' && 'full' || 'parallel' }}"
       - name: Install real Linux terminal emulators for the early reproduction
         if: runner.os == 'Linux' && (inputs.terminal_reproduction || inputs.phase == 'focus' && inputs.suite == 'candidate')
         timeout-minutes: 20

@@ -166,19 +166,32 @@ impl Session {
             log,
         )?;
         result?;
-        let invocation: Vec<String> = [
-            "cargo",
-            "test",
-            "--locked",
-            "--test",
-            "font_sources",
-            "real_emoji::",
-            "--",
-            "--ignored",
-            "--test-threads=1",
-        ]
-        .map(str::to_owned)
-        .into();
+        let invocation: Vec<String> = if self.temporary.join("test-executables.json").exists() {
+            let catalog = self.verified_catalog(&["font_sources"])?;
+            vec![
+                catalog.binaries["font_sources"]
+                    .path
+                    .to_string_lossy()
+                    .into_owned(),
+                "real_emoji::".into(),
+                "--ignored".into(),
+                "--test-threads=1".into(),
+            ]
+        } else {
+            [
+                "cargo",
+                "test",
+                "--locked",
+                "--test",
+                "font_sources",
+                "real_emoji::",
+                "--",
+                "--ignored",
+                "--test-threads=1",
+            ]
+            .map(str::to_owned)
+            .into()
+        };
         let mut command = self.command(&invocation);
         command.env("LAZYPENCIL_TEST_EMOJI_DIR", output);
         self.execute_command(&mut command, 300, log, false)
@@ -683,7 +696,10 @@ impl Session {
                 self.build_catalog(&[])
             }
             Stage::Reproduce => {
-                self.real_emoji("real-emoji.log")?;
+                let parallel_emoji = args.suite == "parallel";
+                if !parallel_emoji {
+                    self.real_emoji("real-emoji.log")?;
+                }
                 self.test(
                     true,
                     "lib",
@@ -703,6 +719,9 @@ impl Session {
                     "tui-reproduction.log",
                     "chromium-script-cancel.log",
                 ] {
+                    if parallel_emoji && log == "real-emoji.log" {
+                        continue;
+                    }
                     fs::OpenOptions::new()
                         .append(true)
                         .open(self.temporary.join("lazypencil-tests.log"))?
@@ -726,6 +745,10 @@ impl Session {
                         Box::new(|| normal::remaining(self, &prepared, false)),
                     ),
                     ("runtime suites", Box::new(|| self.runtime_lanes())),
+                    (
+                        "real emoji pixels",
+                        Box::new(|| self.real_emoji("real-emoji.log")),
+                    ),
                 ]);
                 let ownership = browser::ownership(self);
                 let failures = [("test lanes", result), ("browser evidence", ownership)]

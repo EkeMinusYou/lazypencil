@@ -4,7 +4,7 @@
 
 ## 現在の状態（2026-10-29）
 
-直前の完全検証成功は `c11a0f9` の [CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40741043404)。送信用縮小版・TUI入力スレッドでの変換と候補回収・添付上限のユーザー設定を含み、軽量223件・Clippy、Mac先行5分56秒、両feature構成を含む完全検証・依存監査・署名付きsourceまで成功した。先行ではlibrary166件・添付17件・ユーザー設定17件、実PTYと実clipboard3072画素を確認した。完全検証の可視consoleでは `491b6e9` の全既存named caseの回数を維持し、追加18実行を確認したが、全artifactの独立した再照合と製品全体の受け入れは未完了。次の変更はruntime導入の取消・保存同期と、TUIの任意依存に頼っていた添付PNG試験の修正である。既存Rust補助バイナリのPNGデコーダーを再利用し、描画単独構成を先に確認してから既定構成で検証する。依存クレートやworkflowは増やさず、重いbuildはGHAに限る。Linux x64／arm64・Windowsの既存実装を後日対応用に保持し、Intel Macは対象外とする。OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
+アプリ実装の完全検証済み根拠は `99cc153` の [CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40747470310)。runtime導入の取消・保存同期、描画単独構成の添付PNG検査まで含め、軽量223件・Clippy、Mac先行7分19秒、両feature構成の完全検証・依存監査・署名付きsourceを成功した。送信用縮小版・TUI入力スレッドでの変換と候補回収・ユーザー設定も含む。全artifactの独立した再照合と製品全体の受け入れは未完了で、正常な導入・取消の成功から全異常終了条件の合格とはしない。重いbuildはGHAに限り、Linux x64／arm64・Windowsの既存実装は後日対応用に保持する。Intel Macは対象外とし、OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
 
 旧3環境方針での依存監査・署名付きソースを含む確定済み根拠は [`c9ffb37` の CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40679529757)。Linux 各1,490件・Mac1,479件、各144サマリー・812画像・42描画計測を確認し、過去ケースの実行回数、画像、clipboard／IME、profile／namespace／通信制御、ソース1,161ファイルの Git blob・mode と署名を独立照合した。CI の成功は、製品全体の受け入れ完了を意味しない。
 
@@ -14,7 +14,11 @@
 
 通常のnative対象は `RELEASE_PLATFORMS=["macos-15"]`。自動の対象選択と `--matrix all` もMacだけにし、親runのLinux失敗を調べて自動選択する処理を外す。両feature構成、Chromium／JS／GLSL、clipboard／PTY、性能・ライセンス・配布の元の条件は保持する。
 
-10分以内を目標に、core・既定構成とruntime試験・releaseと計測を3つのMac jobへ分ける変更を準備した。再現試験は消費側job内で先に行い、別の先行jobからの再セットアップ・成果物転送と同条件の部分lint／試験の再実行を除く。通常試験とruntime試験を重ね、browserの7対象は3レーンへ分ける。短いscript期限を持つTUI試験は並列browser開始前に、画像の共通gateは全生成側のjoin後に実行する。MacのCargo buildはcompiler設定を変えず3並列にし、coreと既定のcache contextを分け、releaseは専用cacheのみへ保存する。基準run `c11a0f9` は先行5分56秒、完全job24分34秒、workflow32分09秒だった。10分以内は新構成で未確認であり、準備・build・試験・runner待機を分けて実測する。有用な `99cc153` の実行は中断しない。
+10分以内を目標に、`067182d`・`112f5aa` でcore・既定構成とruntime試験・releaseと計測を3つのMac jobへ分けた。再現試験は消費側job内で先に行い、別の先行jobからの再セットアップ・成果物転送と同条件の部分lint／試験の再実行を除く。通常試験とruntime試験を重ね、browserの7対象は3レーンへ分ける。短いscript期限を持つTUI試験は並列browser開始前に、画像の共通gateは全生成側のjoin後に実行する。MacのCargo buildはcompiler設定を変えず3並列にし、coreと既定のcache contextと保持namespaceを分け、releaseは専用cacheのみへ保存する。基準run `c11a0f9` は先行5分56秒、完全job24分34秒、workflow32分09秒だった。
+
+`112f5aa` の [CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40750278112) は軽量224件・Clippy・全native試験・依存監査・署名付きsourceを成功した。coreは5分21秒（build35秒）、releaseは3分57秒（実compile2分05秒、`reused:false`）、defaultは11分01秒だった。可視consoleを構成別に照合し、同じアプリ実装の `99cc153` とcore462・default838実行の全named caseの回数が一致した。画像の共通gateと42回の性能測定も成功したが、全artifactの独立した監査とは区別する。旧構成の完全job30分56秒・release compile14分22秒より短縮したものの、全体10分以内は未達である。初回のdefault／releaseは15分02秒のrunner割当待ち後にGitHub側で終了され、未実行2jobだけの再実行を行った。defaultの再実行も10分05秒待機してから開始した。annotationはmacOS arm64のcapacity constraintsを明記しており、待機を処理時間へ混ぜない。有用な旧CIはconcurrency groupを分けて中断せず完了した。
+
+次の短縮は同runの計測（readiness351秒・script scope247秒・Material218秒）を根拠に行う。独立したreadinessを2、script scopeを4並列とし、通常のfont／project／graphics／meshを別レーンへ移す。Materialの3書体はそれぞれ専用の一時Storeと導入先で検査し、元フォント・全4304 codepoint・既存の全weightケース・破損検出のassertionを維持する。real emojiはCargoを再実行せず検査済みの同じbinary catalogを使い、他の生成側とjoin後に画像gateへ進む。2秒のscript設定を含むTUI一式は従来どおり並列browserの前に行う。これらの追加調整はまだGHAで未確認であり、timeoutや最終条件は変更していない。
 
 計画・依存監査・Wasm・ソース梱包などの軽量Linux jobは実行ホストとして残す。Linuxアプリのnative buildは通常CIに含めず、既存の手動診断経路を明示した場合だけ実行できる。manual workflowの既定値もMacへ揃えた。`7413a94` の [Mac限定CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40698680065) は軽量220件・Clippy、Mac先行・完全検証、監査・署名付きソースまで成功した。
 
@@ -46,7 +50,7 @@
 
 - 元エンコード保存と縮小版のCLI／TUI操作、入力スレッドによる変換・保存、キャンセル時の候補回収、ユーザーの `[attachments]` 設定は `c11a0f9` でMac先行・両feature構成の完全検証・監査・署名sourceまで成功した。設定を下げた後の送信拒否・段階的な縮小による修復・元画像と下書き保持、実ACPが受信した縮小PNGを含む。既定8枚・各20MiB・合計各50MiB・16Mi画素とネイティブ単体の安全上限は維持する。TUIを含まない描画構成でも同じ画素試験を使えるよう、次の変更でPNG検査を既存Rust補助バイナリへ移し、その構成を先に試験する。物理IMEと最終受け入れは引き続き確認する。
 
-個別仕様に残る制約も、完了扱いにしない。独立copyの絶対／非localな文字列samplerと衝突投影、欠損library／設定fontの専用修復、未参照のproject素材回収、再現用font lockfileなどは各サービス文書の現行範囲を参照する。runtime導入の取消・保存同期は次の検証候補へ追加した。通信待ちを所有する子プロセス、lock待機・分割転送・hash・展開の取消、公開前のfile／directory同期と新規ancestor同期、取消時の未完成物回収と既存Rust補助バイナリを使う回帰試験を含む。コンパイル・実通信・取消・公開耐障害性の合格はまだ未確認である。Browserが広告するdevice IDはdesktop／phone／tabletだけで、全Pencil presetへの対応を宣言しない。GLSLの宣言・構造体・前処理は実装済みだが、fill-stage `pencil:object` は未対応である。これらを古いGHA待ちと混同せず、元の必須条件に照らして実装と確認を切り分ける。
+個別仕様に残る制約も、完了扱いにしない。独立copyの絶対／非localな文字列samplerと衝突投影、欠損library／設定fontの専用修復、未参照のproject素材回収、再現用font lockfileなどは各サービス文書の現行範囲を参照する。runtime導入の取消・保存同期は `99cc153` の完全CIで通常導入と取消試験を成功した。通信待ちを所有する子プロセス、lock待機・分割転送・hash・展開の取消、公開前のfile／directory同期と新規ancestor同期、取消時の未完成物回収と既存Rust補助バイナリを使う回帰試験を含む。コンパイル・通常の実通信と取消の成功から、全異常終了経路・電源断時の耐障害性・最終配布の受け入れ完了とはしない。Browserが広告するdevice IDはdesktop／phone／tabletだけで、全Pencil presetへの対応を宣言しない。GLSLの宣言・構造体・前処理は実装済みだが、fill-stage `pencil:object` は未対応である。これらを古いGHA待ちと混同せず、元の必須条件に照らして実装と確認を切り分ける。
 
 公開前の確認・決定：
 

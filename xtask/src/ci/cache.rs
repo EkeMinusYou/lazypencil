@@ -363,7 +363,7 @@ impl Command {
                     // Each finished platform retires only its own application
                     // payloads; parallel jobs never race over dependency/tool caches.
                     let owned = Regex::new(&format!(
-                        r"^(?:tests-v1|application-v2|release-v1)-{}-[0-9a-f]{{64}}-",
+                        r"^(?:tests(?:-core)?-v1|application-v2|release-v1)-{}-[0-9a-f]{{64}}-",
                         regex::escape(&platform)
                     ))?;
                     obsolete.retain(|entry| {

@@ -132,6 +132,10 @@ pub fn default_tests(root: &Path, binaries: &BTreeMap<String, PathBuf>) -> Resul
             ensure!(path.is_absolute(), "Test executable must be absolute");
             let mut command = vec![path.to_string_lossy().into_owned()];
             command.extend(default_flags());
+            if name == "script_scope" {
+                // Cases own their project, script worker and retained output.
+                command[1] = "--test-threads=4".into();
+            }
             if name == "lib" {
                 command.extend(skips([MANAGEMENT_REPRODUCTION]));
             }

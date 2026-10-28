@@ -284,107 +284,124 @@ fn official_material_fonts_resolve_every_codepoint_and_continuous_weights_withou
     let sources = PathBuf::from(
         std::env::var_os("LAZYPENCIL_TEST_MATERIAL_DIR").expect("Set LAZYPENCIL_TEST_MATERIAL_DIR"),
     );
+    std::thread::scope(|scope| {
+        let workers = ["Outlined", "Rounded", "Sharp"].map(|style| {
+            let sources = &sources;
+            (
+                style,
+                scope.spawn(move || verify_material_style(sources, style)),
+            )
+        });
+        let failures = workers
+            .into_iter()
+            .filter_map(|(style, worker)| worker.join().err().map(|_| style))
+            .collect::<Vec<_>>();
+        assert!(failures.is_empty(), "Material styles failed: {failures:?}");
+    });
+}
+
+#[cfg(feature = "tui")]
+fn verify_material_style(sources: &Path, style: &str) {
+    // Each style mutates and corrupts only its own installed font copy. The
+    // pinned upstream directory is immutable and shared read-only by workers.
     let temp = TempDir::new().unwrap();
     let store = store(&temp, node("lucide", "circle"));
-    for style in ["Outlined", "Rounded", "Sharp"] {
-        let library = format!("Material Symbols {style}");
-        let source = sources.join(format!("MaterialSymbols{style}[FILL,GRAD,opsz,wght].ttf"));
-        let setup = icons::setup(store.data_dir(), &library, Some(&source)).unwrap();
-        let mut request = query(&library);
-        let mut nodes = Vec::new();
-        loop {
-            let page = icons::list(store.data_dir(), &request).unwrap();
-            assert_eq!(page["total"], 4304);
-            for entry in page["icons"].as_array().unwrap() {
-                assert_eq!(entry["weight_range"], json!([100, 700]));
-                assert_eq!(entry["default_weight"], 400);
-                let mut n = node(&library, entry["name"].as_str().unwrap());
-                n["id"] = json!(format!("i{}", nodes.len()));
-                nodes.push(n);
-            }
-            request.cursor = page["next_cursor"].as_str().map(str::to_owned);
-            if request.cursor.is_none() {
-                break;
-            }
+    let library = format!("Material Symbols {style}");
+    let source = sources.join(format!("MaterialSymbols{style}[FILL,GRAD,opsz,wght].ttf"));
+    let setup = icons::setup(store.data_dir(), &library, Some(&source)).unwrap();
+    let mut request = query(&library);
+    let mut nodes = Vec::new();
+    loop {
+        let page = icons::list(store.data_dir(), &request).unwrap();
+        assert_eq!(page["total"], 4304);
+        for entry in page["icons"].as_array().unwrap() {
+            assert_eq!(entry["weight_range"], json!([100, 700]));
+            assert_eq!(entry["default_weight"], 400);
+            let mut n = node(&library, entry["name"].as_str().unwrap());
+            n["id"] = json!(format!("i{}", nodes.len()));
+            nodes.push(n);
         }
-        fs::write(
-            store.path(),
-            json!({"version":"2.21","children":nodes}).to_string(),
-        )
-        .unwrap();
-        let project = Project::load(&store).unwrap();
-        assert_eq!(project.dependencies().len(), 4);
-        for n in project.resolve().unwrap().roots {
-            let icon = n.icon.unwrap().unwrap();
-            assert_eq!(icon.weight, Some(400.0));
-            let path = icons::shape(&icon, skia_safe::Rect::from_wh(24.0, 24.0))
-                .unwrap_or_else(|e| panic!("{library} {}: {e}", icon.name));
-            assert!(!path.is_empty(), "{library} {}", icon.name);
-            assert!(path.compute_tight_bounds().is_finite());
+        request.cursor = page["next_cursor"].as_str().map(str::to_owned);
+        if request.cursor.is_none() {
+            break;
         }
-        let mut hashes = Vec::new();
-        let mut ink = Vec::new();
-        for weight in [
-            100.0, 200.0, 300.0, 350.5, 400.0, 450.0, 500.0, 600.0, 700.0, 100.0,
-        ] {
-            fs::write(store.path(),json!({"version":"2.21","themes":{"mode":["light","dark"]},"variables":{"thickness":{"type":"number","value":[{"value":weight,"theme":{"mode":"light"}},{"value":700,"theme":{"mode":"dark"}}]}},"children":[{"id":"component","type":"frame","reusable":true,"enabled":false,"children":[{"id":"symbol","type":"icon","library":library,"icon":"home","weight":"$thickness","width":96,"height":96,"fill":"#123456"}]},{"id":"instance","type":"ref","ref":"component","enabled":true,"theme":{"mode":"light"}}]}).to_string()).unwrap();
-            let (project, layout) =
-                lazypencil::service::layout_snapshot(&store, &[], None, None).unwrap();
-            assert!(
-                layout
-                    .items
-                    .iter()
-                    .all(|item| item.record.diagnostics.is_empty())
-            );
-            let rendered = lazypencil::render::png(&project, &layout, &Default::default()).unwrap();
-            let image = image::load_from_memory(&rendered.png).unwrap().to_rgba8();
-            ink.push(image.pixels().filter(|p| p.0[3] > 128).count());
-            hashes.push(lazypencil::document::hash(&rendered.png));
-            assert!(
-                layout.items.iter().any(|item| item
-                    .record
-                    .icon
-                    .as_ref()
-                    .is_some_and(|icon| icon["weight"] == weight)),
-                "{weight}"
-            );
-        }
-        assert_eq!(hashes[0], hashes[9]);
-        assert!(ink[8] > ink[0] * 2, "{library}: {ink:?}");
-        assert_ne!(hashes[3], hashes[4]);
-        let mut design: Value = serde_json::from_slice(&fs::read(store.path()).unwrap()).unwrap();
-        design["children"][1]["theme"] = json!({"mode":"dark"});
-        fs::write(store.path(), design.to_string()).unwrap();
+    }
+    fs::write(
+        store.path(),
+        json!({"version":"2.21","children":nodes}).to_string(),
+    )
+    .unwrap();
+    let project = Project::load(&store).unwrap();
+    assert_eq!(project.dependencies().len(), 4);
+    for n in project.resolve().unwrap().roots {
+        let icon = n.icon.unwrap().unwrap();
+        assert_eq!(icon.weight, Some(400.0));
+        let path = icons::shape(&icon, skia_safe::Rect::from_wh(24.0, 24.0))
+            .unwrap_or_else(|e| panic!("{library} {}: {e}", icon.name));
+        assert!(!path.is_empty(), "{library} {}", icon.name);
+        assert!(path.compute_tight_bounds().is_finite());
+    }
+    let mut hashes = Vec::new();
+    let mut ink = Vec::new();
+    for weight in [
+        100.0, 200.0, 300.0, 350.5, 400.0, 450.0, 500.0, 600.0, 700.0, 100.0,
+    ] {
+        fs::write(store.path(),json!({"version":"2.21","themes":{"mode":["light","dark"]},"variables":{"thickness":{"type":"number","value":[{"value":weight,"theme":{"mode":"light"}},{"value":700,"theme":{"mode":"dark"}}]}},"children":[{"id":"component","type":"frame","reusable":true,"enabled":false,"children":[{"id":"symbol","type":"icon","library":library,"icon":"home","weight":"$thickness","width":96,"height":96,"fill":"#123456"}]},{"id":"instance","type":"ref","ref":"component","enabled":true,"theme":{"mode":"light"}}]}).to_string()).unwrap();
         let (project, layout) =
             lazypencil::service::layout_snapshot(&store, &[], None, None).unwrap();
+        assert!(
+            layout
+                .items
+                .iter()
+                .all(|item| item.record.diagnostics.is_empty())
+        );
         let rendered = lazypencil::render::png(&project, &layout, &Default::default()).unwrap();
-        assert_eq!(lazypencil::document::hash(&rendered.png), hashes[8]);
-        let project = Project::load(&store).unwrap();
-        let captured = resolved(&project);
-        let again = Project::load(&store).unwrap();
-        let shared = resolved(&again);
-        assert!(Arc::ptr_eq(&captured.pack, &shared.pack));
-        let font = Path::new(setup["path"].as_str().unwrap()).join("font.ttf");
-        let mut bytes = fs::read(&font).unwrap();
-        bytes[0] ^= 1;
-        fs::write(&font, bytes).unwrap();
-        assert_eq!(
-            project.verify_unchanged().unwrap_err().code,
-            "REVISION_CONFLICT"
-        );
-        assert_eq!(
-            icons::list(store.data_dir(), &query(&library))
-                .unwrap_err()
-                .code,
-            "ICON_INTEGRITY"
-        );
-        assert_eq!(
-            icons::setup(store.data_dir(), &library, Some(&source))
-                .unwrap_err()
-                .code,
-            "ICON_INTEGRITY"
+        let image = image::load_from_memory(&rendered.png).unwrap().to_rgba8();
+        ink.push(image.pixels().filter(|p| p.0[3] > 128).count());
+        hashes.push(lazypencil::document::hash(&rendered.png));
+        assert!(
+            layout.items.iter().any(|item| item
+                .record
+                .icon
+                .as_ref()
+                .is_some_and(|icon| icon["weight"] == weight)),
+            "{weight}"
         );
     }
+    assert_eq!(hashes[0], hashes[9]);
+    assert!(ink[8] > ink[0] * 2, "{library}: {ink:?}");
+    assert_ne!(hashes[3], hashes[4]);
+    let mut design: Value = serde_json::from_slice(&fs::read(store.path()).unwrap()).unwrap();
+    design["children"][1]["theme"] = json!({"mode":"dark"});
+    fs::write(store.path(), design.to_string()).unwrap();
+    let (project, layout) = lazypencil::service::layout_snapshot(&store, &[], None, None).unwrap();
+    let rendered = lazypencil::render::png(&project, &layout, &Default::default()).unwrap();
+    assert_eq!(lazypencil::document::hash(&rendered.png), hashes[8]);
+    let project = Project::load(&store).unwrap();
+    let captured = resolved(&project);
+    let again = Project::load(&store).unwrap();
+    let shared = resolved(&again);
+    assert!(Arc::ptr_eq(&captured.pack, &shared.pack));
+    let font = Path::new(setup["path"].as_str().unwrap()).join("font.ttf");
+    let mut bytes = fs::read(&font).unwrap();
+    bytes[0] ^= 1;
+    fs::write(&font, bytes).unwrap();
+    assert_eq!(
+        project.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    assert_eq!(
+        icons::list(store.data_dir(), &query(&library))
+            .unwrap_err()
+            .code,
+        "ICON_INTEGRITY"
+    );
+    assert_eq!(
+        icons::setup(store.data_dir(), &library, Some(&source))
+            .unwrap_err()
+            .code,
+        "ICON_INTEGRITY"
+    );
 }
 
 #[cfg(feature = "tui")]

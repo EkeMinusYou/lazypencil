@@ -9,7 +9,7 @@ use std::{
 };
 
 #[test]
-fn browser_lanes_preserve_every_existing_target_once_without_intra_target_parallelism() {
+fn browser_lanes_preserve_every_target_and_parallelize_only_isolated_readiness_cases() {
     use lazypencil_xtask::ci::native::browser::TEST_LANES;
     use std::collections::BTreeSet;
     let targets = TEST_LANES
@@ -34,6 +34,12 @@ fn browser_lanes_preserve_every_existing_target_once_without_intra_target_parall
     // Readiness, retained pages and shaders own distinct artifact namespaces.
     // Ownership/destruction is checked after every lane has joined.
     assert_eq!(TEST_LANES[0], ["browser_readiness"]);
+    for target in &targets {
+        assert_eq!(
+            lazypencil_xtask::ci::native::browser::test_threads(target),
+            if *target == "browser_readiness" { 2 } else { 1 },
+        );
+    }
     assert_eq!(TEST_LANES[1], ["dynamic_render", "script_scope"]);
     assert_eq!(
         TEST_LANES[2],
