@@ -51,8 +51,8 @@ runs:
       if: inputs.verify == 'true'
       shell: bash
       run: cargo xtask ci tools verify
-    - name: Retire replaced tool sources before publishing the verified tree
-      if: inputs.retire-old-tools == 'true' && inputs.verify == 'true' && steps.tools.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+    - name: Retire superseded compatible tool sources after verification
+      if: inputs.retire-old-tools == 'true' && inputs.verify == 'true' && github.ref == 'refs/heads/main'
       continue-on-error: true
       shell: bash
       env:

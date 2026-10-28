@@ -1517,6 +1517,11 @@ fn verified_tool_replacement_retires_only_the_restored_sdk_and_cache_format() {
     ];
     let obsolete = cache::obsolete_tools_before_replacement(&entries, &primary, &matched).unwrap();
     assert_eq!(
+        cache::obsolete_tools_before_replacement(&entries, &primary, &primary).unwrap(),
+        obsolete,
+        "An exact verified hit must still retire older compatible sources"
+    );
+    assert_eq!(
         obsolete
             .iter()
             .map(|entry| entry["id"].as_u64().unwrap())

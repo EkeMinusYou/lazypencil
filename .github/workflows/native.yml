@@ -310,7 +310,7 @@ jobs:
         if: inputs.phase == 'focus'
         timeout-minutes: ${{ inputs.suite == 'normal-ci' && 60 || inputs.suite == 'browser-ci' && 25 || 10 }}
         run: cargo xtask ci native focus-test --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
-      - name: Reproduce runtime scheduling alongside a required release build
+      - name: Verify runtime scheduling with the selected build stage
         if: inputs.phase == 'focus' && inputs.runtime_parallel
         timeout-minutes: 60
         run: cargo xtask ci native "$FOCUS_RUNTIME_STAGE" --suite focus
