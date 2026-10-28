@@ -317,10 +317,27 @@ fn application_retention_keeps_the_latest_generation_then_retires_it_after_full_
                 .join(workflow),
         )
         .unwrap();
-        assert!(
-            yaml.find("outputs.checkpoint_prefix").unwrap()
-                < yaml.find("outputs.checkpoint_legacy").unwrap()
-        );
+        // Check the actual restore lists, independent of workflow outputs and
+        // artifact names that may mention the same key outside cache restore.
+        let lists = yaml
+            .split("restore-keys: |\n")
+            .skip(1)
+            .map(|block| {
+                block
+                    .lines()
+                    .take_while(|line| line.starts_with("            "))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .filter(|list| list.contains("outputs.checkpoint_prefix"))
+            .collect::<Vec<_>>();
+        assert_eq!(lists.len(), if workflow == "native.yml" { 2 } else { 1 });
+        for list in lists {
+            assert!(
+                list.find("outputs.checkpoint_prefix").unwrap()
+                    < list.find("outputs.checkpoint_legacy").unwrap()
+            );
+        }
     }
 }
 
