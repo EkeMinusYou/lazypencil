@@ -58,7 +58,7 @@ impl Arguments {
             // Terminals are sequential clients of one owned display. Do not
             // reset the server between closing one and connecting the next.
             command
-                .args(["-a", "-s", "-screen 0 1600x1000x24 -nolisten tcp -noreset"])
+                .args(["-a", "-s", "-screen 0 2400x1600x24 -nolisten tcp -noreset"])
                 .arg(std::env::current_exe()?)
                 .arg("terminal");
             if let Some(candidate) = &self.candidate {

@@ -325,7 +325,36 @@ impl Emulator {
         })?;
         // Feed committed Unicode through the real emulator's X11 input path.
         // Physical IME preedit and candidate windows remain a separate scope.
-        xdo(&["type", "--clearmodifiers", "--delay", "30", JAPANESE])?;
+        // XTest temporarily remaps keycodes for Unicode. Rebinding the next
+        // character before Kitty consumes the previous mapping lost a character
+        // in the real stdin trace. Use observed persistence as the barrier.
+        let input_deadline = Instant::now() + Duration::from_secs(30);
+        for (index, character) in JAPANESE.char_indices() {
+            xdo(&[
+                "type",
+                "--clearmodifiers",
+                "--delay",
+                "30",
+                &character.to_string(),
+            ])?;
+            let expected = &JAPANESE[..index + character.len_utf8()];
+            loop {
+                let saved = session(&self.root)?;
+                if saved["draft"] == expected {
+                    break;
+                }
+                ensure!(
+                    self.child.try_wait()?.is_none(),
+                    "Emulator exited while typing Japanese"
+                );
+                ensure!(
+                    Instant::now() < input_deadline,
+                    "Japanese input did not persist {expected:?}; observed {:?}",
+                    saved["draft"]
+                );
+                thread::sleep(Duration::from_millis(20));
+            }
+        }
         let root = self.root.clone();
         self.phase("japanese-commit", |_, frame| {
             cursor(frame).is_some_and(|current| {
@@ -506,7 +535,7 @@ pub fn run(candidate: Option<&Path>, output: &Path) -> Result<()> {
             "format_version":1,"source_commit":revision,
             "candidate":candidate.is_some().then_some(&verification),
             "development_build":candidate.is_none().then_some(&verification),"target":target,
-            "display":"Xvfb 1600x1000x24; LIBGL_ALWAYS_SOFTWARE=1","protocols":results,"failed":&failed,
+            "display":"Xvfb 2400x1600x24; LIBGL_ALWAYS_SOFTWARE=1","protocols":results,"failed":&failed,
             "scope":"real-emulator rendered pixels and X11 keyboard/resize; not physical-monitor, IME, clipboard, tmux/SSH or performance acceptance"
         }))?,
         false,
