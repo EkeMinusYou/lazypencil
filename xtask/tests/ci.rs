@@ -7,6 +7,44 @@ use serde_json::{Value, json};
 use std::{collections::BTreeMap, fs, path::PathBuf, process::Command};
 
 #[test]
+fn encoded_clipboard_inputs_reproduce_in_the_rendering_attachment_consumer() {
+    let root = util::root();
+    let paths = [
+        "src/clipboard.rs",
+        "src/attachments.rs",
+        "src/conversation/mod.rs",
+        "src/conversation/management.rs",
+        "src/conversation/management/retention/tests.rs",
+        "tests/attachments.rs",
+        "docs/image-attachments.md",
+        "xtask/src/ci/focus.rs",
+    ]
+    .map(str::to_owned);
+    let plan = focus::select(&root, &paths, "auto").unwrap();
+    assert_eq!(plan.suite, "graphics");
+    assert_eq!(plan.targets, ["attachments"]);
+    let commands = ci::commands::plan(&root, &plan.suite, &plan.targets).unwrap();
+    assert!(
+        commands
+            .build
+            .iter()
+            .chain(&commands.checks)
+            .all(|args| !args.iter().any(|arg| arg == "--no-default-features"))
+    );
+    assert!(commands.checks.iter().any(|args| {
+        args.windows(2)
+            .any(|pair| pair == ["--test", "attachments"])
+    }));
+    // Revocation-only changes retain their existing core ownership reproduction.
+    assert_eq!(
+        focus::select(&root, &["src/attachments.rs".into()], "auto")
+            .unwrap()
+            .suite,
+        "conversation"
+    );
+}
+
+#[test]
 fn prose_filenames_never_expand_the_actual_source_consumers() {
     let cases: Vec<Value> = serde_json::from_str(include_str!("fixtures/focus.json")).unwrap();
     for case in cases {

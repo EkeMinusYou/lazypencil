@@ -2,9 +2,9 @@
 
 <a id="current-status"></a>
 
-## 現在の状態（2026-10-28）
+## 現在の状態（2026-10-29）
 
-直前の実装・検証の照合対象は `2cbd75b`。初回対象をmacOS Apple Siliconだけにする変更と文書整理・同梱ガイド版1.0.34は反映済み。先行検証の過剰な対象選択を修正し、実際のMac先行jobを10分以内に短縮した。製品機能の追加は引き続き停止中。Linux x64／arm64・Windowsの既存実装を後日対応用に保持し、Intel Macは対象外とする。OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
+直前の実装・検証の照合対象は `2cbd75b`。初回対象をmacOS Apple Siliconだけにする変更と文書整理・同梱ガイド版1.0.34は反映済み。先行検証の過剰な対象選択を修正し、実際のMac先行jobを10分以内に短縮した。利用者によるgoal再開に従い、製品の残件の実装を再開する。現在の変更は画像添付の元エンコード保存・同一blobの共有と参照に基づく回収であり、GHA検証を進める。Linux x64／arm64・Windowsの既存実装を後日対応用に保持し、Intel Macは対象外とする。OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
 
 旧3環境方針での依存監査・署名付きソースを含む確定済み根拠は [`c9ffb37` の CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40679529757)。Linux 各1,490件・Mac1,479件、各144サマリー・812画像・42描画計測を確認し、過去ケースの実行回数、画像、clipboard／IME、profile／namespace／通信制御、ソース1,161ファイルの Git blob・mode と署名を独立照合した。CI の成功は、製品全体の受け入れ完了を意味しない。
 
@@ -16,7 +16,7 @@
 
 計画・依存監査・Wasm・ソース梱包などの軽量Linux jobは実行ホストとして残す。Linuxアプリのnative buildは通常CIに含めず、既存の手動診断経路を明示した場合だけ実行できる。manual workflowの既定値もMacへ揃えた。`7413a94` の [Mac限定CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40698680065) は軽量220件・Clippy、Mac先行・完全検証、監査・署名付きソースまで成功した。
 
-同runの先行15分12秒のうち、広い動的試験が7分21秒、xtask準備が2分09秒、互換確認・Clippy・buildが2分13秒だった。`docs/tui.md` の名前をコードのTUIとして拾う過剰判定を除き、通常文書を対象選択の前に除外する。実際の `include_str!` 入力である同梱ガイドは、描画依存のない既存guidance統合試験を先行する。`2cbd75b` の [CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40707668716) は軽量222件・ClippyとMac先行3分23秒（guidance 5件）を成功した。最終jobの両feature構成と全試験は保持し、同runで継続する。既存のxtask cacheは以前からMac先行→全体でexact hitしており、保存条件を広げる変更は不要なので元へ戻す。Cargoの入力検証と既存timeoutは変えない。10分以内は今回の先行jobで実測した値であり、すべての変更・最終検証全体・runner待機の保証ではない。
+同runの先行15分12秒のうち、広い動的試験が7分21秒、xtask準備が2分09秒、互換確認・Clippy・buildが2分13秒だった。`docs/tui.md` の名前をコードのTUIとして拾う過剰判定を除き、通常文書を対象選択の前に除外する。実際の `include_str!` 入力である同梱ガイドは、描画依存のない既存guidance統合試験を先行する。`2cbd75b` の [CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40707668716) は軽量222件・ClippyとMac先行3分23秒（guidance 5件）を成功した。同runはMac完全検証・監査・署名付きsourceまで成功した。両feature構成と全試験は保持し、全artifactの独立した再照合はまだ行っていない。既存のxtask cacheは以前からMac先行→全体でexact hitしており、保存条件を広げる変更は不要なので元へ戻す。Cargoの入力検証と既存timeoutは変えない。10分以内は今回の先行jobで実測した値であり、すべての変更・最終検証全体・runner待機の保証ではない。
 
 ### 実装・検証済みの主な範囲
 
@@ -42,7 +42,7 @@
 
 画像添付仕様との追加の差分：
 
-- `image-attachments.md` が要求する元エンコード画像の別保存、上限の設定可能化、利用者が選ぶ送信用縮小版は未実装。現行は正規化PNGと元バイト数を保存し、8枚・20MiB・50MiB・16Mi画素の固定上限を検査する。添付プレビュー・順序・削除・実画像送信は実装済み。
+- 元エンコード画像の保存を追加し、JPEGの向き・元バイト列・送信PNGの分離、旧会話の読み取り、共有ファイルの回収をGHAで検証する。上限の設定可能化と利用者が選ぶ送信用縮小版は未実装。8枚・20MiB・50MiB・16Mi画素の固定上限を維持する。添付プレビュー・順序・削除・実画像送信は実装済み。
 
 個別仕様に残る制約も、完了扱いにしない。独立copyの絶対／非localな文字列samplerと衝突投影、欠損library／設定fontの専用修復、未参照のproject素材回収、runtime導入の明示取消・耐障害性、再現用font lockfileなどは各サービス文書の現行範囲を参照する。Browserが広告するdevice IDはdesktop／phone／tabletだけで、全Pencil presetへの対応を宣言しない。GLSLの宣言・構造体・前処理は実装済みだが、fill-stage `pencil:object` は未対応である。これらを古いGHA待ちと混同せず、元の必須条件に照らして実装と確認を切り分ける。
 

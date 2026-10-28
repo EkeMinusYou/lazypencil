@@ -290,6 +290,31 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     }
     .to_owned();
     let preprocessor = preprocessor_changed(paths);
+    // The clipboard worker and attachment persistence share the encoded image
+    // boundary. Their real consumer needs rendering, even when conversation
+    // metadata changes would otherwise select the core-only ownership suite.
+    if paths.iter().any(|path| path == "src/clipboard.rs")
+        && paths.iter().all(|path| {
+            ci_only(path)
+                || [
+                    "src/attachments.rs",
+                    "src/image_input.rs",
+                    "src/clipboard.rs",
+                    "src/conversation/mod.rs",
+                    "src/conversation/management.rs",
+                    "src/conversation/management/retention/tests.rs",
+                    "tests/attachments.rs",
+                ]
+                .contains(&path.as_str())
+        })
+    {
+        return Ok(Plan {
+            platform,
+            suite: "graphics".into(),
+            targets: vec!["attachments".into()],
+            preprocessor,
+        });
+    }
     // Installation and file verification have no rendering feature dependency.
     // Reproduce these failures before native compilation and browser setup;
     // mixed rendering/CDP changes retain the broader existing plan.

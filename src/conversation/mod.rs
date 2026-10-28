@@ -223,16 +223,10 @@ impl Conversation {
         }
         let image = self.session.state.pending_attachments.remove(index);
         self.session.save()?;
-        if !self
-            .session
-            .state
-            .attachments
-            .iter()
-            .chain(self.images())
-            .any(|retained| retained.id == image.id)
-        {
-            image.remove_file(self.directory())?;
-        }
+        image.reclaim_files(
+            self.directory(),
+            self.session.state.attachments.iter().chain(self.images()),
+        )?;
         Ok(())
     }
     pub fn clear_images(&mut self) -> Result<()> {

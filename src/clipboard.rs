@@ -62,9 +62,13 @@ impl InputImage {
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(self.data)
             .map_err(|_| Error::new("ATTACHMENT_INVALID", "Invalid image worker data"))?;
-        let mut image = Attachment::from_bytes(directory, &bytes, &self.name)?;
-        image.source_bytes = Some(self.source_bytes);
-        Ok(image)
+        if bytes.len() != self.source_bytes {
+            return Err(Error::new(
+                "ATTACHMENT_INVALID",
+                "Image worker source size does not match its data",
+            ));
+        }
+        Attachment::from_bytes(directory, &bytes, &self.name)
     }
 }
 
@@ -278,7 +282,9 @@ fn file_images(paths: &[PathBuf]) -> Result<InputContent> {
                 .unwrap_or_default()
                 .to_string_lossy()
                 .into_owned(),
-            data: base64::engine::general_purpose::STANDARD.encode(image.png),
+            // Validate/normalize in the worker, but preserve the encoded source
+            // across the wire so attachment storage can retain its exact bytes.
+            data: base64::engine::general_purpose::STANDARD.encode(&bytes),
             source_bytes: bytes.len(),
         });
     }

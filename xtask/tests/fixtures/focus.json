@@ -309,11 +309,7 @@
       "platform": "macos-15",
       "suite": "graphics",
       "targets": [
-        "graphics",
-        "render",
-        "text",
-        "font_sources",
-        "optional_icons"
+        "attachments"
       ],
       "preprocessor": false
     }

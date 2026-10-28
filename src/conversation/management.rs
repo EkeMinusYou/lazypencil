@@ -96,6 +96,7 @@ mod tests {
             height: u32::from_be_bytes(png[20..24].try_into().unwrap()),
             bytes: png.len(),
             source_bytes: Some(png.len()),
+            original: None,
             hash,
         };
         let attachments = directory.join("attachments");

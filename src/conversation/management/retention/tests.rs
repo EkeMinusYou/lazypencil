@@ -200,6 +200,7 @@ fn retention_protects_busy_drafts_pending_images_and_incomplete_native_continuit
         height: u32::from_be_bytes(png[20..24].try_into().unwrap()),
         bytes: png.len(),
         source_bytes: Some(png.len()),
+        original: None,
     };
     let metadata = image_path.join("session.json");
     let mut state: Value = serde_json::from_slice(&fs::read(&metadata).unwrap()).unwrap();

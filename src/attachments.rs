@@ -9,6 +9,7 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
+    collections::BTreeSet,
     fs,
     io::Read,
     path::{Path, PathBuf},
@@ -16,6 +17,39 @@ use std::{
 
 pub const MAX_REQUEST_IMAGES: usize = 8;
 pub const MAX_REQUEST_BYTES: usize = 50 * 1024 * 1024;
+const MAX_GRANT_BYTES: usize = 512 * 1024;
+
+/// The encoded input is retained privately; only the normalized PNG is sent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OriginalImage {
+    pub hash: String,
+    pub mime_type: String,
+    pub bytes: usize,
+    /// Dimensions after applying the source's orientation metadata.
+    pub width: u32,
+    pub height: u32,
+}
+
+impl OriginalImage {
+    fn path(&self, directory: &Path) -> Result<PathBuf> {
+        if self.bytes == 0
+            || self.bytes > crate::image_input::MAX_SOURCE_BYTES
+            || self.width == 0
+            || self.height == 0
+            || u64::from(self.width) * u64::from(self.height) > crate::image_input::MAX_IMAGE_PIXELS
+        {
+            return Err(invalid("Invalid original image metadata"));
+        }
+        let extension = match self.mime_type.as_str() {
+            "image/png" => "png",
+            "image/jpeg" => "jpg",
+            "image/webp" => "webp",
+            _ => return Err(invalid("Invalid original image format")),
+        };
+        image_path(directory, &self.hash, extension)
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -28,6 +62,8 @@ pub struct Attachment {
     pub bytes: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_bytes: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original: Option<OriginalImage>,
 }
 
 impl Attachment {
@@ -41,46 +77,108 @@ impl Attachment {
     }
 
     pub fn from_bytes(directory: &Path, source: &[u8], display_name: &str) -> Result<Self> {
+        if display_name.len() > 1024 {
+            return Err(invalid(
+                "Attachment display names must not exceed 1024 bytes",
+            ));
+        }
         let image = crate::image_input::normalize(source, None)?;
         let hash = hash(&image.png);
         create_private_directory(&directory.join("attachments"))?;
+        let original = OriginalImage {
+            hash: crate::document::hash(source),
+            mime_type: image.source_mime.into(),
+            bytes: source.len(),
+            width: image.width,
+            height: image.height,
+        };
         let attachment = Self {
-            id: format!("img_{hash}"),
+            id: identity(&hash, Some(&original)),
             display_name: display_name.into(),
             hash,
             width: image.width,
             height: image.height,
             bytes: image.png.len(),
             source_bytes: Some(source.len()),
+            original: Some(original),
         };
-        let path = attachment.path(directory)?;
-        if path.exists() {
-            attachment.read(directory)?;
-        } else {
-            atomic_replace(&path, &image.png)?;
-        }
+        // PNG input and its normalized output share one blob when identical.
+        // Distinct encodings with the same pixels retain separate originals.
+        persist_image(
+            &attachment
+                .original
+                .as_ref()
+                .expect("original")
+                .path(directory)?,
+            source,
+        )?;
+        persist_image(&attachment.path(directory)?, &image.png)?;
         Ok(attachment)
     }
 
     fn path(&self, directory: &Path) -> Result<PathBuf> {
         if self.hash.len() != 64
             || !self.hash.bytes().all(|b| b.is_ascii_hexdigit())
-            || self.id != format!("img_{}", self.hash)
+            || self.id != identity(&self.hash, self.original.as_ref())
+            || self.bytes == 0
+            || self.bytes > crate::image_input::MAX_SOURCE_BYTES
+            || self
+                .source_bytes
+                .is_some_and(|bytes| bytes > crate::image_input::MAX_SOURCE_BYTES)
+            || self.width == 0
+            || self.height == 0
+            || u64::from(self.width) * u64::from(self.height) > crate::image_input::MAX_IMAGE_PIXELS
         {
             return Err(invalid("Invalid attachment identity"));
         }
-        Ok(directory
-            .join("attachments")
-            .join(format!("{}.png", self.hash)))
+        if let Some(original) = &self.original {
+            original.path(directory)?;
+        }
+        image_path(directory, &self.hash, "png")
     }
 
-    pub(crate) fn remove_file(&self, directory: &Path) -> Result<()> {
-        let path = self.path(directory)?;
-        match fs::remove_file(&path) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(Error::io(&path, error)),
+    pub(crate) fn reclaim_files<'a>(
+        &self,
+        directory: &Path,
+        retained: impl Iterator<Item = &'a Self>,
+    ) -> Result<()> {
+        let mut live = BTreeSet::new();
+        for attachment in retained {
+            live.insert(attachment.path(directory)?);
+            if let Some(original) = &attachment.original {
+                live.insert(original.path(directory)?);
+            }
         }
+        let mut retired = BTreeSet::from([self.path(directory)?]);
+        if let Some(original) = &self.original {
+            retired.insert(original.path(directory)?);
+        }
+        for path in retired.difference(&live) {
+            match fs::remove_file(path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(Error::io(path, error)),
+            }
+        }
+        Ok(())
+    }
+
+    pub fn read_original(&self, directory: &Path) -> Result<Vec<u8>> {
+        let original = self.original.as_ref().ok_or_else(|| {
+            Error::new(
+                "ATTACHMENT_ORIGINAL_UNAVAILABLE",
+                "This older attachment has no captured original",
+            )
+        })?;
+        self.path(directory)?;
+        let bytes = read_bounded(
+            &original.path(directory)?,
+            crate::image_input::MAX_SOURCE_BYTES,
+        )?;
+        if bytes.len() != original.bytes || hash(&bytes) != original.hash {
+            return Err(invalid("A stored original image changed"));
+        }
+        Ok(bytes)
     }
 
     pub fn read(&self, directory: &Path) -> Result<Vec<u8>> {
@@ -102,6 +200,42 @@ impl Attachment {
             base64::engine::general_purpose::STANDARD.encode(self.read(directory)?),
             "image/png",
         )))
+    }
+}
+
+fn identity(normalized: &str, original: Option<&OriginalImage>) -> String {
+    match original {
+        Some(original) => format!(
+            "img_{}",
+            hash(format!("v2:{normalized}:{}", original.hash).as_bytes())
+        ),
+        None => format!("img_{normalized}"),
+    }
+}
+
+fn image_path(directory: &Path, digest: &str, extension: &str) -> Result<PathBuf> {
+    if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(invalid("Invalid stored image hash"));
+    }
+    Ok(directory
+        .join("attachments")
+        .join(format!("{digest}.{extension}")))
+}
+
+fn persist_image(path: &Path, bytes: &[u8]) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            if !metadata.is_file()
+                || read_bounded(path, crate::image_input::MAX_SOURCE_BYTES)? != bytes
+            {
+                return Err(invalid(
+                    "An existing stored image changed; it was not overwritten",
+                ));
+            }
+            Ok(())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => atomic_replace(path, bytes),
+        Err(error) => Err(Error::io(path, error)),
     }
 }
 
@@ -255,7 +389,7 @@ impl AttachmentAccess {
         Ok(manifest)
     }
     fn read_manifest(path: &Path, store: &Store) -> Result<Manifest> {
-        let bytes = read_bounded(path, 256 * 1024)?;
+        let bytes = read_bounded(path, MAX_GRANT_BYTES)?;
         let manifest: Manifest =
             serde_json::from_slice(&bytes).map_err(|_| invalid("Invalid attachment grant"))?;
         if manifest.document != store.path() || manifest.attachments.len() > 256 {
@@ -290,7 +424,7 @@ pub(crate) fn reclaim_stale_grant(
     document: &Path,
     conversation: &str,
 ) -> Result<bool> {
-    let bytes = read_bounded(path, 256 * 1024)?;
+    let bytes = read_bounded(path, MAX_GRANT_BYTES)?;
     let manifest: Manifest =
         serde_json::from_slice(&bytes).map_err(|_| invalid("Invalid attachment grant"))?;
     if manifest.document != document
