@@ -15,6 +15,7 @@ use std::{
 const MAX_BYTES: usize = 256 * 1024;
 pub mod agent_execution;
 pub mod agents;
+pub mod attachments;
 pub mod conversations;
 pub mod keys;
 pub mod runtime;
@@ -82,6 +83,7 @@ pub struct UserConfig {
     pub agents: agents::AgentSettings,
     pub tui: keys::TuiSettings,
     pub conversations: conversations::ConversationSettings,
+    pub attachments: attachments::AttachmentSettings,
 }
 impl Default for UserConfig {
     fn default() -> Self {
@@ -92,6 +94,7 @@ impl Default for UserConfig {
             agents: Default::default(),
             tui: Default::default(),
             conversations: Default::default(),
+            attachments: Default::default(),
         }
     }
 }
@@ -165,6 +168,7 @@ struct UserFile {
     agents: agents::AgentSettings,
     tui: keys::TuiSettings,
     conversations: conversations::ConversationSettings,
+    attachments: attachments::AttachmentSettings,
 }
 impl Default for UserFile {
     fn default() -> Self {
@@ -175,6 +179,7 @@ impl Default for UserFile {
             agents: Default::default(),
             tui: Default::default(),
             conversations: Default::default(),
+            attachments: Default::default(),
         }
     }
 }
@@ -596,6 +601,8 @@ impl UserSource {
                     result.settings.tui = parsed.tui;
                     parsed.conversations.retention.validate()?;
                     result.settings.conversations = parsed.conversations;
+                    parsed.attachments.validate()?;
+                    result.settings.attachments = parsed.attachments;
                     result.fonts = parsed.fonts;
                     result.runtime = parsed.runtime;
                     result.source = Some((path, bytes));
@@ -911,11 +918,12 @@ fn write_configuration(path: &Path, scope: &str) -> Result<Value> {
         tempfile::NamedTempFile::new_in(parent).map_err(|error| Error::io(parent, error))?;
     let template = if scope == "user" {
         format!(
-            "{TEMPLATE}{}{}{}{}",
+            "{TEMPLATE}{}{}{}{}{}",
             runtime::TEMPLATE,
             agents::TEMPLATE,
             keys::TEMPLATE,
-            conversations::TEMPLATE
+            conversations::TEMPLATE,
+            attachments::TEMPLATE
         )
     } else {
         format!(

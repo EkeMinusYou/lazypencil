@@ -19,6 +19,12 @@ pub const MAX_REQUEST_IMAGES: usize = 8;
 pub const MAX_REQUEST_BYTES: usize = 50 * 1024 * 1024;
 const MAX_GRANT_BYTES: usize = 512 * 1024;
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AttachmentOptions {
+    pub bounds: Option<crate::image_input::ImageBounds>,
+    pub limits: crate::config::attachments::AttachmentSettings,
+}
+
 /// The encoded input is retained privately; only the normalized PNG is sent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -67,6 +73,12 @@ pub struct Attachment {
 }
 
 impl Attachment {
+    pub fn source_size(&self) -> usize {
+        self.source_bytes
+            .unwrap_or(self.bytes)
+            .max(self.original.as_ref().map_or(0, |source| source.bytes))
+    }
+
     pub fn from_file(directory: &Path, source: &Path) -> Result<Self> {
         Self::from_file_with_bounds(directory, source, None)
     }
@@ -76,12 +88,28 @@ impl Attachment {
         source: &Path,
         bounds: Option<crate::image_input::ImageBounds>,
     ) -> Result<Self> {
-        let bytes = read_bounded(source, crate::image_input::MAX_SOURCE_BYTES)?;
-        Self::from_bytes_with_bounds(
+        Self::from_file_with_options(
+            directory,
+            source,
+            AttachmentOptions {
+                bounds,
+                ..Default::default()
+            },
+        )
+    }
+
+    pub fn from_file_with_options(
+        directory: &Path,
+        source: &Path,
+        options: AttachmentOptions,
+    ) -> Result<Self> {
+        options.limits.validate()?;
+        let bytes = read_bounded(source, options.limits.decode_limits().max_source_bytes)?;
+        Self::from_bytes_with_options(
             directory,
             &bytes,
             &source.file_name().unwrap_or_default().to_string_lossy(),
-            bounds,
+            options,
         )
     }
 
@@ -95,14 +123,36 @@ impl Attachment {
         display_name: &str,
         bounds: Option<crate::image_input::ImageBounds>,
     ) -> Result<Self> {
+        Self::from_bytes_with_options(
+            directory,
+            source,
+            display_name,
+            AttachmentOptions {
+                bounds,
+                ..Default::default()
+            },
+        )
+    }
+
+    pub fn from_bytes_with_options(
+        directory: &Path,
+        source: &[u8],
+        display_name: &str,
+        options: AttachmentOptions,
+    ) -> Result<Self> {
+        options.limits.validate()?;
         if display_name.len() > 1024 {
             return Err(invalid(
                 "Attachment display names must not exceed 1024 bytes",
             ));
         }
-        let image = crate::image_input::normalize_with_bounds(source, None, bounds)?;
+        let image = crate::image_input::normalize_with_limits(
+            source,
+            None,
+            options.bounds,
+            options.limits.decode_limits(),
+        )?;
         let hash = hash(&image.png);
-        create_private_directory(&directory.join("attachments"))?;
         let original = OriginalImage {
             hash: crate::document::hash(source),
             mime_type: image.source_mime.into(),
@@ -120,6 +170,8 @@ impl Attachment {
             source_bytes: Some(source.len()),
             original: Some(original),
         };
+        options.limits.check_request([&attachment])?;
+        create_private_directory(&directory.join("attachments"))?;
         // PNG input and its normalized output share one blob when identical.
         // Distinct encodings with the same pixels retain separate originals.
         persist_image(
@@ -141,12 +193,27 @@ impl Attachment {
         directory: &Path,
         bounds: crate::image_input::ImageBounds,
     ) -> Result<Self> {
+        self.resized_with_limits(
+            directory,
+            bounds,
+            crate::config::attachments::AttachmentSettings::default(),
+        )
+    }
+
+    pub fn resized_with_limits(
+        &self,
+        directory: &Path,
+        bounds: crate::image_input::ImageBounds,
+        limits: crate::config::attachments::AttachmentSettings,
+    ) -> Result<Self> {
+        limits.check_source(self)?;
         let bytes = self.read_original(directory)?;
         let original = self.original.as_ref().expect("captured original");
-        let image = crate::image_input::normalize_with_bounds(
+        let image = crate::image_input::normalize_with_limits(
             &bytes,
             Some(&original.mime_type),
             Some(bounds),
+            limits.decode_limits(),
         )?;
         if (image.source_width, image.source_height) != (original.width, original.height) {
             return Err(invalid("The original image dimensions changed"));
@@ -157,6 +224,7 @@ impl Attachment {
         result.width = image.width;
         result.height = image.height;
         result.bytes = image.png.len();
+        limits.check_request([&result])?;
         persist_image(&result.path(directory)?, &image.png)?;
         Ok(result)
     }
@@ -285,27 +353,23 @@ fn persist_image(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 pub fn prepare(directory: &Path, files: &[PathBuf]) -> Result<Vec<Attachment>> {
-    if files.len() > MAX_REQUEST_IMAGES {
-        return Err(invalid("A request accepts at most eight images"));
-    }
+    prepare_with_options(directory, files, AttachmentOptions::default())
+}
+
+pub fn prepare_with_options(
+    directory: &Path,
+    files: &[PathBuf],
+    options: AttachmentOptions,
+) -> Result<Vec<Attachment>> {
+    options.limits.check_count(files.len())?;
     let mut result = Vec::new();
-    let mut source_total = 0usize;
-    let mut normalized_total = 0usize;
     for file in files {
-        let bytes = read_bounded(file, crate::image_input::MAX_SOURCE_BYTES)?;
-        source_total = source_total.saturating_add(bytes.len());
-        if source_total > MAX_REQUEST_BYTES {
-            return Err(invalid("Input images exceed 50 MiB in total"));
-        }
-        let attachment = Attachment::from_bytes(
+        let limits = options.limits.remaining(&result)?;
+        let attachment = Attachment::from_file_with_options(
             directory,
-            &bytes,
-            &file.file_name().unwrap_or_default().to_string_lossy(),
+            file,
+            AttachmentOptions { limits, ..options },
         )?;
-        normalized_total += attachment.bytes;
-        if normalized_total > MAX_REQUEST_BYTES {
-            return Err(invalid("Normalized images exceed 50 MiB in total"));
-        }
         result.push(attachment);
     }
     Ok(result)

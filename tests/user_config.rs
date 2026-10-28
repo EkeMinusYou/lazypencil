@@ -20,6 +20,82 @@ struct Fixture {
 }
 
 #[test]
+fn attachment_limits_are_user_owned_validated_and_loaded_without_fonts() {
+    use lazypencil::config::attachments::{self, AttachmentSettings};
+    let f = Fixture::new();
+    let path = || Some(f.user.join("config.toml"));
+    f.settings("[fonts]\nfiles=['unavailable.ttf']\n[attachments]\nmax_images=12\nmax_send_bytes=4096\nmax_total_send_bytes=8192\n");
+    let settings = attachments::load_file(path()).unwrap();
+    assert_eq!(settings.max_images, 12);
+    assert_eq!(settings.max_send_bytes, 4096);
+    assert_eq!(settings.max_total_send_bytes, 8192);
+    assert_eq!(
+        settings.max_source_bytes,
+        AttachmentSettings::default().max_source_bytes
+    );
+    assert!(UserSnapshot::load_file(path()).is_err());
+    f.settings("[attachments]\nmax_images=12\n");
+    let shown = f.data(&["config", "show", "--user"]);
+    assert_eq!(shown["settings"]["attachments"]["max_images"], 12);
+    assert!(f.data(&["config", "schema", "--user"])["properties"]["attachments"].is_object());
+    assert!(
+        f.data(&["config", "schema"])["properties"]
+            .get("attachments")
+            .is_none()
+    );
+    std::fs::write(
+        f.project.join("lazypencil.toml"),
+        "[attachments]\nmax_images=1\n",
+    )
+    .unwrap();
+    assert!(f.snapshot().is_err());
+    for body in [
+        "max_images=0",
+        "max_images=65",
+        "max_source_bytes=0",
+        "max_source_bytes=20971521",
+        "max_send_bytes=0",
+        "max_send_bytes=20971521",
+        "max_total_source_bytes=0",
+        "max_total_source_bytes=268435457",
+        "max_total_send_bytes=0",
+        "max_total_send_bytes=268435457",
+        "max_source_pixels=0",
+        "max_source_pixels=16777217",
+        "max_image=1",
+    ] {
+        f.settings(&format!("[attachments]\n{body}\n"));
+        assert_eq!(
+            attachments::load_file(path()).unwrap_err().code,
+            "CONFIGURATION_ERROR",
+            "{body}"
+        );
+    }
+}
+
+#[test]
+fn configured_prompt_image_count_is_rejected_before_reading_or_creating_a_document() {
+    let f = Fixture::new();
+    f.settings("[attachments]\nmax_images=1\n");
+    let missing = f.project.join("not-created.pen");
+    let output = f.cli(&[
+        "prompt",
+        missing.to_str().unwrap(),
+        "--create",
+        "--image",
+        "missing-1.png",
+        "--image",
+        "missing-2.png",
+        "Describe these images",
+    ]);
+    assert!(!output.status.success());
+    let error: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(error["error"]["code"], "ATTACHMENT_INVALID");
+    assert_eq!(error["error"]["details"]["limit"], "max_images");
+    assert!(!missing.exists());
+}
+
+#[test]
 fn conversation_retention_is_user_owned_validated_and_loaded_without_font_discovery() {
     let f = Fixture::new();
     f.settings("[fonts]\nfiles=['unavailable.ttf']\n[conversations.retention]\nmax_age_days=30\nmax_total_bytes=1048576\nkeep_recent_per_document=2\n");

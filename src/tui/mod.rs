@@ -100,6 +100,12 @@ pub fn run(args: &TuiArgs, data: Option<PathBuf>, json_output: bool) -> Result<(
     }
     let settings = crate::config::keys::load_tui()?;
     let mut conversation = Conversation::open(args.prompt.clone(), data)?;
+    conversation.attachment_limits()?.check_count(
+        conversation
+            .images()
+            .len()
+            .saturating_add(args.prompt.images.len()),
+    )?;
     for image in &args.prompt.images {
         conversation.attach_file(image)?;
     }
@@ -189,7 +195,7 @@ struct App {
     input_reader: fn(
         &Path,
         Option<&Path>,
-        Option<crate::image_input::ImageBounds>,
+        crate::attachments::AttachmentOptions,
         &CancellationToken,
     ) -> Result<InputContent>,
 }
@@ -885,7 +891,7 @@ impl App {
             self.keys.submit_label(),
             self.keys.paste_label()
         );
-        text.push_str("/attach <quoted path>: attach PNG, JPEG or WebP\n/paste-image: explicitly read this host's clipboard\n/resize-image <number> <WIDTHxHEIGHT|original>: choose send size\n/clear-images: remove pending images\n");
+        text.push_str("/attach <quoted path> [WIDTHxHEIGHT|original]: attach PNG, JPEG or WebP\n/paste-image [WIDTHxHEIGHT|original]: read this host's clipboard\n/resize-image <number> <WIDTHxHEIGHT|original>: choose send size\n/clear-images: remove pending images\n");
         for (action, description) in [
             (Nav::Help, "show or hide help outside dialogs"),
             (Nav::PanLeft, "Preview: pan left"),
@@ -1002,10 +1008,20 @@ impl App {
         let words = shell_words::split(&line)
             .map_err(|error| Error::new("INVALID_ARGUMENT", error.to_string()))?;
         match words.first().map(String::as_str) {
-            Some("/attach") if words.len() == 2 => {
-                self.start_input(Some(PathBuf::from(&words[1])))?
+            Some("/attach") if (2..=3).contains(&words.len()) => {
+                let bounds = images::input_bounds(
+                    words.get(2).map(String::as_str),
+                    self.conversation.settings().image_bounds,
+                )?;
+                self.start_input_with_bounds(Some(PathBuf::from(&words[1])), bounds)?
             }
-            Some("/paste-image") if words.len() == 1 => self.start_input(None)?,
+            Some("/paste-image") if (1..=2).contains(&words.len()) => {
+                let bounds = images::input_bounds(
+                    words.get(1).map(String::as_str),
+                    self.conversation.settings().image_bounds,
+                )?;
+                self.start_input_with_bounds(None, bounds)?
+            }
             Some("/resize-image") if words.len() == 3 => {
                 let index = words[1]
                     .parse::<usize>()
@@ -1071,7 +1087,7 @@ impl App {
             _ => {
                 return Err(Error::new(
                     "INVALID_ARGUMENT",
-                    "Commands: /attach <quoted path>, /paste-image, /resize-image <number> <WIDTHxHEIGHT|original>, /clear-images, /open-preview, /time <nonnegative seconds>, /play [fps], /pause, /commands, /history, /logs, /conversations, /help, /quit",
+                    "Commands: /attach <quoted path> [WIDTHxHEIGHT|original], /paste-image [WIDTHxHEIGHT|original], /resize-image <number> <WIDTHxHEIGHT|original>, /clear-images, /open-preview, /time <nonnegative seconds>, /play [fps], /pause, /commands, /history, /logs, /conversations, /help, /quit",
                 ));
             }
         }
@@ -1455,13 +1471,13 @@ fn clean(text: &str) -> String {
 fn read_input(
     executable: &Path,
     path: Option<&Path>,
-    bounds: Option<crate::image_input::ImageBounds>,
+    options: crate::attachments::AttachmentOptions,
     cancel: &CancellationToken,
 ) -> Result<InputContent> {
     if let Some(path) = path {
-        clipboard::read_image_with_bounds(executable, path, bounds, cancel)
+        clipboard::read_image_with_options(executable, path, options, cancel)
     } else {
-        clipboard::read_clipboard_with_bounds(executable, bounds, cancel)
+        clipboard::read_clipboard_with_options(executable, options, cancel)
     }
 }
 

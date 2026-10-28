@@ -38,6 +38,22 @@ fn encoded_clipboard_inputs_reproduce_in_the_rendering_attachment_consumer() {
         ["attachments", "tui"]
     );
     assert!(!focus::tui_measurement_changed(&tui_paths));
+    let mut configured = tui_paths.clone();
+    configured.extend(
+        [
+            "src/config.rs",
+            "src/config/attachments.rs",
+            "tests/user_config.rs",
+        ]
+        .map(str::to_owned),
+    );
+    assert_eq!(
+        focus::select(&root, &configured, "auto").unwrap().targets,
+        ["attachments", "tui", "user_config"]
+    );
+    assert!(!focus::tui_measurement_changed(&configured));
+    configured.push("src/config/runtime.rs".into());
+    assert!(focus::tui_measurement_changed(&configured));
     for additional in [
         "src/render.rs",
         "src/tui/preview.rs",

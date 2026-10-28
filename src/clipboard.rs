@@ -2,10 +2,11 @@
 
 use crate::{
     Error, Result,
-    attachments::{Attachment, read_bounded},
+    attachments::{Attachment, AttachmentOptions, read_bounded},
     image_input,
 };
 use base64::Engine;
+use clap::Parser;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -17,6 +18,15 @@ use std::{
 use tokio_util::sync::CancellationToken;
 
 const MAX_WIRE: usize = 72 * 1024 * 1024;
+
+fn wire_limit(limits: crate::config::attachments::AttachmentSettings) -> usize {
+    let overhead = MAX_WIRE - crate::attachments::MAX_REQUEST_BYTES.div_ceil(3) * 4;
+    let source = limits
+        .max_total_source_bytes
+        .min(limits.max_images.saturating_mul(limits.max_source_bytes));
+    // A text clipboard can contain 1 MiB of characters escaped to six JSON bytes.
+    (source.div_ceil(3) * 4 + overhead).max(7 * 1024 * 1024)
+}
 
 struct Process {
     child: std::process::Child,
@@ -59,8 +69,23 @@ impl InputImage {
         directory: &Path,
         bounds: Option<image_input::ImageBounds>,
     ) -> Result<Attachment> {
-        if self.data.len() > image_input::MAX_SOURCE_BYTES.div_ceil(3) * 4
-            || self.source_bytes > image_input::MAX_SOURCE_BYTES
+        self.store_with_options(
+            directory,
+            AttachmentOptions {
+                bounds,
+                ..Default::default()
+            },
+        )
+    }
+
+    pub fn store_with_options(
+        self,
+        directory: &Path,
+        options: AttachmentOptions,
+    ) -> Result<Attachment> {
+        options.limits.validate()?;
+        if self.data.len() > options.limits.decode_limits().max_source_bytes.div_ceil(3) * 4
+            || self.source_bytes > options.limits.decode_limits().max_source_bytes
         {
             return Err(Error::new(
                 "ATTACHMENT_INVALID",
@@ -76,7 +101,7 @@ impl InputImage {
                 "Image worker source size does not match its data",
             ));
         }
-        Attachment::from_bytes_with_bounds(directory, &bytes, &self.name, bounds)
+        Attachment::from_bytes_with_options(directory, &bytes, &self.name, options)
     }
 }
 
@@ -89,7 +114,22 @@ pub fn read_clipboard_with_bounds(
     bounds: Option<image_input::ImageBounds>,
     cancel: &CancellationToken,
 ) -> Result<InputContent> {
-    read_worker(executable, None, bounds, cancel)
+    read_clipboard_with_options(
+        executable,
+        AttachmentOptions {
+            bounds,
+            ..Default::default()
+        },
+        cancel,
+    )
+}
+
+pub fn read_clipboard_with_options(
+    executable: &Path,
+    options: AttachmentOptions,
+    cancel: &CancellationToken,
+) -> Result<InputContent> {
+    read_worker(executable, None, options, cancel)
 }
 pub fn read_image(
     executable: &Path,
@@ -105,14 +145,33 @@ pub fn read_image_with_bounds(
     bounds: Option<image_input::ImageBounds>,
     cancel: &CancellationToken,
 ) -> Result<InputContent> {
-    read_worker(executable, Some(path), bounds, cancel)
+    read_image_with_options(
+        executable,
+        path,
+        AttachmentOptions {
+            bounds,
+            ..Default::default()
+        },
+        cancel,
+    )
+}
+
+pub fn read_image_with_options(
+    executable: &Path,
+    path: &Path,
+    options: AttachmentOptions,
+    cancel: &CancellationToken,
+) -> Result<InputContent> {
+    read_worker(executable, Some(path), options, cancel)
 }
 fn read_worker(
     executable: &Path,
     path: Option<&Path>,
-    bounds: Option<image_input::ImageBounds>,
+    options: AttachmentOptions,
     cancel: &CancellationToken,
 ) -> Result<InputContent> {
+    options.limits.validate()?;
+    let max_wire = wire_limit(options.limits);
     if cancel.is_cancelled() {
         return Err(Error::new("CANCELLED", "Image input cancelled"));
     }
@@ -132,8 +191,14 @@ fn read_worker(
     } else {
         command.arg("--clipboard");
     }
-    if let Some(bounds) = bounds {
+    if let Some(bounds) = options.bounds {
         command.arg("--max-size").arg(bounds.to_string());
+    }
+    if options.limits != Default::default() {
+        command.arg("--limits").arg(
+            serde_json::to_string(&options.limits)
+                .map_err(|error| Error::new("ATTACHMENT_INVALID", error.to_string()))?,
+        );
     }
     let mut child = command.spawn().map_err(|error| {
         Error::new(
@@ -146,7 +211,7 @@ fn read_worker(
     let reader = std::thread::spawn(move || {
         let mut bytes = Vec::new();
         let result = stdout
-            .take(MAX_WIRE as u64 + 1)
+            .take(max_wire as u64 + 1)
             .read_to_end(&mut bytes)
             .map(|_| bytes);
         let _ = sender.send(result);
@@ -191,18 +256,19 @@ fn read_worker(
             }
             check_input_deadline(cancel, deadline)?;
             let bytes = bytes.map_err(|error| Error::new("IO_ERROR", error.to_string()))?;
-            if bytes.len() > MAX_WIRE {
+            if bytes.len() > max_wire {
                 return Err(Error::new(
                     "ATTACHMENT_INVALID",
                     "Image input response exceeds its limit",
                 ));
             }
-            let value: Value = serde_json::from_slice(&bytes).map_err(|_| {
+            let mut value: Value = serde_json::from_slice(&bytes).map_err(|_| {
                 Error::new(
                     "CLIPBOARD_UNAVAILABLE",
                     "Image input worker returned invalid data",
                 )
             })?;
+            drop(bytes);
             if let Some(error) = value.get("error") {
                 let code = match error["code"].as_str() {
                     Some("ATTACHMENT_INVALID") => "ATTACHMENT_INVALID",
@@ -222,14 +288,22 @@ fn read_worker(
                     "Image input worker terminated unexpectedly",
                 ));
             }
-            let content: InputContent = serde_json::from_value(value["content"].clone())
-                .map_err(|_| Error::new("ATTACHMENT_INVALID", "Invalid image input response"))?;
+            let content: InputContent = serde_json::from_value(
+                value
+                    .get_mut("content")
+                    .map(Value::take)
+                    .unwrap_or(Value::Null),
+            )
+            .map_err(|_| Error::new("ATTACHMENT_INVALID", "Invalid image input response"))?;
             match &content {
-                InputContent::Images { images } if images.is_empty() || images.len() > 8 => {
-                    return Err(Error::new(
-                        "ATTACHMENT_INVALID",
-                        "An image input accepts 1..8 images",
-                    ));
+                InputContent::Images { images } => {
+                    if images.is_empty() {
+                        return Err(Error::new(
+                            "ATTACHMENT_INVALID",
+                            "No images in worker response",
+                        ));
+                    }
+                    options.limits.check_count(images.len())?;
                 }
                 InputContent::Text { text } if text.len() > 1024 * 1024 => {
                     return Err(Error::new(
@@ -259,24 +333,43 @@ fn check_input_deadline(cancel: &CancellationToken, deadline: Instant) -> Result
     Ok(())
 }
 
+#[derive(Parser)]
+struct WorkerArguments {
+    #[arg(
+        long,
+        allow_hyphen_values = true,
+        conflicts_with = "clipboard",
+        required_unless_present = "clipboard"
+    )]
+    file: Option<PathBuf>,
+    #[arg(long, conflicts_with = "file", required_unless_present = "file")]
+    clipboard: bool,
+    #[arg(long)]
+    max_size: Option<image_input::ImageBounds>,
+    #[arg(long)]
+    limits: Option<String>,
+}
+
 pub fn serve_worker() -> Result<()> {
     let result = (|| {
-        let mut args: Vec<_> = std::env::args_os().skip(2).collect();
-        let bounds = if args.len() >= 2 && args[args.len() - 2] == "--max-size" {
-            let bounds = args
-                .last()
-                .and_then(|arg| arg.to_str())
-                .ok_or_else(|| Error::new("INVALID_ARGUMENT", "Image bounds must be UTF-8"))?
-                .parse()?;
-            args.truncate(args.len() - 2);
-            Some(bounds)
-        } else {
-            None
+        let args = WorkerArguments::try_parse_from(std::env::args_os().skip(1))
+            .map_err(|_| Error::new("INVALID_ARGUMENT", "Invalid image input worker arguments"))?;
+        let limits: crate::config::attachments::AttachmentSettings = args
+            .limits
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()
+            .map_err(|_| Error::new("ATTACHMENT_INVALID", "Invalid image input limits"))?
+            .unwrap_or_default();
+        limits.validate()?;
+        let options = AttachmentOptions {
+            bounds: args.max_size,
+            limits,
         };
-        if args.len() == 2 && args[0] == "--file" {
-            file_images(&[PathBuf::from(&args[1])], bounds)
-        } else if args.len() == 1 && args[0] == "--clipboard" {
-            native_read(bounds)
+        if let Some(file) = args.file {
+            file_images(&[file], options)
+        } else if args.clipboard {
+            native_read(options)
         } else {
             Err(Error::new(
                 "INVALID_ARGUMENT",
@@ -295,30 +388,39 @@ pub fn serve_worker() -> Result<()> {
         .map_err(|error| Error::new("IO_ERROR", error.to_string()))
 }
 
-fn file_images(
-    paths: &[PathBuf],
-    bounds: Option<image_input::ImageBounds>,
-) -> Result<InputContent> {
-    if paths.is_empty() || paths.len() > 8 {
-        return Err(Error::new(
-            "ATTACHMENT_INVALID",
-            "Paste at most eight image files",
-        ));
+fn file_images(paths: &[PathBuf], options: AttachmentOptions) -> Result<InputContent> {
+    options.limits.check_count(paths.len())?;
+    if paths.is_empty() {
+        return Err(Error::new("ATTACHMENT_INVALID", "No image files available"));
     }
     let mut images = Vec::new();
     let mut original = 0usize;
     let mut normalized = 0usize;
     for path in paths {
-        let bytes = read_bounded(path, image_input::MAX_SOURCE_BYTES)?;
+        let mut limits = options.limits;
+        limits.max_total_source_bytes = limits.max_total_source_bytes.saturating_sub(original);
+        limits.max_total_send_bytes = limits.max_total_send_bytes.saturating_sub(normalized);
+        if limits.max_total_source_bytes == 0 || limits.max_total_send_bytes == 0 {
+            return Err(Error::new(
+                "ATTACHMENT_INVALID",
+                "The request image byte budget is exhausted",
+            ));
+        }
+        let bytes = read_bounded(path, limits.decode_limits().max_source_bytes)?;
         original += bytes.len();
-        let image = image_input::normalize_with_bounds(&bytes, None, bounds)?;
+        let image = image_input::normalize_with_limits(
+            &bytes,
+            None,
+            options.bounds,
+            limits.decode_limits(),
+        )?;
         normalized += image.png.len();
-        if original > crate::attachments::MAX_REQUEST_BYTES
-            || normalized > crate::attachments::MAX_REQUEST_BYTES
+        if original > options.limits.max_total_source_bytes
+            || normalized > options.limits.max_total_send_bytes
         {
             return Err(Error::new(
                 "ATTACHMENT_INVALID",
-                "Pasted images exceed 50 MiB",
+                "Pasted images exceed the configured total byte limit",
             ));
         }
         images.push(InputImage {
@@ -335,11 +437,24 @@ fn file_images(
     }
     Ok(InputContent::Images { images })
 }
-fn native_read(bounds: Option<image_input::ImageBounds>) -> Result<InputContent> {
+fn native_read(options: AttachmentOptions) -> Result<InputContent> {
     let mut clipboard = arboard::Clipboard::new().map_err(|error| unavailable(&error))?;
     match clipboard.get_image() {
         Ok(image) => {
-            let image = image_input::from_rgba8(image.width, image.height, &image.bytes)?;
+            let mut capture = options.limits.decode_limits();
+            capture.max_output_bytes = capture.max_source_bytes;
+            let image = image_input::from_rgba8_with_limits(
+                image.width,
+                image.height,
+                &image.bytes,
+                capture,
+            )?;
+            image_input::normalize_with_limits(
+                &image.png,
+                None,
+                options.bounds,
+                options.limits.decode_limits(),
+            )?;
             let bytes = image.png.len();
             return Ok(InputContent::Images {
                 images: vec![InputImage {
@@ -353,7 +468,7 @@ fn native_read(bounds: Option<image_input::ImageBounds>) -> Result<InputContent>
         Err(error) => return Err(unavailable(&error)),
     }
     match clipboard.get().file_list() {
-        Ok(files) if !files.is_empty() => return file_images(&files, bounds),
+        Ok(files) if !files.is_empty() => return file_images(&files, options),
         Ok(_) | Err(arboard::Error::ContentNotAvailable) => {}
         Err(error) => return Err(unavailable(&error)),
     }
@@ -377,4 +492,36 @@ fn unavailable(error: &arboard::Error) -> Error {
         "CLIPBOARD_UNAVAILABLE",
         format!("Cannot read this host's clipboard: {error}"),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wire_budget_tracks_selected_source_limits_without_disabling_text_paste() {
+        use crate::config::attachments::AttachmentSettings;
+        let defaults = AttachmentSettings::default();
+        assert_eq!(wire_limit(defaults), MAX_WIRE);
+        let small = AttachmentSettings {
+            max_source_bytes: 1,
+            max_total_source_bytes: 1,
+            ..defaults
+        };
+        assert_eq!(wire_limit(small), 7 * 1024 * 1024);
+        let large = AttachmentSettings {
+            max_images: 64,
+            max_total_source_bytes: 256 * 1024 * 1024,
+            ..defaults
+        };
+        assert!(wire_limit(large) > MAX_WIRE);
+        assert_eq!(
+            wire_limit(AttachmentSettings {
+                max_send_bytes: 1,
+                max_total_send_bytes: 1,
+                ..defaults
+            }),
+            MAX_WIRE
+        );
+    }
 }

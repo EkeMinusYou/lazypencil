@@ -1,6 +1,20 @@
 //! Prepare immutable send images off the event loop and adopt them atomically.
 use super::*;
-use crate::{attachments::Attachment, image_input::ImageBounds};
+use crate::{
+    attachments::{Attachment, AttachmentOptions},
+    image_input::ImageBounds,
+};
+
+pub(super) fn input_bounds(
+    value: Option<&str>,
+    default: Option<ImageBounds>,
+) -> Result<Option<ImageBounds>> {
+    match value {
+        None => Ok(default),
+        Some("original") => Ok(None),
+        Some(value) => value.parse().map(Some),
+    }
+}
 
 pub(super) enum PreparedInput {
     Text(String),
@@ -56,7 +70,8 @@ impl Drop for InputJob {
 fn prepare(
     content: InputContent,
     directory: &Path,
-    bounds: Option<ImageBounds>,
+    options: AttachmentOptions,
+    pending: &[Attachment],
     retained: &[Attachment],
     cancel: &CancellationToken,
 ) -> Result<PreparedInput> {
@@ -64,20 +79,22 @@ fn prepare(
     match content {
         InputContent::Text { text } => Ok(PreparedInput::Text(text)),
         InputContent::Images { images } => {
-            if images.len() > crate::attachments::MAX_REQUEST_IMAGES {
-                return Err(Error::new(
-                    "ATTACHMENT_INVALID",
-                    "A request accepts at most eight images",
-                ));
-            }
+            options
+                .limits
+                .check_count(pending.len().saturating_add(images.len()))?;
             let mut prepared = Vec::new();
-            let result = (|| {
-                for image in images {
-                    crate::cancel::check(Some(cancel))?;
-                    prepared.push(image.store_with_bounds(directory, bounds)?);
-                }
-                crate::cancel::check(Some(cancel))
-            })();
+            let result =
+                (|| {
+                    for image in images {
+                        crate::cancel::check(Some(cancel))?;
+                        let limits = options.limits.remaining(pending.iter().chain(&prepared))?;
+                        prepared.push(image.store_with_options(
+                            directory,
+                            AttachmentOptions { limits, ..options },
+                        )?);
+                    }
+                    crate::cancel::check(Some(cancel))
+                })();
             match result {
                 Ok(()) => Ok(PreparedInput::Images(prepared)),
                 Err(error) => {
@@ -138,16 +155,29 @@ impl App {
     }
 
     pub(super) fn start_input(&mut self, path: Option<PathBuf>) -> Result<()> {
+        self.start_input_with_bounds(path, self.conversation.settings().image_bounds)
+    }
+
+    pub(super) fn start_input_with_bounds(
+        &mut self,
+        path: Option<PathBuf>,
+        bounds: Option<ImageBounds>,
+    ) -> Result<()> {
         let executable = std::env::current_exe().map_err(terminal::io)?;
         let reader = self.input_reader;
-        let bounds = self.conversation.settings().image_bounds;
+        let options = AttachmentOptions {
+            bounds,
+            limits: self.conversation.attachment_limits()?,
+        };
+        let pending = self.conversation.images().to_vec();
         self.start_image_job(
             "Reading image input…",
             move |directory, retained, token| {
                 prepare(
-                    reader(&executable, path.as_deref(), bounds, token)?,
+                    reader(&executable, path.as_deref(), options, token)?,
                     directory,
-                    bounds,
+                    options,
+                    &pending,
                     retained,
                     token,
                 )
@@ -169,11 +199,12 @@ impl App {
             )
         })?;
         let bounds = bounds.unwrap_or(ImageBounds::new(original.width, original.height)?);
+        let limits = self.conversation.attachment_limits()?;
         self.start_image_job(
             "Preparing send image…",
             move |directory, _retained, token| {
                 crate::cancel::check(Some(token))?;
-                let resized = image.resized(directory, bounds)?;
+                let resized = image.resized_with_limits(directory, bounds, limits)?;
                 Ok(PreparedInput::Resized {
                     index,
                     expected_id: image.id,
@@ -237,7 +268,11 @@ impl App {
             prepare(
                 content,
                 self.conversation.directory(),
-                self.conversation.settings().image_bounds,
+                AttachmentOptions {
+                    bounds: self.conversation.settings().image_bounds,
+                    limits: self.conversation.attachment_limits()?,
+                },
+                self.conversation.images(),
                 &self.conversation.image_references(),
                 &CancellationToken::new(),
             )
@@ -263,4 +298,98 @@ pub(super) fn label(image: &Attachment, index: usize) -> String {
         index + 1,
         clean(&image.display_name)
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::Engine;
+
+    #[test]
+    fn image_preparation_accounts_for_pending_images_but_keeps_text_paste_available() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let original = Attachment::from_bytes(
+            temp.path(),
+            include_bytes!("../../examples/assets/crop-source.png"),
+            "reference.png",
+        )
+        .unwrap();
+        let pending = vec![original.clone()];
+        let images = || InputContent::Images {
+            images: vec![crate::clipboard::InputImage {
+                name: "new.png".into(),
+                source_bytes: 1,
+                data: "invalid".into(),
+            }],
+        };
+        let options = AttachmentOptions {
+            limits: crate::config::attachments::AttachmentSettings {
+                max_images: 1,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let cancel = CancellationToken::new();
+        let error = prepare(images(), temp.path(), options, &pending, &pending, &cancel)
+            .err()
+            .unwrap();
+        assert_eq!(error.details.unwrap()["limit"], "max_images");
+        let options = AttachmentOptions {
+            limits: crate::config::attachments::AttachmentSettings {
+                max_total_send_bytes: original.bytes,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(
+            matches!(prepare(InputContent::Text { text: "日本語を貼り付け".into() }, temp.path(), options, &pending, &pending, &cancel).unwrap(), PreparedInput::Text(text) if text == "日本語を貼り付け")
+        );
+        assert_eq!(
+            prepare(images(), temp.path(), options, &pending, &pending, &cancel)
+                .err()
+                .unwrap()
+                .code,
+            "ATTACHMENT_INVALID"
+        );
+        assert!(original.read_original(temp.path()).is_ok());
+
+        // One candidate can fit, but the second must fail without retaining the
+        // first candidate's newly persisted image or touching the existing one.
+        let png = crate::image_input::from_rgba8(1, 1, &[255, 0, 0, 255])
+            .unwrap()
+            .png;
+        let options = AttachmentOptions {
+            limits: crate::config::attachments::AttachmentSettings {
+                max_total_send_bytes: png.len() * 2 - 1,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let names = || {
+            std::fs::read_dir(temp.path().join("attachments"))
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect::<std::collections::BTreeSet<_>>()
+        };
+        let before = names();
+        let content = InputContent::Images {
+            images: (0..2)
+                .map(|_| crate::clipboard::InputImage {
+                    name: "new.png".into(),
+                    source_bytes: png.len(),
+                    data: base64::engine::general_purpose::STANDARD.encode(&png),
+                })
+                .collect(),
+        };
+        assert!(prepare(content, temp.path(), options, &[], &pending, &cancel).is_err());
+        assert_eq!(names(), before);
+        assert_eq!(
+            input_bounds(Some("original"), Some(ImageBounds::new(2, 2).unwrap())).unwrap(),
+            None
+        );
+        assert_eq!(
+            input_bounds(Some("10x20"), None).unwrap(),
+            Some(ImageBounds::new(10, 20).unwrap())
+        );
+    }
 }

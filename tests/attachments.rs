@@ -88,6 +88,189 @@ mod originals {
     }
 
     #[test]
+    fn configured_source_send_and_pixel_limits_require_an_explicit_downscale() {
+        use lazypencil::{
+            attachments::{AttachmentOptions, prepare_with_options},
+            config::attachments::AttachmentSettings,
+            image_input::ImageBounds,
+        };
+        let temp = TempDir::new().unwrap();
+        let source = jpeg();
+        let large =
+            Attachment::from_bytes(&temp.path().join("baseline"), &source, "source.jpg").unwrap();
+        let small = large
+            .resized(
+                &temp.path().join("baseline"),
+                ImageBounds::new(1, 1).unwrap(),
+            )
+            .unwrap();
+        assert!(small.bytes < large.bytes);
+        let limits = AttachmentSettings {
+            max_send_bytes: small.bytes,
+            ..Default::default()
+        };
+        let directory = temp.path().join("limited");
+        let options = AttachmentOptions {
+            bounds: None,
+            limits,
+        };
+        assert_eq!(
+            Attachment::from_bytes_with_options(&directory, &source, "reference.jpg", options)
+                .unwrap_err()
+                .code,
+            "ATTACHMENT_INVALID"
+        );
+        assert!(
+            !directory.exists(),
+            "No blobs should be written on a budget failure"
+        );
+        let image = Attachment::from_bytes_with_options(
+            &directory,
+            &source,
+            "reference.jpg",
+            AttachmentOptions {
+                bounds: Some(ImageBounds::new(1, 1).unwrap()),
+                ..options
+            },
+        )
+        .unwrap();
+        assert_eq!((image.width, image.height), (1, 1));
+        assert_eq!(image.read_original(&directory).unwrap(), source);
+        for limits in [
+            AttachmentSettings {
+                max_source_bytes: source.len() - 1,
+                ..limits
+            },
+            AttachmentSettings {
+                max_source_pixels: 799,
+                ..limits
+            },
+        ] {
+            assert!(
+                Attachment::from_bytes_with_options(
+                    &temp.path().join("rejected"),
+                    &source,
+                    "source.jpg",
+                    AttachmentOptions {
+                        limits,
+                        bounds: Some(ImageBounds::new(1, 1).unwrap())
+                    }
+                )
+                .is_err()
+            );
+            assert!(!temp.path().join("rejected").exists());
+        }
+        let path = temp.path().join("tiny.png");
+        std::fs::write(&path, image.read(&directory).unwrap()).unwrap();
+        let paths = vec![path; 9];
+        assert!(prepare(temp.path(), &paths).is_err());
+        let nine = prepare_with_options(
+            temp.path(),
+            &paths,
+            AttachmentOptions {
+                limits: AttachmentSettings {
+                    max_images: 9,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(nine.len(), 9);
+        let total_source = AttachmentSettings {
+            max_images: 9,
+            max_total_source_bytes: nine[0].source_size() * 9 - 1,
+            ..Default::default()
+        };
+        let total_send = AttachmentSettings {
+            max_images: 9,
+            max_total_send_bytes: nine[0].bytes * 9 - 1,
+            ..Default::default()
+        };
+        assert_eq!(
+            total_source
+                .check_request(&nine)
+                .unwrap_err()
+                .details
+                .unwrap()["limit"],
+            "max_total_source_bytes"
+        );
+        assert_eq!(
+            total_send
+                .check_request(&nine)
+                .unwrap_err()
+                .details
+                .unwrap()["limit"],
+            "max_total_send_bytes"
+        );
+    }
+
+    #[cfg(feature = "tui")]
+    #[test]
+    fn image_worker_receives_selected_budgets_and_preserves_the_encoded_source() {
+        use lazypencil::{
+            attachments::AttachmentOptions,
+            clipboard::{self, InputContent},
+            config::attachments::AttachmentSettings,
+            image_input::ImageBounds,
+        };
+        let temp = TempDir::new().unwrap();
+        let source = jpeg();
+        let path = temp.path().join("reference.jpg");
+        std::fs::write(&path, &source).unwrap();
+        let baseline = Attachment::from_file(temp.path(), &path).unwrap();
+        let small = baseline
+            .resized(temp.path(), ImageBounds::new(1, 1).unwrap())
+            .unwrap();
+        let executable = Path::new(env!("CARGO_BIN_EXE_lazypencil"));
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let options = AttachmentOptions {
+            bounds: None,
+            limits: AttachmentSettings {
+                max_send_bytes: small.bytes,
+                ..Default::default()
+            },
+        };
+        assert_eq!(
+            clipboard::read_image_with_options(executable, &path, options, &cancel)
+                .unwrap_err()
+                .code,
+            "ATTACHMENT_INVALID"
+        );
+        let options = AttachmentOptions {
+            bounds: Some(ImageBounds::new(1, 1).unwrap()),
+            ..options
+        };
+        let InputContent::Images { mut images } =
+            clipboard::read_image_with_options(executable, &path, options, &cancel).unwrap()
+        else {
+            panic!("Expected image");
+        };
+        let stored = images
+            .pop()
+            .unwrap()
+            .store_with_options(temp.path(), options)
+            .unwrap();
+        assert_eq!(stored.read_original(temp.path()).unwrap(), source);
+        assert_eq!((stored.width, stored.height), (1, 1));
+        assert!(
+            clipboard::read_image_with_options(
+                executable,
+                &path,
+                AttachmentOptions {
+                    limits: AttachmentSettings {
+                        max_source_bytes: source.len() - 1,
+                        ..Default::default()
+                    },
+                    ..options
+                },
+                &cancel
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
     fn explicit_send_sizes_use_original_orientation_and_never_compound_or_upscale() {
         use lazypencil::image_input::ImageBounds;
         let temp = TempDir::new().unwrap();
@@ -385,6 +568,101 @@ mod originals {
             env!("CARGO_BIN_EXE_lazypencil").into(),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn tightened_settings_block_submission_and_allow_incremental_image_repairs() {
+        // A separate harness process owns its environment; parallel tests keep
+        // their normal user configuration and never mutate process-global env.
+        if std::env::var_os("LAZYPENCIL_TEST_IMAGE_LIMIT_RELOAD").is_none() {
+            let temp = TempDir::new().unwrap();
+            let mut command = tokio::process::Command::new(std::env::current_exe().unwrap());
+            command.args(["--exact", "originals::tightened_settings_block_submission_and_allow_incremental_image_repairs", "--nocapture"])
+                .env("LAZYPENCIL_TEST_IMAGE_LIMIT_RELOAD", "1")
+                .env("LAZYPENCIL_CONFIG_DIR", temp.path().join("configuration"))
+                .kill_on_drop(true);
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let output = runtime.block_on(async {
+                tokio::time::timeout(std::time::Duration::from_secs(20), command.output())
+                    .await
+                    .unwrap()
+                    .unwrap()
+            });
+            assert!(
+                output.status.success(),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+        let temp = TempDir::new().unwrap();
+        let mut conversation = conversation(&temp);
+        let image =
+            Attachment::from_bytes(conversation.directory(), &jpeg(), "reference.jpg").unwrap();
+        conversation
+            .add_images(vec![image.clone(), image.clone()])
+            .unwrap();
+        conversation
+            .set_draft("日本語の下書きと元画像を保持".into())
+            .unwrap();
+        let small = image
+            .resized(
+                conversation.directory(),
+                lazypencil::image_input::ImageBounds::new(1, 1).unwrap(),
+            )
+            .unwrap();
+        assert!(small.bytes < image.bytes);
+        let settings = std::path::PathBuf::from(std::env::var_os("LAZYPENCIL_CONFIG_DIR").unwrap());
+        std::fs::create_dir_all(&settings).unwrap();
+        std::fs::write(
+            settings.join("config.toml"),
+            format!("[attachments]\nmax_total_send_bytes={}\n", small.bytes * 2),
+        )
+        .unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            assert_eq!(
+                conversation.send(None).await.unwrap_err().code,
+                "ATTACHMENT_INVALID"
+            );
+            assert!(!conversation.active());
+            assert_eq!(conversation.images().len(), 2);
+            assert_eq!(conversation.draft(), "日本語の下書きと元画像を保持");
+            conversation
+                .replace_image(0, &image.id, small.clone())
+                .unwrap();
+            assert_eq!(
+                conversation.send(None).await.unwrap_err().code,
+                "ATTACHMENT_INVALID"
+            );
+            conversation
+                .replace_image(1, &image.id, small.clone())
+                .unwrap();
+            conversation
+                .attachment_limits()
+                .unwrap()
+                .check_request(conversation.images())
+                .unwrap();
+            conversation.close().await.unwrap();
+        });
+        assert_eq!(
+            small.read_original(conversation.directory()).unwrap(),
+            jpeg()
+        );
+        let saved: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(conversation.directory().join("session.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(saved["pending_attachments"][0]["width"], 1);
+        assert_eq!(saved["pending_attachments"][1]["width"], 1);
+        assert_eq!(saved["draft"], "日本語の下書きと元画像を保持");
     }
 
     #[test]

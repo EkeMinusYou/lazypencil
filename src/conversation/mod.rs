@@ -3,7 +3,7 @@
 use crate::{
     Error, Result,
     agent::{AgentEvent, AgentHost, AgentOptions, permissions::DocumentPermissions},
-    attachments::{Attachment, AttachmentGrant, MAX_REQUEST_BYTES, MAX_REQUEST_IMAGES},
+    attachments::{Attachment, AttachmentGrant, AttachmentOptions},
     prompt::{AuthMode, DocumentTools, PromptArgs},
     store::Store,
 };
@@ -159,6 +159,9 @@ impl Conversation {
     pub fn settings(&self) -> &PromptArgs {
         &self.args
     }
+    pub fn attachment_limits(&self) -> Result<crate::config::attachments::AttachmentSettings> {
+        crate::config::attachments::load()
+    }
     pub fn set_draft(&mut self, text: String) -> Result<()> {
         self.require_idle()?;
         if text.len() > 1024 * 1024 {
@@ -172,47 +175,34 @@ impl Conversation {
     }
     pub fn add_images(&mut self, images: Vec<Attachment>) -> Result<()> {
         self.require_idle()?;
-        if self.images().len() + images.len() > MAX_REQUEST_IMAGES {
-            return Err(Error::new(
-                "ATTACHMENT_INVALID",
-                "A request accepts at most eight images",
-            ));
-        }
+        self.attachment_limits()?
+            .check_request(self.images().iter().chain(&images))?;
         for image in &images {
             image.read(self.directory())?;
-        }
-        let source = self
-            .images()
-            .iter()
-            .chain(&images)
-            .map(|image| image.source_bytes.unwrap_or(image.bytes))
-            .sum::<usize>();
-        let normalized = self
-            .images()
-            .iter()
-            .chain(&images)
-            .map(|image| image.bytes)
-            .sum::<usize>();
-        if source > MAX_REQUEST_BYTES || normalized > MAX_REQUEST_BYTES {
-            return Err(Error::new(
-                "ATTACHMENT_INVALID",
-                "Request images exceed 50 MiB",
-            ));
         }
         self.session.state.pending_attachments.extend(images);
         self.session.save()
     }
     pub fn attach_file(&mut self, path: &Path) -> Result<()> {
         self.require_idle()?;
-        if self.images().len() >= MAX_REQUEST_IMAGES {
-            return Err(Error::new(
-                "ATTACHMENT_INVALID",
-                "A request accepts at most eight images",
-            ));
+        let limits = self.attachment_limits()?;
+        limits.check_count(self.images().len().saturating_add(1))?;
+        let limits = limits.remaining(self.images())?;
+        let image = Attachment::from_file_with_options(
+            self.directory(),
+            path,
+            AttachmentOptions {
+                bounds: self.args.image_bounds,
+                limits,
+            },
+        )?;
+        let result = self.add_image(image.clone());
+        if let Err(error) = &result
+            && error.code != "IO_ERROR"
+        {
+            let _ = self.discard_image(&image);
         }
-        let image =
-            Attachment::from_file_with_bounds(self.directory(), path, self.args.image_bounds)?;
-        self.add_image(image)
+        result
     }
     pub fn replace_image(
         &mut self,
@@ -241,24 +231,18 @@ impl Conversation {
                 "A resize must retain the same captured original",
             ));
         }
-        let total = self
-            .images()
-            .iter()
-            .enumerate()
-            .map(|(position, current)| {
-                if position == index {
-                    image.bytes
-                } else {
-                    current.bytes
-                }
-            })
-            .sum::<usize>();
-        if total > MAX_REQUEST_BYTES {
-            return Err(Error::new(
-                "ATTACHMENT_INVALID",
-                "Request images exceed 50 MiB",
-            ));
+        let limits = self.attachment_limits()?;
+        limits.check_request([&image])?;
+        if image.bytes > previous.bytes {
+            limits.check_request(
+                self.images()
+                    .iter()
+                    .enumerate()
+                    .map(|(position, previous)| if position == index { &image } else { previous }),
+            )?;
         }
+        // A smaller replacement may repair one part of a draft whose other
+        // images exceed newly tightened limits. Submission rechecks the whole draft.
         let previous = std::mem::replace(&mut self.session.state.pending_attachments[index], image);
         if let Err(error) = self.session.save() {
             self.session.state.pending_attachments[index] = previous;
@@ -347,6 +331,7 @@ impl Conversation {
                 "Enter a prompt or attach an image",
             ));
         }
+        self.attachment_limits()?.check_request(self.images())?;
         let (guidance, style) =
             crate::service::project_design_start(&self.store, self.args.style.as_deref())?;
         // Start with tokens and example identities; fetch the complete example

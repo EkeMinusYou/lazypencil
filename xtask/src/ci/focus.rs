@@ -182,6 +182,8 @@ fn image_input_only(paths: &[String]) -> bool {
                     "src/attachments.rs",
                     "src/image_input.rs",
                     "src/clipboard.rs",
+                    "src/config.rs",
+                    "src/config/attachments.rs",
                     "src/conversation/mod.rs",
                     "src/conversation/management.rs",
                     "src/conversation/management/retention/tests.rs",
@@ -190,6 +192,7 @@ fn image_input_only(paths: &[String]) -> bool {
                     "src/tui/images.rs",
                     "src/tui/tests.rs",
                     "tests/attachments.rs",
+                    "tests/user_config.rs",
                 ]
                 .contains(&path.as_str())
         })
@@ -323,14 +326,20 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     // boundary. Their real consumer needs rendering, even when conversation
     // metadata changes would otherwise select the core-only ownership suite.
     if image_input_only(paths) {
+        let mut targets = vec!["attachments".into()];
+        if paths.iter().any(|path| path.starts_with("src/tui/")) {
+            targets.push("tui".into());
+        }
+        if paths
+            .iter()
+            .any(|path| path.starts_with("src/config") || path == "tests/user_config.rs")
+        {
+            targets.push("user_config".into());
+        }
         return Ok(Plan {
             platform,
             suite: "graphics".into(),
-            targets: if paths.iter().any(|path| path.starts_with("src/tui/")) {
-                vec!["attachments".into(), "tui".into()]
-            } else {
-                vec!["attachments".into()]
-            },
+            targets,
             preprocessor,
         });
     }

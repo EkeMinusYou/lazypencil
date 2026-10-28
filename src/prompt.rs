@@ -114,6 +114,7 @@ pub fn run_cli(args: &PromptArgs, data_dir: Option<PathBuf>, json_output: bool) 
             "Enter up to 1 MiB of prompt text or attach an image",
         ));
     }
+    crate::config::attachments::load()?.check_count(args.images.len())?;
     let mut conversation = Conversation::open(args.clone(), data_dir)?;
     // A CLI invocation uses only explicitly supplied attachments, never a saved draft's images.
     conversation.clear_images()?;

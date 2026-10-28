@@ -3,6 +3,35 @@ use crate::{Error, Result};
 pub const MAX_SOURCE_BYTES: usize = 20 * 1024 * 1024;
 pub const MAX_IMAGE_PIXELS: u64 = 16 * 1024 * 1024;
 
+#[derive(Debug, Clone, Copy)]
+pub struct DecodeLimits {
+    pub max_source_bytes: usize,
+    pub max_output_bytes: usize,
+    pub max_pixels: u64,
+}
+impl Default for DecodeLimits {
+    fn default() -> Self {
+        Self {
+            max_source_bytes: MAX_SOURCE_BYTES,
+            max_output_bytes: MAX_SOURCE_BYTES,
+            max_pixels: MAX_IMAGE_PIXELS,
+        }
+    }
+}
+impl DecodeLimits {
+    pub fn validate(self) -> Result<()> {
+        if !(1..=MAX_SOURCE_BYTES).contains(&self.max_source_bytes)
+            || !(1..=MAX_SOURCE_BYTES).contains(&self.max_output_bytes)
+            || !(1..=MAX_IMAGE_PIXELS).contains(&self.max_pixels)
+        {
+            return Err(invalid(
+                "Image decode limits exceed the native byte or pixel bounds",
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// An explicit send-image bounding box, never an instruction to upscale.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
@@ -78,17 +107,29 @@ pub struct NormalizedImage {
 
 #[cfg(feature = "rendering")]
 pub fn from_rgba8(width: usize, height: usize, rgba: &[u8]) -> Result<NormalizedImage> {
+    from_rgba8_with_limits(width, height, rgba, DecodeLimits::default())
+}
+
+#[cfg(feature = "rendering")]
+pub fn from_rgba8_with_limits(
+    width: usize,
+    height: usize,
+    rgba: &[u8],
+    limits: DecodeLimits,
+) -> Result<NormalizedImage> {
+    limits.validate()?;
     if width == 0
         || height == 0
-        || (width as u64).saturating_mul(height as u64) > MAX_IMAGE_PIXELS
+        || (width as u64).saturating_mul(height as u64) > limits.max_pixels
         || width
             .checked_mul(height)
             .and_then(|pixels| pixels.checked_mul(4))
             != Some(rgba.len())
     {
-        return Err(invalid(
-            "Clipboard pixels must be nonempty RGBA8 within 16 megapixels",
-        ));
+        return Err(invalid(format!(
+            "Clipboard pixels must be nonempty RGBA8 within {} pixels",
+            limits.max_pixels
+        )));
     }
     let info = skia_safe::ImageInfo::new(
         (width as i32, height as i32),
@@ -101,10 +142,11 @@ pub fn from_rgba8(width: usize, height: usize, rgba: &[u8]) -> Result<Normalized
             .ok_or_else(|| invalid("Cannot allocate clipboard pixels"))?;
     let data = skia_safe::png_encoder::encode_image(None, &image, &Default::default())
         .ok_or_else(|| invalid("Cannot encode clipboard pixels"))?;
-    if data.size() > MAX_SOURCE_BYTES {
-        return Err(invalid(
-            "The clipboard image exceeds 20 MiB after PNG encoding",
-        ));
+    if data.size() > limits.max_output_bytes {
+        return Err(invalid(format!(
+            "Clipboard PNG exceeds {} bytes",
+            limits.max_output_bytes
+        )));
     }
     Ok(NormalizedImage {
         png: data.as_bytes().into(),
@@ -123,6 +165,8 @@ impl std::fmt::Debug for NormalizedImage {
             .field("width", &self.width)
             .field("height", &self.height)
             .field("source_mime", &self.source_mime)
+            .field("source_width", &self.source_width)
+            .field("source_height", &self.source_height)
             .finish()
     }
 }
@@ -136,11 +180,24 @@ pub fn normalize_with_bounds(
     claimed_mime: Option<&str>,
     bounds: Option<ImageBounds>,
 ) -> Result<NormalizedImage> {
+    normalize_with_limits(bytes, claimed_mime, bounds, DecodeLimits::default())
+}
+
+pub fn normalize_with_limits(
+    bytes: &[u8],
+    claimed_mime: Option<&str>,
+    bounds: Option<ImageBounds>,
+    limits: DecodeLimits,
+) -> Result<NormalizedImage> {
+    limits.validate()?;
     if let Some(bounds) = bounds {
         ImageBounds::new(bounds.width, bounds.height)?;
     }
-    if bytes.is_empty() || bytes.len() > MAX_SOURCE_BYTES {
-        return Err(invalid("Image input must contain 1..20 MiB"));
+    if bytes.is_empty() || bytes.len() > limits.max_source_bytes {
+        return Err(invalid(format!(
+            "Image input must contain 1..{} bytes",
+            limits.max_source_bytes
+        )));
     }
     let mime = if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         "image/png"
@@ -159,7 +216,7 @@ pub fn normalize_with_bounds(
         ));
     }
     validate_container(bytes, mime)?;
-    decode(bytes, mime, bounds)
+    decode(bytes, mime, bounds, limits)
 }
 
 #[cfg(feature = "rendering")]
@@ -167,6 +224,7 @@ fn decode(
     bytes: &[u8],
     mime: &'static str,
     bounds: Option<ImageBounds>,
+    limits: DecodeLimits,
 ) -> Result<NormalizedImage> {
     use skia_safe::{Codec, ColorSpace, Data, ImageInfo};
     let mut codec = Codec::from_data(Data::new_copy(bytes))
@@ -174,9 +232,12 @@ fn decode(
     let size = codec.dimensions();
     if size.width <= 0
         || size.height <= 0
-        || size.width as u64 * size.height as u64 > MAX_IMAGE_PIXELS
+        || size.width as u64 * size.height as u64 > limits.max_pixels
     {
-        return Err(invalid("Image dimensions exceed 16 megapixels"));
+        return Err(invalid(format!(
+            "Image dimensions exceed {} decoded source pixels",
+            limits.max_pixels
+        )));
     }
     if codec.get_frame_count() > 1 {
         return Err(invalid("Animated images are not accepted"));
@@ -234,8 +295,11 @@ fn decode(
     let png =
         skia_safe::png_encoder::encode_image(None, &surface.image_snapshot(), &Default::default())
             .ok_or_else(|| invalid("Cannot encode the normalized PNG"))?;
-    if png.size() > MAX_SOURCE_BYTES {
-        return Err(invalid("The normalized image exceeds 20 MiB"));
+    if png.size() > limits.max_output_bytes {
+        return Err(invalid(format!(
+            "Normalized PNG exceeds {} bytes; choose a smaller explicit send size",
+            limits.max_output_bytes
+        )));
     }
     Ok(NormalizedImage {
         png: png.as_bytes().into(),
@@ -252,6 +316,7 @@ fn decode(
     _bytes: &[u8],
     _mime: &'static str,
     _bounds: Option<ImageBounds>,
+    _limits: DecodeLimits,
 ) -> Result<NormalizedImage> {
     Err(Error::new(
         "UNSUPPORTED_FEATURE",

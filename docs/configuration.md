@@ -2,6 +2,26 @@
 
 User `config.toml` persists font preferences, runtime limits, and per-agent ACP preferences across projects. Project `lazypencil.toml` overrides individual font/runtime fields and adds project design guides, style catalogues, and a default style. CLI, MCP, and TUI use the same captured document settings; CLI and TUI resolve the same merged user/project agent profiles. Project instructions and agent execution use separate explicit local grants, described below. Browser wait/selector/animation/network policies and dedicated single-owner authentication profiles are configurable and verified. Simultaneous profile ownership, some asset/library controls and general host-wide resource enforcement remain outside the implemented settings. Prompt, clipboard, global and viewing shortcuts are user-configurable; see [TUI controls](tui.md#viewing-and-global-shortcuts).
 
+## Image attachment budgets
+
+Attachment limits belong to the user `config.toml`; projects cannot override them. `config init --user` writes these defaults, and `config show --user` / `config schema --user` expose them:
+
+```toml
+[attachments]
+max_images = 8
+max_source_bytes = 20971520
+max_send_bytes = 20971520
+max_total_source_bytes = 52428800
+max_total_send_bytes = 52428800
+max_source_pixels = 16777216
+```
+
+`max_images` accepts 1..64. Per-image source/send budgets accept 1..20 MiB; separate per-request source/send totals accept 1..256 MiB. `max_source_pixels` accepts 1..16 Mi pixels (16 × 1024 × 1024), measured before resizing. Per-image bytes and pixels remain bounded by the native decoder's safety limits; raising the count or aggregate budgets does not raise those ceilings. Adapter/model limits still apply.
+
+Source bytes count the captured original encoding; send bytes count the normalized PNG. Lower send budgets require an explicit `--image-max-size WIDTHxHEIGHT`, `/attach PATH WIDTHxHEIGHT`, `/paste-image WIDTHxHEIGHT`, or `/resize-image NUMBER WIDTHxHEIGHT`; images are never silently resized or omitted. `original` overrides a startup size for one TUI input command. Explicit resizing keeps the original encoding and applies orientation before fitting without upscaling.
+
+Limits are checked at ingestion and again before submission. Editing the user file while a draft is open can block its next image addition or submission; stored originals and the draft remain intact. Remove images or resize pending send images to repair the request. A smaller replacement can repair an oversized draft incrementally, while submission still requires the entire request to fit. Tightening source budgets requires removing oversized sources or adjusting the setting. Reading numeric attachment policy does not discover or load fonts. Text clipboard input remains available when an image budget is exhausted.
+
 ## Local conversation retention
 
 Retention is user-owned and is rejected in project configuration. Set it in the user `config.toml` created by `config init --user`:

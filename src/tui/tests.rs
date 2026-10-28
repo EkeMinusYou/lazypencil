@@ -452,7 +452,7 @@ fn periodic_preview_checks_retry_a_captured_layout_after_render_failure() {
 fn fake_input(
     executable: &Path,
     path: Option<&Path>,
-    _: Option<crate::image_input::ImageBounds>,
+    _: crate::attachments::AttachmentOptions,
     cancel: &CancellationToken,
 ) -> Result<InputContent> {
     fake_clipboard(executable, path, cancel)
@@ -584,7 +584,7 @@ fn cancelling_a_prepared_resize_reclaims_only_the_unadopted_send_variant() {
 fn incomplete_image_batch(
     _: &Path,
     _: Option<&Path>,
-    _: Option<crate::image_input::ImageBounds>,
+    _: crate::attachments::AttachmentOptions,
     _: &CancellationToken,
 ) -> Result<InputContent> {
     assert_eq!(std::thread::current().name(), Some("lazypencil-input"));
