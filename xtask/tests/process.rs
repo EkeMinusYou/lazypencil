@@ -486,16 +486,13 @@ fn browser_copy_focus_keeps_each_browser_condition_and_excludes_only_early_repro
     let targets = ["browser_readiness", "project", "script_scope"].map(str::to_owned);
     let plan = commands::plan(&util::root(), "browser", &targets).unwrap();
     let reproductions = [
+        focus::HEADED_LOGIN,
         focus::GENERATED_BROWSER,
         focus::LOCAL_FILES,
         focus::BROWSER_COPY,
         focus::LOCAL_PAGES,
     ];
-    assert!(
-        plan.checks[0]
-            .iter()
-            .any(|arg| arg == focus::GENERATED_BROWSER)
-    );
+    assert!(plan.checks[0].iter().any(|arg| arg == focus::HEADED_LOGIN));
     for (command, expected) in plan.checks.iter().zip(reproductions) {
         assert!(command.iter().any(|arg| arg == expected));
         for flag in ["--exact", "--ignored"] {
