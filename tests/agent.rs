@@ -540,10 +540,17 @@ fn closing_the_host_reaps_its_adapter_process_group() {
 }
 
 fn cli(directory: &TempDir, mode: &str, extra: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_lazypencil"))
-        .arg("--data-dir")
-        .arg(directory.path().join("data"))
-        .args(["--json", "prompt"])
+    cli_output(directory, mode, extra, true)
+}
+
+fn cli_output(directory: &TempDir, mode: &str, extra: &[&str], json: bool) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_lazypencil"));
+    command.arg("--data-dir").arg(directory.path().join("data"));
+    if json {
+        command.arg("--json");
+    }
+    command
+        .arg("prompt")
         .arg(directory.path().join("design.pen"))
         .args(["--adapter"])
         .arg(helper())
@@ -554,6 +561,111 @@ fn cli(directory: &TempDir, mode: &str, extra: &[&str]) -> Output {
         .arg("日本語でデザインを作成してください")
         .output()
         .unwrap()
+}
+
+#[test]
+fn adapter_errors_keep_numeric_codes_without_echoing_private_payloads_or_host_error_codes() {
+    let cases: [(&str, &[&str], &str); 8] = [
+        ("protocol-error-initialize", &[], "initialize"),
+        (
+            "protocol-error-authenticate",
+            &["--auth-method", "fixture-auth"],
+            "authenticate",
+        ),
+        ("protocol-error-new", &[], "session/new"),
+        ("protocol-error-load", &[], "session/load"),
+        (
+            "protocol-error-mode",
+            &["--mode", "workspace-write"],
+            "session/set_mode",
+        ),
+        (
+            "protocol-error-model",
+            &["--model", "fixture-model-2"],
+            "session/set_config_option",
+        ),
+        ("protocol-error-prompt", &[], "session/prompt"),
+        ("protocol-error-frame", &[], "initialize"),
+    ];
+    for (mode, extra, phase) in cases {
+        for json in [true, false] {
+            // Setup phases and prompt failures use the same public entry point
+            // as a real adapter. Every case owns its data, transcript and child.
+            let directory = TempDir::new().unwrap();
+            let file = directory.path().join("design.pen");
+            let original = br##"{"version":"2.21","children":[{"id":"keep","type":"rectangle","width":40,"height":20,"fill":"#2563EB"}]}"##;
+            std::fs::write(&file, original).unwrap();
+            let session = if mode == "protocol-error-load" {
+                let first = cli(&directory, "auth-account", &[]);
+                assert!(
+                    first.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&first.stdout)
+                );
+                Some(
+                    events(&first)
+                        .into_iter()
+                        .find(|event| event["type"] == "complete")
+                        .unwrap()["session"]
+                        .as_str()
+                        .unwrap()
+                        .to_owned(),
+                )
+            } else {
+                None
+            };
+            let mut extra = extra.to_vec();
+            if let Some(session) = &session {
+                extra.extend(["--session", session]);
+            }
+            let output = cli_output(&directory, mode, &extra, json);
+            assert!(!output.status.success(), "{mode}");
+            let rejected: Value = serde_json::from_slice(
+                &std::fs::read(directory.path().join("rejected-acp-phase.json")).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(rejected["phase"], phase, "{mode}");
+            assert_eq!(std::fs::read(&file).unwrap(), original, "{mode}");
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            for text in [&*stdout, &*stderr] {
+                assert!(!text.contains("MUST_NOT_ECHO"), "{mode}");
+                assert!(!text.contains("fixture-private-credential"), "{mode}");
+                assert!(!text.contains("private document excerpt"), "{mode}");
+            }
+            if !json {
+                assert!(stderr.contains("AGENT_ERROR"), "{mode}: {stderr}");
+                continue;
+            }
+            let values = events(&output);
+            let failed = values
+                .iter()
+                .find(|event| event["type"] == "failed")
+                .unwrap();
+            let error = &failed["error"];
+            assert_eq!(error["code"], "AGENT_ERROR", "{mode}");
+            if mode != "protocol-error-frame" {
+                assert_eq!(error["details"]["phase"], phase, "{mode}: {error}");
+                assert_eq!(
+                    error["details"]["acp_error_code"], -32603,
+                    "{mode}: {error}"
+                );
+            }
+            let transcript = Path::new(failed["transcript"].as_str().unwrap());
+            let metadata = transcript.parent().unwrap().join("session.json");
+            let state: Value = serde_json::from_slice(&std::fs::read(&metadata).unwrap()).unwrap();
+            assert_eq!(
+                state["draft"], "日本語でデザインを作成してください",
+                "{mode}"
+            );
+            for path in [transcript, metadata.as_path()] {
+                let text = std::fs::read_to_string(path).unwrap();
+                assert!(!text.contains("MUST_NOT_ECHO"), "{mode}");
+                assert!(!text.contains("fixture-private-credential"), "{mode}");
+                assert!(!text.contains("private document excerpt"), "{mode}");
+            }
+        }
+    }
 }
 fn events(output: &Output) -> Vec<Value> {
     String::from_utf8_lossy(&output.stdout)

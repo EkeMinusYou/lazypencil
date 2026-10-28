@@ -241,6 +241,10 @@ async fn run(
     let notification_events = events.clone();
     let permission_shutdown = shutdown.clone();
     let (auth_sender, auth_receiver) = watch::channel(None::<AuthReport>);
+    // Host errors cross the SDK boundary out of band. Adapter-controlled error
+    // data must never impersonate a host error or become public diagnostics.
+    let host_error = Arc::new(Mutex::new(None));
+    let captured_error = host_error.clone();
     let result = acp::Client.builder()
         .on_receive_notification(async move |notification: acp::UntypedMessage, _cx| {
             // Preserve new, non-breaking update variants and extension notifications.
@@ -275,7 +279,10 @@ async fn run(
         }, acp::on_receive_request!())
         .connect_with(transport, async move |connection: acp::ConnectionTo<acp::Agent>| {
             conversation(&connection, &options, commands, &events, &shutdown, current_cancel, auth_receiver).await
-                .map_err(|error| acp::Error::internal_error().data(serde_json::to_value(error).unwrap_or(Value::Null)))
+                .map_err(|error| {
+                    *captured_error.lock().expect("host error lock") = Some(error);
+                    acp::Error::internal_error()
+                })
         }).await;
     process.stop().await;
     let stderr_bytes = match tokio::time::timeout(Duration::from_secs(1), &mut drain).await {
@@ -286,23 +293,18 @@ async fn run(
         }
     };
     result.map_err(|error| {
-        // Preserve our structured error across the SDK's connection boundary.
-        let encoded = serde_json::to_value(&error).unwrap_or(Value::Null);
-        let data = &encoded["data"];
-        let code = match data["code"].as_str() {
-            Some("CANCELLED") => "CANCELLED",
-            Some("AGENT_UNAVAILABLE") => "AGENT_UNAVAILABLE",
-            Some("INVALID_ARGUMENT") => "INVALID_ARGUMENT",
-            _ => "AGENT_ERROR",
-        };
-        Error::new(
-            code,
-            data["message"]
-                .as_str()
-                .map(str::to_owned)
-                .unwrap_or_else(|| format!("ACP connection failed: {error}")),
-        )
-        .details(json!({"adapter_stderr_bytes":stderr_bytes,"cause":data.get("details")}))
+        let mut error = host_error
+            .lock()
+            .expect("host error lock")
+            .take()
+            .unwrap_or_else(|| protocol_error("connection", error));
+        let mut details = error.details.take().unwrap_or_else(|| json!({}));
+        if !details.is_object() {
+            details = json!({"cause":details});
+        }
+        details["adapter_stderr_bytes"] = json!(stderr_bytes);
+        error.details = Some(details);
+        error
     })
 }
 
@@ -324,7 +326,7 @@ async fn conversation(
             )
             .block_task()
             .await
-            .map_err(protocol_error)?;
+            .map_err(|error| protocol_error("initialize", error))?;
         if initialized.protocol_version != ProtocolVersion::V1 {
             return Err(agent_error("The adapter did not negotiate ACP v1"));
         }
@@ -354,7 +356,7 @@ async fn conversation(
                 .send_request(AuthenticateRequest::new(method.clone()))
                 .block_task()
                 .await
-                .map_err(protocol_error)?;
+                .map_err(|error| protocol_error("authenticate", error))?;
         }
         let restart = options.session_id.is_some()
             && (options.restart_session
@@ -374,7 +376,7 @@ async fn conversation(
                 )
                 .block_task()
                 .await
-                .map_err(protocol_error)?;
+                .map_err(|error| protocol_error("session/load", error))?;
             (SessionId::new(id.clone()), serde_json::to_value(response))
         } else {
             let response = connection
@@ -384,7 +386,7 @@ async fn conversation(
                 )
                 .block_task()
                 .await
-                .map_err(protocol_error)?;
+                .map_err(|error| protocol_error("session/new", error))?;
             (response.session_id.clone(), serde_json::to_value(response))
         };
         let mut response = response.map_err(|e| agent_error(e.to_string()))?;
@@ -464,20 +466,24 @@ async fn conversation(
             result = &mut request => Ok(result),
         };
         let result = match result {
-            Ok(result) => result.map_err(protocol_error).and_then(|response| {
-                if response.stop_reason == StopReason::Cancelled {
-                    Err(Error::new("CANCELLED", "The agent cancelled this turn"))
-                } else {
-                    Ok(response)
-                }
-            }),
+            Ok(result) => result
+                .map_err(|error| protocol_error("session/prompt", error))
+                .and_then(|response| {
+                    if response.stop_reason == StopReason::Cancelled {
+                        Err(Error::new("CANCELLED", "The agent cancelled this turn"))
+                    } else {
+                        Ok(response)
+                    }
+                }),
             Err(reason) => {
                 turn.cancel.cancel();
                 let cancellation = async {
                     connection
                         .send_notification(CancelNotification::new(session.clone()))
-                        .map_err(protocol_error)?;
-                    (&mut request).await.map_err(protocol_error)
+                        .map_err(|error| protocol_error("session/cancel", error))?;
+                    (&mut request)
+                        .await
+                        .map_err(|error| protocol_error("session/prompt", error))
                 };
                 if tokio::time::timeout(options.cancel_grace, cancellation)
                     .await
@@ -537,8 +543,17 @@ async fn emit(events: &mpsc::Sender<AgentEvent>, value: Value) -> Result<()> {
 fn agent_error(message: impl Into<String>) -> Error {
     Error::new("AGENT_ERROR", message)
 }
-fn protocol_error(error: acp::Error) -> Error {
-    agent_error(format!("ACP request failed: {error}"))
+fn protocol_error(phase: &'static str, error: acp::Error) -> Error {
+    let code = serde_json::to_value(&error)
+        .ok()
+        .and_then(|value| value["code"].as_i64());
+    let message = match code {
+        Some(code) => format!("ACP {phase} failed (code {code})"),
+        None => format!("ACP {phase} failed"),
+    };
+    // Free-form messages/data may contain credentials, provider request bodies
+    // or private document excerpts. Keep only protocol-defined numeric codes.
+    agent_error(message).details(json!({"phase":phase,"acp_error_code":code}))
 }
 
 fn validate_frame(line: &str) -> std::io::Result<()> {

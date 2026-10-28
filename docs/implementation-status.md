@@ -1,6 +1,10 @@
 # lazypencil 実装と公開準備の状況
 
-次の差分は、実Chromiumによる生成browser検査の2スキーマを最大2並列にする。各workerが一時プロジェクト・script・browser process tree／profileを所有し、画像名はスキーマ別、集約JSONは全worker回収後に親だけが書く。失敗時も両workerをjoinして結果を確認する。両形式・27経路・3段階の162画像／82,944画素、元の各取得15秒・起動30秒と最終合格基準は維持し、既存JSONに開始offset／所要時間を加える。本体と依存関係は変更せず、Cargoの判定に従って変更した試験を再ビルドする。Rust／実Chromium・全3環境での効果はGHA待ちであり、ローカルで重いbuildは行わない。
+ACPの自由形式error本文／dataが公開診断へ入る経路を修正する差分を準備した。内部エラーをSDK外で保持し、adapterが返したdataをhostエラーとして信用しない。initialize・authenticate・session作成／load・mode／model・prompt・不正frameの8経路を、JSON／通常CLIの16条件で確認する回帰を追加した。数値code・phase、元文書・保存下書き、stdout／stderr／transcript／metadataへのfixture秘密情報の非掲載を確認する。通常の応答・未知notificationの保存契約と既存の取消し・認証・期限は保つ。整形・差分・YAML検査は成功、Rustと実子プロセスの試験はGHA待ちである。
+
+`42363cc` の [GHA](https://github.com/EkeMinusYou/lazypencil/actions/runs/40665001047) は軽量211件・Clippy、先行376件／51サマリー、全3環境・監査を成功した。Mac1,472件・Linux各1,483件、各144サマリーで全旧ケースの回数を保ち、各811画像・42計測・clipboard／IME・profile／namespace／通信制御を独立照合した。source1,159ファイル・32,180,365バイトのGit blob／modeと署名を照合した。署名だけがRekor通信timeoutで一度失敗し、そのjobだけを再実行して成功した。全体jobはx64 17分26秒・arm64 12分45秒・Mac15分06秒、最初の開始から署名再試行完了まで29分42秒、全環境試験完了まで26分45秒。直前39分09秒から短縮したが、元の27〜29分という課題の解消とは扱わない。
+
+各環境は前回の互換buildから1,182ファイルと別管理のrelease15ファイルを復元し、変更したbrowser_readinessの24出力を無効化した。本体binary／mapは各環境で前回と同一、通常build確認はx64 0.82秒・arm64 0.50秒・Mac1.32秒、releaseは0.27／0.19／0.74秒だった。今回のx64先行／全体はcache環境識別子が異なり、先行artifactの誤再利用はせず、互換buildとCargoの鮮度判定を使った。生成browserは各2スキーマが実際に重なり、162画像は各環境で前回と全byte一致した。x64のbrowser群243秒・Material208秒などは残る長い経路であり、異なるhost負荷を並列化だけの速度効果としない。
 
 `dd3fe05` の [GHA](https://github.com/EkeMinusYou/lazypencil/actions/runs/40655581713) は軽量211件・Clippy、先行527件／50サマリー、全3環境・依存監査・署名付きsourceまで成功した。Mac1,472件・Linux各1,483件、各144サマリーで、`65dcc15` の全ケースの回数と追加2件を照合した。各811画像・42描画計測・clipboard3,072画素・IME保存4画面、profile・namespace・sampler・animation・通信制御も独立照合した。source1,159ファイル・32,177,290バイトの全Git blob／mode、tar hash・DSSE署名とsource／workflow／runが一致した。全体jobはx64 15分14秒・arm64 18分50秒・Mac24分45秒、workflow全体39分09秒（自律端末検査93秒を含む）。先行123ファイルを全体x64で再利用し、通常build確認0.53秒・不足するcatalog15.29秒。Macのrelease350.94秒・browser群300.44秒などが残る長い経路であり、27〜29分の問題の解消とは扱わない。
 

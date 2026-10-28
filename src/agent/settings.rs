@@ -28,7 +28,7 @@ pub(super) async fn apply(
             .send_request(SetSessionModeRequest::new(session.clone(), mode.to_owned()))
             .block_task()
             .await
-            .map_err(protocol_error)?;
+            .map_err(|error| protocol_error("session/set_mode", error))?;
         response["modes"]["currentModeId"] = json!(mode);
     }
     if let Some(model) = model {
@@ -68,7 +68,7 @@ pub(super) async fn apply(
             ))
             .block_task()
             .await
-            .map_err(protocol_error)?;
+            .map_err(|error| protocol_error("session/set_config_option", error))?;
         let configs = serde_json::to_value(changed.config_options)
             .map_err(|error| agent_error(error.to_string()))?;
         if !configs.as_array().is_some_and(|options| {

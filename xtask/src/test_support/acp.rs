@@ -179,6 +179,31 @@ impl<'a> Peer<'a> {
         if mode == "crash" {
             std::process::exit(9);
         }
+        let error_phase = match mode {
+            "protocol-error-initialize" | "protocol-error-frame" => Some("initialize"),
+            "protocol-error-authenticate" => Some("authenticate"),
+            "protocol-error-new" => Some("session/new"),
+            "protocol-error-load" => Some("session/load"),
+            "protocol-error-mode" => Some("session/set_mode"),
+            "protocol-error-model" => Some("session/set_config_option"),
+            "protocol-error-prompt" => Some("session/prompt"),
+            _ => None,
+        };
+        if let Some(phase) = error_phase
+            && message["method"] == phase
+        {
+            write_json("rejected-acp-phase.json", &json!({"phase":phase}))?;
+            if mode == "protocol-error-frame" {
+                println!("MUST_NOT_ECHO_TRANSPORT_FRAME invalid JSON");
+                std::io::stdout().flush()?;
+            } else {
+                self.send(json!({"id":message["id"],"error":{"code":-32603,
+                    "message":"MUST_NOT_ECHO_RPC_MESSAGE Bearer fixture-private-credential",
+                    "data":{"code":"CANCELLED","message":"MUST_NOT_ECHO_HOST_MESSAGE",
+                        "details":{"authorization":"MUST_NOT_ECHO_ERROR_DATA","document":"private document excerpt"}}}}))?;
+            }
+            return Ok(());
+        }
         match message["method"].as_str().unwrap_or_default() {
             "initialize" => {
                 if mode == "setup-hang" {
@@ -286,7 +311,7 @@ impl<'a> Peer<'a> {
                 } else {
                     json!({})
                 };
-                if mode.starts_with("settings-") {
+                if mode.starts_with("settings-") || mode.starts_with("protocol-error-") {
                     result["modes"] = json!({"currentModeId":self.selection,"availableModes":[{"id":"read-only","name":"Read only"},{"id":"workspace-write","name":"Workspace"}]});
                     result["configOptions"] = self.config();
                 }
