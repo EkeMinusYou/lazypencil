@@ -67,7 +67,7 @@ fn cache_headroom_retires_only_replaced_downloads_before_tool_publication() {
     );
     assert!(
         position("Retire obsolete sources and duplicate downloads before publishing tools")
-            < position("Save source-bound tools after successful preparation")
+            < position("Save verified source-bound tools")
     );
     let workflow =
         std::fs::read_to_string(lazypencil_xtask::util::root().join(".github/workflows/ci.yml"))

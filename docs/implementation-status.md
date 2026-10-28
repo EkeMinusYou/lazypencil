@@ -4,7 +4,7 @@
 
 ## 現在の状態（2026-10-28）
 
-直前の実装・検証の照合対象は `7413a94`。初回対象をmacOS Apple Siliconだけにする変更と文書整理・同梱ガイド版1.0.34は反映済み。現在は先行検証の過剰な対象選択とxtaskの重複ビルドを改善する。製品機能の追加は引き続き停止中。Linux x64／arm64・Windowsの既存実装を後日対応用に保持し、Intel Macは対象外とする。OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
+直前の実装・検証の照合対象は `2cbd75b`。初回対象をmacOS Apple Siliconだけにする変更と文書整理・同梱ガイド版1.0.34は反映済み。先行検証の過剰な対象選択を修正し、実際のMac先行jobを10分以内に短縮した。製品機能の追加は引き続き停止中。Linux x64／arm64・Windowsの既存実装を後日対応用に保持し、Intel Macは対象外とする。OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
 
 旧3環境方針での依存監査・署名付きソースを含む確定済み根拠は [`c9ffb37` の CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40679529757)。Linux 各1,490件・Mac1,479件、各144サマリー・812画像・42描画計測を確認し、過去ケースの実行回数、画像、clipboard／IME、profile／namespace／通信制御、ソース1,161ファイルの Git blob・mode と署名を独立照合した。CI の成功は、製品全体の受け入れ完了を意味しない。
 
@@ -16,7 +16,7 @@
 
 計画・依存監査・Wasm・ソース梱包などの軽量Linux jobは実行ホストとして残す。Linuxアプリのnative buildは通常CIに含めず、既存の手動診断経路を明示した場合だけ実行できる。manual workflowの既定値もMacへ揃えた。`7413a94` の [Mac限定CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40698680065) は軽量220件・Clippy、Mac先行・完全検証、監査・署名付きソースまで成功した。
 
-同runの先行15分12秒のうち、広い動的試験が7分21秒、xtask準備が2分09秒、互換確認・Clippy・buildが2分13秒だった。`docs/tui.md` の名前をコードのTUIとして拾う過剰判定を除き、実際の `include_str!` 入力である同梱ガイドは、描画依存のない既存guidance統合試験を先行する。最終jobの両feature構成と全試験は保持する。Macでも成功したsource-bound xtask buildを保存し、後続jobによる同じtoolsの再コンパイルを減らす。Cargoの入力検証と既存timeoutは変えない。10分以内は先行jobの目標であり、最終検証全体やrunner待機を含む保証ではない。今回の改善の所要時間はGHA実測で確認する。
+同runの先行15分12秒のうち、広い動的試験が7分21秒、xtask準備が2分09秒、互換確認・Clippy・buildが2分13秒だった。`docs/tui.md` の名前をコードのTUIとして拾う過剰判定を除き、通常文書を対象選択の前に除外する。実際の `include_str!` 入力である同梱ガイドは、描画依存のない既存guidance統合試験を先行する。`2cbd75b` の [CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40707668716) は軽量222件・ClippyとMac先行3分23秒（guidance 5件）を成功した。最終jobの両feature構成と全試験は保持し、同runで継続する。既存のxtask cacheは以前からMac先行→全体でexact hitしており、保存条件を広げる変更は不要なので元へ戻す。Cargoの入力検証と既存timeoutは変えない。10分以内は今回の先行jobで実測した値であり、すべての変更・最終検証全体・runner待機の保証ではない。
 
 ### 実装・検証済みの主な範囲
 
