@@ -390,6 +390,9 @@ impl Bound {
         if self.values.assets.is_some()
             && node.get("scriptUri").is_some()
             && node["enabled"] != false
+            && node
+                .get("type")
+                .is_none_or(|kind| matches!(kind.as_str(), Some("script" | "ref")))
         {
             super::scope::discard_inactive_generated_scope(node)?;
         }
@@ -568,6 +571,13 @@ mod asset_tests {
             node["metadata"]["lazypencil"]["script_bindings"]["script_uri"],
             "assets/nested.js"
         );
+        // Metadata on a known non-script node is opaque, even if an unknown
+        // property happens to have the same spelling as a script URI.
+        let scope = json!({"version":1,"script_uri":"assets/nested.js","library":"uncaptured"});
+        let mut shape = json!({"type":"rectangle","scriptUri":"nested.js",
+            "metadata":{"type":"test","lazypencil":{"script_scope":scope}}});
+        bound.rewrite(&mut shape, &BTreeMap::new(), &mut 0).unwrap();
+        assert_eq!(shape["metadata"]["lazypencil"]["script_scope"], scope);
     }
 
     #[test]
