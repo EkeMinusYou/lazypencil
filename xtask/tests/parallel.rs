@@ -9,8 +9,8 @@ use std::{
 };
 
 #[test]
-fn browser_lanes_preserve_every_existing_target_once_without_intra_target_parallelism() {
-    use lazypencil_xtask::ci::native::browser::TEST_LANES;
+fn browser_lanes_preserve_every_existing_target_once_with_bounded_parallelism() {
+    use lazypencil_xtask::ci::native::browser::{TEST_LANES, test_threads};
     use std::collections::BTreeSet;
     let targets = TEST_LANES
         .into_iter()
@@ -45,6 +45,12 @@ fn browser_lanes_preserve_every_existing_target_once_without_intra_target_parall
         ]
     );
     assert!(!targets.contains(&"agent"));
+    for target in targets {
+        assert_eq!(
+            test_threads(target),
+            if target == "browser_readiness" { 2 } else { 1 }
+        );
+    }
     let binary = std::env::temp_dir().join("verified-script-scope");
     let bindings = lazypencil_xtask::ci::native::browser::binding_commands(&binary);
     assert_eq!(

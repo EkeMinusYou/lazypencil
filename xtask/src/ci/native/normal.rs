@@ -2,7 +2,9 @@
 use super::*;
 
 const TEST_SECONDS: u64 = 900;
-const INDEPENDENT: [&str; 3] = ["script_scope", "graphics", "mesh"];
+const QUIET: [&str; 3] = ["tui", "dynamic_render", "runtime_config"];
+const INDEPENDENT: [&str; 1] = ["script_scope"];
+const RESOURCES: [&str; 4] = ["font_sources", "project", "graphics", "mesh"];
 
 pub fn run(s: &Session) -> Result<()> {
     let prepared = prepare(s)?;
@@ -12,6 +14,7 @@ pub fn run(s: &Session) -> Result<()> {
 pub(super) struct Prepared {
     checks: Vec<commands::Invocation>,
     scripts: Vec<commands::Invocation>,
+    resources: Vec<commands::Invocation>,
     deadline: Instant,
 }
 
@@ -22,16 +25,9 @@ pub(super) fn prepare(s: &Session) -> Result<Prepared> {
         .iter()
         .map(|(name, binary)| (name.clone(), binary.path.clone()))
         .collect();
-    let mut checks = commands::default_tests(&s.root, &binaries)?;
-    let tui = catalog
-        .binaries
-        .get("tui")
-        .context("Missing TUI test executable")?;
-    let terminal = checks
-        .iter()
-        .position(|args| args.first().is_some_and(|path| Path::new(path) == tui.path))
-        .context("Missing complete TUI test invocation")?;
-    let terminal_reproduction = checks.remove(terminal);
+    let checks = commands::default_tests(&s.root, &binaries)?;
+    let quiet = QUIET.map(|name| catalog.binaries[name].path.as_path());
+    let (quiet, checks) = split_checks(checks, &quiet)?;
     let independent = INDEPENDENT
         .map(|name| {
             catalog
@@ -43,6 +39,8 @@ pub(super) fn prepare(s: &Session) -> Result<Prepared> {
         .into_iter()
         .collect::<Result<Vec<_>>>()?;
     let (scripts, checks) = split_checks(checks, &independent)?;
+    let paths = RESOURCES.map(|name| catalog.binaries[name].path.as_path());
+    let (resources, checks) = split_checks(checks, &paths)?;
     let deadline = Instant::now() + Duration::from_secs(TEST_SECONDS);
     let management = s.execute(
         &commands::management_tests(true),
@@ -58,20 +56,14 @@ pub(super) fn prepare(s: &Session) -> Result<Prepared> {
         "lazypencil-tests.log",
         true,
     );
-    // The TUI target deliberately changes a two-second script deadline.
-    // Run its unchanged complete invocation before CPU-heavy release
-    // compilation, then remove it from the later parallel lane.
-    // Its elapsed time still consumes the original shared test budget.
-    let terminal = run_lane(
-        s,
-        &[terminal_reproduction],
-        deadline,
-        "lazypencil-tests.log",
-    );
+    // These complete targets deliberately impose short launch/script budgets.
+    // Run them before competing browser/compilation work, preserving their
+    // assertions, harness flags and the original shared test deadline.
+    let quiet = run_lane(s, &quiet, deadline, "lazypencil-tests.log");
     let failures = [
         ("shared cleanup worker tests", management),
         ("default doctests", doctests),
-        ("terminal script policy reproduction", terminal),
+        ("terminal and launch policy reproductions", quiet),
     ]
     .into_iter()
     .filter_map(|(name, result)| result.err().map(|error| format!("{name}: {error:#}")))
@@ -80,6 +72,7 @@ pub(super) fn prepare(s: &Session) -> Result<Prepared> {
     Ok(Prepared {
         checks,
         scripts,
+        resources,
         deadline,
     })
 }
@@ -88,15 +81,23 @@ pub(super) fn remaining(s: &Session, prepared: &Prepared, compile_release: bool)
     let Prepared {
         checks,
         scripts,
+        resources,
         deadline,
     } = prepared;
+    // The combined release route keeps two test processes. Without release
+    // compilation, its third slot runs independent font/project/pixel checks.
+    let checks = if compile_release {
+        [checks.as_slice(), resources.as_slice()].concat()
+    } else {
+        checks.clone()
+    };
     let mut tasks: Vec<parallel::Task<'_>> = vec![
         (
             "default tests",
-            Box::new(|| run_lane(s, checks, *deadline, "lazypencil-tests.log")),
+            Box::new(|| run_lane(s, &checks, *deadline, "lazypencil-tests.log")),
         ),
         (
-            "script-scope and native pixel tests",
+            "script-scope tests",
             Box::new(|| run_lane(s, scripts, *deadline, "lazypencil-script-scope.log")),
         ),
     ];
@@ -104,6 +105,11 @@ pub(super) fn remaining(s: &Session, prepared: &Prepared, compile_release: bool)
         tasks.push((
             "release compilation",
             Box::new(|| release::compile(s, "lazypencil-release.log")),
+        ));
+    } else {
+        tasks.push((
+            "font, project and native pixels",
+            Box::new(|| run_lane(s, resources, *deadline, "lazypencil-native-pixels.log")),
         ));
     }
     let remaining = parallel::run(tasks);
@@ -114,9 +120,8 @@ fn split_checks(
     checks: Vec<commands::Invocation>,
     independent: &[&Path],
 ) -> Result<(Vec<commands::Invocation>, Vec<commands::Invocation>)> {
-    // These targets own temporary documents and distinct retained image names.
-    // Fill the existing script lane after its long first target; retain exactly
-    // two test processes and their original per-process thread limits.
+    // Each target owns temporary documents and distinct retained image names.
+    // Moving complete invocations preserves their filters and shared deadline.
     let mut checks = checks;
     let mut scripts = Vec::new();
     for path in independent {
