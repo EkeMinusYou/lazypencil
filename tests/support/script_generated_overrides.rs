@@ -41,6 +41,25 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
         "explicit-context" => {
             changes["metadata"] = json!({"type":"test","lazypencil":{"script_scope":{"version":1,"script_uri":"override.js","library":"base"}}})
         }
+        "stale-scope" | "stale-input-scope" => {
+            let mut scope = json!({"version":1,"script_uri":"old.js","library":"uncaptured"});
+            if mode == "stale-input-scope" {
+                changes["inputs"] = json!({"selected":"badge"});
+                scope["inputs"] = json!({"hash":"a".repeat(64),"library":"uncaptured"});
+            }
+            changes["metadata"] = json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":{"script_scope":scope}});
+        }
+        "active-input-scope" | "inherited-input-scope" => {
+            let inputs = if mode == "active-input-scope" {
+                let inputs = json!({"selected":"badge"});
+                changes["inputs"] = inputs.clone();
+                inputs
+            } else {
+                json!({"selected":"$selection","stale":"$missing"})
+            };
+            let hash = lazypencil::document::hash(inputs.to_string().as_bytes());
+            changes["metadata"] = json!({"type":"test","lazypencil":{"script_scope":{"version":1,"script_uri":"old.js","library":"base","inputs":{"hash":hash,"library":""}}}});
+        }
         "inherit" => {}
         _ => panic!("Unknown generated override case"),
     }
@@ -56,6 +75,12 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
             json!({"type":"ref","ref":"base:card","descendants":{"draw":direct(changes)}})
         }
         "children" => json!({"type":"ref","ref":"base:card","children":[direct(changes)]}),
+        "script" => {
+            changes["type"] = json!("script");
+            changes["width"] = json!(36);
+            changes["height"] = json!(12);
+            changes
+        }
         _ => panic!("Unknown generated override address"),
     };
     let code = format!(
@@ -210,7 +235,7 @@ fn independent_case(
 ) -> (TempDir, Store, Vec<u8>) {
     eprintln!("Generated source: schema={version}, style={style}, mode={mode}");
     let (temp, store, code) = setup(version, style, mode, 1);
-    let metadata = if mode == "metadata" {
+    let metadata = if ["metadata", "stale-scope", "stale-input-scope"].contains(&mode) {
         "generated"
     } else {
         "base"
@@ -298,10 +323,32 @@ fn generated_ref_inputs_follow_inherited_container_themes_after_copy_recopy_and_
 }
 
 #[test]
+fn inactive_generated_script_scopes_do_not_block_copy_or_recopy() {
+    std::thread::scope(|threads| {
+        for version in ["2.19", "2.21"] {
+            threads.spawn(move || {
+                for style in ["direct", "descendant", "replacement", "script"] {
+                    for mode in ["stale-scope", "stale-input-scope"] {
+                        let first = if style == "script" || mode == "stale-input-scope" {
+                            Color::GREEN
+                        } else {
+                            Color::RED
+                        };
+                        let _fixture = independent_case(version, style, mode, first);
+                    }
+                }
+            });
+        }
+    });
+}
+
+#[test]
 fn generated_code_overrides_reject_unmanifested_sources_explicit_contexts_and_binding_growth() {
     for (include_source, mode, count, expected) in [
         (false, "inherit", 1, "ASSET_NOT_FOUND"),
         (true, "explicit-context", 1, "UNSUPPORTED_FEATURE"),
+        (true, "active-input-scope", 1, "UNSUPPORTED_FEATURE"),
+        (true, "inherited-input-scope", 1, "UNSUPPORTED_FEATURE"),
         (true, "bad-variable", 1, "INVALID_DOCUMENT"),
         (true, "inherit", 600, "INVALID_DOCUMENT"),
     ] {

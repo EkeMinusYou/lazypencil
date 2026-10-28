@@ -18,6 +18,53 @@ struct InputScope {
     library: String,
 }
 
+fn parse_scope(value: &Value) -> Result<ScriptScope> {
+    let scope: ScriptScope = serde_json::from_value(value.clone())
+        .map_err(|_| invalid("Invalid lazypencil script scope metadata"))?;
+    if scope.version != 1 {
+        return Err(Error::new(
+            "UNSUPPORTED_VERSION",
+            "Unsupported lazypencil script scope version",
+        ));
+    }
+    if scope.script_uri.len() > 4096
+        || scope.inputs.as_ref().is_some_and(|inputs| {
+            inputs.hash.len() != 64
+                || !inputs
+                    .hash
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        })
+    {
+        return Err(invalid("Invalid script scope URI or input hash"));
+    }
+    Ok(scope)
+}
+
+/// Drop only a provably inactive generated scope before URI remapping can make
+/// its old spelling match a copied asset. Ref inputs may still be inherited.
+#[cfg(feature = "rendering")]
+pub(super) fn discard_inactive_generated_scope(node: &mut Value) -> Result<()> {
+    let Some(value) = node.pointer("/metadata/lazypencil/script_scope") else {
+        return Ok(());
+    };
+    let scope = parse_scope(value)?;
+    let output_active =
+        node.get("scriptUri").and_then(Value::as_str) == Some(scope.script_uri.as_str());
+    let inputs_inactive = scope.inputs.as_ref().is_none_or(|inputs| {
+        node.get("inputs")
+            .map(|value| value_hash(value) != inputs.hash)
+            .unwrap_or(node["type"] == "script")
+    });
+    if !output_active && inputs_inactive {
+        node.pointer_mut("/metadata/lazypencil")
+            .and_then(Value::as_object_mut)
+            .expect("validated script scope namespace")
+            .remove("script_scope");
+    }
+    Ok(())
+}
+
 impl Project {
     pub(super) fn scope_document(&self, owner: &Path, alias: &str) -> Result<PathBuf> {
         if alias.len() > 4096 || alias.chars().any(char::is_control) {
@@ -69,25 +116,7 @@ impl Project {
         else {
             return Ok(());
         };
-        let scope: ScriptScope = serde_json::from_value(value.clone())
-            .map_err(|_| invalid("Invalid lazypencil script scope metadata"))?;
-        if scope.version != 1 {
-            return Err(Error::new(
-                "UNSUPPORTED_VERSION",
-                "Unsupported lazypencil script scope version",
-            ));
-        }
-        if scope.script_uri.len() > 4096
-            || scope.inputs.as_ref().is_some_and(|inputs| {
-                inputs.hash.len() != 64
-                    || !inputs
-                        .hash
-                        .bytes()
-                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-            })
-        {
-            return Err(invalid("Invalid script scope URI or input hash"));
-        }
+        let scope = parse_scope(value)?;
         let owner = node.property_source("metadata");
         // Source and input edits invalidate their bindings independently.
         let origin = if node.properties.get("scriptUri").and_then(Value::as_str)

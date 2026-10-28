@@ -387,6 +387,12 @@ impl Bound {
         handles: &BTreeMap<String, (PathBuf, String)>,
         inherited_bytes: &mut usize,
     ) -> Result<()> {
+        if self.values.assets.is_some()
+            && node.get("scriptUri").is_some()
+            && node["enabled"] != false
+        {
+            super::scope::discard_inactive_generated_scope(node)?;
+        }
         self.assets(node, inherited_bytes)?;
         let original_reference = node.get("ref").and_then(Value::as_str).map(str::to_owned);
         if node["type"] == "ref" {
@@ -537,6 +543,32 @@ pub(super) fn asset_key(kind: &str, uri: &str) -> Result<String> {
 #[cfg(test)]
 mod asset_tests {
     use super::*;
+
+    #[cfg(feature = "rendering")]
+    #[test]
+    fn remapping_a_generated_uri_cannot_reactivate_its_stale_scope() {
+        let bound = Bound {
+            origin: PathBuf::from("/captured/main.pen"),
+            inputs_bound: false,
+            values: serde_json::from_value(json!({
+                "version":1,"script_uri":"generator.js",
+                "assets":{"script:nested.js":"assets/nested.js"}
+            }))
+            .unwrap(),
+        };
+        let mut node = json!({"type":"script","scriptUri":"nested.js",
+        "metadata":{"type":"test","keep":"unchanged","lazypencil":{
+            "script_scope":{"version":1,"script_uri":"assets/nested.js","library":"uncaptured"}
+        }}});
+        bound.rewrite(&mut node, &BTreeMap::new(), &mut 0).unwrap();
+        assert_eq!(node["scriptUri"], "assets/nested.js");
+        assert_eq!(node["metadata"]["keep"], "unchanged");
+        assert!(node.pointer("/metadata/lazypencil/script_scope").is_none());
+        assert_eq!(
+            node["metadata"]["lazypencil"]["script_bindings"]["script_uri"],
+            "assets/nested.js"
+        );
+    }
 
     #[test]
     fn asset_keys_remove_dot_spelling_without_merging_parent_traversal_origins() {
