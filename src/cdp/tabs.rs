@@ -95,7 +95,7 @@ impl Browser {
             result
         } else {
             let disposed = self.dispose_tab(tab);
-            result.and_then(|()| disposed)
+            result.and(disposed)
         }
     }
 
