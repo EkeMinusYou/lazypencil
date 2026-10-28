@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 pub(super) const TEMPLATE: &str = concat!(
     "\n# Omitted runtime fields inherit user preferences and built-in limits.\n",
     "# [runtime.javascript]\n# timeout_ms = 2000\n# heap_mib = 64\n# idle_seconds = 60\n# layout_timeout_ms = 10000\n# max_evaluations = 128\n# max_passes = 8\n",
-    "\n# [runtime.browser]\n# timeout_ms = 30000\n# launch_timeout_ms = 15000\n# idle_seconds = 60\n# wait_until = \"load\"\n# ready_selector = \"\"\n# selector_state = \"visible\"\n# additional_wait_ms = 0\n",
+    "\n# [runtime.browser]\n# timeout_ms = 30000\n# launch_timeout_ms = 15000\n# idle_seconds = 60\n# wait_until = \"load\"\n# ready_selector = \"\"\n# selector_state = \"visible\"\n# additional_wait_ms = 0\n# animation_policy = \"running\"\n",
     "\n# [runtime.shader]\n# timeout_ms = 15000\n# launch_timeout_ms = 15000\n# idle_seconds = 60\n",
     "\n# [runtime.dynamic]\n# render_timeout_ms = 45000\n# cache_mib = 64\n# cache_entries = 32\n",
 );
@@ -99,6 +99,15 @@ pub struct BrowserSettings {
     /// Additional host-timed wait after readiness and before final asset decoding.
     #[schemars(range(min = 0, max = 60000))]
     pub additional_wait_ms: u64,
+    pub animation_policy: PageAnimationPolicy,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PageAnimationPolicy {
+    #[default]
+    Running,
+    Paused,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -127,6 +136,7 @@ impl Default for BrowserSettings {
             ready_selector: String::new(),
             selector_state: PageSelectorState::Visible,
             additional_wait_ms: 0,
+            animation_policy: PageAnimationPolicy::Running,
         }
     }
 }
@@ -262,6 +272,7 @@ struct BrowserOverrides {
     ready_selector: Option<String>,
     selector_state: Option<PageSelectorState>,
     additional_wait_ms: Option<u64>,
+    animation_policy: Option<PageAnimationPolicy>,
 }
 
 #[derive(Default, Deserialize)]
@@ -306,6 +317,7 @@ pub(super) fn origins() -> BTreeMap<&'static str, &'static str> {
         "browser.ready_selector",
         "browser.selector_state",
         "browser.additional_wait_ms",
+        "browser.animation_policy",
         "shader.timeout_ms",
         "shader.launch_timeout_ms",
         "shader.idle_seconds",
@@ -353,6 +365,7 @@ impl RuntimeOverrides {
         apply!(browser, ready_selector);
         apply!(browser, selector_state);
         apply!(browser, additional_wait_ms);
+        apply!(browser, animation_policy);
         apply!(shader, timeout_ms);
         apply!(shader, launch_timeout_ms);
         apply!(shader, idle_seconds);

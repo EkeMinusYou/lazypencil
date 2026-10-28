@@ -143,7 +143,9 @@ CLI は取得条件を満たした一時点の PNG を出力する。TUI は同�
 
 読み込みの完了条件、フォントの準備、追加待ち時間、全体のタイムアウトを取得条件として扱う。常時通信するページで無期限に待たない。URL だけでなく、最終 URL、取得時刻、ブラウザーの版、寸法・デバイス設定、準備条件、画像ハッシュを記録する。
 
-`[runtime.browser].additional_wait_ms` は既定0・最大60,000msで、読込／selector条件の後、最終のfont・画像decode・2 animation frameの前に待つ。ページ側のtimerに依存せず、取得／描画の残り期限と取消を共有する。ユーザー設定の待機はプロジェクトの明示0で解除でき、取得metadataとcacheの識別へ含める。新しい設定継承・遅れて追加される画像・host時計・期限・取消／回収／復帰の試験はGHA未検証である。
+`[runtime.browser].additional_wait_ms` は既定0・最大60,000msで、読込／selector条件の後、最終のfont・画像decode・2 animation frameの前に待つ。ページ側のtimerに依存せず、取得／描画の残り期限と取消を共有する。ユーザー設定の待機はプロジェクトの明示0で解除でき、取得metadataとcacheの識別へ含める。設定継承・遅れて追加される画像・host時計・期限・取消／回収／復帰の試験は `360813d` の全3環境CI `40605012001` で成功した。
+
+`[runtime.browser].animation_policy` は既定 `running`、明示 `paused` で取得条件の完了後に native document animation の再生率を0にする。CSS animation・transition・Web Animations を対象にし、JavaScript timer・video・画像decode・別processのframe全体を停止する時計ではない。固定時刻へのseekは行わず、同じ保持contextの更新では停止した状態を取得する。方針変更時は既存の設定再読込に従いcontextを破棄し、metadataと取得cacheも更新する。3種類のnative animation・停止後に作成するanimation・画素・通常frameの継続と設定継承の追加試験はGHA未検証である。
 
 アニメーションや外部の更新を含むページは、実際に取得した時点の状態として扱う。別の時刻の再取得が同じピクセルになるとは保証しない。ネットワークに依存しない互換試験では、ローカルのテストページとフォントを固定する。
 

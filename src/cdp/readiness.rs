@@ -1,10 +1,35 @@
 //! Optional main-document readiness, evaluated as data under the same budget.
 
 use super::{Browser, Budget};
-use crate::{Error, Result, config::runtime::PageSelectorState};
+use crate::{
+    Error, Result,
+    config::runtime::{PageAnimationPolicy, PageSelectorState},
+};
+use serde_json::json;
 use std::time::{Duration, Instant};
 
 impl Browser {
+    /// Control Chromium's native document animations without replacing page code.
+    pub fn set_page_animation_policy(
+        &mut self,
+        session: &str,
+        policy: PageAnimationPolicy,
+        budget: &Budget<'_>,
+    ) -> Result<()> {
+        self.command(Some(session), "Animation.enable", json!({}), budget)?;
+        let rate = match policy {
+            PageAnimationPolicy::Running => 1,
+            PageAnimationPolicy::Paused => 0,
+        };
+        self.command(
+            Some(session),
+            "Animation.setPlaybackRate",
+            json!({"playbackRate": rate}),
+            budget,
+        )?;
+        Ok(())
+    }
+
     /// A page cannot shorten the wait by replacing its timers. Small CDP
     /// round trips keep captured-file requests flowing under the same budget.
     pub fn wait_before_capture(

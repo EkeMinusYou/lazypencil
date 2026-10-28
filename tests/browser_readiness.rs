@@ -280,14 +280,21 @@ impl Fixture {
         runtime: &mut DynamicRuntime,
         cancel: Option<CancellationToken>,
     ) -> lazypencil::Result<RenderedImage> {
+        self.capture_options(runtime, cancel, &Default::default())
+    }
+    fn capture_options(
+        &self,
+        runtime: &mut DynamicRuntime,
+        cancel: Option<CancellationToken>,
+        options: &render::RenderOptions,
+    ) -> lazypencil::Result<RenderedImage> {
         let project = self.project();
         let file = self.0.path().join("scene.pen");
         let saved = fs::read(&file).unwrap();
         let layout =
             lazypencil::layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap())
                 .unwrap();
-        let result =
-            render::png_with_runtime(&project, &layout, &Default::default(), runtime, cancel);
+        let result = render::png_with_runtime(&project, &layout, options, runtime, cancel);
         assert_eq!(fs::read(&file).unwrap(), saved);
         result
     }
@@ -310,6 +317,140 @@ fn assert_green(image: &RenderedImage) {
     assert_eq!(
         raster.peek_pixels().unwrap().get_color((16, 16)),
         Color::GREEN
+    );
+}
+
+#[test]
+#[ignore = "Requires sandboxed headless Chromium"]
+fn native_animation_policy_freezes_css_transitions_and_web_animations_without_stopping_frames() {
+    use lazypencil::{
+        cdp::{Browser, Budget, Purpose},
+        config::runtime::PageAnimationPolicy,
+        runtime::InstalledBrowser,
+    };
+    let installed = InstalledBrowser {
+        executable: std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").unwrap().into(),
+        version: "test-managed-runtime".into(),
+        platform: lazypencil::runtime::platform().unwrap().into(),
+    };
+    let mut browser = Browser::launch_with_supervisor(
+        &installed,
+        Purpose::Page,
+        &Budget::new(Duration::from_secs(30), None),
+        std::path::Path::new(env!("CARGO_BIN_EXE_lazypencil")),
+    )
+    .unwrap();
+    let budget = Budget::new(Duration::from_secs(15), None);
+    let mut evidence = Vec::new();
+    browser.with_tab(&budget, |browser, session| {
+        browser.command(Some(session), "Page.enable", json!({}), &budget)?;
+        browser.command(Some(session), "Emulation.setDeviceMetricsOverride", json!({"width":64,"height":16,"deviceScaleFactor":1,"mobile":false}), &budget)?;
+        let url = page(r#"<style>body{margin:0;display:flex}div{width:16px;height:16px;background:#0f0}@keyframes color{from{background:#0f0}to{background:#f00}}#css{animation:color 60s steps(1,end) forwards}#transition{transition:background-color 60s steps(1,end)}</style><div id="css"></div><div id="transition"></div><div id="web"></div><div id="late"></div><script>const transition=document.getElementById("transition"),web=document.getElementById("web");getComputedStyle(transition).backgroundColor;transition.style.backgroundColor='#f00';getComputedStyle(transition).backgroundColor;web.animate([{background:'#0f0'},{background:'#f00'}],{duration:60000,easing:'steps(1,end)',fill:'forwards'});document.documentElement.dataset.ready='yes';</script>"#);
+        browser.command(Some(session), "Page.navigate", json!({"url":url}), &budget)?;
+        browser.wait_for_selector(session, "html[data-ready]", lazypencil::config::runtime::PageSelectorState::Attached, (0.0,0.0), &budget)?;
+        browser.set_page_animation_policy(session, PageAnimationPolicy::Paused, &budget)?;
+        let before = browser.evaluate(session, "document.getElementById('late').animate([{background:'#0f0'},{background:'#f00'}],{duration:60000,easing:'steps(1,end)',fill:'forwards'});document.getAnimations().map(a=>{a.currentTime=59900;return a.currentTime})", &budget)?;
+        assert_eq!(before.as_array().unwrap().len(), 4);
+        assert!(before.as_array().unwrap().iter().all(|v| v.as_f64().is_some_and(|t| (t-59900.0).abs()<0.01)));
+        for (name, expected) in [("paused",Color::GREEN),("running",Color::RED)] {
+            if name=="running" {
+                browser.set_page_animation_policy(session, PageAnimationPolicy::Running, &budget)?;
+            }
+            browser.wait_before_capture(session, Duration::from_millis(350), &budget)?;
+            // Page frames still run while native animation timelines are paused.
+            browser.evaluate(session, "new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))", &budget)?;
+            let times = browser.evaluate(session, "document.getAnimations().map(a=>a.currentTime)", &budget)?;
+            if name=="paused" {
+                let frozen=times.as_array().unwrap();
+                let initial=before.as_array().unwrap();
+                assert_eq!(frozen.len(),initial.len());
+                // Native times are serialized floating-point milliseconds.
+                for (frozen, initial) in frozen.iter().zip(initial) {
+                    assert!((frozen.as_f64().unwrap()-initial.as_f64().unwrap()).abs()<0.01);
+                }
+            }
+            let screenshot = browser.command(Some(session), "Page.captureScreenshot", json!({"format":"png","captureBeyondViewport":false}), &budget)?;
+            let png = base64::engine::general_purpose::STANDARD.decode(screenshot["data"].as_str().unwrap()).unwrap();
+            let raster=Image::from_encoded(Data::new_copy(&png)).unwrap().make_raster_image(None,None).unwrap();
+            assert_eq!((raster.width(),raster.height()),(64,16));
+            let pixels=raster.peek_pixels().unwrap();
+            for y in 0..16 { for x in 0..64 { assert_eq!(pixels.get_color((x,y)),expected,"{name}: {x},{y}"); } }
+            let png_name=format!("codec-animation-policy-{name}.png");
+            if let Some(directory)=std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
+                fs::create_dir_all(&directory).unwrap();
+                fs::write(std::path::Path::new(&directory).join(&png_name),&png).unwrap();
+            }
+            evidence.push(json!({"state":name,"times":times,"png":png_name,"sha256":lazypencil::document::hash(&png),"expected_rgba":if name=="paused" {[0,255,0,255]}else{[255,0,0,255]}}));
+        }
+        Ok(())
+    }).unwrap();
+    if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
+        fs::write(std::path::Path::new(&directory).join("codec-animation-policy.json"),serde_json::to_vec_pretty(&json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"cases":evidence,"native_animation_types":["CSSAnimation","CSSTransition","WebAnimation"],"late_animation_created_while_paused":true,"page_frames_continued":true})).unwrap()).unwrap();
+    }
+}
+
+#[test]
+#[ignore = "Requires sandboxed headless Chromium"]
+fn animation_policy_is_captured_invalidates_acquisitions_and_preserves_paused_context_refreshes() {
+    let f = Fixture::new(&page(
+        "<style>@keyframes move{from{background:#0f0}to{background:#f00}}html{animation:move 60000ms steps(1,end) infinite}</style>",
+    ));
+    let mut runtime = f
+        .runtime()
+        .with_retained_pages(&f.0.path().join("scene.pen"));
+    let running = f.capture(&mut runtime, None).unwrap();
+    assert_eq!(acquisition(&running)["animation_policy"], "running");
+    let captured = f.project();
+    let settings = f.0.path().join("lazypencil.toml");
+    fs::write(&settings, "[runtime.browser]\nanimation_policy='paused'\n").unwrap();
+    assert_eq!(
+        captured.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    let paused = f.capture(&mut runtime, None).unwrap();
+    assert_eq!(acquisition(&paused)["animation_policy"], "paused");
+    assert_eq!(
+        acquisition(&paused)["limits"]["browser"]["animation_policy"],
+        "paused"
+    );
+    assert!(
+        acquisition(&paused)["ready_condition"]
+            .as_str()
+            .unwrap()
+            .contains("paused document animations")
+    );
+    assert_ne!(
+        acquisition(&paused)["page_state"]["id"],
+        acquisition(&running)["page_state"]["id"]
+    );
+    let cached = f.capture(&mut runtime, None).unwrap();
+    assert_eq!(cached.dynamic_artifacts, paused.dynamic_artifacts);
+    let refreshed = f
+        .capture_options(
+            &mut runtime,
+            None,
+            &render::RenderOptions {
+                refresh: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        acquisition(&refreshed)["page_state"]["id"],
+        acquisition(&paused)["page_state"]["id"]
+    );
+    assert_eq!(acquisition(&refreshed)["page_state"]["reused"], true);
+    assert_ne!(
+        acquisition(&refreshed)["acquisition_id"],
+        acquisition(&paused)["acquisition_id"]
+    );
+    assert_eq!(refreshed.png, paused.png);
+    fs::write(settings, "[runtime.browser]\nanimation_policy='running'\n").unwrap();
+    let resumed = f.capture(&mut runtime, None).unwrap();
+    assert_eq!(acquisition(&resumed)["animation_policy"], "running");
+    assert_ne!(
+        acquisition(&resumed)["page_state"]["id"],
+        acquisition(&paused)["page_state"]["id"]
     );
 }
 

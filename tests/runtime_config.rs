@@ -1,6 +1,6 @@
 use lazypencil::config::{
     Snapshot,
-    runtime::{PageSelectorState, PageWaitUntil, ScriptSettings},
+    runtime::{PageAnimationPolicy, PageSelectorState, PageWaitUntil, ScriptSettings},
 };
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf, process::Command};
@@ -385,6 +385,63 @@ fn additional_page_wait_inherits_and_explicit_zero_invalidates_the_captured_poli
 }
 
 #[test]
+fn page_animation_policy_inherits_and_explicit_running_resets_the_user_preference() {
+    let f = Fixture::new();
+    assert_eq!(
+        f.snapshot()
+            .unwrap()
+            .settings
+            .runtime
+            .browser
+            .animation_policy,
+        PageAnimationPolicy::Running
+    );
+    fs::write(
+        f.user.join("config.toml"),
+        "[runtime.browser]\nanimation_policy='paused'\nadditional_wait_ms=250\n",
+    )
+    .unwrap();
+    let captured = f.snapshot().unwrap();
+    assert_eq!(
+        captured.settings.runtime.browser.animation_policy,
+        PageAnimationPolicy::Paused
+    );
+    assert_eq!(
+        captured.summary()["runtime_origins"]["browser.animation_policy"],
+        "user"
+    );
+    fs::write(
+        f.project.join("lazypencil.toml"),
+        "[runtime.browser]\nanimation_policy='running'\n",
+    )
+    .unwrap();
+    assert_eq!(
+        captured.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    let current = f.snapshot().unwrap();
+    assert_eq!(
+        current.settings.runtime.browser.animation_policy,
+        PageAnimationPolicy::Running
+    );
+    assert_eq!(current.settings.runtime.browser.additional_wait_ms, 250);
+    assert_eq!(
+        current.summary()["runtime_origins"]["browser.animation_policy"],
+        "project"
+    );
+    for invalid in [
+        "[runtime.browser]\nanimation_policy='private-unknown'\n",
+        "[runtime.browser]\nanimation_policy=true\n",
+        "[runtime.shader]\nanimation_policy='paused'\n",
+    ] {
+        fs::write(f.user.join("config.toml"), invalid).unwrap();
+        let error = f.snapshot().err().unwrap();
+        assert_eq!(error.code, "CONFIGURATION_ERROR");
+        assert!(!error.message.contains("private-unknown"));
+    }
+}
+
+#[test]
 fn selector_policy_inherits_independently_and_an_empty_string_clears_it() {
     let f = Fixture::new();
     let defaults = f.snapshot().unwrap().settings.runtime.browser;
@@ -520,6 +577,10 @@ fn runtime_schema_and_templates_expose_limits_without_overriding_inheritance() {
         let wait = &schema["$defs"]["BrowserSettings"]["properties"]["additional_wait_ms"];
         assert_eq!(wait["minimum"].as_f64(), Some(0.0));
         assert_eq!(wait["maximum"].as_f64(), Some(60000.0));
+        assert_eq!(
+            schema["$defs"]["PageAnimationPolicy"]["enum"],
+            json!(["running", "paused"])
+        );
         assert!(
             schema["$defs"]["ShaderSettings"]["properties"]
                 .get("wait_until")
@@ -534,6 +595,7 @@ fn runtime_schema_and_templates_expose_limits_without_overriding_inheritance() {
     assert!(template.contains("# ready_selector = \"\""));
     assert!(template.contains("# selector_state = \"visible\""));
     assert!(template.contains("# additional_wait_ms = 0"));
+    assert!(template.contains("# animation_policy = \"running\""));
     assert!(template.contains("# [runtime.shader]"));
     assert!(template.contains("# [runtime.dynamic]"));
     assert_eq!(
