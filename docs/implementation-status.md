@@ -1,6 +1,8 @@
 # lazypencil 実装と公開準備の状況
 
-進行中の `a94852e` の先行は646件／83サマリー・Clippyで成功した。無効な生成scopeの実worker回帰、ページ診断の通常／保持取得での失敗・復帰、既存namespaceの162画像／82,944画素と素材revisionを照合した。早期のCargo通常build／JSON一覧確認は各0.223秒、生成layout群104.86秒とbinding群165.36秒、続くcopy群46.64秒だった。gzip level1のpackは209 member・1,618,717,112バイトから483,768,036バイトへ23.35秒。元の70.01秒とは対象バイト数も異なるため、圧縮率・全体時間の統制比較とはしない。全3環境と最終sourceは実行中であり、中断しない。
+`a94852e` の [GHA](https://github.com/EkeMinusYou/lazypencil/actions/runs/40641068816) は軽量209件・Clippy、先行646件／83サマリー、全3環境・依存監査・署名付きsourceまで成功した。Mac1,457件・Linux各1,468件、各144サマリーで、従来ケースの回数＋追加7実行を照合した。各798画像・42描画計測・clipboard3,072画素・IME保存4画面、namespaceの162画像／82,944画素、既存sampler・animation・通信制御の基準も独立照合した。source1,157ファイル・32,104,440バイトの全Git blob／mode、tar hash・DSSE署名とsource／workflow／runが一致した。全体jobはx64 20分21秒・arm64 18分22秒・Mac22分29秒、workflow全体45分44秒であり、大幅短縮の達成とは扱わない。
+
+同一commit・cache環境20261023.334.3の先行208ファイルを、全体x64で展開・compiler入力検査後に実際に再利用した。通常build確認0.79秒・不足するcatalog15.70秒、core9.16秒、release247.83秒・最終freshness0.24秒。早期の通常build／JSON一覧確認は各0.223秒、生成layout群104.86秒とbinding群165.36秒は同時開始し、後段copy群46.64秒も完了した。gzip level1のpackは209 member・1,618,717,112バイトから483,768,036バイトへ23.35秒。元の70.01秒とは対象量も異なり統制比較ではない。x64のscript-scope群300.38秒・browser群281.36秒、Macのrelease364.81秒などが残る長い経路である。最終source完了まで旧CIを中断しなかった。
 
 次の差分として、明示作成する認証専用profile、user限定の選択・projectによる無効化、guardianの排他leaseと永続data保持、loginの版確認・期限と終了を準備中。CookieだけでなくlocalStorage／IndexedDB／Cache Storage、通常／保持取得の切替・offline・CLI・親の強制終了と別ownerの保持・identity差替えの試験を追加した。取得metadataへprofile名や資格情報を出さず、shaderは使わない。整形以外のRust検証は未実施で、現在のCIへは送っていない。TUI previewと別MCPが同じprofileを使う際の統合・可視login・全3環境の受け入れは残る。
 
