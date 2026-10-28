@@ -39,26 +39,24 @@ impl Copier<'_> {
                     .get("url")
                     .and_then(Value::as_str)
                     .is_some_and(|url| !url.is_empty());
-                let origin = (has_url
-                    && self
+                if has_url
+                    && !self
                         .project
                         .browser_resources
-                        .contains_key(resolved.browser_origin()))
-                .then(|| resolved.browser_origin().to_path_buf());
-                if origin.is_none()
-                    && (resolved.browser_scope.is_some()
-                        || resolved
-                            .properties
-                            .get("url")
-                            .and_then(Value::as_str)
-                            .and_then(|url| url::Url::parse(url).ok())
-                            .is_some_and(|url| url.scheme() == "file"))
+                        .contains_key(resolved.browser_origin())
+                    && resolved
+                        .properties
+                        .get("url")
+                        .and_then(Value::as_str)
+                        .and_then(|url| url::Url::parse(url).ok())
+                        .is_some_and(|url| url.scheme() == "file")
                 {
                     return Err(Error::new(
                         "ASSET_NOT_FOUND",
                         "A copied local browser requires a declared resource namespace",
                     ));
                 }
+                let origin = has_url.then(|| resolved.browser_origin().to_path_buf());
                 Ok(Some(DynamicInfo::Browser(Info { resolved, origin })))
             }
             _ => Ok(None),
@@ -72,16 +70,23 @@ impl Copier<'_> {
         let destination = self
             .path
             .ok_or_else(|| copy_error("Copying browser resources requires a bound document"))?;
-        let (mut declaration, files) = self.project.pack_browser_resources(origin, destination)?;
-        let catalog = files
-            .iter()
-            .find(|file| file.uri.ends_with("/resources.json"))
-            .expect("browser catalogue");
-        let anchor = destination
-            .parent()
-            .expect("bound document directory")
-            .join("assets/lazypencil/browser.lib.pen");
-        declaration["bundle"]["uri"] = json!(super::scripts::relative_uri(&anchor, &catalog.path)?);
+        let (declaration, files) = if self.project.browser_resources.contains_key(origin) {
+            let (mut declaration, files) =
+                self.project.pack_browser_resources(origin, destination)?;
+            let catalog = files
+                .iter()
+                .find(|file| file.uri.ends_with("/resources.json"))
+                .expect("browser catalogue");
+            let anchor = destination
+                .parent()
+                .expect("bound document directory")
+                .join("assets/lazypencil/browser.lib.pen");
+            declaration["bundle"]["uri"] =
+                json!(super::scripts::relative_uri(&anchor, &catalog.path)?);
+            (declaration, files)
+        } else {
+            (json!({"version":1,"roots":[]}), Vec::new())
+        };
         let document = json!({"version":self.project.root_document().version(),"metadata":{"lazypencil":{"browser_resources":declaration}},"children":[]});
         let library = crate::managed::File::new(
             destination,
@@ -143,12 +148,13 @@ impl Copier<'_> {
                 info.resolved.properties["url"].clone()
             };
             Some(Scope {
-                version: 1,
+                version: 2,
                 url: url
                     .as_str()
                     .ok_or_else(|| copy_error("A copied browser needs a URL"))?
                     .into(),
                 library: self.copied_browser_scope(origin)?,
+                url_library: Some(self.copied_browser_scope(info.resolved.browser_url_origin())?),
             })
         } else {
             None

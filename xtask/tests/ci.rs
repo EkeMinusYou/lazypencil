@@ -327,6 +327,11 @@ fn focus_keeps_the_existing_reproduction_scope_for_every_source_module() {
 
 #[test]
 fn browser_scheduler_changes_execute_the_actual_two_lanes_before_the_full_matrix() {
+    let artifact_only = ["xtask/src/ci/native/browser/evidence.rs".into()];
+    assert!(!focus::runtime_scheduler_changed(&artifact_only));
+    let artifact_plan = focus::select(&util::root(), &artifact_only, "auto").unwrap();
+    assert_eq!(artifact_plan.suite, "ci");
+    assert!(artifact_plan.targets.is_empty());
     assert!(focus::runtime_scheduler_changed(&[
         "xtask/src/ci/native.rs".into()
     ]));

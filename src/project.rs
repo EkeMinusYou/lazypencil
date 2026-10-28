@@ -85,6 +85,8 @@ pub struct ResolvedNode {
     input_context: Option<script_context::Bound>,
     #[serde(skip)]
     browser_scope: Option<PathBuf>,
+    #[serde(skip)]
+    browser_url_scope: Option<PathBuf>,
     #[cfg(feature = "rendering")]
     #[serde(skip_serializing)]
     pub(crate) script_inputs_resolved: bool,
@@ -133,6 +135,12 @@ impl ResolvedNode {
 
     pub fn browser_origin(&self) -> &Path {
         self.browser_scope
+            .as_deref()
+            .unwrap_or_else(|| self.browser_url_origin())
+    }
+
+    fn browser_url_origin(&self) -> &Path {
+        self.browser_url_scope
             .as_deref()
             .unwrap_or_else(|| self.property_source("url"))
     }
@@ -1499,6 +1507,7 @@ impl Project {
             script_bindings: None,
             input_context: None,
             browser_scope: None,
+            browser_url_scope: None,
             #[cfg(feature = "rendering")]
             script_inputs_resolved: false,
             theme: BTreeMap::new(),
@@ -1660,6 +1669,7 @@ impl Project {
         }
         if changes.contains_key("url") {
             node.browser_scope = None;
+            node.browser_url_scope = None;
         }
         if metadata_changed
             && node
@@ -1671,7 +1681,7 @@ impl Project {
             self.bind_browser_scope(node)?;
         }
         if let Some(scope) = browser_carrier.and_then(|carrier| carrier.scope) {
-            node.browser_scope = self.browser_scope_value(node, &scope, origin)?;
+            self.apply_browser_scope(node, &scope, origin)?;
         }
         Ok(())
     }

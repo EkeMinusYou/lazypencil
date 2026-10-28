@@ -96,10 +96,12 @@ impl Project {
         if let Some(mut resolved) = reference {
             self.bind_generated_source(node, &mut resolved, bindings, inherited_bytes)?;
             if resolved.kind() == "browser" {
+                let library = self.generated_browser_url_library(&resolved, bindings)?;
                 bindings.generated_browser_context_at(
                     node,
                     false,
                     resolved.properties.get("url").and_then(Value::as_str),
+                    library.as_deref(),
                     inherited_bytes,
                 )?;
             }
@@ -118,10 +120,12 @@ impl Project {
                         .ok_or_else(|| invalid("A generated script override target is missing"))?;
                         self.bind_generated_source(changes, target, bindings, inherited_bytes)?;
                         if target.kind() == "browser" {
+                            let library = self.generated_browser_url_library(target, bindings)?;
                             bindings.generated_browser_context_at(
                                 changes,
                                 false,
                                 target.properties.get("url").and_then(Value::as_str),
+                                library.as_deref(),
                                 inherited_bytes,
                             )?;
                         }

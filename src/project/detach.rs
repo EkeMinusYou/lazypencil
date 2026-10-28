@@ -623,9 +623,15 @@ impl Project {
             new: &ResolvedNode,
         ) -> Result<bool> {
             if old.kind() == "browser"
+                && old
+                    .properties
+                    .get("url")
+                    .and_then(Value::as_str)
+                    .is_some_and(|url| !url.is_empty())
                 && (before.browser_resources.contains_key(old.browser_origin())
                     || after.browser_resources.contains_key(new.browser_origin()))
-                && old.browser_origin() != new.browser_origin()
+                && (old.browser_origin() != new.browser_origin()
+                    || old.browser_url_origin() != new.browser_url_origin())
             {
                 return Ok(false);
             }

@@ -42,6 +42,16 @@ fn generated_browser_explicit_scopes_cannot_borrow_a_consumers_declared_library(
     script_browser_copy::reject_uncaptured_explicit_namespace();
 }
 
+#[test]
+fn generated_browser_empty_namespaces_remain_closed_after_source_removal_and_recopy() {
+    script_browser_copy::reject_empty_namespace_after_recopy();
+}
+
+#[test]
+fn generated_browser_empty_prompts_keep_absent_and_empty_urls_through_copy_and_recopy() {
+    script_browser_copy::preserve_empty_browser_prompts();
+}
+
 fn write(path: &Path, value: Value) {
     fs::write(path, value.to_string()).unwrap();
 }

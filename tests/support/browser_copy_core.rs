@@ -29,6 +29,15 @@ fn empty_browser_prompts_copy_without_materializing_an_unused_resource_namespace
             .unwrap()
             .is_empty()
     );
+    fixture::apply(
+        &store,
+        "detach-empty-browser",
+        json!([{"op":"detach_instance","target":"linked"}]),
+    );
+    let detached = Project::load(&store).unwrap();
+    let node = fixture::active(&detached, "linked");
+    assert!(node.properties.get("url").is_none());
+    assert_eq!(node.properties["metadata"]["label"], "base");
 }
 
 #[test]

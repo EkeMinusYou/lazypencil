@@ -146,7 +146,12 @@ impl Project {
             self.browser_resources.insert(origin.into(), resources);
             return Ok(());
         }
-        if roots.is_empty() {
+        if roots.is_empty()
+            && self.documents[origin]
+                .value()
+                .pointer("/metadata/lazypencil/browser_resources")
+                .is_none()
+        {
             return Ok(());
         }
         let mut resources = Resources {

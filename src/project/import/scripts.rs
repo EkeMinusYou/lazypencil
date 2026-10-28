@@ -112,9 +112,7 @@ impl Copier<'_> {
             }
             documents.insert(path.clone());
             let document = &self.project.documents[&path];
-            if self.project.browser_resources.contains_key(&path) {
-                browsers.insert(prefix.trim_end_matches(':').into(), path.clone());
-            }
+            browsers.insert(prefix.trim_end_matches(':').into(), path.clone());
             for id in document.locations().keys() {
                 if document.node(id)?["reusable"] == true {
                     component_names.insert(id.clone());
