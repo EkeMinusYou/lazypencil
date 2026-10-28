@@ -1,6 +1,6 @@
 //! A context-scoped, non-forwarding HTTP proxy. No request bytes are retained.
 
-#[cfg(any(feature = "rendering", test))]
+#[cfg(all(unix, any(feature = "rendering", test)))]
 use super::failed;
 use super::{Browser, Budget};
 use crate::{Result, config::runtime::PageNetworkPolicy};

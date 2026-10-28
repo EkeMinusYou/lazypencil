@@ -25,6 +25,7 @@ pub const LOCAL_FILES: &str =
     "captured_local_files_render_after_source_removal_and_deny_unlisted_host_files";
 pub const NATIVE_ANIMATION: &str =
     "native_animation_policy_freezes_css_transitions_and_web_animations_without_stopping_frames";
+pub const OFFLINE_NETWORK: &str = "local_pages::offline_network_policy_blocks_http_websocket_and_tls_routes_for_pages_and_workers";
 pub const BROWSER_COPY: &str =
     "copied_browser_namespaces_keep_pixels_across_removal_recopy_themes_and_detach";
 pub const GENERATED_BROWSER: &str =

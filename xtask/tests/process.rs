@@ -324,50 +324,52 @@ fn focused_dynamic_preview_regressions_run_before_browser_work_and_are_not_repea
     let mut browser_targets = targets.to_vec();
     browser_targets.push("browser_readiness".into());
     let browser = commands::plan(&util::root(), "dynamic", &browser_targets).unwrap();
-    let native = browser
-        .checks
-        .iter()
-        .position(|command| {
-            command
-                .windows(2)
-                .any(|args| args == ["browser_readiness", focus::NATIVE_ANIMATION])
-        })
-        .unwrap();
-    let longer = browser
-        .checks
-        .iter()
-        .position(|command| command.iter().any(|arg| arg == focus::GENERATED_BROWSER))
-        .unwrap();
-    assert!(
-        native < longer,
-        "The known animation failure must precede namespace/browser fixtures"
-    );
-    for flag in ["--exact", "--ignored", "--test-threads=1"] {
-        assert!(browser.checks[native].iter().any(|arg| arg == flag));
-    }
-    let remaining = browser
-        .checks
-        .iter()
-        .find(|command| {
-            command.iter().any(|arg| arg == "browser_readiness")
-                && command.iter().any(|arg| arg == "--include-ignored")
-        })
-        .unwrap();
-    assert!(
-        remaining
-            .windows(2)
-            .any(|args| args == ["--skip", focus::NATIVE_ANIMATION])
-    );
-    assert_eq!(
-        browser
+    for reproduction in [focus::NATIVE_ANIMATION, focus::OFFLINE_NETWORK] {
+        let native = browser
             .checks
             .iter()
-            .filter(|command| command
+            .position(|command| {
+                command
+                    .windows(2)
+                    .any(|args| args == ["browser_readiness", reproduction])
+            })
+            .unwrap();
+        let longer = browser
+            .checks
+            .iter()
+            .position(|command| command.iter().any(|arg| arg == focus::GENERATED_BROWSER))
+            .unwrap();
+        assert!(
+            native < longer,
+            "The native policy reproduction must precede namespace/browser fixtures"
+        );
+        for flag in ["--exact", "--ignored", "--test-threads=1"] {
+            assert!(browser.checks[native].iter().any(|arg| arg == flag));
+        }
+        let remaining = browser
+            .checks
+            .iter()
+            .find(|command| {
+                command.iter().any(|arg| arg == "browser_readiness")
+                    && command.iter().any(|arg| arg == "--include-ignored")
+            })
+            .unwrap();
+        assert!(
+            remaining
                 .windows(2)
-                .any(|args| args == ["browser_readiness", focus::NATIVE_ANIMATION]))
-            .count(),
-        1
-    );
+                .any(|args| args == ["--skip", reproduction])
+        );
+        assert_eq!(
+            browser
+                .checks
+                .iter()
+                .filter(|command| command
+                    .windows(2)
+                    .any(|args| args == ["browser_readiness", reproduction]))
+                .count(),
+            1
+        );
+    }
 }
 
 #[test]

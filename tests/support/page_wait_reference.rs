@@ -15,6 +15,10 @@ pub struct Server {
     pub address: SocketAddr,
     stop: Arc<AtomicBool>,
     task: Option<thread::JoinHandle<()>>,
+    #[allow(
+        dead_code,
+        reason = "Inspected by the browser_readiness integration target"
+    )]
     network: Arc<NetworkCounts>,
 }
 
@@ -26,6 +30,10 @@ struct NetworkCounts {
 }
 
 impl Server {
+    #[allow(
+        dead_code,
+        reason = "Used by browser_readiness, not the shared dynamic_render fixture"
+    )]
     pub fn network_counts(&self) -> (usize, usize, usize) {
         (
             self.network.http.load(Ordering::SeqCst),
@@ -130,25 +138,24 @@ fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool, network: 
     }
     let request = String::from_utf8_lossy(&header);
     let path = request.split_whitespace().nth(1).unwrap_or("");
-    if path.starts_with("/network/socket") {
-        if let Some(key) = request
+    if path.starts_with("/network/socket")
+        && let Some(key) = request
             .lines()
             .filter_map(|line| line.split_once(':'))
             .find_map(|(name, value)| {
                 name.eq_ignore_ascii_case("Sec-WebSocket-Key")
                     .then_some(value.trim())
             })
-        {
-            network.websocket.fetch_add(1, Ordering::SeqCst);
-            let accept = tungstenite::handshake::derive_accept_key(key.as_bytes());
-            let _ = write!(
-                stream,
-                "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
-            );
-            let _ = stream.write_all(&[0x88, 0]);
-            let _ = stream.read(&mut [0; 128]);
-            return;
-        }
+    {
+        network.websocket.fetch_add(1, Ordering::SeqCst);
+        let accept = tungstenite::handshake::derive_accept_key(key.as_bytes());
+        let _ = write!(
+            stream,
+            "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
+        );
+        let _ = stream.write_all(&[0x88, 0]);
+        let _ = stream.read(&mut [0; 128]);
+        return;
     }
     if path.starts_with("/network/") {
         network.http.fetch_add(1, Ordering::SeqCst);
