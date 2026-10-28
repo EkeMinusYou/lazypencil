@@ -32,7 +32,6 @@ struct NetworkCounts {
     turn: AtomicUsize,
     profiles: AtomicUsize,
     headed_ready: Mutex<Option<serde_json::Value>>,
-    headed_close: AtomicBool,
 }
 
 impl Server {
@@ -41,10 +40,6 @@ impl Server {
         self.network.headed_ready.lock().unwrap().clone()
     }
 
-    #[allow(dead_code, reason = "Controlled only by headed-login integration")]
-    pub fn close_headed_login(&self) {
-        self.network.headed_close.store(true, Ordering::SeqCst);
-    }
     #[allow(
         dead_code,
         reason = "Observed only by the dedicated-profile integration"
@@ -190,7 +185,7 @@ fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool, network: 
         );
     }
     let headed_page = (path == "/headed-login").then(|| format!(
-        "<!doctype html><title>Owned login fixture</title><style>html{{height:100%;background:#0f0}}</style><script>(async()=>{{await {PROFILE_SEED};await fetch('/headed-login-ready?width='+outerWidth+'&height='+outerHeight+'&visible='+(document.visibilityState==='visible')+'&headless='+navigator.userAgent.includes('HeadlessChrome/')+'&chrome='+navigator.userAgent.includes('Chrome/'));const timer=setInterval(async()=>{{if(await (await fetch('/headed-login-close')).text()==='yes'){{clearInterval(timer);window.close()}}}},100)}})()</script>"
+        "<!doctype html><title>Owned login fixture</title><style>html{{height:100%;background:#0f0}}</style><script>(async()=>{{await {PROFILE_SEED};await fetch('/headed-login-ready?width='+outerWidth+'&height='+outerHeight+'&visible='+(document.visibilityState==='visible')+'&headless='+navigator.userAgent.includes('HeadlessChrome/')+'&chrome='+navigator.userAgent.includes('Chrome/'))}})()</script>"
     ));
     if path == "/profile-state" {
         network.profiles.fetch_add(1, Ordering::SeqCst);
@@ -222,15 +217,6 @@ fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool, network: 
     }
     let (kind, body, delay) = match path {
         "/headed-login" => ("text/html", headed_page.as_deref().unwrap(), 0),
-        "/headed-login-close" => (
-            "text/plain",
-            if network.headed_close.load(Ordering::SeqCst) {
-                "yes"
-            } else {
-                "no"
-            },
-            0,
-        ),
         path if path.starts_with("/headed-login-ready?") => ("text/plain", "ok", 0),
         "/profile-state"
             if request.lines().any(|line| {

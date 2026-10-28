@@ -674,6 +674,7 @@ pub fn required_images(root: &Path, commit: &str) -> Result<()> {
     ensure!(
         headed["sandbox"] == "enabled"
             && headed["browser_closed"] == true
+            && headed["close_method"] == "owned_browser_discovery_target_close"
             && headed["same_canonical_browser"] == true
             && headed["document_unchanged"] == true
             && headed["storage"] == profiles["storage"]

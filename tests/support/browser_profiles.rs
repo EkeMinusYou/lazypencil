@@ -234,7 +234,8 @@ fn headed_login_closes_normally_and_preserves_storage_for_the_same_full_browser(
         .args(["--timeout-seconds", "45"])
         .env("LAZYPENCIL_CONFIG_DIR", &user)
         .env("LAZYPENCIL_CHROMIUM", &executable);
-    let (login, observed) = std::thread::scope(|threads| {
+    let login_url = format!("http://{}/headed-login", server.address);
+    let (login, observed, close) = std::thread::scope(|threads| {
         let login = threads.spawn(move || {
             command_output::output(&mut command, Duration::from_secs(90), 4 * 1024 * 1024)
         });
@@ -247,16 +248,21 @@ fn headed_login_closes_normally_and_preserves_storage_for_the_same_full_browser(
             }
             std::thread::sleep(Duration::from_millis(20));
         }
-        // Even a failed readiness observation must release and collect the CLI.
-        server.close_headed_login();
-        (login.join().unwrap().unwrap(), observed)
+        // Drive the owned browser's close operation, rather than relying on
+        // page-script permissions to close a window. Always collect the CLI,
+        // including when observation or the bounded close request fails.
+        let close = observed
+            .as_ref()
+            .map(|_| close_owned_login_target(&profile, &login_url));
+        (login.join().unwrap().unwrap(), observed, close)
     });
     assert!(
         !login.timed_out && login.status.success(),
-        "stdout={} stderr={}",
+        "observed={observed:?} close={close:?} stdout={} stderr={}",
         String::from_utf8_lossy(&login.stdout),
         String::from_utf8_lossy(&login.stderr)
     );
+    assert_eq!(close, Some(Ok(())));
     let login: Value = serde_json::from_slice(&login.stdout).unwrap();
     assert_eq!(login["browser_closed"], true);
     let observed = observed.expect("The full browser must report its headed page before closing");
@@ -298,11 +304,82 @@ fn headed_login_closes_normally_and_preserves_storage_for_the_same_full_browser(
             "source_commit":std::env::var("GITHUB_SHA").ok(),"headed_observation":observed,"browser_closed":true,
             "browser_version":std::env::var("LAZYPENCIL_TEST_FULL_CHROMIUM_VERSION").unwrap(),
             "archive_sha256":std::env::var("LAZYPENCIL_TEST_FULL_CHROMIUM_SHA256").unwrap(),
+            "close_method":"owned_browser_discovery_target_close",
             "same_canonical_browser":true,"storage":["http_only_cookie","local_storage","indexed_db","cache_storage"],
             "png":"codec-headed-login.png","png_hash":lazypencil::document::hash(&png),"rgba":[0,255,0,255],
             "document_unchanged":true,"sandbox":"enabled"
         })).unwrap()).unwrap();
     }
+}
+
+fn close_owned_login_target(profile: &Profile, url: &str) -> Result<(), String> {
+    use std::io::Read;
+
+    let mut port_file = String::new();
+    fs::File::open(profile.directory().join("DevToolsActivePort"))
+        .and_then(|file| file.take(513).read_to_string(&mut port_file))
+        .map_err(|error| format!("Owned browser endpoint: {error}"))?;
+    let mut lines = port_file.lines();
+    let port = lines
+        .next()
+        .and_then(|line| line.parse::<std::num::NonZeroU16>().ok())
+        .ok_or("Invalid owned browser port")?;
+    if port_file.len() > 512
+        || !lines
+            .next()
+            .is_some_and(|line| line.starts_with("/devtools/browser/"))
+    {
+        return Err("Invalid owned browser endpoint".into());
+    }
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .proxy(None)
+        .max_redirects(0)
+        .timeout_global(Some(Duration::from_secs(5)))
+        .build()
+        .into();
+    let request = |path: &str| -> Result<Vec<u8>, String> {
+        let mut response = agent
+            .get(format!("http://127.0.0.1:{port}{path}"))
+            .call()
+            .map_err(|error| format!("Owned browser control: {error}"))?;
+        if response.status() != 200 {
+            return Err("Owned browser control returned a non-200 status".into());
+        }
+        let mut bytes = Vec::new();
+        response
+            .body_mut()
+            .as_reader()
+            .take(65537)
+            .read_to_end(&mut bytes)
+            .map_err(|error| format!("Owned browser control response: {error}"))?;
+        if bytes.len() > 65536 {
+            return Err("Owned browser control response exceeds its bound".into());
+        }
+        Ok(bytes)
+    };
+    let targets: Vec<Value> = serde_json::from_slice(&request("/json/list")?)
+        .map_err(|error| format!("Owned browser target list: {error}"))?;
+    let targets = targets
+        .iter()
+        .filter(|target| target["type"] == "page" && target["url"] == url)
+        .collect::<Vec<_>>();
+    if targets.len() != 1 {
+        return Err("Expected exactly one owned login page".into());
+    }
+    let id = targets[0]["id"].as_str().ok_or("Missing login target ID")?;
+    if id.is_empty()
+        || id.len() > 128
+        || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    {
+        return Err("Invalid login target ID".into());
+    }
+    // Chromium's discovery endpoint invokes DevToolsAgentHost::Close().
+    // https://chromium.googlesource.com/chromium/src/+/main/content/browser/devtools/devtools_http_handler.cc
+    let closed = request(&format!("/json/close/{id}"))?;
+    if !String::from_utf8_lossy(&closed).contains("Target is closing") {
+        return Err("Owned browser did not acknowledge target close".into());
+    }
+    Ok(())
 }
 
 fn pixels(png: &[u8], rgba: [u8; 4]) {
