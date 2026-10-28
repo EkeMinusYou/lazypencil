@@ -518,7 +518,7 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     }
     // Font-only generators change native runtime fixtures without becoming
     // application compiler inputs. Keep their native focus after higher-priority gates.
-    if !paths.is_empty() && !font_inputs && paths.iter().all(|p| ci_only(p)) {
+    if !font_inputs && paths.iter().all(|p| ci_only(p)) {
         return Ok(Plan {
             platform,
             suite: "ci".into(),
