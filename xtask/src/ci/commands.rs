@@ -10,6 +10,10 @@ pub type Invocation = Vec<String>;
 
 /// Change Cargo's scheduling without changing compiler-visible environment or flags.
 pub fn build_jobs(invocation: &[String], linux: bool) -> Invocation {
+    build_jobs_for(invocation, if linux { 2 } else { 1 })
+}
+
+pub fn build_jobs_for(invocation: &[String], jobs: usize) -> Invocation {
     let mut scheduled = invocation.to_vec();
     let cargo_end = invocation
         .iter()
@@ -25,8 +29,8 @@ pub fn build_jobs(invocation: &[String], linux: bool) -> Invocation {
     let explicit = cargo.iter().skip(2).any(|argument| {
         argument == "--jobs" || argument.starts_with("--jobs=") || argument.starts_with("-j")
     });
-    if linux && compiles && !explicit {
-        scheduled.splice(2..2, ["--jobs".into(), "2".into()]);
+    if jobs > 1 && compiles && !explicit {
+        scheduled.splice(2..2, ["--jobs".into(), jobs.to_string()]);
     }
     scheduled
 }

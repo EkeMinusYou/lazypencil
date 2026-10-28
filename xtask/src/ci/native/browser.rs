@@ -177,15 +177,14 @@ fn sandbox_named(s: &Session, executable: &Path, name: &str) -> Result<()> {
 // Each target owns its temporary documents, browser profiles and process groups.
 // Their retained filenames occupy separate namespaces. Keep tests within each
 // target serial, and keep the ownership/destruction test after both lanes join.
-pub const TEST_LANES: [&[&str]; 2] = [
+pub const TEST_LANES: [&[&str]; 3] = [
     &["browser_readiness"],
+    &["dynamic_render", "script_scope"],
     &[
-        "dynamic_render",
         "shader_uniforms",
         "sampler_sources",
         "imports",
         "windows_agent",
-        "script_scope",
     ],
 ];
 
@@ -297,7 +296,11 @@ pub fn lanes(s: &Session) -> Result<()> {
             .map(|(index, targets)| -> parallel::Task<'_> {
                 let catalog = &catalog;
                 (
-                    ["browser readiness", "dynamic rendering and shaders"][index],
+                    [
+                        "browser readiness",
+                        "dynamic rendering and scripts",
+                        "shaders and samplers",
+                    ][index],
                     Box::new(move || {
                         let mut failures = Vec::new();
                         for target in targets {

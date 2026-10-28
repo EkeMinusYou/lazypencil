@@ -30,7 +30,8 @@ permissions:
   actions: read
 
 concurrency:
-  group: verify-${{ github.ref }}-${{ inputs.os || 'all' }}
+  # Keep the live serial pipeline intact during the one-time lane migration.
+  group: verify-lanes-v1-${{ github.ref }}-${{ inputs.os || 'all' }}
   cancel-in-progress: true
 
 env:
@@ -81,8 +82,8 @@ jobs:
         run: cargo xtask shader
 
   audit:
-    needs: focus
-    if: ${{ !cancelled() && needs.focus.result == 'success' }}
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
     name: Dependency policy and RustSec
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -140,41 +141,27 @@ jobs:
     if: needs.plan.outputs.preprocessor == 'true'
     uses: ./.github/workflows/shader-preprocessor.yml
 
-  focus:
-    name: Focused reproduction / ${{ needs.plan.outputs.platform }}
-    permissions:
-      contents: read
-      actions: write
-    needs: plan
-    if: ${{ !cancelled() && needs.plan.result == 'success' }}
-    uses: ./.github/workflows/native.yml
-    with:
-      os: ${{ needs.plan.outputs.platform }}
-      phase: focus
-      suite: ${{ needs.plan.outputs.suite }}
-      targets: ${{ needs.plan.outputs.targets }}
-      measure_tui: ${{ needs.plan.outputs.measure_tui == 'true' }}
-      native_clipboard: ${{ needs.plan.outputs.native_clipboard == 'true' }}
-      terminal_reproduction: ${{ needs.plan.outputs.terminal_reproduction == 'true' }}
-      runtime_parallel: ${{ needs.plan.outputs.runtime_parallel == 'true' }}
-
   native:
-    name: Full verification / ${{ matrix.os }}
+    name: Verify ${{ matrix.lane }} / ${{ matrix.os }}
     permissions:
       contents: read
       actions: write
-    needs: [plan, focus, shader-preprocessor]
-    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.focus.result == 'success' && (needs.shader-preprocessor.result == 'success' || needs.shader-preprocessor.result == 'skipped') }}
+    needs: [plan, shader-preprocessor]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.shader-preprocessor.result == 'success' || needs.shader-preprocessor.result == 'skipped') }}
     strategy:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(needs.plan.outputs.matrix) }}
+        lane: [core, default, release]
     uses: ./.github/workflows/native.yml
     with:
       os: ${{ matrix.os }}
-      phase: full
+      phase: ${{ (matrix.lane == 'core' && (needs.plan.outputs.suite == 'core' || needs.plan.outputs.suite == 'conversation') || matrix.lane == 'default' && needs.plan.outputs.suite != 'core' && needs.plan.outputs.suite != 'conversation') && 'verify' || 'full' }}
+      lane: ${{ matrix.lane }}
+      suite: ${{ needs.plan.outputs.suite }}
+      targets: ${{ needs.plan.outputs.targets }}
+      measure_tui: ${{ needs.plan.outputs.measure_tui == 'true' }}
       terminal_reproduction: ${{ needs.plan.outputs.terminal_reproduction_full == 'true' }}
-      focused_application: ${{ needs.focus.outputs.application_artifact || '' }}
 
   source:
     if: ${{ !cancelled() && needs.native.result == 'success' && needs.audit.result == 'success' && (inputs.os == 'all' || inputs.os == '' || inputs.os == 'macos-15') }}

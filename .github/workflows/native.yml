@@ -9,6 +9,9 @@ on:
       phase:
         type: string
         default: full
+      lane:
+        type: string
+        default: all
       suite:
         type: string
         default: core
@@ -56,7 +59,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/xtask
         with:
-          verify: 'true'
+          verify: ${{ inputs.lane == 'all' || inputs.lane == 'core' }}
       - name: Verify the current source distribution
         run: cargo xtask ci native source
 
@@ -73,7 +76,7 @@ jobs:
       FOCUS_SUITE: ${{ inputs.suite }}
       FOCUS_TARGETS: ${{ inputs.targets }}
       RUNTIME_PARALLEL: ${{ inputs.runtime_parallel }}
-      HEADED_BROWSER_TESTS: ${{ inputs.phase == 'full' || inputs.runtime_parallel || contains(fromJSON(inputs.targets), 'browser_readiness') }}
+      HEADED_BROWSER_TESTS: ${{ inputs.lane == 'default' || inputs.lane == 'all' && (inputs.phase == 'full' || inputs.runtime_parallel || contains(fromJSON(inputs.targets), 'browser_readiness')) }}
       FOCUS_RUNTIME_STAGE: ${{ (inputs.suite == 'release' || inputs.suite == 'candidate' || inputs.measure_tui) && 'focus-runtime-release' || 'runtime-tests' }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -81,7 +84,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/xtask
         with:
-          verify: 'true'
+          verify: ${{ inputs.lane == 'all' || inputs.lane == 'core' }}
           retire-old-tools: 'true'
       - name: Cache verified Cargo downloads
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
@@ -100,7 +103,7 @@ jobs:
         run: cargo xtask ci native source
       - name: Restore immutable upstream emoji fixtures
         id: emoji-cache
-        if: inputs.phase == 'full' || contains(fromJSON(inputs.targets), 'font_sources')
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'default') && (inputs.phase != 'focus' || contains(fromJSON(inputs.targets), 'font_sources')) }}
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
@@ -111,11 +114,11 @@ jobs:
             ${{ runner.temp }}/emoji-fonts/Noto-COLRv1.ttf
       - name: Verify pinned emoji bytes before native compilation
         id: emoji-prepare
-        if: inputs.phase == 'full' || contains(fromJSON(inputs.targets), 'font_sources')
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'default') && (inputs.phase != 'focus' || contains(fromJSON(inputs.targets), 'font_sources')) }}
         timeout-minutes: 20
         run: cargo xtask fixtures emoji --output "$RUNNER_TEMP/emoji-fonts"
       - name: Save only verified original emoji inputs
-        if: github.ref == 'refs/heads/main' && steps.emoji-prepare.outcome == 'success' && steps.emoji-cache.outputs.cache-hit != 'true'
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'default') && (github.ref == 'refs/heads/main' && steps.emoji-prepare.outcome == 'success' && steps.emoji-cache.outputs.cache-hit != 'true') }}
         continue-on-error: true
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
@@ -127,7 +130,7 @@ jobs:
       - name: Identify compatible hosted dependency caches
         id: cache-key
         continue-on-error: true
-        run: cargo xtask ci cache native --platform '${{ inputs.os }}' --image "$ImageVersion" --phase '${{ inputs.phase }}'
+        run: cargo xtask ci cache native --platform '${{ inputs.os }}' --image "$ImageVersion" --phase '${{ inputs.phase == 'verify' && 'full' || inputs.phase }}'
       - name: Restore hosted dependency build artifacts
         id: native-cache
         if: steps.cache-key.outcome == 'success'
@@ -149,9 +152,9 @@ jobs:
         run: cargo xtask ci cache prune --source "$RUNNER_TEMP/lazypencil-source"
       - name: Identify source-bound application outputs
         id: application-key
-        if: steps.cache-key.outcome == 'success'
+        if: steps.cache-key.outcome == 'success' && inputs.lane != 'release'
         continue-on-error: true
-        run: cargo xtask ci cache application identify --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
+        run: cargo xtask ci cache application identify --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --native-key '${{ steps.cache-key.outputs.primary }}${{ inputs.lane == 'core' && '-core' || '' }}'
       - name: Download this run's matching focused build
         id: application-artifact
         if: inputs.phase == 'full' && inputs.focused_application != '' && inputs.focused_application == steps.application-key.outputs.checkpoint_legacy
@@ -194,15 +197,15 @@ jobs:
         id: application-reuse
         if: steps.application-key.outcome == 'success'
         timeout-minutes: 3
-        run: cargo xtask ci cache application restore-compatible --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --compatible-directory "$RUNNER_TEMP/lazypencil-compatible-cache" --matched-key '${{ steps.compatible-cache.outputs.cache-matched-key }}' --native-key '${{ steps.cache-key.outputs.primary }}'
+        run: cargo xtask ci cache application restore-compatible --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --compatible-directory "$RUNNER_TEMP/lazypencil-compatible-cache" --matched-key '${{ steps.compatible-cache.outputs.cache-matched-key }}' --native-key '${{ steps.cache-key.outputs.primary }}${{ inputs.lane == 'core' && '-core' || '' }}'
       - name: Identify release outputs independently of test changes
         id: release-key
-        if: steps.cache-key.outcome == 'success' && (inputs.phase == 'full' || inputs.suite == 'release' || inputs.suite == 'candidate' || inputs.measure_tui)
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'release') && (steps.cache-key.outcome == 'success' && (inputs.phase != 'focus' || inputs.suite == 'release' || inputs.suite == 'candidate' || inputs.measure_tui)) }}
         continue-on-error: true
         run: cargo xtask ci cache application identify --release-only --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-release-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
       - name: Restore compatible mapped release outputs
         id: release-cache
-        if: steps.release-key.outcome == 'success'
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'release') && (steps.release-key.outcome == 'success') }}
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
@@ -213,13 +216,13 @@ jobs:
           path: ${{ runner.temp }}/lazypencil-release-cache
           lookup-only: ${{ steps.application-reuse.outputs.release_reused == 'true' }}
       - name: Validate release reuse while keeping verified test outputs
-        if: steps.release-key.outcome == 'success' && steps.application-reuse.outputs.release_reused != 'true'
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'release') && (steps.release-key.outcome == 'success' && steps.application-reuse.outputs.release_reused != 'true') }}
         timeout-minutes: 3
         run: cargo xtask ci cache application restore-or-prune --release-only --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-release-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
       - name: Verify distributed dependency notices
         run: cargo xtask ci native notices
       - name: Reproduce script compatibility before native rendering
-        if: inputs.phase == 'focus'
+        if: (inputs.phase == 'focus' || inputs.phase == 'verify') && inputs.suite != 'ci'
         run: cargo xtask ci native focus-core --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
       - name: Check affected code and build tests with cache-aware ordering
         id: focus-build
@@ -228,8 +231,11 @@ jobs:
         env:
           NATIVE_CACHE_MATCH: ${{ steps.native-cache.outputs.cache-matched-key }}
         run: cargo xtask ci native focus-prepare --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
+      - name: Prepare affected feature configurations in the combined job
+        if: inputs.phase == 'verify' && inputs.suite != 'ci'
+        run: cargo xtask ci native focus-build --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
       - name: Reproduce affected failures before other tests and Chromium
-        if: inputs.phase == 'focus'
+        if: (inputs.phase == 'focus' || inputs.phase == 'verify') && inputs.suite != 'ci'
         run: cargo xtask ci native focus-reproduce --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
       - name: Reproduce changed native clipboard input before longer tests
         id: native-clipboard-focus
@@ -237,16 +243,16 @@ jobs:
         timeout-minutes: 10
         run: cargo xtask ci native clipboard
       - name: Build core test binaries
-        if: inputs.phase == 'full'
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'core') && (inputs.phase != 'focus') }}
         timeout-minutes: 40
         run: cargo xtask ci native core-build
       - name: Test core configuration
         id: core-tests
-        if: inputs.phase == 'full'
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'core') && (inputs.phase != 'focus') }}
         timeout-minutes: 15
         run: cargo xtask ci native core-test
       - name: Publish failed core evidence before longer checks
-        if: failure() && inputs.phase == 'full' && steps.core-tests.outcome == 'failure'
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'core') && (failure() && inputs.phase != 'focus' && steps.core-tests.outcome == 'failure') }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: core-failure-${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
@@ -256,16 +262,16 @@ jobs:
           if-no-files-found: error
           retention-days: 3
       - name: Check all core targets
-        if: inputs.phase == 'full'
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'core') && (inputs.phase != 'focus') }}
         timeout-minutes: 15
         run: cargo xtask ci native core-lint
       - name: Build default tests and record executable identities
         id: default-build
-        if: inputs.phase == 'full'
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'default') && (inputs.phase != 'focus') }}
         timeout-minutes: 45
         run: cargo xtask ci native default-build
       - name: Reproduce real emoji, TUI and isolated MCP cancellation first
-        if: inputs.phase == 'full'
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'default') && (inputs.phase != 'focus') }}
         run: cargo xtask ci native reproduce
       - name: Install real Linux terminal emulators for the early reproduction
         if: runner.os == 'Linux' && (inputs.terminal_reproduction || inputs.phase == 'focus' && inputs.suite == 'candidate')
@@ -285,31 +291,35 @@ jobs:
           if-no-files-found: error
           retention-days: 3
       - name: Check all default targets before longer tests and release compilation
-        if: inputs.phase == 'full'
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'default') && (inputs.phase != 'focus') }}
         timeout-minutes: 15
         run: cargo xtask ci native default-lint
-      - name: Test default configuration alongside release compilation
-        id: default-release
-        if: inputs.phase == 'full'
-        timeout-minutes: 60
-        run: cargo xtask ci native default-release
+      - name: Compile the isolated release lane
+        id: release-build
+        if: inputs.lane == 'release'
+        run: cargo xtask ci native focus-release
+      - name: Install and diagnose the verified sandboxed Chromium runtime
+        if: inputs.lane == 'default' || inputs.lane == 'release' && inputs.measure_tui || inputs.lane == 'all' && (inputs.phase == 'full' || inputs.measure_tui || inputs.runtime_parallel || inputs.suite == 'dynamic' || inputs.suite == 'shader' || inputs.suite == 'copy' || inputs.suite == 'browser' || inputs.suite == 'browser-ci' || inputs.suite == 'render' || (inputs.suite == 'candidate' && contains(fromJSON(inputs.targets), 'dynamic_render')))
+        timeout-minutes: 15
+        run: cargo xtask ci native browser-setup --suite "${{ inputs.lane == 'release' && 'release' || inputs.lane != 'all' && 'pipeline' || inputs.suite }}"
       - name: Verify fixture-owned native clipboard images and actual Ctrl+V delivery
         id: native-clipboard
-        if: inputs.phase == 'full'
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'default') && (inputs.phase != 'focus') }}
         timeout-minutes: 10
         run: cargo xtask ci native clipboard
       - name: Retain native clipboard and PTY evidence
-        if: ${{ always() && (steps.native-clipboard.outcome == 'success' || steps.native-clipboard.outcome == 'failure' || steps.native-clipboard-focus.outcome == 'success' || steps.native-clipboard-focus.outcome == 'failure') }}
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'default') && (always() && (steps.native-clipboard.outcome == 'success' || steps.native-clipboard.outcome == 'failure' || steps.native-clipboard-focus.outcome == 'success' || steps.native-clipboard-focus.outcome == 'failure')) }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: ${{ inputs.phase }}-clipboard-${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/clipboard-evidence
           if-no-files-found: error
           retention-days: 3
-      - name: Install and diagnose the verified sandboxed Chromium runtime
-        if: inputs.phase == 'full' || inputs.measure_tui || inputs.runtime_parallel || inputs.suite == 'dynamic' || inputs.suite == 'shader' || inputs.suite == 'copy' || inputs.suite == 'browser' || inputs.suite == 'browser-ci' || inputs.suite == 'render' || (inputs.suite == 'candidate' && contains(fromJSON(inputs.targets), 'dynamic_render'))
-        timeout-minutes: 15
-        run: cargo xtask ci native browser-setup
+      - name: Run independent default and runtime tests before their shared evidence gate
+        id: default-release
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'default') && (inputs.phase != 'focus') }}
+        timeout-minutes: 60
+        run: cargo xtask ci native "${{ inputs.lane == 'all' && 'default-release' || 'complete-tests' }}"
       - name: Run affected tests and pixel reproductions
         if: inputs.phase == 'focus'
         timeout-minutes: ${{ inputs.suite == 'normal-ci' && 60 || inputs.suite == 'browser-ci' && 25 || 10 }}
@@ -324,15 +334,15 @@ jobs:
         timeout-minutes: 60
         run: cargo xtask ci native focus-release
       - name: Prepare source-bound original notices for the candidate
-        if: inputs.phase == 'focus' && (inputs.suite == 'candidate' || inputs.measure_tui)
+        if: (inputs.phase == 'focus' || inputs.lane == 'release') && (inputs.suite == 'candidate' || inputs.measure_tui)
         timeout-minutes: 20
         run: cargo xtask ci native candidate-prepare
       - name: Verify the isolated binary candidate before the full matrix
-        if: inputs.phase == 'focus' && (inputs.suite == 'candidate' || inputs.measure_tui)
+        if: (inputs.phase == 'focus' || inputs.lane == 'release') && (inputs.suite == 'candidate' || inputs.measure_tui)
         timeout-minutes: 10
         run: cargo xtask ci native candidate
       - name: Retain the focused binary candidate and isolated smoke proof
-        if: inputs.phase == 'focus' && (inputs.suite == 'candidate' || inputs.measure_tui)
+        if: (inputs.phase == 'focus' || inputs.lane == 'release') && (inputs.suite == 'candidate' || inputs.measure_tui)
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: focus-candidate-${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
@@ -343,7 +353,7 @@ jobs:
           if-no-files-found: error
           retention-days: 3
       - name: Verify independent browser, MCP, lifecycle and Material suites
-        if: inputs.phase == 'full'
+        if: inputs.lane == 'all' && inputs.phase == 'full'
         timeout-minutes: 60
         run: cargo xtask ci native runtime-tests
       - name: Verify packaged real-terminal pixels and keyboard operations
@@ -361,7 +371,7 @@ jobs:
           retention-days: 3
       - name: Measure changed TUI performance code before the full matrix
         id: tui-measurement
-        if: inputs.phase == 'focus' && inputs.measure_tui
+        if: (inputs.phase == 'focus' || inputs.lane == 'release') && inputs.measure_tui
         timeout-minutes: 15
         run: cargo xtask measure-tui --candidate "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/tui-measurement" --chromium-resources --enforce-memory-target
       - name: Retain focused TUI measurements and diagnostic logs
@@ -373,17 +383,17 @@ jobs:
           if-no-files-found: error
           retention-days: 3
       - name: Render the combined example for review
-        if: inputs.phase == 'full'
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'default') && (inputs.phase != 'focus') }}
         run: cargo xtask ci native panel
       - name: Recheck release inputs and run isolated smoke tests and measurements
         id: release-smoke
-        if: inputs.phase == 'full'
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'release') && (inputs.phase != 'focus') }}
         run: cargo xtask ci native release
       - name: Retain source-bound logs and rendered evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: ${{ inputs.phase == 'full' && 'verification' || 'focus' }}-${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          name: ${{ inputs.phase != 'focus' && 'verification' || 'focus' }}-${{ inputs.lane != 'all' && format('{0}-', inputs.lane) || '' }}${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/*.log
             ${{ runner.temp }}/ci-timings.jsonl
@@ -406,7 +416,7 @@ jobs:
         if: ${{ !cancelled() && inputs.phase == 'focus' && (success() || steps.focus-build.outcome == 'success' && steps.focus-release.outcome == 'success') && steps.application-key.outcome == 'success' && steps.application-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         timeout-minutes: 3
-        run: cargo xtask ci cache application stage-focused --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --compatible-directory "$RUNNER_TEMP/lazypencil-compatible-cache" --matched-key '${{ steps.compatible-cache.outputs.cache-matched-key }}' --native-key '${{ steps.cache-key.outputs.primary }}'
+        run: cargo xtask ci cache application stage-focused --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --compatible-directory "$RUNNER_TEMP/lazypencil-compatible-cache" --matched-key '${{ steps.compatible-cache.outputs.cache-matched-key }}' --native-key '${{ steps.cache-key.outputs.primary }}${{ inputs.lane == 'core' && '-core' || '' }}'
       - name: Archive focused outputs without changing Cargo file times
         id: application-artifact-pack
         if: ${{ !cancelled() && steps.application-save.outcome == 'success' && steps.application-save.outputs.staged == 'true' }}
@@ -427,25 +437,25 @@ jobs:
           if-no-files-found: error
       - name: Stage mapped release outputs independently of tests
         id: release-save
-        if: ${{ !cancelled() && steps.release-key.outcome == 'success' && steps.release-cache.outputs.cache-hit != 'true' && (steps.release-smoke.outcome == 'success' || steps.focus-release.outcome == 'success' || steps.default-release.outcome == 'success') && github.ref == 'refs/heads/main' }}
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'release') && (!cancelled() && steps.release-key.outcome == 'success' && steps.release-cache.outputs.cache-hit != 'true' && (steps.release-smoke.outcome == 'success' || steps.focus-release.outcome == 'success' || steps.default-release.outcome == 'success') && github.ref == 'refs/heads/main') }}
         continue-on-error: true
         timeout-minutes: 3
         run: cargo xtask ci cache application stage --release-only --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-release-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
       - name: Save the verified release checkpoint
-        if: ${{ !cancelled() && steps.release-save.outcome == 'success' }}
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'release') && (!cancelled() && steps.release-save.outcome == 'success') }}
         continue-on-error: true
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
-          key: ${{ inputs.phase == 'full' && steps.release-key.outputs.primary || steps.release-key.outputs.checkpoint }}
+          key: ${{ inputs.phase != 'focus' && steps.release-key.outputs.primary || steps.release-key.outputs.checkpoint }}
           path: ${{ runner.temp }}/lazypencil-release-cache
       - name: Stage a complete build for unchanged integration-test reuse
         id: compatible-save
-        if: ${{ success() && inputs.phase == 'full' && steps.application-key.outcome == 'success' && steps.compatible-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
+        if: ${{ (inputs.lane != 'release') && success() && inputs.phase != 'focus' && steps.application-key.outcome == 'success' && steps.compatible-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         timeout-minutes: 3
-        run: cargo xtask ci cache application stage --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-compatible-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
+        run: cargo xtask ci cache application stage --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-compatible-cache" --native-key '${{ steps.cache-key.outputs.primary }}${{ inputs.lane == 'core' && '-core' || '' }}'
       - name: Reserve room for the staged successful replacement
-        if: ${{ success() && steps.compatible-save.outcome == 'success' && github.ref == 'refs/heads/main' }}
+        if: ${{ (inputs.lane != 'release') && success() && steps.compatible-save.outcome == 'success' && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         timeout-minutes: 3
         env:
@@ -453,14 +463,14 @@ jobs:
         run: cargo xtask ci cache retain --before-replacement --platform '${{ inputs.os }}' --manifest "$RUNNER_TEMP/lazypencil-source/SOURCE-MANIFEST.json" --delete
       - name: Save the complete integration-test checkpoint
         id: compatible-published
-        if: ${{ !cancelled() && steps.compatible-save.outcome == 'success' }}
+        if: ${{ (inputs.lane != 'release') && !cancelled() && steps.compatible-save.outcome == 'success' }}
         continue-on-error: true
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           key: ${{ steps.application-key.outputs.compatible_primary }}
           path: ${{ runner.temp }}/lazypencil-compatible-cache
       - name: Retire superseded checkpoints after publication
-        if: ${{ !cancelled() && steps.compatible-published.outcome == 'success' && github.ref == 'refs/heads/main' }}
+        if: ${{ (inputs.lane != 'release') && !cancelled() && steps.compatible-published.outcome == 'success' && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         timeout-minutes: 3
         env:
@@ -468,7 +478,7 @@ jobs:
         run: cargo xtask ci cache retain --platform '${{ inputs.os }}' --manifest "$RUNNER_TEMP/lazypencil-source/SOURCE-MANIFEST.json" --delete
       - name: Keep completed dependencies after failure or cancellation
         id: cache-prune
-        if: ${{ always() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true' && steps.native-cache.outputs.cache-matched-key != steps.cache-key.outputs.primary && (steps.focus-build.outcome == 'success' || steps.default-build.outcome == 'success') }}
+        if: ${{ always() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true' && steps.native-cache.outputs.cache-matched-key != steps.cache-key.outputs.primary && (steps.focus-build.outcome == 'success' || steps.default-build.outcome == 'success' || steps.release-build.outcome == 'success') }}
         continue-on-error: true
         run: cargo xtask ci cache prune --source "$RUNNER_TEMP/lazypencil-source"
       - name: Save compatible hosted dependency build artifacts

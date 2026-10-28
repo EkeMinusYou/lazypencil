@@ -5,6 +5,17 @@ const TEST_SECONDS: u64 = 900;
 const INDEPENDENT: [&str; 3] = ["script_scope", "graphics", "mesh"];
 
 pub fn run(s: &Session) -> Result<()> {
+    let prepared = prepare(s)?;
+    remaining(s, &prepared, true)
+}
+
+pub(super) struct Prepared {
+    checks: Vec<commands::Invocation>,
+    scripts: Vec<commands::Invocation>,
+    deadline: Instant,
+}
+
+pub(super) fn prepare(s: &Session) -> Result<Prepared> {
     let catalog = s.verified_catalog(&[])?;
     let binaries = catalog
         .binaries
@@ -66,20 +77,36 @@ pub fn run(s: &Session) -> Result<()> {
     .filter_map(|(name, result)| result.err().map(|error| format!("{name}: {error:#}")))
     .collect::<Vec<_>>();
     ensure!(failures.is_empty(), "{}", failures.join("\n"));
-    let remaining = parallel::run(vec![
-        (
-            "release compilation",
-            Box::new(|| release::compile(s, "lazypencil-release.log")),
-        ),
+    Ok(Prepared {
+        checks,
+        scripts,
+        deadline,
+    })
+}
+
+pub(super) fn remaining(s: &Session, prepared: &Prepared, compile_release: bool) -> Result<()> {
+    let Prepared {
+        checks,
+        scripts,
+        deadline,
+    } = prepared;
+    let mut tasks: Vec<parallel::Task<'_>> = vec![
         (
             "default tests",
-            Box::new(|| run_lane(s, &checks, deadline, "lazypencil-tests.log")),
+            Box::new(|| run_lane(s, checks, *deadline, "lazypencil-tests.log")),
         ),
         (
             "script-scope and native pixel tests",
-            Box::new(|| run_lane(s, &scripts, deadline, "lazypencil-script-scope.log")),
+            Box::new(|| run_lane(s, scripts, *deadline, "lazypencil-script-scope.log")),
         ),
-    ]);
+    ];
+    if compile_release {
+        tasks.push((
+            "release compilation",
+            Box::new(|| release::compile(s, "lazypencil-release.log")),
+        ));
+    }
+    let remaining = parallel::run(tasks);
     remaining.context("Remaining default tests and release compilation failed")
 }
 

@@ -12,7 +12,9 @@
 
 ### 初回MacのみのCI方針
 
-通常のnative対象は `RELEASE_PLATFORMS=["macos-15"]`。自動の先行選択と `--matrix all` もMacだけにし、親runのLinux失敗を調べて自動選択する処理を外す。Macの先行→完全検証と同条件の成果物再利用、両feature構成、Chromium／JS／GLSL、clipboard／PTY、性能・ライセンス・配布の元の条件は保持する。
+通常のnative対象は `RELEASE_PLATFORMS=["macos-15"]`。自動の対象選択と `--matrix all` もMacだけにし、親runのLinux失敗を調べて自動選択する処理を外す。両feature構成、Chromium／JS／GLSL、clipboard／PTY、性能・ライセンス・配布の元の条件は保持する。
+
+10分以内を目標に、core・既定構成とruntime試験・releaseと計測を3つのMac jobへ分ける変更を準備した。再現試験は消費側job内で先に行い、別の先行jobからの再セットアップ・成果物転送と同条件の部分lint／試験の再実行を除く。通常試験とruntime試験を重ね、browserの7対象は3レーンへ分ける。短いscript期限を持つTUI試験は並列browser開始前に、画像の共通gateは全生成側のjoin後に実行する。MacのCargo buildはcompiler設定を変えず3並列にし、coreと既定のcache contextを分け、releaseは専用cacheのみへ保存する。基準run `c11a0f9` は先行5分56秒、完全job24分34秒、workflow32分09秒だった。10分以内は新構成で未確認であり、準備・build・試験・runner待機を分けて実測する。有用な `99cc153` の実行は中断しない。
 
 計画・依存監査・Wasm・ソース梱包などの軽量Linux jobは実行ホストとして残す。Linuxアプリのnative buildは通常CIに含めず、既存の手動診断経路を明示した場合だけ実行できる。manual workflowの既定値もMacへ揃えた。`7413a94` の [Mac限定CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40698680065) は軽量220件・Clippy、Mac先行・完全検証、監査・署名付きソースまで成功した。
 

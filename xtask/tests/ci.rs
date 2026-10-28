@@ -501,7 +501,9 @@ fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() 
     assert!(workflow.contains("if: inputs.phase == 'focus' && inputs.measure_tui"));
     let ci = std::fs::read_to_string(util::root().join(".github/workflows/ci.yml")).unwrap();
     assert!(ci.contains("measure_tui: ${{ needs.plan.outputs.measure_tui == 'true' }}"));
-    assert!(ci.contains("needs: [plan, focus, shader-preprocessor]"));
+    assert!(ci.contains("needs: [plan, shader-preprocessor]"));
+    assert!(ci.contains("lane: [core, default, release]"));
+    assert!(!ci.contains("  focus:\n"));
 }
 
 #[test]
@@ -1249,6 +1251,11 @@ fn native_build_scheduling_preserves_compiler_arguments_and_test_execution() {
         assert_eq!(&scheduled[4..], &args[2..]);
         assert_eq!(ci::commands::build_jobs(&args, false), args);
         assert_eq!(ci::commands::build_jobs(&scheduled, true), scheduled);
+        let mac = ci::commands::build_jobs_for(&args, 3);
+        assert_eq!(&mac[..2], &args[..2]);
+        assert_eq!(&mac[2..4], &["--jobs", "3"]);
+        assert_eq!(&mac[4..], &args[2..]);
+        assert_eq!(ci::commands::build_jobs_for(&mac, 3), mac);
     }
     for args in [
         &["cargo", "test", "--locked", "--", "--no-run"][..],
@@ -1264,6 +1271,7 @@ fn native_build_scheduling_preserves_compiler_arguments_and_test_execution() {
     ] {
         let args = words(args);
         assert_eq!(ci::commands::build_jobs(&args, true), args);
+        assert_eq!(ci::commands::build_jobs_for(&args, 3), args);
     }
 }
 
@@ -1431,6 +1439,37 @@ impl ApplicationFixture {
         )
         .unwrap();
     }
+}
+
+#[test]
+fn core_catalog_cache_survives_retention_without_colliding_with_default_catalog() {
+    let f = ApplicationFixture::new();
+    let default = f.identity();
+    let core =
+        cache::application_identity(&f.source, &f.target, "native-v2-ubuntu-24.04-fixture-core")
+            .unwrap();
+    assert_ne!(core.compatible_primary, default.compatible_primary);
+    cache::stage(&f.source, &f.target, &f.directory, &core).unwrap();
+    assert!(cache::restore(&f.source, &f.target, &f.directory, &default).is_err());
+    cache::restore_compatible(
+        &f.source,
+        &f.target,
+        &f.directory,
+        &core.compatible_primary,
+        &core,
+    )
+    .unwrap();
+    let entries = [core.compatible_primary, default.compatible_primary]
+        .into_iter()
+        .enumerate()
+        .map(|(index, key)| json!({"id":index + 1,"key":key,"ref":"refs/heads/main","version":"layout","created_at":"2026-10-29"}))
+        .collect::<Vec<_>>();
+    let manifest: Manifest = util::json(&f.source.join(dist::MANIFEST)).unwrap();
+    assert!(
+        cache::obsolete_for_manifest(&entries, &manifest)
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]

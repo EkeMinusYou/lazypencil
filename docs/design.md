@@ -545,7 +545,7 @@ lazypencil runtime setup chromium
 
 ## 検証と受け入れ条件
 
-以下の条件は、初回リリースの対象であるmacOS Apple Siliconで満たす。通常CIは変更箇所をMacで先行検証し、成功後にMacの完全なnative試験・描画・Chromium・release検証と依存監査を行い、すべて成功した場合だけソース配布物を確定する。Linux・Windows・Intel Macの成功を初回の必須条件にはしない。OS／CPUの範囲以外の機能・互換性・性能・ライセンス・配布・実端末の完成条件は維持する。
+以下の条件は、初回リリースの対象であるmacOS Apple Siliconで満たす。通常CIはcore構成、既定構成と描画・Chromium、releaseと計測を独立したMac jobで並列実行する。変更箇所の再現試験は該当構成のjob内で完全試験より先に実行し、ビルド済み成果物をそのまま使う。依存監査も並列に行い、全jobの成功後だけソース配布物を確定する。Linux・Windows・Intel Macの成功を初回の必須条件にはしない。OS／CPUの範囲以外の機能・互換性・性能・ライセンス・配布・実端末の完成条件は維持する。
 
 ### 文書と保存
 
@@ -589,7 +589,7 @@ lazypencil runtime setup chromium
 
 開発・CI・配布・検証の補助処理も Rust に統一する。アプリ本体や Skia へ依存しない独立した `xtask` workspace に、対象選択、キャッシュ管理、ソース配布、ライセンス検査、fixture、計測を用途別モジュールとして置き、`cargo xtask …` から呼ぶ。試験用の ACP・ブラウザー・入力ワーカーは Rust の補助バイナリー、PTY 操作は Rust の統合テストとする。GHA の YAML は環境設定、キャッシュ・成果物操作、Rust タスクの呼び出しを中心にし、複雑な処理を埋め込まない。
 
-重いビルドはGHAで行う。変更箇所をMacで先行検証し、成功後に同じMacの完全な最終検証へ進む。通常のnative matrixはMac1環境とし、計画・依存監査・Wasm生成・ソース梱包などの軽量Linux jobを製品のLinux対応とは扱わない。同じソース・環境・コンパイル条件の先行成果物を内容とcompiler dep-infoの検査後に再利用し、依存cacheとアプリ成果物を分離する。独立した長い試験の並列化、失敗時の回収、測定前の全worker終了、元のidle期限と合格基準を維持する。
+重いビルドはGHAで行う。通常のnative対象はMac1環境、構成別の3jobとする。変更箇所の再現と同じ構成の完全試験は同じrunnerで行い、別jobへの成果物転送・再展開・再セットアップを省く。同条件のfocused lintは完全なall-targets lintへ統合し、feature構成やOS・検証目的の異なる試験は残す。coreと既定構成の成果物cacheは別contextとし、依存cacheは共有、releaseは専用cacheだけに保存する。compiler dep-infoとCargoの鮮度判定、失敗時の全worker回収、計測用runnerでの試験との非干渉、元のidle期限と合格基準を維持する。計画・依存監査・Wasm生成・ソース梱包などの軽量Linux jobを製品のLinux対応とは扱わない。runner待機、準備、build、試験と全体経過を分けて計測し、10分以内の達成は実測で判断する。
 
 ## 実装段階
 

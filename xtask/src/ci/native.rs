@@ -44,6 +44,7 @@ pub enum Stage {
     Reproduce,
     DefaultTest,
     DefaultRelease,
+    CompleteTests,
     Clipboard,
     BrowserSetup,
     BrowserTest,
@@ -106,7 +107,14 @@ impl Session {
         })
     }
     pub fn command(&self, invocation: &[String]) -> Command {
-        let invocation = commands::build_jobs(invocation, cfg!(target_os = "linux"));
+        let jobs = if cfg!(target_os = "macos") {
+            3
+        } else if cfg!(target_os = "linux") {
+            2
+        } else {
+            1
+        };
+        let invocation = commands::build_jobs_for(invocation, jobs);
         let mut command = Command::new(&invocation[0]);
         command
             .args(&invocation[1..])
@@ -667,7 +675,13 @@ impl Session {
                 "lazypencil-tests.log",
                 true,
             ),
-            Stage::DefaultBuild => self.build_catalog(&[]),
+            Stage::DefaultBuild => {
+                let log = self.temporary.join("lazypencil-tests.log");
+                if !log.exists() {
+                    fs::write(log, process::text(Command::new("rustc").arg("-vV"))?)?;
+                }
+                self.build_catalog(&[])
+            }
             Stage::Reproduce => {
                 self.real_emoji("real-emoji.log")?;
                 self.test(
@@ -698,8 +712,35 @@ impl Session {
             }
             Stage::DefaultTest => management::default(self),
             Stage::DefaultRelease => normal::run(self),
+            Stage::CompleteTests => {
+                // The release profile builds on another runner. These lanes
+                // consume immutable debug executables and distinct retained
+                // filenames. Native-layout and script comparison inputs are
+                // complete before the final browser image/ownership gate.
+                // Preserve the terminal script's existing two-second deadline
+                // in an otherwise quiet host before starting browser workers.
+                let prepared = normal::prepare(self)?;
+                let result = parallel::run(vec![
+                    (
+                        "default tests",
+                        Box::new(|| normal::remaining(self, &prepared, false)),
+                    ),
+                    ("runtime suites", Box::new(|| self.runtime_lanes())),
+                ]);
+                let ownership = browser::ownership(self);
+                let failures = [("test lanes", result), ("browser evidence", ownership)]
+                    .into_iter()
+                    .filter_map(|(name, result)| {
+                        result.err().map(|error| format!("{name}: {error:#}"))
+                    })
+                    .collect::<Vec<_>>();
+                ensure!(failures.is_empty(), "{}", failures.join("\n"));
+                Ok(())
+            }
             Stage::BrowserSetup => {
-                if args.suite == "candidate" {
+                if args.suite == "release" {
+                    browser::setup_binary(self, &self.executable("release"))
+                } else if args.suite == "candidate" {
                     browser::setup_binary(
                         self,
                         &self.temporary.join("candidate-install/bin/lazypencil"),

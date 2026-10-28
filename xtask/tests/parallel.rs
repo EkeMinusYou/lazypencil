@@ -31,9 +31,19 @@ fn browser_lanes_preserve_every_existing_target_once_without_intra_target_parall
             "windows_agent",
         ])
     );
-    // Readiness owns browser-* outputs; its partner owns retained-* and
-    // shader/sampler outputs. Ownership/destruction is checked after joining.
+    // Readiness, retained pages and shaders own distinct artifact namespaces.
+    // Ownership/destruction is checked after every lane has joined.
     assert_eq!(TEST_LANES[0], ["browser_readiness"]);
+    assert_eq!(TEST_LANES[1], ["dynamic_render", "script_scope"]);
+    assert_eq!(
+        TEST_LANES[2],
+        [
+            "shader_uniforms",
+            "sampler_sources",
+            "imports",
+            "windows_agent"
+        ]
+    );
     assert!(!targets.contains(&"agent"));
     let binary = std::env::temp_dir().join("verified-script-scope");
     let bindings = lazypencil_xtask::ci::native::browser::binding_commands(&binary);
