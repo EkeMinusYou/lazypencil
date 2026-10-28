@@ -8,6 +8,10 @@ use std::{
 
 #[derive(Subcommand)]
 pub enum Command {
+    KittyUi {
+        #[arg(long)]
+        output: PathBuf,
+    },
     BrowserUi {
         #[arg(long)]
         output: PathBuf,
@@ -31,6 +35,7 @@ pub enum Command {
 impl Command {
     pub fn run(self) -> Result<()> {
         match self {
+            Self::KittyUi { output } => kitty_ui::prepare(&output),
             Self::BrowserUi { output } => browser_ui::prepare(&output),
             Self::Emoji { output } => emoji::prepare(
                 &util::root().join("tests/fixtures/fonts/emoji-upstream.json"),
@@ -150,4 +155,5 @@ fn performance_script(output_dir: &Path, chromium: bool) -> Result<serde_json::V
 pub mod browser_ui;
 pub mod emoji;
 pub mod fonts;
+pub mod kitty_ui;
 pub mod oracles;

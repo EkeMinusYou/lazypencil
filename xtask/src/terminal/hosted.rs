@@ -1,4 +1,4 @@
-//! Real X11 emulator pixels and keyboard input from an isolated Xvfb display.
+//! Real-emulator pixels and input from isolated hosted windows.
 use super::raster::{self, Region};
 use crate::{dist, fixtures::oracles::Raster, process, util};
 use anyhow::{Context, Result, bail, ensure};
@@ -45,12 +45,20 @@ fn cursor(frame: &Raster) -> Option<Region> {
 
 fn command(program: &str, args: &[&str]) -> Result<process::Output> {
     process::output_limited(
-        Command::new(program).args(args).env("LC_ALL", "C.UTF-8"),
+        Command::new(program).args(args).env(
+            "LC_ALL",
+            if cfg!(target_os = "macos") {
+                "en_US.UTF-8"
+            } else {
+                "C.UTF-8"
+            },
+        ),
         Duration::from_secs(10),
         65536,
     )
 }
 
+#[cfg(target_os = "linux")]
 fn xdo(args: &[&str]) -> Result<()> {
     let result = command("xdotool", args)?;
     ensure!(
@@ -83,7 +91,11 @@ fn same(a: &[Region], b: &[Region]) -> bool {
 struct Emulator {
     child: Child,
     root: PathBuf,
+    end: Instant,
+    #[cfg(target_os = "linux")]
     window: String,
+    #[cfg(target_os = "macos")]
+    window: super::macos::Window,
 }
 
 impl Drop for Emulator {
@@ -110,7 +122,17 @@ impl Drop for Emulator {
 }
 
 impl Emulator {
-    fn start(protocol: &str, binary: &Path, helper: &Path, root: &Path) -> Result<Self> {
+    fn start(
+        protocol: &str,
+        binary: &Path,
+        helper: &Path,
+        root: &Path,
+        end: Instant,
+    ) -> Result<Self> {
+        ensure!(
+            Instant::now() < end,
+            "Real-emulator suite deadline reached before starting {protocol}"
+        );
         fs::create_dir(root)?;
         fs::write(root.join("lazypencil.toml"), b"version=1\n")?;
         let document = json!({"version":"2.21","children":[{
@@ -123,6 +145,9 @@ impl Emulator {
         }]});
         fs::write(root.join("design.pen"), util::encode(&document)?)?;
         let title = format!("lazypencil-owned-{protocol}-{}", std::process::id());
+        #[cfg(target_os = "macos")]
+        let (mut launch, window) = super::macos::Window::launch(root, &title)?;
+        #[cfg(target_os = "linux")]
         let mut launch = if protocol.ends_with("kitty") {
             let config = root.join("kitty.conf");
             fs::write(
@@ -163,9 +188,11 @@ impl Emulator {
             ]);
             c
         };
+        #[cfg(target_os = "linux")]
         launch
             .args(["strace", "-f", "-s", "256", "-e", "trace=read", "-o"])
-            .arg(root.join("input.strace.log"))
+            .arg(root.join("input.strace.log"));
+        launch
             .arg(binary)
             .arg("--data-dir")
             .arg(root.join("data"))
@@ -199,9 +226,13 @@ impl Emulator {
         let mut state = Self {
             child: launch.spawn()?,
             root: root.into(),
+            end,
+            #[cfg(target_os = "linux")]
             window: String::new(),
+            #[cfg(target_os = "macos")]
+            window,
         };
-        let deadline = Instant::now() + Duration::from_secs(30);
+        let deadline = (Instant::now() + Duration::from_secs(30)).min(end);
         loop {
             if let Some(status) = state.child.try_wait()? {
                 let stderr = util::read(&root.join("emulator.stderr.log"), 8192)
@@ -211,44 +242,81 @@ impl Emulator {
                     });
                 anyhow::bail!("Emulator exited before opening its window ({status}): {stderr}");
             }
-            let result = command(
-                "xdotool",
-                &["search", "--onlyvisible", "--name", &format!("^{title}$")],
-            )?;
-            if result.status.success() {
-                let windows = std::str::from_utf8(&result.stdout)?
-                    .lines()
-                    .collect::<Vec<_>>();
-                ensure!(
-                    windows.len() == 1 && windows[0].bytes().all(|b| b.is_ascii_digit()),
-                    "Ambiguous test window"
-                );
-                state.window = windows[0].into();
+            #[cfg(target_os = "macos")]
+            if state.window.ready()? {
                 break;
+            }
+            #[cfg(target_os = "linux")]
+            {
+                let result = command(
+                    "xdotool",
+                    &["search", "--onlyvisible", "--name", &format!("^{title}$")],
+                )?;
+                if result.status.success() {
+                    let windows = std::str::from_utf8(&result.stdout)?
+                        .lines()
+                        .collect::<Vec<_>>();
+                    ensure!(
+                        windows.len() == 1 && windows[0].bytes().all(|b| b.is_ascii_digit()),
+                        "Ambiguous test window"
+                    );
+                    state.window = windows[0].into();
+                    break;
+                }
             }
             ensure!(Instant::now() < deadline, "Emulator did not map its window");
             thread::sleep(Duration::from_millis(50));
         }
+        #[cfg(target_os = "linux")]
         xdo(&["windowfocus", "--sync", &state.window])?;
         Ok(state)
     }
 
     fn key(&mut self, key: &str) -> Result<()> {
-        xdo(&["key", "--clearmodifiers", key])
+        #[cfg(target_os = "macos")]
+        {
+            self.window.key(key)
+        }
+        #[cfg(target_os = "linux")]
+        {
+            xdo(&["key", "--clearmodifiers", key])
+        }
     }
 
-    fn phase(
-        &mut self,
-        name: &str,
-        accept: impl Fn(&[Region], &Raster) -> bool,
-    ) -> Result<(Vec<Region>, u32, u32)> {
-        let deadline = Instant::now() + Duration::from_secs(30);
-        let mut previous = None;
-        loop {
-            ensure!(
-                self.child.try_wait()?.is_none(),
-                "Emulator exited during {name}"
-            );
+    fn text(&mut self, text: &str) -> Result<()> {
+        #[cfg(target_os = "macos")]
+        {
+            self.window.text(text)
+        }
+        #[cfg(target_os = "linux")]
+        {
+            xdo(&["type", "--clearmodifiers", "--delay", "30", text])
+        }
+    }
+
+    fn resize(&mut self, width: u32, height: u32) -> Result<()> {
+        #[cfg(target_os = "macos")]
+        {
+            self.window.resize(width, height)
+        }
+        #[cfg(target_os = "linux")]
+        {
+            xdo(&[
+                "windowsize",
+                &self.window,
+                &width.to_string(),
+                &height.to_string(),
+            ])
+        }
+    }
+
+    fn frame(&mut self) -> Result<Raster> {
+        #[cfg(target_os = "macos")]
+        {
+            self.window.frame()
+        }
+        #[cfg(target_os = "linux")]
+        {
             let path = self.root.join("latest.xwd");
             let result = process::output_limited(
                 Command::new("xwd")
@@ -261,7 +329,23 @@ impl Emulator {
                 !result.timed_out && result.status.success(),
                 "Screenshot capture failed"
             );
-            let frame = raster::decode(&util::read(&path, 20 * 1024 * 1024)?)?;
+            raster::decode(&util::read(&path, 20 * 1024 * 1024)?)
+        }
+    }
+
+    fn phase(
+        &mut self,
+        name: &str,
+        accept: impl Fn(&[Region], &Raster) -> bool,
+    ) -> Result<(Vec<Region>, u32, u32)> {
+        let deadline = (Instant::now() + Duration::from_secs(30)).min(self.end);
+        let mut previous = None;
+        loop {
+            ensure!(
+                self.child.try_wait()?.is_none(),
+                "Emulator exited during {name}"
+            );
+            let frame = self.frame()?;
             let current = markers(&frame);
             if let Some(regions) = current.as_ref().filter(|r| accept(r, &frame)) {
                 if previous.as_ref() == Some(regions) {
@@ -305,11 +389,8 @@ impl Emulator {
 
     fn verify(mut self) -> Result<Value> {
         self.phase("loaded", |_, frame| cursor(frame).is_some())?;
-        let initial_cursor = cursor(&raster::decode(&util::read(
-            &self.root.join("latest.xwd"),
-            20 * 1024 * 1024,
-        )?)?)
-        .context("Missing initial native prompt cursor")?;
+        let initial_cursor =
+            cursor(&self.frame()?).context("Missing initial native prompt cursor")?;
         self.key("a")?;
         self.phase("typed-cursor", |_, frame| {
             cursor(frame).is_some_and(|current| {
@@ -328,15 +409,9 @@ impl Emulator {
         // XTest temporarily remaps keycodes for Unicode. Rebinding the next
         // character before Kitty consumes the previous mapping lost a character
         // in the real stdin trace. Use observed persistence as the barrier.
-        let input_deadline = Instant::now() + Duration::from_secs(30);
+        let input_deadline = (Instant::now() + Duration::from_secs(30)).min(self.end);
         for (index, character) in JAPANESE.char_indices() {
-            xdo(&[
-                "type",
-                "--clearmodifiers",
-                "--delay",
-                "30",
-                &character.to_string(),
-            ])?;
+            self.text(&character.to_string())?;
             let expected = &JAPANESE[..index + character.len_utf8()];
             loop {
                 let saved = session(&self.root)?;
@@ -393,26 +468,16 @@ impl Emulator {
         self.phase("pan-restored", |r, _| same(r, &zoomed))?;
         self.key("minus")?;
         self.phase("zoom-restored", |r, _| same(r, &initial))?;
-        xdo(&[
-            "windowsize",
-            &self.window,
-            &(width + 160).to_string(),
-            &(height + 96).to_string(),
-        ])?;
+        self.resize(width + 160, height + 96)?;
         self.phase("resized", |r, f| {
             f.width > width && f.height > height && !same(r, &initial)
         })?;
-        xdo(&[
-            "windowsize",
-            &self.window,
-            &width.to_string(),
-            &height.to_string(),
-        ])?;
+        self.resize(width, height)?;
         self.phase("size-restored", |r, f| {
             f.width == width && f.height == height && same(r, &initial)
         })?;
         self.key("q")?;
-        let deadline = Instant::now() + Duration::from_secs(10);
+        let deadline = (Instant::now() + Duration::from_secs(10)).min(self.end);
         loop {
             if let Some(status) = self.child.try_wait()? {
                 ensure!(
@@ -437,12 +502,12 @@ impl Emulator {
             "Viewing unexpectedly started an agent"
         );
         Ok(
-            json!({"screen_capture":"XWD v7 TrueColor from real X11 window",
+            json!({"screen_capture":if cfg!(target_os="macos") {"Kitty visible-window native framebuffer PNG"} else {"XWD v7 TrueColor from real X11 window"},
             "document_sha256":util::file_digest(&self.root.join("design.pen"))?,
             "markers":"three connected primary-color regions, at least 1024 pixels each",
             "phases":["loaded","typed-cursor","prompt-restored","japanese-commit","japanese-restored","initial","zoomed","panned-right","pan-restored","zoom-restored","resized","size-restored"],
             "native_prompt_cursor":{"initial":initial_cursor,"typed_one_cell_right":true,"backspace_restored":true,"hidden_outside_prompt":true},
-            "japanese_commit":{"text":JAPANESE,"draft_sha256":util::digest(JAPANESE.as_bytes()),"source":"XTest Unicode keys through the real emulator; not physical IME","persisted_exactly":true,"native_cursor_cells":6,"backspace_restored":true,"font":"Noto Sans Mono CJK JP"},
+            "japanese_commit":{"text":JAPANESE,"draft_sha256":util::digest(JAPANESE.as_bytes()),"source":if cfg!(target_os="macos") {"Kitty remote-control committed text; not physical IME"} else {"XTest Unicode keys through the real emulator; not physical IME"},"persisted_exactly":true,"native_cursor_cells":6,"backspace_restored":true,"font":if cfg!(target_os="macos") {"Menlo with macOS Japanese fallback"} else {"Noto Sans Mono CJK JP"}},
             "keyboard_exit":"success","prompt_draft_empty":true,"agent_started":false,
             "physical_display_or_ime_acceptance":false,"latency_benchmark":false}),
         )
@@ -450,6 +515,10 @@ impl Emulator {
 }
 
 pub fn run(candidate: Option<&Path>, output: &Path) -> Result<()> {
+    // Match the existing Linux display wrapper's whole-suite budget. In the
+    // native macOS path, expiry returns through the owner guards for cleanup.
+    let end = Instant::now() + Duration::from_secs(300);
+    #[cfg(target_os = "linux")]
     ensure!(
         std::env::var_os("DISPLAY").is_some(),
         "Missing isolated X11 display"
@@ -472,9 +541,10 @@ pub fn run(candidate: Option<&Path>, output: &Path) -> Result<()> {
         verification["source_revision"] == revision,
         "Candidate belongs to another source"
     );
-    let target = match std::env::consts::ARCH {
-        "x86_64" => "x86_64-unknown-linux-gnu",
-        "aarch64" => "aarch64-unknown-linux-gnu",
+    let target = match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("linux", "x86_64") => "x86_64-unknown-linux-gnu",
+        ("linux", "aarch64") => "aarch64-unknown-linux-gnu",
+        ("macos", "aarch64") => "aarch64-apple-darwin",
         _ => bail!("Unsupported initial-release emulator architecture"),
     };
     ensure!(
@@ -485,15 +555,26 @@ pub fn run(candidate: Option<&Path>, output: &Path) -> Result<()> {
     ensure!(helper.is_file(), "Missing independent ACP test helper");
     let mut results = json!({});
     let mut failed = Vec::new();
-    for (protocol, program) in [
+    let emulators = [
         ("kitty", "kitty"),
         ("auto-kitty", "kitty"),
         ("sixel", "xterm"),
         ("auto-sixel", "xterm"),
-    ] {
+    ];
+    for (protocol, program) in emulators
+        .into_iter()
+        .filter(|(_, program)| cfg!(target_os = "linux") || *program == "kitty")
+    {
+        let installed;
+        let program = if cfg!(target_os = "macos") {
+            installed = std::env::var("LAZYPENCIL_TEST_KITTY").context("Pinned Kitty required")?;
+            installed.as_str()
+        } else {
+            program
+        };
         let version = command(
             program,
-            &[if program == "kitty" {
+            &[if protocol.ends_with("kitty") {
                 "--version"
             } else {
                 "-version"
@@ -511,35 +592,39 @@ pub fn run(candidate: Option<&Path>, output: &Path) -> Result<()> {
         );
         // Each emulator owns its window and session. Keep the other reproductions
         // after a failure, but run sequentially because XTest uses display focus.
-        let mut report = match Emulator::start(protocol, &binary, &helper, &output.join(protocol))
-            .and_then(Emulator::verify)
-        {
-            Ok(mut report) => {
-                report["status"] = json!("passed");
-                report
-            }
-            Err(error) => {
-                failed.push(protocol);
-                json!({"status":"failed","error":format!("{error:#}")})
-            }
-        };
+        let mut report =
+            match Emulator::start(protocol, &binary, &helper, &output.join(protocol), end)
+                .and_then(Emulator::verify)
+            {
+                Ok(mut report) => {
+                    report["status"] = json!("passed");
+                    report
+                }
+                Err(error) => {
+                    failed.push(protocol);
+                    json!({"status":"failed","error":format!("{error:#}")})
+                }
+            };
         report["emulator_version"] = json!(identity.trim());
-        if program == "xterm" {
+        if !protocol.ends_with("kitty") {
             report["emulator_configuration"] = json!({"decTerminalID":340,"decGraphicsID":340,"numColorRegisters":256,"font":"Noto Sans Mono CJK JP","font_size":11});
         }
         results[protocol] = report;
     }
-    util::publish(
-        &output.join("report.json"),
-        &util::encode(&json!({
-            "format_version":1,"source_commit":revision,
-            "candidate":candidate.is_some().then_some(&verification),
-            "development_build":candidate.is_none().then_some(&verification),"target":target,
-            "display":format!("Xvfb {}x{}x24; LIBGL_ALWAYS_SOFTWARE=1",super::DISPLAY_WIDTH,super::DISPLAY_HEIGHT),"protocols":results,"failed":&failed,
-            "scope":"real-emulator rendered pixels and X11 keyboard/resize; not physical-monitor, IME, clipboard, tmux/SSH or performance acceptance"
-        }))?,
-        false,
-    )?;
+    let report = json!({
+        "format_version":1,"source_commit":revision,
+        "candidate":candidate.is_some().then_some(&verification),
+        "development_build":candidate.is_none().then_some(&verification),"target":target,
+        "display":if cfg!(target_os="macos") {"macOS WindowServer; Kitty native framebuffer".into()} else {format!("Xvfb {}x{}x24; LIBGL_ALWAYS_SOFTWARE=1",super::DISPLAY_WIDTH,super::DISPLAY_HEIGHT)},"protocols":results,"failed":&failed,
+        "scope":if cfg!(target_os="macos") {"real macOS Kitty pixels, remote-control committed text/keys and native-window resize; not physical-monitor, IME, clipboard, Sixel-on-macOS, tmux/SSH or performance acceptance"} else {"real-emulator rendered pixels and X11 keyboard/resize; not physical-monitor, IME, clipboard, tmux/SSH or performance acceptance"}
+    });
+    #[cfg(target_os = "macos")]
+    let report = {
+        let mut report = report;
+        report["emulator_fixture"] = super::macos::installation()?;
+        report
+    };
+    util::publish(&output.join("report.json"), &util::encode(&report)?, false)?;
     ensure!(
         failed.is_empty(),
         "Real-emulator reproductions failed: {}",

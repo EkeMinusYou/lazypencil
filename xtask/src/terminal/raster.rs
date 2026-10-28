@@ -6,6 +6,62 @@ use flate2::{Compression, Crc, write::ZlibEncoder};
 use serde::Serialize;
 use std::{collections::VecDeque, io::Write};
 
+/// Decode a real emulator's bounded RGB/RGBA screenshot using the upstream codec.
+pub fn decode_png(bytes: &[u8]) -> Result<Raster> {
+    ensure!(
+        bytes.len() <= 20 * 1024 * 1024 && bytes.ends_with(b"\0\0\0\0IEND\xaeB`\x82"),
+        "Truncated or oversized emulator PNG"
+    );
+    let mut reader = png::Decoder::new_with_limits(
+        std::io::Cursor::new(bytes),
+        png::Limits {
+            bytes: 32 * 1024 * 1024,
+        },
+    )
+    .read_info()?;
+    let header = reader.info();
+    let (width, height) = (header.width, header.height);
+    ensure!(
+        (1..=DISPLAY_WIDTH).contains(&width)
+            && (1..=DISPLAY_HEIGHT).contains(&height)
+            && header.animation_control.is_none()
+            && header.bit_depth == png::BitDepth::Eight
+            && matches!(
+                header.color_type,
+                png::ColorType::Rgb | png::ColorType::Rgba
+            ),
+        "Expected bounded static eight-bit RGB/RGBA emulator PNG"
+    );
+    let size = reader
+        .output_buffer_size()
+        .context("PNG output size overflow")?;
+    ensure!(
+        size <= width as usize * height as usize * 4,
+        "Oversized PNG output"
+    );
+    let mut output = vec![0; size];
+    let info = reader.next_frame(&mut output)?;
+    ensure!(
+        info.width == width && info.height == height && info.buffer_size() == size,
+        "Unexpected PNG frame geometry"
+    );
+    reader.finish()?;
+    let channels = if info.color_type == png::ColorType::Rgb {
+        3
+    } else {
+        4
+    };
+    let pixels = output
+        .chunks_exact(channels)
+        .map(|p| [p[0], p[1], p[2], if channels == 4 { p[3] } else { 255 }])
+        .collect();
+    Ok(Raster {
+        width,
+        height,
+        pixels,
+    })
+}
+
 /// XWD v7's header is big-endian; pixel byte order is a separate header field.
 /// Accept RGB TrueColor windows, including 32-bit visuals on a 24-bit server.
 pub fn decode(bytes: &[u8]) -> Result<Raster> {

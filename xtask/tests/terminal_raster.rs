@@ -18,6 +18,57 @@ const COLORS: [[u8; 4]; 6] = [
     [0, 0, 0, 255],
 ];
 
+#[test]
+fn real_emulator_pngs_preserve_rgb_rgba_and_reject_crc_truncation_and_oversized_geometry() {
+    let encode = |color, width, height, data: &[u8]| {
+        let mut bytes = Vec::new();
+        let mut encoder = png::Encoder::new(&mut bytes, width, height);
+        encoder.set_color(color);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().unwrap();
+        writer.write_image_data(data).unwrap();
+        writer.finish().unwrap();
+        bytes
+    };
+    for color in [png::ColorType::Rgb, png::ColorType::Rgba] {
+        let pixels = COLORS
+            .iter()
+            .enumerate()
+            .flat_map(|(index, rgba)| {
+                let mut pixel = rgba.to_vec();
+                if color == png::ColorType::Rgb {
+                    pixel.pop();
+                } else if index == 1 {
+                    pixel[3] = 128;
+                }
+                pixel
+            })
+            .collect::<Vec<_>>();
+        let bytes = encode(color, 3, 2, &pixels);
+        let raster = raster::decode_png(&bytes).unwrap();
+        assert_eq!((raster.width, raster.height), (3, 2));
+        let mut expected = COLORS;
+        if color == png::ColorType::Rgba {
+            expected[1][3] = 128;
+        }
+        assert_eq!(raster.pixels, expected);
+        for length in 0..bytes.len() {
+            assert!(raster::decode_png(&bytes[..length]).is_err());
+        }
+        let mut corrupted = bytes.clone();
+        corrupted[29] ^= 1;
+        assert!(raster::decode_png(&corrupted).is_err());
+        let mut trailing = bytes;
+        trailing.push(0);
+        assert!(raster::decode_png(&trailing).is_err());
+    }
+    let width = DISPLAY_WIDTH + 1;
+    let bytes = encode(png::ColorType::Rgba, width, 1, &vec![0; width as usize * 4]);
+    assert!(raster::decode_png(&bytes).is_err());
+    let gray = encode(png::ColorType::Grayscale, 1, 1, &[127]);
+    assert!(raster::decode_png(&gray).is_err());
+}
+
 fn xwd(order: u32, bpp: u32) -> Vec<u8> {
     let pixel_bytes = bpp as usize / 8;
     let stride = 16;

@@ -404,6 +404,8 @@ impl Fixture {
             "tests/support/common.rs",
             "xtask/src/test_support/terminal.rs",
             "xtask/src/test_support/acp.rs",
+            "xtask/src/fixtures/browser_ui.rs",
+            "tests/fixtures/browser-ui/chromium.json",
         ] {
             if self.source.join(extra).is_file() {
                 names.push(extra);
@@ -680,6 +682,70 @@ fn shared_helpers_invalidate_every_consumer_without_rebuilding_unrelated_outputs
                 );
             }
         }
+    }
+}
+
+#[test]
+fn headed_browser_runtime_fixtures_keep_real_cargo_units_fresh_and_reject_compiled_consumers() {
+    let paths = [
+        "xtask/src/fixtures/browser_ui.rs",
+        "tests/fixtures/browser-ui/chromium.json",
+    ];
+    for consumed in [None, Some(paths[0]), Some(paths[1])] {
+        let f = Fixture::new();
+        for path in paths {
+            let path = f.source.join(path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, b"first runtime fixture\n").unwrap();
+        }
+        if let Some(path) = consumed {
+            fs::write(
+                f.source.join("src/lib.rs"),
+                format!(
+                    "pub fn fixture() -> u8 {{ assert!(!include_bytes!({}).is_empty()); 1 }}\n",
+                    json!(format!("../{path}"))
+                ),
+            )
+            .unwrap();
+        }
+        f.manifest();
+        assert_eq!(f.build(&[]).len(), 5);
+        let old = f.identity();
+        let staged = cache::stage(&f.source, &f.target, &f.full, &old);
+        if let Some(path) = consumed {
+            assert!(
+                staged.is_err(),
+                "Actual compiler input was excluded: {path}"
+            );
+            assert!(!f.full.exists(), "Rejected compiler inputs were cached");
+            continue;
+        }
+        staged.unwrap();
+        for path in paths {
+            fs::write(f.source.join(path), b"changed runtime fixture\n").unwrap();
+        }
+        f.manifest();
+        let current = f.identity();
+        assert_eq!(current.primary, old.primary);
+        f.clear();
+        cache::restore(&f.source, &f.target, &f.full, &current).unwrap();
+        let built = f.build(&[]);
+        assert_eq!(built.len(), 5);
+        assert!(built.values().all(|(fresh, _)| *fresh));
+        for name in ["library-tests", "one", "two"] {
+            process::checked(&mut Command::new(&built[name].1), Duration::from_secs(15)).unwrap();
+        }
+        let delta = cache::stage_focused(
+            &f.source,
+            &f.target,
+            &f.exact,
+            &f.full,
+            &old.compatible_primary,
+            &current,
+        )
+        .unwrap();
+        assert_eq!(delta["files"], 0);
+        assert!(!f.exact.exists(), "Unchanged full outputs were saved again");
     }
 }
 

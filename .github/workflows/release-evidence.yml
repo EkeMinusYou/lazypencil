@@ -130,9 +130,12 @@ jobs:
         if: runner.os == 'Linux'
         timeout-minutes: 20
         run: cargo xtask ci linux-terminal-dependencies
-      - name: Verify actual Kitty and Sixel window pixels and keyboard operations
+      - name: Prepare pinned Kitty for owned macOS terminal windows
+        if: runner.os == 'macOS'
+        timeout-minutes: 15
+        run: cargo xtask fixtures kitty-ui --output "$RUNNER_TEMP/kitty-ui.app"
+      - name: Verify real-terminal pixels, committed text and keyboard operations
         id: terminal-test
-        if: runner.os == 'Linux'
         timeout-minutes: 10
         run: cargo xtask terminal --candidate "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/terminal-evidence"
       - name: Retain real-emulator screenshots and source-bound report

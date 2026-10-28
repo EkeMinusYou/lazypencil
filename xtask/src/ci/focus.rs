@@ -190,17 +190,22 @@ pub fn native_clipboard_changed(paths: &[String]) -> bool {
 pub fn terminal_harness_changed(paths: &[String]) -> bool {
     paths.iter().any(|path| {
         path.starts_with("xtask/src/terminal/")
+            || path == "xtask/src/fixtures/kitty_ui.rs"
             || path.starts_with("xtask/tests/terminal") && path.ends_with(".rs")
     })
 }
 
 pub fn terminal_reproduction_stages(paths: &[String], plan: &Plan) -> (bool, bool) {
     let changed = terminal_harness_changed(paths);
-    let available = plan.platform.starts_with("ubuntu-")
+    let available = (plan.platform.starts_with("ubuntu-") || plan.platform == "macos-15")
         && !["core", "conversation", "ci"].contains(&plan.suite.as_str());
     // A core-only build has no TUI. Keep that focused check small and use the
-    // Linux full jobs' already-required default binaries for the reproduction.
-    (changed && available, changed && !available)
+    // full jobs' already-required default binaries for the reproduction. A Mac
+    // focused check covers native Kitty; retain both Linux/X11 full checks too.
+    (
+        changed && available,
+        changed && (!available || plan.platform == "macos-15"),
+    )
 }
 
 fn has(stems: &BTreeSet<String>, names: &[&str]) -> bool {
@@ -249,9 +254,15 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
             || ["src/paths.rs", "tests/paths.rs"].contains(&p.as_str())
     });
     let platform = if platform == "auto" {
-        // The X11 emulator runner exists only on Linux. Exercise it before
-        // expanding mixed keyboard/PTY changes to the complete platform set.
-        if paths
+        if paths.iter().any(|path| {
+            [
+                "xtask/src/terminal/macos.rs",
+                "xtask/src/fixtures/kitty_ui.rs",
+            ]
+            .contains(&path.as_str())
+        }) {
+            "macos-15"
+        } else if paths
             .iter()
             .any(|path| path.starts_with("xtask/src/terminal/"))
         {
@@ -442,6 +453,7 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
                 ]
                 .contains(&path.as_str())
                     || path.starts_with("xtask/src/terminal/")
+                    || path == "xtask/src/fixtures/kitty_ui.rs"
             }))
     {
         return Ok(Plan {

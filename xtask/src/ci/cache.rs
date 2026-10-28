@@ -660,8 +660,13 @@ pub fn compiled_inputs(manifest: &Manifest) -> Vec<Entry> {
         // Native notice review data is consumed by the evidence collector,
         // not embedded in the application. Compiler dep-info still rejects
         // reuse if an excluded file ever becomes an actual source input.
+        // Headed-browser installation pins/tools are also runtime-only inputs;
+        // focus selection still runs their real browser consumer independently.
         .filter(|entry| {
-            !focus::ci_only(&entry.path) && !entry.path.starts_with("resources/licenses/native/")
+            !focus::ci_only(&entry.path)
+                && !entry.path.starts_with("resources/licenses/native/")
+                && entry.path != "xtask/src/fixtures/browser_ui.rs"
+                && !entry.path.starts_with("tests/fixtures/browser-ui/")
         })
         .cloned()
         .collect::<Vec<_>>();

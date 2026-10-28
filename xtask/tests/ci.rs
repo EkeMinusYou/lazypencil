@@ -461,6 +461,28 @@ fn normal_scheduler_changes_reproduce_the_complete_catalog_before_the_matrix() {
 }
 
 #[test]
+fn macos_kitty_fixtures_reproduce_on_macos_before_preserving_linux_terminal_coverage() {
+    for path in [
+        "xtask/src/fixtures/kitty_ui.rs",
+        "xtask/src/terminal/macos.rs",
+    ] {
+        let paths = [
+            path,
+            "xtask/src/terminal/hosted.rs",
+            "xtask/src/ci/cache.rs",
+        ]
+        .map(str::to_owned);
+        let plan = focus::select(&util::root(), &paths, "auto").unwrap();
+        assert_eq!(plan.platform, "macos-15");
+        assert_eq!(plan.suite, "candidate");
+        assert_eq!(
+            focus::terminal_reproduction_stages(&paths, &plan),
+            (true, true)
+        );
+    }
+}
+
+#[test]
 fn terminal_harness_changes_keep_their_reproduction_in_mixed_application_changes() {
     let paths = ["xtask/src/terminal/hosted.rs", "src/cdp/tabs.rs"].map(str::to_owned);
     let plan = focus::select(&util::root(), &paths, "auto").unwrap();
@@ -470,18 +492,18 @@ fn terminal_harness_changes_keep_their_reproduction_in_mixed_application_changes
         focus::terminal_reproduction_stages(&paths, &plan),
         (true, false)
     );
-    for (platform, suite) in [
-        ("macos-15", "dynamic"),
-        ("ubuntu-24.04", "core"),
-        ("ubuntu-24.04", "ci"),
-        ("ubuntu-24.04-arm", "conversation"),
+    for (platform, suite, expected) in [
+        ("macos-15", "dynamic", (true, true)),
+        ("ubuntu-24.04", "core", (false, true)),
+        ("ubuntu-24.04", "ci", (false, true)),
+        ("ubuntu-24.04-arm", "conversation", (false, true)),
     ] {
         let mut selected = plan.clone();
         selected.platform = platform.into();
         selected.suite = suite.into();
         assert_eq!(
             focus::terminal_reproduction_stages(&paths, &selected),
-            (false, true)
+            expected
         );
     }
     assert!(focus::terminal_harness_changed(&[
@@ -1771,6 +1793,8 @@ fn source_fingerprints_exclude_ci_prose_and_native_review_data_and_ignore_manife
         "xtask/src/ci/cache.rs",
         "resources/licenses/native/quickjs-review.json",
         "resources/licenses/native/upstream.json",
+        "xtask/src/fixtures/browser_ui.rs",
+        "tests/fixtures/browser-ui/chromium.json",
     ] {
         let mut changed = manifest.clone();
         changed.files.push(Entry {
@@ -1899,7 +1923,18 @@ fn application_reuse_rejects_same_mtime_mutations_and_unknown_generated_or_custo
         util::encode(&manifest).unwrap(),
     )
     .unwrap();
-    for path in ["SOURCE-MANIFEST.json", review] {
+    for runtime in [
+        "xtask/src/fixtures/browser_ui.rs",
+        "tests/fixtures/browser-ui/chromium.json",
+    ] {
+        f.write_source(runtime, b"runtime-only fixture\n");
+    }
+    for path in [
+        "SOURCE-MANIFEST.json",
+        review,
+        "xtask/src/fixtures/browser_ui.rs",
+        "tests/fixtures/browser-ui/chromium.json",
+    ] {
         fs::write(
             &f.dep_info,
             format!("library: {}/{path}\n", f.source.display()),

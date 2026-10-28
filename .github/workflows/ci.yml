@@ -174,6 +174,7 @@ jobs:
       os: ${{ matrix.os }}
       phase: full
       terminal_reproduction: ${{ needs.plan.outputs.terminal_reproduction_full == 'true' }}
+      terminal_focus_platform: ${{ needs.plan.outputs.terminal_reproduction == 'true' && needs.plan.outputs.platform || '' }}
       focused_application: ${{ needs.focus.outputs.application_artifact || '' }}
 
   source:

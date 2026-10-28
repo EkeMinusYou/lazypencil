@@ -13,8 +13,10 @@ use std::{
     time::Duration,
 };
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 mod hosted;
+#[cfg(target_os = "macos")]
+mod macos;
 
 #[derive(Args)]
 pub struct Arguments {
@@ -40,10 +42,15 @@ impl Arguments {
             "Select one terminal verification input"
         );
         ensure!(
-            cfg!(target_os = "linux")
+            (cfg!(target_os = "linux") || cfg!(all(target_os = "macos", target_arch = "aarch64")))
                 && std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
-                && std::env::var("RUNNER_OS").as_deref() == Ok("Linux"),
-            "Real-emulator verification requires an isolated Linux GHA runner"
+                && std::env::var("RUNNER_OS").as_deref()
+                    == Ok(if cfg!(target_os = "macos") {
+                        "macOS"
+                    } else {
+                        "Linux"
+                    }),
+            "Real-emulator verification requires an owned supported GHA runner"
         );
         let task = Self {
             candidate: self.candidate.map(std::path::absolute).transpose()?,
@@ -56,7 +63,7 @@ impl Arguments {
 
     fn run_hosted(self) -> Result<()> {
         std::fs::create_dir_all(&self.output)?;
-        if !self.under_display {
+        if cfg!(target_os = "linux") && !self.under_display {
             let mut command = Command::new("xvfb-run");
             // Terminals are sequential clients of one owned display. Do not
             // reset the server between closing one and connecting the next.
@@ -92,13 +99,13 @@ impl Arguments {
                 &serde_json::json!({"real_emulators":"passed","protocols":["kitty","auto-kitty","sixel","auto-sixel"]}),
             );
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
             hosted::run(self.candidate.as_deref(), &self.output)
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         {
-            unreachable!("Linux guard above")
+            unreachable!("Hosted platform guard above")
         }
     }
 }
