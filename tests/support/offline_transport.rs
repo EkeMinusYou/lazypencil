@@ -5,12 +5,45 @@ use super::*;
 #[test]
 #[ignore = "Requires sandboxed headless Chromium and owned UDP/TCP sinks"]
 fn offline_page_process_blocks_stun_turn_and_webtransport_and_online_resumes() {
-    let server = transport_reference::Server::new();
     let mut rows = Vec::new();
-    for retained in [false, true] {
+    // Hold both modes' endpoints until all captures finish, including old context teardown.
+    let groups = [
+        [
+            transport_reference::Server::new(),
+            transport_reference::Server::new(),
+            transport_reference::Server::new(),
+        ],
+        [
+            transport_reference::Server::new(),
+            transport_reference::Server::new(),
+            transport_reference::Server::new(),
+        ],
+    ];
+    assert_eq!(
+        groups
+            .iter()
+            .flatten()
+            .flat_map(|server| [server.stun, server.quic, server.worker_quic])
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        18
+    );
+    assert_eq!(
+        groups
+            .iter()
+            .flatten()
+            .map(|server| server.tcp.address)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        6
+    );
+    for (mode, retained) in [false, true].into_iter().enumerate() {
         let f = LocalFixture::new("2.21");
-        let html = format!(
-            r#"<!doctype html><html><head><link rel='icon' href='data:,'><style>html{{height:100%;background:red}}body{{margin:0}}</style></head><body><script>
+        let sinks = &groups[mode];
+        let [online_sink, offline_sink, resumed_sink] = sinks;
+        let write_page = |server: &transport_reference::Server, color: &str| {
+            let html = format!(
+                r#"<!doctype html><html><head><link rel='icon' href='data:,'><style>html{{height:100%;background:red}}body{{margin:0}}</style></head><body><script>
         (async()=>{{
           let peer,transport,worker,workerURL,timer,ok=false;
           try{{
@@ -25,16 +58,18 @@ fn offline_page_process_blocks_stun_turn_and_webtransport_and_online_resumes() {
             const results=await Promise.all([new Promise(r=>setTimeout(r,1500)),observed]);document.documentElement.dataset.transportResult=results[1];ok=results[1]==='observed';
           }}catch(error){{document.documentElement.dataset.transportResult='error:'+error.name+':'+error.message.slice(0,160)}}finally{{
             clearTimeout(timer);if(peer)peer.close();if(transport)transport.close();if(worker)worker.terminate();if(workerURL)URL.revokeObjectURL(workerURL);
-            document.documentElement.style.background=ok?'#00ff00':'#ff0000';document.documentElement.dataset.transport='yes';
+            document.documentElement.style.background=ok?{color}:'#ff00ff';document.documentElement.dataset.transport='yes';
           }}
         }})();
         </script></body></html>"#,
-            stun = json!(format!("stun:{}", server.stun)),
-            turn = json!(format!("turn:{}?transport=tcp", server.tcp.address)),
-            quic = json!(format!("https://{}/owned", server.quic)),
-            worker_quic = json!(format!("https://{}/owned-worker", server.worker_quic))
-        );
-        fs::write(f.site().join("index.html"), html).unwrap();
+                stun = json!(format!("stun:{}", server.stun)),
+                turn = json!(format!("turn:{}?transport=tcp", server.tcp.address)),
+                quic = json!(format!("https://{}/owned", server.quic)),
+                worker_quic = json!(format!("https://{}/owned-worker", server.worker_quic)),
+                color = json!(color)
+            );
+            fs::write(f.site().join("index.html"), html).unwrap();
+        };
         let policy = |name: &str| {
             fs::write(f.temp.path().join("lazypencil.toml"),format!("[runtime.browser]\nnetwork_policy='{name}'\nready_selector=\"html[data-transport='yes']\"\nselector_state='attached'\ntimeout_ms=15000\n")).unwrap();
         };
@@ -43,7 +78,10 @@ fn offline_page_process_blocks_stun_turn_and_webtransport_and_online_resumes() {
         } else {
             f.runtime()
         };
-        let capture = |runtime: &mut DynamicRuntime, stage: &str, refresh: bool| {
+        let capture = |runtime: &mut DynamicRuntime,
+                       stage: &str,
+                       refresh: bool,
+                       server: &transport_reference::Server| {
             let result = f.capture_options(
                 runtime,
                 &RenderOptions {
@@ -54,7 +92,7 @@ fn offline_page_process_blocks_stun_turn_and_webtransport_and_online_resumes() {
             );
             if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
                 fs::create_dir_all(&directory).unwrap();
-                fs::write(std::path::Path::new(&directory).join("codec-offline-transports-observation.json"),serde_json::to_vec_pretty(&json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"retained":retained,"stage":stage,"STUN_TURN_pageQUIC_workerQUIC_counts":server.counts(),"error":result.as_ref().err().map(|error|json!({"code":error.code,"message":error.message}))})).unwrap()).unwrap();
+                fs::write(std::path::Path::new(&directory).join("codec-offline-transports-observation.json"),serde_json::to_vec_pretty(&json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"retained":retained,"stage":stage,"STUN_TURN_pageQUIC_workerQUIC_counts":server.counts(),"counts_by_endpoint_phase":{"online":online_sink.counts(),"offline":offline_sink.counts(),"online-resumed":resumed_sink.counts()},"error":result.as_ref().err().map(|error|json!({"code":error.code,"message":error.message}))})).unwrap()).unwrap();
             }
             result.unwrap_or_else(|error| {
                 panic!(
@@ -63,7 +101,11 @@ fn offline_page_process_blocks_stun_turn_and_webtransport_and_online_resumes() {
                 )
             })
         };
-        let mut keep = |stage: &str, image: &RenderedImage| {
+        let mut keep = |stage: &str,
+                        phase: &str,
+                        image: &RenderedImage,
+                        server: &transport_reference::Server,
+                        rgba: [u8; 4]| {
             let raster = Image::from_encoded(Data::new_copy(&image.png))
                 .unwrap()
                 .make_raster_image(None, None)
@@ -74,14 +116,14 @@ fn offline_page_process_blocks_stun_turn_and_webtransport_and_online_resumes() {
                 for x in 0..32 {
                     assert_eq!(
                         pixels.get_color((x, y)),
-                        Color::GREEN,
+                        Color::from_argb(rgba[3], rgba[0], rgba[1], rgba[2]),
                         "{retained}/{stage}/{x},{y}"
                     );
                 }
             }
-            let name = "codec-offline-transports.png";
+            let name = format!("codec-offline-transports-{phase}.png");
             if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
-                let path = std::path::Path::new(&directory).join(name);
+                let path = std::path::Path::new(&directory).join(&name);
                 if path.exists() {
                     assert_eq!(fs::read(path).unwrap(), image.png);
                 } else {
@@ -91,26 +133,27 @@ fn offline_page_process_blocks_stun_turn_and_webtransport_and_online_resumes() {
             }
             assert_eq!(acquisition(image)["page_state"]["retained"], retained);
             let metadata = acquisition(image);
-            rows.push(json!({"retained":retained,"stage":stage,"png":name,"png_hash":lazypencil::document::hash(&image.png),"STUN_TURN_pageQUIC_workerQUIC_counts":server.counts(),"network_policy":metadata["network_policy"],"limits_policy":metadata["limits"]["browser"]["network_policy"],"page_state":metadata["page_state"],"acquisition_id":metadata["acquisition_id"],"browser_version":metadata["browser_version"]}));
+            rows.push(json!({"retained":retained,"stage":stage,"endpoint_phase":phase,"png":name,"png_hash":lazypencil::document::hash(&image.png),"expected_rgba":rgba,"STUN_TURN_pageQUIC_workerQUIC_counts":server.counts(),"network_policy":metadata["network_policy"],"limits_policy":metadata["limits"]["browser"]["network_policy"],"page_state":metadata["page_state"],"acquisition_id":metadata["acquisition_id"],"browser_version":metadata["browser_version"]}));
         };
+        write_page(online_sink, "#00ff00");
         policy("online");
-        let before = server.counts();
-        let online = capture(&mut runtime, "online", false);
-        let first = server.counts();
+        let online = capture(&mut runtime, "online", false, online_sink);
+        let first = online_sink.counts();
         assert!(
-            first.0 > before.0 && first.1 > before.1 && first.2 > before.2 && first.3 > before.3,
-            "All positive transport controls must reach their owned sinks: {before:?} -> {first:?}"
+            first.0 > 0 && first.1 > 0 && first.2 > 0 && first.3 > 0,
+            "All positive transport controls must reach their owned sinks: {first:?}"
         );
         assert_eq!(acquisition(&online)["network_policy"], "online");
         assert_eq!(acquisition(&online)["page_state"]["retained"], retained);
         let online_process = runtime.process_ids();
         assert_eq!(online_process.len(), 1);
-        keep("online", &online);
+        keep("online", "online", &online, online_sink, [0, 255, 0, 255]);
+        write_page(offline_sink, "#0000ff");
         policy("offline");
-        let offline = capture(&mut runtime, "offline", false);
+        let offline = capture(&mut runtime, "offline", false, offline_sink);
         assert_eq!(
-            server.counts(),
-            first,
+            offline_sink.counts(),
+            (0, 0, 0, 0),
             "Offline STUN/TURN/QUIC must not reach their sinks"
         );
         assert_eq!(acquisition(&offline)["network_policy"], "offline");
@@ -124,9 +167,15 @@ fn offline_page_process_blocks_stun_turn_and_webtransport_and_online_resumes() {
             offline_process, online_process,
             "Policy changes must replace fresh as well as retained page processes"
         );
-        keep("offline", &offline);
-        let refreshed = capture(&mut runtime, "offline-refresh", true);
-        assert_eq!(server.counts(), first);
+        keep(
+            "offline",
+            "offline",
+            &offline,
+            offline_sink,
+            [0, 0, 255, 255],
+        );
+        let refreshed = capture(&mut runtime, "offline-refresh", true, offline_sink);
+        assert_eq!(offline_sink.counts(), (0, 0, 0, 0));
         assert_eq!(runtime.process_ids(), offline_process);
         assert_eq!(acquisition(&refreshed)["page_state"]["reused"], retained);
         assert_ne!(
@@ -139,19 +188,32 @@ fn offline_page_process_blocks_stun_turn_and_webtransport_and_online_resumes() {
                 acquisition(&offline)["page_state"]["id"]
             );
         }
-        keep("offline-refresh", &refreshed);
+        keep(
+            "offline-refresh",
+            "offline",
+            &refreshed,
+            offline_sink,
+            [0, 0, 255, 255],
+        );
+        write_page(resumed_sink, "#00ffff");
         policy("online");
-        let resumed = capture(&mut runtime, "online-resumed", false);
-        let last = server.counts();
+        let resumed = capture(&mut runtime, "online-resumed", false, resumed_sink);
+        let last = resumed_sink.counts();
         assert!(
-            last.0 > first.0 && last.1 > first.1 && last.2 > first.2 && last.3 > first.3,
-            "Online recovery must reach all owned sinks: {first:?} -> {last:?}"
+            last.0 > 0 && last.1 > 0 && last.2 > 0 && last.3 > 0,
+            "Online recovery must reach all owned sinks: {last:?}"
         );
         assert_ne!(runtime.process_ids(), offline_process);
         assert_eq!(acquisition(&resumed)["network_policy"], "online");
-        keep("online-resumed", &resumed);
+        keep(
+            "online-resumed",
+            "online-resumed",
+            &resumed,
+            resumed_sink,
+            [0, 255, 255, 255],
+        );
     }
     if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
-        fs::write(std::path::Path::new(&directory).join("codec-offline-transports.json"),serde_json::to_vec_pretty(&json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"cases":rows,"observation_ms":1500,"transport_control":"Actual STUN datagrams, TURN/TCP requests and page/worker QUIC long-header datagrams. Owned sinks intentionally do not complete sessions; positive controls prove routing, not successful peer/media or WebTransport content."})).unwrap()).unwrap();
+        fs::write(std::path::Path::new(&directory).join("codec-offline-transports.json"),serde_json::to_vec_pretty(&json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"cases":rows,"observation_ms":1500,"distinct_udp_endpoints_per_mode":9,"distinct_tcp_endpoints_per_mode":3,"distinct_udp_endpoints_total":18,"distinct_tcp_endpoints_total":6,"transport_control":"Actual STUN datagrams, TURN/TCP requests and page/worker QUIC long-header datagrams. Separate endpoints per mode and phase distinguish new acquisitions from prior context teardown; phase colors prove captured HTML freshness. Owned sinks intentionally do not complete sessions; positive controls prove routing, not successful peer/media or WebTransport content."})).unwrap()).unwrap();
     }
 }
