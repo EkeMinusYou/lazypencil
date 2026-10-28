@@ -267,11 +267,22 @@ impl Emulator {
                 if previous.as_ref() == Some(regions) {
                     let png = raster::png(&frame)?;
                     fs::write(self.root.join(format!("{name}.png")), &png)?;
+                    let draft_hash = if name.starts_with("japanese-") {
+                        let saved = session(&self.root)?;
+                        Some(util::digest(
+                            saved["draft"]
+                                .as_str()
+                                .context("Missing owned prompt draft")?
+                                .as_bytes(),
+                        ))
+                    } else {
+                        None
+                    };
                     util::publish(
                         &self.root.join(format!("{name}.json")),
                         &util::encode(&json!({
                             "width":frame.width,"height":frame.height,"markers":regions,"cursor":cursor(&frame),
-                            "png_sha256":util::digest(&png)
+                            "png_sha256":util::digest(&png),"persisted_draft_sha256":draft_hash
                         }))?,
                         false,
                     )?;
@@ -283,7 +294,10 @@ impl Emulator {
             }
             if Instant::now() >= deadline {
                 fs::write(self.root.join("failure.png"), raster::png(&frame)?)?;
-                bail!("{name} did not produce the expected rendered marker geometry: {current:?}");
+                bail!(
+                    "{name} did not produce the expected rendered state: markers={current:?}, cursor={:?}",
+                    cursor(&frame)
+                );
             }
             thread::sleep(Duration::from_millis(50));
         }
@@ -399,7 +413,7 @@ impl Emulator {
             "markers":"three connected primary-color regions, at least 1024 pixels each",
             "phases":["loaded","typed-cursor","prompt-restored","japanese-commit","japanese-restored","initial","zoomed","panned-right","pan-restored","zoom-restored","resized","size-restored"],
             "native_prompt_cursor":{"initial":initial_cursor,"typed_one_cell_right":true,"backspace_restored":true,"hidden_outside_prompt":true},
-            "japanese_commit":{"text":JAPANESE,"source":"XTest Unicode keys through the real emulator; not physical IME","persisted_exactly":true,"native_cursor_cells":6,"backspace_restored":true,"font":"Noto Sans Mono CJK JP"},
+            "japanese_commit":{"text":JAPANESE,"draft_sha256":util::digest(JAPANESE.as_bytes()),"source":"XTest Unicode keys through the real emulator; not physical IME","persisted_exactly":true,"native_cursor_cells":6,"backspace_restored":true,"font":"Noto Sans Mono CJK JP"},
             "keyboard_exit":"success","prompt_draft_empty":true,"agent_started":false,
             "physical_display_or_ime_acceptance":false,"latency_benchmark":false}),
         )
