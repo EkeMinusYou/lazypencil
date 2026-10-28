@@ -233,7 +233,9 @@ jobs:
           NATIVE_CACHE_MATCH: ${{ steps.native-cache.outputs.cache-matched-key }}
         run: cargo xtask ci native focus-prepare --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
       - name: Prepare affected feature configurations in the combined job
-        if: inputs.phase == 'verify' && inputs.suite != 'ci'
+        # Scheduler changes consume the full catalog below; avoid publishing it
+        # twice before the same complete suite. Standalone focus keeps its build.
+        if: inputs.phase == 'verify' && inputs.suite != 'ci' && inputs.suite != 'normal-ci' && inputs.suite != 'browser-ci'
         run: cargo xtask ci native focus-build --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
       - name: Reproduce affected failures before other tests and Chromium
         if: (inputs.phase == 'focus' || inputs.phase == 'verify') && inputs.suite != 'ci'
