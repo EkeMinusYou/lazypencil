@@ -596,7 +596,9 @@ fn adapter_errors_keep_numeric_codes_without_echoing_private_payloads_or_host_er
             let original = br##"{"version":"2.21","children":[{"id":"keep","type":"rectangle","width":40,"height":20,"fill":"#2563EB"}]}"##;
             std::fs::write(&file, original).unwrap();
             let session = if mode == "protocol-error-load" {
-                let first = cli(&directory, "auth-account", &[]);
+                // Resume with the same adapter arguments bound to the local
+                // conversation; only this fixture's session/load must fail.
+                let first = cli(&directory, mode, &[]);
                 assert!(
                     first.status.success(),
                     "{}",
