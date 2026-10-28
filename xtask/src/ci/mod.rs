@@ -78,15 +78,11 @@ impl Command {
                 let paths = focus::changed_paths(&root)?;
                 let platform = focus::retry_platform(&root, &platform);
                 let plan = focus::select(&root, &paths, &platform)?;
+                let platforms = focus::verification_platforms(&matrix)?;
                 ensure!(
-                    matrix == "all" || focus::PLATFORMS.contains(&matrix.as_str()),
-                    "Unsupported release platform"
+                    matrix != "all" || focus::RELEASE_PLATFORMS.contains(&plan.platform.as_str()),
+                    "Release verification must focus on a release target"
                 );
-                let platforms = if matrix == "all" {
-                    focus::PLATFORMS.iter().map(|s| s.to_string()).collect()
-                } else {
-                    vec![matrix]
-                };
                 let outputs = BTreeMap::from([
                     ("platform".into(), plan.platform.clone()),
                     ("suite".into(), plan.suite.clone()),

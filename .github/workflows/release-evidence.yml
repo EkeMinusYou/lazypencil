@@ -3,9 +3,9 @@ on:
   workflow_dispatch:
     inputs:
       os:
-        description: Hosted platform for source-bound release evidence
+        description: Mac release evidence; Linux choices are deferred-platform diagnostics
         type: choice
-        default: ubuntu-24.04-arm
+        default: macos-15
         options: [ubuntu-24.04, ubuntu-24.04-arm, macos-15]
       measure_tui:
         description: Measure the packaged TUI after all builds and other checks finish

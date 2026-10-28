@@ -1,4 +1,4 @@
-name: Native CPU profile
+name: Deferred Linux CPU profile
 on:
   workflow_dispatch:
     inputs:

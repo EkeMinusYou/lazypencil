@@ -7,15 +7,15 @@ on:
   workflow_dispatch:
     inputs:
       os:
-        description: Initial release platforms (all preserves the three-platform release gate)
+        description: Initial release target (all currently means macOS Apple Silicon only)
         type: choice
         default: all
-        options: [all, ubuntu-24.04, ubuntu-24.04-arm, macos-15]
+        options: [all, macos-15]
       focus_os:
         description: Override the affected platform for the initial reproduction
         type: choice
         default: auto
-        options: [auto, ubuntu-24.04, ubuntu-24.04-arm, macos-15]
+        options: [auto, macos-15]
   workflow_call:
     inputs:
       os:
@@ -177,7 +177,7 @@ jobs:
       focused_application: ${{ needs.focus.outputs.application_artifact || '' }}
 
   source:
-    if: ${{ !cancelled() && needs.native.result == 'success' && needs.audit.result == 'success' && (inputs.os == 'all' || inputs.os == '') }}
+    if: ${{ !cancelled() && needs.native.result == 'success' && needs.audit.result == 'success' && (inputs.os == 'all' || inputs.os == '' || inputs.os == 'macos-15') }}
     name: Verified source artifact
     needs: [native, audit]
     permissions:

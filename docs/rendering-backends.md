@@ -1,8 +1,8 @@
 # lazypencil 描画バックエンド比較
 
-確認日: 2026-10-23
+比較日: 2026-10-23／状態更新: 2026-10-28
 
-状態: Rust と Skia CPU・SkParagraph を採用。JavaScript・Web ページ・GLSL の実行経路を追加。実行速度・メモリ使用量・配布サイズは未計測。
+状態: Rust と Skia CPU／SkParagraph を採用済み。JavaScript・Web ページ・GLSL の実行と合成は旧対象3環境で検証し、実行時間・プロセス群メモリ・配布候補サイズも計測済みである。初回リリースの対象はmacOS Apple Siliconのみ。未計測の試作としては扱わない。統制した性能受け入れと最終公開は [現在の性能記録](performance.md)・[残件](implementation-status.md#remaining-work) を参照する。以下は採用時の比較根拠で、別バックエンドの実装は開始していない。
 
 採用する構成は **Rust 本体と、`skia-safe` 経由の Skia CPU・SkParagraph** とする。既存 `.pen` の継続利用と新規作成をともに実現するため、文字・合成・エフェクトを実装する総コストを重視した選択である。**SVG と resvg に段落レイアウトを組み合わせる構成**は代替案として記録する。
 
@@ -30,7 +30,7 @@ SkParagraph のような段落レイアウト機能も、`.pen` のフレーム�
 - 日本語と英数字の混在、折り返し、行高、字間、フォントの代替を扱える。
 - 複数の塗り、画像、角度グラデーション、影、ぼかし、合成へ拡張できる。
 - 大きな文書でも、表示範囲と倍率を指定して描画できる。
-- 初回対象の macOS Apple Silicon・Linux x64／arm64 で配布でき、同じフォント・設定で比較試験を行える。Windows は後日対応、Intel Mac は対象外とする。
+- 初回対象のmacOS Apple Siliconで配布し、固定したフォント・設定で比較試験を行える。Linux x64／arm64とWindowsは既存実装を保持して後日対応、Intel Macは対象外とする。
 - ライブラリ単体の小ささに加え、不足機能を補う実装と依存も含めて評価できる。
 
 `.pen` には通常のぼかしだけでなく背景のぼかし、角度・メッシュのグラデーション、独自のシェーダーもある。これらをすべて一般的な SVG の塗りやフィルターへ単純変換できるとは扱わない。[Pencil の形式仕様](https://docs.pencil.dev/for-developers/the-pen-format)

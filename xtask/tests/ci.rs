@@ -7,6 +7,37 @@ use serde_json::{Value, json};
 use std::{collections::BTreeMap, fs, path::PathBuf, process::Command};
 
 #[test]
+fn initial_release_selects_only_mac_and_preserves_explicit_deferred_diagnostics() {
+    assert_eq!(focus::verification_platforms("all").unwrap(), ["macos-15"]);
+    assert_eq!(
+        focus::verification_platforms("macos-15").unwrap(),
+        ["macos-15"]
+    );
+    for platform in ["ubuntu-24.04", "ubuntu-24.04-arm"] {
+        assert_eq!(focus::verification_platforms(platform).unwrap(), [platform]);
+    }
+    for invalid in ["windows-2025", "macos-15-intel", "unknown"] {
+        assert!(focus::verification_platforms(invalid).is_err());
+    }
+    assert_eq!(
+        focus::retry_platform(std::path::Path::new("/nonexistent"), "auto"),
+        "macos-15"
+    );
+    for paths in [
+        vec!["src/cdp.rs".to_owned()],
+        vec!["src/paths.rs".to_owned()],
+        vec!["xtask/src/terminal/hosted.rs".to_owned()],
+    ] {
+        assert_eq!(
+            focus::select(&util::root(), &paths, "auto")
+                .unwrap()
+                .platform,
+            "macos-15"
+        );
+    }
+}
+
+#[test]
 fn headed_browser_fixture_changes_reproduce_their_real_consumer_before_the_matrix() {
     for path in [
         "tests/support/browser_profiles.rs",
@@ -74,7 +105,7 @@ fn installer_only_changes_reproduce_without_native_features_and_mixed_changes_st
     .map(str::to_owned)
     .to_vec();
     let plan = focus::select(&root, &paths, "auto").unwrap();
-    assert_eq!(plan.platform, "ubuntu-24.04");
+    assert_eq!(plan.platform, "macos-15");
     assert_eq!(plan.suite, "core");
     assert_eq!(plan.targets, ["runtime"]);
     let commands = ci::commands::plan(&root, &plan.suite, &plan.targets).unwrap();
@@ -105,7 +136,7 @@ fn installer_only_changes_reproduce_without_native_features_and_mixed_changes_st
 }
 
 #[test]
-fn hosted_terminal_changes_select_linux_before_shared_bsd_bridge_checks() {
+fn hosted_terminal_changes_select_mac_and_retain_explicit_linux_diagnostics() {
     for path in [
         "src/tui/graphics.rs",
         "src/tui/terminal.rs",
@@ -119,11 +150,12 @@ fn hosted_terminal_changes_select_linux_before_shared_bsd_bridge_checks() {
             "xtask/src/test_support/terminal.rs".into(),
         ];
         let plan = focus::select(&util::root(), &paths, "auto").unwrap();
-        assert_eq!(plan.platform, "ubuntu-24.04");
+        assert_eq!(plan.platform, "macos-15");
         assert_eq!(plan.suite, "candidate");
         assert_eq!(plan.targets, ["render", "tui", "dynamic_render"]);
-        let override_plan = focus::select(&util::root(), &paths, "macos-15").unwrap();
-        assert_eq!(override_plan.platform, "macos-15");
+        let override_plan = focus::select(&util::root(), &paths, "ubuntu-24.04").unwrap();
+        assert_eq!(override_plan.platform, "ubuntu-24.04");
+        assert_eq!(override_plan.targets, plan.targets);
     }
 }
 
@@ -138,7 +170,7 @@ fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() 
         let paths = vec![path.into()];
         assert!(focus::tui_measurement_changed(&paths));
         let plan = focus::select(&util::root(), &paths, "auto").unwrap();
-        assert_eq!(plan.platform, "ubuntu-24.04");
+        assert_eq!(plan.platform, "macos-15");
         assert_eq!(plan.suite, "candidate");
         assert_eq!(plan.targets, ["render"]);
     }
@@ -399,7 +431,7 @@ fn browser_scheduler_changes_execute_the_actual_two_lanes_before_the_full_matrix
     ]
     .map(str::to_owned);
     let plan = focus::select(&util::root(), &paths, "auto").unwrap();
-    assert_eq!(plan.platform, "ubuntu-24.04");
+    assert_eq!(plan.platform, "macos-15");
     assert_eq!(plan.suite, "browser-ci");
     assert_eq!(plan.targets, focus::BROWSER_CI_TARGETS);
     let actual: std::collections::BTreeSet<_> = ci::native::browser::TEST_LANES
@@ -429,7 +461,7 @@ fn normal_scheduler_changes_reproduce_the_complete_catalog_before_the_matrix() {
     ]
     .map(str::to_owned);
     let plan = focus::select(&util::root(), &paths, "auto").unwrap();
-    assert_eq!(plan.platform, "ubuntu-24.04");
+    assert_eq!(plan.platform, "macos-15");
     assert_eq!(plan.suite, "normal-ci");
     assert!(
         plan.targets.is_empty(),
@@ -461,7 +493,7 @@ fn normal_scheduler_changes_reproduce_the_complete_catalog_before_the_matrix() {
 }
 
 #[test]
-fn macos_kitty_fixtures_reproduce_on_macos_before_preserving_linux_terminal_coverage() {
+fn macos_terminal_changes_select_native_pty_without_requiring_deferred_linux_pixels() {
     for path in [
         "xtask/src/fixtures/kitty_ui.rs",
         "xtask/src/terminal/macos.rs",
@@ -479,7 +511,7 @@ fn macos_kitty_fixtures_reproduce_on_macos_before_preserving_linux_terminal_cove
         assert!(ci::commands::terminal_reproduction(&plan.suite, &plan.targets).is_some());
         assert_eq!(
             focus::terminal_reproduction_stages(&paths, &plan),
-            (false, true)
+            (false, false)
         );
     }
 }
@@ -492,13 +524,14 @@ fn terminal_harness_changes_keep_their_reproduction_in_mixed_application_changes
     assert!(focus::terminal_harness_changed(&paths));
     assert_eq!(
         focus::terminal_reproduction_stages(&paths, &plan),
-        (true, false)
+        (false, false)
     );
     for (platform, suite, expected) in [
-        ("macos-15", "dynamic", (false, true)),
-        ("ubuntu-24.04", "core", (false, true)),
-        ("ubuntu-24.04", "ci", (false, true)),
-        ("ubuntu-24.04-arm", "conversation", (false, true)),
+        ("ubuntu-24.04", "dynamic", (true, false)),
+        ("macos-15", "dynamic", (false, false)),
+        ("ubuntu-24.04", "core", (false, false)),
+        ("ubuntu-24.04", "ci", (false, false)),
+        ("ubuntu-24.04-arm", "conversation", (false, false)),
     ] {
         let mut selected = plan.clone();
         selected.platform = platform.into();
@@ -534,7 +567,7 @@ fn font_sources_generators_and_pins_select_native_color_reproductions_before_the
     ] {
         assert_eq!(focus::ci_only(path), path.starts_with("xtask/"), "{path}");
         let plan = focus::select(&util::root(), &[path.into()], "auto").unwrap();
-        assert_eq!(plan.platform, "ubuntu-24.04");
+        assert_eq!(plan.platform, "macos-15");
         assert_eq!(plan.suite, "graphics", "{path}");
         assert_eq!(plan.targets, ["font_sources"], "{path}");
         assert!(ci::commands::color_font_reproduction(&plan.suite, &plan.targets).is_some());
@@ -677,7 +710,7 @@ fn generated_reference_changes_reproduce_the_real_script_binding_cases_first() {
         "tests/support/script_generated_overrides.rs",
     ] {
         let plan = focus::select(&util::root(), &[path.into()], "auto").unwrap();
-        assert_eq!(plan.platform, "ubuntu-24.04");
+        assert_eq!(plan.platform, "macos-15");
         assert_eq!(plan.suite, "graphics");
         assert!(plan.targets.iter().any(|target| target == "script_scope"));
         assert!(!plan.preprocessor);
@@ -833,7 +866,7 @@ fn release_recipe_helpers_compile_on_one_platform_before_the_full_matrix() {
             "auto",
         )
         .unwrap();
-        assert_eq!(plan.platform, "ubuntu-24.04");
+        assert_eq!(plan.platform, "macos-15");
         assert_eq!(plan.suite, "release");
         assert_eq!(plan.targets, ["render"]);
         let commands = ci::commands::plan(&util::root(), &plan.suite, &plan.targets).unwrap();
@@ -878,9 +911,14 @@ fn candidate_packaging_changes_run_a_real_candidate_gate_before_the_matrix() {
             "auto",
         )
         .unwrap();
-        assert_eq!(plan.platform, "ubuntu-24.04");
+        assert_eq!(plan.platform, "macos-15");
         assert_eq!(plan.suite, "candidate");
-        assert_eq!(plan.targets, ["render"]);
+        let expected = if path.starts_with("xtask/src/terminal/") {
+            vec!["render", "tui"]
+        } else {
+            vec!["render"]
+        };
+        assert_eq!(plan.targets, expected);
         let commands = ci::commands::plan(&util::root(), &plan.suite, &plan.targets).unwrap();
         assert!(!commands.build.is_empty() && !commands.checks.is_empty());
     }

@@ -1,8 +1,8 @@
 # lazypencil フォントと対応環境
 
-確認日: 2026-10-24
+更新日: 2026-10-28（現行コードと既存検証記録の照合）
 
-状態: 初回は macOS Apple Silicon・Linux x64／arm64 を対象とし、標準フォントに Noto Sans JP、端末画像に Kitty Graphics Protocol と Sixel を採用する。Noto Sans JP の配布データは版・ハッシュを固定済み。ユーザーによるフォント追加は `--font`、TTF・OTF・TTC・OTC の読み取りと各フェイスの取得、基本のフォールバックを実装・試験した。プロジェクト設定のファイル・検索先・既定書体・任意代替列・言語も CLI・MCP・TUI で共通化した。ユーザー共通の `config.toml` と項目ごとのプロジェクト上書きも実装した。完全な絵文字・可変軸・遅延探索・各 OS の保証は未完成。[現在の実装と検証](fonts.md)、[設定](configuration.md)
+状態: 初回はmacOS Apple Siliconのみを対象とし、Linux x64／arm64とWindowsは後日対応として既存実装を保持する。標準フォントに Noto Sans JP、端末画像に Kitty Graphics Protocol と Sixel を採用する。Noto Sans JP の配布データは版・ハッシュを固定済み。ユーザーによるフォント追加は `--font`、TTF・OTF・TTC・OTC の読み取りと各フェイスの取得、基本のフォールバックを実装・試験した。プロジェクト設定のファイル・検索先・既定書体・任意代替列・言語も CLI・MCP・TUI で共通化した。ユーザー共通の `config.toml` と項目ごとのプロジェクト上書きも実装した。完全な絵文字・可変軸・遅延探索・各 OS の保証は未完成。[現在の実装と検証](fonts.md)、[設定](configuration.md)
 
 ## フォントの扱い
 
@@ -14,7 +14,7 @@
 
 ユーザーは OS へフォントをインストールするか、フォントファイルをユーザーの検索先またはプロジェクト内へ配置して設定から指定できる。プロジェクト内のファイルは OS へのインストールなしで利用できる。追加したフォントは CLI・MCP・TUI で共通して使い、AI による新規作成・編集でも指定できる。専用のフォント配信サービスや一覧カタログは必須にしない。
 
-可変フォントの weight 軸を利用する案を第一候補にする。同じファイルで複数の太さを扱えるが、採用版の SkParagraph での選択・計測・描画を検証し、静的フォントの構成とも配布サイズとメモリを比較する。フォント名だけでなく、取得元のリビジョンとファイルの SHA-256 を固定する。[公式メタデータ](https://raw.githubusercontent.com/google/fonts/main/ofl/notosansjp/METADATA.pb)
+標準パックは Google Fonts revision66a36c8c94b1a5d992ee4e7f392fccfe4945767c の可変 wght TTF を採用済み。元の9,589,900バイト、SHA-256と OFL／publisher metadata は [manifest](../resources/fonts/manifest.json) に記録し、元データとの照合・可変 weight の組版／描画を検証した。通常描画でフォントを取得・更新しない。
 
 Noto Sans JP の配布時は OFL 1.1 の著作権表記とライセンス本文を保持し、フォント自体のライセンスを表示する。本プロジェクトの MIT ライセンスに置き換えない。[付属ライセンス](https://github.com/google/fonts/blob/main/ofl/notosansjp/OFL.txt)
 
@@ -49,33 +49,32 @@ SkParagraph がファイルから読み込んだフォントで組版し、そ�
 
 TUI の会話・メニューの文字は端末のフォントに従う。デザインの文字は Skia で画像化するため、プレビュー用のフォントを端末へインストールする必要はない。
 
-## クロスプラットフォーム
+## 対応環境と後日のクロスプラットフォーム対応
 
-macOS Apple Silicon・Linux x64／arm64 の3環境で、CLI・MCP・TUI と JavaScript・Web ページ・シェーダーを含む共通機能を初回リリースの対象とする。
+初回リリースはmacOS Apple Silicon（arm64）のみとする。CLI・MCP・TUI、JavaScript／Webページ／GLSL、フォント・保存・AI接続・画像貼付・性能・配布の元の完成条件はMacで満たす。
 
-初回リリースの対象は次のとおりとする。対象の指定と、すべての完成条件を検証済みであることは区別する。
+最低macOSと保証する端末は実際の互換試験から固定する。標準GHAのmacos-15で動くことと、より古いmacOSや物理端末での受け入れは区別する。
 
-| OS | 初回の対象 CPU | 確定する互換条件 |
-| --- | --- | --- |
-| macOS | Apple Silicon（arm64） | 最低 OS バージョンと端末を固定する |
-| Linux | x86_64、glibc 系 | ディストリビューション・最低版と端末を固定する |
-| Linux | arm64、glibc 系 | ディストリビューション・最低版と端末を固定する |
+Linux x64／arm64とWindowsは後日対応とし、既存コード・runtime catalogue・テストfixtureと明示診断経路を保持する。通常CIではLinuxアプリをビルドせず、Linuxのディストリビューション／ABI条件は初回の完成条件に含めない。Intel Macは対象外。依存ライブラリのプリビルドが存在するだけで対応済みとは扱わない。
 
-Intel Mac はサポート対象外、Windows は後日対応とする。Windows の既存実装・試験は保持し、追加対応を初回リリースの完了条件に含めない。依存ライブラリに他環境のプリビルドがあっても、lazypencil 全体の配布を保証するものではない。Linux のプリビルドには glibc・libstdc++ の条件があるため、本体と Chromium の両方を満たす対象ディストリビューション・版を固定する。[rust-skia の対応環境](https://github.com/rust-skia/rust-skia#platform-support-build-targets-and-prebuilt-binaries)
-
-Chromium の配布物と必要なシステムライブラリ、JS エンジンのビルド、ソフトウェア WebGL、外部 AI アダプターを各対象で検証する。取得する実行環境は OS・CPU ごとに版とハッシュを固定し、配布元の対応表の存在だけで動作保証しない。[Chrome for Testing の提供状況](https://googlechromelabs.github.io/chrome-for-testing/)
-
-OS 依存処理には、パス・設定保存先・ファイルロック・原子的な置換・子プロセス終了・端末制御を含める。対象3環境でネイティブ実行と保存・復旧を検証する。後日の Windows 対応では、WSL 上の Linux 動作だけで対応済みとは扱わない。
+MacでのChromium、ソフトウェアWebGL、外部AI、パス・ロック・原子的置換・子プロセス・端末を検証する。軽量な監査・ソース梱包用Linux jobは実行ホストであり、製品の対応OSを増やすものではない。
 
 ### 端末内の画像
 
 Kitty Graphics Protocol と Sixel の両方を初期リリースの対応対象とする。最初に Kitty を実装し、続いて Sixel を実装する。端末の応答で利用可否を調べ、設定でも選択できるようにする。OS・CPU の対応と端末の画像プロトコルの対応は別々に公開する。
 
-Sixel では色の量子化、転送量、再描画・拡大縮小の応答も確認する。PNG 出力を画質の基準とし、端末内の表示方式による差を記録する。各対象環境で少なくとも一つの端末による画像閲覧・日本語入力・キーボード操作を受け入れ条件にする。画像非対応端末では既存の外部ビューアへの導線を提供する。
+Sixel では色の量子化、転送量、再描画・拡大縮小の応答も確認する。PNG 出力を画質の基準とし、端末内の表示方式による差を記録する。Macで保証する端末による画像閲覧・日本語入力・キーボード操作と、Kitty／Sixel両方のbackendの動作を受け入れ条件にする。Linuxの成功だけでMacの端末を受け入れ済みとは扱わない。画像非対応端末では既存の外部ビューアへの導線を提供する。
 
 P0 でクロスプラットフォーム上の問題が判明した場合は、機能または環境ごとに原因と対策を記録し、対応範囲の変更が必要なら判断材料を提示する。基本設計の時点で実機確認済みとは表現しない。
 
-### 現在の実行確認
+### 現在の検証根拠
+
+旧3環境方針の確定済み基準は [c9ffb37 の全体CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40679529757)。両 feature 構成・通常／動的描画・フォント・native clipboard・実 PTY・release を含む。Linux の実 Kitty／Sixel 画像も別の成功根拠がある。最低 OS、保証端末、物理 macSKK と最終公開は未受け入れであり、標準Mac VMでは Kitty の OpenGL 初期化が失敗する。[現在の残件](implementation-status.md#remaining-work)
+
+<details>
+<summary>初期ローカル／コンテナー検証の履歴（当時の source に限定）</summary>
+
+ここから下の「その後の変更を含めない」は当時の比較条件であり、現在のGHA未検証を意味しない。
 
 2026-10-23: macOS arm64・Rust 1.99.1 に加え、独立した Debian 12 arm64 コンテナー・Rust 1.94.0 で、配布用ソースアーカイブからビルドした。通常354試験・描画なし205試験が成功し、実 PTY の日本語入力、Kitty／Sixel の独立復号、設定フォントの変更も含めて確認した。Rust 1.94 の Clippy に合わせて等価な条件式へ変更した後、両構成の静的検査と関連32試験を再実行した。実 CLI で Noto Sans JP と mesh を含む26ノードの作例を1040×900へ描画し、診断0件と画像を目視確認した。これは物理的な Linux 端末・クリップボード、Linux の全ディストリビューション、Chromium／外部 AI の実動作、最低 OS 条件、各 CPU 全体の確認を代替しない。
 
@@ -90,3 +89,5 @@ P0 でクロスプラットフォーム上の問題が判明した場合は、�
 要求中の資料取得記録と会話ログ失敗時の処理を含む262ファイルのソースでも、同じ Linux 環境で通常389・描画なし232試験、両構成の静的検査、配布関連12試験、release ビルドと mesh／1,000ノードの描画が終了コード0で成功した。その後の素材公開のロック・取消の修正はこの固定ソースに含めず、macOS の通常395・描画なし238試験等で別に検証した。
 
 CI は初回対象の macOS Apple Silicon・Linux x64／arm64 で配布ソースから検証する。対象試験の成功後に3環境へ広げ、両 feature 構成・Chromium・実 PTY・release を含む検証を維持する。Windows と Intel Mac の実行は初回の gate に含めない。設定の存在と各 source の成功実績は区別し、詳しい記録は [実装状況](implementation-status.md) に残す。
+
+</details>

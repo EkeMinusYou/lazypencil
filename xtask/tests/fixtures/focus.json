@@ -4,7 +4,7 @@
       "src/cdp.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "dynamic",
       "targets": [
         "browser_readiness",
@@ -21,7 +21,7 @@
       "src/runtime.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "runtime"
@@ -34,7 +34,7 @@
       "src/layout.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "graphics",
@@ -50,7 +50,7 @@
       "src/error.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "document_store",
@@ -64,7 +64,7 @@
       "src/process_owner.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent"
@@ -77,7 +77,7 @@
       "src/config.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "config"
@@ -90,7 +90,7 @@
       "src/shader.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "shader",
       "targets": [
         "shader_uniforms"
@@ -103,7 +103,7 @@
       "src/color.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "graphics",
@@ -120,7 +120,7 @@
       "src/image_input.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "document_store",
@@ -134,7 +134,7 @@
       "src/render.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "render",
       "targets": [
         "blends",
@@ -152,7 +152,7 @@
       "src/cancel.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "document_store",
@@ -166,7 +166,7 @@
       "src/lib.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "document_store",
@@ -193,7 +193,7 @@
       "src/query.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "queries"
@@ -206,7 +206,7 @@
       "src/store.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "document_store"
@@ -219,7 +219,7 @@
       "src/service.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "document_store",
@@ -234,7 +234,7 @@
       "src/guidance.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "guidance"
@@ -247,7 +247,7 @@
       "src/image_geometry.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "graphics",
@@ -264,7 +264,7 @@
       "src/project.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "project",
@@ -278,7 +278,7 @@
       "src/prompt.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "document_store",
@@ -292,7 +292,7 @@
       "src/main.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "document_store",
@@ -306,7 +306,7 @@
       "src/clipboard.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "graphics",
@@ -323,7 +323,7 @@
       "src/agent.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent"
@@ -336,7 +336,7 @@
       "src/document.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "document_store"
@@ -349,7 +349,7 @@
       "src/text.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "font_sources",
@@ -364,7 +364,7 @@
       "src/geometry.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "geometry"
@@ -377,7 +377,7 @@
       "src/assets.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "assets"
@@ -390,7 +390,7 @@
       "src/managed.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "document_store",
@@ -404,7 +404,7 @@
       "src/dynamic.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "dynamic",
       "targets": [
         "browser_readiness",
@@ -421,7 +421,7 @@
       "src/operations.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "operations_cli"
@@ -434,7 +434,7 @@
       "src/attachments.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent",
@@ -449,7 +449,7 @@
       "src/mcp.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "mcp"
@@ -462,7 +462,7 @@
       "src/cli.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "document_store",
@@ -476,7 +476,7 @@
       "src/cdp/tabs.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "dynamic",
       "targets": [
         "browser_readiness",
@@ -493,7 +493,7 @@
       "src/cdp/readiness.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "dynamic",
       "targets": [
         "browser_readiness",
@@ -510,7 +510,7 @@
       "src/cdp/lifecycle.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "dynamic",
       "targets": [
         "browser_readiness",
@@ -527,7 +527,7 @@
       "src/cdp/process.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent"
@@ -540,7 +540,7 @@
       "src/cdp/connection.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "dynamic",
       "targets": [
         "browser_readiness",
@@ -557,7 +557,7 @@
       "src/dynamic/preprocessor.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "dynamic",
       "targets": [
         "browser_readiness",
@@ -574,7 +574,7 @@
       "src/dynamic/shader.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "dynamic",
       "targets": [
         "browser_readiness",
@@ -591,7 +591,7 @@
       "src/config/keys.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "tui",
@@ -605,7 +605,7 @@
       "src/config/agents.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "config"
@@ -618,7 +618,7 @@
       "src/config/runtime.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "dynamic",
       "targets": [
         "browser_readiness",
@@ -635,7 +635,7 @@
       "src/config/conversations.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "config"
@@ -648,7 +648,7 @@
       "src/guidance/usage.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent",
@@ -663,7 +663,7 @@
       "src/guidance/project.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "guidance",
@@ -677,7 +677,7 @@
       "src/tui/checkpoints.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "tui",
@@ -691,7 +691,7 @@
       "src/tui/terminal.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "candidate",
       "targets": [
         "render",
@@ -705,7 +705,7 @@
       "src/tui/preview.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "candidate",
       "targets": [
         "render",
@@ -719,7 +719,7 @@
       "src/tui/graphics.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "candidate",
       "targets": [
         "render",
@@ -733,7 +733,7 @@
       "src/tui/playback.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "dynamic",
       "targets": [
         "browser_readiness",
@@ -750,7 +750,7 @@
       "src/tui/mod.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "tui",
@@ -764,7 +764,7 @@
       "src/tui/saved.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "tui",
@@ -778,7 +778,7 @@
       "src/tui/tests.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "dynamic",
       "targets": [
         "browser_readiness",
@@ -795,7 +795,7 @@
       "src/runtime/diagnostics.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "dynamic",
       "targets": [
         "browser_readiness",
@@ -812,7 +812,7 @@
       "src/render/mesh.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "render",
       "targets": [
         "blends",
@@ -830,7 +830,7 @@
       "src/render/polygon.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "render",
       "targets": [
         "blends",
@@ -848,7 +848,7 @@
       "src/render/backdrop.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "render",
       "targets": [
         "blends",
@@ -866,7 +866,7 @@
       "src/render/blending.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "render",
       "targets": [
         "blends",
@@ -884,7 +884,7 @@
       "src/agent/auth.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent"
@@ -897,7 +897,7 @@
       "src/agent/process.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent"
@@ -910,7 +910,7 @@
       "src/agent/permissions.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent"
@@ -923,7 +923,7 @@
       "src/agent/settings.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent"
@@ -936,7 +936,7 @@
       "src/document/codec.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "document_store"
@@ -949,7 +949,7 @@
       "src/operations/import.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "operations_cli"
@@ -962,7 +962,7 @@
       "src/script/layout.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "layout",
@@ -980,7 +980,7 @@
       "src/script/header.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "script_diagnostics",
@@ -996,7 +996,7 @@
       "src/script/worker.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "script_diagnostics",
@@ -1012,7 +1012,7 @@
       "src/script/mod.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "script_diagnostics",
@@ -1028,7 +1028,7 @@
       "src/script/diagnostic.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "script_diagnostics",
@@ -1044,7 +1044,7 @@
       "src/project/detach.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "copy",
       "targets": [
         "detach",
@@ -1061,7 +1061,7 @@
       "src/project/variables.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "project",
@@ -1075,7 +1075,7 @@
       "src/project/import.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "project",
@@ -1089,7 +1089,7 @@
       "src/project/missing.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "project",
@@ -1103,7 +1103,7 @@
       "src/project/scope.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "copy",
       "targets": [
         "project",
@@ -1119,7 +1119,7 @@
       "src/project/failed_code.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "project",
@@ -1133,7 +1133,7 @@
       "src/project/bindings.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "copy",
       "targets": [
         "project",
@@ -1149,7 +1149,7 @@
       "src/icons/drawing.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "icons"
@@ -1162,7 +1162,7 @@
       "src/icons/optional.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "icons"
@@ -1175,7 +1175,7 @@
       "src/icons/mod.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "icons"
@@ -1188,7 +1188,7 @@
       "src/shader/declarations.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "shader",
       "targets": [
         "shader_uniforms"
@@ -1201,7 +1201,7 @@
       "src/shader/defaults.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "shader",
       "targets": [
         "shader_uniforms"
@@ -1214,7 +1214,7 @@
       "src/text/fonts.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "font_sources",
@@ -1229,7 +1229,7 @@
       "src/text/container.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "font_sources",
@@ -1244,7 +1244,7 @@
       "src/text/decorations.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "font_sources",
@@ -1259,7 +1259,7 @@
       "src/service/guidance.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "guidance"
@@ -1272,7 +1272,7 @@
       "src/service/validation.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "document_store",
@@ -1286,7 +1286,7 @@
       "src/service/calculated_nodes.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "calculated_nodes"
@@ -1299,7 +1299,7 @@
       "src/store/content.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "document_store"
@@ -1312,7 +1312,7 @@
       "src/conversation/mod.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent",
@@ -1326,7 +1326,7 @@
       "src/conversation/history.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent",
@@ -1340,7 +1340,7 @@
       "src/conversation/lease.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent",
@@ -1356,7 +1356,7 @@
       "src/conversation/continuity.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent",
@@ -1370,7 +1370,7 @@
       "src/conversation/storage.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent",
@@ -1386,7 +1386,7 @@
       "src/conversation/management.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent",
@@ -1400,7 +1400,7 @@
       "src/conversation/management/cleanup.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent",
@@ -1414,7 +1414,7 @@
       "src/conversation/management/retention.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent",
@@ -1428,7 +1428,7 @@
       "src/conversation/management/deletion.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent",
@@ -1442,7 +1442,7 @@
       "src/conversation/history/display.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent",
@@ -1456,7 +1456,7 @@
       "src/conversation/management/retention/tests.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent",
@@ -1470,7 +1470,7 @@
       "src/project/import/samplers.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "project",
@@ -1484,7 +1484,7 @@
       "src/project/import/scripts.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "copy",
       "targets": [
         "project",
@@ -1500,7 +1500,7 @@
       "src/project/import/scripts/composition.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "copy",
       "targets": [
         "project",
@@ -1516,7 +1516,7 @@
       "src/agent/process/unix.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent"
@@ -1529,7 +1529,7 @@
       "src/agent/process/windows.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent"
@@ -1542,7 +1542,7 @@
       "src/config/keys/navigation.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "tui",
@@ -1556,7 +1556,7 @@
       "src/cdp/connection/tests.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "dynamic",
       "targets": [
         "browser_readiness",
@@ -1573,7 +1573,7 @@
       "src/cdp/process/unix.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent"
@@ -1586,7 +1586,7 @@
       "src/cdp/process/windows.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent"
@@ -1599,7 +1599,7 @@
       "tests/native_layout.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "native_layout"
@@ -1612,7 +1612,7 @@
       "tests/operations_cli.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "operations_cli"
@@ -1625,7 +1625,7 @@
       "tests/detach.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "detach"
@@ -1638,7 +1638,7 @@
       "tests/background.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "background"
@@ -1651,7 +1651,7 @@
       "tests/imports.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "dynamic",
       "targets": [
         "browser_readiness",
@@ -1668,7 +1668,7 @@
       "tests/runtime.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "runtime"
@@ -1681,7 +1681,7 @@
       "tests/shader_uniforms.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "shader",
       "targets": [
         "shader_uniforms"
@@ -1694,7 +1694,7 @@
       "tests/mesh.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "mesh"
@@ -1707,7 +1707,7 @@
       "tests/script_diagnostics.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "script_diagnostics"
@@ -1720,7 +1720,7 @@
       "tests/icons.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "icons"
@@ -1733,7 +1733,7 @@
       "tests/layout.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "layout"
@@ -1746,7 +1746,7 @@
       "tests/user_agent_config.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "user_agent_config"
@@ -1759,7 +1759,7 @@
       "tests/script_render.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "script_render"
@@ -1772,7 +1772,7 @@
       "tests/config.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "config"
@@ -1785,7 +1785,7 @@
       "tests/optional_icons.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "optional_icons"
@@ -1798,7 +1798,7 @@
       "tests/font_sources.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "font_sources"
@@ -1811,7 +1811,7 @@
       "tests/render.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "render"
@@ -1837,7 +1837,7 @@
       "tests/script_scope.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "script_scope"
@@ -1850,7 +1850,7 @@
       "tests/graphics.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "graphics"
@@ -1863,7 +1863,7 @@
       "tests/repair.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "repair"
@@ -1876,7 +1876,7 @@
       "tests/runtime_config.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "dynamic",
       "targets": [
         "browser_readiness",
@@ -1894,7 +1894,7 @@
       "tests/browser_readiness.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "dynamic",
       "targets": [
         "browser_readiness",
@@ -1911,7 +1911,7 @@
       "tests/guidance.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "guidance"
@@ -1924,7 +1924,7 @@
       "tests/sampler_sources.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "dynamic",
       "targets": [
         "browser_readiness",
@@ -1941,7 +1941,7 @@
       "tests/project_guidance.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "project_guidance"
@@ -1954,7 +1954,7 @@
       "tests/project.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "project"
@@ -1967,7 +1967,7 @@
       "tests/components.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "components"
@@ -1980,7 +1980,7 @@
       "tests/conversation_history.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "conversation_history"
@@ -1993,7 +1993,7 @@
       "tests/scripts.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "scripts"
@@ -2006,7 +2006,7 @@
       "tests/blends.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "blends"
@@ -2019,7 +2019,7 @@
       "tests/agent.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent"
@@ -2032,7 +2032,7 @@
       "tests/dynamic_render.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "dynamic",
       "targets": [
         "browser_readiness",
@@ -2049,7 +2049,7 @@
       "tests/text.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "text"
@@ -2062,7 +2062,7 @@
       "tests/geometry.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "geometry"
@@ -2075,7 +2075,7 @@
       "tests/assets.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "assets"
@@ -2088,7 +2088,7 @@
       "tests/queries.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "queries"
@@ -2101,7 +2101,7 @@
       "tests/tui.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "dynamic",
       "targets": [
         "browser_readiness",
@@ -2119,7 +2119,7 @@
       "tests/document_store.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "document_store"
@@ -2132,7 +2132,7 @@
       "tests/calculated_nodes.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "calculated_nodes"
@@ -2145,7 +2145,7 @@
       "tests/attachments.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "attachments"
@@ -2158,7 +2158,7 @@
       "tests/mcp.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "mcp"
@@ -2171,7 +2171,7 @@
       "tests/user_config.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "core",
       "targets": [
         "user_config"
@@ -2184,7 +2184,7 @@
       "tests/windows_agent.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "conversation",
       "targets": [
         "agent"
@@ -2197,7 +2197,7 @@
       "tests/agent_workflow.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "graphics",
@@ -2214,7 +2214,7 @@
       "README.md"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "ci",
       "targets": [],
       "preprocessor": false
@@ -2225,7 +2225,7 @@
       "docs/design.md"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "ci",
       "targets": [],
       "preprocessor": false
@@ -2236,7 +2236,7 @@
       ".github/workflows/ci.yml"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "ci",
       "targets": [],
       "preprocessor": false
@@ -2248,7 +2248,7 @@
       "src/shader.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "dynamic",
       "targets": [
         "browser_readiness",
@@ -2270,7 +2270,7 @@
       "src/shader.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "dynamic",
       "targets": [
         "browser_readiness",
@@ -2291,7 +2291,7 @@
       ".github/workflows/native.yml"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "graphics",
@@ -2312,7 +2312,7 @@
       "tests/tui.rs"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "graphics",
       "targets": [
         "agent",
@@ -2331,7 +2331,7 @@
       ".github/workflows/ci.yml"
     ],
     "expected": {
-      "platform": "ubuntu-24.04",
+      "platform": "macos-15",
       "suite": "copy",
       "targets": [
         "project",

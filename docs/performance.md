@@ -1,5 +1,28 @@
 # Performance observations
 
+## Current interpretation, 2026-10-28
+
+The first release now targets **macOS Apple Silicon only**. Linux native builds, distro/ABI acceptance and binary distribution are deferred. The measurements below retain their original cross-platform source/environment scope; Linux success is supporting history, not a current release requirement. Mac functionality, Kitty/Sixel, clipboard, process-group accounting and the original performance criteria remain required. Single-target CI timing has not yet been measured, and its critical path is not assumed to shrink by two-thirds.
+
+The completed three-target baseline is [c9ffb37](https://github.com/EkeMinusYou/lazypencil/actions/runs/40679529757). Its workflow took 38m28s including a 17m30s focused runtime-concurrency check; native jobs took 16m35s / 17m57s / 20m05s on Linux x64 / Linux arm64 / macOS. Different focus scopes, runner images and cache states prevent a controlled comparison with the original 27–29 minutes. Stable whole-workflow acceleration remains unproven. Same-environment artifact reuse, test-only invalidation and independent test concurrency have individually verified results below.
+
+The later measured macOS candidate at `7fe854b` recorded ordinary bound RSS **172.03 MiB**, cached-feedback p95 **32.72 ms**, and a complete 30.12s ordinary idle interval with CPU upper bound **0.963%**. The platform-scoped MCP allocator policy remains in `src/conversation/mod.rs`; the earlier 200 MiB failures are historical, not the current known state. The separate Chromium trace reached 1,254.16 MiB. Summed sampled RSS is not an atomic kernel peak or a physical-terminal measurement.
+
+Existing Linux observations also satisfy the ordinary sampled-memory target under their recorded conditions. Complete performance acceptance still requires the specified controlled cold/warm conditions, guaranteed environments and the separate Chromium budget. Reuse valid unchanged-condition evidence; do not repeat every historical measurement merely because the documentation changed.
+
+The runtime-only browser installer/catalogue exclusion passed its real-Cargo freshness and compiled-consumer rejection regressions in the 219-test tool gate at `95e2b6f`. That source's [CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40689894389) was still running at this documentation cutoff; native cache/timing effects are not yet accepted.
+
+## Remaining work
+
+Retain the original 1,000-node, 1920×1080 workloads, all original startup/interaction trials, full idle intervals, application process-group accounting and separate external-runtime accounting. Confirm only the missing conditions or behavior affected by a later code change. Source/binary/fixture/environment identities determine whether prior evidence applies.
+
+Working-raster reservations and culling are implemented and bounded; those guards do not themselves establish an RSS result. Further optimization should follow a reproduced acceptance failure or a measured bottleneck, rather than treating every past failure as still open.
+
+<details>
+<summary>Historical measurements and implementation observations</summary>
+
+These are results and plans at each named source. A historical “prepared”, “awaiting GHA” or “target not met” statement is not the current status. Later successful results and the current interpretation above supersede it; all original numbers and failed observations remain preserved.
+
 Run [40679529757](https://github.com/EkeMinusYou/lazypencil/actions/runs/40679529757), source `c9ffb37`, completed the owned headed-login batch through signed source in **38m28s**. Native x64/arm64/macOS jobs took 16m35s/17m57s/20m05s. The 17m30s focus also exercised changed runtime concurrency, unlike the preceding 2m04s core focus; this is not an overall speedup result. All prior case multiplicities remained, with five additions: Linux 1,490 cases each, macOS 1,479, and 144 summaries/platform. Each platform's 812 PNGs, 42 render observations, clipboard/IME/profile/namespace/network controls and new headed-login 1,024 pixels were independently checked. All 1,161 Git blobs/modes (32,224,466 bytes) and signed-source bindings matched. Linux release compilation took 209.50/217.87s under different runner images from the preceding run; the same-run x64 focus/full images also differed, so incompatible reuse was rejected. macOS restored 15 release files from `c53ab98` and completed Cargo's release check in 0.87s. All three production binary hashes matched the preceding source. A separate runtime-only browser installer/catalogue input unnecessarily changed the compatible debug-cache namespace; its correction is prepared alongside the macOS real-terminal harness, with actual Cargo freshness and compiled-consumer rejection coverage. That correction and new harness have not run on GHA yet. No tests, original waits or final criteria were removed.
 
 Run [40670794716](https://github.com/EkeMinusYou/lazypencil/actions/runs/40670794716), source `c53ab98`, completed the ACP error-payload change in **26m23s** through signed source. Native x64/arm64/macOS jobs took 19m53s/18m30s/22m56s. Every prior case multiplicity remained, plus the new error regression in both configurations: Linux 1,485 cases each and macOS 1,474, 144 summaries each. All 811 PNGs/platform, 42 render observations and clipboard/IME/profile/browser controls were independently checked, followed by all 1,159 source blobs/modes and signature bindings. Actual application code changed, so release compilation correctly took 251.73/168.97/381.41s; final freshness checks took 0.24/0.21/0.69s. The preceding 29m42s included a signing-only retry; this core focus took 2m04s whereas the prior browser focus took 8m14s. These different focus scopes and uncontrolled hosts do not establish a universal speedup or stable upper bound, although this complete observation is below the original 27–29-minute range. No tests, waits or final criteria were reduced.
@@ -383,8 +406,4 @@ Runner identities: Linux x64 `20261012.334.1` and arm64 `20261012.149.1` used fo
 
 These are static CLI observations at that exact source, before Windows agent job supervision and TUI time seeking. They do not measure interactive latency, authenticated agents, dynamic runtime descendants, idle CPU, physical terminals or final release acceptance. Platform differences are not isolated hardware regressions.
 
-## Remaining work
-
-Background-aware layers preserve color alpha and replacement coverage, which can require several working rasters. Explicit scratch reservations are bounded and fail rather than dropping effects. This resource guard is separate from measured RSS.
-
-The renderer skips nodes outside the working viewport, including unrelated browser/shader jobs. Overscan is still conservative across the document, and intermediate layers can use complete node bounds. Tighten dependency regions and intermediate-layer culling, then measure controlled cold/warm starts across the target environments on the final release build. TUI pan/zoom, image transport, runtime idle expiry, and full process-group memory remain part of the original acceptance scope.
+</details>

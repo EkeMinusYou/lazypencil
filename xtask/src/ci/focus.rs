@@ -4,7 +4,22 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::BTreeSet, fs, path::Path, process::Command};
 
+/// Retained native backends available for explicitly requested diagnostics.
 pub const PLATFORMS: &[&str] = &["ubuntu-24.04", "ubuntu-24.04-arm", "macos-15"];
+/// Required application targets for the first release, independent of helper hosts.
+pub const RELEASE_PLATFORMS: &[&str] = &["macos-15"];
+
+pub fn verification_platforms(requested: &str) -> Result<Vec<String>> {
+    ensure!(
+        requested == "all" || PLATFORMS.contains(&requested),
+        "Unsupported verification platform"
+    );
+    Ok(if requested == "all" {
+        RELEASE_PLATFORMS.iter().map(|s| (*s).to_owned()).collect()
+    } else {
+        vec![requested.to_owned()]
+    })
+}
 const DYNAMIC: &[&str] = &[
     "cdp",
     "dynamic",
@@ -201,9 +216,13 @@ pub fn terminal_reproduction_stages(paths: &[String], plan: &Plan) -> (bool, boo
         && !["core", "conversation", "ci"].contains(&plan.suite.as_str());
     // A core-only build has no TUI. Keep that focused check small and use the
     // full jobs' already-required default binaries for the reproduction. Standard
-    // macOS VMs lack Kitty's OpenGL context: verify their native PTY first and
-    // retain both Linux/X11 pixel checks. Native Mac pixels need a GPU runner.
-    (changed && available, changed && !available)
+    // macOS VMs lack Kitty's OpenGL context: verify native PTYs on the release
+    // target. Linux pixel checks remain available for explicit diagnostics;
+    // they no longer create release jobs. Native Mac pixels need a GPU runner.
+    (
+        changed && available,
+        changed && !available && RELEASE_PLATFORMS.iter().any(|p| p.starts_with("ubuntu-")),
+    )
 }
 
 fn has(stems: &BTreeSet<String>, names: &[&str]) -> bool {
@@ -242,34 +261,8 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         platform == "auto" || PLATFORMS.contains(&platform),
         "Unsupported focus platform"
     );
-    let mac = paths.iter().any(|p| {
-        let p = p.to_lowercase();
-        // Exercise the shared PTY bridge against BSD libc and terminal restoration first.
-        p.contains("macos")
-            || p.contains("darwin")
-            || p.starts_with("tests/support/terminal/")
-            || p == "xtask/src/test_support/terminal.rs"
-            || ["src/paths.rs", "tests/paths.rs"].contains(&p.as_str())
-    });
     let platform = if platform == "auto" {
-        if paths.iter().any(|path| {
-            [
-                "xtask/src/terminal/macos.rs",
-                "xtask/src/fixtures/kitty_ui.rs",
-            ]
-            .contains(&path.as_str())
-        }) {
-            "macos-15"
-        } else if paths
-            .iter()
-            .any(|path| path.starts_with("xtask/src/terminal/"))
-        {
-            "ubuntu-24.04"
-        } else if mac {
-            "macos-15"
-        } else {
-            "ubuntu-24.04"
-        }
+        RELEASE_PLATFORMS[0]
     } else {
         platform
     }
@@ -1069,53 +1062,13 @@ pub fn changed_paths(root: &Path) -> Result<Vec<String>> {
         .collect())
 }
 
-/// Prefer the platform with a concrete native failure on the direct parent.
-/// This also handles shared fixtures whose failure is specific to a host's
-/// canonical path representation, without growing path-name heuristics.
-pub fn retry_platform(root: &Path, requested: &str) -> String {
-    if requested != "auto" {
-        return requested.into();
-    }
-    fn previous(root: &Path) -> Result<Option<String>> {
-        let parent = process::text(
-            Command::new("git")
-                .current_dir(root)
-                .args(["rev-parse", "HEAD^"]),
-        )?;
-        let parent = parent.trim();
-        let repo = std::env::var("GITHUB_REPOSITORY")?;
-        let output = process::text(Command::new("gh").current_dir(root).args([
-            "api",
-            &format!("repos/{repo}/actions/workflows/ci.yml/runs?head_sha={parent}&per_page=10"),
-        ]))?;
-        let runs: Value = serde_json::from_str(&output)?;
-        for run in runs["workflow_runs"]
-            .as_array()
-            .context("Missing parent workflow runs")?
-        {
-            if run["head_sha"] != parent {
-                continue;
-            }
-            let id = run["id"].as_u64().context("Missing parent run identity")?;
-            let output = process::text(Command::new("gh").current_dir(root).args([
-                "api",
-                &format!("repos/{repo}/actions/runs/{id}/jobs?per_page=100"),
-            ]))?;
-            let jobs: Value = serde_json::from_str(&output)?;
-            return failed_platform(&jobs);
-        }
-        Ok(None)
-    }
-    match previous(root) {
-        Ok(Some(platform)) => {
-            println!("Prioritizing parent native failure on {platform}");
-            platform
-        }
-        Ok(None) => "auto".into(),
-        Err(error) => {
-            eprintln!("Keeping path-based focus: {error:#}");
-            "auto".into()
-        }
+/// A single release target needs no parent-run API query to choose its runner.
+/// Explicit diagnostic choices keep their existing native backends.
+pub fn retry_platform(_root: &Path, requested: &str) -> String {
+    if requested == "auto" {
+        RELEASE_PLATFORMS[0].to_owned()
+    } else {
+        requested.to_owned()
     }
 }
 

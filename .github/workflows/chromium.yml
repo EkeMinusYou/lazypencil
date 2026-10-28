@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       os:
-        description: Hosted platform for real sandboxed Chromium integration
+        description: Mac release validation; Linux choices are deferred-platform diagnostics
         type: choice
-        default: ubuntu-24.04
+        default: macos-15
         options:
           - ubuntu-24.04
           - ubuntu-24.04-arm
