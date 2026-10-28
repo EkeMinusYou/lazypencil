@@ -108,7 +108,10 @@ impl Session {
     pub fn command(&self, invocation: &[String]) -> Command {
         let invocation = commands::build_jobs(invocation, cfg!(target_os = "linux"));
         let mut command = Command::new(&invocation[0]);
-        command.args(&invocation[1..]).current_dir(&self.root);
+        command
+            .args(&invocation[1..])
+            .current_dir(&self.root)
+            .env("CARGO_TARGET_DIR", &self.target);
         command
     }
     pub fn execute(
@@ -804,10 +807,22 @@ impl Session {
         }
     }
     fn build_catalog(&self, targets: &[String]) -> Result<()> {
+        let catalog =
+            self.compile_catalog(targets, "default-build", &std::env::var("GITHUB_SHA")?)?;
+        util::publish(
+            &self.temporary.join("test-executables.json"),
+            &util::encode(&catalog)?,
+            false,
+        )
+    }
+
+    // Early reproductions need compiler-reported identities before the runtime
+    // stage publishes its complete catalog. Keep their records independent.
+    fn compile_catalog(&self, targets: &[String], log: &str, commit: &str) -> Result<Catalog> {
         let [normal, tests] = commands::catalog_builds(targets);
-        self.execute(&normal, 2700, "default-build.log", false)?;
+        self.execute(&normal, 2700, &format!("{log}.log"), false)?;
         let mut command = self.command(&tests);
-        let raw = self.capture(&mut command, 2700, "default-build.jsonl")?;
+        let raw = self.capture(&mut command, 2700, &format!("{log}.jsonl"))?;
         let mut binaries = BTreeMap::new();
         for line in raw.split(|b| *b == b'\n').filter(|l| !l.is_empty()) {
             let event: Value = serde_json::from_slice(line)?;
@@ -857,15 +872,10 @@ impl Session {
             required.iter().all(|s| binaries.contains_key(*s)),
             "Missing parallel test binaries"
         );
-        util::publish(
-            &self.temporary.join("test-executables.json"),
-            &util::encode(&Catalog {
-                source_commit: std::env::var("GITHUB_SHA")?,
-                binaries,
-            })?,
-            false,
-        )?;
-        Ok(())
+        Ok(Catalog {
+            source_commit: commit.into(),
+            binaries,
+        })
     }
     fn runtime_lanes(&self) -> Result<()> {
         // MCP and idle lifecycle clients own separate documents, process trees
@@ -1090,6 +1100,92 @@ fn process_report(s: &Session) -> Result<()> {
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn early_catalog_uses_cargo_outputs_without_reading_or_replacing_the_later_catalog() {
+        let temp = tempfile::tempdir().unwrap();
+        let session = Session {
+            root: temp.path().join("source"),
+            target: temp.path().join("target"),
+            temporary: temp.path().to_owned(),
+            timing_lock: Mutex::new(()),
+        };
+        fs::create_dir_all(session.root.join("src")).unwrap();
+        fs::create_dir_all(session.root.join("tests")).unwrap();
+        fs::write(
+            session.root.join("Cargo.toml"),
+            "[workspace]\n[package]\nname='lazypencil'\nversion='0.1.0'\nedition='2024'\n",
+        )
+        .unwrap();
+        fs::write(
+            session.root.join("Cargo.lock"),
+            "version = 4\n[[package]]\nname = 'lazypencil'\nversion = '0.1.0'\n",
+        )
+        .unwrap();
+        fs::write(session.root.join("src/main.rs"), "fn main() {}\n").unwrap();
+        let test = session.root.join("tests/script_scope.rs");
+        fs::write(
+            &test,
+            "#[test] fn generated_browser_probe() { assert_eq!(10, 10); }\n",
+        )
+        .unwrap();
+        let later = session.temporary.join("test-executables.json");
+        assert!(!later.exists());
+        let first = session
+            .compile_catalog(&["script_scope".into()], "early-first", "fixture-source")
+            .unwrap();
+        first
+            .validate(&session.target, "fixture-source", &["script_scope"])
+            .unwrap();
+        let invocation = |catalog: &Catalog| {
+            vec![
+                catalog.binaries["script_scope"]
+                    .path
+                    .to_string_lossy()
+                    .into_owned(),
+                "generated_browser_probe".into(),
+                "--exact".into(),
+            ]
+        };
+        let result = process::output(
+            &mut session.command(&invocation(&first)),
+            Duration::from_secs(30),
+        )
+        .unwrap();
+        assert!(!result.timed_out && result.status.success());
+        assert!(!later.exists());
+        fs::write(&later, b"a later stage owns this catalog").unwrap();
+        fs::write(
+            &test,
+            "#[test] fn generated_browser_probe() { assert_eq!(10, 11); }\n",
+        )
+        .unwrap();
+        let edited = session
+            .compile_catalog(&["script_scope".into()], "early-edited", "fixture-source")
+            .unwrap();
+        edited
+            .validate(&session.target, "fixture-source", &["script_scope"])
+            .unwrap();
+        assert_ne!(
+            first.binaries["script_scope"].sha256,
+            edited.binaries["script_scope"].sha256
+        );
+        assert!(
+            first
+                .validate(&session.target, "fixture-source", &["script_scope"])
+                .is_err()
+        );
+        let result = process::output(
+            &mut session.command(&invocation(&edited)),
+            Duration::from_secs(30),
+        )
+        .unwrap();
+        assert!(!result.timed_out && !result.status.success());
+        assert!(
+            String::from_utf8_lossy(&result.stdout).contains("generated_browser_probe ... FAILED")
+        );
+        assert_eq!(fs::read(later).unwrap(), b"a later stage owns this catalog");
+    }
 
     #[test]
     fn reused_test_catalog_rejects_missing_mutated_foreign_and_outside_binaries() {

@@ -1,5 +1,9 @@
 # lazypencil 実装と公開準備の状況
 
+`5b329f6` の [先行検証](https://github.com/EkeMinusYou/lazypencil/actions/runs/40639764508) は軽量208件・Clippy、対象build／Clippyと生成URIの失効判定の単体試験を通過し、binding群の開始前に停止した。並列化した早期試験が、後段のruntime stageで初めて保存する `test-executables.json` を読もうとしていた。次の修正では既存のCargo JSON解析を共用し、早期の対象だけをその場でコンパイラーへ確認してhash検査する。一覧はメモリ内だけで保持し、後段の完全な一覧を上書きしない。全環境・署名付きsourceは開始しておらず、時間短縮・gzip・新しいworker回帰の成功は未確認である。
+
+公開用browser診断では、ページ由来の例外とCDPの自由形式本文に秘密が混ざる経路を修正する差分を準備した。操作名・数値code・失敗段階を返し、自作GLSLの上限付き診断は保持する。通常／保持contextの実取得エラー・回収・復帰、機械向けJSONと通常表示への漏れの拒否を試験へ追加した。既存の早期再現の先頭で確認し、同条件の後段だけから除く。整形・差分・YAML検査は成功、追加Rustの実行結果はGHA待ちである。専用認証profileを含む残る公開条件は変更しない。
+
 `d6c5808` の [GHA](https://github.com/EkeMinusYou/lazypencil/actions/runs/40633683855) は軽量207件・Clippy、Linux先行593件／76サマリー、全3環境・RustSec・署名付きsourceまで成功した。Mac1,450件・Linux各1,461件、各144サマリーで、従来ケースの回数＋新規4実行を照合した。各798 PNG・42描画計測・clipboard3,072画素・IME保存4画面と、両形式・27経路・3段階の162画像／82,944画素を独立照合した。従来671画像のcoverage・4 sampler全画素、animation・network・transportの基準も維持した。全体jobはx64 20分42秒・arm64 21分21秒・Mac22分32秒、workflow全体は46分13秒で、全体短縮の達成とは扱わない。source1,156ファイル・32,072,330バイトの全Git blob／mode、tar hash・DSSE署名・source／workflow／runを照合した。
 
 先行の約1.79GB・215 memberのpackは490,028,944バイト・70.01秒だった。artifact名は全体x64へ渡ったが、先行のcache環境識別子20261026.354.1と全体20261023.334.3でfingerprintが異なり取得をskipした。誤再利用はなく、同条件転送の成功を示す結果ではない。完了時にnative cache5個を保持した一方、総容量は10,738,280,773バイトで上限付近だった。

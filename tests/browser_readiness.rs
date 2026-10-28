@@ -322,6 +322,42 @@ fn assert_green(image: &RenderedImage) {
 
 #[test]
 #[ignore = "Requires sandboxed headless Chromium"]
+fn page_evaluation_failures_omit_private_content_and_recover_in_fresh_and_retained_modes() {
+    let secret = "private-cookie-and-token-6e6926";
+    let html = format!(
+        "<script>Object.defineProperty(document,'fonts',{{get(){{throw new Error({})}}}})</script>",
+        json!(secret)
+    );
+    for retained in [false, true] {
+        let f = Fixture::new(&page(&html));
+        let mut runtime = f.runtime();
+        if retained {
+            runtime = runtime.with_retained_pages(&f.0.path().join("scene.pen"));
+        }
+        let error = f
+            .capture(&mut runtime, None)
+            .err()
+            .expect("Page getter must fail");
+        assert_eq!(error.code, "PAGE_LOAD_FAILED");
+        assert_eq!(error.message, "Page JavaScript evaluation failed");
+        assert_eq!(error.details.as_ref().unwrap()["stage"], "page_evaluation");
+        assert!(!serde_json::to_string(&error).unwrap().contains(secret));
+        assert!(!error.to_string().contains(secret));
+        assert!(runtime.process_ids().is_empty());
+        f.url(&page("<style>html{background:#0f0}</style>"));
+        let recovered = f.capture(&mut runtime, None).unwrap();
+        assert_green(&recovered);
+        assert!(!recovered.dynamic_artifacts.is_empty());
+        assert!(
+            !serde_json::to_string(&recovered.dynamic_artifacts)
+                .unwrap()
+                .contains(secret)
+        );
+    }
+}
+
+#[test]
+#[ignore = "Requires sandboxed headless Chromium"]
 fn native_animation_policy_freezes_css_transitions_and_web_animations_without_stopping_frames() {
     use lazypencil::{
         cdp::{Browser, Budget, Purpose},

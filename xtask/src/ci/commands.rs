@@ -543,6 +543,7 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
         ));
         if has("browser_readiness") {
             for reproduction in [
+                focus::PAGE_DIAGNOSTICS,
                 focus::NATIVE_ANIMATION,
                 focus::OFFLINE_NETWORK,
                 focus::OFFLINE_TRANSPORT,
@@ -633,6 +634,7 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
             if names.iter().any(|name| name == "browser_readiness") {
                 if suite == "dynamic" {
                     c.extend(skips([
+                        focus::PAGE_DIAGNOSTICS,
                         focus::NATIVE_ANIMATION,
                         focus::OFFLINE_NETWORK,
                         focus::OFFLINE_TRANSPORT,

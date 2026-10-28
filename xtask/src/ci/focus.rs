@@ -25,6 +25,8 @@ pub const LOCAL_FILES: &str =
     "captured_local_files_render_after_source_removal_and_deny_unlisted_host_files";
 pub const NATIVE_ANIMATION: &str =
     "native_animation_policy_freezes_css_transitions_and_web_animations_without_stopping_frames";
+pub const PAGE_DIAGNOSTICS: &str =
+    "page_evaluation_failures_omit_private_content_and_recover_in_fresh_and_retained_modes";
 pub const OFFLINE_NETWORK: &str = "local_pages::offline_network_policy_blocks_http_websocket_and_tls_routes_for_pages_and_workers";
 pub const OFFLINE_TRANSPORT: &str = "local_pages::offline_transport::offline_page_process_blocks_stun_turn_and_webtransport_and_online_resumes";
 pub const BROWSER_COPY: &str =

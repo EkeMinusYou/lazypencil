@@ -14,6 +14,7 @@ use tokio_util::sync::CancellationToken;
 use tungstenite::{Message, WebSocket};
 
 mod connection;
+mod diagnostics;
 mod lifecycle;
 mod local_files;
 mod network;
@@ -278,10 +279,7 @@ impl Browser {
                     self.dispatch_local_files(&value, budget)?;
                     if value["id"] == id {
                         if let Some(error) = value.get("error") {
-                            return Err(failed(format!(
-                                "CDP {method} failed: {}",
-                                error["message"].as_str().unwrap_or("protocol error")
-                            )));
+                            return Err(diagnostics::protocol_error(method, error));
                         }
                         return Ok(value["result"].clone());
                     }
@@ -383,20 +381,7 @@ impl Browser {
             budget,
         )?;
         if let Some(exception) = result.get("exceptionDetails") {
-            let description = exception["exception"]["description"]
-                .as_str()
-                .or_else(|| exception["text"].as_str())
-                .unwrap_or("Page evaluation failed");
-            return Err(Error::new(
-                "PAGE_LOAD_FAILED",
-                description
-                    .lines()
-                    .next()
-                    .unwrap_or("Page evaluation failed")
-                    .chars()
-                    .take(1024)
-                    .collect::<String>(),
-            ));
+            return Err(diagnostics::evaluation_error(self.purpose, exception));
         }
         result
             .get("result")
