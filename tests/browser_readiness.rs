@@ -35,6 +35,61 @@ mod script_browser_copy;
 #[test]
 #[ignore = "Requires sandboxed headless Chromium"]
 fn generated_browser_namespaces_keep_pixels_after_source_removal_and_recopy() {
+    let directory = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR").map(std::path::PathBuf::from);
+    if let Some(directory) = &directory {
+        fs::create_dir_all(directory).unwrap();
+    }
+    let started = Instant::now();
+    // Each schema owns its projects, scripts, browser process tree and profile.
+    // Artifact names include the schema; only this parent writes the report.
+    let (cases, timings) = std::thread::scope(|threads| {
+        let handles = ["2.19", "2.21"].map(|version| {
+            let directory = directory.as_deref();
+            (
+                version,
+                threads.spawn(move || {
+                    let offset = started.elapsed().as_secs_f64();
+                    let schema_started = Instant::now();
+                    let cases = generated_browser_namespace_cases(version, directory);
+                    let elapsed = schema_started.elapsed().as_secs_f64();
+                    eprintln!("Generated browser pixels: schema={version}, elapsed={elapsed:.3}s");
+                    (cases, json!({"document_version":version,"started_after_seconds":offset,"elapsed_seconds":elapsed}))
+                }),
+            )
+        });
+        let mut cases = Vec::new();
+        let mut timings = Vec::new();
+        let mut failures = Vec::new();
+        // Join every started worker, including after another schema panics.
+        for (version, handle) in handles {
+            match handle.join() {
+                Ok((rows, timing)) => {
+                    cases.extend(rows);
+                    timings.push(timing);
+                }
+                Err(error) => {
+                    let reason = error
+                        .downcast_ref::<String>()
+                        .map(String::as_str)
+                        .or_else(|| error.downcast_ref::<&str>().copied())
+                        .unwrap_or("non-string panic");
+                    failures.push(format!("schema {version}: {reason}"));
+                }
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+        (cases, timings)
+    });
+    if let Some(directory) = directory {
+        fs::write(directory.join("codec-generated-browser.json"),serde_json::to_vec_pretty(&json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"sandbox":"enabled","cases":cases,"schema_timings":timings})).unwrap()).unwrap();
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn generated_browser_namespace_cases(
+    version: &str,
+    directory: Option<&std::path::Path>,
+) -> Vec<Value> {
     use lazypencil::{
         cdp::{Browser, Budget, Purpose},
         runtime::InstalledBrowser,
@@ -51,19 +106,14 @@ fn generated_browser_namespaces_keep_pixels_after_source_removal_and_recopy() {
         std::path::Path::new(env!("CARGO_BIN_EXE_lazypencil")),
     )
     .unwrap();
-    let directory = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR").map(std::path::PathBuf::from);
-    if let Some(directory) = &directory {
-        fs::create_dir_all(directory).unwrap();
-    }
     let mut cases = Vec::new();
-    for version in ["2.19", "2.21"] {
-        for style in script_browser_copy::STYLES {
-            let (_temp, frames) = script_browser_copy::study(version, style);
-            let mut original = None;
-            let mut stages = Vec::new();
-            for frame in frames {
-                let budget = Budget::new(Duration::from_secs(15), None);
-                let png=browser.with_tab(&budget,|browser,session| {
+    for style in script_browser_copy::STYLES {
+        let (_temp, frames) = script_browser_copy::study(version, style);
+        let mut original = None;
+        let mut stages = Vec::new();
+        for frame in frames {
+            let budget = Budget::new(Duration::from_secs(15), None);
+            let png=browser.with_tab(&budget,|browser,session| {
                     browser.command(Some(session),"Page.enable",json!({}),&budget)?;
                     browser.intercept_local_files(session,frame.files.clone(),&budget)?;
                     browser.command(Some(session),"Emulation.setDeviceMetricsOverride",json!({"width":32,"height":16,"deviceScaleFactor":1,"mobile":false}),&budget)?;
@@ -79,44 +129,41 @@ fn generated_browser_namespaces_keep_pixels_after_source_removal_and_recopy() {
                     assert_eq!(stats.fulfilled,2);assert_eq!(stats.denied,0);
                     Ok(base64::engine::general_purpose::STANDARD.decode(screenshot["data"].as_str().unwrap()).unwrap())
                 }).unwrap();
-                let image = Image::from_encoded(Data::new_copy(&png))
-                    .unwrap()
-                    .make_raster_image(None, None)
-                    .unwrap();
-                assert_eq!((image.width(), image.height()), (32, 16));
-                let pixels = image.peek_pixels().unwrap();
-                let expected =
-                    Color::from_argb(frame.rgba[3], frame.rgba[0], frame.rgba[1], frame.rgba[2]);
-                for y in 0..16 {
-                    for x in 0..32 {
-                        assert_eq!(
-                            pixels.get_color((x, y)),
-                            expected,
-                            "{version}/{style}/{} at {x},{y}",
-                            frame.stage
-                        );
-                    }
+            let image = Image::from_encoded(Data::new_copy(&png))
+                .unwrap()
+                .make_raster_image(None, None)
+                .unwrap();
+            assert_eq!((image.width(), image.height()), (32, 16));
+            let pixels = image.peek_pixels().unwrap();
+            let expected =
+                Color::from_argb(frame.rgba[3], frame.rgba[0], frame.rgba[1], frame.rgba[2]);
+            for y in 0..16 {
+                for x in 0..32 {
+                    assert_eq!(
+                        pixels.get_color((x, y)),
+                        expected,
+                        "{version}/{style}/{} at {x},{y}",
+                        frame.stage
+                    );
                 }
-                if let Some(original) = &original {
-                    assert_eq!(&png, original);
-                } else {
-                    original = Some(png.clone());
-                }
-                let name = format!(
-                    "codec-generated-browser-{version}-{style}-{}.png",
-                    frame.stage
-                );
-                if let Some(directory) = &directory {
-                    fs::write(directory.join(&name), &png).unwrap();
-                }
-                stages.push(json!({"stage":frame.stage,"name":name,"png_hash":lazypencil::document::hash(&png),"resource_revision":frame.revision}));
             }
-            cases.push(json!({"document_version":version,"style":style,"rgba":script_browser_copy::rgba(style),"stages":stages,"sources_removed":true}));
+            if let Some(original) = &original {
+                assert_eq!(&png, original);
+            } else {
+                original = Some(png.clone());
+            }
+            let name = format!(
+                "codec-generated-browser-{version}-{style}-{}.png",
+                frame.stage
+            );
+            if let Some(directory) = directory {
+                fs::write(directory.join(&name), &png).unwrap();
+            }
+            stages.push(json!({"stage":frame.stage,"name":name,"png_hash":lazypencil::document::hash(&png),"resource_revision":frame.revision}));
         }
+        cases.push(json!({"document_version":version,"style":style,"rgba":script_browser_copy::rgba(style),"stages":stages,"sources_removed":true}));
     }
-    if let Some(directory) = directory {
-        fs::write(directory.join("codec-generated-browser.json"),serde_json::to_vec_pretty(&json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"sandbox":"enabled","cases":cases})).unwrap()).unwrap();
-    }
+    cases
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]

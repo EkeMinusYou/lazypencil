@@ -53,7 +53,7 @@ This explicit override is reported as `external-unverified`, with `managed: fals
 
 ## Dedicated authentication profiles
 
-Persistent stores, user selection, owner cleanup and login deadline/recovery passed on all three initial-release targets in [the `65dcc15` gate](https://github.com/EkeMinusYou/lazypencil/actions/runs/40646818773). The added canonical-browser binding below still awaits hosted verification. Ordinary rendering uses temporary, isolated browser contexts. No personal Chrome profile is adopted.
+Persistent stores, user selection, canonical-browser binding, owner cleanup and login deadline/recovery passed on all three initial-release targets in [the `dd3fe05` gate](https://github.com/EkeMinusYou/lazypencil/actions/runs/40655581713). Ordinary rendering uses temporary, isolated browser contexts. No personal Chrome profile is adopted.
 
 ```sh
 lazypencil runtime profile create work
@@ -64,7 +64,7 @@ lazypencil runtime profile login work \
   --url https://example.com/login
 ```
 
-Login requires a full browser with a visible UI. Set `LAZYPENCIL_CHROMIUM` to that same executable for login and all authenticated acquisitions; the managed headless shell remains available for anonymous work. A matching major version alone does not establish storage compatibility: for example, [headless shell uses a mock keychain on macOS](https://raw.githubusercontent.com/chromium/chromium/main/headless/app/headless_shell.cc). The implementation binds each profile to the canonical executable path on first use, under its guardian lease, and rejects a different path before launching it. The marker stores a path hash, not credentials. A symlink resolving to the same executable is accepted. Updates at the same path remain the browser's responsibility; moving to another executable requires a newly created profile and login. Close the dedicated login tab/window, or quit that browser, to return. Ctrl+C or `--timeout-seconds` (default 600, range 1–3,600) closes the owned browser through the normal cleanup path. This additional browser binding awaits hosted verification.
+Login requires a full browser with a visible UI. Set `LAZYPENCIL_CHROMIUM` to that same executable for login and all authenticated acquisitions; the managed headless shell remains available for anonymous work. A matching major version alone does not establish storage compatibility: for example, [headless shell uses a mock keychain on macOS](https://raw.githubusercontent.com/chromium/chromium/main/headless/app/headless_shell.cc). The implementation binds each profile to the canonical executable path on first use, under its guardian lease, and rejects a different path before launching it. The marker stores a path hash, not credentials. A symlink resolving to the same executable is accepted. Updates at the same path remain the browser's responsibility; moving to another executable requires a newly created profile and login. Close the dedicated login tab/window, or quit that browser, to return. Ctrl+C or `--timeout-seconds` (default 600, range 1–3,600) closes the owned browser through the normal cleanup path.
 
 Select the name in **user** configuration:
 
@@ -77,7 +77,7 @@ The same captured setting applies to CLI, MCP and TUI page acquisitions. A proje
 
 Profiles live under `browser-profiles/<name>` in the selected data directory, with private ownership markers and an exclusive lease held by the browser guardian. Persistent cookies, localStorage, IndexedDB and Cache Storage remain there. Per-acquisition tabs close normally; retained TUI tabs keep their existing DOM lifetime. Shader workers never use these profiles. Acquisition metadata and serialized runtime limits omit the profile name; credentials are not imported into `.pen` files or conversation records. The guardian preserves persistent data after host death and releases its lease only after collecting the browser's children.
 
-Concurrent independent browser processes cannot use one profile. This includes a TUI preview and a separate bound MCP process: their joint authenticated-session behavior still needs integration before release acceptance. The completed tests cover exclusive ownership, replaced identities, abrupt owner death, all four persistent storage kinds, fresh/retained isolation and restoration, offline acquisition, real CLI selection and login deadline/recovery. Visible full-browser login UI and the new executable-binding regressions remain unverified.
+Concurrent independent browser processes cannot use one profile. This includes a TUI preview and a separate bound MCP process: their joint authenticated-session behavior still needs integration before release acceptance. The completed tests cover exclusive ownership, replaced identities, canonical executable matching and refusal, abrupt owner death, all four persistent storage kinds, fresh/retained isolation and restoration, offline acquisition, real CLI selection and login deadline/recovery. Visible full-browser login UI remains unverified.
 
 ## Execution and licensing
 
