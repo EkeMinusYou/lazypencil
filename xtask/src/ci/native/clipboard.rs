@@ -32,23 +32,16 @@ pub fn run(session: &Session) -> Result<()> {
         );
     }
     let output = session.temporary.join("clipboard-evidence");
-    let mut command = session.command(
-        &[
-            "cargo",
-            "test",
-            "--locked",
-            "--test",
-            "tui",
-            commands::NATIVE_CLIPBOARD_TEST,
-            "--",
-            "--exact",
-            "--ignored",
-            "--nocapture",
-            "--test-threads=1",
-        ]
-        .map(str::to_owned),
-    );
+    let invocation = session.test_invocation(
+        true,
+        "tui",
+        commands::NATIVE_CLIPBOARD_TEST,
+        &["--exact", "--ignored", "--nocapture", "--test-threads=1"],
+    )?;
+    let mut command = session.command(&invocation);
     command
+        .env("CARGO_MANIFEST_DIR", &session.root)
+        .env("CARGO_MANIFEST_PATH", session.root.join("Cargo.toml"))
         .env("LAZYPENCIL_TEST_NATIVE_CLIPBOARD", "owned-runner-clipboard")
         .env("LAZYPENCIL_TEST_TUI_ARTIFACTS", &output);
     session.capture(&mut command, 240, "native-clipboard.log")?;

@@ -148,6 +148,7 @@ impl Session {
         log: &str,
         append: bool,
     ) -> Result<()> {
+        self.require_consumer_command(command)?;
         let invocation = std::iter::once(command.get_program())
             .chain(command.get_args())
             .map(|argument| argument.to_string_lossy().into_owned())
@@ -271,7 +272,22 @@ impl Session {
         args.extend(arguments);
         Ok(args.into_iter().map(str::to_owned).collect())
     }
+    fn require_consumer_command(&self, command: &Command) -> Result<()> {
+        let cargo = matches!(
+            Path::new(command.get_program())
+                .file_name()
+                .and_then(|name| name.to_str()),
+            Some("cargo" | "cargo.exe")
+        );
+        ensure!(
+            !cargo || !self.temporary.join("binary-receipt.json").exists(),
+            "A compiled-catalog consumer cannot invoke Cargo"
+        );
+        Ok(())
+    }
+
     pub fn capture(&self, command: &mut Command, seconds: u64, path: &str) -> Result<Vec<u8>> {
+        self.require_consumer_command(command)?;
         let invocation = std::iter::once(command.get_program())
             .chain(command.get_args())
             .map(|argument| argument.to_string_lossy().into_owned())
@@ -327,13 +343,13 @@ impl Session {
                 binaries::stage(self, elapsed)
             }
             Stage::NormalConsumer => {
-                let elapsed = binaries::restore(self)?;
+                let elapsed = binaries::restore(self, false)?;
                 let prepared = normal::prepare_consumed(self, elapsed)?;
                 normal::remaining(self, &prepared, false)?;
                 binaries::completed(self, "normal")
             }
             Stage::RuntimeConsumer => {
-                let _ = binaries::restore(self)?;
+                let _ = binaries::restore(self, true)?;
                 self.run(Arguments {
                     stage: Stage::Reproduce,
                     suite: "pipeline".into(),
@@ -1054,36 +1070,33 @@ impl Session {
         self.execute_command(&mut command, 300, log, true)
     }
 
+    fn lifecycle_tests(&self, catalog: &Catalog, target: &str, log: &str) -> Result<()> {
+        let args = commands::lifecycle(&catalog.binaries[target].path, target)?;
+        let mut command = self.command(&args);
+        command.env(
+            "LAZYPENCIL_CONFIG_DIR",
+            self.temporary
+                .join(format!("runtime-lifecycle-{target}-settings")),
+        );
+        self.execute_command(&mut command, 300, log, false)
+    }
+
     fn long_tests(&self) -> Result<()> {
         super::setup::material_fonts(
             &self.root.join("resources/icons/catalogue.json"),
             &self.temporary.join("lazypencil-material-fonts"),
         )?;
         let catalog = self.verified_catalog(&["mcp", "tui", "optional_icons"])?;
-        // These independent lanes use immutable debug binaries and both join
+        // These independent lanes use immutable debug binaries and all join
         // before subsequent smoke tests and resource measurements.
         parallel::run(vec![
             (
-                "process lifecycle",
-                Box::new(|| -> Result<()> {
-                    let mut failures = Vec::new();
-                    for (target, log) in [
-                        ("mcp", "chromium-mcp-idle.log"),
-                        ("tui", "chromium-tui.log"),
-                    ] {
-                        let args = commands::lifecycle(&catalog.binaries[target].path, target)?;
-                        let mut command = self.command(&args);
-                        command.env(
-                            "LAZYPENCIL_CONFIG_DIR",
-                            self.temporary.join("runtime-lifecycle-settings"),
-                        );
-                        if let Err(error) = self.execute_command(&mut command, 300, log, false) {
-                            failures.push(format!("{target}: {error:#}"));
-                        }
-                    }
-                    ensure!(failures.is_empty(), "{}", failures.join("\n"));
-                    Ok(())
-                }),
+                "MCP lifecycle",
+                Box::new(|| self.lifecycle_tests(&catalog, "mcp", "chromium-mcp-idle.log")),
+            ),
+            (
+                "TUI lifecycle",
+                Box::new(|| self.lifecycle_tests(&catalog, "tui", "chromium-tui.log")),
             ),
             (
                 "Material verification",

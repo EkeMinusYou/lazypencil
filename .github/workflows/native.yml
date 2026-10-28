@@ -38,6 +38,8 @@ on:
         value: ${{ jobs.verify.outputs.application_artifact }}
       binaries_artifact:
         value: ${{ jobs.verify.outputs.binaries_artifact }}
+      runtime_binaries_artifact:
+        value: ${{ jobs.verify.outputs.runtime_binaries_artifact }}
 
 permissions:
   contents: read
@@ -69,6 +71,7 @@ jobs:
     outputs:
       application_artifact: ${{ steps.application-artifact-upload.outcome == 'success' && steps.application-key.outputs.checkpoint_legacy || '' }}
       binaries_artifact: ${{ steps.binaries-upload.outcome == 'success' && format('native-executables-{0}', github.sha) || '' }}
+      runtime_binaries_artifact: ${{ steps.runtime-binaries-upload.outcome == 'success' && format('native-runtime-executables-{0}', github.sha) || '' }}
     permissions:
       contents: read
       actions: write
@@ -310,6 +313,17 @@ jobs:
         with:
           name: native-executables-${{ github.sha }}
           path: ${{ runner.temp }}/native-binaries
+          compression-level: 1
+          retention-days: 1
+          overwrite: true
+          if-no-files-found: error
+      - name: Share only the executable targets used by runtime verification
+        id: runtime-binaries-upload
+        if: inputs.lane == 'build'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: native-runtime-executables-${{ github.sha }}
+          path: ${{ runner.temp }}/native-runtime-binaries
           compression-level: 1
           retention-days: 1
           overwrite: true

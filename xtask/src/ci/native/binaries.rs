@@ -29,6 +29,22 @@ fn directory(s: &Session) -> PathBuf {
     s.temporary.join("native-binaries")
 }
 
+fn runtime_targets() -> std::collections::BTreeSet<&'static str> {
+    browser::TEST_LANES
+        .into_iter()
+        .flatten()
+        .copied()
+        .chain([
+            "mcp",
+            "agent",
+            "tui",
+            "optional_icons",
+            "font_sources",
+            "lib",
+        ])
+        .collect()
+}
+
 fn copy(binary: &Binary, source: &Path, target: &Path) -> Result<()> {
     let bytes = util::read(source, LIMIT)?;
     ensure!(
@@ -50,7 +66,12 @@ fn relative<'a>(s: &Session, binary: &'a Binary) -> Result<&'a Path> {
     Ok(relative)
 }
 
-fn stage_record(s: &Session, receipt: &Receipt) -> Result<()> {
+fn stage_record(
+    s: &Session,
+    receipt: &Receipt,
+    destination: &Path,
+    targets: Option<&std::collections::BTreeSet<&str>>,
+) -> Result<()> {
     receipt.catalog.validate(
         &s.target,
         receipt.identity["commit"]
@@ -65,17 +86,19 @@ fn stage_record(s: &Session, receipt: &Receipt) -> Result<()> {
     for binary in receipt
         .catalog
         .binaries
-        .values()
+        .iter()
+        .filter(|(name, _)| targets.is_none_or(|targets| targets.contains(name.as_str())))
+        .map(|(_, binary)| binary)
         .chain([&receipt.application])
     {
         copy(
             binary,
             &binary.path,
-            &directory(s).join(relative(s, binary)?),
+            &destination.join(relative(s, binary)?),
         )?;
     }
     util::publish(
-        &directory(s).join("receipt.json"),
+        &destination.join("receipt.json"),
         &util::encode(receipt)?,
         false,
     )
@@ -90,22 +113,30 @@ pub(super) fn stage(s: &Session, elapsed: Duration) -> Result<()> {
         .collect();
     let _ = commands::default_tests(&s.root, &binaries)?;
     let path = s.executable("debug");
+    let receipt = Receipt {
+        identity: identity(s)?,
+        catalog,
+        application: Binary {
+            sha256: util::file_digest(&path)?,
+            path,
+        },
+        cargo_seconds: elapsed.as_secs_f64(),
+    };
+    stage_record(s, &receipt, &directory(s), None)?;
     stage_record(
         s,
-        &Receipt {
-            identity: identity(s)?,
-            catalog,
-            application: Binary {
-                sha256: util::file_digest(&path)?,
-                path,
-            },
-            cargo_seconds: elapsed.as_secs_f64(),
-        },
+        &receipt,
+        &s.temporary.join("native-runtime-binaries"),
+        Some(&runtime_targets()),
     )
 }
 
-fn restore_record(s: &Session, expected: &Value) -> Result<Duration> {
-    let receipt: Receipt = util::json(&directory(s).join("receipt.json"))?;
+fn restore_record(
+    s: &Session,
+    expected: &Value,
+    targets: Option<&std::collections::BTreeSet<&str>>,
+) -> Result<Duration> {
+    let mut receipt: Receipt = util::json(&directory(s).join("receipt.json"))?;
     ensure!(
         &receipt.identity == expected,
         "Compiled catalog source or compiler conditions differ"
@@ -118,6 +149,18 @@ fn restore_record(s: &Session, expected: &Value) -> Result<Duration> {
         receipt.application.path == s.executable("debug"),
         "Unexpected application path"
     );
+    if let Some(targets) = targets {
+        ensure!(
+            targets
+                .iter()
+                .all(|name| receipt.catalog.binaries.contains_key(*name)),
+            "Required runtime executable missing from the shared catalog"
+        );
+        receipt
+            .catalog
+            .binaries
+            .retain(|name, _| targets.contains(name.as_str()));
+    }
     for binary in receipt
         .catalog
         .binaries
@@ -156,8 +199,9 @@ fn restore_record(s: &Session, expected: &Value) -> Result<Duration> {
     Ok(Duration::from_secs_f64(receipt.cargo_seconds))
 }
 
-pub(super) fn restore(s: &Session) -> Result<Duration> {
-    restore_record(s, &identity(s)?)
+pub(super) fn restore(s: &Session, runtime: bool) -> Result<Duration> {
+    let targets = runtime.then(runtime_targets);
+    restore_record(s, &identity(s)?, targets.as_ref())
 }
 
 pub(super) fn completed(s: &Session, mode: &str) -> Result<()> {
@@ -233,6 +277,8 @@ mod tests {
         let path = s.target.join("debug/deps/probe");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, b"test executable").unwrap();
+        let unused = s.target.join("debug/deps/unused");
+        fs::write(&unused, b"another test executable").unwrap();
         let main = s.executable("debug");
         fs::write(&main, b"application executable").unwrap();
         let identity = json!({"commit":"source", "compiler":"original compiler"});
@@ -240,13 +286,22 @@ mod tests {
             identity: identity.clone(),
             catalog: Catalog {
                 source_commit: "source".into(),
-                binaries: BTreeMap::from([(
-                    "probe".into(),
-                    Binary {
-                        sha256: util::file_digest(&path).unwrap(),
-                        path: path.clone(),
-                    },
-                )]),
+                binaries: BTreeMap::from([
+                    (
+                        "probe".into(),
+                        Binary {
+                            sha256: util::file_digest(&path).unwrap(),
+                            path: path.clone(),
+                        },
+                    ),
+                    (
+                        "unused".into(),
+                        Binary {
+                            sha256: util::file_digest(&unused).unwrap(),
+                            path: unused.clone(),
+                        },
+                    ),
+                ]),
             },
             application: Binary {
                 sha256: util::file_digest(&main).unwrap(),
@@ -254,23 +309,24 @@ mod tests {
             },
             cargo_seconds: 2.5,
         };
-        stage_record(&s, &receipt).unwrap();
+        stage_record(&s, &receipt, &directory(&s), None).unwrap();
         fs::remove_dir_all(&s.target).unwrap();
         assert!(
             restore_record(
                 &s,
-                &json!({"commit":"source", "compiler":"different compiler"})
+                &json!({"commit":"source", "compiler":"different compiler"}),
+                None
             )
             .is_err()
         );
         assert!(!s.target.exists());
         let staged = directory(&s).join("debug/deps/probe");
         fs::write(&staged, b"tampered executable").unwrap();
-        assert!(restore_record(&s, &identity).is_err());
+        assert!(restore_record(&s, &identity, None).is_err());
         assert!(!path.exists());
         fs::write(&staged, b"test executable").unwrap();
         assert_eq!(
-            restore_record(&s, &identity).unwrap(),
+            restore_record(&s, &identity, None).unwrap(),
             Duration::from_millis(2500)
         );
         receipt
@@ -278,5 +334,41 @@ mod tests {
             .validate(&s.target, "source", &["probe"])
             .unwrap();
         assert_eq!(fs::read(main).unwrap(), b"application executable");
+        assert!(
+            s.capture(
+                Command::new("cargo").arg("--version"),
+                1,
+                "forbidden-cargo.log"
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("cannot invoke Cargo")
+        );
+        let partial = s.temporary.join("partial");
+        let targets = std::collections::BTreeSet::from(["probe"]);
+        stage_record(&s, &receipt, &partial, Some(&targets)).unwrap();
+        assert_eq!(
+            util::file_digest(&partial.join("receipt.json")).unwrap(),
+            util::file_digest(&directory(&s).join("receipt.json")).unwrap()
+        );
+        fs::remove_dir_all(&s.target).unwrap();
+        fs::remove_dir_all(directory(&s)).unwrap();
+        fs::rename(partial, directory(&s)).unwrap();
+        for name in [
+            "test-executables.json",
+            "binary-receipt.json",
+            "lazypencil-tests.log",
+        ] {
+            fs::remove_file(s.temporary.join(name)).unwrap();
+        }
+        restore_record(&s, &identity, Some(&targets)).unwrap();
+        assert!(path.exists());
+        assert!(!unused.exists());
+        let partial_catalog: Catalog =
+            util::json(&s.temporary.join("test-executables.json")).unwrap();
+        assert_eq!(partial_catalog.binaries.len(), 1);
+        partial_catalog
+            .validate(&s.target, "source", &["probe"])
+            .unwrap();
     }
 }

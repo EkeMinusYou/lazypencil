@@ -77,7 +77,7 @@ jobs:
       - name: Download this run's single compiled catalog
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
-          name: ${{ needs.build.outputs.binaries_artifact }}
+          name: ${{ matrix.suite == 'runtime' && needs.build.outputs.runtime_binaries_artifact || needs.build.outputs.binaries_artifact }}
           path: ${{ runner.temp }}/native-binaries
       - name: Restore pinned emoji inputs
         if: matrix.suite == 'runtime'
