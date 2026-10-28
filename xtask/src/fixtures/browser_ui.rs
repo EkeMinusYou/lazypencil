@@ -191,7 +191,7 @@ fn extract(archive: &Path, output: &Path, root: &str) -> Result<serde_json::Valu
     let mut bytes = 0u64;
     for index in 0..archive.len() {
         let entry = archive.by_index(index)?;
-        let name = entry.name().trim_end_matches('/').to_owned();
+        let name = entry.name()?.trim_end_matches('/').to_owned();
         util::safe_path(&name)?;
         ensure!(
             name == root || name.starts_with(&format!("{root}/")),
