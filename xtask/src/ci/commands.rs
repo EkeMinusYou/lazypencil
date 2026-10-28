@@ -533,6 +533,7 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
         ));
         if has("browser_readiness") {
             for reproduction in [
+                focus::NATIVE_ANIMATION,
                 focus::GENERATED_BROWSER,
                 focus::LOCAL_FILES,
                 focus::BROWSER_COPY,
@@ -618,6 +619,9 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
                 "retained_",
             ]));
             if names.iter().any(|name| name == "browser_readiness") {
+                if suite == "dynamic" {
+                    c.extend(skips([focus::NATIVE_ANIMATION]));
+                }
                 c.extend(skips([
                     focus::LOCAL_FILES,
                     focus::BROWSER_COPY,

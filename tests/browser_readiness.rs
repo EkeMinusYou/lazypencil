@@ -345,13 +345,14 @@ fn native_animation_policy_freezes_css_transitions_and_web_animations_without_st
     browser.with_tab(&budget, |browser, session| {
         browser.command(Some(session), "Page.enable", json!({}), &budget)?;
         browser.command(Some(session), "Emulation.setDeviceMetricsOverride", json!({"width":64,"height":16,"deviceScaleFactor":1,"mobile":false}), &budget)?;
-        let url = page(r#"<style>body{margin:0;display:flex}div{width:16px;height:16px;background:#0f0}@keyframes color{from{background:#0f0}to{background:#f00}}#css{animation:color 60s steps(1,end) forwards}#transition{transition:background-color 60s steps(1,end)}</style><div id="css"></div><div id="transition"></div><div id="web"></div><div id="late"></div><script>const transition=document.getElementById("transition"),web=document.getElementById("web");getComputedStyle(transition).backgroundColor;transition.style.backgroundColor='#f00';getComputedStyle(transition).backgroundColor;web.animate([{background:'#0f0'},{background:'#f00'}],{duration:60000,easing:'steps(1,end)',fill:'forwards'});document.documentElement.dataset.ready='yes';</script>"#);
+        let url = page(r#"<style>body{margin:0;display:flex}div{width:16px;height:16px;background:#0f0}@keyframes color{from{background:#0f0}to{background:#f00}}#css{animation:color 60s steps(1,end) forwards}#transition{transition:background-color 60s steps(1,end)}</style><div id="css"></div><div id="transition"></div><div id="web"></div><div id="late"></div><script>const transition=document.getElementById("transition"),web=document.getElementById("web");getComputedStyle(transition).backgroundColor;transition.style.backgroundColor='#f00';getComputedStyle(transition).backgroundColor;web.animate([{background:'#0f0'},{background:'#f00'}],{duration:60000,easing:'steps(1,end)',fill:'forwards'});addEventListener('load',()=>document.documentElement.dataset.ready='yes');</script>"#);
         browser.command(Some(session), "Page.navigate", json!({"url":url}), &budget)?;
         browser.wait_for_selector(session, "html[data-ready]", lazypencil::config::runtime::PageSelectorState::Attached, (0.0,0.0), &budget)?;
         browser.set_page_animation_policy(session, PageAnimationPolicy::Paused, &budget)?;
-        let before = browser.evaluate(session, "document.getElementById('late').animate([{background:'#0f0'},{background:'#f00'}],{duration:60000,easing:'steps(1,end)',fill:'forwards'});document.getAnimations().map(a=>{a.currentTime=59900;return a.currentTime})", &budget)?;
+        // Complete pending play tasks before seeking and measuring a stable sample.
+        let before = browser.evaluate(session, "(async()=>{document.getElementById('late').animate([{background:'#0f0'},{background:'#f00'}],{duration:60000,easing:'steps(1,end)',fill:'forwards'});const animations=document.getAnimations();await Promise.all(animations.map(a=>a.ready));animations.forEach(a=>a.currentTime=59900);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return animations.map(a=>a.currentTime)})()", &budget)?;
         assert_eq!(before.as_array().unwrap().len(), 4);
-        assert!(before.as_array().unwrap().iter().all(|v| v.as_f64().is_some_and(|t| (t-59900.0).abs()<0.01)));
+        assert!(before.as_array().unwrap().iter().all(|v| v.as_f64().is_some_and(|t| (t-59900.0).abs()<0.01)), "Unexpected initial times: {before}");
         for (name, expected) in [("paused",Color::GREEN),("running",Color::RED)] {
             if name=="running" {
                 browser.set_page_animation_policy(session, PageAnimationPolicy::Running, &budget)?;
@@ -360,13 +361,18 @@ fn native_animation_policy_freezes_css_transitions_and_web_animations_without_st
             // Page frames still run while native animation timelines are paused.
             browser.evaluate(session, "new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))", &budget)?;
             let times = browser.evaluate(session, "document.getAnimations().map(a=>a.currentTime)", &budget)?;
+            let details = browser.evaluate(session, "({timeline:document.timeline.currentTime,animations:document.getAnimations().map(a=>({kind:a.constructor.name,time:a.currentTime,start:a.startTime,pending:a.pending,state:a.playState,rate:a.playbackRate}))})", &budget)?;
+            if let Some(directory)=std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
+                fs::create_dir_all(&directory).unwrap();
+                fs::write(std::path::Path::new(&directory).join("codec-animation-policy-observation.json"),serde_json::to_vec_pretty(&json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"browser_version":browser.version,"state":name,"initial_times":before,"observed_times":times,"details":details})).unwrap()).unwrap();
+            }
             if name=="paused" {
                 let frozen=times.as_array().unwrap();
                 let initial=before.as_array().unwrap();
                 assert_eq!(frozen.len(),initial.len());
                 // Native times are serialized floating-point milliseconds.
                 for (frozen, initial) in frozen.iter().zip(initial) {
-                    assert!((frozen.as_f64().unwrap()-initial.as_f64().unwrap()).abs()<0.01);
+                    assert!((frozen.as_f64().unwrap()-initial.as_f64().unwrap()).abs()<0.01,"Animation advanced: initial={before}, observed={times}, details={details}");
                 }
             }
             let screenshot = browser.command(Some(session), "Page.captureScreenshot", json!({"format":"png","captureBeyondViewport":false}), &budget)?;
