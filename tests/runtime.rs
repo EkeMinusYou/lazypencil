@@ -3,6 +3,129 @@ use std::{fs, process::Command};
 use tempfile::TempDir;
 #[path = "support/fixture.rs"]
 mod fixture_support;
+#[cfg(unix)]
+#[path = "support/lock_wait.rs"]
+mod lock_wait;
+
+#[test]
+fn a_cancelled_runtime_setup_does_not_create_local_state() {
+    let temp = TempDir::new().unwrap();
+    let data = temp.path().join("absent");
+    let cancel = tokio_util::sync::CancellationToken::new();
+    cancel.cancel();
+    assert_eq!(
+        runtime::setup_with_cancellation(&data, None, Some(&cancel), None)
+            .unwrap_err()
+            .code,
+        "CANCELLED"
+    );
+    assert!(!data.exists());
+}
+
+#[test]
+fn blocked_runtime_download_is_cancelled_reaped_and_never_activated() {
+    use std::{
+        sync::atomic::{AtomicBool, Ordering},
+        time::{Duration, Instant},
+    };
+    let temp = TempDir::new().unwrap();
+    let executable = temp
+        .path()
+        .join(format!("download-fixture{}", std::env::consts::EXE_SUFFIX));
+    let started = temp.path().join("download.pid");
+    fixture_support::process(
+        &executable,
+        serde_json::json!({"pid_file": started, "stdout":"partial archive", "sleep_ms":60000}),
+    );
+    let data = temp.path().join("data");
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let observed = AtomicBool::new(false);
+    let result = std::thread::scope(|scope| {
+        scope.spawn(|| {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !started.is_file() && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            observed.store(started.is_file(), Ordering::SeqCst);
+            cancel.cancel();
+        });
+        runtime::setup_with_cancellation(&data, None, Some(&cancel), Some(&executable))
+    });
+    assert!(
+        observed.load(Ordering::SeqCst),
+        "The actual owned download process must have started"
+    );
+    assert_eq!(result.unwrap_err().code, "CANCELLED");
+    #[cfg(unix)]
+    {
+        let pid = fs::read_to_string(&started)
+            .unwrap()
+            .parse::<i32>()
+            .unwrap();
+        assert_eq!(
+            unsafe { libc::kill(pid, 0) },
+            -1,
+            "The owned download process was not reaped"
+        );
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ESRCH)
+        );
+    }
+    let manifest: serde_json::Value =
+        serde_json::from_str(include_str!("../resources/runtimes/chromium.json")).unwrap();
+    let parent = data
+        .join("runtimes/chromium")
+        .join(manifest["version"].as_str().unwrap());
+    assert!(!parent.join(runtime::platform().unwrap()).exists());
+    assert_eq!(
+        fs::read_dir(parent).unwrap().count(),
+        1,
+        "Only the installer lock may remain"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn ctrl_c_cancels_runtime_lock_wait_without_releasing_another_installer() {
+    let temp = TempDir::new().unwrap();
+    let data = temp.path().join("data");
+    let manifest: serde_json::Value =
+        serde_json::from_str(include_str!("../resources/runtimes/chromium.json")).unwrap();
+    let parent = data
+        .join("runtimes/chromium")
+        .join(manifest["version"].as_str().unwrap());
+    fs::create_dir_all(&parent).unwrap();
+    let path = parent.join(format!(".{}.lock", runtime::platform().unwrap()));
+    let holder = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(&path)
+        .unwrap();
+    fs2::FileExt::lock_exclusive(&holder).unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_lazypencil"));
+    command
+        .args(["--json", "--data-dir"])
+        .arg(&data)
+        .args(["runtime", "setup", "chromium", "--archive"])
+        .arg(temp.path().join("unread.zip"))
+        .env("LAZYPENCIL_CONFIG_DIR", temp.path().join("configuration"));
+    let waiter = lock_wait::WaitingProcess::spawn(&mut command);
+    assert_eq!(unsafe { libc::kill(waiter.id() as i32, libc::SIGINT) }, 0);
+    let output = waiter.wait_with_output();
+    assert_eq!(output.status.code(), Some(130));
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["error"]["code"], "CANCELLED");
+    let probe = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&path)
+        .unwrap();
+    assert!(fs2::FileExt::try_lock_exclusive(&probe).is_err());
+    assert_eq!(fs::read_dir(parent).unwrap().count(), 1);
+}
 
 #[cfg(unix)]
 #[test]

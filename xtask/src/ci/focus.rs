@@ -350,8 +350,14 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         && paths.iter().all(|path| {
             [
                 "src/runtime.rs",
+                "src/runtime/download.rs",
+                "src/cli.rs",
+                "src/main.rs",
                 "src/store.rs",
                 "tests/runtime.rs",
+                "tests/attachments.rs",
+                "xtask/src/bin/test-helper.rs",
+                "xtask/src/ci/commands.rs",
                 "xtask/src/ci/focus.rs",
                 "xtask/tests/ci.rs",
                 ".github/actions/xtask/action.yml",
@@ -365,16 +371,23 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
                 || path.starts_with("docs/") && path.ends_with(".md")
         })
     {
+        let attachments = paths
+            .iter()
+            .any(|path| path == "tests/attachments.rs" || path == "xtask/src/bin/test-helper.rs");
+        let mut targets = if paths.iter().any(|path| path == "src/store.rs") {
+            ["document_store", "operations_cli", "project", "runtime"]
+                .map(str::to_owned)
+                .to_vec()
+        } else {
+            vec!["runtime".into()]
+        };
+        if attachments {
+            targets.insert(0, "attachments".into());
+        }
         return Ok(Plan {
             platform,
-            suite: "core".into(),
-            targets: if paths.iter().any(|path| path == "src/store.rs") {
-                ["document_store", "operations_cli", "project", "runtime"]
-                    .map(str::to_owned)
-                    .to_vec()
-            } else {
-                vec!["runtime".into()]
-            },
+            suite: if attachments { "graphics" } else { "core" }.into(),
+            targets,
             preprocessor,
         });
     }

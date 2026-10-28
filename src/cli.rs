@@ -976,7 +976,14 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
             let data = store::data_directory(arguments.data_dir.clone())?;
             match command {
                 RuntimeCommand::Setup { archive, .. } => {
-                    crate::runtime::setup(&data, archive.as_deref())
+                    let executable = std::env::current_exe()
+                        .map_err(|error| Error::new("IO_ERROR", error.to_string()))?;
+                    crate::runtime::setup_with_cancellation(
+                        &data,
+                        archive.as_deref(),
+                        Some(&crate::cancel::token()),
+                        Some(&executable),
+                    )
                 }
                 RuntimeCommand::Status => Ok(crate::runtime::status(&data)),
                 RuntimeCommand::Profile { command } => match command {

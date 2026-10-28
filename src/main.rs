@@ -2,6 +2,18 @@ use clap::{CommandFactory, FromArgMatches};
 use std::{io::Write, process::ExitCode};
 
 fn main() -> ExitCode {
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|argument| argument == "__runtime_download_worker")
+    {
+        return match lazypencil::runtime::serve_download_worker() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("{error}");
+                ExitCode::from(error.exit_code())
+            }
+        };
+    }
     #[cfg(any(windows, unix))]
     if std::env::args_os()
         .nth(1)

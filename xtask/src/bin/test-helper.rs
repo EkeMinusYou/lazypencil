@@ -16,6 +16,7 @@ fn main() -> test_support::Result {
             "hold-child",
             "render-fixture",
             "font-fixture",
+            "png-inspect",
         ]
         .contains(&s.as_str())
     });
@@ -28,6 +29,20 @@ fn main() -> test_support::Result {
         }
     }
     match args.first().map(String::as_str) {
+        Some("png-inspect") => {
+            use std::io::Read;
+            let path = args.get(1).ok_or("Missing PNG input")?;
+            let mut bytes = Vec::new();
+            std::fs::File::open(path)?
+                .take(20 * 1024 * 1024 + 1)
+                .read_to_end(&mut bytes)?;
+            let frame = lazypencil_xtask::terminal::raster::decode_png(&bytes)?;
+            serde_json::to_writer(
+                std::io::stdout().lock(),
+                &serde_json::json!({"width":frame.width,"height":frame.height,"first_pixel":frame.pixels[0]}),
+            )?;
+            Ok(())
+        }
         Some("font-fixture") => {
             let destination = args.get(1).ok_or("Missing color-font output")?;
             let bytes = match args.get(2).map(String::as_str).unwrap_or("colr") {

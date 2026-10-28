@@ -330,6 +330,26 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
         app.push("--no-default-features".into());
     }
     let mut builds = vec![build, app];
+    if suite == "graphics" && has("attachments") {
+        // Exercise the optional-TUI boundary before ending in the default
+        // build graph used by reproductions and the shared focused artifact.
+        // The same image contracts run in both distinct feature configurations.
+        builds.insert(
+            0,
+            words(&[
+                "cargo",
+                "test",
+                "--locked",
+                "--no-default-features",
+                "--features",
+                "rendering",
+                "--test",
+                "attachments",
+                "--",
+                "--test-threads=2",
+            ]),
+        );
+    }
     if !core && has("script_scope") {
         builds.push(words(&[
             "cargo",

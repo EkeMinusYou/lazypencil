@@ -71,6 +71,23 @@ mod originals {
     use base64::Engine;
     use lazypencil::{attachments::Attachment, document::hash};
 
+    fn inspect_png(bytes: &[u8]) -> serde_json::Value {
+        use std::io::Write;
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(bytes).unwrap();
+        let output = std::process::Command::new(fixture_support::helper())
+            .arg("png-inspect")
+            .arg(file.path())
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice(&output.stdout).unwrap()
+    }
+
     fn jpeg() -> Vec<u8> {
         let mut surface = skia_safe::surfaces::raster_n32_premul((40, 20)).unwrap();
         surface.canvas().clear(skia_safe::Color::RED);
@@ -333,8 +350,12 @@ mod originals {
             ),
             (2, 2, 1, 1)
         );
-        let decoded = image::load_from_memory(&image.png).unwrap().to_rgba8();
-        let pixel = decoded.get_pixel(0, 0).0;
+        let decoded = inspect_png(&image.png);
+        assert_eq!(
+            (decoded["width"].as_u64(), decoded["height"].as_u64()),
+            (Some(1), Some(1))
+        );
+        let pixel: [u8; 4] = serde_json::from_value(decoded["first_pixel"].clone()).unwrap();
         assert!(
             pixel[0] >= 254 && pixel[1] <= 1 && pixel[2] <= 1,
             "{pixel:?}"
@@ -453,12 +474,10 @@ mod originals {
             result.unwrap().unwrap();
         });
         let received = std::fs::read(temp.path().join("received-image-1-0.png")).unwrap();
+        let decoded = inspect_png(&received);
         assert_eq!(
-            image::load_from_memory(&received)
-                .unwrap()
-                .to_rgba8()
-                .dimensions(),
-            (5, 10)
+            (decoded["width"].as_u64(), decoded["height"].as_u64()),
+            (Some(5), Some(10))
         );
         assert_eq!(received, image.read(conversation.directory()).unwrap());
         assert_eq!(

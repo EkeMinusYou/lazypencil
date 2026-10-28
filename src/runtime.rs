@@ -11,8 +11,10 @@ use std::{
     path::{Component, Path, PathBuf},
     time::Duration,
 };
+use tokio_util::sync::CancellationToken;
 
 mod diagnostics;
+mod download;
 pub(crate) use diagnostics::host_status;
 pub mod profiles;
 
@@ -89,7 +91,7 @@ pub fn installed(data: &Path) -> Result<InstalledBrowser> {
             "Chromium is not installed; run lazypencil runtime setup chromium",
         ));
     }
-    verify(&directory, artifact)?;
+    verify(&directory, artifact, None, false)?;
     Ok(InstalledBrowser {
         executable: directory.join(&artifact.executable),
         version: manifest.version,
@@ -99,6 +101,18 @@ pub fn installed(data: &Path) -> Result<InstalledBrowser> {
 
 /// A local archive is accepted only when it matches the same pinned official hash.
 pub fn setup(data: &Path, archive: Option<&Path>) -> Result<Value> {
+    setup_with_cancellation(data, archive, None, None)
+}
+
+/// A cancellable network installation needs the real application executable,
+/// so embedded hosts never launch their own binary as an internal worker.
+pub fn setup_with_cancellation(
+    data: &Path,
+    archive: Option<&Path>,
+    cancel: Option<&CancellationToken>,
+    executable: Option<&Path>,
+) -> Result<Value> {
+    crate::cancel::check(cancel)?;
     let manifest = manifest()?;
     let platform = platform()?;
     let artifact = manifest
@@ -106,8 +120,40 @@ pub fn setup(data: &Path, archive: Option<&Path>) -> Result<Value> {
         .iter()
         .find(|artifact| artifact.platform == platform)
         .ok_or_else(|| unavailable("No pinned artifact for this platform"))?;
-    let directory = directory(data, &manifest.version, platform);
+    install(
+        data,
+        &manifest.version,
+        artifact,
+        archive,
+        cancel,
+        executable,
+    )
+}
+
+fn install(
+    data: &Path,
+    version: &str,
+    artifact: &Artifact,
+    archive: Option<&Path>,
+    cancel: Option<&CancellationToken>,
+    executable: Option<&Path>,
+) -> Result<Value> {
+    crate::cancel::check(cancel)?;
+    let platform = artifact.platform.as_str();
+    let directory = directory(data, version, platform);
     let parent = directory.parent().expect("runtime parent");
+    let mut publication_parents = Vec::new();
+    for path in parent.ancestors() {
+        let path = if path.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            path
+        };
+        publication_parents.push(path.to_owned());
+        if path.is_dir() {
+            break;
+        }
+    }
     crate::store::create_private_directory(parent)?;
     let lock_path = parent.join(format!(".{platform}.lock"));
     let lock = OpenOptions::new()
@@ -119,11 +165,13 @@ pub fn setup(data: &Path, archive: Option<&Path>) -> Result<Value> {
         .map_err(|e| Error::io(&lock_path, e))?;
     // Match the existing icon-installer contention budget; downloads retain
     // their separate 180-second limit. Do not wait forever for another setup.
-    crate::store::wait_for_file_lock(&lock, &lock_path, false, None, Duration::from_secs(60))?;
+    crate::store::wait_for_file_lock(&lock, &lock_path, false, cancel, Duration::from_secs(60))?;
+    crate::cancel::check(cancel)?;
     if directory.exists() {
-        verify(&directory, artifact)?;
+        verify(&directory, artifact, cancel, false)?;
+        crate::store::sync_directory(parent)?;
         return Ok(
-            json!({"version":manifest.version,"platform":platform,"executable":directory.join(&artifact.executable),"reused":true}),
+            json!({"version":version,"platform":platform,"executable":directory.join(&artifact.executable),"reused":true}),
         );
     }
     let mut temporary =
@@ -136,23 +184,20 @@ pub fn setup(data: &Path, archive: Option<&Path>) -> Result<Value> {
                 error
             }
         })?;
-        std::io::copy(&mut file.take(artifact.bytes + 1), &mut temporary)
-            .map_err(|e| Error::io(path, e))?;
+        copy_checked(file, &mut temporary, path, artifact.bytes, cancel)?;
     } else {
-        eprintln!("Downloading Chromium {} for {platform}", manifest.version);
-        let agent: ureq::Agent = ureq::Agent::config_builder()
-            .timeout_global(Some(Duration::from_secs(180)))
-            .build()
-            .into();
-        let mut response = agent
-            .get(&artifact.url)
-            .call()
-            .map_err(|e| unavailable(format!("Chromium download failed: {e}")))?;
-        std::io::copy(
-            &mut response.body_mut().as_reader().take(artifact.bytes + 1),
-            &mut temporary,
-        )
-        .map_err(|e| unavailable(format!("Chromium download failed: {e}")))?;
+        eprintln!("Downloading Chromium {version} for {platform}");
+        if let Some(executable) = executable {
+            download::run(executable, &temporary, artifact.bytes, cancel)?;
+        } else {
+            if cancel.is_some() {
+                return Err(Error::new(
+                    "INVALID_ARGUMENT",
+                    "Cancellable runtime downloads require the lazypencil executable",
+                ));
+            }
+            download::direct(artifact, &mut temporary)?;
+        }
     }
     temporary
         .flush()
@@ -163,7 +208,7 @@ pub fn setup(data: &Path, archive: Option<&Path>) -> Result<Value> {
         .map_err(|e| Error::io(temporary.path(), e))?
         .len()
         != artifact.bytes
-        || digest(temporary.path(), artifact.bytes)? != artifact.sha256
+        || digest_with_cancellation(temporary.path(), artifact.bytes, cancel)? != artifact.sha256
     {
         return Err(integrity(
             "Chromium archive does not match its pinned SHA-256 and size",
@@ -183,6 +228,7 @@ pub fn setup(data: &Path, archive: Option<&Path>) -> Result<Value> {
         return Err(integrity("Runtime archive has too many entries"));
     }
     for index in 0..archive.len() {
+        crate::cancel::check(cancel)?;
         let entry = archive
             .by_index(index)
             .map_err(|e| integrity(format!("Invalid runtime entry: {e}")))?;
@@ -220,12 +266,10 @@ pub fn setup(data: &Path, archive: Option<&Path>) -> Result<Value> {
             .create_new(true)
             .open(&path)
             .map_err(|e| Error::io(&path, e))?;
-        let copied = std::io::copy(&mut entry.take(pinned.bytes + 1), &mut target)
-            .map_err(|e| Error::io(&path, e))?;
+        let copied = copy_checked(entry, &mut target, &path, pinned.bytes, cancel)?;
         if copied != pinned.bytes {
             return Err(integrity("Incomplete runtime entry"));
         }
-        target.sync_all().map_err(|e| Error::io(&path, e))?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -235,12 +279,20 @@ pub fn setup(data: &Path, archive: Option<&Path>) -> Result<Value> {
             )
             .map_err(|e| Error::io(&path, e))?;
         }
+        target.sync_all().map_err(|e| Error::io(&path, e))?;
     }
-    verify(staging.path(), artifact)?;
+    // Persist all file data, permissions and nested directory entries before
+    // exposing the verified installation through its final directory name.
+    verify(staging.path(), artifact, cancel, true)?;
+    crate::cancel::check(cancel)?;
     fs::rename(staging.path(), &directory).map_err(|e| Error::io(&directory, e))?;
-    crate::store::sync_directory(parent)?;
+    // Once renamed, finish the commit even if cancellation arrives. Sync the
+    // newly created ancestor entries too, including the first existing parent.
+    for path in publication_parents {
+        crate::store::sync_directory(&path)?;
+    }
     Ok(
-        json!({"version":manifest.version,"platform":platform,"executable":directory.join(&artifact.executable),"reused":false,"source":artifact.url,"archive_sha256":artifact.sha256}),
+        json!({"version":version,"platform":platform,"executable":directory.join(&artifact.executable),"reused":false,"source":artifact.url,"archive_sha256":artifact.sha256}),
     )
 }
 
@@ -255,7 +307,13 @@ pub fn status(data: &Path) -> Value {
     report["host"] = host_status();
     report
 }
-fn verify(directory: &Path, artifact: &Artifact) -> Result<()> {
+fn verify(
+    directory: &Path,
+    artifact: &Artifact,
+    cancel: Option<&CancellationToken>,
+    durable: bool,
+) -> Result<()> {
+    crate::cancel::check(cancel)?;
     if fs::symlink_metadata(directory)
         .map_err(|e| Error::io(directory, e))?
         .file_type()
@@ -264,6 +322,7 @@ fn verify(directory: &Path, artifact: &Artifact) -> Result<()> {
         return Err(integrity("Runtime directory is a symbolic link"));
     }
     for (relative, pinned) in &artifact.files {
+        crate::cancel::check(cancel)?;
         let path = directory.join(relative);
         let mut parent = path.parent();
         while let Some(p) = parent.filter(|p| *p != directory) {
@@ -277,7 +336,7 @@ fn verify(directory: &Path, artifact: &Artifact) -> Result<()> {
         if !metadata.is_file()
             || metadata.file_type().is_symlink()
             || metadata.len() != pinned.bytes
-            || digest(&path, pinned.bytes)? != pinned.sha256
+            || digest_with_cancellation(&path, pinned.bytes, cancel)? != pinned.sha256
         {
             return Err(integrity(format!(
                 "Installed runtime file differs from its pin: {relative}"
@@ -291,7 +350,7 @@ fn verify(directory: &Path, artifact: &Artifact) -> Result<()> {
             }
         }
     }
-    verify_contents(directory, directory, &artifact.files)?;
+    verify_contents(directory, directory, &artifact.files, cancel, durable)?;
     Ok(())
 }
 
@@ -299,15 +358,18 @@ fn verify_contents(
     root: &Path,
     directory: &Path,
     files: &BTreeMap<String, PinnedFile>,
+    cancel: Option<&CancellationToken>,
+    durable: bool,
 ) -> Result<()> {
     for entry in fs::read_dir(directory).map_err(|e| Error::io(directory, e))? {
+        crate::cancel::check(cancel)?;
         let path = entry.map_err(|e| Error::io(directory, e))?.path();
         let metadata = fs::symlink_metadata(&path).map_err(|e| Error::io(&path, e))?;
         if metadata.file_type().is_symlink() {
             return Err(integrity("Installed runtime contains a symbolic link"));
         }
         if metadata.is_dir() {
-            verify_contents(root, &path, files)?;
+            verify_contents(root, &path, files, cancel, durable)?;
         } else {
             let relative = path
                 .strip_prefix(root)
@@ -325,16 +387,34 @@ fn verify_contents(
             }
         }
     }
+    crate::cancel::check(cancel)?;
+    if durable {
+        crate::store::sync_directory(directory)?;
+    }
     Ok(())
 }
+#[cfg(test)]
 fn digest(path: &Path, expected_bytes: u64) -> Result<String> {
+    digest_with_cancellation(path, expected_bytes, None)
+}
+fn digest_with_cancellation(
+    path: &Path,
+    expected_bytes: u64,
+    cancel: Option<&CancellationToken>,
+) -> Result<String> {
     let mut file = crate::store::open_regular_file(path)?.take(expected_bytes.saturating_add(1));
     let mut digest = Sha256::new();
     let mut buffer = [0u8; 65536];
     let mut bytes = 0;
     loop {
-        let count = file.read(&mut buffer).map_err(|e| Error::io(path, e))?;
+        crate::cancel::check(cancel)?;
+        let count = match file.read(&mut buffer) {
+            Ok(count) => count,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(Error::io(path, error)),
+        };
         if count == 0 {
+            crate::cancel::check(cancel)?;
             break;
         }
         bytes += count as u64;
@@ -349,6 +429,56 @@ fn digest(path: &Path, expected_bytes: u64) -> Result<String> {
         .map(|byte| format!("{byte:02x}"))
         .collect())
 }
+
+fn copy_checked(
+    reader: impl Read,
+    writer: &mut impl Write,
+    path: &Path,
+    expected_bytes: u64,
+    cancel: Option<&CancellationToken>,
+) -> Result<u64> {
+    let mut reader = reader.take(expected_bytes.saturating_add(1));
+    let mut buffer = [0u8; 64 * 1024];
+    let mut total = 0u64;
+    loop {
+        crate::cancel::check(cancel)?;
+        let count = match reader.read(&mut buffer) {
+            Ok(count) => count,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(Error::io(path, error)),
+        };
+        crate::cancel::check(cancel)?;
+        if count == 0 {
+            return Ok(total);
+        }
+        total += count as u64;
+        if total > expected_bytes {
+            return Err(integrity("Runtime input exceeds its pinned size"));
+        }
+        writer
+            .write_all(&buffer[..count])
+            .map_err(|error| Error::io(path, error))?;
+    }
+}
+
+#[doc(hidden)]
+pub fn serve_download_worker() -> Result<()> {
+    if std::env::args_os().nth(2).is_some() {
+        return Err(Error::new(
+            "INVALID_ARGUMENT",
+            "The runtime download worker takes no arguments",
+        ));
+    }
+    download::watch_owner()?;
+    let manifest = manifest()?;
+    let platform = platform()?;
+    let artifact = manifest
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.platform == platform)
+        .ok_or_else(|| unavailable("No pinned artifact for this platform"))?;
+    download::direct(artifact, &mut std::io::stdout().lock())
+}
 fn unavailable(message: impl Into<String>) -> Error {
     Error::new("RUNTIME_UNAVAILABLE", message)
 }
@@ -358,6 +488,134 @@ fn integrity(message: impl Into<String>) -> Error {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn installation_activates_only_a_complete_pinned_tree_and_retains_modified_data() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let source = temp.path().join("archive.zip");
+        let bytes = b"fixture browser";
+        let mut zip = zip::ZipWriter::new(fs::File::create(&source).unwrap());
+        zip.start_file(
+            "app/nested/browser",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
+        zip.write_all(bytes).unwrap();
+        zip.finish().unwrap();
+        let size = fs::metadata(&source).unwrap().len();
+        let mut artifact = Artifact {
+            platform: "fixture".into(),
+            url: "https://invalid.example/archive.zip".into(),
+            executable: "app/nested/browser".into(),
+            sha256: digest(&source, size).unwrap(),
+            bytes: size,
+            files: BTreeMap::from([(
+                "app/nested/browser".into(),
+                PinnedFile {
+                    sha256: crate::document::hash(bytes),
+                    bytes: bytes.len() as u64,
+                    executable: true,
+                },
+            )]),
+        };
+        let data = temp.path().join("fresh/data");
+        artifact.files.get_mut("app/nested/browser").unwrap().sha256 = "0".repeat(64);
+        assert_eq!(
+            install(&data, "test", &artifact, Some(&source), None, None)
+                .unwrap_err()
+                .code,
+            "RUNTIME_INTEGRITY"
+        );
+        let directory = directory(&data, "test", "fixture");
+        assert!(!directory.exists());
+        let parent = directory.parent().unwrap();
+        assert_eq!(
+            fs::read_dir(parent).unwrap().count(),
+            1,
+            "Only the installer lock remains after failure"
+        );
+        artifact.files.get_mut("app/nested/browser").unwrap().sha256 = crate::document::hash(bytes);
+        assert_eq!(
+            install(&data, "test", &artifact, Some(&source), None, None).unwrap()["reused"],
+            false
+        );
+        assert_eq!(
+            fs::read(directory.join(&artifact.executable)).unwrap(),
+            bytes
+        );
+        assert_eq!(
+            install(&data, "test", &artifact, Some(&source), None, None).unwrap()["reused"],
+            true
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_ne!(
+                fs::metadata(directory.join(&artifact.executable))
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o111,
+                0
+            );
+        }
+        fs::write(directory.join(&artifact.executable), b"modified").unwrap();
+        assert_eq!(
+            install(&data, "test", &artifact, Some(&source), None, None)
+                .unwrap_err()
+                .code,
+            "RUNTIME_INTEGRITY"
+        );
+        assert_eq!(
+            fs::read(directory.join(&artifact.executable)).unwrap(),
+            b"modified"
+        );
+    }
+
+    #[test]
+    fn cancellation_stops_a_transfer_before_writing_the_next_chunk() {
+        struct Cancelling {
+            token: CancellationToken,
+        }
+        impl Read for Cancelling {
+            fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+                bytes.fill(7);
+                self.token.cancel();
+                Ok(bytes.len())
+            }
+        }
+        let token = CancellationToken::new();
+        let mut output = Vec::new();
+        assert_eq!(
+            copy_checked(
+                Cancelling {
+                    token: token.clone()
+                },
+                &mut output,
+                Path::new("fixture"),
+                1024 * 1024,
+                Some(&token)
+            )
+            .unwrap_err()
+            .code,
+            "CANCELLED"
+        );
+        assert!(output.is_empty());
+        assert_eq!(
+            copy_checked(
+                std::io::Cursor::new(b"too large"),
+                &mut output,
+                Path::new("fixture"),
+                3,
+                None
+            )
+            .unwrap_err()
+            .code,
+            "RUNTIME_INTEGRITY"
+        );
+        assert!(output.is_empty());
+    }
     #[test]
     fn runtime_installation_lock_preserves_holder_and_observes_exhausted_budget() {
         let holder = tempfile::NamedTempFile::new().unwrap();

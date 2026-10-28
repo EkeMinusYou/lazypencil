@@ -73,10 +73,26 @@ fn encoded_clipboard_inputs_reproduce_in_the_rendering_attachment_consumer() {
             .any(|target| target == "font_sources")
     );
     let commands = ci::commands::plan(&root, &plan.suite, &plan.targets).unwrap();
+    assert_eq!(
+        commands.build[0],
+        [
+            "cargo",
+            "test",
+            "--locked",
+            "--no-default-features",
+            "--features",
+            "rendering",
+            "--test",
+            "attachments",
+            "--",
+            "--test-threads=2"
+        ]
+    );
     assert!(
         commands
             .build
             .iter()
+            .skip(1)
             .chain(&commands.checks)
             .all(|args| !args.iter().any(|arg| arg == "--no-default-features"))
     );
@@ -248,6 +264,9 @@ fn installer_only_changes_reproduce_without_native_features_and_mixed_changes_st
     let root = util::root();
     let paths: Vec<String> = [
         "src/runtime.rs",
+        "src/runtime/download.rs",
+        "src/cli.rs",
+        "src/main.rs",
         "tests/runtime.rs",
         "xtask/src/ci/focus.rs",
         "xtask/tests/ci.rs",
@@ -267,6 +286,18 @@ fn installer_only_changes_reproduce_without_native_features_and_mixed_changes_st
     assert_eq!(plan.platform, "macos-15");
     assert_eq!(plan.suite, "core");
     assert_eq!(plan.targets, ["runtime"]);
+    let mut combined = paths.clone();
+    combined.extend(
+        [
+            "tests/attachments.rs",
+            "xtask/src/bin/test-helper.rs",
+            "xtask/src/ci/commands.rs",
+        ]
+        .map(str::to_owned),
+    );
+    let combined = focus::select(&root, &combined, "auto").unwrap();
+    assert_eq!(combined.suite, "graphics");
+    assert_eq!(combined.targets, ["attachments", "runtime"]);
     let commands = ci::commands::plan(&root, &plan.suite, &plan.targets).unwrap();
     assert!(
         commands

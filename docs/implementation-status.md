@@ -4,11 +4,11 @@
 
 ## 現在の状態（2026-10-29）
 
-直前の実装・検証の照合対象は `491b6e9`。初回対象をmacOS Apple Siliconだけにする変更と文書整理・同梱ガイド版1.0.34は反映済み。先行検証の過剰な対象選択を修正し、実際のMac先行jobを10分以内に短縮した。製品の残件の実装を再開し、元エンコード保存はMac CIで先行・完全検証・監査・署名付きsourceまで成功した。送信用縮小版とTUI入力スレッドでの変換・保存・候補回収を含む `4116c7f` は軽量223件・Clippyを成功したが、Mac先行は2回ともランナー容量不足で処理開始前に終了した。現在は添付上限のユーザー設定とCLI／TUI／入力ワーカー／送信前の検査を追加し、同じ縮小・候補回収の回帰試験も次の候補で検証する。Linux x64／arm64・Windowsの既存実装を後日対応用に保持し、Intel Macは対象外とする。OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
+直前の完全検証成功は `c11a0f9` の [CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40741043404)。送信用縮小版・TUI入力スレッドでの変換と候補回収・添付上限のユーザー設定を含み、軽量223件・Clippy、Mac先行5分56秒、両feature構成を含む完全検証・依存監査・署名付きsourceまで成功した。先行ではlibrary166件・添付17件・ユーザー設定17件、実PTYと実clipboard3072画素を確認した。完全検証の可視consoleでは `491b6e9` の全既存named caseの回数を維持し、追加18実行を確認したが、全artifactの独立した再照合と製品全体の受け入れは未完了。次の変更はruntime導入の取消・保存同期と、TUIの任意依存に頼っていた添付PNG試験の修正である。既存Rust補助バイナリのPNGデコーダーを再利用し、描画単独構成を先に確認してから既定構成で検証する。依存クレートやworkflowは増やさず、重いbuildはGHAに限る。Linux x64／arm64・Windowsの既存実装を後日対応用に保持し、Intel Macは対象外とする。OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
 
 旧3環境方針での依存監査・署名付きソースを含む確定済み根拠は [`c9ffb37` の CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40679529757)。Linux 各1,490件・Mac1,479件、各144サマリー・812画像・42描画計測を確認し、過去ケースの実行回数、画像、clipboard／IME、profile／namespace／通信制御、ソース1,161ファイルの Git blob・mode と署名を独立照合した。CI の成功は、製品全体の受け入れ完了を意味しない。
 
-`95e2b6f` の [CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40689894389) は、軽量219件・28サマリーと Clippy、Mac先行、旧方針の3環境full job、依存監査・署名付きソースまで成功した。有用な実行を中断せず、終了後に今回の変更を送る。各artifactの独立照合はまだ行っていないため、上記c9ffb37の確定済み基準と区別する。同条件の再実行は行わない。
+`95e2b6f` の [CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40689894389) は、軽量219件・28サマリーと Clippy、Mac先行、旧方針の3環境full job、依存監査・署名付きソースまで成功した。有用な実行は中断せず、終了後に次の変更を送った。各artifactの独立照合はまだ行っていないため、上記c9ffb37の確定済み基準と区別する。同条件の再実行は行わない。
 
 ### 初回MacのみのCI方針
 
@@ -42,9 +42,9 @@
 
 画像添付仕様との追加の差分：
 
-- 元エンコード保存は `491b6e9` の [CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40726406737) で軽量223件・Clippy、Mac先行5分02秒（添付9件・library161件・native clipboard3072画素）と完全検証・監査・署名sourceまで成功した。利用者が選ぶ縮小版のCLI／TUI操作、元からの再生成、入力スレッドによる変換・保存、キャンセル時の候補回収と、ユーザーの `[attachments]` 設定を実装し、GHA検証を進める。既定8枚・各20MiB・合計各50MiB・16Mi画素を維持し、枚数・元容量・送信容量・元画素数を設定できる。ネイティブ単体の安全上限は維持する。設定を下げた後の送信拒否・段階的な縮小による修復・元画像と下書き保持も回帰試験へ含めたが、新しい本体のコンパイル・実行成功はまだ確認していない。
+- 元エンコード保存と縮小版のCLI／TUI操作、入力スレッドによる変換・保存、キャンセル時の候補回収、ユーザーの `[attachments]` 設定は `c11a0f9` でMac先行・両feature構成の完全検証・監査・署名sourceまで成功した。設定を下げた後の送信拒否・段階的な縮小による修復・元画像と下書き保持、実ACPが受信した縮小PNGを含む。既定8枚・各20MiB・合計各50MiB・16Mi画素とネイティブ単体の安全上限は維持する。TUIを含まない描画構成でも同じ画素試験を使えるよう、次の変更でPNG検査を既存Rust補助バイナリへ移し、その構成を先に試験する。物理IMEと最終受け入れは引き続き確認する。
 
-個別仕様に残る制約も、完了扱いにしない。独立copyの絶対／非localな文字列samplerと衝突投影、欠損library／設定fontの専用修復、未参照のproject素材回収、runtime導入の明示取消・耐障害性、再現用font lockfileなどは各サービス文書の現行範囲を参照する。Browserが広告するdevice IDはdesktop／phone／tabletだけで、全Pencil presetへの対応を宣言しない。GLSLの宣言・構造体・前処理は実装済みだが、fill-stage `pencil:object` は未対応である。これらを古いGHA待ちと混同せず、元の必須条件に照らして実装と確認を切り分ける。
+個別仕様に残る制約も、完了扱いにしない。独立copyの絶対／非localな文字列samplerと衝突投影、欠損library／設定fontの専用修復、未参照のproject素材回収、再現用font lockfileなどは各サービス文書の現行範囲を参照する。runtime導入の取消・保存同期は次の検証候補へ追加した。通信待ちを所有する子プロセス、lock待機・分割転送・hash・展開の取消、公開前のfile／directory同期と新規ancestor同期、取消時の未完成物回収と既存Rust補助バイナリを使う回帰試験を含む。コンパイル・実通信・取消・公開耐障害性の合格はまだ未確認である。Browserが広告するdevice IDはdesktop／phone／tabletだけで、全Pencil presetへの対応を宣言しない。GLSLの宣言・構造体・前処理は実装済みだが、fill-stage `pencil:object` は未対応である。これらを古いGHA待ちと混同せず、元の必須条件に照らして実装と確認を切り分ける。
 
 公開前の確認・決定：
 
@@ -55,7 +55,7 @@
 
 ### 既知の障害と、完了扱いしないこと
 
-標準 macOS GHA の Kitty 0.49.2 は、取得・ハッシュ・署名・両実行ファイルの版検査後に NSGL／OpenGL 3.3 の初期化で失敗した。`3d711d9` の失敗はアプリ起動前であり、日本語入力の不具合や可視画面の成功とは扱わない。Mac の実 Kitty 12段階試験は既存 release-evidence の `macos_terminal_gui` に保持し、明示時だけ課金対象の GPU runner を使う。未実行である。利用者への反復した手動確認依頼を検証計画の前提にしない。
+標準 macOS GHA の Kitty 0.49.2 は、取得・ハッシュ・署名・両実行ファイルの版検査後に NSGL／OpenGL 3.3 の初期化で失敗した。`3d711d9` の失敗はアプリ起動前であり、日本語入力の不具合や可視画面の成功とは扱わない。実 Kitty 12段階試験は既存 release-evidence の `macos_terminal_gui` に保持しているが、GPU付きlarger runnerはGitHub Team／Enterprise Cloudの組織向けである。[公式の利用条件](https://docs.github.com/en/enterprise-cloud%40latest/actions/concepts/runners/larger-runners)。現在のrepository ownerは個人アカウントであり、このflagだけで利用できる経路とは扱わず、未実行のまま残す。アカウント移管・契約変更は実行していない。利用者への反復した手動確認依頼を検証計画の前提にしない。
 
 旧3環境CI全体の安定した短縮は未達だった。初回Macのみへ変更し、Linux nativeの待機・再ビルド・必須確認を外すが、実行時間が単純に1/3になるとは見積もらない。`c9ffb37` は38分28秒、先行17分30秒、全体 job は x64 16分35秒・arm64 17分57秒・Mac20分05秒だった。先行範囲と runner image が異なり、元の27〜29分との統制比較ではない。Mac release 再利用0.87秒、同一環境での先行成果物再利用、変更した試験だけの無効化、独立試験の並列化には個別の成功根拠がある。性能効果の未確認と、機構の未実装を区別する。
 
