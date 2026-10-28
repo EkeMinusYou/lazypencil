@@ -33,7 +33,14 @@ pub fn linux_profile_dependencies() -> Result<()> {
 
 pub fn linux_terminal_dependencies() -> Result<()> {
     hosted_linux_packages(&[
-        "kitty", "xterm", "xvfb", "xauth", "xdotool", "x11-apps", "strace",
+        "kitty",
+        "xterm",
+        "xvfb",
+        "xauth",
+        "xdotool",
+        "x11-apps",
+        "strace",
+        "fonts-noto-cjk",
     ])
 }
 

@@ -14,6 +14,29 @@ use std::{
 
 const COLORS: [[u8; 4]; 3] = [[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255]];
 const CURSOR: [u8; 4] = [255, 0, 255, 255];
+const JAPANESE: &str = "日本語";
+
+fn session(root: &Path) -> Result<Value> {
+    fn only_directory(path: &Path) -> Result<PathBuf> {
+        let directories = fs::read_dir(path)?
+            .map(|entry| -> Result<Option<PathBuf>> {
+                let entry = entry?;
+                Ok(entry.file_type()?.is_dir().then(|| entry.path()))
+            })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        ensure!(directories.len() == 1, "Ambiguous owned test session");
+        Ok(directories[0].clone())
+    }
+    let document = only_directory(&root.join("data/documents"))?;
+    let session = only_directory(&document.join("conversations"))?;
+    Ok(serde_json::from_slice(&util::read(
+        &session.join("session.json"),
+        65536,
+    )?)?)
+}
 
 fn cursor(frame: &Raster) -> Option<Region> {
     let mut regions = raster::regions(frame, CURSOR, 8);
@@ -22,7 +45,7 @@ fn cursor(frame: &Raster) -> Option<Region> {
 
 fn command(program: &str, args: &[&str]) -> Result<process::Output> {
     process::output_limited(
-        Command::new(program).args(args),
+        Command::new(program).args(args).env("LC_ALL", "C.UTF-8"),
         Duration::from_secs(10),
         65536,
     )
@@ -104,7 +127,7 @@ impl Emulator {
             let config = root.join("kitty.conf");
             fs::write(
                 &config,
-                "linux_display_server x11\nfont_size 11\ninitial_window_width 120c\ninitial_window_height 40c\nwindow_padding_width 0\nbackground_opacity 1\nsync_to_monitor no\ncursor #ff00ff\ncursor_text_color #000000\ncursor_shape block\ncursor_blink_interval 0\n",
+                "linux_display_server x11\nfont_family Noto Sans Mono CJK JP\nfont_size 11\ninitial_window_width 120c\ninitial_window_height 40c\nwindow_padding_width 0\nbackground_opacity 1\nsync_to_monitor no\ncursor #ff00ff\ncursor_text_color #000000\ncursor_shape block\ncursor_blink_interval 0\n",
             )?;
             let mut c = Command::new("kitty");
             c.arg("--debug-rendering")
@@ -125,7 +148,7 @@ impl Emulator {
                 "-xrm",
                 "*numColorRegisters:256",
                 "-fa",
-                "monospace",
+                "Noto Sans Mono CJK JP",
                 "-fs",
                 "11",
                 "-bg",
@@ -286,6 +309,25 @@ impl Emulator {
         self.phase("prompt-restored", |_, frame| {
             cursor(frame).as_ref() == Some(&initial_cursor)
         })?;
+        // Feed committed Unicode through the real emulator's X11 input path.
+        // Physical IME preedit and candidate windows remain a separate scope.
+        xdo(&["type", "--clearmodifiers", "--delay", "30", JAPANESE])?;
+        let root = self.root.clone();
+        self.phase("japanese-commit", |_, frame| {
+            cursor(frame).is_some_and(|current| {
+                current.left
+                    == initial_cursor.left + 6 * (initial_cursor.right - initial_cursor.left)
+                    && current.top == initial_cursor.top
+                    && current.bottom == initial_cursor.bottom
+            }) && session(&root).is_ok_and(|session| session["draft"] == JAPANESE)
+        })?;
+        for _ in JAPANESE.chars() {
+            self.key("BackSpace")?;
+        }
+        self.phase("japanese-restored", |_, frame| {
+            cursor(frame).as_ref() == Some(&initial_cursor)
+                && session(&root).is_ok_and(|session| session["draft"] == "")
+        })?;
         self.key("Tab")?;
         let (initial, width, height) = self.phase("initial", |_, frame| cursor(frame).is_none())?;
         self.key("plus")?;
@@ -342,23 +384,7 @@ impl Emulator {
             );
             thread::sleep(Duration::from_millis(20));
         }
-        fn only_directory(path: &Path) -> Result<PathBuf> {
-            let directories = fs::read_dir(path)?
-                .map(|entry| -> Result<Option<PathBuf>> {
-                    let entry = entry?;
-                    Ok(entry.file_type()?.is_dir().then(|| entry.path()))
-                })
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>();
-            ensure!(directories.len() == 1, "Ambiguous owned test session");
-            Ok(directories[0].clone())
-        }
-        let document = only_directory(&self.root.join("data/documents"))?;
-        let session = only_directory(&document.join("conversations"))?;
-        let session: Value =
-            serde_json::from_slice(&util::read(&session.join("session.json"), 65536)?)?;
+        let session = session(&self.root)?;
         ensure!(
             session["draft"] == "",
             "Terminal replies or navigation polluted the prompt"
@@ -371,8 +397,9 @@ impl Emulator {
             json!({"screen_capture":"XWD v7 TrueColor from real X11 window",
             "document_sha256":util::file_digest(&self.root.join("design.pen"))?,
             "markers":"three connected primary-color regions, at least 1024 pixels each",
-            "phases":["loaded","typed-cursor","prompt-restored","initial","zoomed","panned-right","pan-restored","zoom-restored","resized","size-restored"],
+            "phases":["loaded","typed-cursor","prompt-restored","japanese-commit","japanese-restored","initial","zoomed","panned-right","pan-restored","zoom-restored","resized","size-restored"],
             "native_prompt_cursor":{"initial":initial_cursor,"typed_one_cell_right":true,"backspace_restored":true,"hidden_outside_prompt":true},
+            "japanese_commit":{"text":JAPANESE,"source":"XTest Unicode keys through the real emulator; not physical IME","persisted_exactly":true,"native_cursor_cells":6,"backspace_restored":true,"font":"Noto Sans Mono CJK JP"},
             "keyboard_exit":"success","prompt_draft_empty":true,"agent_started":false,
             "physical_display_or_ime_acceptance":false,"latency_benchmark":false}),
         )
@@ -455,7 +482,7 @@ pub fn run(candidate: Option<&Path>, output: &Path) -> Result<()> {
         };
         report["emulator_version"] = json!(identity.trim());
         if program == "xterm" {
-            report["emulator_configuration"] = json!({"decTerminalID":340,"decGraphicsID":340,"numColorRegisters":256,"font":"monospace","font_size":11});
+            report["emulator_configuration"] = json!({"decTerminalID":340,"decGraphicsID":340,"numColorRegisters":256,"font":"Noto Sans Mono CJK JP","font_size":11});
         }
         results[protocol] = report;
     }
