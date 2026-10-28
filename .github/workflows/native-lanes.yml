@@ -1,0 +1,129 @@
+name: Native build and independent test consumers
+on:
+  workflow_call:
+    inputs:
+      os:
+        type: string
+        required: true
+      suite:
+        type: string
+        required: true
+      targets:
+        type: string
+        required: true
+      measure_tui:
+        type: boolean
+        default: false
+      terminal_reproduction:
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  actions: write
+jobs:
+  core:
+    if: inputs.os == 'macos-15'
+    uses: ./.github/workflows/native.yml
+    with:
+      os: ${{ inputs.os }}
+      lane: core
+      phase: ${{ (inputs.suite == 'core' || inputs.suite == 'conversation') && 'verify' || 'full' }}
+      suite: ${{ inputs.suite }}
+      targets: ${{ inputs.targets }}
+  release:
+    if: inputs.os == 'macos-15'
+    uses: ./.github/workflows/native.yml
+    with:
+      os: ${{ inputs.os }}
+      lane: release
+      phase: full
+      suite: ${{ inputs.suite }}
+      targets: ${{ inputs.targets }}
+      measure_tui: ${{ inputs.measure_tui }}
+  build:
+    if: inputs.os == 'macos-15'
+    uses: ./.github/workflows/native.yml
+    with:
+      os: ${{ inputs.os }}
+      lane: build
+      phase: ${{ inputs.suite != 'core' && inputs.suite != 'conversation' && 'verify' || 'full' }}
+      suite: ${{ inputs.suite }}
+      targets: ${{ inputs.targets }}
+  tests:
+    if: inputs.os == 'macos-15'
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [normal, runtime]
+    name: Test ${{ matrix.suite }} from the shared build
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_JOBS: '1'
+      CARGO_INCREMENTAL: '0'
+      CARGO_TERM_COLOR: always
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      LAZYPENCIL_CI_TEST_PROFILE: optimized-debug-v1
+      HEADED_BROWSER_TESTS: ${{ matrix.suite == 'runtime' }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/xtask
+      - name: Verify and normalize the same complete source distribution
+        run: cargo xtask ci native source
+      - name: Download this run's single compiled catalog
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: ${{ needs.build.outputs.binaries_artifact }}
+          path: ${{ runner.temp }}/native-binaries
+      - name: Restore pinned emoji inputs
+        if: matrix.suite == 'runtime'
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          key: emoji-fonts-v1-${{ hashFiles('tests/fixtures/fonts/emoji-upstream.json') }}
+          path: |
+            ${{ runner.temp }}/emoji-fonts/LICENSE
+            ${{ runner.temp }}/emoji-fonts/NotoColorEmoji.ttf
+            ${{ runner.temp }}/emoji-fonts/Noto-COLRv1.ttf
+      - name: Restore pinned Material inputs independently of Cargo build caches
+        if: matrix.suite == 'runtime'
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          key: material-fonts-v1-${{ hashFiles('resources/icons/catalogue.json') }}
+          path: ${{ runner.temp }}/lazypencil-material-fonts
+      - name: Validate the catalog and run all tests assigned to this consumer
+        run: cargo xtask ci native '${{ matrix.suite }}-consumer'
+      - name: Retain independent source-bound results and all failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: native-test-${{ matrix.suite }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/*.log
+            ${{ runner.temp }}/*.json
+            ${{ runner.temp }}/ci-timings.jsonl
+            ${{ runner.temp }}/codec-reference/codec-*
+            ${{ runner.temp }}/tui-artifacts/
+            ${{ runner.temp }}/clipboard-evidence/
+            ${{ runner.temp }}/render-regressions/
+          overwrite: true
+          retention-days: 3
+          if-no-files-found: error
+  deferred:
+    if: inputs.os != 'macos-15'
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [core, default, release]
+    uses: ./.github/workflows/native.yml
+    with:
+      os: ${{ inputs.os }}
+      lane: ${{ matrix.lane }}
+      phase: ${{ (matrix.lane == 'core' && (inputs.suite == 'core' || inputs.suite == 'conversation') || matrix.lane == 'default' && inputs.suite != 'core' && inputs.suite != 'conversation') && 'verify' || 'full' }}
+      suite: ${{ inputs.suite }}
+      targets: ${{ inputs.targets }}
+      measure_tui: ${{ inputs.measure_tui }}
+      terminal_reproduction: ${{ inputs.terminal_reproduction }}

@@ -504,7 +504,7 @@ fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() 
     let ci = std::fs::read_to_string(util::root().join(".github/workflows/ci.yml")).unwrap();
     assert!(ci.contains("measure_tui: ${{ needs.plan.outputs.measure_tui == 'true' }}"));
     assert!(ci.contains("needs: [plan, shader-preprocessor]"));
-    assert!(ci.contains("lane: [core, default, release]"));
+    assert!(ci.contains("uses: ./.github/workflows/native-lanes.yml"));
     assert!(!ci.contains("  focus:\n"));
 }
 

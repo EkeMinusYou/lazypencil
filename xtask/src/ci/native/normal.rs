@@ -19,6 +19,14 @@ pub(super) struct Prepared {
 }
 
 pub(super) fn prepare(s: &Session) -> Result<Prepared> {
+    prepare_inner(s, None)
+}
+
+pub(super) fn prepare_consumed(s: &Session, elapsed: Duration) -> Result<Prepared> {
+    prepare_inner(s, Some(elapsed))
+}
+
+fn prepare_inner(s: &Session, elapsed: Option<Duration>) -> Result<Prepared> {
     let catalog = s.verified_catalog(&[])?;
     let binaries = catalog
         .binaries
@@ -41,7 +49,37 @@ pub(super) fn prepare(s: &Session) -> Result<Prepared> {
     let (scripts, checks) = split_checks(checks, &independent)?;
     let paths = RESOURCES.map(|name| catalog.binaries[name].path.as_path());
     let (resources, checks) = split_checks(checks, &paths)?;
-    let deadline = Instant::now() + Duration::from_secs(TEST_SECONDS);
+    let budget = Duration::from_secs(TEST_SECONDS)
+        .checked_sub(elapsed.unwrap_or_default())
+        .context("Default test budget exhausted during Cargo checks")?;
+    let deadline = Instant::now() + budget;
+    let cargo = if elapsed.is_none() {
+        cargo_checks(s).map(|_| ())
+    } else {
+        Ok(())
+    };
+    // These complete targets deliberately impose short launch/script budgets.
+    // They precede competing work and consume the same active test budget,
+    // including Cargo checks already completed by the producer.
+    let quiet = run_lane(s, &quiet, deadline, "lazypencil-tests.log");
+    let failures = [
+        ("Cargo checks", cargo),
+        ("terminal and launch policies", quiet),
+    ]
+    .into_iter()
+    .filter_map(|(name, result)| result.err().map(|error| format!("{name}: {error:#}")))
+    .collect::<Vec<_>>();
+    ensure!(failures.is_empty(), "{}", failures.join("\n"));
+    Ok(Prepared {
+        checks,
+        scripts,
+        resources,
+        deadline,
+    })
+}
+
+pub(super) fn cargo_checks(s: &Session) -> Result<Duration> {
+    let started = Instant::now();
     let management = s.execute(
         &commands::management_tests(true),
         TEST_SECONDS,
@@ -56,25 +94,19 @@ pub(super) fn prepare(s: &Session) -> Result<Prepared> {
         "lazypencil-tests.log",
         true,
     );
-    // These complete targets deliberately impose short launch/script budgets.
-    // Run them before competing browser/compilation work, preserving their
-    // assertions, harness flags and the original shared test deadline.
-    let quiet = run_lane(s, &quiet, deadline, "lazypencil-tests.log");
     let failures = [
         ("shared cleanup worker tests", management),
         ("default doctests", doctests),
-        ("terminal and launch policy reproductions", quiet),
     ]
     .into_iter()
     .filter_map(|(name, result)| result.err().map(|error| format!("{name}: {error:#}")))
     .collect::<Vec<_>>();
     ensure!(failures.is_empty(), "{}", failures.join("\n"));
-    Ok(Prepared {
-        checks,
-        scripts,
-        resources,
-        deadline,
-    })
+    ensure!(
+        started.elapsed() < Duration::from_secs(TEST_SECONDS),
+        "Default test budget exhausted during Cargo checks"
+    );
+    Ok(started.elapsed())
 }
 
 pub(super) fn remaining(s: &Session, prepared: &Prepared, compile_release: bool) -> Result<()> {

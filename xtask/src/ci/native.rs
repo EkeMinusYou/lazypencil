@@ -14,6 +14,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod binaries;
 pub mod browser;
 mod candidate;
 mod clipboard;
@@ -45,6 +46,10 @@ pub enum Stage {
     DefaultTest,
     DefaultRelease,
     CompleteTests,
+    BinariesStage,
+    NormalConsumer,
+    RuntimeConsumer,
+    EvidenceGate,
     Clipboard,
     BrowserSetup,
     BrowserTest,
@@ -171,21 +176,17 @@ impl Session {
             log,
         )?;
         result?;
-        let invocation: Vec<String> = [
-            "cargo",
-            "test",
-            "--locked",
-            "--test",
+        let invocation = self.test_invocation(
+            true,
             "font_sources",
             "real_emoji::",
-            "--",
-            "--ignored",
-            "--test-threads=1",
-        ]
-        .map(str::to_owned)
-        .into();
+            &["--ignored", "--test-threads=1"],
+        )?;
         let mut command = self.command(&invocation);
-        command.env("LAZYPENCIL_TEST_EMOJI_DIR", output);
+        command
+            .env("LAZYPENCIL_TEST_EMOJI_DIR", output)
+            .env("CARGO_MANIFEST_DIR", &self.root)
+            .env("CARGO_MANIFEST_PATH", self.root.join("Cargo.toml"));
         self.execute_command(&mut command, 300, log, false)
     }
     fn record_timing(
@@ -229,7 +230,32 @@ impl Session {
         arguments: &[&str],
         log: &str,
     ) -> Result<()> {
-        let mut args = vec!["test", "--locked"];
+        let invocation = self.test_invocation(features, target, filter, arguments)?;
+        let mut command = self.command(&invocation);
+        command
+            .env("CARGO_MANIFEST_DIR", &self.root)
+            .env("CARGO_MANIFEST_PATH", self.root.join("Cargo.toml"));
+        self.execute_command(&mut command, 300, log, true)
+    }
+    fn test_invocation(
+        &self,
+        features: bool,
+        target: &str,
+        filter: &str,
+        arguments: &[&str],
+    ) -> Result<Vec<String>> {
+        if features && self.temporary.join("test-executables.json").exists() {
+            let catalog = self.verified_catalog(&[])?;
+            if let Some(binary) = catalog.binaries.get(target) {
+                let mut args = vec![binary.path.to_string_lossy().into_owned()];
+                if !filter.is_empty() {
+                    args.push(filter.into());
+                }
+                args.extend(arguments.iter().map(|arg| (*arg).to_owned()));
+                return Ok(args);
+            }
+        }
+        let mut args = vec!["cargo", "test", "--locked"];
         if !features {
             args.push("--no-default-features");
         }
@@ -243,7 +269,7 @@ impl Session {
         }
         args.push("--");
         args.extend(arguments);
-        self.cargo(&args, 300, log, true)
+        Ok(args.into_iter().map(str::to_owned).collect())
     }
     pub fn capture(&self, command: &mut Command, seconds: u64, path: &str) -> Result<Vec<u8>> {
         let invocation = std::iter::once(command.get_program())
@@ -296,6 +322,40 @@ impl Session {
         let has = |s: &str| targets.iter().any(|t| t == s);
         let core = ["core", "conversation"].contains(&args.suite.as_str());
         match args.stage {
+            Stage::BinariesStage => {
+                let elapsed = normal::cargo_checks(self)?;
+                binaries::stage(self, elapsed)
+            }
+            Stage::NormalConsumer => {
+                let elapsed = binaries::restore(self)?;
+                let prepared = normal::prepare_consumed(self, elapsed)?;
+                normal::remaining(self, &prepared, false)?;
+                binaries::completed(self, "normal")
+            }
+            Stage::RuntimeConsumer => {
+                let _ = binaries::restore(self)?;
+                self.run(Arguments {
+                    stage: Stage::Reproduce,
+                    suite: "pipeline".into(),
+                    targets: "[]".into(),
+                })?;
+                browser::setup(self)?;
+                clipboard::run(self)?;
+                let runtime = self.runtime_lanes();
+                let ownership = browser::ownership_only(self);
+                let panel = browser::panel(self);
+                let failures = [
+                    ("runtime", runtime),
+                    ("ownership", ownership),
+                    ("panel", panel),
+                ]
+                .into_iter()
+                .filter_map(|(name, result)| result.err().map(|error| format!("{name}: {error:#}")))
+                .collect::<Vec<_>>();
+                ensure!(failures.is_empty(), "{}", failures.join("\n"));
+                binaries::completed(self, "runtime")
+            }
+            Stage::EvidenceGate => binaries::gate(self),
             Stage::Clipboard => clipboard::run(self),
             Stage::EvidenceBuild => release::observe(self),
             Stage::Candidate => candidate::run(self),

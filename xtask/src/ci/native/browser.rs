@@ -353,6 +353,14 @@ pub fn lanes(s: &Session) -> Result<()> {
 }
 
 pub fn ownership(s: &Session) -> Result<()> {
+    ownership_only(s)?;
+    required_images(
+        &s.temporary.join("codec-reference"),
+        &std::env::var("GITHUB_SHA")?,
+    )
+}
+
+pub fn ownership_only(s: &Session) -> Result<()> {
     let catalog = s.verified_catalog(&["agent"])?;
     s.execute(
         &[
@@ -365,10 +373,6 @@ pub fn ownership(s: &Session) -> Result<()> {
         300,
         "chromium-render.log",
         true,
-    )?;
-    required_images(
-        &s.temporary.join("codec-reference"),
-        &std::env::var("GITHUB_SHA")?,
     )
 }
 

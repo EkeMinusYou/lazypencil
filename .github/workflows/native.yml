@@ -36,6 +36,8 @@ on:
     outputs:
       application_artifact:
         value: ${{ jobs.verify.outputs.application_artifact }}
+      binaries_artifact:
+        value: ${{ jobs.verify.outputs.binaries_artifact }}
 
 permissions:
   contents: read
@@ -66,6 +68,7 @@ jobs:
   verify:
     outputs:
       application_artifact: ${{ steps.application-artifact-upload.outcome == 'success' && steps.application-key.outputs.checkpoint_legacy || '' }}
+      binaries_artifact: ${{ steps.binaries-upload.outcome == 'success' && format('native-executables-{0}', github.sha) || '' }}
     permissions:
       contents: read
       actions: write
@@ -270,7 +273,7 @@ jobs:
         run: cargo xtask ci native core-lint
       - name: Build default tests and record executable identities
         id: default-build
-        if: ${{ (inputs.lane == 'all' || inputs.lane == 'default') && (inputs.phase != 'focus') }}
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'default' || inputs.lane == 'build') && (inputs.phase != 'focus') }}
         timeout-minutes: 45
         run: cargo xtask ci native default-build
       - name: Reproduce real emoji, TUI and isolated MCP cancellation first
@@ -294,9 +297,23 @@ jobs:
           if-no-files-found: error
           retention-days: 3
       - name: Check all default targets before longer tests and release compilation
-        if: ${{ (inputs.lane == 'all' || inputs.lane == 'default') && (inputs.phase != 'focus') }}
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'default' || inputs.lane == 'build') && (inputs.phase != 'focus') }}
         timeout-minutes: 15
         run: cargo xtask ci native default-lint
+      - name: Complete Cargo-owned checks and stage the immutable executable catalog
+        if: inputs.lane == 'build'
+        run: cargo xtask ci native binaries-stage
+      - name: Share executables without duplicating the complete Cargo checkpoint
+        id: binaries-upload
+        if: inputs.lane == 'build'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: native-executables-${{ github.sha }}
+          path: ${{ runner.temp }}/native-binaries
+          compression-level: 1
+          retention-days: 1
+          overwrite: true
+          if-no-files-found: error
       - name: Compile the isolated release lane
         id: release-build
         if: inputs.lane == 'release'

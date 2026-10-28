@@ -30,7 +30,7 @@ permissions:
   actions: read
 
 concurrency:
-  # Keep the live serial pipeline intact during the one-time lane migration.
+  # Group source verification by branch and requested platform.
   group: verify-lanes-v1-${{ github.ref }}-${{ inputs.os || 'all' }}
   cancel-in-progress: true
 
@@ -142,7 +142,7 @@ jobs:
     uses: ./.github/workflows/shader-preprocessor.yml
 
   native:
-    name: Verify ${{ matrix.lane }} / ${{ matrix.os }}
+    name: Verify / ${{ matrix.os }}
     permissions:
       contents: read
       actions: write
@@ -152,12 +152,9 @@ jobs:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(needs.plan.outputs.matrix) }}
-        lane: [core, default, release]
-    uses: ./.github/workflows/native.yml
+    uses: ./.github/workflows/native-lanes.yml
     with:
       os: ${{ matrix.os }}
-      phase: ${{ (matrix.lane == 'core' && (needs.plan.outputs.suite == 'core' || needs.plan.outputs.suite == 'conversation') || matrix.lane == 'default' && needs.plan.outputs.suite != 'core' && needs.plan.outputs.suite != 'conversation') && 'verify' || 'full' }}
-      lane: ${{ matrix.lane }}
       suite: ${{ needs.plan.outputs.suite }}
       targets: ${{ needs.plan.outputs.targets }}
       measure_tui: ${{ needs.plan.outputs.measure_tui == 'true' }}
@@ -183,6 +180,13 @@ jobs:
         env:
           VERIFICATION_RESULTS: ${{ toJSON(needs) }}
         run: cargo xtask ci gate
+      - name: Collect both independent Mac test consumers
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          pattern: native-test-*-${{ github.sha }}
+          path: ${{ runner.temp }}/consumer-evidence
+      - name: Require matching consumers and every original shared image check
+        run: cargo xtask ci native evidence-gate
       - name: Build and verify the complete source artifact
         run: |
           cargo xtask dist source --output dist/lazypencil-source.tar.gz

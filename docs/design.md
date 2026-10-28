@@ -589,7 +589,7 @@ lazypencil runtime setup chromium
 
 開発・CI・配布・検証の補助処理も Rust に統一する。アプリ本体や Skia へ依存しない独立した `xtask` workspace に、対象選択、キャッシュ管理、ソース配布、ライセンス検査、fixture、計測を用途別モジュールとして置き、`cargo xtask …` から呼ぶ。試験用の ACP・ブラウザー・入力ワーカーは Rust の補助バイナリー、PTY 操作は Rust の統合テストとする。GHA の YAML は環境設定、キャッシュ・成果物操作、Rust タスクの呼び出しを中心にし、複雑な処理を埋め込まない。
 
-重いビルドはGHAで行う。通常のnative対象はMac1環境、構成別の3jobとする。変更箇所の再現と同じ構成の完全試験は同じrunnerで行い、別jobへの成果物転送・再展開・再セットアップを省く。同条件のfocused lintは完全なall-targets lintへ統合し、feature構成やOS・検証目的の異なる試験は残す。coreと既定構成の成果物cacheは別contextとし、依存cacheは共有、releaseは専用cacheだけに保存する。compiler dep-infoとCargoの鮮度判定、失敗時の全worker回収、計測用runnerでの試験との非干渉、元のidle期限と合格基準を維持する。計画・依存監査・Wasm生成・ソース梱包などの軽量Linux jobを製品のLinux対応とは扱わない。runner待機、準備、build、試験と全体経過を分けて計測し、10分以内の達成は実測で判断する。
+重いビルドはGHAで行う。通常のnative対象はMac1環境とする。core・既定構成のビルド・releaseを並列に進め、既定構成の実行ファイルは一度だけ作る。通常試験とbrowser／MCP／lifecycle／Material試験は同じ台帳から別Macで並列実行し、consumerはコンパイラー・image・ビルド条件・ソース・hashを照合してから実行する。consumerでnativeビルドや依存cacheの再展開は行わず、実行ファイルだけを一つのartifactとして渡す。Cargo管理の試験とdoctestはbuilderで一度だけ行い、元の通常試験budgetへ含める。全consumer成功後に画像証跡を衝突なく結合し、同じ台帳と従来の共通画像gateを署名付きsourceの前に検査する。同条件のfocused lintは完全なall-targets lintへ統合し、feature構成やOS・検証目的の異なる試験は残す。coreと既定構成の成果物cacheは別contextとし、依存cacheは共有、releaseは専用cacheだけに保存する。compiler dep-infoとCargoの鮮度判定、失敗時の全worker回収、計測用runnerでの試験との非干渉、元のidle期限と合格基準を維持する。計画・依存監査・Wasm生成・ソース梱包などの軽量Linux jobを製品のLinux対応とは扱わない。runner待機、準備、build、試験と全体経過を分けて計測し、10分以内の達成は実測で判断する。
 
 ## 実装段階
 
