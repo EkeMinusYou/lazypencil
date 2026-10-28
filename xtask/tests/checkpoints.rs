@@ -3,6 +3,81 @@ use serde_json::json;
 use std::collections::BTreeSet;
 
 #[test]
+fn cache_headroom_retires_only_replaced_downloads_before_tool_publication() {
+    let prefix = "cargo-downloads-Linux-X64";
+    let old = format!("{prefix}-{}", "a".repeat(64));
+    let new = format!("{prefix}-{}", "b".repeat(64));
+    let entry = |id, key: &str, version: &str, reference: &str| {
+        json!({"id":id,"key":key,"version":version,"ref":reference,
+            "created_at":format!("2026-10-{id:02}T00:00:00Z")})
+    };
+    let entries = vec![
+        entry(1, &old, "wire", "refs/heads/main"),
+        entry(2, &new, "wire", "refs/heads/main"),
+        entry(3, &old, "other", "refs/heads/main"),
+        entry(4, &old.replace("X64", "ARM64"), "wire", "refs/heads/main"),
+        entry(5, &old.replace("Linux", "macOS"), "wire", "refs/heads/main"),
+        entry(6, &old, "wire", "refs/pull/1/merge"),
+        entry(
+            7,
+            &old.replace("downloads-", "downloads-v2-"),
+            "wire",
+            "refs/heads/main",
+        ),
+        entry(
+            8,
+            "native-v2-ubuntu-24.04-fixture",
+            "wire",
+            "refs/heads/main",
+        ),
+    ];
+    assert_eq!(
+        cache::obsolete(&entries, None)
+            .unwrap()
+            .iter()
+            .map(|e| e["id"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        [1]
+    );
+    assert!(
+        cache::obsolete(
+            &entries
+                .iter()
+                .filter(|e| e["id"] != 2)
+                .cloned()
+                .collect::<Vec<_>>(),
+            None
+        )
+        .unwrap()
+        .is_empty(),
+        "The last download set survives until a matching newer set exists"
+    );
+    let action = std::fs::read_to_string(
+        lazypencil_xtask::util::root().join(".github/actions/xtask/action.yml"),
+    )
+    .unwrap();
+    let position = |text| action.find(text).unwrap();
+    assert!(
+        position("Verify Rust tools before application builds")
+            < position("Verify source inputs before reserving publication headroom")
+    );
+    assert!(
+        position("Verify source inputs before reserving publication headroom")
+            < position("Retire obsolete sources and duplicate downloads before publishing tools")
+    );
+    assert!(
+        position("Retire obsolete sources and duplicate downloads before publishing tools")
+            < position("Save verified source-bound tools")
+    );
+    let workflow =
+        std::fs::read_to_string(lazypencil_xtask::util::root().join(".github/workflows/ci.yml"))
+            .unwrap();
+    let plan = workflow.split("  audit:").next().unwrap();
+    assert!(plan.contains("reserve-source-headroom: 'true'"));
+    assert!(!workflow.contains("cache-maintenance:"));
+}
+
+#[test]
 fn manifest_retention_expires_old_release_sources_but_preserves_test_only_changes() {
     use lazypencil_xtask::dist::{Entry, Manifest};
     let mut manifest = Manifest {

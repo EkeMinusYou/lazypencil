@@ -43,6 +43,9 @@ env:
 jobs:
   plan:
     name: Select affected platform and tests
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
@@ -62,6 +65,8 @@ jobs:
       - uses: ./.github/actions/xtask
         with:
           verify: 'true'
+          retire-old-tools: 'true'
+          reserve-source-headroom: 'true'
       - name: Select changes since the last fully verified baseline
         id: focus
         env:
@@ -72,27 +77,6 @@ jobs:
       - name: Verify the stored shader component when its inputs are unchanged
         if: steps.focus.outputs.preprocessor != 'true'
         run: cargo xtask shader
-
-  cache-maintenance:
-    name: Reserve dependency cache headroom
-    needs: plan
-    if: github.ref == 'refs/heads/main'
-    permissions:
-      contents: read
-      actions: write
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/xtask
-      - name: Identify reusable application inputs without native compilation
-        run: cargo xtask ci native source
-      - name: Remove application generations that cannot be reused
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: cargo xtask ci cache retain --manifest "$RUNNER_TEMP/lazypencil-source/SOURCE-MANIFEST.json" --delete
 
   audit:
     needs: focus
@@ -159,8 +143,8 @@ jobs:
     permissions:
       contents: read
       actions: write
-    needs: [plan, cache-maintenance]
-    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.cache-maintenance.result == 'success' || needs.cache-maintenance.result == 'skipped') }}
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
     uses: ./.github/workflows/native.yml
     with:
       os: ${{ needs.plan.outputs.platform }}

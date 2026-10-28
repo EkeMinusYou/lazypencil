@@ -1395,6 +1395,9 @@ fn obsolete_with_sources(
         r"^(xtask-v1-(?:Linux|macOS|Windows)-(?:X64|ARM64)-[A-Za-z0-9_.]+-rust[0-9.]+)-[0-9a-f]{64}$",
     )?;
     let mut tool_groups = BTreeMap::<(String, String), Vec<&Value>>::new();
+    let downloads =
+        Regex::new(r"^(cargo-downloads-(?:Linux|macOS|Windows)-(?:X64|ARM64))-[0-9a-f]{64}$")?;
+    let mut download_groups = BTreeMap::<(String, String), Vec<&Value>>::new();
     let tool_dependencies = Regex::new(
         r"^(xtask-deps-v1-(?:Linux|macOS|Windows)-(?:X64|ARM64)-[A-Za-z0-9_.]+-rust[0-9.]+)-[0-9a-f]{64}$",
     )?;
@@ -1406,6 +1409,12 @@ fn obsolete_with_sources(
         let key = entry["key"].as_str().context("Invalid cache key")?;
         let version = entry["version"].as_str().context("Invalid cache version")?;
         let id = entry["id"].as_u64().context("Invalid cache id")?;
+        if let Some(caps) = downloads.captures(key) {
+            download_groups
+                .entry((caps[1].into(), version.into()))
+                .or_default()
+                .push(entry);
+        }
         if let Some(caps) = tools.captures(key) {
             tool_groups
                 .entry((caps[1].into(), version.into()))
@@ -1523,6 +1532,12 @@ fn obsolete_with_sources(
     // Keep one complete generation per runner/compiler/cache format so cheap
     // tool outputs do not evict expensive native dependencies.
     for entries in tool_groups.into_values() {
+        older_than_latest(entries, 1, &mut selected);
+    }
+    // Cargo fetches current locked inputs before a successful cache save.
+    // Keep its newest complete download set per platform and wire format;
+    // duplicated archive/index generations must not evict native compilations.
+    for entries in download_groups.into_values() {
         older_than_latest(entries, 1, &mut selected);
     }
     for entries in checkpoints.into_values() {

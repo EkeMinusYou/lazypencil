@@ -7,6 +7,9 @@ inputs:
   retire-old-tools:
     description: Retire replaced compatible tool caches after verification with actions write permission
     default: 'false'
+  reserve-source-headroom:
+    description: Retire obsolete source/download caches before tool publication with actions write permission
+    default: 'false'
 runs:
   using: composite
   steps:
@@ -58,6 +61,18 @@ runs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: cargo xtask ci cache retain --delete --before-tools-replacement '${{ steps.tools.outputs.cache-primary-key }}' --tools-matched-key '${{ steps.tools.outputs.cache-matched-key }}'
+    - name: Verify source inputs before reserving publication headroom
+      id: source-headroom
+      if: inputs.reserve-source-headroom == 'true' && inputs.verify == 'true' && github.ref == 'refs/heads/main'
+      shell: bash
+      run: cargo xtask ci native source
+    - name: Retire obsolete sources and duplicate downloads before publishing tools
+      if: steps.source-headroom.outcome == 'success'
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: cargo xtask ci cache retain --manifest "$RUNNER_TEMP/lazypencil-source/SOURCE-MANIFEST.json" --delete
     - name: Save verified source-bound tools
       if: inputs.verify == 'true' && steps.tools.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
       continue-on-error: true

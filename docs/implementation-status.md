@@ -1,14 +1,12 @@
 # lazypencil 実装と公開準備の状況
 
-先行の独立したbinding再現（実測138.64／129.02秒）は、source／hashを照合した既存の通常構成バイナリで最大2並列にする差分を準備した。一時文書・素材・worker・ログを分離し、両群をjoinした後に従来copy群も実行して全結果を集める。既存の3 filter・libtestの直列条件・各300秒の期限、後段の並列runtime目的・全3環境の検査を保持する。今回の通常構成のURI／scope単体回帰も長い再現の前へ置く。追加RustはGHA未確認。
+`d6c5808` の [GHA](https://github.com/EkeMinusYou/lazypencil/actions/runs/40633683855) は軽量207件・Clippy、Linux先行593件／76サマリー、全3環境・RustSec・署名付きsourceまで成功した。Mac1,450件・Linux各1,461件、各144サマリーで、従来ケースの回数＋新規4実行を照合した。各798 PNG・42描画計測・clipboard3,072画素・IME保存4画面と、両形式・27経路・3段階の162画像／82,944画素を独立照合した。従来671画像のcoverage・4 sampler全画素、animation・network・transportの基準も維持した。全体jobはx64 20分42秒・arm64 21分21秒・Mac22分32秒、workflow全体は46分13秒で、全体短縮の達成とは扱わない。source1,156ファイル・32,072,330バイトの全Git blob／mode、tar hash・DSSE署名・source／workflow／runを照合した。
 
-`d6c5808` のLinux先行は21分14秒で593件・76サマリー、Clippy・49本のsource付き計測まで成功した。8対象のdynamic選択であり、前走4対象との単純な時間比較はしない。両形式・27経路・3段階の162画像／82,944画素、色・hash・素材revision・削除後／再コピー後のbyte一致を独立照合した。全3環境は進行中。215 member・約1.79GBを490,028,944バイトへpackする処理が70.01秒だったため、後続batchではgzip level1を指定する。PAX・時刻／mode・内部リンク・構造検査・hash・compiler入力検査は維持し、サイズと所要時間を合わせて確認する。x64全体ではartifactの取得・展開がskipされている。identity不一致かoutputの受け渡しかは完了ログで確認し、現時点で同条件再利用成功とは扱わない。現在のCIは中断しない。
+先行の約1.79GB・215 memberのpackは490,028,944バイト・70.01秒だった。artifact名は全体x64へ渡ったが、先行のcache環境識別子20261026.354.1と全体20261023.334.3でfingerprintが異なり取得をskipした。誤再利用はなく、同条件転送の成功を示す結果ではない。完了時にnative cache5個を保持した一方、総容量は10,738,280,773バイトで上限付近だった。
 
-ツールcache整理のguardも確認し、先行planが保存した完全一致cacheをnative jobが使うと旧世代の整理を省いてしまう条件を修正した。同じSDK／cache形式だけを対象とする既存処理を、検証成功後の完全一致にも適用する。主キー・native依存・他形式は保持し、planの権限も変更しない。既存selector回帰へ完全一致の対照を追加し、動的focusではrelease buildが必須ではないことをstep名へ反映した。追加分は未push・GHA待ちで、実行中の `d6c5808` は維持する。
+次の未検証batchは、無効な生成scriptスコープのURI変換前の失効判定と、既知の非script型の不透明metadataの保持を修正する。有効・継承中の入力は除去せず、両形式・4経路・2条件の実worker／コピー／再コピーと負の対照を追加した。生成browserの54ケースをスキーマ別の最大2並列にし、先行binding群（実測138.64／129.02秒）も検証済み通常構成バイナリで2並列にする。一時文書・素材・worker・ログを分離し、両群join後は失敗時も従来copy群まで実行する。既存filter・libtest条件・各300秒の期限・別目的のruntime並列確認・全3環境の基準は維持する。
 
-CI待機中に、生成browserの高速レイアウト試験をスキーマ別の最大2並列へ変更した。各ケースの一時文書・素材・data・scriptプロセスは独立し、開始済みの両threadを終了時にjoinする。54ケース・162段階の検査、実Chromium画素・構成／OS・期限・計測の順序は保持する。この変更も現在のCIにはpushせず、後続batchで実測する。
-
-進行中の `d6c5808` は軽量207件・28サマリーとClippyを成功し、Linuxの変更対象8 targetとruntime並列確認へ進んだ。有用なCIを中断せず、次の差分はローカルだけで準備する。生成 script の無効な `script_scope` がコピー後の実行まで拒否していた経路を修正し、URI変換での再有効化と入力側の独立した有効性を区別する。両形式・4経路・2条件の実 worker／コピー／再コピーと、まだ有効・継承中の入力を除去しない負の対照を追加した。通常のスコープ解析を共用し、形式／hashの検査を保持する。整形・差分・YAML検査は成功、追加RustのGHA検証は待機中。有効な明示スコープ全体の合成と公開全体の残件は維持する。
+整理を検証成功後・新規tool保存前へ移し、旧tool・不要なsource・同じOS／CPU／cache形式で新しいmain保存がある重複download世代だけを対象にする。後段の整理jobは計画jobへ統合し、計画jobにmain限定cache削除用のActions write権限を付ける。native依存・他形式・PRを保護する。圧縮はPAX・時刻／mode・内部リンク・構造／hash／compiler入力検査を保ってgzip level1へ変更する。整形・差分・YAML検査は成功、追加Rustと時間・容量の効果はGHA待ちである。有効な明示scriptスコープの合成・専用認証profile・最低OS・性能・端末・両実agent・公開全体の残件は維持する。
 
 `6e00b07` の軽量ゲートでは公開入口の修正がコンパイルを通過し、追加した転送往復・nanosecond時刻／mode・内部ハードリンク・破損拒否・tool整理を含むci target41件は成功した。旧workflow試験1件がファイル全体の最初のキー出現位置を比較しており、新しいartifact用outputをcache復元順と誤認した。実際のrestore-keysリストごとに順序を検査するよう範囲を修正し、nativeの2リストと配布検証の1リストを要求する。fallback順・試験範囲と期限は保持し、全環境はまだ開始していない。
 
