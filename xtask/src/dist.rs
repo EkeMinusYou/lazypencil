@@ -86,7 +86,7 @@ pub struct Manifest {
 
 pub type Files = BTreeMap<String, (Vec<u8>, u32)>;
 
-fn path_key(name: &str) -> String {
+pub(crate) fn path_key(name: &str) -> String {
     name.nfc()
         .flat_map(char::to_lowercase)
         .case_fold()

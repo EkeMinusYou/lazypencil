@@ -1,6 +1,12 @@
 # lazypencil 実装と公開準備の状況
 
-`de3a5d8` の [Linux先行](https://github.com/EkeMinusYou/lazypencil/actions/runs/40626927395) は406件・61サマリー、Clippyと42本のsource付き計測まで成功した。ガイド同時変更もbrowser／project／script_scope／guidanceの4対象を先行し、runtime並列検証を維持した。両形式・22経路・3段階の132画像・67,584画素、色・hash・元ファイル削除後と再コピー後のbyte一致・素材revisionを独立照合した。全3環境・最終sourceは進行中で、中断せず保持する。次の未検証差分はURL所有文脈を別に保持するbrowser scope v2、空の名前空間、空／未指定URLのplaceholderと27経路・162画像の試験である。画像成果物検査も実行順制御とは別のRustモジュールへ分け、既存の制御関数の内容が変わっていないことを確認した。Rustのbuild・試験・ClippyはGHA待ちで、公開全体の残件は維持する。
+直近のmacOS保存証拠では、実PTYで受けた日本語・結合文字／ZWJを含む下書き、80×24・50×16・145×38の描画画面とカーソル座標、サイズ変更後の追加入力と保存済み下書きの全文一致を独立照合した。以後も既存のPTY・GHA上のKitty／xterm検証を使い、利用者への反復確認依頼はしない。物理macSKKの未確定文字・候補表示の合格とは区別する。
+
+CIの次の未検証差分は、同じrun・commit・SDK／compiler条件の先行成果物を短期artifactで全体検証へ渡し、依存cache枠に同じfocus payloadを保存しない処理である。転送用tarは時刻のナノ秒精度・mode・Cargoの内部ハードリンクを保持し、展開前の構造検査と既存の全compiler入力／hash検査を分ける。検証済みxtaskの保存直前には、復元元と同じSDK／cache形式の古いtool世代だけを整理する。既存試験へ転送往復・時刻／mode・内部リンク・破損拒否・対象限定の回帰を接続した。ローカルの整形・差分・YAML検査は成功、Rust build／試験／Clippyと再利用実績・短縮量はGHA待ちである。進行中の `de3a5d8` を中断しない。
+
+`de3a5d8` の [GHA](https://github.com/EkeMinusYou/lazypencil/actions/runs/40626927395) はLinux先行406件・61サマリー、全3環境・RustSec・署名付きsourceまで成功した。Mac1,446件・Linux各1,457件、各144サマリーで、従来ケースの回数＋新規2実行を照合した。各768 PNG・42描画計測・clipboard3,072画素・IME保存4画面と、両形式・22経路・3段階の132画像／67,584画素、元ファイル削除後の再コピー・素材revisionを独立照合した。従来671画像のcoverageと4 samplerの全画素再計算、animation・network・transportの従来基準も維持した。jobはMac21分19秒・arm64 18分04秒・x64 52分22秒。x64はimage20261026.354.1のnative cacheがなく、通常build704.36秒・release1296.95秒で、先行のSDKとも異なり成果物を再利用しなかった。全workflow66分11秒を短縮達成とは扱わず、SDK／compiler条件は保持する。source1,154ファイル・32,029,936バイトの全Git blob／mode、tar hash・DSSE署名・source／workflow／runを独立照合した。最後まで中断せず検証した。
+
+次の未検証差分はURL所有文脈を別に保持するbrowser scope v2、空の名前空間、空／未指定URLのplaceholderと27経路・162画像の試験である。画像成果物検査も実行順制御とは別のRustモジュールへ分け、既存の制御関数の内容が変わっていないことを確認した。Rustのbuild・試験・ClippyはGHA待ちで、公開全体の残件は維持する。
 
 `ed72448` の [GHA](https://github.com/EkeMinusYou/lazypencil/actions/runs/40622329188) は先行367件・50サマリー、全3環境、RustSec、署名付きsourceまで成功した。全体はMac1,444件・Linux各1,455件、各144サマリーで、8eの全ケース回数＋新規2実行を照合した。各678画像（元671の667 byte一致＋4 samplerの全画素再計算、新規animation2・network2・transport3）・42描画計測・clipboard3,072画素・IME保存4画面を独立照合した。通常／保持のonline・復帰はSTUN3／TURN1／page QUIC4／worker QUIC4、offline／refreshは各0で、全18 UDP／6 TCP endpointと3色・8,192ケース画素・metadataも一致した。jobはMac21分33秒・x64 16分22秒・arm64 34分52秒。x64は同commit先行106ファイルを再利用し、Cargo既定build確認0.69秒、残るtest catalogueは21.23秒だった。arm64はSDK image20261026.166.1へ替わり対応native cacheがなく、通常build364.44秒・release680.84秒を要した。SDK／compiler条件を維持し、全workflowは46分14秒で全体短縮とは扱わない。source1,154ファイル・32,002,878バイトの全Git blob／mode、tar SHA-256 `5946df4ad22f42e7e36c585ff6557b2168ab71e84c6d666e7ec8ed3497ec200a`、DSSE署名・source／workflow／runを照合した。
 

@@ -24,6 +24,12 @@ on:
       runtime_parallel:
         type: boolean
         default: false
+      focused_application:
+        type: string
+        default: ''
+    outputs:
+      application_artifact:
+        value: ${{ jobs.verify.outputs.application_artifact }}
 
 permissions:
   contents: read
@@ -52,6 +58,8 @@ jobs:
         run: cargo xtask ci native source
 
   verify:
+    outputs:
+      application_artifact: ${{ steps.application-artifact-upload.outcome == 'success' && steps.application-key.outputs.checkpoint_legacy || '' }}
     permissions:
       contents: read
       actions: write
@@ -70,6 +78,7 @@ jobs:
       - uses: ./.github/actions/xtask
         with:
           verify: 'true'
+          retire-old-tools: 'true'
       - name: Cache verified Cargo downloads
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
@@ -139,9 +148,23 @@ jobs:
         if: steps.cache-key.outcome == 'success'
         continue-on-error: true
         run: cargo xtask ci cache application identify --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
+      - name: Download this run's matching focused build
+        id: application-artifact
+        if: inputs.phase == 'full' && inputs.focused_application != '' && inputs.focused_application == steps.application-key.outputs.checkpoint_legacy
+        continue-on-error: true
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: ${{ inputs.focused_application }}
+          path: ${{ runner.temp }}/lazypencil-application-transport
+      - name: Unpack focused outputs before compiler input verification
+        id: application-artifact-extract
+        if: steps.application-artifact.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 12
+        run: cargo xtask ci cache artifact unpack --archive "$RUNNER_TEMP/lazypencil-application-transport/checkpoint.tar.gz" --directory "$RUNNER_TEMP/lazypencil-application-cache"
       - name: Restore source-bound application outputs
         id: application-cache
-        if: steps.application-key.outcome == 'success'
+        if: steps.application-key.outcome == 'success' && steps.application-artifact-extract.outcome != 'success'
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
@@ -379,13 +402,24 @@ jobs:
         continue-on-error: true
         timeout-minutes: 3
         run: cargo xtask ci cache application stage-focused --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --compatible-directory "$RUNNER_TEMP/lazypencil-compatible-cache" --matched-key '${{ steps.compatible-cache.outputs.cache-matched-key }}' --native-key '${{ steps.cache-key.outputs.primary }}'
-      - name: Save verified application outputs
+      - name: Archive focused outputs without changing Cargo file times
+        id: application-artifact-pack
         if: ${{ !cancelled() && steps.application-save.outcome == 'success' && steps.application-save.outputs.staged == 'true' }}
         continue-on-error: true
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        timeout-minutes: 12
+        run: cargo xtask ci cache artifact pack --directory "$RUNNER_TEMP/lazypencil-application-cache" --archive "$RUNNER_TEMP/lazypencil-application-transport/checkpoint.tar.gz"
+      - name: Share this run's verified focused outputs
+        id: application-artifact-upload
+        if: ${{ !cancelled() && steps.application-artifact-pack.outcome == 'success' }}
+        continue-on-error: true
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          key: ${{ steps.application-key.outputs.checkpoint }}
-          path: ${{ runner.temp }}/lazypencil-application-cache
+          name: ${{ steps.application-key.outputs.checkpoint_legacy }}
+          path: ${{ runner.temp }}/lazypencil-application-transport/checkpoint.tar.gz
+          compression-level: 0
+          retention-days: 1
+          overwrite: true
+          if-no-files-found: error
       - name: Stage mapped release outputs independently of tests
         id: release-save
         if: ${{ !cancelled() && steps.release-key.outcome == 'success' && steps.release-cache.outputs.cache-hit != 'true' && (steps.release-smoke.outcome == 'success' || steps.focus-release.outcome == 'success' || steps.default-release.outcome == 'success') && github.ref == 'refs/heads/main' }}

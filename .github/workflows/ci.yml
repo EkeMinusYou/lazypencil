@@ -186,6 +186,7 @@ jobs:
     with:
       os: ${{ matrix.os }}
       phase: full
+      focused_application: ${{ needs.focus.outputs.application_artifact || '' }}
 
   source:
     if: ${{ !cancelled() && needs.native.result == 'success' && needs.audit.result == 'success' && (inputs.os == 'all' || inputs.os == '') }}

@@ -4,6 +4,9 @@ inputs:
   verify:
     description: Run the tool test and lint gate for this verification job
     default: 'false'
+  retire-old-tools:
+    description: Retire replaced compatible tool caches after verification with actions write permission
+    default: 'false'
 runs:
   using: composite
   steps:
@@ -48,6 +51,13 @@ runs:
       if: inputs.verify == 'true'
       shell: bash
       run: cargo xtask ci tools verify
+    - name: Retire replaced tool sources before publishing the verified tree
+      if: inputs.retire-old-tools == 'true' && inputs.verify == 'true' && steps.tools.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: cargo xtask ci cache retain --delete --before-tools-replacement '${{ steps.tools.outputs.cache-primary-key }}' --tools-matched-key '${{ steps.tools.outputs.cache-matched-key }}'
     - name: Save verified source-bound tools
       if: inputs.verify == 'true' && steps.tools.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
       continue-on-error: true

@@ -57,11 +57,20 @@ const FLAG_PREFIXES: &[&str] = &[
     "CXXFLAGS_",
 ];
 
+pub mod artifact;
 mod compatible;
 pub use compatible::{restore_combined, restore_compatible, stage_focused};
 
 #[derive(Subcommand)]
 pub enum Command {
+    Artifact {
+        #[arg(value_parser = ["pack", "unpack"])]
+        operation: String,
+        #[arg(long)]
+        directory: PathBuf,
+        #[arg(long)]
+        archive: PathBuf,
+    },
     Native {
         #[arg(long)]
         platform: String,
@@ -95,6 +104,10 @@ pub enum Command {
     Retain {
         #[arg(long)]
         delete: bool,
+        #[arg(long, conflicts_with_all = ["platform", "manifest", "before_replacement"])]
+        before_tools_replacement: Option<String>,
+        #[arg(long, requires = "before_tools_replacement")]
+        tools_matched_key: Option<String>,
         /// Retire older application sources after staging a successful full build,
         /// before uploading its replacement. Upload failure may lose app reuse.
         #[arg(long, requires_all = ["platform", "manifest"])]
@@ -125,6 +138,18 @@ pub enum Command {
 impl Command {
     pub fn run(self) -> Result<()> {
         match self {
+            Self::Artifact {
+                operation,
+                directory,
+                archive,
+            } => {
+                let report = if operation == "pack" {
+                    artifact::pack(&directory, &archive)?
+                } else {
+                    artifact::unpack(&archive, &directory)?
+                };
+                util::print(&report)
+            }
             Self::Native {
                 platform,
                 image,
@@ -283,6 +308,8 @@ impl Command {
             }
             Self::Retain {
                 delete,
+                before_tools_replacement,
+                tools_matched_key,
                 before_replacement,
                 platform,
                 repository,
@@ -311,7 +338,13 @@ impl Command {
                     .collect::<Vec<_>>();
                 let manifest = manifest.map(|p| util::json::<Manifest>(&p)).transpose()?;
                 let source_hash = manifest.as_ref().map(source_fingerprint).transpose()?;
-                let mut obsolete = if before_replacement {
+                let mut obsolete = if let Some(primary) = before_tools_replacement {
+                    obsolete_tools_before_replacement(
+                        &entries,
+                        &primary,
+                        tools_matched_key.as_deref().unwrap_or_default(),
+                    )?
+                } else if before_replacement {
                     obsolete_before_replacement(
                         &entries,
                         platform
@@ -1226,6 +1259,54 @@ fn older_than_latest(mut entries: Vec<&Value>, keep: usize, selected: &mut BTree
     for entry in entries.into_iter().skip(keep) {
         selected.insert(entry["id"].as_u64().unwrap(), entry.clone());
     }
+}
+
+/// A newly verified tool tree replaces only compatible tool sources. Never
+/// retire SDKs, native builds, or an ambiguous Actions cache wire format.
+pub fn obsolete_tools_before_replacement(
+    entries: &[Value],
+    primary: &str,
+    matched: &str,
+) -> Result<Vec<Value>> {
+    let regex = Regex::new(
+        r"^(xtask-v1-(?:Linux|macOS|Windows)-(?:X64|ARM64)-[A-Za-z0-9_.]+-rust[0-9.]+)-[0-9a-f]{64}$",
+    )?;
+    let group = regex
+        .captures(primary)
+        .context("Invalid tool replacement key")?[1]
+        .to_owned();
+    if matched.is_empty() {
+        return Ok(Vec::new());
+    }
+    ensure!(
+        regex
+            .captures(matched)
+            .is_some_and(|captures| captures[1] == group),
+        "Foreign tool replacement context"
+    );
+    let versions = entries
+        .iter()
+        .filter(|entry| entry["ref"] == "refs/heads/main" && entry["key"] == matched)
+        .filter_map(|entry| entry["version"].as_str())
+        .collect::<BTreeSet<_>>();
+    if versions.len() != 1 {
+        return Ok(Vec::new());
+    }
+    let version = versions.into_iter().next().unwrap();
+    Ok(entries
+        .iter()
+        .filter(|entry| {
+            entry["ref"] == "refs/heads/main"
+                && entry["version"] == version
+                && entry["id"].as_u64().is_some()
+                && entry["key"] != primary
+                && entry["key"]
+                    .as_str()
+                    .and_then(|key| regex.captures(key))
+                    .is_some_and(|captures| captures[1] == group)
+        })
+        .cloned()
+        .collect())
 }
 
 /// Only rebuildable application snapshots are retired before publishing a

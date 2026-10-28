@@ -1301,6 +1301,17 @@ fn application_identify_cli_emits_unique_generation_keys_and_ordered_compatible_
 fn application_reuse_checks_all_outputs_before_overlaying_and_never_reuses_images_or_dependencies()
 {
     let f = ApplicationFixture::new();
+    #[cfg(unix)]
+    {
+        util::chmod(&f.library, 0o755).unwrap();
+        fs::File::open(&f.library)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(
+                std::time::UNIX_EPOCH + std::time::Duration::new(1_700_000_000, 123_456_789),
+            ))
+            .unwrap();
+        fs::hard_link(&f.library, f.target.join("debug/liblazypencil.rlib")).unwrap();
+    }
     fs::write(f.target.join("release-smoke.png"), b"old evidence").unwrap();
     fs::write(
         f.library
@@ -1311,9 +1322,22 @@ fn application_reuse_checks_all_outputs_before_overlaying_and_never_reuses_image
     )
     .unwrap();
     f.stage();
+    #[cfg(unix)]
+    {
+        let archive = f._temp.path().join("checkpoint.tar.gz");
+        let before = fs::metadata(&f.library).unwrap().modified().unwrap();
+        cache::artifact::pack(&f.directory, &archive).unwrap();
+        fs::remove_dir_all(&f.directory).unwrap();
+        cache::artifact::unpack(&archive, &f.directory).unwrap();
+        let file = f
+            .directory
+            .join("files/debug/deps/liblazypencil-1234567890abcdef.rlib");
+        assert_eq!(util::raw_mode(&file).unwrap(), 0o755);
+        assert_eq!(fs::metadata(file).unwrap().modified().unwrap(), before);
+    }
     fs::remove_dir_all(&f.target).unwrap();
     let report = cache::restore(&f.source, &f.target, &f.directory, &f.identity()).unwrap();
-    assert_eq!(report["files"], 3);
+    assert_eq!(report["files"], if cfg!(unix) { 4 } else { 3 });
     assert_eq!(fs::read(&f.library).unwrap(), b"compiled fixture library");
     assert!(!f.target.join("release-smoke.png").exists());
     fs::remove_dir_all(&f.target).unwrap();
@@ -1370,6 +1394,156 @@ fn release_cache_keeps_the_mapped_executable_and_rejects_partial_or_changed_pair
         assert!(cache::restore(&f.source, &f.target, &f.directory, &f.identity()).is_err());
         assert!(!f.target.exists());
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn checkpoint_artifacts_reject_links_traversal_duplicates_and_corrupt_trailers_before_extraction() {
+    let f = ApplicationFixture::new();
+    f.stage();
+    fs::write(f._temp.path().join("escaped"), b"sentinel").unwrap();
+    for kind in ["symlink", "hardlink", "parent", "duplicate", "unexpected"] {
+        let archive = f._temp.path().join(format!("{kind}.tar.gz"));
+        let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        let mut builder = tar::Builder::new(encoder);
+        let manifest = fs::read(f.directory.join("manifest.json")).unwrap();
+        let mut header = tar::Header::new_gnu();
+        header.set_size(manifest.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, "manifest.json", manifest.as_slice())
+            .unwrap();
+        let report: Value = serde_json::from_slice(&manifest).unwrap();
+        for (index, file) in report["files"].as_array().unwrap().iter().enumerate() {
+            let name = format!("files/{}", file["path"].as_str().unwrap());
+            for _ in 0..if kind == "duplicate" && index == 0 {
+                2
+            } else {
+                1
+            } {
+                let mut data = fs::read(f.directory.join(&name)).unwrap();
+                let mut header = tar::Header::new_gnu();
+                header.set_mode(file["mode"].as_u64().unwrap() as u32);
+                if index == 0 && matches!(kind, "symlink" | "hardlink") {
+                    data.clear();
+                    header.set_entry_type(if kind == "symlink" {
+                        tar::EntryType::Symlink
+                    } else {
+                        tar::EntryType::Link
+                    });
+                    let target = if kind == "symlink" {
+                        format!("{}escaped", "../".repeat(name.split('/').count() + 1))
+                    } else {
+                        "../../escaped".into()
+                    };
+                    header.set_link_name(target).unwrap();
+                }
+                header.set_size(data.len() as u64);
+                header.set_cksum();
+                if index == 0 && kind == "parent" {
+                    header.as_mut_bytes()[..10].copy_from_slice(b"../escaped");
+                    header.set_cksum();
+                    builder.append(&header, data.as_slice()).unwrap();
+                } else {
+                    builder
+                        .append_data(
+                            &mut header,
+                            if index == 0 && kind == "unexpected" {
+                                "files/foreign"
+                            } else {
+                                &name
+                            },
+                            data.as_slice(),
+                        )
+                        .unwrap();
+                }
+            }
+        }
+        fs::write(&archive, builder.into_inner().unwrap().finish().unwrap()).unwrap();
+        let parent = f._temp.path().join(format!("sandbox-{kind}"));
+        fs::create_dir(&parent).unwrap();
+        fs::write(parent.join("escaped"), b"sentinel").unwrap();
+        let destination = parent.join("output");
+        assert!(
+            cache::artifact::unpack(&archive, &destination).is_err(),
+            "{kind}"
+        );
+        assert!(!destination.exists());
+        assert_eq!(
+            fs::read(f._temp.path().join("escaped")).unwrap(),
+            b"sentinel"
+        );
+        assert_eq!(fs::read(parent.join("escaped")).unwrap(), b"sentinel");
+    }
+    let archive = f._temp.path().join("valid.tar.gz");
+    cache::artifact::pack(&f.directory, &archive).unwrap();
+    let mut bytes = fs::read(&archive).unwrap();
+    *bytes.last_mut().unwrap() ^= 0x80;
+    fs::write(&archive, bytes).unwrap();
+    let destination = f._temp.path().join("corrupt-output");
+    assert!(cache::artifact::unpack(&archive, &destination).is_err());
+    assert!(!destination.exists());
+}
+
+#[test]
+fn verified_tool_replacement_retires_only_the_restored_sdk_and_cache_format() {
+    let prefix = "xtask-v1-Linux-ARM64-20261023.149.3-rust1.94.0";
+    let primary = format!("{prefix}-{}", "a".repeat(64));
+    let matched = format!("{prefix}-{}", "b".repeat(64));
+    let entry = |id, key: &str, version: &str, reference: &str| json!({"id":id,"key":key,"version":version,"ref":reference});
+    let entries = vec![
+        entry(1, &matched, "current", "refs/heads/main"),
+        entry(2, &primary, "current", "refs/heads/main"),
+        entry(
+            3,
+            &format!("{prefix}-{}", "c".repeat(64)),
+            "other",
+            "refs/heads/main",
+        ),
+        entry(4, &matched, "current", "refs/pull/1/merge"),
+        entry(
+            5,
+            &matched.replace("20261023.149.3", "20261026.166.1"),
+            "current",
+            "refs/heads/main",
+        ),
+        entry(
+            6,
+            "native-v2-ubuntu-24.04-arm-existing",
+            "current",
+            "refs/heads/main",
+        ),
+    ];
+    let obsolete = cache::obsolete_tools_before_replacement(&entries, &primary, &matched).unwrap();
+    assert_eq!(
+        obsolete
+            .iter()
+            .map(|entry| entry["id"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        [1]
+    );
+    assert!(
+        cache::obsolete_tools_before_replacement(&entries, &primary, "")
+            .unwrap()
+            .is_empty()
+    );
+    let mut ambiguous = entries.clone();
+    ambiguous.push(entry(7, &matched, "second-format", "refs/heads/main"));
+    assert!(
+        cache::obsolete_tools_before_replacement(&ambiguous, &primary, &matched)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(cache::obsolete_tools_before_replacement(&entries, "unreviewed", &matched).is_err());
+    assert!(
+        cache::obsolete_tools_before_replacement(
+            &entries,
+            &primary,
+            &matched.replace("ARM64", "X64")
+        )
+        .is_err()
+    );
 }
 
 #[test]
