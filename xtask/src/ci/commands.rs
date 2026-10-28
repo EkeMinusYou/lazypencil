@@ -286,6 +286,23 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
         skips(focus::SHADER_REGRESSIONS)
     };
     let all_selected = selected(targets, &[]);
+    if suite == "core" && targets == ["guidance"] {
+        // Guidance has integration contracts and no library unit tests of its
+        // own. Do not repeat unrelated lifecycle/library tests in this focus.
+        let mut build = common.clone();
+        build.extend(all_selected.clone());
+        build.push("--no-run".into());
+        let mut check = common.clone();
+        check.extend(all_selected);
+        check.extend(words(&["--", "--test-threads=2"]));
+        return Ok(Plan {
+            build: vec![
+                build,
+                words(&["cargo", "build", "--locked", "--no-default-features"]),
+            ],
+            checks: vec![check],
+        });
+    }
     if suite == "shader" {
         ensure!(
             targets == ["shader_uniforms"],

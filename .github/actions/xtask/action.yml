@@ -73,8 +73,10 @@ runs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: cargo xtask ci cache retain --manifest "$RUNNER_TEMP/lazypencil-source/SOURCE-MANIFEST.json" --delete
-    - name: Save verified source-bound tools
-      if: inputs.verify == 'true' && steps.tools.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+    # Native jobs compile the same source-bound tools on their own OS. Preserve
+    # that build for the next job too; the plan job still owns the full tool gate.
+    - name: Save source-bound tools after successful preparation
+      if: success() && steps.tools.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
       continue-on-error: true
       uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
       with:

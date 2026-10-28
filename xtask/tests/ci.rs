@@ -7,6 +7,78 @@ use serde_json::{Value, json};
 use std::{collections::BTreeMap, fs, path::PathBuf, process::Command};
 
 #[test]
+fn prose_filenames_never_expand_the_actual_source_consumers() {
+    let cases: Vec<Value> = serde_json::from_str(include_str!("fixtures/focus.json")).unwrap();
+    for case in cases {
+        let mut paths: Vec<String> = serde_json::from_value(case["paths"].clone()).unwrap();
+        let before = focus::select(&util::root(), &paths, "auto").unwrap();
+        paths.extend(
+            [
+                "docs/tui.md",
+                "docs/shader.md",
+                "docs/scripts.md",
+                "docs/graphics.md",
+                "README.md",
+                "tests/fixtures/fonts/README.md",
+            ]
+            .map(str::to_owned),
+        );
+        assert_eq!(
+            focus::select(&util::root(), &paths, "auto").unwrap(),
+            before,
+            "{paths:?}"
+        );
+    }
+}
+
+#[test]
+fn bundled_guidance_with_ci_and_prose_uses_its_real_core_contract() {
+    let root = util::root();
+    // Reproduce the source categories in 7413a94, including the misleading TUI
+    // prose name and the embedded Markdown that must still invalidate Cargo.
+    let paths = [
+        "docs/tui.md",
+        "docs/graphics.md",
+        "docs/implementation-status.md",
+        "README.md",
+        "tests/fixtures/fonts/README.md",
+        "resources/guidance/browser.md",
+        "src/guidance.rs",
+        "xtask/src/ci/focus.rs",
+        "xtask/src/ci/mod.rs",
+        "xtask/tests/ci.rs",
+        "xtask/tests/fixtures/focus.json",
+        ".github/actions/xtask/action.yml",
+        ".github/workflows/release-evidence.yml",
+    ]
+    .map(str::to_owned);
+    let plan = focus::select(&root, &paths, "auto").unwrap();
+    assert_eq!(plan.suite, "core");
+    assert_eq!(plan.targets, ["guidance"]);
+    let commands = ci::commands::plan(&root, &plan.suite, &plan.targets).unwrap();
+    assert_eq!(commands.checks.len(), 1);
+    for command in commands.build.iter().chain(&commands.checks) {
+        assert!(command.iter().any(|arg| arg == "--no-default-features"));
+        assert!(!command.iter().any(|arg| arg == "--lib"));
+    }
+    assert!(
+        commands.checks[0]
+            .windows(2)
+            .any(|pair| pair == ["--test", "guidance"])
+    );
+    for source in [
+        "src/guidance/project.rs",
+        "src/guidance/usage.rs",
+        "src/cdp.rs",
+    ] {
+        let mut mixed = paths.to_vec();
+        mixed.push(source.into());
+        let mixed = focus::select(&root, &mixed, "auto").unwrap();
+        assert_ne!(mixed.targets, ["guidance"], "{source}");
+    }
+}
+
+#[test]
 fn initial_release_selects_only_mac_and_preserves_explicit_deferred_diagnostics() {
     assert_eq!(focus::verification_platforms("all").unwrap(), ["macos-15"]);
     assert_eq!(

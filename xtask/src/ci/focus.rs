@@ -124,6 +124,21 @@ fn font_input(path: &str) -> bool {
         || (path.starts_with("tests/fixtures/fonts/") && !path.ends_with(".md"))
 }
 
+fn documentation_only(path: &str) -> bool {
+    (path.ends_with(".md") && (!path.contains('/') || path.starts_with("docs/")))
+        || (path.starts_with("tests/fixtures/") && path.ends_with("/README.md"))
+}
+
+fn bundled_guidance(path: &str) -> bool {
+    [
+        "src/guidance.rs",
+        "src/service/guidance.rs",
+        "tests/guidance.rs",
+    ]
+    .contains(&path)
+        || path.starts_with("resources/guidance/")
+}
+
 pub fn ci_only(path: &str) -> bool {
     path.starts_with(".github/")
         || path.starts_with("scripts/ci/")
@@ -132,8 +147,7 @@ pub fn ci_only(path: &str) -> bool {
             && !path.starts_with("xtask/src/fixtures/oracles/")
             && path != "xtask/src/fixtures/browser_ui.rs"
             && path != "xtask/src/bin/test-helper.rs")
-        || (path.ends_with(".md") && (!path.contains('/') || path.starts_with("docs/")))
-        || (path.starts_with("tests/fixtures/") && path.ends_with("/README.md"))
+        || documentation_only(path)
 }
 
 pub fn preprocessor_changed(paths: &[String]) -> bool {
@@ -300,6 +314,21 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
             } else {
                 vec!["runtime".into()]
             },
+            preprocessor,
+        });
+    }
+    // These bodies are real include_str! inputs, unlike repository prose. Their
+    // catalog/CLI contract has no Skia or Chromium dependency; the full job still
+    // exercises the rendering consumers and both feature configurations.
+    if paths.iter().any(|path| bundled_guidance(path))
+        && paths
+            .iter()
+            .all(|path| ci_only(path) || bundled_guidance(path))
+    {
+        return Ok(Plan {
+            platform,
+            suite: "core".into(),
+            targets: vec!["guidance".into()],
             preprocessor,
         });
     }
@@ -558,6 +587,11 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         stems.insert("browser_readiness".into());
     }
     for p in paths {
+        // A prose filename such as docs/tui.md is not the TUI module. Keep
+        // compiler inputs under resources/ and real test fixtures significant.
+        if documentation_only(p) {
+            continue;
+        }
         if let Some(stem) = Path::new(p).file_stem().and_then(|s| s.to_str()) {
             stems.insert(stem.into());
         }
@@ -977,6 +1011,9 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         suite = "graphics".into();
     }
     targets.extend(changed_tests);
+    if paths.iter().any(|path| bundled_guidance(path)) {
+        targets.insert("guidance".into());
+    }
     ensure!(
         !targets.contains("agent_workflow") && targets.iter().all(|s| all.contains(s)),
         "Focus may run only deterministic integration targets"

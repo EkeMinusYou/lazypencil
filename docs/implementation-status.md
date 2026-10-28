@@ -4,7 +4,7 @@
 
 ## 現在の状態（2026-10-28）
 
-直前の実装・検証の照合対象は `95e2b6f`。今回の変更は文書整理・同梱ガイド版1.0.34と、初回対象をmacOS Apple SiliconだけにするCI／設定の変更である。製品機能の追加は引き続き停止中。Linux x64／arm64・Windowsの既存実装を後日対応用に保持し、Intel Macは対象外とする。OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
+直前の実装・検証の照合対象は `7413a94`。初回対象をmacOS Apple Siliconだけにする変更と文書整理・同梱ガイド版1.0.34は反映済み。現在は先行検証の過剰な対象選択とxtaskの重複ビルドを改善する。製品機能の追加は引き続き停止中。Linux x64／arm64・Windowsの既存実装を後日対応用に保持し、Intel Macは対象外とする。OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
 
 旧3環境方針での依存監査・署名付きソースを含む確定済み根拠は [`c9ffb37` の CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40679529757)。Linux 各1,490件・Mac1,479件、各144サマリー・812画像・42描画計測を確認し、過去ケースの実行回数、画像、clipboard／IME、profile／namespace／通信制御、ソース1,161ファイルの Git blob・mode と署名を独立照合した。CI の成功は、製品全体の受け入れ完了を意味しない。
 
@@ -14,7 +14,9 @@
 
 通常のnative対象は `RELEASE_PLATFORMS=["macos-15"]`。自動の先行選択と `--matrix all` もMacだけにし、親runのLinux失敗を調べて自動選択する処理を外す。Macの先行→完全検証と同条件の成果物再利用、両feature構成、Chromium／JS／GLSL、clipboard／PTY、性能・ライセンス・配布の元の条件は保持する。
 
-計画・依存監査・Wasm・ソース梱包などの軽量Linux jobは実行ホストとして残す。Linuxアプリのnative buildは通常CIに含めず、既存の手動診断経路を明示した場合だけ実行できる。manual workflowの既定値もMacへ揃える。今回のRust／YAML変更は整形・静的確認済み。新しい方針の実行結果は、この変更を含むCIを正本とし、旧3環境runの成功で代用しない。
+計画・依存監査・Wasm・ソース梱包などの軽量Linux jobは実行ホストとして残す。Linuxアプリのnative buildは通常CIに含めず、既存の手動診断経路を明示した場合だけ実行できる。manual workflowの既定値もMacへ揃えた。`7413a94` の [Mac限定CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40698680065) は軽量220件・Clippy、Mac先行・完全検証、監査・署名付きソースまで成功した。
+
+同runの先行15分12秒のうち、広い動的試験が7分21秒、xtask準備が2分09秒、互換確認・Clippy・buildが2分13秒だった。`docs/tui.md` の名前をコードのTUIとして拾う過剰判定を除き、実際の `include_str!` 入力である同梱ガイドは、描画依存のない既存guidance統合試験を先行する。最終jobの両feature構成と全試験は保持する。Macでも成功したsource-bound xtask buildを保存し、後続jobによる同じtoolsの再コンパイルを減らす。Cargoの入力検証と既存timeoutは変えない。10分以内は先行jobの目標であり、最終検証全体やrunner待機を含む保証ではない。今回の改善の所要時間はGHA実測で確認する。
 
 ### 実装・検証済みの主な範囲
 

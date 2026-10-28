@@ -10,6 +10,8 @@ struct Guide {
     summary: &'static str,
     body: &'static str,
 }
+// Embedded bodies are compiler inputs. CI must distinguish them from repository
+// prose even when both use Markdown; Cargo tracks these include_str! dependencies.
 const GUIDES: &[Guide] = &[
     Guide {
         id: "start",
