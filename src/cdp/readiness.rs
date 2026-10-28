@@ -40,6 +40,7 @@ impl Browser {
     ) -> Result<()> {
         let started = Instant::now();
         while started.elapsed() < duration {
+            self.check_page_network_location(session, budget)?;
             self.evaluate(session, "true", budget)?;
             let remaining = duration.saturating_sub(started.elapsed());
             std::thread::sleep(
@@ -74,6 +75,7 @@ impl Browser {
             scroll.0, scroll.1
         );
         loop {
+            self.check_page_network_location(session, budget)?;
             match self.evaluate(session, &expression, budget)?.as_str() {
                 Some("ready") => return Ok(()),
                 Some("invalid") => {

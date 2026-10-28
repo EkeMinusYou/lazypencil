@@ -1,6 +1,8 @@
 use lazypencil::config::{
     Snapshot,
-    runtime::{PageAnimationPolicy, PageSelectorState, PageWaitUntil, ScriptSettings},
+    runtime::{
+        PageAnimationPolicy, PageNetworkPolicy, PageSelectorState, PageWaitUntil, ScriptSettings,
+    },
 };
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf, process::Command};
@@ -442,6 +444,67 @@ fn page_animation_policy_inherits_and_explicit_running_resets_the_user_preferenc
 }
 
 #[test]
+fn page_network_policy_is_data_only_inherits_and_rejects_invalid_lower_scopes() {
+    let f = Fixture::new();
+    assert_eq!(
+        f.snapshot()
+            .unwrap()
+            .settings
+            .runtime
+            .browser
+            .network_policy,
+        PageNetworkPolicy::Online
+    );
+    fs::write(
+        f.user.join("config.toml"),
+        "[runtime.browser]\nnetwork_policy='offline'\nadditional_wait_ms=250\n",
+    )
+    .unwrap();
+    let captured = f.snapshot().unwrap();
+    assert_eq!(
+        captured.settings.runtime.browser.network_policy,
+        PageNetworkPolicy::Offline
+    );
+    assert_eq!(
+        captured.summary()["runtime_origins"]["browser.network_policy"],
+        "user"
+    );
+    fs::write(
+        f.project.join("lazypencil.toml"),
+        "[runtime.browser]\nnetwork_policy='online'\n",
+    )
+    .unwrap();
+    assert_eq!(
+        captured.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    let current = f.snapshot().unwrap();
+    assert_eq!(
+        current.settings.runtime.browser.network_policy,
+        PageNetworkPolicy::Online
+    );
+    assert_eq!(current.settings.runtime.browser.additional_wait_ms, 250);
+    assert_eq!(
+        current.summary()["runtime_origins"]["browser.network_policy"],
+        "project"
+    );
+    assert_eq!(
+        captured.settings.runtime.browser.network_policy,
+        PageNetworkPolicy::Offline
+    );
+    for invalid in [
+        "[runtime.browser]\nnetwork_policy='private-invalid'\n",
+        "[runtime.browser]\nnetwork_policy=1\n",
+        "[runtime.shader]\nnetwork_policy='offline'\n",
+    ] {
+        fs::write(f.user.join("config.toml"), invalid).unwrap();
+        let error = f.snapshot().err().unwrap();
+        assert_eq!(error.code, "CONFIGURATION_ERROR");
+        assert!(!error.message.contains("private-invalid"));
+    }
+}
+
+#[test]
 fn selector_policy_inherits_independently_and_an_empty_string_clears_it() {
     let f = Fixture::new();
     let defaults = f.snapshot().unwrap().settings.runtime.browser;
@@ -581,6 +644,10 @@ fn runtime_schema_and_templates_expose_limits_without_overriding_inheritance() {
             schema["$defs"]["PageAnimationPolicy"]["enum"],
             json!(["running", "paused"])
         );
+        assert_eq!(
+            schema["$defs"]["PageNetworkPolicy"]["enum"],
+            json!(["online", "offline"])
+        );
         assert!(
             schema["$defs"]["ShaderSettings"]["properties"]
                 .get("wait_until")
@@ -596,6 +663,7 @@ fn runtime_schema_and_templates_expose_limits_without_overriding_inheritance() {
     assert!(template.contains("# selector_state = \"visible\""));
     assert!(template.contains("# additional_wait_ms = 0"));
     assert!(template.contains("# animation_policy = \"running\""));
+    assert!(template.contains("# network_policy = \"online\""));
     assert!(template.contains("# [runtime.shader]"));
     assert!(template.contains("# [runtime.dynamic]"));
     assert_eq!(

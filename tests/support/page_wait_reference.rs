@@ -5,7 +5,7 @@ use std::{
     net::{SocketAddr, TcpListener, TcpStream},
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread,
     time::{Duration, Instant},
@@ -15,9 +15,25 @@ pub struct Server {
     pub address: SocketAddr,
     stop: Arc<AtomicBool>,
     task: Option<thread::JoinHandle<()>>,
+    network: Arc<NetworkCounts>,
+}
+
+#[derive(Default)]
+struct NetworkCounts {
+    http: AtomicUsize,
+    websocket: AtomicUsize,
+    tls: AtomicUsize,
 }
 
 impl Server {
+    pub fn network_counts(&self) -> (usize, usize, usize) {
+        (
+            self.network.http.load(Ordering::SeqCst),
+            self.network.websocket.load(Ordering::SeqCst),
+            self.network.tls.load(Ordering::SeqCst),
+        )
+    }
+
     pub fn new() -> Self {
         Self::with_selector_probe(Arc::new(AtomicBool::new(false)))
     }
@@ -28,6 +44,8 @@ impl Server {
         let address = listener.local_addr().unwrap();
         let stop = Arc::new(AtomicBool::new(false));
         let stopped = stop.clone();
+        let network = Arc::new(NetworkCounts::default());
+        let requests_network = network.clone();
         let task = thread::spawn(move || {
             let mut requests = Vec::new();
             while !stopped.load(Ordering::SeqCst) {
@@ -35,7 +53,10 @@ impl Server {
                     Ok((stream, _)) if requests.len() < 64 => {
                         let stopped = stopped.clone();
                         let probe = probe.clone();
-                        requests.push(thread::spawn(move || serve(stream, &stopped, &probe)));
+                        let network = requests_network.clone();
+                        requests.push(thread::spawn(move || {
+                            serve(stream, &stopped, &probe, &network)
+                        }));
                     }
                     Ok(_) => (),
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -52,6 +73,7 @@ impl Server {
             address,
             stop,
             task: Some(task),
+            network,
         }
     }
 }
@@ -63,7 +85,7 @@ impl Drop for Server {
     }
 }
 
-fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool) {
+fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool, network: &NetworkCounts) {
     // Accepted sockets can inherit the listener's nonblocking mode.
     stream.set_nonblocking(false).unwrap();
     stream
@@ -92,7 +114,15 @@ fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool) {
                 continue;
             }
             Err(_) => return,
-            Ok(count) => header.extend_from_slice(&buffer[..count]),
+            Ok(count) => {
+                // An intentional TLS sink proves HTTPS/WSS routing before
+                // the expected handshake failure, without installing a test CA.
+                if header.is_empty() && buffer[0] == 0x16 {
+                    network.tls.fetch_add(1, Ordering::SeqCst);
+                    return;
+                }
+                header.extend_from_slice(&buffer[..count]);
+            }
         }
     }
     if !header.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
@@ -100,6 +130,29 @@ fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool) {
     }
     let request = String::from_utf8_lossy(&header);
     let path = request.split_whitespace().nth(1).unwrap_or("");
+    if path.starts_with("/network/socket") {
+        if let Some(key) = request
+            .lines()
+            .filter_map(|line| line.split_once(':'))
+            .find_map(|(name, value)| {
+                name.eq_ignore_ascii_case("Sec-WebSocket-Key")
+                    .then_some(value.trim())
+            })
+        {
+            network.websocket.fetch_add(1, Ordering::SeqCst);
+            let accept = tungstenite::handshake::derive_accept_key(key.as_bytes());
+            let _ = write!(
+                stream,
+                "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
+            );
+            let _ = stream.write_all(&[0x88, 0]);
+            let _ = stream.read(&mut [0; 128]);
+            return;
+        }
+    }
+    if path.starts_with("/network/") {
+        network.http.fetch_add(1, Ordering::SeqCst);
+    }
     if path == "/polled" {
         probe.store(true, Ordering::SeqCst);
     }
@@ -141,9 +194,25 @@ fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool) {
             0,
         ),
         "/never" => ("text/plain", "ok", 10000),
+        "/network/image" => (
+            "image/svg+xml",
+            "<svg xmlns='http://www.w3.org/2000/svg' width='8' height='8'><path fill='green' d='M0 0h8v8H0z'/></svg>",
+            0,
+        ),
+        "/network/green" => (
+            "text/html",
+            "<html data-network='yes' style='background:#00ff00'></html>",
+            0,
+        ),
+        "/network/fetch" | "/network/worker" => ("text/plain", "ok", 0),
         _ => ("text/plain", "", 0),
     };
-    if write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n", body.len()).is_err() {
+    let cors = if path.starts_with("/network/") {
+        "Access-Control-Allow-Origin: *\r\nAccess-Control-Allow-Private-Network: true\r\n"
+    } else {
+        ""
+    };
+    if write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: {kind}\r\nContent-Length: {}\r\n{cors}Cache-Control: no-store\r\nConnection: close\r\n\r\n", body.len()).is_err() {
         return;
     }
     let started = Instant::now();

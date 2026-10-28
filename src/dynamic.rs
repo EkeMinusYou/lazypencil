@@ -385,6 +385,7 @@ impl DynamicRuntime {
     ) -> Result<Raster> {
         self.check()?;
         let url = page_url(node)?;
+        crate::cdp::check_network_navigation(self.browser_settings.network_policy, url)?;
         let zoom = number(node.properties.get("zoom"), 1.0)?;
         if !(0.1..=5.0).contains(&zoom) {
             return Err(page_error("Page zoom must be within 0.1..5"));
@@ -431,6 +432,7 @@ impl DynamicRuntime {
         let selector_state = self.browser_settings.selector_state;
         let additional_wait_ms = self.browser_settings.additional_wait_ms;
         let animation_policy = self.browser_settings.animation_policy;
+        let network_policy = self.browser_settings.network_policy;
         let load_condition = if wait_until == PageWaitUntil::NetworkIdle {
             "load, main-frame networkIdle lifecycle"
         } else {
@@ -460,6 +462,7 @@ impl DynamicRuntime {
             .min(Duration::from_millis(self.browser_settings.timeout_ms));
         let budget = Budget::new(duration, cancel.as_ref());
         let browser = self.browser(Purpose::Page, &budget)?;
+        browser.configure_page_network(network_policy, &budget)?;
         let version = browser.version.clone();
         let retained = identity.as_deref().map(|key| (key, signature.as_str()));
         let result=browser.with_page(retained,&budget,|browser,session,page_state| {
@@ -479,6 +482,7 @@ impl DynamicRuntime {
             if navigation.get("errorText").is_some() { return Err(navigation_error(&navigation)); }
             loop {
                 let frame=browser.command(Some(session),"Page.getFrameTree",json!({}),&budget)?;
+                crate::cdp::check_network_frame(network_policy,&frame["frameTree"]["frame"])?;
                 let committed=navigation.get("loaderId").is_none_or(|loader| frame["frameTree"]["frame"]["loaderId"]==*loader);
                 let idle = wait_until == PageWaitUntil::Load || browser.page_is_idle(session, &frame["frameTree"]["frame"]);
                 if committed && idle && browser.evaluate(session,"document.readyState === 'complete'",&budget)?==true { break; }
@@ -492,12 +496,15 @@ impl DynamicRuntime {
             }
             let expression=format!("(async()=>{{await document.fonts.ready;await Promise.all([...document.images].map(image=>image.decode()));window.scrollTo({{left:{scroll_x},top:{scroll_y},behavior:'instant'}});await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));return {{url:window.location.href,scrollX:window.scrollX,scrollY:window.scrollY}};}})()");
             let state=browser.evaluate(session,&expression,&budget)?;
+            if let Some(url)=state["url"].as_str() {
+                crate::cdp::check_network_navigation(network_policy,url)?;
+            }
             let screenshot=browser.command(Some(session),"Page.captureScreenshot",json!({"format":"png","fromSurface":true,"captureBeyondViewport":false}),&budget)?;
             let png=base64::engine::general_purpose::STANDARD.decode(screenshot["data"].as_str().ok_or_else(|| page_error("No page image was returned"))?).map_err(|_| page_error("Invalid page PNG encoding"))?;
             let mut metadata=json!({"kind":"browser","acquisition_id":uuid::Uuid::new_v4().to_string(),"requested_url":redacted_url(url),"url_hash":hash(url.as_bytes()),
                 "final_url":state["url"].as_str().map(redacted_url),"browser_version":version,"viewport_width":width,"viewport_height":height,"pixel_width":pixel_width,"pixel_height":pixel_height,
                 "scale":scale,"zoom":zoom,"scroll_x":state["scrollX"],"scroll_y":state["scrollY"],"device_id":device,
-                "wait_until":wait_until,"ready_selector":ready_selector,"selector_state":selector_state,"additional_wait_ms":additional_wait_ms,"animation_policy":animation_policy,"ready_condition":ready_condition,"acquired_at":timestamp(),"png_hash":hash(&png),"limits":limits,"page_state":page_state});
+                "wait_until":wait_until,"ready_selector":ready_selector,"selector_state":selector_state,"additional_wait_ms":additional_wait_ms,"animation_policy":animation_policy,"network_policy":network_policy,"ready_condition":ready_condition,"acquired_at":timestamp(),"png_hash":hash(&png),"limits":limits,"page_state":page_state});
             if let Some(identity)=&input.identity {
                 metadata["resources"]=identity.clone();
                 metadata["local_files"]=serde_json::to_value(browser.local_file_stats(session)

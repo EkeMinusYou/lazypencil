@@ -16,6 +16,9 @@ use tungstenite::{Message, WebSocket};
 mod connection;
 mod lifecycle;
 mod local_files;
+mod network;
+#[cfg(feature = "rendering")]
+pub(crate) use network::{check_network_frame, check_network_navigation};
 mod process;
 mod readiness;
 mod tabs;
@@ -41,6 +44,7 @@ pub struct Browser {
     retained_tabs: VecDeque<tabs::RetainedTab>,
     local_files: local_files::Interception,
     purpose: Purpose,
+    deny_proxy: Option<network::DenyProxy>,
     _profile: Option<tempfile::TempDir>,
 }
 
@@ -214,6 +218,7 @@ impl Browser {
             retained_tabs: VecDeque::new(),
             local_files: local_files::Interception::default(),
             purpose,
+            deny_proxy: None,
             _profile: profile,
         };
         let version = browser.command(None, "Browser.getVersion", json!({}), budget)?;

@@ -145,12 +145,13 @@ impl Browser {
     }
 
     fn create_tab(&mut self, budget: &Budget<'_>) -> Result<Tab> {
-        let context = self.command(
-            None,
-            "Target.createBrowserContext",
-            json!({"disposeOnDetach":true}),
-            budget,
-        )?;
+        let mut options = json!({"disposeOnDetach":true});
+        if let Some(proxy) = &self.deny_proxy {
+            options["proxyServer"] = format!("http://{}", proxy.address).into();
+            // Chromium otherwise bypasses proxies for localhost/link-local URLs.
+            options["proxyBypassList"] = "<-loopback>".into();
+        }
+        let context = self.command(None, "Target.createBrowserContext", options, budget)?;
         let context = identifier(&context, "browserContextId")?;
         let result = (|| {
             self.command(
