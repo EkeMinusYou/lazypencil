@@ -48,6 +48,7 @@ pub enum Stage {
     CompleteTests,
     BinariesStage,
     NormalConsumer,
+    RuntimePrepare,
     RuntimeConsumer,
     EvidenceGate,
     Clipboard,
@@ -348,14 +349,22 @@ impl Session {
                 normal::remaining(self, &prepared, false)?;
                 binaries::completed(self, "normal")
             }
-            Stage::RuntimeConsumer => {
+            Stage::RuntimePrepare => {
                 let _ = binaries::restore(self, true)?;
                 self.run(Arguments {
                     stage: Stage::Reproduce,
                     suite: "pipeline".into(),
                     targets: "[]".into(),
                 })?;
-                browser::setup(self)?;
+                // Browser preparation publishes GITHUB_ENV values. Consumers
+                // run in the next Actions step so both Chromium paths exist.
+                browser::setup(self)
+            }
+            Stage::RuntimeConsumer => {
+                ensure!(
+                    self.temporary.join("binary-receipt.json").is_file(),
+                    "Prepare the runtime catalog before running its tests"
+                );
                 clipboard::run(self)?;
                 let runtime = self.runtime_lanes();
                 let ownership = browser::ownership_only(self);
