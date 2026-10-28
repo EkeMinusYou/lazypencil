@@ -1,4 +1,5 @@
 //! Decode the bounded TrueColor XWD snapshots used by the hosted X server.
+use super::{DISPLAY_HEIGHT, DISPLAY_WIDTH};
 use crate::fixtures::oracles::Raster;
 use anyhow::{Context, Result, ensure};
 use flate2::{Compression, Crc, write::ZlibEncoder};
@@ -17,7 +18,7 @@ pub fn decode(bytes: &[u8]) -> Result<Raster> {
         "Expected XWD v7 RGB ZPixmap"
     );
     ensure!(
-        (1..=2048).contains(&width) && (1..=2048).contains(&height),
+        (1..=DISPLAY_WIDTH).contains(&width) && (1..=DISPLAY_HEIGHT).contains(&height),
         "Screenshot exceeds the hosted display bounds"
     );
     ensure!(
@@ -43,7 +44,7 @@ pub fn decode(bytes: &[u8]) -> Result<Raster> {
     let stride = word(12) as usize;
     let pixel_bytes = bpp as usize / 8;
     ensure!(
-        stride >= width as usize * pixel_bytes && stride <= 8192,
+        stride >= width as usize * pixel_bytes && stride <= DISPLAY_WIDTH as usize * 4,
         "Invalid screenshot row stride"
     );
     let offset = header
@@ -90,8 +91,8 @@ fn chunk(out: &mut Vec<u8>, tag: &[u8; 4], bytes: &[u8]) {
 
 pub fn png(frame: &Raster) -> Result<Vec<u8>> {
     ensure!(
-        (1..=2048).contains(&frame.width)
-            && (1..=2048).contains(&frame.height)
+        (1..=DISPLAY_WIDTH).contains(&frame.width)
+            && (1..=DISPLAY_HEIGHT).contains(&frame.height)
             && frame.pixels.len() == frame.width as usize * frame.height as usize,
         "Invalid screenshot raster"
     );

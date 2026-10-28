@@ -1,6 +1,9 @@
 //! Hosted real-emulator verification; independent of the app and Skia crates.
 pub mod raster;
 
+pub const DISPLAY_WIDTH: u32 = 2400;
+pub const DISPLAY_HEIGHT: u32 = 1600;
+
 use crate::{evidence, process, util};
 use anyhow::{Result, ensure};
 use clap::Args;
@@ -58,7 +61,10 @@ impl Arguments {
             // Terminals are sequential clients of one owned display. Do not
             // reset the server between closing one and connecting the next.
             command
-                .args(["-a", "-s", "-screen 0 2400x1600x24 -nolisten tcp -noreset"])
+                .args(["-a", "-s"])
+                .arg(format!(
+                    "-screen 0 {DISPLAY_WIDTH}x{DISPLAY_HEIGHT}x24 -nolisten tcp -noreset"
+                ))
                 .arg(std::env::current_exe()?)
                 .arg("terminal");
             if let Some(candidate) = &self.candidate {

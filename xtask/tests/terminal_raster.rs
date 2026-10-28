@@ -2,7 +2,10 @@
 use flate2::{Crc, read::ZlibDecoder};
 use lazypencil_xtask::{
     fixtures::oracles::Raster,
-    terminal::raster::{self, Region},
+    terminal::{
+        DISPLAY_HEIGHT, DISPLAY_WIDTH,
+        raster::{self, Region},
+    },
 };
 use std::io::Read;
 
@@ -105,7 +108,9 @@ fn malformed_or_unbounded_screenshots_fail_before_pixel_allocation() {
         (7, 2),
         (11, 64),
         (12, 11),
-        (12, 8193),
+        (4, DISPLAY_WIDTH + 1),
+        (5, DISPLAY_HEIGHT + 1),
+        (12, DISPLAY_WIDTH * 4 + 1),
         (13, 3),
         (14, 0),
         (14, 0xff),
@@ -125,6 +130,30 @@ fn malformed_or_unbounded_screenshots_fail_before_pixel_allocation() {
     let mut bytes = original;
     bytes[105] = 1;
     assert!(raster::decode(&bytes).is_err());
+}
+
+#[test]
+fn wide_cjk_windows_fit_the_owned_display_and_keep_codec_limits_aligned() {
+    for (width, height) in [(2204, 2), (DISPLAY_WIDTH, 2), (2, DISPLAY_HEIGHT)] {
+        let mut bytes = xwd(0, 32);
+        bytes.truncate(118); // Header, owned window name and one color-map entry.
+        for (word, value) in [
+            (4, width),
+            (5, height),
+            (12, width * 4),
+            (20, width),
+            (21, height),
+        ] {
+            bytes[word * 4..word * 4 + 4].copy_from_slice(&value.to_be_bytes());
+        }
+        bytes.extend([51, 34, 17, 0].repeat((width * height) as usize));
+        let frame = raster::decode(&bytes).unwrap();
+        assert_eq!((frame.width, frame.height), (width, height));
+        assert!(frame.pixels.iter().all(|pixel| *pixel == [17, 34, 51, 255]));
+        let png = raster::png(&frame).unwrap();
+        assert_eq!(u32::from_be_bytes(png[16..20].try_into().unwrap()), width);
+        assert_eq!(u32::from_be_bytes(png[20..24].try_into().unwrap()), height);
+    }
 }
 
 #[test]

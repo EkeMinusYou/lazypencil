@@ -535,7 +535,7 @@ pub fn run(candidate: Option<&Path>, output: &Path) -> Result<()> {
             "format_version":1,"source_commit":revision,
             "candidate":candidate.is_some().then_some(&verification),
             "development_build":candidate.is_none().then_some(&verification),"target":target,
-            "display":"Xvfb 2400x1600x24; LIBGL_ALWAYS_SOFTWARE=1","protocols":results,"failed":&failed,
+            "display":format!("Xvfb {}x{}x24; LIBGL_ALWAYS_SOFTWARE=1",super::DISPLAY_WIDTH,super::DISPLAY_HEIGHT),"protocols":results,"failed":&failed,
             "scope":"real-emulator rendered pixels and X11 keyboard/resize; not physical-monitor, IME, clipboard, tmux/SSH or performance acceptance"
         }))?,
         false,
