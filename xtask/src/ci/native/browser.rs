@@ -1,7 +1,8 @@
 use super::*;
+use crate::performance;
 
 mod evidence;
-pub use evidence::required_images;
+pub use evidence::{local_page_mcp_images, required_images};
 
 pub fn setup(s: &Session) -> Result<()> {
     setup_binary(s, &s.executable("debug"))
@@ -283,4 +284,38 @@ pub fn ownership(s: &Session) -> Result<()> {
         &s.temporary.join("codec-reference"),
         &std::env::var("GITHUB_SHA")?,
     )
+}
+
+pub fn panel(s: &Session) -> Result<()> {
+    let chromium = std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").context("Chromium unavailable")?;
+    let output = s.temporary.join("chromium-panel.png");
+    let raw = s.capture(
+        Command::new(s.executable("debug"))
+            .env("LAZYPENCIL_CHROMIUM", chromium)
+            .arg("--json")
+            .arg("--data-dir")
+            .arg(s.temporary.join("chromium-test-data"))
+            .args([
+                "render",
+                "examples/dynamic-panel.pen",
+                "--time",
+                "0.5",
+                "--output",
+            ])
+            .arg(&output),
+        300,
+        "chromium-panel.json",
+    )?;
+    let report: Value = serde_json::from_slice(&raw)?;
+    ensure!(
+        report["width"] == 1000
+            && report["height"] == 640
+            && report["diagnostics"] == json!([])
+            && report["dynamic_artifacts"]
+                .as_array()
+                .is_some_and(|a| a.len() == 2),
+        "Unexpected combined panel"
+    );
+    performance::png(&output, &report, 1000, 640)?;
+    Ok(())
 }
