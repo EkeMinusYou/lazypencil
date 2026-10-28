@@ -498,7 +498,9 @@ fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() 
         workflow.find("native candidate\n").unwrap()
             < workflow.find("cargo xtask measure-tui").unwrap()
     );
-    assert!(workflow.contains("if: inputs.phase == 'focus' && inputs.measure_tui"));
+    assert!(workflow.contains(
+        "if: (inputs.phase == 'focus' || inputs.lane == 'release') && inputs.measure_tui"
+    ));
     let ci = std::fs::read_to_string(util::root().join(".github/workflows/ci.yml")).unwrap();
     assert!(ci.contains("measure_tui: ${{ needs.plan.outputs.measure_tui == 'true' }}"));
     assert!(ci.contains("needs: [plan, shader-preprocessor]"));

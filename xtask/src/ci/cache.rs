@@ -805,8 +805,15 @@ fn application_identity_for(
     } else {
         "application-v2"
     };
+    // Core and default catalogs are complementary payloads. Keep their
+    // retention namespaces distinct as well as their build fingerprints.
+    let tests_namespace = if native_key.ends_with("-core") {
+        "tests-core-v1"
+    } else {
+        "tests-v1"
+    };
     let compatible_prefix = format!(
-        "tests-v1-{platform}-{}-full-",
+        "{tests_namespace}-{platform}-{}-full-",
         compatible_fingerprint(&recipe)?
     );
     Ok(ApplicationIdentity {
@@ -1327,7 +1334,7 @@ pub fn obsolete_before_replacement(
         "Invalid replacement identity"
     );
     let tests = Regex::new(&format!(
-        r"^tests-v1-{}-[0-9a-f]{{64}}-full-([0-9a-f]{{64}})$",
+        r"^tests(?:-core)?-v1-{}-[0-9a-f]{{64}}-full-([0-9a-f]{{64}})$",
         regex::escape(platform)
     ))?;
     let application = Regex::new(&format!(
@@ -1387,12 +1394,13 @@ fn obsolete_with_sources(
         r"^release-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-([0-9a-f]{64})-[0-9a-f]{64}-(full|focus)(?:-[1-9][0-9]*-[1-9][0-9]*)?$",
     )?;
     let tests = Regex::new(
-        r"^tests-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-[0-9a-f]{64}-full-([0-9a-f]{64})$",
+        r"^(tests(?:-core)?)-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-[0-9a-f]{64}-full-([0-9a-f]{64})$",
     )?;
     let compatible_sources = keys
         .iter()
         .filter_map(|(key, _)| tests.captures(key))
-        .map(|caps| (caps[1].to_owned(), caps[2].to_owned()))
+        .filter(|caps| &caps[1] == "tests")
+        .map(|caps| (caps[2].to_owned(), caps[3].to_owned()))
         .collect::<BTreeSet<_>>();
     let mut selected = BTreeMap::new();
     let mut groups = BTreeMap::<(String, String), Vec<&Value>>::new();
@@ -1502,7 +1510,10 @@ fn obsolete_with_sources(
         }
         if let Some(caps) = tests.captures(key) {
             groups
-                .entry((format!("tests:{}:{version}", &caps[1]), "full".into()))
+                .entry((
+                    format!("{}:{}:{version}", &caps[1], &caps[2]),
+                    "full".into(),
+                ))
                 .or_default()
                 .push(entry);
         }
