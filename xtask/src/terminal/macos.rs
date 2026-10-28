@@ -185,7 +185,7 @@ impl Window {
         let pixels = self
             .pixels
             .context("Capture the original Kitty framebuffer before resize")?;
-        let cells = [width, height].map(|v| u64::from(v));
+        let cells = [width, height].map(u64::from);
         let width = (cells[0] * u64::from(self.cells[0]) / u64::from(pixels[0])).max(1);
         let height = (cells[1] * u64::from(self.cells[1]) / u64::from(pixels[1])).max(1);
         self.checked(self.matched("resize-os-window").args([
