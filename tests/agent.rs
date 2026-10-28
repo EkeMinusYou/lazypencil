@@ -621,7 +621,11 @@ fn adapter_errors_keep_numeric_codes_without_echoing_private_payloads_or_host_er
             let output = cli_output(&directory, mode, &extra, json);
             assert!(!output.status.success(), "{mode}");
             let rejected: Value = serde_json::from_slice(
-                &std::fs::read(directory.path().join("rejected-acp-phase.json")).unwrap(),
+                &std::fs::read(directory.path().join("rejected-acp-phase.json")).unwrap_or_else(|error| {
+                    panic!("{mode}, json={json}: missing rejection record: {error}; stdout={}; stderr={}; fixture={}",
+                        String::from_utf8_lossy(&output.stdout),String::from_utf8_lossy(&output.stderr),
+                        std::fs::read_to_string(directory.path().join("fixture-errors.log")).unwrap_or_default())
+                }),
             )
             .unwrap();
             assert_eq!(rejected["phase"], phase, "{mode}");
