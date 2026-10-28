@@ -5,7 +5,32 @@ mod evidence;
 pub use evidence::{local_page_mcp_images, required_images};
 
 pub fn setup(s: &Session) -> Result<()> {
-    setup_binary(s, &s.executable("debug"))
+    setup_binary(s, &s.executable("debug"))?;
+    if std::env::var("HEADED_BROWSER_TESTS").as_deref() != Ok("true") {
+        return Ok(());
+    }
+    let raw = s.capture(
+        Command::new(std::env::current_exe()?)
+            .args(["fixtures", "browser-ui", "--output"])
+            .arg(s.temporary.join("chromium-ui")),
+        600,
+        "chromium-ui-setup.json",
+    )?;
+    let report: Value = serde_json::from_slice(&raw)?;
+    let executable = PathBuf::from(
+        report["executable"]
+            .as_str()
+            .context("Full browser executable missing")?,
+    )
+    .canonicalize()?;
+    ensure!(
+        executable.starts_with(s.temporary.join("chromium-ui").canonicalize()?),
+        "Full browser outside owned fixture directory"
+    );
+    if cfg!(target_os = "linux") {
+        sandbox_named(s, &executable, "chromium-ui")?;
+    }
+    Ok(())
 }
 
 pub fn setup_binary(s: &Session, binary: &Path) -> Result<()> {
@@ -107,6 +132,14 @@ pub fn setup_binary(s: &Session, binary: &Path) -> Result<()> {
     Ok(())
 }
 fn sandbox(s: &Session, executable: &Path) -> Result<()> {
+    sandbox_named(s, executable, "chromium")
+}
+
+fn sandbox_named(s: &Session, executable: &Path, name: &str) -> Result<()> {
+    ensure!(
+        ["chromium", "chromium-ui"].contains(&name),
+        "Unknown owned browser sandbox role"
+    );
     let restriction = Path::new("/proc/sys/kernel/apparmor_restrict_unprivileged_userns");
     if !restriction.exists() || fs::read_to_string(restriction)?.trim() != "1" {
         return Ok(());
@@ -117,9 +150,10 @@ fn sandbox(s: &Session, executable: &Path) -> Result<()> {
         "Unsafe AppArmor executable path"
     );
     let policy = format!(
-        "abi <abi/4.0>,\ninclude <tunables/global>\nprofile lazypencil_ci_chromium \"{text}\" flags=(unconfined) {{\n  userns,\n}}\n"
+        "abi <abi/4.0>,\ninclude <tunables/global>\nprofile lazypencil_ci_{} \"{text}\" flags=(unconfined) {{\n  userns,\n}}\n",
+        name.replace('-', "_")
     );
-    let path = s.temporary.join("chromium-userns.apparmor");
+    let path = s.temporary.join(format!("{name}-userns.apparmor"));
     fs::write(&path, &policy)?;
     util::chmod(&path, 0o600)?;
     process::checked(
@@ -133,7 +167,7 @@ fn sandbox(s: &Session, executable: &Path) -> Result<()> {
         "Global AppArmor restriction changed"
     );
     util::publish(
-        &s.temporary.join("chromium-userns-policy.json"),
+        &s.temporary.join(format!("{name}-userns-policy.json")),
         &util::encode(
             &json!({"executable":text,"profile_sha256":util::digest(policy),"kernel_restriction_before":1,"kernel_restriction_after":1,"loaded":true}),
         )?,

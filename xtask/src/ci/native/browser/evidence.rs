@@ -654,8 +654,44 @@ pub fn required_images(root: &Path, commit: &str) -> Result<()> {
         32,
         32,
     )?;
+    let headed = report("codec-headed-login.json")?;
+    let observation = &headed["headed_observation"];
+    let catalogue: Value =
+        util::json(&util::root().join("tests/fixtures/browser-ui/chromium.json"))?;
+    let platform = if cfg!(target_os = "macos") {
+        "mac-arm64"
+    } else if cfg!(target_arch = "aarch64") {
+        "linux-arm64"
+    } else {
+        "linux64"
+    };
+    let pin = catalogue["artifacts"]
+        .as_array()
+        .context("Missing full browser pins")?
+        .iter()
+        .find(|row| row["platform"] == platform)
+        .context("Full browser pin missing")?;
+    ensure!(
+        headed["sandbox"] == "enabled"
+            && headed["browser_closed"] == true
+            && headed["same_canonical_browser"] == true
+            && headed["document_unchanged"] == true
+            && headed["storage"] == profiles["storage"]
+            && headed["browser_version"] == catalogue["version"]
+            && headed["archive_sha256"] == pin["sha256"]
+            && observation["visible"] == true
+            && observation["headless"] == false
+            && observation["chrome"] == true
+            && observation["width"].as_u64().is_some_and(|v| v > 0)
+            && observation["height"].as_u64().is_some_and(|v| v > 0)
+            && headed["png"] == "codec-headed-login.png"
+            && headed["rgba"] == json!([0, 255, 0, 255])
+            && !headed.to_string().contains("profile-fixture-secret"),
+        "Incomplete headed-login/normal-close proof"
+    );
+    png("codec-headed-login.png", &headed["png_hash"], 32, 32)?;
     println!(
-        "Verified required PNG source identities, hashes and dimensions, including thirteen dedicated-profile captures"
+        "Verified required PNG identities, including thirteen dedicated-profile captures and the full-browser headed-login round trip"
     );
     Ok(())
 }

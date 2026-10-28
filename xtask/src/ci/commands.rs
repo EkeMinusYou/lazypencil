@@ -370,6 +370,7 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
             "Browser focus requires the complete document/script/browser target set"
         );
         let reproductions = [
+            focus::HEADED_LOGIN,
             focus::GENERATED_BROWSER,
             focus::LOCAL_FILES,
             focus::BROWSER_COPY,
@@ -433,6 +434,23 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
         });
     }
     let mut checks = shader_first;
+    if suite == "dynamic" && has("browser_readiness") {
+        checks.insert(
+            0,
+            append(
+                &common,
+                &[
+                    "--test",
+                    "browser_readiness",
+                    focus::HEADED_LOGIN,
+                    "--",
+                    "--exact",
+                    "--ignored",
+                    "--test-threads=1",
+                ],
+            ),
+        );
+    }
     // Dynamic focus otherwise selects only CDP/pages/TUI library namespaces.
     // Exercise the native pixel transfer and camera math before browser work.
     if suite == "dynamic" && has("tui") {
@@ -634,6 +652,7 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
             if names.iter().any(|name| name == "browser_readiness") {
                 if suite == "dynamic" {
                     c.extend(skips([
+                        focus::HEADED_LOGIN,
                         focus::PAGE_DIAGNOSTICS,
                         focus::NATIVE_ANIMATION,
                         focus::OFFLINE_NETWORK,

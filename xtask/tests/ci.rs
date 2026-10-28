@@ -7,6 +7,53 @@ use serde_json::{Value, json};
 use std::{collections::BTreeMap, fs, path::PathBuf, process::Command};
 
 #[test]
+fn headed_browser_fixture_changes_reproduce_their_real_consumer_before_the_matrix() {
+    for path in [
+        "tests/support/browser_profiles.rs",
+        "tests/support/page_wait_reference.rs",
+        "tests/fixtures/browser-ui/chromium.json",
+        "xtask/src/fixtures/browser_ui.rs",
+    ] {
+        let plan = focus::select(&util::root(), &[path.into()], "auto").unwrap();
+        assert_eq!(plan.suite, "dynamic", "{path}");
+        assert!(plan.targets.iter().any(|name| name == "browser_readiness"));
+        let commands = ci::commands::plan(&util::root(), &plan.suite, &plan.targets).unwrap();
+        let first = commands
+            .checks
+            .iter()
+            .position(|args| {
+                args.iter().any(|arg| arg == focus::HEADED_LOGIN)
+                    && !args.iter().any(|arg| arg == "--skip")
+            })
+            .unwrap();
+        let other = commands
+            .checks
+            .iter()
+            .position(|args| {
+                args.iter().any(|arg| arg == focus::GENERATED_BROWSER)
+                    && !args.iter().any(|arg| arg == "--skip")
+            })
+            .unwrap();
+        assert!(
+            first < other,
+            "The visible login must fail before unrelated long browser studies"
+        );
+        assert!(commands.checks[first].iter().any(|arg| arg == "--ignored"));
+        assert!(commands.checks[first].iter().any(|arg| arg == "--exact"));
+        assert_eq!(
+            commands
+                .checks
+                .iter()
+                .filter(|args| args
+                    .windows(2)
+                    .any(|pair| pair == ["--skip", focus::HEADED_LOGIN]))
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
 fn installer_only_changes_reproduce_without_native_features_and_mixed_changes_stay_broad() {
     let root = util::root();
     let paths: Vec<String> = [

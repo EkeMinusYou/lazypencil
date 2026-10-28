@@ -20,6 +20,7 @@ const PACKAGES: &[&str] = &[
     "libx11-dev",
     "xvfb",
     "xauth",
+    "libgtk-3-0t64",
 ];
 const SOURCES: &str = "Types: deb\nURIs: https://archive.ubuntu.com/ubuntu\nSuites: noble noble-updates noble-backports\nComponents: main restricted universe multiverse\nArchitectures: amd64\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n\nTypes: deb\nURIs: https://security.ubuntu.com/ubuntu\nSuites: noble-security\nComponents: main restricted universe multiverse\nArchitectures: amd64\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n";
 

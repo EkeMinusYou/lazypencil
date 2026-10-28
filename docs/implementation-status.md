@@ -1,6 +1,10 @@
 # lazypencil 実装と公開準備の状況
 
-ACPの自由形式error本文／dataが公開診断へ入る経路を修正する差分を準備した。内部エラーをSDK外で保持し、adapterが返したdataをhostエラーとして信用しない。initialize・authenticate・session作成／load・mode／model・prompt・不正frameの8経路を、JSON／通常CLIの16条件で確認する回帰を追加した。数値code・phase、元文書・保存下書き、stdout／stderr／transcript／metadataへのfixture秘密情報の非掲載を確認する。通常の応答・未知notificationの保存契約と既存の取消し・認証・期限は保つ。整形・差分・YAML検査は成功、Rustと実子プロセスの試験はGHA待ちである。
+`c53ab98` の [GHA](https://github.com/EkeMinusYou/lazypencil/actions/runs/40670794716) は軽量211件・Clippy、先行358件／33サマリー、全3環境・監査・署名付きsourceを成功した。Mac1,474件・Linux各1,485件、各144サマリーで、全旧ケースの回数と新しいACP回帰の各2構成の実行を照合した。各811画像・42描画計測・clipboard／IME・profile／namespace／通信制御を独立照合し、source1,159ファイル・32,191,746バイトのGit blob／mode、tar hash・DSSE署名・source／run／workflowの対応も確認した。全体jobはx64 19分53秒・arm64 18分30秒・Mac22分56秒、workflow全体26分23秒。前回の29分42秒は署名の再試行を含み、今回はcore先行2分04秒に対して前回はbrowser先行8分14秒で、試験の先行範囲とhost負荷が異なる。元の27〜29分より短い今回の観測を、すべての変更で安定した所要時間の保証にはしない。
+
+ACP errorの自由形式本文／dataは公開診断へ転用せず、数値codeとhost定義のphaseを保持する。内部エラーはSDK外で保持し、adapterのdataをhostエラーとして信用しない。初期化・認証・会話作成／load・mode／model・prompt・不正frameの8経路をJSON／通常CLIの16条件で確認した。元文書の保持は全16条件、下書き／transcript／metadataはJSONの8条件で確認し、出力にfixture秘密情報が混じらなかった。既存の取消し・認証route・設定・会話復帰も維持した。新試験の最初の失敗は、loadの準備で別adapter引数を使ったため正しく束縛拒否されたものだった。同じfixture設定を使う試験へ直し、束縛・期限・成功基準は緩めていない。
+
+可視loginの正の検証を準備した。公式full-browser固定版の3環境catalogue、軽量なRustの `cargo xtask fixtures browser-ui`、Linuxの子CLI専用Xvfb・別AppArmor policy、公開login CLIの通常終了と同じcanonical browserによる4ストレージ取得を接続する。ページの可視状態・window寸法・headlessでないUA、元文書／metadataの保持と32×32の1,024画素を検査する。新試験は先行dynamicの先頭で実行し、同条件の後段からだけ除く。最終gateにもsource／version／archive hashと追加PNGを要求し、元のheadless13画像・10秒login期限・既存全試験は維持する。full-browserは必要なbrowser対象／runtime並列／全体検証だけで取得し、別の依存cacheは作らない。Rust／実取得・可視loginはGHA待ちであり、完了扱いにしない。ローカルは整形・差分・YAMLと所有ページJSの構文だけを検査し、重いbuild／archive保存は行っていない。
 
 `42363cc` の [GHA](https://github.com/EkeMinusYou/lazypencil/actions/runs/40665001047) は軽量211件・Clippy、先行376件／51サマリー、全3環境・監査を成功した。Mac1,472件・Linux各1,483件、各144サマリーで全旧ケースの回数を保ち、各811画像・42計測・clipboard／IME・profile／namespace／通信制御を独立照合した。source1,159ファイル・32,180,365バイトのGit blob／modeと署名を照合した。署名だけがRekor通信timeoutで一度失敗し、そのjobだけを再実行して成功した。全体jobはx64 17分26秒・arm64 12分45秒・Mac15分06秒、最初の開始から署名再試行完了まで29分42秒、全環境試験完了まで26分45秒。直前39分09秒から短縮したが、元の27〜29分という課題の解消とは扱わない。
 

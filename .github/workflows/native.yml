@@ -73,6 +73,7 @@ jobs:
       FOCUS_SUITE: ${{ inputs.suite }}
       FOCUS_TARGETS: ${{ inputs.targets }}
       RUNTIME_PARALLEL: ${{ inputs.runtime_parallel }}
+      HEADED_BROWSER_TESTS: ${{ inputs.phase == 'full' || inputs.runtime_parallel || contains(fromJSON(inputs.targets), 'browser_readiness') }}
       FOCUS_RUNTIME_STAGE: ${{ (inputs.suite == 'release' || inputs.suite == 'candidate' || inputs.measure_tui) && 'focus-runtime-release' || 'runtime-tests' }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -393,6 +394,7 @@ jobs:
             ${{ runner.temp }}/chromium-*.json
             ${{ runner.temp }}/chromium-*.png
             ${{ runner.temp }}/chromium-userns.apparmor
+            ${{ runner.temp }}/chromium-ui-userns.apparmor
             ${{ runner.temp }}/codec-reference/codec-*
             ${{ runner.temp }}/lazypencil-target/release-*.json
             ${{ runner.temp }}/lazypencil-target/release-*.png

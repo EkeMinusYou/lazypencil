@@ -1,0 +1,29 @@
+{
+  "version": "156.0.8078.47",
+  "source": "https://googlechromelabs.github.io/chrome-for-testing/",
+  "usage": "Owned headed-browser integration tests on GitHub Actions; not a distributed or managed application runtime.",
+  "hash_provenance": "SHA-256 values computed by streaming the versioned official HTTPS downloads without retaining the archives locally; not publisher-supplied checksums.",
+  "artifacts": [
+    {
+      "platform": "mac-arm64",
+      "url": "https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.47/mac-arm64/chrome-mac-arm64.zip",
+      "sha256": "ad7f2b49a4dc679af286b1b1b386670d93ca7868079f69012d21ba0ac8293df3",
+      "bytes": 194932023,
+      "executable": "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+    },
+    {
+      "platform": "linux64",
+      "url": "https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.47/linux64/chrome-linux64.zip",
+      "sha256": "e6c94490f0b6b337225aeb2d2a5034858516b7017356980ba94f5176d8774a50",
+      "bytes": 200206486,
+      "executable": "chrome-linux64/chrome"
+    },
+    {
+      "platform": "linux-arm64",
+      "url": "https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.47/linux-arm64/chrome-linux-arm64.zip",
+      "sha256": "9e37000e3ee2731e45e475a6a2eac587d3c0ee5f8aef7cab5211ecd52cf3fb7b",
+      "bytes": 199726566,
+      "executable": "chrome-linux-arm64/chrome"
+    }
+  ]
+}

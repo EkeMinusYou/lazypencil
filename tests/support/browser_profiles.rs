@@ -54,7 +54,7 @@ fn dedicated_profiles_persist_full_storage_isolate_acquisitions_and_keep_secrets
         }
         let expires = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()+3600;
         assert_eq!(browser.command(Some(session), "Network.setCookie", json!({"name":"lp-profile-cookie","value":"profile-fixture-secret","url":url,"httpOnly":true,"expires":expires}), &budget)?["success"], true);
-        assert_eq!(browser.evaluate(session, r#"(async()=>{localStorage.setItem('lp-auth','profile-fixture-secret');const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('lp-auth-state',1);request.onupgradeneeded=()=>request.result.createObjectStore('state');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)});await new Promise((resolve,reject)=>{const tx=db.transaction('state','readwrite');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.objectStore('state').put('profile-fixture-secret','auth')});db.close();const cache=await caches.open('lp-auth-cache');await cache.put('/profile-cache-entry',new Response('profile-fixture-secret'));return true})()"#, &budget)?, true);
+        assert_eq!(browser.evaluate(session, reference::PROFILE_SEED, &budget)?, true);
         Ok(())
     }).unwrap();
     drop(browser);
@@ -196,6 +196,112 @@ fn dedicated_profiles_persist_full_storage_isolate_acquisitions_and_keep_secrets
         fs::create_dir_all(&directory).unwrap();
         fs::write(directory.join("codec-dedicated-profiles-cli.png"), &png).unwrap();
         fs::write(directory.join("codec-dedicated-profiles.json"),serde_json::to_vec_pretty(&json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"cases":evidence,"cli_png_hash":lazypencil::document::hash(&png),"storage":["http_only_cookie","local_storage","indexed_db","cache_storage"],"exclusive_owner":true,"login_navigation_before_deadline":true,"post_login_png_hash":lazypencil::document::hash(&png),"sandbox":"enabled"})).unwrap()).unwrap();
+    }
+}
+
+#[test]
+#[ignore = "Requires a pinned full Chromium and an owned headed display"]
+fn headed_login_closes_normally_and_preserves_storage_for_the_same_full_browser() {
+    let executable = std::path::PathBuf::from(
+        std::env::var_os("LAZYPENCIL_TEST_FULL_CHROMIUM").expect("Full browser fixture required"),
+    );
+    let server = reference::Server::new();
+    let f = Fixture::new(&format!("http://{}/profile-state", server.address));
+    let name = "headed-login-private";
+    let profile = Profile::create(f.0.path(), name).unwrap();
+    let user = f.0.path().join("user");
+    fs::create_dir(&user).unwrap();
+    fs::write(user.join("config.toml"),format!("[runtime.browser]\nprofile={}\nready_selector='html[data-profile-ready]'\nselector_state='attached'\n",json!(name))).unwrap();
+    f.policy("html[data-profile-ready]", "attached", 15000);
+    let before = fs::read(f.0.path().join("scene.pen")).unwrap();
+    let mut command = if cfg!(target_os = "linux") {
+        let mut command = std::process::Command::new("xvfb-run");
+        // Only this CLI and its owned browser inherit the isolated display.
+        command
+            .args(["-a", "-s", "-screen 0 1280x960x24 -nolisten tcp -noreset"])
+            .arg(env!("CARGO_BIN_EXE_lazypencil"));
+        command
+    } else {
+        std::process::Command::new(env!("CARGO_BIN_EXE_lazypencil"))
+    };
+    command
+        .args(["--json", "--data-dir"])
+        .arg(f.0.path())
+        .args(["runtime", "profile", "login", name, "--browser"])
+        .arg(&executable)
+        .arg("--url")
+        .arg(format!("http://{}/headed-login", server.address))
+        .args(["--timeout-seconds", "45"])
+        .env("LAZYPENCIL_CONFIG_DIR", &user)
+        .env("LAZYPENCIL_CHROMIUM", &executable);
+    let (login, observed) = std::thread::scope(|threads| {
+        let login = threads.spawn(move || {
+            command_output::output(&mut command, Duration::from_secs(90), 4 * 1024 * 1024)
+        });
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let mut observed = None;
+        while Instant::now() < deadline {
+            if let Some(proof) = server.headed_login_ready() {
+                observed = Some(proof);
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        // Even a failed readiness observation must release and collect the CLI.
+        server.close_headed_login();
+        (login.join().unwrap().unwrap(), observed)
+    });
+    assert!(
+        !login.timed_out && login.status.success(),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&login.stdout),
+        String::from_utf8_lossy(&login.stderr)
+    );
+    let login: Value = serde_json::from_slice(&login.stdout).unwrap();
+    assert_eq!(login["browser_closed"], true);
+    let observed = observed.expect("The full browser must report its headed page before closing");
+    assert!(observed["width"].as_u64().unwrap() > 0 && observed["height"].as_u64().unwrap() > 0);
+    assert_eq!(observed["visible"], true);
+    assert_eq!(observed["headless"], false);
+    assert_eq!(observed["chrome"], true);
+    assert!(profile.directory().is_dir());
+    let output = command_output::output(
+        std::process::Command::new(env!("CARGO_BIN_EXE_lazypencil"))
+            .args(["--json", "--data-dir"])
+            .arg(f.0.path())
+            .arg("render")
+            .arg(f.0.path().join("scene.pen"))
+            .arg("--output")
+            .arg(f.0.path().join("restored.png"))
+            .env("LAZYPENCIL_CONFIG_DIR", &user)
+            .env("LAZYPENCIL_CHROMIUM", &executable),
+        Duration::from_secs(90),
+        4 * 1024 * 1024,
+    )
+    .unwrap();
+    assert!(
+        !output.timed_out && output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let metadata: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(!metadata.to_string().contains(name));
+    assert!(!metadata.to_string().contains("profile-fixture-secret"));
+    assert_eq!(fs::read(f.0.path().join("scene.pen")).unwrap(), before);
+    let png = fs::read(f.0.path().join("restored.png")).unwrap();
+    pixels(&png, [0, 255, 0, 255]);
+    if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
+        let directory = std::path::PathBuf::from(directory);
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("codec-headed-login.png"), &png).unwrap();
+        fs::write(directory.join("codec-headed-login.json"),serde_json::to_vec_pretty(&json!({
+            "source_commit":std::env::var("GITHUB_SHA").ok(),"headed_observation":observed,"browser_closed":true,
+            "browser_version":std::env::var("LAZYPENCIL_TEST_FULL_CHROMIUM_VERSION").unwrap(),
+            "archive_sha256":std::env::var("LAZYPENCIL_TEST_FULL_CHROMIUM_SHA256").unwrap(),
+            "same_canonical_browser":true,"storage":["http_only_cookie","local_storage","indexed_db","cache_storage"],
+            "png":"codec-headed-login.png","png_hash":lazypencil::document::hash(&png),"rgba":[0,255,0,255],
+            "document_unchanged":true,"sandbox":"enabled"
+        })).unwrap()).unwrap();
     }
 }
 

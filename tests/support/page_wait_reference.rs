@@ -4,12 +4,14 @@ use std::{
     io::{Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread,
     time::{Duration, Instant},
 };
+
+pub const PROFILE_SEED: &str = r#"(async()=>{localStorage.setItem('lp-auth','profile-fixture-secret');const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('lp-auth-state',1);request.onupgradeneeded=()=>request.result.createObjectStore('state');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)});await new Promise((resolve,reject)=>{const tx=db.transaction('state','readwrite');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.objectStore('state').put('profile-fixture-secret','auth')});db.close();const cache=await caches.open('lp-auth-cache');await cache.put('/profile-cache-entry',new Response('profile-fixture-secret'));return true})()"#;
 
 pub struct Server {
     pub address: SocketAddr,
@@ -29,9 +31,20 @@ struct NetworkCounts {
     tls: AtomicUsize,
     turn: AtomicUsize,
     profiles: AtomicUsize,
+    headed_ready: Mutex<Option<serde_json::Value>>,
+    headed_close: AtomicBool,
 }
 
 impl Server {
+    #[allow(dead_code, reason = "Observed only by headed-login integration")]
+    pub fn headed_login_ready(&self) -> Option<serde_json::Value> {
+        self.network.headed_ready.lock().unwrap().clone()
+    }
+
+    #[allow(dead_code, reason = "Controlled only by headed-login integration")]
+    pub fn close_headed_login(&self) {
+        self.network.headed_close.store(true, Ordering::SeqCst);
+    }
     #[allow(
         dead_code,
         reason = "Observed only by the dedicated-profile integration"
@@ -159,6 +172,26 @@ fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool, network: 
     }
     let request = String::from_utf8_lossy(&header);
     let path = request.split_whitespace().nth(1).unwrap_or("");
+    if let Some(query) = path.strip_prefix("/headed-login-ready?") {
+        let fields = query
+            .split('&')
+            .filter_map(|field| field.split_once('='))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let number = |name| {
+            fields
+                .get(name)
+                .and_then(|value| value.parse::<u32>().ok())
+                .unwrap_or(0)
+        };
+        let flag = |name| fields.get(name).is_some_and(|value| *value == "true");
+        *network.headed_ready.lock().unwrap() = Some(
+            serde_json::json!({"width":number("width"),"height":number("height"),
+            "visible":flag("visible"),"headless":flag("headless"),"chrome":flag("chrome")}),
+        );
+    }
+    let headed_page = (path == "/headed-login").then(|| format!(
+        "<!doctype html><title>Owned login fixture</title><style>html{{height:100%;background:#0f0}}</style><script>(async()=>{{await {PROFILE_SEED};await fetch('/headed-login-ready?width='+outerWidth+'&height='+outerHeight+'&visible='+(document.visibilityState==='visible')+'&headless='+navigator.userAgent.includes('HeadlessChrome/')+'&chrome='+navigator.userAgent.includes('Chrome/'));const timer=setInterval(async()=>{{if(await (await fetch('/headed-login-close')).text()==='yes'){{clearInterval(timer);window.close()}}}},100)}})()</script>"
+    ));
     if path == "/profile-state" {
         network.profiles.fetch_add(1, Ordering::SeqCst);
     }
@@ -188,6 +221,17 @@ fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool, network: 
         probe.store(true, Ordering::SeqCst);
     }
     let (kind, body, delay) = match path {
+        "/headed-login" => ("text/html", headed_page.as_deref().unwrap(), 0),
+        "/headed-login-close" => (
+            "text/plain",
+            if network.headed_close.load(Ordering::SeqCst) {
+                "yes"
+            } else {
+                "no"
+            },
+            0,
+        ),
+        path if path.starts_with("/headed-login-ready?") => ("text/plain", "ok", 0),
         "/profile-state"
             if request.lines().any(|line| {
                 line.starts_with("Cookie:")
@@ -260,7 +304,12 @@ fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool, network: 
     } else {
         ""
     };
-    if write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: {kind}\r\nContent-Length: {}\r\n{cors}Cache-Control: no-store\r\nConnection: close\r\n\r\n", body.len()).is_err() {
+    let cookie = if path == "/headed-login" {
+        "Set-Cookie: lp-profile-cookie=profile-fixture-secret; HttpOnly; Path=/; Max-Age=3600\r\n"
+    } else {
+        ""
+    };
+    if write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: {kind}\r\nContent-Length: {}\r\n{cors}{cookie}Cache-Control: no-store\r\nConnection: close\r\n\r\n", body.len()).is_err() {
         return;
     }
     let started = Instant::now();

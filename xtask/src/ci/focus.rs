@@ -23,6 +23,7 @@ const DYNAMIC: &[&str] = &[
 ];
 pub const LOCAL_FILES: &str =
     "captured_local_files_render_after_source_removal_and_deny_unlisted_host_files";
+pub const HEADED_LOGIN: &str = "browser_profiles::headed_login_closes_normally_and_preserves_storage_for_the_same_full_browser";
 pub const NATIVE_ANIMATION: &str =
     "native_animation_policy_freezes_css_transitions_and_web_animations_without_stopping_frames";
 pub const PAGE_DIAGNOSTICS: &str =
@@ -114,6 +115,7 @@ pub fn ci_only(path: &str) -> bool {
         || (path.starts_with("xtask/")
             && !path.starts_with("xtask/src/test_support/")
             && !path.starts_with("xtask/src/fixtures/oracles/")
+            && path != "xtask/src/fixtures/browser_ui.rs"
             && path != "xtask/src/bin/test-helper.rs")
         || (path.ends_with(".md") && (!path.contains('/') || path.starts_with("docs/")))
         || (path.starts_with("tests/fixtures/") && path.ends_with("/README.md"))
@@ -534,6 +536,19 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
             .map(|m| m[1].to_owned())
             .collect::<BTreeSet<_>>();
     let mut stems = BTreeSet::new();
+    // These fixtures are consumed by the actual browser-readiness target.
+    // Runtime acquisition helpers need their consumer even without app edits.
+    if paths.iter().any(|path| {
+        [
+            "tests/support/browser_profiles.rs",
+            "tests/support/page_wait_reference.rs",
+            "xtask/src/fixtures/browser_ui.rs",
+        ]
+        .contains(&path.as_str())
+            || path.starts_with("tests/fixtures/browser-ui/")
+    }) {
+        stems.insert("browser_readiness".into());
+    }
     for p in paths {
         if let Some(stem) = Path::new(p).file_stem().and_then(|s| s.to_str()) {
             stems.insert(stem.into());
