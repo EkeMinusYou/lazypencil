@@ -102,6 +102,18 @@ impl Command {
                         focus::native_clipboard_changed(&paths).to_string(),
                     ),
                     (
+                        "terminal_reproduction".into(),
+                        focus::terminal_reproduction_stages(&paths, &plan)
+                            .0
+                            .to_string(),
+                    ),
+                    (
+                        "terminal_reproduction_full".into(),
+                        focus::terminal_reproduction_stages(&paths, &plan)
+                            .1
+                            .to_string(),
+                    ),
+                    (
                         "measure_tui".into(),
                         focus::tui_measurement_changed(&paths).to_string(),
                     ),

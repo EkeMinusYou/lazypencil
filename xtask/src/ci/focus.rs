@@ -185,6 +185,22 @@ pub fn native_clipboard_changed(paths: &[String]) -> bool {
     })
 }
 
+pub fn terminal_harness_changed(paths: &[String]) -> bool {
+    paths.iter().any(|path| {
+        path.starts_with("xtask/src/terminal/")
+            || path.starts_with("xtask/tests/terminal") && path.ends_with(".rs")
+    })
+}
+
+pub fn terminal_reproduction_stages(paths: &[String], plan: &Plan) -> (bool, bool) {
+    let changed = terminal_harness_changed(paths);
+    let available = plan.platform.starts_with("ubuntu-")
+        && !["core", "conversation", "ci"].contains(&plan.suite.as_str());
+    // A core-only build has no TUI. Keep that focused check small and use the
+    // Linux full jobs' already-required default binaries for the reproduction.
+    (changed && available, changed && !available)
+}
+
 fn has(stems: &BTreeSet<String>, names: &[&str]) -> bool {
     names.iter().any(|s| stems.contains(*s))
 }

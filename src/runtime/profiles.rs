@@ -25,6 +25,8 @@ pub struct Profile {
 struct Identity {
     version: u32,
     id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    browser_path_hash: Option<String>,
 }
 
 pub(crate) fn valid_name(name: &str) -> bool {
@@ -92,6 +94,32 @@ fn private_file(path: &Path, create: bool) -> Result<File> {
     Ok(file)
 }
 
+#[cfg(unix)]
+fn read_identity(directory: &Path) -> Result<Identity> {
+    let mut bytes = Vec::new();
+    private_file(&directory.join(MARKER), false)?
+        .take(4097)
+        .read_to_end(&mut bytes)
+        .map_err(|_| failure("profile_read_marker"))?;
+    if bytes.len() > 4096 {
+        return Err(failure("profile_marker"));
+    }
+    let identity: Identity =
+        serde_json::from_slice(&bytes).map_err(|_| failure("profile_marker"))?;
+    if identity.version != 1
+        || uuid::Uuid::parse_str(&identity.id).is_err()
+        || identity.browser_path_hash.as_ref().is_some_and(|hash| {
+            hash.len() != 64
+                || !hash
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        })
+    {
+        return Err(failure("profile_marker"));
+    }
+    Ok(identity)
+}
+
 impl Profile {
     #[cfg(unix)]
     pub fn create(data: &Path, name: &str) -> Result<Self> {
@@ -122,6 +150,7 @@ impl Profile {
         let identity = Identity {
             version: 1,
             id: uuid::Uuid::new_v4().to_string(),
+            browser_path_hash: None,
         };
         // Never recursively delete a caller-provided path or adopt an existing
         // unmarked directory. A partial initialization remains diagnosable.
@@ -159,19 +188,7 @@ impl Profile {
     pub(crate) fn from_directory(directory: &Path) -> Result<Self> {
         private_metadata(directory, true)?;
         let directory = crate::paths::canonical(directory)?;
-        let mut bytes = Vec::new();
-        private_file(&directory.join(MARKER), false)?
-            .take(4097)
-            .read_to_end(&mut bytes)
-            .map_err(|_| failure("profile_read_marker"))?;
-        if bytes.len() > 4096 {
-            return Err(failure("profile_marker"));
-        }
-        let identity: Identity =
-            serde_json::from_slice(&bytes).map_err(|_| failure("profile_marker"))?;
-        if identity.version != 1 || uuid::Uuid::parse_str(&identity.id).is_err() {
-            return Err(failure("profile_marker"));
-        }
+        let identity = read_identity(&directory)?;
         Ok(Self {
             directory,
             identity: identity.id,
@@ -203,6 +220,39 @@ impl Profile {
         // The guardian retains this file until every owned browser child has
         // exited, including after abrupt host termination.
         Ok(Lease { _lock: lock })
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn lease_for_browser(&self, executable: &Path) -> Result<Lease> {
+        use std::os::unix::ffi::OsStrExt;
+        let lease = self.lease()?;
+        let executable = crate::paths::canonical(executable)?;
+        let expected = crate::document::hash(executable.as_os_str().as_bytes());
+        let mut identity = read_identity(&self.directory)?;
+        if identity.id != self.identity {
+            return Err(failure("profile_identity"));
+        }
+        match &identity.browser_path_hash {
+            Some(actual) if actual == &expected => return Ok(lease),
+            Some(_) => return Err(failure("profile_browser_identity")),
+            None => identity.browser_path_hash = Some(expected),
+        }
+        // Bind before the browser opens its persistent stores, under the same
+        // lease. Full Chrome and headless shell need not share cookie encryption
+        // or profile formats even when their Chromium major versions match.
+        let mut marker = tempfile::NamedTempFile::new_in(&self.directory)
+            .map_err(|_| failure("profile_bind_browser"))?;
+        marker
+            .write_all(&serde_json::to_vec(&identity).expect("profile identity"))
+            .and_then(|()| marker.as_file().sync_all())
+            .map_err(|_| failure("profile_bind_browser"))?;
+        marker
+            .persist(self.directory.join(MARKER))
+            .map_err(|_| failure("profile_bind_browser"))?;
+        File::open(&self.directory)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|_| failure("profile_bind_browser"))?;
+        Ok(lease)
     }
 
     #[cfg(not(unix))]
@@ -251,6 +301,19 @@ pub fn login(
             "Login browser must be an executable file",
         ));
     }
+    let acquisition = super::installed(data)?;
+    if acquisition.executable != executable {
+        return Err(Error::new(
+            "RUNTIME_UNAVAILABLE",
+            "Login and acquisition must use the same browser executable; set LAZYPENCIL_CHROMIUM to the full browser used for login",
+        ).details(serde_json::json!({"stage":"profile_browser_identity"})));
+    }
+    if !headless && acquisition.version != "external-unverified" {
+        return Err(Error::new(
+            "RUNTIME_UNAVAILABLE",
+            "Visible login needs a full Chrome/Chromium browser; configure LAZYPENCIL_CHROMIUM and --browser to use that same executable",
+        ).details(serde_json::json!({"stage":"profile_login_browser"})));
+    }
     let installed = super::InstalledBrowser {
         executable,
         version: "external-unverified".into(),
@@ -261,21 +324,6 @@ pub fn login(
         std::time::Duration::from_secs(timeout_seconds),
         Some(&cancel),
     );
-    // Probe with an ephemeral directory before a full browser may upgrade the
-    // persistent format. The usual page runtime must use the same major release.
-    let login_version = probe_version(&installed, &budget)?;
-    let acquisition = super::installed(data)?;
-    let acquisition_version = if acquisition.executable == installed.executable {
-        login_version.clone()
-    } else if acquisition.version == "external-unverified" {
-        probe_version(&acquisition, &budget)?
-    } else {
-        acquisition.version.clone()
-    };
-    if major(&login_version).is_none() || major(&login_version) != major(&acquisition_version) {
-        return Err(Error::new("RUNTIME_UNAVAILABLE", "Login and acquisition browsers must use the same Chromium major version")
-            .details(serde_json::json!({"stage":"profile_browser_version","login_major":major(&login_version),"acquisition_major":major(&acquisition_version)})));
-    }
     let launch = crate::cdp::Budget::new(
         budget.remaining()?.min(std::time::Duration::from_secs(30)),
         Some(&cancel),
@@ -285,30 +333,6 @@ pub fn login(
     browser.login(url, &budget)
 }
 
-fn probe_version(
-    browser: &super::InstalledBrowser,
-    budget: &crate::cdp::Budget<'_>,
-) -> Result<String> {
-    let launch = crate::cdp::Budget::new(
-        budget.remaining()?.min(std::time::Duration::from_secs(30)),
-        budget.cancel,
-    );
-    let browser = crate::cdp::Browser::launch(browser, crate::cdp::Purpose::Page, &launch)?;
-    Ok(browser.version.clone())
-}
-
-fn major(version: &str) -> Option<u32> {
-    version
-        .strip_prefix("HeadlessChrome/")
-        .or_else(|| version.strip_prefix("Chrome/"))
-        .unwrap_or(version)
-        .split('.')
-        .next()?
-        .parse()
-        .ok()
-        .filter(|major| *major > 0)
-}
-
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
@@ -316,10 +340,6 @@ mod tests {
 
     #[test]
     fn dedicated_profiles_are_explicit_private_and_exclusively_leased() {
-        assert_eq!(major("Chrome/156.0.1.2"), Some(156));
-        assert_eq!(major("HeadlessChrome/156.0.1.3"), major("156.0.1.2"));
-        assert_ne!(major("157.0.1.2"), major("156.0.1.2"));
-        assert_eq!(major("external-unverified"), None);
         let temp = tempfile::tempdir().unwrap();
         let profile = Profile::create(temp.path(), "work-1").unwrap();
         assert_eq!(
@@ -335,6 +355,23 @@ mod tests {
         );
         drop(lease);
         profile.lease().unwrap();
+        let browser = temp.path().join("browser");
+        fs::write(&browser, b"first browser fixture").unwrap();
+        drop(profile.lease_for_browser(&browser).unwrap());
+        let marker = fs::read(profile.directory().join(MARKER)).unwrap();
+        let alias = temp.path().join("browser-alias");
+        symlink(&browser, &alias).unwrap();
+        drop(profile.lease_for_browser(&alias).unwrap());
+        let other = temp.path().join("other-browser");
+        fs::write(&other, b"different browser fixture").unwrap();
+        assert!(profile.lease_for_browser(&other).is_err());
+        assert_eq!(fs::read(profile.directory().join(MARKER)).unwrap(), marker);
+        drop(
+            Profile::open(temp.path(), "work-1")
+                .unwrap()
+                .lease_for_browser(&browser)
+                .unwrap(),
+        );
         for name in ["", "..", "../work", "Work", "/work", "-work", "a/b"] {
             assert!(Profile::create(temp.path(), name).is_err());
         }
@@ -371,6 +408,7 @@ mod tests {
             serde_json::to_vec(&Identity {
                 version: 1,
                 id: uuid::Uuid::new_v4().to_string(),
+                browser_path_hash: None,
             })
             .unwrap(),
         )

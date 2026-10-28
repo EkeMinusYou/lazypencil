@@ -21,6 +21,9 @@ on:
       native_clipboard:
         type: boolean
         default: false
+      terminal_reproduction:
+        type: boolean
+        default: false
       runtime_parallel:
         type: boolean
         default: false
@@ -232,23 +235,6 @@ jobs:
         if: inputs.phase == 'focus' && inputs.native_clipboard
         timeout-minutes: 10
         run: cargo xtask ci native clipboard
-      - name: Install real Linux terminal emulators for the early reproduction
-        if: inputs.phase == 'focus' && inputs.suite == 'candidate' && runner.os == 'Linux'
-        timeout-minutes: 20
-        run: cargo xtask ci linux-terminal-dependencies
-      - name: Reproduce real terminal pixels with the existing focused debug build
-        id: terminal-reproduction
-        if: inputs.phase == 'focus' && inputs.suite == 'candidate' && runner.os == 'Linux'
-        timeout-minutes: 10
-        run: cargo xtask terminal --development-build --output "$RUNNER_TEMP/terminal-reproduction"
-      - name: Retain early real-terminal reproduction evidence
-        if: ${{ always() && (steps.terminal-reproduction.outcome == 'success' || steps.terminal-reproduction.outcome == 'failure') }}
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: terminal-reproduction-${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/terminal-reproduction
-          if-no-files-found: error
-          retention-days: 3
       - name: Build core test binaries
         if: inputs.phase == 'full'
         timeout-minutes: 40
@@ -280,6 +266,23 @@ jobs:
       - name: Reproduce real emoji, TUI and isolated MCP cancellation first
         if: inputs.phase == 'full'
         run: cargo xtask ci native reproduce
+      - name: Install real Linux terminal emulators for the early reproduction
+        if: runner.os == 'Linux' && (inputs.terminal_reproduction || inputs.phase == 'focus' && inputs.suite == 'candidate')
+        timeout-minutes: 20
+        run: cargo xtask ci linux-terminal-dependencies
+      - name: Reproduce real terminal pixels with the existing verified debug build
+        id: terminal-reproduction
+        if: runner.os == 'Linux' && (inputs.terminal_reproduction || inputs.phase == 'focus' && inputs.suite == 'candidate')
+        timeout-minutes: 10
+        run: cargo xtask terminal --development-build --output "$RUNNER_TEMP/terminal-reproduction"
+      - name: Retain early real-terminal reproduction evidence
+        if: ${{ always() && (steps.terminal-reproduction.outcome == 'success' || steps.terminal-reproduction.outcome == 'failure') }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: terminal-reproduction-${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/terminal-reproduction
+          if-no-files-found: error
+          retention-days: 3
       - name: Check all default targets before longer tests and release compilation
         if: inputs.phase == 'full'
         timeout-minutes: 15

@@ -55,6 +55,8 @@ jobs:
       preprocessor: ${{ steps.focus.outputs.preprocessor }}
       measure_tui: ${{ steps.focus.outputs.measure_tui }}
       native_clipboard: ${{ steps.focus.outputs.native_clipboard }}
+      terminal_reproduction: ${{ steps.focus.outputs.terminal_reproduction }}
+      terminal_reproduction_full: ${{ steps.focus.outputs.terminal_reproduction_full }}
       runtime_parallel: ${{ steps.focus.outputs.runtime_parallel }}
       matrix: ${{ steps.focus.outputs.matrix }}
     steps:
@@ -153,6 +155,7 @@ jobs:
       targets: ${{ needs.plan.outputs.targets }}
       measure_tui: ${{ needs.plan.outputs.measure_tui == 'true' }}
       native_clipboard: ${{ needs.plan.outputs.native_clipboard == 'true' }}
+      terminal_reproduction: ${{ needs.plan.outputs.terminal_reproduction == 'true' }}
       runtime_parallel: ${{ needs.plan.outputs.runtime_parallel == 'true' }}
 
   native:
@@ -170,6 +173,7 @@ jobs:
     with:
       os: ${{ matrix.os }}
       phase: full
+      terminal_reproduction: ${{ needs.plan.outputs.terminal_reproduction_full == 'true' }}
       focused_application: ${{ needs.focus.outputs.application_artifact || '' }}
 
   source:

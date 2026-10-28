@@ -251,7 +251,7 @@ pub fn serve_worker() -> Result<bool> {
             .transpose()?;
         let _lease = persistent
             .as_ref()
-            .map(crate::runtime::profiles::Profile::lease)
+            .map(|profile| profile.lease_for_browser(Path::new(&command)))
             .transpose()?;
         // Only freshly created ephemeral directories are recursively removed.
         // A persistent profile and its lease outlive the complete browser group.

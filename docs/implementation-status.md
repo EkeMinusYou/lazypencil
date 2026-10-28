@@ -4,7 +4,9 @@
 
 同一commit・cache環境20261023.334.3の先行208ファイルを、全体x64で展開・compiler入力検査後に実際に再利用した。通常build確認0.79秒・不足するcatalog15.70秒、core9.16秒、release247.83秒・最終freshness0.24秒。早期の通常build／JSON一覧確認は各0.223秒、生成layout群104.86秒とbinding群165.36秒は同時開始し、後段copy群46.64秒も完了した。gzip level1のpackは209 member・1,618,717,112バイトから483,768,036バイトへ23.35秒。元の70.01秒とは対象量も異なり統制比較ではない。x64のscript-scope群300.38秒・browser群281.36秒、Macのrelease364.81秒などが残る長い経路である。最終source完了まで旧CIを中断しなかった。
 
-次の差分として、明示作成する認証専用profile、user限定の選択・projectによる無効化、guardianの排他leaseと永続data保持、loginの版確認・期限と終了を準備中。CookieだけでなくlocalStorage／IndexedDB／Cache Storage、通常／保持取得の切替・offline・CLI・親の強制終了と別ownerの保持・identity差替えの試験を追加した。取得metadataへprofile名や資格情報を出さず、shaderは使わない。整形以外のRust検証は未実施で、現在のCIへは送っていない。TUI previewと別MCPが同じprofileを使う際の統合・可視login・全3環境の受け入れは残る。
+認証専用profileの `65dcc15` は [先行GHA](https://github.com/EkeMinusYou/lazypencil/actions/runs/40646818773) が成功し、全3環境を実行中。軽量209件、先行541件／52サマリー（先行内のxtask再検査を含む）とClippy、明示作成・user限定選択・projectによる無効化・排他lease・親の強制終了と別owner保持・identity差替え、実ChromiumのCookie／localStorage／IndexedDB／Cache Storage・通常／保持取得の切替・offline・実CLI・loginの期限と復帰が通過した。artifactのsource／digest、13画像・13,312画素、profile名・試験用資格情報のmetadata非掲載も独立照合した。TUI previewと別MCPが同じprofileを使う統合・可視login・全3環境の受け入れは残る。
+
+次の未検証差分では、profileを最初に使ったcanonical browser実行pathのhashへlease内で束縛し、別browserは起動前に拒否する。同じChromium majorだけを条件にfull Chromeとheadless shellの保存領域を混在させず、loginと取得は同じ明示実行ファイルを使う。実guardianで別browserを起動しないこと・marker不変・別owner保持と、CLIの起動前拒否を既存試験へ追加した。Kitty／xtermの4 protocol modeには専用NotoフォントとXTestの日本語確定入力・保存全文・native cursor6桁・Backspace復帰と追加8画面を準備した。複数種類の変更と混在しても検査を落とさず、core専用buildやMac先行時は既存Linux全体jobのdefault binaryを使う。進行中CIを中断せず、これらのRust実行と画像確認は次のGHAで行う。物理macSKKの候補表示の合格には読み替えない。
 
 `487ffb2` の軽量ゲートでは、実Cargoを使う早期一覧の回帰（一覧なしでの起動・後段一覧の保持・変更した失敗assertionの実行）が成功した。計209件中208件が成功し、固定の期待コマンド一覧1件だけが新しいページ診断の先行実行を含んでいなかった。元の9ケース・全コマンドは維持し、新規再現と同条件での後段skipだけを一覧へ追加する。Clippyは成功、nativeと全環境は開始していない。アプリ本体・実Chromium・圧縮と時間効果は引き続き未確認である。
 

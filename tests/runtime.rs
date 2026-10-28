@@ -67,6 +67,39 @@ fn profile_commands_require_explicit_creation_and_never_launch_a_browser() {
     ] {
         assert!(!invoke(&args).status.success());
     }
+    let browser = temp.path().join("login-browser");
+    let acquisition = temp.path().join("acquisition-browser");
+    for path in [&browser, &acquisition] {
+        fixture_support::install(
+            path,
+            &[
+                "mark".into(),
+                temp.path().join("must-not-launch").to_str().unwrap().into(),
+            ],
+        );
+    }
+    let before = fs::read(data.join("browser-profiles/work/lazypencil-profile.json")).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_lazypencil"))
+        .args(["--json", "--data-dir"])
+        .arg(&data)
+        .args(["runtime", "profile", "login", "work", "--browser"])
+        .arg(&browser)
+        .args(["--url", "https://example.invalid", "--timeout-seconds", "1"])
+        .env("LAZYPENCIL_CHROMIUM", &acquisition)
+        .env("LAZYPENCIL_CONFIG_DIR", temp.path().join("config"))
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let output: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        output["error"]["details"]["stage"],
+        "profile_browser_identity"
+    );
+    assert!(!temp.path().join("must-not-launch").exists());
+    assert_eq!(
+        fs::read(data.join("browser-profiles/work/lazypencil-profile.json")).unwrap(),
+        before
+    );
 }
 
 #[cfg(unix)]

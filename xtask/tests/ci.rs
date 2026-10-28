@@ -414,6 +414,43 @@ fn normal_scheduler_changes_reproduce_the_complete_catalog_before_the_matrix() {
 }
 
 #[test]
+fn terminal_harness_changes_keep_their_reproduction_in_mixed_application_changes() {
+    let paths = ["xtask/src/terminal/hosted.rs", "src/cdp/tabs.rs"].map(str::to_owned);
+    let plan = focus::select(&util::root(), &paths, "auto").unwrap();
+    assert_ne!(plan.suite, "candidate");
+    assert!(focus::terminal_harness_changed(&paths));
+    assert_eq!(
+        focus::terminal_reproduction_stages(&paths, &plan),
+        (true, false)
+    );
+    for (platform, suite) in [
+        ("macos-15", "dynamic"),
+        ("ubuntu-24.04", "core"),
+        ("ubuntu-24.04", "ci"),
+        ("ubuntu-24.04-arm", "conversation"),
+    ] {
+        let mut selected = plan.clone();
+        selected.platform = platform.into();
+        selected.suite = suite.into();
+        assert_eq!(
+            focus::terminal_reproduction_stages(&paths, &selected),
+            (false, true)
+        );
+    }
+    assert!(focus::terminal_harness_changed(&[
+        "xtask/tests/terminal_raster.rs".into()
+    ]));
+    assert!(!focus::terminal_harness_changed(&[
+        "docs/tui.md".into(),
+        "src/cdp/tabs.rs".into()
+    ]));
+    assert_eq!(
+        focus::terminal_reproduction_stages(&["docs/tui.md".into()], &plan),
+        (false, false)
+    );
+}
+
+#[test]
 fn font_sources_generators_and_pins_select_native_color_reproductions_before_the_full_matrix() {
     for path in [
         "tests/support/color_fonts.rs",

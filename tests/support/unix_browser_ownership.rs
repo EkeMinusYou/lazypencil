@@ -264,6 +264,44 @@ fn killed_profile_owners_reap_children_preserve_persistent_data_and_release_only
     fs2::FileExt::try_lock_exclusive(&first_lock).unwrap();
     assert!(second_tree.iter().copied().all(alive));
     assert!(fs2::FileExt::try_lock_exclusive(&second_lock).is_err());
+    fs2::FileExt::unlock(&first_lock).unwrap();
+    let marker = fs::read(first_profile.join("lazypencil-profile.json")).unwrap();
+    let other = first.path().join("different-browser");
+    super::fixture_support::install(
+        &other,
+        &[
+            "mark".into(),
+            first
+                .path()
+                .join("must-not-launch")
+                .to_str()
+                .unwrap()
+                .into(),
+        ],
+    );
+    let error = Browser::launch_profile(
+        &InstalledBrowser {
+            executable: other,
+            version: "fixture".into(),
+            platform: "fixture".into(),
+        },
+        &lazypencil::runtime::profiles::Profile::open(first.path(), "work").unwrap(),
+        &Budget::new(Duration::from_secs(5), None),
+        Some(Path::new(env!("CARGO_BIN_EXE_lazypencil"))),
+        false,
+    )
+    .err()
+    .expect("A different browser must not open the persistent stores");
+    assert_eq!(
+        error.details.as_ref().unwrap()["supervisor_phase"],
+        "profile_browser_identity"
+    );
+    assert!(!first.path().join("must-not-launch").exists());
+    assert_eq!(
+        fs::read(first_profile.join("lazypencil-profile.json")).unwrap(),
+        marker
+    );
+    assert!(second_tree.iter().copied().all(alive));
     terminate(&mut second_owner);
     gone(&second_tree);
     fs2::FileExt::try_lock_exclusive(&second_lock).unwrap();

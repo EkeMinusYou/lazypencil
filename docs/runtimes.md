@@ -56,14 +56,15 @@ This explicit override is reported as `external-unverified`, with `managed: fals
 The dedicated-profile implementation is awaiting hosted Rust/Chromium verification. Ordinary rendering still uses temporary, isolated browser contexts. No personal Chrome profile is adopted.
 
 ```sh
-lazypencil runtime setup chromium
 lazypencil runtime profile create work
+# Keep this setting for subsequent render, MCP and TUI commands as well.
+export LAZYPENCIL_CHROMIUM=/absolute/path/to/full-chromium
 lazypencil runtime profile login work \
   --browser /absolute/path/to/full-chromium \
   --url https://example.com/login
 ```
 
-Login requires a full browser with a visible UI. The managed headless shell remains the acquisition runtime; login probes a temporary profile first and requires the same Chromium major version. An explicitly configured `LAZYPENCIL_CHROMIUM` may supply the acquisition browser instead. Close the dedicated login tab/window, or quit that browser, to return. Ctrl+C or `--timeout-seconds` (default 600, range 1–3,600) closes the owned browser through the normal cleanup path.
+Login requires a full browser with a visible UI. Set `LAZYPENCIL_CHROMIUM` to that same executable for login and all authenticated acquisitions; the managed headless shell remains available for anonymous work. A matching major version alone does not establish storage compatibility: for example, [headless shell uses a mock keychain on macOS](https://raw.githubusercontent.com/chromium/chromium/main/headless/app/headless_shell.cc). The implementation binds each profile to the canonical executable path on first use, under its guardian lease, and rejects a different path before launching it. The marker stores a path hash, not credentials. A symlink resolving to the same executable is accepted. Updates at the same path remain the browser's responsibility; moving to another executable requires a newly created profile and login. Close the dedicated login tab/window, or quit that browser, to return. Ctrl+C or `--timeout-seconds` (default 600, range 1–3,600) closes the owned browser through the normal cleanup path. This additional browser binding awaits hosted verification.
 
 Select the name in **user** configuration:
 
