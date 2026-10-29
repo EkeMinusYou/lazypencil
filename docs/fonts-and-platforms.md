@@ -2,7 +2,7 @@
 
 更新日: 2026-10-28（現行コードと既存検証記録の照合）
 
-状態: 初回はmacOS Apple Siliconのみを対象とし、Linux x64／arm64とWindowsは後日対応として既存実装を保持する。標準フォントに Noto Sans JP、端末画像に Kitty Graphics Protocol と Sixel を採用する。Noto Sans JP の配布データは版・ハッシュを固定済み。ユーザーによるフォント追加は `--font`、TTF・OTF・TTC・OTC の読み取りと各フェイスの取得、基本のフォールバックを実装・試験した。プロジェクト設定のファイル・検索先・既定書体・任意代替列・言語も CLI・MCP・TUI で共通化した。ユーザー共通の `config.toml` と項目ごとのプロジェクト上書きも実装した。完全な絵文字・可変軸・遅延探索・各 OS の保証は未完成。[現在の実装と検証](fonts.md)、[設定](configuration.md)
+状態: 初回はmacOS Apple Siliconのみを対象とし、Linux x64／arm64とWindowsは後日対応として既存実装を保持する。標準フォントに Noto Sans JP、端末画像に Kitty Graphics Protocol と Sixel を採用する。Noto Sans JP の配布データは版・ハッシュを固定済み。ユーザーによるフォント追加は `--font`、TTF・OTF・TTC・OTC の読み取りと各フェイスの取得、基本のフォールバックを実装・試験した。プロジェクト設定のファイル・検索先・既定書体・任意代替列・言語も CLI・MCP・TUI で共通化した。ユーザー共通の `config.toml` と項目ごとのプロジェクト上書きも実装した。可変wghtと指定のカラー絵文字fixture、ファミリー単位の遅延読み込みは検証済み。任意の絵文字列・全可変軸・OSフォントの自動変更監視・再現用lockfile・Macの最終受け入れは残る。[現在の実装と検証](fonts.md)、[設定](configuration.md)
 
 ## フォントの扱い
 

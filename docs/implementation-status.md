@@ -4,6 +4,10 @@
 
 ## 現在の状態（2026-10-30）
 
+4fcbb2cの[CI 40934904023](https://github.com/EkeMinusYou/lazypencil/actions/runs/40934904023)はMac／Linuxの補助ツール試験・Clippyと依存監査を成功したが、appのcore／既定／releaseは共通の`UserSource::base()`を整理時に削除した参照不足でコンパイルを停止した。`config/agents.rs`の2呼出しでも必要なメソッドを戻した。既定構成の先行は20.06秒で失敗を返し、新しいfont機能・profile試験の成功とは扱わない。全jobの終了を確認してから修正版を送る。
+
+修正版では英語ガイド集合を1.0.48へ更新し、検証済みの認証共有と新しい欠損font診断を案内する。動的コンテンツ・runtime・画像添付・フォントの古い未統合／未実装記述も既存の成功根拠へ揃える。新しい機能や検証済み条件を追加で縮小する変更ではない。
+
 f4363a3の[CI 40930720610](https://github.com/EkeMinusYou/lazypencil/actions/runs/40930720610)は、監査・core／builder／release・通常／pixel／Material／端末consumerが成功した。欠損libraryの新規6件は既定構成の先行で0.09秒、coreの実MCP・CLIも成功した。runtimeは共有profile4件を38.82秒で成功した後、既存の専用profile保存状態の復元試験が取得中に`RENDER_TIMEOUT`となった。起動15秒／取得30秒のどちらに達したかと、retained・stageは旧ログから特定できない。全workerの回収と他の結果を確認してから次の変更を準備し、全工程成功・最終sourceの根拠にはしない。
 
 次の差分では、このprofile復元caseも画面ありloginと同じ静かな先行区間へ移し、後続readinessから除く。case・assertion・製品の期限・共有browser全体budgetを維持し、失敗時にはretained／stageを出す。欠損素材の先行試験はlibraryだけのfilterを外し、同じrepair targetの新しいfontケースも早期に実行する。
@@ -166,7 +170,7 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 
 欠損libraryの修復はf4363a3でcore／既定構成の先行と実MCP・CLIを成功した。宣言された通常／入れ子の`.pen`が存在しない場合も、欠損path・用途・元documentとabsence revisionを捕捉し、inspect／stored readと共通編集の依存条件を利用できる。`remove_import`→`add_import`の一バッチで参照先を差し替えるか、instanceとimportを一緒に削除する。未使用の欠損importだけなら部分修復できるが、保存結果に未解決のcomponent／variable参照は許さず、別libraryの同名IDへ推測で接続しない。appearanceの競合、dry-run／保存／再送、入れ子、禁止pathとCLI／実MCPを含む。候補全体は上記runtimeの期限超過により未合格である。
 
-欠損font入力の対応を準備した。選択された設定のファイル／探索ディレクトリが欠けていても、そのpath・設定source・用途とabsence revisionを保持して構造編集を可能にする。config showはfonts_complete／font_diagnosticsを出し、get_documentにも共通の欠損依存を含める。一覧・計測・描画は欠損を隠さずASSET_NOT_FOUNDで止める。元pathへの復元、再取得後の実フォント選択・描画、親symlinkの変更、CLI／実MCPの回帰を追加した。ユーザー／projectのフォント設定は自動で書き換えず、ファイルも自動複製しない。書式・差分は確認済みで、remote検証は未実施である。
+欠損font入力の対応を準備した。選択された設定のファイル／探索ディレクトリが欠けていても、そのpath・設定source・用途とabsence revisionを保持して構造編集を可能にする。config showはfonts_complete／font_diagnosticsを出し、get_documentにも共通の欠損依存を含める。一覧・計測・描画は欠損を隠さずASSET_NOT_FOUNDで止める。元pathへの復元、再取得後の実フォント選択・描画、親symlinkの変更、CLI／実MCPの回帰を追加した。ユーザー／projectのフォント設定は自動で書き換えず、ファイルも自動複製しない。4fcbb2cでは上記の参照不足でappをコンパイルできなかったため、機能の成功は修正版で確認する。
 
 コピー済み定義のコード所有元保持は2c9ac33、入力文脈の世代別復元は4252fe2、新たに生成したscriptと後続の上書きはd7cc9c6で検証済みである。元source削除後と再copyを含み、通常metadataによる元設定の保持、失効した出力設定からコード所有元への復帰を確認した。必要な元情報を保存していない旧captureは、推測で接続せず元sourceからの再copyを案内する既存の診断を維持する。拡張済み依存cacheのwarm再利用はb09a329のコンパイル段階で確認できた。認証profileの同時利用はe786e3eで検証済みであり、初回Skia buildの重複・CI待機とcache整理の競合を引き続き改善する。
 

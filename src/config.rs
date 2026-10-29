@@ -623,6 +623,9 @@ impl UserSource {
         }
         Ok(result)
     }
+    fn base(&self) -> Option<&Path> {
+        self.source.as_ref().and_then(|(path, _)| path.parent())
+    }
     fn verify(&self) -> Result<()> {
         if self.automatic && Some(user_config_path().map_err(|_| conflict())?) != self.requested {
             return Err(conflict());
