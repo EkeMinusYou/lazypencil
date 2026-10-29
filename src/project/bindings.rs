@@ -420,47 +420,7 @@ impl Bound {
     }
 
     fn value(&self, value: &mut Value) -> Result<()> {
-        match value {
-            Value::String(text) if text.starts_with('$') && text.len() > 1 => {
-                let name = &text[1..];
-                let target = self
-                    .values
-                    .variables
-                    .get(name)
-                    .or_else(|| {
-                        self.values
-                            .variables
-                            .values()
-                            .find(|target| target.as_str() == name)
-                    })
-                    .ok_or_else(|| {
-                        invalid("A generated variable reference is absent from the script bindings")
-                    })?;
-                *text = format!("${target}");
-            }
-            Value::Array(values) => {
-                for value in values {
-                    self.value(value)?;
-                }
-            }
-            Value::Object(values) => {
-                for (key, value) in values {
-                    if key == "uniforms" || key == "inputs" {
-                        if let Some(values) = value.as_object_mut() {
-                            for value in values.values_mut() {
-                                self.value(value)?;
-                            }
-                        } else {
-                            self.value(value)?;
-                        }
-                    } else if key != "children" && !literal_property(key) {
-                        self.value(value)?;
-                    }
-                }
-            }
-            _ => {}
-        }
-        Ok(())
+        rewrite_property_variables(value, Some(&self.values.variables), true)
     }
 
     pub(super) fn declared_input(&self, value: &mut Value) -> Result<()> {
@@ -699,6 +659,55 @@ impl Bound {
         }
         Ok(state)
     }
+}
+
+#[cfg(feature = "rendering")]
+fn rewrite_property_variables(
+    value: &mut Value,
+    variables: Option<&BTreeMap<String, String>>,
+    strict: bool,
+) -> Result<()> {
+    match value {
+        Value::String(text) if text.starts_with('$') && text.len() > 1 => {
+            let variables = variables.ok_or_else(|| Error::new(
+                "UNSUPPORTED_FEATURE",
+                "The native inputs lack original variable provenance; copy them again from their source",
+            ))?;
+            let name = &text[1..];
+            let target = variables
+                .get(name)
+                .or_else(|| variables.values().find(|target| target.as_str() == name));
+            if let Some(target) = target {
+                *text = format!("${target}");
+            } else if strict {
+                return Err(invalid(
+                    "A generated variable reference is absent from the script bindings",
+                ));
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                rewrite_property_variables(value, variables, strict)?;
+            }
+        }
+        Value::Object(values) => {
+            for (key, value) in values {
+                if key == "uniforms" || key == "inputs" {
+                    if let Some(values) = value.as_object_mut() {
+                        for value in values.values_mut() {
+                            rewrite_property_variables(value, variables, strict)?;
+                        }
+                    } else {
+                        rewrite_property_variables(value, variables, strict)?;
+                    }
+                } else if key != "children" && !literal_property(key) {
+                    rewrite_property_variables(value, variables, strict)?;
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 #[cfg(feature = "rendering")]

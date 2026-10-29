@@ -168,33 +168,18 @@ impl Bound {
         let Some(scope) = self.native_scope() else {
             return Ok((self.clone(), raw.clone()));
         };
-        fn rewrite(value: &mut Value, variables: Option<&BTreeMap<String, String>>) -> Result<()> {
-            match value {
-                Value::String(text) if text.starts_with('$') && text.len() > 1 => {
-                    let variables = variables.ok_or_else(|| Error::new(
-                        "UNSUPPORTED_FEATURE",
-                        "The native inputs lack original variable provenance; copy them again from their source",
-                    ))?;
-                    if let Some(target) = variables.get(&text[1..]) {
-                        *text = format!("${target}");
-                    }
-                }
-                Value::Array(values) => {
-                    for value in values {
-                        rewrite(value, variables)?;
-                    }
-                }
-                Value::Object(values) => {
-                    for value in values.values_mut() {
-                        rewrite(value, variables)?;
-                    }
-                }
-                _ => {}
-            }
-            Ok(())
-        }
         let mut original = raw.clone();
-        rewrite(&mut original, scope.source_variables.as_ref())?;
+        if let Some(values) = original.as_object_mut() {
+            for value in values.values_mut() {
+                super::rewrite_property_variables(value, scope.source_variables.as_ref(), false)?;
+            }
+        } else {
+            super::rewrite_property_variables(
+                &mut original,
+                scope.source_variables.as_ref(),
+                false,
+            )?;
+        }
         Ok((self.document_scope()?.into_owned(), original))
     }
 
