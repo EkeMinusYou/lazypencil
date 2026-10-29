@@ -392,7 +392,7 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
             } else {
                 json!({"type":"ref","ref":"base:card","descendants":{
                     "draw":{"id":"replacement","type":"frame","layout":"none","width":36,"height":12,"children":[script]},
-                    "draw/emitted":changes
+                    "emitted":changes
                 }})
             }
         }

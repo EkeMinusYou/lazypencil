@@ -267,6 +267,7 @@ fn generated_code_ownership_merges_colliding_graphs_without_changing_output() {
         .unwrap();
     assert_eq!(again["code_namespace"], output["code_namespace"]);
     assert_eq!(again["script_scopes"], output["script_scopes"]);
+    let mut exhausted = crate::script::MAX_OUTPUT_BYTES;
     assert!(
         parent
             .output_with_code_owner(
@@ -274,7 +275,7 @@ fn generated_code_ownership_merges_colliding_graphs_without_changing_output() {
                 None,
                 Some(hash(b"nested.js")),
                 Some(&code),
-                &mut crate::script::MAX_OUTPUT_BYTES
+                &mut exhausted
             )
             .is_err()
     );
