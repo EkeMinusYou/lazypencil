@@ -4,6 +4,10 @@
 
 ## 現在の状態（2026-10-30）
 
+f53ffeeの[CI 40946469636](https://github.com/EkeMinusYou/lazypencil/actions/runs/40946469636)では既定構成builder・全5 consumerとreleaseが成功した。実MCPと生成text CLIに加え、既存TUI preview workerがlock変更を拒否し、元のlockへの復元後に同じPNGとviewへ戻る試験も成功した。実端末IMEの確認とは区別する。共通化した標準font manifestの原本照合と、Skia依存manifestを実compiler入力に含めたapp cacheの保存も成功し、完成成果物の再利用候補を保持した。
+
+同候補のaudit／coreは補助ツールの原本試験一件で停止した。独立した小さなfixtureが旧include元を持ったままだったためであり、参照元一件の移動・二つの宣言stub・対応する目録／manifestのhashだけを更新した。原本のfont・license・出所データのbyte列は不変と照合した。アプリ本体は変えず、まずMac／Linuxの補助ツール全試験・Clippyで修正を確認する。先行のtext-layer／color-font／実emojiは、後段pixel consumerで既に並列に動く同じ独立資源の組合せなので、先行側も既存のjoin処理で最大3系統にした。元のfilter・assertion・期限・全結果の回収を維持し、重複実行自体の削減とは区別する。軽量検証の成功後、既存app成果物を再利用する最終CIで実並列と最終gateを確認する。
+
 再現用font lockfileを実装した。project最上位の`font_lock`、`fonts lock FILE`／`fonts check FILE`、元のhashを要求する明示更新、CLI／MCP／TUI共通の遅延face照合を含む。lockfile自体の変更・absenceも依存条件へ束縛し、構造編集と通常の描画を区別する。全file face・その文書の生成textで観測したsystem face、可変軸・標準pack・engineを記録し、ローカルpathを固定しない。初回6a6abaeの[CI 40944025851](https://github.com/EkeMinusYou/lazypencil/actions/runs/40944025851)では、core全試験、既定構成builderと通常／pixel／runtime／端末／Materialの全5 consumerが成功した。新しい修復targetは31件を1.65秒で成功し、実CLIの生成text、移動後の同一fontデータ、末尾padding変更の拒否と明示更新後の同一PNG、実MCPのstale snapshot拒否・不一致中の構造編集・復帰を確認した。
 
 ただし同候補のcore Clippyは条件式一件、releaseは新しいフォントmanifestのinclude元が原本一覧へ未反映だったため停止し、最終source gateは未実行である。app cacheの保存も、検証資料を新たなcompiler入力にしたため`Unbound compiler input`で拒否された。修正では条件式をまとめ、標準font manifestの読取りをtext層へ共通化して原本一覧の参照元を更新する。Skiaの識別には既に追跡しているvendored依存manifestを使い、Cargoの入力検査や合格条件を弱めない。既存preview workerを使ったlockfile変更の拒否・復帰とview保持の試験も追加した。全ての有用なconsumerの終了後に修正版を送り、新しいTUI試験・修正版Clippy／releaseと最終gateはその結果で確認する。

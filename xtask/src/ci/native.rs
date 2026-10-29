@@ -601,15 +601,6 @@ impl Session {
                         "focus-terminal-modes.log",
                     )?;
                 }
-                if !core && has("graphics") {
-                    self.test(
-                        true,
-                        "graphics",
-                        focus::TEXT_LAYER_REPRODUCTION,
-                        &["--exact", "--test-threads=1"],
-                        "focus-text-layers.log",
-                    )?;
-                }
                 if args.suite == "candidate" && has("tui") {
                     self.test(
                         true,
@@ -619,15 +610,44 @@ impl Session {
                         "focus-camera-pan.log",
                     )?;
                 }
+                // The full pixel consumer already runs these owned targets in
+                // parallel. Keep the same independent files, logs and limits
+                // here, and join every started reproduction before continuing.
+                let mut pixels: Vec<parallel::Task<'_>> = Vec::new();
+                if !core && has("graphics") {
+                    pixels.push((
+                        "text-layer reproduction",
+                        Box::new(|| {
+                            self.test(
+                                true,
+                                "graphics",
+                                focus::TEXT_LAYER_REPRODUCTION,
+                                &["--exact", "--test-threads=1"],
+                                "focus-text-layers.log",
+                            )
+                        }),
+                    ));
+                }
                 if commands::color_font_reproduction(&args.suite, &targets).is_some() {
-                    self.test(
-                        true,
-                        "font_sources",
-                        commands::COLOR_FONT_REPRODUCTION,
-                        &["--test-threads=1"],
-                        "focus-color-fonts.log",
-                    )?;
-                    self.real_emoji("focus-real-emoji.log")?;
+                    pixels.push((
+                        "color-font reproduction",
+                        Box::new(|| {
+                            self.test(
+                                true,
+                                "font_sources",
+                                commands::COLOR_FONT_REPRODUCTION,
+                                &["--test-threads=1"],
+                                "focus-color-fonts.log",
+                            )
+                        }),
+                    ));
+                    pixels.push((
+                        "upstream emoji reproduction",
+                        Box::new(|| self.real_emoji("focus-real-emoji.log")),
+                    ));
+                }
+                if !pixels.is_empty() {
+                    parallel::run(pixels)?;
                 }
                 if args.suite == "dynamic" && has("native_layout") {
                     self.test(
