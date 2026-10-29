@@ -314,6 +314,24 @@ impl Bound {
                 bindings.inputs_hash.is_some() && hash(bindings.script_uri.as_bytes()) == uri_hash
             });
         let inherited = if provided.is_none() && needs_inherited {
+            if scopes.scope.is_some()
+                && scopes.bindings.is_some()
+                && (target.input_context.as_ref().is_some_and(|context| {
+                    context.values.lexical_inputs != Some(true)
+                        || self.original().input_epoch.is_none()
+                        || context.values.input_epoch != self.original().input_epoch
+                }) || target.script_input_scope.is_some()
+                    || target.input_context.is_none()
+                        && target
+                            .script_bindings
+                            .as_ref()
+                            .is_some_and(|bindings| bindings.inputs_bound))
+            {
+                return Err(Error::new(
+                    "UNSUPPORTED_FEATURE",
+                    "Generated combined scopes require lexical inputs from the same captured generation; independent inherited input contexts need further composition",
+                ));
+            }
             Self::inherited_raw_inputs(target)?
         } else {
             None

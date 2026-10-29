@@ -147,6 +147,7 @@ impl Project {
             script_images: BTreeSet::new(),
             used_script_assets: BTreeSet::new(),
             script_binding_bytes: 0,
+            input_epoch: Uuid::new_v4().simple().to_string(),
             browser_scopes: BTreeMap::new(),
         };
         while let Some(key) = graph.queue.pop_front() {
@@ -354,6 +355,7 @@ struct Copier<'a> {
     script_images: BTreeSet<(PathBuf, String, String)>,
     used_script_assets: BTreeSet<String>,
     script_binding_bytes: usize,
+    input_epoch: String,
     browser_scopes: BTreeMap<PathBuf, String>,
 }
 

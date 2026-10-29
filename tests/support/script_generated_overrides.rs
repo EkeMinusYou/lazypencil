@@ -329,6 +329,23 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
         base["children"][1]["metadata"]["lazypencil"]["script_scope"] = json!({"version":1,"script_uri":"base.js","library":"","inputs":{"hash":lazypencil::document::hash(inputs.to_string().as_bytes()),"library":"inputs"}});
         write(&path, base);
     }
+    if mode == "binding-combined-inherited-nonlexical" {
+        write(
+            &temp.path().join("library/inputs.pen"),
+            json!({"version":version,
+                "variables":{"selection":{"type":"string","value":"badge"}},
+                "children":[{"id":"badge","type":"rectangle","reusable":true,"width":10,"height":10,"fill":"#00ffff"}]
+            }),
+        );
+        let path = temp.path().join("library/base.pen");
+        let mut base: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        base["imports"] = json!({"inputs":"inputs.pen"});
+        base["children"][1]["metadata"]["lazypencil"]["script_input_context"] = json!({
+            "version":1,"library":"inputs","values":{"selected":"$selection","stale":"$missing"},
+            "variables":{"selection":"selection"},"components":{"badge":"badge"}
+        });
+        write(&path, base);
+    }
     if mode.starts_with("binding-native-parent") {
         let library = mode.ends_with("-library");
         let path = temp.path().join(if library {
@@ -696,6 +713,12 @@ fn generated_code_overrides_reject_unmanifested_sources_explicit_contexts_and_bi
         (true, "binding-unknown-target", 1, "INVALID_DOCUMENT"),
         (true, "binding-unknown-library", 1, "INVALID_DOCUMENT"),
         (true, "binding-unmanifested-asset", 1, "ASSET_NOT_FOUND"),
+        (
+            true,
+            "binding-combined-inherited-nonlexical",
+            1,
+            "UNSUPPORTED_FEATURE",
+        ),
         (true, "inherited-unknown-input-scope", 1, "INVALID_DOCUMENT"),
         (true, "metadata-unknown-source", 1, "INVALID_DOCUMENT"),
         (true, "bad-variable", 1, "INVALID_DOCUMENT"),

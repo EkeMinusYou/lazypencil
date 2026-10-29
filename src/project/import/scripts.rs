@@ -470,10 +470,35 @@ impl Copier<'_> {
         } else {
             node.properties.get("inputs").cloned()
         };
-        let context = super::super::script_context::capture(
+        let mut context = super::super::script_context::capture(
             original.as_ref(),
             json!({"version":1,"values":values,"variables":variables,"components":components}),
         )?;
+        if context["version"] == 2 {
+            context["lexical_inputs"] = json!(if let Some(old) = &node.input_context {
+                old.values.lexical_inputs.unwrap_or(false)
+            } else {
+                node.script_input_scope.is_none()
+                    && !node
+                        .script_bindings
+                        .as_ref()
+                        .is_some_and(|bound| bound.inputs_bound)
+            });
+            budget.charge(32)?;
+            let epoch = if let Some(old) = &node.input_context {
+                old.values.input_epoch.as_ref()
+            } else if let Some(bound) = &node.script_bindings
+                && bound.values.assets.is_some()
+            {
+                bound.original().input_epoch.as_ref()
+            } else {
+                Some(&self.input_epoch)
+            };
+            if let Some(epoch) = epoch {
+                context["input_epoch"] = json!(epoch);
+                budget.charge(epoch.len() + 32)?;
+            }
+        }
         budget.charge(
             context
                 .get("source_values")
@@ -652,6 +677,17 @@ impl Copier<'_> {
                 bindings["version"] = json!(if bindings["version"] == 4 { 4 } else { 3 });
                 bindings["source_uri_hash"] = json!(source_hash);
                 budget.charge(128)?;
+                let epoch = if let Some(bound) = &info.resolved.script_bindings
+                    && bound.values.assets.is_some()
+                {
+                    bound.original().input_epoch.as_ref()
+                } else {
+                    Some(&self.input_epoch)
+                };
+                if let Some(epoch) = epoch {
+                    bindings["input_epoch"] = json!(epoch);
+                    budget.charge(epoch.len() + 32)?;
+                }
             }
         }
         let context = if input_context {

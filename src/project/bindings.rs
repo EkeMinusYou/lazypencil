@@ -32,6 +32,8 @@ pub(super) struct Bindings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) source_uri_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) input_epoch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) library: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) browser_library: Option<String>,
@@ -97,6 +99,13 @@ impl Serialize for Bound {
 
 fn valid_name(value: &str) -> bool {
     !value.is_empty() && value.len() <= 4096 && !value.chars().any(char::is_control)
+}
+
+pub(super) fn valid_epoch(value: &str) -> bool {
+    value.len() == 32
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 pub(super) fn bind(project: &Project, node: &ResolvedNode) -> Result<Option<Bound>> {
@@ -172,6 +181,13 @@ fn parse(value: &Value) -> Result<Bindings> {
         })
     {
         return Err(invalid("Invalid or oversized script binding names"));
+    }
+    if values
+        .input_epoch
+        .as_ref()
+        .is_some_and(|value| values.version < 3 || !valid_epoch(value))
+    {
+        return Err(invalid("Invalid script input capture generation"));
     }
     if values.source_uri_hash.as_ref().is_some_and(|value| {
         value.len() != 64
@@ -324,6 +340,7 @@ impl Bound {
             && self.original().script_scopes == other.original().script_scopes
             && self.original().script_namespace == other.original().script_namespace
             && self.original().source_uri_hash == other.original().source_uri_hash
+            && self.original().input_epoch == other.original().input_epoch
     }
 }
 
@@ -472,6 +489,9 @@ impl Bound {
         } else {
             2
         };
+        if values.version < 3 {
+            values.input_epoch = None;
+        }
         values.input_components = None;
         values.inputs_hash = inputs.map(|value| {
             let mut value = value.clone();

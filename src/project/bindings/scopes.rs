@@ -260,6 +260,7 @@ impl Bound {
             script_scopes: BTreeMap::new(),
             script_namespace: None,
             source_uri_hash: values.source_uri_hash.clone(),
+            input_epoch: values.input_epoch.clone(),
         };
         Ok(Self {
             origin,

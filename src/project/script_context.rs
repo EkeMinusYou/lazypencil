@@ -16,6 +16,10 @@ pub(super) struct Inputs {
     pub source_hash: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub source_values: BTreeMap<String, Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lexical_inputs: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_epoch: Option<String>,
 }
 
 impl Inputs {
@@ -63,6 +67,8 @@ impl Bound {
             && self.values.components == other.values.components
             && self.values.source_hash == other.values.source_hash
             && self.values.source_values == other.values.source_values
+            && self.values.lexical_inputs == other.values.lexical_inputs
+            && self.values.input_epoch == other.values.input_epoch
     }
 
     pub fn expression(&self, name: &str, value: &Value) -> Result<Value> {
@@ -119,6 +125,11 @@ pub(super) fn bind(
     }
     if (values.version == 2) != values.source_hash.is_some()
         || values.version == 1 && !values.source_values.is_empty()
+        || values.version == 1 && (values.lexical_inputs.is_some() || values.input_epoch.is_some())
+        || values
+            .input_epoch
+            .as_ref()
+            .is_some_and(|epoch| !super::bindings::valid_epoch(epoch))
         || values
             .source_values
             .keys()
@@ -354,6 +365,12 @@ mod tests {
         let mut changed = captured;
         changed["source_values"]["selected"] = json!("ordinary");
         assert_eq!(scene(changed, "copy").unwrap_err().code, "INVALID_DOCUMENT");
+        let mut invalid_epoch = capture(Some(&json!({"selected":"old"})), context()).unwrap();
+        invalid_epoch["input_epoch"] = json!("unbounded-or-foreign");
+        assert_eq!(
+            scene(invalid_epoch, "copy").unwrap_err().code,
+            "INVALID_DOCUMENT"
+        );
     }
 
     fn context() -> Value {

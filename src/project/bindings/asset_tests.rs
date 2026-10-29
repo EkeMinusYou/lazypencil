@@ -287,6 +287,69 @@ fn combined_scope_guards_preserve_independent_output_input_and_variable_owners()
 
 #[cfg(feature = "rendering")]
 #[test]
+fn combined_inherited_guards_require_known_lexical_input_ownership() {
+    let input = json!({"selected":"badge"});
+    let context = super::super::script_context::capture(
+        Some(&input),
+        json!({
+            "version":1,"values":input,"variables":{},"components":{"badge":"badge"}
+        }),
+    )
+    .unwrap();
+    let project = Project::local(Document::parse(json!({"version":"2.21","children":[
+        {"id":"badge","type":"rectangle","reusable":true,"width":10,"height":10},
+        {"id":"worker","type":"script","scriptUri":"nested.js","width":10,"height":10,"inputs":input,
+         "metadata":{"type":"test","lazypencil":{"script_input_context":context}}}
+    ]}).to_string()).unwrap()).unwrap();
+    let mut target = project.resolve().unwrap().roots.remove(1);
+    let parent = custom_parent();
+    let mut captured = parent.original().clone();
+    captured.version = 3;
+    captured.source_uri_hash = Some(hash(b"generator.js"));
+    captured.input_epoch = Some("1".repeat(32));
+    let parent = Bound::from_values(parent.origin.clone(), false, captured).unwrap();
+    for invalid in ["short".into(), "G".repeat(32), "f".repeat(33)] {
+        let mut value = serde_json::to_value(parent.original()).unwrap();
+        value["input_epoch"] = json!(invalid);
+        assert!(parse(&value).is_err());
+    }
+    let legacy = parent
+        .inherited_output_with_hash("nested.js", None, None, &mut 0)
+        .unwrap();
+    assert!(legacy.get("input_epoch").is_none());
+    assert!(parse(&legacy).is_ok());
+    let metadata = json!({
+        "script_scope":{"version":1,"script_uri":"nested.js","library":"base","inputs":{"hash":super::super::scope::value_hash(&input),"library":"base"}},
+        "script_bindings":{"version":1,"script_uri":"nested.js","components":{"badge":"badge"}}
+    });
+    for (lexical, epoch, accepted) in [
+        (None, None, false),
+        (Some(false), Some("1".repeat(32)), false),
+        (Some(true), None, false),
+        (Some(true), Some("2".repeat(32)), false),
+        (Some(true), Some("1".repeat(32)), true),
+    ] {
+        target.input_context.as_mut().unwrap().values.lexical_inputs = lexical;
+        target.input_context.as_mut().unwrap().values.input_epoch = epoch;
+        let mut changes = json!({"metadata":{"lazypencil":metadata}});
+        let result = parent.compose_generated_scopes(
+            &metadata,
+            &mut changes,
+            &target,
+            &GeneratedState::default(),
+            "nested.js",
+            &mut 0,
+        );
+        if accepted {
+            assert!(result.is_ok());
+        } else {
+            assert_eq!(result.unwrap_err().code, "UNSUPPORTED_FEATURE");
+        }
+    }
+}
+
+#[cfg(feature = "rendering")]
+#[test]
 fn generated_explicit_scope_selection_keeps_shared_tables_and_rejects_unreachable_namespaces() {
     let scope = |component: &str, variable: &str, libraries: Value| {
         json!({
