@@ -17,6 +17,9 @@ on:
       terminal_reproduction:
         type: boolean
         default: false
+      rebuild_application:
+        type: boolean
+        default: false
 permissions:
   contents: read
   actions: write
@@ -30,6 +33,7 @@ jobs:
       phase: ${{ (inputs.suite == 'core' || inputs.suite == 'conversation') && 'verify' || 'full' }}
       suite: ${{ inputs.suite }}
       targets: ${{ inputs.targets }}
+      rebuild_application: ${{ inputs.rebuild_application }}
   release:
     if: inputs.os == 'macos-15'
     uses: ./.github/workflows/native.yml
@@ -40,6 +44,7 @@ jobs:
       suite: ${{ inputs.suite }}
       targets: ${{ inputs.targets }}
       measure_tui: ${{ inputs.measure_tui }}
+      rebuild_application: ${{ inputs.rebuild_application }}
   build:
     if: inputs.os == 'macos-15'
     uses: ./.github/workflows/native.yml
@@ -49,6 +54,7 @@ jobs:
       phase: ${{ inputs.suite != 'core' && inputs.suite != 'conversation' && 'verify' || 'full' }}
       suite: ${{ inputs.suite }}
       targets: ${{ inputs.targets }}
+      rebuild_application: ${{ inputs.rebuild_application }}
   tests:
     if: inputs.os == 'macos-15'
     needs: build
@@ -130,3 +136,4 @@ jobs:
       targets: ${{ inputs.targets }}
       measure_tui: ${{ inputs.measure_tui }}
       terminal_reproduction: ${{ inputs.terminal_reproduction }}
+      rebuild_application: ${{ inputs.rebuild_application }}

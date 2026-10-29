@@ -33,6 +33,9 @@ on:
       focused_application:
         type: string
         default: ''
+      rebuild_application:
+        type: boolean
+        default: false
     outputs:
       application_artifact:
         value: ${{ jobs.verify.outputs.application_artifact }}
@@ -166,7 +169,7 @@ jobs:
         run: cargo xtask ci cache application identify --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --native-key '${{ steps.cache-key.outputs.primary }}${{ inputs.lane == 'core' && '-core' || '' }}'
       - name: Download this run's matching focused build
         id: application-artifact
-        if: inputs.phase == 'full' && inputs.focused_application != '' && inputs.focused_application == steps.application-key.outputs.checkpoint_legacy
+        if: ${{ !inputs.rebuild_application && inputs.phase == 'full' && inputs.focused_application != '' && inputs.focused_application == steps.application-key.outputs.checkpoint_legacy }}
         continue-on-error: true
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
@@ -180,7 +183,7 @@ jobs:
         run: cargo xtask ci cache artifact unpack --archive "$RUNNER_TEMP/lazypencil-application-transport/checkpoint.tar.gz" --directory "$RUNNER_TEMP/lazypencil-application-cache"
       - name: Restore source-bound application outputs
         id: application-cache
-        if: steps.application-key.outcome == 'success' && steps.application-artifact-extract.outcome != 'success'
+        if: ${{ !inputs.rebuild_application && steps.application-key.outcome == 'success' && steps.application-artifact-extract.outcome != 'success' }}
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
@@ -191,7 +194,7 @@ jobs:
           path: ${{ runner.temp }}/lazypencil-application-cache
       - name: Restore unchanged integration-test outputs from a full build
         id: compatible-cache
-        if: steps.application-key.outcome == 'success'
+        if: ${{ !inputs.rebuild_application && steps.application-key.outcome == 'success' }}
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
@@ -214,7 +217,7 @@ jobs:
         run: cargo xtask ci cache application identify --release-only --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-release-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
       - name: Restore compatible mapped release outputs
         id: release-cache
-        if: ${{ (inputs.lane == 'all' || inputs.lane == 'release') && (steps.release-key.outcome == 'success') }}
+        if: ${{ !inputs.rebuild_application && (inputs.lane == 'all' || inputs.lane == 'release') && (steps.release-key.outcome == 'success') }}
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:

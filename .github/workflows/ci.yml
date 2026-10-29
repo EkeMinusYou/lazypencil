@@ -16,6 +16,10 @@ on:
         type: choice
         default: auto
         options: [auto, macos-15]
+      rebuild_application:
+        description: Measure application recompilation while retaining dependency caches
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       os:
@@ -24,6 +28,9 @@ on:
       focus_os:
         type: string
         default: auto
+      rebuild_application:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -165,6 +172,7 @@ jobs:
       targets: ${{ needs.plan.outputs.targets }}
       measure_tui: ${{ needs.plan.outputs.measure_tui == 'true' }}
       terminal_reproduction: ${{ needs.plan.outputs.terminal_reproduction_full == 'true' }}
+      rebuild_application: ${{ inputs.rebuild_application == true }}
 
   source:
     if: ${{ !cancelled() && needs.native.result == 'success' && needs.audit.result == 'success' && (inputs.os == 'all' || inputs.os == '' || inputs.os == 'macos-15') }}
