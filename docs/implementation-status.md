@@ -4,7 +4,13 @@
 
 ## 現在の状態（2026-10-29）
 
-最新の全工程成功は4252fe2の[CI 40883349979](https://github.com/EkeMinusYou/lazypencil/actions/runs/40883349979)である。入力文脈v3は世代別に元式・変数／部品の所有元・下位scope／bindingの入力対応を保持する。明示入力の失効・解除、出力だけの変更、両形式・4経路の80組と、新旧producerが同じ部品を使う混在ケースを元／copy／再copyで確認した。既定構成856件・core470件のnamed caseと回数に従来854件／469件からの欠落はない。全1,932 PNGのrevision・hash・寸法、644組の三段階byte一致、先行と通常のPNG／JSON一致、従来1,680 PNGの不変を照合した。新規2種類の画像byte列を既存Rust補助で独立復号し、36×12の寸法・先頭の青画素・下位設定に対応した青／緑の描画を確認した。全5 consumerのcompiler／binary receiptはbyte一致し、実Chromium・MCP・端末・Material・42描画計測・監査・共通画像gateも成功した。署名付きsourceは1,194ファイル・13,341,087バイト、SHA-256 `21b5190930ea281c8e46805dc1dd25e10e15a2d55d6d369d2a1552ee9ecc8386`で、署名者・source・workflow・runを照合した。
+最新の全工程成功はd7cc9c6の[CI 40888907387](https://github.com/EkeMinusYou/lazypencil/actions/runs/40888907387)である。生成scriptのコード所有元を出力設定から独立して保持し、子配列差替え／ノード置換の後に通常metadata・scope・binding・carrierを上書きする両形式16組を元／copy／再copyで確認した。コード側の捕捉表が出力側と異なる場合も、到達可能なlibrary、部品経路・変数・テーマ・素材・browser設定を衝突なく合成する。既定構成858件・core470件のnamed caseと回数に従来856件／470件からの欠落はない。全1,980 PNGのrevision・hash・寸法、660組の三段階一致、先行と通常のPNG／JSON一致、従来1,932 PNGの不変を確認した。追加画像は既に独立復号したbyte列と一致し、同じ復号は繰り返していない。実Chromium・MCP・端末・Material・42描画計測・監査・共通画像gateが成功し、全5 consumerのreceiptもbyte一致した。署名付きsourceは1,195ファイル・13,344,619バイト、SHA-256 `f75be9cd86e97d8ac6802e9d2c5af811d53ea9807135b99b7470eea980e4b846`で、署名者・source・workflow・runを照合した。
+
+全体25分38秒で10分目標は未達。builder9分17秒・core6分55秒・release18分03秒、通常3分45秒・pixel2分07秒・runtime3分16秒・端末1分10秒・Material1分50秒・source36秒だった。runtimeと端末がbuilderの`20260907.0337.1`と異なる`20261028.0489.1`へ割り当てられ、試験前のreceipt照合で停止した。他の有用なjobと新環境の依存buildは終了まで待ち、失敗した2 job、続いてruntimeだけを再実行した。新しいpush・全体buildのやり直し・環境条件の緩和は行わず、3回目のattemptで最終gateが成功した。新規再現は5.20秒、先行build156.08秒と残りbuild132.52秒、既存binding201.65秒だった。registry356単位とSkiaは全てfreshで、全体buildは先行lib／CLI／lib試験／script_scopeを再利用した。
+
+CI短縮の具体的な残件も確認した。`src/project/bindings/asset_tests.rs`を含む試験だけの変更でも、互換cache候補が`tests/`などに限られるため同じ環境のapp／未変更試験を再利用できなかった。ファイル名だけで安全とせず、既存のcompiler dep-infoによるproduction consumer拒否を維持して対象を広げる。新runnerのreleaseは依存cacheがなく、初回build742.98秒、直後の確認も148.19秒だった。後者はSkiaのbuild中に`skia/include`が更新され、CargoがSkia wrapperとappを再buildしたためである。入力を偽装してfresh扱いにせず、初期準備と本体compileの順序を調整する対象とする。新環境の依存cache保存は完了している。
+
+前回の全工程成功は4252fe2の[CI 40883349979](https://github.com/EkeMinusYou/lazypencil/actions/runs/40883349979)である。入力文脈v3は世代別に元式・変数／部品の所有元・下位scope／bindingの入力対応を保持する。明示入力の失効・解除、出力だけの変更、両形式・4経路の80組と、新旧producerが同じ部品を使う混在ケースを元／copy／再copyで確認した。既定構成856件・core470件のnamed caseと回数に従来854件／469件からの欠落はない。全1,932 PNGのrevision・hash・寸法、644組の三段階byte一致、先行と通常のPNG／JSON一致、従来1,680 PNGの不変を照合した。新規2種類の画像byte列を既存Rust補助で独立復号し、36×12の寸法・先頭の青画素・下位設定に対応した青／緑の描画を確認した。全5 consumerのcompiler／binary receiptはbyte一致し、実Chromium・MCP・端末・Material・42描画計測・監査・共通画像gateも成功した。署名付きsourceは1,194ファイル・13,341,087バイト、SHA-256 `21b5190930ea281c8e46805dc1dd25e10e15a2d55d6d369d2a1552ee9ecc8386`で、署名者・source・workflow・runを照合した。
 
 全体14分05秒、builder8分48秒・core7分41秒・release5分30秒、通常3分42秒・pixel2分54秒・runtime3分16秒・端末1分13秒・Material1分33秒・source41秒だった。10分目標は引き続き未達。先行build127.31秒・残りbuild112.68秒と再現を並列実行し、新規再現31.98秒・既存binding171.54秒・browser37.18秒・copy11.24秒だった。registry356単位とSkiaはCargoで全てfresh、全体buildでは先行lib／CLI／lib試験／script_scopeの4単位も再利用した。アプリ変更や試験の追加があるため、前回から3秒増えた差を単独処理の性能効果とは扱わない。文書更新だけで同条件の完全CIを繰り返さない。
 
@@ -104,7 +110,7 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 
 ### 次に実装・確認すること
 
-`code_namespace`によるコード所有元の保持は2c9ac33、入力文脈v3の世代別復元は4252fe2で検証済みである。新旧producerの混在、明示入力の失効・解除、出力だけの変更を元／copy／再copyで確認した。元sourceがなくても新しく保持した世代から復元できる。一方、必要な出自を保存していない旧captureと、コード所有元を持たない生成置換は引き続き残る。成功した条件を根拠なく再実行せず、次はこの未保持の境界を扱う。
+コピー済み定義のコード所有元保持は2c9ac33、入力文脈の世代別復元は4252fe2、新たに生成したscriptと後続の上書きはd7cc9c6で検証済みである。元source削除後と再copyを含み、通常metadataによる元設定の保持、失効した出力設定からコード所有元への復帰を確認した。必要な元情報を保存していない旧captureは、推測で接続せず元sourceからの再copyを案内する既存の診断を維持する。次は上記のCI cache／初期buildと、認証profileの同時利用を進める。
 
 提供入力に対する明示入力文脈60組、refの上書きcarrier56組、および単独入力文脈の参照名転送は7431326で検証済みである。以下の準備中・再実行待ちという記述は当時の履歴であり、現在の未完了一覧には数えない。
 
@@ -139,7 +145,7 @@ cbc868bでは、bindings v3に元URIのhash、input context v2に元入力のhas
 
 </details>
 
-- 必要な出自を持たない旧captureと、生成された置換scriptのコード所有元。世代別に保持された継承入力の復元・解除は4252fe2の80組と新旧producer混在で検証済み。コピー済み定義の出力解除64組、提供入力の明示文脈60組、ref carrier56組、単独native parentの出力所有元36組、入力guard・変数と参照部品の独立所有元124組の既存検証も維持する。これらの成功を、未保持の出自まで復元できるという保証にはしない。
+
 - TUI preview と別の bound MCP が、同じ認証済みブラウザープロファイルを同時利用する統合。専用 profile の作成・ログイン・永続ストレージ・所有者回収は実装済みだが、現在の lease は二つ目の独立 owner を拒否する。
 
 ab8c785の既定構成builderは7分42秒、通常consumer3分24秒、pixel consumer3分01秒、runtime consumer3分07秒、source gate32秒だった。初回305198bは追加した単体試験補助のString型不一致で停止したため成功扱いせず、core・releaseの完了後に修正した。既存bindings単体試験をcfg(test)の別ファイルへ分け、以後の試験補助だけの修正が本体のcompiler入力に混ざることを防ぐ。署名済みsourceは1,186ファイル・13,275,319バイト、SHA-256 `5254036df2833e5e628a2fcfb9680eff2272cd1be95433e91556a55ff5e0fdc9`。検証後の差分は文書更新と、PNG報告用revisionを実行時環境から読む試験補助1行のみで、同条件のnative全検証は重ねない。この最終の補助変更自体のremote実行とは区別する。
@@ -161,7 +167,7 @@ ab8c785の既定構成builderは7分42秒、通常consumer3分24秒、pixel cons
 
 標準 macOS GHA の Kitty 0.49.2 は、取得・ハッシュ・署名・両実行ファイルの版検査後に NSGL／OpenGL 3.3 の初期化で失敗した。`3d711d9` の失敗はアプリ起動前であり、日本語入力の不具合や可視画面の成功とは扱わない。実 Kitty 12段階試験は既存 release-evidence の `macos_terminal_gui` に保持しているが、GPU付きlarger runnerはGitHub Team／Enterprise Cloudの組織向けである。[公式の利用条件](https://docs.github.com/en/enterprise-cloud%40latest/actions/concepts/runners/larger-runners)。現在のrepository ownerは個人アカウントであり、このflagだけで利用できる経路とは扱わず、未実行のまま残す。アカウント移管・契約変更は実行していない。利用者への反復した手動確認依頼を検証計画の前提にしない。
 
-旧3環境CI全体の安定した短縮は未達だった。初回Macのみへ変更し、Linux nativeの待機・再ビルド・必須確認を外した。実行時間が単純に1/3になるとは見積もらない。`c9ffb37` は38分28秒、先行17分30秒、全体 job は x64 16分35秒・arm64 17分57秒・Mac20分05秒だった。先行範囲と runner image が異なり、元の27〜29分との統制比較ではない。Mac release 再利用0.87秒、同一環境での先行成果物再利用、変更した試験だけの無効化、独立試験の並列化には個別の成功根拠がある。直近の9d6613bは14分43秒（依存変更・Wasm検証を含む）。5eaa691は12分06秒（本体変更と新規124組）、f9cc4daは10分17秒（本体全50単位を再build）だった。copy先行の06bab20は10分31秒、本体再利用の028e522は8分30秒だった。旧62675c9の12分51秒・788f4c2の9分51秒・旧3環境と条件を分け、全体10分以内の維持は引き続き改善する。
+旧3環境CI全体の安定した短縮は未達だった。初回Macのみへ変更し、Linux nativeの待機・再ビルド・必須確認を外した。実行時間が単純に1/3になるとは見積もらない。`c9ffb37` は38分28秒、先行17分30秒、全体 job は x64 16分35秒・arm64 17分57秒・Mac20分05秒だった。先行範囲と runner image が異なり、元の27〜29分との統制比較ではない。Mac release 再利用0.87秒、同一環境での先行成果物再利用、変更した試験だけの無効化、独立試験の並列化には個別の成功根拠がある。9d6613b当時は14分43秒（依存変更・Wasm検証を含む）。5eaa691は12分06秒（本体変更と新規124組）、f9cc4daは10分17秒（本体全50単位を再build）だった。copy先行の06bab20は10分31秒、本体再利用の028e522は8分30秒だった。旧62675c9の12分51秒・788f4c2の9分51秒・旧3環境と条件を分け、全体10分以内の維持は引き続き改善する。
 
 macOS の常用メモリは `7fe854b` の既存候補で172.03MiB、cached feedback p95 は32.72msだった。古い「200MiB未達」を現在の既知不具合に数えない。この標本結果から、全環境・統制条件・物理端末の性能受け入れ完了とはしない。[性能記録](performance.md)
 
@@ -169,7 +175,7 @@ macOS の常用メモリは `7fe854b` の既存候補で172.03MiB、cached feedb
 
 ### 完成までの順序と概算
 
-1. 独立コピーの残る明示scriptスコープ合成：3〜6実働日の概算。
+1. CIの試験専用入力の再利用と、初回Skia build直後の重複compileを改善する。独立コピーの生成script所有元対応はd7cc9c6で検証済みになった。
 2. 同時認証利用：旧3〜5実働日の概算を再評価する。旧見積もりに含めた追加フォントの遅延読み込みは検証済みになった。
 3. 各個別仕様の残る互換・資源処理（非local sampler、欠損修復、素材回収、font lockfileなど）を具体化する。追加分の工数は未確定。
 4. 不足する受け入れ確認、保証環境の確定、配布・文書整理：2〜4実働日の概算。
