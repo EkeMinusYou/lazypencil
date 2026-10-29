@@ -4,9 +4,13 @@
 
 ## 現在の状態（2026-10-29）
 
-最新の全工程成功は2c9ac33の[CI 40880188129](https://github.com/EkeMinusYou/lazypencil/actions/runs/40880188129)である。コード所有元を出力設定と独立して保持し、通常scope／native bindingの両形式・4経路・64組で、元source削除後と再copyの復元を検証した。既定構成854件・core469件のnamed caseと回数を従来の852件／469件へ照合し、欠落0件を確認した。全1,680 PNGのrevision・hash・寸法、560組の元／copy／再copy、先行と通常の画像一致、従来1,488 PNGの不変を照合した。新しい1種類のbyte列は既存Rust補助で独立復号し、寸法と先頭画素を確認した。全5 consumerのcompiler／binary receiptはbyte一致し、実Chromium・MCP・端末・Material・42描画計測・依存監査・共通画像gateも成功した。署名付きsourceは1,194ファイル・13,336,814バイト、SHA-256 `7d2ae264e1175ee581f945d10488189e0411eaba0f7ce49aff30f82001a46760`である。
+最新の全工程成功は4252fe2の[CI 40883349979](https://github.com/EkeMinusYou/lazypencil/actions/runs/40883349979)である。入力文脈v3は世代別に元式・変数／部品の所有元・下位scope／bindingの入力対応を保持する。明示入力の失効・解除、出力だけの変更、両形式・4経路の80組と、新旧producerが同じ部品を使う混在ケースを元／copy／再copyで確認した。既定構成856件・core470件のnamed caseと回数に従来854件／469件からの欠落はない。全1,932 PNGのrevision・hash・寸法、644組の三段階byte一致、先行と通常のPNG／JSON一致、従来1,680 PNGの不変を照合した。新規2種類の画像byte列を既存Rust補助で独立復号し、36×12の寸法・先頭の青画素・下位設定に対応した青／緑の描画を確認した。全5 consumerのcompiler／binary receiptはbyte一致し、実Chromium・MCP・端末・Material・42描画計測・監査・共通画像gateも成功した。署名付きsourceは1,194ファイル・13,341,087バイト、SHA-256 `21b5190930ea281c8e46805dc1dd25e10e15a2d55d6d369d2a1552ee9ecc8386`で、署名者・source・workflow・runを照合した。
 
-今回は再実行なしで全体14分02秒、10分目標は未達。builder8分19秒・core9分24秒・release4分48秒、通常4分20秒・pixel2分24秒・runtime3分07秒・端末1分22秒・Material1分16秒・source31秒だった。先行build127.17秒・残りbuild110.66秒と先行試験を並列で実行し、コード所有元64組は24.83秒、既存binding146.79秒、browser35.38秒、copy7.65秒だった。registryの356単位とSkiaは全てCargoでfresh、全体buildでも先行lib／CLI／lib試験／script_scopeの4単位を再利用した。前の7431326はMac imageの混在により通常jobだけを再実行して16分17秒だった。条件は緩めず、成功したビルドと他のconsumerを再利用して解消した。同条件の追加検証は行わず、以下の古い数値・未確認記述は各source当時の履歴として扱う。
+全体14分05秒、builder8分48秒・core7分41秒・release5分30秒、通常3分42秒・pixel2分54秒・runtime3分16秒・端末1分13秒・Material1分33秒・source41秒だった。10分目標は引き続き未達。先行build127.31秒・残りbuild112.68秒と再現を並列実行し、新規再現31.98秒・既存binding171.54秒・browser37.18秒・copy11.24秒だった。registry356単位とSkiaはCargoで全てfresh、全体buildでは先行lib／CLI／lib試験／script_scopeの4単位も再利用した。アプリ変更や試験の追加があるため、前回から3秒増えた差を単独処理の性能効果とは扱わない。文書更新だけで同条件の完全CIを繰り返さない。
+
+前回の全工程成功は2c9ac33の[CI 40880188129](https://github.com/EkeMinusYou/lazypencil/actions/runs/40880188129)である。コード所有元を出力設定と独立して保持し、通常scope／native bindingの両形式・4経路・64組で、元source削除後と再copyの復元を検証した。既定構成854件・core469件のnamed caseと回数を従来の852件／469件へ照合し、欠落0件を確認した。全1,680 PNGのrevision・hash・寸法、560組の元／copy／再copy、先行と通常の画像一致、従来1,488 PNGの不変を照合した。新しい1種類のbyte列は既存Rust補助で独立復号し、寸法と先頭画素を確認した。全5 consumerのcompiler／binary receiptはbyte一致し、実Chromium・MCP・端末・Material・42描画計測・依存監査・共通画像gateも成功した。署名付きsourceは1,194ファイル・13,336,814バイト、SHA-256 `7d2ae264e1175ee581f945d10488189e0411eaba0f7ce49aff30f82001a46760`である。
+
+2c9ac33は再実行なしで全体14分02秒、10分目標は未達。builder8分19秒・core9分24秒・release4分48秒、通常4分20秒・pixel2分24秒・runtime3分07秒・端末1分22秒・Material1分16秒・source31秒だった。先行build127.17秒・残りbuild110.66秒と先行試験を並列で実行し、コード所有元64組は24.83秒、既存binding146.79秒、browser35.38秒、copy7.65秒だった。registryの356単位とSkiaは全てCargoでfresh、全体buildでも先行lib／CLI／lib試験／script_scopeの4単位を再利用した。前の7431326はMac imageの混在により通常jobだけを再実行して16分17秒だった。条件は緩めず、成功したビルドと他のconsumerを再利用して解消した。同条件の追加検証は行わず、以下の古い数値・未確認記述は各source当時の履歴として扱う。
 
 9d6613bの[CI 40870088186](https://github.com/EkeMinusYou/lazypencil/actions/runs/40870088186)は全工程成功した。追加フォントは全ファイルの常時保持・一括native登録をやめ、内容hashのストリーム取得、名前表の探索、使用ファミリーの読み込みを分離した。文字不足時に指定順でfallbackを追加し、一覧取得では全フェイスを明示的に読み込む。未使用ファミリーの非登録、同サイズ変更の拒否、ロード済みデータの保持、未使用ファイルの依存revision、遅延／全件読み込みの画素・計測一致が成功した。既定構成840→845件・core468→469件で、全named caseと回数に欠落0件。既存の888 PNGは5eaa691と全てbyte一致した。実Chromium・MCP・端末・Material・42描画計測・全5 consumerの共通gate・依存監査も成功し、署名済みsourceは1,194ファイル・13,326,426バイト、SHA-256 `d88e12b151c32399d5533d200b0538c0c48c20103e2548c87f73a6afbab707eb`だった。
 
@@ -100,7 +104,7 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 
 ### 次に実装・確認すること
 
-`code_namespace`によるコピー済み定義のコード所有元保持、URIを継承した出力guard失効時の復元、元の出力を保つ通常metadata編集は2c9ac33で検証済みである。次の候補では入力文脈v3の世代別snapshotを追加し、元式・変数／部品の所有元・下位scope／bindingの入力対応を再copyでも保持する。明示入力の解除・失効、出力のみの変更、新旧producerの混在を両形式の実workerと元／copy／再copyの画像で検証する。両形式・4経路の80組と混在producerの検査を先行へ移し、同条件のbinding群からは除く。現時点ではGHA未検証であり、旧captureと生成置換を含む全合成の完了とは扱わない。捕捉表の不要なclone削減と素材aliasの衝突回避もこの候補にまとめる。
+`code_namespace`によるコード所有元の保持は2c9ac33、入力文脈v3の世代別復元は4252fe2で検証済みである。新旧producerの混在、明示入力の失効・解除、出力だけの変更を元／copy／再copyで確認した。元sourceがなくても新しく保持した世代から復元できる。一方、必要な出自を保存していない旧captureと、コード所有元を持たない生成置換は引き続き残る。成功した条件を根拠なく再実行せず、次はこの未保持の境界を扱う。
 
 提供入力に対する明示入力文脈60組、refの上書きcarrier56組、および単独入力文脈の参照名転送は7431326で検証済みである。以下の準備中・再実行待ちという記述は当時の履歴であり、現在の未完了一覧には数えない。
 
@@ -135,7 +139,7 @@ cbc868bでは、bindings v3に元URIのhash、input context v2に元入力のhas
 
 </details>
 
-- 複数世代にまたがる継承入力と、入力文脈を解除した際の元の所有元への復帰。生成された置換scriptや旧captureで、コード所有元が未保持の場合も残る。コピー済み定義の出力解除は2c9ac33の64組、提供入力の明示文脈とref carrierの合成は7431326の60組／56組で検証済みだが、全組合せの完成とは扱わない。単独native parentの出力所有元36組、入力guard・変数と参照部品の独立所有元124組の既存検証も維持する。
+- 必要な出自を持たない旧captureと、生成された置換scriptのコード所有元。世代別に保持された継承入力の復元・解除は4252fe2の80組と新旧producer混在で検証済み。コピー済み定義の出力解除64組、提供入力の明示文脈60組、ref carrier56組、単独native parentの出力所有元36組、入力guard・変数と参照部品の独立所有元124組の既存検証も維持する。これらの成功を、未保持の出自まで復元できるという保証にはしない。
 - TUI preview と別の bound MCP が、同じ認証済みブラウザープロファイルを同時利用する統合。専用 profile の作成・ログイン・永続ストレージ・所有者回収は実装済みだが、現在の lease は二つ目の独立 owner を拒否する。
 
 ab8c785の既定構成builderは7分42秒、通常consumer3分24秒、pixel consumer3分01秒、runtime consumer3分07秒、source gate32秒だった。初回305198bは追加した単体試験補助のString型不一致で停止したため成功扱いせず、core・releaseの完了後に修正した。既存bindings単体試験をcfg(test)の別ファイルへ分け、以後の試験補助だけの修正が本体のcompiler入力に混ざることを防ぐ。署名済みsourceは1,186ファイル・13,275,319バイト、SHA-256 `5254036df2833e5e628a2fcfb9680eff2272cd1be95433e91556a55ff5e0fdc9`。検証後の差分は文書更新と、PNG報告用revisionを実行時環境から読む試験補助1行のみで、同条件のnative全検証は重ねない。この最終の補助変更自体のremote実行とは区別する。
