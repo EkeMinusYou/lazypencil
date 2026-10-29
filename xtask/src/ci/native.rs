@@ -280,6 +280,7 @@ impl Session {
         self.execute_command(&mut command, 300, log, true)
     }
     fn core_reproductions(&self, suite: &str, targets: &[String]) -> Result<()> {
+        self.asset_maintenance_reproductions(false, targets)?;
         if std::env::var("RUNTIME_PARALLEL").as_deref() == Ok("true") {
             self.execute(
                 &commands::management_tests(false),
@@ -303,6 +304,38 @@ impl Session {
                 "conversation::management::",
                 &["--test-threads=2"],
                 "focus-history-core.log",
+            )?;
+        }
+        Ok(())
+    }
+
+    fn asset_maintenance_reproductions(&self, features: bool, targets: &[String]) -> Result<()> {
+        let has = |name| targets.iter().any(|target| target == name);
+        if has("assets") || has("document_store") {
+            self.test(
+                features,
+                "lib",
+                "store::activity::tests::",
+                &["--test-threads=2"],
+                "focus-asset-activity.log",
+            )?;
+        }
+        if has("document_store") {
+            self.test(
+                features,
+                "document_store",
+                "history_records_its_owner_accepts_legacy_records_and_rejects_a_foreign_owner",
+                &["--exact", "--test-threads=1"],
+                "focus-history-owner.log",
+            )?;
+        }
+        if cfg!(unix) && has("assets") {
+            self.test(
+                features,
+                "assets",
+                "cli_asset_output_keeps_maintenance_excluded_until_the_response_is_written",
+                &["--exact", "--test-threads=1"],
+                "focus-asset-output.log",
             )?;
         }
         Ok(())
@@ -603,6 +636,7 @@ impl Session {
             }
             Stage::FocusReproduce => {
                 let separate_core = self.separate_core()?;
+                self.asset_maintenance_reproductions(!core, &targets)?;
                 if has("sampler_sources") {
                     self.test(
                         !core,

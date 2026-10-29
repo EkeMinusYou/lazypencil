@@ -107,6 +107,24 @@ fn main() -> ExitCode {
             return ExitCode::from(error.exit_code() as u8);
         }
     };
+    // Keep uploaded-but-not-yet-referenced assets live until the CLI result
+    // has been written, including long-lived TUI, prompt and MCP frontends.
+    let _asset_activity = match lazypencil::store::AssetActivity::acquire() {
+        Ok(activity) => activity,
+        Err(error) => {
+            if arguments.json {
+                let value = if matches!(arguments.command, lazypencil::cli::Command::Prompt(_)) {
+                    serde_json::json!({"type":"error","error":error})
+                } else {
+                    serde_json::json!({"error":error})
+                };
+                let _ = writeln!(std::io::stdout().lock(), "{value}");
+            } else {
+                eprintln!("{error}");
+            }
+            return ExitCode::from(error.exit_code());
+        }
+    };
     if let Err(error) = lazypencil::config::agents::resolve_arguments(&mut arguments, &matches) {
         if arguments.json {
             let value = if matches!(arguments.command, lazypencil::cli::Command::Prompt(_)) {

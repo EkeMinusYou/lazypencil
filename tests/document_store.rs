@@ -575,3 +575,34 @@ fn unrecognized_wire_versions_remain_read_only_without_running_the_edit() {
         assert!(store.history(10, None).unwrap().is_empty());
     }
 }
+
+#[test]
+fn history_records_its_owner_accepts_legacy_records_and_rejects_a_foreign_owner() {
+    let (_temp, store) = setup();
+    let revision = store.read().unwrap().revision();
+    let result = store
+        .transact("owned", &revision, "owned", |document| {
+            let mut after = document.clone();
+            after.set_property("", "name", &json!("owned"))?;
+            Ok((after, json!({})))
+        })
+        .unwrap();
+    let id = result["checkpoint_id"].as_str().unwrap();
+    let path = store
+        .document_data_dir()
+        .join("history")
+        .join(id)
+        .join("metadata.json");
+    let mut entry: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(entry["document_path"], json!(store.path()));
+    entry.as_object_mut().unwrap().remove("document_path");
+    fs::write(&path, entry.to_string()).unwrap();
+    assert!(store.history(10, None).unwrap()[0].document_path.is_none());
+    entry["document_path"] = json!(store.path().with_file_name("foreign.pen"));
+    fs::write(path, entry.to_string()).unwrap();
+    assert_eq!(
+        store.history(10, None).unwrap_err().code,
+        "RECOVERY_REQUIRED"
+    );
+    assert_eq!(store.read().unwrap().value()["name"], "owned");
+}

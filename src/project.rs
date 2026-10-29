@@ -182,6 +182,7 @@ pub struct ResolvedScene {
 }
 
 pub struct Project {
+    _asset_activity: Option<Arc<crate::store::AssetActivity>>,
     root: PathBuf,
     documents: BTreeMap<PathBuf, Document>,
     imports: BTreeMap<PathBuf, BTreeMap<String, PathBuf>>,
@@ -240,6 +241,7 @@ impl Project {
             .into_iter()
             .collect();
         Ok(Self {
+            _asset_activity: None,
             root: root.clone(),
             documents: [(root.clone(), document)].into_iter().collect(),
             imports: [(root, BTreeMap::new())].into_iter().collect(),
@@ -596,7 +598,15 @@ impl Project {
         Ok((value, aliases))
     }
     pub fn load(store: &Store) -> Result<Self> {
-        Self::from_document_with_data(store.path(), store.read()?, &[], Some(store.data_dir()))
+        Self::from_document_with_activity(
+            store.path(),
+            store.read()?,
+            &[],
+            Some(store.data_dir()),
+            &BTreeMap::new(),
+            None,
+            store.asset_activity(),
+        )
     }
 
     pub fn from_document(
@@ -642,6 +652,27 @@ impl Project {
         cancel: Option<&tokio_util::sync::CancellationToken>,
     ) -> Result<Self> {
         crate::cancel::check(cancel)?;
+        Self::from_document_with_activity(
+            path,
+            document,
+            additional_roots,
+            data,
+            overlay,
+            cancel,
+            crate::store::AssetActivity::acquire()?,
+        )
+    }
+
+    fn from_document_with_activity(
+        path: &Path,
+        document: Document,
+        additional_roots: &[PathBuf],
+        data: Option<&Path>,
+        overlay: &crate::managed::Overlay,
+        cancel: Option<&tokio_util::sync::CancellationToken>,
+        activity: Arc<crate::store::AssetActivity>,
+    ) -> Result<Self> {
+        crate::cancel::check(cancel)?;
         let path = crate::paths::canonical(path)?;
         let configuration = crate::config::Snapshot::load(&path)?;
         let root = configuration.root().to_path_buf();
@@ -650,6 +681,7 @@ impl Project {
             allowed_roots.push(crate::paths::canonical(root)?);
         }
         let mut project = Self {
+            _asset_activity: Some(activity),
             root: path.clone(),
             documents: BTreeMap::new(),
             imports: BTreeMap::new(),

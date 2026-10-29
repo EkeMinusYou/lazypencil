@@ -22,6 +22,130 @@ fn setup() -> (TempDir, Store) {
     (temp, store)
 }
 
+#[cfg(unix)]
+#[test]
+fn cli_asset_output_keeps_maintenance_excluded_until_the_response_is_written() {
+    use fs2::FileExt;
+    use std::{
+        io::Read,
+        os::{
+            fd::{AsRawFd, OwnedFd},
+            unix::net::UnixStream,
+        },
+        process::{Child, Stdio},
+        time::{Duration, Instant},
+    };
+    struct Owner(Child);
+    impl Drop for Owner {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let (temp, store) = setup();
+    let source = format!("/*{}*/ return [];", "x".repeat(96 * 1024));
+    fs::write(temp.path().join("generator.js"), &source).unwrap();
+    fs::write(store.path(), json!({"version":"2.21","children":[{"id":"script","type":"script","scriptUri":"generator.js","width":1,"height":1}]}).to_string()).unwrap();
+    let locks = temp.path().join("isolated-locks");
+    let (mut output, writer) = UnixStream::pair().unwrap();
+    let bytes: libc::c_int = 4096;
+    // Bound the real output buffer, so receiving its first byte proves main
+    // is publishing a result while most of that result still cannot be sent.
+    assert_eq!(
+        unsafe {
+            libc::setsockopt(
+                writer.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_SNDBUF,
+                (&bytes as *const libc::c_int).cast(),
+                std::mem::size_of_val(&bytes) as libc::socklen_t,
+            )
+        },
+        0
+    );
+    let mut capacity: libc::c_int = 0;
+    let mut length = std::mem::size_of_val(&capacity) as libc::socklen_t;
+    assert_eq!(
+        unsafe {
+            libc::getsockopt(
+                writer.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_SNDBUF,
+                (&mut capacity as *mut libc::c_int).cast(),
+                &mut length,
+            )
+        },
+        0
+    );
+    assert!(capacity > 0 && capacity < 65536);
+    let writer: OwnedFd = writer.into();
+    let mut child = Owner(
+        Command::new(env!("CARGO_BIN_EXE_lazypencil"))
+            .env("LAZYPENCIL_LOCK_DIR", &locks)
+            .arg("--json")
+            .arg("--data-dir")
+            .arg(store.data_dir())
+            .args(["assets", "read"])
+            .arg(store.path())
+            .arg("--hash")
+            .arg(lazypencil::document::hash(source.as_bytes()))
+            .args(["--limit", "1048576"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::from(writer))
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    output
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    let mut first = [0u8; 1];
+    output.read_exact(&mut first).unwrap();
+    assert_eq!(first, *b"{");
+    let activity = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(locks.join(format!(
+            "{}.lock",
+            lazypencil::document::hash(b"lazypencil-managed-assets-activity-v1")
+        )))
+        .unwrap();
+    let error = FileExt::try_lock_exclusive(&activity).unwrap_err();
+    assert_eq!(
+        error.raw_os_error(),
+        fs2::lock_contended_error().raw_os_error()
+    );
+    let mut result = first.to_vec();
+    let mut buffer = [0u8; 8192];
+    loop {
+        output
+            .set_read_timeout(Some(
+                deadline
+                    .checked_duration_since(Instant::now())
+                    .expect("CLI output deadline"),
+            ))
+            .unwrap();
+        let read = output.read(&mut buffer).unwrap();
+        if read == 0 {
+            break;
+        }
+        result.extend_from_slice(&buffer[..read]);
+        assert!(result.len() < 128 * 1024);
+    }
+    let result: Value = serde_json::from_slice(&result).unwrap();
+    assert!(result.get("error").is_none(), "{result}");
+    loop {
+        if let Some(status) = child.0.try_wait().unwrap() {
+            assert!(status.success());
+            break;
+        }
+        assert!(Instant::now() < deadline, "CLI exit deadline");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    FileExt::try_lock_exclusive(&activity).unwrap();
+}
+
 #[test]
 fn code_assets_are_content_addressed_and_never_change_the_document() {
     let (temp, store) = setup();

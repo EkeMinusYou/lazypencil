@@ -7,6 +7,21 @@ use serde_json::{Value, json};
 use std::{collections::BTreeMap, fs, path::PathBuf, process::Command};
 
 #[test]
+fn asset_activity_submodules_and_mixed_project_changes_prepare_asset_and_history_reproductions() {
+    for paths in [
+        vec!["src/store/activity.rs".into()],
+        vec!["src/store.rs".into(), "src/project.rs".into()],
+    ] {
+        let plan = focus::select(&util::root(), &paths, "auto").unwrap();
+        let early = ci::commands::reproduction_targets(&plan.suite, &plan.targets);
+        for target in ["assets", "document_store"] {
+            assert!(plan.targets.iter().any(|name| name == target));
+            assert!(early.iter().any(|name| name == target));
+        }
+    }
+}
+
+#[test]
 fn font_lock_changes_reproduce_revision_checked_repairs_before_the_complete_suite() {
     for path in ["src/font_lock.rs", "tests/support/font_lock.rs"] {
         let plan = focus::select(&util::root(), &[path.into()], "auto").unwrap();

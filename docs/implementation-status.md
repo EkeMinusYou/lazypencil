@@ -4,6 +4,8 @@
 
 ## 現在の状態（2026-10-30）
 
+管理素材回収の保護として、Store／保持ProjectとCLI／MCP／TUI／promptの寿命に共有leaseを接続し、保守用Storeの排他取得を追加した。文書ロック・依存ロックは維持し、異なるdata directoryでも同じper-user leaseを共有する。新しい履歴へ元文書のcanonical pathを保存し、旧metadataの読取りと別文書への付け替え拒否を扱う。実CLIの出力を小さいUnix socket bufferで止めた状態の排他拒否、Storeの終了後もProjectが保持する保護、複数owner・clone・取消と旧履歴の回帰を追加した。GHA前の準備であり、回収の参照走査・確認revision・削除は引き続き実装する。
+
 badafd3の[CI 40958169976](https://github.com/EkeMinusYou/lazypencil/actions/runs/40958169976)は全工程成功し、全体9分51秒だった。core／既定構成の全試験とClippy、通常開発build、release、通常／pixel／runtime／端末／Materialの全5 consumer、共通画像gateと署名付きsourceを含む。ローカル`file://`文字列samplerの独立copyは、2.19／2.21のテーマ・元URL表示・source削除・移動・再copy・将来編集と、許可領域・URLの予約文字・同一byteへのsymlink変更を検証済み。実WebGLも相対／絶対／file URLの各light・darkの6条件でcopy前後の画像が一致し、最終gateが全12 PNGのhashを照合した。実端末IMEや公開受け入れ全体の完了とは分ける。
 
 builder3分06秒・core6分07秒・release2分19秒、通常3分57秒・runtime5分26秒・pixel2分38秒・Material1分58秒・端末1分05秒・source36秒だった。待機は通常1〜9秒、端末だけ既存のconsumer同時実行数上限により130秒で、runtimeより先に完了した。3eec395の既定304出力・core918出力は失効0件で再利用し、Cargo確認は3.55秒／2.43秒、release15出力も再利用して確認3.94秒だった。広げすぎたFocusCoreを完全coreへ追加しない経路と、300msの起動期限試験をbackground compile終了後へ置く経路が実際に成功した。試験・期限・最終gateは維持し、sourceは1,207ファイル、tar SHA-256 `e965be0745b957d00b4a6e134b381b3ca20210c090a1b3060053d4263dc93e63`で署名workflow／revisionも照合した。10分以内はこの成果物再利用条件の実測であり、本体変更・cold依存・任意のrunner待機での安定達成へ一般化しない。

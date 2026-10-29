@@ -10,12 +10,15 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     path::{Path, PathBuf},
+    sync::Arc,
     time::{Duration, Instant},
 };
 use tempfile::NamedTempFile;
 use uuid::Uuid;
 
+mod activity;
 pub(crate) mod content;
+pub use activity::AssetActivity;
 
 #[derive(Debug, Clone)]
 pub struct Store {
@@ -23,6 +26,7 @@ pub struct Store {
     data_dir: PathBuf,
     document_key: String,
     lock_dir: PathBuf,
+    activity: Arc<AssetActivity>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,6 +40,9 @@ pub struct HistoryEntry {
     pub before_revision: String,
     pub after_revision: String,
     pub result: Value,
+    /// Canonical owner of new checkpoints; absent in older retained history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub document_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -48,6 +55,22 @@ pub enum TransactionState {
 
 impl Store {
     pub fn open(path: impl AsRef<Path>, data_dir: Option<PathBuf>) -> Result<Self> {
+        Self::open_with_mode(path.as_ref(), data_dir, false)
+    }
+
+    /// Open an exclusive managed-asset maintenance session. All Store, Project
+    /// and CLI activity using the same per-user lock directory must be idle.
+    /// A busy session fails immediately; ordinary document locks still apply.
+    pub fn open_for_asset_maintenance(
+        path: impl AsRef<Path>,
+        data_dir: Option<PathBuf>,
+    ) -> Result<Self> {
+        Self::open_with_mode(path.as_ref(), data_dir, true)
+    }
+
+    fn open_with_mode(path: &Path, data_dir: Option<PathBuf>, maintenance: bool) -> Result<Self> {
+        let lock_dir = default_lock_dir()?;
+        let activity = AssetActivity::in_directory(&lock_dir, maintenance, None)?;
         let path = crate::paths::canonical(path)?;
         if !path.is_file() {
             return Err(Error::new(
@@ -55,10 +78,21 @@ impl Store {
                 "Document path is not a file",
             ));
         }
-        Self::at_canonical_path(path, data_dir)
+        Self::at_path_with_activity(path, data_dir, lock_dir, activity)
     }
 
     fn at_canonical_path(path: PathBuf, data_dir: Option<PathBuf>) -> Result<Self> {
+        let lock_dir = default_lock_dir()?;
+        let activity = AssetActivity::in_directory(&lock_dir, false, None)?;
+        Self::at_path_with_activity(path, data_dir, lock_dir, activity)
+    }
+
+    fn at_path_with_activity(
+        path: PathBuf,
+        data_dir: Option<PathBuf>,
+        lock_dir: PathBuf,
+        activity: Arc<AssetActivity>,
+    ) -> Result<Self> {
         if path.to_str().is_none() {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
@@ -71,7 +105,8 @@ impl Store {
             path,
             data_dir,
             document_key,
-            lock_dir: default_lock_dir()?,
+            lock_dir,
+            activity,
         })
     }
 
@@ -124,6 +159,9 @@ impl Store {
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+    pub(crate) fn asset_activity(&self) -> Arc<AssetActivity> {
+        self.activity.clone()
     }
     pub fn data_dir(&self) -> &Path {
         &self.data_dir
@@ -264,6 +302,7 @@ impl Store {
             before_revision: before.revision(),
             after_revision: after.revision(),
             result: Value::Null,
+            document_path: Some(self.path.clone()),
         };
         result["revision"] = json!(entry.after_revision);
         result["request_id"] = json!(request_id);
@@ -434,10 +473,14 @@ impl Store {
             let entry = read_entry(&path)?;
             if path.file_name().and_then(|s| s.to_str()) != Some(&entry.id)
                 || !valid_checkpoint_id(&entry.id)
+                || entry
+                    .document_path
+                    .as_ref()
+                    .is_some_and(|owner| owner != &self.path)
             {
                 return Err(Error::new(
                     "RECOVERY_REQUIRED",
-                    "History identity does not match its directory",
+                    "History identity does not match its document or directory",
                 ));
             }
             entries.push(entry);
@@ -516,6 +559,12 @@ fn lock_path(
     cancel: Option<&tokio_util::sync::CancellationToken>,
 ) -> Result<File> {
     crate::cancel::check(cancel)?;
+    let file = open_lock(resource, directory)?;
+    wait_for_file_lock(&file, resource, shared, cancel, Duration::from_secs(5))?;
+    Ok(file)
+}
+
+fn open_lock(resource: &Path, directory: &Path) -> Result<File> {
     if resource.to_str().is_none() {
         return Err(Error::new(
             "INVALID_ARGUMENT",
@@ -534,11 +583,7 @@ fn lock_path(
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let file = options
-        .open(&path)
-        .map_err(|error| Error::io(&path, error))?;
-    wait_for_file_lock(&file, resource, shared, cancel, Duration::from_secs(5))?;
-    Ok(file)
+    options.open(&path).map_err(|error| Error::io(&path, error))
 }
 
 pub(crate) fn wait_for_file_lock(

@@ -279,6 +279,8 @@ pub fn reproduction_targets(suite: &str, targets: &[String]) -> Vec<String> {
                 "repair",
                 "script_scope",
                 "sampler_sources",
+                "assets",
+                "document_store",
                 "attachments",
             ]
             .contains(&name.as_str())
