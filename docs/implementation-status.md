@@ -8,7 +8,7 @@
 
 全体14分13秒で10分目標は未達。builder7分32秒・core12分34秒・release8分59秒、通常3分34秒・runtime4分53秒・pixel3分00秒・Material1分34秒・端末1分00秒・source54秒だった。対象選択は33秒で、未変更のWasmは追加しなかった。builderの先行compileは159.05秒、修復31件は1.68秒で成功し、color-font34.26秒／実emoji116.40秒の開始が重なり、両方成功した。同じ条件の以前の直列値との差を、そのまま速度改善量にはしない。
 
-core移管時に条件を広げすぎ、以前の完全core jobにはなかった広いFocusCoreまで追加していた。320秒の前段にはlib単独とintegrationの異なるCargo入力構成のcompile（150.97秒／168.18秒）を含むため、「同じ試験を320秒削る」とは扱わない。修正では完全core build後の`core-reproduce`へ必要な所有権・会話管理・cleanup workerだけを渡し、従来の完全coreとstandalone focusの各構成は保持する。実行0件だった旧`dynamic::worker::`呼出しだけも除く。この補助処理の差分は新しいMac先行GHAで確認し、アプリ本体・同条件の全native検証はこの整理だけのために繰り返さない。
+core移管時に条件を広げすぎ、以前の完全core jobにはなかった広いFocusCoreまで追加していた。320秒の前段にはlib単独とintegrationの異なるCargo入力構成のcompile（150.97秒／168.18秒）を含むため、「同じ試験を320秒削る」とは扱わない。修正では完全core build後の`core-reproduce`へ必要な所有権・会話管理・cleanup workerだけを渡し、従来の完全coreとstandalone focusの各構成は保持する。実行0件だった旧`dynamic::worker::`呼出しだけも除く。1952d08の[Mac先行GHA 40954265977](https://github.com/EkeMinusYou/lazypencil/actions/runs/40954265977)で、補助ツール全試験・Clippy・原本通知の照合が成功した。実Cargo fixtureも新しいcore-reproduce入口から同じ保護を成功した。アプリ本体・同条件の全native検証はこの整理だけのために繰り返さず、全体時間への効果は次に必要なアプリ検証で測る。
 
 同SDKのf53ffee成果物はbcbd67aで実際に再利用できたため、置換済みの旧Mac成果物cache一件だけを整理して1,092,373,112バイトを解放した。両Mac imageの依存cacheと、新しい成果物・異なるSDKのfallbackは保持した。全5 consumerのreceiptと元の画像gateが成功し、署名sourceは1,207ファイル・13,399,707バイト、SHA-256 `b96a778537c61a36be56a6529c2882101da4c426649a9ff70472e4c76a075023`で、workflow／source revisionの署名照合も成功した。重いbuildと試験はGHAだけで実行し、有用な実行を中断していない。
 
