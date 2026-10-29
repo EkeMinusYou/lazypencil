@@ -12,6 +12,10 @@ use tempfile::TempDir;
 #[path = "support/lock_wait.rs"]
 mod lock_wait;
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[path = "support/asset_prune.rs"]
+mod asset_prune;
+
 fn setup() -> (TempDir, Store) {
     let temp = TempDir::new().unwrap();
     let store = Store::init(

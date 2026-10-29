@@ -944,6 +944,9 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     if any(paths, &["src/main.rs"], &[]) {
         targets.extend(["assets", "runtime"].map(str::to_owned));
     }
+    if any(paths, &["src/assets.rs"], &["src/assets/"]) {
+        targets.insert("assets".into());
+    }
     if any(paths, &["src/render.rs"], &["src/render/"]) {
         targets.extend(["graphics", "render"].map(str::to_owned));
     }

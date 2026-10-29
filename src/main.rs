@@ -112,6 +112,9 @@ fn main() -> ExitCode {
     let uses_assets = !matches!(
         &arguments.command,
         lazypencil::cli::Command::Doctor
+            | lazypencil::cli::Command::Assets {
+                command: lazypencil::cli::AssetCommand::Prune { .. }
+            }
             | lazypencil::cli::Command::Runtime {
                 command: lazypencil::cli::RuntimeCommand::Status
             }

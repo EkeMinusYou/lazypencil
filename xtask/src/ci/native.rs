@@ -311,6 +311,22 @@ impl Session {
 
     fn asset_maintenance_reproductions(&self, features: bool, targets: &[String]) -> Result<()> {
         let has = |name| targets.iter().any(|target| target == name);
+        if has("assets") {
+            self.test(
+                features,
+                "lib",
+                "assets::prune::",
+                &["--test-threads=2"],
+                "focus-asset-prune-recovery.log",
+            )?;
+            self.test(
+                features,
+                "assets",
+                "asset_prune::",
+                &["--test-threads=2"],
+                "focus-asset-prune.log",
+            )?;
+        }
         if has("runtime") {
             self.test(
                 features,

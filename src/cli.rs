@@ -330,6 +330,14 @@ pub enum FontCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum AssetCommand {
+    /// Review unused managed assets; provide the reviewed revision to apply.
+    Prune {
+        file: PathBuf,
+        #[arg(long)]
+        project_root: PathBuf,
+        #[arg(long)]
+        expected_revision: Option<String>,
+    },
     /// Store a validated image, JavaScript source, or GLSL source without changing the document.
     Put {
         file: PathBuf,
@@ -813,6 +821,17 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
             None => crate::guidance::get_style(id),
         },
         Command::Assets { command } => match command {
+            AssetCommand::Prune {
+                file,
+                project_root,
+                expected_revision,
+            } => crate::assets::prune::run(
+                file,
+                project_root,
+                arguments.data_dir.clone(),
+                expected_revision.as_deref(),
+                Some(&crate::cancel::token()),
+            ),
             AssetCommand::Put {
                 file,
                 kind,

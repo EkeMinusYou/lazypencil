@@ -6,14 +6,14 @@ use std::path::Path;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-pub(super) enum Kind {
+pub(crate) enum Kind {
     File,
     Directory,
     Link,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
-pub(super) struct Entry {
+pub(crate) struct Entry {
     pub name: String,
     pub kind: Kind,
 }
@@ -46,7 +46,7 @@ mod native {
             .map_err(|_| Error::new("INVALID_ARGUMENT", "Invalid browser resource path"))
     }
 
-    fn directory(path: &Path, cancel: Option<&CancellationToken>) -> Result<File> {
+    pub(super) fn directory(path: &Path, cancel: Option<&CancellationToken>) -> Result<File> {
         crate::cancel::check(cancel)?;
         if !path.is_absolute() {
             return Err(Error::new(
@@ -231,7 +231,7 @@ mod native {
     }
 }
 
-pub(super) fn entries(
+pub(crate) fn entries(
     path: &Path,
     limit: usize,
     cancel: Option<&CancellationToken>,
@@ -250,7 +250,7 @@ pub(super) fn entries(
     }
 }
 
-pub(super) fn read(
+pub(crate) fn read(
     path: &Path,
     limit: usize,
     cancel: Option<&CancellationToken>,
@@ -269,7 +269,7 @@ pub(super) fn read(
     }
 }
 
-pub(super) fn revision(
+pub(crate) fn revision(
     path: &Path,
     limit: usize,
     cancel: Option<&CancellationToken>,
@@ -291,6 +291,14 @@ pub(super) fn revision(
             "Guarded local browser resources are not available on this platform",
         ))
     }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub(crate) fn open_directory(
+    path: &Path,
+    cancel: Option<&CancellationToken>,
+) -> Result<std::fs::File> {
+    native::directory(path, cancel)
 }
 
 #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]

@@ -4,7 +4,7 @@ use super::*;
 use std::fs;
 
 mod bundle;
-mod filesystem;
+pub(crate) mod filesystem;
 use filesystem::Entry;
 
 const MAX_FILES: usize = 4096;

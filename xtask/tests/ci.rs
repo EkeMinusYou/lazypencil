@@ -27,6 +27,18 @@ fn asset_activity_and_frontend_changes_prepare_asset_and_history_reproductions()
 }
 
 #[test]
+fn asset_maintenance_submodules_keep_their_reproductions_in_mixed_project_changes() {
+    let paths = ["src/assets/prune/scan.rs", "src/project.rs"].map(str::to_owned);
+    let plan = focus::select(&util::root(), &paths, "auto").unwrap();
+    assert!(plan.targets.iter().any(|target| target == "assets"));
+    assert!(
+        ci::commands::reproduction_targets(&plan.suite, &plan.targets)
+            .iter()
+            .any(|target| target == "assets")
+    );
+}
+
+#[test]
 fn font_lock_changes_reproduce_revision_checked_repairs_before_the_complete_suite() {
     for path in ["src/font_lock.rs", "tests/support/font_lock.rs"] {
         let plan = focus::select(&util::root(), &[path.into()], "auto").unwrap();

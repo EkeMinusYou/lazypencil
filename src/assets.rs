@@ -7,6 +7,8 @@ use tokio_util::sync::CancellationToken;
 
 const MAX_CODE_BYTES: usize = 1024 * 1024;
 
+pub mod prune;
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AssetKind {

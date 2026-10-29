@@ -18,6 +18,7 @@ const MAX_ASSET_BYTES: usize = 64 * 1024 * 1024;
 
 mod bindings;
 mod browser_resources;
+pub(crate) use browser_resources::filesystem as secure_filesystem;
 pub use browser_resources::{BrowserResourceRoot, BrowserResources};
 mod detach;
 #[cfg(feature = "rendering")]
@@ -608,6 +609,29 @@ impl Project {
             None,
             store.asset_activity(),
         )
+    }
+
+    /// Capture a sibling document or retained checkpoint under the existing
+    /// maintenance lease, without taking a conflicting new shared lease.
+    pub(crate) fn for_asset_retention(
+        store: &Store,
+        path: &Path,
+        document: Document,
+        cancel: Option<&tokio_util::sync::CancellationToken>,
+    ) -> Result<Self> {
+        Self::from_document_with_activity(
+            path,
+            document,
+            &[],
+            Some(store.data_dir()),
+            &BTreeMap::new(),
+            cancel,
+            store.asset_activity(),
+        )
+    }
+
+    pub(crate) fn retention_documents(&self) -> &BTreeMap<PathBuf, Document> {
+        &self.documents
     }
 
     pub fn from_document(
