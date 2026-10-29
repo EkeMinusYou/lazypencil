@@ -96,6 +96,8 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 
 ### 次に実装・確認すること
 
+次の準備中の差分は、生成ref／子孫変更の`script_override`について、内側のscope・binding・入力文脈、外側の出力／入力を独立して合成する。外側のnull、失効した入力、明示URIに対する失効した出力、内側の同名metadataの保持、metadataのみの出力変更を両形式・4経路・7種類の56組へ追加した。先行ではこの56組を最初に実行する。元URIを継承していて出力guardが失効し、元のコード所有元を確定できない場合と、複数世代の入力所有元・解除は残件である。ローカルは整形と差分を確認し、Rust実行は進行中の6dbb296のCI終了後にGHAで行う。
+
 c8e1c66の[CI 40874923459](https://github.com/EkeMinusYou/lazypencil/actions/runs/40874923459)はcore469件・両構成のコンパイル・release・監査、既存84組を含む先行bindingの12件を成功した。追加した拒否ケースは、元入力libraryの`selection`がコピー先の同名変数と衝突し、目的の描画検査へ進む前に停止した。試験データの変数を明示renameして修正する。通常consumerと署名付きsourceは未実行であり、この候補を全工程成功とはしない。実行は終了しており、準備済みの入力文脈対応とこのfixture修正を合わせて次に検証する。
 
 次の候補は、明示`script_input_context`の入力一致判定と形式・由来検査を通常文書の読込みと共用する。生成結果の入力文脈を捕捉済みの宣言libraryへ結び、scope／bindingの出力選択と独立して変数・部品を適用する。単独・scope併用・三者併用、変数の改名、別library、失効時に未知libraryを参照しないことを両形式・5経路の60組で検証する。各組の元／copy／再copyと画像を既存の試験へ追加し、先行の最初に実行する。既存のnative入力guardは同条件のbinding群へ移し、通常全試験も維持する。Rustの整形は成功したが、この候補のGHA実行はまだ開始していない。有用なc8e1c66のCIが終了してから送る。carrier・入力所有元の解除・複数世代の継承は引き続き残件である。

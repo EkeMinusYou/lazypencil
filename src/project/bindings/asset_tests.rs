@@ -206,10 +206,10 @@ fn inherited_script_uri_guards_use_original_provenance_instead_of_relocated_spel
     let (output, input) = parent
         .compose_generated_scopes(
             &scope,
+            None,
             &mut changes,
             &target,
             &GeneratedState::default(),
-            "assets/nested.js",
             &mut 0,
         )
         .unwrap();
@@ -220,10 +220,10 @@ fn inherited_script_uri_guards_use_original_provenance_instead_of_relocated_spel
         parent
             .compose_generated_scopes(
                 &scope,
+                None,
                 &mut changes,
                 &target,
                 &GeneratedState::default(),
-                "assets/nested.js",
                 &mut 0
             )
             .unwrap_err()
@@ -332,6 +332,77 @@ fn explicit_generated_input_context_owns_expressions_and_components_independentl
 
 #[cfg(feature = "rendering")]
 #[test]
+fn generated_override_carriers_replace_only_the_selected_context_side() {
+    let parent = custom_parent();
+    let project = Project::local(Document::parse(json!({"version":"2.21","children":[
+        {"id":"worker","type":"script","scriptUri":"nested.js","width":36,"height":12,"inputs":{"selected":"badge"}}
+    ]}).to_string()).unwrap()).unwrap();
+    let target = project.resolve().unwrap().roots.remove(0);
+    let namespace = json!({
+        "script_scope":{"version":1,"script_uri":"nested.js","library":"base","inputs":{"hash":super::super::scope::value_hash(&json!({"selected":"badge"})),"library":"base"}},
+        "script_bindings":{"version":1,"script_uri":"nested.js","components":{"badge":"badge"},"inputs_hash":super::super::scope::value_hash(&json!({"selected":"badge"})),"input_components":{"badge":"badge"}},
+        "script_input_context":{"version":1,"values":{"selected":"badge"},"variables":{},"components":{"badge":"alternate"}}
+    });
+    for (variant, output, input) in [
+        ("output", "base-badge", "copied-alternate"),
+        ("input", "copied-badge", "base-badge"),
+        ("both", "base-badge", "base-badge"),
+        ("stale-output", "copied-badge", "copied-alternate"),
+        ("stale-input", "copied-badge", "copied-badge"),
+    ] {
+        let carried_output = ["output", "both", "stale-output"].contains(&variant).then(|| json!({
+            "version":1,"script_uri":if variant == "stale-output" {"old.js"} else {"nested.js"},
+            "library":if variant == "stale-output" {"unknown"} else {"base"},"components":{"badge":"badge"}
+        }));
+        let carried_input = ["input", "both", "stale-input"]
+            .contains(&variant)
+            .then(|| {
+                json!({
+                    "version":1,"library":if variant == "stale-input" {"unknown"} else {"base"},
+                    "values":{"selected":if variant == "stale-input" {"different"} else {"badge"}},
+                    "variables":{},"components":{"badge":"badge"}
+                })
+            });
+        let mut changes = json!({"scriptUri":"nested.js","inputs":{"selected":"badge"},
+            "metadata":{"type":"lazypencil","lazypencil":{"script_override":{
+                "version":1,"metadata":{"type":"test","lazypencil":namespace},"output":carried_output,"input":carried_input
+            }}}
+        });
+        let carrier = super::super::script_context::override_value(changes.as_object().unwrap())
+            .unwrap()
+            .unwrap();
+        let (actual_output, actual_input) = parent
+            .compose_generated_scopes(
+                &namespace,
+                Some(&carrier),
+                &mut changes,
+                &target,
+                &GeneratedState::default(),
+                &mut 0,
+            )
+            .unwrap();
+        let bound = Bound::from_values(
+            parent.origin.clone(),
+            false,
+            parse(&actual_output.unwrap()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(bound.component("badge").unwrap(), output, "{variant}");
+        assert_eq!(
+            actual_input.unwrap()["components"]["badge"],
+            input,
+            "{variant}"
+        );
+    }
+    let script = json!({"type":"script","scriptUri":"nested.js","metadata":{"type":"lazypencil","lazypencil":{"script_override":{"version":1}}}});
+    assert_eq!(
+        generated::selection(&parent, &script).err().unwrap().code,
+        "INVALID_DOCUMENT"
+    );
+}
+
+#[cfg(feature = "rendering")]
+#[test]
 fn combined_inherited_guards_require_known_lexical_input_ownership() {
     let input = json!({"selected":"badge"});
     let context = super::super::script_context::capture(
@@ -379,10 +450,10 @@ fn combined_inherited_guards_require_known_lexical_input_ownership() {
         let mut changes = json!({"metadata":{"lazypencil":metadata}});
         let result = parent.compose_generated_scopes(
             &metadata,
+            None,
             &mut changes,
             &target,
             &GeneratedState::default(),
-            "nested.js",
             &mut 0,
         );
         if accepted {

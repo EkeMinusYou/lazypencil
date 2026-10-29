@@ -25,13 +25,18 @@ fn native_inputs(parent: &Bound, node: &Value) -> Result<Option<Selection>> {
 }
 
 pub(in crate::project) fn has_scope(node: &Value) -> bool {
-    ["script_scope", "script_bindings", "script_input_context"]
-        .into_iter()
-        .any(|field| {
-            node.pointer("/metadata/lazypencil")
-                .and_then(|namespace| namespace.get(field))
-                .is_some()
-        })
+    [
+        "script_scope",
+        "script_bindings",
+        "script_input_context",
+        "script_override",
+    ]
+    .into_iter()
+    .any(|field| {
+        node.pointer("/metadata/lazypencil")
+            .and_then(|namespace| namespace.get(field))
+            .is_some()
+    })
 }
 
 pub(in crate::project) fn has_pending_scopes(node: &Value) -> bool {
@@ -90,15 +95,13 @@ pub(super) fn selection(parent: &Bound, node: &Value) -> Result<Option<Selection
     let Some(namespace) = node.pointer("/metadata/lazypencil") else {
         return native_inputs(parent, node);
     };
+    if namespace.get("script_override").is_some() {
+        return Err(invalid(
+            "Copied script override envelopes require a ref node",
+        ));
+    }
     if !has_scope(node) {
-        return if ["script_override"]
-            .iter()
-            .any(|key| namespace.get(*key).is_some())
-        {
-            Ok(None)
-        } else {
-            native_inputs(parent, node)
-        };
+        return native_inputs(parent, node);
     }
     let scopes = Scopes::parse(namespace)?;
     let uri = node
@@ -125,19 +128,12 @@ struct Scopes<'a> {
     binding_value: Option<&'a Value>,
     input_context: Option<super::super::script_context::Inputs>,
     input_value: Option<&'a Value>,
+    override_output: Option<(Bindings, &'a Value)>,
+    override_input: Option<(super::super::script_context::Inputs, &'a Value)>,
 }
 
 impl<'a> Scopes<'a> {
     fn parse(namespace: &'a Value) -> Result<Self> {
-        if ["script_override"]
-            .iter()
-            .any(|key| namespace.get(*key).is_some())
-        {
-            return Err(Error::new(
-                "UNSUPPORTED_FEATURE",
-                "Generated override carriers require independent composition",
-            ));
-        }
         let binding_value = namespace.get("script_bindings");
         Ok(Self {
             scope: namespace
@@ -151,7 +147,24 @@ impl<'a> Scopes<'a> {
                 .map(super::super::script_context::parse)
                 .transpose()?,
             input_value: namespace.get("script_input_context"),
+            override_output: None,
+            override_input: None,
         })
+    }
+
+    fn with_override(
+        mut self,
+        carrier: Option<&'a super::super::script_context::Override>,
+    ) -> Result<Self> {
+        self.override_output = carrier
+            .and_then(|value| value.output.as_ref())
+            .map(|value| parse(value).map(|parsed| (parsed, value)))
+            .transpose()?;
+        self.override_input = carrier
+            .and_then(|value| value.input.as_ref())
+            .map(|value| super::super::script_context::parse(value).map(|parsed| (parsed, value)))
+            .transpose()?;
+        Ok(self)
     }
 
     fn select(
@@ -167,7 +180,7 @@ impl<'a> Scopes<'a> {
         let mut input_active = false;
         // Evaluate explicit context against the lexical controls, before an
         // independent scope or binding changes their component namespace.
-        let explicit = self
+        let mut explicit = self
             .input_context
             .as_ref()
             .zip(self.input_value)
@@ -177,6 +190,13 @@ impl<'a> Scopes<'a> {
             })
             .transpose()?
             .flatten();
+        if let Some((context, value)) = &self.override_input {
+            explicit = input
+                .as_ref()
+                .map(|(owner, raw)| parent.explicit_generated_input(context, value, owner, raw))
+                .transpose()?
+                .flatten();
+        }
         if let Some(scope) = &self.scope {
             if hash(scope.script_uri.as_bytes()) == uri_hash {
                 output = parent.document_scope()?.selected(&scope.library)?;
@@ -194,7 +214,32 @@ impl<'a> Scopes<'a> {
                 input_active = true;
             }
         }
-        if let (Some(source), Some(value)) = (&self.bindings, self.binding_value) {
+        let mut scope_components = self.override_output.as_ref().and_then(|_| {
+            input
+                .as_ref()
+                .map(|(owner, _)| owner.values.components.clone())
+        });
+        let scope_input_active = input_active;
+        for (source, value, overridden) in self
+            .bindings
+            .as_ref()
+            .zip(self.binding_value)
+            .map(|(source, value)| (source, value, false))
+            .into_iter()
+            .chain(
+                self.override_output
+                    .as_ref()
+                    .map(|(source, value)| (source, *value, true)),
+            )
+        {
+            if overridden {
+                output = parent.document_scope()?.into_owned();
+                output_active = true;
+                input_active = scope_input_active;
+                if let Some((owner, _)) = &mut input {
+                    owner.values.components = scope_components.take().expect("scope inputs");
+                }
+            }
             let canonical = canonical_uri == Some(source.script_uri.as_str())
                 && parent.generated_output(value)?;
             if canonical || hash(source.script_uri.as_bytes()) == uri_hash {
@@ -380,14 +425,30 @@ impl Bound {
     pub(in crate::project) fn compose_generated_scopes(
         &self,
         namespace: &Value,
+        carrier: Option<&super::super::script_context::Override>,
         changes: &mut Value,
         target: &ResolvedNode,
         state: &GeneratedState,
-        uri: &str,
         budget: &mut usize,
     ) -> Result<(Option<Value>, Option<Value>)> {
-        let scopes = Scopes::parse(namespace)?;
+        let scopes = Scopes::parse(namespace)?.with_override(carrier)?;
+        let uri = changes
+            .get("scriptUri")
+            .or_else(|| target.properties.get("scriptUri"))
+            .and_then(Value::as_str)
+            .ok_or_else(|| invalid("A generated script needs scriptUri"))?
+            .to_owned();
         let uri_hash = Self::generated_source_hash(target, state)?;
+        if changes.get("scriptUri").is_none()
+            && let Some((source, value)) = &scopes.override_output
+            && hash(source.script_uri.as_bytes()) != uri_hash
+            && !(source.script_uri == uri && self.generated_output(value)?)
+        {
+            return Err(Error::new(
+                "UNSUPPORTED_FEATURE",
+                "An inactive generated output override needs captured code ownership when its source is inherited",
+            ));
+        }
         let provided = changes
             .get("inputs")
             .map(|raw| self.generated_inputs(raw))
@@ -397,12 +458,17 @@ impl Bound {
             .as_ref()
             .is_some_and(|scope| scope.inputs.is_some())
             || scopes.input_context.is_some()
+            || scopes.override_input.is_some()
+            || scopes
+                .override_output
+                .as_ref()
+                .is_some_and(|(source, _)| source.inputs_hash.is_some())
             || scopes.bindings.as_ref().is_some_and(|bindings| {
                 bindings.inputs_hash.is_some() && hash(bindings.script_uri.as_bytes()) == uri_hash
             });
         let inherited = if provided.is_none() && needs_inherited {
             if scopes.scope.is_some()
-                && scopes.bindings.is_some()
+                && (scopes.bindings.is_some() || scopes.override_output.is_some())
                 && (target.input_context.as_ref().is_some_and(|context| {
                     context.values.lexical_inputs != Some(true)
                         || self.original().input_epoch.is_none()
@@ -436,12 +502,12 @@ impl Bound {
         } else {
             None
         };
-        let selected = scopes.select(self, &uri_hash, Some(uri), input, from_changes)?;
+        let selected = scopes.select(self, &uri_hash, Some(&uri), input, from_changes)?;
         let output = if selected.output_active || changes.get("scriptUri").is_some() {
             Some(
                 selected
                     .output
-                    .inherited_output_with_hash(uri, None, Some(uri_hash), budget)?,
+                    .inherited_output_with_hash(&uri, None, Some(uri_hash), budget)?,
             )
         } else {
             None

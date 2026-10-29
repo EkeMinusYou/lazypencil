@@ -283,14 +283,28 @@ impl Project {
             .and_then(Value::as_str)
             .ok_or_else(|| invalid("A generated script override needs a source URI"))?
             .to_owned();
-        let mut metadata = changes.get("metadata").cloned();
+        let carrier =
+            script_context::override_value(changes.as_object().expect("generated properties"))?;
+        let mut metadata = carrier.as_ref().map_or_else(
+            || changes.get("metadata").cloned(),
+            |value| value.metadata.clone(),
+        );
+        if metadata
+            .as_ref()
+            .is_some_and(|metadata| !metadata.is_object())
+        {
+            return Err(invalid("Generated script metadata must be an object"));
+        }
         let mut explicit_output = None;
         let mut explicit_input = None;
         let mut scoped = false;
-        if let Some(namespace) = metadata
+        let namespace = metadata
             .as_ref()
             .and_then(|metadata| metadata.get("lazypencil"))
-            && (namespace.get("script_scope").is_some()
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+        if carrier.is_some()
+            || (namespace.get("script_scope").is_some()
                 || namespace.get("script_input_context").is_some()
                     && namespace.get("script_bindings").is_none()
                 || namespace
@@ -300,22 +314,23 @@ impl Project {
                     .unwrap_or(false))
         {
             let selected = bindings.compose_generated_scopes(
-                namespace,
+                &namespace,
+                carrier.as_ref(),
                 changes,
                 target,
                 context,
-                &uri,
                 inherited_bytes,
             )?;
             explicit_output = selected.0;
             explicit_input = selected.1;
-            let namespace = metadata
+            if let Some(namespace) = metadata
                 .as_mut()
                 .and_then(|metadata| metadata.pointer_mut("/lazypencil"))
                 .and_then(Value::as_object_mut)
-                .expect("validated scope");
-            namespace.remove("script_scope");
-            namespace.remove("script_bindings");
+            {
+                namespace.remove("script_scope");
+                namespace.remove("script_bindings");
+            }
             scoped = true;
         }
         if let Some(metadata) = &metadata {

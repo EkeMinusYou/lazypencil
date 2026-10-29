@@ -29,8 +29,14 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
     .unwrap();
     let mut changes = json!({"scriptUri":"override.js"});
     match mode {
-        mode if mode.starts_with("binding-input-context-") => {
-            let variant = mode.strip_prefix("binding-input-context-").unwrap();
+        mode if mode.starts_with("binding-input-context-")
+            || mode.starts_with("binding-carrier-") =>
+        {
+            let carrier = mode.starts_with("binding-carrier-");
+            let variant = mode
+                .strip_prefix("binding-input-context-")
+                .or_else(|| mode.strip_prefix("binding-carrier-"))
+                .unwrap();
             let variable = variant == "variable";
             let inputs = if variable {
                 json!({"selected":"$selection","stale":"$missing"})
@@ -68,6 +74,30 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
             }
             changes["metadata"] =
                 json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":namespace});
+            if carrier {
+                if variant == "metadata-output" {
+                    changes.as_object_mut().unwrap().remove("scriptUri");
+                    fs::write(temp.path().join("library/base.js"), REPLACEMENT).unwrap();
+                }
+                if variant == "nested" {
+                    changes["metadata"]["lazypencil"]["script_override"] =
+                        json!({"version":999,"opaque":"keep"});
+                }
+                let metadata = changes["metadata"].take();
+                let output = ["output", "both", "stale-output", "metadata-output"].contains(&variant).then(|| json!({
+                    "version":1,"script_uri":if variant == "stale-output" {"old.js"} else if variant == "metadata-output" {"base.js"} else {"override.js"},
+                    "library":if variant == "stale-output" {"uncaptured"} else {"base"},
+                    "components":{"badge":"badge"},"variables":{"tone":"tone"}
+                }));
+                let input = ["input", "both", "stale-input"].contains(&variant).then(|| json!({
+                    "version":1,"library":if variant == "stale-input" {"uncaptured"} else {"base"},
+                    "values":{"selected":if variant == "stale-input" {"different"} else {"badge"}},
+                    "variables":{},"components":{"badge":"badge"}
+                }));
+                changes["metadata"] = json!({"type":"lazypencil","lazypencil":{"script_override":{
+                    "version":1,"metadata":metadata,"output":output,"input":input
+                }}});
+            }
         }
         mode if mode.starts_with("binding-combined-")
             || mode.starts_with("binding-native-parent-combined-") =>
@@ -328,6 +358,7 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
     if ["binding-mapped", "binding-inherited-inputs"].contains(&mode)
         || mode.starts_with("binding-combined-")
         || mode.starts_with("binding-input-context-")
+        || mode.starts_with("binding-carrier-")
     {
         let path = temp.path().join("library/ui.pen");
         let mut ui: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
@@ -552,6 +583,11 @@ fn preview_colours(store: &Store, colours: [Color; 3], metadata: &str) -> Vec<u8
     assert_eq!(child.node.properties["metadata"]["keep"], metadata);
     if metadata == "generated" {
         assert_eq!(child.node.properties["metadata"]["literal"], "$tone");
+        if let Some(opaque) =
+            child.node.properties["metadata"].pointer("/lazypencil/script_override")
+        {
+            assert_eq!(opaque, &json!({"version":999,"opaque":"keep"}));
+        }
     }
     let image = render::png(
         &project,
@@ -614,6 +650,9 @@ fn independent_case(
             "binding-stale-inputs",
             "binding-combined-stale-binding-output",
             "binding-input-context-scope",
+            "binding-carrier-output",
+            "binding-carrier-both",
+            "binding-carrier-metadata-output",
         ]
         .contains(&mode)
     {
@@ -689,6 +728,30 @@ fn independent_case(
     );
 
     (temp, second, before)
+}
+
+#[test]
+fn generated_script_override_carriers_keep_metadata_output_and_input_independent() {
+    std::thread::scope(|threads| {
+        for version in ["2.19", "2.21"] {
+            threads.spawn(move || {
+                for style in ["direct", "descendant", "replacement", "children"] {
+                    for (variant, first) in [
+                        ("output", Color::CYAN),
+                        ("input", Color::RED),
+                        ("both", Color::RED),
+                        ("stale-output", Color::CYAN),
+                        ("stale-input", Color::GREEN),
+                        ("nested", Color::CYAN),
+                        ("metadata-output", Color::CYAN),
+                    ] {
+                        let mode = format!("binding-carrier-{variant}");
+                        let _fixture = independent_case(version, style, &mode, first);
+                    }
+                }
+            });
+        }
+    });
 }
 
 #[test]

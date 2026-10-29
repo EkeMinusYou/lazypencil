@@ -16,6 +16,8 @@ Rust 本体と Skia CPU・SkParagraph の採用は維持する。通常の図形
 
 ## 実行構成
 
+生成ref／子孫変更の`script_override`は、内側metadataのscope・binding・入力文脈を評価した後、`output`と`input`を個別に適用する。nullは内側の結果を保つ。一致しない入力文脈は内側の明示入力文脈を解除し、scope／bindingの参照入力対応は保持する。明示scriptUriに対して出力guardが失効した場合は生成元文書の出力へ戻す。URIを継承し、戻るべき元コード所有元が未捕捉の場合は診断を維持する。内側の通常metadataにある同名のcarrierは再帰的に適用しない。完全なscript定義にref用carrierを指定することは拒否する。両形式・4経路・7種類の56組を元／copy／再copyと画素で確認する追加はGHA待ちであり、複数世代と入力解除の全範囲を完了したという意味ではない。
+
 ```mermaid
 flowchart TD
     Snapshot[文書と参照アセットのスナップショット] --> Layout[依存関係とレイアウトの解決]
