@@ -1010,12 +1010,11 @@ impl Snapshot {
             design.verify_unchanged()?;
         }
         verify_project_source(&self.document, &self.discovery, &self.source)?;
-        if let Some(lock) = &self.font_lock {
-            if canonical(&lock.requested).map_err(|_| conflict())? != lock.path
-                || read_font_lock(&lock.path).map_err(|_| conflict())? != lock.bytes
-            {
-                return Err(conflict());
-            }
+        if let Some(lock) = &self.font_lock
+            && (canonical(&lock.requested).map_err(|_| conflict())? != lock.path
+                || read_font_lock(&lock.path).map_err(|_| conflict())? != lock.bytes)
+        {
+            return Err(conflict());
         }
         verify_fonts(&self.bindings, &self.directories, &self.missing_fonts)
     }

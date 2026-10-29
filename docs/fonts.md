@@ -64,7 +64,7 @@ The UTF-8 JSON manifest is version 1, at most 1 MiB, with these fields:
 | Field | Meaning |
 | --- | --- |
 | `version` | Exactly `1`; unknown fields or versions are rejected. |
-| `engine`, `native_sources` | Layout engine identity and the hash of the pinned native-source provenance. |
+| `engine`, `native_sources` | Layout engine identity and the hash of the vendored Skia dependency manifest, including its pinned native revision. |
 | `bundled_pack` | Complete pinned standard-font pack manifest, including its upstream revision and hashes. |
 | `input_hashes` | At most 256 source hashes, in effective configured/CLI file precedence order. |
 | `default_family`, `fallback_families`, `locale` | Effective selection policy; the fallback list preserves its order. |

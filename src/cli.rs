@@ -630,7 +630,7 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
             FontCommand::License => {
                 let text = include_str!("../resources/fonts/OFL.txt");
                 Ok(
-                    json!({"family":crate::text::DEFAULT_FONT_FAMILY,"license":"OFL-1.1","hash":crate::document::hash(text.as_bytes()),"text":text,"manifest":serde_json::from_str::<Value>(include_str!("../resources/fonts/manifest.json")).expect("pinned font manifest")}),
+                    json!({"family":crate::text::DEFAULT_FONT_FAMILY,"license":"OFL-1.1","hash":crate::document::hash(text.as_bytes()),"text":text,"manifest":crate::text::bundled_manifest()}),
                 )
             }
         },

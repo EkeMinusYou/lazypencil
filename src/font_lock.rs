@@ -30,12 +30,11 @@ pub(crate) struct Manifest {
 }
 
 fn bundled_pack() -> Value {
-    serde_json::from_str(include_str!("../resources/fonts/manifest.json"))
-        .expect("Pinned font manifest")
+    crate::text::bundled_manifest()
 }
 
 fn native_sources() -> String {
-    hash(include_bytes!("../resources/licenses/native/upstream.json"))
+    hash(include_bytes!("../vendor/skia-bindings/Cargo.toml"))
 }
 
 fn portable(mut info: FontInfo) -> FontInfo {

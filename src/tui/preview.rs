@@ -629,6 +629,75 @@ mod tests {
     }
 
     #[test]
+    fn a_periodic_preview_rejects_changed_font_locks_and_recovers_without_losing_its_view() {
+        let temp = TempDir::new().unwrap();
+        std::fs::create_dir(temp.path().join(".git")).unwrap();
+        let path = temp.path().join("design.pen");
+        std::fs::write(
+            temp.path().join("lazypencil.toml"),
+            "font_lock='fonts.lock.json'\n",
+        )
+        .unwrap();
+        let saved = json!({"version":"2.21","children":[{
+            "id":"label","type":"text","content":"固定フォント","fontFamily":"Noto Sans JP","fontSize":18,"width":180,"height":30
+        }]}).to_string();
+        std::fs::write(&path, &saved).unwrap();
+        let store = Store::open(&path, Some(temp.path().join("data"))).unwrap();
+        crate::font_lock::create(&store, &[], None, None).unwrap();
+        let lock_path = temp.path().join("fonts.lock.json");
+        let baseline = std::fs::read(&lock_path).unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let worker = Worker::start(store, vec![], Backend::halfblocks(), 134).unwrap();
+            let mut request = Request {
+                generation: 1,
+                cells: Size::new(60, 22),
+                view: View::default(),
+                refresh: false,
+                refresh_pages: false,
+                check_only: false,
+                attachment: None,
+            };
+            worker.request(request.clone());
+            let initial = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap()
+                .result
+                .unwrap();
+            request.view = initial.view;
+            request.check_only = true;
+            let mut changed: Value = serde_json::from_slice(&baseline).unwrap();
+            changed["engine"] = json!("changed-font-engine");
+            std::fs::write(&lock_path, serde_json::to_vec(&changed).unwrap()).unwrap();
+            worker.request(request.clone());
+            let rejected = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap();
+            assert_eq!(rejected.result.err().unwrap().code, "FONT_LOCK_MISMATCH");
+            std::fs::write(&lock_path, &baseline).unwrap();
+            worker.request(request.clone());
+            let restored = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap()
+                .result
+                .unwrap();
+            assert_eq!(restored.image.png().unwrap(), initial.image.png().unwrap());
+            assert_eq!(restored.view.center, initial.view.center);
+            assert_eq!(restored.view.zoom, initial.view.zoom);
+            worker.request(request);
+            assert!(
+                tokio::time::timeout(Duration::from_millis(200), worker.next())
+                    .await
+                    .is_err()
+            );
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), saved);
+        });
+    }
+
+    #[test]
     fn a_periodic_policy_reload_updates_identity_even_when_pixels_are_identical() {
         let temp = TempDir::new().unwrap();
         let path = temp.path().join("design.pen");

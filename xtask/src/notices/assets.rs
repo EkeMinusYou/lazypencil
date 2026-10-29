@@ -21,7 +21,7 @@ fn expected_declarations() -> BTreeSet<(String, String)> {
     let mut out = [
         ("src/text.rs", "resources/fonts/NotoSansJP.ttf"),
         ("src/cli.rs", "resources/fonts/OFL.txt"),
-        ("src/cli.rs", "resources/fonts/manifest.json"),
+        ("src/text.rs", "resources/fonts/manifest.json"),
         ("src/icons/mod.rs", "resources/icons/catalogue.json"),
         ("src/icons/mod.rs", "resources/icons/lucide/icons.json"),
         (

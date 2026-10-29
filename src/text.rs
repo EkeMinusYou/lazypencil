@@ -12,6 +12,11 @@ use skia_safe::{
 pub const DEFAULT_FONT_FAMILY: &str = "Noto Sans JP";
 pub const DEFAULT_FONT_BYTES: &[u8] = include_bytes!("../resources/fonts/NotoSansJP.ttf");
 
+pub(crate) fn bundled_manifest() -> serde_json::Value {
+    serde_json::from_str(include_str!("../resources/fonts/manifest.json"))
+        .expect("Pinned font manifest")
+}
+
 mod bitmap;
 mod container;
 mod decorations;
