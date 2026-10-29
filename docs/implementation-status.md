@@ -6,6 +6,8 @@
 
 作業中の候補は、Unixの認証profileを一つのprivate page workerから利用し、TUIの保持描画と別bound MCPを同じChromiumへ接続する。元のguardian leaseは維持し、取得全体を直列化しつつ、保持ページ・取消・終了回収をownerごとに分ける。owner別8ページ・16接続と通信／資源上限を設け、network policy変更時は起動条件を変えて再起動する。実MCPと保持描画の同時利用・owner別eviction・取消／強制終了・通信方針切替の試験を準備した。GHAでのコンパイルと実行は未確認であり、下記の検証済み基準と区別する。
 
+初回候補8740ab0のCI 40915028991は、`dispose_tab`の二つの分岐が`Result<()>`と`Result<Value>`を返す型不一致でcore／既定構成のコンパイルを停止した。返却値をunitへ揃え、修正版で検証する。機能試験の成功とは扱わない。依存cacheは拡張済みの`complete-native-v2`を実際に復元し、この失敗までにregistry依存の再コンパイルはなかった。監査は成功し、残ったreleaseは未割当だった。
+
 最新の全工程成功は5b7139dの[CI 40900801284](https://github.com/EkeMinusYou/lazypencil/actions/runs/40900801284)である。依存cacheの保存・選択・整理と、ビルドreceiptへ束縛した実行hostの記録を追加した。MacとLinuxの補助ツール全試験・新しい保存条件／拒否条件・Clippyが成功した。既定858件・core470件のnamed caseと回数にec9d668からの欠落はなく、全1,980 PNGはbyte一致し、今回sourceと36×12の寸法も一致した。同じ画像の復号・三段階比較は繰り返していない。本体と47試験実行ファイルも前回とhash一致した。全5 consumerの元receiptはbyte一致し、個別host記録・試験完了結果とのhash対応と最終gateを成功した。Chromium・端末・Material・42描画計測・監査・署名付きsourceも成功し、source archiveは13,352,641バイト、SHA-256 `f6059197697fdbdac87041a73ae4a8e4aa2202256167b519d8c1682609b23a44`で、source／workflow／run attempt 1の署名を照合した。
 
 全体19分04秒、再試行なし。builder7分43秒・core7分01秒・release2分36秒、通常4分40秒・pixel2分10秒・runtime3分08秒・端末1分11秒・Material1分42秒・source37秒だった。builder完了から先頭consumer開始まで5分08秒あり、そのうちruntime job作成から割当まで5分07秒だった。元の期限と全試験は維持しており、10分目標は未達である。前回32分33秒との差を修正単独の効果とはしない。

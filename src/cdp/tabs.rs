@@ -502,10 +502,11 @@ impl Browser {
                 options,
                 &Budget::new(Duration::from_millis(500), None),
             )
+            .map(|_| ())
         };
         self.local_files.remove(&tab.session);
         self.page_lifecycle.remove(&tab.session);
-        disposed.map(|_| ())
+        disposed
     }
 }
 

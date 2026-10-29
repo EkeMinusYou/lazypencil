@@ -170,6 +170,26 @@ fn bound_mcp_and_retained_previews_share_authentication_without_cross_owner_evic
     let page = first.metadata["page_state"]["id"].clone();
     let pid = preview.process_ids();
     assert_eq!(pid.len(), 1);
+    // An already running worker cannot silently serve a different engine or
+    // Chromium selection. Rejection must leave its existing owner untouched.
+    for engine in [false, true] {
+        let mut incompatible = if engine {
+            study
+                .runtime()
+                .with_supervisor_executable(std::env::current_exe().unwrap())
+        } else {
+            study
+                .runtime()
+                .with_executable(std::env::current_exe().unwrap())
+        };
+        incompatible.begin_render(None, true);
+        let error = incompatible
+            .page(&study.node, 32.0, 32.0, 1.0)
+            .err()
+            .unwrap();
+        assert_eq!(error.details.unwrap()["stage"], "profile_context");
+        assert!(incompatible.process_ids().is_empty());
+    }
     let mut other = study.runtime();
     let second = study.capture(&mut other);
     assert_eq!(other.process_ids(), pid);
