@@ -166,7 +166,7 @@ impl Copier<'_> {
         }
         if let Some((origin, id)) = &node.instance_identity {
             let mut source = origin.clone();
-            let mut original = self.project.documents[origin].node(id)?;
+            let mut original = self.project.documents[origin].node(id)?.clone();
             for _ in 0..128 {
                 self.project.check_cancelled()?;
                 let Some(reference) = original.get("ref").and_then(Value::as_str) else {
