@@ -251,7 +251,7 @@ jobs:
       - name: Verify distributed dependency notices
         run: cargo xtask ci native notices
       - name: Reproduce script compatibility before native rendering
-        if: (inputs.phase == 'focus' || inputs.phase == 'verify') && inputs.suite != 'ci' && inputs.lane != 'build'
+        if: (inputs.phase == 'focus' || inputs.phase == 'verify' || inputs.lane == 'core') && inputs.suite != 'ci' && inputs.lane != 'build'
         run: cargo xtask ci native focus-core --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
       - name: Check affected code and build tests with cache-aware ordering
         id: focus-build

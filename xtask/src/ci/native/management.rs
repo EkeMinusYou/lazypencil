@@ -12,13 +12,11 @@ pub fn core(s: &Session) -> Result<()> {
 }
 
 pub fn focus(s: &Session) -> Result<()> {
-    // Reproduce the failing resource group before rendering or browser setup.
-    // Core and default features remain separate checks with their own processes.
+    // FocusCore runs the core feature check before default compilation. Keep
+    // this resource group in its own default-feature harness without switching
+    // the published CLI or recompiling the core graph on the default builder.
     normal::run_checks(
-        &[
-            commands::management_tests(false),
-            commands::management_tests(true),
-        ],
+        &[commands::management_tests(true)],
         Instant::now() + Duration::from_secs(900),
         |args, seconds| s.execute(args, seconds, "focus-management.log", true),
     )

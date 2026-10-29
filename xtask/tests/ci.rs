@@ -7,6 +7,20 @@ use serde_json::{Value, json};
 use std::{collections::BTreeMap, fs, path::PathBuf, process::Command};
 
 #[test]
+fn font_lock_changes_reproduce_revision_checked_repairs_before_the_complete_suite() {
+    for path in ["src/font_lock.rs", "tests/support/font_lock.rs"] {
+        let plan = focus::select(&util::root(), &[path.into()], "auto").unwrap();
+        assert_eq!(plan.suite, "graphics");
+        assert!(plan.targets.iter().any(|target| target == "repair"));
+        assert!(
+            ci::commands::reproduction_targets(&plan.suite, &plan.targets)
+                .iter()
+                .any(|target| target == "repair")
+        );
+    }
+}
+
+#[test]
 fn binding_submodules_keep_their_script_copy_reproduction_before_complete_verification() {
     for path in [
         "src/project/bindings/custom.rs",

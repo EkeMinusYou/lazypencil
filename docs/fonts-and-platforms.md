@@ -2,7 +2,7 @@
 
 更新日: 2026-10-28（現行コードと既存検証記録の照合）
 
-状態: 初回はmacOS Apple Siliconのみを対象とし、Linux x64／arm64とWindowsは後日対応として既存実装を保持する。標準フォントに Noto Sans JP、端末画像に Kitty Graphics Protocol と Sixel を採用する。Noto Sans JP の配布データは版・ハッシュを固定済み。ユーザーによるフォント追加は `--font`、TTF・OTF・TTC・OTC の読み取りと各フェイスの取得、基本のフォールバックを実装・試験した。プロジェクト設定のファイル・検索先・既定書体・任意代替列・言語も CLI・MCP・TUI で共通化した。ユーザー共通の `config.toml` と項目ごとのプロジェクト上書きも実装した。可変wghtと指定のカラー絵文字fixture、ファミリー単位の遅延読み込みは検証済み。任意の絵文字列・全可変軸・OSフォントの自動変更監視・再現用lockfile・Macの最終受け入れは残る。[現在の実装と検証](fonts.md)、[設定](configuration.md)
+状態: 初回はmacOS Apple Siliconのみを対象とし、Linux x64／arm64とWindowsは後日対応として既存実装を保持する。標準フォントに Noto Sans JP、端末画像に Kitty Graphics Protocol と Sixel を採用する。Noto Sans JP の配布データは版・ハッシュを固定済み。ユーザーによるフォント追加は `--font`、TTF・OTF・TTC・OTC の読み取りと各フェイスの取得、基本のフォールバックを実装・試験した。プロジェクト設定のファイル・検索先・既定書体・任意代替列・言語も CLI・MCP・TUI で共通化した。ユーザー共通の `config.toml` と項目ごとのプロジェクト上書きも実装した。可変wghtと指定のカラー絵文字fixture、ファミリー単位の遅延読み込みは検証済み。再現用lockfileも実装し、下記の条件で検証した。任意の絵文字列・全可変軸・OSフォントの自動変更監視・Macの最終受け入れは残る。[現在の実装と検証](fonts.md)、[設定](configuration.md)
 
 ## フォントの扱い
 
@@ -37,7 +37,7 @@ Noto Sans JP の配布時は OFL 1.1 の著作権表記とライセンス本文�
 
 ### 再現性と軽量性
 
-プロジェクト設定の最上位に`font_lock = "fonts.lock.json"`を指定し、`fonts lock FILE`で明示取得、`fonts check FILE`で照合する方式を実装した。JSON版1・最大1 MiBに、設定されたフォントデータの優先順、ファミリー・スタイル・source／face hash・collection index・可変軸、既定書体・代替列・言語、標準パックの版とエンジン識別情報を記録する。通常の取得でlockfileを書き換えず、不一致は計測・描画を拒否する。変更済みの内容への更新には現在のhashを要求し、文書・設定・フォントを自動で変更しない。設定された全file faceと、その文書の生成テキストを含む実組版で観測したsystem faceを捕捉する。ローカルpathを固定しないので同じデータの移動は許す。全OS書体・全script分岐・BrowserのCSSフォントの固定とは区別する。[確定したスキーマと操作](fonts.md#reproducibility-lockfile)。この新経路のGHA検証は未完了である。
+プロジェクト設定の最上位に`font_lock = "fonts.lock.json"`を指定し、`fonts lock FILE`で明示取得、`fonts check FILE`で照合する方式を実装した。JSON版1・最大1 MiBに、設定されたフォントデータの優先順、ファミリー・スタイル・source／face hash・collection index・可変軸、既定書体・代替列・言語、標準パックの版とエンジン識別情報を記録する。通常の取得でlockfileを書き換えず、不一致は計測・描画を拒否する。変更済みの内容への更新には現在のhashを要求し、文書・設定・フォントを自動で変更しない。設定された全file faceと、その文書の生成テキストを含む実組版で観測したsystem faceを捕捉する。ローカルpathを固定しないので同じデータの移動は許す。全OS書体・全script分岐・BrowserのCSSフォントの固定とは区別する。[確定したスキーマと操作](fonts.md#reproducibility-lockfile)。f53ffeeの[Mac CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40946469636)でCLI／実MCP／TUI preview workerの照合・不一致の拒否・復元が成功した。補助ツールのfixture不整合で停止した最終gateの確認と、実端末での公開受け入れは別に残る。
 
 SkParagraph がファイルから読み込んだフォントで組版し、その結果を計測と描画の両方に使う。OS のフォント探索と、実際のフォント選択・文字計測を分ける。[Skia のフォント読み込み API](https://api.skia.org/classSkFontMgr.html)
 

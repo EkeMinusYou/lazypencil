@@ -1203,6 +1203,20 @@ fn mcp_copies_a_component_and_its_image_then_works_without_the_source_library() 
         document["capabilities"]["import_component"]["modes"],
         json!(["link", "copy"])
     );
+    for capability in [
+        "copy_scripts",
+        "copy_absolute_string_sampler_paths",
+        "reuse_contained_definitions",
+    ] {
+        assert_eq!(
+            document["capabilities"]["import_component"][capability],
+            true
+        );
+    }
+    assert_eq!(
+        document["capabilities"]["dynamic_content"],
+        cfg!(feature = "rendering")
+    );
     let mut request = json!({"request_id":"mcp-import-preview","expected_revision":document["revision"],"expected_dependency_revision":document["dependency_revision"],"dry_run":true,
         "operations":[{"op":"import_component","source":{"library_alias":"ui","node_id":"tile"},"mode":"copy","client_ref":"tile"},{"op":"remove_import","alias":"ui"}]});
     let preview = client.data("apply_operations", request.clone());

@@ -285,11 +285,10 @@ impl Session {
         filter: &str,
         arguments: &[&str],
     ) -> Result<Vec<String>> {
-        if features
-            && ["test-executables.json", "early-test-executables.json"]
-                .iter()
-                .any(|name| self.temporary.join(name).exists())
-        {
+        let published = ["test-executables.json", "early-test-executables.json"]
+            .iter()
+            .any(|name| self.temporary.join(name).exists());
+        if features && published {
             let catalog = self.verified_catalog(&[])?;
             if let Some(binary) = catalog.binaries.get(target) {
                 let mut args = vec![binary.path.to_string_lossy().into_owned()];
@@ -326,6 +325,14 @@ impl Session {
         ensure!(
             !cargo || !self.temporary.join("binary-receipt.json").exists(),
             "A compiled-catalog consumer cannot invoke Cargo"
+        );
+        ensure!(
+            !cargo
+                || !command.get_args().any(|arg| arg == "--no-default-features")
+                || !["test-executables.json", "early-test-executables.json"]
+                    .iter()
+                    .any(|name| self.temporary.join(name).exists()),
+            "Core reproductions must finish before publishing default-feature executables"
         );
         Ok(())
     }
@@ -465,6 +472,27 @@ impl Session {
                 Ok(())
             }
             Stage::FocusCore => {
+                if std::env::var("RUNTIME_PARALLEL").as_deref() == Ok("true") {
+                    self.execute(
+                        &commands::management_tests(false),
+                        900,
+                        "focus-management-core.log",
+                        false,
+                    )?;
+                }
+                if args.suite == "dynamic" && has("agent") {
+                    self.test(false,"agent","browser_ownership::killed_profile_owners_reap_children_preserve_persistent_data_and_release_only_their_lease",
+                        &["--exact","--test-threads=1"],"focus-profile-ownership.log")?;
+                }
+                if !core && has("conversation_history") {
+                    self.test(
+                        false,
+                        "lib",
+                        "conversation::management::",
+                        &["--test-threads=2"],
+                        "focus-history-core.log",
+                    )?;
+                }
                 if ["graphics", "dynamic", "copy", "browser"].contains(&args.suite.as_str())
                     && has("project")
                 {
@@ -576,10 +604,6 @@ impl Session {
                         "focus-deferred-fonts.log",
                     )?;
                 }
-                if args.suite == "dynamic" && has("agent") {
-                    self.test(false,"agent","browser_ownership::killed_profile_owners_reap_children_preserve_persistent_data_and_release_only_their_lease",
-                        &["--exact","--test-threads=1"],"focus-profile-ownership.log")?;
-                }
                 if has("user_agent_config") {
                     self.test(
                         !core,
@@ -666,13 +690,6 @@ impl Session {
                     )?;
                 }
                 if !core && has("conversation_history") {
-                    self.test(
-                        false,
-                        "lib",
-                        "conversation::management::",
-                        &["--test-threads=2"],
-                        "focus-history.log",
-                    )?;
                     for filter in ["conversation::management::", "conversation::history::"] {
                         self.test(
                             true,
@@ -1465,6 +1482,100 @@ fn process_report(s: &Session) -> Result<()> {
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn core_reproductions_precede_default_publication_and_cannot_replace_its_cli() {
+        let temp = tempfile::tempdir().unwrap();
+        let session = Session {
+            root: temp.path().join("source"),
+            target: temp.path().join("target"),
+            temporary: temp.path().to_owned(),
+            timing_lock: Mutex::new(()),
+        };
+        fs::create_dir_all(session.root.join("src")).unwrap();
+        fs::create_dir_all(session.root.join("tests")).unwrap();
+        for (name, bytes) in [
+            (
+                "Cargo.toml",
+                "[workspace]\n[package]\nname='lazypencil'\nversion='0.1.0'\nedition='2024'\n[features]\ndefault=['tui']\ntui=[]\n",
+            ),
+            (
+                "Cargo.lock",
+                "version=4\n[[package]]\nname='lazypencil'\nversion='0.1.0'\n",
+            ),
+            (
+                "src/main.rs",
+                "fn main(){println!(\"{}\",cfg!(feature=\"tui\"));}\n",
+            ),
+            (
+                "tests/agent.rs",
+                r#"mod browser_ownership {
+                    #[test]
+                    fn killed_profile_owners_reap_children_preserve_persistent_data_and_release_only_their_lease() {
+                        assert!(!cfg!(feature="tui"));
+                        let output=std::process::Command::new(env!("CARGO_BIN_EXE_lazypencil")).output().unwrap();
+                        assert!(output.status.success());
+                        assert_eq!(output.stdout,b"false\n");
+                    }
+                }"#,
+            ),
+        ] {
+            fs::write(session.root.join(name), bytes).unwrap();
+        }
+        session
+            .run(Arguments {
+                stage: Stage::FocusCore,
+                suite: "dynamic".into(),
+                targets: "[\"agent\"]".into(),
+            })
+            .unwrap();
+        let core_log = session.temporary.join("focus-profile-ownership.log");
+        assert!(fs::read_to_string(core_log).unwrap().contains("1 passed"));
+        let catalog = session
+            .compile_catalog(&["agent".into()], "default-probe", "fixture-source")
+            .unwrap();
+        session.publish_catalog_to(&catalog, None).unwrap();
+        let application = session.executable("debug");
+        let digest = util::file_digest(&application).unwrap();
+        assert_eq!(
+            process::checked(&mut Command::new(&application), Duration::from_secs(5)).unwrap(),
+            b"true\n"
+        );
+        let complete = session.temporary.join("test-executables.json");
+        let early = session.temporary.join("early-test-executables.json");
+        for published in [&complete, &early] {
+            if published == &early {
+                fs::rename(&complete, &early).unwrap();
+            }
+            // Both the integration-test route that caused the failure and
+            // direct Cargo helpers must fail before touching the shared CLI.
+            let error = session
+                .test(
+                    false,
+                    "agent",
+                    "browser_ownership::killed_profile_owners_reap_children_preserve_persistent_data_and_release_only_their_lease",
+                    &["--exact", "--test-threads=1"],
+                    "forbidden-core.log",
+                )
+                .unwrap_err();
+            assert!(error.to_string().contains("before publishing"));
+            assert!(
+                session
+                    .execute(
+                        &commands::management_tests(false),
+                        30,
+                        "forbidden-core.log",
+                        false
+                    )
+                    .is_err()
+            );
+            assert!(!session.temporary.join("forbidden-core.log").exists());
+            assert_eq!(util::file_digest(&application).unwrap(), digest);
+            catalog
+                .validate(&session.target, "fixture-source", &["agent"])
+                .unwrap();
+        }
+    }
 
     #[test]
     fn early_catalog_uses_cargo_outputs_without_reading_or_replacing_the_later_catalog() {

@@ -4,13 +4,19 @@
 
 ## 現在の状態（2026-10-30）
 
+bcbd67aの[最終CI 40949240892](https://github.com/EkeMinusYou/lazypencil/actions/runs/40949240892)は10分12秒で失敗した。監査・Wasm・releaseとTUI性能計測、core全試験は成功したが、builderの先行と既定構成Clippyが停止し、全5 consumerと最終sourceは未実行である。builderはf53ffeeの304出力を失効0件で再利用し、同じ条件の準備は4.23秒で成功した。その後、先行中にcoreのagent試験をCargoで157.83秒かけてビルドし、共有CLIを描画なし構成へ置き換えた。直後の実PTYは`unrecognized subcommand 'tui'`で起動前に失敗した。並列pixel群より前の停止であり、新しい並列化の実成功とは扱わない。
+
+修正ではcoreのprofile所有権・会話管理・cleanup worker再現をdefaultの実行ファイルを確定する前へ移し、独立core jobでも先に実行する。元のfeature・filter・assertion・期限を維持し、確定後のcore Cargo呼出しは拒否する。小さな実Cargo fixtureでcore再現→default CLI生成と、early／complete両catalogの後では直接・統合試験の両経路からCLIを置換できないことを検査する。Clippyのfont lockfileの不要なunwrapも条件分岐で解消する。MCPのcapabilityに残っていたscript copy・絶対sampler・内包定義再利用・動的描画の古い無効表示も既存実装へ揃える。これらの新しい差分は未検証であり、補助ツールの先行GHA成功後にアプリを検証する。実行中の有用なjobは中断せず、前候補が全て終了してから次の修正を送る。
+
 f53ffeeの[CI 40946469636](https://github.com/EkeMinusYou/lazypencil/actions/runs/40946469636)では既定構成builder・全5 consumerとreleaseが成功した。実MCPと生成text CLIに加え、既存TUI preview workerがlock変更を拒否し、元のlockへの復元後に同じPNGとviewへ戻る試験も成功した。実端末IMEの確認とは区別する。共通化した標準font manifestの原本照合と、Skia依存manifestを実compiler入力に含めたapp cacheの保存も成功し、完成成果物の再利用候補を保持した。
 
-同候補のaudit／coreは補助ツールの原本試験一件で停止した。独立した小さなfixtureが旧include元を持ったままだったためであり、参照元一件の移動・二つの宣言stub・対応する目録／manifestのhashだけを更新した。原本のfont・license・出所データのbyte列は不変と照合した。アプリ本体は変えず、まずMac／Linuxの補助ツール全試験・Clippyで修正を確認する。先行のtext-layer／color-font／実emojiは、後段pixel consumerで既に並列に動く同じ独立資源の組合せなので、先行側も既存のjoin処理で最大3系統にした。元のfilter・assertion・期限・全結果の回収を維持し、重複実行自体の削減とは区別する。軽量検証の成功後、既存app成果物を再利用する最終CIで実並列と最終gateを確認する。
+同候補のaudit／coreは補助ツールの原本試験一件で停止した。独立した小さなfixtureが旧include元を持ったままだったためであり、参照元一件の移動・二つの宣言stub・対応する目録／manifestのhashだけを更新した。原本のfont・license・出所データのbyte列は不変と照合した。アプリ本体は変えず、bcbd67aの[Mac](https://github.com/EkeMinusYou/lazypencil/actions/runs/40948566639)／[Linux](https://github.com/EkeMinusYou/lazypencil/actions/runs/40948571267)で補助ツール全試験・Clippyと原本の照合が成功した。先行のtext-layer／color-font／実emojiは、後段pixel consumerで既に並列に動く同じ独立資源の組合せなので、先行側も既存のjoin処理で最大3系統にした。元のfilter・assertion・期限・全結果の回収を維持し、重複実行自体の削減とは区別する。再利用は上記のとおり成功し、実並列と最終gateは先行の構成切替を修正してから確認する。
+
+同実行の対象選択では、成功済みbaselineのjobを読むGitHub APIがHTTP 502を一度返し、全ファイル変更扱いへ拡大された。そのため未変更のWasm検証もnativeより前に追加された。実行を中断せず、履歴GETの一時的な500／502／503／504だけを最大3回・元の45秒総上限内で再試行する修正を準備する。認証・権限・rate limit・不正JSON・起動失敗・期限超過は再試行せず、解決しない場合の保守的な全対象選択は維持する。
 
 再現用font lockfileを実装した。project最上位の`font_lock`、`fonts lock FILE`／`fonts check FILE`、元のhashを要求する明示更新、CLI／MCP／TUI共通の遅延face照合を含む。lockfile自体の変更・absenceも依存条件へ束縛し、構造編集と通常の描画を区別する。全file face・その文書の生成textで観測したsystem face、可変軸・標準pack・engineを記録し、ローカルpathを固定しない。初回6a6abaeの[CI 40944025851](https://github.com/EkeMinusYou/lazypencil/actions/runs/40944025851)では、core全試験、既定構成builderと通常／pixel／runtime／端末／Materialの全5 consumerが成功した。新しい修復targetは31件を1.65秒で成功し、実CLIの生成text、移動後の同一fontデータ、末尾padding変更の拒否と明示更新後の同一PNG、実MCPのstale snapshot拒否・不一致中の構造編集・復帰を確認した。
 
-ただし同候補のcore Clippyは条件式一件、releaseは新しいフォントmanifestのinclude元が原本一覧へ未反映だったため停止し、最終source gateは未実行である。app cacheの保存も、検証資料を新たなcompiler入力にしたため`Unbound compiler input`で拒否された。修正では条件式をまとめ、標準font manifestの読取りをtext層へ共通化して原本一覧の参照元を更新する。Skiaの識別には既に追跡しているvendored依存manifestを使い、Cargoの入力検査や合格条件を弱めない。既存preview workerを使ったlockfile変更の拒否・復帰とview保持の試験も追加した。全ての有用なconsumerの終了後に修正版を送り、新しいTUI試験・修正版Clippy／releaseと最終gateはその結果で確認する。
+6a6abae当時のcore Clippyは条件式一件、releaseは新しいフォントmanifestのinclude元が原本一覧へ未反映だったため停止し、最終source gateは未実行だった。app cacheの保存も、検証資料を新たなcompiler入力にしたため`Unbound compiler input`で拒否された。f53ffeeでは条件式をまとめ、標準font manifestの読取りをtext層へ共通化して原本一覧の参照元を更新済み。Skiaの識別には既に追跡しているvendored依存manifestを使い、Cargoの入力検査や合格条件を弱めていない。既存preview workerを使ったlockfile変更の拒否・復帰とview保持、releaseとapp cache保存は冒頭のとおり成功し、残る最終gateはbcbd67aで確認する。
 
 同候補の全体は14分12秒で10分目標は未達。先行compile172.04秒、残りcompile73.96秒で、修復は早期に成功した。一方で先行のtext-layer試験97.20秒、color-font群12.08秒、実emoji63.90秒は同じcommit／実行ファイル・macOS15.7.9／image20260907.0337.1のpixel consumerでも再実行された。現在の記録と画像gateを保ってこの重複を引き継ぐ余地を確認したが、まだ削減していない。異なるimage／OSの条件まで一律に省略しない。
 
@@ -239,7 +245,7 @@ ab8c785の既定構成builderは7分42秒、通常consumer3分24秒、pixel cons
 
 - 元エンコード保存と縮小版のCLI／TUI操作、入力スレッドによる変換・保存、キャンセル時の候補回収、ユーザーの `[attachments]` 設定は `c11a0f9` でMac先行・両feature構成の完全検証・監査・署名sourceまで成功した。設定を下げた後の送信拒否・段階的な縮小による修復・元画像と下書き保持、実ACPが受信した縮小PNGを含む。既定8枚・各20MiB・合計各50MiB・16Mi画素とネイティブ単体の安全上限は維持する。PNG検査は既存Rust補助バイナリのpng-inspectへ移行済みで、試験コードの検査経路はTUI featureに依存しない。個別feature構成の過去の実行根拠は、現在の通常CIのcore／既定2構成と区別して扱う。物理IMEと最終受け入れは引き続き確認する。
 
-個別仕様に残る制約も、完了扱いにしない。独立copyの非localな文字列sampler、未参照のproject素材回収、再現用font lockfileなどは各サービス文書の現行範囲を参照する。欠損library／設定fontの診断と修復は上記のとおり検証済みである。runtime導入の取消・保存同期は `99cc153` の完全CIで通常導入と取消試験を成功した。通信待ちを所有する子プロセス、lock待機・分割転送・hash・展開の取消、公開前のfile／directory同期と新規ancestor同期、取消時の未完成物回収と既存Rust補助バイナリを使う回帰試験を含む。コンパイル・通常の実通信と取消の成功から、全異常終了経路・電源断時の耐障害性・最終配布の受け入れ完了とはしない。Browserが広告するdevice IDはdesktop／phone／tabletだけで、全Pencil presetへの対応を宣言しない。GLSLの宣言・構造体・前処理は実装済みだが、fill-stage `pencil:object` は未対応である。これらを古いGHA待ちと混同せず、元の必須条件に照らして実装と確認を切り分ける。
+個別仕様に残る制約も、完了扱いにしない。独立copyの非localな文字列samplerと未参照のproject素材回収は各サービス文書の現行範囲を参照する。font lockfileは実装済みで、最終CIと公開受け入れを冒頭で区別している。欠損library／設定fontの診断と修復は上記のとおり検証済みである。runtime導入の取消・保存同期は `99cc153` の完全CIで通常導入と取消試験を成功した。通信待ちを所有する子プロセス、lock待機・分割転送・hash・展開の取消、公開前のfile／directory同期と新規ancestor同期、取消時の未完成物回収と既存Rust補助バイナリを使う回帰試験を含む。コンパイル・通常の実通信と取消の成功から、全異常終了経路・電源断時の耐障害性・最終配布の受け入れ完了とはしない。Browserが広告するdevice IDはdesktop／phone／tabletだけで、全Pencil presetへの対応を宣言しない。GLSLの宣言・構造体・前処理は実装済みだが、fill-stage `pencil:object` は未対応である。2026-10-30に[公開形式仕様](https://docs.pencil.dev/for-developers/the-pen-format)を再確認したところ、deviceIdは文字列でpreset一覧の定義がなく、object画像の意味はeffect段階で明記されている一方、fill段階の評価順序は明記されていない。この二点を仕様確認待ちとして残し、推測した動作を本家互換とは宣言しない。元の必須条件は維持する。
 
 公開前の確認・決定：
 
@@ -262,7 +268,7 @@ macOS の常用メモリは `7fe854b` の既存候補で172.03MiB、cached feedb
 
 1. 拡張済み依存cacheのwarm再利用と、異なるMac 15 imageでの通常consumerの実成功はb09a329で確認した。全5 consumerの最終gateもc38fc1cまで複数回成功している。10分目標と、新imageの補助tool依存checkpoint、初回Skia build直後の重複compileの改善は残る。試験専用入力の再利用はec9d668、独立コピーの生成script所有元はd7cc9c6で検証済みになった。
 2. 同時認証利用はe786e3eの全工程CIで検証済み。旧3〜5実働日の概算には、既に検証済みの追加フォント遅延読み込みとこの対応が含まれており、現在の残工数には加算しない。
-3. 各個別仕様の残る互換・資源処理（非local sampler、素材回収、font lockfileなど）を具体化する。欠損library／設定fontの診断と修復はc38fc1cで検証済みになった。残る追加分の工数は未確定。
+3. 各個別仕様の残る互換・資源処理（非local sampler、素材回収など）を具体化する。font lockfileは実装済みで、CLI／実MCP／TUI workerはf53ffeeで成功し、最終gateを確認中である。欠損library／設定fontの診断と修復はc38fc1cで検証済みになった。残る追加分の工数は未確定。
 4. 不足する受け入れ確認、保証環境の確定、配布・文書整理：2〜4実働日の概算。
 
 上記は旧3環境方針での概算である。初回Macのみへの変更で、Linuxの環境確認・配布・最低版調整は初回から外れる。共通の機能不足はそのまま残るため、全工数を単純に1/3にはしない。前回提示した8〜15実働日は主要4項目と確認作業に対する1人換算の概算だった。画像添付など個別仕様との差分の追加工数は含めていないため、製品全体の完成日を確約する総見積もりには使わない。実機環境確保・権利処理の待ち時間も別である。完成目標に沿って実装を再開している。変更箇所を1環境で先行検証し、元の最終合格基準を維持する。同じ入力・環境・目的で確認済みの内容を、根拠なく再検証しない。

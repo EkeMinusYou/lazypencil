@@ -621,7 +621,7 @@ Rust、Skia CPU・SkParagraph、MIT ライセンス、標準フォントの Noto
 
 - 文書版は2.19／2.21、新規は2.21。編集・MCP・設定の機械可読 schema は対応する Rust 型から取得し、文書版の正本は版別 codec とする。スキーマ全属性の振る舞いを網羅保証したという意味ではない。版の選択を未決へ戻さず、未確認の振る舞いと独立コピーの制約を個別に扱う。
 - 依存は Cargo.toml／Cargo.lock、Chromium156.0.8078.47と取得元・hashは runtime manifest に記録済み。MCP は2025-11-25を広告する。更新時は影響する接続・描画条件を検証する。
-- Noto Sans JP は Google Fonts revision66a36c8c94b1a5d992ee4e7f392fccfe4945767c の可変 wght TTF を同梱し、元の OFL・metadata・hashを保持する。追加フォントは設定・CLIから利用可能。ファミリー単位の遅延読み込みと文字不足に応じたfallback登録は9d6613bで検証済み。再現用 font lockfile の具体的 schema は残る。
+- Noto Sans JP は Google Fonts revision66a36c8c94b1a5d992ee4e7f392fccfe4945767c の可変 wght TTF を同梱し、元の OFL・metadata・hashを保持する。追加フォントは設定・CLIから利用可能。ファミリー単位の遅延読み込みと文字不足に応じたfallback登録は9d6613bで検証済み。再現用font lockfileも実装し、JSON版1のschema・明示取得・revision付き更新・共通照合を[フォント仕様](fonts.md#reproducibility-lockfile)へ定めた。最終CIと公開受け入れは[現状](implementation-status.md#current-status)で区別する。
 - JavaScript／browser／shader／cache／会話保持の設定と上限は実装済み。[設定](configuration.md) と各サービスの Rust 定義を正本とする。画像入力の8枚・20MiB・合計50MiB・16Mi画素は現行の固定上限で、設定可能化など画像添付仕様との差は [画像入力](image-attachments.md) に明記する。
 - 最低macOS、保証端末、統制した性能条件と Chromium の別予算、配布候補の最終受け入れは未確定。Macの対象機能とOS／CPU以外の元の完成条件は変えない。
 - 本家との総合デザイン品質比較は当初から保留。許諾を確認していない本家出力を取得・配布する前提にはしない。

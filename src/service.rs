@@ -450,7 +450,7 @@ pub fn document_metadata_with_fonts(
     let mut result = document.summary();
     result["path"] = json!(store.path());
     result["capabilities"] = json!({
-        "schema":document.version(),"supported_schemas":crate::document::SUPPORTED_DOCUMENT_VERSIONS,"default_schema":crate::document::DOCUMENT_VERSION,"rendering":cfg!(feature="rendering"),"dynamic_content":false,
+        "schema":document.version(),"supported_schemas":crate::document::SUPPORTED_DOCUMENT_VERSIONS,"default_schema":crate::document::DOCUMENT_VERSION,"rendering":cfg!(feature="rendering"),"dynamic_content":cfg!(feature="rendering"),
         "asset_repair":{"declared_images_and_code":true,"declared_libraries":true,"configured_font_diagnostics":true,"max_missing_references":1024,"allow_new_missing":false,"restore_reports_missing":true},
         "instance_overrides":true,"managed_assets":true,"attachments":false,
         "variables":{"resolved_values":true,"sources":true,"node_theme_context":true,"property_namespace":true,"pagination":true},
@@ -463,7 +463,7 @@ pub fn document_metadata_with_fonts(
         "icons":{"node_type":"icon","packs":crate::icons::catalogue().iter().map(|pack| &pack.id).collect::<Vec<_>>(),"bundled":["lucide"],"rendering":cfg!(feature="rendering"),"synthetic_weights":false,"variable_weight_range":[100,700],"discovery_tool":"list_icons"},
         "fonts":{"rendering":cfg!(feature="rendering"),"formats":["ttf","otf","ttc","otc"],"face_metadata":true,"variation_control":["wght"],"fallback_policy":"project configuration or requested family, bundled default, explicit files","project_configuration":true,"lockfile":cfg!(feature="rendering")},
         "detach_instance":{"local_stored":true,"external":true,"inherited":true,"preserve_nested_refs":true,"external_scripts":true,"script_scope_metadata_version":1,"shader_sampler_variables":true,"checked_semantics":true},
-        "import_component":{"modes":["link","copy"],"sources":["local","declared_library","local_file","bundled_style"],"dry_run_writes":false,"copy_scripts":false,"copy_string_sampler_variables":true,"copy_absolute_string_sampler_paths":false,"sampler_copy_format":"imported_literal_variables","reuse_contained_definitions":false}
+        "import_component":{"modes":["link","copy"],"sources":["local","declared_library","local_file","bundled_style"],"dry_run_writes":false,"copy_scripts":true,"copy_string_sampler_variables":true,"copy_absolute_string_sampler_paths":true,"sampler_copy_format":"imported_literal_variables","reuse_contained_definitions":true}
     });
     #[cfg(feature = "rendering")]
     {

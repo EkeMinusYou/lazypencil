@@ -281,14 +281,15 @@ pub fn create(
     let reused = previous
         .as_ref()
         .is_some_and(|old| old.as_ref() == bytes.as_slice());
-    if previous.is_some() && !reused && expected_revision.is_none() {
+    if let Some(previous) = &previous
+        && !reused
+        && expected_revision.is_none()
+    {
         return Err(Error::new(
             "REVISION_CONFLICT",
             "Updating a font lockfile requires --expected-lock-revision",
         )
-        .details(
-            json!({"actual_lock_revision":hash(previous.as_ref().expect("Existing lockfile"))}),
-        ));
+        .details(json!({"actual_lock_revision":hash(previous)})));
     }
     crate::store::require_revision(&store.read()?, &snapshot.revision)?;
     project.verify_unchanged()?;

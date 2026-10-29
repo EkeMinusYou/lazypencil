@@ -2,6 +2,7 @@ use crate::{process, util};
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::time::{Duration, Instant};
 use std::{collections::BTreeSet, fs, path::Path, process::Command};
 
 /// Retained native backends available for explicitly requested diagnostics.
@@ -954,6 +955,16 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     }
     if any(
         paths,
+        &["src/font_lock.rs", "tests/support/font_lock.rs"],
+        &[],
+    ) {
+        if ["core", "conversation"].contains(&suite.as_str()) {
+            suite = "graphics".into();
+        }
+        targets.insert("repair".into());
+    }
+    if any(
+        paths,
         &[
             "src/project/bindings.rs",
             "src/project/generated_refs.rs",
@@ -1099,10 +1110,52 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     })
 }
 
+fn history_json(mut request: impl FnMut(Duration) -> Result<process::Output>) -> Result<Value> {
+    // Preserve the original GET budget across retries. A temporary history
+    // outage must not immediately expand a small change into every build lane.
+    let deadline = Instant::now() + Duration::from_secs(45);
+    for attempt in 0..3 {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        ensure!(
+            !remaining.is_zero(),
+            "CI history GET exceeded its 45s budget"
+        );
+        let output = request(remaining)?;
+        ensure!(!output.timed_out, "CI history GET exceeded its 45s budget");
+        if output.status.success() {
+            return Ok(serde_json::from_slice(&output.stdout)?);
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let transient = stderr.lines().any(|line| {
+            line.starts_with("gh: ")
+                && [500, 502, 503, 504]
+                    .iter()
+                    .any(|code| line.ends_with(&format!("(HTTP {code})")))
+        });
+        let delay = Duration::from_secs(attempt + 1);
+        if !transient || attempt == 2 || deadline.saturating_duration_since(Instant::now()) <= delay
+        {
+            anyhow::bail!("CI history GET failed ({}): {stderr}", output.status);
+        }
+        eprintln!(
+            "Retrying CI history GET after a temporary GitHub server error (attempt {}/3)",
+            attempt + 2
+        );
+        std::thread::sleep(delay);
+    }
+    unreachable!("Each final attempt returns its result")
+}
+
 pub fn changed_paths(root: &Path) -> Result<Vec<String>> {
     fn api(root: &Path, endpoint: &str) -> Result<Value> {
-        let output = process::text(Command::new("gh").current_dir(root).args(["api", endpoint]))?;
-        Ok(serde_json::from_str(&output)?)
+        history_json(|timeout| {
+            process::output(
+                Command::new("gh")
+                    .current_dir(root)
+                    .args(["api", "--method", "GET", endpoint]),
+                timeout,
+            )
+        })
     }
     fn baseline(root: &Path) -> Result<String> {
         let repo = std::env::var("GITHUB_REPOSITORY")?;
@@ -1206,4 +1259,95 @@ pub fn failed_platform(jobs: &Value) -> Result<Option<String>> {
 pub fn build_before_lint(suite: &str, matched_key: &str) -> bool {
     matched_key.is_empty()
         || (matched_key.starts_with("core-") && !["core", "conversation"].contains(&suite))
+}
+
+#[cfg(test)]
+mod history_tests {
+    use super::*;
+
+    fn response(success: bool, stdout: &[u8], stderr: &[u8]) -> process::Output {
+        #[cfg(unix)]
+        use std::os::unix::process::ExitStatusExt;
+        #[cfg(windows)]
+        use std::os::windows::process::ExitStatusExt;
+        process::Output {
+            status: std::process::ExitStatus::from_raw(if success { 0 } else { 256 }),
+            stdout: stdout.to_vec(),
+            stderr: stderr.to_vec(),
+            elapsed: Duration::ZERO,
+            timed_out: false,
+        }
+    }
+
+    #[test]
+    fn temporary_history_outages_recover_under_one_deadline_without_using_error_bodies() {
+        let mut budgets = Vec::new();
+        let result = history_json(|budget| {
+            budgets.push(budget);
+            Ok(match budgets.len() {
+                1 => response(
+                    false,
+                    br#"{"workflow_runs":[{"head_sha":"untrusted-error-body"}]}"#,
+                    b"gh: Server Error (HTTP 502)\n",
+                ),
+                2 => response(false, b"", b"gh: Service Unavailable (HTTP 503)\n"),
+                3 => response(true, br#"{"workflow_runs":[{"head_sha":"verified"}]}"#, b""),
+                _ => panic!("History lookup exceeded its retry limit"),
+            })
+        })
+        .unwrap();
+        assert_eq!(result["workflow_runs"][0]["head_sha"], "verified");
+        assert_eq!(budgets.len(), 3);
+        assert!(budgets[0] <= Duration::from_secs(45));
+        assert!(budgets.windows(2).all(|pair| pair[1] < pair[0]));
+    }
+
+    #[test]
+    fn persistent_server_errors_stop_after_three_attempts() {
+        let mut attempts = 0;
+        let error = history_json(|_| {
+            attempts += 1;
+            Ok(response(false, b"", b"gh: Gateway Timeout (HTTP 504)\n"))
+        })
+        .unwrap_err();
+        assert_eq!(attempts, 3);
+        assert!(error.to_string().contains("HTTP 504"));
+    }
+
+    #[test]
+    fn permission_rate_limit_transport_timeout_and_malformed_history_never_retry() {
+        for stderr in [
+            "gh: Requires authentication (HTTP 401)\n",
+            "gh: Forbidden (HTTP 403)\n",
+            "gh: Not Found (HTTP 404)\n",
+            "gh: Too Many Requests (HTTP 429)\n",
+            "unrecognized client failure (HTTP 502)\n",
+        ] {
+            let mut attempts = 0;
+            assert!(
+                history_json(|_| {
+                    attempts += 1;
+                    Ok(response(false, b"{}", stderr.as_bytes()))
+                })
+                .is_err()
+            );
+            assert_eq!(attempts, 1, "{stderr}");
+        }
+        for kind in ["transport", "timeout", "json"] {
+            let mut attempts = 0;
+            assert!(
+                history_json(|_| {
+                    attempts += 1;
+                    if kind == "transport" {
+                        anyhow::bail!("Cannot launch gh");
+                    }
+                    let mut output = response(true, b"not JSON", b"");
+                    output.timed_out = kind == "timeout";
+                    Ok(output)
+                })
+                .is_err()
+            );
+            assert_eq!(attempts, 1, "{kind}");
+        }
+    }
 }
