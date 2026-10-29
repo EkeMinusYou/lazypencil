@@ -300,7 +300,7 @@ return [
  {id:"chosen",type:"ref",ref:"parent",descendants:{"source-text":{content:"Generated"},"sibling/source-text":{content:"Generated ref"}}},
  {id:"direct",type:"ref",ref:"nested",y:30,descendants:pencil.input.missing?{"discarded":{fill:"#ff00ff"}}:{"source-text":{content:"Direct"}}}
 ];"##;
-    fn render(store: &Store, id: &str) -> Vec<u8> {
+    fn render(store: &Store, id: &str, version: &str, label: &str) -> Vec<u8> {
         let (project, snapshot) = service::layout_snapshot_with_runtime(
             store,
             &[],
@@ -320,16 +320,36 @@ return [
                 "Missing generated text {expected}"
             );
         }
-        render::png(
+        let output = render::png(
             &project,
             &snapshot,
             &RenderOptions {
                 node: Some(id.into()),
+                region: Some(lazypencil::geometry::Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 120.0,
+                    height: 60.0,
+                }),
                 ..Default::default()
             },
         )
-        .unwrap()
-        .png
+        .unwrap();
+        if let Some(root) = std::env::var_os("LAZYPENCIL_TEST_TUI_ARTIFACTS") {
+            let root = std::path::PathBuf::from(root).join("component-reuse");
+            fs::create_dir_all(&root).unwrap();
+            fs::write(
+                root.join(format!("generated-{version}-{label}.png")),
+                &output.png,
+            )
+            .unwrap();
+            write(
+                &root.join(format!("generated-{version}-{label}-layout.json")),
+                json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"width":output.width,"height":output.height,"region":output.region,"items":snapshot.items.iter().map(|item| &item.record).collect::<Vec<_>>()}),
+            );
+        }
+        assert_eq!((output.width, output.height), (120, 60));
+        output.png
     }
     for version in ["2.19", "2.21"] {
         let (temp, store) = fixture(version);
@@ -387,7 +407,7 @@ return [
         );
         fs::remove_file(library).unwrap();
         fs::remove_file(temp.path().join("generate.js")).unwrap();
-        let independent = render(&store, id);
+        let independent = render(&store, id, version, "independent");
         let raster = skia_safe::Image::from_encoded(skia_safe::Data::new_copy(&independent))
             .unwrap()
             .make_raster_image(None, None)
@@ -417,20 +437,10 @@ return [
         fs::remove_file(store.path()).unwrap();
         fs::remove_dir_all(temp.path().join("assets")).unwrap();
         let second_id = again["generated_ids"]["0"]["id"].as_str().unwrap();
-        let recopied = render(&second, second_id);
+        let recopied = render(&second, second_id, version, "recopied");
         if let Some(root) = std::env::var_os("LAZYPENCIL_TEST_TUI_ARTIFACTS") {
             let root = std::path::PathBuf::from(root).join("component-reuse");
             fs::create_dir_all(&root).unwrap();
-            fs::write(
-                root.join(format!("generated-{version}-independent.png")),
-                &independent,
-            )
-            .unwrap();
-            fs::write(
-                root.join(format!("generated-{version}-recopied.png")),
-                &recopied,
-            )
-            .unwrap();
             write(
                 &root.join(format!("generated-{version}-report.json")),
                 json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"code_hash":hash(CODE.as_bytes()),"independent":hash(&independent),"recopied":hash(&recopied),"width":120,"height":60}),
