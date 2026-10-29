@@ -91,7 +91,7 @@ Files discovered only in generated content appear in `runtime_dependencies`, sep
 
 ## Browser pages and GLSL
 
-Independent script copies capture declared assets, component/variable/theme bindings and local browser resources. Generated browser scope/override composition, URL ownership and recopy passed both schemas, including 162 namespace images per target in the completed baseline. Explicit component reuse includes definitions contained inside a copied parent, with separate placement IDs and explicit descendant-path mappings. Stored replacement children keep their authorship across reuse and recopy; stored and generated refs share the path translation. Valid explicit generated script contexts remain unfinished, and dynamically authored replacement children require further verification. See [copy semantics](docs/mcp.md#importing-components).
+Independent script copies capture declared assets, component/variable/theme bindings and local browser resources. Generated browser scope/override composition, URL ownership and recopy passed both schemas, including 162 namespace images per target in the completed baseline. Explicit component reuse includes definitions contained inside a copied parent, with separate placement IDs and explicit descendant-path mappings. Stored and runtime-authored replacement children preserve their addresses through reuse, source removal and recopy. The runtime cases passed both schemas with real workers and matching recopy PNGs. Valid explicit generated script contexts remain unfinished. See [copy semantics](docs/mcp.md#importing-components).
 
 ```sh
 cargo run -- runtime setup chromium

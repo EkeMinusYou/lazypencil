@@ -96,7 +96,7 @@ fn capture(store: &Store, label: &str) -> Vec<u8> {
         fs::create_dir_all(&directory).unwrap();
         fs::write(directory.join(format!("{label}.png")), &output.png).unwrap();
         fs::write(directory.join(format!("{label}.json")), serde_json::to_vec_pretty(&json!({
-            "source_commit":option_env!("GITHUB_SHA"), "png_sha256":lazypencil::document::hash(&output.png),
+            "source_commit":std::env::var("GITHUB_SHA").ok(), "png_sha256":lazypencil::document::hash(&output.png),
             "width":output.width,"height":output.height,"items":snapshot.items.iter().map(|item|&item.record).collect::<Vec<_>>()
         })).unwrap()).unwrap();
     }
