@@ -4,7 +4,7 @@
 
 ## 現在の状態（2026-10-29）
 
-最新のMac完全CIの根拠は `a921231` の [初回実行](https://github.com/EkeMinusYou/lazypencil/actions/runs/40787578813)。軽量227件・Clippy、core462・default838ケース、runtime・画像gate・42描画計測・依存監査・署名付きsourceまで成功した。両構成の可視consoleで従来の全named caseの回数を保持したことを照合した。runtime導入の取消・保存同期、描画単独構成の添付PNG検査、送信用縮小版・TUI入力スレッドでの変換と候補回収・ユーザー設定も含む。全artifactの独立した再照合と製品全体の受け入れは未完了で、正常な導入・取消の成功から全異常終了条件の合格とはしない。重いbuildはGHAに限り、Linux x64／arm64・Windowsの既存実装は後日対応用に保持する。Intel Macは対象外とし、OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
+最新のMac完全CIの根拠は `958b803` の [cache利用時の実行](https://github.com/EkeMinusYou/lazypencil/actions/runs/40791884683)。軽量227件・Clippy、core462・default838ケース、runtime・画像gate・42描画計測・依存監査・署名付きsourceまで成功した。両構成の可視consoleで従来の全named caseの回数を保持したことを照合した。runtime導入の取消・保存同期、描画単独構成の添付PNG検査、送信用縮小版・TUI入力スレッドでの変換と候補回収・ユーザー設定も含む。全artifactの独立した再照合と製品全体の受け入れは未完了で、正常な導入・取消の成功から全異常終了条件の合格とはしない。重いbuildはGHAに限り、Linux x64／arm64・Windowsの既存実装は後日対応用に保持する。Intel Macは対象外とし、OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
 
 旧3環境方針での依存監査・署名付きソースを含む確定済み根拠は [`c9ffb37` の CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40679529757)。Linux 各1,490件・Mac1,479件、各144サマリー・812画像・42描画計測を確認し、過去ケースの実行回数、画像、clipboard／IME、profile／namespace／通信制御、ソース1,161ファイルの Git blob・mode と署名を独立照合した。CI の成功は、製品全体の受け入れ完了を意味しない。
 
@@ -20,9 +20,11 @@
 
 GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug assertionと整数overflow検査を明示的に有効にする。通常dev、依存・Skia、releaseの設定は維持し、実際のCargo設定をアプリ成果物のidentityへ含める。不変の同梱Noto Sans JP（9.1MB）のdigestはOnceLockで共有し、非TTCの無変更借用では同じdigestをface identityへ再利用する。追加フォントは毎回hashし、TTC抽出後の独立hashも保持する。既存の並列共有／owned読み込み試験では画素とmetadataの一致を確認する。
 
-`ffcfcc5` の初回は本体再ビルドを含め全体11分36秒、同じ成果物の [ウォーム計測](https://github.com/EkeMinusYou/lazypencil/actions/runs/40773729092) は全体11分31秒で、単一Mac内の競合が残っていた。別runnerへ分けた最初の2実行はconsumerに残ったCargo呼び出しとGITHUB_ENVのstep境界で失敗し、直接実行と前stepでのChromium準備へ修正した。次の `736a723` は全native試験が成功したが、Linux上の共通画像gateでhost側のpinを選んで失敗した。生成元Macのreceiptと実際のPNG identityが一致することを既存証跡で確認し、生成元のplatformを明示して元の判定条件を保持した。
+`ffcfcc5` の初回は本体再ビルドを含め全体11分36秒、同じ成果物の [ウォーム計測](https://github.com/EkeMinusYou/lazypencil/actions/runs/40773729092) は11分31秒で、単一Mac内の競合が残っていた。別runner構成の `e7af071` は全工程成功で初回11分09秒・cache利用時10分24秒だった。通常側の絵文字試験を既存の短いscript系統へ移した `a921231` は通常試験stepを4分03秒から3分03秒へ短縮したが、[次の実行](https://github.com/EkeMinusYou/lazypencil/actions/runs/40788771141) で画面ありChromeの保存状態の復元がRENDER_TIMEOUTとなった。成功扱いや期限の変更をせず、対象caseを他のruntime producerより前へ移し、後続から同じcaseだけを除いた。browser全体budgetには両段階を含める。
 
-`e7af071` の初回は全体11分09秒で全工程成功した。core4分18秒・builder3分34秒・release2分28秒を並列実行し、同じ実行ファイルを受け取る通常consumer5分22秒・runtime consumer2分47秒が成功した。実試験stepは通常3分43秒・runtime1分37秒で、runtimeの準備20秒は別に計測した。runtime転送は12対象と本体へ絞り、実フォント絵文字試験43秒は通常側で実行した。core462・既定構成838ケースについて従来の全named caseの回数を照合し、欠落0件だった。最終gate・署名付きsourceまでの成功を確認したが、この初回実行では10分目標は未達である。同じcommitの [キャッシュ利用時](https://github.com/EkeMinusYou/lazypencil/actions/runs/40786195540) も全工程成功したが全体10分24秒で、通常側の絵文字46秒が全系統の直前に直列で残っていた。入力・PNG名・ログ・一時資源が他の通常試験と独立していることを確認し、絵文字を既存の短いscript系統へ移してから同系統のscript試験を行う。静かな起動試験は先行させ、3系統の上限、絵文字の独立300秒、通常試験の元のbudget、失敗時の全結果回収を維持する。変更後の `a921231` の初回は全工程成功で10分13秒、通常consumer3分58秒・実試験step3分03秒だった。従来のcore462・既定構成838ケースの回数と42描画計測も保持した。補助処理の新規buildを含む対象選択は1分37秒で、同じcommitの [cache利用時](https://github.com/EkeMinusYou/lazypencil/actions/runs/40788771141) は、通常試験・core・releaseが成功したが、並列区間で画面ありChromeの保存状態の復元がRENDER_TIMEOUTとなり失敗した。全工程成功や10分以内とは扱わない。対象caseを他のruntime producerより前へ移し、後続から同じcaseだけを除いて元のbrowser budgetと内部期限を維持する。大きい実行ファイル転送はtar/Zstandardの単一streamへ変更し、128MiBのwindowでファイル間の静的リンク部分も圧縮する。通常／runtimeの同一receipt、hash検査、runtimeの12対象への限定を保ち、既存の転送回帰を実圧縮・展開と不正member拒否まで拡張する。変更後のGHAで全結果と時間を確認する。
+`958b803` の [初回](https://github.com/EkeMinusYou/lazypencil/actions/runs/40790731466) は依存監査・共通画像gate・署名付きsourceまで全工程成功で10分06秒。core462・既定構成838ケースについて従来の全named caseの回数を照合し、欠落0件、release42描画計測も維持した。対象選択1分34秒、共通builder3分11秒、通常consumer4分34秒（試験step3分30秒）、runtime consumer4分08秒、source検証35秒だった。画面ありChromeの先行caseは7.8秒で成功した。実行ファイルの受け渡しはtar/Zstandard（128MiBの照合window）へ揃え、同じ対象数の直前runとの比較で通常用約1.04GB→211MB、runtime用約320MB→90MB、圧縮時間はそれぞれ7.4秒／3.6秒だった。同じreceipt・compiler／hash検査・runtimeの12対象・元の期限は保持し、既存の転送回帰は実圧縮・展開と不正member拒否まで検証した。補助処理の新規buildを含む初回では10分を6秒超えた。
+
+同じcommitの [cache利用時](https://github.com/EkeMinusYou/lazypencil/actions/runs/40791884683) は全工程成功で **7分48秒**。対象選択45秒、共通builder2分13秒、通常consumer3分57秒（試験step2分59秒）、runtime consumer4分05秒（準備37秒・試験step2分40秒）、source検証30秒だった。run開始からplanは4秒、planからnativeは3〜4秒、builderからconsumerは4〜5秒、consumerからsourceは2秒で、今回の待機は処理時間の主因ではなかった。appのbuild確認5.4秒・lint0.4秒で再コンパイル0件、core462・既定構成838ケースの従来の全named caseの回数・42描画計測・先行headed caseの成功も再照合した。画像gate・監査・署名付きsourceまで含む10分以内を、依存／アプリ／補助処理のcacheが使える条件で実測した。依存を含む完全なcold buildや長いrunner割当待ちへの保証とはしない。同条件の追加実行は行わず、重いbuildはGHAだけで行う。
 
 過去の比較では基準 `c11a0f9` が先行5分56秒・完全job24分34秒・workflow32分09秒、`112f5aa` はdefault11分01秒だった。後者ではMac runnerが15分02秒の割当待ちでGitHub側に終了され、未実行jobだけを再実行した。capacity constraintsのannotationを保存し、待機と処理時間を分ける。有用な実行は中断していない。`1190c6b` の過剰並列化はMCP30秒／emoji300秒の期限に抵触し、`140d94a` のウォーム試験は300ms起動期限のPID記録前に終了した。失敗を合格へ読み替えず、期限も変更していない。`f2ffcf0` は全工程成功したが全体13分31秒であり、フォントの重複計算を除く前の結果として区別する。
 
@@ -69,7 +71,7 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 
 標準 macOS GHA の Kitty 0.49.2 は、取得・ハッシュ・署名・両実行ファイルの版検査後に NSGL／OpenGL 3.3 の初期化で失敗した。`3d711d9` の失敗はアプリ起動前であり、日本語入力の不具合や可視画面の成功とは扱わない。実 Kitty 12段階試験は既存 release-evidence の `macos_terminal_gui` に保持しているが、GPU付きlarger runnerはGitHub Team／Enterprise Cloudの組織向けである。[公式の利用条件](https://docs.github.com/en/enterprise-cloud%40latest/actions/concepts/runners/larger-runners)。現在のrepository ownerは個人アカウントであり、このflagだけで利用できる経路とは扱わず、未実行のまま残す。アカウント移管・契約変更は実行していない。利用者への反復した手動確認依頼を検証計画の前提にしない。
 
-旧3環境CI全体の安定した短縮は未達だった。初回Macのみへ変更し、Linux nativeの待機・再ビルド・必須確認を外すが、実行時間が単純に1/3になるとは見積もらない。`c9ffb37` は38分28秒、先行17分30秒、全体 job は x64 16分35秒・arm64 17分57秒・Mac20分05秒だった。先行範囲と runner image が異なり、元の27〜29分との統制比較ではない。Mac release 再利用0.87秒、同一環境での先行成果物再利用、変更した試験だけの無効化、独立試験の並列化には個別の成功根拠がある。性能効果の未確認と、機構の未実装を区別する。
+旧3環境CI全体の安定した短縮は未達だった。初回Macのみへ変更し、Linux nativeの待機・再ビルド・必須確認を外した。実行時間が単純に1/3になるとは見積もらない。`c9ffb37` は38分28秒、先行17分30秒、全体 job は x64 16分35秒・arm64 17分57秒・Mac20分05秒だった。先行範囲と runner image が異なり、元の27〜29分との統制比較ではない。Mac release 再利用0.87秒、同一環境での先行成果物再利用、変更した試験だけの無効化、独立試験の並列化には個別の成功根拠がある。現在のMac構成の実測は上記7分48秒を参照し、旧3環境とは条件を分けて扱う。
 
 macOS の常用メモリは `7fe854b` の既存候補で172.03MiB、cached feedback p95 は32.72msだった。古い「200MiB未達」を現在の既知不具合に数えない。この標本結果から、全環境・統制条件・物理端末の性能受け入れ完了とはしない。[性能記録](performance.md)
 
