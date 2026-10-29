@@ -2,9 +2,17 @@
 
 <a id="current-status"></a>
 
-## 現在の状態（2026-10-29）
+## 現在の状態（2026-10-30）
 
-最新の全工程成功はd7cc9c6の[CI 40888907387](https://github.com/EkeMinusYou/lazypencil/actions/runs/40888907387)である。生成scriptのコード所有元を出力設定から独立して保持し、子配列差替え／ノード置換の後に通常metadata・scope・binding・carrierを上書きする両形式16組を元／copy／再copyで確認した。コード側の捕捉表が出力側と異なる場合も、到達可能なlibrary、部品経路・変数・テーマ・素材・browser設定を衝突なく合成する。既定構成858件・core470件のnamed caseと回数に従来856件／470件からの欠落はない。全1,980 PNGのrevision・hash・寸法、660組の三段階一致、先行と通常のPNG／JSON一致、従来1,932 PNGの不変を確認した。追加画像は既に独立復号したbyte列と一致し、同じ復号は繰り返していない。実Chromium・MCP・端末・Material・42描画計測・監査・共通画像gateが成功し、全5 consumerのreceiptもbyte一致した。署名付きsourceは1,195ファイル・13,344,619バイト、SHA-256 `f75be9cd86e97d8ac6802e9d2c5af811d53ea9807135b99b7470eea980e4b846`で、署名者・source・workflow・runを照合した。
+最新の全工程成功はec9d668の[CI 40894030254](https://github.com/EkeMinusYou/lazypencil/actions/runs/40894030254)である。`src`内の試験専用ファイルも既存のcompiler dep-infoで消費先を判定し、影響する試験単位だけを失効させる。ファイル名から試験専用と断定せず、production consumer・欠けたdep-info・入力集合／mode／recipeの不一致は再利用を拒否する。旧形式の候補keyも検索し、payloadのsource fingerprintを維持して移行する。LinuxとMacの実Cargo回帰・補助ツールの全試験／Clippy、Macのcore470件・既定858件のnamed caseと回数に欠落はない。全1,980 PNGがd7cc9c6とbyte一致し、今回sourceと36×12の寸法も一致した。同じ画像の独立復号・三段階比較は繰り返していない。全5 receiptもbyte一致し、Chromium・端末・Material・42描画計測・監査・画像gateと署名付きsourceを成功した。source archiveは13,345,878バイト、SHA-256 `eb0d23295c4e3847371cc61f85ae41029f36ff6bd7419768219a2f941bf18384`で、source／workflow／run attempt 4の署名を照合した。
+
+通常とpixelの初回・2回目、pixelの3回目は新しいrunner imageに割り当てられ、試験前のreceipt照合で停止した。ほかの全jobが完了してから失敗したconsumerだけを再実行し、4回目のattemptで全体が成功した。新しいpushやappの再buildは行わなかったが、runner割当待ちも含め全体32分33秒で、10分目標は未達である。builder8分27秒・core6分33秒・release5分03秒、通常3分59秒・pixel1分46秒・runtime3分15秒・端末1分17秒・Material1分51秒・source43秒だった。
+
+今回、旧keyからcore918ファイル／既定304ファイルを再利用し、coreのCargo確認は2.12秒だった。一方、既定の依存27単位と本体・試験50単位が再buildされ、254.09秒を要した。Skiaはfreshだった。本体と47本の試験実行ファイルは前回d7cc9c6とhash一致した。依存の固定primaryは9d6613bのrelease jobが12:10:40に保存したもので、同じrunのdefault jobが12:13:12に保存した完全なcheckpointより先に選択される。後者はprimaryが存在すると旧整理処理で削除されるため、通常試験で不足する依存構成を繰り返し補っていた。過去の「全体buildでregistry依存がfresh」は先行buildでの再compileを含む総計ではない。d7cc9c6の先行ログにも同じ依存のcompileを確認した。次は完全な依存構成を保持する保存・選択・整理を揃え、Cargoの入力確認を維持したままこの重複を減らす。
+
+次の候補では、現在のrelease依存baselineを引き継ぎ、既定構成の完全catalogをcompileした場合だけ拡張済みの依存cacheを保存する。保存後に同じcompiler／image／入力／wire formatの旧baselineと部分checkpointを整理し、warm hit時は重複保存しない。cold・旧入力・先行試験だけの結果は部分checkpointに留める。また、実行専用consumerではビルドreceiptを変更せず、hashで束縛した実行ホストの記録を別に保持する。Mac arm64・macOS 15内のOS更新だけを許し、source／run／compiler／flags／profile／pathは一致を要求する。OS版はimage名から推測せずsw_versで取得する。ビルドcacheのimage照合とconsumerのCargo禁止、全consumerの同一receipt、元の全試験と最終gateは維持する。旧停止環境は15.7.9と15.8.2であり、CIでの再現結果と実行成功を確認するまではこの候補を検証済みに数えない。
+
+前回の全工程成功はd7cc9c6の[CI 40888907387](https://github.com/EkeMinusYou/lazypencil/actions/runs/40888907387)である。生成scriptのコード所有元を出力設定から独立して保持し、子配列差替え／ノード置換の後に通常metadata・scope・binding・carrierを上書きする両形式16組を元／copy／再copyで確認した。コード側の捕捉表が出力側と異なる場合も、到達可能なlibrary、部品経路・変数・テーマ・素材・browser設定を衝突なく合成する。既定構成858件・core470件のnamed caseと回数に従来856件／470件からの欠落はない。全1,980 PNGのrevision・hash・寸法、660組の三段階一致、先行と通常のPNG／JSON一致、従来1,932 PNGの不変を確認した。追加画像は既に独立復号したbyte列と一致し、同じ復号は繰り返していない。実Chromium・MCP・端末・Material・42描画計測・監査・共通画像gateが成功し、全5 consumerのreceiptもbyte一致した。署名付きsourceは1,195ファイル・13,344,619バイト、SHA-256 `f75be9cd86e97d8ac6802e9d2c5af811d53ea9807135b99b7470eea980e4b846`で、署名者・source・workflow・runを照合した。
 
 全体25分38秒で10分目標は未達。builder9分17秒・core6分55秒・release18分03秒、通常3分45秒・pixel2分07秒・runtime3分16秒・端末1分10秒・Material1分50秒・source36秒だった。runtimeと端末がbuilderの`20260907.0337.1`と異なる`20261028.0489.1`へ割り当てられ、試験前のreceipt照合で停止した。他の有用なjobと新環境の依存buildは終了まで待ち、失敗した2 job、続いてruntimeだけを再実行した。新しいpush・全体buildのやり直し・環境条件の緩和は行わず、3回目のattemptで最終gateが成功した。新規再現は5.20秒、先行build156.08秒と残りbuild132.52秒、既存binding201.65秒だった。registry356単位とSkiaは全てfreshで、全体buildは先行lib／CLI／lib試験／script_scopeを再利用した。
 
@@ -175,7 +183,7 @@ macOS の常用メモリは `7fe854b` の既存候補で172.03MiB、cached feedb
 
 ### 完成までの順序と概算
 
-1. CIの試験専用入力の再利用と、初回Skia build直後の重複compileを改善する。独立コピーの生成script所有元対応はd7cc9c6で検証済みになった。
+1. 拡張済みの依存cacheと実行hostの照合をGHAで検証し、初回Skia build直後の重複compileも改善する。試験専用入力の再利用はec9d668、独立コピーの生成script所有元はd7cc9c6で検証済みになった。
 2. 同時認証利用：旧3〜5実働日の概算を再評価する。旧見積もりに含めた追加フォントの遅延読み込みは検証済みになった。
 3. 各個別仕様の残る互換・資源処理（非local sampler、欠損修復、素材回収、font lockfileなど）を具体化する。追加分の工数は未確定。
 4. 不足する受け入れ確認、保証環境の確定、配布・文書整理：2〜4実働日の概算。

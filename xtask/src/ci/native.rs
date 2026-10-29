@@ -1120,6 +1120,9 @@ impl Session {
 
     fn compile_test_catalog(&self, targets: &[String], log: &str, commit: &str) -> Result<Catalog> {
         let [_, mut tests] = commands::catalog_builds(targets);
+        // Preserve Cargo's own reasons for freshness/rebuild decisions in the
+        // captured stderr, including dependency work hidden by an early build.
+        tests.push("--verbose".into());
         if !targets.is_empty() && self.root.join("src/lib.rs").is_file() {
             tests.push("--lib".into());
         }

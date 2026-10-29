@@ -2,6 +2,9 @@
 use super::*;
 use std::io::Read;
 
+mod execution;
+use execution::Execution;
+
 const LIMIT: u64 = 256 * 1024 * 1024;
 const ARCHIVE: &str = "catalog.tar.zst";
 const ARCHIVE_LIMIT: u64 = 8 * 1024 * 1024 * 1024;
@@ -33,11 +36,21 @@ impl Subset {
 }
 
 fn identity(s: &Session) -> Result<Value> {
+    let os_version = if cfg!(target_os = "macos") {
+        Some(
+            process::text(Command::new("sw_vers").arg("-productVersion"))?
+                .trim()
+                .to_owned(),
+        )
+    } else {
+        None
+    };
     Ok(json!({
-        "schema":1, "commit":std::env::var("GITHUB_SHA")?,
+        "schema":2, "commit":std::env::var("GITHUB_SHA")?,
         "run":std::env::var("GITHUB_RUN_ID")?,
         "os":std::env::consts::OS, "arch":std::env::consts::ARCH,
         "image":std::env::var("LAZYPENCIL_RUNNER_IMAGE")?,
+        "os_version":os_version,
         "compiler":process::text(Command::new("rustc").arg("-vV"))?,
         "flags":super::super::cache::compile_flags(&std::env::vars().collect()),
         "test_profile":commands::TEST_PROFILE_CONFIG,
@@ -285,10 +298,8 @@ fn restore_record(
     targets: Option<&std::collections::BTreeSet<&str>>,
 ) -> Result<Duration> {
     let mut receipt: Receipt = util::json(&directory(s).join("receipt.json"))?;
-    ensure!(
-        &receipt.identity == expected,
-        "Compiled catalog source or compiler conditions differ"
-    );
+    let receipt_sha256 = util::file_digest(&directory(s).join("receipt.json"))?;
+    let execution = Execution::new(&receipt.identity, expected, &receipt_sha256)?;
     ensure!(
         receipt.cargo_seconds.is_finite() && (0.0..900.0).contains(&receipt.cargo_seconds),
         "Invalid completed test budget"
@@ -337,6 +348,11 @@ fn restore_record(
         false,
     )?;
     util::publish(
+        &s.temporary.join("execution-host.json"),
+        &util::encode(&execution)?,
+        false,
+    )?;
+    util::publish(
         &s.temporary.join("lazypencil-tests.log"),
         receipt.identity["compiler"]
             .as_str()
@@ -358,7 +374,8 @@ pub(super) fn completed(s: &Session, mode: &str) -> Result<()> {
         &s.temporary.join("consumer-result.json"),
         &util::encode(&json!({
             "commit":std::env::var("GITHUB_SHA")?, "run":std::env::var("GITHUB_RUN_ID")?,
-            "mode":mode, "binaries":util::file_digest(&directory(s).join("receipt.json"))?
+            "mode":mode, "binaries":util::file_digest(&directory(s).join("receipt.json"))?,
+            "execution":util::file_digest(&s.temporary.join("execution-host.json"))?
         }))?,
         false,
     )
@@ -389,6 +406,13 @@ pub(super) fn gate(s: &Session) -> Result<()> {
             "Consumer receipt changed"
         );
         let receipt: Receipt = util::json(&receipt_path)?;
+        let execution_path = root.join("execution-host.json");
+        ensure!(
+            result["execution"].as_str() == Some(util::file_digest(&execution_path)?.as_str()),
+            "Consumer execution evidence changed"
+        );
+        let execution: Execution = util::json(&execution_path)?;
+        execution.validate(&receipt.identity, digest)?;
         ensure!(
             receipt.identity["commit"] == commit
                 && receipt.identity["run"] == run
@@ -537,6 +561,7 @@ mod tests {
         for name in [
             "test-executables.json",
             "binary-receipt.json",
+            "execution-host.json",
             "lazypencil-tests.log",
         ] {
             fs::remove_file(s.temporary.join(name)).unwrap();

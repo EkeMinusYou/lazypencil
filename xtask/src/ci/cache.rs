@@ -59,6 +59,7 @@ const FLAG_PREFIXES: &[&str] = &[
 
 pub mod artifact;
 mod compatible;
+pub mod native_snapshots;
 pub use compatible::{restore_combined, restore_compatible, stage_focused};
 
 #[derive(Subcommand)]
@@ -78,6 +79,28 @@ pub enum Command {
         image: String,
         #[arg(long, default_value = "full", value_parser = ["focus", "full"])]
         phase: String,
+        #[arg(long, default_value_t = false, action = clap::ArgAction::Set)]
+        core_only: bool,
+        #[arg(long, env = "GITHUB_OUTPUT")]
+        github_output: Option<PathBuf>,
+    },
+    NativeCheckpoint {
+        #[arg(long)]
+        primary: String,
+        #[arg(long, default_value = "")]
+        matched_key: String,
+        #[arg(long)]
+        checkpoint: String,
+        #[arg(long, default_value_t = false, action = clap::ArgAction::Set)]
+        core_only: bool,
+        #[arg(long, default_value = "")]
+        complete_catalog: String,
+        #[arg(long, default_value_t = false, action = clap::ArgAction::Set)]
+        release_verified: bool,
+        #[arg(long)]
+        source: PathBuf,
+        #[arg(long, env = "CARGO_TARGET_DIR")]
+        target: PathBuf,
         #[arg(long, env = "GITHUB_OUTPUT")]
         github_output: Option<PathBuf>,
     },
@@ -154,6 +177,7 @@ impl Command {
                 platform,
                 image,
                 phase,
+                core_only,
                 github_output,
             } => {
                 let root = util::root();
@@ -167,6 +191,8 @@ impl Command {
                     &std::env::vars().collect(),
                 )?;
                 let primary = report["primary"].as_str().unwrap();
+                let preferred = native_snapshots::preferred_key(primary, core_only)?;
+                let complete = native_snapshots::complete_key(primary)?;
                 let checkpoint = if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
                     checkpoint_key(
                         primary,
@@ -182,11 +208,46 @@ impl Command {
                     github_output.as_deref(),
                     &BTreeMap::from([
                         ("primary".into(), report["primary"].as_str().unwrap().into()),
+                        ("preferred".into(), preferred),
+                        ("complete".into(), complete),
                         ("legacy".into(), report["legacy"].as_str().unwrap().into()),
                         ("checkpoint".into(), checkpoint),
                     ]),
                 )?;
                 util::print(&report)
+            }
+            Self::NativeCheckpoint {
+                primary,
+                matched_key,
+                checkpoint,
+                core_only,
+                complete_catalog,
+                release_verified,
+                source,
+                target,
+                github_output,
+            } => {
+                let commit = std::env::var("GITHUB_SHA")?;
+                ensure!(
+                    complete_catalog.is_empty() || complete_catalog == commit,
+                    "Dependency catalog belongs to another source"
+                );
+                let key = native_snapshots::publication(native_snapshots::Publication {
+                    primary: &primary,
+                    matched: &matched_key,
+                    checkpoint: &checkpoint,
+                    core_only,
+                    full_catalog: !complete_catalog.is_empty(),
+                    release_verified,
+                })?;
+                if key.is_some() {
+                    prune(&source, &target)?;
+                }
+                util::github_output(
+                    github_output.as_deref(),
+                    &BTreeMap::from([("save_key".into(), key.clone().unwrap_or_default())]),
+                )?;
+                util::print(&json!({"save_key":key,"matched":matched_key}))
             }
             Self::Application {
                 operation,
@@ -1458,11 +1519,18 @@ fn obsolete_with_sources(
     let mut tool_fallbacks = Vec::new();
     let generations =
         Regex::new(r"^(native-v2-.+-[0-9a-f]{64})-(?:focus|full)-[1-9][0-9]*-[1-9][0-9]*$")?;
+    let native = Regex::new(r"^native-v2-[A-Za-z0-9_.-]+-[0-9a-f]{64}$")?;
     let mut checkpoints = BTreeMap::<(String, String), Vec<&Value>>::new();
     for entry in entries {
         let key = entry["key"].as_str().context("Invalid cache key")?;
         let version = entry["version"].as_str().context("Invalid cache version")?;
         let id = entry["id"].as_u64().context("Invalid cache id")?;
+        if native.is_match(key) && keys.contains(&(format!("complete-{key}").as_str(), version)) {
+            // A release-only baseline must not replace the graph that a full
+            // default build extended. Retire it only after publication, and
+            // only within the same SDK/compiler/flags/cache wire format.
+            selected.insert(id, entry.clone());
+        }
         if let Some(caps) = downloads.captures(key) {
             download_groups
                 .entry((caps[1].into(), version.into()))
@@ -1491,7 +1559,9 @@ fn obsolete_with_sources(
             let primary = generations
                 .captures(suffix)
                 .map_or_else(|| suffix.to_owned(), |caps| caps[1].to_owned());
-            if keys.contains(&(primary.as_str(), version)) {
+            if keys.contains(&(primary.as_str(), version))
+                || keys.contains(&(format!("complete-{primary}").as_str(), version))
+            {
                 selected.insert(id, entry.clone());
             } else {
                 checkpoints

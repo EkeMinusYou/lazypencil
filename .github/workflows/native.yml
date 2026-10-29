@@ -96,6 +96,7 @@ jobs:
       LAZYPENCIL_CI_SEPARATE_CORE: ${{ inputs.lane == 'build' }}
       FOCUS_SUITE: ${{ inputs.suite }}
       FOCUS_TARGETS: ${{ inputs.targets }}
+      CORE_ONLY_CACHE: ${{ inputs.phase == 'focus' && !(inputs.measure_tui || inputs.native_clipboard || inputs.runtime_parallel) && (inputs.suite == 'core' || inputs.suite == 'conversation') }}
       RUNTIME_PARALLEL: ${{ inputs.runtime_parallel }}
       HEADED_BROWSER_TESTS: ${{ inputs.lane == 'default' || inputs.lane == 'all' && (inputs.phase == 'full' || inputs.runtime_parallel || contains(fromJSON(inputs.targets), 'browser_readiness')) }}
       FOCUS_RUNTIME_STAGE: ${{ (inputs.suite == 'release' || inputs.suite == 'candidate' || inputs.measure_tui) && 'focus-runtime-release' || 'runtime-tests' }}
@@ -151,16 +152,17 @@ jobs:
       - name: Identify compatible hosted dependency caches
         id: cache-key
         continue-on-error: true
-        run: cargo xtask ci cache native --platform '${{ inputs.os }}' --image "$ImageVersion" --phase '${{ inputs.phase == 'verify' && 'full' || inputs.phase }}'
+        run: cargo xtask ci cache native --platform '${{ inputs.os }}' --image "$ImageVersion" --phase '${{ inputs.phase == 'verify' && 'full' || inputs.phase }}' --core-only "$CORE_ONLY_CACHE"
       - name: Restore hosted dependency build artifacts
         id: native-cache
         if: steps.cache-key.outcome == 'success'
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
-          key: ${{ inputs.phase == 'focus' && !(inputs.measure_tui || inputs.native_clipboard || inputs.runtime_parallel) && (inputs.suite == 'core' || inputs.suite == 'conversation') && 'core-' || '' }}${{ steps.cache-key.outputs.primary }}
+          key: ${{ steps.cache-key.outputs.preferred }}
           restore-keys: |
-            ${{ inputs.phase == 'focus' && !(inputs.measure_tui || inputs.native_clipboard || inputs.runtime_parallel) && (inputs.suite == 'core' || inputs.suite == 'conversation') && steps.cache-key.outputs.primary || '' }}
+            ${{ steps.cache-key.outputs.complete }}
+            ${{ steps.cache-key.outputs.primary }}
             ${{ format('checkpoint-{0}-', steps.cache-key.outputs.primary) }}
             ${{ format('checkpoint-{0}', steps.cache-key.outputs.primary) }}
             ${{ steps.cache-key.outputs.legacy }}
@@ -574,16 +576,24 @@ jobs:
         run: cargo xtask ci cache retain --platform '${{ inputs.os }}' --manifest "$RUNNER_TEMP/lazypencil-source/SOURCE-MANIFEST.json" --delete
       - name: Keep completed dependencies after failure or cancellation
         id: cache-prune
-        if: ${{ always() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true' && steps.native-cache.outputs.cache-matched-key != steps.cache-key.outputs.primary && (steps.focus-build.outcome == 'success' || steps.default-build.outcome == 'success' || steps.default-build.outputs.compiled_catalog == github.sha || steps.release-build.outcome == 'success') }}
+        if: ${{ always() && steps.native-cache.outcome == 'success' && (steps.focus-build.outcome == 'success' || steps.default-build.outcome == 'success' || steps.default-build.outputs.compiled_catalog == github.sha || steps.release-build.outcome == 'success') }}
         continue-on-error: true
-        run: cargo xtask ci cache prune --source "$RUNNER_TEMP/lazypencil-source"
+        run: cargo xtask ci cache native-checkpoint --primary '${{ steps.cache-key.outputs.primary }}' --checkpoint '${{ steps.cache-key.outputs.checkpoint }}' --matched-key '${{ steps.native-cache.outputs.cache-matched-key }}' --core-only "$CORE_ONLY_CACHE" --complete-catalog '${{ steps.default-build.outputs.compiled_catalog }}' --release-verified '${{ inputs.phase == 'full' && steps.release-smoke.outcome == 'success' }}' --source "$RUNNER_TEMP/lazypencil-source"
       - name: Save compatible hosted dependency build artifacts
-        if: ${{ always() && steps.cache-prune.outcome == 'success' && github.ref == 'refs/heads/main' }}
+        id: native-published
+        if: ${{ always() && steps.cache-prune.outcome == 'success' && steps.cache-prune.outputs.save_key != '' && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
-          key: ${{ (inputs.phase == 'full' && steps.release-smoke.outcome == 'success' || inputs.phase == 'focus' && !(inputs.measure_tui || inputs.native_clipboard || inputs.runtime_parallel) && (inputs.suite == 'core' || inputs.suite == 'conversation')) && steps.native-cache.outputs.cache-primary-key || steps.cache-key.outputs.checkpoint }}
+          key: ${{ steps.cache-prune.outputs.save_key }}
           path: |
             ${{ runner.temp }}/lazypencil-target
             ${{ runner.temp }}/lazypencil-source/vendor/skia-bindings/skia
             ${{ runner.temp }}/lazypencil-material-fonts
+      - name: Retire the release baseline only after its extended graph exists
+        if: ${{ always() && steps.native-published.outcome == 'success' && github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: cargo xtask ci cache retain --manifest "$RUNNER_TEMP/lazypencil-source/SOURCE-MANIFEST.json" --delete
