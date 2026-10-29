@@ -251,7 +251,7 @@ jobs:
       - name: Verify distributed dependency notices
         run: cargo xtask ci native notices
       - name: Reproduce script compatibility before native rendering
-        if: (inputs.phase == 'focus' || inputs.phase == 'verify' || inputs.lane == 'core') && inputs.suite != 'ci' && inputs.lane != 'build'
+        if: (inputs.phase == 'focus' || inputs.phase == 'verify') && inputs.suite != 'ci' && inputs.lane != 'build'
         run: cargo xtask ci native focus-core --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
       - name: Check affected code and build tests with cache-aware ordering
         id: focus-build
@@ -277,6 +277,9 @@ jobs:
         if: ${{ (inputs.lane == 'all' || inputs.lane == 'core') && (inputs.phase != 'focus') }}
         timeout-minutes: 40
         run: cargo xtask ci native core-build
+      - name: Reproduce affected core ownership without extending the complete suite
+        if: inputs.lane == 'core' && inputs.phase == 'full'
+        run: cargo xtask ci native core-reproduce --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
       - name: Test core configuration
         id: core-tests
         if: ${{ (inputs.lane == 'all' || inputs.lane == 'core') && (inputs.phase != 'focus') }}

@@ -39,6 +39,7 @@ pub enum Stage {
     FocusRelease,
     FocusRuntimeRelease,
     CoreBuild,
+    CoreReproduce,
     CoreTest,
     CoreLint,
     DefaultBuild,
@@ -278,6 +279,34 @@ impl Session {
             .env("CARGO_MANIFEST_PATH", self.root.join("Cargo.toml"));
         self.execute_command(&mut command, 300, log, true)
     }
+    fn core_reproductions(&self, suite: &str, targets: &[String]) -> Result<()> {
+        if std::env::var("RUNTIME_PARALLEL").as_deref() == Ok("true") {
+            self.execute(
+                &commands::management_tests(false),
+                900,
+                "focus-management-core.log",
+                false,
+            )?;
+        }
+        if suite == "dynamic" && targets.iter().any(|target| target == "agent") {
+            self.test(false,"agent","browser_ownership::killed_profile_owners_reap_children_preserve_persistent_data_and_release_only_their_lease",
+                &["--exact","--test-threads=1"],"focus-profile-ownership.log")?;
+        }
+        if !["core", "conversation"].contains(&suite)
+            && targets
+                .iter()
+                .any(|target| target == "conversation_history")
+        {
+            self.test(
+                false,
+                "lib",
+                "conversation::management::",
+                &["--test-threads=2"],
+                "focus-history-core.log",
+            )?;
+        }
+        Ok(())
+    }
     fn test_invocation(
         &self,
         features: bool,
@@ -472,27 +501,7 @@ impl Session {
                 Ok(())
             }
             Stage::FocusCore => {
-                if std::env::var("RUNTIME_PARALLEL").as_deref() == Ok("true") {
-                    self.execute(
-                        &commands::management_tests(false),
-                        900,
-                        "focus-management-core.log",
-                        false,
-                    )?;
-                }
-                if args.suite == "dynamic" && has("agent") {
-                    self.test(false,"agent","browser_ownership::killed_profile_owners_reap_children_preserve_persistent_data_and_release_only_their_lease",
-                        &["--exact","--test-threads=1"],"focus-profile-ownership.log")?;
-                }
-                if !core && has("conversation_history") {
-                    self.test(
-                        false,
-                        "lib",
-                        "conversation::management::",
-                        &["--test-threads=2"],
-                        "focus-history-core.log",
-                    )?;
-                }
+                self.core_reproductions(&args.suite, &targets)?;
                 if ["graphics", "dynamic", "copy", "browser"].contains(&args.suite.as_str())
                     && has("project")
                 {
@@ -804,13 +813,6 @@ impl Session {
                         &["--test-threads=2"],
                         "focus-dynamic-inputs.log",
                     )?;
-                    self.test(
-                        true,
-                        "lib",
-                        "dynamic::worker::",
-                        &["--test-threads=2"],
-                        "focus-dynamic-inputs.log",
-                    )?;
                 }
                 if ["dynamic", "shader"].contains(&args.suite.as_str()) {
                     self.test(
@@ -887,6 +889,7 @@ impl Session {
                     false,
                 )
             }
+            Stage::CoreReproduce => self.core_reproductions(&args.suite, &targets),
             Stage::CoreTest => management::core(self),
             Stage::CoreLint => self.cargo(
                 &[
@@ -1524,7 +1527,7 @@ mod tests {
         }
         session
             .run(Arguments {
-                stage: Stage::FocusCore,
+                stage: Stage::CoreReproduce,
                 suite: "dynamic".into(),
                 targets: "[\"agent\"]".into(),
             })

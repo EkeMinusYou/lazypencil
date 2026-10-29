@@ -37,7 +37,7 @@ Noto Sans JP の配布時は OFL 1.1 の著作権表記とライセンス本文�
 
 ### 再現性と軽量性
 
-プロジェクト設定の最上位に`font_lock = "fonts.lock.json"`を指定し、`fonts lock FILE`で明示取得、`fonts check FILE`で照合する方式を実装した。JSON版1・最大1 MiBに、設定されたフォントデータの優先順、ファミリー・スタイル・source／face hash・collection index・可変軸、既定書体・代替列・言語、標準パックの版とエンジン識別情報を記録する。通常の取得でlockfileを書き換えず、不一致は計測・描画を拒否する。変更済みの内容への更新には現在のhashを要求し、文書・設定・フォントを自動で変更しない。設定された全file faceと、その文書の生成テキストを含む実組版で観測したsystem faceを捕捉する。ローカルpathを固定しないので同じデータの移動は許す。全OS書体・全script分岐・BrowserのCSSフォントの固定とは区別する。[確定したスキーマと操作](fonts.md#reproducibility-lockfile)。f53ffeeの[Mac CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40946469636)でCLI／実MCP／TUI preview workerの照合・不一致の拒否・復元が成功した。補助ツールのfixture不整合で停止した最終gateの確認と、実端末での公開受け入れは別に残る。
+プロジェクト設定の最上位に`font_lock = "fonts.lock.json"`を指定し、`fonts lock FILE`で明示取得、`fonts check FILE`で照合する方式を実装した。JSON版1・最大1 MiBに、設定されたフォントデータの優先順、ファミリー・スタイル・source／face hash・collection index・可変軸、既定書体・代替列・言語、標準パックの版とエンジン識別情報を記録する。通常の取得でlockfileを書き換えず、不一致は計測・描画を拒否する。変更済みの内容への更新には現在のhashを要求し、文書・設定・フォントを自動で変更しない。設定された全file faceと、その文書の生成テキストを含む実組版で観測したsystem faceを捕捉する。ローカルpathを固定しないので同じデータの移動は許す。全OS書体・全script分岐・BrowserのCSSフォントの固定とは区別する。[確定したスキーマと操作](fonts.md#reproducibility-lockfile)。625bec7の[Mac完全CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40951785256)でCLI／実MCP／TUI preview workerの照合・不一致の拒否・復元、両構成とClippy、release・共通画像・署名sourceまで成功した。実端末と公開受け入れ全体は別に残る。
 
 SkParagraph がファイルから読み込んだフォントで組版し、その結果を計測と描画の両方に使う。OS のフォント探索と、実際のフォント選択・文字計測を分ける。[Skia のフォント読み込み API](https://api.skia.org/classSkFontMgr.html)
 

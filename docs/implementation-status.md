@@ -4,6 +4,17 @@
 
 ## 現在の状態（2026-10-30）
 
+625bec7の[CI 40951785256](https://github.com/EkeMinusYou/lazypencil/actions/runs/40951785256)は全工程成功した。監査、core／既定構成の全試験とClippy、通常開発build、release、通常／pixel／runtime／端末／Materialの全5 consumer、共通画像gateと署名付きsourceを含む。font lockfileはCLIの生成text、hash付き更新・移動・復元、実MCPのstale拒否と構造編集、TUI preview workerの拒否・同一PNG／viewへの復帰まで検証済みになった。MCPの古いcapability表示も実装へ揃い、実MCPの回帰が成功した。実端末のIMEや公開受け入れ全体の完了とは区別する。
+
+全体14分13秒で10分目標は未達。builder7分32秒・core12分34秒・release8分59秒、通常3分34秒・runtime4分53秒・pixel3分00秒・Material1分34秒・端末1分00秒・source54秒だった。対象選択は33秒で、未変更のWasmは追加しなかった。builderの先行compileは159.05秒、修復31件は1.68秒で成功し、color-font34.26秒／実emoji116.40秒の開始が重なり、両方成功した。同じ条件の以前の直列値との差を、そのまま速度改善量にはしない。
+
+core移管時に条件を広げすぎ、以前の完全core jobにはなかった広いFocusCoreまで追加していた。320秒の前段にはlib単独とintegrationの異なるCargo入力構成のcompile（150.97秒／168.18秒）を含むため、「同じ試験を320秒削る」とは扱わない。修正では完全core build後の`core-reproduce`へ必要な所有権・会話管理・cleanup workerだけを渡し、従来の完全coreとstandalone focusの各構成は保持する。実行0件だった旧`dynamic::worker::`呼出しだけも除く。この補助処理の差分は新しいMac先行GHAで確認し、アプリ本体・同条件の全native検証はこの整理だけのために繰り返さない。
+
+同SDKのf53ffee成果物はbcbd67aで実際に再利用できたため、置換済みの旧Mac成果物cache一件だけを整理して1,092,373,112バイトを解放した。両Mac imageの依存cacheと、新しい成果物・異なるSDKのfallbackは保持した。全5 consumerのreceiptと元の画像gateが成功し、署名sourceは1,207ファイル・13,399,707バイト、SHA-256 `b96a778537c61a36be56a6529c2882101da4c426649a9ff70472e4c76a075023`で、workflow／source revisionの署名照合も成功した。重いbuildと試験はGHAだけで実行し、有用な実行を中断していない。
+
+<details>
+<summary>Font lockfile導入時の失敗とcache改善の履歴（上記625bec7でアプリの最終gateまで検証済み）</summary>
+
 bcbd67aの[最終CI 40949240892](https://github.com/EkeMinusYou/lazypencil/actions/runs/40949240892)は10分12秒で失敗した。監査・Wasm・releaseとTUI性能計測、core全試験は成功したが、builderの先行と既定構成Clippyが停止し、全5 consumerと最終sourceは未実行である。builderはf53ffeeの304出力を失効0件で再利用し、同じ条件の準備は4.23秒で成功した。その後、先行中にcoreのagent試験をCargoで157.83秒かけてビルドし、共有CLIを描画なし構成へ置き換えた。直後の実PTYは`unrecognized subcommand 'tui'`で起動前に失敗した。並列pixel群より前の停止であり、新しい並列化の実成功とは扱わない。
 
 修正ではcoreのprofile所有権・会話管理・cleanup worker再現をdefaultの実行ファイルを確定する前へ移し、独立core jobでも先に実行する。元のfeature・filter・assertion・期限を維持し、確定後のcore Cargo呼出しは拒否する。小さな実Cargo fixtureでcore再現→default CLI生成と、early／complete両catalogの後では直接・統合試験の両経路からCLIを置換できないことを検査する。Clippyのfont lockfileの不要なunwrapも条件分岐で解消する。MCPのcapabilityに残っていたscript copy・絶対sampler・内包定義再利用・動的描画の古い無効表示も既存実装へ揃える。これらの新しい差分は未検証であり、補助ツールの先行GHA成功後にアプリを検証する。実行中の有用なjobは中断せず、前候補が全て終了してから次の修正を送る。
@@ -27,6 +38,8 @@ c38fc1cの[CI 40935920526](https://github.com/EkeMinusYou/lazypencil/actions/run
 builderの補助ツール準備では、新imageで検証済みtool cacheと依存だけのcheckpointがともになく、116.36秒のcold buildが発生した。d5e27c3では、非検証jobでも最後のtool呼出し後に標準の`cargo clean -p lazypencil-xtask`で自前出力だけを除き、既存のcompiler／image／lockfile keyへ依存checkpointを保存するようにした。検証済みの完全tool cacheを優先し、依存checkpointで上書きしない。自前コードのepoch正規化後も旧実行ファイルを再利用せず、未変更依存だけがCargoでfreshになる実Cargo回帰は、[Mac 40940088205](https://github.com/EkeMinusYou/lazypencil/actions/runs/40940088205)・[Linux 40940093609](https://github.com/EkeMinusYou/lazypencil/actions/runs/40940093609)で成功した。既存workflowによる全xtask試験はMac232件・Linux233件、Clippy・元のライセンス資料の照合も成功し、ローカルでは重いビルドを行っていない。actionlintと書式検査も成功した。native job末尾の保存／次回復元の実証と10分目標は、次に必要なapp検証で確認する。同条件の全native試験をこの小変更だけのために追加しない。
 
 Macの軽量workflowはrunner割当まで約5分09秒待ち、新image20261028.0489.1で実行した。検証済みtool cache157,350,453バイトを新image用に保存したため、以後の同条件の利用候補になる。warm復元の実測とは区別する。容量は、置換先が保存・検証済みで同じSDK／compile条件／wire formatの旧app二件と旧Linux tool一件だけを整理し、1,540,172,450バイトを解放した。旧appのguide入力などが変わると互換hashも変わり、保持groupが別になるため残っていたものである。現行core／既定構成、異なるMac imageのfallbackと両Mac／Linuxの依存cacheは保持し、稼働中のMac軽量workflowを中断しなかった。
+
+</details>
 
 <details>
 <summary>直前候補の失敗とcache改善の履歴（c38fc1cで上記範囲を検証済み）</summary>
@@ -245,7 +258,7 @@ ab8c785の既定構成builderは7分42秒、通常consumer3分24秒、pixel cons
 
 - 元エンコード保存と縮小版のCLI／TUI操作、入力スレッドによる変換・保存、キャンセル時の候補回収、ユーザーの `[attachments]` 設定は `c11a0f9` でMac先行・両feature構成の完全検証・監査・署名sourceまで成功した。設定を下げた後の送信拒否・段階的な縮小による修復・元画像と下書き保持、実ACPが受信した縮小PNGを含む。既定8枚・各20MiB・合計各50MiB・16Mi画素とネイティブ単体の安全上限は維持する。PNG検査は既存Rust補助バイナリのpng-inspectへ移行済みで、試験コードの検査経路はTUI featureに依存しない。個別feature構成の過去の実行根拠は、現在の通常CIのcore／既定2構成と区別して扱う。物理IMEと最終受け入れは引き続き確認する。
 
-個別仕様に残る制約も、完了扱いにしない。独立copyの非localな文字列samplerと未参照のproject素材回収は各サービス文書の現行範囲を参照する。font lockfileは実装済みで、最終CIと公開受け入れを冒頭で区別している。欠損library／設定fontの診断と修復は上記のとおり検証済みである。runtime導入の取消・保存同期は `99cc153` の完全CIで通常導入と取消試験を成功した。通信待ちを所有する子プロセス、lock待機・分割転送・hash・展開の取消、公開前のfile／directory同期と新規ancestor同期、取消時の未完成物回収と既存Rust補助バイナリを使う回帰試験を含む。コンパイル・通常の実通信と取消の成功から、全異常終了経路・電源断時の耐障害性・最終配布の受け入れ完了とはしない。Browserが広告するdevice IDはdesktop／phone／tabletだけで、全Pencil presetへの対応を宣言しない。GLSLの宣言・構造体・前処理は実装済みだが、fill-stage `pencil:object` は未対応である。2026-10-30に[公開形式仕様](https://docs.pencil.dev/for-developers/the-pen-format)を再確認したところ、deviceIdは文字列でpreset一覧の定義がなく、object画像の意味はeffect段階で明記されている一方、fill段階の評価順序は明記されていない。この二点を仕様確認待ちとして残し、推測した動作を本家互換とは宣言しない。元の必須条件は維持する。
+個別仕様に残る制約も、完了扱いにしない。独立copyの非localな文字列samplerと未参照のproject素材回収は各サービス文書の現行範囲を参照する。font lockfileは625bec7の完全CIで検証済みで、公開受け入れ全体は冒頭で区別している。欠損library／設定fontの診断と修復は上記のとおり検証済みである。runtime導入の取消・保存同期は `99cc153` の完全CIで通常導入と取消試験を成功した。通信待ちを所有する子プロセス、lock待機・分割転送・hash・展開の取消、公開前のfile／directory同期と新規ancestor同期、取消時の未完成物回収と既存Rust補助バイナリを使う回帰試験を含む。コンパイル・通常の実通信と取消の成功から、全異常終了経路・電源断時の耐障害性・最終配布の受け入れ完了とはしない。Browserが広告するdevice IDはdesktop／phone／tabletだけで、全Pencil presetへの対応を宣言しない。GLSLの宣言・構造体・前処理は実装済みだが、fill-stage `pencil:object` は未対応である。2026-10-30に[公開形式仕様](https://docs.pencil.dev/for-developers/the-pen-format)を再確認したところ、deviceIdは文字列でpreset一覧の定義がなく、object画像の意味はeffect段階で明記されている一方、fill段階の評価順序は明記されていない。この二点を仕様確認待ちとして残し、推測した動作を本家互換とは宣言しない。元の必須条件は維持する。
 
 公開前の確認・決定：
 
@@ -268,7 +281,7 @@ macOS の常用メモリは `7fe854b` の既存候補で172.03MiB、cached feedb
 
 1. 拡張済み依存cacheのwarm再利用と、異なるMac 15 imageでの通常consumerの実成功はb09a329で確認した。全5 consumerの最終gateもc38fc1cまで複数回成功している。10分目標と、新imageの補助tool依存checkpoint、初回Skia build直後の重複compileの改善は残る。試験専用入力の再利用はec9d668、独立コピーの生成script所有元はd7cc9c6で検証済みになった。
 2. 同時認証利用はe786e3eの全工程CIで検証済み。旧3〜5実働日の概算には、既に検証済みの追加フォント遅延読み込みとこの対応が含まれており、現在の残工数には加算しない。
-3. 各個別仕様の残る互換・資源処理（非local sampler、素材回収など）を具体化する。font lockfileは実装済みで、CLI／実MCP／TUI workerはf53ffeeで成功し、最終gateを確認中である。欠損library／設定fontの診断と修復はc38fc1cで検証済みになった。残る追加分の工数は未確定。
+3. 各個別仕様の残る互換・資源処理（非local sampler、素材回収など）を具体化する。font lockfileは625bec7の完全CIでCLI／実MCP／TUI workerと最終gateまで検証済みになった。欠損library／設定fontの診断と修復はc38fc1cで検証済みになった。残る追加分の工数は未確定。
 4. 不足する受け入れ確認、保証環境の確定、配布・文書整理：2〜4実働日の概算。
 
 上記は旧3環境方針での概算である。初回Macのみへの変更で、Linuxの環境確認・配布・最低版調整は初回から外れる。共通の機能不足はそのまま残るため、全工数を単純に1/3にはしない。前回提示した8〜15実働日は主要4項目と確認作業に対する1人換算の概算だった。画像添付など個別仕様との差分の追加工数は含めていないため、製品全体の完成日を確約する総見積もりには使わない。実機環境確保・権利処理の待ち時間も別である。完成目標に沿って実装を再開している。変更箇所を1環境で先行検証し、元の最終合格基準を維持する。同じ入力・環境・目的で確認済みの内容を、根拠なく再検証しない。
