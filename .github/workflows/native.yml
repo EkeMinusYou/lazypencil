@@ -80,6 +80,8 @@ jobs:
     runs-on: ${{ inputs.os }}
     env:
       LAZYPENCIL_CI_TEST_PROFILE: optimized-debug-v1
+      # The combined Mac pipeline already runs the complete core configuration.
+      LAZYPENCIL_CI_SEPARATE_CORE: ${{ inputs.lane == 'build' }}
       FOCUS_SUITE: ${{ inputs.suite }}
       FOCUS_TARGETS: ${{ inputs.targets }}
       RUNTIME_PARALLEL: ${{ inputs.runtime_parallel }}
@@ -229,7 +231,7 @@ jobs:
       - name: Verify distributed dependency notices
         run: cargo xtask ci native notices
       - name: Reproduce script compatibility before native rendering
-        if: (inputs.phase == 'focus' || inputs.phase == 'verify') && inputs.suite != 'ci'
+        if: (inputs.phase == 'focus' || inputs.phase == 'verify') && inputs.suite != 'ci' && inputs.lane != 'build'
         run: cargo xtask ci native focus-core --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
       - name: Check affected code and build tests with cache-aware ordering
         id: focus-build

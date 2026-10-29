@@ -522,6 +522,10 @@ impl Session {
                 self.execute(&command, 300, "focus-clippy.log", false)
             }
             Stage::FocusReproduce => {
+                let separate_core = std::env::var("LAZYPENCIL_CI_SEPARATE_CORE")
+                    .unwrap_or_else(|_| "false".into())
+                    .parse::<bool>()
+                    .context("LAZYPENCIL_CI_SEPARATE_CORE must be true or false")?;
                 if args.suite == "dynamic" && has("agent") {
                     self.test(false,"agent","browser_ownership::killed_profile_owners_reap_children_preserve_persistent_data_and_release_only_their_lease",
                         &["--exact","--test-threads=1"],"focus-profile-ownership.log")?;
@@ -660,17 +664,22 @@ impl Session {
                 if ["graphics", "dynamic", "copy", "browser"].contains(&args.suite.as_str())
                     && has("script_scope")
                 {
-                    for filter in [
-                        "project::bindings::",
-                        "project::import::scripts::composition::tests::",
-                    ] {
-                        self.test(
-                            false,
-                            "lib",
-                            filter,
-                            &["--test-threads=2"],
-                            "focus-bindings.log",
-                        )?;
+                    // These pure namespace checks use the same core compiler
+                    // conditions and two-thread harness as the complete core
+                    // job. Standalone focus still owns and runs them here.
+                    if !separate_core {
+                        for filter in [
+                            "project::bindings::",
+                            "project::import::scripts::composition::tests::",
+                        ] {
+                            self.test(
+                                false,
+                                "lib",
+                                filter,
+                                &["--test-threads=2"],
+                                "focus-bindings.log",
+                            )?;
+                        }
                     }
                     self.test(
                         true,

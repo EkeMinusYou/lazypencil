@@ -4,7 +4,7 @@
 
 ## 現在の状態（2026-10-29）
 
-最新のMac完全CIの根拠は `958b803` の [cache利用時の実行](https://github.com/EkeMinusYou/lazypencil/actions/runs/40791884683)。軽量227件・Clippy、core462・default838ケース、runtime・画像gate・42描画計測・依存監査・署名付きsourceまで成功した。両構成の可視consoleで従来の全named caseの回数を保持したことを照合した。runtime導入の取消・保存同期、描画単独構成の添付PNG検査、送信用縮小版・TUI入力スレッドでの変換と候補回収・ユーザー設定も含む。全artifactの独立した再照合と製品全体の受け入れは未完了で、正常な導入・取消の成功から全異常終了条件の合格とはしない。重いbuildはGHAに限り、Linux x64／arm64・Windowsの既存実装は後日対応用に保持する。Intel Macは対象外とし、OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
+最新のMac完全CIの根拠は `4aaccab` の [実行](https://github.com/EkeMinusYou/lazypencil/actions/runs/40794144460)。軽量227件・Clippy、core462・default840ケース、runtime・画像gate・42描画計測・依存監査・署名付きsourceまで成功した。両構成の可視consoleで従来の全named caseの回数を保持したことを照合した。runtime導入の取消・保存同期、Rust補助バイナリによる添付PNG検査、送信用縮小版・TUI入力スレッドでの変換と候補回収・ユーザー設定も含む。全artifactの独立した再照合と製品全体の受け入れは未完了で、正常な導入・取消の成功から全異常終了条件の合格とはしない。重いbuildはGHAに限り、Linux x64／arm64・Windowsの既存実装は後日対応用に保持する。Intel Macは対象外とし、OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
 
 旧3環境方針での依存監査・署名付きソースを含む確定済み根拠は [`c9ffb37` の CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40679529757)。Linux 各1,490件・Mac1,479件、各144サマリー・812画像・42描画計測を確認し、過去ケースの実行回数、画像、clipboard／IME、profile／namespace／通信制御、ソース1,161ファイルの Git blob・mode と署名を独立照合した。CI の成功は、製品全体の受け入れ完了を意味しない。
 
@@ -25,6 +25,8 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 `958b803` の [初回](https://github.com/EkeMinusYou/lazypencil/actions/runs/40790731466) は依存監査・共通画像gate・署名付きsourceまで全工程成功で10分06秒。core462・既定構成838ケースについて従来の全named caseの回数を照合し、欠落0件、release42描画計測も維持した。対象選択1分34秒、共通builder3分11秒、通常consumer4分34秒（試験step3分30秒）、runtime consumer4分08秒、source検証35秒だった。画面ありChromeの先行caseは7.8秒で成功した。実行ファイルの受け渡しはtar/Zstandard（128MiBの照合window）へ揃え、同じ対象数の直前runとの比較で通常用約1.04GB→211MB、runtime用約320MB→90MB、圧縮時間はそれぞれ7.4秒／3.6秒だった。同じreceipt・compiler／hash検査・runtimeの12対象・元の期限は保持し、既存の転送回帰は実圧縮・展開と不正member拒否まで検証した。補助処理の新規buildを含む初回では10分を6秒超えた。
 
 同じcommitの [cache利用時](https://github.com/EkeMinusYou/lazypencil/actions/runs/40791884683) は全工程成功で **7分48秒**。対象選択45秒、共通builder2分13秒、通常consumer3分57秒（試験step2分59秒）、runtime consumer4分05秒（準備37秒・試験step2分40秒）、source検証30秒だった。run開始からplanは4秒、planからnativeは3〜4秒、builderからconsumerは4〜5秒、consumerからsourceは2秒で、今回の待機は処理時間の主因ではなかった。appのbuild確認5.4秒・lint0.4秒で再コンパイル0件、core462・既定構成838ケースの従来の全named caseの回数・42描画計測・先行headed caseの成功も再照合した。画像gate・監査・署名付きsourceまで含む10分以内を、依存／アプリ／補助処理のcacheが使える条件で実測した。依存を含む完全なcold buildや長いrunner割当待ちへの保証とはしない。同条件の追加実行は行わず、重いbuildはGHAだけで行う。
+
+本体コードを変更した `4aaccab` の完全CIは17分11秒で成功し、cacheだけを再利用した上記7分48秒とは条件を区別する。既定builderの先行core互換試験に3分50秒を使い、同じsource・compiler条件・no-default構成・2-threadの検証が専用core jobにも含まれることをconsoleとworkflowで照合した。combined builderではこの重複を除き、描画ありの先行試験・単独focusの両構成・最終core完全検証は保持する。あわせてコピー回帰に実workerのユーザーmetadataと部品参照の確認を加え、変更後のGHAで確認する。
 
 過去の比較では基準 `c11a0f9` が先行5分56秒・完全job24分34秒・workflow32分09秒、`112f5aa` はdefault11分01秒だった。後者ではMac runnerが15分02秒の割当待ちでGitHub側に終了され、未実行jobだけを再実行した。capacity constraintsのannotationを保存し、待機と処理時間を分ける。有用な実行は中断していない。`1190c6b` の過剰並列化はMCP30秒／emoji300秒の期限に抵触し、`140d94a` のウォーム試験は300ms起動期限のPID記録前に終了した。失敗を合格へ読み替えず、期限も変更していない。`f2ffcf0` は全工程成功したが全体13分31秒であり、フォントの重複計算を除く前の結果として区別する。
 
@@ -50,14 +52,14 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 
 コード上に残る主な機能不足：
 
-- 生成 script の有効な明示 `script_scope`／`script_bindings`／上書き文脈の独立合成。現在は `bindings.rs` と `generated_refs.rs` で拒否する。失効したscript_bindingsが生成URIの再配置で復活する別の不具合を修正し、実worker・2形式・元ファイル削除・再コピーの回帰を追加した。修正後のGHA結果を確認する。有効な明示文脈の合成を、この修正だけで完了扱いにしない。
+- 生成 script の有効な明示 `script_scope`／`script_bindings`／上書き文脈の独立合成。現在は `bindings.rs` と `generated_refs.rs` で拒否する。失効したscript_bindingsが生成URIの再配置で復活する別の不具合を修正し、実worker・2形式・元ファイル削除・再コピーの回帰を追加した。4aaccabのMac完全CIで両形式の回帰まで成功し、従来のケースの実行回数を保持した。有効な明示文脈の合成を、この修正だけで完了扱いにしない。
 - コピーする親の内部にある再利用可能な部品定義を、既存定義へ明示再利用する経路。独立した依存定義と選択した部品の再利用は実装済み。
 - TUI preview と別の bound MCP が、同じ認証済みブラウザープロファイルを同時利用する統合。専用 profile の作成・ログイン・永続ストレージ・所有者回収は実装済みだが、現在の lease は二つ目の独立 owner を拒否する。
 - 追加フォントの遅延読み込み。入力容量・フェイス数の上限と OS FontMgr の遅延作成は実装済みだが、指定ファイルの全件読み取り・登録が残る。
 
 画像添付仕様との追加の差分：
 
-- 元エンコード保存と縮小版のCLI／TUI操作、入力スレッドによる変換・保存、キャンセル時の候補回収、ユーザーの `[attachments]` 設定は `c11a0f9` でMac先行・両feature構成の完全検証・監査・署名sourceまで成功した。設定を下げた後の送信拒否・段階的な縮小による修復・元画像と下書き保持、実ACPが受信した縮小PNGを含む。既定8枚・各20MiB・合計各50MiB・16Mi画素とネイティブ単体の安全上限は維持する。TUIを含まない描画構成でも同じ画素試験を使えるよう、次の変更でPNG検査を既存Rust補助バイナリへ移し、その構成を先に試験する。物理IMEと最終受け入れは引き続き確認する。
+- 元エンコード保存と縮小版のCLI／TUI操作、入力スレッドによる変換・保存、キャンセル時の候補回収、ユーザーの `[attachments]` 設定は `c11a0f9` でMac先行・両feature構成の完全検証・監査・署名sourceまで成功した。設定を下げた後の送信拒否・段階的な縮小による修復・元画像と下書き保持、実ACPが受信した縮小PNGを含む。既定8枚・各20MiB・合計各50MiB・16Mi画素とネイティブ単体の安全上限は維持する。PNG検査は既存Rust補助バイナリのpng-inspectへ移行済みで、試験コードの検査経路はTUI featureに依存しない。個別feature構成の過去の実行根拠は、現在の通常CIのcore／既定2構成と区別して扱う。物理IMEと最終受け入れは引き続き確認する。
 
 個別仕様に残る制約も、完了扱いにしない。独立copyの非localな文字列sampler、欠損library／設定fontの専用修復、未参照のproject素材回収、再現用font lockfileなどは各サービス文書の現行範囲を参照する。runtime導入の取消・保存同期は `99cc153` の完全CIで通常導入と取消試験を成功した。通信待ちを所有する子プロセス、lock待機・分割転送・hash・展開の取消、公開前のfile／directory同期と新規ancestor同期、取消時の未完成物回収と既存Rust補助バイナリを使う回帰試験を含む。コンパイル・通常の実通信と取消の成功から、全異常終了経路・電源断時の耐障害性・最終配布の受け入れ完了とはしない。Browserが広告するdevice IDはdesktop／phone／tabletだけで、全Pencil presetへの対応を宣言しない。GLSLの宣言・構造体・前処理は実装済みだが、fill-stage `pencil:object` は未対応である。これらを古いGHA待ちと混同せず、元の必須条件に照らして実装と確認を切り分ける。
 

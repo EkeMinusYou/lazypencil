@@ -178,6 +178,35 @@ fn independent_copy_keeps_namespace_nested_workers_and_live_choices_after_source
 
 #[test]
 fn copied_nested_source_relocation_never_revives_stale_explicit_bindings() {
+    let check_metadata = |store: &Store, owner: &str| {
+        let (project, layout) = calculation(store);
+        let nested = layout
+            .items
+            .iter()
+            .filter(|item| {
+                item.node.kind() == "script"
+                    && item
+                        .record
+                        .generated_by
+                        .as_ref()
+                        .is_some_and(|address| address.node_id == owner)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(nested.len(), 1);
+        let metadata = &nested[0].node.properties["metadata"];
+        assert_eq!(metadata["type"], "example");
+        assert_eq!(metadata["keep"], json!([1, 2, 3]));
+        let bindings = &metadata["lazypencil"]["script_bindings"];
+        assert!(bindings.get("library").is_none());
+        assert_eq!(
+            bindings["script_uri"],
+            nested[0].node.properties["scriptUri"]
+        );
+        let component = bindings["components"]["base:other"].as_str().unwrap();
+        let definition = project.root_document().node(component).unwrap();
+        assert_eq!(definition["reusable"], true);
+        assert_eq!(definition["fill"], "#0000ff");
+    };
     for version in ["2.19", "2.21"] {
         let (temp, store) = fixture();
         for name in ["main.pen", "library/ui.lib.pen", "library/base.lib.pen"] {
@@ -201,11 +230,12 @@ fn copied_nested_source_relocation_never_revives_stale_explicit_bindings() {
         assert_ne!(code, fixture::CODE);
         fs::write(temp.path().join("library/draw.js"), &code).unwrap();
         let before = png(&store, None);
-        let (response, _) = copied(&store);
+        let (response, id) = copied(&store);
         fs::remove_dir_all(temp.path().join("library")).unwrap();
         let independent = png(&store, None);
         assert_eq!(before, independent);
         assert_eq!(pixel(&independent, 65), Color::BLUE);
+        check_metadata(&store, &id);
         let original = store.read().unwrap();
         let component = response["generated_ids"]["0"]["component_id"]
             .as_str()
@@ -216,12 +246,14 @@ fn copied_nested_source_relocation_never_revives_stale_explicit_bindings() {
         assert_eq!(fs::read(temp.path().join(uri)).unwrap(), code.as_bytes());
         drop(original);
 
-        let (target, _) = fixture::recopy(&store, component, &temp.path().join("recopy"), "next.");
+        let (target, target_id) =
+            fixture::recopy(&store, component, &temp.path().join("recopy"), "next.");
         fs::remove_file(store.path()).unwrap();
         fs::remove_dir_all(temp.path().join("assets")).unwrap();
         let recopied = png(&target, None);
         assert_eq!(before, recopied);
         assert_eq!(pixel(&recopied, 65), Color::BLUE);
+        check_metadata(&target, &target_id);
         record_code(
             &format!("stale-bindings-{version}"),
             code.as_bytes(),
@@ -231,7 +263,8 @@ fn copied_nested_source_relocation_never_revives_stale_explicit_bindings() {
                 ("recopied", &recopied),
             ],
             json!({"source_removed":true,"recopy_source_removed":true,
-                "inactive_context_never_reactivated":true,"nested_source_hash":hash(&nested)}),
+                "inactive_context_never_reactivated":true,"user_metadata_preserved":true,
+                "nested_source_hash":hash(&nested)}),
         );
     }
 }
