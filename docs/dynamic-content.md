@@ -134,7 +134,7 @@ JS 内でだけ構築する素材名は `options.script_assets` に追加する�
 
 捕捉済みの通常namespaceから生成する単独custom script_bindingsは、部品・変数・テーマ・子孫パス・素材のlogical mapとtarget identityを合成する。明示キーがidentity fallbackより優先する。libraryは出力対象を選び、inputs_hashに一致する入力だけinput_componentsを使う。入力変数の所有元は出力mapと分け、継承入力のguardは元の式を使う。閉じたasset manifestの外のファイルや未知の対象をコピー先の同名資源へ結ばない。raw catalogのviewとその到達可能な別名も保持する。62675c9の[完全GHA](https://github.com/EkeMinusYou/lazypencil/actions/runs/40834879129)では、5経路×6文脈×2形式と継承4経路×2文脈×2形式の新規76組が成功し、追加228 PNGのrevision・hash・寸法・独立復号と76組の元／copy／再copyのbyte一致を照合した。元からcustom bindingを持つ親generatorと複合文脈の全範囲の証明とはしない。
 
-native bindingを持つ親のコピーはv4で論理mapと実文書のnamespaceを分離する。元の変数名はsource_variablesに保持し、親の一度だけの変換後の提供入力でguardを照合する。継承入力は別に原式と指定元を保つ。入力の部品scopeを変数式の所有元に使わず、二つの表を独立して捕捉する。旧captureで必要な元式を確定できない場合だけ再copyを案内する。06bab20の所有元36組に加え、5eaa691の[完全GHA](https://github.com/EkeMinusYou/lazypencil/actions/runs/40860814717)では、通常／scope／custom、active／stale、出力guard不一致、継承・5経路・別folder所有元と両形式の新規124組が成功した。先行と通常の888 PNG／JSON、296組の元／copy／再copy、既存detach 3件の回復も照合した。単独文脈についての結果であり、script_scope／script_bindings／script_input_context／script_overrideを組み合わせる複合envelopeは引き続き未完了である。
+native bindingを持つ親のコピーはv4で論理mapと実文書のnamespaceを分離する。元の変数名はsource_variablesに保持し、親の一度だけの変換後の提供入力でguardを照合する。継承入力は別に原式と指定元を保つ。入力の部品scopeを変数式の所有元に使わず、二つの表を独立して捕捉する。旧captureで必要な元式を確定できない場合だけ再copyを案内する。06bab20の所有元36組に加え、5eaa691の[完全GHA](https://github.com/EkeMinusYou/lazypencil/actions/runs/40860814717)では、通常／scope／custom、active／stale、出力guard不一致、継承・5経路・別folder所有元と両形式の新規124組が成功した。先行と通常の888 PNG／JSON、296組の元／copy／再copy、既存detach 3件の回復も照合した。この時点の結果は単独文脈である。後続の複合envelope・入力世代・生成コード所有元は冒頭の4252fe2／d7cc9c6までの検証結果を参照する。
 
 生成された `scriptUri` と一致しなくなった `script_scope` は、入力側も無効と確認できる場合だけ除く。管理 URI への転送前に判定し、入力 hash が有効または継承中で判定不能なら保持する。この失効処理と実 worker／再コピー／画素の回帰は確定済み3環境gateで成功した。この失効処理だけで明示スコープの全合成範囲を実装済みとはしない。
 
@@ -199,6 +199,8 @@ CLI は取得条件を満たした一時点の PNG を出力する。TUI は同�
 - 色空間、アルファの扱い、ブレンド、複数の塗りと効果の適用順序。
 
 ### 宣言と数値入力
+
+ローカル`file://` URLの文字列samplerは、percent encodingを復号したファイルへ通常の許可領域・依存検査を適用する。独立コピーはURL原文を表示用に保持し、画像だけを`sampler_images`で転送する。元sourceの削除・project移動・再copy後も元URLを開かず、利用者が変数を新しいURLへ変更した場合は新しい参照を検査する。HTTP(S)等の取得と、捕捉scriptのfile-URL asset keyは残る対応範囲である。新しいURL対応の検証状況は[現在の状態](implementation-status.md#current-status)を参照する。
 
 マクロ・条件分岐がある shader は、実 WebGL コンパイラーで元の GLSL を検査し、そのコンパイラーの predefined macro を使ってブラウザー内の上限付き Wasm で展開してから、選択された宣言を Rust の型検査へ渡す。型・名前・構造体 field・配列長を生成する object／function macro と、異なる型を持つ条件分岐を同じ経路で扱う。選択された宣言の documentation の既定値・時刻・解像度も維持する。注釈と宣言の間にある directive は展開後に消えても区切りとして保持し、元の行・ファイル番号や byte 位置を変更しない内部コピーを使う。コメント内の色などの `#` は directive と区別する。未選択または未知の名前への保存済み override はエラーとし、元のコード・文書は書き換えない。展開ソースは4 MiB、宣言トークン・型・添字の既存の上限を保ち、Wasm にホスト側のファイル・ネットワーク機能を渡さない。宣言取得と型付き入力の準備・描画は一つの shader 期限を共有する。展開ソースと PNG は同じ LRU の容量・件数制限に従い、cache の読み取りで待機期限を延長しない。自作8ケースを両形式・塗り／効果・1倍／2倍で検査し、inactive な時刻・型エラー・未対応版・idle 後の再利用も確認する。新しい Rust／実 WebGL の結果は GHA で検証し、本家との全互換性とは扱わない。
 

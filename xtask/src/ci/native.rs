@@ -398,7 +398,24 @@ impl Session {
         );
         Ok(result.stdout)
     }
+    fn focus_launch_reproduction(&self, suite: &str) -> Result<()> {
+        if suite == "dynamic" {
+            self.test(
+                true,
+                "dynamic_render",
+                "",
+                &["--test-threads=2"],
+                "focus-dynamic-inputs.log",
+            )?;
+        }
+        Ok(())
+    }
+
     pub fn run(&self, args: Arguments) -> Result<()> {
+        self.run_ordered(args, false)
+    }
+
+    fn run_ordered(&self, args: Arguments, concurrent_compilation: bool) -> Result<()> {
         let targets: Vec<String> = serde_json::from_str(&args.targets)?;
         if args.suite == "normal-ci" {
             ensure!(
@@ -814,14 +831,8 @@ impl Session {
                     )?;
                     browser::focus_bindings(self)?;
                 }
-                if args.suite == "dynamic" {
-                    self.test(
-                        true,
-                        "dynamic_render",
-                        "",
-                        &["--test-threads=2"],
-                        "focus-dynamic-inputs.log",
-                    )?;
+                if !concurrent_compilation {
+                    self.focus_launch_reproduction(&args.suite)?;
                 }
                 if ["dynamic", "shader"].contains(&args.suite.as_str()) {
                     self.test(
@@ -977,11 +988,14 @@ impl Session {
                     (
                         "affected reproductions",
                         Box::new(|| {
-                            self.run(Arguments {
-                                stage: Stage::FocusReproduce,
-                                suite: args.suite.clone(),
-                                targets: args.targets.clone(),
-                            })
+                            self.run_ordered(
+                                Arguments {
+                                    stage: Stage::FocusReproduce,
+                                    suite: args.suite.clone(),
+                                    targets: args.targets.clone(),
+                                },
+                                true,
+                            )
                         }),
                     ),
                     (
@@ -998,7 +1012,11 @@ impl Session {
                             self.publish_catalog(&catalog)
                         }),
                     ),
-                ])
+                ])?;
+                // The dynamic target tests 300ms launch/operation/render
+                // budgets with a real child. Compilation must have joined
+                // before it runs, just as in the full terminal consumer.
+                self.focus_launch_reproduction(&args.suite)
             }
             Stage::Reproduce => self.reproduce_inputs(true),
             Stage::DefaultTest => management::default(self),

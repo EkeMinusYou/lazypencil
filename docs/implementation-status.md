@@ -4,7 +4,9 @@
 
 ## 現在の状態（2026-10-30）
 
-次の互換対応として、明示したローカル`file://` URLを通常のcanonical path・許可領域・依存検査へ接続した。shaderの文字列samplerは元のURL文字列を表示用に保持し、画像だけを既存の管理bundleへコピーする。2.19／2.21のテーマ・移動・再copy・将来編集、URLの予約文字・禁止authority等・同一byteへのsymlink変更と、実WebGLの元source削除前後の画像照合を既存試験へ加えた。GHA検証前であり、下記の成功済み候補の証拠とは分ける。HTTP(S)等の取得、捕捉scriptのfile-URL asset key、未参照素材の回収は引き続き残る。
+明示したローカル`file://` URLを通常のcanonical path・許可領域・依存検査へ接続した。shaderの文字列samplerは元のURL文字列を表示用に保持し、画像だけを既存の管理bundleへコピーする。3eec395の[CI 40956710045](https://github.com/EkeMinusYou/lazypencil/actions/runs/40956710045)では、2.19／2.21のテーマ・移動・再copy・将来編集、URLの予約文字・禁止authority等・同一byteへのsymlink変更の新規3件が既定構成の先行で1.13秒、coreの全試験でも成功した。両構成Clippy・通常開発build・releaseと補助ツール監査も成功した。
+
+同候補のbuilderは、残るcompileと並列に動かした既存dynamic_renderの300ms起動期限試験で、PID file生成前の期限到達により停止した。新しいURL試験の失敗ではなく、実WebGLのURL画像と全5 consumer・最終sourceの成功根拠にもならない。修正では短い起動期限を使う完全dynamic_render targetだけを、開始済みの全compile・再現をjoinした直後へ移す。独立した再現の並列化、元のcase・300ms期限・子回収assertion、standalone focusの実行は維持する。全job終了後に修正版を送る。HTTP(S)等の取得、捕捉scriptのfile-URL asset key、未参照素材の回収は引き続き残る。
 
 625bec7の[CI 40951785256](https://github.com/EkeMinusYou/lazypencil/actions/runs/40951785256)は全工程成功した。監査、core／既定構成の全試験とClippy、通常開発build、release、通常／pixel／runtime／端末／Materialの全5 consumer、共通画像gateと署名付きsourceを含む。font lockfileはCLIの生成text、hash付き更新・移動・復元、実MCPのstale拒否と構造編集、TUI preview workerの拒否・同一PNG／viewへの復帰まで検証済みになった。MCPの古いcapability表示も実装へ揃い、実MCPの回帰が成功した。実端末のIMEや公開受け入れ全体の完了とは区別する。
 
