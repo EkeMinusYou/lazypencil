@@ -91,6 +91,8 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 
 ### 次に実装・確認すること
 
+フォント遅延読み込みの依存監査では、ebf2587のCI 40868196098が`ttf-parser`の保守終了（RUSTSEC-2026-0192）を検出した。例外で通さず、名前表の解析をFontationsの`read-fonts` 0.46.0へ変更する。実行中のMac検証は中断せず、通常CIを発火しない準備コミットで新しい依存の原本通知を先にGHAで生成し、その後に置換後の構成を検証する。旧パーサーでの成功を置換後の検証結果として扱わない。
+
 コード上に残る主な機能不足：
 
 宣言済みの実行namespaceを共有表へ捕捉し、再copyで合成する。生成ノードがscriptUriを明示したscript_scopeは、出力側の別名と明示入力のhash付き別名を個別に選ぶ。5経路×3入力／出力文脈×2形式の元source・copy・再copy、および到達不能なnamespaceの拒否は349c2eaの完全GHAで成功し、90 PNGも独立照合した。metadataだけのsource選択と継承入力guardは下記cbc868bで検証済み。custom script_bindingsと複合envelopeは引き続き残件とする。

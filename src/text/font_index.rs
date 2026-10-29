@@ -1,6 +1,10 @@
 //! Read only collection directories and names until a family is actually used.
 
 use crate::{Error, Result, project::font_files::FontFile};
+use read_fonts::{
+    FontData, FontRead,
+    tables::name::{Name, NameId},
+};
 use std::collections::BTreeSet;
 
 fn invalid(message: &str) -> Error {
@@ -63,27 +67,27 @@ pub(super) fn families(source: &FontFile) -> Result<Vec<Option<Vec<String>>>> {
             }
         }
         let bytes = name.ok_or_else(|| invalid("Font has no name table"))?;
-        let table = ttf_parser::name::Table::parse(&bytes)
-            .ok_or_else(|| invalid("Invalid font name table"))?;
+        let table =
+            Name::read(FontData::new(&bytes)).map_err(|_| invalid("Invalid font name table"))?;
+        if table.version() > 1 || table.name_record().len() != usize::from(table.count()) {
+            return Err(invalid("Invalid font name records"));
+        }
         let mut names = table
-            .names
-            .into_iter()
+            .name_record()
+            .iter()
             .filter_map(|name| {
-                if ![
-                    ttf_parser::name_id::FAMILY,
-                    ttf_parser::name_id::TYPOGRAPHIC_FAMILY,
-                ]
-                .contains(&name.name_id)
+                if ![NameId::FAMILY_NAME, NameId::TYPOGRAPHIC_FAMILY_NAME].contains(&name.name_id())
+                    || !name.is_unicode()
                 {
                     return None;
                 }
-                let value = name.to_string()?;
+                let value = name.string(table.string_data()).ok()?.to_string();
                 if value.is_empty() || value.len() > 256 {
                     return None;
                 }
                 Some((
-                    name.name_id != ttf_parser::name_id::TYPOGRAPHIC_FAMILY,
-                    name.language_id != 0x409,
+                    name.name_id() != NameId::TYPOGRAPHIC_FAMILY_NAME,
+                    name.language_id() != 0x409,
                     value,
                 ))
             })
