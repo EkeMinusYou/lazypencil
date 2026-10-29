@@ -29,6 +29,21 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
     .unwrap();
     let mut changes = json!({"scriptUri":"override.js"});
     match mode {
+        mode if mode.starts_with("binding-emitted-code-") => {
+            changes.as_object_mut().unwrap().remove("scriptUri");
+            let mut metadata = json!({"type":"test","keep":"generated","literal":"$tone"});
+            let stale = json!({"version":1,"script_uri":"old.js","library":"uncaptured"});
+            match mode.strip_prefix("binding-emitted-code-").unwrap() {
+                "keep" => (),
+                "scope" => metadata["lazypencil"]["script_scope"] = stale,
+                "binding" => metadata["lazypencil"]["script_bindings"] = stale,
+                "carrier" => {
+                    metadata = json!({"type":"lazypencil","lazypencil":{"script_override":{"version":1,"metadata":metadata,"output":stale}}})
+                }
+                _ => panic!("Unknown emitted code-owner case"),
+            }
+            changes["metadata"] = metadata;
+        }
         mode if mode.starts_with("binding-inherited-state-") => {
             let variant = mode.strip_prefix("binding-inherited-state-").unwrap();
             let raw = json!({"selected":"$selection","stale":"$missing"});
@@ -368,6 +383,19 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
         changes
     };
     let template = match style {
+        "emitted-children" | "emitted-replacement" => {
+            let script = json!({"id":"emitted","type":"script","scriptUri":"override.js","width":36,"height":12,
+                "inputs":{"selected":"badge"},"metadata":{"type":"test","keep":"generated","literal":"$tone",
+                "lazypencil":{"script_scope":{"version":1,"script_uri":"override.js","library":"base"}}}});
+            if style == "emitted-children" {
+                json!({"type":"ref","ref":"base:card","children":[script],"descendants":{"emitted":changes}})
+            } else {
+                json!({"type":"ref","ref":"base:card","descendants":{
+                    "draw":{"id":"replacement","type":"frame","layout":"none","width":36,"height":12,"children":[script]},
+                    "draw/emitted":changes
+                }})
+            }
+        }
         "direct" => direct(changes),
         "descendant" => json!({"type":"ref","ref":"base:card","descendants":{"draw":changes}}),
         "replacement" => {
@@ -779,7 +807,9 @@ fn independent_case(
     } else {
         "base"
     };
-    let output = if mode == "binding-inherited-state-underlay-binding" {
+    let output = if mode == "binding-emitted-code-keep" {
+        Color::RED
+    } else if mode == "binding-inherited-state-underlay-binding" {
         Color::BLUE
     } else if mode.starts_with("binding-code-owner-") {
         if mode.contains("-keep") {
@@ -881,6 +911,22 @@ fn independent_case(
     );
 
     (temp, second, before)
+}
+
+#[test]
+fn generated_replacements_keep_their_code_owner_under_later_overrides() {
+    std::thread::scope(|threads| {
+        for version in ["2.19", "2.21"] {
+            threads.spawn(move || {
+                for style in ["emitted-children", "emitted-replacement"] {
+                    for variant in ["keep", "scope", "binding", "carrier"] {
+                        let mode = format!("binding-emitted-code-{variant}");
+                        let _fixture = independent_case(version, style, &mode, Color::GREEN);
+                    }
+                }
+            });
+        }
+    });
 }
 
 #[test]

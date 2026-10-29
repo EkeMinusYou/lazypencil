@@ -51,8 +51,12 @@ pub(in crate::project) fn has_pending_scopes(node: &Value) -> bool {
             .is_some_and(|changes| changes.values().any(has_pending_scopes))
 }
 
-pub(in crate::project) fn clear_pending_scopes(node: &mut Value) {
+pub(in crate::project) fn clear_pending_scopes(
+    node: &mut Value,
+    context: &GeneratedState,
+) -> Result<()> {
     if has_scope(node)
+        && !context.bound_script
         && let Some(namespace) = node
             .pointer_mut("/metadata/lazypencil")
             .and_then(Value::as_object_mut)
@@ -67,15 +71,28 @@ pub(in crate::project) fn clear_pending_scopes(node: &mut Value) {
         }
     }
     if let Some(children) = node.get_mut("children").and_then(Value::as_array_mut) {
-        for child in children {
-            clear_pending_scopes(child);
+        for (index, child) in children.iter_mut().enumerate() {
+            clear_pending_scopes(
+                child,
+                context
+                    .children
+                    .get(index)
+                    .ok_or_else(|| invalid("Generated preview child is missing"))?,
+            )?;
         }
     }
     if let Some(changes) = node.get_mut("descendants").and_then(Value::as_object_mut) {
-        for changes in changes.values_mut() {
-            clear_pending_scopes(changes);
+        for (path, changes) in changes {
+            clear_pending_scopes(
+                changes,
+                context
+                    .descendants
+                    .get(path)
+                    .ok_or_else(|| invalid("Generated preview descendant is missing"))?,
+            )?;
         }
     }
+    Ok(())
 }
 
 pub(super) fn selection(parent: &Bound, node: &Value) -> Result<Option<Selection>> {
@@ -601,11 +618,23 @@ impl Bound {
             selected.output_active = true;
         }
         let output = if selected.output_active || changes.get("scriptUri").is_some() {
-            Some(
-                selected
-                    .output
-                    .inherited_output_with_hash(&uri, None, Some(uri_hash), budget)?,
-            )
+            let code_owner = if changes.get("scriptUri").is_some() {
+                Some(self.document_scope()?.into_owned())
+            } else {
+                target
+                    .script_bindings
+                    .as_ref()
+                    .filter(|bound| bound.original().code_namespace.is_some())
+                    .map(Bound::code_scope)
+                    .transpose()?
+            };
+            Some(selected.output.output_with_code_owner(
+                &uri,
+                None,
+                Some(uri_hash),
+                code_owner.as_ref(),
+                budget,
+            )?)
         } else {
             None
         };

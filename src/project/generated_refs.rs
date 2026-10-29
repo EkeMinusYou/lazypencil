@@ -38,7 +38,7 @@ impl Project {
             {
                 let mut preview = node.clone();
                 browser_context::clear_preview_contexts(&mut preview);
-                bindings::clear_pending_scopes(&mut preview);
+                bindings::clear_pending_scopes(&mut preview, context)?;
                 std::borrow::Cow::Owned(preview)
             } else {
                 std::borrow::Cow::Borrowed(&*node)
@@ -410,10 +410,11 @@ impl Project {
         let output = if explicit_output.is_some() || !provided_source {
             explicit_output
         } else {
-            Some(bindings.document_scope()?.inherited_output_with_hash(
+            Some(bindings.document_scope()?.output_with_code_owner(
                 &uri,
                 None,
                 context.uri_hash.clone(),
+                Some(bindings),
                 inherited_bytes,
             )?)
         };

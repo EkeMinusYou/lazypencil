@@ -215,6 +215,86 @@ fn captured_code_owner_stays_distinct_from_output_and_requires_valid_provenance(
 
 #[cfg(feature = "rendering")]
 #[test]
+fn generated_code_ownership_merges_colliding_graphs_without_changing_output() {
+    let parent = custom_parent();
+    let mut source = parent.original().clone();
+    source
+        .components
+        .insert("badge-slot".into(), "code-badge".into());
+    source
+        .variables
+        .insert("tone-slot".into(), "code-tone".into());
+    source
+        .assets
+        .as_mut()
+        .unwrap()
+        .insert("script:code.js".into(), "assets/code.js".into());
+    source
+        .script_scopes
+        .get_mut("")
+        .unwrap()
+        .assets
+        .insert("script:code.js".into(), "assets/code.js".into());
+    let code = Bound::from_values(parent.origin.clone(), false, source).unwrap();
+    let output = parent
+        .output_with_code_owner(
+            "assets/nested.js",
+            None,
+            Some(hash(b"nested.js")),
+            Some(&code),
+            &mut 0,
+        )
+        .unwrap();
+    let parsed = Bound::from_values(parent.origin.clone(), false, parse(&output).unwrap()).unwrap();
+    assert_eq!(parsed.component("badge").unwrap(), "copied-badge");
+    assert_eq!(parsed.values.variables["tone"], "copied-tone");
+    let owner = parsed.code_scope().unwrap();
+    assert_eq!(owner.component("badge").unwrap(), "code-badge");
+    assert_eq!(owner.values.variables["tone"], "code-tone");
+    assert_eq!(owner.asset("script", "code.js").unwrap(), "assets/code.js");
+    assert_eq!(
+        owner.selected("base").unwrap().component("badge").unwrap(),
+        "base-badge"
+    );
+    let again = parsed
+        .output_with_code_owner(
+            "assets/nested.js",
+            None,
+            Some(hash(b"nested.js")),
+            Some(&owner),
+            &mut 0,
+        )
+        .unwrap();
+    assert_eq!(again["code_namespace"], output["code_namespace"]);
+    assert_eq!(again["script_scopes"], output["script_scopes"]);
+    assert!(
+        parent
+            .output_with_code_owner(
+                "assets/nested.js",
+                None,
+                Some(hash(b"nested.js")),
+                Some(&code),
+                &mut crate::script::MAX_OUTPUT_BYTES
+            )
+            .is_err()
+    );
+    let mut foreign = code;
+    foreign.origin = PathBuf::from("/different/main.pen");
+    assert!(
+        parent
+            .output_with_code_owner(
+                "assets/nested.js",
+                None,
+                Some(hash(b"nested.js")),
+                Some(&foreign),
+                &mut 0
+            )
+            .is_err()
+    );
+}
+
+#[cfg(feature = "rendering")]
+#[test]
 fn inherited_script_uri_guards_use_original_provenance_instead_of_relocated_spellings() {
     let project = Project::local(Document::parse(json!({"version":"2.21","children":[{
         "id":"worker","type":"script","width":36,"height":12,"scriptUri":"assets/nested.js",

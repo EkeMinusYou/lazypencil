@@ -4,6 +4,8 @@ use super::*;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "rendering")]
+mod code;
+#[cfg(feature = "rendering")]
 mod custom;
 #[cfg(feature = "rendering")]
 mod generated;
@@ -75,6 +77,7 @@ pub(super) struct Bound {
 #[derive(Debug, Default)]
 pub(super) struct GeneratedState {
     pub uri_hash: Option<String>,
+    pub bound_script: bool,
     pub children: Vec<GeneratedState>,
     pub descendants: BTreeMap<String, GeneratedState>,
 }
@@ -447,6 +450,7 @@ impl Bound {
         self.value(value)
     }
 
+    #[cfg(test)]
     pub(super) fn inherited_output_with_hash(
         &self,
         uri: &str,
@@ -454,6 +458,22 @@ impl Bound {
         uri_hash: Option<String>,
         inherited_bytes: &mut usize,
     ) -> Result<Value> {
+        Ok(serde_json::to_value(self.inherited_output_values(
+            uri,
+            inputs,
+            uri_hash,
+            inherited_bytes,
+        )?)
+        .expect("bindings"))
+    }
+
+    pub(super) fn inherited_output_values(
+        &self,
+        uri: &str,
+        inputs: Option<&Value>,
+        uri_hash: Option<String>,
+        inherited_bytes: &mut usize,
+    ) -> Result<Bindings> {
         *inherited_bytes = inherited_bytes
             .saturating_add(serde_json::to_vec(self.original()).expect("bindings").len())
             .saturating_add(8192);
@@ -504,7 +524,7 @@ impl Bound {
             value.sort_all_objects();
             hash(value.to_string().as_bytes())
         });
-        Ok(serde_json::to_value(values).expect("bindings"))
+        Ok(values)
     }
 
     pub(super) fn rewrite(
@@ -646,17 +666,19 @@ impl Bound {
                 .as_str()
                 .ok_or_else(|| invalid("A generated script needs scriptUri"))?;
             let values = if let Some(selection) = &selected {
-                selection.output.inherited_output_with_hash(
+                selection.output.output_with_code_owner(
                     uri,
                     None,
                     state.uri_hash.clone(),
+                    Some(self),
                     inherited_bytes,
                 )?
             } else {
-                self.document_scope()?.inherited_output_with_hash(
+                self.document_scope()?.output_with_code_owner(
                     uri,
                     node.get("inputs"),
                     state.uri_hash.clone(),
+                    Some(self),
                     inherited_bytes,
                 )?
             };
@@ -682,6 +704,7 @@ impl Bound {
                 ));
             }
             namespace.insert("script_bindings".into(), values);
+            state.bound_script = true;
         }
         Ok(state)
     }
