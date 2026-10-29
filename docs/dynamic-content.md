@@ -98,7 +98,7 @@ JS 内でだけ構築する素材名は `options.script_assets` に追加する�
 
 切り離しは既存のコード・部品・素材への依存を保持する。独立コピーを選んだ場合は、転送された所有文書も含めて閉包を作り、新しいコピー先のローカル対応表へ合成する。切り離しの検査では保存形式の URI・別名・hash の綴りを比較する代わりに、正規化したコードの場所、実効プロパティ・テーマ・部品／変数／素材の対応先と入力の失効状態を比較する。disabled な script のヘッダーも snapshot に捕捉し、宣言済みの入力だけを移し、古い未知の入力は解決せず保存する。JS は切り離し中にも実行しない。
 
-継承した script の保存済み入力は `script_input_context` v1 でコード生成用の対応表から分離する。元の入力式・変数・参照部品を新しいコピー先へ結び、ヘッダーの既定値にはコードのスコープを使う。未使用の古い入力を評価せず保持し、宣言済みの入力として使う時点で検証する。入力・コードの明示的な再設定は、同じ JSON でもその項目の古い対応を失効させる。
+継承した script の保存済み入力は `script_input_context` でコード生成用の対応表から分離する。v2は元入力のhashと変換された式の差分を保持し、v1の読取りも維持する。元の入力式・変数・参照部品を実効入力scopeから新しいコピー先へ結び、ヘッダーの既定値にはコードのスコープを使う。未使用の古い入力を評価せず保持し、宣言済みの入力として使う時点で検証する。入力・コードの明示的な再設定は、同じ JSON でもその項目の古い対応を失効させる。
 
 部分上書きで指定した script の追加素材は、所有する ref の ID と descendant 経路を `/` で結んだキーを文書の別名で修飾し、`script_assets` に渡す。例えば `ui:inner/draw` は ui 文書の inner ref が draw へ適用するコードの素材を表す。元のコード URI・生成スコープを使って素材を検査し、入力だけの上書きからコードの所有権を変更しない。
 
@@ -114,7 +114,7 @@ JS 内でだけ構築する素材名は `options.script_assets` に追加する�
 
 生成した `browser_scope`／`browser_override` の明示別名には捕捉した `script_bindings.browser_libraries` を使う。v2 の `url_library` は URL 所有元を別途保持し、metadata だけの不一致指定でも元の URL 文脈へ戻す。v1 の読み取りも維持する。捕捉していない別名や所有情報のない旧データを同名のコピー先へ推測で結ばない。明示 script 文脈の独立合成とは別の機能である。
 
-明示script文脈の全範囲の独立合成は未完了である。scriptUriを明示した生成script_scopeは、宣言済みの出力別名と、明示inputsに一致するhash付き入力別名を選ぶ。捕捉するscript_bindings v2は共通の対応表とscript_scopesを持ち、script_namespaceで選んだ文脈の論理名を共通表へ結ぶ。共通表のcomponents／variables／descendantsは選択中の論理名表そのものとは限らない。v1の読取りは維持する。5経路×3文脈×2形式の元source・copy・再copyは349c2eaの[完全GHA](https://github.com/EkeMinusYou/lazypencil/actions/runs/40820298828)で成功し、90 PNGのhash・revision・寸法・30組の前後一致も独立照合した。metadataだけのsource選択、継承入力を要するguard、custom script_bindings、複合envelopeは残件である。静的出力や元libraryへのlinkで代替して完了とはしない。本家との全体の往復描画互換も未受け入れである。
+明示script文脈の全範囲の独立合成は未完了である。生成script_scopeは、宣言済みの出力別名とhash付き入力別名を個別に選ぶ。捕捉するscript_bindingsの共通表とscript_scopesを使い、script_namespaceで選んだ文脈の論理名を共通表へ結ぶ。共通表のcomponents／variables／descendantsは選択中の論理名表そのものとは限らない。v3は元URIのhashを追加し、v1／v2の読取りも維持する。5経路×3文脈×2形式の明示URIケースは349c2eaの[完全GHA](https://github.com/EkeMinusYou/lazypencil/actions/runs/40820298828)と90 PNGの独立照合で成功した。metadataだけのsource選択、元入力式に対する継承guard、実効入力scopeの所有元と失効guardの維持はcbc868bの[完全GHA](https://github.com/EkeMinusYou/lazypencil/actions/runs/40831221172)で成功し、継承4経路・両形式を含む追加30組／90 PNGを独立照合した。再配置後のURIや変換後の入力式に古いguardを再接続しない。出自のない旧copyで元のguardを復元できない場合は再copyを案内して拒否する。custom script_bindingsと複合envelopeは残件である。静的出力や元libraryへのlinkで代替して完了とはしない。本家との全体の往復描画互換も未受け入れである。
 
 生成された `scriptUri` と一致しなくなった `script_scope` は、入力側も無効と確認できる場合だけ除く。管理 URI への転送前に判定し、入力 hash が有効または継承中で判定不能なら保持する。この失効処理と実 worker／再コピー／画素の回帰は確定済み3環境gateで成功した。この失効処理だけで明示スコープの全合成範囲を実装済みとはしない。
 

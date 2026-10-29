@@ -4,7 +4,9 @@
 
 ## 現在の状態（2026-10-29）
 
-最新のMac完全CIは `788f4c2` の [実行](https://github.com/EkeMinusYou/lazypencil/actions/runs/40826867322)。依存cacheだけを残して本体・全試験・releaseを再ビルドし、runner待機を含む全体9分51秒で、軽量試験・両構成のClippy、core・default、全5 consumer・共通画像gate・42描画計測・依存監査・署名付きsourceまで成功した。既定構成の本体50コンパイル単位はfresh 0件、試験実行ファイル47本、依存356単位の再ビルド0件をCargoのJSONで照合した。直前861894bの通常・pixel・runtimeと、今回の通常・pixel・runtime・端末・Materialの和は832件で全named caseと実行回数が一致し、coreにも欠落0件だった。全artifactの独立した再照合と製品全体の受け入れは未完了で、正常な導入・取消の成功から全異常終了条件の合格とはしない。重いbuildはGHAに限り、Linux x64／arm64・Windowsの既存実装は後日対応用に保持する。Intel Macは対象外とし、OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
+再起動後に作業を再開し、`cbc868b` の [CI 40831221172](https://github.com/EkeMinusYou/lazypencil/actions/runs/40831221172) が全工程成功したことを確認した。全体10分08秒で、10分の目標を8秒超えた。対象選択21秒・core5分12秒・builder5分43秒・release3分15秒、通常2分13秒・pixel2分20秒・runtime3分16秒・端末1分07秒・Material1分37秒、source36秒だった。前回の既定構成832件のnamed caseと実行回数に欠落はなく、新規3件を加え835件、coreにも欠落0件。全5 consumerのcompiler／binary receiptはbyte一致し、既定buildのregistry依存354単位は全件freshだった。元／copy／再copyの新旧180 PNGはrevision・hash・36×12寸法・独立復号と60組のbyte一致を照合した。署名付きsourceのSHA-256は `251f7fe71866b4c89652940f9bb1532af30aff3be6b1a6868fa109e7aff3abb6`。同条件のCIは再実行せず、残るcustom bindingと複合envelopeを次の機能実装対象とする。
+
+直前のCI改善を確認したMac完全CIは `788f4c2` の [実行](https://github.com/EkeMinusYou/lazypencil/actions/runs/40826867322)。依存cacheだけを残して本体・全試験・releaseを再ビルドし、runner待機を含む全体9分51秒で、軽量試験・両構成のClippy、core・default、全5 consumer・共通画像gate・42描画計測・依存監査・署名付きsourceまで成功した。既定構成の本体50コンパイル単位はfresh 0件、試験実行ファイル47本、依存356単位の再ビルド0件をCargoのJSONで照合した。直前861894bの通常・pixel・runtimeと、今回の通常・pixel・runtime・端末・Materialの和は832件で全named caseと実行回数が一致し、coreにも欠落0件だった。全artifactの独立した再照合と製品全体の受け入れは未完了で、正常な導入・取消の成功から全異常終了条件の合格とはしない。重いbuildはGHAに限り、Linux x64／arm64・Windowsの既存実装は後日対応用に保持する。Intel Macは対象外とし、OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
 
 本体再buildを含む旧方式の完全CIは、`ab8c785` の [実行](https://github.com/EkeMinusYou/lazypencil/actions/runs/40815181222) が12分15秒、`349c2ea` の [実行](https://github.com/EkeMinusYou/lazypencil/actions/runs/40820298828) が11分28秒だった。ab8c785では実行時生成childrenの新規2試験、7組合せ×2形式の42 PNGのhash・revision・寸法・14組の再copy一致を独立照合した。349c2eaでは明示URI付きscript_scopeの新規試験と、5経路×3文脈×2形式×3段階の90 PNGのhash・revision・36×12寸法・30組の元／copy／再copy一致を独立照合した。これらの成功を、残る全script文脈合成の完成とはしない。
 
@@ -63,11 +65,11 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 
 コード上に残る主な機能不足：
 
-宣言済みの実行namespaceを共有表へ捕捉し、再copyで合成する。生成ノードがscriptUriを明示したscript_scopeは、出力側の別名と明示入力のhash付き別名を個別に選ぶ。5経路×3入力／出力文脈×2形式の元source・copy・再copy、および到達不能なnamespaceの拒否は349c2eaの完全GHAで成功し、90 PNGも独立照合した。metadataだけのsource選択、継承入力を要するguard、custom script_bindingsと複合envelopeは引き続き残件とする。
+宣言済みの実行namespaceを共有表へ捕捉し、再copyで合成する。生成ノードがscriptUriを明示したscript_scopeは、出力側の別名と明示入力のhash付き別名を個別に選ぶ。5経路×3入力／出力文脈×2形式の元source・copy・再copy、および到達不能なnamespaceの拒否は349c2eaの完全GHAで成功し、90 PNGも独立照合した。metadataだけのsource選択と継承入力guardは下記cbc868bで検証済み。custom script_bindingsと複合envelopeは引き続き残件とする。
 
-次の候補では、bindings v3に元URIのhash、input context v2に元入力のhashと変換された式の差分を保存する。参照先の展開後にこの出自とguardを照合し、metadataだけのsource選択と継承入力のscopeを別々に合成する。生成URIの変換前情報はJSONへ一時項目を足さず、Rustの並行する構造で後段へ渡す。入力scopeが変数と部品の両方で実効入力文書を使う修正も含む。元の型の読取り、失効したguard、未使用controls、宣言済みnamespaceと出力budgetは維持する。継承4経路・両形式、stale guardと別の保存済み入力所有元の実worker／copy／再copyを既存試験へ追加した。GHAは未検証で、custom bindingと複合envelopeはこの候補の後も残る。
+cbc868bでは、bindings v3に元URIのhash、input context v2に元入力のhashと変換された式の差分を保存する。参照先の展開後にこの出自とguardを照合し、metadataだけのsource選択と継承入力のscopeを別々に合成する。生成URIの変換前情報はJSONへ一時項目を足さず、Rustの並行する構造で後段へ渡す。入力scopeが変数と部品の両方で実効入力文書を使う修正も含む。元の型の読取り、失効したguard、未使用controls、宣言済みnamespaceと出力budgetは維持する。継承4経路・両形式、stale guardと別の保存済み入力所有元の実worker／copy／再copyの新規30組は完全GHAで成功し、追加90 PNGも独立照合した。元URIの絶対パスは新規メタデータへ書かず、出自のない旧copyは必要な継承guardだけ再copyを案内する。custom bindingと複合envelopeはこの修正の後も残る。
 
-- 生成 script の有効な明示 `script_scope`／`script_bindings`／上書き文脈の独立合成。metadataだけのsource選択、継承入力guard、custom bindingと複合envelopeは `bindings.rs` と `generated_refs.rs` で拒否する。失効したscript_bindingsが生成URIの再配置で復活する別の不具合を修正し、実worker・2形式・元ファイル削除・再コピーの回帰を追加した。d37e4f2のMac完全CIで両形式の画素、実workerのユーザーmetadata、コピー先の部品定義への参照まで成功し、従来のケースの実行回数を保持した。修正コードから独立に再構成したJSのhashと、元source削除／再コピー前後の6 PNGのhash・寸法・一致も照合した。有効な明示文脈の合成を、この修正だけで完了扱いにしない。
+- 生成 script のcustom `script_bindings`と、明示 `script_scope`／入力文脈／上書きcarrierを組み合わせた独立合成。これらの組合せは `bindings.rs` と `generated_refs.rs` で拒否する。単独のscript_scopeによるmetadataだけのsource選択・継承入力guardはcbc868bで検証済み。失効したscript_bindingsが生成URIの再配置で復活する別の不具合はd37e4f2で修正・Mac完全CIと6 PNGの独立照合済み。有効なcustom／複合文脈の合成を、これらの修正だけで完了扱いにしない。
 - TUI preview と別の bound MCP が、同じ認証済みブラウザープロファイルを同時利用する統合。専用 profile の作成・ログイン・永続ストレージ・所有者回収は実装済みだが、現在の lease は二つ目の独立 owner を拒否する。
 - 追加フォントの遅延読み込み。入力容量・フェイス数の上限と OS FontMgr の遅延作成は実装済みだが、指定ファイルの全件読み取り・登録が残る。
 
