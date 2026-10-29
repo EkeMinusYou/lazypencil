@@ -274,17 +274,31 @@ impl Project {
         Ok(&self.documents[self.library_path(alias)?])
     }
 
+    fn imported_path(&self, origin: &Path, alias: &str) -> Result<Option<&PathBuf>> {
+        let path = self
+            .imports
+            .get(origin)
+            .and_then(|imports| imports.get(alias));
+        if path.is_none()
+            && self.documents[origin].value()["imports"]
+                .get(alias)
+                .is_some()
+        {
+            return Err(Error::new(
+                "ASSET_NOT_FOUND",
+                "The declared library is missing",
+            ));
+        }
+        Ok(path)
+    }
+
     fn library_path(&self, alias: Option<&str>) -> Result<&PathBuf> {
         let mut path = &self.root;
         if let Some(alias) = alias {
             for part in alias.split(':') {
-                path = self
-                    .imports
-                    .get(path)
-                    .and_then(|imports| imports.get(part))
-                    .ok_or_else(|| {
-                        Error::new("INVALID_ARGUMENT", "Unknown declared library alias")
-                    })?;
+                path = self.imported_path(path, part)?.ok_or_else(|| {
+                    Error::new("INVALID_ARGUMENT", "Unknown declared library alias")
+                })?;
             }
         }
         Ok(path)
@@ -793,7 +807,23 @@ impl Project {
             let uri = uri
                 .as_str()
                 .ok_or_else(|| invalid("A library URI must be a string"))?;
-            let target = self.resolve_file(path, uri)?;
+            let target = match self.resolve_file(path, uri) {
+                Ok(target) => target,
+                Err(error) => {
+                    if self
+                        .reference_path(path, uri)?
+                        .extension()
+                        .is_none_or(|extension| !extension.eq_ignore_ascii_case("pen"))
+                    {
+                        return Err(invalid("Imported libraries must be .pen documents"));
+                    }
+                    self.capture_missing_reference(path, uri, "library", error)?;
+                    // Keep the declaration in the original document, but do
+                    // not invent definitions or a lookup edge to an absent
+                    // document. Structural repairs must resolve their result.
+                    continue;
+                }
+            };
             if target
                 .extension()
                 .and_then(|s| s.to_str())
@@ -1319,7 +1349,7 @@ impl Project {
             return Ok((origin.into(), node.clone()));
         }
         if let Some((alias, member)) = name.split_once(':')
-            && let Some(path) = self.imports.get(origin).and_then(|v| v.get(alias))
+            && let Some(path) = self.imported_path(origin, alias)?
         {
             return self.lookup_node(path, member);
         }
@@ -2218,7 +2248,7 @@ impl Project {
             return Ok((origin.into(), value.clone()));
         }
         if let Some((alias, member)) = name.split_once(':')
-            && let Some(path) = self.imports.get(origin).and_then(|v| v.get(alias))
+            && let Some(path) = self.imported_path(origin, alias)?
         {
             return self.lookup_variable(path, member);
         }

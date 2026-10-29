@@ -276,6 +276,7 @@ pub fn reproduction_targets(suite: &str, targets: &[String]) -> Vec<String> {
                 "native_layout",
                 "conversation_history",
                 "mcp",
+                "repair",
                 "script_scope",
                 "attachments",
             ]

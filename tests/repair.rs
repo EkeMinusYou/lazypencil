@@ -2,8 +2,11 @@ use base64::Engine;
 use lazypencil::assets::{self, AssetKind};
 use lazypencil::{operations::EditRequest, project::Project, service, store::Store};
 use serde_json::{Value, json};
-use std::{fs, process::Command};
+use std::{fs, process::Command, time::Duration};
 use tempfile::TempDir;
+
+#[path = "../xtask/src/test_support/command_output.rs"]
+mod command_output;
 
 fn image(uri: &str) -> Value {
     json!({"id":"image","type":"rectangle","width":20,"height":20,"fill":{"type":"image","url":uri}})
@@ -30,6 +33,248 @@ fn request(store: &Store, id: &str, operations: Value, dry_run: bool) -> EditReq
 }
 fn png() -> Vec<u8> {
     base64::engine::general_purpose::STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEUlEQVR4nGP4/5/hPwgzwBgAbaQL9REU6k8AAAAASUVORK5CYII=").unwrap()
+}
+
+#[test]
+fn missing_library_can_be_rebound_with_revision_checks_without_inventing_its_contents() {
+    let (temp, store) = fixture(json!([
+        {"id":"instance","type":"ref","ref":"ui:tile"}
+    ]));
+    let mut document = store.read().unwrap();
+    document
+        .set_property("", "imports", &json!({"ui":"lost/ui.lib.pen"}))
+        .unwrap();
+    fs::write(store.path(), document.text()).unwrap();
+    let original = fs::read(store.path()).unwrap();
+    let metadata = service::document_metadata(&store).unwrap();
+    assert!(metadata.get("dependency_error").is_none(), "{metadata}");
+    assert_eq!(metadata["assets_complete"], Value::Null);
+    assert!(metadata.get("resolution_error").is_some());
+    assert_eq!(metadata["asset_diagnostics"][0]["kind"], "library");
+    assert_eq!(metadata["asset_diagnostics"][0]["uri"], "lost/ui.lib.pen");
+    assert_eq!(metadata["dependencies"][0]["availability"], "missing");
+    let project = Project::load(&store).unwrap();
+    assert!(project.components().is_empty());
+    assert_eq!(project.resolve().unwrap_err().code, "ASSET_NOT_FOUND");
+    fs::write(
+        temp.path().join("replacement.pen"),
+        json!({"version":"2.21","children":[
+            {"id":"tile","type":"rectangle","reusable":true,"width":20,"height":20,"fill":"#2563eb"}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let operations = json!([
+        {"op":"remove_import","alias":"ui"},
+        {"op":"add_import","alias":"ui","uri":"replacement.pen"}
+    ]);
+    let edit = request(&store, "rebind-library", operations, true);
+    let dry = service::apply_request(&store, &edit).unwrap();
+    assert_eq!(dry["assets_complete"], true);
+    assert_eq!(fs::read(store.path()).unwrap(), original);
+    assert!(store.history(10, None).unwrap().is_empty());
+    let mut edit = edit;
+    edit.dry_run = false;
+    let result = service::apply_request(&store, &edit).unwrap();
+    assert_eq!(result["assets_complete"], true);
+    assert_eq!(
+        service::apply_request(&store, &edit).unwrap()["replayed"],
+        true
+    );
+    let repaired = Project::load(&store).unwrap().resolve().unwrap();
+    assert_eq!(repaired.roots.len(), 1);
+    assert_eq!(repaired.roots[0].properties["fill"], "#2563eb");
+    assert!(
+        store
+            .read()
+            .unwrap()
+            .text()
+            .contains("// Preserve this comment.")
+    );
+    assert_eq!(store.read().unwrap().value()["future"]["keep"], 17);
+    assert!(!temp.path().join("lost").exists());
+}
+
+#[test]
+fn unused_missing_libraries_support_partial_removal_but_not_new_missing_imports() {
+    let (_temp, store) = fixture(json!([]));
+    let mut document = store.read().unwrap();
+    document
+        .set_property("", "imports", &json!({"one":"one.pen","two":"two.pen"}))
+        .unwrap();
+    fs::write(store.path(), document.text()).unwrap();
+    let metadata = service::document_metadata(&store).unwrap();
+    assert_eq!(metadata["assets_complete"], false);
+    assert_eq!(metadata["asset_diagnostics"].as_array().unwrap().len(), 2);
+    let result = service::apply_request(
+        &store,
+        &request(
+            &store,
+            "remove-one",
+            json!([
+                {"op":"remove_import","alias":"one"}
+            ]),
+            false,
+        ),
+    )
+    .unwrap();
+    assert_eq!(result["assets_complete"], false);
+    assert_eq!(result["asset_diagnostics"].as_array().unwrap().len(), 1);
+    let original = fs::read(store.path()).unwrap();
+    let edit = request(
+        &store,
+        "new-missing-library",
+        json!([
+            {"op":"add_import","alias":"three","uri":"three.pen"}
+        ]),
+        false,
+    );
+    assert_eq!(
+        service::apply_request(&store, &edit).unwrap_err().code,
+        "ASSET_NOT_FOUND"
+    );
+    assert_eq!(fs::read(store.path()).unwrap(), original);
+    assert_eq!(store.history(10, None).unwrap().len(), 1);
+}
+
+#[test]
+fn an_appearing_library_invalidates_its_absence_revision_before_saving() {
+    let (temp, store) = fixture(json!([]));
+    let mut document = store.read().unwrap();
+    document
+        .set_property("", "imports", &json!({"ui":"absent.pen"}))
+        .unwrap();
+    fs::write(store.path(), document.text()).unwrap();
+    let project = Project::load(&store).unwrap();
+    let original = fs::read(store.path()).unwrap();
+    let edit = request(
+        &store,
+        "stale-library",
+        json!([
+            {"op":"remove_import","alias":"ui"}
+        ]),
+        false,
+    );
+    fs::write(
+        temp.path().join("absent.pen"),
+        r#"{"version":"2.21","children":[]}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        project.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    assert_eq!(
+        service::apply_request(&store, &edit).unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    assert_eq!(fs::read(store.path()).unwrap(), original);
+    assert!(store.history(10, None).unwrap().is_empty());
+}
+
+#[test]
+fn missing_library_detection_does_not_accept_urls_directories_or_invalid_extensions() {
+    for uri in [
+        "https://example.invalid/absent.pen",
+        "file:///absent.pen",
+        "directory.pen",
+        "absent.png",
+        "../outside.pen",
+    ] {
+        let (temp, store) = fixture(json!([]));
+        fs::create_dir(temp.path().join("directory.pen")).unwrap();
+        let mut document = store.read().unwrap();
+        document
+            .set_property("", "imports", &json!({"ui":uri}))
+            .unwrap();
+        fs::write(store.path(), document.text()).unwrap();
+        let metadata = service::document_metadata(&store).unwrap();
+        assert!(
+            metadata.get("dependency_error").is_some(),
+            "{uri}: {metadata}"
+        );
+        assert!(
+            metadata.get("assets_complete").is_none(),
+            "{uri}: {metadata}"
+        );
+        assert!(Project::load(&store).is_err(), "{uri}");
+    }
+}
+
+#[test]
+fn a_missing_library_alias_cannot_fall_back_to_a_different_librarys_literal_names() {
+    for variable in [false, true] {
+        let (temp, store) = fixture(if variable {
+            json!([{"id":"instance","type":"rectangle","fill":"$ui:color"}])
+        } else {
+            json!([{"id":"instance","type":"ref","ref":"ui:tile"}])
+        });
+        fs::write(temp.path().join("other.pen"), json!({"version":"2.21",
+            "variables":{"color":{"type":"color","value":"#2563eb"}},
+            "children":[{"id":"ui:tile","type":"rectangle","reusable":true,"width":20,"height":20}]
+        }).to_string()).unwrap();
+        let mut document = store.read().unwrap();
+        document
+            .set_property(
+                "",
+                "imports",
+                &json!({"ui":"absent.pen","other":"other.pen"}),
+            )
+            .unwrap();
+        fs::write(store.path(), document.text()).unwrap();
+        let metadata = service::document_metadata(&store).unwrap();
+        assert!(metadata.get("dependency_error").is_none(), "{metadata}");
+        assert_eq!(
+            metadata["resolution_error"]["code"], "ASSET_NOT_FOUND",
+            "{metadata}"
+        );
+        assert_eq!(
+            Project::load(&store)
+                .unwrap()
+                .library_document(Some("ui"))
+                .unwrap_err()
+                .code,
+            "ASSET_NOT_FOUND"
+        );
+    }
+}
+
+#[test]
+fn a_nested_missing_library_reports_its_owner_and_can_be_removed_with_its_instances() {
+    let (temp, store) = fixture(json!([
+        {"id":"instance","type":"ref","ref":"outer:ui:tile"}
+    ]));
+    let outer = temp.path().join("outer.pen");
+    let library =
+        json!({"version":"2.21","imports":{"ui":"nested/absent.pen"},"children":[]}).to_string();
+    fs::write(&outer, &library).unwrap();
+    let mut document = store.read().unwrap();
+    document
+        .set_property("", "imports", &json!({"outer":"outer.pen"}))
+        .unwrap();
+    fs::write(store.path(), document.text()).unwrap();
+    let metadata = service::document_metadata(&store).unwrap();
+    assert!(metadata.get("dependency_error").is_none(), "{metadata}");
+    assert_eq!(
+        metadata["asset_diagnostics"][0]["origin"],
+        json!(outer.canonicalize().unwrap())
+    );
+    assert_eq!(metadata["asset_diagnostics"][0]["uri"], "nested/absent.pen");
+    let result = service::apply_request(
+        &store,
+        &request(
+            &store,
+            "remove-nested-library",
+            json!([
+                {"op":"delete","target":"instance"},
+                {"op":"remove_import","alias":"outer"}
+            ]),
+            false,
+        ),
+    )
+    .unwrap();
+    assert_eq!(result["assets_complete"], true);
+    assert_eq!(fs::read_to_string(&outer).unwrap(), library);
 }
 
 #[test]
@@ -537,48 +782,82 @@ fn missing_links_are_tracked_and_retargeting_an_absent_parent_conflicts() {
 
 #[test]
 fn cli_inspection_and_repair_share_the_missing_dependency_revision() {
-    let (temp, store) = fixture(json!([image("images/lost.png")]));
-    let output = Command::new(env!("CARGO_BIN_EXE_lazypencil"))
-        .arg("--data-dir")
-        .arg(store.data_dir())
-        .args(["--json", "inspect"])
-        .arg(store.path())
-        .output()
+    for missing_library in [false, true] {
+        let (temp, store) = fixture(if missing_library {
+            json!([])
+        } else {
+            json!([image("images/lost.png")])
+        });
+        if missing_library {
+            let mut document = store.read().unwrap();
+            document
+                .set_property("", "imports", &json!({"ui":"absent.pen"}))
+                .unwrap();
+            fs::write(store.path(), document.text()).unwrap();
+        }
+        let output = command_output::output(
+            Command::new(env!("CARGO_BIN_EXE_lazypencil"))
+                .arg("--data-dir")
+                .arg(store.data_dir())
+                .args(["--json", "inspect"])
+                .arg(store.path()),
+            Duration::from_secs(30),
+            1024 * 1024,
+        )
         .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let metadata: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(metadata["assets_complete"], false);
-    let operations = temp.path().join("repair.json");
-    fs::write(
-        &operations,
-        json!([{"op":"delete","target":"image"}]).to_string(),
-    )
-    .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_lazypencil"))
-        .arg("--data-dir")
-        .arg(store.data_dir())
-        .args(["--json", "apply"])
-        .arg(store.path())
-        .arg("--operations")
-        .arg(operations)
-        .args([
-            "--expected-revision",
-            metadata["revision"].as_str().unwrap(),
-            "--expected-dependency-revision",
-            metadata["dependency_revision"].as_str().unwrap(),
-        ])
-        .output()
+        assert!(
+            !output.timed_out,
+            "CLI inspection timed out after {:?}",
+            output.elapsed
+        );
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let metadata: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(metadata["assets_complete"], false);
+        let operations = temp.path().join("repair.json");
+        fs::write(
+            &operations,
+            if missing_library {
+                json!([{"op":"remove_import","alias":"ui"}])
+            } else {
+                json!([{"op":"delete","target":"image"}])
+            }
+            .to_string(),
+        )
         .unwrap();
-    assert!(
-        output.status.success(),
-        "{} {}",
-        String::from_utf8_lossy(&output.stderr),
-        String::from_utf8_lossy(&output.stdout)
-    );
-    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(result["assets_complete"], true);
+        let output = command_output::output(
+            Command::new(env!("CARGO_BIN_EXE_lazypencil"))
+                .arg("--data-dir")
+                .arg(store.data_dir())
+                .args(["--json", "apply"])
+                .arg(store.path())
+                .arg("--operations")
+                .arg(operations)
+                .args([
+                    "--expected-revision",
+                    metadata["revision"].as_str().unwrap(),
+                    "--expected-dependency-revision",
+                    metadata["dependency_revision"].as_str().unwrap(),
+                ]),
+            Duration::from_secs(30),
+            1024 * 1024,
+        )
+        .unwrap();
+        assert!(
+            !output.timed_out,
+            "CLI repair timed out after {:?}",
+            output.elapsed
+        );
+        assert!(
+            output.status.success(),
+            "{} {}",
+            String::from_utf8_lossy(&output.stderr),
+            String::from_utf8_lossy(&output.stdout)
+        );
+        let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(result["assets_complete"], true);
+    }
 }

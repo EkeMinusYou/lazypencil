@@ -549,6 +549,15 @@ impl Session {
             }
             Stage::FocusReproduce => {
                 let separate_core = self.separate_core()?;
+                if has("repair") {
+                    self.test(
+                        !core,
+                        "repair",
+                        "librar",
+                        &["--test-threads=2"],
+                        "focus-library-repair.log",
+                    )?;
+                }
                 if args.suite == "dynamic" && has("mcp") {
                     self.test(
                         true,

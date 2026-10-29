@@ -720,6 +720,49 @@ fn mcp_can_diagnose_and_repair_missing_assets_without_executing_missing_code() {
 }
 
 #[test]
+fn mcp_can_rebind_a_missing_library_and_then_read_the_original_instance() {
+    let (temp, file, data) = fixture();
+    fs::write(
+        &file,
+        json!({"version":"2.21","imports":{"ui":"missing.pen"},"children":[
+            {"id":"instance","type":"ref","ref":"ui:tile"}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    fs::write(
+        temp.path().join("replacement.pen"),
+        json!({"version":"2.21","children":[
+            {"id":"tile","type":"rectangle","reusable":true,"width":20,"height":20,"fill":"#2563eb"}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let mut client = Client::start(&file, &data);
+    let metadata = client.data("get_document", json!({}));
+    assert_eq!(metadata["asset_diagnostics"][0]["kind"], "library");
+    assert_eq!(
+        metadata["capabilities"]["asset_repair"]["declared_libraries"],
+        true
+    );
+    let stored = client.data("read_nodes", json!({"node_id":"instance"}));
+    assert_eq!(
+        stored["dependency_revision"],
+        metadata["dependency_revision"]
+    );
+    let repaired = client.data("apply_operations", json!({"request_id":"rebind-library",
+        "expected_revision":metadata["revision"],"expected_dependency_revision":metadata["dependency_revision"],
+        "operations":[{"op":"remove_import","alias":"ui"},{"op":"add_import","alias":"ui","uri":"replacement.pen"}]}));
+    assert_eq!(repaired["assets_complete"], true);
+    let expanded = client.data(
+        "read_nodes",
+        json!({"node_id":"instance","expand_instances":true}),
+    );
+    assert_eq!(expanded["nodes"][0]["properties"]["fill"], "#2563eb");
+    client.finish();
+}
+
+#[test]
 fn mcp_variable_queries_expose_themed_values_sources_and_bound_pages() {
     let (temp, file, data) = fixture();
     fs::write(temp.path().join("tokens.pen"),json!({"version":"2.21","themes":{"mode":["light","dark"]},

@@ -125,7 +125,7 @@ impl Project {
         }
         Err(Error::new(
             "ASSET_NOT_FOUND",
-            "The document has missing image or code assets",
+            "The document has missing library, image, or code assets",
         )
         .details(json!({"assets_complete":false,"asset_diagnostics":self.asset_diagnostics()})))
     }

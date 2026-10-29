@@ -4,11 +4,15 @@
 
 ## 現在の状態（2026-10-30）
 
-最新の全工程成功はe786e3eの[CI 40925838163](https://github.com/EkeMinusYou/lazypencil/actions/runs/40925838163)である。Unixの認証profileを一つのprivate page workerから利用し、TUIの保持描画経路と別bound MCPを同じChromiumへ接続する実装を検証した。元のguardian leaseは維持し、取得全体を直列化しつつ、保持ページ・取消・終了回収をownerごとに分ける。owner別8ページ・16接続と通信／資源上限を設け、network policy変更時は起動条件を変えて再起動する。実Chromiumによる共有4件は41.47秒で成功した。同時利用とowner別eviction、取消／強制終了後の他owner保持、同じfile URLに対するproject別素材分離、通信方針切替と永続ストレージを確認した。可視TUIと実IMEの受け入れとは区別する。
+最新の全工程成功は4ec8d67の[CI 40928627047](https://github.com/EkeMinusYou/lazypencil/actions/runs/40928627047)である。cache整理の競合修正、Mac／Linux補助ツール全試験とClippy、core／既定構成、release、全5 consumerと最終source工程が成功した。既定構成は前回e786e3eの304出力を失効0件で再利用し、全408コンパイル単位（registry356単位を含む）はCargoでfreshだった。47試験実行ファイルのhashも全て前回と一致した。coreも918出力を失効0件で再利用し、Cargo確認は2.06秒だった。試験範囲・期限・最終gateは維持した。
+
+全体12分05秒で10分目標は未達。builder2分29秒・core6分01秒・release2分59秒、通常3分50秒・runtime3分55秒・pixel2分24秒・Material1分57秒・端末1分05秒・source46秒だった。pixelはjob作成18:15:51からrunner割当18:21:27 UTCまで5分36秒待った。アプリ変更がない再利用条件での結果であり、本体変更時やcold環境の10分以内、クラウドの待機時間の保証とはしない。
+
+共有profile対応の初回の全工程成功はe786e3eの[CI 40925838163](https://github.com/EkeMinusYou/lazypencil/actions/runs/40925838163)である。Unixの認証profileを一つのprivate page workerから利用し、TUIの保持描画経路と別bound MCPを同じChromiumへ接続する実装を検証した。元のguardian leaseは維持し、取得全体を直列化しつつ、保持ページ・取消・終了回収をownerごとに分ける。owner別8ページ・16接続と通信／資源上限を設け、network policy変更時は起動条件を変えて再起動する。実Chromiumによる共有4件は41.47秒で成功した。同時利用とowner別eviction、取消／強制終了後の他owner保持、同じfile URLに対するproject別素材分離、通信方針切替と永続ストレージを確認した。可視TUIと実IMEの受け入れとは区別する。
 
 監査・core・既定構成builder・release・通常／pixel／runtime／端末／Materialの全5 consumerと最終source工程は成功した。workflow全体は約13分15秒、builder7分14秒・core7分19秒・release6分36秒・runtime4分37秒だった。全体10分目標は未達であり、異なる変更やrunner条件の時間差を修正単独の効果とは扱わない。
 
-次の差分では、置換cacheの保存前に古いapp cacheを削除する処理を廃止する。a4aa5e6のログではdefault側が17:34:35 UTCにcore cacheも削除し、core側の17:34:41の復元がmissして不要な約1分51秒のcompileを生じた。保存済みcacheだけを、同じfeature構成・compiler／SDK文脈・wire format内で整理する。回帰試験は、保存前のfallback保持と、保存後も別構成／compiler／wire formatを保持することを検査する。容量確保には初回対象外のLinux完成app cache二つだけを削除し、1,948,360,456バイトを解放した。Linuxを含む依存cacheは保持した。この差分のremote検証はまだ未実施である。
+4ec8d67では、置換cacheの保存前に古いapp cacheを削除する処理を廃止した。a4aa5e6のログではdefault側が17:34:35 UTCにcore cacheも削除し、core側の17:34:41の復元がmissして不要な約1分51秒のcompileを生じた。保存済みcacheだけを、同じfeature構成・compiler／SDK文脈・wire format内で整理する。回帰試験は、保存前のfallback保持と、保存後も別構成／compiler／wire formatを保持することをMac／Linuxで成功した。容量確保には初回対象外のLinux完成app cache二つだけを削除し、1,948,360,456バイトを解放した。Linuxを含む依存cacheは保持した。
 
 <details>
 <summary>共有profile対応の準備と失敗履歴（e786e3eで上記範囲を検証済み）</summary>
@@ -28,6 +32,9 @@ runtimeは割当後、共有profile4件を12.53秒で失敗として返した。
 </details>
 
 再起動後のKittyアクセスもコンピューター操作ツールが`net.kovidgoyal.kitty`を安全上の理由で拒否した。実IMEの成功とは扱わず、元の実端末受け入れを維持する。
+
+<details>
+<summary>以前の全工程検証とCI短縮の履歴（各source当時の結果）</summary>
 
 前回の全工程成功は5b7139dの[CI 40900801284](https://github.com/EkeMinusYou/lazypencil/actions/runs/40900801284)である。依存cacheの保存・選択・整理と、ビルドreceiptへ束縛した実行hostの記録を追加した。MacとLinuxの補助ツール全試験・新しい保存条件／拒否条件・Clippyが成功した。既定858件・core470件のnamed caseと回数にec9d668からの欠落はなく、全1,980 PNGはbyte一致し、今回sourceと36×12の寸法も一致した。同じ画像の復号・三段階比較は繰り返していない。本体と47試験実行ファイルも前回とhash一致した。全5 consumerの元receiptはbyte一致し、個別host記録・試験完了結果とのhash対応と最終gateを成功した。Chromium・端末・Material・42描画計測・監査・署名付きsourceも成功し、source archiveは13,352,641バイト、SHA-256 `f6059197697fdbdac87041a73ae4a8e4aa2202256167b519d8c1682609b23a44`で、source／workflow／run attempt 1の署名を照合した。
 
@@ -99,6 +106,8 @@ custom合成を確定したMac完全CIは `62675c9` の [実行40834879129](http
 
 `95e2b6f` の [CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40689894389) は、軽量219件・28サマリーと Clippy、Mac先行、旧方針の3環境full job、依存監査・署名付きソースまで成功した。有用な実行は中断せず、終了後に次の変更を送った。各artifactの独立照合はまだ行っていないため、上記c9ffb37の確定済み基準と区別する。同条件の再実行は行わない。
 
+</details>
+
 ### 初回MacのみのCI方針
 
 本体再ビルド条件の861894b [CI 40822390824](https://github.com/EkeMinusYou/lazypencil/actions/runs/40822390824)は全工程成功したが12分02秒だった。対象選択19秒、共通builder7分07秒（本体と全試験のコンパイル4分16秒、Cargo試験と梱包50秒）、通常3分14秒・pixel2分36秒・runtime3分38秒、source42秒だった。normal development buildのcore側への移管、同一runの補助実行ファイルの共有、端末とMaterialの独立consumer、検査済みcompiler出力の直接tar梱包と2系統の並列圧縮をまとめ、788f4c2の同じ再ビルド条件で全体9分51秒になった。対象選択37秒、共通builder4分48秒（コンパイル2分36秒、Cargo試験と梱包21秒）、通常2分25秒・pixel2分23秒・runtime3分22秒・端末1分06秒・Material1分31秒、source42秒。pixelには作成から開始まで71秒のrunner待機があり、全体時間に含めた。Mac jobの合計実行時間は26分32秒から24分42秒だった。新経路のRust試験・Clippy・全consumer・共通gateまで確認し、元の試験・feature・期限・最終合格条件は維持した。署名済みsourceは1,189ファイル・13,285,845バイト、SHA-256 `d89e6ea4e6ac65cf22800bcd5766d87ab40192e76ee2a8429e0ccc8e6a8387f4`。アプリ成果物を再利用した旧構成bbc7790の8分51秒とは条件を分ける。依存もないcold buildや任意のクラウド待機への保証とはせず、同条件の追加実行は行わない。
@@ -148,6 +157,8 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 <a id="remaining-work"></a>
 
 ### 次に実装・確認すること
+
+欠損libraryの修復を準備した。宣言された通常／入れ子の`.pen`が存在しない場合も、欠損path・用途・元documentとabsence revisionを捕捉し、inspect／stored readと共通編集の依存条件を利用できる。`remove_import`→`add_import`の一バッチで参照先を差し替えるか、instanceとimportを一緒に削除する。未使用の欠損importだけなら部分修復できるが、保存結果に未解決のcomponent／variable参照は許さず、別libraryの同名IDへ推測で接続しない。appearanceの競合、dry-run／保存／再送、入れ子、禁止pathとCLI／実MCPの回帰を追加し、library修復を先行で実行する。書式・差分は確認済みで、remoteのコンパイルと機能検証はまだ未実施。設定fontの修復や、元から欠損している定義を推測する動作の完了とは扱わない。
 
 コピー済み定義のコード所有元保持は2c9ac33、入力文脈の世代別復元は4252fe2、新たに生成したscriptと後続の上書きはd7cc9c6で検証済みである。元source削除後と再copyを含み、通常metadataによる元設定の保持、失効した出力設定からコード所有元への復帰を確認した。必要な元情報を保存していない旧captureは、推測で接続せず元sourceからの再copyを案内する既存の診断を維持する。拡張済み依存cacheのwarm再利用はb09a329のコンパイル段階で確認できた。認証profileの同時利用はe786e3eで検証済みであり、初回Skia buildの重複・CI待機とcache整理の競合を引き続き改善する。
 
