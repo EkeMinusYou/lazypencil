@@ -11,27 +11,26 @@ use tempfile::TempDir;
 fn fixture(version: &str) -> (TempDir, Store) {
     let temp = TempDir::new().unwrap();
     fs::create_dir(temp.path().join(".git")).unwrap();
+    let nested = json!({"id":"nested","type":"frame","name":"Source","reusable":true,"x":"$offset","y":3,"width":20,"height":20,"fill":"$unused","metadata":{"type":"source"},"children":[
+        {"id":"source-text","type":"text","content":"Source"},
+        {"id":"badge","type":"rectangle","reusable":true,"width":2,"height":2,"fill":"#ff0000"}
+    ]});
+    let group = json!({"id":"group","type":"frame","layout":"none","width":120,"height":30,"children":[
+        nested,
+        {"id":"sibling","type":"ref","ref":"nested","x":55,"y":3,"descendants":{"source-text":{"content":"Inner"}}},
+        {"id":"external","type":"ref","ref":"badge","x":100,"y":3}
+    ]});
+    let parent = json!({"id":"parent","type":"frame","name":"Parent","reusable":true,"layout":"none","width":120,"height":30,"children":[group]});
+    let wrapper = json!({"id":"wrapper","type":"frame","name":"Wrapper","reusable":true,"layout":"none","width":120,"height":30,"metadata":{"type":"test","literal":"$unused"},"children":[
+        {"id":"parent-use","type":"ref","ref":"parent","descendants":{
+            "nested":{"x":18},"source-text":{"content":"Outer"},"sibling/source-text":{"content":"Reference"}
+        }}
+    ]});
     write(
         &temp.path().join("library.pen"),
         json!({"version":version,
         "variables":{"offset":{"type":"number","value":12},"unused":{"type":"color","value":"#ff0000"}},
-        "children":[
-            {"id":"parent","type":"frame","name":"Parent","reusable":true,"layout":"none","width":120,"height":30,"children":[
-                {"id":"group","type":"frame","layout":"none","width":120,"height":30,"children":[
-                    {"id":"nested","type":"frame","name":"Source","reusable":true,"x":"$offset","y":3,"width":20,"height":20,"fill":"$unused","metadata":{"type":"source"},"children":[
-                        {"id":"source-text","type":"text","content":"Source"},
-                        {"id":"badge","type":"rectangle","reusable":true,"width":2,"height":2,"fill":"#ff0000"}
-                    ]},
-                    {"id":"sibling","type":"ref","ref":"nested","x":55,"y":3,"descendants":{"source-text":{"content":"Inner"}}},
-                    {"id":"external","type":"ref","ref":"badge","x":100,"y":3}
-                ]}
-            ]},
-            {"id":"wrapper","type":"frame","name":"Wrapper","reusable":true,"layout":"none","width":120,"height":30,"metadata":{"type":"test","literal":"$unused"},"children":[
-                {"id":"parent-use","type":"ref","ref":"parent","descendants":{
-                    "nested":{"x":18},"source-text":{"content":"Outer"},"sibling/source-text":{"content":"Reference"}
-                }}
-            ]}
-        ]}),
+        "children":[parent,wrapper]}),
     );
     write(
         &temp.path().join("main.pen"),
