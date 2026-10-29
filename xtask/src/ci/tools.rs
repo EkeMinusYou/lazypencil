@@ -13,6 +13,10 @@ use std::{
 pub enum Command {
     Prepare,
     Verify,
+    Stage {
+        #[arg(long)]
+        output: PathBuf,
+    },
 }
 impl Command {
     pub fn run(self) -> Result<()> {
@@ -20,6 +24,24 @@ impl Command {
         let workspace = root.join("xtask");
         let target = workspace.join("target");
         match self {
+            Self::Stage { output } => {
+                let executable = std::env::current_exe()?;
+                let directory = executable
+                    .parent()
+                    .context("Tool executable lacks a directory")?;
+                let names = if cfg!(windows) {
+                    ["xtask.exe", "lazypencil-test-helper.exe"]
+                } else {
+                    ["xtask", "lazypencil-test-helper"]
+                };
+                let mut sums = String::new();
+                for name in names {
+                    let bytes = util::read(&directory.join(name), 256 * 1024 * 1024)?;
+                    sums.push_str(&format!("{}  {name}\n", util::digest(&bytes)));
+                    util::publish(&output.join(name), &bytes, false)?;
+                }
+                util::publish(&output.join("SHA256SUMS"), sums.as_bytes(), false)
+            }
             Self::Prepare => {
                 ensure!(
                     std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true"),

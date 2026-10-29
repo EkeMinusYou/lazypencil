@@ -14,6 +14,24 @@ struct Receipt {
     cargo_seconds: f64,
 }
 
+pub(super) enum Subset {
+    All,
+    Runtime,
+    Terminal,
+    Material,
+}
+
+impl Subset {
+    fn targets(&self) -> Option<std::collections::BTreeSet<&'static str>> {
+        match self {
+            Self::All => None,
+            Self::Runtime => Some(runtime_targets()),
+            Self::Terminal => Some(normal::QUIET.into_iter().collect()),
+            Self::Material => Some(["mcp", "optional_icons"].into_iter().collect()),
+        }
+    }
+}
+
 fn identity(s: &Session) -> Result<Value> {
     Ok(json!({
         "schema":1, "commit":std::env::var("GITHUB_SHA")?,
@@ -37,7 +55,7 @@ fn runtime_targets() -> std::collections::BTreeSet<&'static str> {
         .into_iter()
         .flatten()
         .copied()
-        .chain(["mcp", "agent", "tui", "optional_icons", "lib"])
+        .chain(["mcp", "agent", "tui", "lib"])
         .collect()
 }
 
@@ -62,23 +80,30 @@ fn relative<'a>(s: &Session, binary: &'a Binary) -> Result<&'a Path> {
     Ok(relative)
 }
 
-fn stage_record(
+fn pack(
     s: &Session,
     receipt: &Receipt,
     destination: &Path,
     targets: Option<&std::collections::BTreeSet<&str>>,
 ) -> Result<()> {
-    receipt.catalog.validate(
-        &s.target,
-        receipt.identity["commit"]
-            .as_str()
-            .context("Commit missing")?,
-        &[],
-    )?;
+    ensure!(
+        receipt.identity["commit"] == receipt.catalog.source_commit,
+        "Catalog source differs from the receipt"
+    );
     ensure!(
         receipt.application.path == s.executable("debug"),
         "Unexpected application path"
     );
+    fs::create_dir_all(destination)?;
+    let encoded = util::encode(receipt)?;
+    util::publish(&destination.join("receipt.json"), &encoded, false)?;
+    let work = tempfile::tempdir_in(&s.temporary)?;
+    let path = work.path().join("catalog.tar");
+    let mut tar = tar::Builder::new(fs::File::create_new(&path)?);
+    append(&mut tar, Path::new("receipt.json"), &encoded, 0o600)?;
+    let mut total = encoded.len() as u64;
+    // Read and verify each immutable compiler output directly into the tar.
+    // Avoid publishing and syncing another complete executable tree first.
     for binary in receipt
         .catalog
         .binaries
@@ -87,17 +112,48 @@ fn stage_record(
         .map(|(_, binary)| binary)
         .chain([&receipt.application])
     {
-        copy(
-            binary,
-            &binary.path,
-            &destination.join(relative(s, binary)?),
-        )?;
+        let bytes = util::read(&binary.path, LIMIT)?;
+        ensure!(
+            util::digest(&bytes) == binary.sha256,
+            "Compiled binary changed"
+        );
+        total = total
+            .checked_add(bytes.len() as u64)
+            .context("Executable size overflow")?;
+        ensure!(total <= ARCHIVE_LIMIT, "Executable archive too large");
+        append(&mut tar, relative(s, binary)?, &bytes, 0o700)?;
     }
-    util::publish(
-        &destination.join("receipt.json"),
-        &util::encode(receipt)?,
-        false,
-    )
+    tar.finish()?;
+    drop(tar);
+    s.execute_command(
+        Command::new("zstd")
+            .args(["-3", "--long=27", "--single-thread", "--no-progress", "-o"])
+            .arg(destination.join(ARCHIVE))
+            .arg(&path),
+        300,
+        &format!(
+            "{}-transport.log",
+            destination
+                .file_name()
+                .context("Archive directory missing")?
+                .to_string_lossy()
+        ),
+        true,
+    )?;
+    println!(
+        "Executable transport: {total} bytes -> {} bytes",
+        fs::metadata(destination.join(ARCHIVE))?.len()
+    );
+    Ok(())
+}
+
+fn append(tar: &mut tar::Builder<fs::File>, name: &Path, bytes: &[u8], mode: u32) -> Result<()> {
+    let mut header = tar::Header::new_gnu();
+    header.set_size(bytes.len() as u64);
+    header.set_mode(mode);
+    header.set_cksum();
+    tar.append_data(&mut header, name, bytes)?;
+    Ok(())
 }
 
 pub(super) fn stage(s: &Session, elapsed: Duration) -> Result<()> {
@@ -118,54 +174,30 @@ pub(super) fn stage(s: &Session, elapsed: Duration) -> Result<()> {
         },
         cargo_seconds: elapsed.as_secs_f64(),
     };
-    stage_record(s, &receipt, &directory(s), None)?;
-    pack(s, &directory(s))?;
-    let runtime = s.temporary.join("native-runtime-binaries");
-    stage_record(s, &receipt, &runtime, Some(&runtime_targets()))?;
-    pack(s, &runtime)
-}
-
-fn pack(s: &Session, directory: &Path) -> Result<()> {
-    let work = tempfile::tempdir_in(&s.temporary)?;
-    let path = work.path().join("catalog.tar");
-    let mut tar = tar::Builder::new(fs::File::create_new(&path)?);
-    // The receipt comes first so consumers can restrict every later member.
-    let receipt = directory.join("receipt.json");
-    let files = std::iter::once(receipt.clone()).chain(
-        util::walk(directory)?
-            .into_iter()
-            .filter(|path| path != &receipt),
-    );
-    let mut total = 0u64;
-    for path in files {
-        let size = fs::metadata(&path)?.len();
-        total = total
-            .checked_add(size)
-            .context("Executable size overflow")?;
-        ensure!(
-            size <= LIMIT && total <= ARCHIVE_LIMIT,
-            "Executable archive too large"
-        );
-        tar.append_path_with_name(&path, path.strip_prefix(directory)?)?;
-    }
-    tar.finish()?;
-    drop(tar);
-    // A 128 MiB matching window covers common statically linked code across
-    // test executables; individual ZIP members cannot share this dictionary.
-    s.execute_command(
-        Command::new("zstd")
-            .args(["-3", "--long=27", "--single-thread", "--no-progress", "-o"])
-            .arg(directory.join(ARCHIVE))
-            .arg(&path),
-        300,
-        "executable-transport.log",
-        true,
-    )?;
-    println!(
-        "Executable transport: {total} bytes -> {} bytes",
-        fs::metadata(directory.join(ARCHIVE))?.len()
-    );
-    Ok(())
+    parallel::run(vec![
+        (
+            "complete catalog",
+            Box::new(|| pack(s, &receipt, &directory(s), None)),
+        ),
+        (
+            "consumer subsets",
+            Box::new(|| {
+                for (name, subset) in [
+                    ("runtime", Subset::Runtime),
+                    ("terminal", Subset::Terminal),
+                    ("material", Subset::Material),
+                ] {
+                    pack(
+                        s,
+                        &receipt,
+                        &s.temporary.join(format!("native-{name}-binaries")),
+                        subset.targets().as_ref(),
+                    )?;
+                }
+                Ok(())
+            }),
+        ),
+    ])
 }
 
 fn unpack(s: &Session, targets: Option<&std::collections::BTreeSet<&str>>) -> Result<()> {
@@ -315,8 +347,8 @@ fn restore_record(
     Ok(Duration::from_secs_f64(receipt.cargo_seconds))
 }
 
-pub(super) fn restore(s: &Session, runtime: bool) -> Result<Duration> {
-    let targets = runtime.then(runtime_targets);
+pub(super) fn restore(s: &Session, subset: Subset) -> Result<Duration> {
+    let targets = subset.targets();
     unpack(s, targets.as_ref())?;
     restore_record(s, &identity(s)?, targets.as_ref())
 }
@@ -338,7 +370,7 @@ pub(super) fn gate(s: &Session) -> Result<()> {
     let output = s.temporary.join("codec-reference");
     fs::create_dir(&output)?;
     let mut binaries: Option<String> = None;
-    for mode in ["normal", "pixels", "runtime"] {
+    for mode in ["normal", "pixels", "runtime", "terminal", "material"] {
         let root = s
             .temporary
             .join("consumer-evidence")
@@ -375,7 +407,7 @@ pub(super) fn gate(s: &Session) -> Result<()> {
         // The pixel lane owns native render diagnostics; codec-script images
         // remain mandatory outputs of the normal and runtime producers.
         let codec = root.join("codec-reference");
-        if mode == "pixels" && !codec.exists() {
+        if !["normal", "runtime"].contains(&mode) && !codec.exists() {
             continue;
         }
         for entry in fs::read_dir(codec)? {
@@ -446,8 +478,11 @@ mod tests {
             },
             cargo_seconds: 2.5,
         };
-        stage_record(&s, &receipt, &directory(&s), None).unwrap();
-        pack(&s, &directory(&s)).unwrap();
+        pack(&s, &receipt, &directory(&s), None).unwrap();
+        assert!(!directory(&s).join("debug").exists());
+        fs::write(&path, b"changed compiler output").unwrap();
+        assert!(pack(&s, &receipt, &s.temporary.join("changed"), None).is_err());
+        fs::write(&path, b"test executable").unwrap();
         let packed = s.temporary.join("packed");
         fs::rename(directory(&s), &packed).unwrap();
         fs::create_dir(directory(&s)).unwrap();
@@ -489,8 +524,7 @@ mod tests {
         );
         let partial = s.temporary.join("partial");
         let targets = std::collections::BTreeSet::from(["probe"]);
-        stage_record(&s, &receipt, &partial, Some(&targets)).unwrap();
-        pack(&s, &partial).unwrap();
+        pack(&s, &receipt, &partial, Some(&targets)).unwrap();
         assert_eq!(
             util::file_digest(&partial.join("receipt.json")).unwrap(),
             util::file_digest(&directory(&s).join("receipt.json")).unwrap()

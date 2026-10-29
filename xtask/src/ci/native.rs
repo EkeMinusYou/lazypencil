@@ -42,6 +42,7 @@ pub enum Stage {
     CoreTest,
     CoreLint,
     DefaultBuild,
+    DefaultDevelopmentBuild,
     BuildAndReproduce,
     Reproduce,
     DefaultTest,
@@ -50,6 +51,8 @@ pub enum Stage {
     BinariesStage,
     NormalConsumer,
     PixelsConsumer,
+    TerminalConsumer,
+    MaterialConsumer,
     RuntimePrepare,
     RuntimeConsumer,
     EvidenceGate,
@@ -384,17 +387,27 @@ impl Session {
                 binaries::stage(self, elapsed)
             }
             Stage::NormalConsumer => {
-                let elapsed = binaries::restore(self, false)?;
+                let elapsed = binaries::restore(self, binaries::Subset::All)?;
                 normal::consume(self, elapsed)?;
                 binaries::completed(self, "normal")
             }
             Stage::PixelsConsumer => {
-                let elapsed = binaries::restore(self, false)?;
+                let elapsed = binaries::restore(self, binaries::Subset::All)?;
                 normal::consume_pixels(self, elapsed)?;
                 binaries::completed(self, "pixels")
             }
+            Stage::TerminalConsumer => {
+                let elapsed = binaries::restore(self, binaries::Subset::Terminal)?;
+                normal::consume_terminal(self, elapsed)?;
+                binaries::completed(self, "terminal")
+            }
+            Stage::MaterialConsumer => {
+                let _ = binaries::restore(self, binaries::Subset::Material)?;
+                self.material_tests()?;
+                binaries::completed(self, "material")
+            }
             Stage::RuntimePrepare => {
-                let _ = binaries::restore(self, true)?;
+                let _ = binaries::restore(self, binaries::Subset::Runtime)?;
                 self.reproduce_inputs(false)?;
                 // Browser preparation publishes GITHUB_ENV values. Consumers
                 // run in the next Actions step so both Chromium paths exist.
@@ -406,7 +419,7 @@ impl Session {
                     "Prepare the runtime catalog before running its tests"
                 );
                 clipboard::run(self)?;
-                let runtime = self.runtime_lanes();
+                let runtime = self.runtime_lanes(false);
                 let ownership = browser::ownership_only(self);
                 let panel = browser::panel(self);
                 let failures = [
@@ -820,6 +833,12 @@ impl Session {
                 }
                 self.build_catalog(&[])
             }
+            Stage::DefaultDevelopmentBuild => self.execute(
+                &commands::catalog_builds(&[])[0],
+                2700,
+                "default-development-build.log",
+                false,
+            ),
             Stage::BuildAndReproduce => {
                 if ["ci", "normal-ci", "browser-ci"].contains(&args.suite.as_str()) {
                     return self.build_catalog(&[]);
@@ -882,7 +901,7 @@ impl Session {
                         "default tests",
                         Box::new(|| normal::remaining(self, &prepared, false)),
                     ),
-                    ("runtime suites", Box::new(|| self.runtime_lanes())),
+                    ("runtime suites", Box::new(|| self.runtime_lanes(true))),
                 ]);
                 let ownership = browser::ownership(self);
                 let failures = [("test lanes", result), ("browser evidence", ownership)]
@@ -930,10 +949,10 @@ impl Session {
                             "release compilation",
                             Box::new(|| release::compile(self, "focus-release-parallel.log")),
                         ),
-                        ("runtime suites", Box::new(|| self.runtime_lanes())),
+                        ("runtime suites", Box::new(|| self.runtime_lanes(true))),
                     ])
                 } else {
-                    self.runtime_lanes()
+                    self.runtime_lanes(true)
                 };
                 let ownership = browser::ownership(self);
                 let failures = [("runtime lanes", result), ("browser ownership", ownership)]
@@ -946,7 +965,7 @@ impl Session {
                 Ok(())
             }
             Stage::Mcp => self.mcp_tests(),
-            Stage::LongTests => self.long_tests(),
+            Stage::LongTests => self.long_tests(true),
             Stage::Panel => browser::panel(self),
             Stage::DefaultLint => self.cargo(
                 &[
@@ -1033,7 +1052,9 @@ impl Session {
     // stage publishes its complete catalog. Keep their records independent.
     fn compile_catalog(&self, targets: &[String], log: &str, commit: &str) -> Result<Catalog> {
         let [normal, _] = commands::catalog_builds(targets);
-        self.execute(&normal, 2700, &format!("{log}.log"), false)?;
+        if !self.separate_core()? {
+            self.execute(&normal, 2700, &format!("{log}.log"), false)?;
+        }
         self.compile_test_catalog(targets, log, commit)
     }
 
@@ -1098,7 +1119,7 @@ impl Session {
             binaries,
         })
     }
-    fn runtime_lanes(&self) -> Result<()> {
+    fn runtime_lanes(&self, with_material: bool) -> Result<()> {
         let prepared_browser = browser::prepare(self)?;
         // MCP and idle lifecycle clients own separate documents, process trees
         // and automatic CDP ports. Material has an independent settings path.
@@ -1108,7 +1129,10 @@ impl Session {
                 Box::new(|| browser::run_prepared(self, prepared_browser)),
             ),
             ("MCP dynamic images", Box::new(|| self.mcp_tests())),
-            ("lifecycle and Material", Box::new(|| self.long_tests())),
+            (
+                "lifecycle and Material",
+                Box::new(|| self.long_tests(with_material)),
+            ),
         ])
     }
 
@@ -1180,15 +1204,11 @@ impl Session {
         self.execute_command(&mut command, 300, log, false)
     }
 
-    fn long_tests(&self) -> Result<()> {
-        super::setup::material_fonts(
-            &self.root.join("resources/icons/catalogue.json"),
-            &self.temporary.join("lazypencil-material-fonts"),
-        )?;
-        let catalog = self.verified_catalog(&["mcp", "tui", "optional_icons"])?;
+    fn long_tests(&self, with_material: bool) -> Result<()> {
+        let catalog = self.verified_catalog(&["mcp", "tui"])?;
         // These independent lanes use immutable debug binaries and all join
         // before subsequent smoke tests and resource measurements.
-        parallel::run(vec![
+        let mut tasks: Vec<parallel::Task<'_>> = vec![
             (
                 "MCP lifecycle",
                 Box::new(|| self.lifecycle_tests(&catalog, "mcp", "chromium-mcp-idle.log")),
@@ -1197,44 +1217,51 @@ impl Session {
                 "TUI lifecycle",
                 Box::new(|| self.lifecycle_tests(&catalog, "tui", "chromium-tui.log")),
             ),
+        ];
+        if with_material {
+            tasks.push(("Material verification", Box::new(|| self.material_tests())));
+        }
+        parallel::run(tasks)
+    }
+
+    fn material_tests(&self) -> Result<()> {
+        super::setup::material_fonts(
+            &self.root.join("resources/icons/catalogue.json"),
+            &self.temporary.join("lazypencil-material-fonts"),
+        )?;
+        let catalog = self.verified_catalog(&["mcp", "optional_icons"])?;
+        let mut failures = Vec::new();
+        for (target, filter, log) in [
             (
-                "Material verification",
-                Box::new(|| -> Result<()> {
-                    let mut failures = Vec::new();
-                    for (target, filter, log) in [
-                        (
-                            "optional_icons",
-                            "official_material_fonts",
-                            "lazypencil-material-fonts.log",
-                        ),
-                        ("mcp", "real_mcp_material", "lazypencil-material-mcp.log"),
-                    ] {
-                        let args = vec![
-                            catalog.binaries[target].path.to_string_lossy().into_owned(),
-                            filter.into(),
-                            "--ignored".into(),
-                            "--nocapture".into(),
-                            "--test-threads=1".into(),
-                        ];
-                        let mut command = self.command(&args);
-                        command
-                            .env(
-                                "LAZYPENCIL_TEST_MATERIAL_DIR",
-                                self.temporary.join("lazypencil-material-fonts"),
-                            )
-                            .env(
-                                "LAZYPENCIL_CONFIG_DIR",
-                                self.temporary.join("lazypencil-material-settings"),
-                            );
-                        if let Err(error) = self.execute_command(&mut command, 3600, log, false) {
-                            failures.push(format!("{target}: {error:#}"));
-                        }
-                    }
-                    ensure!(failures.is_empty(), "{}", failures.join("\n"));
-                    Ok(())
-                }),
+                "optional_icons",
+                "official_material_fonts",
+                "lazypencil-material-fonts.log",
             ),
-        ])
+            ("mcp", "real_mcp_material", "lazypencil-material-mcp.log"),
+        ] {
+            let args = vec![
+                catalog.binaries[target].path.to_string_lossy().into_owned(),
+                filter.into(),
+                "--ignored".into(),
+                "--nocapture".into(),
+                "--test-threads=1".into(),
+            ];
+            let mut command = self.command(&args);
+            command
+                .env(
+                    "LAZYPENCIL_TEST_MATERIAL_DIR",
+                    self.temporary.join("lazypencil-material-fonts"),
+                )
+                .env(
+                    "LAZYPENCIL_CONFIG_DIR",
+                    self.temporary.join("lazypencil-material-settings"),
+                );
+            if let Err(error) = self.execute_command(&mut command, 3600, log, false) {
+                failures.push(format!("{target}: {error:#}"));
+            }
+        }
+        ensure!(failures.is_empty(), "{}", failures.join("\n"));
+        Ok(())
     }
 
     fn verified_catalog(&self, required: &[&str]) -> Result<Catalog> {

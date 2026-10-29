@@ -43,6 +43,12 @@ on:
         value: ${{ jobs.verify.outputs.binaries_artifact }}
       runtime_binaries_artifact:
         value: ${{ jobs.verify.outputs.runtime_binaries_artifact }}
+      terminal_binaries_artifact:
+        value: ${{ jobs.verify.outputs.terminal_binaries_artifact }}
+      material_binaries_artifact:
+        value: ${{ jobs.verify.outputs.material_binaries_artifact }}
+      native_tools_artifact:
+        value: ${{ jobs.verify.outputs.native_tools_artifact }}
 
 permissions:
   contents: read
@@ -75,6 +81,9 @@ jobs:
       application_artifact: ${{ steps.application-artifact-upload.outcome == 'success' && steps.application-key.outputs.checkpoint_legacy || '' }}
       binaries_artifact: ${{ steps.binaries-upload.outcome == 'success' && format('native-executables-{0}', github.sha) || '' }}
       runtime_binaries_artifact: ${{ steps.runtime-binaries-upload.outcome == 'success' && format('native-runtime-executables-{0}', github.sha) || '' }}
+      terminal_binaries_artifact: ${{ steps.terminal-binaries-upload.outcome == 'success' && format('native-terminal-executables-{0}', github.sha) || '' }}
+      material_binaries_artifact: ${{ steps.material-binaries-upload.outcome == 'success' && format('native-material-executables-{0}', github.sha) || '' }}
+      native_tools_artifact: ${{ steps.native-tools-upload.outcome == 'success' && format('native-tools-{0}', github.sha) || '' }}
     permissions:
       contents: read
       actions: write
@@ -311,6 +320,24 @@ jobs:
         if: ${{ (inputs.lane == 'all' || inputs.lane == 'default' || inputs.lane == 'core' && runner.os == 'macOS') && (inputs.phase != 'focus') }}
         timeout-minutes: 15
         run: cargo xtask ci native default-lint
+      - name: Verify normal default-feature development compilation on the independent core host
+        if: inputs.lane == 'core' && runner.os == 'macOS' && inputs.phase != 'focus'
+        timeout-minutes: 45
+        run: cargo xtask ci native default-development-build
+      - name: Stage same-run native tools for consumers
+        if: inputs.lane == 'build'
+        run: cargo xtask ci tools stage --output "$RUNNER_TEMP/native-tools"
+      - name: Share tools without their Cargo build tree
+        id: native-tools-upload
+        if: inputs.lane == 'build'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: native-tools-${{ github.sha }}
+          path: ${{ runner.temp }}/native-tools/
+          compression-level: 1
+          retention-days: 1
+          overwrite: true
+          if-no-files-found: error
       - name: Complete Cargo-owned checks and stage the immutable executable catalog
         if: inputs.lane == 'build'
         run: cargo xtask ci native binaries-stage
@@ -332,6 +359,28 @@ jobs:
         with:
           name: native-runtime-executables-${{ github.sha }}
           path: ${{ runner.temp }}/native-runtime-binaries/catalog.tar.zst
+          compression-level: 0
+          retention-days: 1
+          overwrite: true
+          if-no-files-found: error
+      - name: Share terminal checks without unrelated executables
+        id: terminal-binaries-upload
+        if: inputs.lane == 'build'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: native-terminal-executables-${{ github.sha }}
+          path: ${{ runner.temp }}/native-terminal-binaries/catalog.tar.zst
+          compression-level: 0
+          retention-days: 1
+          overwrite: true
+          if-no-files-found: error
+      - name: Share Material checks without unrelated executables
+        id: material-binaries-upload
+        if: inputs.lane == 'build'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: native-material-executables-${{ github.sha }}
+          path: ${{ runner.temp }}/native-material-binaries/catalog.tar.zst
           compression-level: 0
           retention-days: 1
           overwrite: true

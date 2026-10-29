@@ -2,7 +2,7 @@
 use super::*;
 
 const TEST_SECONDS: u64 = 900;
-const QUIET: [&str; 3] = ["tui", "dynamic_render", "runtime_config"];
+pub(super) const QUIET: [&str; 3] = ["tui", "dynamic_render", "runtime_config"];
 const INDEPENDENT: [&str; 1] = ["script_scope"];
 const RESOURCES: [&str; 4] = ["font_sources", "project", "graphics", "mesh"];
 
@@ -29,6 +29,18 @@ pub(super) fn consume(s: &Session, elapsed: Duration) -> Result<()> {
     // checks on its own host. The quiet launch interval remains local here.
     prepared.resources.clear();
     remaining_inner(s, &prepared, false)
+}
+
+pub(super) fn consume_terminal(s: &Session, elapsed: Duration) -> Result<()> {
+    let catalog = s.verified_catalog(&QUIET)?;
+    let checks = QUIET
+        .iter()
+        .map(|name| commands::default_test(name, &catalog.binaries[*name].path))
+        .collect::<Result<Vec<_>>>()?;
+    let budget = Duration::from_secs(TEST_SECONDS)
+        .checked_sub(elapsed)
+        .context("Default test budget exhausted during Cargo checks")?;
+    run_lane(s, &checks, Instant::now() + budget, "lazypencil-tests.log")
 }
 
 pub(super) fn consume_pixels(s: &Session, elapsed: Duration) -> Result<()> {
@@ -99,7 +111,13 @@ fn prepare_inner(s: &Session, elapsed: Option<Duration>) -> Result<Prepared> {
     // These complete targets deliberately impose short launch/script budgets.
     // They precede competing work and consume the same active test budget,
     // including Cargo checks already completed by the producer.
-    let quiet = run_lane(s, &quiet, deadline, "lazypencil-tests.log");
+    let quiet = if elapsed.is_some() {
+        // The mandatory terminal consumer runs these exact invocations alone
+        // on its host. Standalone routes retain their quiet interval here.
+        Ok(())
+    } else {
+        run_lane(s, &quiet, deadline, "lazypencil-tests.log")
+    };
     let failures = [
         ("Cargo checks", cargo),
         ("terminal and launch policies", quiet),

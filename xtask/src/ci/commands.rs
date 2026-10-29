@@ -169,17 +169,18 @@ pub fn default_tests(root: &Path, binaries: &BTreeMap<String, PathBuf>) -> Resul
     ["lib".to_owned(), "lazypencil".to_owned()]
         .into_iter()
         .chain(integration)
-        .map(|name| {
-            let path = &binaries[&name];
-            ensure!(path.is_absolute(), "Test executable must be absolute");
-            let mut command = vec![path.to_string_lossy().into_owned()];
-            command.extend(default_flags());
-            if name == "lib" {
-                command.extend(skips([MANAGEMENT_REPRODUCTION]));
-            }
-            Ok(command)
-        })
+        .map(|name| default_test(&name, &binaries[&name]))
         .collect()
+}
+
+pub fn default_test(name: &str, path: &Path) -> Result<Invocation> {
+    ensure!(path.is_absolute(), "Test executable must be absolute");
+    let mut command = vec![path.to_string_lossy().into_owned()];
+    command.extend(default_flags());
+    if name == "lib" {
+        command.extend(skips([MANAGEMENT_REPRODUCTION]));
+    }
+    Ok(command)
 }
 
 /// Clipboard ownership belongs to its dedicated stage, outside the runtime lifecycle suite.
@@ -375,7 +376,11 @@ pub fn plan_with_core(
         rest.extend(shader_skip);
         checks.push(rest);
         return Ok(Plan {
-            build: vec![build, words(&["cargo", "build", "--locked"])],
+            build: if separate_core {
+                vec![build]
+            } else {
+                vec![build, words(&["cargo", "build", "--locked"])]
+            },
             checks,
         });
     }
@@ -386,7 +391,11 @@ pub fn plan_with_core(
     if core {
         app.push("--no-default-features".into());
     }
-    let mut builds = vec![build, app];
+    let mut builds = if separate_core && !core {
+        vec![build]
+    } else {
+        vec![build, app]
+    };
     if suite == "graphics" && has("attachments") {
         // Exercise the optional-TUI boundary before ending in the default
         // build graph used by reproductions and the shared focused artifact.

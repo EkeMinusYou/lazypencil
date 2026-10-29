@@ -4,7 +4,9 @@
 
 ## 現在の状態（2026-10-29）
 
-最新のMac完全CIの根拠は `ab8c785` の [実行](https://github.com/EkeMinusYou/lazypencil/actions/runs/40815181222)。本体再buildを含む全体12分15秒で、軽量試験・Clippy、core・default、runtime・画像gate・42描画計測・依存監査・署名付きsourceまで成功した。前回のcore・通常・runtimeの全named caseと実行回数を照合し、欠落0件だった。実行時生成childrenの新規2試験と、7組合せ×2形式の42 PNGのhash・revision・寸法・14組の再copy一致も独立照合した。保存済みchildrenの既存回帰も保持する。cache利用時に9分09秒を測った209a27bと条件が異なり、今回の本体再build条件では10分目標は未達である。全artifactの独立した再照合と製品全体の受け入れは未完了で、正常な導入・取消の成功から全異常終了条件の合格とはしない。重いbuildはGHAに限り、Linux x64／arm64・Windowsの既存実装は後日対応用に保持する。Intel Macは対象外とし、OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
+最新のMac完全CIは `bbc7790` の [実行](https://github.com/EkeMinusYou/lazypencil/actions/runs/40821380912)。アプリ成果物の再利用条件で全体8分51秒となり、軽量試験・両構成のClippy、core・default、runtime・画像gate・42描画計測・依存監査・署名付きsourceまで成功した。618ファイルを再利用し、無効化0件だった。直前の成功349c2eaとcore・通常＋pixel・runtimeの全named caseと実行回数を照合し、欠落0件だった。依存cacheだけを残して本体・全試験・releaseを再コンパイルした861894bの CI 40822390824は全工程成功したが12分02秒で、10分目標は未達だった。全artifactの独立した再照合と製品全体の受け入れは未完了で、正常な導入・取消の成功から全異常終了条件の合格とはしない。重いbuildはGHAに限り、Linux x64／arm64・Windowsの既存実装は後日対応用に保持する。Intel Macは対象外とし、OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
+
+本体再buildを含む旧方式の完全CIは、`ab8c785` の [実行](https://github.com/EkeMinusYou/lazypencil/actions/runs/40815181222) が12分15秒、`349c2ea` の [実行](https://github.com/EkeMinusYou/lazypencil/actions/runs/40820298828) が11分28秒だった。ab8c785では実行時生成childrenの新規2試験、7組合せ×2形式の42 PNGのhash・revision・寸法・14組の再copy一致を独立照合した。349c2eaでは明示URI付きscript_scopeの新規試験と、5経路×3文脈×2形式×3段階の90 PNGのhash・revision・36×12寸法・30組の元／copy／再copy一致を独立照合した。これらの成功を、残る全script文脈合成の完成とはしない。
 
 旧3環境方針での依存監査・署名付きソースを含む確定済み根拠は [`c9ffb37` の CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40679529757)。Linux 各1,490件・Mac1,479件、各144サマリー・812画像・42描画計測を確認し、過去ケースの実行回数、画像、clipboard／IME、profile／namespace／通信制御、ソース1,161ファイルの Git blob・mode と署名を独立照合した。CI の成功は、製品全体の受け入れ完了を意味しない。
 
@@ -12,11 +14,13 @@
 
 ### 初回MacのみのCI方針
 
+再起動後に861894bの CI 40822390824の完了と全job成功を確認した。対象選択19秒、共通builder7分07秒（本体と全試験のコンパイル4分16秒、Cargo試験と梱包50秒）、通常3分14秒・pixel2分36秒・runtime3分38秒、source42秒で、全体12分02秒だった。次の差分は、normal development buildのcore側への移管、同一runの補助実行ファイルの共有、端末とMaterialの独立consumer、検査済みcompiler出力の直接tar梱包と2系統の並列圧縮をまとめたもの。元の試験・feature・期限・最終gateは維持し、Rustと新経路は次のGHAで検証する。
+
 通常のnative対象は `RELEASE_PLATFORMS=["macos-15"]`。自動の対象選択と `--matrix all` もMacだけにし、親runのLinux失敗を調べて自動選択する処理を外す。両feature構成、Chromium／JS／GLSL、clipboard／PTY、性能・ライセンス・配布の元の条件は保持する。
 
 通常CIはcore検証・既定構成のビルド・releaseと計測を並列実行する。既定構成は一度だけビルドし、通常・pixel/font・runtimeの3 consumerが同じ実行ファイルを別々のMacで消費する。コンパイラー・OS／CPU・image・ビルド条件・ソースと各ファイルhashを照合し、consumer側のnativeビルドや依存cacheの再展開を除く。Cargo管理のcleanup-worker試験とdoctestはbuilderで一度だけ行い、その時間も元の通常試験budgetから差し引く。署名付きsourceの前に全consumerの結果と画像を衝突なしで結合し、同じcompiled catalogと元の共通gateを要求する。通常とpixelは同じ保存済みbundleを取得し、完全成果物を追加保存しない。実行ファイルだけの転送bundleは完全なCargo checkpointと分け、追加フォント入力は小さい専用cacheを使う。combined builderでは専用core jobと重なるnamespace用のcore事前buildを除き、standalone focusとrendering-only添付構成は保持する。coreと既定構成のcache context／保持namespaceを分け、releaseは専用cacheだけへ保存する。実際のcompiler入力とCargoの再ビルド判定は維持する。
 
-一般試験とscript scopeを通常hostの2系統、font/project/graphics/meshと絵文字をpixel hostの2系統で実行し、browser/MCP/lifecycle/Materialとも並列にする。readinessは2並列、script scopeは2並列、他のbrowser対象とMaterial書体は直列とする。短い起動／script期限を持つTUI・dynamic_render・runtime_configの通常targetは静かな先行区間へ移し、各invocationを後続から除いて一度ずつ実行する。全処理のjoin後に共通の画像／所有権gateを実行する。性能測定は独立release runnerで行う。試験範囲・合格条件・timeoutは削減していない。
+library単体・一般統合・script scopeを通常hostの3系統、graphics・font/project/mesh・絵文字をpixel hostの3系統で実行し、browser/MCP/lifecycle/Materialとも並列にする。readinessは2並列、script scopeは2並列、他のbrowser対象とMaterial書体は直列とする。短い起動／script期限を持つTUI・dynamic_render・runtime_configの通常targetは静かな先行区間へ移し、各invocationを後続から除いて一度ずつ実行する。全処理のjoin後に共通の画像／所有権gateを実行する。性能測定は独立release runnerで行う。試験範囲・合格条件・timeoutは削減していない。
 
 209a27bの完全CIは対象選択1分48秒、共通builder3分06秒、通常consumer3分30秒、pixel consumer2分38秒、runtime consumer3分30秒、source検証33秒で、run開始から終了まで9分09秒だった。対象選択のうち約69秒はGHAのAction取得待ちで、補助ツールのコンパイル自体は7.78秒だった。前回の出力624ファイルを再利用、無効化0件、アプリ・依存の再コンパイル0件をconsoleで確認した。通常consumerは前回の4分28秒から3分30秒、graphics invocationは99.31秒から56.29秒へ短縮した。通常・pixelの実行名と回数の和は旧通常consumerを保持し、core・runtimeにも欠落はない。全3 consumerの同一catalog照合、13専用profile画像とheaded-loginの元の共通gate、42描画計測と署名付きsourceを成功した。source archiveは13,268,990バイト、SHA-256 `577dab6acf91770f2d8094d1e4b8c836a60fde4a0aef5c62098a840d2d1f3342`。並列化に追加Mac runnerを1台使うため、経過時間の短縮と課金runner分の削減は区別する。依存もないcold buildや任意のrunner待機まで10分以内を保証する結果ではなく、同条件の追加実行は行わない。
 
@@ -59,9 +63,9 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 
 コード上に残る主な機能不足：
 
-次の候補は、宣言済みの実行namespaceを共有表へ捕捉し、再copyで合成する。生成ノードがscriptUriを明示したscript_scopeは、出力側の別名と明示入力のhash付き別名を個別に選ぶ処理を追加した。5経路×3入力／出力文脈×2形式の元source・copy・再copy、および到達不能なnamespaceの拒否を既存試験へ追加している。GHA未検証であり、metadataだけのsource選択、継承入力を要するguard、custom script_bindingsと複合envelopeは引き続き残件とする。
+宣言済みの実行namespaceを共有表へ捕捉し、再copyで合成する。生成ノードがscriptUriを明示したscript_scopeは、出力側の別名と明示入力のhash付き別名を個別に選ぶ。5経路×3入力／出力文脈×2形式の元source・copy・再copy、および到達不能なnamespaceの拒否は349c2eaの完全GHAで成功し、90 PNGも独立照合した。metadataだけのsource選択、継承入力を要するguard、custom script_bindingsと複合envelopeは引き続き残件とする。
 
-- 生成 script の有効な明示 `script_scope`／`script_bindings`／上書き文脈の独立合成。現在は `bindings.rs` と `generated_refs.rs` で拒否する。失効したscript_bindingsが生成URIの再配置で復活する別の不具合を修正し、実worker・2形式・元ファイル削除・再コピーの回帰を追加した。d37e4f2のMac完全CIで両形式の画素、実workerのユーザーmetadata、コピー先の部品定義への参照まで成功し、従来のケースの実行回数を保持した。修正コードから独立に再構成したJSのhashと、元source削除／再コピー前後の6 PNGのhash・寸法・一致も照合した。有効な明示文脈の合成を、この修正だけで完了扱いにしない。
+- 生成 script の有効な明示 `script_scope`／`script_bindings`／上書き文脈の独立合成。metadataだけのsource選択、継承入力guard、custom bindingと複合envelopeは `bindings.rs` と `generated_refs.rs` で拒否する。失効したscript_bindingsが生成URIの再配置で復活する別の不具合を修正し、実worker・2形式・元ファイル削除・再コピーの回帰を追加した。d37e4f2のMac完全CIで両形式の画素、実workerのユーザーmetadata、コピー先の部品定義への参照まで成功し、従来のケースの実行回数を保持した。修正コードから独立に再構成したJSのhashと、元source削除／再コピー前後の6 PNGのhash・寸法・一致も照合した。有効な明示文脈の合成を、この修正だけで完了扱いにしない。
 - TUI preview と別の bound MCP が、同じ認証済みブラウザープロファイルを同時利用する統合。専用 profile の作成・ログイン・永続ストレージ・所有者回収は実装済みだが、現在の lease は二つ目の独立 owner を拒否する。
 - 追加フォントの遅延読み込み。入力容量・フェイス数の上限と OS FontMgr の遅延作成は実装済みだが、指定ファイルの全件読み取り・登録が残る。
 
@@ -84,7 +88,7 @@ ab8c785の既定構成builderは7分42秒、通常consumer3分24秒、pixel cons
 
 標準 macOS GHA の Kitty 0.49.2 は、取得・ハッシュ・署名・両実行ファイルの版検査後に NSGL／OpenGL 3.3 の初期化で失敗した。`3d711d9` の失敗はアプリ起動前であり、日本語入力の不具合や可視画面の成功とは扱わない。実 Kitty 12段階試験は既存 release-evidence の `macos_terminal_gui` に保持しているが、GPU付きlarger runnerはGitHub Team／Enterprise Cloudの組織向けである。[公式の利用条件](https://docs.github.com/en/enterprise-cloud%40latest/actions/concepts/runners/larger-runners)。現在のrepository ownerは個人アカウントであり、このflagだけで利用できる経路とは扱わず、未実行のまま残す。アカウント移管・契約変更は実行していない。利用者への反復した手動確認依頼を検証計画の前提にしない。
 
-旧3環境CI全体の安定した短縮は未達だった。初回Macのみへ変更し、Linux nativeの待機・再ビルド・必須確認を外した。実行時間が単純に1/3になるとは見積もらない。`c9ffb37` は38分28秒、先行17分30秒、全体 job は x64 16分35秒・arm64 17分57秒・Mac20分05秒だった。先行範囲と runner image が異なり、元の27〜29分との統制比較ではない。Mac release 再利用0.87秒、同一環境での先行成果物再利用、変更した試験だけの無効化、独立試験の並列化には個別の成功根拠がある。現在のMac構成の直近実測は上記12分15秒（本体再build込み）と9分09秒（アプリ・依存cache利用）を参照し、旧3環境とも条件を分けて扱う。
+旧3環境CI全体の安定した短縮は未達だった。初回Macのみへ変更し、Linux nativeの待機・再ビルド・必須確認を外した。実行時間が単純に1/3になるとは見積もらない。`c9ffb37` は38分28秒、先行17分30秒、全体 job は x64 16分35秒・arm64 17分57秒・Mac20分05秒だった。先行範囲と runner image が異なり、元の27〜29分との統制比較ではない。Mac release 再利用0.87秒、同一環境での先行成果物再利用、変更した試験だけの無効化、独立試験の並列化には個別の成功根拠がある。現在のMac構成の直近実測は上記12分02秒（本体再build込み）と8分51秒（アプリ成果物再利用）を参照し、旧3環境とも条件を分けて扱う。
 
 macOS の常用メモリは `7fe854b` の既存候補で172.03MiB、cached feedback p95 は32.72msだった。古い「200MiB未達」を現在の既知不具合に数えない。この標本結果から、全環境・統制条件・物理端末の性能受け入れ完了とはしない。[性能記録](performance.md)
 

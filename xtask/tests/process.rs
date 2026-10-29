@@ -261,7 +261,10 @@ fn focused_scheduling_preserves_reproduction_order_and_excludes_only_repeated_co
         let expected = plan
             .build
             .iter()
-            .filter(|command| command.as_slice() != namespace_build)
+            .filter(|command| {
+                command.as_slice() != namespace_build
+                    && command.as_slice() != ["cargo", "build", "--locked"]
+            })
             .cloned()
             .collect::<Vec<_>>();
         assert_eq!(combined.build, expected, "{}", case["suite"]);
