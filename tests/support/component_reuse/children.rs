@@ -1,5 +1,9 @@
 use super::*;
 
+#[cfg(feature = "rendering")]
+#[path = "runtime.rs"]
+mod runtime;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Case {
     Contained,

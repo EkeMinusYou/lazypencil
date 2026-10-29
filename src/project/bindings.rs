@@ -3,6 +3,17 @@
 use super::*;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "rendering")]
+mod paths;
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct DescendantContext {
+    pub parent: String,
+    pub instance: bool,
+    pub target_instance: bool,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Bindings {
@@ -26,6 +37,8 @@ pub(super) struct Bindings {
     pub(super) themes: BTreeMap<String, String>,
     #[serde(default)]
     pub(super) descendants: BTreeMap<String, BTreeMap<String, String>>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(super) descendant_contexts: BTreeMap<String, BTreeMap<String, DescendantContext>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) assets: Option<BTreeMap<String, String>>,
 }
@@ -114,6 +127,28 @@ fn parse(value: &Value) -> Result<Bindings> {
         })
     {
         return Err(invalid("Invalid or oversized script binding names"));
+    }
+    for (name, contexts) in &values.descendant_contexts {
+        if !values.components.contains_key(name) || contexts.len() > MAX_NODES {
+            return Err(invalid("Invalid script descendant contexts"));
+        }
+        for (path, context) in contexts {
+            if !valid_name(path) || (!context.parent.is_empty() && !valid_name(&context.parent)) {
+                return Err(invalid("Invalid script descendant context path"));
+            }
+            let mut parent = context.parent.as_str();
+            let mut depth = 0;
+            while !parent.is_empty() {
+                depth += 1;
+                if parent == path || depth > 256 {
+                    return Err(invalid("Cyclic or oversized script descendant ancestry"));
+                }
+                parent = &contexts
+                    .get(parent)
+                    .ok_or_else(|| invalid("Missing script descendant parent"))?
+                    .parent;
+            }
+        }
     }
     Ok(values)
 }
@@ -231,6 +266,7 @@ impl Bound {
             && self.values.variables == other.values.variables
             && self.values.themes == other.values.themes
             && self.values.descendants == other.values.descendants
+            && self.values.descendant_contexts == other.values.descendant_contexts
             && self.values.assets == other.values.assets
             && self.values.browser_library == other.values.browser_library
             && self.values.browser_libraries == other.values.browser_libraries
@@ -408,6 +444,8 @@ impl Bound {
         node: &mut Value,
         handles: &BTreeMap<String, (PathBuf, String)>,
         inherited_bytes: &mut usize,
+        project: &Project,
+        ids: &BTreeMap<String, String>,
     ) -> Result<()> {
         if self.values.assets.is_some()
             && node.get("scriptUri").is_some()
@@ -421,6 +459,25 @@ impl Bound {
         }
         self.assets(node, inherited_bytes)?;
         let original_reference = node.get("ref").and_then(Value::as_str).map(str::to_owned);
+        let remapped = if let Some(changes) = node
+            .as_object_mut()
+            .and_then(|node| node.remove("descendants"))
+        {
+            let Value::Object(changes) = changes else {
+                return Err(invalid("Generated overrides must be objects"));
+            };
+            Some(paths::remap(
+                Some(self),
+                &self.origin,
+                node,
+                changes,
+                handles,
+                project,
+                ids,
+            )?)
+        } else {
+            None
+        };
         if node["type"] == "ref" {
             let name = original_reference
                 .as_deref()
@@ -459,7 +516,7 @@ impl Bound {
         rewritten?;
         if let Some(children) = node.get_mut("children").and_then(Value::as_array_mut) {
             for child in children {
-                self.rewrite(child, handles, inherited_bytes)?;
+                self.rewrite(child, handles, inherited_bytes, project, ids)?;
             }
         }
         if let Some(slot) = node.get_mut("slot").and_then(Value::as_array_mut) {
@@ -472,35 +529,17 @@ impl Bound {
                 }
             }
         }
-        if let Some(changes) = node.get_mut("descendants").and_then(Value::as_object_mut) {
-            let paths = original_reference
-                .as_ref()
-                .and_then(|name| self.values.descendants.get(name));
+        if let Some(entries) = remapped {
             let mut rewritten = Map::new();
-            let mut entries = std::mem::take(changes).into_iter().collect::<Vec<_>>();
-            entries.sort_by_key(|(path, _)| path.split('/').count());
             for (path, mut properties) in entries {
-                let path = if original_reference
-                    .as_ref()
-                    .is_some_and(|name| self.values.components.contains_key(name))
-                {
-                    paths
-                        .and_then(|paths| paths.get(&path))
-                        .cloned()
-                        .ok_or_else(|| {
-                            invalid("A generated override path is absent from the script bindings")
-                        })?
-                } else {
-                    path
-                };
-                self.rewrite(&mut properties, handles, inherited_bytes)?;
+                self.rewrite(&mut properties, handles, inherited_bytes, project, ids)?;
                 if rewritten.insert(path, properties).is_some() {
                     return Err(invalid(
                         "Generated override paths collide after script binding",
                     ));
                 }
             }
-            *changes = rewritten;
+            node["descendants"] = Value::Object(rewritten);
         }
         if node["type"] == "script" && self.values.assets.is_some() && node["enabled"] != false {
             let uri = node["scriptUri"]
@@ -529,6 +568,43 @@ impl Bound {
         }
         Ok(())
     }
+}
+
+#[cfg(feature = "rendering")]
+pub(super) fn rewrite_generated_paths(
+    project: &Project,
+    node: &mut Value,
+    owner: &Path,
+    handles: &BTreeMap<String, (PathBuf, String)>,
+    ids: &BTreeMap<String, String>,
+) -> Result<()> {
+    project.check_cancelled()?;
+    let changes = node
+        .as_object_mut()
+        .and_then(|node| node.remove("descendants"));
+    if let Some(changes) = changes {
+        let Value::Object(changes) = changes else {
+            return Err(invalid("Generated overrides must be objects"));
+        };
+        let mut mapped = Map::new();
+        for (path, mut properties) in
+            paths::remap(None, owner, node, changes, handles, project, ids)?
+        {
+            rewrite_generated_paths(project, &mut properties, owner, handles, ids)?;
+            if mapped.insert(path, properties).is_some() {
+                return Err(invalid(
+                    "Generated override paths collide after script binding",
+                ));
+            }
+        }
+        node["descendants"] = Value::Object(mapped);
+    }
+    if let Some(children) = node.get_mut("children").and_then(Value::as_array_mut) {
+        for child in children {
+            rewrite_generated_paths(project, child, owner, handles, ids)?;
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn asset_key(kind: &str, uri: &str) -> Result<String> {
@@ -573,6 +649,11 @@ mod asset_tests {
     use super::*;
 
     #[cfg(feature = "rendering")]
+    fn empty_project() -> Project {
+        Project::local(Document::parse(r#"{"version":"2.21","children":[]}"#).unwrap()).unwrap()
+    }
+
+    #[cfg(feature = "rendering")]
     #[test]
     fn remapping_a_generated_uri_cannot_reactivate_its_stale_scope() {
         let bound = Bound {
@@ -588,7 +669,15 @@ mod asset_tests {
         "metadata":{"type":"test","keep":"unchanged","lazypencil":{
             "script_scope":{"version":1,"script_uri":"assets/nested.js","library":"uncaptured"}
         }}});
-        bound.rewrite(&mut node, &BTreeMap::new(), &mut 0).unwrap();
+        bound
+            .rewrite(
+                &mut node,
+                &BTreeMap::new(),
+                &mut 0,
+                &empty_project(),
+                &BTreeMap::new(),
+            )
+            .unwrap();
         assert_eq!(node["scriptUri"], "assets/nested.js");
         assert_eq!(node["metadata"]["keep"], "unchanged");
         assert!(node.pointer("/metadata/lazypencil/script_scope").is_none());
@@ -601,7 +690,15 @@ mod asset_tests {
         let scope = json!({"version":1,"script_uri":"assets/nested.js","library":"uncaptured"});
         let mut shape = json!({"type":"rectangle","scriptUri":"nested.js",
             "metadata":{"type":"test","lazypencil":{"script_scope":scope}}});
-        bound.rewrite(&mut shape, &BTreeMap::new(), &mut 0).unwrap();
+        bound
+            .rewrite(
+                &mut shape,
+                &BTreeMap::new(),
+                &mut 0,
+                &empty_project(),
+                &BTreeMap::new(),
+            )
+            .unwrap();
         assert_eq!(shape["metadata"]["lazypencil"]["script_scope"], scope);
     }
 
@@ -621,7 +718,15 @@ mod asset_tests {
             "library":"uncaptured","components":{"badge":"unrelated-badge"}});
         let mut node = json!({"type":"script","scriptUri":"nested.js",
             "metadata":{"type":"test","keep":[1,2],"lazypencil":{"script_bindings":stale}}});
-        bound.rewrite(&mut node, &BTreeMap::new(), &mut 0).unwrap();
+        bound
+            .rewrite(
+                &mut node,
+                &BTreeMap::new(),
+                &mut 0,
+                &empty_project(),
+                &BTreeMap::new(),
+            )
+            .unwrap();
         assert_eq!(node["scriptUri"], "assets/nested.js");
         assert_eq!(node["metadata"]["keep"], json!([1, 2]));
         let actual = &node["metadata"]["lazypencil"]["script_bindings"];
@@ -632,7 +737,15 @@ mod asset_tests {
         // valid active context that still requires independent composition.
         let mut shape = json!({"type":"rectangle","scriptUri":"nested.js",
             "metadata":{"type":"test","lazypencil":{"script_bindings":stale}}});
-        bound.rewrite(&mut shape, &BTreeMap::new(), &mut 0).unwrap();
+        bound
+            .rewrite(
+                &mut shape,
+                &BTreeMap::new(),
+                &mut 0,
+                &empty_project(),
+                &BTreeMap::new(),
+            )
+            .unwrap();
         assert_eq!(shape["metadata"]["lazypencil"]["script_bindings"], stale);
         let mut active = json!({"type":"script","scriptUri":"assets/nested.js",
             "metadata":{"lazypencil":{"script_bindings":stale}}});
@@ -770,6 +883,14 @@ mod tests {
             ),
             (
                 json!({"version":1,"script_uri":"draw.js","descendants":{"unknown":{"old":"new"}}}),
+                "INVALID_DOCUMENT",
+            ),
+            (
+                json!({"version":1,"script_uri":"draw.js","components":{"old":"copy"},"descendant_contexts":{"old":{"child":{"parent":"child","instance":false,"target_instance":false}}}}),
+                "INVALID_DOCUMENT",
+            ),
+            (
+                json!({"version":1,"script_uri":"draw.js","components":{"old":"copy"},"descendant_contexts":{"old":{"child":{"parent":"absent","instance":false,"target_instance":true}}}}),
                 "INVALID_DOCUMENT",
             ),
             (

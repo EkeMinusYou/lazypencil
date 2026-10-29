@@ -1894,14 +1894,21 @@ impl Project {
         let mut nodes = nodes.to_vec();
         let mut counter = 0;
         let mut ids = BTreeSet::new();
+        let mut generated_names = BTreeMap::new();
         for node in &mut nodes {
-            assign_generated_ids(node, &mut counter, &mut ids)?;
+            assign_generated_ids(node, &mut counter, &mut ids, &mut generated_names)?;
         }
         if let Some(bindings) = &script.script_bindings {
             let mut inherited_bytes = 0;
             for node in &mut nodes {
                 self.check_cancelled()?;
-                bindings.rewrite(node, &self.runtime_refs, &mut inherited_bytes)?;
+                bindings.rewrite(
+                    node,
+                    &self.runtime_refs,
+                    &mut inherited_bytes,
+                    self,
+                    &generated_names,
+                )?;
             }
             for node in &mut nodes {
                 self.bind_generated_ref_contexts(
@@ -1909,6 +1916,16 @@ impl Project {
                     bindings,
                     &script.theme,
                     &mut inherited_bytes,
+                )?;
+            }
+        } else {
+            for node in &mut nodes {
+                bindings::rewrite_generated_paths(
+                    self,
+                    node,
+                    &origin,
+                    &self.runtime_refs,
+                    &generated_names,
                 )?;
             }
         }
@@ -2220,6 +2237,7 @@ fn assign_generated_ids(
     node: &mut Value,
     counter: &mut usize,
     ids: &mut BTreeSet<String>,
+    names: &mut BTreeMap<String, String>,
 ) -> Result<()> {
     if let Some(id) = node.get("id") {
         let id = id
@@ -2229,16 +2247,17 @@ fn assign_generated_ids(
         if !ids.insert(id.into()) {
             return Err(invalid("Duplicate ID in script output"));
         }
+        names.insert(format!("generated_node_{}", *counter), id.into());
     }
     node["id"] = json!(format!("generated_node_{}", *counter));
     *counter += 1;
     if let Some(children) = node.get_mut("children").and_then(Value::as_array_mut) {
         for child in children {
-            assign_generated_ids(child, counter, ids)?;
+            assign_generated_ids(child, counter, ids, names)?;
         }
     }
     if node["type"] == "ref" {
-        assign_generated_override_ids(node, counter, ids)?;
+        assign_generated_override_ids(node, counter, ids, names)?;
     }
     Ok(())
 }
@@ -2248,6 +2267,7 @@ fn assign_generated_override_ids(
     node: &mut Value,
     counter: &mut usize,
     ids: &mut BTreeSet<String>,
+    names: &mut BTreeMap<String, String>,
 ) -> Result<()> {
     for changes in node
         .get_mut("descendants")
@@ -2256,14 +2276,14 @@ fn assign_generated_override_ids(
         .flat_map(Map::values_mut)
     {
         if changes.get("type").is_some() {
-            assign_generated_ids(changes, counter, ids)?;
+            assign_generated_ids(changes, counter, ids, names)?;
         } else {
             if let Some(children) = changes.get_mut("children").and_then(Value::as_array_mut) {
                 for child in children {
-                    assign_generated_ids(child, counter, ids)?;
+                    assign_generated_ids(child, counter, ids, names)?;
                 }
             }
-            assign_generated_override_ids(changes, counter, ids)?;
+            assign_generated_override_ids(changes, counter, ids, names)?;
         }
     }
     Ok(())

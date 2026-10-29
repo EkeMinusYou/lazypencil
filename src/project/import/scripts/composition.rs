@@ -121,6 +121,7 @@ impl Copier<'_> {
             self.axis_target(&bound.origin, name)
         })?;
         let mut descendants = Map::new();
+        let mut descendant_contexts = Map::new();
         for name in components.keys() {
             self.project.check_cancelled()?;
             let original = bound
@@ -139,21 +140,40 @@ impl Copier<'_> {
                 &mut 0,
             )?;
             let mut paths = Map::new();
+            let mut contexts = Map::new();
             budget.key(name)?;
             if bound.values.components.contains_key(name) {
                 if let Some(old) = bound.values.descendants.get(name) {
                     let mapped =
-                        self.copied_override_paths(&expanded, old.values().map(String::as_str))?;
+                        self.copied_override_nodes(&expanded, old.values().map(String::as_str))?;
                     for (from, to) in old {
-                        let target = &mapped[to];
+                        let target = &mapped[to].0;
                         budget.pair(from, target)?;
                         paths.insert(from.clone(), json!(target));
                     }
+                    if let Some(previous) = bound.values.descendant_contexts.get(name) {
+                        for (path, context) in previous {
+                            let mut context = context.clone();
+                            context.target_instance = old
+                                .get(path)
+                                .and_then(|target| mapped.get(target))
+                                .is_some_and(|(_, instance)| *instance);
+                            let context = serde_json::to_value(context).expect("context");
+                            budget.key(path)?;
+                            budget.charge(context.to_string().len() + 4)?;
+                            contexts.insert(path.clone(), context);
+                        }
+                    }
                 }
             } else {
-                self.override_paths(&expanded, &mut paths, budget)?;
+                self.override_paths(&expanded, &mut paths, &mut contexts, budget)?;
             }
             descendants.insert(name.clone(), json!(paths));
+            if !bound.values.components.contains_key(name)
+                || bound.values.descendant_contexts.contains_key(name)
+            {
+                descendant_contexts.insert(name.clone(), json!(contexts));
+            }
         }
         let mut assets = Map::new();
         if let Some(old) = &bound.values.assets {
@@ -199,7 +219,7 @@ impl Copier<'_> {
             }
         }
         let mut values = json!({"version":1,"script_uri":uri,"components":components,"input_components":input_components,
-            "variables":variables,"themes":themes,"descendants":descendants,"assets":assets});
+            "variables":variables,"themes":themes,"descendants":descendants,"descendant_contexts":descendant_contexts,"assets":assets});
         let browser_origin = if let Some(alias) = &bound.values.browser_library {
             Some(self.project.scope_document(&bound.origin, alias)?)
         } else if bound.values.assets.is_none()

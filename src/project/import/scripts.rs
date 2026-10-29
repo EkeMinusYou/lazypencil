@@ -468,9 +468,14 @@ impl Copier<'_> {
         &self,
         root: &ResolvedNode,
         result: &mut Map<String, Value>,
+        contexts: &mut Map<String, Value>,
         budget: &mut Budget,
     ) -> Result<()> {
         self.walk_copied_paths(root, &mut |path| {
+            let context = json!({"parent":path.parent,"instance":path.instance,"target_instance":path.target_instance});
+            budget.key(path.source)?;
+            budget.charge(context.to_string().len() + 4)?;
+            contexts.insert(path.source.to_owned(), context);
             if let Some(target) = path.target {
                 budget.pair(path.source, target)?;
                 result.insert(path.source.to_owned(), json!(target));
@@ -550,15 +555,18 @@ impl Copier<'_> {
             self.compose_bindings(bound, &uri, input, output_scope, &additional, &mut budget)?
         } else {
             let mut descendants = Map::new();
+            let mut descendant_contexts = Map::new();
             for (name, key) in &self.script_scopes[output_scope].components {
                 let definition = self.project.documents[&key.0].node(&key.1)?;
                 let expanded =
                     self.project
                         .expand(&key.0, definition, None, &[], &mut Vec::new(), &mut 0)?;
                 let mut paths = Map::new();
+                let mut contexts = Map::new();
                 budget.key(name)?;
-                self.override_paths(&expanded, &mut paths, &mut budget)?;
+                self.override_paths(&expanded, &mut paths, &mut contexts, &mut budget)?;
                 descendants.insert(name.clone(), Value::Object(paths));
+                descendant_contexts.insert(name.clone(), Value::Object(contexts));
             }
             let variables = self.script_scopes[output_scope]
                 .variables
@@ -578,7 +586,7 @@ impl Copier<'_> {
                 budget.pair(key, target)?;
             }
             let mut values = json!({"version":1,"script_uri":uri,"components":self.component_bindings(output_scope,&mut budget)?,"input_components":self.component_bindings(input,&mut budget)?,
-                "variables":variables,"themes":themes,"descendants":descendants,"assets":self.script_scopes[output_scope].assets});
+                "variables":variables,"themes":themes,"descendants":descendants,"descendant_contexts":descendant_contexts,"assets":self.script_scopes[output_scope].assets});
             if self.project.browser_resources.contains_key(output_scope) {
                 let alias = self.copied_browser_scope(output_scope)?;
                 budget.pair("browser_library", &alias)?;

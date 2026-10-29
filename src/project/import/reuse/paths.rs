@@ -9,6 +9,7 @@ struct Substitution {
 }
 
 struct Prefix {
+    parent: String,
     from: String,
     to: Option<String>,
     substitution: Option<Substitution>,
@@ -89,15 +90,6 @@ impl Walker<'_, '_, '_> {
                     })
                     .transpose()?,
             };
-            if fresh
-                && !(self.visitor)(Mapping {
-                    source: &source,
-                    target: target.as_deref(),
-                    reused: prefix.substitution.as_ref().map(|scope| &scope.key),
-                })?
-            {
-                return Ok(false);
-            }
             let instance = if provenance == Provenance::Body {
                 prefix
                     .substitution
@@ -109,6 +101,18 @@ impl Walker<'_, '_, '_> {
             } else {
                 child.is_instance || self.copier.reuse.contains_key(&authored(child))
             };
+            if fresh
+                && !(self.visitor)(Mapping {
+                    source: &source,
+                    target: target.as_deref(),
+                    reused: prefix.substitution.as_ref().map(|scope| &scope.key),
+                    parent: &prefix.parent,
+                    instance: child.is_instance,
+                    target_instance: instance,
+                })?
+            {
+                return Ok(false);
+            }
             let from = if child.is_instance {
                 format!("{source}/")
             } else {
@@ -135,6 +139,7 @@ impl Walker<'_, '_, '_> {
             if !self.children(
                 child,
                 Prefix {
+                    parent: source,
                     from,
                     to,
                     substitution,
@@ -166,6 +171,7 @@ pub(super) fn walk(
     .children(
         root,
         Prefix {
+            parent: String::new(),
             from: String::new(),
             to: Some(String::new()),
             substitution,

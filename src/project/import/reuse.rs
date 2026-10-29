@@ -12,6 +12,9 @@ pub(super) struct Mapping<'a> {
     pub source: &'a str,
     pub target: Option<&'a str>,
     pub reused: Option<&'a Key>,
+    pub parent: &'a str,
+    pub instance: bool,
+    pub target_instance: bool,
 }
 
 fn position(node: &ResolvedNode) -> Key {
@@ -247,6 +250,18 @@ impl Copier<'_> {
         root: &ResolvedNode,
         requested: impl Iterator<Item = &'a str>,
     ) -> Result<BTreeMap<String, String>> {
+        Ok(self
+            .copied_override_nodes(root, requested)?
+            .into_iter()
+            .map(|(source, (target, _))| (source, target))
+            .collect())
+    }
+
+    pub(super) fn copied_override_nodes<'a>(
+        &self,
+        root: &ResolvedNode,
+        requested: impl Iterator<Item = &'a str>,
+    ) -> Result<BTreeMap<String, (String, bool)>> {
         let mut wanted = requested.collect::<BTreeSet<_>>();
         let mut result = BTreeMap::new();
         if wanted.is_empty() {
@@ -258,7 +273,7 @@ impl Copier<'_> {
                     copy_error("A descendant is absent from the reused component; supply an explicit component_paths mapping")
                         .details(json!({"source_path":path.source,"source_key":path.reused.and_then(|key|self.key(key).ok())}))
                 })?;
-                result.insert(path.source.to_owned(), target.to_owned());
+                result.insert(path.source.to_owned(), (target.to_owned(), path.target_instance));
             }
             Ok(!wanted.is_empty())
         })?;
