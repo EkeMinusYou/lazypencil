@@ -262,11 +262,17 @@ fn cancelled_and_killed_bound_mcp_preserve_another_previews_browser_and_page() {
             mcp.child.kill().unwrap();
             mcp.child.wait().unwrap();
         } else {
+            let cancelled = Instant::now();
             mcp.send(json!({"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":request,"reason":"cancel owned profile page"}}));
-            let response = mcp.response_with_timeout(request, Duration::from_secs(60));
+            // RMCP drops a cancelled response. As in the existing cancellation
+            // regressions, the next request proves that owned work was released.
+            assert_eq!(
+                mcp.data("get_document", json!({}))["revision"],
+                document["revision"]
+            );
             assert!(
-                response["result"]["isError"] == true || response.get("error").is_some(),
-                "{response}"
+                cancelled.elapsed() < Duration::from_secs(5),
+                "Cancellation did not release the document worker before the original 30-second page deadline"
             );
             mcp.finish();
         }
