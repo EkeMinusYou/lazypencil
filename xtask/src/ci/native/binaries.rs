@@ -338,7 +338,7 @@ pub(super) fn gate(s: &Session) -> Result<()> {
     let output = s.temporary.join("codec-reference");
     fs::create_dir(&output)?;
     let mut binaries: Option<String> = None;
-    for mode in ["normal", "runtime"] {
+    for mode in ["normal", "pixels", "runtime"] {
         let root = s
             .temporary
             .join("consumer-evidence")
@@ -372,7 +372,13 @@ pub(super) fn gate(s: &Session) -> Result<()> {
             "Consumers used different compiled catalogs"
         );
         binaries = Some(digest.to_owned());
-        for entry in fs::read_dir(root.join("codec-reference"))? {
+        // The pixel lane owns native render diagnostics; codec-script images
+        // remain mandatory outputs of the normal and runtime producers.
+        let codec = root.join("codec-reference");
+        if mode == "pixels" && !codec.exists() {
+            continue;
+        }
+        for entry in fs::read_dir(codec)? {
             let entry = entry?;
             let name = entry.file_name();
             ensure!(

@@ -48,6 +48,7 @@ pub enum Stage {
     CompleteTests,
     BinariesStage,
     NormalConsumer,
+    PixelsConsumer,
     RuntimePrepare,
     RuntimeConsumer,
     EvidenceGate,
@@ -382,6 +383,11 @@ impl Session {
                 normal::consume(self, elapsed)?;
                 binaries::completed(self, "normal")
             }
+            Stage::PixelsConsumer => {
+                let elapsed = binaries::restore(self, false)?;
+                normal::consume_pixels(self, elapsed)?;
+                binaries::completed(self, "pixels")
+            }
             Stage::RuntimePrepare => {
                 let _ = binaries::restore(self, true)?;
                 self.reproduce_inputs(false)?;
@@ -496,7 +502,9 @@ impl Session {
                 if args.suite == "browser-ci" {
                     return self.build_catalog(&targets);
                 }
-                let plan = commands::plan(&self.root, &args.suite, &targets)?;
+                let separate_core = self.separate_core()?;
+                let plan =
+                    commands::plan_with_core(&self.root, &args.suite, &targets, separate_core)?;
                 for command in plan.build {
                     self.execute(
                         &command,
@@ -522,10 +530,7 @@ impl Session {
                 self.execute(&command, 300, "focus-clippy.log", false)
             }
             Stage::FocusReproduce => {
-                let separate_core = std::env::var("LAZYPENCIL_CI_SEPARATE_CORE")
-                    .unwrap_or_else(|_| "false".into())
-                    .parse::<bool>()
-                    .context("LAZYPENCIL_CI_SEPARATE_CORE must be true or false")?;
+                let separate_core = self.separate_core()?;
                 if args.suite == "dynamic" && has("agent") {
                     self.test(false,"agent","browser_ownership::killed_profile_owners_reap_children_preserve_persistent_data_and_release_only_their_lease",
                         &["--exact","--test-threads=1"],"focus-profile-ownership.log")?;
@@ -952,6 +957,13 @@ impl Session {
             }
         }
     }
+    fn separate_core(&self) -> Result<bool> {
+        std::env::var("LAZYPENCIL_CI_SEPARATE_CORE")
+            .unwrap_or_else(|_| "false".into())
+            .parse::<bool>()
+            .context("LAZYPENCIL_CI_SEPARATE_CORE must be true or false")
+    }
+
     fn build_catalog(&self, targets: &[String]) -> Result<()> {
         let catalog =
             self.compile_catalog(targets, "default-build", &std::env::var("GITHUB_SHA")?)?;

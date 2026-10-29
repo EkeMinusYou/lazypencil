@@ -186,7 +186,7 @@ jobs:
         env:
           VERIFICATION_RESULTS: ${{ toJSON(needs) }}
         run: cargo xtask ci gate
-      - name: Collect both independent Mac test consumers
+      - name: Collect all independent Mac test consumers
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           pattern: native-test-*-${{ github.sha }}

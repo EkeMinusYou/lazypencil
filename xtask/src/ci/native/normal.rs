@@ -23,8 +23,36 @@ pub(super) fn prepare(s: &Session) -> Result<Prepared> {
 }
 
 pub(super) fn consume(s: &Session, elapsed: Duration) -> Result<()> {
-    let prepared = prepare_inner(s, Some(elapsed))?;
-    remaining_inner(s, &prepared, false, true)
+    let mut prepared = prepare_inner(s, Some(elapsed))?;
+    // The pixel consumer owns these exact invocations and the ignored emoji
+    // checks on its own host. The quiet launch interval remains local here.
+    prepared.resources.clear();
+    remaining_inner(s, &prepared, false)
+}
+
+pub(super) fn consume_pixels(s: &Session, elapsed: Duration) -> Result<()> {
+    let catalog = s.verified_catalog(&[])?;
+    let binaries = catalog
+        .binaries
+        .iter()
+        .map(|(name, binary)| (name.clone(), binary.path.clone()))
+        .collect();
+    let checks = commands::default_tests(&s.root, &binaries)?;
+    let paths = RESOURCES.map(|name| catalog.binaries[name].path.as_path());
+    let (resources, _) = split_checks(checks, &paths)?;
+    let budget = Duration::from_secs(TEST_SECONDS)
+        .checked_sub(elapsed)
+        .context("Default test budget exhausted during Cargo checks")?;
+    let deadline = Instant::now() + budget;
+    // These already ran concurrently on the old normal consumer. Separate
+    // hosts now keep them away from script workers and short launch budgets.
+    parallel::run(vec![
+        (
+            "font, project and native pixels",
+            Box::new(|| run_lane(s, &resources, deadline, "lazypencil-native-pixels.log")),
+        ),
+        ("emoji", Box::new(|| s.real_emoji("real-emoji.log"))),
+    ])
 }
 
 fn prepare_inner(s: &Session, elapsed: Option<Duration>) -> Result<Prepared> {
@@ -111,15 +139,10 @@ pub(super) fn cargo_checks(s: &Session) -> Result<Duration> {
 }
 
 pub(super) fn remaining(s: &Session, prepared: &Prepared, compile_release: bool) -> Result<()> {
-    remaining_inner(s, prepared, compile_release, false)
+    remaining_inner(s, prepared, compile_release)
 }
 
-fn remaining_inner(
-    s: &Session,
-    prepared: &Prepared,
-    compile_release: bool,
-    emoji: bool,
-) -> Result<()> {
+fn remaining_inner(s: &Session, prepared: &Prepared, compile_release: bool) -> Result<()> {
     let Prepared {
         checks,
         scripts,
@@ -139,29 +162,8 @@ fn remaining_inner(
             Box::new(|| run_lane(s, &checks, *deadline, "lazypencil-tests.log")),
         ),
         (
-            "emoji and script-scope tests",
-            Box::new(|| {
-                // These tests own separate inputs and logs. Keep at most three
-                // active test processes by sharing the shorter script lane.
-                let started = Instant::now();
-                let emoji = if emoji {
-                    s.real_emoji("real-emoji.log")
-                } else {
-                    Ok(())
-                };
-                // Emoji retains its separate 300-second deadline and does not
-                // consume the original ordinary-test budget on this lane.
-                let deadline = *deadline + started.elapsed();
-                let scripts = run_lane(s, scripts, deadline, "lazypencil-script-scope.log");
-                let failures = [("emoji", emoji), ("script scope", scripts)]
-                    .into_iter()
-                    .filter_map(|(name, result)| {
-                        result.err().map(|error| format!("{name}: {error:#}"))
-                    })
-                    .collect::<Vec<_>>();
-                ensure!(failures.is_empty(), "{}", failures.join("\n"));
-                Ok(())
-            }),
+            "script-scope tests",
+            Box::new(|| run_lane(s, scripts, *deadline, "lazypencil-script-scope.log")),
         ),
     ];
     if compile_release {
@@ -169,7 +171,7 @@ fn remaining_inner(
             "release compilation",
             Box::new(|| release::compile(s, "lazypencil-release.log")),
         ));
-    } else {
+    } else if !resources.is_empty() {
         tasks.push((
             "font, project and native pixels",
             Box::new(|| run_lane(s, resources, *deadline, "lazypencil-native-pixels.log")),

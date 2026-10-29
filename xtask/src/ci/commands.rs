@@ -256,6 +256,17 @@ pub struct Plan {
     pub checks: Vec<Invocation>,
 }
 pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
+    plan_with_core(root, suite, targets, false)
+}
+
+/// A complete core lane can own namespace checks without compiling that graph
+/// again in the default builder. Rendering-only attachment checks stay here.
+pub fn plan_with_core(
+    root: &Path,
+    suite: &str,
+    targets: &[String],
+    separate_core: bool,
+) -> Result<Plan> {
     let (allowed, _) = focus::integration_targets(root)?;
     ensure!(
         !targets.is_empty()
@@ -396,7 +407,7 @@ pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
             ]),
         );
     }
-    if !core && has("script_scope") {
+    if !core && has("script_scope") && !separate_core {
         builds.push(words(&[
             "cargo",
             "test",

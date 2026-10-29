@@ -88,6 +88,9 @@ fn encoded_clipboard_inputs_reproduce_in_the_rendering_attachment_consumer() {
             "--test-threads=2"
         ]
     );
+    let combined = ci::commands::plan_with_core(&root, &plan.suite, &plan.targets, true).unwrap();
+    assert_eq!(combined.build, commands.build);
+    assert_eq!(combined.checks, commands.checks);
     assert!(
         commands
             .build

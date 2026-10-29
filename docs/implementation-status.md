@@ -4,7 +4,7 @@
 
 ## 現在の状態（2026-10-29）
 
-最新のMac完全CIの根拠は `cc4561a` の [実行](https://github.com/EkeMinusYou/lazypencil/actions/runs/40807003763)。全体9分36秒で、軽量227件・Clippy、core465・default844ケース、runtime・画像gate・42描画計測・依存監査・署名付きsourceまで成功した。前回のcore・通常・runtimeの全named caseの回数を保持し、内包部品再利用の新規3／4ケースを含むことをconsoleで照合した。runtime導入の取消・保存同期、Rust補助バイナリによる添付PNG検査、送信用縮小版・TUI入力スレッドでの変換と候補回収・ユーザー設定も含む。全artifactの独立した再照合と製品全体の受け入れは未完了で、正常な導入・取消の成功から全異常終了条件の合格とはしない。重いbuildはGHAに限り、Linux x64／arm64・Windowsの既存実装は後日対応用に保持する。Intel Macは対象外とし、OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
+最新のMac完全CIの根拠は `9611e5d` の [実行](https://github.com/EkeMinusYou/lazypencil/actions/runs/40810729336)。全体12分44秒で、軽量試験・Clippy、core・default、runtime・画像gate・42描画計測・依存監査・署名付きsourceまで成功した。保存済みchildren／全ノード置換の6組合せ×2形式の通常／実worker回帰も成功した。試験補助だけを変更した前回cc4561aの9分36秒と異なり、今回は本体の再コンパイルを含み、10分目標は未達だった。全artifactの独立した再照合と製品全体の受け入れは未完了で、正常な導入・取消の成功から全異常終了条件の合格とはしない。重いbuildはGHAに限り、Linux x64／arm64・Windowsの既存実装は後日対応用に保持する。Intel Macは対象外とし、OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
 
 旧3環境方針での依存監査・署名付きソースを含む確定済み根拠は [`c9ffb37` の CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40679529757)。Linux 各1,490件・Mac1,479件、各144サマリー・812画像・42描画計測を確認し、過去ケースの実行回数、画像、clipboard／IME、profile／namespace／通信制御、ソース1,161ファイルの Git blob・mode と署名を独立照合した。CI の成功は、製品全体の受け入れ完了を意味しない。
 
@@ -14,9 +14,9 @@
 
 通常のnative対象は `RELEASE_PLATFORMS=["macos-15"]`。自動の対象選択と `--matrix all` もMacだけにし、親runのLinux失敗を調べて自動選択する処理を外す。両feature構成、Chromium／JS／GLSL、clipboard／PTY、性能・ライセンス・配布の元の条件は保持する。
 
-通常CIはcore検証・既定構成のビルド・releaseと計測を並列実行する。既定構成は一度だけビルドし、通常試験とruntime試験が同じ実行ファイルを別々のMacで消費する。コンパイラー・OS／CPU・image・ビルド条件・ソースと各ファイルhashを照合し、consumer側のnativeビルドや依存cacheの再展開を除く。Cargo管理のcleanup-worker試験とdoctestはbuilderで一度だけ行い、その時間も元の通常試験budgetから差し引く。署名付きsourceの前に両consumerの結果と画像を衝突なしで結合し、同じcompiled catalogと元の共通gateを要求する。実行ファイルだけの転送bundleは完全なCargo checkpointと分け、追加フォント入力は小さい専用cacheを使う。再現試験を消費側job内で先に行い、同じCargo出力を完全検証へ継続する。別の先行jobからの再セットアップ・成果物転送、同条件の部分lint／試験の重複を除いた。combined verifyのnormal-ci／browser-ciは完全buildで一度だけcatalogを作成し、standalone focusの準備は保持する。coreと既定構成のcache context／保持namespaceを分け、releaseは専用cacheだけへ保存する。実際のcompiler入力とCargoの再ビルド判定は維持する。
+通常CIはcore検証・既定構成のビルド・releaseと計測を並列実行する。既定構成は一度だけビルドし、通常・pixel/font・runtimeの3 consumerが同じ実行ファイルを別々のMacで消費する。コンパイラー・OS／CPU・image・ビルド条件・ソースと各ファイルhashを照合し、consumer側のnativeビルドや依存cacheの再展開を除く。Cargo管理のcleanup-worker試験とdoctestはbuilderで一度だけ行い、その時間も元の通常試験budgetから差し引く。署名付きsourceの前に全consumerの結果と画像を衝突なしで結合し、同じcompiled catalogと元の共通gateを要求する。通常とpixelは同じ保存済みbundleを取得し、完全成果物を追加保存しない。実行ファイルだけの転送bundleは完全なCargo checkpointと分け、追加フォント入力は小さい専用cacheを使う。combined builderでは専用core jobと重なるnamespace用のcore事前buildを除き、standalone focusとrendering-only添付構成は保持する。coreと既定構成のcache context／保持namespaceを分け、releaseは専用cacheだけへ保存する。実際のcompiler入力とCargoの再ビルド判定は維持する。この追加変更のGHA実測は次の検証で確認する。
 
-一般試験・絵文字とscript scope・font/project/pixelの3系統と、browser/MCP/lifecycle/Materialを並列実行する。readinessは2並列、script scopeは2並列、他のbrowser対象とMaterial書体は直列とする。短い起動／script期限を持つTUI・dynamic_render・runtime_configの通常targetは静かな先行区間へ移し、各invocationを後続から除いて一度ずつ実行する。全処理のjoin後に共通の画像／所有権gateを実行する。性能測定は独立release runnerで行う。試験範囲・合格条件・timeoutは削減していない。
+一般試験とscript scopeを通常hostの2系統、font/project/graphics/meshと絵文字をpixel hostの2系統で実行し、browser/MCP/lifecycle/Materialとも並列にする。readinessは2並列、script scopeは2並列、他のbrowser対象とMaterial書体は直列とする。短い起動／script期限を持つTUI・dynamic_render・runtime_configの通常targetは静かな先行区間へ移し、各invocationを後続から除いて一度ずつ実行する。全処理のjoin後に共通の画像／所有権gateを実行する。性能測定は独立release runnerで行う。試験範囲・合格条件・timeoutは削減していない。
 
 内包部品再利用を含むcc4561aの完全CIは、対象選択27秒・共通builder3分38秒・通常consumer4分39秒・runtime consumer3分40秒・source検証40秒で全体9分36秒だった。アプリ・依存cacheを利用し、試験補助の変更をcompiler入力で照合して612ファイルを再利用、影響する12出力を無効化した。変更試験の準備14.84秒、本体build確認0.47秒。前のeb314a9とreceiptのcompiler／image／flags／profile、全47ターゲット、本体hashを独立照合し、変更したバイナリーはimportsだけで、他46と本体は一致した。本体変更時の再コンパイルを含む条件とは区別し、同条件の追加実行は行わない。
 
@@ -57,7 +57,7 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 コード上に残る主な機能不足：
 
 - 生成 script の有効な明示 `script_scope`／`script_bindings`／上書き文脈の独立合成。現在は `bindings.rs` と `generated_refs.rs` で拒否する。失効したscript_bindingsが生成URIの再配置で復活する別の不具合を修正し、実worker・2形式・元ファイル削除・再コピーの回帰を追加した。d37e4f2のMac完全CIで両形式の画素、実workerのユーザーmetadata、コピー先の部品定義への参照まで成功し、従来のケースの実行回数を保持した。修正コードから独立に再構成したJSのhashと、元source削除／再コピー前後の6 PNGのhash・寸法・一致も照合した。有効な明示文脈の合成を、この修正だけで完了扱いにしない。
-- 親の内部にある部品定義の明示再利用はcc4561aのMac完全CIで、配置を保つref・ID分離・component_paths・元ファイル／素材削除・再コピー・将来編集・両形式の実workerと4 PNGまで成功済み。残っていた保存済みchildren／全ノード置換後の子への上書きについて、保存ノードの出自と有効な参照境界に基づく共通変換を追加した。通常copy・生成script・再コピーで同じ処理を使い、親子の適用順と衝突時の原子的拒否も確認する。6組合せ×2形式の通常／実worker回帰を追加し、GHAで検証中。JSが実行時に作る新しいchildrenへの上書きは別途未確認であり、この実装から内包再利用全体の完了とはしない。
+- 親の内部にある部品定義の明示再利用はcc4561aのMac完全CIで、配置を保つref・ID分離・component_paths・元ファイル／素材削除・再コピー・将来編集・両形式の実workerと4 PNGまで成功済み。保存済みchildren／全ノード置換後の子への上書きも9611e5dのMac完全CIで、出自と有効な参照境界に基づく共通変換・通常copy・生成script・再コピー、親子の適用順と衝突時の原子的拒否の回帰が成功した。6組合せ×2形式を実行した結果であり、JSが実行時に作る新しいchildrenへの上書きは別途未確認である。この結果から内包再利用全体の完了とはしない。
 - TUI preview と別の bound MCP が、同じ認証済みブラウザープロファイルを同時利用する統合。専用 profile の作成・ログイン・永続ストレージ・所有者回収は実装済みだが、現在の lease は二つ目の独立 owner を拒否する。
 - 追加フォントの遅延読み込み。入力容量・フェイス数の上限と OS FontMgr の遅延作成は実装済みだが、指定ファイルの全件読み取り・登録が残る。
 

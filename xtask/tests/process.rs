@@ -243,6 +243,29 @@ fn focused_scheduling_preserves_reproduction_order_and_excludes_only_repeated_co
             commands::plan(&util::root(), case["suite"].as_str().unwrap(), &targets).unwrap();
         assert_eq!(json!(plan.build), case["build"]);
         assert_eq!(json!(plan.checks), case["checks"], "{}", case["suite"]);
+        let combined = commands::plan_with_core(
+            &util::root(),
+            case["suite"].as_str().unwrap(),
+            &targets,
+            true,
+        )
+        .unwrap();
+        let namespace_build = [
+            "cargo",
+            "test",
+            "--locked",
+            "--no-default-features",
+            "--lib",
+            "--no-run",
+        ];
+        let expected = plan
+            .build
+            .iter()
+            .filter(|command| command.as_slice() != namespace_build)
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(combined.build, expected, "{}", case["suite"]);
+        assert_eq!(combined.checks, plan.checks, "{}", case["suite"]);
     }
     for (suite, targets) in [
         ("ci", vec!["mcp".into()]),
