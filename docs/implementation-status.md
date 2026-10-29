@@ -4,7 +4,7 @@
 
 ## 現在の状態（2026-10-29）
 
-最新のMac完全CIの根拠は `d37e4f2` の [実行](https://github.com/EkeMinusYou/lazypencil/actions/runs/40796673447)。軽量227件・Clippy、core462・default840ケース、runtime・画像gate・42描画計測・依存監査・署名付きsourceまで成功した。両構成の可視consoleで従来の全named caseの回数を保持したことを照合した。runtime導入の取消・保存同期、Rust補助バイナリによる添付PNG検査、送信用縮小版・TUI入力スレッドでの変換と候補回収・ユーザー設定も含む。全artifactの独立した再照合と製品全体の受け入れは未完了で、正常な導入・取消の成功から全異常終了条件の合格とはしない。重いbuildはGHAに限り、Linux x64／arm64・Windowsの既存実装は後日対応用に保持する。Intel Macは対象外とし、OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
+最新のMac完全CIの根拠は `d43e842` の [実行](https://github.com/EkeMinusYou/lazypencil/actions/runs/40799689722)。全体8分26秒で、軽量227件・Clippy、core462・default840ケース、runtime・画像gate・42描画計測・依存監査・署名付きsourceまで成功した。可視consoleで前回の補助ツール・core・通常・runtimeの全named caseの回数を保持したことを照合した。runtime導入の取消・保存同期、Rust補助バイナリによる添付PNG検査、送信用縮小版・TUI入力スレッドでの変換と候補回収・ユーザー設定も含む。全artifactの独立した再照合と製品全体の受け入れは未完了で、正常な導入・取消の成功から全異常終了条件の合格とはしない。重いbuildはGHAに限り、Linux x64／arm64・Windowsの既存実装は後日対応用に保持する。Intel Macは対象外とし、OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
 
 旧3環境方針での依存監査・署名付きソースを含む確定済み根拠は [`c9ffb37` の CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40679529757)。Linux 各1,490件・Mac1,479件、各144サマリー・812画像・42描画計測を確認し、過去ケースの実行回数、画像、clipboard／IME、profile／namespace／通信制御、ソース1,161ファイルの Git blob・mode と署名を独立照合した。CI の成功は、製品全体の受け入れ完了を意味しない。
 
@@ -17,6 +17,8 @@
 通常CIはcore検証・既定構成のビルド・releaseと計測を並列実行する。既定構成は一度だけビルドし、通常試験とruntime試験が同じ実行ファイルを別々のMacで消費する。コンパイラー・OS／CPU・image・ビルド条件・ソースと各ファイルhashを照合し、consumer側のnativeビルドや依存cacheの再展開を除く。Cargo管理のcleanup-worker試験とdoctestはbuilderで一度だけ行い、その時間も元の通常試験budgetから差し引く。署名付きsourceの前に両consumerの結果と画像を衝突なしで結合し、同じcompiled catalogと元の共通gateを要求する。実行ファイルだけの転送bundleは完全なCargo checkpointと分け、追加フォント入力は小さい専用cacheを使う。再現試験を消費側job内で先に行い、同じCargo出力を完全検証へ継続する。別の先行jobからの再セットアップ・成果物転送、同条件の部分lint／試験の重複を除いた。combined verifyのnormal-ci／browser-ciは完全buildで一度だけcatalogを作成し、standalone focusの準備は保持する。coreと既定構成のcache context／保持namespaceを分け、releaseは専用cacheだけへ保存する。実際のcompiler入力とCargoの再ビルド判定は維持する。
 
 一般試験・絵文字とscript scope・font/project/pixelの3系統と、browser/MCP/lifecycle/Materialを並列実行する。readinessは2並列、script scopeは2並列、他のbrowser対象とMaterial書体は直列とする。短い起動／script期限を持つTUI・dynamic_render・runtime_configの通常targetは静かな先行区間へ移し、各invocationを後続から除いて一度ずつ実行する。全処理のjoin後に共通の画像／所有権gateを実行する。性能測定は独立release runnerで行う。試験範囲・合格条件・timeoutは削減していない。
+
+`d43e842` は対象選択前のLinux補助ツール全試験・Clippyを監査jobへ移し、Mac検証と並列にした。対象選択は36秒、共通builder3分03秒、通常consumer3分35秒、runtime consumer4分01秒、source検証35秒で、workflow全体は8分26秒だった。runner割当は初回3秒、plan後2〜3秒、builder後3秒、consumer後2秒だった。補助ツールの新しいcache keyによる初回buildを含むが、アプリ・依存には既存cacheを利用した。compiler入力の照合後に649ファイルを再利用し、無効化0件、本体・依存の再コンパイル0件をconsoleで確認した。前回成功d37e4f2と補助ツール・core・通常・runtimeのnamed caseと実行回数を照合し、欠落0件だった。42描画計測、13専用profile画像と画面ありloginの共通gate、source署名のrevision照合も成功した。容量予約は共通actionで対象選択中に維持し、検証済みツールの保存はplan成功後の監査内で行う。中間aee053dは既存のworkflow確認に失敗したため合格扱いせず、有用なMac試験が終わってから修正を送った。元の試験・期限・最終gateは保持し、同条件の再実行は行わない。依存もないcold buildや長いrunner待機まで10分以内を保証する結果ではない。
 
 GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug assertionと整数overflow検査を明示的に有効にする。通常dev、依存・Skia、releaseの設定は維持し、実際のCargo設定をアプリ成果物のidentityへ含める。不変の同梱Noto Sans JP（9.1MB）のdigestはOnceLockで共有し、非TTCの無変更借用では同じdigestをface identityへ再利用する。追加フォントは毎回hashし、TTC抽出後の独立hashも保持する。既存の並列共有／owned読み込み試験では画素とmetadataの一致を確認する。
 
