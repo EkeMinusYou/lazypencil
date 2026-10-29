@@ -1842,7 +1842,9 @@ impl Project {
                 if reference.is_empty() {
                     continue;
                 }
-                let (origin, reference) = if saved && let Some(context) = &node.input_context {
+                let (origin, reference) = if self.runtime_refs.contains_key(reference) {
+                    (origin, reference)
+                } else if saved && let Some(context) = &node.input_context {
                     (context.origin.as_path(), context.component(reference)?)
                 } else if let Some(bindings) = &node.script_bindings
                     && (!saved || bindings.inputs_bound)

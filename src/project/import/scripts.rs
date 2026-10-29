@@ -2,6 +2,7 @@ use super::*;
 use crate::script::header::{Header, InputKind};
 
 mod composition;
+mod scopes;
 use composition::Budget;
 
 pub(super) struct Scope {
@@ -53,7 +54,7 @@ impl Copier<'_> {
         }
         if let Some(bound) = &info.resolved.script_bindings {
             self.script_scope(&bound.origin)?;
-            if let Some(assets) = &bound.values.assets {
+            if let Some(assets) = &bound.original().assets {
                 for (key, uri) in assets {
                     let (kind, _) = key.split_once(':').expect("validated asset binding");
                     let path = self.project.resolve_file(&bound.origin, uri)?;
@@ -213,6 +214,7 @@ impl Copier<'_> {
             {
                 self.variable(&path, name)?;
             }
+            self.script_scope(&path)?;
         }
         Ok(())
     }
@@ -593,6 +595,7 @@ impl Copier<'_> {
                 values["browser_library"] = json!(alias);
             }
             values["browser_libraries"] = self.copy_browser_libraries(output_scope, &mut budget)?;
+            self.capture_script_scopes(output_scope, &mut values, &mut budget)?;
             values
         };
         let inputs_hash = result.get("inputs").map(|value| {

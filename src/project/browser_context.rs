@@ -515,6 +515,7 @@ mod tests {
         let mut bound = bindings::Bound {
             origin: PathBuf::from("/project/main.pen"),
             inputs_bound: false,
+        captured: None,
             values: serde_json::from_value(json!({"version":1,"script_uri":"draw.js","assets":{},"browser_library":"captured"})).unwrap(),
         };
         let mut node = json!({"type":"browser","url":"FILE:///page.html?literal=$keep#anchor","metadata":{"type":"test","keep":"$keep"}});
@@ -583,6 +584,7 @@ mod tests {
         let bound = bindings::Bound {
             origin: PathBuf::from("/project/main.pen"),
             inputs_bound: false,
+        captured: None,
             values: serde_json::from_value(json!({"version":1,"script_uri":"draw.js","assets":{},
                 "browser_library":"root-copy","browser_libraries":{"":"root-copy","base:leaf":"leaf-copy"}})).unwrap(),
         };

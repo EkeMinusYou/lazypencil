@@ -95,37 +95,36 @@ impl Copier<'_> {
         additional: &[crate::operations::ScriptAsset],
         budget: &mut Budget,
     ) -> Result<Value> {
-        let components = mapped(&bound.values.components, budget, |id| {
+        let source = bound.original();
+        let components = mapped(&source.components, budget, |id| {
             self.node_target(&(bound.origin.clone(), id.into()))
         })?;
         let input_components = if bound.inputs_bound {
             mapped(
-                bound
-                    .values
+                source
                     .input_components
                     .as_ref()
-                    .unwrap_or(&bound.values.components),
+                    .unwrap_or(&source.components),
                 budget,
                 |id| self.node_target(&(bound.origin.clone(), id.into())),
             )?
         } else {
             self.component_bindings(input, budget)?
         };
-        let variables = mapped(&bound.values.variables, budget, |name| {
+        let variables = mapped(&source.variables, budget, |name| {
             self.vars
                 .get(&(bound.origin.clone(), name.into()))
                 .cloned()
                 .ok_or_else(|| copy_error("Missing re-copied script variable"))
         })?;
-        let themes = mapped(&bound.values.themes, budget, |name| {
+        let themes = mapped(&source.themes, budget, |name| {
             self.axis_target(&bound.origin, name)
         })?;
         let mut descendants = Map::new();
         let mut descendant_contexts = Map::new();
         for name in components.keys() {
             self.project.check_cancelled()?;
-            let original = bound
-                .values
+            let original = source
                 .components
                 .get(name)
                 .map(String::as_str)
@@ -142,8 +141,8 @@ impl Copier<'_> {
             let mut paths = Map::new();
             let mut contexts = Map::new();
             budget.key(name)?;
-            if bound.values.components.contains_key(name) {
-                if let Some(old) = bound.values.descendants.get(name) {
+            if source.components.contains_key(name) {
+                if let Some(old) = source.descendants.get(name) {
                     let mapped =
                         self.copied_override_nodes(&expanded, old.values().map(String::as_str))?;
                     for (from, to) in old {
@@ -151,7 +150,7 @@ impl Copier<'_> {
                         budget.pair(from, target)?;
                         paths.insert(from.clone(), json!(target));
                     }
-                    if let Some(previous) = bound.values.descendant_contexts.get(name) {
+                    if let Some(previous) = source.descendant_contexts.get(name) {
                         for (path, context) in previous {
                             let mut context = context.clone();
                             context.target_instance = old
@@ -169,14 +168,14 @@ impl Copier<'_> {
                 self.override_paths(&expanded, &mut paths, &mut contexts, budget)?;
             }
             descendants.insert(name.clone(), json!(paths));
-            if !bound.values.components.contains_key(name)
-                || bound.values.descendant_contexts.contains_key(name)
+            if !source.components.contains_key(name)
+                || source.descendant_contexts.contains_key(name)
             {
                 descendant_contexts.insert(name.clone(), json!(contexts));
             }
         }
         let mut assets = Map::new();
-        if let Some(old) = &bound.values.assets {
+        if let Some(old) = &source.assets {
             for (key, value) in old {
                 let (kind, _) = key.split_once(':').expect("validated asset binding");
                 let target = self.asset(&bound.origin, value, kind)?;
@@ -206,6 +205,31 @@ impl Copier<'_> {
             };
             let key = crate::project::bindings::asset_key(kind, &asset.uri)?;
             let target = self.asset(output, &asset.uri, kind)?;
+            if !source.script_scopes.is_empty() {
+                let active = source.script_namespace.as_deref().unwrap_or("");
+                if let Some(previous) = source.script_scopes[active].assets.get(&key)
+                    && self.asset(&bound.origin, previous, kind)? != target
+                {
+                    return Err(Error::new(
+                        "ASSET_CONFLICT",
+                        "Additional assets conflict with their captured script scope",
+                    ));
+                }
+                if !assets.values().any(|value| value == &json!(target)) {
+                    let mut name = key.clone();
+                    let mut index = assets.len();
+                    while assets.contains_key(&name) {
+                        name = crate::project::bindings::asset_key(
+                            kind,
+                            &format!("@lazypencil/scope/assets/{index}"),
+                        )?;
+                        index += 1;
+                    }
+                    budget.pair(&name, &target)?;
+                    assets.insert(name, json!(target));
+                }
+                continue;
+            }
             if let Some(previous) = assets.get(&key) {
                 if previous != &json!(target) {
                     return Err(Error::new(
@@ -220,9 +244,9 @@ impl Copier<'_> {
         }
         let mut values = json!({"version":1,"script_uri":uri,"components":components,"input_components":input_components,
             "variables":variables,"themes":themes,"descendants":descendants,"descendant_contexts":descendant_contexts,"assets":assets});
-        let browser_origin = if let Some(alias) = &bound.values.browser_library {
+        let browser_origin = if let Some(alias) = &source.browser_library {
             Some(self.project.scope_document(&bound.origin, alias)?)
-        } else if bound.values.assets.is_none()
+        } else if source.assets.is_none()
             && self.project.browser_resources.contains_key(&bound.origin)
         {
             Some(bound.origin.clone())
@@ -237,13 +261,30 @@ impl Copier<'_> {
         // Preserve original names and the previous copy's names, matching the
         // identity fallback used by the generated runtime. Never import an
         // unrelated destination namespace as a replacement for a missing name.
-        if let Some(old) = &bound.values.browser_libraries {
+        if let Some(old) = &source.browser_libraries {
             values["browser_libraries"] = Value::Object(mapped(old, budget, |alias| {
                 let origin = self.project.scope_document(&bound.origin, alias)?;
                 self.copied_browser_scope(&origin)
             })?);
-        } else if bound.values.assets.is_none() {
+        } else if source.assets.is_none() {
             values["browser_libraries"] = self.copy_browser_libraries(&bound.origin, budget)?;
+        }
+        self.compose_script_scopes(bound, &mut values, budget)?;
+        for asset in additional {
+            if let Some(scopes) = values.get_mut("script_scopes") {
+                let active = source.script_namespace.as_deref().unwrap_or("");
+                let kind = match asset.kind {
+                    crate::operations::ScriptAssetKind::Image => "image",
+                    crate::operations::ScriptAssetKind::Shader => "shader",
+                    crate::operations::ScriptAssetKind::Script => "script",
+                };
+                let key = crate::project::bindings::asset_key(kind, &asset.uri)?;
+                let target = self.asset(output, &asset.uri, kind)?;
+                if scopes[active]["assets"].get(&key).is_none() {
+                    budget.pair(&key, &target)?;
+                }
+                scopes[active]["assets"][key] = json!(target);
+            }
         }
         Ok(values)
     }

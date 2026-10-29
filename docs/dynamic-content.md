@@ -114,7 +114,7 @@ JS 内でだけ構築する素材名は `options.script_assets` に追加する�
 
 生成した `browser_scope`／`browser_override` の明示別名には捕捉した `script_bindings.browser_libraries` を使う。v2 の `url_library` は URL 所有元を別途保持し、metadata だけの不一致指定でも元の URL 文脈へ戻す。v1 の読み取りも維持する。捕捉していない別名や所有情報のない旧データを同名のコピー先へ推測で結ばない。明示 script 文脈の独立合成とは別の機能である。
 
-有効な明示 script スコープの独立合成は未実装である。生成 browser の別名合成・URL所有文脈とは別の残件で、静的出力や元 library への link で代替して完了とはしない。本家との全体の往復描画互換も未受け入れである。
+明示script文脈の全範囲の独立合成は未完了である。scriptUriを明示した生成script_scopeは、宣言済みの出力別名と、明示inputsに一致するhash付き入力別名を選ぶ候補を追加した。捕捉するscript_bindings v2は共通の対応表とscript_scopesを持ち、script_namespaceで選んだ文脈の論理名を共通表へ結ぶ。共通表のcomponents／variables／descendantsは選択中の論理名表そのものとは限らない。v1の読取りは維持する。metadataだけのsource選択、継承入力を要するguard、custom script_bindings、複合envelopeは残件で、候補もGHA未検証である。静的出力や元libraryへのlinkで代替して完了とはしない。本家との全体の往復描画互換も未受け入れである。
 
 生成された `scriptUri` と一致しなくなった `script_scope` は、入力側も無効と確認できる場合だけ除く。管理 URI への転送前に判定し、入力 hash が有効または継承中で判定不能なら保持する。この失効処理と実 worker／再コピー／画素の回帰は確定済み3環境gateで成功した。有効な明示スコープの独立合成を実装済みとはしない。
 

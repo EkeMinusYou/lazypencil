@@ -3,22 +3,22 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ScriptScope {
-    version: u32,
-    script_uri: String,
-    library: String,
+pub(super) struct ScriptScope {
+    pub version: u32,
+    pub script_uri: String,
+    pub library: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    inputs: Option<InputScope>,
+    pub inputs: Option<InputScope>,
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct InputScope {
-    hash: String,
-    library: String,
+pub(super) struct InputScope {
+    pub hash: String,
+    pub library: String,
 }
 
-fn parse_scope(value: &Value) -> Result<ScriptScope> {
+pub(super) fn parse_scope(value: &Value) -> Result<ScriptScope> {
     let scope: ScriptScope = serde_json::from_value(value.clone())
         .map_err(|_| invalid("Invalid lazypencil script scope metadata"))?;
     if scope.version != 1 {
@@ -175,7 +175,7 @@ impl Project {
             namespace.remove("script_input_context");
         }
         let retained = if let Some(bound) = &original.script_bindings {
-            let mut values = bound.values.clone();
+            let mut values = bound.original().clone();
             values.script_uri = value["scriptUri"]
                 .as_str()
                 .ok_or_else(|| invalid("A detached script requires scriptUri"))?
@@ -243,7 +243,7 @@ pub(super) fn metadata_namespace(node: &mut Value) -> Result<&mut Map<String, Va
         .ok_or_else(|| invalid("The lazypencil metadata namespace must be an object"))
 }
 
-fn value_hash(value: &Value) -> String {
+pub(super) fn value_hash(value: &Value) -> String {
     // Object key order is immaterial to an input binding.
     let mut normalized = value.clone();
     normalized.sort_all_objects();

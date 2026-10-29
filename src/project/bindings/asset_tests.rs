@@ -1,6 +1,49 @@
 use super::*;
 
 #[cfg(feature = "rendering")]
+#[test]
+fn generated_explicit_scope_selection_keeps_shared_tables_and_rejects_unreachable_namespaces() {
+    let scope = |component: &str, variable: &str, libraries: Value| {
+        json!({
+            "components":{"badge":component},"variables":{"tone":variable},"themes":{},"assets":{},
+            "libraries":libraries,"browser_libraries":{}
+        })
+    };
+    let values = parse(&json!({"version":2,"script_uri":"draw.js","assets":{},
+        "components":{"ui-member":"ui-target","base-member":"base-target"},
+        "variables":{"ui-tone":"ui_tone","base-tone":"base_tone"},
+        "descendants":{"ui-member":{"label":"ui-label"},"base-member":{"label":"base-label"}},
+        "script_scopes":{
+            "":scope("ui-member","ui-tone",json!({"":"","base":"base"})),
+            "base":scope("base-member","base-tone",json!({"":"base"}))
+        }
+    }))
+    .unwrap();
+    let parent = Bound::from_values(PathBuf::from("/captured/main.pen"), false, values).unwrap();
+    assert_eq!(parent.component("badge").unwrap(), "ui-target");
+    let base = parent.selected("base").unwrap();
+    assert_eq!(base.component("badge").unwrap(), "base-target");
+    assert_eq!(base.values.descendants["badge"]["label"], "base-label");
+    let mut tone = json!("$tone");
+    base.declared_input(&mut tone).unwrap();
+    assert_eq!(tone, "$base_tone");
+    assert!(base.selected("base").is_err());
+    assert_eq!(
+        base.selected("").unwrap().component("badge").unwrap(),
+        "base-target"
+    );
+    let output = base.inherited_output("nested.js", None, &mut 0).unwrap();
+    assert!(parent.generated_output(&output).unwrap());
+    let mut escaped = output.clone();
+    escaped["script_namespace"] = json!("");
+    assert!(!base.generated_output(&escaped).unwrap());
+    assert_eq!(
+        serde_json::to_value(&base).unwrap()["values"]["components"]["ui-member"],
+        "ui-target"
+    );
+}
+
+#[cfg(feature = "rendering")]
 fn empty_project() -> Project {
     Project::local(Document::parse(r#"{"version":"2.21","children":[]}"#.into()).unwrap()).unwrap()
 }
@@ -11,6 +54,7 @@ fn remapping_a_generated_uri_cannot_reactivate_its_stale_scope() {
     let bound = Bound {
         origin: PathBuf::from("/captured/main.pen"),
         inputs_bound: false,
+        captured: None,
         values: serde_json::from_value(json!({
             "version":1,"script_uri":"generator.js",
             "assets":{"script:nested.js":"assets/nested.js"}
@@ -60,6 +104,7 @@ fn remapping_a_generated_uri_cannot_reactivate_stale_bindings() {
     let bound = Bound {
         origin: PathBuf::from("/captured/main.pen"),
         inputs_bound: false,
+        captured: None,
         values: serde_json::from_value(json!({
             "version":1,"script_uri":"generator.js", "components":{"badge":"copied-badge"},
             "assets":{"script:nested.js":"assets/nested.js"}

@@ -174,7 +174,7 @@ impl Project {
         node: &ResolvedNode,
         bindings: &bindings::Bound,
     ) -> Result<()> {
-        if node.kind() != "script" {
+        if node.kind() != "script" || node.input_context.is_some() {
             return Ok(());
         }
         let uri = node
@@ -236,16 +236,40 @@ impl Project {
             .ok_or_else(|| invalid("A generated script override needs a source URI"))?
             .to_owned();
         let metadata = changes.get("metadata").cloned();
+        let mut explicit_output = None;
+        let mut explicit_input = None;
         if let Some(metadata) = &metadata {
             if !metadata.is_object() {
                 return Err(invalid("Generated script metadata must be an object"));
             }
             let (output, input) = script_context::metadata_contexts(Some(metadata));
             if output || input || metadata.pointer("/lazypencil/script_override").is_some() {
-                return Err(Error::new(
-                    "UNSUPPORTED_FEATURE",
-                    "Generated explicit script contexts require independent scope composition",
-                ));
+                let candidate = metadata.pointer("/lazypencil/script_bindings");
+                if !candidate
+                    .map(|value| bindings.generated_output(value))
+                    .transpose()?
+                    .unwrap_or(false)
+                    || candidate
+                        .and_then(|value| value.get("script_uri"))
+                        .and_then(Value::as_str)
+                        != Some(uri.as_str())
+                    || metadata.pointer("/lazypencil/script_scope").is_some()
+                    || metadata.pointer("/lazypencil/script_override").is_some()
+                {
+                    return Err(Error::new(
+                        "UNSUPPORTED_FEATURE",
+                        "Generated explicit script contexts require independent scope composition",
+                    ));
+                }
+                explicit_output = candidate.cloned();
+                if let Some(context) = metadata.pointer("/lazypencil/script_input_context") {
+                    if !bindings.generated_input(context)? {
+                        return Err(invalid(
+                            "Generated inputs are outside their captured namespace",
+                        ));
+                    }
+                    explicit_input = Some(context.clone());
+                }
             }
         }
         // The URI was already checked and remapped against the parent's closed
@@ -256,6 +280,13 @@ impl Project {
             self.runtime_assets.insert(path.clone());
         }
         if let Some(inputs) = changes.get_mut("inputs") {
+            target.input_context = None;
+            target.script_input_scope = None;
+            target.properties.insert("inputs".into(), inputs.clone());
+            if let Some(context) = &explicit_input {
+                target.input_context =
+                    script_context::bind(self, target, context, &bindings.origin)?;
+            }
             let code = std::str::from_utf8(&self.asset(&path)?.bytes)
                 .map_err(|_| invalid("A generated script reference needs UTF-8 source"))?;
             let header = crate::script::header::Header::parse(code)?;
@@ -264,17 +295,34 @@ impl Project {
                 .ok_or_else(|| invalid("Script inputs must be an object"))?;
             for input in header.inputs {
                 if let Some(value) = values.get_mut(&input.name) {
-                    bindings.declared_input(value)?;
+                    if let Some(context) = &target.input_context {
+                        *value = context.expression(&input.name, value)?;
+                    } else {
+                        bindings.declared_input(value)?;
+                    }
                 }
             }
             target.properties.insert("inputs".into(), inputs.clone());
             target.script_inputs_resolved = false;
         }
-        let output = bindings.inherited_output(&uri, None, inherited_bytes)?;
+        let output = if let Some(output) = explicit_output {
+            output
+        } else {
+            bindings.inherited_output(&uri, None, inherited_bytes)?
+        };
+        let mut metadata = metadata;
+        if let Some(namespace) = metadata
+            .as_mut()
+            .and_then(|value| value.get_mut("lazypencil"))
+            .and_then(Value::as_object_mut)
+        {
+            namespace.remove("script_bindings");
+            namespace.remove("script_input_context");
+        }
         // Only code ownership changes here. Unoverridden saved inputs and user
         // metadata continue to come from the referenced component definition.
         changes.as_object_mut().expect("generated properties").insert("metadata".into(),
-            json!({"type":"lazypencil","lazypencil":{"script_override":{"version":1,"metadata":metadata,"output":output}}}));
+            json!({"type":"lazypencil","lazypencil":{"script_override":{"version":1,"metadata":metadata,"output":output,"input":explicit_input}}}));
         Ok(())
     }
 }

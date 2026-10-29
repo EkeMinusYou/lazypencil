@@ -39,7 +39,19 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
             changes["metadata"] = json!({"type":"test","keep":"generated","literal":"$tone"})
         }
         "explicit-context" => {
-            changes["metadata"] = json!({"type":"test","lazypencil":{"script_scope":{"version":1,"script_uri":"override.js","library":"base"}}})
+            changes["metadata"] = json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":{"script_scope":{"version":1,"script_uri":"override.js","library":"base"}}})
+        }
+        "explicit-input-context" => {
+            let inputs = json!({"selected":"$selection","stale":"$missing"});
+            changes["inputs"] = inputs.clone();
+            let hash = lazypencil::document::hash(inputs.to_string().as_bytes());
+            changes["metadata"] = json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":{"script_scope":{"version":1,"script_uri":"override.js","library":"base","inputs":{"hash":hash,"library":""}}}});
+        }
+        "unknown-context" => {
+            changes["metadata"] = json!({"type":"test","lazypencil":{"script_scope":{"version":1,"script_uri":"override.js","library":"uncaptured"}}});
+        }
+        "explicit-bindings" => {
+            changes["metadata"] = json!({"type":"test","lazypencil":{"script_bindings":{"version":1,"script_uri":"override.js","components":{"badge":"badge"},"variables":{"tone":"tone"}}}});
         }
         "stale-scope" | "stale-input-scope" => {
             let mut scope = json!({"version":1,"script_uri":"old.js","library":"uncaptured"});
@@ -58,7 +70,7 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
                 json!({"selected":"$selection","stale":"$missing"})
             };
             let hash = lazypencil::document::hash(inputs.to_string().as_bytes());
-            changes["metadata"] = json!({"type":"test","lazypencil":{"script_scope":{"version":1,"script_uri":"old.js","library":"base","inputs":{"hash":hash,"library":""}}}});
+            changes["metadata"] = json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":{"script_scope":{"version":1,"script_uri":"old.js","library":"base","inputs":{"hash":hash,"library":""}}}});
         }
         "inherit" => {}
         _ => panic!("Unknown generated override case"),
@@ -172,6 +184,10 @@ fn copy(store: &Store, include_source: bool) -> Value {
 }
 
 fn preview(store: &Store, first: Color, metadata: &str) -> Vec<u8> {
+    preview_colours(store, [first, Color::GREEN, Color::GREEN], metadata)
+}
+
+fn preview_colours(store: &Store, colours: [Color; 3], metadata: &str) -> Vec<u8> {
     let bytes = fs::read(store.path()).unwrap();
     let (project, layout) = service::layout_snapshot_with_runtime(
         store,
@@ -220,7 +236,7 @@ fn preview(store: &Store, first: Color, metadata: &str) -> Vec<u8> {
     )
     .unwrap();
     assert_eq!((image.width, image.height), (36, 12));
-    for (x, color) in [(5, first), (17, Color::GREEN), (29, Color::GREEN)] {
+    for (x, color) in [5, 17, 29].into_iter().zip(colours) {
         assert_eq!(pixel(&image.png, x), color, "x={x}");
     }
     assert_eq!(fs::read(store.path()).unwrap(), bytes);
@@ -235,12 +251,47 @@ fn independent_case(
 ) -> (TempDir, Store, Vec<u8>) {
     eprintln!("Generated source: schema={version}, style={style}, mode={mode}");
     let (temp, store, code) = setup(version, style, mode, 1);
-    let metadata = if ["metadata", "stale-scope", "stale-input-scope"].contains(&mode) {
+    let metadata = if [
+        "metadata",
+        "stale-scope",
+        "stale-input-scope",
+        "explicit-context",
+        "explicit-input-context",
+        "active-input-scope",
+    ]
+    .contains(&mode)
+    {
         "generated"
     } else {
         "base"
     };
-    let before = preview(&store, first, metadata);
+    let output = if ["explicit-context", "explicit-input-context"].contains(&mode) {
+        Color::RED
+    } else {
+        Color::GREEN
+    };
+    let render = |store: &Store, stage: &str| {
+        let png = preview_colours(store, [first, output, output], metadata);
+        if [
+            "explicit-context",
+            "explicit-input-context",
+            "active-input-scope",
+        ]
+        .contains(&mode)
+            && let Some(root) = std::env::var_os("LAZYPENCIL_TEST_TUI_ARTIFACTS")
+        {
+            let root = std::path::PathBuf::from(root).join("generated-script-scopes");
+            fs::create_dir_all(&root).unwrap();
+            let name = format!("{version}-{style}-{mode}-{stage}");
+            fs::write(root.join(format!("{name}.png")), &png).unwrap();
+            fs::write(root.join(format!("{name}.json")), serde_json::to_vec_pretty(&json!({
+                "source_commit":std::env::var("GITHUB_SHA").ok(),"png_sha256":lazypencil::document::hash(&png),
+                "width":36,"height":12,"red_first":first==Color::RED,"red_output":output==Color::RED
+            })).unwrap()).unwrap();
+        }
+        png
+    };
+    let before = render(&store, "original");
     let response = copy(&store, true);
     let component = response["generated_ids"]["0"]["component_id"]
         .as_str()
@@ -261,7 +312,7 @@ fn independent_case(
     );
     fs::remove_dir_all(temp.path().join("library")).unwrap();
     assert_eq!(
-        preview(&store, first, metadata),
+        render(&store, "copied"),
         before,
         "{version}/{style}/{mode}/copy"
     );
@@ -269,7 +320,7 @@ fn independent_case(
     fs::remove_file(store.path()).unwrap();
     fs::remove_dir_all(temp.path().join("assets")).unwrap();
     assert_eq!(
-        preview(&second, first, metadata),
+        render(&second, "recopied"),
         before,
         "{version}/{style}/{mode}/recopy"
     );
@@ -346,8 +397,8 @@ fn inactive_generated_script_scopes_do_not_block_copy_or_recopy() {
 fn generated_code_overrides_reject_unmanifested_sources_explicit_contexts_and_binding_growth() {
     for (include_source, mode, count, expected) in [
         (false, "inherit", 1, "ASSET_NOT_FOUND"),
-        (true, "explicit-context", 1, "UNSUPPORTED_FEATURE"),
-        (true, "active-input-scope", 1, "UNSUPPORTED_FEATURE"),
+        (true, "unknown-context", 1, "INVALID_DOCUMENT"),
+        (true, "explicit-bindings", 1, "UNSUPPORTED_FEATURE"),
         (true, "inherited-input-scope", 1, "UNSUPPORTED_FEATURE"),
         (true, "bad-variable", 1, "INVALID_DOCUMENT"),
         (true, "inherit", 600, "INVALID_DOCUMENT"),
@@ -377,4 +428,28 @@ fn generated_code_overrides_reject_unmanifested_sources_explicit_contexts_and_bi
         }
         assert_eq!(fs::read(store.path()).unwrap(), bytes);
     }
+}
+
+#[test]
+fn generated_explicit_scopes_keep_output_and_input_namespaces_through_copy_and_recopy() {
+    std::thread::scope(|threads| {
+        for version in ["2.19", "2.21"] {
+            threads.spawn(move || {
+                for style in ["direct", "descendant", "replacement", "children", "script"] {
+                    for mode in [
+                        "explicit-context",
+                        "explicit-input-context",
+                        "active-input-scope",
+                    ] {
+                        let first = if mode == "explicit-context" {
+                            Color::RED
+                        } else {
+                            Color::GREEN
+                        };
+                        let _fixture = independent_case(version, style, mode, first);
+                    }
+                }
+            });
+        }
+    });
 }

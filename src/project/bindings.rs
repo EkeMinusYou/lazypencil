@@ -4,7 +4,11 @@ use super::*;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "rendering")]
+mod generated;
+#[cfg(feature = "rendering")]
 mod paths;
+mod scopes;
+pub(super) use scopes::CapturedScope;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -41,13 +45,38 @@ pub(super) struct Bindings {
     pub(super) descendant_contexts: BTreeMap<String, BTreeMap<String, DescendantContext>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) assets: Option<BTreeMap<String, String>>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(super) script_scopes: BTreeMap<String, CapturedScope>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) script_namespace: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub(super) struct Bound {
     pub(super) origin: PathBuf,
     pub(super) inputs_bound: bool,
     pub(super) values: Bindings,
+    pub(super) captured: Option<Box<Bindings>>,
+}
+
+impl Serialize for Bound {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct State<'a> {
+            origin: &'a Path,
+            inputs_bound: bool,
+            values: &'a Bindings,
+        }
+        State {
+            origin: &self.origin,
+            inputs_bound: self.inputs_bound,
+            values: self.original(),
+        }
+        .serialize(serializer)
+    }
 }
 
 fn valid_name(value: &str) -> bool {
@@ -75,7 +104,7 @@ fn parse(value: &Value) -> Result<Bindings> {
     }
     let values: Bindings = serde_json::from_value(value.clone())
         .map_err(|_| invalid("Invalid lazypencil script bindings"))?;
-    if values.version != 1 {
+    if ![1, 2].contains(&values.version) {
         return Err(Error::new(
             "UNSUPPORTED_VERSION",
             "Unsupported script bindings version",
@@ -150,6 +179,7 @@ fn parse(value: &Value) -> Result<Bindings> {
             }
         }
     }
+    scopes::validate(&values)?;
     Ok(values)
 }
 
@@ -250,11 +280,7 @@ pub(super) fn bind_value(
             hash(inputs.to_string().as_bytes()) == *expected
         })
     });
-    Ok(Some(Bound {
-        origin,
-        inputs_bound,
-        values,
-    }))
+    Ok(Some(Bound::from_values(origin, inputs_bound, values)?))
 }
 
 impl Bound {
@@ -270,6 +296,8 @@ impl Bound {
             && self.values.assets == other.values.assets
             && self.values.browser_library == other.values.browser_library
             && self.values.browser_libraries == other.values.browser_libraries
+            && self.original().script_scopes == other.original().script_scopes
+            && self.original().script_namespace == other.original().script_namespace
     }
 }
 
@@ -419,14 +447,14 @@ impl Bound {
         inherited_bytes: &mut usize,
     ) -> Result<Value> {
         *inherited_bytes = inherited_bytes
-            .saturating_add(serde_json::to_vec(&self.values).expect("bindings").len())
+            .saturating_add(serde_json::to_vec(self.original()).expect("bindings").len())
             .saturating_add(8192);
         if *inherited_bytes > crate::script::MAX_OUTPUT_BYTES {
             return Err(invalid(
                 "Inherited script bindings exceed the generated output budget",
             ));
         }
-        let mut values = self.values.clone();
+        let mut values = self.original().clone();
         // Generated nodes already belong to the resolved namespace owner.
         values.library = None;
         values.script_uri = uri.into();
@@ -457,7 +485,15 @@ impl Bound {
             super::scope::discard_inactive_generated_scope(node)?;
             discard_inactive_generated_bindings(node)?;
         }
+        let selected = if self.values.assets.is_some() {
+            generated::selection(self, node)?
+        } else {
+            None
+        };
         self.assets(node, inherited_bytes)?;
+        if let Some(selection) = &selected {
+            selection.apply(node, inherited_bytes)?;
+        }
         let original_reference = node.get("ref").and_then(Value::as_str).map(str::to_owned);
         let remapped = if let Some(changes) = node
             .as_object_mut()
@@ -500,8 +536,9 @@ impl Bound {
         // inputs until that captured header is available; stale controls must
         // not bind to either the copied namespace or a same-named caller value.
         let deferred_inputs = if self.values.assets.is_some()
-            && node.get("scriptUri").is_some()
-            && (node["type"] == "ref" || node.get("type").is_none())
+            && (selected.is_some() && node["type"] == "script"
+                || node.get("scriptUri").is_some()
+                    && (node["type"] == "ref" || node.get("type").is_none()))
         {
             node.as_object_mut().and_then(|node| node.remove("inputs"))
         } else {
@@ -545,7 +582,13 @@ impl Bound {
             let uri = node["scriptUri"]
                 .as_str()
                 .ok_or_else(|| invalid("A generated script needs scriptUri"))?;
-            let values = self.inherited_output(uri, node.get("inputs"), inherited_bytes)?;
+            let values = if let Some(selection) = &selected {
+                selection
+                    .output
+                    .inherited_output(uri, None, inherited_bytes)?
+            } else {
+                self.inherited_output(uri, node.get("inputs"), inherited_bytes)?
+            };
             let metadata = node
                 .as_object_mut()
                 .expect("script")
@@ -558,7 +601,10 @@ impl Bound {
                 .or_insert_with(|| json!({}))
                 .as_object_mut()
                 .ok_or_else(|| invalid("Generated script namespace must be an object"))?;
-            if namespace.contains_key("script_scope") || namespace.contains_key("script_bindings") {
+            if selected.is_none()
+                && (namespace.contains_key("script_scope")
+                    || namespace.contains_key("script_bindings"))
+            {
                 return Err(Error::new(
                     "UNSUPPORTED_FEATURE",
                     "Generated explicit script scopes need independent scope composition",
