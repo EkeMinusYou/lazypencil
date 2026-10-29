@@ -8,7 +8,9 @@ c38fc1cの[CI 40935920526](https://github.com/EkeMinusYou/lazypencil/actions/run
 
 全体15分32秒で10分目標は未達。builder9分22秒・core6分27秒・release3分44秒、通常4分25秒・runtime4分50秒・pixel2分10秒・Material1分19秒・端末1分15秒・source41秒だった。新Mac image用の完全依存cacheを復元し、先行の174.75秒ではappだけをコンパイルした。残る全体buildは86.85秒で、registry依存の不要な再compileとは区別する。
 
-builderの補助ツール準備では、新imageで検証済みtool cacheと依存だけのcheckpointがともになく、116.36秒のcold buildが発生した。非検証jobでも最後のtool呼出し後に標準の`cargo clean -p lazypencil-xtask`で自前出力だけを除き、既存のcompiler／image／lockfile keyへ依存checkpointを保存する最小修正を準備中である。検証済みの完全tool cacheを優先し、依存checkpointで上書きしない。自前コードのepoch正規化後も旧実行ファイルを再利用せず、未変更依存だけがCargoでfreshになる実Cargo回帰を追加した。書式・actionlintは成功したが、この変更のhosted試験とnativeでの保存／復元の実証は未確認である。
+builderの補助ツール準備では、新imageで検証済みtool cacheと依存だけのcheckpointがともになく、116.36秒のcold buildが発生した。d5e27c3では、非検証jobでも最後のtool呼出し後に標準の`cargo clean -p lazypencil-xtask`で自前出力だけを除き、既存のcompiler／image／lockfile keyへ依存checkpointを保存するようにした。検証済みの完全tool cacheを優先し、依存checkpointで上書きしない。自前コードのepoch正規化後も旧実行ファイルを再利用せず、未変更依存だけがCargoでfreshになる実Cargo回帰は、[Mac 40940088205](https://github.com/EkeMinusYou/lazypencil/actions/runs/40940088205)・[Linux 40940093609](https://github.com/EkeMinusYou/lazypencil/actions/runs/40940093609)で成功した。既存workflowによる全xtask試験はMac232件・Linux233件、Clippy・元のライセンス資料の照合も成功し、ローカルでは重いビルドを行っていない。actionlintと書式検査も成功した。native job末尾の保存／次回復元の実証と10分目標は、次に必要なapp検証で確認する。同条件の全native試験をこの小変更だけのために追加しない。
+
+Macの軽量workflowはrunner割当まで約5分09秒待ち、新image20261028.0489.1で実行した。検証済みtool cache157,350,453バイトを新image用に保存したため、以後の同条件の利用候補になる。warm復元の実測とは区別する。容量は、置換先が保存・検証済みで同じSDK／compile条件／wire formatの旧app二件と旧Linux tool一件だけを整理し、1,540,172,450バイトを解放した。旧appのguide入力などが変わると互換hashも変わり、保持groupが別になるため残っていたものである。現行core／既定構成、異なるMac imageのfallbackと両Mac／Linuxの依存cacheは保持し、稼働中のMac軽量workflowを中断しなかった。
 
 <details>
 <summary>直前候補の失敗とcache改善の履歴（c38fc1cで上記範囲を検証済み）</summary>
