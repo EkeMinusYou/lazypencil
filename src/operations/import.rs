@@ -57,6 +57,8 @@ pub struct ImportOptions {
     pub component_prefix: Option<String>,
     pub variables: BTreeMap<String, NameResolution>,
     pub components: BTreeMap<String, NameResolution>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub component_paths: BTreeMap<String, BTreeMap<String, String>>,
     pub themes: BTreeMap<String, NameResolution>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub script_assets: BTreeMap<String, Vec<ScriptAsset>>,
@@ -211,6 +213,7 @@ pub(super) fn apply_import(
                 || options.component_prefix.is_some()
                 || !options.variables.is_empty()
                 || !options.components.is_empty()
+                || !options.component_paths.is_empty()
                 || !options.themes.is_empty()
                 || !options.script_assets.is_empty()
             {

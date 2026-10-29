@@ -3,6 +3,8 @@ use lazypencil::{operations::EditRequest, project::Project, service, store::Stor
 use serde_json::{Value, json};
 use std::{fs, path::Path};
 use tempfile::TempDir;
+#[path = "support/component_reuse.rs"]
+mod component_reuse;
 #[cfg(unix)]
 #[path = "support/lock_wait.rs"]
 mod lock_wait;

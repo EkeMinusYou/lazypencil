@@ -467,31 +467,70 @@ impl Copier<'_> {
     fn override_paths(
         &self,
         root: &ResolvedNode,
-        from: &str,
-        to: &str,
         result: &mut Map<String, Value>,
         budget: &mut Budget,
     ) -> Result<()> {
-        for child in &root.children {
-            self.project.check_cancelled()?;
-            let key = (child.component_source.clone(), child.component_key.clone());
-            let source = format!("{from}{}", child.component_key);
-            let target = format!("{to}{}", self.node_target(&key)?);
-            budget.pair(&source, &target)?;
-            result.insert(source.clone(), json!(target));
-            if child.is_instance {
-                self.override_paths(
-                    child,
-                    &format!("{source}/"),
-                    &format!("{target}/"),
-                    result,
-                    budget,
-                )?;
-            } else {
-                self.override_paths(child, from, to, result, budget)?;
-            }
+        struct Prefix {
+            from: String,
+            to: String,
+            reused: Option<(Key, String, String)>,
         }
-        Ok(())
+        fn walk(
+            copier: &Copier<'_>,
+            node: &ResolvedNode,
+            prefix: Prefix,
+            result: &mut Map<String, Value>,
+            budget: &mut Budget,
+        ) -> Result<()> {
+            for child in &node.children {
+                copier.project.check_cancelled()?;
+                let source = format!("{}{}", prefix.from, child.component_key);
+                let target = if let Some((key, old, new)) = &prefix.reused {
+                    let relative = source.strip_prefix(old).expect("source prefix");
+                    format!(
+                        "{new}{}",
+                        copier.replacement_path(key, &relative.split('/').collect::<Vec<_>>())?
+                    )
+                } else {
+                    let key = (child.component_source.clone(), child.component_key.clone());
+                    format!("{}{}", prefix.to, copier.placement_target(&key)?)
+                };
+                budget.pair(&source, &target)?;
+                result.insert(source.clone(), json!(target));
+                let from = if child.is_instance {
+                    format!("{source}/")
+                } else {
+                    prefix.from.clone()
+                };
+                let to = if child.is_instance {
+                    format!("{target}/")
+                } else {
+                    prefix.to.clone()
+                };
+                let reused = match &prefix.reused {
+                    Some(reused) => Some(reused.clone()),
+                    None => copier
+                        .root_reuse(child)?
+                        .map(|key| (key, from.clone(), format!("{target}/"))),
+                };
+                walk(copier, child, Prefix { from, to, reused }, result, budget)?;
+            }
+            Ok(())
+        }
+        let reused = self
+            .root_reuse(root)?
+            .map(|key| (key, String::new(), String::new()));
+        walk(
+            self,
+            root,
+            Prefix {
+                from: String::new(),
+                to: String::new(),
+                reused,
+            },
+            result,
+            budget,
+        )
     }
 
     pub(super) fn rewrite_script(
@@ -573,7 +612,7 @@ impl Copier<'_> {
                         .expand(&key.0, definition, None, &[], &mut Vec::new(), &mut 0)?;
                 let mut paths = Map::new();
                 budget.key(name)?;
-                self.override_paths(&expanded, "", "", &mut paths, &mut budget)?;
+                self.override_paths(&expanded, &mut paths, &mut budget)?;
                 descendants.insert(name.clone(), Value::Object(paths));
             }
             let variables = self.script_scopes[output_scope]

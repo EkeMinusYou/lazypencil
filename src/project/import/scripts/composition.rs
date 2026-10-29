@@ -130,7 +130,7 @@ impl Copier<'_> {
                 .map(String::as_str)
                 .unwrap_or(name);
             let definition = self.project.documents[&bound.origin].node(original)?;
-            let mut expanded = self.project.expand(
+            let expanded = self.project.expand(
                 &bound.origin,
                 definition,
                 None,
@@ -143,25 +143,13 @@ impl Copier<'_> {
             if bound.values.components.contains_key(name) {
                 if let Some(old) = bound.values.descendants.get(name) {
                     for (from, to) in old {
-                        let parts = to.split('/').collect::<Vec<_>>();
-                        let mut targets = Vec::new();
-                        for index in 0..parts.len() {
-                            let node = find_descendant_mut(&mut expanded, &parts[..=index])
-                                .ok_or_else(|| {
-                                    copy_error("A re-copied script override path is missing")
-                                })?;
-                            targets.push(self.node_target(&(
-                                node.component_source.clone(),
-                                node.component_key.clone(),
-                            ))?);
-                        }
-                        let target = targets.join("/");
+                        let target = self.copied_override_path(&expanded, to)?;
                         budget.pair(from, &target)?;
                         paths.insert(from.clone(), json!(target));
                     }
                 }
             } else {
-                self.override_paths(&expanded, "", "", &mut paths, budget)?;
+                self.override_paths(&expanded, &mut paths, budget)?;
             }
             descendants.insert(name.clone(), json!(paths));
         }

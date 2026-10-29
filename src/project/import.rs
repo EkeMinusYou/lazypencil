@@ -3,6 +3,7 @@ use crate::operations::{ImportOptions, NameResolution};
 use uuid::Uuid;
 
 mod browsers;
+mod reuse;
 mod samplers;
 mod scripts;
 
@@ -126,6 +127,9 @@ impl Project {
             queue: VecDeque::from([selected.clone()]),
             ids: BTreeMap::new(),
             reuse: BTreeMap::new(),
+            reused_targets: BTreeMap::new(),
+            reused_target_nodes: 0,
+            reused_path_bytes: 0,
             names: BTreeMap::new(),
             vars: BTreeMap::new(),
             var_values: BTreeMap::new(),
@@ -158,9 +162,8 @@ impl Project {
             if let Some(NameResolution::Reuse { target }) =
                 options.components.get(&graph.key(&key)?)
             {
-                graph.existing_component(target)?;
+                graph.remember_reuse(&key, target)?;
                 graph.used_components.insert(graph.key(&key)?);
-                graph.reuse.insert(key, target.clone());
                 continue;
             }
             graph.roots.insert(key.clone());
@@ -175,6 +178,12 @@ impl Project {
                     .ok()
                     .and_then(|l| l.parent_id.clone());
                 while let Some(id) = parent {
+                    // A substituted ancestor no longer emits its original
+                    // children. Independently referenced inner definitions
+                    // must therefore remain standalone copied roots.
+                    if graph.reuse.contains_key(&(key.0.clone(), id.clone())) {
+                        break;
+                    }
                     if graph.roots.contains(&(key.0.clone(), id.clone())) {
                         return false;
                     }
@@ -218,6 +227,16 @@ impl Project {
                 ));
             }
         }
+        if options.component_paths.keys().any(|key| {
+            !graph
+                .reuse
+                .keys()
+                .any(|source| graph.key(source).is_ok_and(|value| &value == key))
+        }) {
+            return Err(copy_error(
+                "Component paths must name an explicitly reused source component",
+            ));
+        }
         if options
             .script_assets
             .keys()
@@ -244,7 +263,12 @@ impl Project {
             .iter()
             .map(|(key, name)| graph.report_entry(key, name, &mut map_bytes))
             .collect::<Result<Map<_, _>>>()?;
-        let result = json!({"mode":"copy","id_map":ids,"variable_map":variables_map,"theme_map":themes_map,
+        let reused = graph
+            .reuse
+            .iter()
+            .map(|(key, id)| graph.report_entry(key, id, &mut map_bytes))
+            .collect::<Result<Map<_, _>>>()?;
+        let result = json!({"mode":"copy","id_map":ids,"reused_components":reused,"variable_map":variables_map,"theme_map":themes_map,
             "assets":graph.files.values().map(|file|json!({"uri":file.uri,"hash":hash(&file.bytes),"bytes":file.bytes.len()})).collect::<Vec<_>>()});
         Ok(CopyPlan {
             definitions,
@@ -309,6 +333,9 @@ struct Copier<'a> {
     queue: VecDeque<Key>,
     ids: BTreeMap<Key, String>,
     reuse: BTreeMap<Key, String>,
+    reused_targets: BTreeMap<String, BTreeSet<String>>,
+    reused_target_nodes: usize,
+    reused_path_bytes: usize,
     names: BTreeMap<Key, String>,
     vars: BTreeMap<Key, String>,
     var_values: BTreeMap<Key, Value>,
@@ -579,17 +606,18 @@ impl Copier<'_> {
                 "An unknown node cannot be copied structurally",
             ));
         }
-        self.source_axes(origin)?;
         if node["reusable"] == true {
             let source = self.key(&key)?;
             let policy = self.options.components.get(&source);
             if policy.is_some() {
                 self.used_components.insert(source.clone());
             }
-            if matches!(policy, Some(NameResolution::Reuse { .. })) {
-                return Err(copy_error(
-                    "A contained reusable definition cannot be reused independently; rename it or link the parent",
-                ));
+            if let Some(NameResolution::Reuse { target }) = policy {
+                let target = target.clone();
+                self.remember_reuse(&key, &target)?;
+                let placement = reuse::placement(node);
+                self.source_axes(origin)?;
+                return self.scan_value(origin, &Value::Object(placement));
             }
             let name = match policy {
                 Some(NameResolution::Rename { name }) => Some(name.clone()),
@@ -618,6 +646,7 @@ impl Copier<'_> {
                 self.names.insert(key, name);
             }
         }
+        self.source_axes(origin)?;
         self.scan_properties(origin, node)
     }
     fn scan_properties(&mut self, origin: &Path, node: &Value) -> Result<()> {
@@ -803,6 +832,22 @@ impl Copier<'_> {
         Ok(uri)
     }
     fn rewrite_node(&mut self, origin: &Path, node: &Value) -> Result<Value> {
+        let key = (origin.into(), node["id"].as_str().expect("node ID").into());
+        if let Some(target) = self.reuse.get(&key).cloned() {
+            let mut placement = reuse::placement(node);
+            // Only placement expressions belong to the source namespace. The
+            // selected definition and its code/assets belong to the consumer.
+            for (key, value) in &mut placement {
+                if key == "theme" || !literal_property(key) {
+                    *value = self.rewrite_value(origin, &json!({key.clone():value.clone()}))?[key]
+                        .clone();
+                }
+            }
+            placement.insert("id".into(), json!(self.placement_target(&key)?));
+            placement.insert("type".into(), json!("ref"));
+            placement.insert("ref".into(), json!(target));
+            return Ok(Value::Object(placement));
+        }
         self.rewrite_properties(origin, node, true)
     }
     fn rewrite_properties(&mut self, origin: &Path, node: &Value, is_node: bool) -> Result<Value> {
@@ -899,15 +944,7 @@ impl Copier<'_> {
             let mut remapped = Map::new();
             for (path, changes) in overrides {
                 let parts = path.split('/').collect::<Vec<_>>();
-                let mut keys = Vec::new();
-                for index in 0..parts.len() {
-                    let target = find_descendant_mut(&mut expanded, &parts[..=index])
-                        .ok_or_else(|| copy_error("Missing copied override target"))?;
-                    keys.push(self.node_target(&(
-                        target.component_source.clone(),
-                        target.component_key.clone(),
-                    ))?);
-                }
+                let mapped_path = self.copied_override_path(&expanded, path)?;
                 let info = if changes.get("type").is_none() {
                     let target =
                         find_descendant_mut(&mut expanded, &parts).expect("validated override");
@@ -926,7 +963,7 @@ impl Copier<'_> {
                     self.dynamic_info(origin, changes)?
                 };
                 remapped.insert(
-                    keys.join("/"),
+                    mapped_path,
                     self.rewrite_properties_info(
                         origin,
                         changes,
