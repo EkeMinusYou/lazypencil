@@ -63,7 +63,7 @@ runs:
       run: cargo xtask ci cache retain --delete --before-tools-replacement '${{ steps.tools.outputs.cache-primary-key }}' --tools-matched-key '${{ steps.tools.outputs.cache-matched-key }}'
     - name: Verify source inputs before reserving publication headroom
       id: source-headroom
-      if: inputs.reserve-source-headroom == 'true' && inputs.verify == 'true' && github.ref == 'refs/heads/main'
+      if: inputs.reserve-source-headroom == 'true' && github.ref == 'refs/heads/main'
       shell: bash
       run: cargo xtask ci native source
     - name: Retire obsolete sources and duplicate downloads before publishing tools

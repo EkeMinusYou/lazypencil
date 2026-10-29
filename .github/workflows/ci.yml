@@ -66,14 +66,10 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/xtask
+        with:
+          reserve-source-headroom: 'true'
       # Tool tests and lint run in the independent audit job. Selection needs
       # the tool binary, but must not serialize every native job behind its gate.
-      - name: Verify source inputs and reserve checkpoint publication headroom
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          cargo xtask ci native source
-          cargo xtask ci cache retain --manifest "$RUNNER_TEMP/lazypencil-source/SOURCE-MANIFEST.json" --delete
       - name: Select changes since the last fully verified baseline
         id: focus
         env:
@@ -86,6 +82,8 @@ jobs:
         run: cargo xtask shader
 
   audit:
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
     name: Rust tools, dependency policy and RustSec
     permissions:
       contents: read
