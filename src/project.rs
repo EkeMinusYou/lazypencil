@@ -182,7 +182,6 @@ pub struct ResolvedScene {
 }
 
 pub struct Project {
-    _asset_activity: Option<Arc<crate::store::AssetActivity>>,
     root: PathBuf,
     documents: BTreeMap<PathBuf, Document>,
     imports: BTreeMap<PathBuf, BTreeMap<String, PathBuf>>,
@@ -208,6 +207,8 @@ pub struct Project {
     overlay_published: bool,
     file_bindings: std::sync::Mutex<BTreeMap<PathBuf, PathBuf>>,
     cancel: Option<tokio_util::sync::CancellationToken>,
+    // Fields drop in declaration order. Release the lease after captured inputs.
+    _asset_activity: Option<Arc<crate::store::AssetActivity>>,
 }
 
 impl Project {
