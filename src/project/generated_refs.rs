@@ -223,6 +223,10 @@ impl Project {
             .and_then(Value::as_str)
             .ok_or_else(|| invalid("A generated script reference needs scriptUri"))?;
         let path = self.resolve_file(node.property_source("scriptUri"), uri)?;
+        if !self.assets.contains_key(&path) {
+            self.capture_asset(&path, "script")?;
+            self.runtime_assets.insert(path.clone());
+        }
         let code = std::str::from_utf8(&self.asset(&path)?.bytes)
             .map_err(|_| invalid("A generated script reference needs UTF-8 source"))?;
         let header = crate::script::header::Header::parse(code)?;

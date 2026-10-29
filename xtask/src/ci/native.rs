@@ -1545,15 +1545,27 @@ mod tests {
         // Failed runtime assertions must not discard a complete compiler graph.
         // Publishing still rejects changed executable bytes before recording it.
         let complete = session.compile_test_catalog(&complete_targets, "failed-test-build", "fixture-source").unwrap();
+        let publication = Session {
+            root: session.root.clone(),
+            target: session.target.clone(),
+            temporary: temp.path().join("complete-publication"),
+            timing_lock: Mutex::new(()),
+        };
+        fs::create_dir_all(&publication.temporary).unwrap();
+        let published_path = publication.temporary.join("test-executables.json");
         let output = temp.path().join("action-output");
-        session.publish_catalog_to(&complete, Some(&output)).unwrap();
+        publication.publish_catalog_to(&complete, Some(&output)).unwrap();
         assert_eq!(fs::read_to_string(&output).unwrap(), "compiled_catalog=fixture-source\n");
-        let published = fs::read(&later).unwrap();
+        let published = fs::read(&published_path).unwrap();
+        let recorded: Catalog = serde_json::from_slice(&published).unwrap();
+        assert_eq!(recorded.source_commit, "fixture-source");
+        fs::remove_file(&published_path).unwrap();
         fs::write(&output, b"").unwrap();
         fs::write(&complete.binaries["script_scope"].path, b"mutated executable").unwrap();
-        assert!(session.publish_catalog_to(&complete, Some(&output)).is_err());
+        assert!(publication.publish_catalog_to(&complete, Some(&output)).is_err());
         assert!(fs::read(&output).unwrap().is_empty());
-        assert_eq!(fs::read(&later).unwrap(), published);
+        assert!(!published_path.exists());
+        assert_eq!(fs::read(&later).unwrap(), b"a later stage owns this catalog");
     }
 
     #[test]
