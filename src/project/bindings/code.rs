@@ -50,7 +50,7 @@ fn merge_members(
 }
 
 impl Bound {
-    pub(super) fn output_with_code_owner(
+    pub(in crate::project) fn output_with_code_owner(
         &self,
         uri: &str,
         inputs: Option<&Value>,
