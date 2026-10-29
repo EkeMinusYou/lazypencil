@@ -4,6 +4,8 @@
 
 ## 現在の状態（2026-10-30）
 
+7fa75b3の[Mac補助ツールGHA 40962628149](https://github.com/EkeMinusYou/lazypencil/actions/runs/40962628149)は全試験・Clippy・原本照合まで成功した。本体[CI 40963196991](https://github.com/EkeMinusYou/lazypencil/actions/runs/40963196991)では新しいlease3件・履歴owner・実CLIの出力中保護が先行と両feature構成で成功し、release・pixel／runtime／端末／Materialも成功した。core／通常consumerは既存のdoctor／runtime statusの無状態診断で、広すぎるmainの共有leaseがlock directoryを作ったことを検出した。素材を参照しないこの2コマンドだけを取得対象から外し、元の試験・assertionを維持する。main変更ではこの診断とassetsを先行対象に含め、early catalogにもruntimeを準備する。全job終了後に修正版を送る。完全Clippyと最終sourceはこの候補で完了した根拠にせず、修正版で確認する。
+
 管理素材回収の保護として、Store／保持ProjectとCLI／MCP／TUI／promptの寿命に共有leaseを接続し、保守用Storeの排他取得を追加した。文書ロック・依存ロックは維持し、異なるdata directoryでも同じper-user leaseを共有する。新しい履歴へ元文書のcanonical pathを保存し、旧metadataの読取りと別文書への付け替え拒否を扱う。実CLIの出力を小さいUnix socket bufferで止めた状態の排他拒否、Storeの終了後もProjectが保持する保護、複数owner・clone・取消と旧履歴の回帰を追加した。bbbb520のMac補助ツールGHAは、素材試験を追加するstore/content.rsの古い対象選択fixture一件で停止した。期待値を対応する範囲へ揃え、Projectのguardを最後にdropする順序と、製品のcompiler入力へ混ぜない独立unit試験ファイルも整理した。本体のGHA前であり、回収の参照走査・確認revision・削除は引き続き実装する。
 
 badafd3の[CI 40958169976](https://github.com/EkeMinusYou/lazypencil/actions/runs/40958169976)は全工程成功し、全体9分51秒だった。core／既定構成の全試験とClippy、通常開発build、release、通常／pixel／runtime／端末／Materialの全5 consumer、共通画像gateと署名付きsourceを含む。ローカル`file://`文字列samplerの独立copyは、2.19／2.21のテーマ・元URL表示・source削除・移動・再copy・将来編集と、許可領域・URLの予約文字・同一byteへのsymlink変更を検証済み。実WebGLも相対／絶対／file URLの各light・darkの6条件でcopy前後の画像が一致し、最終gateが全12 PNGのhashを照合した。実端末IMEや公開受け入れ全体の完了とは分ける。

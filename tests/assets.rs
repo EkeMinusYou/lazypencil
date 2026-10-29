@@ -77,7 +77,7 @@ fn cli_asset_output_keeps_maintenance_excluded_until_the_response_is_written() {
         },
         0
     );
-    assert!(capacity > 0 && capacity < 65536);
+    assert!((1..65536).contains(&capacity));
     let writer: OwnedFd = writer.into();
     let mut child = Owner(
         Command::new(env!("CARGO_BIN_EXE_lazypencil"))

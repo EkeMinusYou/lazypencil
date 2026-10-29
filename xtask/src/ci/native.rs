@@ -311,6 +311,15 @@ impl Session {
 
     fn asset_maintenance_reproductions(&self, features: bool, targets: &[String]) -> Result<()> {
         let has = |name| targets.iter().any(|target| target == name);
+        if has("runtime") {
+            self.test(
+                features,
+                "runtime",
+                "doctor_and_runtime_status_do_not_launch_an_explicit_browser_or_create_local_state",
+                &["--exact", "--test-threads=1"],
+                "focus-readonly-diagnostics.log",
+            )?;
+        }
         if has("assets") || has("document_store") {
             self.test(
                 features,

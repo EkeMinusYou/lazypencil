@@ -296,8 +296,10 @@
       "platform": "macos-15",
       "suite": "core",
       "targets": [
+        "assets",
         "document_store",
-        "mcp"
+        "mcp",
+        "runtime"
       ],
       "preprocessor": false
     }

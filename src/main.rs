@@ -109,7 +109,17 @@ fn main() -> ExitCode {
     };
     // Keep uploaded-but-not-yet-referenced assets live until the CLI result
     // has been written, including long-lived TUI, prompt and MCP frontends.
-    let _asset_activity = match lazypencil::store::AssetActivity::acquire() {
+    let uses_assets = !matches!(
+        &arguments.command,
+        lazypencil::cli::Command::Doctor
+            | lazypencil::cli::Command::Runtime {
+                command: lazypencil::cli::RuntimeCommand::Status
+            }
+    );
+    let _asset_activity = match uses_assets
+        .then(lazypencil::store::AssetActivity::acquire)
+        .transpose()
+    {
         Ok(activity) => activity,
         Err(error) => {
             if arguments.json {

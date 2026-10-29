@@ -941,6 +941,9 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         // mixed project/render changes whose normal selection is rendering-only.
         targets.extend(["assets", "document_store"].map(str::to_owned));
     }
+    if any(paths, &["src/main.rs"], &[]) {
+        targets.extend(["assets", "runtime"].map(str::to_owned));
+    }
     if any(paths, &["src/render.rs"], &["src/render/"]) {
         targets.extend(["graphics", "render"].map(str::to_owned));
     }
