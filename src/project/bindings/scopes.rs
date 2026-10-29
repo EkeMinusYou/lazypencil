@@ -4,6 +4,8 @@ use super::*;
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(in crate::project) struct CapturedScope {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub document_namespace: Option<String>,
     pub components: BTreeMap<String, String>,
     pub variables: BTreeMap<String, String>,
     pub themes: BTreeMap<String, String>,
@@ -19,7 +21,7 @@ pub(super) fn validate(values: &Bindings) -> Result<()> {
         || values.version == 2 && values.script_scopes.is_empty()
     {
         return Err(invalid(
-            "Captured execution namespaces require script bindings version 2 or 3",
+            "Captured execution namespaces require script bindings version 2, 3 or 4",
         ));
     }
     if values.script_scopes.len() > 4096
@@ -32,6 +34,17 @@ pub(super) fn validate(values: &Bindings) -> Result<()> {
         return Err(invalid("Invalid captured script namespace"));
     }
     for (name, scope) in &values.script_scopes {
+        if let Some(document) = &scope.document_namespace
+            && (values.version < 4
+                || values
+                    .script_scopes
+                    .get(document)
+                    .is_none_or(|scope| scope.document_namespace.is_some()))
+        {
+            return Err(invalid(
+                "A native script view needs a captured document namespace",
+            ));
+        }
         if values.assets.is_none() || scope.libraries.get("") != Some(name) {
             return Err(invalid(
                 "A captured namespace needs its own identity and a closed asset manifest",
@@ -110,6 +123,28 @@ pub(super) fn validate(values: &Bindings) -> Result<()> {
 impl Bound {
     pub(in crate::project) fn original(&self) -> &Bindings {
         self.captured.as_deref().unwrap_or(&self.values)
+    }
+
+    #[cfg(feature = "rendering")]
+    pub(in crate::project) fn document_scope(&self) -> Result<std::borrow::Cow<'_, Self>> {
+        let values = self.original();
+        let namespace = values.script_namespace.as_deref().unwrap_or("");
+        let Some(document) = values
+            .script_scopes
+            .get(namespace)
+            .and_then(|scope| scope.document_namespace.as_ref())
+        else {
+            return Ok(std::borrow::Cow::Borrowed(self));
+        };
+        let mut values = values.clone();
+        values.script_namespace = Some(document.clone());
+        values.inputs_hash = None;
+        values.input_components = None;
+        Ok(std::borrow::Cow::Owned(Self::from_values(
+            self.origin.clone(),
+            false,
+            values,
+        )?))
     }
 
     pub(super) fn from_values(

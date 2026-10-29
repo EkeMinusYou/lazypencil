@@ -220,7 +220,15 @@ fn assets(
 impl Bound {
     pub(super) fn custom_output(&self, value: &Value, uri_hash: String) -> Result<Self> {
         let source = parse(value)?;
-        let owner = self.selected(source.library.as_deref().unwrap_or(""))?;
+        if source.assets.is_none() && self.original().script_scopes.is_empty() {
+            return Err(Error::new(
+                "UNSUPPORTED_FEATURE",
+                "This script lacks its original document namespace; copy it again from its source",
+            ));
+        }
+        let owner = self
+            .document_scope()?
+            .selected(source.library.as_deref().unwrap_or(""))?;
         for target in source.components.values() {
             owner.component(target)?;
         }
@@ -245,6 +253,7 @@ impl Bound {
             composition.values.script_scopes.insert(
                 String::new(),
                 CapturedScope {
+                    document_namespace: None,
                     components: owner
                         .values
                         .components
@@ -280,6 +289,7 @@ impl Bound {
             BTreeMap::from([(
                 String::new(),
                 CapturedScope {
+                    document_namespace: None,
                     components: source
                         .components
                         .keys()
@@ -360,6 +370,10 @@ impl Bound {
                 }
             }
             if source.script_scopes.is_empty() {
+                scope.document_namespace = source
+                    .assets
+                    .is_none()
+                    .then(|| base.script_namespace.clone().unwrap_or_default());
                 scope.assets = assets(source.assets.as_ref(), &owner)?;
                 scope.libraries = base
                     .script_scopes
@@ -397,6 +411,7 @@ impl Bound {
                     None => BTreeMap::new(),
                 };
             } else {
+                scope.document_namespace = raw.document_namespace.as_deref().map(identity);
                 scope.assets = assets(Some(&raw.assets), &owner)?;
                 scope.libraries = raw
                     .libraries
@@ -441,7 +456,16 @@ impl Bound {
         composition.values.library = None;
         composition.values.script_uri = source.script_uri;
         composition.values.source_uri_hash = Some(uri_hash);
-        composition.values.version = 3;
+        composition.values.version = if composition
+            .values
+            .script_scopes
+            .values()
+            .any(|scope| scope.document_namespace.is_some())
+        {
+            4
+        } else {
+            3
+        };
         let value = serde_json::to_value(&composition.values).expect("bindings");
         // Validate the complete graph and existing per-script count/byte limits.
         let values = parse(&value)?;

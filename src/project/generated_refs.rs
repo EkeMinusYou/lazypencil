@@ -117,8 +117,9 @@ impl Project {
         if let Some(mut resolved) = reference {
             self.bind_generated_source(node, &mut resolved, bindings, inherited_bytes, context)?;
             if resolved.kind() == "browser" {
-                let library = self.generated_browser_url_library(&resolved, bindings)?;
-                bindings.generated_browser_context_at(
+                let owner = bindings.document_scope()?;
+                let library = self.generated_browser_url_library(&resolved, &owner)?;
+                owner.generated_browser_context_at(
                     node,
                     false,
                     resolved.properties.get("url").and_then(Value::as_str),
@@ -151,8 +152,9 @@ impl Project {
                                 .ok_or_else(|| invalid("Generated override context is missing"))?,
                         )?;
                         if target.kind() == "browser" {
-                            let library = self.generated_browser_url_library(target, bindings)?;
-                            bindings.generated_browser_context_at(
+                            let owner = bindings.document_scope()?;
+                            let library = self.generated_browser_url_library(target, &owner)?;
+                            owner.generated_browser_context_at(
                                 changes,
                                 false,
                                 target.properties.get("url").and_then(Value::as_str),
@@ -411,7 +413,7 @@ impl Project {
         let output = if explicit_output.is_some() || !provided_source {
             explicit_output
         } else {
-            Some(bindings.inherited_output_with_hash(
+            Some(bindings.document_scope()?.inherited_output_with_hash(
                 &uri,
                 None,
                 context.uri_hash.clone(),

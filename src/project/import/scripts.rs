@@ -20,6 +20,16 @@ pub(super) struct Info {
     source: Key,
 }
 
+impl Info {
+    fn generated_origin(&self) -> &Path {
+        self.resolved
+            .script_bindings
+            .as_ref()
+            .map(|bound| bound.origin.as_path())
+            .unwrap_or_else(|| self.resolved.script_origin())
+    }
+}
+
 impl Copier<'_> {
     pub(super) fn script_info_resolved(
         &mut self,
@@ -78,7 +88,7 @@ impl Copier<'_> {
                     crate::operations::ScriptAssetKind::Script => "script",
                 };
                 super::super::bindings::asset_key(kind, &asset.uri)?;
-                let owner = info.resolved.script_origin();
+                let owner = info.generated_origin();
                 let path = self.project.resolve_file(owner, &asset.uri)?;
                 self.project.capture_asset(&path, kind)?;
                 self.script_images
@@ -573,7 +583,14 @@ impl Copier<'_> {
                 .get(&key)
                 .cloned()
                 .unwrap_or_default();
-            self.compose_bindings(bound, &uri, input, output_scope, &additional, &mut budget)?
+            self.compose_bindings(
+                bound,
+                &uri,
+                input,
+                info.generated_origin(),
+                &additional,
+                &mut budget,
+            )?
         } else {
             let mut descendants = Map::new();
             let mut descendant_contexts = Map::new();
@@ -632,7 +649,7 @@ impl Copier<'_> {
                 Some(hash(info.uri.as_bytes()))
             };
             if let Some(source_hash) = source_hash {
-                bindings["version"] = json!(3);
+                bindings["version"] = json!(if bindings["version"] == 4 { 4 } else { 3 });
                 bindings["source_uri_hash"] = json!(source_hash);
                 budget.charge(128)?;
             }

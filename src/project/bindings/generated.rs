@@ -119,7 +119,7 @@ pub(super) fn selection(parent: &Bound, node: &Value) -> Result<Option<Selection
         return Err(invalid("A generated script needs scriptUri"));
     };
     let output = if scope.script_uri == uri {
-        parent.selected(&scope.library)?
+        parent.document_scope()?.selected(&scope.library)?
     } else {
         parent.clone()
     };
@@ -129,7 +129,7 @@ pub(super) fn selection(parent: &Bound, node: &Value) -> Result<Option<Selection
                 .inputs
                 .filter(|scope| super::super::scope::value_hash(inputs) == scope.hash)
             {
-                parent.selected(&scope.library)?
+                parent.document_scope()?.selected(&scope.library)?
             } else {
                 parent.clone()
             },
@@ -312,14 +312,18 @@ impl Bound {
         let scope = super::super::scope::parse_scope(scope)?;
         let uri_hash = Self::generated_source_hash(target, state)?;
         let output = if uri_hash == hash(scope.script_uri.as_bytes()) {
-            Some(self.selected(&scope.library)?.inherited_output_with_hash(
+            Some(
+                self.document_scope()?
+                    .selected(&scope.library)?
+                    .inherited_output_with_hash(uri, None, Some(uri_hash), budget)?,
+            )
+        } else if changes.get("scriptUri").is_some() {
+            Some(self.document_scope()?.inherited_output_with_hash(
                 uri,
                 None,
                 Some(uri_hash),
                 budget,
             )?)
-        } else if changes.get("scriptUri").is_some() {
-            Some(self.inherited_output_with_hash(uri, None, Some(uri_hash), budget)?)
         } else {
             None
         };
@@ -336,7 +340,7 @@ impl Bound {
         let input = if provided.is_some() || active.is_some() {
             let raw = raw.expect("provided or guarded inputs");
             let owner = if let Some(scope) = active {
-                self.selected(&scope.library)?
+                self.document_scope()?.selected(&scope.library)?
             } else {
                 self.clone()
             };
@@ -365,10 +369,15 @@ impl Bound {
         if source.script_scopes.is_empty() {
             return namespace.is_empty();
         }
-        source.script_scopes[source.script_namespace.as_deref().unwrap_or("")]
-            .libraries
-            .values()
-            .any(|target| target == namespace)
+        let scope = &source.script_scopes[source.script_namespace.as_deref().unwrap_or("")];
+        scope.libraries.values().any(|target| target == namespace)
+            || scope.document_namespace.as_ref().is_some_and(|document| {
+                document == namespace
+                    || source.script_scopes[document]
+                        .libraries
+                        .values()
+                        .any(|target| target == namespace)
+            })
     }
 
     fn captured_target(&self, target: &str, component: bool) -> bool {

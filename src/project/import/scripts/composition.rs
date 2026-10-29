@@ -269,10 +269,14 @@ impl Copier<'_> {
         } else if source.assets.is_none() {
             values["browser_libraries"] = self.copy_browser_libraries(&bound.origin, budget)?;
         }
-        self.compose_script_scopes(bound, &mut values, budget)?;
+        if source.assets.is_none() && source.script_scopes.is_empty() {
+            self.capture_native_binding_scope(&bound.origin, &mut values, budget)?;
+        } else {
+            self.compose_script_scopes(bound, &mut values, budget)?;
+        }
+        let active = values["script_namespace"].as_str().unwrap_or("").to_owned();
         for asset in additional {
             if let Some(scopes) = values.get_mut("script_scopes") {
-                let active = source.script_namespace.as_deref().unwrap_or("");
                 let kind = match asset.kind {
                     crate::operations::ScriptAssetKind::Image => "image",
                     crate::operations::ScriptAssetKind::Shader => "shader",
@@ -280,10 +284,10 @@ impl Copier<'_> {
                 };
                 let key = crate::project::bindings::asset_key(kind, &asset.uri)?;
                 let target = self.asset(output, &asset.uri, kind)?;
-                if scopes[active]["assets"].get(&key).is_none() {
+                if scopes[&active]["assets"].get(&key).is_none() {
                     budget.pair(&key, &target)?;
                 }
-                scopes[active]["assets"][key] = json!(target);
+                scopes[&active]["assets"][key] = json!(target);
             }
         }
         Ok(values)

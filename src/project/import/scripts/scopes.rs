@@ -41,6 +41,17 @@ impl Copier<'_> {
         values: &mut Value,
         budget: &mut Budget,
     ) -> Result<()> {
+        self.capture_scopes(origin, values, budget, true, None)
+    }
+
+    fn capture_scopes(
+        &mut self,
+        origin: &Path,
+        values: &mut Value,
+        budget: &mut Budget,
+        reuse_tables: bool,
+        physical_browsers: Option<BTreeMap<String, String>>,
+    ) -> Result<()> {
         let mut identities = BTreeMap::new();
         for (alias, path) in &self.script_scopes[origin].browsers {
             identities
@@ -48,24 +59,34 @@ impl Copier<'_> {
                 .or_insert_with(|| alias.clone());
         }
         let mut components = BTreeMap::new();
-        for (name, key) in &self.script_scopes[origin].components {
+        for (name, key) in self.script_scopes[origin]
+            .components
+            .iter()
+            .filter(|_| reuse_tables)
+        {
             components
                 .entry(key.clone())
                 .or_insert_with(|| name.clone());
         }
         let mut variables = BTreeMap::new();
-        for (name, key) in &self.script_scopes[origin].variables {
+        for (name, key) in self.script_scopes[origin]
+            .variables
+            .iter()
+            .filter(|_| reuse_tables)
+        {
             variables.entry(key.clone()).or_insert_with(|| name.clone());
         }
         let root_assets: BTreeMap<String, String> =
             serde_json::from_value(values["assets"].clone()).expect("assets");
-        let browser_libraries: BTreeMap<String, String> =
-            serde_json::from_value(values["browser_libraries"].clone()).expect("browser libraries");
+        let browser_libraries: BTreeMap<String, String> = physical_browsers.unwrap_or_else(|| {
+            serde_json::from_value(values["browser_libraries"].clone()).expect("browser libraries")
+        });
         let mut result = Map::new();
         for (path, identity) in &identities {
             self.project.check_cancelled()?;
             let source = &self.script_scopes[path];
             let mut scope = CapturedScope {
+                document_namespace: None,
                 components: BTreeMap::new(),
                 variables: BTreeMap::new(),
                 themes: BTreeMap::new(),
@@ -119,7 +140,21 @@ impl Copier<'_> {
             for document in &self.script_scopes[path].documents {
                 if let Some(axes) = self.project.documents[document].value()["themes"].as_object() {
                     for name in axes.keys() {
-                        scope.themes.insert(name.clone(), name.clone());
+                        if reuse_tables {
+                            scope.themes.insert(name.clone(), name.clone());
+                        } else {
+                            let target = self.axis_target(document, name)?;
+                            let key = private_key(values, "themes");
+                            budget.pair(&key, &target)?;
+                            values["themes"][&key] = json!(target);
+                            if let Some(previous) = scope.themes.insert(name.clone(), key.clone())
+                                && values["themes"][previous] != values["themes"][&key]
+                            {
+                                return Err(copy_error(
+                                    "Captured document theme axes need one shared copied target",
+                                ));
+                            }
+                        }
                     }
                 }
             }
@@ -152,6 +187,70 @@ impl Copier<'_> {
         }
         values["script_scopes"] = Value::Object(result);
         values["version"] = json!(2);
+        Ok(())
+    }
+
+    pub(super) fn capture_native_binding_scope(
+        &mut self,
+        origin: &Path,
+        values: &mut Value,
+        budget: &mut Budget,
+    ) -> Result<()> {
+        // The native mapping rewrites the parent's output. Nested code without
+        // its own mapping still resolves names in the underlying document.
+        let members = |section: &str| -> BTreeMap<String, String> {
+            values[section]
+                .as_object()
+                .expect("binding table")
+                .keys()
+                .map(|key| (key.clone(), key.clone()))
+                .collect()
+        };
+        let mut native = CapturedScope {
+            document_namespace: Some(String::new()),
+            components: members("components"),
+            variables: members("variables"),
+            themes: members("themes"),
+            assets: serde_json::from_value(values["assets"].clone()).expect("assets"),
+            libraries: BTreeMap::new(),
+            browser_library: values["browser_library"].as_str().map(str::to_owned),
+            browser_libraries: serde_json::from_value(values["browser_libraries"].clone())
+                .expect("browser libraries"),
+        };
+        let physical: BTreeMap<String, String> =
+            serde_json::from_value(self.copy_browser_libraries(origin, budget)?)
+                .expect("browser libraries");
+        for (alias, target) in &physical {
+            if values["browser_libraries"][alias] == json!(target) {
+                continue;
+            }
+            let key = if values["browser_libraries"].get(alias).is_none() {
+                alias.clone()
+            } else {
+                private_key(values, "browser_libraries")
+            };
+            budget.pair(&key, target)?;
+            values["browser_libraries"][key] = json!(target);
+        }
+        self.capture_scopes(origin, values, budget, false, Some(physical))?;
+        let scopes = values["script_scopes"].as_object().expect("scopes");
+        let mut index = scopes.len();
+        let namespace = loop {
+            let name = format!("@lazypencil/native/{index}");
+            if !scopes.contains_key(&name) {
+                break name;
+            }
+            index += 1;
+        };
+        native.libraries = serde_json::from_value(values["script_scopes"][""]["libraries"].clone())
+            .expect("libraries");
+        native.libraries.insert(String::new(), namespace.clone());
+        let native = serde_json::to_value(native).expect("native scope");
+        budget.key(&namespace)?;
+        budget.charge(native.to_string().len() + 4)?;
+        values["script_scopes"][&namespace] = native;
+        values["script_namespace"] = json!(namespace);
+        values["version"] = json!(4);
         Ok(())
     }
 
@@ -235,7 +334,7 @@ impl Copier<'_> {
             result.insert(name.clone(), scope);
         }
         values["script_scopes"] = json!(result);
-        values["version"] = json!(2);
+        values["version"] = json!(if original.version >= 4 { 4 } else { 2 });
         if let Some(active) = &original.script_namespace {
             values["script_namespace"] = json!(active);
         }

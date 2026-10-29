@@ -61,7 +61,13 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
         | "binding-unknown-target"
         | "binding-unknown-library"
         | "binding-unmanifested-asset"
-        | "binding-combined" => {
+        | "binding-combined"
+        | "binding-native-parent"
+        | "binding-native-parent-scope"
+        | "binding-native-parent-default"
+        | "binding-native-parent-library"
+        | "binding-native-parent-scope-library"
+        | "binding-native-parent-default-library" => {
             let mut bindings = json!({"version":1,"script_uri":"override.js","components":{"badge":"badge"},"variables":{"tone":"tone"}});
             if ["binding-library", "binding-inputs", "binding-stale-inputs"].contains(&mode) {
                 bindings["library"] = json!("base");
@@ -111,6 +117,15 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
             if mode == "binding-combined" {
                 changes["metadata"]["lazypencil"]["script_scope"] =
                     json!({"version":1,"script_uri":"override.js","library":"base"});
+            }
+            if mode.starts_with("binding-native-parent-scope") {
+                changes["metadata"]["lazypencil"] =
+                    json!({"script_scope":{"version":1,"script_uri":"override.js","library":""}});
+            } else if mode.starts_with("binding-native-parent-default") {
+                changes["metadata"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("lazypencil");
             }
         }
         "stale-scope" | "stale-input-scope" => {
@@ -259,6 +274,64 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
         base["children"][1]["metadata"]["lazypencil"]["script_scope"] = json!({"version":1,"script_uri":"base.js","library":"","inputs":{"hash":lazypencil::document::hash(inputs.to_string().as_bytes()),"library":"inputs"}});
         write(&path, base);
     }
+    if mode.starts_with("binding-native-parent") {
+        let library = mode.ends_with("-library");
+        let path = temp.path().join(if library {
+            "library/base.pen"
+        } else {
+            "library/ui.pen"
+        });
+        let mut owner: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        owner["variables"]["accent"] = json!({"type":"color","value":"#00ffff"});
+        owner["children"].as_array_mut().unwrap().push(json!({"id":"alternate","name":"Native alternate","type":"rectangle","reusable":true,"width":10,"height":10,"fill":"#00ffff"}));
+        if !library {
+            owner["children"].as_array_mut().unwrap().extend([
+                json!({"id":"worker-bridge","type":"ref","reusable":true,"ref":"base:worker"}),
+                json!({"id":"card-bridge","type":"ref","reusable":true,"ref":"base:card"}),
+            ]);
+        }
+        write(&path, owner);
+        let path = temp.path().join("library/ui.pen");
+        let mut ui: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let mut parent = json!({"version":1,"script_uri":"draw.js",
+            "components":{"badge":"alternate","base:worker":if library {"worker"} else {"worker-bridge"},"base:card":if library {"card"} else {"card-bridge"}},
+            "variables":{"tone":"accent"},
+            "descendants":{"base:card":{"draw":"draw"}},
+            "descendant_contexts":{"base:card":{"draw":{"parent":"","instance":true,"target_instance":true}}}
+        });
+        if library {
+            parent["library"] = json!("base");
+            ui["imports"]["base"] = json!("base/base.pen");
+        }
+        let generator = ui["children"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|node| node["id"] == "generator")
+            .unwrap();
+        generator["metadata"] =
+            json!({"type":"test","keep":"native-parent","lazypencil":{"script_bindings":parent}});
+        write(&path, ui);
+        if library {
+            fs::create_dir(temp.path().join("library/base")).unwrap();
+            fs::rename(
+                temp.path().join("library/base.pen"),
+                temp.path().join("library/base/base.pen"),
+            )
+            .unwrap();
+            fs::rename(
+                temp.path().join("library/base.js"),
+                temp.path().join("library/base/base.js"),
+            )
+            .unwrap();
+            fs::write(temp.path().join("library/base/override.js"), REPLACEMENT).unwrap();
+            fs::write(
+                temp.path().join("library/override.js"),
+                "/* @schema 2.21 */ return [{type:'rectangle',width:36,height:12,fill:'#ff00ff'}];",
+            )
+            .unwrap();
+        }
+    }
     let store = Store::open(temp.path().join("main.pen"), Some(temp.path().join("data"))).unwrap();
     (temp, store, code)
 }
@@ -385,15 +458,16 @@ fn independent_case(
     } else {
         "base"
     };
-    let output = if [
-        "explicit-context",
-        "explicit-input-context",
-        "metadata-input",
-        "binding-library",
-        "binding-inputs",
-        "binding-stale-inputs",
-    ]
-    .contains(&mode)
+    let output = if (mode.starts_with("binding-native-parent") && mode.ends_with("-library"))
+        || [
+            "explicit-context",
+            "explicit-input-context",
+            "metadata-input",
+            "binding-library",
+            "binding-inputs",
+            "binding-stale-inputs",
+        ]
+        .contains(&mode)
     {
         Color::RED
     } else if mode == "binding-mapped" {
@@ -604,6 +678,37 @@ fn generated_custom_bindings_compose_names_libraries_catalogs_and_saved_inputs()
                     let _fixture =
                         independent_case(version, style, "binding-inherited-inputs", Color::CYAN);
                     let _fixture = independent_case(version, style, "binding-metadata", Color::RED);
+                }
+            });
+        }
+    });
+}
+
+#[test]
+fn native_binding_parents_keep_the_document_owner_of_nested_code_and_custom_contexts() {
+    std::thread::scope(|threads| {
+        for version in ["2.19", "2.21"] {
+            threads.spawn(move || {
+                for style in ["script", "direct", "descendant", "replacement", "children"] {
+                    for mode in [
+                        "binding-native-parent",
+                        "binding-native-parent-scope",
+                        "binding-native-parent-default",
+                    ] {
+                        let first = if style == "script" {
+                            Color::GREEN
+                        } else {
+                            Color::RED
+                        };
+                        let _fixture = independent_case(version, style, mode, first);
+                    }
+                }
+                for mode in [
+                    "binding-native-parent-library",
+                    "binding-native-parent-scope-library",
+                    "binding-native-parent-default-library",
+                ] {
+                    let _fixture = independent_case(version, "script", mode, Color::RED);
                 }
             });
         }

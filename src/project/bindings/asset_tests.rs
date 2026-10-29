@@ -31,6 +31,33 @@ fn custom_bindings_keep_key_shadowing_identity_fallbacks_paths_and_closed_assets
         "descendant_contexts":{"old":{"old-label":{"parent":"","instance":false,"target_instance":true}}},
         "assets":{"script:alias.js":"nested.js"}
     });
+    let mut unclosed = raw.clone();
+    unclosed.as_object_mut().unwrap().remove("assets");
+    let native = parent.custom_output(&unclosed, hash(b"nested.js")).unwrap();
+    assert_eq!(native.original().version, 4);
+    assert_eq!(
+        native.document_scope().unwrap().component("badge").unwrap(),
+        "copied-badge"
+    );
+    assert_eq!(
+        native.document_scope().unwrap().values.variables["tone"],
+        "copied-tone"
+    );
+    let child = native.custom_output(&json!({"version":1,"script_uri":"nested.js","components":{"badge":"badge"},"variables":{"tone":"tone"}}), hash(b"nested.js")).unwrap();
+    assert_eq!(child.component("badge").unwrap(), "copied-badge");
+    assert_eq!(child.values.variables["tone"], "copied-tone");
+    for invalid_target in [
+        "uncaptured",
+        native.original().script_namespace.as_deref().unwrap(),
+    ] {
+        let mut invalid = serde_json::to_value(native.original()).unwrap();
+        let name = native.original().script_namespace.as_deref().unwrap();
+        invalid["script_scopes"][name]["document_namespace"] = json!(invalid_target);
+        assert!(parse(&invalid).is_err());
+    }
+    let mut old_version = serde_json::to_value(native.original()).unwrap();
+    old_version["version"] = json!(3);
+    assert!(parse(&old_version).is_err());
     let output = parent.custom_output(&raw, hash(b"nested.js")).unwrap();
     assert_eq!(output.component("badge").unwrap(), "copied-alternate");
     assert_eq!(output.component("alternate").unwrap(), "copied-alternate");

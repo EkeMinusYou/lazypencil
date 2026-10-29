@@ -120,7 +120,7 @@ fn parse(value: &Value) -> Result<Bindings> {
     }
     let values: Bindings = serde_json::from_value(value.clone())
         .map_err(|_| invalid("Invalid lazypencil script bindings"))?;
-    if ![1, 2, 3].contains(&values.version) {
+    if ![1, 2, 3, 4].contains(&values.version) {
         return Err(Error::new(
             "UNSUPPORTED_VERSION",
             "Unsupported script bindings version",
@@ -178,7 +178,7 @@ fn parse(value: &Value) -> Result<Bindings> {
             || !value
                 .bytes()
                 .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    }) || values.source_uri_hash.is_some() != (values.version == 3)
+    }) || values.source_uri_hash.is_some() != (values.version >= 3)
     {
         return Err(invalid("Invalid script source provenance"));
     }
@@ -359,7 +359,8 @@ impl Bound {
             return Ok(());
         }
         if node["type"] == "browser" {
-            self.generated_browser_context(node, true, inherited_bytes)?;
+            self.document_scope()?
+                .generated_browser_context(node, true, inherited_bytes)?;
         }
         if let Some(uri) = node.get_mut("scriptUri")
             && let Some(value) = uri.as_str()
@@ -486,8 +487,26 @@ impl Bound {
         values.library = None;
         values.script_uri = uri.into();
         values.source_uri_hash = uri_hash;
+        if values.source_uri_hash.is_none()
+            && values
+                .script_scopes
+                .values()
+                .any(|scope| scope.document_namespace.is_some())
+        {
+            return Err(invalid(
+                "A document execution namespace requires original source URI provenance",
+            ));
+        }
         values.version = if values.source_uri_hash.is_some() {
-            3
+            if values
+                .script_scopes
+                .values()
+                .any(|scope| scope.document_namespace.is_some())
+            {
+                4
+            } else {
+                3
+            }
         } else if values.script_scopes.is_empty() {
             1
         } else {
@@ -641,7 +660,7 @@ impl Bound {
                     inherited_bytes,
                 )?
             } else {
-                self.inherited_output_with_hash(
+                self.document_scope()?.inherited_output_with_hash(
                     uri,
                     node.get("inputs"),
                     state.uri_hash.clone(),
