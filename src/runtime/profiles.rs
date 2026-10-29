@@ -13,6 +13,14 @@ use std::{
 #[cfg(unix)]
 const MARKER: &str = "lazypencil-profile.json";
 
+#[cfg(all(unix, feature = "rendering"))]
+pub(crate) mod pages;
+
+#[cfg(all(unix, feature = "rendering"))]
+pub fn serve_page_worker() -> Result<()> {
+    pages::serve_worker()
+}
+
 #[derive(Clone)]
 pub struct Profile {
     directory: PathBuf,

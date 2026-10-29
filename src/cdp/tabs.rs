@@ -30,6 +30,195 @@ pub(super) struct RetainedTab {
 }
 
 impl Browser {
+    #[cfg(all(unix, feature = "rendering"))]
+    pub(crate) fn enter_profile_owner(&mut self, owner: &str, budget: &Budget<'_>) -> Result<()> {
+        budget.check()?;
+        if !self.persistent_profile || uuid::Uuid::parse_str(owner).is_err() {
+            return Err(failed("Invalid shared page owner"));
+        }
+        self.active_profile_owner = Some(owner.into());
+        Ok(())
+    }
+
+    #[cfg(all(unix, feature = "rendering"))]
+    pub(crate) fn leave_profile_owner(&mut self, owner: &str) -> Result<()> {
+        if self.active_profile_owner.as_deref() == Some(owner) {
+            self.active_profile_owner = None;
+        }
+        let budget = Budget::new(Duration::from_millis(500), None);
+        while self
+            .pending_profile_targets
+            .values()
+            .any(|value| value == owner)
+        {
+            self.command(None, "Target.getTargets", json!({}), &budget)?;
+            if self
+                .pending_profile_targets
+                .values()
+                .any(|value| value == owner)
+            {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+        if self.profile_target_fault {
+            return Err(failed("Browser target ownership is unavailable"));
+        }
+        while let Some(target) = self
+            .profile_targets
+            .iter()
+            .find(|(_, value)| value.as_str() == owner)
+            .map(|(target, _)| target.clone())
+        {
+            self.close_profile_target(&target, &budget)?;
+        }
+        let prefix = format!("{owner}:");
+        let mut index = 0;
+        while index < self.retained_tabs.len() {
+            if self.retained_tabs[index].key.starts_with(&prefix) {
+                let entry = self
+                    .retained_tabs
+                    .remove(index)
+                    .expect("owned retained page");
+                self.local_files.remove(&entry.tab.session);
+                self.page_lifecycle.remove(&entry.tab.session);
+            } else {
+                index += 1;
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(all(unix, feature = "rendering"))]
+    pub(crate) fn retain_profile_pages(
+        &mut self,
+        owner: &str,
+        signatures: &std::collections::BTreeMap<String, String>,
+        budget: &Budget<'_>,
+    ) -> Result<()> {
+        let prefix = format!("{owner}:");
+        self.retain_pages(
+            |entry| {
+                !entry.key.starts_with(&prefix)
+                    || signatures.get(&entry.key[prefix.len()..]) == Some(&entry.signature)
+            },
+            budget,
+        )
+    }
+
+    #[cfg(all(unix, feature = "rendering"))]
+    pub(crate) fn profile_page_count(&self, owner: &str) -> usize {
+        let prefix = format!("{owner}:");
+        self.retained_tabs
+            .iter()
+            .filter(|entry| entry.key.starts_with(&prefix))
+            .count()
+    }
+
+    pub(super) fn observe_profile_target(&mut self, reply: &Value) -> Result<()> {
+        match reply["method"].as_str() {
+            Some("Target.targetCreated" | "Target.targetInfoChanged") => {
+                let info = &reply["params"]["targetInfo"];
+                if info["type"] == "page"
+                    && let Some(owner) = info["openerId"]
+                        .as_str()
+                        .and_then(|opener| self.profile_targets.get(opener))
+                        .cloned()
+                {
+                    self.profile_targets
+                        .insert(identifier(info, "targetId")?, owner);
+                }
+            }
+            Some("Target.targetDestroyed") => {
+                if let Some(target) = reply["params"]["targetId"].as_str() {
+                    self.profile_targets.remove(target);
+                }
+            }
+            _ => {}
+        }
+        let Some(owner) = reply["id"]
+            .as_u64()
+            .and_then(|id| self.pending_profile_targets.remove(&id))
+        else {
+            return Ok(());
+        };
+        if reply.get("error").is_some() {
+            return Ok(());
+        }
+        match identifier(&reply["result"], "targetId") {
+            Ok(target) => {
+                self.profile_targets.insert(target, owner);
+                Ok(())
+            }
+            Err(error) => {
+                self.profile_target_fault = true;
+                Err(error)
+            }
+        }
+    }
+
+    fn create_profile_target(&mut self, options: Value, budget: &Budget<'_>) -> Result<Value> {
+        budget.check()?;
+        let id = self.next_id + 1;
+        if let Some(owner) = &self.active_profile_owner {
+            self.pending_profile_targets.insert(id, owner.clone());
+        }
+        let result = self.command(None, "Target.createTarget", options, budget);
+        if self.next_id < id {
+            self.pending_profile_targets.remove(&id);
+        }
+        result
+    }
+
+    fn close_profile_target(&mut self, target: &str, budget: &Budget<'_>) -> Result<()> {
+        if !self.profile_targets.contains_key(target) {
+            return Ok(());
+        }
+        let info = self.command(None, "Target.getTargets", json!({}), budget)?;
+        let entries = info["targetInfos"]
+            .as_array()
+            .ok_or_else(|| failed("Cannot observe owned browser targets"))?;
+        let mut owned = BTreeSet::from([target.to_owned()]);
+        loop {
+            let before = owned.len();
+            for entry in entries {
+                if entry["openerId"]
+                    .as_str()
+                    .is_some_and(|opener| owned.contains(opener))
+                {
+                    owned.insert(identifier(entry, "targetId")?);
+                }
+            }
+            if owned.len() == before {
+                break;
+            }
+        }
+        let present = entries
+            .iter()
+            .filter_map(|entry| entry["targetId"].as_str())
+            .collect::<BTreeSet<_>>();
+        owned.remove(target);
+        for child in owned.into_iter().chain(std::iter::once(target.to_owned())) {
+            if present.contains(child.as_str())
+                && let Err(error) = self.command(
+                    None,
+                    "Target.closeTarget",
+                    json!({"targetId":child}),
+                    budget,
+                )
+            {
+                let current = self.command(None, "Target.getTargets", json!({}), budget)?;
+                if current["targetInfos"]
+                    .as_array()
+                    .is_none_or(|entries| entries.iter().any(|entry| entry["targetId"] == child))
+                {
+                    return Err(error);
+                }
+            }
+            self.profile_targets.remove(&child);
+        }
+        Ok(())
+    }
+
     /// A deliberate login keeps its page open until the user closes the browser
     /// or the shared deadline/cancellation ends it. Credentials remain on disk.
     pub fn login(&mut self, url: &str, budget: &Budget<'_>) -> Result<()> {
@@ -134,11 +323,33 @@ impl Browser {
         }
         let reused = previous.is_some();
         if retained.is_some() && !reused {
-            while self.retained_tabs.len() >= MAX_RETAINED_PAGES {
+            // Shared profiles have an independent LRU for every frontend.
+            // Anonymous runtimes retain their original eight-page limit.
+            let prefix = self
+                .active_profile_owner
+                .as_ref()
+                .map(|owner| format!("{owner}:"));
+            let owned = |entry: &RetainedTab| {
+                prefix
+                    .as_ref()
+                    .is_none_or(|prefix| entry.key.starts_with(prefix))
+            };
+            while self
+                .retained_tabs
+                .iter()
+                .filter(|entry| owned(entry))
+                .count()
+                >= MAX_RETAINED_PAGES
+            {
+                let position = self
+                    .retained_tabs
+                    .iter()
+                    .position(&owned)
+                    .expect("retained context bound");
                 let evicted = self
                     .retained_tabs
-                    .pop_front()
-                    .expect("retained context bound");
+                    .remove(position)
+                    .expect("owned retained context");
                 self.dispose_tab(evicted.tab)?;
             }
         }
@@ -236,7 +447,7 @@ impl Browser {
                 target_options["browserContextId"] = context.clone().into();
             }
             self.command(None, "Browser.setDownloadBehavior", download, budget)?;
-            let target = self.command(None, "Target.createTarget", target_options, budget)?;
+            let target = self.create_profile_target(target_options, budget)?;
             let target = identifier(&target, "targetId")?;
             created_target = Some(target.clone());
             let attached = self.command(
@@ -282,12 +493,16 @@ impl Browser {
             ),
             None => ("Target.closeTarget", json!({"targetId":tab.target})),
         };
-        let disposed = self.command(
-            None,
-            method,
-            options,
-            &Budget::new(Duration::from_millis(500), None),
-        );
+        let disposed = if self.profile_targets.contains_key(&tab.target) {
+            self.close_profile_target(&tab.target, &Budget::new(Duration::from_millis(500), None))
+        } else {
+            self.command(
+                None,
+                method,
+                options,
+                &Budget::new(Duration::from_millis(500), None),
+            )
+        };
         self.local_files.remove(&tab.session);
         self.page_lifecycle.remove(&tab.session);
         disposed.map(|_| ())

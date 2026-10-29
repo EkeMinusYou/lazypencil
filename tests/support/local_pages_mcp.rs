@@ -21,7 +21,7 @@ fn pixels(bytes: &[u8], color: skia_safe::Color) {
     }
 }
 
-fn capture(client: &mut Client, document: &Value, refresh: bool) -> (Vec<u8>, Value) {
+pub(super) fn capture(client: &mut Client, document: &Value, refresh: bool) -> (Vec<u8>, Value) {
     let result=client.call("render",json!({"expected_revision":document["revision"],"expected_dependency_revision":document["dependency_revision"],"refresh":refresh}));
     assert_ne!(result["isError"], true, "{result}");
     let image = result["content"]

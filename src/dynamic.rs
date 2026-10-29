@@ -19,9 +19,11 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio_util::sync::CancellationToken;
+pub(crate) mod acquisition;
 mod pages;
 mod preprocessor;
 mod shader;
+use acquisition::PageAcquisition;
 use pages::{PageInput, page_url};
 
 #[derive(Clone)]
@@ -52,6 +54,8 @@ pub struct DynamicRuntime {
     page_scope: Option<String>,
     page_snapshot: Option<String>,
     pages: Option<Browser>,
+    #[cfg(unix)]
+    shared_pages: Option<crate::runtime::profiles::pages::Client>,
     shaders: Option<Browser>,
     page_used: Option<Instant>,
     shader_used: Option<Instant>,
@@ -74,6 +78,8 @@ impl DynamicRuntime {
             page_scope: None,
             page_snapshot: None,
             pages: None,
+            #[cfg(unix)]
+            shared_pages: None,
             shaders: None,
             page_used: None,
             shader_used: None,
@@ -90,6 +96,8 @@ impl DynamicRuntime {
     pub fn with_executable(mut self, path: impl Into<PathBuf>) -> Self {
         self.shaders.take();
         self.pages.take();
+        #[cfg(unix)]
+        self.shared_pages.take();
         self.page_used = None;
         self.shader_used = None;
         self.cache.clear();
@@ -108,6 +116,8 @@ impl DynamicRuntime {
         let scope = hash(document.as_os_str().as_encoded_bytes());
         if self.page_scope.as_ref() != Some(&scope) {
             self.pages.take();
+            #[cfg(unix)]
+            self.shared_pages.take();
             self.page_used = None;
             self.cache.clear();
             self.cache_order.clear();
@@ -146,7 +156,7 @@ impl DynamicRuntime {
         // still reuse the same captured layout and cache.
         self.cache.clear();
         self.cache_order.clear();
-        if self.pages.is_some() {
+        if self.has_pages() {
             let mut signatures = BTreeMap::new();
             for item in snapshot
                 .items
@@ -175,6 +185,10 @@ impl DynamicRuntime {
                 None => Ok(()),
             };
             result.map_err(|error| budget.check().err().unwrap_or(error))?;
+            #[cfg(unix)]
+            if let Some(client) = self.shared_pages.as_mut() {
+                client.retain(&signatures, &budget)?;
+            }
         }
         self.page_snapshot = Some(snapshot.id.clone());
         Ok(())
@@ -187,6 +201,8 @@ impl DynamicRuntime {
             || self.browser_settings.profile != settings.browser.profile
         {
             self.pages.take();
+            #[cfg(unix)]
+            self.shared_pages.take();
             self.page_used = None;
         }
         if self.browser_settings != settings.browser
@@ -224,21 +240,44 @@ impl DynamicRuntime {
     }
     /// The owned Chromium child IDs, for runtime diagnostics.
     pub fn process_ids(&self) -> Vec<u32> {
-        [self.pages.as_ref(), self.shaders.as_ref()]
+        let ids = [self.pages.as_ref(), self.shaders.as_ref()]
             .into_iter()
             .flatten()
             .map(Browser::process_id)
-            .collect()
+            .collect::<Vec<_>>();
+        #[cfg(unix)]
+        let ids = ids
+            .into_iter()
+            .chain(
+                self.shared_pages
+                    .as_ref()
+                    .and_then(|client| client.process_id()),
+            )
+            .collect();
+        ids
     }
     /// Number of live page contexts retained by this runtime for diagnostics.
     pub fn retained_page_count(&self) -> usize {
-        self.pages.as_ref().map_or(0, Browser::retained_page_count)
+        let count = self.pages.as_ref().map_or(0, Browser::retained_page_count);
+        #[cfg(unix)]
+        let count = count
+            + self
+                .shared_pages
+                .as_ref()
+                .map_or(0, |client| client.retained_count());
+        count
+    }
+    fn has_pages(&self) -> bool {
+        let present = self.pages.is_some();
+        #[cfg(unix)]
+        let present = present || self.shared_pages.is_some();
+        present
     }
     /// Page and shader processes expire independently; cached rasters remain valid.
     pub fn idle_deadline(&self) -> Option<Instant> {
         [
             (
-                self.pages.as_ref().and(self.page_used),
+                self.has_pages().then_some(self.page_used).flatten(),
                 self.browser_settings.idle_seconds,
             ),
             (
@@ -251,6 +290,15 @@ impl DynamicRuntime {
         .min()
     }
     pub fn expire_idle(&mut self, now: Instant) {
+        #[cfg(unix)]
+        if self.shared_pages.is_some()
+            && self.page_used.is_some_and(|used| {
+                used + Duration::from_secs(self.browser_settings.idle_seconds) <= now
+            })
+        {
+            self.shared_pages.take();
+            self.page_used = None;
+        }
         for (slot, used, seconds) in [
             (
                 &mut self.pages,
@@ -324,6 +372,44 @@ impl DynamicRuntime {
             )?);
         }
         Ok(slot.as_mut().expect("browser initialized"))
+    }
+    #[cfg(unix)]
+    fn shared_page_client(
+        &mut self,
+        operation: &Budget<'_>,
+    ) -> Result<&mut crate::runtime::profiles::pages::Client> {
+        if self.shared_pages.is_none() {
+            let duration =
+                self.remaining()?
+                    .min(operation.remaining()?)
+                    .min(Duration::from_millis(
+                        self.browser_settings.launch_timeout_ms,
+                    ));
+            let budget = Budget::new(duration, self.cancel.as_ref());
+            let browser = if let Some(path) = &self.executable {
+                crate::runtime::InstalledBrowser {
+                    executable: crate::paths::canonical(path)?,
+                    version: "external-unverified".into(),
+                    platform: crate::runtime::platform()?.into(),
+                }
+            } else {
+                crate::runtime::installed(&self.data)?
+            };
+            let profile = crate::runtime::profiles::Profile::open(
+                &self.data,
+                &self.browser_settings.profile,
+            )?;
+            self.shared_pages = Some(crate::runtime::profiles::pages::Client::connect(
+                &profile,
+                &browser,
+                self.supervisor.as_deref(),
+                &budget,
+            )?);
+        }
+        Ok(self
+            .shared_pages
+            .as_mut()
+            .expect("profile client initialized"))
     }
     fn remaining(&self) -> Result<Duration> {
         Duration::from_millis(self.settings.render_timeout_ms)
@@ -409,9 +495,8 @@ impl DynamicRuntime {
             return Err(page_error("Page scroll offsets must be nonnegative"));
         }
         let device = node.properties.get("deviceId").and_then(Value::as_str);
-        let mobile = match device {
-            None | Some("desktop") => false,
-            Some("phone" | "tablet") => true,
+        match device {
+            None | Some("desktop" | "phone" | "tablet") => {}
             _ => {
                 return Err(Error::new(
                     "UNSUPPORTED_FEATURE",
@@ -419,8 +504,7 @@ impl DynamicRuntime {
                 ));
             }
         };
-        let (pixel_width, pixel_height) =
-            dimensions(width as f64 * scale as f64, height as f64 * scale as f64)?;
+        dimensions(width as f64 * scale as f64, height as f64 * scale as f64)?;
         let request = json!({"url":url,"width":width,"height":height,"scale":scale,"zoom":zoom,"scroll_x":scroll_x,"scroll_y":scroll_y,"device":device,"resources":input.identity});
         let identity = self.page_identity(node);
         let signature = input.signature(node)?;
@@ -438,92 +522,34 @@ impl DynamicRuntime {
         {
             return Ok(cached);
         }
+        let request = PageAcquisition {
+            url: url.to_owned(),
+            width,
+            height,
+            scale,
+            zoom,
+            scroll_x,
+            scroll_y,
+            device: device.map(str::to_owned),
+            settings: self.browser_settings.clone(),
+            dynamic: self.settings,
+            retained: identity.map(|key| (key, signature)),
+            resources: input.resources.map(|resources| resources.files),
+            resource_identity: input.identity,
+        };
         let cancel = self.cancel.clone();
-        let limits = json!({"browser":self.browser_settings,"dynamic":self.settings});
-        let wait_until = self.browser_settings.wait_until;
-        let ready_selector = self.browser_settings.ready_selector.clone();
-        let selector_state = self.browser_settings.selector_state;
-        let additional_wait_ms = self.browser_settings.additional_wait_ms;
-        let animation_policy = self.browser_settings.animation_policy;
-        let network_policy = self.browser_settings.network_policy;
-        let load_condition = if wait_until == PageWaitUntil::NetworkIdle {
-            "load, main-frame networkIdle lifecycle"
-        } else {
-            "load"
-        };
-        let selector_condition = match (ready_selector.is_empty(), selector_state) {
-            (true, _) => "",
-            (false, PageSelectorState::Attached) => ", attached CSS selector",
-            (false, PageSelectorState::Visible) => ", visible CSS selector",
-        };
-        let extra_condition = if additional_wait_ms == 0 {
-            String::new()
-        } else {
-            format!(", additional wait {additional_wait_ms}ms")
-        };
-        let animation_condition =
-            if animation_policy == crate::config::runtime::PageAnimationPolicy::Paused {
-                ", paused document animations"
-            } else {
-                ""
-            };
-        let ready_condition = format!(
-            "{load_condition}{selector_condition}{extra_condition}{animation_condition}, fonts, decoded images, two animation frames"
-        );
         let duration = self
             .remaining()?
             .min(Duration::from_millis(self.browser_settings.timeout_ms));
         let budget = Budget::new(duration, cancel.as_ref());
-        let browser = self.browser(Purpose::Page, &budget)?;
-        let version = browser.version.clone();
-        let retained = identity.as_deref().map(|key| (key, signature.as_str()));
-        let result=browser.with_page(retained,&budget,|browser,session,page_state| {
-            browser.command(Some(session),"Page.enable",json!({}),&budget)?;
-            if !page_state.reused && let Some(resources)=&input.resources {
-                browser.intercept_local_files(session,resources.files.clone(),&budget)?;
-            }
-            if page_state.retained {
-                browser.command(Some(session),"Page.bringToFront",json!({}),&budget)?;
-            }
-            if wait_until == PageWaitUntil::NetworkIdle {
-                browser.watch_page_idle(session, &budget)?;
-            }
-            browser.command(Some(session),"Emulation.setDeviceMetricsOverride",json!({"width":width.ceil().max(1.0) as u32,"height":height.ceil().max(1.0) as u32,"deviceScaleFactor":scale,"mobile":mobile}),&budget)?;
-            browser.command(Some(session),"Emulation.setTouchEmulationEnabled",json!({"enabled":mobile}),&budget)?;
-            let navigation=if page_state.reused { Value::Null } else { browser.command(Some(session),"Page.navigate",json!({"url":url}),&budget)? };
-            if navigation.get("errorText").is_some() { return Err(navigation_error(&navigation)); }
-            loop {
-                let frame=browser.command(Some(session),"Page.getFrameTree",json!({}),&budget)?;
-                crate::cdp::check_network_frame(network_policy,&frame["frameTree"]["frame"])?;
-                let committed=navigation.get("loaderId").is_none_or(|loader| frame["frameTree"]["frame"]["loaderId"]==*loader);
-                let idle = wait_until == PageWaitUntil::Load || browser.page_is_idle(session, &frame["frameTree"]["frame"]);
-                if committed && idle && browser.evaluate(session,"document.readyState === 'complete'",&budget)?==true { break; }
-                std::thread::sleep(Duration::from_millis(20));budget.check()?;
-            }
-            browser.command(Some(session),"Emulation.setPageScaleFactor",json!({"pageScaleFactor":zoom}),&budget)?;
-            browser.wait_for_selector(session, &ready_selector, selector_state, (scroll_x,scroll_y), &budget)?;
-            browser.wait_before_capture(session, Duration::from_millis(additional_wait_ms), &budget)?;
-            if animation_policy == crate::config::runtime::PageAnimationPolicy::Paused {
-                browser.set_page_animation_policy(session, animation_policy, &budget)?;
-            }
-            let expression=format!("(async()=>{{await document.fonts.ready;await Promise.all([...document.images].map(image=>image.decode()));window.scrollTo({{left:{scroll_x},top:{scroll_y},behavior:'instant'}});await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));return {{url:window.location.href,scrollX:window.scrollX,scrollY:window.scrollY}};}})()");
-            let state=browser.evaluate(session,&expression,&budget)?;
-            if let Some(url)=state["url"].as_str() {
-                crate::cdp::check_network_navigation(network_policy,url)?;
-            }
-            let screenshot=browser.command(Some(session),"Page.captureScreenshot",json!({"format":"png","fromSurface":true,"captureBeyondViewport":false}),&budget)?;
-            let png=base64::engine::general_purpose::STANDARD.decode(screenshot["data"].as_str().ok_or_else(|| page_error("No page image was returned"))?).map_err(|_| page_error("Invalid page PNG encoding"))?;
-            let mut metadata=json!({"kind":"browser","acquisition_id":uuid::Uuid::new_v4().to_string(),"requested_url":redacted_url(url),"url_hash":hash(url.as_bytes()),
-                "final_url":state["url"].as_str().map(redacted_url),"browser_version":version,"viewport_width":width,"viewport_height":height,"pixel_width":pixel_width,"pixel_height":pixel_height,
-                "scale":scale,"zoom":zoom,"scroll_x":state["scrollX"],"scroll_y":state["scrollY"],"device_id":device,
-                "wait_until":wait_until,"ready_selector":ready_selector,"selector_state":selector_state,"additional_wait_ms":additional_wait_ms,"animation_policy":animation_policy,"network_policy":network_policy,"ready_condition":ready_condition,"acquired_at":timestamp(),"png_hash":hash(&png),"limits":limits,"page_state":page_state});
-            if let Some(identity)=&input.identity {
-                metadata["resources"]=identity.clone();
-                metadata["local_files"]=serde_json::to_value(browser.local_file_stats(session)
-                    .ok_or_else(||page_error("Local browser resource session is missing"))?).expect("local resource statistics");
-            }
-            checked_png(png,metadata)
-        });
+        #[cfg(unix)]
+        let result = if !self.browser_settings.profile.is_empty() {
+            self.shared_page_client(&budget)?.page(request, &budget)
+        } else {
+            request.acquire(self.browser(Purpose::Page, &budget)?, &budget)
+        };
+        #[cfg(not(unix))]
+        let result = request.acquire(self.browser(Purpose::Page, &budget)?, &budget);
         self.page_used = Some(Instant::now());
         let result = result
             .map_err(|error| budget.check().err().unwrap_or(error))
@@ -624,7 +650,7 @@ pub fn dimensions(width: f64, height: f64) -> Result<(u32, u32)> {
     }
     Ok((width.ceil() as u32, height.ceil() as u32))
 }
-fn checked_png(png: Vec<u8>, mut metadata: Value) -> Result<Raster> {
+pub(crate) fn checked_png(png: Vec<u8>, mut metadata: Value) -> Result<Raster> {
     if png.len() > 32 * 1024 * 1024 || !png.starts_with(b"\x89PNG\r\n\x1a\n") {
         return Err(page_error("Dynamic PNG is invalid or exceeds 32 MiB"));
     }

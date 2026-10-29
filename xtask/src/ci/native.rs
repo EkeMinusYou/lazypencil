@@ -549,6 +549,15 @@ impl Session {
             }
             Stage::FocusReproduce => {
                 let separate_core = self.separate_core()?;
+                if args.suite == "dynamic" && has("mcp") {
+                    self.test(
+                        true,
+                        "lib",
+                        "runtime::profiles::pages::wire::tests::",
+                        &["--test-threads=2"],
+                        "focus-profile-channel.log",
+                    )?;
+                }
                 if !core && has("font_sources") {
                     self.test(
                         true,
@@ -1203,10 +1212,17 @@ impl Session {
         let catalog = self.verified_catalog(&["mcp", "agent"])?;
         let mut failures = Vec::new();
         for test in [
+            "shared_profiles::",
             "real_mcp_shader_assets_uniform_edits_and_browser_refresh_return_image_content",
             "local_pages::real_mcp_and_cli_local_pages_declare_edit_pack_and_render_after_source_removal",
         ] {
-            if let Err(error) = self.mcp_check(&catalog, "mcp", test, true, "chromium-mcp.log") {
+            if let Err(error) = self.mcp_check(
+                &catalog,
+                "mcp",
+                test,
+                test != "shared_profiles::",
+                "chromium-mcp.log",
+            ) {
                 failures.push(format!("{test}: {error:#}"));
             }
         }

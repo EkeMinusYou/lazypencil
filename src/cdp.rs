@@ -14,6 +14,8 @@ use tokio_util::sync::CancellationToken;
 use tungstenite::{Message, WebSocket};
 
 mod connection;
+#[cfg(all(unix, feature = "rendering"))]
+pub(crate) use connection::Transport as BudgetStream;
 mod diagnostics;
 mod lifecycle;
 mod local_files;
@@ -46,6 +48,10 @@ pub struct Browser {
     local_files: local_files::Interception,
     purpose: Purpose,
     persistent_profile: bool,
+    profile_targets: BTreeMap<String, String>,
+    pending_profile_targets: BTreeMap<u64, String>,
+    profile_target_fault: bool,
+    active_profile_owner: Option<String>,
     deny_proxy: Option<network::DenyProxy>,
     _profile: Option<tempfile::TempDir>,
 }
@@ -304,6 +310,10 @@ impl Browser {
             local_files: local_files::Interception::default(),
             purpose,
             persistent_profile: selected_profile.is_some(),
+            profile_targets: BTreeMap::new(),
+            pending_profile_targets: BTreeMap::new(),
+            profile_target_fault: false,
+            active_profile_owner: None,
             deny_proxy,
             _profile: profile,
         };
@@ -324,9 +334,21 @@ impl Browser {
             budget.check()?;
             match self.socket.read() {
                 Ok(Message::Text(text)) => {
-                    budget.check()?;
-                    let value: Value =
-                        serde_json::from_str(&text).map_err(|_| failed("Invalid CDP JSON"))?;
+                    // A small create-target reply can acknowledge owned work
+                    // at the cancellation boundary. Record that target before
+                    // returning cancellation so one owner's cleanup can find it.
+                    if (self.pending_profile_targets.is_empty() || text.len() > 4096)
+                        && let Err(error) = budget.check()
+                    {
+                        return Err(error);
+                    }
+                    let value: Value = serde_json::from_str(&text).map_err(|_| {
+                        budget
+                            .check()
+                            .err()
+                            .unwrap_or_else(|| failed("Invalid CDP JSON"))
+                    })?;
+                    self.observe_profile_target(&value)?;
                     budget.check()?;
                     if let Some(lifecycle) = value["sessionId"]
                         .as_str()

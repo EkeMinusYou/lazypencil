@@ -11,14 +11,47 @@ use std::{
 use tokio_util::sync::CancellationToken;
 use tungstenite::{WebSocket, protocol::WebSocketConfig};
 
-pub(super) struct Transport {
-    stream: TcpStream,
+pub(crate) trait Socket: Read + Write {
+    fn read_timeout(&self, duration: Duration) -> io::Result<()>;
+    fn write_timeout(&self, duration: Duration) -> io::Result<()>;
+}
+
+impl Socket for TcpStream {
+    fn read_timeout(&self, duration: Duration) -> io::Result<()> {
+        self.set_read_timeout(Some(duration))
+    }
+    fn write_timeout(&self, duration: Duration) -> io::Result<()> {
+        self.set_write_timeout(Some(duration))
+    }
+}
+
+#[cfg(all(unix, feature = "rendering"))]
+impl Socket for std::os::unix::net::UnixStream {
+    fn read_timeout(&self, duration: Duration) -> io::Result<()> {
+        self.set_read_timeout(Some(duration))
+    }
+    fn write_timeout(&self, duration: Duration) -> io::Result<()> {
+        self.set_write_timeout(Some(duration))
+    }
+}
+
+pub(crate) struct Transport<S: Socket = TcpStream> {
+    stream: S,
     end: Instant,
     cancel: Option<CancellationToken>,
 }
 
-impl Transport {
-    pub(super) fn set_budget(&mut self, budget: &Budget<'_>) {
+impl<S: Socket> Transport<S> {
+    #[cfg(all(unix, feature = "rendering"))]
+    pub(crate) fn new(stream: S, budget: &Budget<'_>) -> Self {
+        Self {
+            stream,
+            end: budget.end,
+            cancel: budget.cancel.cloned(),
+        }
+    }
+
+    pub(crate) fn set_budget(&mut self, budget: &Budget<'_>) {
         self.end = budget.end;
         self.cancel = budget.cancel.cloned();
     }
@@ -44,10 +77,10 @@ impl Transport {
     }
 }
 
-impl Read for Transport {
+impl<S: Socket> Read for Transport<S> {
     fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
         loop {
-            self.stream.set_read_timeout(Some(self.remaining()?))?;
+            self.stream.read_timeout(self.remaining()?)?;
             match self.stream.read(bytes) {
                 Err(error) if pending(&error) => continue,
                 result => return result,
@@ -56,10 +89,10 @@ impl Read for Transport {
     }
 }
 
-impl Write for Transport {
+impl<S: Socket> Write for Transport<S> {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         loop {
-            self.stream.set_write_timeout(Some(self.remaining()?))?;
+            self.stream.write_timeout(self.remaining()?)?;
             match self.stream.write(bytes) {
                 Err(error) if pending(&error) => continue,
                 result => return result,

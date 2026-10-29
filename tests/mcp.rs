@@ -15,6 +15,10 @@ mod fixture_support;
 #[path = "support/local_pages_mcp.rs"]
 mod local_pages;
 
+#[cfg(all(feature = "rendering", any(target_os = "linux", target_os = "macos")))]
+#[path = "support/shared_profiles_mcp.rs"]
+mod shared_profiles;
+
 struct Client {
     child: Child,
     input: Option<ChildStdin>,

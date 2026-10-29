@@ -2,6 +2,19 @@ use clap::{CommandFactory, FromArgMatches};
 use std::{io::Write, process::ExitCode};
 
 fn main() -> ExitCode {
+    #[cfg(all(unix, feature = "rendering"))]
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|argument| argument == "__profile_page_worker")
+    {
+        return match lazypencil::runtime::profiles::serve_page_worker() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("{error}");
+                ExitCode::from(error.exit_code())
+            }
+        };
+    }
     if std::env::args_os()
         .nth(1)
         .is_some_and(|argument| argument == "__runtime_download_worker")

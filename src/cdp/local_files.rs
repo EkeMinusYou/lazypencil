@@ -29,6 +29,12 @@ pub struct LocalFiles {
 }
 
 impl LocalFiles {
+    #[cfg(all(unix, feature = "rendering"))]
+    pub(crate) fn entries(&self) -> impl Iterator<Item = (&str, Option<&str>, &[u8])> {
+        self.files
+            .iter()
+            .map(|(url, file)| (url.as_str(), file.mime.as_deref(), file.bytes.as_ref()))
+    }
     pub fn new<B: Into<Arc<[u8]>>>(
         files: impl IntoIterator<Item = (String, String, B)>,
     ) -> Result<Self> {
