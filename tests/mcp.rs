@@ -18,41 +18,50 @@ mod http_image_reference;
 #[cfg(unix)]
 #[test]
 fn http_image_metadata_cancellation_reaps_worker_and_unblocks_document_access() {
-    let temp = TempDir::new().unwrap();
-    let server = http_image_reference::Server::new();
-    let file = temp.path().join("image.pen");
-    fs::write(&file, json!({"version":"2.21","children":[{"id":"image","type":"rectangle","width":16,"height":16,"fill":{"type":"image","url":format!("http://{}/network/http-image/blocked.png", server.address)}}]}).to_string()).unwrap();
-    let mut client = Client::start(&file, &temp.path().join("data"));
-    let request = client.start_request("tools/call", json!({"name":"get_document","arguments":{}}));
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while server.network_counts().0 == 0 {
-        assert!(
-            Instant::now() < deadline,
-            "Metadata did not start the actual HTTP request"
+    for (tool, arguments) in [
+        ("get_document", json!({})),
+        ("get_guidance", json!({"id":"start"})),
+        ("list_styles", json!({"limit":1})),
+        ("get_style", json!({"id":"standard-ui"})),
+        ("read_asset", json!({"hash":"0".repeat(64)})),
+    ] {
+        let temp = TempDir::new().unwrap();
+        let server = http_image_reference::Server::new();
+        let file = temp.path().join("image.pen");
+        fs::write(&file, json!({"version":"2.21","children":[{"id":"image","type":"rectangle","width":16,"height":16,"fill":{"type":"image","url":format!("http://{}/network/http-image/blocked.png", server.address)}}]}).to_string()).unwrap();
+        let mut client = Client::start(&file, &temp.path().join("data"));
+        let request =
+            client.start_request("tools/call", json!({"name":tool,"arguments":arguments}));
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while server.network_counts().0 == 0 {
+            assert!(
+                Instant::now() < deadline,
+                "{tool} did not start the actual HTTP request"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let workers = fixture_support::child_pids(client.child.id());
+        assert_eq!(workers.len(), 1);
+        let repaired = json!({"version":"2.21","children":[{"id":"image","type":"rectangle","width":16,"height":16,"fill":"#00ff00"}]}).to_string();
+        fs::write(&file, &repaired).unwrap();
+        client.send(json!({"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":request,"reason":"cancel metadata image capture"}}));
+        let next = client.data("get_document", json!({}));
+        assert_eq!(next["assets_complete"], true);
+        assert_eq!(
+            next["revision"],
+            lazypencil::document::hash(repaired.as_bytes())
         );
-        std::thread::sleep(Duration::from_millis(5));
+        assert_eq!(
+            unsafe { libc::kill(workers[0] as i32, 0) },
+            -1,
+            "Cancelled metadata retained its HTTP worker"
+        );
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ESRCH)
+        );
+        client.finish();
     }
-    let workers = fixture_support::child_pids(client.child.id());
-    assert_eq!(workers.len(), 1);
-    let repaired = json!({"version":"2.21","children":[{"id":"image","type":"rectangle","width":16,"height":16,"fill":"#00ff00"}]}).to_string();
-    fs::write(&file, &repaired).unwrap();
-    client.send(json!({"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":request,"reason":"cancel metadata image capture"}}));
-    let next = client.data("get_document", json!({}));
-    assert_eq!(next["assets_complete"], true);
-    assert_eq!(
-        next["revision"],
-        lazypencil::document::hash(repaired.as_bytes())
-    );
-    assert_eq!(
-        unsafe { libc::kill(workers[0] as i32, 0) },
-        -1,
-        "Cancelled metadata retained its HTTP worker"
-    );
-    assert_eq!(
-        std::io::Error::last_os_error().raw_os_error(),
-        Some(libc::ESRCH)
-    );
-    client.finish();
 }
 
 #[cfg(all(feature = "rendering", any(target_os = "linux", target_os = "macos")))]

@@ -231,6 +231,10 @@ fn main() -> ExitCode {
             | lazypencil::cli::Command::Inspect(_)
             | lazypencil::cli::Command::Validate(_)
             | lazypencil::cli::Command::Variables(_)
+            | lazypencil::cli::Command::Guidance { .. }
+            | lazypencil::cli::Command::Styles { .. }
+            | lazypencil::cli::Command::Style { .. }
+            | lazypencil::cli::Command::Fonts { .. }
             | lazypencil::cli::Command::Config { .. }
             | lazypencil::cli::Command::Layout(_)
             | lazypencil::cli::Command::Apply(_)

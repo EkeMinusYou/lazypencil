@@ -518,20 +518,25 @@ impl DocumentWorker {
             "list_icons" => crate::icons::list(self.store.data_dir(), &parse(arguments)?)?,
             "get_guidance" => {
                 let args: GuideArgs = parse(arguments)?;
-                service::project_guidance(&self.store, args.id.as_deref())?
+                service::project_guidance_with_cancellation(
+                    &self.store,
+                    args.id.as_deref(),
+                    Some(cancel),
+                )?
             }
             "list_styles" => {
                 let args: StylesArgs = parse(arguments)?;
-                service::project_styles(
+                service::project_styles_with_cancellation(
                     &self.store,
                     args.use_case.as_deref(),
                     args.limit,
                     args.cursor.as_deref(),
+                    Some(cancel),
                 )?
             }
             "get_style" => {
                 let args: StyleArgs = parse(arguments)?;
-                service::project_style(&self.store, &args.id)?
+                service::project_style_with_cancellation(&self.store, &args.id, Some(cancel))?
             }
             "get_document" => {
                 let _: Empty = parse(arguments)?;
@@ -1150,7 +1155,7 @@ mod tests {
         );
         let large = " ".repeat(1024 * 1024 + 1);
         std::fs::write(temp.path().join("nested.js"), &large).unwrap();
-        let mut project = worker.project().unwrap();
+        let mut project = worker.project(None).unwrap();
         let declared = project.dependencies();
         let owner = project.resolve().unwrap().roots.remove(0);
         project

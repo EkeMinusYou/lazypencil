@@ -15,7 +15,10 @@ mod validation;
 pub use crate::project::VariablesRequest;
 #[cfg(feature = "rendering")]
 pub use calculated_nodes::{read_calculated_nodes, validate_calculated_nodes_request};
-pub use guidance::{project_design_start, project_guidance, project_style, project_styles};
+pub use guidance::{
+    project_design_start, project_guidance, project_guidance_with_cancellation, project_style,
+    project_style_with_cancellation, project_styles, project_styles_with_cancellation,
+};
 #[cfg(feature = "rendering")]
 pub use validation::validation_from_snapshot;
 pub use validation::{ValidateRequest, ValidationScope, validate_document_with_options};
