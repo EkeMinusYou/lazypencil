@@ -67,16 +67,16 @@ pub(super) fn selection(parent: &Bound, node: &Value) -> Result<Option<Selection
 fn known_variables(bound: &Bound, value: &mut Value) {
     match value {
         Value::String(text) => {
-            if let Some(name) = text.strip_prefix('$') {
-                if let Some(target) = bound.values.variables.get(name).or_else(|| {
+            if let Some(name) = text.strip_prefix('$')
+                && let Some(target) = bound.values.variables.get(name).or_else(|| {
                     bound
                         .values
                         .variables
                         .values()
                         .find(|target| target.as_str() == name)
-                }) {
-                    *text = format!("${target}");
-                }
+                })
+            {
+                *text = format!("${target}");
             }
         }
         Value::Array(values) => {
