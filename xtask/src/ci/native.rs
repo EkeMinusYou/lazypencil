@@ -553,9 +553,9 @@ impl Session {
                     self.test(
                         !core,
                         "repair",
-                        "librar",
+                        "",
                         &["--test-threads=2"],
-                        "focus-library-repair.log",
+                        "focus-asset-repair.log",
                     )?;
                 }
                 if args.suite == "dynamic" && has("mcp") {

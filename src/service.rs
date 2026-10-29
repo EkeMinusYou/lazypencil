@@ -451,7 +451,7 @@ pub fn document_metadata_with_fonts(
     result["path"] = json!(store.path());
     result["capabilities"] = json!({
         "schema":document.version(),"supported_schemas":crate::document::SUPPORTED_DOCUMENT_VERSIONS,"default_schema":crate::document::DOCUMENT_VERSION,"rendering":cfg!(feature="rendering"),"dynamic_content":false,
-        "asset_repair":{"declared_images_and_code":true,"declared_libraries":true,"max_missing_references":1024,"allow_new_missing":false,"restore_reports_missing":true},
+        "asset_repair":{"declared_images_and_code":true,"declared_libraries":true,"configured_font_diagnostics":true,"max_missing_references":1024,"allow_new_missing":false,"restore_reports_missing":true},
         "instance_overrides":true,"managed_assets":true,"attachments":false,
         "variables":{"resolved_values":true,"sources":true,"node_theme_context":true,"property_namespace":true,"pagination":true},
         "node_reads":{"calculated":cfg!(feature="rendering"),"generated":cfg!(feature="rendering"),"snapshot_reuse":cfg!(feature="rendering")},

@@ -763,6 +763,75 @@ fn mcp_can_rebind_a_missing_library_and_then_read_the_original_instance() {
 }
 
 #[test]
+fn mcp_missing_user_fonts_allow_edits_and_recover_after_the_declared_file_is_restored() {
+    let (temp, _, data) = fixture();
+    let project = temp.path().join("project");
+    fs::create_dir_all(project.join(".git")).unwrap();
+    let file = project.join("design.pen");
+    fs::write(&file, json!({"version":"2.21","children":[
+        {"id":"label","type":"text","content":"A","fontFamily":"LP Test Sans","fontSize":20,"width":40,"height":30}
+    ]}).to_string()).unwrap();
+    let user = temp.path().join("user");
+    fs::create_dir(&user).unwrap();
+    fs::write(
+        user.join("config.toml"),
+        "[fonts]\nfiles=['fonts/regular.ttf']\n",
+    )
+    .unwrap();
+    let original = fs::read(user.join("config.toml")).unwrap();
+    let mut client = Client::start_with_user_config(&file, &data, None, &[], None, Some(&user));
+    let metadata = client.data("get_document", json!({}));
+    assert_eq!(metadata["assets_complete"], false);
+    assert_eq!(metadata["asset_diagnostics"][0]["kind"], "font");
+    let saved = client.data("apply_operations", json!({"request_id":"edit-missing-font",
+        "expected_revision":metadata["revision"],"expected_dependency_revision":metadata["dependency_revision"],
+        "operations":[{"op":"update","target":"label","set":{"name":"Kept draft"}}]}));
+    assert_eq!(saved["assets_complete"], false);
+    #[cfg(feature = "rendering")]
+    {
+        let fonts = client.call("list_fonts", json!({}));
+        assert_eq!(
+            fonts["structuredContent"]["error"]["code"],
+            "ASSET_NOT_FOUND"
+        );
+        let layout = client.call("get_layout", json!({"expected_revision":saved["revision"],"expected_dependency_revision":saved["dependency_revision"]}));
+        assert_eq!(
+            layout["structuredContent"]["error"]["code"],
+            "ASSET_NOT_FOUND"
+        );
+    }
+    fs::create_dir(user.join("fonts")).unwrap();
+    fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fonts/regular.ttf"),
+        user.join("fonts/regular.ttf"),
+    )
+    .unwrap();
+    let repaired = client.data("get_document", json!({}));
+    assert_eq!(repaired["assets_complete"], true);
+    assert_ne!(
+        repaired["dependency_revision"],
+        saved["dependency_revision"]
+    );
+    #[cfg(feature = "rendering")]
+    {
+        let fonts = client.data("list_fonts", json!({}));
+        assert!(
+            fonts["fonts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|font| font["family"] == "LP Test Sans")
+        );
+    }
+    assert_eq!(fs::read(user.join("config.toml")).unwrap(), original);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&fs::read(&file).unwrap()).unwrap()["children"][0]["fontFamily"],
+        "LP Test Sans"
+    );
+    client.finish();
+}
+
+#[test]
 fn mcp_variable_queries_expose_themed_values_sources_and_bound_pages() {
     let (temp, file, data) = fixture();
     fs::write(temp.path().join("tokens.pen"),json!({"version":"2.21","themes":{"mode":["light","dark"]},

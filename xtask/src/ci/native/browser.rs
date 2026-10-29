@@ -313,6 +313,8 @@ pub fn focus_inputs(s: &Session) -> Result<()> {
 
 const HEADED_LOGIN: &str = "browser_profiles::headed_login_closes_normally_and_preserves_storage_for_the_same_full_browser";
 const HEADED_LOG: &str = "chromium-headed-login.log";
+const PROFILE_STORAGE: &str = "browser_profiles::dedicated_profiles_persist_full_storage_isolate_acquisitions_and_keep_secrets_out_of_metadata";
+const PROFILE_LOG: &str = "chromium-profile-storage.log";
 
 pub(super) struct Prepared {
     catalog: Catalog,
@@ -329,24 +331,28 @@ pub(super) fn prepare(s: &Session) -> Result<Prepared> {
     let required = required_targets();
     let catalog = s.verified_catalog(&required)?;
     let deadline = Instant::now() + Duration::from_secs(1200);
-    // Full Chrome window/profile restoration has its own short render deadline.
-    // Complete it before any other runtime producer starts, keeping the same
-    // test, browser, assertions, and shared browser-suite budget.
-    s.execute(
-        &[
-            catalog.binaries["browser_readiness"]
-                .path
-                .to_string_lossy()
-                .into_owned(),
-            HEADED_LOGIN.into(),
-            "--exact".into(),
-            "--ignored".into(),
-            "--test-threads=1".into(),
-        ],
-        1200,
-        HEADED_LOG,
-        false,
-    )?;
+    // Full Chrome login and persistent-profile restoration include bounded
+    // startup/first-acquisition deadlines. Keep them away from competing
+    // software WebGL/browser producers without changing their own deadlines.
+    for (case, log) in [(HEADED_LOGIN, HEADED_LOG), (PROFILE_STORAGE, PROFILE_LOG)] {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        ensure!(!remaining.is_zero(), "Browser suite deadline exceeded");
+        s.execute(
+            &[
+                catalog.binaries["browser_readiness"]
+                    .path
+                    .to_string_lossy()
+                    .into_owned(),
+                case.into(),
+                "--exact".into(),
+                "--ignored".into(),
+                "--test-threads=1".into(),
+            ],
+            remaining.as_secs() + u64::from(remaining.subsec_nanos() != 0),
+            log,
+            false,
+        )?;
+    }
     Ok(Prepared { catalog, deadline })
 }
 
@@ -385,6 +391,7 @@ pub(super) fn run_prepared(s: &Session, prepared: Prepared) -> Result<()> {
                                 ];
                                 if *target == "browser_readiness" {
                                     args.extend(["--skip".into(), HEADED_LOGIN.into()]);
+                                    args.extend(["--skip".into(), PROFILE_STORAGE.into()]);
                                 }
                                 s.execute(
                                     &args,
@@ -408,6 +415,7 @@ pub(super) fn run_prepared(s: &Session, prepared: Prepared) -> Result<()> {
     // records and individual logs retain each target's independent duration.
     let mut combined = fs::File::create(s.temporary.join("chromium-render.log"))?;
     combined.write_all(&fs::read(s.temporary.join(HEADED_LOG))?)?;
+    combined.write_all(&fs::read(s.temporary.join(PROFILE_LOG))?)?;
     for target in required_targets() {
         let path = s.temporary.join(format!("chromium-suite-{target}.log"));
         if path.exists() {

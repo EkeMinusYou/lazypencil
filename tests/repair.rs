@@ -36,6 +36,246 @@ fn png() -> Vec<u8> {
 }
 
 #[test]
+fn missing_configured_fonts_allow_structural_edits_and_conflict_when_the_file_appears() {
+    let (temp, store) = fixture(json!([
+        {"id":"label","type":"text","content":"A","fontFamily":"LP Test Sans","fontSize":20,"width":40,"height":30}
+    ]));
+    let configuration = temp.path().join("lazypencil.toml");
+    let settings = "[fonts]\nfiles=['fonts/regular.ttf']\n";
+    fs::write(&configuration, settings).unwrap();
+    let project = Project::load(&store).unwrap();
+    assert!(!project.assets_complete());
+    let metadata = service::document_metadata(&store).unwrap();
+    assert_eq!(metadata["assets_complete"], false);
+    assert_eq!(metadata["configuration"]["fonts_complete"], false);
+    assert_eq!(metadata["asset_diagnostics"][0]["kind"], "font");
+    assert_eq!(
+        metadata["asset_diagnostics"][0]["origin"],
+        json!(configuration.canonicalize().unwrap())
+    );
+    assert!(
+        metadata["dependencies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|dependency| dependency["kind"] == "font"
+                && dependency["availability"] == "missing")
+    );
+    #[cfg(feature = "rendering")]
+    assert_eq!(project.load_fonts().err().unwrap().code, "ASSET_NOT_FOUND");
+    let edit = request(
+        &store,
+        "edit-with-missing-font",
+        json!([
+            {"op":"update","target":"label","set":{"name":"Kept draft"}}
+        ]),
+        false,
+    );
+    let saved = service::apply_request(&store, &edit).unwrap();
+    assert_eq!(saved["assets_complete"], false);
+    assert_eq!(
+        store.read().unwrap().node("label").unwrap()["fontFamily"],
+        "LP Test Sans"
+    );
+    let stale = request(
+        &store,
+        "stale-missing-font",
+        json!([
+            {"op":"update","target":"label","set":{"name":"Must not save"}}
+        ]),
+        false,
+    );
+    let frozen = Project::load(&store).unwrap();
+    fs::create_dir(temp.path().join("fonts")).unwrap();
+    fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fonts/regular.ttf"),
+        temp.path().join("fonts/regular.ttf"),
+    )
+    .unwrap();
+    assert_eq!(
+        frozen.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    assert_eq!(
+        service::apply_request(&store, &stale).unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    assert_eq!(
+        store.read().unwrap().node("label").unwrap()["name"],
+        "Kept draft"
+    );
+    assert_eq!(fs::read_to_string(&configuration).unwrap(), settings);
+    let repaired = service::document_metadata(&store).unwrap();
+    assert_eq!(repaired["assets_complete"], true);
+    assert_ne!(
+        repaired["dependency_revision"],
+        saved["dependency_revision"]
+    );
+    #[cfg(feature = "rendering")]
+    {
+        let (project, layout) = service::layout_snapshot(&store, &[], None, None).unwrap();
+        let text = layout
+            .items
+            .iter()
+            .find(|item| item.record.id == "label")
+            .unwrap()
+            .record
+            .text
+            .as_ref()
+            .unwrap();
+        assert_eq!(text.fonts[0].family, "LP Test Sans");
+        assert_eq!(
+            text.fonts[0].hash,
+            lazypencil::document::hash(&fs::read(temp.path().join("fonts/regular.ttf")).unwrap())
+        );
+        let output = lazypencil::render::png(&project, &layout, &Default::default()).unwrap();
+        assert!(!output.png.is_empty());
+        let mut fonts = project.load_fonts().unwrap();
+        assert!(
+            fonts
+                .inventory()
+                .unwrap()
+                .iter()
+                .any(|face| face.family == "LP Test Sans")
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_missing_configured_font_retains_parent_link_identity_during_inspection() {
+    use std::os::unix::fs::symlink;
+    let (temp, store) = fixture(json!([]));
+    fs::create_dir(temp.path().join("one")).unwrap();
+    fs::create_dir(temp.path().join("two")).unwrap();
+    symlink("one", temp.path().join("fonts")).unwrap();
+    fs::write(
+        temp.path().join("lazypencil.toml"),
+        "[fonts]\nfiles=['fonts/missing.ttf']\n",
+    )
+    .unwrap();
+    let project = Project::load(&store).unwrap();
+    let stale = request(
+        &store,
+        "redirect-missing-font",
+        json!([
+            {"op":"set_variable","name":"tone","definition":{"type":"color","value":"#2563eb"}}
+        ]),
+        false,
+    );
+    fs::remove_file(temp.path().join("fonts")).unwrap();
+    symlink("two", temp.path().join("fonts")).unwrap();
+    assert_eq!(
+        project.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    assert_eq!(
+        service::apply_request(&store, &stale).unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    assert!(store.history(10, None).unwrap().is_empty());
+}
+
+#[test]
+fn a_missing_font_search_directory_is_diagnosed_and_rechecked_after_restoration() {
+    let (temp, store) = fixture(json!([]));
+    fs::write(
+        temp.path().join("lazypencil.toml"),
+        "[fonts]\nsearch_paths=['fonts']\n",
+    )
+    .unwrap();
+    let project = Project::load(&store).unwrap();
+    assert_eq!(project.asset_diagnostics()[0]["kind"], "font_directory");
+    let frozen = lazypencil::config::Snapshot::load(store.path()).unwrap();
+    assert_eq!(frozen.require_fonts().unwrap_err().code, "ASSET_NOT_FOUND");
+    fs::create_dir(temp.path().join("fonts")).unwrap();
+    fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fonts/regular.ttf"),
+        temp.path().join("fonts/regular.ttf"),
+    )
+    .unwrap();
+    assert_eq!(
+        frozen.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    assert_eq!(
+        project.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    let restored = lazypencil::config::Snapshot::load(store.path()).unwrap();
+    restored.require_fonts().unwrap();
+    assert_eq!(restored.font_files.len(), 1);
+    assert!(Project::load(&store).unwrap().assets_complete());
+}
+
+#[test]
+fn user_font_configuration_is_inspectable_while_inventory_rejects_missing_inputs() {
+    let (temp, _store) = fixture(json!([]));
+    let user = temp.path().join("user");
+    fs::create_dir(&user).unwrap();
+    fs::write(
+        user.join("config.toml"),
+        "[fonts]\nfiles=['missing.ttf','missing.ttf']\nsearch_paths=['missing-directory']\n",
+    )
+    .unwrap();
+    for (arguments, inspect) in [
+        (&["config", "show", "--user"][..], true),
+        (&["fonts", "list"][..], false),
+    ] {
+        if !inspect && !cfg!(feature = "rendering") {
+            continue;
+        }
+        let output = command_output::output(
+            Command::new(env!("CARGO_BIN_EXE_lazypencil"))
+                .env("LAZYPENCIL_CONFIG_DIR", &user)
+                .arg("--json")
+                .args(arguments),
+            Duration::from_secs(30),
+            1024 * 1024,
+        )
+        .unwrap();
+        assert!(
+            !output.timed_out,
+            "Font command timed out after {:?}",
+            output.elapsed
+        );
+        assert_eq!(
+            output.status.success(),
+            inspect,
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        if inspect {
+            assert_eq!(value["fonts_complete"], false);
+            assert_eq!(value["font_diagnostics"].as_array().unwrap().len(), 2);
+            assert_eq!(value["font_files"], json!([]));
+        } else {
+            assert_eq!(value["error"]["code"], "ASSET_NOT_FOUND");
+        }
+    }
+    assert!(!user.join("missing.ttf").exists());
+    assert!(!user.join("missing-directory").exists());
+}
+
+#[test]
+fn existing_wrong_font_input_types_are_not_reclassified_as_missing() {
+    let (temp, store) = fixture(json!([]));
+    fs::create_dir(temp.path().join("directory.ttf")).unwrap();
+    fs::write(temp.path().join("file"), "not a directory").unwrap();
+    for settings in [
+        "[fonts]\nfiles=['directory.ttf']\n",
+        "[fonts]\nsearch_paths=['file']\n",
+    ] {
+        fs::write(temp.path().join("lazypencil.toml"), settings).unwrap();
+        assert_eq!(
+            Project::load(&store).err().unwrap().code,
+            "CONFIGURATION_ERROR"
+        );
+    }
+}
+
+#[test]
 fn missing_library_can_be_rebound_with_revision_checks_without_inventing_its_contents() {
     let (temp, store) = fixture(json!([
         {"id":"instance","type":"ref","ref":"ui:tile"}

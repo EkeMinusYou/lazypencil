@@ -201,6 +201,7 @@ pub struct UserSnapshot {
     pub font_files: Vec<PathBuf>,
     directories: Vec<Directory>,
     bindings: Vec<(PathBuf, PathBuf)>,
+    missing_fonts: Vec<MissingFont>,
 }
 
 /// User retention policy without font discovery, adapters or project loading.
@@ -262,6 +263,7 @@ pub struct Snapshot {
     lock_paths: Vec<PathBuf>,
     directories: Vec<Directory>,
     bindings: Vec<(PathBuf, PathBuf)>,
+    pub(crate) missing_fonts: Vec<MissingFont>,
 }
 
 fn invalid(message: impl Into<String>) -> Error {
@@ -621,9 +623,6 @@ impl UserSource {
         }
         Ok(result)
     }
-    fn base(&self) -> Option<&Path> {
-        self.source.as_ref().and_then(|(path, _)| path.parent())
-    }
     fn verify(&self) -> Result<()> {
         if self.automatic && Some(user_config_path().map_err(|_| conflict())?) != self.requested {
             return Err(conflict());
@@ -651,27 +650,65 @@ struct FontInputs {
     files: Vec<PathBuf>,
     directories: Vec<Directory>,
     bindings: Vec<(PathBuf, PathBuf)>,
+    missing: Vec<MissingFont>,
+}
+
+#[derive(Clone)]
+pub(crate) struct MissingFont {
+    pub path: crate::paths::MissingPath,
+    pub origin: PathBuf,
+    pub uri: String,
+    pub kind: &'static str,
+}
+
+impl MissingFont {
+    fn diagnostic(&self) -> Value {
+        json!({"code":"ASSET_NOT_FOUND","kind":self.kind,"origin":self.origin,"uri":self.uri,
+            "path":self.path.requested,"resolved_path":self.path.target,"revision":self.path.revision()})
+    }
 }
 
 fn font_inputs(
     settings: &FontSettings,
     origins: &BTreeMap<&'static str, &'static str>,
-    bases: &[(&str, &Path)],
+    sources: &[(&str, &Path)],
 ) -> Result<FontInputs> {
     let mut font_files = Vec::new();
     let mut bindings = Vec::new();
     let mut directories = Vec::new();
+    let mut missing = Vec::new();
     // More specific discovery precedes inherited explicit files when fields mix.
-    for (origin, base) in bases {
+    for (origin, source) in sources {
+        let base = source
+            .parent()
+            .ok_or_else(|| invalid("Configuration has no parent directory"))?;
         if origins["files"] == *origin {
             for path in &settings.files {
                 let requested = base.join(path);
-                let canonical = canonical(&requested).map_err(|_| {
+                let unavailable = || {
                     invalid(format!(
                         "Cannot resolve configured font {}",
                         requested.display()
                     ))
-                })?;
+                };
+                let canonical = match canonical(&requested) {
+                    Ok(path) => path,
+                    Err(_) => {
+                        let Some(absent) = crate::paths::MissingPath::capture(&requested)
+                            .map_err(|_| unavailable())?
+                        else {
+                            return Err(unavailable());
+                        };
+                        absent.verify()?;
+                        missing.push(MissingFont {
+                            path: absent,
+                            origin: (*source).into(),
+                            uri: path.to_string_lossy().into_owned(),
+                            kind: "font",
+                        });
+                        continue;
+                    }
+                };
                 if !fs::metadata(&canonical).is_ok_and(|metadata| metadata.is_file()) {
                     return Err(invalid("Configured font input must be a regular file"));
                 }
@@ -681,7 +718,25 @@ fn font_inputs(
         }
         if origins["search_paths"] == *origin {
             for path in &settings.search_paths {
-                let snapshot = directory(&base.join(path))?;
+                let requested = base.join(path);
+                let snapshot = match directory(&requested) {
+                    Ok(snapshot) => snapshot,
+                    Err(error) => {
+                        let Some(absent) = crate::paths::MissingPath::capture(&requested)
+                            .map_err(|_| error.clone())?
+                        else {
+                            return Err(error);
+                        };
+                        absent.verify()?;
+                        missing.push(MissingFont {
+                            path: absent,
+                            origin: (*source).into(),
+                            uri: path.to_string_lossy().into_owned(),
+                            kind: "font_directory",
+                        });
+                        continue;
+                    }
+                };
                 font_files.extend(snapshot.files.iter().cloned());
                 directories.push(snapshot);
             }
@@ -689,17 +744,39 @@ fn font_inputs(
     }
     let mut seen = BTreeSet::new();
     font_files.retain(|path| seen.insert(path.clone()));
-    if font_files.len() > 256 {
+    let mut absent = BTreeSet::new();
+    missing.retain(|font| absent.insert((font.path.requested.clone(), font.kind)));
+    if font_files
+        .iter()
+        .cloned()
+        .chain(
+            missing
+                .iter()
+                .filter(|font| font.kind == "font")
+                .map(|font| font.path.target.clone()),
+        )
+        .collect::<BTreeSet<_>>()
+        .len()
+        > 256
+    {
         return Err(invalid("Configured font files exceed 256"));
     }
     Ok(FontInputs {
         files: font_files,
         directories,
         bindings,
+        missing,
     })
 }
 
-fn verify_fonts(bindings: &[(PathBuf, PathBuf)], directories: &[Directory]) -> Result<()> {
+fn verify_fonts(
+    bindings: &[(PathBuf, PathBuf)],
+    directories: &[Directory],
+    missing: &[MissingFont],
+) -> Result<()> {
+    for font in missing {
+        font.path.verify().map_err(|_| conflict())?;
+    }
     for (requested, expected) in bindings {
         if canonical(requested).map_err(|_| conflict())? != *expected {
             return Err(conflict());
@@ -711,6 +788,14 @@ fn verify_fonts(bindings: &[(PathBuf, PathBuf)], directories: &[Directory]) -> R
         }
     }
     Ok(())
+}
+
+fn require_fonts(missing: &[MissingFont]) -> Result<()> {
+    if missing.is_empty() {
+        return Ok(());
+    }
+    Err(Error::new("ASSET_NOT_FOUND", "Configured font inputs are missing")
+        .details(json!({"fonts_complete":false,"font_diagnostics":missing.iter().map(MissingFont::diagnostic).collect::<Vec<_>>()})))
 }
 
 impl UserSnapshot {
@@ -729,9 +814,10 @@ impl UserSnapshot {
             &fonts,
             &origins,
             &source
-                .base()
-                .map(|base| vec![("user", base)])
-                .unwrap_or_default(),
+                .source
+                .iter()
+                .map(|(path, _)| ("user", path.as_path()))
+                .collect::<Vec<_>>(),
         )?;
         let settings = source.settings.clone();
         Ok(Self {
@@ -740,15 +826,26 @@ impl UserSnapshot {
             font_files: inputs.files,
             directories: inputs.directories,
             bindings: inputs.bindings,
+            missing_fonts: inputs.missing,
         })
     }
     pub fn verify_unchanged(&self) -> Result<()> {
         self.source.verify()?;
-        verify_fonts(&self.bindings, &self.directories)
+        verify_fonts(&self.bindings, &self.directories, &self.missing_fonts)
+    }
+    pub fn require_fonts(&self) -> Result<()> {
+        require_fonts(&self.missing_fonts)
     }
     pub fn summary(&self) -> Value {
         let mut value = self.source.summary();
         value["font_files"] = json!(self.font_files);
+        value["fonts_complete"] = json!(self.missing_fonts.is_empty());
+        value["font_diagnostics"] = json!(
+            self.missing_fonts
+                .iter()
+                .map(MissingFont::diagnostic)
+                .collect::<Vec<_>>()
+        );
         value
     }
 }
@@ -802,11 +899,12 @@ impl Snapshot {
             .as_ref()
             .and_then(|(path, _)| path.parent())
             .unwrap_or(&discovery.root);
-        let mut bases = vec![("project", base)];
-        if let Some(base) = user.base() {
-            bases.push(("user", base));
-        }
-        let inputs = font_inputs(&settings.fonts, &font_origins, &bases)?;
+        let sources = source
+            .iter()
+            .map(|(path, _)| ("project", path.as_path()))
+            .chain(user.source.iter().map(|(path, _)| ("user", path.as_path())))
+            .collect::<Vec<_>>();
+        let inputs = font_inputs(&settings.fonts, &font_origins, &sources)?;
         let design = crate::guidance::ProjectCatalog::load(
             &discovery.root,
             base,
@@ -830,6 +928,7 @@ impl Snapshot {
             lock_paths,
             directories: inputs.directories,
             bindings: inputs.bindings,
+            missing_fonts: inputs.missing,
         })
     }
     pub fn root(&self) -> &Path {
@@ -844,7 +943,10 @@ impl Snapshot {
             design.verify_unchanged()?;
         }
         verify_project_source(&self.document, &self.discovery, &self.source)?;
-        verify_fonts(&self.bindings, &self.directories)
+        verify_fonts(&self.bindings, &self.directories, &self.missing_fonts)
+    }
+    pub fn require_fonts(&self) -> Result<()> {
+        require_fonts(&self.missing_fonts)
     }
     pub fn summary(&self) -> Value {
         let design = self
@@ -852,7 +954,7 @@ impl Snapshot {
             .as_ref()
             .map(|design| design.metadata())
             .unwrap_or_else(|error| json!({"available":false,"trusted":false,"error":error}));
-        json!({"path":self.source.as_ref().map(|(path,_)|path),"hash":self.source.as_ref().map(|(_,bytes)|hash(bytes)),"root":self.root(),"settings":self.settings,"font_files":self.font_files,"font_origins":self.font_origins,"runtime_origins":self.runtime_origins,"user":self.user.summary(),"design":design})
+        json!({"path":self.source.as_ref().map(|(path,_)|path),"hash":self.source.as_ref().map(|(_,bytes)|hash(bytes)),"root":self.root(),"settings":self.settings,"font_files":self.font_files,"fonts_complete":self.missing_fonts.is_empty(),"font_diagnostics":self.missing_fonts.iter().map(MissingFont::diagnostic).collect::<Vec<_>>(),"font_origins":self.font_origins,"runtime_origins":self.runtime_origins,"user":self.user.summary(),"design":design})
     }
     pub fn sources(&self) -> Vec<(PathBuf, Arc<[u8]>)> {
         self.source

@@ -80,7 +80,9 @@ fn dedicated_profiles_persist_full_storage_isolate_acquisitions_and_keep_secrets
             settings.browser.profile = selected.into();
             runtime.configure(settings.clone()).unwrap();
             runtime.begin_render(None, true);
-            let raster = runtime.page(node, 32.0, 32.0, 1.0).unwrap();
+            let raster = runtime.page(node, 32.0, 32.0, 1.0).unwrap_or_else(|error| {
+                panic!("Profile acquisition failed (retained={retained}, stage={stage}): {error:?}")
+            });
             retain(&mut evidence, retained, stage, &raster, rgba);
         }
         settings.browser.network_policy = PageNetworkPolicy::Offline;

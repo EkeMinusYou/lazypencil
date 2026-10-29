@@ -688,6 +688,15 @@ impl Project {
             .font_files
             .clone();
         project.add_font_files(&configured_fonts)?;
+        let missing_fonts = project
+            .configuration
+            .as_ref()
+            .expect("configuration")
+            .missing_fonts
+            .clone();
+        for font in &missing_fonts {
+            project.capture_missing_font(font)?;
+        }
         project.load_document(&path, Some(document), &mut BTreeSet::new())?;
         let mut references = Vec::new();
         let mut libraries = BTreeSet::new();
@@ -1228,6 +1237,9 @@ impl Project {
     #[cfg(feature = "rendering")]
     pub fn load_fonts(&self) -> Result<crate::text::Fonts> {
         self.check_cancelled()?;
+        if let Some(configuration) = &self.configuration {
+            configuration.require_fonts()?;
+        }
         let sources = self
             .font_files
             .iter()

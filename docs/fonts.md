@@ -36,6 +36,8 @@ Supplied file revisions remain project dependencies even when no text uses them.
 
 ## Selection and text coverage
 
+Missing configured files and search directories are captured as absent inputs, so inspection and structural document edits remain available. Effective configuration reports `fonts_complete: false` and `font_diagnostics`; document metadata includes the same missing inputs in its asset diagnostics and dependency revision. Restoring an input or retargeting a parent invalidates the captured revision. Font inventory, shaping and rendering require every selected configured input; an available bundled/system face does not conceal a missing declared file. Restoring the original path or explicitly editing configuration is separate from document edits. Unreadable inputs, wrong file types, malformed configuration and discovery limits remain errors. This missing-input extension is awaiting hosted verification.
+
 File fonts take precedence over same-named installed families. Family matching is case-insensitive. The bundled Noto Sans JP takes precedence over a system installation, while an explicitly supplied same-named family overrides the bundle. Multiple supplied styles of a family participate in Skia's style matching; the engine no longer assumes that the first face describes every weight or slant.
 
 The default glyph fallback chain is the requested family, Noto Sans JP, then other explicitly supplied families in file/collection order. Duplicate family names are omitted. Skia's arbitrary system fallback is disabled. A missing requested family remains an error even if another font could draw the text.

@@ -582,6 +582,7 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
                     (fonts, inventory)
                 } else {
                     let configuration = crate::config::UserSnapshot::load()?;
+                    configuration.require_fonts()?;
                     let mut paths = fonts.clone();
                     paths.extend(configuration.font_files.iter().cloned());
                     let mut loaded = crate::text::Fonts::new(&paths)?;

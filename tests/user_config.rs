@@ -33,7 +33,12 @@ fn attachment_limits_are_user_owned_validated_and_loaded_without_fonts() {
         settings.max_source_bytes,
         AttachmentSettings::default().max_source_bytes
     );
-    assert!(UserSnapshot::load_file(path()).is_err());
+    let incomplete = UserSnapshot::load_file(path()).unwrap();
+    assert_eq!(incomplete.summary()["fonts_complete"], false);
+    assert_eq!(
+        incomplete.require_fonts().unwrap_err().code,
+        "ASSET_NOT_FOUND"
+    );
     f.settings("[attachments]\nmax_images=12\n");
     let shown = f.data(&["config", "show", "--user"]);
     assert_eq!(shown["settings"]["attachments"]["max_images"], 12);
@@ -106,7 +111,14 @@ fn conversation_retention_is_user_owned_validated_and_loaded_without_font_discov
     assert_eq!(snapshot.settings.retention.max_total_bytes, Some(1048576));
     assert_eq!(snapshot.settings.retention.keep_recent_per_document, 2);
     snapshot.verify_unchanged().unwrap();
-    assert!(UserSnapshot::load_file(Some(f.user.join("config.toml"))).is_err());
+    assert_eq!(
+        UserSnapshot::load_file(Some(f.user.join("config.toml")))
+            .unwrap()
+            .require_fonts()
+            .unwrap_err()
+            .code,
+        "ASSET_NOT_FOUND"
+    );
     let schema = f.data(&["config", "schema", "--user"]);
     assert!(schema["properties"]["conversations"].is_object());
     assert!(schema.to_string().contains("RetentionSettings"));

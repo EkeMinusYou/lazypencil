@@ -66,6 +66,28 @@ impl Project {
                 "A missing reference escapes the allowed project roots",
             ));
         }
+        self.remember_missing(path, origin, uri, kind)
+    }
+
+    pub(super) fn capture_missing_font(&mut self, font: &crate::config::MissingFont) -> Result<()> {
+        // Font paths are explicitly authorized by user/project configuration;
+        // document image/code references still require the ordinary read roots.
+        self.remember_missing(font.path.clone(), &font.origin, &font.uri, font.kind)
+    }
+
+    fn remember_missing(
+        &mut self,
+        path: crate::paths::MissingPath,
+        origin: &Path,
+        uri: &str,
+        kind: &str,
+    ) -> Result<()> {
+        self.check_cancelled()?;
+        let key = (path.requested.clone(), kind.to_owned());
+        if let Some(existing) = self.missing_assets.get(&key) {
+            existing.path.verify()?;
+            return path.verify();
+        }
         if self.missing_assets.len() >= 1024 {
             return Err(invalid(
                 "A project may report at most 1024 missing asset references",
@@ -125,7 +147,7 @@ impl Project {
         }
         Err(Error::new(
             "ASSET_NOT_FOUND",
-            "The document has missing library, image, or code assets",
+            "The document has missing library, font, image, or code assets",
         )
         .details(json!({"assets_complete":false,"asset_diagnostics":self.asset_diagnostics()})))
     }
