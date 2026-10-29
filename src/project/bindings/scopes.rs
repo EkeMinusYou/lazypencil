@@ -19,6 +19,18 @@ pub(in crate::project) struct CapturedScope {
 }
 
 pub(super) fn validate(values: &Bindings) -> Result<()> {
+    if let Some(namespace) = &values.code_namespace
+        && (values.version < 3
+            || values.assets.is_none()
+            || values
+                .script_scopes
+                .get(namespace)
+                .is_none_or(|scope| scope.document_namespace.is_some()))
+    {
+        return Err(invalid(
+            "A captured code owner must name a document execution namespace",
+        ));
+    }
     if values.version == 1 && !values.script_scopes.is_empty()
         || values.version == 2 && values.script_scopes.is_empty()
     {
@@ -150,6 +162,21 @@ pub(super) fn validate(values: &Bindings) -> Result<()> {
 }
 
 impl Bound {
+    #[cfg(feature = "rendering")]
+    pub(super) fn code_scope(&self) -> Result<Self> {
+        let mut values = self.original().clone();
+        let namespace = values.code_namespace.clone().ok_or_else(|| {
+            Error::new(
+                "UNSUPPORTED_FEATURE",
+                "The inherited script lacks captured code ownership; copy it again from its source",
+            )
+        })?;
+        values.script_namespace = Some(namespace);
+        values.inputs_hash = None;
+        values.input_components = None;
+        Self::from_values(self.origin.clone(), false, values)
+    }
+
     pub(in crate::project) fn original(&self) -> &Bindings {
         self.captured.as_deref().unwrap_or(&self.values)
     }
@@ -261,6 +288,7 @@ impl Bound {
             script_namespace: None,
             source_uri_hash: values.source_uri_hash.clone(),
             input_epoch: values.input_epoch.clone(),
+            code_namespace: values.code_namespace.clone(),
         };
         Ok(Self {
             origin,

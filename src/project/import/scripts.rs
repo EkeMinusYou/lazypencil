@@ -58,6 +58,7 @@ impl Copier<'_> {
 
     pub(super) fn scan_script_info(&mut self, info: &Info) -> Result<()> {
         self.script_scope(info.resolved.script_origin())?;
+        self.script_scope(info.resolved.property_source("scriptUri"))?;
         self.script_scope(info.resolved.script_input_origin())?;
         if info.resolved.properties.contains_key("inputs") {
             self.script_scope(info.resolved.property_source("inputs"))?;
@@ -665,6 +666,22 @@ impl Copier<'_> {
             hash(value.to_string().as_bytes())
         });
         if output {
+            if info
+                .resolved
+                .script_bindings
+                .as_ref()
+                .is_none_or(|bound| bound.values.assets.is_none())
+            {
+                self.capture_code_scope(
+                    info.resolved
+                        .script_bindings
+                        .as_ref()
+                        .map_or(output_scope, |bound| bound.origin.as_path()),
+                    info.resolved.property_source("scriptUri"),
+                    &mut bindings,
+                    &mut budget,
+                )?;
+            }
             bindings["inputs_hash"] = json!(inputs_hash);
             let source_hash = if let Some(bound) = &info.resolved.script_bindings
                 && bound.values.assets.is_some()

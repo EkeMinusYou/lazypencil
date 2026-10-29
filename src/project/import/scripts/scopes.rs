@@ -14,6 +14,102 @@ fn private_key(values: &Value, section: &str) -> String {
 }
 
 impl Copier<'_> {
+    pub(super) fn capture_code_scope(
+        &mut self,
+        output: &Path,
+        code: &Path,
+        values: &mut Value,
+        budget: &mut Budget,
+    ) -> Result<()> {
+        let namespace = if let Some((alias, _)) = self.script_scopes[output]
+            .browsers
+            .iter()
+            .find(|(_, path)| path.as_path() == code)
+        {
+            alias.clone()
+        } else {
+            // A native output binding may point away from the document that
+            // stores the code. Add its closed graph to the same shared tables.
+            for (key, target) in self.script_scopes[code].assets.clone() {
+                if !values["assets"]
+                    .as_object()
+                    .expect("assets")
+                    .values()
+                    .any(|value| value == &json!(target))
+                {
+                    let kind = key.split_once(':').expect("asset kind").0;
+                    let alias = format!(
+                        "{kind}:@lazypencil/code/{}",
+                        values["assets"].as_object().expect("assets").len()
+                    );
+                    budget.pair(&alias, &target)?;
+                    values["assets"][alias] = json!(target);
+                }
+            }
+            let physical: BTreeMap<String, String> =
+                serde_json::from_value(self.copy_browser_libraries(code, budget)?)
+                    .expect("browser libraries");
+            for target in physical.values() {
+                if !values["browser_libraries"]
+                    .as_object()
+                    .expect("browser libraries")
+                    .values()
+                    .any(|value| value == &json!(target))
+                {
+                    let key = private_key(values, "browser_libraries");
+                    budget.pair(&key, target)?;
+                    values["browser_libraries"][key] = json!(target);
+                }
+            }
+            let mut previous = values["script_scopes"]
+                .take()
+                .as_object()
+                .expect("scopes")
+                .clone();
+            let version = values["version"].clone();
+            self.capture_scopes(code, values, budget, false, Some(physical))?;
+            let captured: BTreeMap<String, CapturedScope> =
+                serde_json::from_value(values["script_scopes"].take()).expect("captured scopes");
+            let mut index = previous.len();
+            let prefix = loop {
+                let prefix = format!("@lazypencil/code/{index}");
+                if previous
+                    .keys()
+                    .all(|name| name != &prefix && !name.starts_with(&format!("{prefix}/")))
+                {
+                    break prefix;
+                }
+                index += 1;
+            };
+            let rename = |name: &str| {
+                if name.is_empty() {
+                    prefix.clone()
+                } else {
+                    format!("{prefix}/{name}")
+                }
+            };
+            for (name, mut scope) in captured {
+                let original_size = serde_json::to_vec(&scope).expect("scope").len() + name.len();
+                for target in scope.libraries.values_mut() {
+                    *target = rename(target);
+                }
+                let name = rename(&name);
+                let scope = serde_json::to_value(scope).expect("scope");
+                budget
+                    .charge((scope.to_string().len() + name.len()).saturating_sub(original_size))?;
+                if previous.insert(name, scope).is_some() {
+                    return Err(copy_error("Captured code namespaces collide"));
+                }
+            }
+            values["script_scopes"] = json!(previous);
+            values["version"] = version;
+            prefix
+        };
+        budget.pair("code_namespace", &namespace)?;
+        values["code_namespace"] = json!(namespace);
+        Ok(())
+    }
+
     fn scope_component(
         &self,
         key: &Key,
@@ -340,6 +436,9 @@ impl Copier<'_> {
         values["version"] = json!(if original.version >= 4 { 4 } else { 2 });
         if let Some(active) = &original.script_namespace {
             values["script_namespace"] = json!(active);
+        }
+        if let Some(code) = &original.code_namespace {
+            values["code_namespace"] = json!(code);
         }
         Ok(())
     }

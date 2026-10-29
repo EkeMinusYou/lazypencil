@@ -439,16 +439,17 @@ impl Bound {
             .ok_or_else(|| invalid("A generated script needs scriptUri"))?
             .to_owned();
         let uri_hash = Self::generated_source_hash(target, state)?;
-        if changes.get("scriptUri").is_none()
-            && let Some((source, value)) = &scopes.override_output
-            && hash(source.script_uri.as_bytes()) != uri_hash
-            && !(source.script_uri == uri && self.generated_output(value)?)
-        {
-            return Err(Error::new(
-                "UNSUPPORTED_FEATURE",
-                "An inactive generated output override needs captured code ownership when its source is inherited",
-            ));
-        }
+        let inactive_override = scopes
+            .override_output
+            .as_ref()
+            .map(|(source, value)| {
+                Ok::<_, Error>(
+                    hash(source.script_uri.as_bytes()) != uri_hash
+                        && !(source.script_uri == uri && self.generated_output(value)?),
+                )
+            })
+            .transpose()?
+            .unwrap_or(false);
         let provided = changes
             .get("inputs")
             .map(|raw| self.generated_inputs(raw))
@@ -502,7 +503,18 @@ impl Bound {
         } else {
             None
         };
-        let selected = scopes.select(self, &uri_hash, Some(&uri), input, from_changes)?;
+        let mut selected = scopes.select(self, &uri_hash, Some(&uri), input, from_changes)?;
+        if changes.get("scriptUri").is_none()
+            && (inactive_override
+                || scopes.override_output.is_none()
+                    && (scopes.scope.is_some() || scopes.bindings.is_some())
+                    && !selected.output_active)
+        {
+            selected.output = target.script_bindings.as_ref().ok_or_else(|| Error::new(
+                "UNSUPPORTED_FEATURE", "The inherited script lacks captured code ownership; copy it again from its source",
+            ))?.code_scope()?;
+            selected.output_active = true;
+        }
         let output = if selected.output_active || changes.get("scriptUri").is_some() {
             Some(
                 selected

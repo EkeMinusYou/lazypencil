@@ -100,6 +100,8 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 
 ### 次に実装・確認すること
 
+次の候補では`code_namespace`をコピーの捕捉表へ追加し、出力と異なるコード所有元、その文書の宣言library・素材・部品・変数を保持する。再copyでも保持し、URIを継承したままscope・binding・carrierの出力guardが失効した場合に元コード所有元へ戻す。出力を変更しないmetadataの保持と、通常scope／native bindingを含む両形式・4経路の64組を追加し、元source削除後と再copyを確認する。ローカル整形は成功し、Rustの実行はGHA待ち。未保持の旧captureと生成置換、複数世代の入力文脈・解除は引き続き残る。
+
 提供入力に対する明示入力文脈60組、refの上書きcarrier56組、および単独入力文脈の参照名転送は7431326で検証済みである。以下の準備中・再実行待ちという記述は当時の履歴であり、現在の未完了一覧には数えない。
 
 <details>

@@ -29,6 +29,32 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
     .unwrap();
     let mut changes = json!({"scriptUri":"override.js"});
     match mode {
+        mode if mode.starts_with("binding-code-owner-") => {
+            let variant = mode
+                .strip_prefix("binding-code-owner-")
+                .unwrap()
+                .trim_end_matches("-native");
+            changes.as_object_mut().unwrap().remove("scriptUri");
+            changes["inputs"] = json!({"selected":"badge"});
+            let mut metadata = json!({"type":"test","keep":"generated","literal":"$tone"});
+            match variant {
+                "scope" => {
+                    metadata["lazypencil"]["script_scope"] =
+                        json!({"version":1,"script_uri":"old.js","library":"uncaptured"})
+                }
+                "binding" => {
+                    metadata["lazypencil"]["script_bindings"] = json!({"version":1,"script_uri":"old.js","library":"uncaptured","components":{"badge":"missing"}})
+                }
+                "carrier" => {
+                    metadata = json!({"type":"lazypencil","lazypencil":{"script_override":{
+                        "version":1,"metadata":metadata,"output":{"version":1,"script_uri":"old.js","library":"uncaptured","components":{"badge":"missing"}}
+                    }}})
+                }
+                "keep" => (),
+                _ => panic!("Unknown code-owner case"),
+            }
+            changes["metadata"] = metadata;
+        }
         mode if mode.starts_with("binding-input-context-")
             || mode.starts_with("binding-carrier-") =>
         {
@@ -355,6 +381,25 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
             {"id":"use","type":"ref","ref":"ui:generator"}
         ]}),
     );
+    if mode.starts_with("binding-code-owner-") {
+        fs::write(temp.path().join("library/base.js"), REPLACEMENT).unwrap();
+        write(
+            &temp.path().join("library/palette.pen"),
+            json!({"version":version,
+                "variables":{"tone":{"type":"color","value":"#00ffff"},"selection":{"type":"string","value":"badge"}},
+                "children":[{"id":"badge","type":"rectangle","reusable":true,"width":10,"height":10,"fill":"#00ffff"}]
+            }),
+        );
+        let path = temp.path().join("library/base.pen");
+        let mut base: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        base["imports"]["palette"] = json!("palette.pen");
+        base["children"][1]["metadata"]["lazypencil"] = if mode.ends_with("-native") {
+            json!({"script_bindings":{"version":1,"script_uri":"base.js","library":"palette","components":{"badge":"badge"},"variables":{"tone":"tone"}}})
+        } else {
+            json!({"script_scope":{"version":1,"script_uri":"base.js","library":"palette"}})
+        };
+        write(&path, base);
+    }
     if ["binding-mapped", "binding-inherited-inputs"].contains(&mode)
         || mode.starts_with("binding-combined-")
         || mode.starts_with("binding-input-context-")
@@ -501,6 +546,14 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
 
 fn copy(store: &Store, include_source: bool, mode: &str) -> Value {
     let mut variables = serde_json::Map::new();
+    if mode.starts_with("binding-code-owner-") {
+        for name in ["selection", "tone"] {
+            variables.insert(
+                format!("ui:base:palette:{name}"),
+                json!({"action":"rename","name":format!("palette_{name}")}),
+            );
+        }
+    }
     if mode == "binding-combined-inherited-nonlexical" {
         variables.insert(
             "ui:base:inputs:selection".into(),
@@ -611,6 +664,31 @@ fn preview_colours(store: &Store, colours: [Color; 3], metadata: &str) -> Vec<u8
     image.png
 }
 
+fn separate_code_owner(store: &Store) {
+    let document = store.read().unwrap();
+    assert!(
+        document.locations().keys().any(|id| {
+            let node = document.node(id).unwrap();
+            let bindings = &node["metadata"]["lazypencil"]["script_bindings"];
+            let Some(code) = bindings["code_namespace"].as_str() else {
+                return false;
+            };
+            let output = bindings["script_namespace"].as_str().unwrap_or("");
+            if code == output {
+                return false;
+            }
+            let code_variable = bindings["script_scopes"][code]["variables"]["tone"]
+                .as_str()
+                .unwrap();
+            let output_variable = bindings["script_scopes"][output]["variables"]["tone"]
+                .as_str()
+                .unwrap();
+            bindings["variables"][code_variable] != bindings["variables"][output_variable]
+        }),
+        "The copied code must retain a different owner from its explicit output scope"
+    );
+}
+
 fn independent_case(
     version: &str,
     style: &str,
@@ -640,7 +718,13 @@ fn independent_case(
     } else {
         "base"
     };
-    let output = if (mode.starts_with("binding-native-parent") && mode.ends_with("-library"))
+    let output = if mode.starts_with("binding-code-owner-") {
+        if mode.contains("-keep") {
+            Color::CYAN
+        } else {
+            Color::RED
+        }
+    } else if (mode.starts_with("binding-native-parent") && mode.ends_with("-library"))
         || [
             "explicit-context",
             "explicit-input-context",
@@ -699,6 +783,9 @@ fn independent_case(
         .as_str()
         .unwrap();
     let document = store.read().unwrap();
+    if mode.starts_with("binding-code-owner-") {
+        separate_code_owner(&store);
+    }
     let node = document.node(component).unwrap();
     assert_eq!(
         fs::read(temp.path().join(node["scriptUri"].as_str().unwrap())).unwrap(),
@@ -719,6 +806,9 @@ fn independent_case(
         "{version}/{style}/{mode}/copy"
     );
     let (second, _) = fixture::recopy(&store, component, &temp.path().join("second"), "again_");
+    if mode.starts_with("binding-code-owner-") {
+        separate_code_owner(&second);
+    }
     fs::remove_file(store.path()).unwrap();
     fs::remove_dir_all(temp.path().join("assets")).unwrap();
     assert_eq!(
@@ -728,6 +818,27 @@ fn independent_case(
     );
 
     (temp, second, before)
+}
+
+#[test]
+fn inherited_code_ownership_survives_inactive_output_contexts_and_recopy() {
+    std::thread::scope(|threads| {
+        for version in ["2.19", "2.21"] {
+            threads.spawn(move || {
+                for style in ["direct", "descendant", "replacement", "children"] {
+                    for native in [false, true] {
+                        for variant in ["keep", "scope", "binding", "carrier"] {
+                            let mode = format!(
+                                "binding-code-owner-{variant}{}",
+                                if native { "-native" } else { "" }
+                            );
+                            let _fixture = independent_case(version, style, &mode, Color::GREEN);
+                        }
+                    }
+                }
+            });
+        }
+    });
 }
 
 #[test]

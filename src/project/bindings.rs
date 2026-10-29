@@ -34,6 +34,8 @@ pub(super) struct Bindings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) input_epoch: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) code_namespace: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) library: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) browser_library: Option<String>,
@@ -341,6 +343,7 @@ impl Bound {
             && self.original().script_namespace == other.original().script_namespace
             && self.original().source_uri_hash == other.original().source_uri_hash
             && self.original().input_epoch == other.original().input_epoch
+            && self.original().code_namespace == other.original().code_namespace
     }
 }
 
@@ -464,6 +467,9 @@ impl Bound {
         values.library = None;
         values.script_uri = uri.into();
         values.source_uri_hash = uri_hash;
+        // An emitted node's source can differ from this generator's source.
+        // Its code ownership must be captured separately, never inherited by guess.
+        values.code_namespace = None;
         if values.source_uri_hash.is_none()
             && values
                 .script_scopes

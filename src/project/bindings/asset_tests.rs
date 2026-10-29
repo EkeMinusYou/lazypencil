@@ -187,11 +187,40 @@ fn custom_captured_views_remain_separate_and_do_not_acquire_parent_aliases() {
 
 #[cfg(feature = "rendering")]
 #[test]
+fn captured_code_owner_stays_distinct_from_output_and_requires_valid_provenance() {
+    let parent = custom_parent();
+    assert_eq!(parent.code_scope().unwrap_err().code, "UNSUPPORTED_FEATURE");
+    let mut values = parent.original().clone();
+    values.version = 3;
+    values.source_uri_hash = Some(hash(b"generator.js"));
+    values.code_namespace = Some("base".into());
+    let bound = Bound::from_values(parent.origin.clone(), false, values.clone()).unwrap();
+    assert_eq!(bound.component("badge").unwrap(), "copied-badge");
+    assert_eq!(
+        bound.code_scope().unwrap().component("badge").unwrap(),
+        "base-badge"
+    );
+    assert!(parse(&serde_json::to_value(&values).unwrap()).is_ok());
+    let output = bound
+        .inherited_output_with_hash("nested.js", None, Some(hash(b"nested.js")), &mut 0)
+        .unwrap();
+    assert!(output.get("code_namespace").is_none());
+    values.code_namespace = Some("missing".into());
+    assert!(parse(&serde_json::to_value(&values).unwrap()).is_err());
+    values.code_namespace = Some("base".into());
+    values.version = 2;
+    values.source_uri_hash = None;
+    assert!(parse(&serde_json::to_value(values).unwrap()).is_err());
+}
+
+#[cfg(feature = "rendering")]
+#[test]
 fn inherited_script_uri_guards_use_original_provenance_instead_of_relocated_spellings() {
     let project = Project::local(Document::parse(json!({"version":"2.21","children":[{
         "id":"worker","type":"script","width":36,"height":12,"scriptUri":"assets/nested.js",
         "metadata":{"type":"test","lazypencil":{"script_bindings":{
-            "version":3,"script_uri":"assets/nested.js","source_uri_hash":hash(b"nested.js"),"assets":{}
+            "version":3,"script_uri":"assets/nested.js","source_uri_hash":hash(b"nested.js"),"assets":{},"code_namespace":"",
+            "script_scopes":{"":{"components":{},"variables":{},"themes":{},"assets":{},"libraries":{"":""},"browser_libraries":{}}}
         }}}
     }]}).to_string()).unwrap()).unwrap();
     let target = project.resolve().unwrap().roots.remove(0);
@@ -213,7 +242,8 @@ fn inherited_script_uri_guards_use_original_provenance_instead_of_relocated_spel
             &mut 0,
         )
         .unwrap();
-    assert!(output.is_none() && input.is_none());
+    assert!(output.is_some() && input.is_none());
+    assert_eq!(output.unwrap()["source_uri_hash"], hash(b"nested.js"));
     changes["metadata"]["lazypencil"]["script_scope"]["script_uri"] = json!("nested.js");
     let scope = changes.pointer("/metadata/lazypencil").unwrap().clone();
     assert_eq!(
