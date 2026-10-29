@@ -44,7 +44,10 @@ pub(super) fn parse_scope(value: &Value) -> Result<ScriptScope> {
 /// Drop only a provably inactive generated scope before URI remapping can make
 /// its old spelling match a copied asset. Ref inputs may still be inherited.
 #[cfg(feature = "rendering")]
-pub(super) fn discard_inactive_generated_scope(node: &mut Value) -> Result<()> {
+pub(super) fn discard_inactive_generated_scope(
+    node: &mut Value,
+    inputs: Option<&Value>,
+) -> Result<()> {
     let Some(value) = node.pointer("/metadata/lazypencil/script_scope") else {
         return Ok(());
     };
@@ -52,7 +55,7 @@ pub(super) fn discard_inactive_generated_scope(node: &mut Value) -> Result<()> {
     let output_active =
         node.get("scriptUri").and_then(Value::as_str) == Some(scope.script_uri.as_str());
     let inputs_inactive = scope.inputs.as_ref().is_none_or(|inputs| {
-        node.get("inputs")
+        inputs
             .map(|value| value_hash(value) != inputs.hash)
             .unwrap_or(node["type"] == "script")
     });

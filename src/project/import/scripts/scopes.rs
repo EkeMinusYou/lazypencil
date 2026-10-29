@@ -87,6 +87,7 @@ impl Copier<'_> {
             let source = &self.script_scopes[path];
             let mut scope = CapturedScope {
                 document_namespace: None,
+                source_variables: None,
                 components: BTreeMap::new(),
                 variables: BTreeMap::new(),
                 themes: BTreeMap::new(),
@@ -193,6 +194,7 @@ impl Copier<'_> {
     pub(super) fn capture_native_binding_scope(
         &mut self,
         origin: &Path,
+        source_variables: &BTreeMap<String, String>,
         values: &mut Value,
         budget: &mut Budget,
     ) -> Result<()> {
@@ -208,6 +210,7 @@ impl Copier<'_> {
         };
         let mut native = CapturedScope {
             document_namespace: Some(String::new()),
+            source_variables: Some(source_variables.clone()),
             components: members("components"),
             variables: members("variables"),
             themes: members("themes"),

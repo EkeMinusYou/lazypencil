@@ -254,6 +254,7 @@ impl Bound {
                 String::new(),
                 CapturedScope {
                     document_namespace: None,
+                    source_variables: None,
                     components: owner
                         .values
                         .components
@@ -290,6 +291,7 @@ impl Bound {
                 String::new(),
                 CapturedScope {
                     document_namespace: None,
+                    source_variables: None,
                     components: source
                         .components
                         .keys()
@@ -374,6 +376,7 @@ impl Bound {
                     .assets
                     .is_none()
                     .then(|| base.script_namespace.clone().unwrap_or_default());
+                scope.source_variables = source.assets.is_none().then(|| source.variables.clone());
                 scope.assets = assets(source.assets.as_ref(), &owner)?;
                 scope.libraries = base
                     .script_scopes

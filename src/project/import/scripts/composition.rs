@@ -270,7 +270,12 @@ impl Copier<'_> {
             values["browser_libraries"] = self.copy_browser_libraries(&bound.origin, budget)?;
         }
         if source.assets.is_none() && source.script_scopes.is_empty() {
-            self.capture_native_binding_scope(&bound.origin, &mut values, budget)?;
+            self.capture_native_binding_scope(
+                &bound.origin,
+                &source.variables,
+                &mut values,
+                budget,
+            )?;
         } else {
             self.compose_script_scopes(bound, &mut values, budget)?;
         }

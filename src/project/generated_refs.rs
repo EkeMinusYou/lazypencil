@@ -210,6 +210,13 @@ impl Project {
         if node.kind() != "script" || node.input_context.is_some() {
             return Ok(());
         }
+        // Native child scopes already own saved ref choices. Turning them into
+        // parent handles here would bypass their independent input guards.
+        if bindings.values.assets.is_none()
+            && (node.script_input_scope.is_some() || node.script_bindings.is_some())
+        {
+            return Ok(());
+        }
         let uri = node
             .properties
             .get("scriptUri")

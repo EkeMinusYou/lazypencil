@@ -35,6 +35,33 @@ fn custom_bindings_keep_key_shadowing_identity_fallbacks_paths_and_closed_assets
     unclosed.as_object_mut().unwrap().remove("assets");
     let native = parent.custom_output(&unclosed, hash(b"nested.js")).unwrap();
     assert_eq!(native.original().version, 4);
+    let (owner, original) = native
+        .generated_inputs(&json!({"value":"$tone","nested":["$accent"]}))
+        .unwrap();
+    assert_eq!(original, json!({"value":"$accent","nested":["$tone"]}));
+    assert_eq!(owner.values.variables["accent"], "copied-accent");
+    let namespace = native.original().script_namespace.as_deref().unwrap();
+    let mut legacy = serde_json::to_value(native.original()).unwrap();
+    legacy["script_scopes"][namespace]
+        .as_object_mut()
+        .unwrap()
+        .remove("source_variables");
+    let legacy = Bound::from_values(native.origin.clone(), false, parse(&legacy).unwrap()).unwrap();
+    assert_eq!(
+        legacy
+            .generated_inputs(&json!({"selected":"$tone"}))
+            .unwrap_err()
+            .code,
+        "UNSUPPORTED_FEATURE"
+    );
+    assert!(
+        legacy
+            .generated_inputs(&json!({"selected":"badge"}))
+            .is_ok()
+    );
+    let mut wrong = serde_json::to_value(native.original()).unwrap();
+    wrong["script_scopes"][namespace]["source_variables"]["tone"] = json!("tone");
+    assert!(parse(&wrong).is_err());
     assert_eq!(
         native.document_scope().unwrap().component("badge").unwrap(),
         "copied-badge"

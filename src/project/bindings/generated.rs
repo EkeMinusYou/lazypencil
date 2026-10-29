@@ -3,7 +3,21 @@ use super::*;
 
 pub(super) struct Selection {
     pub output: Bound,
-    input: Option<Bound>,
+    input: Option<(Bound, Value)>,
+}
+
+fn native_inputs(parent: &Bound, node: &Value) -> Result<Option<Selection>> {
+    if parent.native_scope().is_none() {
+        return Ok(None);
+    }
+    node.get("inputs")
+        .map(|raw| -> Result<Selection> {
+            Ok(Selection {
+                output: parent.document_scope()?.into_owned(),
+                input: Some(parent.generated_inputs(raw)?),
+            })
+        })
+        .transpose()
 }
 
 pub(in crate::project) fn has_scope(node: &Value) -> bool {
@@ -70,7 +84,7 @@ pub(super) fn selection(parent: &Bound, node: &Value) -> Result<Option<Selection
         return Ok(None);
     }
     let Some(namespace) = node.pointer("/metadata/lazypencil") else {
-        return Ok(None);
+        return native_inputs(parent, node);
     };
     if let Some(value) = namespace.get("script_bindings") {
         if ["script_scope", "script_input_context", "script_override"]
@@ -87,23 +101,34 @@ pub(super) fn selection(parent: &Bound, node: &Value) -> Result<Option<Selection
             .and_then(Value::as_str)
             .ok_or_else(|| invalid("A generated script needs scriptUri"))?;
         let output = parent.custom_output(value, hash(uri.as_bytes()))?;
-        let input = node.get("inputs").map(|inputs| {
-            let mut owner = parent.clone();
-            if output.values.inputs_hash.as_ref() == Some(&super::super::scope::value_hash(inputs))
-            {
-                owner.values.components = output
-                    .values
-                    .input_components
-                    .as_ref()
-                    .unwrap_or(&output.values.components)
-                    .clone();
-            }
-            owner
-        });
+        let input = node
+            .get("inputs")
+            .map(|inputs| -> Result<(Bound, Value)> {
+                let (mut owner, inputs) = parent.generated_inputs(inputs)?;
+                if output.values.inputs_hash.as_ref()
+                    == Some(&super::super::scope::value_hash(&inputs))
+                {
+                    owner.values.components = output
+                        .values
+                        .input_components
+                        .as_ref()
+                        .unwrap_or(&output.values.components)
+                        .clone();
+                }
+                Ok((owner, inputs))
+            })
+            .transpose()?;
         return Ok(Some(Selection { output, input }));
     }
     let Some(scope) = namespace.get("script_scope") else {
-        return Ok(None);
+        return if ["script_input_context", "script_override"]
+            .iter()
+            .any(|key| namespace.get(*key).is_some())
+        {
+            Ok(None)
+        } else {
+            native_inputs(parent, node)
+        };
     };
     let scope = super::super::scope::parse_scope(scope)?;
     if ["script_bindings", "script_input_context", "script_override"]
@@ -121,19 +146,21 @@ pub(super) fn selection(parent: &Bound, node: &Value) -> Result<Option<Selection
     let output = if scope.script_uri == uri {
         parent.document_scope()?.selected(&scope.library)?
     } else {
-        parent.clone()
+        parent.document_scope()?.into_owned()
     };
     let input = if let Some(inputs) = node.get("inputs") {
-        Some(
+        let (owner, inputs) = parent.generated_inputs(inputs)?;
+        Some((
             if let Some(scope) = scope
                 .inputs
-                .filter(|scope| super::super::scope::value_hash(inputs) == scope.hash)
+                .filter(|scope| super::super::scope::value_hash(&inputs) == scope.hash)
             {
                 parent.document_scope()?.selected(&scope.library)?
             } else {
-                parent.clone()
+                owner
             },
-        )
+            inputs,
+        ))
     } else {
         None
     };
@@ -171,12 +198,11 @@ fn known_variables(bound: &Bound, value: &mut Value) {
 
 impl Selection {
     pub(super) fn apply(&self, node: &mut Value, budget: &mut usize) -> Result<()> {
-        let input = if let Some(bound) = &self.input {
-            let original = node.get("inputs").cloned().expect("explicit inputs");
+        let input = if let Some((bound, original)) = &self.input {
             let mut values = original.clone();
             known_variables(bound, &mut values);
             let context = super::super::script_context::capture(
-                Some(&original),
+                Some(original),
                 json!({"version":1,"values":values,"variables":bound.values.variables,"components":bound.values.components}),
             )?;
             *budget = budget.saturating_add(context.to_string().len());
@@ -243,19 +269,25 @@ impl Bound {
             return Ok((None, None));
         }
         let output = self.custom_output(value, uri_hash.clone())?;
-        let provided = changes.get("inputs").cloned();
+        let provided = changes
+            .get("inputs")
+            .map(|raw| self.generated_inputs(raw))
+            .transpose()?;
         let inherited = if provided.is_none() && source.inputs_hash.is_some() {
             Self::inherited_raw_inputs(target)?
         } else {
             None
         };
-        let raw = provided.as_ref().or(inherited.as_ref());
+        let raw = provided.as_ref().map(|(_, raw)| raw).or(inherited.as_ref());
         let active = raw.is_some_and(|raw| {
             source.inputs_hash.as_ref() == Some(&super::super::scope::value_hash(raw))
         });
         let input = if provided.is_some() || active {
             let raw = raw.expect("provided or guarded inputs");
-            let mut owner = self.clone();
+            let mut owner = provided
+                .as_ref()
+                .map(|(owner, _)| owner.clone())
+                .unwrap_or_else(|| self.clone());
             if provided.is_none()
                 && let Some(context) = &target.input_context
             {
@@ -273,7 +305,7 @@ impl Bound {
             changes["inputs"] = raw.clone();
             let selection = Selection {
                 output: output.clone(),
-                input: Some(owner),
+                input: Some((owner, raw.clone())),
             };
             selection.apply(changes, budget)?;
             changes
@@ -327,13 +359,16 @@ impl Bound {
         } else {
             None
         };
-        let provided = changes.get("inputs").cloned();
+        let provided = changes
+            .get("inputs")
+            .map(|raw| self.generated_inputs(raw))
+            .transpose()?;
         let inherited = if provided.is_none() && scope.inputs.is_some() {
             Self::inherited_raw_inputs(target)?
         } else {
             None
         };
-        let raw = provided.as_ref().or(inherited.as_ref());
+        let raw = provided.as_ref().map(|(_, raw)| raw).or(inherited.as_ref());
         let active = scope.inputs.as_ref().filter(|scope| {
             raw.is_some_and(|raw| super::super::scope::value_hash(raw) == scope.hash)
         });
@@ -342,7 +377,10 @@ impl Bound {
             let owner = if let Some(scope) = active {
                 self.document_scope()?.selected(&scope.library)?
             } else {
-                self.clone()
+                provided
+                    .as_ref()
+                    .map(|(owner, _)| owner.clone())
+                    .unwrap_or_else(|| self.clone())
             };
             let mut values = raw.clone();
             known_variables(&owner, &mut values);

@@ -544,7 +544,14 @@ impl Bound {
                 .is_none_or(|kind| matches!(kind.as_str(), Some("script" | "ref")))
         {
             if node["type"] == "script" {
-                super::scope::discard_inactive_generated_scope(node)?;
+                let inputs = if node.pointer("/metadata/lazypencil/script_scope").is_some() {
+                    node.get("inputs")
+                        .map(|raw| self.generated_inputs(raw).map(|(_, raw)| raw))
+                        .transpose()?
+                } else {
+                    None
+                };
+                super::scope::discard_inactive_generated_scope(node, inputs.as_ref())?;
             }
             if node["type"] == "script" {
                 discard_inactive_generated_bindings(node)?;

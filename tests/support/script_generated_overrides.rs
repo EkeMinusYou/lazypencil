@@ -29,6 +29,31 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
     .unwrap();
     let mut changes = json!({"scriptUri":"override.js"});
     match mode {
+        mode if mode.starts_with("binding-native-parent-input-") => {
+            let inherited = mode.contains("-inherited-");
+            let stale = mode.contains("-stale");
+            let selected = if inherited != stale {
+                "$selection"
+            } else {
+                "$native_selection"
+            };
+            let guarded = if inherited {
+                json!({"selected":selected,"stale":"$missing"})
+            } else {
+                changes["inputs"] = json!({"selected":"$selection"});
+                json!({"selected":selected})
+            };
+            let hash = lazypencil::document::hash(guarded.to_string().as_bytes());
+            let namespace = if mode.contains("-scope") {
+                json!({"script_scope":{"version":1,"script_uri":if mode.contains("-only-") {"old.js"} else {"override.js"},"library":if mode.contains("-only-") {"uncaptured"} else {""},"inputs":{"hash":hash,"library":if inherited {""} else {"base"}}}})
+            } else if mode.contains("-default") {
+                json!({})
+            } else {
+                json!({"script_bindings":{"version":1,"script_uri":"override.js","components":{"badge":"badge"},"variables":{"tone":"tone"},"inputs_hash":hash,"input_components":if inherited {json!({"badge":"alternate"})} else {json!({"alternate":"badge"})}}})
+            };
+            changes["metadata"] =
+                json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":namespace});
+        }
         "literal" => changes["inputs"] = json!({"selected":"badge","stale":"$missing"}),
         "variable" | "themed-variable" => {
             changes["inputs"] = json!({"selected":"$selection","stale":"$missing"})
@@ -283,6 +308,13 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
         });
         let mut owner: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         owner["variables"]["accent"] = json!({"type":"color","value":"#00ffff"});
+        if mode.starts_with("binding-native-parent-input-") {
+            owner["variables"]["native_selection"] = json!({"type":"string","value":"alternate"});
+            let path = temp.path().join("library/base.pen");
+            let mut base: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            base["variables"]["native_selection"] = json!({"type":"string","value":"badge"});
+            write(&path, base);
+        }
         owner["children"].as_array_mut().unwrap().push(json!({"id":"alternate","name":"Native alternate","type":"rectangle","reusable":true,"width":10,"height":10,"fill":"#00ffff"}));
         if !library {
             owner["children"].as_array_mut().unwrap().extend([
@@ -299,6 +331,9 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
             "descendants":{"base:card":{"draw":"draw"}},
             "descendant_contexts":{"base:card":{"draw":{"parent":"","instance":true,"target_instance":true}}}
         });
+        if mode.starts_with("binding-native-parent-input-") {
+            parent["variables"]["selection"] = json!("native_selection");
+        }
         if library {
             parent["library"] = json!("base");
             ui["imports"]["base"] = json!("base/base.pen");
@@ -336,7 +371,7 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
     (temp, store, code)
 }
 
-fn copy(store: &Store, include_source: bool) -> Value {
+fn copy(store: &Store, include_source: bool, mode: &str) -> Value {
     let mut variables = serde_json::Map::new();
     for (scope, prefix) in [("ui", "ui_"), ("ui:base", "base_")] {
         for name in ["selection", "tone"] {
@@ -347,6 +382,9 @@ fn copy(store: &Store, include_source: bool) -> Value {
         }
     }
     let mut options = json!({"component_prefix":"Copy ","variables":variables});
+    if mode.starts_with("binding-native-parent-input-") {
+        options["variable_prefix"] = json!("copy_");
+    }
     if store.read().unwrap().value()["themes"]
         .get("copy_mode")
         .is_some()
@@ -507,7 +545,7 @@ fn independent_case(
         png
     };
     let before = render(&store, "original");
-    let response = copy(&store, true);
+    let response = copy(&store, true, mode);
     let component = response["generated_ids"]["0"]["component_id"]
         .as_str()
         .unwrap();
@@ -623,7 +661,7 @@ fn generated_code_overrides_reject_unmanifested_sources_explicit_contexts_and_bi
         (true, "inherit", 600, "INVALID_DOCUMENT"),
     ] {
         let (temp, store, _) = setup("2.21", "direct", mode, count);
-        copy(&store, include_source);
+        copy(&store, include_source, mode);
         fs::remove_dir_all(temp.path().join("library")).unwrap();
         let bytes = fs::read(store.path()).unwrap();
         let error = service::layout_snapshot_with_runtime(
@@ -709,6 +747,63 @@ fn native_binding_parents_keep_the_document_owner_of_nested_code_and_custom_cont
                     "binding-native-parent-default-library",
                 ] {
                     let _fixture = independent_case(version, "script", mode, Color::RED);
+                }
+            });
+        }
+    });
+}
+
+#[test]
+fn native_parent_input_guards_use_post_mapping_expressions_and_keep_inherited_controls_separate() {
+    std::thread::scope(|threads| {
+        for version in ["2.19", "2.21"] {
+            threads.spawn(move || {
+                for style in ["script", "direct", "descendant", "replacement", "children"] {
+                    for (mode, first) in [
+                        ("binding-native-parent-input-scope", Color::RED),
+                        ("binding-native-parent-input-scope-stale", Color::CYAN),
+                        ("binding-native-parent-input-only-scope", Color::RED),
+                        ("binding-native-parent-input-only-scope-stale", Color::CYAN),
+                        ("binding-native-parent-input-custom", Color::GREEN),
+                        ("binding-native-parent-input-custom-stale", Color::CYAN),
+                        ("binding-native-parent-input-default", Color::CYAN),
+                    ] {
+                        let _fixture = independent_case(version, style, mode, first);
+                    }
+                    if style != "script" {
+                        for (mode, first) in [
+                            ("binding-native-parent-input-inherited-scope", Color::GREEN),
+                            (
+                                "binding-native-parent-input-inherited-only-scope",
+                                Color::GREEN,
+                            ),
+                            (
+                                "binding-native-parent-input-inherited-only-scope-stale",
+                                Color::RED,
+                            ),
+                            (
+                                "binding-native-parent-input-inherited-scope-stale",
+                                Color::RED,
+                            ),
+                            ("binding-native-parent-input-inherited-custom", Color::CYAN),
+                            (
+                                "binding-native-parent-input-inherited-custom-stale",
+                                Color::RED,
+                            ),
+                        ] {
+                            let _fixture = independent_case(version, style, mode, first);
+                        }
+                    }
+                }
+                for (mode, first) in [
+                    ("binding-native-parent-input-custom-library", Color::RED),
+                    (
+                        "binding-native-parent-input-custom-stale-library",
+                        Color::CYAN,
+                    ),
+                    ("binding-native-parent-input-default-library", Color::CYAN),
+                ] {
+                    let _fixture = independent_case(version, "script", mode, first);
                 }
             });
         }

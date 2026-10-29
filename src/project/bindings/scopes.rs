@@ -6,6 +6,8 @@ use super::*;
 pub(in crate::project) struct CapturedScope {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub document_namespace: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_variables: Option<BTreeMap<String, String>>,
     pub components: BTreeMap<String, String>,
     pub variables: BTreeMap<String, String>,
     pub themes: BTreeMap<String, String>,
@@ -44,6 +46,33 @@ pub(super) fn validate(values: &Bindings) -> Result<()> {
             return Err(invalid(
                 "A native script view needs a captured document namespace",
             ));
+        }
+        if let Some(variables) = &scope.source_variables {
+            let document = scope
+                .document_namespace
+                .as_ref()
+                .and_then(|name| values.script_scopes.get(name))
+                .ok_or_else(|| invalid("Original input variables need a document namespace"))?;
+            for (logical, original) in variables {
+                if !valid_name(logical)
+                    || !valid_name(original)
+                    || scope
+                        .variables
+                        .get(logical)
+                        .and_then(|key| values.variables.get(key))
+                        .zip(
+                            document
+                                .variables
+                                .get(original)
+                                .and_then(|key| values.variables.get(key)),
+                        )
+                        .is_none_or(|(logical, original)| logical != original)
+                {
+                    return Err(invalid(
+                        "Original input variables must retain their captured targets",
+                    ));
+                }
+            }
         }
         if values.assets.is_none() || scope.libraries.get("") != Some(name) {
             return Err(invalid(
@@ -123,6 +152,50 @@ pub(super) fn validate(values: &Bindings) -> Result<()> {
 impl Bound {
     pub(in crate::project) fn original(&self) -> &Bindings {
         self.captured.as_deref().unwrap_or(&self.values)
+    }
+
+    #[cfg(feature = "rendering")]
+    pub(super) fn native_scope(&self) -> Option<&CapturedScope> {
+        let values = self.original();
+        values
+            .script_scopes
+            .get(values.script_namespace.as_deref().unwrap_or(""))
+            .filter(|scope| scope.document_namespace.is_some())
+    }
+
+    #[cfg(feature = "rendering")]
+    pub(super) fn generated_inputs(&self, raw: &Value) -> Result<(Self, Value)> {
+        let Some(scope) = self.native_scope() else {
+            return Ok((self.clone(), raw.clone()));
+        };
+        fn rewrite(value: &mut Value, variables: Option<&BTreeMap<String, String>>) -> Result<()> {
+            match value {
+                Value::String(text) if text.starts_with('$') && text.len() > 1 => {
+                    let variables = variables.ok_or_else(|| Error::new(
+                        "UNSUPPORTED_FEATURE",
+                        "The native inputs lack original variable provenance; copy them again from their source",
+                    ))?;
+                    if let Some(target) = variables.get(&text[1..]) {
+                        *text = format!("${target}");
+                    }
+                }
+                Value::Array(values) => {
+                    for value in values {
+                        rewrite(value, variables)?;
+                    }
+                }
+                Value::Object(values) => {
+                    for value in values.values_mut() {
+                        rewrite(value, variables)?;
+                    }
+                }
+                _ => {}
+            }
+            Ok(())
+        }
+        let mut original = raw.clone();
+        rewrite(&mut original, scope.source_variables.as_ref())?;
+        Ok((self.document_scope()?.into_owned(), original))
     }
 
     #[cfg(feature = "rendering")]
