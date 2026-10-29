@@ -74,6 +74,10 @@ fn copied(store: &Store) -> (Value, String) {
 }
 
 fn record(name: &str, images: &[(&str, &[u8])], extra: Value) {
+    record_code(name, fixture::CODE.as_bytes(), images, extra);
+}
+
+fn record_code(name: &str, code: &[u8], images: &[(&str, &[u8])], extra: Value) {
     if let Some(root) = std::env::var_os("LAZYPENCIL_TEST_TUI_ARTIFACTS") {
         let directory = std::path::PathBuf::from(root).join("script-copy");
         fs::create_dir_all(&directory).unwrap();
@@ -82,7 +86,7 @@ fn record(name: &str, images: &[(&str, &[u8])], extra: Value) {
             fs::write(directory.join(format!("{name}-{label}.png")), png).unwrap();
             hashes.insert((*label).into(), json!(hash(png)));
         }
-        fs::write(directory.join(format!("{name}-report.json")),json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"code_hash":hash(fixture::CODE.as_bytes()),"png_hashes":hashes,"checks":extra}).to_string()).unwrap();
+        fs::write(directory.join(format!("{name}-report.json")),json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"code_hash":hash(code),"png_hashes":hashes,"checks":extra}).to_string()).unwrap();
     }
 }
 
@@ -168,6 +172,66 @@ fn independent_copy_keeps_namespace_nested_workers_and_live_choices_after_source
                 ("changed", &changed),
             ],
             json!({"original_removed":true,"initial_pixels_equal":true,"future_namespace_choice":true,"explicit_consumer_choice":true,"live_variable_nested_and_theme":true,"source_code_unchanged":true,"copied_id":id}),
+        );
+    }
+}
+
+#[test]
+fn copied_nested_source_relocation_never_revives_stale_explicit_bindings() {
+    for version in ["2.19", "2.21"] {
+        let (temp, store) = fixture();
+        for name in ["main.pen", "library/ui.lib.pen", "library/base.lib.pen"] {
+            let path = temp.path().join(name);
+            let mut document: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            document["version"] = json!(version);
+            fixture::write(&path, document);
+        }
+        let nested = fs::read(temp.path().join("library/nested.js")).unwrap();
+        // The stale URI deliberately equals the destination asset spelling.
+        // It is inactive before copy and must not become active after remap.
+        let stale_uri = format!("assets/lazypencil/{}.js", hash(&nested));
+        let metadata = json!({"type":"example","keep":[1,2,3],"lazypencil":{
+            "script_bindings":{"version":1,"script_uri":stale_uri,
+                "library":"uncaptured","components":{"base:other":"unrelated"}}
+        }});
+        let code = fixture::CODE.replace(
+            "scriptUri:\"nested.js\",x:60",
+            &format!("scriptUri:\"nested.js\",metadata:{metadata},x:60"),
+        );
+        assert_ne!(code, fixture::CODE);
+        fs::write(temp.path().join("library/draw.js"), &code).unwrap();
+        let before = png(&store, None);
+        let (response, _) = copied(&store);
+        fs::remove_dir_all(temp.path().join("library")).unwrap();
+        let independent = png(&store, None);
+        assert_eq!(before, independent);
+        assert_eq!(pixel(&independent, 65), Color::BLUE);
+        let original = store.read().unwrap();
+        let component = response["generated_ids"]["0"]["component_id"]
+            .as_str()
+            .unwrap();
+        let uri = original.node(component).unwrap()["scriptUri"]
+            .as_str()
+            .unwrap();
+        assert_eq!(fs::read(temp.path().join(uri)).unwrap(), code.as_bytes());
+        drop(original);
+
+        let (target, _) = fixture::recopy(&store, component, &temp.path().join("recopy"), "next.");
+        fs::remove_file(store.path()).unwrap();
+        fs::remove_dir_all(temp.path().join("assets")).unwrap();
+        let recopied = png(&target, None);
+        assert_eq!(before, recopied);
+        assert_eq!(pixel(&recopied, 65), Color::BLUE);
+        record_code(
+            &format!("stale-bindings-{version}"),
+            code.as_bytes(),
+            &[
+                ("before", &before),
+                ("independent", &independent),
+                ("recopied", &recopied),
+            ],
+            json!({"source_removed":true,"recopy_source_removed":true,
+                "inactive_context_never_reactivated":true,"nested_source_hash":hash(&nested)}),
         );
     }
 }

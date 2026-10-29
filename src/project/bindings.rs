@@ -56,12 +56,7 @@ pub(super) fn bind(project: &Project, node: &ResolvedNode) -> Result<Option<Boun
     bind_value(project, node, value, node.property_source("metadata"))
 }
 
-pub(super) fn bind_value(
-    project: &Project,
-    node: &ResolvedNode,
-    value: &Value,
-    owner: &Path,
-) -> Result<Option<Bound>> {
+fn parse(value: &Value) -> Result<Bindings> {
     if value.to_string().len() > 4 * 1024 * 1024 {
         return Err(invalid("Script bindings exceed 4 MiB"));
     }
@@ -120,6 +115,33 @@ pub(super) fn bind_value(
     {
         return Err(invalid("Invalid or oversized script binding names"));
     }
+    Ok(values)
+}
+
+/// Inspect the original URI before asset relocation can make stale metadata
+/// match again. Valid explicit bindings still need independent composition.
+#[cfg(feature = "rendering")]
+pub(super) fn discard_inactive_generated_bindings(node: &mut Value) -> Result<()> {
+    let Some(value) = node.pointer("/metadata/lazypencil/script_bindings") else {
+        return Ok(());
+    };
+    let bindings = parse(value)?;
+    if node.get("scriptUri").and_then(Value::as_str) != Some(bindings.script_uri.as_str()) {
+        node.pointer_mut("/metadata/lazypencil")
+            .and_then(Value::as_object_mut)
+            .expect("validated script bindings namespace")
+            .remove("script_bindings");
+    }
+    Ok(())
+}
+
+pub(super) fn bind_value(
+    project: &Project,
+    node: &ResolvedNode,
+    value: &Value,
+    owner: &Path,
+) -> Result<Option<Bound>> {
+    let values = parse(value)?;
     // An explicit source override must not revive a stale binding, even when
     // another document uses an identical URI. Same-value instance overrides
     // are separately revoked by apply_properties.
@@ -395,6 +417,7 @@ impl Bound {
                 .is_none_or(|kind| matches!(kind.as_str(), Some("script" | "ref")))
         {
             super::scope::discard_inactive_generated_scope(node)?;
+            discard_inactive_generated_bindings(node)?;
         }
         self.assets(node, inherited_bytes)?;
         let original_reference = node.get("ref").and_then(Value::as_str).map(str::to_owned);
@@ -578,6 +601,49 @@ mod asset_tests {
             "metadata":{"type":"test","lazypencil":{"script_scope":scope}}});
         bound.rewrite(&mut shape, &BTreeMap::new(), &mut 0).unwrap();
         assert_eq!(shape["metadata"]["lazypencil"]["script_scope"], scope);
+    }
+
+    #[cfg(feature = "rendering")]
+    #[test]
+    fn remapping_a_generated_uri_cannot_reactivate_stale_bindings() {
+        let bound = Bound {
+            origin: PathBuf::from("/captured/main.pen"),
+            inputs_bound: false,
+            values: serde_json::from_value(json!({
+                "version":1,"script_uri":"generator.js", "components":{"badge":"copied-badge"},
+                "assets":{"script:nested.js":"assets/nested.js"}
+            }))
+            .unwrap(),
+        };
+        let stale = json!({"version":1,"script_uri":"assets/nested.js",
+            "library":"uncaptured","components":{"badge":"unrelated-badge"}});
+        let mut node = json!({"type":"script","scriptUri":"nested.js",
+            "metadata":{"type":"test","keep":[1,2],"lazypencil":{"script_bindings":stale}}});
+        bound.rewrite(&mut node, &BTreeMap::new(), &mut 0).unwrap();
+        assert_eq!(node["scriptUri"], "assets/nested.js");
+        assert_eq!(node["metadata"]["keep"], json!([1, 2]));
+        let actual = &node["metadata"]["lazypencil"]["script_bindings"];
+        assert_eq!(actual["components"]["badge"], "copied-badge");
+        assert!(actual.get("library").is_none());
+
+        // This change must neither reinterpret opaque metadata nor discard a
+        // valid active context that still requires independent composition.
+        let mut shape = json!({"type":"rectangle","scriptUri":"nested.js",
+            "metadata":{"type":"test","lazypencil":{"script_bindings":stale}}});
+        bound.rewrite(&mut shape, &BTreeMap::new(), &mut 0).unwrap();
+        assert_eq!(shape["metadata"]["lazypencil"]["script_bindings"], stale);
+        let mut active = json!({"type":"script","scriptUri":"assets/nested.js",
+            "metadata":{"lazypencil":{"script_bindings":stale}}});
+        discard_inactive_generated_bindings(&mut active).unwrap();
+        assert_eq!(active["metadata"]["lazypencil"]["script_bindings"], stale);
+        for invalid in [
+            json!({"version":2,"script_uri":"old.js"}),
+            json!({"version":1,"script_uri":"old.js","unknown":true}),
+        ] {
+            let mut node = json!({"type":"script","scriptUri":"nested.js",
+                "metadata":{"lazypencil":{"script_bindings":invalid}}});
+            assert!(discard_inactive_generated_bindings(&mut node).is_err());
+        }
     }
 
     #[test]
