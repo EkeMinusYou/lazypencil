@@ -212,6 +212,68 @@ fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool, network: 
     if path.starts_with("/network/") {
         network.http.fetch_add(1, Ordering::SeqCst);
     }
+    if let Some(route) = path
+        .split('?')
+        .next()
+        .and_then(|path| path.strip_prefix("/network/http-image/"))
+    {
+        use base64::Engine;
+        if matches!(
+            route,
+            "redirect.png" | "loop.png" | "file.png" | "credentials.png"
+        ) {
+            let location = match route {
+                "redirect.png" => "/network/http-image/yellow.png",
+                "loop.png" => "/network/http-image/loop.png",
+                "file.png" => "file:///must-not-open.png",
+                _ => "http://user:fixture-password@127.0.0.1/private",
+            };
+            let _ = write!(
+                stream,
+                "HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            );
+            return;
+        }
+        if route == "oversized.png" {
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                20 * 1024 * 1024 + 1
+            );
+            return;
+        }
+        let encoded = if route == "blue.png" {
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYPj/HwADAgH/5ncLrgAAAABJRU5ErkJggg=="
+        } else {
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4/5/hPwAH/QL+ppTFtAAAAABJRU5ErkJggg=="
+        };
+        let bytes = if route == "invalid.png" {
+            b"private-response-body".to_vec()
+        } else {
+            base64::engine::general_purpose::STANDARD
+                .decode(encoded)
+                .unwrap()
+        };
+        let length = if route == "truncated.png" {
+            bytes.len() + 1
+        } else {
+            bytes.len()
+        };
+        if write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n").is_err() { return; }
+        if route == "blocked.png" {
+            probe.store(true, Ordering::SeqCst);
+            let started = Instant::now();
+            while !stop.load(Ordering::SeqCst) && started.elapsed() < Duration::from_secs(30) {
+                if matches!(stream.peek(&mut [0; 1]), Ok(0)) {
+                    return;
+                }
+                thread::sleep(Duration::from_millis(5));
+            }
+            return;
+        }
+        let _ = stream.write_all(&bytes);
+        return;
+    }
     if path == "/polled" {
         probe.store(true, Ordering::SeqCst);
     }

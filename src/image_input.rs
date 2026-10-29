@@ -199,6 +199,16 @@ pub fn normalize_with_limits(
             limits.max_source_bytes
         )));
     }
+    let mime = validate_encoded(bytes, claimed_mime)?;
+    decode(bytes, mime, bounds, limits)
+}
+
+/// Validate the existing static container policy without requiring Skia. Copy
+/// and HTTP capture retain original bytes; rendering performs bounded decoding.
+pub(crate) fn validate_encoded(bytes: &[u8], claimed_mime: Option<&str>) -> Result<&'static str> {
+    if bytes.is_empty() || bytes.len() > MAX_SOURCE_BYTES {
+        return Err(invalid("Encoded image exceeds its native byte limit"));
+    }
     let mime = if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         "image/png"
     } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
@@ -216,7 +226,7 @@ pub fn normalize_with_limits(
         ));
     }
     validate_container(bytes, mime)?;
-    decode(bytes, mime, bounds, limits)
+    Ok(mime)
 }
 
 #[cfg(feature = "rendering")]

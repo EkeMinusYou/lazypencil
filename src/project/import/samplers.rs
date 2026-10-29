@@ -50,16 +50,15 @@ impl Copier<'_> {
                 if let Some(name) = uri.strip_prefix('$').filter(|name| !name.is_empty()) {
                     queue.push_back(self.project.variable_key(&key.0, name)?);
                 } else if !uri.is_empty() && !uri.starts_with('#') && !uri.starts_with("pencil:") {
-                    let path = self
-                        .project
-                        .resolve_file(&key.0, self.project.sampler_uri(&key.0, uri))?;
-                    self.project.capture_asset(&path, "image")?;
+                    let bound = self.project.sampler_uri(&key.0, uri).to_owned();
+                    let path = self.project.capture_image(&key.0, &bound)?;
                     let bytes = self.project.asset(&path)?.bytes.clone();
                     image_extension(&bytes)?;
                     images
                         .entry((
                             key.0.clone(),
                             Path::new(uri).is_absolute()
+                                || crate::remote_images::is_http(uri)
                                 || crate::paths::local_file_url(uri).is_ok(),
                         ))
                         .or_default()

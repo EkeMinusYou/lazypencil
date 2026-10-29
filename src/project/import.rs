@@ -808,8 +808,13 @@ impl Copier<'_> {
         })
     }
     fn asset(&mut self, origin: &Path, uri: &str, kind: &str) -> Result<String> {
-        let path = self.project.resolve_file(origin, uri)?;
-        self.project.capture_asset(&path, kind)?;
+        let path = if kind == "image" {
+            self.project.capture_image(origin, uri)?
+        } else {
+            let path = self.project.resolve_file(origin, uri)?;
+            self.project.capture_asset(&path, kind)?;
+            path
+        };
         let bytes = self.project.asset(&path)?.bytes.clone();
         let extension = match kind {
             "shader" => "glsl",

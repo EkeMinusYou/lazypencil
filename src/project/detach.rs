@@ -123,6 +123,10 @@ impl Project {
         let uri = value
             .as_str()
             .ok_or_else(|| invalid("An asset URI must be a string"))?;
+        if crate::remote_images::is_http(uri) {
+            crate::remote_images::validate(uri)?;
+            return Ok(());
+        }
         let target = self.asset_path_for_edit(origin, uri)?;
         let base = self
             .root
@@ -555,6 +559,10 @@ impl Project {
             if let Some(uri) = value.as_str()
                 && !uri.is_empty()
             {
+                if crate::remote_images::is_http(uri) {
+                    crate::remote_images::validate(uri)?;
+                    return Ok(());
+                }
                 *value = json!(project.asset_path_for_edit(origin, uri)?);
             }
             Ok(())

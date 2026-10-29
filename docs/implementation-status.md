@@ -4,6 +4,8 @@
 
 ## 現在の状態（2026-10-30）
 
+HTTP(S)画像の捕捉と文字列samplerの独立copyを追加した。通常画像・shader入力をメモリ内のremote_image依存に捕捉し、既存の管理bundleとsampler_imagesで原文・別テーマを保持する。通信はChromium downloadの所有者pipe・取消／回収を共用し、offline、通信・byte・redirect上限とURL／応答の秘匿を扱う。不完全なHTTP画像も診断と構造修復を可能にし、GCは通信しない。元通信・source停止後のcopy／移動／再copy、未来のURL編集、拒否・取消・期限・構造修復を既存sampler_sourcesへ追加した。既存の実WebGL証跡もHTTPのlight／darkと、repository所有の固定HTTPS画像のhash照合を含める。補助CLI試験の共通出力・回収処理を使い、素材回収側にあった同じ処理を整理した。ローカルは整形と差分検査までで、この新しい候補のGHAは未実行である。下記9865944の成功とは区別する。
+
 9865944の[CI 40968788345](https://github.com/EkeMinusYou/lazypencil/actions/runs/40968788345)は全工程成功した。管理素材回収の `assets prune FILE --project-root DIR` は、確認・revision付き適用・保持履歴と別文書による保護・変更拒否・使用中拒否・隔離後の回収／復元を、core／既定構成で検証済みになった。新規CLI試験7件とunit試験4件を含む。選んだrootの別文書・全stored文字列・読み込んだlibraryとbrowser資源・選んだdata directoryの全保持checkpointを調べ、内容hashの一致する単体素材とmanifest全体を照合したbundleだけを候補にする。動的script・不明な旧owner・未解決入力・symlinkなどは理由付きで保持する。manifestを削除した後のbundleの部分回収、最終空directoryの前後に中断したjournalの回収、参照が戻った完全payloadの復元と復元先の衝突も成功した。参照の不明な素材を捨てたり、全異常終了・電源断の受け入れを済んだと宣言するものではない。コマンドの範囲と上限は[管理素材の仕様](mcp.md#project-asset-maintenance)に記載する。
 
 両構成Clippy、通常開発build、release、通常／runtime／pixel／端末／Materialの全5 consumer、共通画像gateと署名付きsourceも成功した。sourceは1,215ファイル・13,431,168バイト、tar SHA-256 `cb664fe3162974984dc248086ab326d1640ab01bdf4f4a067741961a5948ff1c`で、署名workflow／revisionを照合した。Mac補助ツールGHA 40968170039も8fcbf18で全試験・Clippy・原本照合を成功している。重いbuildはGHAだけで行い、有用な実行を中断していない。

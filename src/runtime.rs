@@ -14,7 +14,7 @@ use std::{
 use tokio_util::sync::CancellationToken;
 
 mod diagnostics;
-mod download;
+pub(crate) mod download;
 pub(crate) use diagnostics::host_status;
 pub mod profiles;
 

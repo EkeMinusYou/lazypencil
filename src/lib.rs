@@ -35,6 +35,7 @@ mod process_owner;
 pub mod project;
 pub mod prompt;
 mod query;
+pub mod remote_images;
 #[cfg(feature = "rendering")]
 pub mod render;
 pub mod runtime;

@@ -2,9 +2,11 @@ use super::*;
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
-    process::{Child, Stdio},
-    time::{Duration, Instant},
+    time::Duration,
 };
+
+#[path = "fixture.rs"]
+mod fixture_support;
 
 struct Fixture {
     temp: TempDir,
@@ -63,17 +65,6 @@ impl Fixture {
         path
     }
     fn command(&self, revision: Option<&str>) -> Value {
-        struct Owner(Child);
-        impl Drop for Owner {
-            fn drop(&mut self) {
-                let _ = self.0.kill();
-                let _ = self.0.wait();
-            }
-        }
-        // Disk-backed output cannot deadlock a child behind an undrained pipe.
-        // It lives outside the scanned project and all tests isolate lock/config.
-        let output = tempfile::NamedTempFile::new_in(self.temp.path()).unwrap();
-        let stderr = tempfile::NamedTempFile::new_in(self.temp.path()).unwrap();
         let mut command = Command::new(env!("CARGO_BIN_EXE_lazypencil"));
         command
             .env("LAZYPENCIL_LOCK_DIR", self.locks())
@@ -84,34 +75,23 @@ impl Fixture {
             .args(["assets", "prune"])
             .arg(&self.file)
             .arg("--project-root")
-            .arg(&self.root)
-            .stdin(Stdio::null())
-            .stdout(output.reopen().unwrap())
-            .stderr(stderr.reopen().unwrap());
+            .arg(&self.root);
         if let Some(revision) = revision {
             command.arg("--expected-revision").arg(revision);
         }
-        let mut child = Owner(command.spawn().unwrap());
-        let deadline = Instant::now() + Duration::from_secs(35);
-        let status = loop {
-            if let Some(status) = child.0.try_wait().unwrap() {
-                break status;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "Asset maintenance exceeded its response deadline"
-            );
-            std::thread::sleep(Duration::from_millis(10));
-        };
-        let text = fs::read(output.path()).unwrap();
-        let value: Value = serde_json::from_slice(&text).unwrap_or_else(|error| {
+        let output = fixture_support::output(&mut command, Duration::from_secs(35));
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
             panic!(
                 "{error}: {} / {}",
-                String::from_utf8_lossy(&text),
-                fs::read_to_string(stderr.path()).unwrap()
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
             )
         });
-        assert_eq!(status.success(), value.get("error").is_none(), "{value}");
+        assert_eq!(
+            output.status.success(),
+            value.get("error").is_none(),
+            "{value}"
+        );
         value
     }
     fn checkpoint(&self, owner: &Path, before: Value, state: &str, legacy: bool) {

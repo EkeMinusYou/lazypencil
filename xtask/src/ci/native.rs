@@ -665,6 +665,20 @@ impl Session {
                 if has("sampler_sources") {
                     self.test(
                         !core,
+                        "lib",
+                        "remote_images::tests::",
+                        &["--test-threads=2"],
+                        "focus-http-image-policy.log",
+                    )?;
+                    self.test(
+                        !core,
+                        "sampler_sources",
+                        "http_images::",
+                        &["--test-threads=2"],
+                        "focus-http-images.log",
+                    )?;
+                    self.test(
+                        !core,
                         "sampler_sources",
                         "file_url_",
                         &["--test-threads=2"],

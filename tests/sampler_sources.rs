@@ -3,6 +3,9 @@ use serde_json::{Value, json};
 use std::{fs, path::Path};
 use tempfile::TempDir;
 
+#[path = "support/http_images.rs"]
+mod http_images;
+
 fn write(path: &Path, value: Value) {
     fs::write(path, value.to_string()).unwrap();
 }
@@ -1215,10 +1218,11 @@ fn real_webgl_independent_sampler_copy_matches_pixels_after_original_sources_are
             }
         }
     }
+    let https_image = http_images::real_webgl_case(&mut evidence);
     if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
         fs::write(
             Path::new(&directory).join("codec-sampler-copy.json"),
-            json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"cases":evidence}).to_string(),
+            json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"cases":evidence,"https_image":https_image}).to_string(),
         )
         .unwrap();
     }

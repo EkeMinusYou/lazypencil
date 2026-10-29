@@ -305,7 +305,7 @@ fn sampler(
             "pencil:background" => background
                 .ok_or_else(|| invalid("pencil:background is unavailable at this stage"))?,
             _ => {
-                let path = project.resolve_file(node.property_source(property), uri)?;
+                let path = project.resolve_image(node.property_source(property), uri)?;
                 project.asset(&path)?.bytes.as_ref()
             }
         };

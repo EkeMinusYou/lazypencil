@@ -366,6 +366,7 @@ where
                         .into_iter()
                         .flat_map(Project::runtime_dependencies),
                 )
+                .filter(crate::project::Dependency::is_file)
                 .map(|dependency| dependency.path)
                 .chain(before_project.configuration_lock_paths())
                 .chain(after_project.configuration_lock_paths())
@@ -463,7 +464,8 @@ pub fn document_metadata_with_fonts(
         "icons":{"node_type":"icon","packs":crate::icons::catalogue().iter().map(|pack| &pack.id).collect::<Vec<_>>(),"bundled":["lucide"],"rendering":cfg!(feature="rendering"),"synthetic_weights":false,"variable_weight_range":[100,700],"discovery_tool":"list_icons"},
         "fonts":{"rendering":cfg!(feature="rendering"),"formats":["ttf","otf","ttc","otc"],"face_metadata":true,"variation_control":["wght"],"fallback_policy":"project configuration or requested family, bundled default, explicit files","project_configuration":true,"lockfile":cfg!(feature="rendering")},
         "detach_instance":{"local_stored":true,"external":true,"inherited":true,"preserve_nested_refs":true,"external_scripts":true,"script_scope_metadata_version":1,"shader_sampler_variables":true,"checked_semantics":true},
-        "import_component":{"modes":["link","copy"],"sources":["local","declared_library","local_file","bundled_style"],"dry_run_writes":false,"copy_scripts":true,"copy_string_sampler_variables":true,"copy_absolute_string_sampler_paths":true,"sampler_copy_format":"imported_literal_variables","reuse_contained_definitions":true}
+        "import_component":{"modes":["link","copy"],"sources":["local","declared_library","local_file","bundled_style"],"dry_run_writes":false,"copy_scripts":true,"copy_string_sampler_variables":true,"copy_absolute_string_sampler_paths":true,"copy_http_string_sampler_urls":true,"sampler_copy_format":"imported_literal_variables","reuse_contained_definitions":true},
+        "image_sources":{"local":true,"local_file_url":true,"http":true,"https":true,"embedded_data_url":false,"network_policy":"runtime.browser","remote_dependency_kind":"remote_image","remote_snapshot":"captured_bytes"}
     });
     #[cfg(feature = "rendering")]
     {

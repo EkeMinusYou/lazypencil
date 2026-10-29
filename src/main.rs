@@ -2,6 +2,15 @@ use clap::{CommandFactory, FromArgMatches};
 use std::{io::Write, process::ExitCode};
 
 fn main() -> ExitCode {
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|argument| argument == "__http_image_worker")
+    {
+        return match lazypencil::remote_images::serve_worker() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(_) => ExitCode::FAILURE,
+        };
+    }
     #[cfg(all(unix, feature = "rendering"))]
     if std::env::args_os()
         .nth(1)

@@ -31,6 +31,38 @@ impl Project {
         kind: &str,
     ) -> Result<()> {
         self.check_cancelled()?;
+        if kind == "image" && crate::remote_images::is_http(uri) {
+            // Maintenance only discovers local retention roots. It must not
+            // acquire the network while scanning documents or old history.
+            if !self.remote_images_allowed {
+                return Ok(());
+            }
+            match self.capture_image(origin, uri) {
+                Ok(_) => return Ok(()),
+                Err(error) if matches!(error.code, "CANCELLED" | "REVISION_CONFLICT") => {
+                    return Err(error);
+                }
+                Err(error) => {
+                    let key = crate::remote_images::identity(uri);
+                    if !self.remote_failures.contains_key(&key) {
+                        if self.remote_failures.len() >= 1024 {
+                            return Err(invalid(
+                                "A project may report at most 1024 failed HTTP images",
+                            ));
+                        }
+                        self.byte_count = self
+                            .byte_count
+                            .saturating_add(key.as_os_str().len())
+                            .saturating_add(error.message.len());
+                        if self.byte_count > MAX_PROJECT_BYTES {
+                            return Err(invalid("Project dependencies exceed 128 MiB"));
+                        }
+                        self.remote_failures.insert(key, error);
+                    }
+                    return Ok(());
+                }
+            }
+        }
         match self.resolve_file(origin, uri) {
             Ok(path) => self.capture_asset(&path, kind),
             Err(error) => self.capture_missing_reference(origin, uri, kind, error),
@@ -119,11 +151,12 @@ impl Project {
         self.missing_assets
             .values()
             .map(MissingAsset::diagnostic)
+            .chain(self.remote_failures.iter().map(|(path, error)| json!({"code":error.code,"message":error.message,"path":path,"kind":"remote_image"})))
             .collect()
     }
 
     pub fn assets_complete(&self) -> bool {
-        self.missing_assets.is_empty()
+        self.missing_assets.is_empty() && self.remote_failures.is_empty()
     }
 
     pub(crate) fn refresh_missing_assets(&mut self) -> Result<()> {
@@ -144,6 +177,7 @@ impl Project {
     pub(crate) fn require_assets(&self) -> Result<()> {
         if self.assets_complete()
             || self.font_lock_capture
+                && self.remote_failures.is_empty()
                 && self
                     .missing_assets
                     .values()
@@ -159,6 +193,15 @@ impl Project {
     }
 
     pub(crate) fn require_no_new_missing(&self, before: &Project) -> Result<()> {
+        for path in self.remote_failures.keys() {
+            if !before.remote_failures.contains_key(path) {
+                return Err(Error::new(
+                    "ASSET_NOT_FOUND",
+                    "An edit cannot introduce a new unavailable HTTP image",
+                )
+                .details(json!({"path":path,"kind":"remote_image"})));
+            }
+        }
         let mut allowed = BTreeSet::new();
         for asset in before.missing_assets.values() {
             self.check_cancelled()?;

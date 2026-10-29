@@ -1173,7 +1173,7 @@ impl Renderer<'_> {
             .ok_or_else(|| invalid("Image fill requires a local URL"))?;
         let path = self
             .project
-            .resolve_file(node.property_source(property), url)?;
+            .resolve_image(node.property_source(property), url)?;
         if !self.images.contains_key(&path) {
             let asset = self.project.asset(&path)?;
             let image = Image::from_encoded(Data::new_copy(&asset.bytes))

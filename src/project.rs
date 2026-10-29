@@ -32,6 +32,7 @@ mod browser_context;
 mod import;
 mod missing;
 mod override_context;
+mod remote_images;
 pub(crate) use override_context::preserve_metadata as preserve_execution_metadata;
 mod sampler_images;
 mod script_context;
@@ -56,6 +57,19 @@ pub struct Asset {
     pub bytes: Arc<[u8]>,
     pub kind: String,
     pub revision: String,
+}
+
+impl Dependency {
+    pub(crate) fn is_file(&self) -> bool {
+        self.kind != "remote_image"
+    }
+}
+
+struct CaptureOptions<'a> {
+    cancel: Option<&'a tokio_util::sync::CancellationToken>,
+    activity: Arc<crate::store::AssetActivity>,
+    remote_images: bool,
+    remote_worker: Option<&'a Path>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -208,6 +222,10 @@ pub struct Project {
     overlay_published: bool,
     file_bindings: std::sync::Mutex<BTreeMap<PathBuf, PathBuf>>,
     cancel: Option<tokio_util::sync::CancellationToken>,
+    remote_images_allowed: bool,
+    remote_worker: Option<PathBuf>,
+    remote_deadline: Option<std::time::Instant>,
+    remote_failures: BTreeMap<PathBuf, Error>,
     // Fields drop in declaration order. Release the lease after captured inputs.
     _asset_activity: Option<Arc<crate::store::AssetActivity>>,
 }
@@ -268,6 +286,10 @@ impl Project {
             overlay: BTreeMap::new(),
             overlay_published: true,
             cancel: None,
+            remote_images_allowed: false,
+            remote_worker: None,
+            remote_deadline: None,
+            remote_failures: BTreeMap::new(),
             file_bindings: Default::default(),
         })
     }
@@ -611,6 +633,27 @@ impl Project {
         )
     }
 
+    /// Embedders use the CLI executable for cancellable HTTP image workers.
+    pub fn load_with_remote_worker(
+        store: &Store,
+        executable: &Path,
+        cancel: Option<&tokio_util::sync::CancellationToken>,
+    ) -> Result<Self> {
+        Self::capture_inputs(
+            store.path(),
+            store.read()?,
+            &[],
+            Some(store.data_dir()),
+            &BTreeMap::new(),
+            CaptureOptions {
+                cancel,
+                activity: store.asset_activity(),
+                remote_images: true,
+                remote_worker: Some(executable),
+            },
+        )
+    }
+
     /// Capture a sibling document or retained checkpoint under the existing
     /// maintenance lease, without taking a conflicting new shared lease.
     pub(crate) fn for_asset_retention(
@@ -619,14 +662,18 @@ impl Project {
         document: Document,
         cancel: Option<&tokio_util::sync::CancellationToken>,
     ) -> Result<Self> {
-        Self::from_document_with_activity(
+        Self::capture_inputs(
             path,
             document,
             &[],
             Some(store.data_dir()),
             &BTreeMap::new(),
-            cancel,
-            store.asset_activity(),
+            CaptureOptions {
+                cancel,
+                activity: store.asset_activity(),
+                remote_images: false,
+                remote_worker: None,
+            },
         )
     }
 
@@ -697,6 +744,30 @@ impl Project {
         cancel: Option<&tokio_util::sync::CancellationToken>,
         activity: Arc<crate::store::AssetActivity>,
     ) -> Result<Self> {
+        Self::capture_inputs(
+            path,
+            document,
+            additional_roots,
+            data,
+            overlay,
+            CaptureOptions {
+                cancel,
+                activity,
+                remote_images: true,
+                remote_worker: None,
+            },
+        )
+    }
+
+    fn capture_inputs(
+        path: &Path,
+        document: Document,
+        additional_roots: &[PathBuf],
+        data: Option<&Path>,
+        overlay: &crate::managed::Overlay,
+        options: CaptureOptions<'_>,
+    ) -> Result<Self> {
+        let cancel = options.cancel;
         crate::cancel::check(cancel)?;
         let path = crate::paths::canonical(path)?;
         let configuration = crate::config::Snapshot::load(&path)?;
@@ -706,7 +777,11 @@ impl Project {
             allowed_roots.push(crate::paths::canonical(root)?);
         }
         let mut project = Self {
-            _asset_activity: Some(activity),
+            _asset_activity: Some(options.activity),
+            remote_images_allowed: options.remote_images,
+            remote_worker: options.remote_worker.map(Path::to_owned),
+            remote_deadline: None,
+            remote_failures: BTreeMap::new(),
             root: path.clone(),
             documents: BTreeMap::new(),
             imports: BTreeMap::new(),
@@ -988,6 +1063,19 @@ impl Project {
                     }),
             )
             .chain(self.missing_assets.values().map(|asset| asset.dependency()))
+            .chain(self.remote_failures.iter().map(|(path, error)| {
+                Dependency {
+                    path: path.clone(),
+                    revision: hash(
+                        json!({"path":path,"availability":"missing","error":error})
+                            .to_string()
+                            .as_bytes(),
+                    ),
+                    kind: "remote_image".into(),
+                    version: None,
+                    availability: Some("missing"),
+                }
+            }))
             .chain(self.font_sources.values().map(|font| Dependency {
                 path: font.path.clone(),
                 revision: font.revision.clone(),
@@ -1123,6 +1211,9 @@ impl Project {
         let browser_paths = browser_resources::protected_paths(self);
         for (path, asset) in &self.assets {
             self.check_cancelled()?;
+            if asset.kind == "remote_image" {
+                continue;
+            }
             if !self.overlay_published && self.overlay.contains_key(path) {
                 continue;
             }
@@ -1153,6 +1244,20 @@ impl Project {
 
     pub fn capture_asset(&mut self, path: &Path, kind: &str) -> Result<()> {
         self.check_cancelled()?;
+        if self
+            .assets
+            .get(path)
+            .is_some_and(|asset| asset.kind == "remote_image")
+        {
+            return if kind == "image" {
+                Ok(())
+            } else {
+                Err(Error::new(
+                    "ASSET_NOT_FOUND",
+                    "Captured HTTP images cannot be used as code or local files",
+                ))
+            };
+        }
         if let Some(file) = self.overlay.get(path).cloned() {
             if !self.assets.contains_key(path) {
                 let kind = if let Some(font) = self.font_sources.remove(path) {
@@ -2204,9 +2309,17 @@ impl Project {
             self.bind_icons(node);
         }
         for (origin, uri, kind) in assets {
-            let path = self.resolve_file(&origin, &uri)?;
+            let path = if kind == "image" {
+                self.resolve_image(&origin, &uri)?
+            } else {
+                self.resolve_file(&origin, &uri)?
+            };
             if !self.assets.contains_key(&path) {
-                self.capture_asset(&path, &kind)?;
+                if kind == "image" {
+                    self.capture_image(&origin, &uri)?;
+                } else {
+                    self.capture_asset(&path, &kind)?;
+                }
                 self.runtime_assets.insert(path);
             }
         }

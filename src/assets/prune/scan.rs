@@ -285,6 +285,9 @@ impl Scan {
                     }
                 }
                 for dependency in project.dependencies() {
+                    if !dependency.is_file() {
+                        continue;
+                    }
                     self.paths.insert(dependency.path.clone());
                     if dependency.availability.is_none() && dependency.kind != "font" {
                         let bytes = self.read(&dependency.path, MAX_FILE, budget)?;

@@ -64,6 +64,8 @@ Inherited edits use `{"node_id":"instance","instance_path":["nested-instance","l
 
 Use `assets put design.pen --kind image --input reference.jpg` to create a checked, normalized PNG, or `--kind script` / `--kind shader` for UTF-8 code. The returned URI points to an immutable file under `assets/lazypencil` beside the document. Referencing it is a separate editing batch; storing code does not execute it.
 
+Image fills and shader image inputs can use HTTP(S) URLs. A project snapshot keeps the acquired image bytes in memory; standalone copies retain them locally while preserving shared string values and themes. `runtime.browser.network_policy = "offline"` prevents acquisition, and copied local images remain available offline. See [HTTP image limits and capture conditions](docs/dynamic-content.md#http画像の取得と保持).
+
 Asset uploads and component imports coordinate with dependency readers through the destination's writer lock, including absent files. `assets put` and MCP uploads can be cancelled while waiting for that lock and before publication. Existing content is rechecked after waiting and is never overwritten. See [managed asset behavior](docs/mcp.md#managed-assets).
 
 Review unused project assets with `assets prune design.pen --project-root /path/to/project --json`. Repeat with `--expected-revision REVIEWED_SHA256` to apply. Include all sibling documents sharing assets in the chosen root and select their retained history with `--data-dir` when needed. Review never deletes files; active frontends block maintenance. Uncertain references retain assets, and interrupted cleanup is reviewed by the same command. See [asset maintenance](docs/mcp.md#project-asset-maintenance) for scope and recovery conditions.

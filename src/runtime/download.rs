@@ -4,7 +4,7 @@ use crate::{Error, Result};
 use std::{
     io::{Read, Write},
     path::Path,
-    process::{Child, ChildStdin, Command, Stdio},
+    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     sync::mpsc,
     thread::JoinHandle,
     time::{Duration, Instant},
@@ -12,9 +12,9 @@ use std::{
 use tokio_util::sync::CancellationToken;
 
 const DOWNLOAD_SECONDS: u64 = 180;
-const MAGIC: &[u8; 8] = b"LPDL\x01\0\r\n";
+pub(crate) const MAGIC: &[u8; 8] = b"LPDL\x01\0\r\n";
 
-pub(super) fn watch_owner() -> Result<()> {
+pub(crate) fn watch_owner() -> Result<()> {
     let mut input = std::io::stdin();
     let mut magic = [0u8; 8];
     input
@@ -113,9 +113,61 @@ pub(super) fn run(
     let mut command = Command::new(executable);
     command
         .arg("__runtime_download_worker")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
+    let copied = run_worker(
+        command,
+        MAGIC,
+        Duration::from_secs(DOWNLOAD_SECONDS),
+        cancel,
+        move |stdout| copy_checked(stdout, &mut output, &path, expected_bytes, None),
+    )?;
+    if copied != expected_bytes {
+        return Err(integrity("Incomplete Chromium download"));
+    }
+    Ok(())
+}
+
+/// Use the same owner-pipe, cancellation and reap path for bounded image reads.
+/// Neither worker creates child processes; no independent network task survives
+/// its host. The request is carried over stdin rather than exposed in argv.
+pub(crate) fn collect(
+    executable: &Path,
+    worker: &str,
+    request: &[u8],
+    limit: usize,
+    timeout: Duration,
+    cancel: Option<&CancellationToken>,
+) -> Result<Vec<u8>> {
+    let mut command = Command::new(executable);
+    command.arg(worker).stderr(Stdio::null());
+    run_worker(command, request, timeout, cancel, move |stdout| {
+        let mut bytes = Vec::new();
+        stdout
+            .take(limit as u64 + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|_| unavailable("Cannot read image download output"))?;
+        if bytes.len() > limit {
+            return Err(integrity("Image download exceeds its byte budget"));
+        }
+        Ok(bytes)
+    })
+}
+
+fn run_worker<T: Send + 'static>(
+    mut command: Command,
+    request: &[u8],
+    timeout: Duration,
+    cancel: Option<&CancellationToken>,
+    read: impl FnOnce(ChildStdout) -> Result<T> + Send + 'static,
+) -> Result<T> {
+    crate::cancel::check(cancel)?;
+    if !Path::new(command.get_program()).is_absolute() {
+        return Err(Error::new(
+            "INVALID_ARGUMENT",
+            "Download workers require an absolute executable path",
+        ));
+    }
+    command.stdin(Stdio::piped()).stdout(Stdio::piped());
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -137,15 +189,15 @@ pub(super) fn run(
         .owner
         .as_mut()
         .expect("live owner pipe")
-        .write_all(MAGIC)
+        .write_all(request)
         .map_err(|error| unavailable(format!("Cannot start runtime download owner: {error}")))?;
     transfer.reader = Some(std::thread::spawn(move || {
-        let result = copy_checked(stdout, &mut output, &path, expected_bytes, None);
+        let result = read(stdout);
         let _ = sender.send(result);
     }));
     // Keep the HTTP budget unchanged and allow one second to drain/reap the
     // worker. Cancellation does not wait for an individual blocking HTTP call.
-    let deadline = Instant::now() + Duration::from_secs(DOWNLOAD_SECONDS + 1);
+    let deadline = Instant::now() + timeout + Duration::from_secs(1);
     let mut copied = None;
     loop {
         crate::cancel::check(cancel)?;
@@ -171,13 +223,10 @@ pub(super) fn run(
             if !status.success() {
                 return Err(unavailable("Chromium download worker failed"));
             }
-            if let Some(copied) = copied {
+            if let Some(copied) = copied.take() {
                 crate::cancel::check(cancel)?;
-                if copied != expected_bytes {
-                    return Err(integrity("Incomplete Chromium download"));
-                }
                 transfer.completed = true;
-                return Ok(());
+                return Ok(copied);
             }
         }
         std::thread::sleep(Duration::from_millis(15));

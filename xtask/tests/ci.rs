@@ -39,6 +39,28 @@ fn asset_maintenance_submodules_keep_their_reproductions_in_mixed_project_change
 }
 
 #[test]
+fn remote_image_changes_prepare_http_cancellation_and_retention_before_full_tests() {
+    for path in [
+        "src/remote_images.rs",
+        "src/project/remote_images.rs",
+        "src/remote_images/tests.rs",
+    ] {
+        let plan = focus::select(&util::root(), &[path.into()], "auto").unwrap();
+        let targets = ci::commands::reproduction_targets(&plan.suite, &plan.targets);
+        for target in ["sampler_sources", "runtime", "assets"] {
+            assert!(
+                plan.targets.iter().any(|name| name == target),
+                "{path}: {plan:?}"
+            );
+            assert!(
+                targets.iter().any(|name| name == target),
+                "{path}: {targets:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn font_lock_changes_reproduce_revision_checked_repairs_before_the_complete_suite() {
     for path in ["src/font_lock.rs", "tests/support/font_lock.rs"] {
         let plan = focus::select(&util::root(), &[path.into()], "auto").unwrap();

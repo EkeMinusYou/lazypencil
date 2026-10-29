@@ -57,7 +57,7 @@ impl Project {
         if dependencies.iter().any(|d| {
             !matches!(
                 d.kind.as_str(),
-                "document" | "script" | "shader" | "image" | "icon_pack"
+                "document" | "script" | "shader" | "image" | "remote_image" | "icon_pack"
             )
         }) {
             return None;
@@ -167,6 +167,15 @@ impl FailedCodeCapture {
         }
         for dependency in &self.dependencies {
             project.check_cancelled()?;
+            if !dependency.is_file() {
+                if !project
+                    .asset(&dependency.path)
+                    .is_ok_and(|asset| asset.revision == dependency.revision)
+                {
+                    return Err(conflict());
+                }
+                continue;
+            }
             let actual = crate::store::content::file_hash(
                 &dependency.path,
                 MAX_ASSET_BYTES,

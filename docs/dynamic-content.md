@@ -200,7 +200,17 @@ CLI は取得条件を満たした一時点の PNG を出力する。TUI は同�
 
 ### 宣言と数値入力
 
-ローカル`file://` URLの文字列samplerは、percent encodingを復号したファイルへ通常の許可領域・依存検査を適用する。独立コピーはURL原文を表示用に保持し、画像だけを`sampler_images`で転送する。元sourceの削除・project移動・再copy後も元URLを開かず、利用者が変数を新しいURLへ変更した場合は新しい参照を検査する。HTTP(S)等の取得と、捕捉scriptのfile-URL asset keyは残る対応範囲である。新しいURL対応の検証状況は[現在の状態](implementation-status.md#current-status)を参照する。
+ローカル`file://` URLの文字列samplerは、percent encodingを復号したファイルへ通常の許可領域・依存検査を適用する。独立コピーはURL原文を表示用に保持し、画像だけを`sampler_images`で転送する。元sourceの削除・project移動・再copy後も元URLを開かず、利用者が変数を新しいURLへ変更した場合は新しい参照を検査する。HTTP(S)の取得・通常画像とsamplerの共通捕捉・独立コピーも新たに実装し、GHA確認待ちである。詳細は下記のHTTP画像の条件を参照する。埋め込みdata画像URLと、捕捉scriptのfile-URL／HTTP asset keyは引き続き未対応である。新しいURL対応の検証状況は[現在の状態](implementation-status.md#current-status)を参照する。
+
+### HTTP画像の取得と保持
+
+通常の画像fillとshaderの画像入力は、HTTP(S)画像をスナップショット内のメモリへ捕捉する。`remote_image`依存のpathはURLをhash化した論理IDであり、ローカルファイルや許可rootの追加には使わない。取得済みのbyte列とhashをそのProjectの寿命まで保持し、`verify_unchanged`でネットワークを再取得しない。次のProjectの読み込みでは改めて取得し、画像のbyte列が変われば依存revisionも変わる。ディスクcache・cookie保存は追加しない。CLI／MCP／TUIは自身の実行ファイルを専用workerに使い、ライブラリを組み込む側の明示捕捉には`Project::load_with_remote_worker`を用意する。
+
+取得は`runtime.browser.network_policy`と`timeout_ms`に従い、offlineでは開始しない。1 ProjectのHTTP画像取得全体は最大30秒、1画像の符号化済み入力は20MiB、URLは4,096 byte、redirectは最大5回である。PNG／JPEG／WebPの静的container検査を共用し、描画時は従来のpixel／decode上限も適用する。URLに埋め込んだ資格情報、別protocolへのredirect、HTTPSからHTTPへの降格を拒否する。明示URLのqueryとfragmentは文書・文字列に保持するが、fragmentを通信要求へ送らず、失敗診断へURL／本文を転用しない。browser認証profileのcookieは画像workerへ引き継がない。
+
+DNS／TLS／HTTPは、既存Chromium downloadと共通の所有者pipe・取消・kill／wait処理を使う専用workerで実行する。上記の通信期限に加えて最大1秒のdrain／回収枠を設け、親の終了でworkerも終了する。取得失敗は不完全なassetと診断に残し、文書のinspectと構造修復を可能にする。新たな未取得画像を導入する編集や、不完全な画像を完全な描画として返すことは認めない。管理素材の回収走査ではHTTPを取得しない。
+
+独立コピーでは使用する変数の別テーマの画像も捕捉し、既存の管理bundleへ保存する。元のURL文字列・alias・themeを残して画像だけを転送するため、通信停止・元source削除・project移動・再copy後もローカルで描画できる。コピー後に利用者が新しいURLへ変数を変更すれば、新しい所有元のHTTP画像として取得する。取得先が将来返す内容の不変性や、認証を要する全サービスへの互換性を保証するものではない。
 
 マクロ・条件分岐がある shader は、実 WebGL コンパイラーで元の GLSL を検査し、そのコンパイラーの predefined macro を使ってブラウザー内の上限付き Wasm で展開してから、選択された宣言を Rust の型検査へ渡す。型・名前・構造体 field・配列長を生成する object／function macro と、異なる型を持つ条件分岐を同じ経路で扱う。選択された宣言の documentation の既定値・時刻・解像度も維持する。注釈と宣言の間にある directive は展開後に消えても区切りとして保持し、元の行・ファイル番号や byte 位置を変更しない内部コピーを使う。コメント内の色などの `#` は directive と区別する。未選択または未知の名前への保存済み override はエラーとし、元のコード・文書は書き換えない。展開ソースは4 MiB、宣言トークン・型・添字の既存の上限を保ち、Wasm にホスト側のファイル・ネットワーク機能を渡さない。宣言取得と型付き入力の準備・描画は一つの shader 期限を共有する。展開ソースと PNG は同じ LRU の容量・件数制限に従い、cache の読み取りで待機期限を延長しない。自作8ケースを両形式・塗り／効果・1倍／2倍で検査し、inactive な時刻・型エラー・未対応版・idle 後の再利用も確認する。新しい Rust／実 WebGL の結果は GHA で検証し、本家との全互換性とは扱わない。
 
