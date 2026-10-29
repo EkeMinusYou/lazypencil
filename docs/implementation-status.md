@@ -4,7 +4,7 @@
 
 ## 現在の状態（2026-10-29）
 
-最新のMac完全CIの根拠は `4aaccab` の [実行](https://github.com/EkeMinusYou/lazypencil/actions/runs/40794144460)。軽量227件・Clippy、core462・default840ケース、runtime・画像gate・42描画計測・依存監査・署名付きsourceまで成功した。両構成の可視consoleで従来の全named caseの回数を保持したことを照合した。runtime導入の取消・保存同期、Rust補助バイナリによる添付PNG検査、送信用縮小版・TUI入力スレッドでの変換と候補回収・ユーザー設定も含む。全artifactの独立した再照合と製品全体の受け入れは未完了で、正常な導入・取消の成功から全異常終了条件の合格とはしない。重いbuildはGHAに限り、Linux x64／arm64・Windowsの既存実装は後日対応用に保持する。Intel Macは対象外とし、OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
+最新のMac完全CIの根拠は `d37e4f2` の [実行](https://github.com/EkeMinusYou/lazypencil/actions/runs/40796673447)。軽量227件・Clippy、core462・default840ケース、runtime・画像gate・42描画計測・依存監査・署名付きsourceまで成功した。両構成の可視consoleで従来の全named caseの回数を保持したことを照合した。runtime導入の取消・保存同期、Rust補助バイナリによる添付PNG検査、送信用縮小版・TUI入力スレッドでの変換と候補回収・ユーザー設定も含む。全artifactの独立した再照合と製品全体の受け入れは未完了で、正常な導入・取消の成功から全異常終了条件の合格とはしない。重いbuildはGHAに限り、Linux x64／arm64・Windowsの既存実装は後日対応用に保持する。Intel Macは対象外とし、OS／CPU以外の[元の完成条件](design.md#検証と受け入れ条件)は維持する。
 
 旧3環境方針での依存監査・署名付きソースを含む確定済み根拠は [`c9ffb37` の CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40679529757)。Linux 各1,490件・Mac1,479件、各144サマリー・812画像・42描画計測を確認し、過去ケースの実行回数、画像、clipboard／IME、profile／namespace／通信制御、ソース1,161ファイルの Git blob・mode と署名を独立照合した。CI の成功は、製品全体の受け入れ完了を意味しない。
 
@@ -26,7 +26,7 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 
 同じcommitの [cache利用時](https://github.com/EkeMinusYou/lazypencil/actions/runs/40791884683) は全工程成功で **7分48秒**。対象選択45秒、共通builder2分13秒、通常consumer3分57秒（試験step2分59秒）、runtime consumer4分05秒（準備37秒・試験step2分40秒）、source検証30秒だった。run開始からplanは4秒、planからnativeは3〜4秒、builderからconsumerは4〜5秒、consumerからsourceは2秒で、今回の待機は処理時間の主因ではなかった。appのbuild確認5.4秒・lint0.4秒で再コンパイル0件、core462・既定構成838ケースの従来の全named caseの回数・42描画計測・先行headed caseの成功も再照合した。画像gate・監査・署名付きsourceまで含む10分以内を、依存／アプリ／補助処理のcacheが使える条件で実測した。依存を含む完全なcold buildや長いrunner割当待ちへの保証とはしない。同条件の追加実行は行わず、重いbuildはGHAだけで行う。
 
-本体コードを変更した `4aaccab` の完全CIは17分11秒で成功し、cacheだけを再利用した上記7分48秒とは条件を区別する。既定builderの先行core互換試験に3分50秒を使い、同じsource・compiler条件・no-default構成・2-threadの検証が専用core jobにも含まれることをconsoleとworkflowで照合した。combined builderではこの重複を除き、描画ありの先行試験・単独focusの両構成・最終core完全検証は保持する。あわせてコピー回帰に実workerのユーザーmetadataと部品参照の確認を加え、変更後のGHAで確認する。
+本体コードを変更した `4aaccab` の完全CIは17分11秒で成功し、cacheだけを再利用した上記7分48秒とは条件を区別する。既定builderの先行core互換試験に3分50秒を使い、同じsource・compiler条件・no-default構成・2-threadの検証が専用core jobにも含まれることをconsoleとworkflowで照合した。combined builderではこの重複だけを除き、描画ありの先行試験・単独focusの両構成・最終core完全検証は保持した。補助処理と試験を変更したd37e4f2のCIも全工程成功で10分28秒だった。core462・既定構成840ケースの実行回数と42描画計測を照合し、欠落0件。先行試験でも実workerのユーザーmetadataと部品参照を検証した。前の成功source 4aaccabのreceiptと比較し、本体のhashは同じで、47試験ターゲットのうち変わったのはscript_scopeだけだった。通常アプリのbuild確認は0.5秒、変更試験の準備は12.3秒で、builderの先行区間からno-defaultコマンドが除かれていた。補助処理の初回build・試験の変更・checkpoint保存を含む結果であり、cache利用時7分48秒とは分けて扱う。
 
 過去の比較では基準 `c11a0f9` が先行5分56秒・完全job24分34秒・workflow32分09秒、`112f5aa` はdefault11分01秒だった。後者ではMac runnerが15分02秒の割当待ちでGitHub側に終了され、未実行jobだけを再実行した。capacity constraintsのannotationを保存し、待機と処理時間を分ける。有用な実行は中断していない。`1190c6b` の過剰並列化はMCP30秒／emoji300秒の期限に抵触し、`140d94a` のウォーム試験は300ms起動期限のPID記録前に終了した。失敗を合格へ読み替えず、期限も変更していない。`f2ffcf0` は全工程成功したが全体13分31秒であり、フォントの重複計算を除く前の結果として区別する。
 
@@ -52,7 +52,7 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 
 コード上に残る主な機能不足：
 
-- 生成 script の有効な明示 `script_scope`／`script_bindings`／上書き文脈の独立合成。現在は `bindings.rs` と `generated_refs.rs` で拒否する。失効したscript_bindingsが生成URIの再配置で復活する別の不具合を修正し、実worker・2形式・元ファイル削除・再コピーの回帰を追加した。4aaccabのMac完全CIで両形式の回帰まで成功し、従来のケースの実行回数を保持した。有効な明示文脈の合成を、この修正だけで完了扱いにしない。
+- 生成 script の有効な明示 `script_scope`／`script_bindings`／上書き文脈の独立合成。現在は `bindings.rs` と `generated_refs.rs` で拒否する。失効したscript_bindingsが生成URIの再配置で復活する別の不具合を修正し、実worker・2形式・元ファイル削除・再コピーの回帰を追加した。d37e4f2のMac完全CIで両形式の画素、実workerのユーザーmetadata、コピー先の部品定義への参照まで成功し、従来のケースの実行回数を保持した。修正コードから独立に再構成したJSのhashと、元source削除／再コピー前後の6 PNGのhash・寸法・一致も照合した。有効な明示文脈の合成を、この修正だけで完了扱いにしない。
 - コピーする親の内部にある再利用可能な部品定義を、既存定義へ明示再利用する経路。独立した依存定義と選択した部品の再利用は実装済み。
 - TUI preview と別の bound MCP が、同じ認証済みブラウザープロファイルを同時利用する統合。専用 profile の作成・ログイン・永続ストレージ・所有者回収は実装済みだが、現在の lease は二つ目の独立 owner を拒否する。
 - 追加フォントの遅延読み込み。入力容量・フェイス数の上限と OS FontMgr の遅延作成は実装済みだが、指定ファイルの全件読み取り・登録が残る。
