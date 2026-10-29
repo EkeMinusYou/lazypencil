@@ -2,11 +2,11 @@
 
 設計日: 2026-10-23
 
-継承入力を組み合わせるコピーでは、入力文脈v2の`lexical_inputs`と、入力文脈／bindings v3・v4の`input_epoch`を内部の由来情報として使う。通常の入力所有元かどうかと、同じコピー世代に属するかを区別し、再コピーでは元の世代を維持する。旧データや別の入力文脈で由来を確定できない場合は推測して適用しない。これらは利用者が変更するselectorではなく、明示入力文脈・carrier・複数世代の全合成を完了するものでもない。この追加の由来検査はGHA確認待ちである。
+継承入力を組み合わせるコピーでは、入力文脈v2の`lexical_inputs`と、入力文脈／bindings v3・v4の`input_epoch`を内部の由来情報として使う。通常の入力所有元かどうかと、同じコピー世代に属するかを区別し、再コピーでは元の世代を維持する。旧データや別の入力文脈で由来を確定できない場合は推測して適用しない。これらは利用者が変更するselectorではなく、複数世代の全合成を完了するものでもない。由来検査は7431326の完全GHAで成功した。
 
 生成した`script_scope`と`script_bindings`を同時に指定する場合、出力URIのguardと保存入力のhashを別々に照合する。有効なbindingが出力を優先し、保存した参照入力は有効なbindingの`input_components`、有効なscopeの入力library、元の入力所有元の順に選ぶ。変数式は入力所有元の変数表を維持する。この対の84組・独立した16通りのguardは5b24cfeのGHAで成功した。847件の既定構成・469件のcoreに従来のnamed caseの欠落はなかった。
 
-明示`script_input_context`は通常文書と生成結果で入力一致の判定・形式検査を共用する。提供入力が一致した場合、その文脈の変数・部品の対応を出力scope／bindingと別に捕捉する。文脈のlibraryは生成元の捕捉済み文書から解決し、失効した文脈の未宣言libraryは参照しない。コピー後もJavaScriptは変更しない。単独文脈・scopeとの併用・三者併用、変数の改名・別library・失効の60組とcopy／再copyの追加試験はGHA確認待ち。`script_override`を含む合成、元の所有元への復帰、複数世代の継承入力は引き続き未完了であり、この追加だけで完成とはしない。
+明示`script_input_context`は通常文書と生成結果で入力一致の判定・形式検査を共用する。提供入力が一致した場合、その文脈の変数・部品の対応を出力scope／bindingと別に捕捉する。文脈のlibraryは生成元の捕捉済み文書から解決し、失効した文脈の未宣言libraryは参照しない。コピー後もJavaScriptは変更しない。単独文脈・scopeとの併用・三者併用、変数の改名・別library・失効の60組とcopy／再copyは7431326の完全GHAで成功した。同じ文書内でも部品名が変わる場合はruntime handleへ変換し、変更前の名前をワーカーへ渡さない。元の所有元への復帰、複数世代の継承入力は引き続き未完了である。
 
 状態: JavaScript・Webページ・GLSL、CLI／MCP／TUI、実行上限・保持page・再生・取得方針・専用profileを実装し、確定済みc9ffb37では旧方針のMac／Linux2環境で検証した。初回リリースはmacOS Apple Siliconのみに変更した。入力22ケースも現在のworker／描画試験に含み、改めて未検証には戻さない。明示scriptスコープの合成、認証profileの同時利用、fill-stage object samplingなどの制約とMacの最終受け入れは残る。[現在の残件](implementation-status.md#remaining-work)
 
@@ -16,7 +16,7 @@ Rust 本体と Skia CPU・SkParagraph の採用は維持する。通常の図形
 
 ## 実行構成
 
-生成ref／子孫変更の`script_override`は、内側metadataのscope・binding・入力文脈を評価した後、`output`と`input`を個別に適用する。nullは内側の結果を保つ。一致しない入力文脈は内側の明示入力文脈を解除し、scope／bindingの参照入力対応は保持する。明示scriptUriに対して出力guardが失効した場合は生成元文書の出力へ戻す。URIを継承し、戻るべき元コード所有元が未捕捉の場合は診断を維持する。内側の通常metadataにある同名のcarrierは再帰的に適用しない。完全なscript定義にref用carrierを指定することは拒否する。両形式・4経路・7種類の56組を元／copy／再copyと画素で確認する追加はGHA待ちであり、複数世代と入力解除の全範囲を完了したという意味ではない。
+生成ref／子孫変更の`script_override`は、内側metadataのscope・binding・入力文脈を評価した後、`output`と`input`を個別に適用する。nullは内側の結果を保つ。一致しない入力文脈は内側の明示入力文脈を解除し、scope／bindingの参照入力対応は保持する。明示scriptUriに対して出力guardが失効した場合は生成元文書の出力へ戻す。URIを継承し、戻るべき元コード所有元が未捕捉の場合は診断を維持する。内側の通常metadataにある同名のcarrierは再帰的に適用しない。完全なscript定義にref用carrierを指定することは拒否する。両形式・4経路・7種類の56組を元／copy／再copyと画素で確認し、7431326の完全GHAで成功した。複数世代と入力解除の全範囲を完了したという意味ではない。
 
 ```mermaid
 flowchart TD

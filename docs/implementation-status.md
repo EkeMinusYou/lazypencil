@@ -4,6 +4,10 @@
 
 ## 現在の状態（2026-10-29）
 
+最新の全工程成功は7431326の[CI 40877168230、attempt 2](https://github.com/EkeMinusYou/lazypencil/actions/runs/40877168230/attempts/2)である。明示入力文脈60組と上書きcarrier56組、同じ文書内の参照名変更を修正し、既定構成852件・core469件のnamed caseと回数を従来の847件／469件へ照合して欠落0件を確認した。全1,488 PNGのrevision・hash・寸法、496組の元／copy／再copy、先行と通常の画像一致、従来1,140 PNGの不変を照合した。8種類のbyte列は既存の独立復号済み画像と同じで、重ねて復号しない。全5 consumerのcompiler／binary receiptはbyte一致し、実Chromium・MCP・端末・Material・42描画計測・依存監査・共通画像gateも成功した。署名付きsourceは1,194ファイル・13,333,894バイト、SHA-256 `6d1b641abe49f1a4104e787f85aa1355e231fb84744401111d544adce0693f2f`である。
+
+初回は通常consumerだけが新しいMac runner image `20261028.0489.1`に割り当てられ、builderの`20260907.0337.1`との不一致で試験前に停止した。他の検証を最後まで保ち、終了後に通常jobだけを再実行したところ元と同じimageで成功した。アプリ・依存を再buildせず、image・compiler・ソース・hashの条件も緩めていない。再実行と最終sourceを含む全体は16分17秒で、10分目標は未達。builder7分14秒、core8分17秒、release3分14秒、正常な通常consumer3分14秒、source33秒。先行build128.87秒・残りbuild110.29秒、追加再現15.67秒／13.02秒、既存binding133.97秒、browser32.02秒、copy8.00秒だった。registryの356単位とSkiaは全てCargoでfresh、全体buildでも先行lib／CLI／lib試験／script_scopeの4単位を再利用した。中間のc8e1c66のfixture名衝突と6dbb296の参照転送不具合は解消した。5b24cfeで実行済みのフォントfixtureの一覧取得補強も含め、同条件の追加検証は行わない。以下の9d6613b等の記述はそれぞれの固定source当時の結果であり、現在の残件とは区別する。
+
 9d6613bの[CI 40870088186](https://github.com/EkeMinusYou/lazypencil/actions/runs/40870088186)は全工程成功した。追加フォントは全ファイルの常時保持・一括native登録をやめ、内容hashのストリーム取得、名前表の探索、使用ファミリーの読み込みを分離した。文字不足時に指定順でfallbackを追加し、一覧取得では全フェイスを明示的に読み込む。未使用ファミリーの非登録、同サイズ変更の拒否、ロード済みデータの保持、未使用ファイルの依存revision、遅延／全件読み込みの画素・計測一致が成功した。既定構成840→845件・core468→469件で、全named caseと回数に欠落0件。既存の888 PNGは5eaa691と全てbyte一致した。実Chromium・MCP・端末・Material・42描画計測・全5 consumerの共通gate・依存監査も成功し、署名済みsourceは1,194ファイル・13,326,426バイト、SHA-256 `d88e12b151c32399d5533d200b0538c0c48c20103e2548c87f73a6afbab707eb`だった。
 
 全体は14分43秒で、10分目標は未達。今回はWasmの原本検証と依存変更も含む。Skiaを含む既存依存を同一条件のcacheから復元し、先行コンパイルは155.54秒、残る試験のコンパイルは89.92秒、releaseは159.29秒。Skia本体とwrapperはCargoでfreshだった。旧候補のcacheなし370.44秒／486.14秒とはソースも異なるため、差を純粋なcache効果の測定値とはしない。新規再現は0.55秒、通常consumerは3分21秒、sourceは47秒だった。GHAの同じバイナリ（SHA-256 `c014b01e5da191f72ad2e9fdb3aba785585fec10f05613da60217c30d2a4d306`）をハッシュ照合して取り出し、Macで全7フォントfixtureの全フェイス・元hash・collection正規化hashをCLI経由で確認した。確認用バイナリは削除した。検証後は既存fixture試験も一覧取得を明示する形に補強したが、アプリコードは変えておらず、同条件の全CIは重ねない。この試験ソース補強自体のGHAコンパイルは次の実装検証に含める。複合script文脈、同時認証profile、物理端末と最終公開受け入れは残る。
@@ -96,6 +100,13 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 
 ### 次に実装・確認すること
 
+提供入力に対する明示入力文脈60組、refの上書きcarrier56組、および単独入力文脈の参照名転送は7431326で検証済みである。以下の準備中・再実行待ちという記述は当時の履歴であり、現在の未完了一覧には数えない。
+
+<details>
+<summary>今回の入力文脈・carrier対応の準備と失敗履歴（7431326で上記範囲を検証済み）</summary>
+
+7431326では入力文脈60組が15.67秒、carrier56組が13.02秒で先行成功した。先行の1,488 PNGのrevision・hash・寸法、496組の元／copy／再copyのbyte一致と、従来1,140 PNGの不変を照合した。8種類の画像byte列は既存の検証済み画像と一致し、同じ画像を重ねて復号しない。core・release・監査・builderは成功したが、通常consumerだけがGitHub runner image `20261028.0489.1`に割り当てられ、builderの`20260907.0337.1`との不一致で試験前に停止した。Rust 1.94.0・Mac arm64のままでも現在のreceiptはimageの一致を要求する。他のconsumerを中断せず、終了後に失敗した通常jobと依存する最終gateだけを再実行する。image条件や期限は緩めず、アプリの再buildを伴う全体再実行にはしない。
+
 6dbb296の[CI 40876063418](https://github.com/EkeMinusYou/lazypencil/actions/runs/40876063418)では、新しい先行試験が3.47秒で単独入力文脈の不具合を再現した。scope／bindingとの併用・別library・変数変換・失効の両形式とcopy／再copyは通過したが、単独入力文脈では同じ文書内の別部品へ対応してもワーカーに元の名前を渡していた。`prepare_script_refs`で参照名が変わった場合もruntime handleを渡し、cyanの期待画素を維持して修正する。releaseと監査は成功し、coreの残る工程も中断しない。通常consumerと署名sourceの成功とは扱わない。この修正は準備したcarrier合成とまとめて検証する。
 
 次の準備中の差分は、生成ref／子孫変更の`script_override`について、内側のscope・binding・入力文脈、外側の出力／入力を独立して合成する。外側のnull、失効した入力、明示URIに対する失効した出力、内側の同名metadataの保持、metadataのみの出力変更を両形式・4経路・7種類の56組へ追加した。先行ではこの56組を最初に実行する。元URIを継承していて出力guardが失効し、元のコード所有元を確定できない場合と、複数世代の入力所有元・解除は残件である。ローカルは整形と差分を確認し、Rust実行は進行中の6dbb296のCI終了後にGHAで行う。
@@ -120,7 +131,9 @@ cbc868bでは、bindings v3に元URIのhash、input context v2に元入力のhas
 
 62675c9では、生成した単独のcustom script_bindingsを捕捉済みの部品・変数・テーマ・子孫経路・素材へ合成する。明示キーがtarget identityより優先する規則、raw catalog内の独立view、入力hash付きinput_components、継承入力とmetadataだけの出力変更を扱う。未知の対象・library・未登録素材と複合文脈は拒否し、構築中の出力budgetを維持する。5経路×6文脈×2形式と継承4経路×2文脈×2形式の新規76組は実worker・元source／copy／再copyで成功し、追加228 PNGも独立照合した。名前のshadow・path・閉じた素材とviewの単体試験も成功した。元からcustom bindingを持つgeneratorの入れ子で、論理対応と実文書の所有元を分ける処理、および複合envelope全体はこの修正の後も残件とする。
 
-- 明示 `script_scope`／`script_bindings`／入力文脈／上書きcarrierを組み合わせた複合envelopeの独立合成。単独native parentの出力所有元は06bab20の36組、入力guard・変数と参照部品の独立した所有元は5eaa691の124組で検証済み。複合文脈は `bindings.rs` と `generated_refs.rs` で引き続き拒否する。通常の捕捉済みnamespaceから生成した単独custom bindingは62675c9、単独script_scopeのmetadataだけのsource選択・継承入力guardはcbc868bで検証済み。これらの成功を複合文脈の合成完了とは扱わない。
+</details>
+
+- 複数世代にまたがる継承入力と、入力文脈を解除した際の元の所有元への復帰。コードURIを継承したまま出力guardが失効する場合の、元コード所有元の保持も必要である。提供入力の明示文脈とref carrierの合成は7431326の60組／56組で検証済みだが、この残る範囲を含む全組合せの完成とは扱わない。単独native parentの出力所有元36組、入力guard・変数と参照部品の独立所有元124組の既存検証も維持する。
 - TUI preview と別の bound MCP が、同じ認証済みブラウザープロファイルを同時利用する統合。専用 profile の作成・ログイン・永続ストレージ・所有者回収は実装済みだが、現在の lease は二つ目の独立 owner を拒否する。
 
 ab8c785の既定構成builderは7分42秒、通常consumer3分24秒、pixel consumer3分01秒、runtime consumer3分07秒、source gate32秒だった。初回305198bは追加した単体試験補助のString型不一致で停止したため成功扱いせず、core・releaseの完了後に修正した。既存bindings単体試験をcfg(test)の別ファイルへ分け、以後の試験補助だけの修正が本体のcompiler入力に混ざることを防ぐ。署名済みsourceは1,186ファイル・13,275,319バイト、SHA-256 `5254036df2833e5e628a2fcfb9680eff2272cd1be95433e91556a55ff5e0fdc9`。検証後の差分は文書更新と、PNG報告用revisionを実行時環境から読む試験補助1行のみで、同条件のnative全検証は重ねない。この最終の補助変更自体のremote実行とは区別する。
