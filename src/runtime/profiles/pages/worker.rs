@@ -4,7 +4,7 @@ use super::*;
 use std::{
     collections::HashMap,
     os::{
-        fd::{AsRawFd, FromRawFd},
+        fd::AsRawFd,
         unix::{fs::MetadataExt, net::UnixListener},
     },
     sync::{
@@ -255,7 +255,11 @@ pub(super) fn serve() -> Result<()> {
         .spawn(move || {
             // Only the initiating host owns this pipe's write end. Once its first
             // authenticated connection exists the pipe can close without shutdown.
-            let mut owner = unsafe { fs::File::from_raw_fd(libc::STDIN_FILENO) };
+            // Keep fd 0 open after EOF. Closing it here lets a later macOS
+            // posix_spawn reuse it for a CLOEXEC pipe, losing the nested
+            // guardian's stdin handshake. StdinLock only borrows standard IO.
+            let input = io::stdin();
+            let mut owner = input.lock();
             let mut byte = [0; 1];
             loop {
                 match owner.read(&mut byte) {

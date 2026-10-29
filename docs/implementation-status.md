@@ -4,7 +4,7 @@
 
 ## 現在の状態（2026-10-30）
 
-作業中の候補は、Unixの認証profileを一つのprivate page workerから利用し、TUIの保持描画と別bound MCPを同じChromiumへ接続する。元のguardian leaseは維持し、取得全体を直列化しつつ、保持ページ・取消・終了回収をownerごとに分ける。owner別8ページ・16接続と通信／資源上限を設け、network policy変更時は起動条件を変えて再起動する。実MCPと保持描画の同時利用・owner別eviction・取消／強制終了・通信方針切替の試験を準備した。GHAでのコンパイルと実行は未確認であり、下記の検証済み基準と区別する。
+作業中の候補は、Unixの認証profileを一つのprivate page workerから利用し、TUIの保持描画と別bound MCPを同じChromiumへ接続する。元のguardian leaseは維持し、取得全体を直列化しつつ、保持ページ・取消・終了回収をownerごとに分ける。owner別8ページ・16接続と通信／資源上限を設け、network policy変更時は起動条件を変えて再起動する。実MCPと保持描画の同時利用・owner別eviction・取消／強制終了・通信方針切替の試験を準備した。コンパイルと通信単体試験は成功したが、実Chromiumによる共有の統合試験はまだ未実行であり、下記の検証済み基準と区別する。
 
 初回候補8740ab0のCI 40915028991は、`dispose_tab`の二つの分岐が`Result<()>`と`Result<Value>`を返す型不一致でcore／既定構成のコンパイルを停止した。返却値をunitへ揃え、修正版で検証する。機能試験の成功とは扱わない。依存cacheは拡張済みの`complete-native-v2`を実際に復元し、この失敗までにregistry依存の再コンパイルはなかった。監査は成功し、残ったreleaseは未割当だった。
 
@@ -13,6 +13,10 @@
 通常consumerはbuild側15.7.9／image20260907.0337.1と異なる15.8.2／20261028.0489.1で実成功した。元receiptのSHA-256は通常／pixel／端末で`5530295f6d00f93c4ca6d21906ed5171801fd7bb01d8f5f76e257fb1df6da490`と一致し、通常の実行host記録hash`f6636047ed7b86526854f1929010561e4d074bd4c8f73375c78e2462aa9890c3`もconsumer結果に対応した。これは異なるimage間の実行の根拠であり、全5 consumerの最終gateまで成功したという意味ではない。runtimeは15分間runner未割当のままGitHub側で終了し、run全体はfailureとなった。GitHubの注記はhosted runnerが複数回試行しても割り当てられなかったことと、macOS arm64の容量制約を示す。runtimeの試験は一件も開始しておらず、アプリの試験失敗と混同しない。
 
 新しいMCP取消試験は、取消後の応答をSDKが破棄する既存経路に合わせ、次の要求で回収を確認する形へ修正する。元のページ期限30秒より前に5秒以内で次の要求が処理されることを要求し、製品の期限は変更しない。共有profile4件は長いbrowser／lifecycle群を開始する前へ移し、後続MCP群から同じ呼出しを除く。b09a329の有用なCIは終了まで中断せず取得した。次はこの試験と実行順だけの修正版で、アプリ本体・無関係な試験のCargo再利用とruntimeの実成功を確認する。
+
+試験と実行順を修正したa4aa5e6の[CI 40921267249](https://github.com/EkeMinusYou/lazypencil/actions/runs/40921267249)は、builder／release／core・通常／pixel／Material／端末consumerを成功した。先行の再compileは14.55秒、全体のCargo確認は0.32秒で、全体catalogのregistry356単位・app50単位は全てfreshだった。47試験実行ファイルのうち変更はMCPだけで、残る46本のhashはb09a329と一致した。試験だけの変更で無関係な本体・依存・試験を再buildしない経路の実証とする。
+
+runtimeは割当後、共有profile4件を12.53秒で失敗として返した。全件が入れ子のChromium guardian起動時の`owner_start`／Broken pipeであり、後続の長いbrowser／lifecycle群を開始する前に停止した。起動ownerを監視するスレッドがEOF後にfd 0を閉じ、macOSの後続posix_spawnでCLOEXEC pipeへ番号が再利用されることを確認した。小さい独立Rustプロセスでも、stdinを開いたままなら子のhandshakeが成功し、閉じるとBroken pipe／子のUnexpectedEofを再現した。監視には標準入力を借用するStdinLockを使い、EOFを観測した後もfd 0を閉じない修正を準備した。通常のguardian lease・製品の期限・試験範囲は維持し、修正版の実共有と全runtimeの成功は別途確認する。
 
 再起動後のKittyアクセスもコンピューター操作ツールが`net.kovidgoyal.kitty`を安全上の理由で拒否した。実IMEの成功とは扱わず、元の実端末受け入れを維持する。
 
