@@ -467,26 +467,82 @@ impl Bound {
             || scopes.bindings.as_ref().is_some_and(|bindings| {
                 bindings.inputs_hash.is_some() && hash(bindings.script_uri.as_bytes()) == uri_hash
             });
+        let metadata_input = scopes.input_context.is_some()
+            || scopes
+                .scope
+                .as_ref()
+                .is_some_and(|scope| scope.inputs.is_some())
+            || scopes
+                .bindings
+                .as_ref()
+                .is_some_and(|bindings| bindings.inputs_hash.is_some());
+        let generation = if provided.is_none() && needs_inherited {
+            target.input_context.as_ref().and_then(|context| {
+                self.original()
+                    .input_epoch
+                    .as_ref()
+                    .and_then(|epoch| context.values.generations.get(epoch))
+            })
+        } else {
+            None
+        };
         let inherited = if provided.is_none() && needs_inherited {
-            if scopes.scope.is_some()
-                && (scopes.bindings.is_some() || scopes.override_output.is_some())
-                && (target.input_context.as_ref().is_some_and(|context| {
-                    context.values.lexical_inputs != Some(true)
-                        || self.original().input_epoch.is_none()
-                        || context.values.input_epoch != self.original().input_epoch
-                }) || target.script_input_scope.is_some()
-                    || target.input_context.is_none()
-                        && target
-                            .script_bindings
-                            .as_ref()
-                            .is_some_and(|bindings| bindings.inputs_bound))
-            {
-                return Err(Error::new(
-                    "UNSUPPORTED_FEATURE",
-                    "Generated combined scopes require lexical inputs from the same captured generation; independent inherited input contexts need further composition",
-                ));
+            if let Some(generation) = generation {
+                if target
+                    .input_context
+                    .as_ref()
+                    .is_none_or(|context| context.origin != self.origin)
+                {
+                    return Err(invalid(
+                        "Inherited input generations belong to a different captured document",
+                    ));
+                }
+                let captured = self.original();
+                if generation
+                    .variables
+                    .values()
+                    .any(|target| !captured.variables.values().any(|value| value == target))
+                    || generation
+                        .component_maps()
+                        .flat_map(BTreeMap::values)
+                        .any(|target| !captured.components.values().any(|value| value == target))
+                {
+                    return Err(invalid(
+                        "Inherited input generation is outside the captured graph",
+                    ));
+                }
+                Some(json!(generation.values))
+            } else {
+                let known_legacy = target.input_context.as_ref().is_some_and(|context| {
+                    context.values.lexical_inputs == Some(true)
+                        && self.original().input_epoch.is_some()
+                        && context.values.input_epoch == self.original().input_epoch
+                });
+                if target
+                    .input_context
+                    .as_ref()
+                    .is_some_and(|context| context.values.version == 3)
+                    && !known_legacy
+                    || scopes.scope.is_some()
+                        && (scopes.bindings.is_some() || scopes.override_output.is_some())
+                        && (target.input_context.as_ref().is_some_and(|context| {
+                            context.values.lexical_inputs != Some(true)
+                                || self.original().input_epoch.is_none()
+                                || context.values.input_epoch != self.original().input_epoch
+                        }) || target.script_input_scope.is_some()
+                            || target.input_context.is_none()
+                                && target
+                                    .script_bindings
+                                    .as_ref()
+                                    .is_some_and(|bindings| bindings.inputs_bound))
+                {
+                    return Err(Error::new(
+                        "UNSUPPORTED_FEATURE",
+                        "Generated combined scopes require lexical inputs from the same captured generation; independent inherited input contexts need further composition",
+                    ));
+                }
+                Self::inherited_raw_inputs(target)?
             }
-            Self::inherited_raw_inputs(target)?
         } else {
             None
         };
@@ -495,7 +551,23 @@ impl Bound {
             Some(provided)
         } else if let Some(raw) = inherited {
             let mut owner = self.clone();
-            if let Some(context) = &target.input_context {
+            if let Some(generation) = generation {
+                owner.values.variables = generation.variables.clone();
+                owner.values.components = generation.components.clone();
+                if !metadata_input {
+                    if let Some(scope) = &generation.scope_components {
+                        owner.values.components = scope.clone();
+                    }
+                    if scopes.scope.is_none()
+                        && scopes.bindings.is_none()
+                        && scopes.override_output.is_none()
+                        && changes.get("scriptUri").is_none()
+                        && let Some(binding) = &generation.binding_components
+                    {
+                        owner.values.components = binding.clone();
+                    }
+                }
+            } else if let Some(context) = &target.input_context {
                 owner.values.variables = context.values.variables.clone();
                 owner.values.components = context.values.components.clone();
             }
@@ -503,7 +575,20 @@ impl Bound {
         } else {
             None
         };
-        let mut selected = scopes.select(self, &uri_hash, Some(&uri), input, from_changes)?;
+        let keep_inputs = from_changes
+            || generation.is_some() && (metadata_input || scopes.override_input.is_some());
+        let mut selected = scopes.select(self, &uri_hash, Some(&uri), input, keep_inputs)?;
+        if generation.is_some()
+            && !metadata_input
+            && scopes.override_input.is_none()
+            && let Some(context) = &target.input_context
+        {
+            let mut owner = self.clone();
+            owner.values.variables = context.values.variables.clone();
+            owner.values.components = context.values.components.clone();
+            selected.input = Some((owner, json!(generation.expect("input generation").values)));
+            selected.input_values = Some(json!(context.values.values));
+        }
         if changes.get("scriptUri").is_none()
             && (inactive_override
                 || scopes.override_output.is_none()
@@ -527,6 +612,28 @@ impl Bound {
         let has_input = selected.input.is_some();
         if has_input {
             selected.apply(changes, budget)?;
+            if generation.is_some()
+                && let Some(original) = &target.input_context
+            {
+                let generations =
+                    serde_json::to_value(&original.values.generations).expect("input generations");
+                *budget = budget.saturating_add(generations.to_string().len() + 128);
+                if *budget > crate::script::MAX_OUTPUT_BYTES {
+                    return Err(invalid(
+                        "Inherited input generations exceed the generated output budget",
+                    ));
+                }
+                let context = changes
+                    .pointer_mut("/metadata/lazypencil/script_input_context")
+                    .expect("input context");
+                context["version"] = json!(3);
+                context["generations"] = generations;
+                context["input_epoch"] = json!(self.original().input_epoch);
+                context["lexical_inputs"] = json!(false);
+                if context.to_string().len() > 4 * 1024 * 1024 {
+                    return Err(invalid("Inherited input generations exceed 4 MiB"));
+                }
+            }
         }
         let input = has_input.then(|| {
             changes

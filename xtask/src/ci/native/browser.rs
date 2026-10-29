@@ -193,7 +193,7 @@ pub fn test_threads(target: &str) -> usize {
     if target == "browser_readiness" { 2 } else { 1 }
 }
 
-pub const BINDING_REPRODUCTION: &str = "script_bindings::generated_sources::inherited_code_ownership_survives_inactive_output_contexts_and_recopy";
+pub const BINDING_REPRODUCTION: &str = "script_bindings::generated_sources::inherited_input_generations_restore_lexical_controls_and_underlying_scopes";
 
 pub fn binding_commands(binary: &Path) -> [Vec<String>; 4] {
     [
@@ -238,7 +238,7 @@ pub fn focus_bindings(s: &Session) -> Result<()> {
     };
     // Reproduce the changed input boundary before unrelated long layouts. The
     // later binding group excludes this exact same-condition invocation.
-    execute(0, "focus-code-ownership.log")?;
+    execute(0, "focus-input-generations.log")?;
     let groups = parallel::run(vec![
         (
             "generated browser layouts",

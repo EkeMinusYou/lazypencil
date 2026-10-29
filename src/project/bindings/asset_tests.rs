@@ -492,6 +492,66 @@ fn combined_inherited_guards_require_known_lexical_input_ownership() {
             assert_eq!(result.unwrap_err().code, "UNSUPPORTED_FEATURE");
         }
     }
+    let context = target.input_context.as_mut().unwrap();
+    context.origin = parent.origin.clone();
+    context.values.version = 3;
+    context.values.lexical_inputs = Some(false);
+    context.values.input_epoch = Some("2".repeat(32));
+    context.values.generations.insert(
+        "1".repeat(32),
+        serde_json::from_value(json!({
+            "hash":super::super::scope::value_hash(&input),"values":input,
+            "variables":{},"components":{"badge":"copied-badge"}
+        }))
+        .unwrap(),
+    );
+    for active in [true, false] {
+        let mut metadata = metadata.clone();
+        if !active {
+            metadata["script_scope"]["inputs"]["hash"] = json!("0".repeat(64));
+        }
+        let mut changes = json!({"metadata":{"lazypencil":metadata}});
+        let (_, result) = parent
+            .compose_generated_scopes(
+                &metadata,
+                None,
+                &mut changes,
+                &target,
+                &GeneratedState::default(),
+                &mut 0,
+            )
+            .unwrap();
+        let result = result.unwrap();
+        assert_eq!(result["version"], 3);
+        assert_eq!(
+            result["components"]["badge"],
+            if active { "base-badge" } else { "copied-badge" }
+        );
+        assert_eq!(result["input_epoch"], "1".repeat(32));
+        assert_eq!(result["generations"].as_object().unwrap().len(), 1);
+    }
+    target
+        .input_context
+        .as_mut()
+        .unwrap()
+        .values
+        .generations
+        .clear();
+    let mut changes = json!({"metadata":{"lazypencil":metadata}});
+    assert_eq!(
+        parent
+            .compose_generated_scopes(
+                &metadata,
+                None,
+                &mut changes,
+                &target,
+                &GeneratedState::default(),
+                &mut 0
+            )
+            .unwrap_err()
+            .code,
+        "UNSUPPORTED_FEATURE"
+    );
 }
 
 #[cfg(feature = "rendering")]

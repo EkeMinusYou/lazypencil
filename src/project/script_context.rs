@@ -20,6 +20,29 @@ pub(super) struct Inputs {
     pub lexical_inputs: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_epoch: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub generations: BTreeMap<String, InputGeneration>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct InputGeneration {
+    pub hash: String,
+    pub values: BTreeMap<String, Value>,
+    pub variables: BTreeMap<String, String>,
+    pub components: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope_components: Option<BTreeMap<String, String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding_components: Option<BTreeMap<String, String>>,
+}
+
+impl InputGeneration {
+    pub(super) fn component_maps(&self) -> impl Iterator<Item = &BTreeMap<String, String>> {
+        std::iter::once(&self.components)
+            .chain(self.scope_components.iter())
+            .chain(self.binding_components.iter())
+    }
 }
 
 impl Inputs {
@@ -109,6 +132,7 @@ impl Bound {
             && self.values.source_values == other.values.source_values
             && self.values.lexical_inputs == other.values.lexical_inputs
             && self.values.input_epoch == other.values.input_epoch
+            && self.values.generations == other.values.generations
     }
 
     pub fn expression(&self, name: &str, value: &Value) -> Result<Value> {
@@ -152,13 +176,17 @@ pub(super) fn parse(value: &Value) -> Result<Inputs> {
     }
     let values: Inputs = serde_json::from_value(value.clone())
         .map_err(|_| invalid("Invalid copied input context"))?;
-    if ![1, 2].contains(&values.version) {
+    if ![1, 2, 3].contains(&values.version) {
         return Err(Error::new(
             "UNSUPPORTED_VERSION",
             "Unsupported copied input context version",
         ));
     }
-    if (values.version == 2) != values.source_hash.is_some()
+    if values.version == 2 && values.source_hash.is_none()
+        || values.version == 1 && values.source_hash.is_some()
+        || values.version < 3 && !values.generations.is_empty()
+        || values.version == 3 && values.generations.is_empty()
+        || values.source_hash.is_none() && !values.source_values.is_empty()
         || values.version == 1 && !values.source_values.is_empty()
         || values.version == 1 && (values.lexical_inputs.is_some() || values.input_epoch.is_some())
         || values
@@ -184,6 +212,28 @@ pub(super) fn parse(value: &Value) -> Result<Inputs> {
             .any(|(from, to)| !valid(from) || !valid(to))
     {
         return Err(invalid("Invalid copied input context names"));
+    }
+    let mut count = values.variables.len() + values.components.len() + values.values.len();
+    for (epoch, generation) in &values.generations {
+        count = count.saturating_add(
+            generation.values.len()
+                + generation.variables.len()
+                + generation
+                    .component_maps()
+                    .map(BTreeMap::len)
+                    .sum::<usize>(),
+        );
+        if !super::bindings::valid_epoch(epoch)
+            || count > MAX_NODES
+            || generation.hash != super::scope::value_hash(&json!(generation.values))
+            || generation.values.keys().any(|name| !valid(name))
+            || std::iter::once(&generation.variables)
+                .chain(generation.component_maps())
+                .flat_map(BTreeMap::iter)
+                .any(|(from, to)| !valid(from) || !valid(to))
+        {
+            return Err(invalid("Invalid copied input generation"));
+        }
     }
     Ok(values)
 }
@@ -231,6 +281,23 @@ pub(super) fn bind(
             .is_none()
         {
             return Err(invalid("A copied input variable is missing"));
+        }
+    }
+    for generation in values.generations.values() {
+        for target in generation.variables.values() {
+            project.check_cancelled()?;
+            if project.documents[&origin].value()["variables"]
+                .get(target)
+                .is_none()
+            {
+                return Err(invalid("A copied input generation variable is missing"));
+            }
+        }
+        for target in generation.component_maps().flat_map(BTreeMap::values) {
+            project.check_cancelled()?;
+            if project.documents[&origin].node(target)?["reusable"] != true {
+                return Err(invalid("A copied input generation target must be reusable"));
+            }
         }
     }
     Ok(Some(Bound { origin, values }))
@@ -386,6 +453,42 @@ mod tests {
         );
     }
 
+    #[test]
+    fn input_generations_validate_original_controls_and_every_captured_target() {
+        let raw = json!({"selected":"old"});
+        let epoch = "a".repeat(32);
+        let mut value = capture(Some(&raw), context()).unwrap();
+        value["version"] = json!(3);
+        value["generations"] = json!({(epoch.clone()):{
+            "hash":super::super::scope::value_hash(&raw),"values":raw,
+            "variables":{},"components":{"old":"copy"},"scope_components":{"old":"copy"}
+        }});
+        assert!(scene(value.clone(), "copy").is_ok());
+        for field in ["components", "scope_components", "binding_components"] {
+            let mut invalid = value.clone();
+            invalid["generations"][&epoch][field] = json!({"old":"ordinary"});
+            assert_eq!(
+                scene(invalid.clone(), "copy").unwrap_err().code,
+                "INVALID_DOCUMENT"
+            );
+            assert!(
+                scene(invalid, "caller").unwrap().roots[2]
+                    .input_context
+                    .is_none()
+            );
+        }
+        let mut changed = value.clone();
+        changed["generations"][&epoch]["values"]["selected"] = json!("changed");
+        assert_eq!(scene(changed, "copy").unwrap_err().code, "INVALID_DOCUMENT");
+        for version in [1, 2] {
+            let mut legacy = value.clone();
+            legacy["version"] = json!(version);
+            assert_eq!(scene(legacy, "copy").unwrap_err().code, "INVALID_DOCUMENT");
+        }
+        value["generations"] = json!({});
+        assert_eq!(scene(value, "copy").unwrap_err().code, "INVALID_DOCUMENT");
+    }
+
     fn context() -> Value {
         json!({"version":1,"values":{"selected":"copy"},"variables":{},"components":{"old":"copy"}})
     }
@@ -421,7 +524,7 @@ mod tests {
             );
         }
         let mut unknown = context();
-        unknown["version"] = json!(3);
+        unknown["version"] = json!(4);
         assert_eq!(
             scene(unknown, "caller").unwrap_err().code,
             "UNSUPPORTED_VERSION"

@@ -29,6 +29,39 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
     .unwrap();
     let mut changes = json!({"scriptUri":"override.js"});
     match mode {
+        mode if mode.starts_with("binding-inherited-state-") => {
+            let variant = mode.strip_prefix("binding-inherited-state-").unwrap();
+            let raw = json!({"selected":"$selection","stale":"$missing"});
+            let hash = lazypencil::document::hash(raw.to_string().as_bytes());
+            let binding = json!({"version":1,"script_uri":"override.js","components":{"badge":"badge"},"variables":{"tone":"tone"}});
+            let context = |stale: bool| {
+                json!({"version":1,"values":if stale {json!({"selected":"different","stale":"$missing"})} else {raw.clone()},
+                "library":if stale {"uncaptured"} else {""},"variables":{"selection":"selection"},"components":{"badge":"alternate"}})
+            };
+            let mut metadata = json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":{"script_bindings":binding}});
+            if variant.ends_with("scope") && !variant.starts_with("underlay") {
+                metadata["lazypencil"]["script_scope"] = json!({"version":1,"script_uri":"old.js","library":"uncaptured",
+                    "inputs":{"hash":if variant.starts_with("stale") {"0".repeat(64)} else {hash},"library":""}});
+            } else if variant.ends_with("context") {
+                metadata["lazypencil"]["script_input_context"] =
+                    context(variant.starts_with("stale"));
+            } else {
+                let input = if variant == "carrier-output" {
+                    None
+                } else {
+                    Some(context(variant != "carrier"))
+                };
+                let output = (variant == "carrier-output").then(|| json!({"version":1,"script_uri":"override.js","components":{"badge":"badge"},"variables":{"tone":"tone"},"inputs_hash":hash,"input_components":{"badge":"badge"}}));
+                metadata = json!({"type":"lazypencil","lazypencil":{"script_override":{
+                    "version":1,"metadata":{"type":"test","keep":"generated","literal":"$tone"},"input":input,"output":output
+                }}});
+            }
+            if variant == "underlay-binding" {
+                changes.as_object_mut().unwrap().remove("scriptUri");
+                fs::write(temp.path().join("library/base.js"), REPLACEMENT).unwrap();
+            }
+            changes["metadata"] = metadata;
+        }
         mode if mode.starts_with("binding-code-owner-") => {
             let variant = mode
                 .strip_prefix("binding-code-owner-")
@@ -404,6 +437,7 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
         || mode.starts_with("binding-combined-")
         || mode.starts_with("binding-input-context-")
         || mode.starts_with("binding-carrier-")
+        || mode.starts_with("binding-inherited-state-")
     {
         let path = temp.path().join("library/ui.pen");
         let mut ui: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
@@ -449,7 +483,9 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
         base["children"][1]["metadata"]["lazypencil"]["script_scope"] = json!({"version":1,"script_uri":"base.js","library":"","inputs":{"hash":lazypencil::document::hash(inputs.to_string().as_bytes()),"library":"inputs"}});
         write(&path, base);
     }
-    if mode == "binding-combined-inherited-nonlexical" {
+    if mode == "binding-combined-inherited-nonlexical"
+        || mode.starts_with("binding-inherited-state-")
+    {
         write(
             &temp.path().join("library/inputs.pen"),
             json!({"version":version,
@@ -464,6 +500,23 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
             "version":1,"library":"inputs","values":{"selected":"$selection","stale":"$missing"},
             "variables":{"selection":"selection"},"components":{"badge":"badge"}
         });
+        if mode.contains("underlay-") {
+            write(
+                &temp.path().join("library/underlay.pen"),
+                json!({"version":version,
+                    "variables":{"tone":{"type":"color","value":"#0000ff"}},
+                    "children":[{"id":"badge","type":"rectangle","reusable":true,"width":10,"height":10,"fill":"#0000ff"}]
+                }),
+            );
+            base["imports"]["underlay"] = json!("underlay.pen");
+            let raw = json!({"selected":"$selection","stale":"$missing"});
+            let hash = lazypencil::document::hash(raw.to_string().as_bytes());
+            if mode.ends_with("underlay-scope") {
+                base["children"][1]["metadata"]["lazypencil"]["script_scope"] = json!({"version":1,"script_uri":"base.js","library":"","inputs":{"hash":hash,"library":"underlay"}});
+            } else {
+                base["children"][1]["metadata"]["lazypencil"]["script_bindings"] = json!({"version":1,"script_uri":"base.js","library":"underlay","variables":{"tone":"tone"},"components":{"badge":"badge"},"inputs_hash":hash,"input_components":{"badge":"badge"}});
+            }
+        }
         write(&path, base);
     }
     if mode.starts_with("binding-native-parent") {
@@ -554,11 +607,19 @@ fn copy(store: &Store, include_source: bool, mode: &str) -> Value {
             );
         }
     }
-    if mode == "binding-combined-inherited-nonlexical" {
+    if mode == "binding-combined-inherited-nonlexical"
+        || mode.starts_with("binding-inherited-state-")
+    {
         variables.insert(
             "ui:base:inputs:selection".into(),
             json!({"action":"rename","name":"input_selection"}),
         );
+        if mode.contains("underlay-") {
+            variables.insert(
+                "ui:base:underlay:tone".into(),
+                json!({"action":"rename","name":"underlay_tone"}),
+            );
+        }
     }
     for (scope, prefix) in [("ui", "ui_"), ("ui:base", "base_")] {
         for name in ["selection", "tone"] {
@@ -718,7 +779,9 @@ fn independent_case(
     } else {
         "base"
     };
-    let output = if mode.starts_with("binding-code-owner-") {
+    let output = if mode == "binding-inherited-state-underlay-binding" {
+        Color::BLUE
+    } else if mode.starts_with("binding-code-owner-") {
         if mode.contains("-keep") {
             Color::CYAN
         } else {
@@ -818,6 +881,180 @@ fn independent_case(
     );
 
     (temp, second, before)
+}
+
+#[test]
+fn inherited_input_generations_restore_lexical_controls_and_underlying_scopes() {
+    std::thread::scope(|threads| {
+        for version in ["2.19", "2.21"] {
+            threads.spawn(move || {
+                for style in ["direct", "descendant", "replacement", "children"] {
+                    for (variant, first) in [
+                        ("scope", Color::GREEN),
+                        ("stale-scope", Color::RED),
+                        ("context", Color::CYAN),
+                        ("stale-context", Color::RED),
+                        ("carrier", Color::CYAN),
+                        ("stale-carrier", Color::RED),
+                        ("carrier-output", Color::CYAN),
+                        ("underlay-scope", Color::BLUE),
+                        ("underlay-binding", Color::BLUE),
+                    ] {
+                        let mode = format!("binding-inherited-state-{variant}");
+                        let (_temp, store, _) = independent_case(version, style, &mode, first);
+                        let document = store.read().unwrap();
+                        assert!(document.locations().keys().any(|id| {
+                            document
+                                .node(id)
+                                .unwrap()
+                                .pointer("/metadata/lazypencil/script_input_context/generations")
+                                .and_then(Value::as_object)
+                                .is_some_and(|generations| generations.len() >= 2)
+                        }));
+                    }
+                    let _fixture = independent_case(
+                        version,
+                        style,
+                        "binding-combined-inherited-nonlexical",
+                        Color::CYAN,
+                    );
+                }
+                different_input_generations(version);
+            });
+        }
+    });
+}
+
+fn generation_panels(store: &Store, version: &str, stage: &str) -> Vec<Vec<u8>> {
+    let (project, layout) = service::layout_snapshot_with_runtime(
+        store,
+        &[],
+        None,
+        None,
+        &mut ScriptRuntime::new(env!("CARGO_BIN_EXE_lazypencil")),
+    )
+    .unwrap();
+    assert_eq!(layout.script_executions.len(), 4);
+    assert!(
+        layout.summary()["diagnostics"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    [("old", 0.0, Color::RED, Color::GREEN), ("new", 36.0, Color::BLUE, Color::BLUE)]
+        .into_iter().map(|(name, x, first, output)| {
+            let image = render::png(&project, &layout, &RenderOptions {
+                region: Some(Rect{x,y:0.,width:36.,height:12.}), ..Default::default()
+            }).unwrap();
+            for (x, expected) in [(5, first), (17, output), (29, output)] {
+                assert_eq!(pixel(&image.png, x), expected, "{version}/{stage}/{name}/{x}");
+            }
+            if let Some(root) = std::env::var_os("LAZYPENCIL_TEST_TUI_ARTIFACTS") {
+                let root = std::path::PathBuf::from(root).join("generated-script-scopes");
+                fs::create_dir_all(&root).unwrap();
+                let name = format!("{version}-generation-{name}-{stage}");
+                fs::write(root.join(format!("{name}.png")), &image.png).unwrap();
+                fs::write(root.join(format!("{name}.json")), serde_json::to_vec_pretty(&json!({
+                    "source_commit":std::env::var("GITHUB_SHA").ok(),"png_sha256":lazypencil::document::hash(&image.png),
+                    "width":36,"height":12,"red_first":first==Color::RED,"red_output":output==Color::RED,
+                    "first_rgba":[first.r(),first.g(),first.b(),first.a()],"output_rgba":[output.r(),output.g(),output.b(),output.a()]
+                })).unwrap()).unwrap();
+            }
+            image.png
+        }).collect()
+}
+
+fn different_input_generations(version: &str) {
+    let (temp, store, _) = setup(
+        version,
+        "direct",
+        "binding-inherited-state-stale-carrier",
+        1,
+    );
+    let response = copy(&store, true, "binding-inherited-state-stale-carrier");
+    let old = response["generated_ids"]["0"]["component_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let document = store.read().unwrap();
+    let bindings = &document.node(&old).unwrap()["metadata"]["lazypencil"]["script_bindings"];
+    let worker_key = bindings["script_scopes"][""]["components"]["base:worker"]
+        .as_str()
+        .unwrap();
+    let worker = bindings["components"][worker_key]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let replacement = bindings["assets"]["script:override.js"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let template = json!({"type":"ref","ref":worker,"scriptUri":replacement,
+        "metadata":{"type":"lazypencil","lazypencil":{"script_override":{
+            "version":1,"metadata":{"type":"test","keep":"generated","literal":"$tone"},
+            "input":{"version":1,"library":"uncaptured","values":{"selected":"different"},"variables":{},"components":{}}
+        }}}
+    });
+    fs::write(
+        temp.path().join("new-generation.js"),
+        format!("/* @schema 2.21 */ return [{template}];"),
+    )
+    .unwrap();
+    let inserted = fixture::apply(
+        &store,
+        "two-generations",
+        json!([
+            {"op":"update","target":old,"set":{"enabled":false}},
+            {"op":"insert","parent":null,"client_ref":"fresh","node":{"id":"new-generator","name":"New generator","type":"script","reusable":true,"enabled":false,"scriptUri":"new-generation.js","width":36,"height":12}},
+            {"op":"insert","parent":null,"node":{"id":"generations","type":"frame","reusable":true,"layout":"none","width":72,"height":12,"children":[
+                {"id":"old-use","type":"ref","ref":old,"enabled":true},
+                {"id":"new-use","type":"ref","ref":{"result_of":"fresh"},"enabled":true,"x":36}
+            ]}}
+        ]),
+    );
+    let fresh = inserted["generated_ids"]["1"]["id"].as_str().unwrap();
+    let source = inserted["generated_ids"]["2"]["id"].as_str().unwrap();
+    let original = generation_panels(&store, version, "original");
+    let second = temp.path().join("second-generations");
+    fs::create_dir(&second).unwrap();
+    write(
+        &second.join("main.pen"),
+        json!({"version":version,"imports":{"source":store.path().to_str().unwrap()},
+        "variables":{"tone":{"type":"color","value":"#ff00ff"}},"children":[
+            {"id":"local","type":"frame","enabled":false,"children":[{"id":"badge","type":"rectangle","reusable":true,"width":10,"height":10,"fill":"#ff00ff"}]}
+        ]}),
+    );
+    let second_store = Store::open(second.join("main.pen"), Some(second.join("data"))).unwrap();
+    let imported = fixture::apply(
+        &second_store,
+        "copy-generations",
+        json!([
+            {"op":"import_component","source":{"library_alias":"source","node_id":source},"mode":"copy","options":{
+                "component_prefix":"Generation ","variable_prefix":"again_",
+                "script_assets":{(format!("source:{fresh}")):[{"kind":"script","uri":replacement}]}
+            }},{"op":"remove_import","alias":"source"}
+        ]),
+    );
+    let group = imported["generated_ids"]["0"]["component_id"]
+        .as_str()
+        .unwrap();
+    fs::remove_file(store.path()).unwrap();
+    fs::remove_file(temp.path().join("new-generation.js")).unwrap();
+    fs::remove_dir_all(temp.path().join("library")).unwrap();
+    fs::remove_dir_all(temp.path().join("assets")).unwrap();
+    assert_eq!(
+        generation_panels(&second_store, version, "copied"),
+        original
+    );
+    let (third, _) = fixture::recopy(
+        &second_store,
+        group,
+        &temp.path().join("third-generations"),
+        "third_",
+    );
+    fs::remove_file(second_store.path()).unwrap();
+    fs::remove_dir_all(second.join("assets")).unwrap();
+    assert_eq!(generation_panels(&third, version, "recopied"), original);
 }
 
 #[test]
@@ -961,12 +1198,6 @@ fn generated_code_overrides_reject_unmanifested_sources_explicit_contexts_and_bi
         (true, "binding-unknown-target", 1, "INVALID_DOCUMENT"),
         (true, "binding-unknown-library", 1, "INVALID_DOCUMENT"),
         (true, "binding-unmanifested-asset", 1, "ASSET_NOT_FOUND"),
-        (
-            true,
-            "binding-combined-inherited-nonlexical",
-            1,
-            "UNSUPPORTED_FEATURE",
-        ),
         (true, "inherited-unknown-input-scope", 1, "INVALID_DOCUMENT"),
         (true, "metadata-unknown-source", 1, "INVALID_DOCUMENT"),
         (true, "bad-variable", 1, "INVALID_DOCUMENT"),

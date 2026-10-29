@@ -38,10 +38,14 @@ impl Copier<'_> {
                     .any(|value| value == &json!(target))
                 {
                     let kind = key.split_once(':').expect("asset kind").0;
-                    let alias = format!(
-                        "{kind}:@lazypencil/code/{}",
-                        values["assets"].as_object().expect("assets").len()
-                    );
+                    let mut index = values["assets"].as_object().expect("assets").len();
+                    let alias = loop {
+                        let alias = format!("{kind}:@lazypencil/code/{index}");
+                        if values["assets"].get(&alias).is_none() {
+                            break alias;
+                        }
+                        index += 1;
+                    };
                     budget.pair(&alias, &target)?;
                     values["assets"][alias] = json!(target);
                 }
@@ -61,11 +65,9 @@ impl Copier<'_> {
                     values["browser_libraries"][key] = json!(target);
                 }
             }
-            let mut previous = values["script_scopes"]
-                .take()
-                .as_object()
-                .expect("scopes")
-                .clone();
+            let Value::Object(mut previous) = values["script_scopes"].take() else {
+                unreachable!("validated captured scopes")
+            };
             let version = values["version"].clone();
             self.capture_scopes(code, values, budget, false, Some(physical))?;
             let captured: BTreeMap<String, CapturedScope> =
@@ -73,9 +75,10 @@ impl Copier<'_> {
             let mut index = previous.len();
             let prefix = loop {
                 let prefix = format!("@lazypencil/code/{index}");
+                let child_prefix = format!("{prefix}/");
                 if previous
                     .keys()
-                    .all(|name| name != &prefix && !name.starts_with(&format!("{prefix}/")))
+                    .all(|name| name != &prefix && !name.starts_with(&child_prefix))
                 {
                     break prefix;
                 }

@@ -475,7 +475,7 @@ impl Copier<'_> {
             original.as_ref(),
             json!({"version":1,"values":values,"variables":variables,"components":components}),
         )?;
-        if context["version"] == 2 {
+        {
             context["lexical_inputs"] = json!(if let Some(old) = &node.input_context {
                 old.values.lexical_inputs.unwrap_or(false)
             } else {
@@ -500,13 +500,92 @@ impl Copier<'_> {
                 budget.charge(epoch.len() + 32)?;
             }
         }
+        context["generations"] = self.input_generations(node, budget)?;
+        context["version"] = json!(3);
         budget.charge(
             context
                 .get("source_values")
                 .map_or(0, |values| values.to_string().len())
                 + 128,
         )?;
+        if context.to_string().len() > 4 * 1024 * 1024 {
+            return Err(copy_error("Copied input generations exceed 4 MiB"));
+        }
         Ok(Some(context))
+    }
+
+    fn input_generations(&self, node: &ResolvedNode, budget: &mut Budget) -> Result<Value> {
+        let mut generations = Map::new();
+        if let Some(old) = &node.input_context {
+            for (epoch, generation) in &old.values.generations {
+                let mut value = serde_json::to_value(generation).expect("input generation");
+                value["variables"] = json!(composition::mapped(
+                    &generation.variables,
+                    budget,
+                    |name| {
+                        self.vars
+                            .get(&(old.origin.clone(), name.into()))
+                            .cloned()
+                            .ok_or_else(|| copy_error("Missing input-generation variable"))
+                    }
+                )?);
+                for (field, members) in [
+                    ("components", Some(&generation.components)),
+                    ("scope_components", generation.scope_components.as_ref()),
+                    ("binding_components", generation.binding_components.as_ref()),
+                ] {
+                    if let Some(members) = members {
+                        value[field] = json!(composition::mapped(members, budget, |id| {
+                            self.node_target(&(old.origin.clone(), id.into()))
+                        })?);
+                    }
+                }
+                budget.pair(epoch, &generation.hash)?;
+                budget.charge(
+                    serde_json::to_vec(&generation.values)
+                        .expect("raw inputs")
+                        .len()
+                        + 64,
+                )?;
+                generations.insert(epoch.clone(), value);
+            }
+        }
+        let origin = node.property_source("inputs");
+        let variables = self.script_scopes[origin]
+            .variables
+            .iter()
+            .map(|(name, key)| {
+                budget.pair(name, &self.vars[key])?;
+                Ok((name.clone(), json!(self.vars[key])))
+            })
+            .collect::<Result<Map<_, _>>>()?;
+        let raw = node.properties.get("inputs").expect("input generation");
+        let mut generation = json!({
+            "hash":super::super::scope::value_hash(raw),"values":raw,
+            "variables":variables,"components":self.component_bindings(origin, budget)?
+        });
+        if let Some(scope) = &node.script_input_scope {
+            generation["scope_components"] = json!(self.component_bindings(scope, budget)?);
+        }
+        if let Some(bound) = &node.script_bindings
+            && bound.inputs_bound
+        {
+            let members = bound
+                .values
+                .input_components
+                .as_ref()
+                .unwrap_or(&bound.values.components);
+            generation["binding_components"] = json!(composition::mapped(members, budget, |id| {
+                self.node_target(&(bound.origin.clone(), id.into()))
+            })?);
+        }
+        budget.pair(
+            &self.input_epoch,
+            generation["hash"].as_str().expect("generation hash"),
+        )?;
+        budget.charge(raw.to_string().len() + 64)?;
+        generations.insert(self.input_epoch.clone(), generation);
+        Ok(Value::Object(generations))
     }
 
     fn component_bindings(&self, origin: &Path, budget: &mut Budget) -> Result<Map<String, Value>> {
