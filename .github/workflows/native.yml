@@ -105,6 +105,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/xtask
+        id: tools
         with:
           verify: ${{ inputs.lane == 'all' || inputs.lane == 'core' }}
           retire-old-tools: 'true'
@@ -590,3 +591,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: cargo xtask ci cache retain --manifest "$RUNNER_TEMP/lazypencil-source/SOURCE-MANIFEST.json" --delete
+      # All tool calls and artifact uploads finish before Cargo removes only
+      # our package. Preserve dependencies on images not chosen by the core
+      # tool gate, without publishing unverified tool executables or cloning
+      # a second complete target tree.
+      - name: Keep bootstrap dependencies after the last tool invocation
+        id: tool-dependencies
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' && steps.tools.outputs.dependency-save-needed == 'true' && github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        run: cargo clean --locked --manifest-path xtask/Cargo.toml --target-dir xtask/target --package lazypencil-xtask
+      - name: Save the bootstrap dependency checkpoint for this image
+        if: ${{ !cancelled() && steps.tool-dependencies.outcome == 'success' }}
+        continue-on-error: true
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          key: ${{ steps.tools.outputs.dependency-key }}
+          path: xtask/target

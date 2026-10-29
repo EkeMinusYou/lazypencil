@@ -16,6 +16,117 @@ fn helper() -> &'static str {
 }
 
 #[test]
+fn bootstrap_dependency_checkpoints_keep_dependencies_but_never_reuse_owned_executables() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().canonicalize().unwrap();
+    let target = root.join("target");
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::create_dir_all(root.join("shared/src")).unwrap();
+    for (path, content) in [
+        (
+            "Cargo.toml",
+            "[package]\nname='lazypencil-xtask'\nversion='0.0.0'\nedition='2024'\n[workspace]\n[dependencies]\nshared={path='shared'}\n[[bin]]\nname='xtask'\npath='src/main.rs'\n",
+        ),
+        (
+            "shared/Cargo.toml",
+            "[package]\nname='shared'\nversion='0.0.0'\nedition='2024'\n",
+        ),
+        ("shared/src/lib.rs", "pub const VALUE:u8=1;\n"),
+        (
+            "src/main.rs",
+            "fn main(){println!(\"{}\",lazypencil_xtask::value());}\n",
+        ),
+        ("src/lib.rs", "pub fn value()->u8{shared::VALUE+1}\n"),
+    ] {
+        fs::write(root.join(path), content).unwrap();
+    }
+    let normalize = || {
+        fs::File::open(root.join("src/lib.rs"))
+            .unwrap()
+            .set_times(
+                fs::FileTimes::new()
+                    .set_modified(std::time::UNIX_EPOCH + Duration::from_secs(946684800)),
+            )
+            .unwrap()
+    };
+    normalize();
+    let cargo = |arguments: &[&str]| {
+        process::checked(
+            Command::new("cargo")
+                .current_dir(&root)
+                .env("CARGO_TARGET_DIR", &target)
+                .env("CARGO_INCREMENTAL", "0")
+                .args(arguments),
+            Duration::from_secs(120),
+        )
+        .unwrap()
+    };
+    cargo(&["generate-lockfile", "--offline"]);
+    let build = || {
+        let output = cargo(&["build", "--locked", "--bins", "--message-format=json"]);
+        let mut units = std::collections::BTreeMap::new();
+        let mut dependency = None;
+        for line in output.split(|byte| *byte == b'\n') {
+            let Ok(event) = serde_json::from_slice::<Value>(line) else {
+                continue;
+            };
+            if event["reason"] != "compiler-artifact" {
+                continue;
+            }
+            let name = event["target"]["name"].as_str().unwrap();
+            units.insert(name.to_owned(), event["fresh"].as_bool().unwrap());
+            if name == "shared" {
+                dependency = event["filenames"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .find(|path| path.ends_with(".rlib"))
+                    .map(std::path::PathBuf::from);
+            }
+        }
+        (units, dependency.unwrap())
+    };
+    let (_, dependency) = build();
+    let before = (
+        util::digest(fs::read(&dependency).unwrap()),
+        fs::metadata(&dependency).unwrap().modified().unwrap(),
+    );
+    let executable = target
+        .join("debug")
+        .join(format!("xtask{}", std::env::consts::EXE_SUFFIX));
+    assert!(executable.is_file());
+    cargo(&["clean", "--locked", "--package", "lazypencil-xtask"]);
+    assert!(
+        !executable.exists(),
+        "Bootstrap caches must not retain our executables"
+    );
+    assert_eq!(
+        before,
+        (
+            util::digest(fs::read(&dependency).unwrap()),
+            fs::metadata(&dependency).unwrap().modified().unwrap()
+        )
+    );
+    fs::write(
+        root.join("src/lib.rs"),
+        "pub fn value()->u8{shared::VALUE+2}\n",
+    )
+    .unwrap();
+    normalize();
+    let (units, _) = build();
+    assert!(
+        units["shared"],
+        "Unchanged dependencies must remain Cargo-fresh"
+    );
+    assert!(!units["lazypencil_xtask"] && !units["xtask"]);
+    assert_eq!(
+        process::checked(&mut Command::new(executable), Duration::from_secs(15)).unwrap(),
+        b"3\n"
+    );
+}
+
+#[test]
 fn normal_build_before_test_catalog_avoids_rebuilds_without_merging_feature_conditions() {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().canonicalize().unwrap();

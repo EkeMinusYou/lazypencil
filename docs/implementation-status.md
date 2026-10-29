@@ -4,6 +4,15 @@
 
 ## 現在の状態（2026-10-30）
 
+c38fc1cの[CI 40935920526](https://github.com/EkeMinusYou/lazypencil/actions/runs/40935920526)は全工程成功した。Mac／Linuxの補助ツール全試験・Clippy、依存監査、core／既定構成、release、通常／pixel／runtime／端末／Materialの全5 consumer、共通画像gateと署名付きsourceを含む。欠損library／設定fontの診断・構造編集・復元はCLI／実MCPを含めて検証済みである。既定構成の先行repair targetは26件を1.25秒で成功した。以前期限超過した専用profileの保存状態復元も、静かな先行区間で同じcase・assertion・製品期限を保って46.79秒で成功した。可視TUI・物理IMEの受け入れ完了とはしない。
+
+全体15分32秒で10分目標は未達。builder9分22秒・core6分27秒・release3分44秒、通常4分25秒・runtime4分50秒・pixel2分10秒・Material1分19秒・端末1分15秒・source41秒だった。新Mac image用の完全依存cacheを復元し、先行の174.75秒ではappだけをコンパイルした。残る全体buildは86.85秒で、registry依存の不要な再compileとは区別する。
+
+builderの補助ツール準備では、新imageで検証済みtool cacheと依存だけのcheckpointがともになく、116.36秒のcold buildが発生した。非検証jobでも最後のtool呼出し後に標準の`cargo clean -p lazypencil-xtask`で自前出力だけを除き、既存のcompiler／image／lockfile keyへ依存checkpointを保存する最小修正を準備中である。検証済みの完全tool cacheを優先し、依存checkpointで上書きしない。自前コードのepoch正規化後も旧実行ファイルを再利用せず、未変更依存だけがCargoでfreshになる実Cargo回帰を追加した。書式・actionlintは成功したが、この変更のhosted試験とnativeでの保存／復元の実証は未確認である。
+
+<details>
+<summary>直前候補の失敗とcache改善の履歴（c38fc1cで上記範囲を検証済み）</summary>
+
 4fcbb2cの[CI 40934904023](https://github.com/EkeMinusYou/lazypencil/actions/runs/40934904023)はMac／Linuxの補助ツール試験・Clippyと依存監査を成功したが、appのcore／既定／releaseは共通の`UserSource::base()`を整理時に削除した参照不足でコンパイルを停止した。`config/agents.rs`の2呼出しでも必要なメソッドを戻した。既定構成の先行は20.06秒で失敗を返し、新しいfont機能・profile試験の成功とは扱わない。全jobの終了を確認してから修正版を送る。
 
 修正版では英語ガイド集合を1.0.48へ更新し、検証済みの認証共有と新しい欠損font診断を案内する。動的コンテンツ・runtime・画像添付・フォントの古い未統合／未実装記述も既存の成功根拠へ揃える。新しい機能や検証済み条件を追加で縮小する変更ではない。
@@ -23,6 +32,8 @@ f4363a3の[CI 40930720610](https://github.com/EkeMinusYou/lazypencil/actions/run
 監査・core・既定構成builder・release・通常／pixel／runtime／端末／Materialの全5 consumerと最終source工程は成功した。workflow全体は約13分15秒、builder7分14秒・core7分19秒・release6分36秒・runtime4分37秒だった。全体10分目標は未達であり、異なる変更やrunner条件の時間差を修正単独の効果とは扱わない。
 
 4ec8d67では、置換cacheの保存前に古いapp cacheを削除する処理を廃止した。a4aa5e6のログではdefault側が17:34:35 UTCにcore cacheも削除し、core側の17:34:41の復元がmissして不要な約1分51秒のcompileを生じた。保存済みcacheだけを、同じfeature構成・compiler／SDK文脈・wire format内で整理する。回帰試験は、保存前のfallback保持と、保存後も別構成／compiler／wire formatを保持することをMac／Linuxで成功した。容量確保には初回対象外のLinux完成app cache二つだけを削除し、1,948,360,456バイトを解放した。Linuxを含む依存cacheは保持した。
+
+</details>
 
 <details>
 <summary>共有profile対応の準備と失敗履歴（e786e3eで上記範囲を検証済み）</summary>
@@ -168,9 +179,9 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 
 ### 次に実装・確認すること
 
-欠損libraryの修復はf4363a3でcore／既定構成の先行と実MCP・CLIを成功した。宣言された通常／入れ子の`.pen`が存在しない場合も、欠損path・用途・元documentとabsence revisionを捕捉し、inspect／stored readと共通編集の依存条件を利用できる。`remove_import`→`add_import`の一バッチで参照先を差し替えるか、instanceとimportを一緒に削除する。未使用の欠損importだけなら部分修復できるが、保存結果に未解決のcomponent／variable参照は許さず、別libraryの同名IDへ推測で接続しない。appearanceの競合、dry-run／保存／再送、入れ子、禁止pathとCLI／実MCPを含む。候補全体は上記runtimeの期限超過により未合格である。
+欠損libraryの修復はf4363a3の先行に加え、c38fc1cの全工程CIで検証済みである。宣言された通常／入れ子の`.pen`が存在しない場合も、欠損path・用途・元documentとabsence revisionを捕捉し、inspect／stored readと共通編集の依存条件を利用できる。`remove_import`→`add_import`の一バッチで参照先を差し替えるか、instanceとimportを一緒に削除する。未使用の欠損importだけなら部分修復できるが、保存結果に未解決のcomponent／variable参照は許さず、別libraryの同名IDへ推測で接続しない。appearanceの競合、dry-run／保存／再送、入れ子、禁止pathとCLI／実MCPを含む。この範囲を残る実装不足には数えない。
 
-欠損font入力の対応を準備した。選択された設定のファイル／探索ディレクトリが欠けていても、そのpath・設定source・用途とabsence revisionを保持して構造編集を可能にする。config showはfonts_complete／font_diagnosticsを出し、get_documentにも共通の欠損依存を含める。一覧・計測・描画は欠損を隠さずASSET_NOT_FOUNDで止める。元pathへの復元、再取得後の実フォント選択・描画、親symlinkの変更、CLI／実MCPの回帰を追加した。ユーザー／projectのフォント設定は自動で書き換えず、ファイルも自動複製しない。4fcbb2cでは上記の参照不足でappをコンパイルできなかったため、機能の成功は修正版で確認する。
+欠損font入力の対応もc38fc1cの全工程CIで検証済みである。選択された設定のファイル／探索ディレクトリが欠けていても、そのpath・設定source・用途とabsence revisionを保持して構造編集を可能にする。config showはfonts_complete／font_diagnosticsを出し、get_documentにも共通の欠損依存を含める。一覧・計測・描画は欠損を隠さずASSET_NOT_FOUNDで止める。元pathへの復元、再取得後の実フォント選択・データhash・描画、親symlinkの変更、CLI／実MCPの回帰が成功した。ユーザー／projectのフォント設定は自動で書き換えず、ファイルも自動複製しない。4fcbb2cのコンパイル失敗は修正済みであり、この機能の確認待ちには数えない。
 
 コピー済み定義のコード所有元保持は2c9ac33、入力文脈の世代別復元は4252fe2、新たに生成したscriptと後続の上書きはd7cc9c6で検証済みである。元source削除後と再copyを含み、通常metadataによる元設定の保持、失効した出力設定からコード所有元への復帰を確認した。必要な元情報を保存していない旧captureは、推測で接続せず元sourceからの再copyを案内する既存の診断を維持する。拡張済み依存cacheのwarm再利用はb09a329のコンパイル段階で確認できた。認証profileの同時利用はe786e3eで検証済みであり、初回Skia buildの重複・CI待機とcache整理の競合を引き続き改善する。
 
@@ -216,7 +227,7 @@ ab8c785の既定構成builderは7分42秒、通常consumer3分24秒、pixel cons
 
 - 元エンコード保存と縮小版のCLI／TUI操作、入力スレッドによる変換・保存、キャンセル時の候補回収、ユーザーの `[attachments]` 設定は `c11a0f9` でMac先行・両feature構成の完全検証・監査・署名sourceまで成功した。設定を下げた後の送信拒否・段階的な縮小による修復・元画像と下書き保持、実ACPが受信した縮小PNGを含む。既定8枚・各20MiB・合計各50MiB・16Mi画素とネイティブ単体の安全上限は維持する。PNG検査は既存Rust補助バイナリのpng-inspectへ移行済みで、試験コードの検査経路はTUI featureに依存しない。個別feature構成の過去の実行根拠は、現在の通常CIのcore／既定2構成と区別して扱う。物理IMEと最終受け入れは引き続き確認する。
 
-個別仕様に残る制約も、完了扱いにしない。独立copyの非localな文字列sampler、欠損library／設定fontの専用修復、未参照のproject素材回収、再現用font lockfileなどは各サービス文書の現行範囲を参照する。runtime導入の取消・保存同期は `99cc153` の完全CIで通常導入と取消試験を成功した。通信待ちを所有する子プロセス、lock待機・分割転送・hash・展開の取消、公開前のfile／directory同期と新規ancestor同期、取消時の未完成物回収と既存Rust補助バイナリを使う回帰試験を含む。コンパイル・通常の実通信と取消の成功から、全異常終了経路・電源断時の耐障害性・最終配布の受け入れ完了とはしない。Browserが広告するdevice IDはdesktop／phone／tabletだけで、全Pencil presetへの対応を宣言しない。GLSLの宣言・構造体・前処理は実装済みだが、fill-stage `pencil:object` は未対応である。これらを古いGHA待ちと混同せず、元の必須条件に照らして実装と確認を切り分ける。
+個別仕様に残る制約も、完了扱いにしない。独立copyの非localな文字列sampler、未参照のproject素材回収、再現用font lockfileなどは各サービス文書の現行範囲を参照する。欠損library／設定fontの診断と修復は上記のとおり検証済みである。runtime導入の取消・保存同期は `99cc153` の完全CIで通常導入と取消試験を成功した。通信待ちを所有する子プロセス、lock待機・分割転送・hash・展開の取消、公開前のfile／directory同期と新規ancestor同期、取消時の未完成物回収と既存Rust補助バイナリを使う回帰試験を含む。コンパイル・通常の実通信と取消の成功から、全異常終了経路・電源断時の耐障害性・最終配布の受け入れ完了とはしない。Browserが広告するdevice IDはdesktop／phone／tabletだけで、全Pencil presetへの対応を宣言しない。GLSLの宣言・構造体・前処理は実装済みだが、fill-stage `pencil:object` は未対応である。これらを古いGHA待ちと混同せず、元の必須条件に照らして実装と確認を切り分ける。
 
 公開前の確認・決定：
 
@@ -237,9 +248,9 @@ macOS の常用メモリは `7fe854b` の既存候補で172.03MiB、cached feedb
 
 ### 完成までの順序と概算
 
-1. 拡張済み依存cacheのwarm再利用と、異なるMac 15 imageでの通常consumerの実成功はb09a329で確認した。全5 consumerの最終gate・10分目標と、初回Skia build直後の重複compileの改善は残る。試験専用入力の再利用はec9d668、独立コピーの生成script所有元はd7cc9c6で検証済みになった。
+1. 拡張済み依存cacheのwarm再利用と、異なるMac 15 imageでの通常consumerの実成功はb09a329で確認した。全5 consumerの最終gateもc38fc1cまで複数回成功している。10分目標と、新imageの補助tool依存checkpoint、初回Skia build直後の重複compileの改善は残る。試験専用入力の再利用はec9d668、独立コピーの生成script所有元はd7cc9c6で検証済みになった。
 2. 同時認証利用はe786e3eの全工程CIで検証済み。旧3〜5実働日の概算には、既に検証済みの追加フォント遅延読み込みとこの対応が含まれており、現在の残工数には加算しない。
-3. 各個別仕様の残る互換・資源処理（非local sampler、欠損修復、素材回収、font lockfileなど）を具体化する。追加分の工数は未確定。
+3. 各個別仕様の残る互換・資源処理（非local sampler、素材回収、font lockfileなど）を具体化する。欠損library／設定fontの診断と修復はc38fc1cで検証済みになった。残る追加分の工数は未確定。
 4. 不足する受け入れ確認、保証環境の確定、配布・文書整理：2〜4実働日の概算。
 
 上記は旧3環境方針での概算である。初回Macのみへの変更で、Linuxの環境確認・配布・最低版調整は初回から外れる。共通の機能不足はそのまま残るため、全工数を単純に1/3にはしない。前回提示した8〜15実働日は主要4項目と確認作業に対する1人換算の概算だった。画像添付など個別仕様との差分の追加工数は含めていないため、製品全体の完成日を確約する総見積もりには使わない。実機環境確保・権利処理の待ち時間も別である。完成目標に沿って実装を再開している。変更箇所を1環境で先行検証し、元の最終合格基準を維持する。同じ入力・環境・目的で確認済みの内容を、根拠なく再検証しない。
