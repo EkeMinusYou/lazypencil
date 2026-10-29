@@ -8,7 +8,7 @@ badafd3の[CI 40958169976](https://github.com/EkeMinusYou/lazypencil/actions/run
 
 builder3分06秒・core6分07秒・release2分19秒、通常3分57秒・runtime5分26秒・pixel2分38秒・Material1分58秒・端末1分05秒・source36秒だった。待機は通常1〜9秒、端末だけ既存のconsumer同時実行数上限により130秒で、runtimeより先に完了した。3eec395の既定304出力・core918出力は失効0件で再利用し、Cargo確認は3.55秒／2.43秒、release15出力も再利用して確認3.94秒だった。広げすぎたFocusCoreを完全coreへ追加しない経路と、300msの起動期限試験をbackground compile終了後へ置く経路が実際に成功した。試験・期限・最終gateは維持し、sourceは1,207ファイル、tar SHA-256 `e965be0745b957d00b4a6e134b381b3ca20210c090a1b3060053d4263dc93e63`で署名workflow／revisionも照合した。10分以内はこの成果物再利用条件の実測であり、本体変更・cold依存・任意のrunner待機での安定達成へ一般化しない。
 
-追加の整理では、新規sampler再現がearly catalogの対象から漏れてCargoを呼んでいた箇所を、先行build対象の一覧へ接続する。既存の小さな実Cargo fixtureでsampler実行ファイルの先行生成と、全体で同じhashの再利用を検査する。英語shaderガイドの「絶対パス・投影衝突を拒否する」という古い案内も現在の実装へ揃え、file URLの条件と残るHTTP(S)／captured script asset keyの制約を案内する。ガイド集合は1.0.50。追加整理のGHAはこれからで、ガイド本文を含む次のアプリ成果物のcompile確認は次に必要な本体検証へまとめる。同条件の全native CIをこの小変更だけのために繰り返さない。未参照素材の回収と元の公開受け入れ条件は残る。
+追加の整理では、新規sampler再現がearly catalogの対象から漏れてCargoを呼んでいた箇所を、先行build対象の一覧へ接続した。1c5d470の[Mac補助ツールGHA 40959774593](https://github.com/EkeMinusYou/lazypencil/actions/runs/40959774593)で全試験・Clippy・ライセンス原本の照合が成功した。既存の小さな実Cargo fixtureもsampler実行ファイルの先行生成と、全体で同じhashの再利用を成功した。英語shaderガイドの「絶対パス・投影衝突を拒否する」という古い案内も現在の実装へ揃え、file URLの条件と残るHTTP(S)／captured script asset keyの制約を案内する。ガイド集合は1.0.50。ガイド本文を含む次のアプリ成果物のcompile確認は次に必要な本体検証へまとめ、上記badafd3のバイナリーを新版ガイドのcompile証拠にはしない。同条件の全native CIをこの小変更だけのために繰り返さない。未参照素材の回収と元の公開受け入れ条件は残る。
 
 <details>
 <summary>file URL対応の初回失敗と直前の成功記録（現在の結果は上記badafd3）</summary>
