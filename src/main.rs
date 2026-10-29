@@ -89,6 +89,7 @@ fn main() -> ExitCode {
             }
         };
     }
+    lazypencil::remote_images::initialize_worker();
     let parsed = lazypencil::cli::Arguments::command()
         .try_get_matches()
         .and_then(|matches| {

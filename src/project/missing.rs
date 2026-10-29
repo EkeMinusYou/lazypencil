@@ -57,7 +57,8 @@ impl Project {
                         if self.byte_count > MAX_PROJECT_BYTES {
                             return Err(invalid("Project dependencies exceed 128 MiB"));
                         }
-                        self.remote_failures.insert(key, error);
+                        self.remote_failures
+                            .insert(key, error.details(json!({"origin":origin})));
                     }
                     return Ok(());
                 }
@@ -151,7 +152,7 @@ impl Project {
         self.missing_assets
             .values()
             .map(MissingAsset::diagnostic)
-            .chain(self.remote_failures.iter().map(|(path, error)| json!({"code":error.code,"message":error.message,"path":path,"kind":"remote_image"})))
+            .chain(self.remote_failures.iter().map(|(path, error)| json!({"code":error.code,"message":error.message,"path":path,"kind":"remote_image","origin":error.details.as_ref().and_then(|details| details.get("origin"))})))
             .collect()
     }
 

@@ -5,13 +5,23 @@ use serde::{Deserialize, Serialize};
 use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, OnceLock},
     time::{Duration, Instant},
 };
 use tokio_util::sync::CancellationToken;
 
 const PREFIX: &str = "lazypencil-http-image://";
 pub(crate) const MAX_SECONDS: u64 = 30;
+static CLI_WORKER: OnceLock<PathBuf> = OnceLock::new();
+
+/// Called by the CLI entry point, which implements the private worker command.
+/// Library hosts select their worker explicitly through Project construction.
+#[doc(hidden)]
+pub fn initialize_worker() {
+    if let Ok(executable) = std::env::current_exe() {
+        let _ = CLI_WORKER.set(executable);
+    }
+}
 
 fn failure(message: &str) -> Error {
     Error::new("ASSET_NOT_FOUND", message)
@@ -30,10 +40,7 @@ pub(crate) fn validate(uri: &str) -> Result<url::Url> {
         return Err(failure("Invalid or oversized HTTP image URL"));
     }
     let url = url::Url::parse(uri).map_err(|_| failure("Invalid HTTP image URL"))?;
-    if uri.len() > 4096
-        || uri.chars().any(char::is_control)
-        || uri.contains('\\')
-        || !matches!(url.scheme(), "http" | "https")
+    if !matches!(url.scheme(), "http" | "https")
         || url.host_str().is_none()
         || !url.username().is_empty()
         || url.password().is_some()
@@ -88,19 +95,9 @@ pub(crate) fn fetch(
     url.set_fragment(None);
     let executable = match executable {
         Some(executable) => executable.to_owned(),
-        None => {
-            let executable = std::env::current_exe()
-                .map_err(|_| failure("Cannot locate the HTTP image worker"))?;
-            if executable
-                .file_stem()
-                .is_none_or(|name| name != "lazypencil")
-            {
-                return Err(failure(
-                    "Embedded HTTP image capture requires an explicit lazypencil worker",
-                ));
-            }
-            executable
-        }
+        None => CLI_WORKER.get().cloned().ok_or_else(|| {
+            failure("Embedded HTTP image capture requires an explicit lazypencil worker")
+        })?,
     };
     let timeout = timeout.min(Duration::from_secs(MAX_SECONDS));
     if timeout < Duration::from_millis(1) {
