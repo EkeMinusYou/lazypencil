@@ -32,7 +32,47 @@ The current macOS Skia CoreText path does not accept nonzero collection indexes 
 
 `hash` identifies the original source bytes, and `face_index` identifies its original collection entry. `face_hash` identifies the normalized standalone data supplied to Skia. The original collection remains a captured file dependency, so even a change to trailing source bytes invalidates a retained calculation. Normalization does not hide a changed input.
 
-Supplied file revisions remain project dependencies even when no text uses them. A deferred read verifies the complete source hash before passing its captured bytes to Skia; same-size edits cannot silently change a retained snapshot. Loaded faces retain their immutable data, and the project checks all configured file revisions before accepting the operation. Library `Fonts::from_sources` also accepts already captured immutable bytes. Direct file loading checks regular-file descriptors and bounded reads; a FIFO is rejected rather than waited on. Named system families are resolved on demand for the requested style, captured as font data, and reconstructed from those bytes. A system data hash identifies the bytes returned by Skia, which may reconstruct font tables; it is not a promise to identify an OS file path. Automatic OS-font-change monitoring, font lockfiles, and a full platform reproducibility audit remain unfinished. Explicit refresh/recalculation is required to resolve installed fonts again.
+Supplied file revisions remain project dependencies even when no text uses them. A deferred read verifies the complete source hash before passing its captured bytes to Skia; same-size edits cannot silently change a retained snapshot. Loaded faces retain their immutable data, and the project checks all configured file revisions before accepting the operation. Library `Fonts::from_sources` also accepts already captured immutable bytes. Direct file loading checks regular-file descriptors and bounded reads; a FIFO is rejected rather than waited on. Named system families are resolved on demand for the requested style, captured as font data, and reconstructed from those bytes. A system data hash identifies the bytes returned by Skia, which may reconstruct font tables; it is not a promise to identify an OS file path. Automatic OS-font-change monitoring and a full platform reproducibility audit remain unfinished. Explicit refresh/recalculation is required to resolve installed fonts again. An optional lockfile checks those newly resolved bytes against an explicit baseline.
+
+## Reproducibility lockfile
+
+Opt in with a **top-level project setting**, before any TOML table:
+
+```toml
+version = 1
+font_lock = "fonts.lock.json"
+
+[fonts]
+files = ["fonts/Brand.ttf"]
+fallbacks = ["Noto Sans JP"]
+locale = "ja"
+```
+
+```sh
+lazypencil fonts lock design.pen
+lazypencil fonts check design.pen
+# Review a changed baseline before replacing its current hash:
+lazypencil fonts lock design.pen --expected-lock-revision CURRENT_SHA256
+```
+
+`fonts lock` performs the real layout, including generated script text, and explicitly loads every supplied face. It captures the configured files in precedence order and system faces observed by that document. It does not enumerate every installed family or execute every possible script branch. Prefer supplied font files for a project-wide baseline covering styles not yet used by that document. A later unrecorded system face is rejected until explicitly captured. Browser CSS/Web fonts, icon packs and the terminal's own text fonts retain their separate owners.
+
+Only the project configuration accepts `font_lock`; its path resolves relative to the physical `lazypencil.toml`. Existing projects without this setting keep their previous behavior. `--output PATH` can acquire an inactive baseline without changing configuration; the result's `active` field distinguishes that case. Creation never rewrites the document, font files or configuration. Identical acquisition is a no-op. Replacing different existing bytes requires the current `--expected-lock-revision`; stale hashes fail. New files use no-clobber publication, updates use the existing atomic writer, and the destination shares dependency-reader locks. Linked final output names and document/configuration/font/asset destinations are rejected.
+
+The UTF-8 JSON manifest is version 1, at most 1 MiB, with these fields:
+
+| Field | Meaning |
+| --- | --- |
+| `version` | Exactly `1`; unknown fields or versions are rejected. |
+| `engine`, `native_sources` | Layout engine identity and the hash of the pinned native-source provenance. |
+| `bundled_pack` | Complete pinned standard-font pack manifest, including its upstream revision and hashes. |
+| `input_hashes` | At most 256 source hashes, in effective configured/CLI file precedence order. |
+| `default_family`, `fallback_families`, `locale` | Effective selection policy; the fallback list preserves its order. |
+| `faces` | At most 256 unique `FontInfo` records as described above, including collection index, source/face hashes, physical style, synthetic flags and variation axes/ranges/default positions. `source` is `file`, `bundled` or `system:font-data`; local paths and native unique IDs are omitted. |
+
+The baseline fixes face data and policy; a document's supported weight changes still select axes from the same fixed data. Per-run selected positions remain in `get_layout` metrics. Renaming or relocating identical files is allowed when their effective order and policy stay the same. This is reproducible font selection, not a promise of identical antialiasing across operating systems or a lock on web-page contents.
+
+CLI, MCP and TUI share enforcement through `Project::load_fonts`, including faces loaded later during shaping. `fonts list --file` also checks the lock. `FONT_LOCK_MISMATCH` identifies changed data, settings, engine/pack or an unrecorded face; `FONT_LOCK_INVALID` identifies malformed or unsupported manifests. The configured lock is a captured dependency, so modified bytes, a redirected parent or restoring an absent lock invalidates old edit/calculation preconditions. Missing locks report `font_lock` asset diagnostics. Inspection and structural edits remain available with a missing, malformed or mismatched lock; normal inventory, layout and rendering require a valid baseline. Oversized/non-regular/unreadable inputs still fail their bounded source checks. Only explicit baseline acquisition bypasses its old/missing font lock, retaining the normal missing-font and missing-asset checks and publication preconditions. Hosted verification of this extension is pending.
 
 ## Selection and text coverage
 

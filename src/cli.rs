@@ -97,7 +97,7 @@ pub enum Command {
         #[command(subcommand)]
         command: IconCommand,
     },
-    /// Inspect additional fonts and read the bundled font's complete license.
+    /// Inspect fonts, read their bundled license, and manage project font baselines.
     #[cfg(feature = "rendering")]
     Fonts {
         #[command(subcommand)]
@@ -304,6 +304,23 @@ pub enum FontCommand {
         /// Resolve the document's project configuration before applying --font.
         #[arg(long)]
         file: Option<PathBuf>,
+        #[arg(long = "font")]
+        fonts: Vec<PathBuf>,
+    },
+    /// Capture the document's configured and observed fonts without changing its configuration.
+    Lock {
+        file: PathBuf,
+        #[arg(long)]
+        output: Option<PathBuf>,
+        /// Required when replacing an existing baseline with different contents.
+        #[arg(long)]
+        expected_lock_revision: Option<String>,
+        #[arg(long = "font")]
+        fonts: Vec<PathBuf>,
+    },
+    /// Verify all configured faces and the document's actual font selection against its lockfile.
+    Check {
+        file: PathBuf,
         #[arg(long = "font")]
         fonts: Vec<PathBuf>,
     },
@@ -570,6 +587,18 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
         },
         #[cfg(feature = "rendering")]
         Command::Fonts { command } => match command {
+            FontCommand::Lock {
+                file,
+                output,
+                expected_lock_revision,
+                fonts,
+            } => crate::font_lock::create(
+                &open(file)?,
+                fonts,
+                output.as_deref(),
+                expected_lock_revision.as_deref(),
+            ),
+            FontCommand::Check { file, fonts } => crate::font_lock::check(&open(file)?, fonts),
             FontCommand::List { fonts, file } => {
                 let mut metadata = json!({});
                 let (fonts, inventory) = if let Some(file) = file {

@@ -16,6 +16,8 @@ pub mod document;
 #[cfg(feature = "rendering")]
 pub mod dynamic;
 pub mod error;
+#[cfg(feature = "rendering")]
+pub mod font_lock;
 pub mod geometry;
 pub mod guidance;
 pub mod icons;

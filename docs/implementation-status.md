@@ -4,6 +4,8 @@
 
 ## 現在の状態（2026-10-30）
 
+再現用font lockfileの実装候補を追加した。project最上位の`font_lock`、`fonts lock FILE`／`fonts check FILE`、元のhashを要求する明示更新、CLI／MCP／TUI共通の遅延face照合を含む。lockfile自体の変更・absenceも依存条件へ束縛し、構造編集と通常の描画を区別する。全file face・その文書の生成textで観測したsystem face、可変軸・標準pack・engineを記録し、ローカルpathを固定しない。coreの欠損lock／設定、既定構成の移動・変更・更新・生成text CLI・実MCPの回帰を追加した。新しい機能のGHA結果は未確認であり、以下の既存成功と混同しない。
+
 c38fc1cの[CI 40935920526](https://github.com/EkeMinusYou/lazypencil/actions/runs/40935920526)は全工程成功した。Mac／Linuxの補助ツール全試験・Clippy、依存監査、core／既定構成、release、通常／pixel／runtime／端末／Materialの全5 consumer、共通画像gateと署名付きsourceを含む。欠損library／設定fontの診断・構造編集・復元はCLI／実MCPを含めて検証済みである。既定構成の先行repair targetは26件を1.25秒で成功した。以前期限超過した専用profileの保存状態復元も、静かな先行区間で同じcase・assertion・製品期限を保って46.79秒で成功した。可視TUI・物理IMEの受け入れ完了とはしない。
 
 全体15分32秒で10分目標は未達。builder9分22秒・core6分27秒・release3分44秒、通常4分25秒・runtime4分50秒・pixel2分10秒・Material1分19秒・端末1分15秒・source41秒だった。新Mac image用の完全依存cacheを復元し、先行の174.75秒ではappだけをコンパイルした。残る全体buildは86.85秒で、registry依存の不要な再compileとは区別する。

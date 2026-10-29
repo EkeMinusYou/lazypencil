@@ -1,6 +1,6 @@
 use super::{DEFAULT_FONT_BYTES, DEFAULT_FONT_FAMILY};
 use crate::{Error, Result, document::hash, project::font_files::FontFile};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use skia_safe::{
     Data, FontMgr, FontStyle, Typeface,
     font_style::Slant,
@@ -17,7 +17,8 @@ const MAX_FONT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_FACES: usize = 256;
 const MAX_TOTAL_BYTES: usize = 128 * 1024 * 1024;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FontAxis {
     pub tag: String,
     pub min: f32,
@@ -27,7 +28,8 @@ pub struct FontAxis {
     pub hidden: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FontInfo {
     pub family: String,
     pub source: String,
@@ -109,6 +111,7 @@ pub struct Fonts {
     locale: String,
     pending: Vec<PendingFace>,
     cancel: Option<tokio_util::sync::CancellationToken>,
+    lock: Option<crate::font_lock::Manifest>,
 }
 
 struct PendingFace {
@@ -177,6 +180,7 @@ impl Fonts {
             locale: "ja".into(),
             pending: Vec::new(),
             cancel: cancel.cloned(),
+            lock: None,
         };
         let mut additional = Vec::new();
         let mut seen = BTreeSet::new();
@@ -398,6 +402,14 @@ impl Fonts {
             return Err(invalid("Invalid font family name"));
         }
         let mut info = info.instance(&face)?;
+        info.family = self
+            .families
+            .get(&info.family.to_lowercase())
+            .cloned()
+            .unwrap_or_else(|| info.family.clone());
+        if let Some(lock) = &self.lock {
+            lock.require_face(&info)?;
+        }
         self.loaded_bytes = total;
         info.family = self
             .families
@@ -544,6 +556,12 @@ impl Fonts {
                 names.push(family);
             }
         }
+        if self.lock.is_some() && self.fallbacks != names {
+            return Err(Error::new(
+                "FONT_LOCK_MISMATCH",
+                "A locked font fallback chain cannot be changed; reload the project's configuration",
+            ));
+        }
         self.fallbacks = names;
         Ok(())
     }
@@ -572,6 +590,15 @@ impl Fonts {
                 ))
         });
         Ok(information)
+    }
+
+    pub(crate) fn enforce_lock(&mut self, lock: crate::font_lock::Manifest) -> Result<()> {
+        lock.require_settings(self)?;
+        for info in self.registered.values() {
+            lock.require_face(info)?;
+        }
+        self.lock = Some(lock);
+        Ok(())
     }
 
     fn load_pending(&mut self, index: usize) -> Result<()> {

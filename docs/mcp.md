@@ -1,5 +1,7 @@
 # MCP stdio server
 
+An optional project [font lockfile](fonts.md#reproducibility-lockfile) is enforced by the common font loader, including newly selected deferred faces. `get_document.configuration.font_lock` reports its presence and hash; its captured bytes or absence participate in dependency revisions. `list_fonts`, layout and rendering report `FONT_LOCK_INVALID` or `FONT_LOCK_MISMATCH` instead of silently updating a baseline. Structural edits remain available. Baseline publication is an explicit `fonts lock FILE` CLI operation, with revision-checked updates.
+
 The current server binds to one existing document for its lifetime:
 
 ```sh

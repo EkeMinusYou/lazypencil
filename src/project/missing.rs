@@ -142,7 +142,13 @@ impl Project {
     }
 
     pub(crate) fn require_assets(&self) -> Result<()> {
-        if self.assets_complete() {
+        if self.assets_complete()
+            || self.font_lock_capture
+                && self
+                    .missing_assets
+                    .values()
+                    .all(|asset| asset.kind == "font_lock")
+        {
             return Ok(());
         }
         Err(Error::new(

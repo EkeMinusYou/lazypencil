@@ -28,6 +28,9 @@ pub struct ProjectConfig {
     #[schemars(range(min = 1, max = 1))]
     pub version: u32,
     pub fonts: FontSettings,
+    /// Explicit project-owned font reproducibility manifest, relative to this configuration.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_lock: Option<PathBuf>,
     pub runtime: runtime::RuntimeSettings,
     pub design: crate::guidance::DesignSettings,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -38,6 +41,7 @@ impl Default for ProjectConfig {
         Self {
             version: 1,
             fonts: FontSettings::default(),
+            font_lock: None,
             runtime: Default::default(),
             design: Default::default(),
             agents: None,
@@ -143,6 +147,7 @@ impl FontOverrides {
 struct ProjectFile {
     version: u32,
     fonts: FontOverrides,
+    font_lock: Option<PathBuf>,
     runtime: runtime::RuntimeOverrides,
     design: crate::guidance::DesignSettings,
     agents: Option<agents::AgentSettings>,
@@ -152,6 +157,7 @@ impl Default for ProjectFile {
         Self {
             version: 1,
             fonts: Default::default(),
+            font_lock: None,
             runtime: Default::default(),
             design: Default::default(),
             agents: None,
@@ -256,6 +262,7 @@ pub struct Snapshot {
     pub settings: ProjectConfig,
     pub source: Option<(PathBuf, Arc<[u8]>)>,
     pub font_files: Vec<PathBuf>,
+    pub(crate) font_lock: Option<FontLockInput>,
     pub design: Result<crate::guidance::ProjectCatalog>,
     user: UserSource,
     font_origins: BTreeMap<&'static str, &'static str>,
@@ -264,6 +271,27 @@ pub struct Snapshot {
     directories: Vec<Directory>,
     bindings: Vec<(PathBuf, PathBuf)>,
     pub(crate) missing_fonts: Vec<MissingFont>,
+}
+
+pub(crate) const MAX_FONT_LOCK_BYTES: usize = 1024 * 1024;
+
+#[derive(Clone)]
+pub(crate) struct FontLockInput {
+    pub requested: PathBuf,
+    pub path: PathBuf,
+    pub bytes: Arc<[u8]>,
+}
+
+pub(crate) fn read_font_lock(path: &Path) -> Result<Arc<[u8]>> {
+    let mut bytes = Vec::new();
+    crate::store::open_regular_file(path)?
+        .take(MAX_FONT_LOCK_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| Error::io(path, error))?;
+    if bytes.len() > MAX_FONT_LOCK_BYTES {
+        return Err(invalid("Font lockfile exceeds 1 MiB"));
+    }
+    Ok(bytes.into())
 }
 
 fn invalid(message: impl Into<String>) -> Error {
@@ -891,6 +919,7 @@ impl Snapshot {
             .apply(&mut settings.fonts, &mut font_origins, "project");
         settings.design = project.design;
         settings.agents = project.agents;
+        settings.font_lock = project.font_lock;
         validate_fonts(&settings.fonts)?;
         let mut runtime_origins = runtime::origins();
         user.runtime
@@ -907,7 +936,38 @@ impl Snapshot {
             .map(|(path, _)| ("project", path.as_path()))
             .chain(user.source.iter().map(|(path, _)| ("user", path.as_path())))
             .collect::<Vec<_>>();
-        let inputs = font_inputs(&settings.fonts, &font_origins, &sources)?;
+        let mut inputs = font_inputs(&settings.fonts, &font_origins, &sources)?;
+        let font_lock = if let Some(path) = &settings.font_lock {
+            if path.as_os_str().is_empty()
+                || path.to_str().is_none()
+                || path.as_os_str().as_encoded_bytes().len() > 4096
+                || path.to_string_lossy().contains("://")
+            {
+                return Err(invalid(
+                    "Font lockfile must be a nonempty local UTF-8 path up to 4096 bytes",
+                ));
+            }
+            let requested = base.join(path);
+            if let Some(absent) = crate::paths::MissingPath::capture(&requested)? {
+                inputs.missing.push(MissingFont {
+                    path: absent,
+                    origin: source.as_ref().expect("Explicit project setting").0.clone(),
+                    uri: path.to_string_lossy().into_owned(),
+                    kind: "font_lock",
+                });
+                None
+            } else {
+                let path = canonical(&requested)?;
+                let bytes = read_font_lock(&path)?;
+                Some(FontLockInput {
+                    requested,
+                    path,
+                    bytes,
+                })
+            }
+        } else {
+            None
+        };
         let design = crate::guidance::ProjectCatalog::load(
             &discovery.root,
             base,
@@ -918,12 +978,16 @@ impl Snapshot {
         );
         let mut lock_paths = discovery.candidates.clone();
         lock_paths.extend(user.requested.iter().cloned());
+        if let Some(path) = &settings.font_lock {
+            lock_paths.push(base.join(path));
+        }
         Ok(Self {
             document: document.into(),
             discovery,
             settings,
             source,
             font_files: inputs.files,
+            font_lock,
             design,
             user,
             font_origins,
@@ -946,10 +1010,39 @@ impl Snapshot {
             design.verify_unchanged()?;
         }
         verify_project_source(&self.document, &self.discovery, &self.source)?;
+        if let Some(lock) = &self.font_lock {
+            if canonical(&lock.requested).map_err(|_| conflict())? != lock.path
+                || read_font_lock(&lock.path).map_err(|_| conflict())? != lock.bytes
+            {
+                return Err(conflict());
+            }
+        }
         verify_fonts(&self.bindings, &self.directories, &self.missing_fonts)
     }
     pub fn require_fonts(&self) -> Result<()> {
         require_fonts(&self.missing_fonts)
+    }
+    #[cfg(feature = "rendering")]
+    pub(crate) fn require_unlocked_fonts(&self) -> Result<()> {
+        require_fonts(
+            &self
+                .missing_fonts
+                .iter()
+                .filter(|font| font.kind != "font_lock")
+                .cloned()
+                .collect::<Vec<_>>(),
+        )
+    }
+    pub(crate) fn font_lock_path(&self) -> Option<PathBuf> {
+        self.settings.font_lock.as_ref().map(|path| {
+            self.source
+                .as_ref()
+                .expect("Explicit project setting")
+                .0
+                .parent()
+                .expect("Configuration parent")
+                .join(path)
+        })
     }
     pub fn summary(&self) -> Value {
         let design = self
@@ -957,7 +1050,7 @@ impl Snapshot {
             .as_ref()
             .map(|design| design.metadata())
             .unwrap_or_else(|error| json!({"available":false,"trusted":false,"error":error}));
-        json!({"path":self.source.as_ref().map(|(path,_)|path),"hash":self.source.as_ref().map(|(_,bytes)|hash(bytes)),"root":self.root(),"settings":self.settings,"font_files":self.font_files,"fonts_complete":self.missing_fonts.is_empty(),"font_diagnostics":self.missing_fonts.iter().map(MissingFont::diagnostic).collect::<Vec<_>>(),"font_origins":self.font_origins,"runtime_origins":self.runtime_origins,"user":self.user.summary(),"design":design})
+        json!({"path":self.source.as_ref().map(|(path,_)|path),"hash":self.source.as_ref().map(|(_,bytes)|hash(bytes)),"root":self.root(),"settings":self.settings,"font_files":self.font_files,"fonts_complete":self.missing_fonts.is_empty(),"font_diagnostics":self.missing_fonts.iter().map(MissingFont::diagnostic).collect::<Vec<_>>(),"font_lock":self.font_lock_path().map(|path|json!({"path":path,"available":self.font_lock.is_some(),"hash":self.font_lock.as_ref().map(|lock|hash(&lock.bytes))})),"font_origins":self.font_origins,"runtime_origins":self.runtime_origins,"user":self.user.summary(),"design":design})
     }
     pub fn sources(&self) -> Vec<(PathBuf, Arc<[u8]>)> {
         self.source

@@ -95,6 +95,8 @@ impl Error {
             | "UNSUPPORTED_FEATURE"
             | "ASSET_NOT_FOUND"
             | "ASSET_CONFLICT"
+            | "FONT_LOCK_INVALID"
+            | "FONT_LOCK_MISMATCH"
             | "REFERENCE_CYCLE"
             | "LAYOUT_UNRESOLVED"
             | "SNAPSHOT_UNAVAILABLE"

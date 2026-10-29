@@ -202,6 +202,7 @@ pub struct Project {
     font_sources: BTreeMap<PathBuf, font_files::FontFile>,
     font_bindings: Vec<(PathBuf, PathBuf)>,
     font_settings: crate::config::FontSettings,
+    font_lock_capture: bool,
     overlay: crate::managed::Overlay,
     overlay_published: bool,
     file_bindings: std::sync::Mutex<BTreeMap<PathBuf, PathBuf>>,
@@ -259,6 +260,7 @@ impl Project {
             font_sources: BTreeMap::new(),
             font_bindings: vec![],
             font_settings: Default::default(),
+            font_lock_capture: false,
             overlay: BTreeMap::new(),
             overlay_published: true,
             cancel: None,
@@ -667,6 +669,7 @@ impl Project {
             font_sources: BTreeMap::new(),
             font_bindings: vec![],
             font_settings: configuration.settings.fonts.clone(),
+            font_lock_capture: false,
             configuration: Some(configuration),
             overlay: overlay.clone(),
             overlay_published: overlay.is_empty(),
@@ -680,6 +683,19 @@ impl Project {
             .sources();
         for (path, bytes) in configuration_sources {
             project.capture_bytes(path, "configuration", bytes)?;
+        }
+        if let Some(lock) = project
+            .configuration
+            .as_ref()
+            .and_then(|configuration| configuration.font_lock.clone())
+        {
+            if project.assets.contains_key(&lock.path) || lock.path == path {
+                return Err(Error::new(
+                    "CONFIGURATION_ERROR",
+                    "Font lockfile must not alias a document or configuration",
+                ));
+            }
+            project.capture_bytes(lock.path, "font_lock", lock.bytes)?;
         }
         let configured_fonts = project
             .configuration
@@ -1093,6 +1109,17 @@ impl Project {
             return Ok(());
         }
         let path = crate::paths::canonical(path)?;
+        if self
+            .assets
+            .get(&path)
+            .is_some_and(|asset| asset.kind == "font_lock")
+            && kind != "font_lock"
+        {
+            return Err(Error::new(
+                "CONFIGURATION_ERROR",
+                "Font lockfile must not alias another project asset",
+            ));
+        }
         if let Some(font) = self.font_sources.get(&path) {
             let bytes = font.read(self.cancel.as_ref())?;
             self.byte_count -= font.length;
@@ -1144,6 +1171,12 @@ impl Project {
                 return Err(Error::new("INVALID_ARGUMENT", "Font paths must be UTF-8"));
             }
             if let Some(asset) = self.assets.get_mut(&canonical) {
+                if asset.kind == "font_lock" {
+                    return Err(Error::new(
+                        "CONFIGURATION_ERROR",
+                        "Font lockfile must not alias a configured font",
+                    ));
+                }
                 if asset.kind == "browser_resource" {
                     asset.kind = "font".into();
                 }
@@ -1236,9 +1269,18 @@ impl Project {
 
     #[cfg(feature = "rendering")]
     pub fn load_fonts(&self) -> Result<crate::text::Fonts> {
+        self.load_fonts_with_lock(true)
+    }
+
+    #[cfg(feature = "rendering")]
+    fn load_fonts_with_lock(&self, enforce: bool) -> Result<crate::text::Fonts> {
         self.check_cancelled()?;
         if let Some(configuration) = &self.configuration {
-            configuration.require_fonts()?;
+            if enforce {
+                configuration.require_fonts()?;
+            } else {
+                configuration.require_unlocked_fonts()?;
+            }
         }
         let sources = self
             .font_files
@@ -1256,10 +1298,54 @@ impl Project {
                     })
             })
             .collect::<Result<Vec<_>>>()?;
+        let lock = if enforce {
+            self.configuration
+                .as_ref()
+                .and_then(|configuration| configuration.font_lock.as_ref())
+                .map(|input| crate::font_lock::Manifest::parse(&input.bytes))
+                .transpose()?
+        } else {
+            None
+        };
+        if let Some(lock) = &lock {
+            lock.require_inputs(&self.font_input_hashes()?)?;
+        }
         let mut fonts = crate::text::Fonts::from_files(&sources, self.cancel.as_ref())?;
         fonts.configure(self.font_settings())?;
+        if let Some(lock) = lock {
+            fonts.enforce_lock(lock)?;
+        }
         self.check_cancelled()?;
         Ok(fonts)
+    }
+
+    #[cfg(feature = "rendering")]
+    pub(crate) fn capture_fonts(&mut self) -> Result<crate::text::Fonts> {
+        let fonts = self.load_fonts_with_lock(false)?;
+        // Only explicit baseline acquisition may resolve past its missing lock.
+        // The missing input remains a dependency and is still rechecked at publication.
+        self.font_lock_capture = true;
+        Ok(fonts)
+    }
+
+    #[cfg(feature = "rendering")]
+    pub(crate) fn font_input_hashes(&self) -> Result<Vec<String>> {
+        self.font_files
+            .iter()
+            .map(|path| {
+                self.font_sources
+                    .get(path)
+                    .map(|font| Ok(font.revision.clone()))
+                    .unwrap_or_else(|| self.asset(path).map(|asset| asset.revision.clone()))
+            })
+            .collect()
+    }
+
+    #[cfg(feature = "rendering")]
+    pub(crate) fn font_lock_path(&self) -> Option<PathBuf> {
+        self.configuration
+            .as_ref()
+            .and_then(crate::config::Snapshot::font_lock_path)
     }
 
     fn reference_path(&self, origin: &Path, uri: &str) -> Result<PathBuf> {

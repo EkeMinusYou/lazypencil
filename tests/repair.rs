@@ -8,6 +8,53 @@ use tempfile::TempDir;
 #[path = "../xtask/src/test_support/command_output.rs"]
 mod command_output;
 
+#[cfg(feature = "rendering")]
+#[path = "support/font_lock.rs"]
+mod font_lock;
+
+#[test]
+fn missing_font_lock_preserves_edits_and_rechecks_its_absence_and_raw_contents() {
+    let (temp, store) = fixture(json!([]));
+    fs::write(
+        temp.path().join("lazypencil.toml"),
+        "font_lock='fonts.lock.json'\n",
+    )
+    .unwrap();
+    let frozen = Project::load(&store).unwrap();
+    let metadata = service::document_metadata(&store).unwrap();
+    assert_eq!(metadata["configuration"]["font_lock"]["available"], false);
+    assert_eq!(metadata["asset_diagnostics"][0]["kind"], "font_lock");
+    service::apply_request(
+        &store,
+        &request(
+            &store,
+            "edit-with-missing-lock",
+            json!([
+                {"op":"insert","node":{"id":"rectangle","type":"rectangle","width":10,"height":10}}
+            ]),
+            false,
+        ),
+    )
+    .unwrap();
+    fs::write(temp.path().join("fonts.lock.json"), b"{}").unwrap();
+    assert_eq!(
+        frozen.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    let malformed = Project::load(&store).unwrap();
+    assert!(malformed.assets_complete());
+    #[cfg(feature = "rendering")]
+    assert_eq!(
+        malformed.load_fonts().err().unwrap().code,
+        "FONT_LOCK_INVALID"
+    );
+    fs::write(temp.path().join("fonts.lock.json"), b"[]").unwrap();
+    assert_eq!(
+        malformed.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+}
+
 fn image(uri: &str) -> Value {
     json!({"id":"image","type":"rectangle","width":20,"height":20,"fill":{"type":"image","url":uri}})
 }

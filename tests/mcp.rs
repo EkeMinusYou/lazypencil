@@ -831,6 +831,56 @@ fn mcp_missing_user_fonts_allow_edits_and_recover_after_the_declared_file_is_res
     client.finish();
 }
 
+#[cfg(feature = "rendering")]
+#[test]
+fn mcp_font_locks_reject_stale_calculations_and_mismatches_but_keep_structural_edits() {
+    let (temp, file, data) = fixture();
+    fs::create_dir_all(temp.path().join(".git")).unwrap();
+    fs::write(&file, json!({"version":"2.21","children":[{"id":"label","type":"text","content":"固定フォント","fontFamily":"Noto Sans JP","fontSize":18,"width":180,"height":30}]}).to_string()).unwrap();
+    fs::write(
+        temp.path().join("lazypencil.toml"),
+        "font_lock='fonts.lock.json'\n",
+    )
+    .unwrap();
+    let store = lazypencil::store::Store::open(&file, Some(data.clone())).unwrap();
+    lazypencil::font_lock::create(&store, &[], None, None).unwrap();
+    let path = temp.path().join("fonts.lock.json");
+    let baseline = fs::read(&path).unwrap();
+    let mut client = Client::start(&file, &data);
+    let before = client.data("get_document", json!({}));
+    let calculation = client.data("get_layout", json!({"expected_revision":before["revision"],"expected_dependency_revision":before["dependency_revision"]}));
+    let mut manifest: Value = serde_json::from_slice(&baseline).unwrap();
+    manifest["engine"] = json!("different-engine");
+    fs::write(&path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+    let stale = client.call("render", json!({"snapshot_id":calculation["snapshot_id"],"expected_revision":calculation["revision"],"expected_dependency_revision":calculation["dependency_revision"]}));
+    assert_eq!(
+        stale["structuredContent"]["error"]["code"],
+        "REVISION_CONFLICT"
+    );
+    let changed = client.data("get_document", json!({}));
+    assert_ne!(
+        changed["dependency_revision"],
+        before["dependency_revision"]
+    );
+    let mismatch = client.call("get_layout", json!({"expected_revision":changed["revision"],"expected_dependency_revision":changed["dependency_revision"]}));
+    assert_eq!(
+        mismatch["structuredContent"]["error"]["code"],
+        "FONT_LOCK_MISMATCH"
+    );
+    client.data("apply_operations", json!({"request_id":"font-lock-structural-edit",
+        "expected_revision":changed["revision"],"expected_dependency_revision":changed["dependency_revision"],
+        "operations":[{"op":"update","target":"label","set":{"name":"Kept edit"}}]}));
+    fs::write(&path, baseline).unwrap();
+    let recovered = client.data("get_document", json!({}));
+    let layout = client.data("get_layout", json!({"expected_revision":recovered["revision"],"expected_dependency_revision":recovered["dependency_revision"]}));
+    assert!(layout["nodes"].as_array().unwrap().iter().any(|node| {
+        node["text"]["fonts"]
+            .as_array()
+            .is_some_and(|fonts| fonts.iter().any(|font| font["family"] == "Noto Sans JP"))
+    }));
+    client.finish();
+}
+
 #[test]
 fn mcp_variable_queries_expose_themed_values_sources_and_bound_pages() {
     let (temp, file, data) = fixture();

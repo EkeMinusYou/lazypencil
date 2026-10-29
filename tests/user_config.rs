@@ -20,6 +20,44 @@ struct Fixture {
 }
 
 #[test]
+fn font_lock_is_project_owned_and_missing_inputs_remain_inspectable() {
+    let f = Fixture::new();
+    fs::write(
+        f.project.join("lazypencil.toml"),
+        "font_lock='fonts.lock.json'\n",
+    )
+    .unwrap();
+    let snapshot = f.snapshot().unwrap();
+    let shown = snapshot.summary();
+    assert_eq!(shown["font_lock"]["available"], false);
+    assert_eq!(shown["fonts_complete"], false);
+    assert_eq!(shown["font_diagnostics"][0]["kind"], "font_lock");
+    assert!(
+        snapshot
+            .lock_paths()
+            .iter()
+            .any(|path| path.ends_with("fonts.lock.json"))
+    );
+    f.settings("font_lock='user-lock.json'\n");
+    assert_eq!(
+        UserSnapshot::load_file(Some(f.user.join("config.toml")))
+            .err()
+            .unwrap()
+            .code,
+        "CONFIGURATION_ERROR"
+    );
+    f.settings("");
+    for value in ["''", "'https://example.invalid/fonts.json'"] {
+        fs::write(
+            f.project.join("lazypencil.toml"),
+            format!("font_lock={value}\n"),
+        )
+        .unwrap();
+        assert_eq!(f.snapshot().err().unwrap().code, "CONFIGURATION_ERROR");
+    }
+}
+
+#[test]
 fn attachment_limits_are_user_owned_validated_and_loaded_without_fonts() {
     use lazypencil::config::attachments::{self, AttachmentSettings};
     let f = Fixture::new();

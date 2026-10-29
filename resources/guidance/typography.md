@@ -1,5 +1,7 @@
 # Typography and multilingual copy
 
+An optional project `font_lock` fixes font data, selection settings, native-source identity and the bundled pack. `FONT_LOCK_MISMATCH` means the current inputs or a newly selected face differ from that baseline; do not hide it with a substitute or silently regenerate the lock. Inspection and structural edits remain available. The explicit `fonts lock FILE` CLI captures all supplied faces and system faces observed by that document, including generated text. Changed contents require the reviewed `--expected-lock-revision`; `fonts check FILE` verifies the configured baseline. A missing lock remains a missing dependency until explicitly created. Browser CSS fonts and terminal text fonts have their own owners and are outside this lock.
+
 Use typography to express hierarchy. Choose a few clear roles, such as page title, section title, body, label, and supporting text. Keep their sizes and weights consistent across the document. The standard-ui style starts with 32/24/20 for headings, 16 for body, 14 for supporting copy, and 12 for short labels. These are defaults for that style, not universal rules.
 
 Noto Sans JP is bundled. Use another family only when it is available or the user supplies its font file. A missing font or missing glyph is a real diagnostic; do not silently claim the original typography was reproduced. Extra fonts and different font weights can change wrapping and control sizes.
