@@ -72,7 +72,37 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
             let hash = lazypencil::document::hash(inputs.to_string().as_bytes());
             changes["metadata"] = json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":{"script_scope":{"version":1,"script_uri":"old.js","library":"base","inputs":{"hash":hash,"library":""}}}});
         }
-        "inherit" => {}
+        "stale-inherited-input-scope" | "inherited-unknown-input-scope" => {
+            if mode == "stale-inherited-input-scope" {
+                fs::write(temp.path().join("library/base.js"), "/**\n * @schema 2.21\n * @input selected: ref = \"badge\"\n */\nreturn [{type:'rectangle',width:36,height:12,fill:'#0000ff'}];").unwrap();
+            }
+            let selected = if mode == "stale-inherited-input-scope" {
+                "$base_selection"
+            } else {
+                "$selection"
+            };
+            let inputs = json!({"selected":selected,"stale":"$missing"});
+            let hash = lazypencil::document::hash(inputs.to_string().as_bytes());
+            changes["metadata"] = json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":{"script_scope":{"version":1,"script_uri":"old.js","library":"base","inputs":{"hash":hash,"library":"uncaptured"}}}});
+        }
+        "metadata-output" | "metadata-input" | "metadata-both" | "metadata-unknown-source" => {
+            changes.as_object_mut().unwrap().remove("scriptUri");
+            fs::write(temp.path().join("library/base.js"), REPLACEMENT).unwrap();
+            let mut scope = json!({"version":1,"script_uri":"base.js","library":""});
+            if mode == "metadata-input" {
+                scope["script_uri"] = json!("old.js");
+                scope["library"] = json!("uncaptured");
+            }
+            if ["metadata-input", "metadata-both"].contains(&mode) {
+                let inputs = json!({"selected":"$selection","stale":"$missing"});
+                scope["inputs"] = json!({"hash":lazypencil::document::hash(inputs.to_string().as_bytes()),"library":""});
+            }
+            if mode == "metadata-unknown-source" {
+                scope["library"] = json!("uncaptured");
+            }
+            changes["metadata"] = json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":{"script_scope":scope}});
+        }
+        "inherit" | "saved-input-owner" => {}
         _ => panic!("Unknown generated override case"),
     }
     let direct = |mut changes: Value| {
@@ -145,6 +175,22 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
         let mut main: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         main["themes"] = json!({"copy_mode":["light","dark"]});
         write(&path, main);
+    }
+    if mode == "saved-input-owner" {
+        write(
+            &temp.path().join("library/inputs.pen"),
+            json!({"version":version,
+                "variables":{"source_selection":{"type":"string","value":"badge"}},
+                "children":[{"id":"badge","name":"Input badge","type":"rectangle","reusable":true,"width":10,"height":10,"fill":"#00ffff"}]
+            }),
+        );
+        let path = temp.path().join("library/base.pen");
+        let mut base: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        base["imports"] = json!({"inputs":"inputs.pen"});
+        let inputs = json!({"selected":"$source_selection","stale":"$missing"});
+        base["children"][1]["inputs"] = inputs.clone();
+        base["children"][1]["metadata"]["lazypencil"]["script_scope"] = json!({"version":1,"script_uri":"base.js","library":"","inputs":{"hash":lazypencil::document::hash(inputs.to_string().as_bytes()),"library":"inputs"}});
+        write(&path, base);
     }
     let store = Store::open(temp.path().join("main.pen"), Some(temp.path().join("data"))).unwrap();
     (temp, store, code)
@@ -258,6 +304,11 @@ fn independent_case(
         "explicit-context",
         "explicit-input-context",
         "active-input-scope",
+        "inherited-input-scope",
+        "stale-inherited-input-scope",
+        "metadata-output",
+        "metadata-input",
+        "metadata-both",
     ]
     .contains(&mode)
     {
@@ -265,7 +316,13 @@ fn independent_case(
     } else {
         "base"
     };
-    let output = if ["explicit-context", "explicit-input-context"].contains(&mode) {
+    let output = if [
+        "explicit-context",
+        "explicit-input-context",
+        "metadata-input",
+    ]
+    .contains(&mode)
+    {
         Color::RED
     } else {
         Color::GREEN
@@ -276,6 +333,12 @@ fn independent_case(
             "explicit-context",
             "explicit-input-context",
             "active-input-scope",
+            "inherited-input-scope",
+            "stale-inherited-input-scope",
+            "metadata-output",
+            "metadata-input",
+            "metadata-both",
+            "saved-input-owner",
         ]
         .contains(&mode)
             && let Some(root) = std::env::var_os("LAZYPENCIL_TEST_TUI_ARTIFACTS")
@@ -399,7 +462,8 @@ fn generated_code_overrides_reject_unmanifested_sources_explicit_contexts_and_bi
         (false, "inherit", 1, "ASSET_NOT_FOUND"),
         (true, "unknown-context", 1, "INVALID_DOCUMENT"),
         (true, "explicit-bindings", 1, "UNSUPPORTED_FEATURE"),
-        (true, "inherited-input-scope", 1, "UNSUPPORTED_FEATURE"),
+        (true, "inherited-unknown-input-scope", 1, "INVALID_DOCUMENT"),
+        (true, "metadata-unknown-source", 1, "INVALID_DOCUMENT"),
         (true, "bad-variable", 1, "INVALID_DOCUMENT"),
         (true, "inherit", 600, "INVALID_DOCUMENT"),
     ] {
@@ -428,6 +492,33 @@ fn generated_code_overrides_reject_unmanifested_sources_explicit_contexts_and_bi
         }
         assert_eq!(fs::read(store.path()).unwrap(), bytes);
     }
+}
+
+#[test]
+fn generated_inherited_scope_guards_keep_original_spelling_after_copy_and_recopy() {
+    std::thread::scope(|threads| {
+        for version in ["2.19", "2.21"] {
+            threads.spawn(move || {
+                for style in ["direct", "descendant", "replacement", "children"] {
+                    for mode in ["inherited-input-scope", "metadata-output", "metadata-both"] {
+                        let first = if mode == "metadata-output" {
+                            Color::RED
+                        } else {
+                            Color::GREEN
+                        };
+                        let _fixture = independent_case(version, style, mode, first);
+                    }
+                }
+                for (mode, first) in [
+                    ("metadata-input", Color::GREEN),
+                    ("stale-inherited-input-scope", Color::RED),
+                    ("saved-input-owner", Color::CYAN),
+                ] {
+                    let _fixture = independent_case(version, "direct", mode, first);
+                }
+            });
+        }
+    });
 }
 
 #[test]

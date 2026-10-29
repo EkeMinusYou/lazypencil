@@ -12,6 +12,41 @@ pub(super) struct Inputs {
     pub values: BTreeMap<String, Value>,
     pub variables: BTreeMap<String, String>,
     pub components: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub source_values: BTreeMap<String, Value>,
+}
+
+impl Inputs {
+    pub(super) fn original_values(&self) -> Option<Value> {
+        self.source_hash.as_ref()?;
+        let mut values = self.values.clone();
+        values.extend(self.source_values.clone());
+        Some(json!(values))
+    }
+}
+
+pub(super) fn capture(original: Option<&Value>, mut context: Value) -> Result<Value> {
+    if let Some(original) = original {
+        let raw = original
+            .as_object()
+            .ok_or_else(|| invalid("Script inputs must be an object"))?;
+        let mapped = context["values"]
+            .as_object()
+            .ok_or_else(|| invalid("Script inputs must be an object"))?;
+        let source_values: Map<String, Value> = raw
+            .iter()
+            .filter(|(key, value)| mapped.get(*key) != Some(*value))
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+        context["version"] = json!(2);
+        context["source_hash"] = json!(super::scope::value_hash(original));
+        if !source_values.is_empty() {
+            context["source_values"] = json!(source_values);
+        }
+    }
+    Ok(context)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -26,6 +61,8 @@ impl Bound {
             && self.values.values == other.values.values
             && self.values.variables == other.values.variables
             && self.values.components == other.values.components
+            && self.values.source_hash == other.values.source_hash
+            && self.values.source_values == other.values.source_values
     }
 
     pub fn expression(&self, name: &str, value: &Value) -> Result<Value> {
@@ -74,11 +111,23 @@ pub(super) fn bind(
     }
     let values: Inputs = serde_json::from_value(value.clone())
         .map_err(|_| invalid("Invalid copied input context"))?;
-    if values.version != 1 {
+    if ![1, 2].contains(&values.version) {
         return Err(Error::new(
             "UNSUPPORTED_VERSION",
             "Unsupported copied input context version",
         ));
+    }
+    if (values.version == 2) != values.source_hash.is_some()
+        || values.version == 1 && !values.source_values.is_empty()
+        || values
+            .source_values
+            .keys()
+            .any(|key| !values.values.contains_key(key))
+        || values.original_values().as_ref().is_some_and(|original| {
+            Some(super::scope::value_hash(original)).as_ref() != values.source_hash.as_ref()
+        })
+    {
+        return Err(invalid("Invalid copied input provenance"));
     }
     let valid = |v: &str| !v.is_empty() && v.len() <= 4096 && !v.chars().any(char::is_control);
     if values.variables.len() + values.components.len() + values.values.len() > MAX_NODES
@@ -291,6 +340,22 @@ pub(super) fn override_value(changes: &Map<String, Value>) -> Result<Option<Over
 mod tests {
     use super::*;
 
+    #[test]
+    fn copied_input_provenance_keeps_original_expressions_and_rejects_tampering() {
+        let original = json!({"selected":"old"});
+        let captured = capture(Some(&original), context()).unwrap();
+        let values: Inputs = serde_json::from_value(captured.clone()).unwrap();
+        assert_eq!(values.original_values(), Some(original));
+        assert_eq!(
+            values.source_values,
+            BTreeMap::from([("selected".into(), json!("old"))])
+        );
+        assert!(scene(captured.clone(), "copy").is_ok());
+        let mut changed = captured;
+        changed["source_values"]["selected"] = json!("ordinary");
+        assert_eq!(scene(changed, "copy").unwrap_err().code, "INVALID_DOCUMENT");
+    }
+
     fn context() -> Value {
         json!({"version":1,"values":{"selected":"copy"},"variables":{},"components":{"old":"copy"}})
     }
@@ -326,7 +391,7 @@ mod tests {
             );
         }
         let mut unknown = context();
-        unknown["version"] = json!(2);
+        unknown["version"] = json!(3);
         assert_eq!(
             scene(unknown, "caller").unwrap_err().code,
             "UNSUPPORTED_VERSION"

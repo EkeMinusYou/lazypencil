@@ -19,7 +19,7 @@ pub(super) fn validate(values: &Bindings) -> Result<()> {
         || values.version == 2 && values.script_scopes.is_empty()
     {
         return Err(invalid(
-            "Captured execution namespaces require script bindings version 2",
+            "Captured execution namespaces require script bindings version 2 or 3",
         ));
     }
     if values.script_scopes.len() > 4096
@@ -166,6 +166,7 @@ impl Bound {
                 .collect(),
             script_scopes: BTreeMap::new(),
             script_namespace: None,
+            source_uri_hash: values.source_uri_hash.clone(),
         };
         Ok(Self {
             origin,
@@ -179,6 +180,9 @@ impl Bound {
     pub(in crate::project) fn selected(&self, alias: &str) -> Result<Self> {
         let mut values = self.original().clone();
         if values.script_scopes.is_empty() {
+            if alias.is_empty() {
+                return Ok(self.clone());
+            }
             return Err(Error::new(
                 "UNSUPPORTED_FEATURE",
                 "This script lacks captured execution namespaces; copy it again from its source",

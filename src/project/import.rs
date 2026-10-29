@@ -676,12 +676,8 @@ impl Copier<'_> {
                 let header = &script.header;
                 for input in &header.inputs {
                     if let Some(value) = value.get(&input.name) {
-                        let (source, value) = self.script_input_expression(
-                            origin,
-                            &script.resolved,
-                            &input.name,
-                            value,
-                        )?;
+                        let (source, value) =
+                            self.script_input_expression(&script.resolved, &input.name, value)?;
                         self.scan_value(&source, &value)?;
                     }
                 }

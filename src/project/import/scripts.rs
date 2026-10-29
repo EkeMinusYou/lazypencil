@@ -328,7 +328,6 @@ impl Copier<'_> {
 
     pub(super) fn script_input_expression(
         &self,
-        origin: &Path,
         node: &ResolvedNode,
         name: &str,
         value: &Value,
@@ -339,14 +338,13 @@ impl Copier<'_> {
                 context.values.values.get(name).unwrap_or(value).clone(),
             ))
         } else {
-            Ok((origin.into(), value.clone()))
+            Ok((node.script_input_origin().into(), value.clone()))
         }
     }
 
     pub(super) fn copied_input_value(&self, info: &Info, name: &str, raw: &Value) -> Result<Value> {
         let node = &info.resolved;
-        let (origin, value) =
-            self.script_input_expression(node.property_source("inputs"), node, name, raw)?;
+        let (origin, value) = self.script_input_expression(node, name, raw)?;
         if let Some(variable) = value.as_str().and_then(|v| v.strip_prefix('$')) {
             let known = node
                 .input_context
@@ -412,7 +410,7 @@ impl Copier<'_> {
                     .ok_or_else(|| copy_error("Missing copied input variable"))
             })?
         } else {
-            self.script_scopes[node.property_source("inputs")]
+            self.script_scopes[node.script_input_origin()]
                 .variables
                 .iter()
                 .map(|(name, key)| {
@@ -449,9 +447,30 @@ impl Copier<'_> {
                 Ok((name.clone(), value))
             })
             .collect::<Result<Map<_, _>>>()?;
-        Ok(Some(
+        let original = if let Some(context) = &node.input_context
+            && context.values.source_hash.is_some()
+        {
+            context.values.original_values()
+        } else if node
+            .script_bindings
+            .as_ref()
+            .is_some_and(|bound| bound.values.assets.is_some())
+        {
+            None
+        } else {
+            node.properties.get("inputs").cloned()
+        };
+        let context = super::super::script_context::capture(
+            original.as_ref(),
             json!({"version":1,"values":values,"variables":variables,"components":components}),
-        ))
+        )?;
+        budget.charge(
+            context
+                .get("source_values")
+                .map_or(0, |values| values.to_string().len())
+                + 128,
+        )?;
+        Ok(Some(context))
     }
 
     fn component_bindings(&self, origin: &Path, budget: &mut Budget) -> Result<Map<String, Value>> {
@@ -605,6 +624,18 @@ impl Copier<'_> {
         });
         if output {
             bindings["inputs_hash"] = json!(inputs_hash);
+            let source_hash = if let Some(bound) = &info.resolved.script_bindings
+                && bound.values.assets.is_some()
+            {
+                bound.original().source_uri_hash.clone()
+            } else {
+                Some(hash(info.uri.as_bytes()))
+            };
+            if let Some(source_hash) = source_hash {
+                bindings["version"] = json!(3);
+                bindings["source_uri_hash"] = json!(source_hash);
+                budget.charge(128)?;
+            }
         }
         let context = if input_context {
             self.input_context(info, &mut budget)?

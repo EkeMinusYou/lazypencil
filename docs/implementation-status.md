@@ -65,6 +65,8 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 
 宣言済みの実行namespaceを共有表へ捕捉し、再copyで合成する。生成ノードがscriptUriを明示したscript_scopeは、出力側の別名と明示入力のhash付き別名を個別に選ぶ。5経路×3入力／出力文脈×2形式の元source・copy・再copy、および到達不能なnamespaceの拒否は349c2eaの完全GHAで成功し、90 PNGも独立照合した。metadataだけのsource選択、継承入力を要するguard、custom script_bindingsと複合envelopeは引き続き残件とする。
 
+次の候補では、bindings v3に元URIのhash、input context v2に元入力のhashと変換された式の差分を保存する。参照先の展開後にこの出自とguardを照合し、metadataだけのsource選択と継承入力のscopeを別々に合成する。生成URIの変換前情報はJSONへ一時項目を足さず、Rustの並行する構造で後段へ渡す。入力scopeが変数と部品の両方で実効入力文書を使う修正も含む。元の型の読取り、失効したguard、未使用controls、宣言済みnamespaceと出力budgetは維持する。継承4経路・両形式、stale guardと別の保存済み入力所有元の実worker／copy／再copyを既存試験へ追加した。GHAは未検証で、custom bindingと複合envelopeはこの候補の後も残る。
+
 - 生成 script の有効な明示 `script_scope`／`script_bindings`／上書き文脈の独立合成。metadataだけのsource選択、継承入力guard、custom bindingと複合envelopeは `bindings.rs` と `generated_refs.rs` で拒否する。失効したscript_bindingsが生成URIの再配置で復活する別の不具合を修正し、実worker・2形式・元ファイル削除・再コピーの回帰を追加した。d37e4f2のMac完全CIで両形式の画素、実workerのユーザーmetadata、コピー先の部品定義への参照まで成功し、従来のケースの実行回数を保持した。修正コードから独立に再構成したJSのhashと、元source削除／再コピー前後の6 PNGのhash・寸法・一致も照合した。有効な明示文脈の合成を、この修正だけで完了扱いにしない。
 - TUI preview と別の bound MCP が、同じ認証済みブラウザープロファイルを同時利用する統合。専用 profile の作成・ログイン・永続ストレージ・所有者回収は実装済みだが、現在の lease は二つ目の独立 owner を拒否する。
 - 追加フォントの遅延読み込み。入力容量・フェイス数の上限と OS FontMgr の遅延作成は実装済みだが、指定ファイルの全件読み取り・登録が残る。

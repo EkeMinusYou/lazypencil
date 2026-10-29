@@ -2,6 +2,59 @@ use super::*;
 
 #[cfg(feature = "rendering")]
 #[test]
+fn inherited_script_uri_guards_use_original_provenance_instead_of_relocated_spellings() {
+    let project = Project::local(Document::parse(json!({"version":"2.21","children":[{
+        "id":"worker","type":"script","width":36,"height":12,"scriptUri":"assets/nested.js",
+        "metadata":{"type":"test","lazypencil":{"script_bindings":{
+            "version":3,"script_uri":"assets/nested.js","source_uri_hash":hash(b"nested.js"),"assets":{}
+        }}}
+    }]}).to_string()).unwrap()).unwrap();
+    let target = project.resolve().unwrap().roots.remove(0);
+    let parent = Bound::from_values(PathBuf::from("/captured/main.pen"), false, parse(&json!({
+        "version":2,"script_uri":"generator.js","assets":{},
+        "script_scopes":{"":{"components":{},"variables":{},"themes":{},"assets":{},"libraries":{"":""},"browser_libraries":{}}}
+    })).unwrap()).unwrap();
+    let mut changes = json!({"metadata":{"type":"test","lazypencil":{"script_scope":{
+        "version":1,"script_uri":"assets/nested.js","library":"uncaptured"
+    }}}});
+    let scope = changes
+        .pointer("/metadata/lazypencil/script_scope")
+        .unwrap()
+        .clone();
+    let (output, input) = parent
+        .compose_generated_scope(
+            &scope,
+            &mut changes,
+            &target,
+            &GeneratedState::default(),
+            "assets/nested.js",
+            &mut 0,
+        )
+        .unwrap();
+    assert!(output.is_none() && input.is_none());
+    changes["metadata"]["lazypencil"]["script_scope"]["script_uri"] = json!("nested.js");
+    let scope = changes
+        .pointer("/metadata/lazypencil/script_scope")
+        .unwrap()
+        .clone();
+    assert_eq!(
+        parent
+            .compose_generated_scope(
+                &scope,
+                &mut changes,
+                &target,
+                &GeneratedState::default(),
+                "assets/nested.js",
+                &mut 0
+            )
+            .unwrap_err()
+            .code,
+        "INVALID_DOCUMENT"
+    );
+}
+
+#[cfg(feature = "rendering")]
+#[test]
 fn generated_explicit_scope_selection_keeps_shared_tables_and_rejects_unreachable_namespaces() {
     let scope = |component: &str, variable: &str, libraries: Value| {
         json!({
@@ -32,7 +85,9 @@ fn generated_explicit_scope_selection_keeps_shared_tables_and_rejects_unreachabl
         base.selected("").unwrap().component("badge").unwrap(),
         "base-target"
     );
-    let output = base.inherited_output("nested.js", None, &mut 0).unwrap();
+    let output = base
+        .inherited_output_with_hash("nested.js", None, None, &mut 0)
+        .unwrap();
     assert!(parent.generated_output(&output).unwrap());
     let mut escaped = output.clone();
     escaped["script_namespace"] = json!("");

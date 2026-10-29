@@ -1902,22 +1902,24 @@ impl Project {
         }
         if let Some(bindings) = &script.script_bindings {
             let mut inherited_bytes = 0;
+            let mut contexts = Vec::with_capacity(nodes.len());
             for node in &mut nodes {
                 self.check_cancelled()?;
-                bindings.rewrite(
+                contexts.push(bindings.rewrite(
                     node,
                     &self.runtime_refs,
                     &mut inherited_bytes,
                     self,
                     &generated_names,
-                )?;
+                )?);
             }
-            for node in &mut nodes {
+            for (node, context) in nodes.iter_mut().zip(&contexts) {
                 self.bind_generated_ref_contexts(
                     node,
                     bindings,
                     &script.theme,
                     &mut inherited_bytes,
+                    context,
                 )?;
             }
         } else {

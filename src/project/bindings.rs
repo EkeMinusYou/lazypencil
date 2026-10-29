@@ -6,6 +6,10 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "rendering")]
 mod generated;
 #[cfg(feature = "rendering")]
+pub(super) use generated::{
+    clear_pending_scopes, has_pending_scopes, has_scope as has_generated_scope,
+};
+#[cfg(feature = "rendering")]
 mod paths;
 mod scopes;
 pub(super) use scopes::CapturedScope;
@@ -23,6 +27,8 @@ pub(super) struct DescendantContext {
 pub(super) struct Bindings {
     pub(super) version: u32,
     pub(super) script_uri: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) source_uri_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) library: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -57,6 +63,14 @@ pub(super) struct Bound {
     pub(super) inputs_bound: bool,
     pub(super) values: Bindings,
     pub(super) captured: Option<Box<Bindings>>,
+}
+
+#[cfg(feature = "rendering")]
+#[derive(Debug, Default)]
+pub(super) struct GeneratedState {
+    pub uri_hash: Option<String>,
+    pub children: Vec<GeneratedState>,
+    pub descendants: BTreeMap<String, GeneratedState>,
 }
 
 impl Serialize for Bound {
@@ -104,7 +118,7 @@ fn parse(value: &Value) -> Result<Bindings> {
     }
     let values: Bindings = serde_json::from_value(value.clone())
         .map_err(|_| invalid("Invalid lazypencil script bindings"))?;
-    if ![1, 2].contains(&values.version) {
+    if ![1, 2, 3].contains(&values.version) {
         return Err(Error::new(
             "UNSUPPORTED_VERSION",
             "Unsupported script bindings version",
@@ -156,6 +170,15 @@ fn parse(value: &Value) -> Result<Bindings> {
         })
     {
         return Err(invalid("Invalid or oversized script binding names"));
+    }
+    if values.source_uri_hash.as_ref().is_some_and(|value| {
+        value.len() != 64
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    }) || values.source_uri_hash.is_some() != (values.version == 3)
+    {
+        return Err(invalid("Invalid script source provenance"));
     }
     for (name, contexts) in &values.descendant_contexts {
         if !values.components.contains_key(name) || contexts.len() > MAX_NODES {
@@ -298,6 +321,7 @@ impl Bound {
             && self.values.browser_libraries == other.values.browser_libraries
             && self.original().script_scopes == other.original().script_scopes
             && self.original().script_namespace == other.original().script_namespace
+            && self.original().source_uri_hash == other.original().source_uri_hash
     }
 }
 
@@ -440,10 +464,11 @@ impl Bound {
         self.value(value)
     }
 
-    pub(super) fn inherited_output(
+    pub(super) fn inherited_output_with_hash(
         &self,
         uri: &str,
         inputs: Option<&Value>,
+        uri_hash: Option<String>,
         inherited_bytes: &mut usize,
     ) -> Result<Value> {
         *inherited_bytes = inherited_bytes
@@ -458,6 +483,14 @@ impl Bound {
         // Generated nodes already belong to the resolved namespace owner.
         values.library = None;
         values.script_uri = uri.into();
+        values.source_uri_hash = uri_hash;
+        values.version = if values.source_uri_hash.is_some() {
+            3
+        } else if values.script_scopes.is_empty() {
+            1
+        } else {
+            2
+        };
         values.input_components = None;
         values.inputs_hash = inputs.map(|value| {
             let mut value = value.clone();
@@ -474,7 +507,14 @@ impl Bound {
         inherited_bytes: &mut usize,
         project: &Project,
         ids: &BTreeMap<String, String>,
-    ) -> Result<()> {
+    ) -> Result<GeneratedState> {
+        let mut state = GeneratedState {
+            uri_hash: node
+                .get("scriptUri")
+                .and_then(Value::as_str)
+                .map(|uri| hash(uri.as_bytes())),
+            ..GeneratedState::default()
+        };
         if self.values.assets.is_some()
             && node.get("scriptUri").is_some()
             && node["enabled"] != false
@@ -482,7 +522,9 @@ impl Bound {
                 .get("type")
                 .is_none_or(|kind| matches!(kind.as_str(), Some("script" | "ref")))
         {
-            super::scope::discard_inactive_generated_scope(node)?;
+            if node["type"] == "script" {
+                super::scope::discard_inactive_generated_scope(node)?;
+            }
             discard_inactive_generated_bindings(node)?;
         }
         let selected = if self.values.assets.is_some() {
@@ -537,6 +579,7 @@ impl Bound {
         // not bind to either the copied namespace or a same-named caller value.
         let deferred_inputs = if self.values.assets.is_some()
             && (selected.is_some() && node["type"] == "script"
+                || generated::has_scope(node)
                 || node.get("scriptUri").is_some()
                     && (node["type"] == "ref" || node.get("type").is_none()))
         {
@@ -553,7 +596,9 @@ impl Bound {
         rewritten?;
         if let Some(children) = node.get_mut("children").and_then(Value::as_array_mut) {
             for child in children {
-                self.rewrite(child, handles, inherited_bytes, project, ids)?;
+                state
+                    .children
+                    .push(self.rewrite(child, handles, inherited_bytes, project, ids)?);
             }
         }
         if let Some(slot) = node.get_mut("slot").and_then(Value::as_array_mut) {
@@ -569,7 +614,9 @@ impl Bound {
         if let Some(entries) = remapped {
             let mut rewritten = Map::new();
             for (path, mut properties) in entries {
-                self.rewrite(&mut properties, handles, inherited_bytes, project, ids)?;
+                let context =
+                    self.rewrite(&mut properties, handles, inherited_bytes, project, ids)?;
+                state.descendants.insert(path.clone(), context);
                 if rewritten.insert(path, properties).is_some() {
                     return Err(invalid(
                         "Generated override paths collide after script binding",
@@ -583,11 +630,19 @@ impl Bound {
                 .as_str()
                 .ok_or_else(|| invalid("A generated script needs scriptUri"))?;
             let values = if let Some(selection) = &selected {
-                selection
-                    .output
-                    .inherited_output(uri, None, inherited_bytes)?
+                selection.output.inherited_output_with_hash(
+                    uri,
+                    None,
+                    state.uri_hash.clone(),
+                    inherited_bytes,
+                )?
             } else {
-                self.inherited_output(uri, node.get("inputs"), inherited_bytes)?
+                self.inherited_output_with_hash(
+                    uri,
+                    node.get("inputs"),
+                    state.uri_hash.clone(),
+                    inherited_bytes,
+                )?
             };
             let metadata = node
                 .as_object_mut()
@@ -612,7 +667,7 @@ impl Bound {
             }
             namespace.insert("script_bindings".into(), values);
         }
-        Ok(())
+        Ok(state)
     }
 }
 

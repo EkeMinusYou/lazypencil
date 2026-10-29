@@ -19,7 +19,7 @@ fn bindings() -> Value {
 fn binding_validation_requires_local_targets_and_a_known_bounded_format() {
     for (value, code) in [
         (
-            json!({"version":3,"script_uri":"draw.js"}),
+            json!({"version":4,"script_uri":"draw.js"}),
             "UNSUPPORTED_VERSION",
         ),
         (

@@ -6,12 +6,61 @@ pub(super) struct Selection {
     input: Option<Bound>,
 }
 
+pub(in crate::project) fn has_scope(node: &Value) -> bool {
+    node.pointer("/metadata/lazypencil/script_scope").is_some()
+}
+
+pub(in crate::project) fn has_pending_scopes(node: &Value) -> bool {
+    has_scope(node)
+        || node
+            .get("children")
+            .and_then(Value::as_array)
+            .is_some_and(|children| children.iter().any(has_pending_scopes))
+        || node
+            .get("descendants")
+            .and_then(Value::as_object)
+            .is_some_and(|changes| changes.values().any(has_pending_scopes))
+}
+
+pub(in crate::project) fn clear_pending_scopes(node: &mut Value) {
+    if has_scope(node)
+        && let Some(namespace) = node
+            .pointer_mut("/metadata/lazypencil")
+            .and_then(Value::as_object_mut)
+    {
+        for key in [
+            "script_scope",
+            "script_bindings",
+            "script_input_context",
+            "script_override",
+        ] {
+            namespace.remove(key);
+        }
+    }
+    if let Some(children) = node.get_mut("children").and_then(Value::as_array_mut) {
+        for child in children {
+            clear_pending_scopes(child);
+        }
+    }
+    if let Some(changes) = node.get_mut("descendants").and_then(Value::as_object_mut) {
+        for changes in changes.values_mut() {
+            clear_pending_scopes(changes);
+        }
+    }
+}
+
 pub(super) fn selection(parent: &Bound, node: &Value) -> Result<Option<Selection>> {
     if node["enabled"] == false
         || node
             .get("type")
             .is_some_and(|kind| !matches!(kind.as_str(), Some("script" | "ref")))
     {
+        return Ok(None);
+    }
+    // A reference's effective URI, raw inherited controls and script kind are
+    // available only after expansion. The parallel GeneratedState retains
+    // original URI guards without inserting temporary fields into user JSON.
+    if node["type"] != "script" {
         return Ok(None);
     }
     let Some(namespace) = node.pointer("/metadata/lazypencil") else {
@@ -31,10 +80,7 @@ pub(super) fn selection(parent: &Bound, node: &Value) -> Result<Option<Selection
         ));
     }
     let Some(uri) = node.get("scriptUri").and_then(Value::as_str) else {
-        return Err(Error::new(
-            "UNSUPPORTED_FEATURE",
-            "A generated inherited script scope requires source provenance",
-        ));
+        return Err(invalid("A generated script needs scriptUri"));
     };
     let output = if scope.script_uri == uri {
         parent.selected(&scope.library)?
@@ -53,12 +99,6 @@ pub(super) fn selection(parent: &Bound, node: &Value) -> Result<Option<Selection
             },
         )
     } else {
-        if scope.inputs.is_some() && node["type"] != "script" {
-            return Err(Error::new(
-                "UNSUPPORTED_FEATURE",
-                "A generated inherited input scope requires source provenance",
-            ));
-        }
         None
     };
     Ok(Some(Selection { output, input }))
@@ -95,18 +135,14 @@ fn known_variables(bound: &Bound, value: &mut Value) {
 
 impl Selection {
     pub(super) fn apply(&self, node: &mut Value, budget: &mut usize) -> Result<()> {
-        let output = if node["type"] != "script" {
-            let uri = node["scriptUri"]
-                .as_str()
-                .ok_or_else(|| invalid("A generated script needs scriptUri"))?;
-            Some(self.output.inherited_output(uri, None, budget)?)
-        } else {
-            None
-        };
         let input = if let Some(bound) = &self.input {
-            let mut values = node.get("inputs").cloned().expect("explicit inputs");
+            let original = node.get("inputs").cloned().expect("explicit inputs");
+            let mut values = original.clone();
             known_variables(bound, &mut values);
-            let context = json!({"version":1,"values":values,"variables":bound.values.variables,"components":bound.values.components});
+            let context = super::super::script_context::capture(
+                Some(&original),
+                json!({"version":1,"values":values,"variables":bound.values.variables,"components":bound.values.components}),
+            )?;
             *budget = budget.saturating_add(context.to_string().len());
             if *budget > crate::script::MAX_OUTPUT_BYTES {
                 return Err(invalid(
@@ -120,9 +156,6 @@ impl Selection {
         };
         let namespace = super::super::scope::metadata_namespace(node)?;
         namespace.remove("script_scope");
-        if let Some(output) = output {
-            namespace.insert("script_bindings".into(), output);
-        }
         if let Some(input) = input {
             namespace.insert("script_input_context".into(), input);
         }
@@ -131,6 +164,97 @@ impl Selection {
 }
 
 impl Bound {
+    pub(in crate::project) fn compose_generated_scope(
+        &self,
+        scope: &Value,
+        changes: &mut Value,
+        target: &ResolvedNode,
+        state: &GeneratedState,
+        uri: &str,
+        budget: &mut usize,
+    ) -> Result<(Option<Value>, Option<Value>)> {
+        let namespace = changes
+            .pointer("/metadata/lazypencil")
+            .expect("scope owner");
+        if ["script_bindings", "script_input_context", "script_override"]
+            .iter()
+            .any(|key| namespace.get(*key).is_some())
+        {
+            return Err(Error::new(
+                "UNSUPPORTED_FEATURE",
+                "Combined generated explicit script contexts require composition",
+            ));
+        }
+        let scope = super::super::scope::parse_scope(scope)?;
+        let uri_hash = state.uri_hash.clone().or_else(|| {
+            if let Some(bound) = &target.script_bindings && bound.values.assets.is_some() {
+                bound.original().source_uri_hash.clone()
+            } else {
+                target.properties.get("scriptUri").and_then(Value::as_str).map(|uri| hash(uri.as_bytes()))
+            }
+        }).ok_or_else(|| Error::new("UNSUPPORTED_FEATURE", "The inherited source lacks original URI provenance; copy it again from its source"))?;
+        let output = if uri_hash == hash(scope.script_uri.as_bytes()) {
+            Some(self.selected(&scope.library)?.inherited_output_with_hash(
+                uri,
+                None,
+                Some(uri_hash),
+                budget,
+            )?)
+        } else if changes.get("scriptUri").is_some() {
+            Some(self.inherited_output_with_hash(uri, None, Some(uri_hash), budget)?)
+        } else {
+            None
+        };
+        let provided = changes.get("inputs").cloned();
+        let inherited = if provided.is_none() && scope.inputs.is_some() {
+            if let Some(context) = &target.input_context {
+                Some(context.values.original_values().ok_or_else(|| Error::new("UNSUPPORTED_FEATURE", "The inherited inputs lack original expression provenance; copy them again from their source"))?)
+            } else if target
+                .script_bindings
+                .as_ref()
+                .is_some_and(|bound| bound.inputs_bound && bound.values.assets.is_some())
+            {
+                return Err(Error::new(
+                    "UNSUPPORTED_FEATURE",
+                    "The inherited inputs lack original expression provenance; copy them again from their source",
+                ));
+            } else {
+                target.properties.get("inputs").cloned()
+            }
+        } else {
+            None
+        };
+        let raw = provided.as_ref().or(inherited.as_ref());
+        let active = scope.inputs.as_ref().filter(|scope| {
+            raw.is_some_and(|raw| super::super::scope::value_hash(raw) == scope.hash)
+        });
+        let input = if provided.is_some() || active.is_some() {
+            let raw = raw.expect("provided or guarded inputs");
+            let owner = if let Some(scope) = active {
+                self.selected(&scope.library)?
+            } else {
+                self.clone()
+            };
+            let mut values = raw.clone();
+            known_variables(&owner, &mut values);
+            let context = super::super::script_context::capture(
+                Some(raw),
+                json!({"version":1,"values":values,"variables":owner.values.variables,"components":owner.values.components}),
+            )?;
+            *budget = budget.saturating_add(context.to_string().len());
+            if *budget > crate::script::MAX_OUTPUT_BYTES {
+                return Err(invalid(
+                    "Inherited script contexts exceed the generated output budget",
+                ));
+            }
+            changes["inputs"] = values;
+            Some(context)
+        } else {
+            None
+        };
+        Ok((output, input))
+    }
+
     fn reachable(&self, namespace: &str) -> bool {
         let source = self.original();
         if source.script_scopes.is_empty() {

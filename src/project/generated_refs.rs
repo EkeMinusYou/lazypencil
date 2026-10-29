@@ -9,6 +9,7 @@ impl Project {
         bindings: &bindings::Bound,
         inherited: &BTreeMap<String, String>,
         inherited_bytes: &mut usize,
+        context: &bindings::GeneratedState,
     ) -> Result<()> {
         self.check_cancelled()?;
         if node["enabled"] == false {
@@ -28,13 +29,16 @@ impl Project {
                 || node.get("scriptUri").is_some()
                 || node.get("url").is_some()
                 || browser_context::has_context(node)
+                || bindings::has_generated_scope(node)
                 || node.get("children").is_some())
         {
             let preview = if bindings.values.assets.is_some()
-                && browser_context::has_preview_contexts(node)
+                && (browser_context::has_preview_contexts(node)
+                    || bindings::has_pending_scopes(node))
             {
                 let mut preview = node.clone();
                 browser_context::clear_preview_contexts(&mut preview);
+                bindings::clear_pending_scopes(&mut preview);
                 std::borrow::Cow::Owned(preview)
             } else {
                 std::borrow::Cow::Borrowed(&*node)
@@ -58,12 +62,25 @@ impl Project {
         };
         // Prepare replacement contexts before any input/property resolution.
         if let Some(children) = node.get_mut("children").and_then(Value::as_array_mut) {
-            for child in children {
-                self.bind_generated_ref_contexts(child, bindings, &theme, inherited_bytes)?;
+            for (index, child) in children.iter_mut().enumerate() {
+                self.bind_generated_ref_contexts(
+                    child,
+                    bindings,
+                    &theme,
+                    inherited_bytes,
+                    context
+                        .children
+                        .get(index)
+                        .ok_or_else(|| invalid("Generated context child is missing"))?,
+                )?;
             }
         }
         if let Some(changes) = node.get_mut("descendants").and_then(Value::as_object_mut) {
             for (path, changes) in changes {
+                let context = context
+                    .descendants
+                    .get(path)
+                    .ok_or_else(|| invalid("Generated descendant context is missing"))?;
                 let target_theme = if let Some(reference) = reference.as_mut() {
                     find_descendant_mut(reference, &path.split('/').collect::<Vec<_>>())
                         .ok_or_else(|| invalid("A generated override target is missing"))?
@@ -78,23 +95,27 @@ impl Project {
                         bindings,
                         &target_theme,
                         inherited_bytes,
+                        context,
                     )?;
                 } else if let Some(children) =
                     changes.get_mut("children").and_then(Value::as_array_mut)
                 {
-                    for child in children {
+                    for (index, child) in children.iter_mut().enumerate() {
                         self.bind_generated_ref_contexts(
                             child,
                             bindings,
                             &target_theme,
                             inherited_bytes,
+                            context.children.get(index).ok_or_else(|| {
+                                invalid("Generated replacement context is missing")
+                            })?,
                         )?;
                     }
                 }
             }
         }
         if let Some(mut resolved) = reference {
-            self.bind_generated_source(node, &mut resolved, bindings, inherited_bytes)?;
+            self.bind_generated_source(node, &mut resolved, bindings, inherited_bytes, context)?;
             if resolved.kind() == "browser" {
                 let library = self.generated_browser_url_library(&resolved, bindings)?;
                 bindings.generated_browser_context_at(
@@ -111,14 +132,24 @@ impl Project {
                         && (changes.get("inputs").is_some()
                             || changes.get("scriptUri").is_some()
                             || changes.get("url").is_some()
-                            || browser_context::has_context(changes))
+                            || browser_context::has_context(changes)
+                            || bindings::has_generated_scope(changes))
                     {
                         let target = find_descendant_mut(
                             &mut resolved,
                             &path.split('/').collect::<Vec<_>>(),
                         )
                         .ok_or_else(|| invalid("A generated script override target is missing"))?;
-                        self.bind_generated_source(changes, target, bindings, inherited_bytes)?;
+                        self.bind_generated_source(
+                            changes,
+                            target,
+                            bindings,
+                            inherited_bytes,
+                            context
+                                .descendants
+                                .get(path)
+                                .ok_or_else(|| invalid("Generated override context is missing"))?,
+                        )?;
                         if target.kind() == "browser" {
                             let library = self.generated_browser_url_library(target, bindings)?;
                             bindings.generated_browser_context_at(
@@ -223,27 +254,56 @@ impl Project {
         target: &mut ResolvedNode,
         bindings: &bindings::Bound,
         inherited_bytes: &mut usize,
+        context: &bindings::GeneratedState,
     ) -> Result<()> {
-        if changes.get("scriptUri").is_none()
+        let provided_source = changes.get("scriptUri").is_some();
+        if !provided_source && !bindings::has_generated_scope(changes)
             || changes["enabled"] == false
             || target.kind() != "script"
             || bindings.values.assets.is_none()
         {
             return Ok(());
         }
-        let uri = changes["scriptUri"]
-            .as_str()
+        let uri = changes
+            .get("scriptUri")
+            .or_else(|| target.properties.get("scriptUri"))
+            .and_then(Value::as_str)
             .ok_or_else(|| invalid("A generated script override needs a source URI"))?
             .to_owned();
-        let metadata = changes.get("metadata").cloned();
+        let mut metadata = changes.get("metadata").cloned();
         let mut explicit_output = None;
         let mut explicit_input = None;
+        let mut scoped = false;
+        if let Some(scope) = metadata
+            .as_ref()
+            .and_then(|metadata| metadata.pointer("/lazypencil/script_scope"))
+        {
+            let selected = bindings.compose_generated_scope(
+                scope,
+                changes,
+                target,
+                context,
+                &uri,
+                inherited_bytes,
+            )?;
+            explicit_output = selected.0;
+            explicit_input = selected.1;
+            metadata
+                .as_mut()
+                .and_then(|metadata| metadata.pointer_mut("/lazypencil"))
+                .and_then(Value::as_object_mut)
+                .expect("validated scope")
+                .remove("script_scope");
+            scoped = true;
+        }
         if let Some(metadata) = &metadata {
             if !metadata.is_object() {
                 return Err(invalid("Generated script metadata must be an object"));
             }
             let (output, input) = script_context::metadata_contexts(Some(metadata));
-            if output || input || metadata.pointer("/lazypencil/script_override").is_some() {
+            if !scoped
+                && (output || input || metadata.pointer("/lazypencil/script_override").is_some())
+            {
                 let candidate = metadata.pointer("/lazypencil/script_bindings");
                 if !candidate
                     .map(|value| bindings.generated_output(value))
@@ -274,7 +334,12 @@ impl Project {
         }
         // The URI was already checked and remapped against the parent's closed
         // manifest. Capture it before reading the replacement header for ref inputs.
-        let path = self.resolve_file(&bindings.origin, &uri)?;
+        let owner = if provided_source {
+            bindings.origin.as_path()
+        } else {
+            target.property_source("scriptUri")
+        };
+        let path = self.resolve_file(owner, &uri)?;
         if !self.assets.contains_key(&path) {
             self.capture_asset(&path, "script")?;
             self.runtime_assets.insert(path.clone());
@@ -305,10 +370,15 @@ impl Project {
             target.properties.insert("inputs".into(), inputs.clone());
             target.script_inputs_resolved = false;
         }
-        let output = if let Some(output) = explicit_output {
-            output
+        let output = if explicit_output.is_some() || !provided_source {
+            explicit_output
         } else {
-            bindings.inherited_output(&uri, None, inherited_bytes)?
+            Some(bindings.inherited_output_with_hash(
+                &uri,
+                None,
+                context.uri_hash.clone(),
+                inherited_bytes,
+            )?)
         };
         let mut metadata = metadata;
         if let Some(namespace) = metadata
