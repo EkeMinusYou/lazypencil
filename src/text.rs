@@ -15,6 +15,7 @@ pub const DEFAULT_FONT_BYTES: &[u8] = include_bytes!("../resources/fonts/NotoSan
 mod bitmap;
 mod container;
 mod decorations;
+mod font_index;
 mod fonts;
 pub use fonts::{FontAxis, FontInfo, Fonts};
 
@@ -108,27 +109,45 @@ impl Fonts {
             coordinates: &coordinates,
         });
         style.set_font_arguments(&arguments);
-        let resolved = self.resolve(
-            &spec.family,
-            style.font_style(),
-            style.font_arguments().expect("font arguments were set"),
-        )?;
-        check()?;
-        style.set_font_families(&resolved.families);
-        let mut paragraph_style = ParagraphStyle::new();
-        paragraph_style.set_text_style(&style);
-        paragraph_style.set_text_align(spec.align);
-        let mut builder = ParagraphBuilder::new(&paragraph_style, self.collection.clone());
-        builder.add_text(&spec.content);
-        let mut paragraph = builder.build();
-        check()?;
-        paragraph.layout(width.unwrap_or(1_000_000.0));
-        check()?;
-        if width.is_none() {
-            let natural = paragraph.max_intrinsic_width().ceil();
-            paragraph.layout(natural.max(0.0));
-            check()?;
-        }
+        let (mut paragraph, resolved) = (0..=self.fallback_families().len())
+            .find_map(|fallback_count| {
+                let attempt = (|| -> Result<_> {
+                    let resolved = self.resolve(
+                        &spec.family,
+                        style.font_style(),
+                        style.font_arguments().expect("font arguments were set"),
+                        fallback_count,
+                    )?;
+                    check()?;
+                    style.set_font_families(&resolved.families);
+                    let mut paragraph_style = ParagraphStyle::new();
+                    paragraph_style.set_text_style(&style);
+                    paragraph_style.set_text_align(spec.align);
+                    let mut builder =
+                        ParagraphBuilder::new(&paragraph_style, self.collection.clone());
+                    builder.add_text(&spec.content);
+                    let mut paragraph = builder.build();
+                    check()?;
+                    paragraph.layout(width.unwrap_or(1_000_000.0));
+                    check()?;
+                    if width.is_none() {
+                        let natural = paragraph.max_intrinsic_width().ceil();
+                        paragraph.layout(natural.max(0.0));
+                        check()?;
+                    }
+                    Ok((paragraph, resolved))
+                })();
+                match attempt {
+                    Ok((paragraph, resolved))
+                        if paragraph.unresolved_glyphs().is_some_and(|count| count > 0)
+                            && fallback_count < self.fallback_families().len() =>
+                    {
+                        None
+                    }
+                    value => Some(value),
+                }
+            })
+            .expect("at least the primary font is attempted")?;
         let mut missing = paragraph.unresolved_codepoints();
         missing.sort_unstable();
         missing.dedup();

@@ -17,9 +17,10 @@ fn the_bundled_font_matches_its_pinned_manifest_and_loads_without_system_install
         .find(|f| f["file"] == "NotoSansJP.ttf")
         .unwrap();
     assert_eq!(hash(DEFAULT_FONT_BYTES), file["sha256"]);
-    let fonts = Fonts::new(&[]).unwrap();
-    assert_eq!(fonts.inventory()[0].family, DEFAULT_FONT_FAMILY);
-    assert_eq!(fonts.inventory()[0].source, "bundled");
+    let mut fonts = Fonts::new(&[]).unwrap();
+    let inventory = fonts.inventory().unwrap();
+    assert_eq!(inventory[0].family, DEFAULT_FONT_FAMILY);
+    assert_eq!(inventory[0].source, "bundled");
 }
 
 #[test]

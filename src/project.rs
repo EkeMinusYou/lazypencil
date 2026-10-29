@@ -22,6 +22,7 @@ pub use browser_resources::{BrowserResourceRoot, BrowserResources};
 mod detach;
 #[cfg(feature = "rendering")]
 mod failed_code;
+pub(crate) mod font_files;
 #[cfg(feature = "rendering")]
 mod generated_refs;
 #[cfg(feature = "rendering")]
@@ -198,6 +199,7 @@ pub struct Project {
     icon_data_dir: Option<PathBuf>,
     configuration: Option<crate::config::Snapshot>,
     font_files: Vec<PathBuf>,
+    font_sources: BTreeMap<PathBuf, font_files::FontFile>,
     font_bindings: Vec<(PathBuf, PathBuf)>,
     font_settings: crate::config::FontSettings,
     overlay: crate::managed::Overlay,
@@ -254,6 +256,7 @@ impl Project {
             icon_data_dir: None,
             configuration: None,
             font_files: vec![],
+            font_sources: BTreeMap::new(),
             font_bindings: vec![],
             font_settings: Default::default(),
             overlay: BTreeMap::new(),
@@ -647,6 +650,7 @@ impl Project {
             icons: crate::icons::Registry::default(),
             icon_data_dir: data.map(Path::to_path_buf),
             font_files: vec![],
+            font_sources: BTreeMap::new(),
             font_bindings: vec![],
             font_settings: configuration.settings.fonts.clone(),
             configuration: Some(configuration),
@@ -872,6 +876,13 @@ impl Project {
                     }),
             )
             .chain(self.missing_assets.values().map(|asset| asset.dependency()))
+            .chain(self.font_sources.values().map(|font| Dependency {
+                path: font.path.clone(),
+                revision: font.revision.clone(),
+                kind: "font".into(),
+                version: None,
+                availability: None,
+            }))
             .collect::<Vec<_>>();
         dependencies.sort_by(|a, b| a.path.cmp(&b.path));
         dependencies
@@ -970,6 +981,13 @@ impl Project {
             }
         }
         self.icons.verify_unchanged()?;
+        for font in self.font_sources.values() {
+            if !self.overlay_published && self.overlay.contains_key(&font.path) {
+                continue;
+            }
+            self.verify_published_overlay(&font.path)?;
+            font.verify(self.cancel.as_ref())?;
+        }
         self.verify_browser_resources()?;
         for (path, document) in &self.documents {
             self.check_cancelled()?;
@@ -1030,6 +1048,12 @@ impl Project {
             return Ok(());
         }
         let path = crate::paths::canonical(path)?;
+        if let Some(font) = self.font_sources.get(&path) {
+            let bytes = font.read(self.cancel.as_ref())?;
+            self.byte_count -= font.length;
+            self.font_sources.remove(&path);
+            self.capture_bytes(path.clone(), kind, bytes)?;
+        }
         self.runtime_assets.remove(&path);
         if let Some(asset) = self.assets.get_mut(&path) {
             if asset.kind == "browser_resource" && kind != "browser_resource" {
@@ -1074,7 +1098,20 @@ impl Project {
             if canonical.to_str().is_none() {
                 return Err(Error::new("INVALID_ARGUMENT", "Font paths must be UTF-8"));
             }
-            self.capture_asset(&canonical, "font")?;
+            if !self.assets.contains_key(&canonical) && !self.font_sources.contains_key(&canonical)
+            {
+                let font = if let Some(file) = self.overlay.get(&canonical) {
+                    font_files::FontFile::from_bytes(canonical.clone(), file.bytes.clone())
+                } else {
+                    font_files::FontFile::capture(&canonical, self.cancel.as_ref())?
+                };
+                self.byte_count = self
+                    .byte_count
+                    .checked_add(font.length)
+                    .filter(|total| *total <= MAX_PROJECT_BYTES)
+                    .ok_or_else(|| invalid("Project dependencies exceed 128 MiB"))?;
+                self.font_sources.insert(canonical.clone(), font);
+            }
             if !self
                 .font_bindings
                 .iter()
@@ -1155,9 +1192,20 @@ impl Project {
         let sources = self
             .font_files
             .iter()
-            .map(|path| Ok((path.clone(), self.asset(path)?.bytes.clone())))
+            .map(|path| {
+                self.font_sources
+                    .get(path)
+                    .cloned()
+                    .map(Ok)
+                    .unwrap_or_else(|| {
+                        Ok(font_files::FontFile::from_bytes(
+                            path.clone(),
+                            self.asset(path)?.bytes.clone(),
+                        ))
+                    })
+            })
             .collect::<Result<Vec<_>>>()?;
-        let mut fonts = crate::text::Fonts::from_sources(&sources)?;
+        let mut fonts = crate::text::Fonts::from_files(&sources, self.cancel.as_ref())?;
         fonts.configure(self.font_settings())?;
         self.check_cancelled()?;
         Ok(fonts)

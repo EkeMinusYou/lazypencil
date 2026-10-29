@@ -549,6 +549,15 @@ impl Session {
             }
             Stage::FocusReproduce => {
                 let separate_core = self.separate_core()?;
+                if !core && has("font_sources") {
+                    self.test(
+                        true,
+                        "font_sources",
+                        commands::DEFERRED_FONT_REPRODUCTION,
+                        &["--exact", "--test-threads=1"],
+                        "focus-deferred-fonts.log",
+                    )?;
+                }
                 if args.suite == "dynamic" && has("agent") {
                     self.test(false,"agent","browser_ownership::killed_profile_owners_reap_children_preserve_persistent_data_and_release_only_their_lease",
                         &["--exact","--test-threads=1"],"focus-profile-ownership.log")?;

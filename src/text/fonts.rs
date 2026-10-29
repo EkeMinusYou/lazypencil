@@ -1,5 +1,5 @@
 use super::{DEFAULT_FONT_BYTES, DEFAULT_FONT_FAMILY};
-use crate::{Error, Result, document::hash};
+use crate::{Error, Result, document::hash, project::font_files::FontFile};
 use serde::Serialize;
 use skia_safe::{
     Data, FontMgr, FontStyle, Typeface,
@@ -9,7 +9,6 @@ use skia_safe::{
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
-    io::Read,
     path::PathBuf,
     sync::{Arc, OnceLock},
 };
@@ -108,6 +107,14 @@ pub struct Fonts {
     loaded_bytes: usize,
     default_family: String,
     locale: String,
+    pending: Vec<PendingFace>,
+    cancel: Option<tokio_util::sync::CancellationToken>,
+}
+
+struct PendingFace {
+    source: FontFile,
+    index: u32,
+    names: Vec<String>,
 }
 
 pub(super) struct ResolvedFonts {
@@ -120,32 +127,36 @@ impl Fonts {
         if files.len() > MAX_FACES {
             return Err(invalid("Font inputs exceed 256 files"));
         }
-        let mut total = 0usize;
         let sources = files
             .iter()
-            .map(|path| {
-                let mut bytes = Vec::new();
-                crate::store::open_regular_file(path)?
-                    .take(MAX_FONT_BYTES as u64 + 1)
-                    .read_to_end(&mut bytes)
-                    .map_err(|error| Error::io(path, error))?;
-                if bytes.len() > MAX_FONT_BYTES {
-                    return Err(invalid("A font file exceeds 64 MiB"));
-                }
-                total = total
-                    .checked_add(bytes.len())
-                    .filter(|total| *total <= MAX_TOTAL_BYTES)
-                    .ok_or_else(|| invalid("Font inputs exceed 128 MiB"))?;
-                Ok((path.clone(), Arc::<[u8]>::from(bytes)))
-            })
+            .map(|path| FontFile::capture(path, None))
             .collect::<Result<Vec<_>>>()?;
-        Self::from_sources(&sources)
+        Self::from_files(&sources, None)
     }
 
     pub fn from_sources(sources: &[(PathBuf, Arc<[u8]>)]) -> Result<Self> {
+        if sources.len() > MAX_FACES
+            || sources
+                .iter()
+                .try_fold(0usize, |total, (_, bytes)| total.checked_add(bytes.len()))
+                .is_none_or(|total| total > MAX_TOTAL_BYTES)
+        {
+            return Err(invalid("Font inputs exceed 128 MiB or 256 files"));
+        }
+        let files = sources
+            .iter()
+            .map(|(path, bytes)| FontFile::from_bytes(path.clone(), bytes.clone()))
+            .collect::<Vec<_>>();
+        Self::from_files(&files, None)
+    }
+
+    pub(crate) fn from_files(
+        sources: &[FontFile],
+        cancel: Option<&tokio_util::sync::CancellationToken>,
+    ) -> Result<Self> {
         let total = sources
             .iter()
-            .try_fold(0usize, |total, (_, bytes)| total.checked_add(bytes.len()))
+            .try_fold(0usize, |total, source| total.checked_add(source.length))
             .ok_or_else(|| invalid("Font input size overflow"))?;
         if total > MAX_TOTAL_BYTES || sources.len() > MAX_FACES {
             return Err(invalid("Font inputs exceed 128 MiB or 256 files"));
@@ -164,19 +175,64 @@ impl Fonts {
             loaded_bytes: 0,
             default_family: DEFAULT_FONT_FAMILY.into(),
             locale: "ja".into(),
+            pending: Vec::new(),
+            cancel: cancel.cloned(),
         };
         let mut additional = Vec::new();
-        for (path, bytes) in sources {
-            for family in fonts.register(bytes, &path.display().to_string(), None, None)? {
+        let mut seen = BTreeSet::new();
+        for source in sources {
+            crate::cancel::check(cancel)?;
+            if source.length > MAX_FONT_BYTES {
+                return Err(invalid("A font file exceeds 64 MiB"));
+            }
+            for (index, names) in super::font_index::families(source)?.into_iter().enumerate() {
+                if !seen.insert((source.revision.clone(), index)) {
+                    continue;
+                }
+                if seen.len() > MAX_FACES {
+                    return Err(invalid(
+                        "Configured fonts exceed 256 faces including the default",
+                    ));
+                }
+                let Some(names) = names else {
+                    let bytes = source.read(cancel)?;
+                    additional.extend(fonts.register_indices(
+                        &bytes,
+                        &source.path.display().to_string(),
+                        None,
+                        None,
+                        Some(&[index as u32]),
+                    )?);
+                    continue;
+                };
+                let family = names[0].clone();
+                for name in &names {
+                    fonts.explicit.insert(name.to_lowercase());
+                    fonts
+                        .families
+                        .entry(name.to_lowercase())
+                        .or_insert_with(|| name.clone());
+                }
                 if !additional.contains(&family) {
                     additional.push(family);
                 }
+                fonts.pending.push(PendingFace {
+                    source: source.clone(),
+                    index: index as u32,
+                    names,
+                });
             }
+            source.verify(cancel)?;
         }
         if !fonts
             .families
             .contains_key(&DEFAULT_FONT_FAMILY.to_lowercase())
         {
+            if seen.len() >= MAX_FACES {
+                return Err(invalid(
+                    "Configured fonts exceed 256 faces including the default",
+                ));
+            }
             let face = fonts.bundled_face()?;
             fonts.register(
                 DEFAULT_FONT_BYTES,
@@ -205,6 +261,17 @@ impl Fonts {
         alias: Option<&str>,
         shared_face: Option<&Typeface>,
     ) -> Result<Vec<String>> {
+        self.register_indices(bytes, source, alias, shared_face, None)
+    }
+
+    fn register_indices(
+        &mut self,
+        bytes: &[u8],
+        source: &str,
+        alias: Option<&str>,
+        shared_face: Option<&Typeface>,
+        only: Option<&[u32]>,
+    ) -> Result<Vec<String>> {
         if bytes.len() > MAX_FONT_BYTES {
             return Err(invalid("A font file exceeds 64 MiB"));
         }
@@ -222,6 +289,9 @@ impl Fonts {
         };
         let mut families = Vec::new();
         for index in 0..count {
+            if only.is_some_and(|only| !only.contains(&index)) {
+                continue;
+            }
             if let Some(existing) = self
                 .registered
                 .values()
@@ -343,6 +413,13 @@ impl Fonts {
 
     fn ensure_style(&mut self, family: &str, style: FontStyle) -> Result<String> {
         let key = family.to_lowercase();
+        while let Some(index) = self
+            .pending
+            .iter()
+            .position(|face| face.names.iter().any(|name| name.to_lowercase() == key))
+        {
+            self.load_pending(index)?;
+        }
         if self.explicit.contains(&key) {
             return Ok(self.families[&key].clone());
         }
@@ -458,7 +535,11 @@ impl Fonts {
         }
         let mut names = Vec::new();
         for family in families {
-            let family = self.ensure_style(family, FontStyle::normal())?;
+            let family = if self.explicit.contains(&family.to_lowercase()) {
+                self.families[&family.to_lowercase()].clone()
+            } else {
+                self.ensure_style(family, FontStyle::normal())?
+            };
             if !names.contains(&family) {
                 names.push(family);
             }
@@ -467,7 +548,10 @@ impl Fonts {
         Ok(())
     }
 
-    pub fn inventory(&self) -> Vec<FontInfo> {
+    pub fn inventory(&mut self) -> Result<Vec<FontInfo>> {
+        while !self.pending.is_empty() {
+            self.load_pending(0)?;
+        }
         let mut information = self.registered.values().cloned().collect::<Vec<_>>();
         information.sort_by(|a, b| {
             (
@@ -487,7 +571,52 @@ impl Fonts {
                     b.face_index,
                 ))
         });
-        information
+        Ok(information)
+    }
+
+    fn load_pending(&mut self, index: usize) -> Result<()> {
+        let pending = &self.pending[index];
+        let bytes = pending.source.read(self.cancel.as_ref())?;
+        let source = pending.source.path.display().to_string();
+        let key = pending.names[0].to_lowercase();
+        let selected = self
+            .pending
+            .iter()
+            .enumerate()
+            .filter(|(_, candidate)| {
+                candidate.source.path == pending.source.path
+                    && candidate.source.revision == pending.source.revision
+                    && candidate
+                        .names
+                        .iter()
+                        .any(|name| name.to_lowercase() == key)
+            })
+            .map(|(position, _)| position)
+            .collect::<Vec<_>>();
+        let indices = selected
+            .iter()
+            .map(|position| self.pending[*position].index)
+            .collect::<Vec<_>>();
+        let families = self.register_indices(&bytes, &source, None, None, Some(&indices))?;
+        if families.len() != selected.len() {
+            return Err(invalid("Missing indexed font face"));
+        }
+        for (position, family) in selected.iter().zip(families) {
+            let names = &self.pending[*position].names;
+            if !names
+                .iter()
+                .any(|name| name.to_lowercase() == family.to_lowercase())
+            {
+                return Err(invalid("Font family differs from its indexed names"));
+            }
+            for name in names {
+                self.families.insert(name.to_lowercase(), family.clone());
+            }
+        }
+        for position in selected.into_iter().rev() {
+            self.pending.remove(position);
+        }
+        Ok(())
     }
 
     pub(super) fn resolve(
@@ -495,9 +624,10 @@ impl Fonts {
         primary: &str,
         style: FontStyle,
         arguments: &FontArguments,
+        fallback_count: usize,
     ) -> Result<ResolvedFonts> {
         let mut families = vec![self.ensure_style(primary, style)?];
-        for family in self.fallbacks.clone() {
+        for family in self.fallbacks.clone().into_iter().take(fallback_count) {
             let family = self.ensure_style(&family, style)?;
             if !families.contains(&family) {
                 families.push(family);
@@ -544,6 +674,59 @@ fn invalid(message: impl Into<String>) -> Error {
 mod sharing_tests {
     use super::*;
     use crate::text::{TextBlock, TextSpec};
+
+    #[test]
+    fn unused_families_do_not_create_native_faces_or_eagerly_load_configured_fallbacks() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fonts/faces.ttc");
+        let mut fonts = Fonts::new(&[path]).unwrap();
+        assert_eq!(fonts.registered.len(), 1);
+        assert_eq!(fonts.pending.len(), 4);
+        fonts
+            .set_fallback_families(&["LP Test Supplement".into()])
+            .unwrap();
+        assert_eq!(fonts.pending.len(), 4);
+        fonts
+            .layout(
+                &TextSpec {
+                    content: "日本語".into(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+        assert_eq!(fonts.registered.len(), 1);
+        assert_eq!(fonts.pending.len(), 4);
+        fonts
+            .layout(
+                &TextSpec {
+                    content: "A".into(),
+                    family: "LP Test Sans".into(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+        assert_eq!(fonts.pending.len(), 1);
+        assert_eq!(fonts.registered.len(), 4);
+        assert!(
+            fonts.pending[0]
+                .names
+                .iter()
+                .any(|name| name == "LP Test Supplement")
+        );
+        fonts
+            .layout(
+                &TextSpec {
+                    content: "\u{f0000}".into(),
+                    family: "LP Test Sans".into(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+        assert!(fonts.pending.is_empty());
+        assert_eq!(fonts.registered.len(), 5);
+    }
 
     fn raster(block: TextBlock) -> Vec<u8> {
         let mut surface = skia_safe::surfaces::raster_n32_premul((360, 100)).unwrap();

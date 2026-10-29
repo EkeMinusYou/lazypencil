@@ -78,9 +78,10 @@ fn original_font_fixtures_have_pinned_contents_and_load_every_collection_face() 
         assert_eq!(bytes.len() as u64, information["bytes"].as_u64().unwrap());
         Fonts::new(&[fixture(name)]).unwrap();
     }
-    let fonts = Fonts::new(&[fixture("faces.ttc")]).unwrap();
+    let mut fonts = Fonts::new(&[fixture("faces.ttc")]).unwrap();
     let faces = fonts
         .inventory()
+        .unwrap()
         .into_iter()
         .filter(|font| font.source.ends_with("faces.ttc"))
         .collect::<Vec<_>>();
@@ -324,6 +325,109 @@ fn captured_font_inputs_enforce_the_aggregate_byte_budget_before_loading() {
     let error = Fonts::from_sources(&sources).err().unwrap();
     assert_eq!(error.code, "INVALID_ARGUMENT");
     assert!(error.message.contains("128 MiB"));
+}
+
+#[test]
+fn deferred_file_fonts_detect_same_size_changes_before_use_and_preserve_loaded_faces() {
+    let directory = tempfile::TempDir::new().unwrap();
+    let path = directory.path().join("regular.ttf");
+    let bytes = fs::read(fixture("regular.ttf")).unwrap();
+    fs::write(&path, &bytes).unwrap();
+    let mut fonts = Fonts::new(std::slice::from_ref(&path)).unwrap();
+    fonts.set_fallback_families(&[]).unwrap();
+    let mut changed = bytes.clone();
+    *changed.last_mut().unwrap() ^= 1;
+    fs::write(&path, &changed).unwrap();
+    fonts
+        .layout(&spec("日本語", DEFAULT_FONT_FAMILY), None)
+        .unwrap();
+    let error = fonts
+        .layout(&spec("A", "LP Test Sans"), None)
+        .err()
+        .unwrap();
+    assert_eq!(error.code, "REVISION_CONFLICT");
+    assert_eq!(fonts.inventory().err().unwrap().code, "REVISION_CONFLICT");
+    fs::write(&path, &bytes).unwrap();
+    let before = paint(&fonts.layout(&spec("A", "LP Test Sans"), None).unwrap());
+    fs::write(&path, changed).unwrap();
+    assert_eq!(
+        paint(&fonts.layout(&spec("A", "LP Test Sans"), None).unwrap()),
+        before
+    );
+}
+
+#[test]
+fn lazy_and_explicit_inventory_paths_produce_identical_fallback_and_collection_pixels() {
+    for name in ["faces.ttc", "cff.otc", "regular.ttf"] {
+        let mut lazy = Fonts::new(&[fixture(name)]).unwrap();
+        let mut eager = Fonts::new(&[fixture(name)]).unwrap();
+        eager.inventory().unwrap();
+        let family = if name == "cff.otc" {
+            "LP Test CFF"
+        } else {
+            "LP Test Sans"
+        };
+        for text in ["A", "日本語 A"] {
+            for weight in [400, 700] {
+                let mut request = spec(text, family);
+                request.weight = weight;
+                let actual = lazy.layout(&request, None).unwrap();
+                let expected = eager.layout(&request, None).unwrap();
+                assert_eq!(
+                    paint(&actual),
+                    paint(&expected),
+                    "{name}: {text}, weight {weight}"
+                );
+                assert_eq!(
+                    serde_json::to_value(actual.metrics).unwrap(),
+                    serde_json::to_value(expected.metrics).unwrap()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn unused_project_fonts_still_guard_the_snapshot_revision() {
+    let directory = tempfile::TempDir::new().unwrap();
+    let store = lazypencil::store::Store::init(
+        directory.path().join("design.pen"),
+        Some(directory.path().join("data")),
+    )
+    .unwrap();
+    let path = directory.path().join("regular.ttf");
+    let mut bytes = fs::read(fixture("regular.ttf")).unwrap();
+    fs::write(&path, &bytes).unwrap();
+    let mut project = lazypencil::project::Project::load(&store).unwrap();
+    project.add_font_files(std::slice::from_ref(&path)).unwrap();
+    let dependency = project
+        .dependencies()
+        .into_iter()
+        .find(|dependency| dependency.kind == "font")
+        .unwrap();
+    assert_eq!(dependency.revision, hash(&bytes));
+    let revision = project.dependency_revision();
+    let mut fonts = project.load_fonts().unwrap();
+    fonts.set_fallback_families(&[]).unwrap();
+    fonts
+        .layout(&spec("日本語", DEFAULT_FONT_FAMILY), None)
+        .unwrap();
+    project.verify_unchanged().unwrap();
+    assert_eq!(project.dependency_revision(), revision);
+    *bytes.last_mut().unwrap() ^= 1;
+    fs::write(path, bytes).unwrap();
+    assert_eq!(
+        project.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    assert_eq!(
+        fonts
+            .layout(&spec("A", "LP Test Sans"), None)
+            .err()
+            .unwrap()
+            .code,
+        "REVISION_CONFLICT"
+    );
 }
 
 #[test]

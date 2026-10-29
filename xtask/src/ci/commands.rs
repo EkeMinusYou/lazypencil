@@ -95,6 +95,8 @@ pub fn catalog_builds(targets: &[String]) -> [Invocation; 2] {
 }
 
 pub const COLOR_FONT_REPRODUCTION: &str = "color_fonts::";
+pub const DEFERRED_FONT_REPRODUCTION: &str =
+    "deferred_file_fonts_detect_same_size_changes_before_use_and_preserve_loaded_faces";
 pub const MANAGEMENT_REPRODUCTION: &str = "conversation::management::";
 pub const PREVIEW_REPRODUCTIONS: [&str; 3] = [
     "render::tests::",
@@ -369,6 +371,9 @@ pub fn plan_with_core(
         } else {
             vec![]
         };
+    if !core && has("font_sources") {
+        input_skip.extend(skips([DEFERRED_FONT_REPRODUCTION]));
+    }
     if color_font_reproduction(suite, targets).is_some() {
         input_skip.extend(skips([COLOR_FONT_REPRODUCTION]));
     }

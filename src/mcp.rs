@@ -728,9 +728,10 @@ impl DocumentWorker {
             "list_fonts" => {
                 let _: Empty = parse(arguments)?;
                 let project = self.project()?;
-                let fonts = project.load_fonts()?;
+                let mut fonts = project.load_fonts()?;
+                let inventory = fonts.inventory()?;
                 project.verify_unchanged()?;
-                json!({"revision":project.root_document().revision(),"dependency_revision":project.dependency_revision(),"fonts":fonts.inventory(),"fallback_families":fonts.fallback_families(),"default_family":fonts.default_family(),"locale":fonts.locale(),"configuration":project.configuration()})
+                json!({"revision":project.root_document().revision(),"dependency_revision":project.dependency_revision(),"fonts":inventory,"fallback_families":fonts.fallback_families(),"default_family":fonts.default_family(),"locale":fonts.locale(),"configuration":project.configuration()})
             }
             _ => return Err(Error::new("INVALID_ARGUMENT", "Unknown tool")),
         };

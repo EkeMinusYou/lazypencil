@@ -572,24 +572,26 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
         Command::Fonts { command } => match command {
             FontCommand::List { fonts, file } => {
                 let mut metadata = json!({});
-                let fonts = if let Some(file) = file {
+                let (fonts, inventory) = if let Some(file) = file {
                     let mut project = crate::project::Project::load(&open(file)?)?;
                     project.add_font_files(fonts)?;
-                    let fonts = project.load_fonts()?;
+                    let mut fonts = project.load_fonts()?;
+                    let inventory = fonts.inventory()?;
                     project.verify_unchanged()?;
                     metadata = json!({"revision":project.root_document().revision(),"dependency_revision":project.dependency_revision(),"configuration":project.configuration()});
-                    fonts
+                    (fonts, inventory)
                 } else {
                     let configuration = crate::config::UserSnapshot::load()?;
                     let mut paths = fonts.clone();
                     paths.extend(configuration.font_files.iter().cloned());
                     let mut loaded = crate::text::Fonts::new(&paths)?;
                     loaded.configure(&configuration.settings.fonts)?;
+                    let inventory = loaded.inventory()?;
                     configuration.verify_unchanged()?;
                     metadata["configuration"] = configuration.summary();
-                    loaded
+                    (loaded, inventory)
                 };
-                metadata["fonts"] = json!(fonts.inventory());
+                metadata["fonts"] = json!(inventory);
                 metadata["fallback_families"] = json!(fonts.fallback_families());
                 metadata["default_family"] = json!(fonts.default_family());
                 metadata["locale"] = json!(fonts.locale());
