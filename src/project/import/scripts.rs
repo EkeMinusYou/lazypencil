@@ -348,7 +348,7 @@ impl Copier<'_> {
                 context.values.values.get(name).unwrap_or(value).clone(),
             ))
         } else {
-            Ok((node.script_input_origin().into(), value.clone()))
+            Ok((node.property_source("inputs").into(), value.clone()))
         }
     }
 
@@ -420,7 +420,7 @@ impl Copier<'_> {
                     .ok_or_else(|| copy_error("Missing copied input variable"))
             })?
         } else {
-            self.script_scopes[node.script_input_origin()]
+            self.script_scopes[node.property_source("inputs")]
                 .variables
                 .iter()
                 .map(|(name, key)| {

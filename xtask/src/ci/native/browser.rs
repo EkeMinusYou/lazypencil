@@ -196,14 +196,24 @@ pub fn test_threads(target: &str) -> usize {
 pub const NATIVE_INPUT_GUARDS: &str = "script_bindings::generated_sources::native_parent_input_guards_use_post_mapping_expressions_and_keep_inherited_controls_separate";
 
 pub fn binding_commands(binary: &Path) -> [Vec<String>; 4] {
-    [NATIVE_INPUT_GUARDS, "generated_browser_", "script_bindings::", "script_copy::"].map(|filter| {
+    [
+        NATIVE_INPUT_GUARDS,
+        "generated_browser_",
+        "script_bindings::",
+        "script_copy::",
+    ]
+    .map(|filter| {
         let mut command = vec![
             binary.to_string_lossy().into_owned(),
             filter.into(),
             "--test-threads=1".into(),
         ];
-        if filter == NATIVE_INPUT_GUARDS { command.push("--exact".into()); }
-        if filter == "script_bindings::" { command.extend(["--skip".into(), NATIVE_INPUT_GUARDS.into()]); }
+        if filter == NATIVE_INPUT_GUARDS {
+            command.push("--exact".into());
+        }
+        if filter == "script_bindings::" {
+            command.extend(["--skip".into(), NATIVE_INPUT_GUARDS.into()]);
+        }
         command
     })
 }

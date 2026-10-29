@@ -310,9 +310,15 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
         owner["variables"]["accent"] = json!({"type":"color","value":"#00ffff"});
         if mode.starts_with("binding-native-parent-input-") {
             owner["variables"]["native_selection"] = json!({"type":"string","value":"alternate"});
+            if !library {
+                owner["variables"]["selection"]["value"] = json!("alternate");
+            }
             let path = temp.path().join("library/base.pen");
             let mut base: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-            base["variables"]["native_selection"] = json!({"type":"string","value":"badge"});
+            base["variables"]["native_selection"] = json!({"type":"string","value":"missing"});
+            if !library {
+                base["children"].as_array_mut().unwrap().push(json!({"id":"alternate","name":"Base alternate","type":"rectangle","reusable":true,"width":10,"height":10,"fill":"#ff0000"}));
+            }
             write(&path, base);
         }
         owner["children"].as_array_mut().unwrap().push(json!({"id":"alternate","name":"Native alternate","type":"rectangle","reusable":true,"width":10,"height":10,"fill":"#00ffff"}));

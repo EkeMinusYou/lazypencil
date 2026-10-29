@@ -1781,7 +1781,7 @@ impl Project {
                     let (origin, value) = if let Some(context) = &node.input_context {
                         (context.origin.as_path(), context.expression(name, value)?)
                     } else {
-                        (node.script_input_origin(), value.clone())
+                        (node.property_source("inputs"), value.clone())
                     };
                     self.resolve_value(origin, &value, &node.theme, &mut Vec::new())?
                 } else {

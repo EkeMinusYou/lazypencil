@@ -149,18 +149,18 @@ pub(super) fn selection(parent: &Bound, node: &Value) -> Result<Option<Selection
         parent.document_scope()?.into_owned()
     };
     let input = if let Some(inputs) = node.get("inputs") {
-        let (owner, inputs) = parent.generated_inputs(inputs)?;
-        Some((
-            if let Some(scope) = scope
-                .inputs
-                .filter(|scope| super::super::scope::value_hash(&inputs) == scope.hash)
-            {
-                parent.document_scope()?.selected(&scope.library)?
-            } else {
-                owner
-            },
-            inputs,
-        ))
+        let (mut owner, inputs) = parent.generated_inputs(inputs)?;
+        if let Some(scope) = scope
+            .inputs
+            .filter(|scope| super::super::scope::value_hash(&inputs) == scope.hash)
+        {
+            owner.values.components = parent
+                .document_scope()?
+                .selected(&scope.library)?
+                .values
+                .components;
+        }
+        Some((owner, inputs))
     } else {
         None
     };
@@ -374,14 +374,23 @@ impl Bound {
         });
         let input = if provided.is_some() || active.is_some() {
             let raw = raw.expect("provided or guarded inputs");
-            let owner = if let Some(scope) = active {
-                self.document_scope()?.selected(&scope.library)?
-            } else {
-                provided
-                    .as_ref()
-                    .map(|(owner, _)| owner.clone())
-                    .unwrap_or_else(|| self.clone())
-            };
+            let mut owner = provided
+                .as_ref()
+                .map(|(owner, _)| owner.clone())
+                .unwrap_or_else(|| self.clone());
+            if provided.is_none()
+                && let Some(context) = &target.input_context
+            {
+                owner.values.variables = context.values.variables.clone();
+                owner.values.components = context.values.components.clone();
+            }
+            if let Some(scope) = active {
+                owner.values.components = self
+                    .document_scope()?
+                    .selected(&scope.library)?
+                    .values
+                    .components;
+            }
             let mut values = raw.clone();
             known_variables(&owner, &mut values);
             let context = super::super::script_context::capture(

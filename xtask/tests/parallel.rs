@@ -59,18 +59,40 @@ fn browser_lanes_preserve_every_existing_target_once_with_bounded_parallelism() 
             .iter()
             .map(|command| command[1].as_str())
             .collect::<Vec<_>>(),
-        [reproduction, "generated_browser_", "script_bindings::", "script_copy::"],
+        [
+            reproduction,
+            "generated_browser_",
+            "script_bindings::",
+            "script_copy::"
+        ],
         "Keep every original default-feature binding filter"
     );
     assert_eq!(bindings[0].last().unwrap(), "--exact");
     assert_eq!(&bindings[2][3..], ["--skip", reproduction]);
-    let source = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent().unwrap().join("tests/support/script_generated_overrides.rs")).unwrap();
-    assert!(source.contains(&format!("fn {}(", reproduction.rsplit("::").next().unwrap())),
-        "The early exact filter must name an existing regression, never run zero tests");
+    let source = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("tests/support/script_generated_overrides.rs"),
+    )
+    .unwrap();
+    assert!(
+        source.contains(&format!(
+            "fn {}(",
+            reproduction.rsplit("::").next().unwrap()
+        )),
+        "The early exact filter must name an existing regression, never run zero tests"
+    );
     for (index, command) in bindings.into_iter().enumerate() {
         assert_eq!(std::path::Path::new(&command[0]), binary.as_path());
-        assert_eq!(command.len(), match index {0=>4,2=>5,_=>3});
+        assert_eq!(
+            command.len(),
+            match index {
+                0 => 4,
+                2 => 5,
+                _ => 3,
+            }
+        );
         assert_eq!(command[2], "--test-threads=1");
     }
 }
