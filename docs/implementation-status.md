@@ -4,9 +4,13 @@
 
 ## 現在の状態（2026-10-29）
 
+9d6613bの[CI 40870088186](https://github.com/EkeMinusYou/lazypencil/actions/runs/40870088186)は全工程成功した。追加フォントは全ファイルの常時保持・一括native登録をやめ、内容hashのストリーム取得、名前表の探索、使用ファミリーの読み込みを分離した。文字不足時に指定順でfallbackを追加し、一覧取得では全フェイスを明示的に読み込む。未使用ファミリーの非登録、同サイズ変更の拒否、ロード済みデータの保持、未使用ファイルの依存revision、遅延／全件読み込みの画素・計測一致が成功した。既定構成840→845件・core468→469件で、全named caseと回数に欠落0件。既存の888 PNGは5eaa691と全てbyte一致した。実Chromium・MCP・端末・Material・42描画計測・全5 consumerの共通gate・依存監査も成功し、署名済みsourceは1,194ファイル・13,326,426バイト、SHA-256 `d88e12b151c32399d5533d200b0538c0c48c20103e2548c87f73a6afbab707eb`だった。
+
+全体は14分43秒で、10分目標は未達。今回はWasmの原本検証と依存変更も含む。Skiaを含む既存依存を同一条件のcacheから復元し、先行コンパイルは155.54秒、残る試験のコンパイルは89.92秒、releaseは159.29秒。Skia本体とwrapperはCargoでfreshだった。旧候補のcacheなし370.44秒／486.14秒とはソースも異なるため、差を純粋なcache効果の測定値とはしない。新規再現は0.55秒、通常consumerは3分21秒、sourceは47秒だった。GHAの同じバイナリ（SHA-256 `c014b01e5da191f72ad2e9fdb3aba785585fec10f05613da60217c30d2a4d306`）をハッシュ照合して取り出し、Macで全7フォントfixtureの全フェイス・元hash・collection正規化hashをCLI経由で確認した。確認用バイナリは削除した。検証後は既存fixture試験も一覧取得を明示する形に補強したが、アプリコードは変えておらず、同条件の全CIは重ねない。この試験ソース補強自体のGHAコンパイルは次の実装検証に含める。複合script文脈、同時認証profile、物理端末と最終公開受け入れは残る。
+
 5eaa691の[CI 40860814717](https://github.com/EkeMinusYou/lazypencil/actions/runs/40860814717)は全工程成功した。既定構成839→840件・core468件のnamed case／回数に欠落0件、前回失敗したdetach 3件も回復した。新規124組は変数式の宣言元と参照部品の入力scopeを別に保持し、同名変数の別値・誤ったscopeのmissing値でも成功した。全5 consumerのcompiler／binary receiptはbyte一致し、先行と通常の888 PNG／JSON、296組の元／copy／再copyも一致した。新規372枚はc8d4848で独立復号し、強化した今回のfixtureでも同じbyte列・今回revision／hashを確認したので同一画像の復号を繰り返していない。両構成Clippy・補助の実Cargo回帰・監査・42描画計測・共通画像gate・署名付きsourceも成功した。sourceは13,311,625バイト、SHA-256 `5ff1a00bfcc25d4a4fe85b65a40cd1d673c63d61d403c7abd0fc96b7095ef1ac`。native parentの単独scope／custom bindingと入力guardはこの範囲で検証済みとし、複合envelopeの合成と製品全体の受け入れは残る。
 
-今回の全体時間は12分06秒で、10分目標は未達である。対象選択40秒・builder7分21秒・core8分19秒・release3分43秒、通常3分08秒・pixel1分52秒・runtime3分12秒・端末1分23秒・Material1分37秒、source40秒。最初のrunner待機2秒、plan後3〜5秒、長いconsumerのbuilder後3〜5秒、source前3秒で、待機列が主因ではなかった。builderのxtask準備41秒・依存cache復元38秒、先行コンパイル124.15秒・Cargo確認1.20秒、新規guard40.53秒・既存binding77.40秒・browser35.98秒・copy10.57秒、残りの全体コンパイル99.44秒だった。再現と残りコンパイルは並列で、先行lib／CLI／lib試験／script_scopeの4単位を全体でもfreshとして再利用し、registry依存354単位も全件freshだった。本体変更・124組の追加・補助処理更新の条件であり、本体再利用8分30秒や旧完全build10分17秒と混同しない。同条件の完全CIを追加実行せず、残るbuilderの準備と検証のcritical pathを次の短縮対象とする。成功したコンパイルを再現失敗後も保持する経路はe36cb4cで実測し、実行ファイル変更時の記録拒否は今回の実Cargo回帰で成功した。強制再buildのlookup-onlyによる既存keyの再stage抑止は、この通常push実行では強制再build時のhitまで再測定していない。
+5eaa691の全体時間は12分06秒で、10分目標は未達だった。対象選択40秒・builder7分21秒・core8分19秒・release3分43秒、通常3分08秒・pixel1分52秒・runtime3分12秒・端末1分23秒・Material1分37秒、source40秒。最初のrunner待機2秒、plan後3〜5秒、長いconsumerのbuilder後3〜5秒、source前3秒で、待機列が主因ではなかった。builderのxtask準備41秒・依存cache復元38秒、先行コンパイル124.15秒・Cargo確認1.20秒、新規guard40.53秒・既存binding77.40秒・browser35.98秒・copy10.57秒、残りの全体コンパイル99.44秒だった。再現と残りコンパイルは並列で、先行lib／CLI／lib試験／script_scopeの4単位を全体でもfreshとして再利用し、registry依存354単位も全件freshだった。本体変更・124組の追加・補助処理更新の条件であり、本体再利用8分30秒や旧完全build10分17秒と混同しない。同条件の完全CIを追加実行せず、残るbuilderの準備と検証のcritical pathを次の短縮対象とした。成功したコンパイルを再現失敗後も保持する経路はe36cb4cで実測し、実行ファイル変更時の記録拒否は5eaa691の実Cargo回帰で成功した。強制再buildのlookup-onlyによる既存keyの再stage抑止は、この通常push実行では強制再build時のhitまで再測定していない。
 
 c8d4848の[CI 40857731874](https://github.com/EkeMinusYou/lazypencil/actions/runs/40857731874)では新規124組の先行と通常条件の実worker・copy／再copyが成功した。888 PNGのrevision／hash／寸法、従来516枚とのbyte一致、新規372枚の独立復号と296組の三段階byte一致を照合した。新規先行54.18秒・既存binding92.36秒・browser33.65秒・copy7.15秒、先行build124.68秒・残り125.80秒で、registry依存354単位は全件fresh、全体buildで先行4単位もfreshだった。release・runtime・pixel・端末・Materialは成功したが、通常試験の既存detach 3件は入力変数を部品スコープへ寄せた変更でMissing variable $ui:captionとなった。変数式の所有元を属性の指定文書へ戻し、copierとgenerated scopeでも変数と参照部品の表を別に保持する。新規fixtureは同名変数の別値と誤った所有元のmissing値で取り違えを検出し、元の色・888画像の検査は維持する。補助ツールの試験・Clippyは成功したが、独立xtaskのfmtをrootのfmtだけで検査した見落としがありaudit／coreは停止した。xtaskのmanifestを指定して整形し、両workspaceのfmtをローカルで検査済み。全工程成功・source署名とは扱わず、有用な全consumerを終了まで中断せず取得した。整形だけでは完全CIを繰り返さず、この機能上の回帰修正とまとめて次に検証する。
 
@@ -78,6 +82,7 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 
 - JSONC の保持、対応形式2.19／2.21、編集・競合・復旧・履歴、CLI／stdio MCP と画像返却。
 - Skia CPU／SkParagraph、日本語・追加フォント・カラー／bitmap 字形の輪郭、18合成モード・mesh、Lucide／Feather／Phosphor／Material の6パック。
+- 追加フォントのファミリー単位の遅延読み込みと、文字不足に応じたfallback登録。元ファイルのストリームhashと使用前の再照合は維持し、通常のファイルデータを全件保持しない。非Unicode名の互換読み込み・明示的な全件一覧取得・同ファミリー内のnative style選択は維持する。探索とhash取得のI/Oは残り、ゼロI/O・全ファイル形式の完全互換・実測RSS削減を保証したものではない。
 - QuickJS、別途取得する固定 Chromium、browser／GLSL、保持ページ・取得条件・通信方針、アイドル時の子プロセス回収。
 - 部品・変数・テーマ・素材のコピー／切り離し、通常および生成 browser の名前空間の持ち運び。下記の残るケースは含めない。
 - 内包部品定義の明示再利用、配置IDの分離とcomponent_paths、保存済み／実行時生成childrenと全ノード置換への上書き。実行時の元IDを内部IDと分けて保持し、元の親子関係・参照境界をscript bindingsへ記録する。通常生成・独立copy・再copyで元の出自を保持し、削除済みの子や衝突する経路は拒否する。ab8c785では7組合せ×2形式の実workerがcopy前・元source削除後・再copyで成功した。42 PNGは全て120×60・hashとrevisionが一致し、copy／再copyの14組がbyte一致した。refからgroupへの境界変更の1画像も目視した。既存version-1 bindingsの宣言済みpath動作は維持し、有効な明示script contextの合成は下記の残件と区別する。
@@ -105,7 +110,6 @@ cbc868bでは、bindings v3に元URIのhash、input context v2に元入力のhas
 
 - 明示 `script_scope`／`script_bindings`／入力文脈／上書きcarrierを組み合わせた複合envelopeの独立合成。単独native parentの出力所有元は06bab20の36組、入力guard・変数と参照部品の独立した所有元は5eaa691の124組で検証済み。複合文脈は `bindings.rs` と `generated_refs.rs` で引き続き拒否する。通常の捕捉済みnamespaceから生成した単独custom bindingは62675c9、単独script_scopeのmetadataだけのsource選択・継承入力guardはcbc868bで検証済み。これらの成功を複合文脈の合成完了とは扱わない。
 - TUI preview と別の bound MCP が、同じ認証済みブラウザープロファイルを同時利用する統合。専用 profile の作成・ログイン・永続ストレージ・所有者回収は実装済みだが、現在の lease は二つ目の独立 owner を拒否する。
-- 追加フォントの遅延読み込みは検証中。全ファイルをメモリへ保持せず、内容hashのストリーム取得と名前表の探索を分け、必要なファミリーだけをnativeへ登録する変更を追加した。文字不足時は指定順にfallbackを増やし、一覧取得は全フェイスを明示的に読み込む。同サイズ変更の拒否・既存のcollection／色字形／CLI／MCPとの互換性はGHAで確認するまで合格扱いにしない。全指定ファイルのhash取得は維持し、ゼロI/Oや実測済みのメモリ削減を主張しない。ed2c187のCI 40867356891は更新漏れのRust通知で停止し、アプリのRust／Skia検証には到達していない。追加したttf-parser 0.25.1の原本通知を、既存の収集workflowを使ったGHA 40867900326で全392 packageの原本から再生成・再照合した。ローカルでも270通知ファイルと現lockfileの整合を確認した。通知更新後のアプリ検証は引き続き必要である。
 
 ab8c785の既定構成builderは7分42秒、通常consumer3分24秒、pixel consumer3分01秒、runtime consumer3分07秒、source gate32秒だった。初回305198bは追加した単体試験補助のString型不一致で停止したため成功扱いせず、core・releaseの完了後に修正した。既存bindings単体試験をcfg(test)の別ファイルへ分け、以後の試験補助だけの修正が本体のcompiler入力に混ざることを防ぐ。署名済みsourceは1,186ファイル・13,275,319バイト、SHA-256 `5254036df2833e5e628a2fcfb9680eff2272cd1be95433e91556a55ff5e0fdc9`。検証後の差分は文書更新と、PNG報告用revisionを実行時環境から読む試験補助1行のみで、同条件のnative全検証は重ねない。この最終の補助変更自体のremote実行とは区別する。
 
@@ -126,7 +130,7 @@ ab8c785の既定構成builderは7分42秒、通常consumer3分24秒、pixel cons
 
 標準 macOS GHA の Kitty 0.49.2 は、取得・ハッシュ・署名・両実行ファイルの版検査後に NSGL／OpenGL 3.3 の初期化で失敗した。`3d711d9` の失敗はアプリ起動前であり、日本語入力の不具合や可視画面の成功とは扱わない。実 Kitty 12段階試験は既存 release-evidence の `macos_terminal_gui` に保持しているが、GPU付きlarger runnerはGitHub Team／Enterprise Cloudの組織向けである。[公式の利用条件](https://docs.github.com/en/enterprise-cloud%40latest/actions/concepts/runners/larger-runners)。現在のrepository ownerは個人アカウントであり、このflagだけで利用できる経路とは扱わず、未実行のまま残す。アカウント移管・契約変更は実行していない。利用者への反復した手動確認依頼を検証計画の前提にしない。
 
-旧3環境CI全体の安定した短縮は未達だった。初回Macのみへ変更し、Linux nativeの待機・再ビルド・必須確認を外した。実行時間が単純に1/3になるとは見積もらない。`c9ffb37` は38分28秒、先行17分30秒、全体 job は x64 16分35秒・arm64 17分57秒・Mac20分05秒だった。先行範囲と runner image が異なり、元の27〜29分との統制比較ではない。Mac release 再利用0.87秒、同一環境での先行成果物再利用、変更した試験だけの無効化、独立試験の並列化には個別の成功根拠がある。現在のMac構成の直近実測は上記5eaa691の12分06秒（本体変更と新規124組）である。旧f9cc4daは10分17秒（本体全50単位を再build）だった。copy先行の06bab20は10分31秒、本体再利用の028e522は8分30秒だった。旧62675c9の12分51秒・788f4c2の9分51秒・旧3環境と条件を分け、全体10分以内の維持は引き続き改善する。
+旧3環境CI全体の安定した短縮は未達だった。初回Macのみへ変更し、Linux nativeの待機・再ビルド・必須確認を外した。実行時間が単純に1/3になるとは見積もらない。`c9ffb37` は38分28秒、先行17分30秒、全体 job は x64 16分35秒・arm64 17分57秒・Mac20分05秒だった。先行範囲と runner image が異なり、元の27〜29分との統制比較ではない。Mac release 再利用0.87秒、同一環境での先行成果物再利用、変更した試験だけの無効化、独立試験の並列化には個別の成功根拠がある。直近の9d6613bは14分43秒（依存変更・Wasm検証を含む）。5eaa691は12分06秒（本体変更と新規124組）、f9cc4daは10分17秒（本体全50単位を再build）だった。copy先行の06bab20は10分31秒、本体再利用の028e522は8分30秒だった。旧62675c9の12分51秒・788f4c2の9分51秒・旧3環境と条件を分け、全体10分以内の維持は引き続き改善する。
 
 macOS の常用メモリは `7fe854b` の既存候補で172.03MiB、cached feedback p95 は32.72msだった。古い「200MiB未達」を現在の既知不具合に数えない。この標本結果から、全環境・統制条件・物理端末の性能受け入れ完了とはしない。[性能記録](performance.md)
 
@@ -135,8 +139,8 @@ macOS の常用メモリは `7fe854b` の既存候補で172.03MiB、cached feedb
 ### 完成までの順序と概算
 
 1. 独立コピーの残る明示scriptスコープ合成：3〜6実働日の概算。
-2. 同時認証利用・追加フォントの遅延読み込み：3〜5実働日の概算。
-3. 今回明記した画像添付仕様との差分、各個別仕様の残る互換・資源処理を具体化する。追加分の工数は未確定。
+2. 同時認証利用：旧3〜5実働日の概算を再評価する。旧見積もりに含めた追加フォントの遅延読み込みは検証済みになった。
+3. 各個別仕様の残る互換・資源処理（非local sampler、欠損修復、素材回収、font lockfileなど）を具体化する。追加分の工数は未確定。
 4. 不足する受け入れ確認、保証環境の確定、配布・文書整理：2〜4実働日の概算。
 
 上記は旧3環境方針での概算である。初回Macのみへの変更で、Linuxの環境確認・配布・最低版調整は初回から外れる。共通の機能不足はそのまま残るため、全工数を単純に1/3にはしない。前回提示した8〜15実働日は主要4項目と確認作業に対する1人換算の概算だった。画像添付など個別仕様との差分の追加工数は含めていないため、製品全体の完成日を確約する総見積もりには使わない。実機環境確保・権利処理の待ち時間も別である。完成目標に沿って実装を再開している。変更箇所を1環境で先行検証し、元の最終合格基準を維持する。同じ入力・環境・目的で確認済みの内容を、根拠なく再検証しない。

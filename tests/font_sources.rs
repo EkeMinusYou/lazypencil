@@ -76,7 +76,12 @@ fn original_font_fixtures_have_pinned_contents_and_load_every_collection_face() 
         let bytes = fs::read(fixture(name)).unwrap();
         assert_eq!(hash(&bytes), information["sha256"]);
         assert_eq!(bytes.len() as u64, information["bytes"].as_u64().unwrap());
-        Fonts::new(&[fixture(name)]).unwrap();
+        let inventory = Fonts::new(&[fixture(name)]).unwrap().inventory().unwrap();
+        assert!(
+            inventory
+                .iter()
+                .any(|font| font.source.ends_with(name.as_str()))
+        );
     }
     let mut fonts = Fonts::new(&[fixture("faces.ttc")]).unwrap();
     let faces = fonts
