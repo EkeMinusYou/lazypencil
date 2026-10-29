@@ -23,6 +23,12 @@ impl Journal {
             .expect("validated asset parent")
             .join(format!("{TRASH}{}", self.operation))
     }
+    fn marker(&self) -> PathBuf {
+        self.directory().with_extension("json")
+    }
+    fn finalizing(&self) -> Result<bool> {
+        Ok(crate::paths::MissingPath::capture(&self.marker())?.is_none())
+    }
     fn payload(&self) -> Candidate {
         let mut asset = self.asset.clone();
         asset.path = self.directory().join("payload");
@@ -88,7 +94,35 @@ impl Journal {
 }
 
 pub(super) fn load(directory: &Path, budget: &mut Budget<'_>) -> Result<Journal> {
-    let entries = filesystem::entries(directory, 3, budget.cancel)?;
+    let directory = if directory
+        .extension()
+        .is_some_and(|extension| extension == "json")
+    {
+        directory.with_extension("")
+    } else {
+        directory.into()
+    };
+    let marker = directory.with_extension("json");
+    if crate::paths::MissingPath::capture(&marker)?.is_none() {
+        let journal: Journal = serde_json::from_slice(&budget.read(&marker, 4 * 1024 * 1024)?)
+            .map_err(|_| {
+                Error::new(
+                    "RECOVERY_REQUIRED",
+                    "Cannot read final asset cleanup journal",
+                )
+            })?;
+        journal.validate(&directory)?;
+        if crate::paths::MissingPath::capture(&directory)?.is_none()
+            && !filesystem::entries(&directory, 1, budget.cancel)?.is_empty()
+        {
+            return Err(Error::new(
+                "RECOVERY_REQUIRED",
+                "Final asset cleanup directory is not empty",
+            ));
+        }
+        return Ok(journal);
+    }
+    let entries = filesystem::entries(&directory, 3, budget.cancel)?;
     budget.entries(entries.len())?;
     if entries.iter().any(|entry| {
         !matches!(entry.name.as_str(), "journal.json" | "payload")
@@ -103,7 +137,7 @@ pub(super) fn load(directory: &Path, budget: &mut Budget<'_>) -> Result<Journal>
     let journal: Journal =
         serde_json::from_slice(&budget.read(&directory.join("journal.json"), 4 * 1024 * 1024)?)
             .map_err(|_| Error::new("RECOVERY_REQUIRED", "Cannot read asset deletion journal"))?;
-    journal.validate(directory)?;
+    journal.validate(&directory)?;
     Ok(journal)
 }
 
@@ -123,13 +157,39 @@ pub(super) fn quarantine(
     journal.validate(&journal.directory())?;
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
-        native::quarantine(&journal, budget)?;
+        native::quarantine(&journal, budget).map_err(|error| {
+            Error::new(error.code, error.message.clone())
+                .details(json!({"cause":error,"journal":journal.directory()}))
+        })?;
         Ok(journal)
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         let _ = budget;
         Err(unavailable())
+    }
+}
+
+pub(super) fn payload_state(
+    journal: &Journal,
+    budget: &mut Budget<'_>,
+) -> Result<BTreeSet<String>> {
+    if journal.finalizing()? {
+        return Ok(BTreeSet::new());
+    }
+    if filesystem::entries(&journal.directory(), 2, budget.cancel)?
+        .iter()
+        .any(|entry| entry.name == "payload")
+    {
+        scan::candidate_state(&journal.payload(), true, budget).map_err(|error| {
+            Error::new(
+                "RECOVERY_REQUIRED",
+                "Cannot verify quarantined asset contents",
+            )
+            .details(json!({"cause":error,"journal":journal.directory()}))
+        })
+    } else {
+        Ok(BTreeSet::new())
     }
 }
 

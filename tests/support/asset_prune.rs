@@ -303,3 +303,67 @@ fn busy_activity_and_unowned_or_tampered_assets_are_never_deleted() {
         b"unlisted data"
     );
 }
+
+#[test]
+fn the_bound_document_is_a_retention_root_inside_managed_storage_or_without_a_pen_extension() {
+    for managed in [false, true] {
+        let mut fixture = Fixture::new();
+        let (uri, retained) = fixture.asset(b"referenced", "png");
+        let (_, orphan) = fixture.asset(b"orphan", "glsl");
+        let document = json!({"version":"2.21","children":[],"metadata":{"asset":uri}}).to_string();
+        if managed {
+            fixture.file = fixture.asset(document.as_bytes(), "lib.pen").1;
+        } else {
+            fs::remove_file(&fixture.file).unwrap();
+            fixture.file = fixture.root.join("unconventional.design");
+            fs::write(&fixture.file, document).unwrap();
+        }
+        let before = fs::read(&fixture.file).unwrap();
+        let review = fixture.command(None);
+        assert_eq!(candidates(&review), vec![orphan.clone()], "{review}");
+        let result = fixture.command(review["revision"].as_str());
+        assert_eq!(result["errors"], json!([]), "{result}");
+        assert!(!orphan.exists());
+        assert!(retained.exists());
+        assert_eq!(fs::read(&fixture.file).unwrap(), before);
+    }
+}
+
+#[test]
+fn the_cli_reviews_pending_cleanup_and_restores_newly_referenced_quarantined_assets() {
+    for referenced in [false, true] {
+        let fixture = Fixture::new();
+        let bytes = b"quarantined";
+        let (uri, asset) = fixture.asset(bytes, "glsl");
+        let operation = uuid::Uuid::new_v4().to_string();
+        let directory = asset
+            .parent()
+            .unwrap()
+            .join(format!(".lazypencil-trash-{operation}"));
+        fs::create_dir(&directory).unwrap();
+        fs::write(directory.join("journal.json"), json!({"version":1,"operation":operation,"root":fixture.root,"document":fixture.file,"asset":{"path":asset,"digest":lazypencil::document::hash(bytes),"bundle":false,"files":{"":{"sha256":lazypencil::document::hash(bytes),"bytes":bytes.len()}}}}).to_string()).unwrap();
+        fs::rename(&asset, directory.join("payload")).unwrap();
+        if referenced {
+            fs::write(
+                &fixture.file,
+                json!({"version":"2.21","children":[],"metadata":{"asset":uri}}).to_string(),
+            )
+            .unwrap();
+        }
+        let review = fixture.command(None);
+        assert!(candidates(&review).is_empty());
+        assert_eq!(
+            review["pending"][0]["action"],
+            if referenced { "restore" } else { "cleanup" },
+            "{review}"
+        );
+        assert!(directory.join("payload").exists());
+        let result = fixture.command(review["revision"].as_str());
+        assert_eq!(result["errors"], json!([]), "{result}");
+        assert!(!directory.exists());
+        assert_eq!(asset.exists(), referenced);
+        if referenced {
+            assert_eq!(fs::read(asset).unwrap(), bytes);
+        }
+    }
+}

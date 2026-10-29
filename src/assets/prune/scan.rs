@@ -7,7 +7,8 @@ use std::fs;
 pub(super) enum Source {
     File { content: Content },
     Directory { entries: Value },
-    Missing,
+    Missing { snapshot: crate::paths::MissingPath },
+    Alias { canonical: PathBuf },
 }
 
 #[derive(Default)]
@@ -16,6 +17,7 @@ pub(super) struct Scan {
     pub identities: BTreeSet<String>,
     pub owned: Vec<Candidate>,
     pub pending: Vec<trash::Journal>,
+    pub pending_payloads: BTreeMap<PathBuf, BTreeSet<String>>,
     pub retained: BTreeMap<PathBuf, String>,
     pub uncertain: BTreeSet<String>,
     pub references: BTreeSet<String>,
@@ -44,7 +46,13 @@ impl Scan {
                 Source::Directory { entries } => {
                     json!(filesystem::entries(path, MAX_ENTRIES, budget.cancel)?) == *entries
                 }
-                Source::Missing => missing(path, budget)?,
+                Source::Missing { snapshot } => {
+                    snapshot.verify()?;
+                    true
+                }
+                Source::Alias { canonical } => {
+                    crate::paths::canonical(path).is_ok_and(|current| &current == canonical)
+                }
             };
             if !matches {
                 return Err(changed());
@@ -67,6 +75,19 @@ impl Scan {
             },
         );
         Ok(entries)
+    }
+
+    fn missing(&mut self, path: &Path, budget: &Budget<'_>) -> Result<bool> {
+        budget.check()?;
+        if let Some(snapshot) = crate::paths::MissingPath::capture(path)? {
+            snapshot.verify()?;
+            self.sources
+                .insert(path.into(), Source::Missing { snapshot });
+            Ok(true)
+        } else {
+            filesystem::entries(path, MAX_ENTRIES, budget.cancel)?;
+            Ok(false)
+        }
     }
 
     fn read(&mut self, path: &Path, limit: usize, budget: &mut Budget<'_>) -> Result<Vec<u8>> {
@@ -132,11 +153,20 @@ impl Scan {
     fn assets(&mut self, path: &Path, budget: &mut Budget<'_>) -> Result<()> {
         let entries = filesystem::entries(path, MAX_ENTRIES, budget.cancel)?;
         budget.entries(entries.len())?;
+        let mut pending = BTreeSet::new();
         for entry in entries {
             let child = path.join(&entry.name);
             if entry.name.starts_with(TRASH) {
                 match trash::load(&child, budget) {
-                    Ok(journal) => self.pending.push(journal),
+                    Ok(journal) => {
+                        if pending.insert(journal.directory()) {
+                            self.pending_payloads.insert(
+                                journal.directory(),
+                                trash::payload_state(&journal, budget)?,
+                            );
+                            self.pending.push(journal);
+                        }
+                    }
                     Err(error) => {
                         self.uncertain
                             .insert(format!("{}: {}", child.display(), error.code));
@@ -219,6 +249,10 @@ impl Scan {
         document: Document,
         budget: &mut Budget<'_>,
     ) -> Result<()> {
+        for diagnostic in document.diagnostics() {
+            self.uncertain
+                .insert(format!("{}: {}", path.display(), diagnostic.code));
+        }
         self.raw_references(path, document.value(), budget)?;
         self.owners
             .insert(hash(path.as_os_str().as_encoded_bytes()), path.into());
@@ -274,8 +308,7 @@ impl Scan {
 
     fn histories(&mut self, store: &Store, data: &Path, budget: &mut Budget<'_>) -> Result<()> {
         let documents = data.join("documents");
-        if missing(&documents, budget)? {
-            self.sources.insert(documents, Source::Missing);
+        if self.missing(&documents, budget)? {
             return Ok(());
         }
         for namespace in self.entries(&documents, budget)? {
@@ -286,8 +319,7 @@ impl Scan {
                 continue;
             }
             let history = path.join("history");
-            if missing(&history, budget)? {
-                self.sources.insert(history, Source::Missing);
+            if self.missing(&history, budget)? {
                 continue;
             }
             for entry in self.entries(&history, budget)? {
@@ -360,41 +392,11 @@ fn document(bytes: Vec<u8>) -> Result<Document> {
     )
 }
 
-fn missing(path: &Path, budget: &Budget<'_>) -> Result<bool> {
-    budget.check()?;
-    match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.is_dir() && !metadata.is_symlink() => {
-            filesystem::entries(path, MAX_ENTRIES, budget.cancel)?;
-            Ok(false)
-        }
-        Ok(_) => Err(Error::new(
-            "RECOVERY_REQUIRED",
-            "History paths must be real directories",
-        )),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            // Validate the first existing ancestor too; an absent path behind
-            // a redirected/symbolic ancestor is not a verified absence.
-            for parent in path.ancestors().skip(1) {
-                match fs::symlink_metadata(parent) {
-                    Ok(_) => {
-                        filesystem::entries(parent, MAX_ENTRIES, budget.cancel)?;
-                        break;
-                    }
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
-                    Err(error) => return Err(Error::io(parent, error)),
-                }
-            }
-            Ok(true)
-        }
-        Err(error) => Err(Error::io(path, error)),
-    }
-}
-
 pub(super) fn collect(store: &Store, root: &Path, budget: &mut Budget<'_>) -> Result<Scan> {
-    let data = if store.data_dir().exists() {
-        crate::paths::canonical(store.data_dir())?
-    } else {
-        crate::managed::normalize(store.data_dir())?
+    let absent_data = crate::paths::MissingPath::capture(store.data_dir())?;
+    let data = match &absent_data {
+        Some(snapshot) => snapshot.target.clone(),
+        None => crate::paths::canonical(store.data_dir())?,
     };
     if data == root {
         return Err(Error::new(
@@ -403,7 +405,23 @@ pub(super) fn collect(store: &Store, root: &Path, budget: &mut Budget<'_>) -> Re
         ));
     }
     let mut scan = Scan::default();
+    if let Some(snapshot) = absent_data {
+        scan.sources
+            .insert(store.data_dir().into(), Source::Missing { snapshot });
+    } else if data != store.data_dir() {
+        scan.sources.insert(
+            store.data_dir().into(),
+            Source::Alias {
+                canonical: data.clone(),
+            },
+        );
+    }
     scan.tree(root, &data, 0, budget)?;
+    scan.paths.insert(store.path().into());
+    if !scan.documents.iter().any(|(path, _)| path == store.path()) {
+        let bytes = scan.read(store.path(), crate::document::MAX_DOCUMENT_BYTES, budget)?;
+        scan.documents.push((store.path().into(), document(bytes)?));
+    }
     for (path, document) in std::mem::take(&mut scan.documents) {
         scan.capture(store, &path, document, budget)?;
     }
@@ -442,7 +460,7 @@ pub(super) fn candidate(path: &Path, budget: &mut Budget<'_>) -> Result<Candidat
     let bundle = name.ends_with(".bundle");
     let mut files = BTreeMap::new();
     if bundle {
-        let bytes = budget.read(&path.join("bundle.json"), 1024 * 1024)?;
+        let bytes = budget.read(&path.join("bundle.json"), 2 * 1024 * 1024)?;
         if hash(&bytes) != digest {
             return Err(changed());
         }
@@ -493,6 +511,14 @@ pub(super) fn verify_candidate(
     partial: bool,
     budget: &mut Budget<'_>,
 ) -> Result<()> {
+    candidate_state(asset, partial, budget).map(|_| ())
+}
+
+pub(super) fn candidate_state(
+    asset: &Candidate,
+    partial: bool,
+    budget: &mut Budget<'_>,
+) -> Result<BTreeSet<String>> {
     let mut seen = BTreeSet::new();
     if asset.bundle {
         verify_tree(asset, &asset.path, 0, &mut seen, budget)?;
@@ -520,7 +546,7 @@ pub(super) fn verify_candidate(
     if !partial && seen.len() != asset.files.len() {
         return Err(changed());
     }
-    Ok(())
+    Ok(seen)
 }
 
 fn verify_tree(

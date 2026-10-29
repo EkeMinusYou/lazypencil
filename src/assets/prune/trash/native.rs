@@ -220,13 +220,13 @@ pub(super) fn quarantine(journal: &Journal, budget: &mut Budget<'_>) -> Result<(
     Ok(())
 }
 
-fn verify_journal(journal: &Journal, budget: &mut Budget<'_>) -> Result<Directory> {
+fn verify_journal(journal: &Journal, budget: &mut Budget<'_>) -> Result<()> {
     let directory = journal.directory();
     let observed = load(&directory, budget)?;
     if serde_json::to_value(&observed).unwrap() != serde_json::to_value(journal).unwrap() {
         return Err(changed());
     }
-    Directory::open(&directory, budget)
+    Ok(())
 }
 
 fn finish_journal(journal: &Journal, trash: &Directory, budget: &mut Budget<'_>) -> Result<()> {
@@ -235,9 +235,43 @@ fn finish_journal(journal: &Journal, trash: &Directory, budget: &mut Budget<'_>)
     if entries.len() != 1 || entries[0].name != "journal.json" {
         return Err(changed());
     }
-    trash.unlink("journal.json", false)?;
     let parent = Directory::open(journal.asset.path.parent().unwrap(), budget)?;
-    parent.unlink(trash.path.file_name().unwrap().to_str().unwrap(), true)
+    // Keep a durable owner outside the final directory too. A crash between
+    // deleting its journal and removing an empty directory must not strand an
+    // unidentifiable trash directory or lose the final cleanup operation.
+    rename(
+        trash,
+        "journal.json".as_ref(),
+        &parent,
+        journal.marker().file_name().unwrap(),
+        budget,
+    )?;
+    finish_marker(journal, budget)
+}
+
+fn finish_marker(journal: &Journal, budget: &mut Budget<'_>) -> Result<()> {
+    verify_journal(journal, budget)?;
+    if !journal.finalizing()? {
+        return Err(changed());
+    }
+    let parent = Directory::open(journal.asset.path.parent().unwrap(), budget)?;
+    if crate::paths::MissingPath::capture(&journal.directory())?.is_none() {
+        let trash = parent.child(
+            journal.directory().file_name().unwrap().to_str().unwrap(),
+            budget,
+        )?;
+        if !filesystem::entries(&trash.path, 1, budget.cancel)?.is_empty() {
+            return Err(changed());
+        }
+        trash.verify(budget)?;
+        parent.unlink(trash.path.file_name().unwrap().to_str().unwrap(), true)?;
+    }
+    verify_journal(journal, budget)?;
+    parent.verify(budget)?;
+    parent.unlink(
+        journal.marker().file_name().unwrap().to_str().unwrap(),
+        false,
+    )
 }
 
 fn remove_tree(
@@ -286,7 +320,11 @@ fn remove_tree(
 }
 
 pub(super) fn finish(journal: &Journal, budget: &mut Budget<'_>) -> Result<()> {
-    let trash = verify_journal(journal, budget)?;
+    verify_journal(journal, budget)?;
+    if journal.finalizing()? {
+        return finish_marker(journal, budget);
+    }
+    let trash = Directory::open(&journal.directory(), budget)?;
     let payload = journal.payload();
     let entries = filesystem::entries(&trash.path, 2, budget.cancel)?;
     if let Some(entry) = entries.iter().find(|entry| entry.name == "payload") {
@@ -312,7 +350,18 @@ pub(super) fn finish(journal: &Journal, budget: &mut Budget<'_>) -> Result<()> {
 }
 
 pub(super) fn restore(journal: &Journal, budget: &mut Budget<'_>) -> Result<()> {
-    let trash = verify_journal(journal, budget)?;
+    verify_journal(journal, budget)?;
+    if journal.finalizing()? {
+        scan::verify_candidate(&journal.asset, false, budget).map_err(|error| {
+            Error::new(
+                "RECOVERY_REQUIRED",
+                "Referenced asset was already removed before final journal cleanup",
+            )
+            .details(json!({"cause":error,"journal":journal.marker()}))
+        })?;
+        return finish_marker(journal, budget);
+    }
+    let trash = Directory::open(&journal.directory(), budget)?;
     let parent = Directory::open(journal.asset.path.parent().unwrap(), budget)?;
     if filesystem::entries(&trash.path, 2, budget.cancel)?
         .iter()

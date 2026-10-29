@@ -142,7 +142,8 @@ pub fn run(
         serde_json::to_vec(&json!({
             "version":1,"root":root,"document":store.path(),"data_dir":store.data_dir(),
             "sources":scan.sources,"projects":scan.identities,"owned":scan.owned,
-            "pending":scan.pending,"retained":scan.retained,"uncertain":scan.uncertain,
+            "pending":scan.pending,"pending_payloads":scan.pending_payloads,
+            "retained":scan.retained,"uncertain":scan.uncertain,
             "references":scan.references,"paths":scan.paths
         }))
         .map_err(|error| Error::new("INTERNAL_ERROR", error.to_string()))?
@@ -228,6 +229,16 @@ pub fn run(
             Ok(())
         })();
         if let Err(error) = operation {
+            if let Some(path) = error
+                .details
+                .as_ref()
+                .and_then(|details| details.get("journal"))
+            {
+                result["cleanup_pending"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(path.clone());
+            }
             result["errors"].as_array_mut().unwrap().push(json!(error));
             break;
         }

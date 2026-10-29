@@ -61,6 +61,26 @@ fn interrupted_bundle_cleanup_recovers_even_after_its_manifest_was_removed() {
 }
 
 #[test]
+fn final_cleanup_remains_identifiable_before_and_after_the_empty_directory_is_removed() {
+    for remove_directory in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(temp.path()).unwrap();
+        let asset = bundle(&root);
+        let journal = quarantine(&asset, &root, &root.join("main.pen"), &mut budget()).unwrap();
+        fs::remove_dir_all(journal.payload().path).unwrap();
+        fs::rename(journal.directory().join("journal.json"), journal.marker()).unwrap();
+        if remove_directory {
+            fs::remove_dir(journal.directory()).unwrap();
+        }
+        let loaded = load(&journal.marker(), &mut budget()).unwrap();
+        finish(&loaded, &mut budget()).unwrap();
+        assert!(!journal.marker().exists());
+        assert!(!journal.directory().exists());
+        assert!(!asset.path.exists());
+    }
+}
+
+#[test]
 fn quarantine_restores_complete_referenced_bundles_without_clobbering_a_new_owner() {
     let temp = tempfile::tempdir().unwrap();
     let root = fs::canonicalize(temp.path()).unwrap();
