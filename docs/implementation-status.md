@@ -4,6 +4,8 @@
 
 ## 現在の状態（2026-10-30）
 
+次の互換対応として、明示したローカル`file://` URLを通常のcanonical path・許可領域・依存検査へ接続した。shaderの文字列samplerは元のURL文字列を表示用に保持し、画像だけを既存の管理bundleへコピーする。2.19／2.21のテーマ・移動・再copy・将来編集、URLの予約文字・禁止authority等・同一byteへのsymlink変更と、実WebGLの元source削除前後の画像照合を既存試験へ加えた。GHA検証前であり、下記の成功済み候補の証拠とは分ける。HTTP(S)等の取得、捕捉scriptのfile-URL asset key、未参照素材の回収は引き続き残る。
+
 625bec7の[CI 40951785256](https://github.com/EkeMinusYou/lazypencil/actions/runs/40951785256)は全工程成功した。監査、core／既定構成の全試験とClippy、通常開発build、release、通常／pixel／runtime／端末／Materialの全5 consumer、共通画像gateと署名付きsourceを含む。font lockfileはCLIの生成text、hash付き更新・移動・復元、実MCPのstale拒否と構造編集、TUI preview workerの拒否・同一PNG／viewへの復帰まで検証済みになった。MCPの古いcapability表示も実装へ揃い、実MCPの回帰が成功した。実端末のIMEや公開受け入れ全体の完了とは区別する。
 
 全体14分13秒で10分目標は未達。builder7分32秒・core12分34秒・release8分59秒、通常3分34秒・runtime4分53秒・pixel3分00秒・Material1分34秒・端末1分00秒・source54秒だった。対象選択は33秒で、未変更のWasmは追加しなかった。builderの先行compileは159.05秒、修復31件は1.68秒で成功し、color-font34.26秒／実emoji116.40秒の開始が重なり、両方成功した。同じ条件の以前の直列値との差を、そのまま速度改善量にはしない。

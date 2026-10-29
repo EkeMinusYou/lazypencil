@@ -126,6 +126,35 @@ fn absolute_fixture() -> (TempDir, Store, [String; 2]) {
     (temp, store, paths)
 }
 
+fn file_url_fixture(version: &str) -> (TempDir, Store, [String; 2]) {
+    let (temp, store, paths) = absolute_fixture();
+    let urls = paths.map(|path| {
+        let target = Path::new(&path).with_file_name(format!(
+            "画像 % # ? {}",
+            Path::new(&path).file_name().unwrap().to_str().unwrap()
+        ));
+        fs::rename(path, &target).unwrap();
+        url::Url::from_file_path(target).unwrap().to_string()
+    });
+    let source = temp.path().join("library/data/images.lib.pen");
+    let mut document: Value = serde_json::from_slice(&fs::read(&source).unwrap()).unwrap();
+    document["variables"]["leaf"]["value"] = json!([
+        {"value":urls[0]},
+        {"theme":{"mode":"dark"},"value":urls[1]}
+    ]);
+    write(&source, document);
+    for path in [
+        source,
+        temp.path().join("library/ui.lib.pen"),
+        store.path().into(),
+    ] {
+        let mut document: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        document["version"] = json!(version);
+        write(&path, document);
+    }
+    (temp, store, urls)
+}
+
 #[cfg(unix)]
 const PROJECTIONS: &[&str] = &["aliases", "file_directory", "case"];
 
@@ -679,6 +708,86 @@ fn sampler_projection_collisions_keep_text_themes_and_future_edits_after_indepen
 #[test]
 fn absolute_sampler_copy_preserves_text_themes_portability_and_future_edits() {
     let (temp, store, strings) = absolute_fixture();
+    assert_portable_sampler_copy(temp, store, strings, false);
+}
+
+#[test]
+fn file_url_sampler_copy_preserves_encoded_text_themes_portability_and_future_edits() {
+    for version in ["2.19", "2.21"] {
+        let (temp, store, strings) = file_url_fixture(version);
+        assert_portable_sampler_copy(temp, store, strings, true);
+    }
+}
+
+#[test]
+fn file_url_samplers_keep_root_restrictions_and_dependency_conflicts() {
+    let (temp, store, urls) = file_url_fixture("2.21");
+    let project = Project::load(&store).unwrap();
+    let image_path = url::Url::parse(&urls[0]).unwrap().to_file_path().unwrap();
+    image(&image_path, true);
+    assert_eq!(
+        project.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    let outside = TempDir::new().unwrap();
+    let outside_image = outside.path().join("outside.png");
+    image(&outside_image, false);
+    let source = temp.path().join("library/data/images.lib.pen");
+    let mut document: Value = serde_json::from_slice(&fs::read(&source).unwrap()).unwrap();
+    document["variables"]["leaf"]["value"] =
+        json!(url::Url::from_file_path(outside_image).unwrap().as_str());
+    write(&source, document.clone());
+    assert_eq!(Project::load(&store).err().unwrap().code, "ASSET_NOT_FOUND");
+    for uri in [
+        format!("{}?download=1", urls[0]),
+        format!("{}#fragment", urls[0]),
+        "file://remote.example/image.png".into(),
+        "file://user:secret@localhost/image.png".into(),
+        "file:relative.png".into(),
+        "file:///bad%00name.png".into(),
+        "file:///bad%ffname.png".into(),
+    ] {
+        document["variables"]["leaf"]["value"] = json!(uri);
+        write(&source, document.clone());
+        assert_eq!(
+            Project::load(&store).err().unwrap().code,
+            "ASSET_NOT_FOUND",
+            "{uri}"
+        );
+    }
+    assert!(!temp.path().join("assets").exists());
+    assert!(store.history(10, None).unwrap().is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn file_url_samplers_detect_same_byte_symlink_rebinding() {
+    let (temp, store, urls) = file_url_fixture("2.21");
+    let path = url::Url::parse(&urls[0]).unwrap().to_file_path().unwrap();
+    let alias = path.with_file_name("alias.png");
+    let replacement = path.with_file_name("same.png");
+    fs::copy(&path, &replacement).unwrap();
+    std::os::unix::fs::symlink(&path, &alias).unwrap();
+    let source = temp.path().join("library/data/images.lib.pen");
+    let mut document: Value = serde_json::from_slice(&fs::read(&source).unwrap()).unwrap();
+    document["variables"]["leaf"]["value"] =
+        json!(url::Url::from_file_path(&alias).unwrap().as_str());
+    write(&source, document);
+    let project = Project::load(&store).unwrap();
+    fs::remove_file(&alias).unwrap();
+    std::os::unix::fs::symlink(replacement, alias).unwrap();
+    assert_eq!(
+        project.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+}
+
+fn assert_portable_sampler_copy(
+    temp: TempDir,
+    store: Store,
+    strings: [String; 2],
+    file_urls: bool,
+) {
     let original = fs::read(store.path()).unwrap();
     let metadata = service::document_metadata(&store).unwrap();
     let preview: EditRequest = serde_json::from_value(json!({"request_id":"absolute-preview","expected_revision":metadata["revision"],"expected_dependency_revision":metadata["dependency_revision"],"dry_run":true,"operations":copy_operations()})).unwrap();
@@ -686,9 +795,14 @@ fn absolute_sampler_copy_preserves_text_themes_portability_and_future_edits() {
     assert_eq!(fs::read(store.path()).unwrap(), original);
     assert!(!temp.path().join("assets").exists());
     assert!(store.history(10, None).unwrap().is_empty());
-    let hashes = strings
-        .each_ref()
-        .map(|path| lazypencil::document::hash(&fs::read(path).unwrap()));
+    let hashes = strings.each_ref().map(|path| {
+        let path = if file_urls {
+            url::Url::parse(path).unwrap().to_file_path().unwrap()
+        } else {
+            path.into()
+        };
+        lazypencil::document::hash(&fs::read(path).unwrap())
+    });
     let result = edit(&store, "absolute-copy", copy_operations());
     let target = result["generated_ids"]["0"]["id"]
         .as_str()
@@ -765,10 +879,15 @@ fn absolute_sampler_copy_preserves_text_themes_portability_and_future_edits() {
     );
     image(&moved.path().join("replacement.png"), true);
     let replacement = moved.path().join("replacement.png").canonicalize().unwrap();
+    let replacement_text = if file_urls {
+        url::Url::from_file_path(&replacement).unwrap().to_string()
+    } else {
+        replacement.to_str().unwrap().into()
+    };
     edit(
         &store,
         "absolute-future",
-        json!([{"op":"set_variable","name":"again_copied_leaf","definition":{"type":"string","value":replacement}}]),
+        json!([{"op":"set_variable","name":"again_copied_leaf","definition":{"type":"string","value":replacement_text}}]),
     );
     let node = Project::load(&store)
         .unwrap()
@@ -778,7 +897,10 @@ fn absolute_sampler_copy_preserves_text_themes_portability_and_future_edits() {
         .into_iter()
         .find(|node| node.id() == target)
         .unwrap();
-    assert_eq!(node.children[0].properties["content"], json!(replacement));
+    assert_eq!(
+        node.children[0].properties["content"],
+        json!(replacement_text)
+    );
     for property in ["fill", "stroke", "effect"] {
         assert_eq!(
             node.properties[property]["uniforms"]["image"][0],
@@ -1019,8 +1141,12 @@ fn independent_sampler_copy_preserves_parent_and_transit_directory_uris() {
 fn real_webgl_independent_sampler_copy_matches_pixels_after_original_sources_are_deleted() {
     use lazypencil::{dynamic::DynamicRuntime, render};
     let mut evidence = Vec::new();
-    for absolute in [false, true] {
-        let (temp, store) = if absolute {
+    for kind in ["relative", "absolute", "file_url"] {
+        let absolute = kind == "absolute";
+        let (temp, store) = if kind == "file_url" {
+            let (temp, store, _) = file_url_fixture("2.21");
+            (temp, store)
+        } else if absolute {
             let (temp, store, _) = absolute_fixture();
             (temp, store)
         } else {
@@ -1071,16 +1197,21 @@ fn real_webgl_independent_sampler_copy_matches_pixels_after_original_sources_are
             .unwrap();
             assert_eq!(
                 rendered.png, originals[index],
-                "Copied {mode} sampler pixels changed (absolute={absolute})"
+                "Copied {mode} sampler pixels changed (source={kind})"
             );
             if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
                 let directory = Path::new(&directory);
                 fs::create_dir_all(directory).unwrap();
-                let before = format!("codec-sampler-copy-{absolute}-{mode}-before.png");
-                let after = format!("codec-sampler-copy-{absolute}-{mode}-after.png");
+                let label = if kind == "file_url" {
+                    "file_url".into()
+                } else {
+                    absolute.to_string()
+                };
+                let before = format!("codec-sampler-copy-{label}-{mode}-before.png");
+                let after = format!("codec-sampler-copy-{label}-{mode}-after.png");
                 fs::write(directory.join(&before), &originals[index]).unwrap();
                 fs::write(directory.join(&after), &rendered.png).unwrap();
-                evidence.push(json!({"absolute":absolute,"theme":mode,"before":before,"after":after,"width":rendered.width,"height":rendered.height,"png_hash":lazypencil::document::hash(&rendered.png)}));
+                evidence.push(json!({"source_kind":kind,"absolute":absolute,"theme":mode,"before":before,"after":after,"width":rendered.width,"height":rendered.height,"png_hash":lazypencil::document::hash(&rendered.png)}));
             }
         }
     }

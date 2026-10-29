@@ -586,6 +586,15 @@ impl Session {
             }
             Stage::FocusReproduce => {
                 let separate_core = self.separate_core()?;
+                if has("sampler_sources") {
+                    self.test(
+                        !core,
+                        "sampler_sources",
+                        "file_url_",
+                        &["--test-threads=2"],
+                        "focus-file-url-samplers.log",
+                    )?;
+                }
                 if has("repair") {
                     self.test(
                         !core,

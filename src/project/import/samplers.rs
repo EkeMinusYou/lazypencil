@@ -57,7 +57,11 @@ impl Copier<'_> {
                     let bytes = self.project.asset(&path)?.bytes.clone();
                     image_extension(&bytes)?;
                     images
-                        .entry((key.0.clone(), Path::new(uri).is_absolute()))
+                        .entry((
+                            key.0.clone(),
+                            Path::new(uri).is_absolute()
+                                || crate::paths::local_file_url(uri).is_ok(),
+                        ))
                         .or_default()
                         .insert(uri.into(), bytes);
                 }

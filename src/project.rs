@@ -1349,7 +1349,13 @@ impl Project {
     }
 
     fn reference_path(&self, origin: &Path, uri: &str) -> Result<PathBuf> {
-        if uri.contains("://") || uri.starts_with("file:") {
+        if uri
+            .get(..5)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("file:"))
+        {
+            return crate::paths::local_file_url(uri);
+        }
+        if uri.contains("://") {
             return Err(Error::new(
                 "ASSET_NOT_FOUND",
                 "Only explicit local file references are allowed here",
@@ -2246,21 +2252,19 @@ impl Project {
         let mut source = origin.to_path_buf();
         let result =
             self.variable_with_file_origin(origin, name, theme, active, Some(&mut source))?;
-        if let Some(uri) = result.as_str().filter(|uri| {
-            !uri.is_empty()
-                && !uri.starts_with('#')
-                && !uri.starts_with("pencil:")
-                && !uri.contains("://")
-                && !uri.starts_with("file:")
-        }) && let Some(parent) = source.parent()
+        if let Some(uri) = result
+            .as_str()
+            .filter(|uri| !uri.is_empty() && !uri.starts_with('#') && !uri.starts_with("pencil:"))
         {
             // Anchor the value without opening inactive assets. Capture and rendering
             // perform canonicalization, root checks, and dependency verification.
-            let path = parent.join(self.sampler_uri(&source, uri));
-            return Ok(json!(
-                path.to_str()
-                    .ok_or_else(|| invalid("Shader image paths must be UTF-8"))?
-            ));
+            let uri = self.sampler_uri(&source, uri);
+            if let Ok(path) = self.reference_path(&source, uri) {
+                return Ok(json!(
+                    path.to_str()
+                        .ok_or_else(|| invalid("Shader image paths must be UTF-8"))?
+                ));
+            }
         }
         Ok(result)
     }

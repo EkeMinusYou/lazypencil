@@ -112,12 +112,17 @@ pub fn required_images_for(root: &Path, commit: &str, platform: &str) -> Result<
     let cases = sampler["cases"]
         .as_array()
         .context("Missing sampler copy images")?;
-    ensure!(cases.len() == 4, "Expected four sampler copy conditions");
-    for absolute in [false, true] {
+    ensure!(cases.len() == 6, "Expected six sampler copy conditions");
+    for kind in ["relative", "absolute", "file_url"] {
+        let absolute = kind == "absolute";
         for theme in ["light", "dark"] {
             let rows: Vec<_> = cases
                 .iter()
-                .filter(|row| row["absolute"] == absolute && row["theme"] == theme)
+                .filter(|row| {
+                    row["source_kind"] == kind
+                        && row["absolute"] == absolute
+                        && row["theme"] == theme
+                })
                 .collect();
             ensure!(
                 rows.len() == 1,
@@ -125,8 +130,13 @@ pub fn required_images_for(root: &Path, commit: &str, platform: &str) -> Result<
             );
             let row = rows[0];
             let (width, height) = dimensions(row)?;
-            let before = format!("codec-sampler-copy-{absolute}-{theme}-before.png");
-            let after = format!("codec-sampler-copy-{absolute}-{theme}-after.png");
+            let label = if kind == "file_url" {
+                "file_url".into()
+            } else {
+                absolute.to_string()
+            };
+            let before = format!("codec-sampler-copy-{label}-{theme}-before.png");
+            let after = format!("codec-sampler-copy-{label}-{theme}-after.png");
             ensure!(
                 row["before"] == before && row["after"] == after,
                 "Wrong sampler image names"

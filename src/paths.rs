@@ -1,6 +1,45 @@
 use crate::{Error, Result};
 use std::path::{Path, PathBuf};
 
+/// Decode an explicit local file URL without granting access to its target.
+/// Callers must still capture canonical bindings and enforce project roots.
+pub(crate) fn local_file_url(uri: &str) -> Result<PathBuf> {
+    let invalid = || {
+        Error::new(
+            "ASSET_NOT_FOUND",
+            "Expected an absolute local file URL without credentials, query, or fragment",
+        )
+    };
+    if !uri
+        .get(..7)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("file://"))
+        || uri.chars().any(char::is_control)
+        || uri.contains('\\')
+    {
+        return Err(invalid());
+    }
+    let url = url::Url::parse(uri).map_err(|_| invalid())?;
+    if url.scheme() != "file"
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url
+            .host_str()
+            .is_some_and(|host| !host.is_empty() && host != "localhost")
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(invalid());
+    }
+    let path = url.to_file_path().map_err(|_| invalid())?;
+    if !path.is_absolute()
+        || path.to_str().is_none()
+        || path.as_os_str().as_encoded_bytes().contains(&0)
+    {
+        return Err(invalid());
+    }
+    Ok(path)
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct MissingPath {
     pub requested: PathBuf,
@@ -201,4 +240,37 @@ pub fn canonical(path: impl AsRef<Path>) -> Result<PathBuf> {
         ));
     }
     Ok(canonical)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_file_urls_decode_once_without_treating_reserved_filename_bytes_as_url_fields() {
+        let path = std::env::temp_dir().join("画像 %20 # ?.png");
+        let url = url::Url::from_file_path(&path).unwrap();
+        assert_eq!(local_file_url(url.as_str()).unwrap(), path);
+        let upper = url.as_str().replacen("file:", "FILE:", 1);
+        assert_eq!(local_file_url(&upper).unwrap(), path);
+        let local_host = url.as_str().replacen("file:///", "file://localhost/", 1);
+        assert_eq!(local_file_url(&local_host).unwrap(), path);
+        for invalid in [
+            format!("{url}?query"),
+            format!("{url}#fragment"),
+            "file:relative.png".into(),
+            "file://remote.example/image.png".into(),
+            "file://user:secret@localhost/image.png".into(),
+            "file:///bad%00name.png".into(),
+            "file:///bad%ffname.png".into(),
+            "file:///bad\nname.png".into(),
+            "file:///bad\\name.png".into(),
+            "https://example.com/image.png".into(),
+        ] {
+            assert_eq!(
+                local_file_url(&invalid).unwrap_err().code,
+                "ASSET_NOT_FOUND"
+            );
+        }
+    }
 }

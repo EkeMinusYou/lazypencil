@@ -39,8 +39,8 @@ pub(super) fn parse(document: &Document) -> Result<BTreeMap<String, String>> {
                 || uri.chars().any(char::is_control)
                 || uri.starts_with(['$', '#'])
                 || uri.starts_with("pencil:")
-                || uri.contains("://")
-                || uri.starts_with("file:")
+                || (uri.contains("://") || uri.starts_with("file:"))
+                    && crate::paths::local_file_url(uri).is_err()
                 || target.is_empty()
                 || target.len() > 4096
                 || target.contains(['\\', ':'])
