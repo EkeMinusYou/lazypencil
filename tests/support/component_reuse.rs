@@ -11,10 +11,12 @@ use tempfile::TempDir;
 fn fixture(version: &str) -> (TempDir, Store) {
     let temp = TempDir::new().unwrap();
     fs::create_dir(temp.path().join(".git")).unwrap();
-    let nested = json!({"id":"nested","type":"frame","name":"Source","reusable":true,"x":"$offset","y":3,"width":20,"height":20,"fill":"$unused","metadata":{"type":"source"},"children":[
+    let body = json!([
         {"id":"source-text","type":"text","content":"Source"},
-        {"id":"badge","type":"rectangle","reusable":true,"width":2,"height":2,"fill":"#ff0000"}
-    ]});
+        {"id":"badge","type":"rectangle","reusable":true,"width":2,"height":2,"fill":"#ff0000"},
+        {"id":"discarded","type":"rectangle","width":1,"height":1,"fill":"$unused"}
+    ]);
+    let nested = json!({"id":"nested","type":"frame","name":"Source","reusable":true,"x":"$offset","y":3,"width":20,"height":20,"fill":"$unused","metadata":{"type":"source"},"children":body});
     let group = json!({"id":"group","type":"frame","layout":"none","width":120,"height":30,"children":[
         nested,
         {"id":"sibling","type":"ref","ref":"nested","x":55,"y":3,"descendants":{"source-text":{"content":"Inner"}}},
@@ -32,13 +34,16 @@ fn fixture(version: &str) -> (TempDir, Store) {
         "variables":{"offset":{"type":"number","value":12},"unused":{"type":"color","value":"#ff0000"}},
         "children":[parent,wrapper]}),
     );
+    let existing = json!({"id":"existing","name":"Local","type":"frame","reusable":true,"enabled":false,"layout":"none","width":24,"height":20,"fill":"#00ff00","metadata":{"type":"local","keep":[1,2]},"children":[
+            {"id":"local-label","type":"text","content":"Local","fontSize":7,"fill":"#000000"},
+            {"id":"local-badge","type":"rectangle","width":2,"height":2,"fill":"#00ff00"}
+    ]});
+    // Templates stay hidden independently of the target's enabled property.
+    // Node PNG exports retain the surrounding scene's compositing context.
     write(
         &temp.path().join("main.pen"),
         json!({"version":version,"imports":{"ui":"library.pen"},"children":[
-            {"id":"existing","name":"Local","type":"frame","reusable":true,"enabled":false,"layout":"none","width":24,"height":20,"fill":"#00ff00","metadata":{"type":"local","keep":[1,2]},"children":[
-            {"id":"local-label","type":"text","content":"Local","fontSize":7,"fill":"#000000"},
-            {"id":"local-badge","type":"rectangle","width":2,"height":2,"fill":"#00ff00"}
-            ]}
+            {"id":"local-definitions","type":"frame","enabled":false,"width":0,"height":0,"children":[existing]}
         ]}),
     );
     let store = Store::open(temp.path().join("main.pen"), Some(temp.path().join("data"))).unwrap();
@@ -245,12 +250,12 @@ fn incompatible_or_unused_reuse_paths_fail_without_publication_and_link_rejects_
 fn matching_descendant_ids_need_no_explicit_reuse_path_mapping() {
     let (_temp, store) = fixture("2.21");
     let mut document = store.read().unwrap();
-    document
-        .set_property("/children/0/children/0", "id", &json!("source-text"))
-        .unwrap();
-    document
-        .set_property("/children/0/children/1", "id", &json!("badge"))
-        .unwrap();
+    for (id, target) in [("local-label", "source-text"), ("local-badge", "badge")] {
+        let pointer = document.location(id).unwrap().pointer.clone();
+        document
+            .set_property(&pointer, "id", &json!(target))
+            .unwrap();
+    }
     fs::write(store.path(), document.text()).unwrap();
     let mut copy = operation();
     copy["options"]
@@ -287,11 +292,14 @@ fn generated_refs_keep_reused_definitions_and_override_paths_after_independent_r
         render::{self, RenderOptions},
         script::ScriptRuntime,
     };
-    const CODE: &str = r#"/** @schema 2.21 */
+    const CODE: &str = r##"/**
+ * @schema 2.21
+ * @input missing: boolean = false
+ */
 return [
  {id:"chosen",type:"ref",ref:"parent",descendants:{"source-text":{content:"Generated"},"sibling/source-text":{content:"Generated ref"}}},
- {id:"direct",type:"ref",ref:"nested",y:30}
-];"#;
+ {id:"direct",type:"ref",ref:"nested",y:30,descendants:pencil.input.missing?{"discarded":{fill:"#ff00ff"}}:{"source-text":{content:"Direct"}}}
+];"##;
     fn render(store: &Store, id: &str) -> Vec<u8> {
         let (project, snapshot) = service::layout_snapshot_with_runtime(
             store,
@@ -301,6 +309,17 @@ return [
             &mut ScriptRuntime::new(env!("CARGO_BIN_EXE_lazypencil")),
         )
         .unwrap();
+        for expected in ["Generated", "Generated ref", "Direct"] {
+            assert!(
+                snapshot.items.iter().any(|item| item
+                    .node
+                    .properties
+                    .get("content")
+                    .and_then(Value::as_str)
+                    == Some(expected)),
+                "Missing generated text {expected}"
+            );
+        }
         render::png(
             &project,
             &snapshot,
@@ -320,8 +339,9 @@ return [
         write(&library, source);
         fs::write(temp.path().join("generate.js"), CODE).unwrap();
         let mut document = store.read().unwrap();
+        let pointer = document.location("existing").unwrap().pointer.clone();
         document
-            .set_property("/children/0", "enabled", &json!(true))
+            .set_property(&pointer, "enabled", &json!(true))
             .unwrap();
         fs::write(store.path(), document.text()).unwrap();
         let mut copy = operation();
@@ -353,6 +373,7 @@ return [
             bindings["descendants"]["nested"]["source-text"],
             "local-label"
         );
+        assert!(bindings["descendants"]["nested"].get("discarded").is_none());
         assert_eq!(
             fs::read(temp.path().join("generate.js")).unwrap(),
             CODE.as_bytes()
@@ -397,7 +418,6 @@ return [
         fs::remove_dir_all(temp.path().join("assets")).unwrap();
         let second_id = again["generated_ids"]["0"]["id"].as_str().unwrap();
         let recopied = render(&second, second_id);
-        assert_eq!(recopied, independent);
         if let Some(root) = std::env::var_os("LAZYPENCIL_TEST_TUI_ARTIFACTS") {
             let root = std::path::PathBuf::from(root).join("component-reuse");
             fs::create_dir_all(&root).unwrap();
@@ -416,5 +436,30 @@ return [
                 json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"code_hash":hash(CODE.as_bytes()),"independent":hash(&independent),"recopied":hash(&recopied),"width":120,"height":60}),
             );
         }
+        assert_eq!(recopied, independent);
+        service::apply_request(
+            &second,
+            &request(
+                &second,
+                "missing-reuse-path",
+                json!([
+                    {"op":"update","target":second_id,"set":{"inputs":{"missing":true}}}
+                ]),
+                false,
+            ),
+        )
+        .unwrap();
+        let before = fs::read(second.path()).unwrap();
+        let error = service::layout_snapshot_with_runtime(
+            &second,
+            &[],
+            None,
+            None,
+            &mut ScriptRuntime::new(env!("CARGO_BIN_EXE_lazypencil")),
+        )
+        .err()
+        .expect("A removed source-only descendant must remain unbound");
+        assert!(error.message.contains("generated override path"), "{error}");
+        assert_eq!(fs::read(second.path()).unwrap(), before);
     }
 }

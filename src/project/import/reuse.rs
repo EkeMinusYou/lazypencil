@@ -139,6 +139,18 @@ impl Copier<'_> {
     }
 
     pub(super) fn replacement_path(&self, key: &Key, path: &[&str]) -> Result<String> {
+        if let Some(path) = self.available_replacement_path(key, path)? {
+            return Ok(path);
+        }
+        Err(copy_error("A descendant is absent from the reused component; supply an explicit component_paths mapping")
+            .details(json!({"source_key":self.key(key)?,"source_path":path.join("/"),"target":self.reuse[key]})))
+    }
+
+    pub(super) fn available_replacement_path(
+        &self,
+        key: &Key,
+        path: &[&str],
+    ) -> Result<Option<String>> {
         self.project.check_cancelled()?;
         let original = path.join("/");
         let replacement = self
@@ -147,11 +159,9 @@ impl Copier<'_> {
             .get(&self.key(key)?)
             .and_then(|paths| paths.get(&original))
             .unwrap_or(&original);
-        if !self.reused_targets[&self.reuse[key]].contains(replacement) {
-            return Err(copy_error("A descendant is absent from the reused component; supply an explicit component_paths mapping")
-                .details(json!({"source_key":self.key(key)?,"source_path":original,"target":self.reuse[key]})));
-        }
-        Ok(replacement.clone())
+        Ok(self.reused_targets[&self.reuse[key]]
+            .contains(replacement)
+            .then(|| replacement.clone()))
     }
 
     pub(super) fn root_reuse(&self, node: &ResolvedNode) -> Result<Option<Key>> {

@@ -485,33 +485,49 @@ impl Copier<'_> {
             for child in &node.children {
                 copier.project.check_cancelled()?;
                 let source = format!("{}{}", prefix.from, child.component_key);
+                if source.len() > 4096 {
+                    budget.key(&source)?;
+                }
                 let target = if let Some((key, old, new)) = &prefix.reused {
                     let relative = source.strip_prefix(old).expect("source prefix");
-                    format!(
-                        "{new}{}",
-                        copier.replacement_path(key, &relative.split('/').collect::<Vec<_>>())?
-                    )
+                    copier
+                        .available_replacement_path(key, &relative.split('/').collect::<Vec<_>>())?
+                        .map(|path| format!("{new}{path}"))
                 } else {
                     let key = (child.component_source.clone(), child.component_key.clone());
-                    format!("{}{}", prefix.to, copier.placement_target(&key)?)
+                    Some(format!("{}{}", prefix.to, copier.placement_target(&key)?))
                 };
-                budget.pair(&source, &target)?;
-                result.insert(source.clone(), json!(target));
+                // Explicit substitution can remove source-only descendants.
+                // Keep the valid closed map; a generated use of an omitted
+                // path retains the runtime's missing-binding diagnostic.
+                if let Some(target) = &target {
+                    budget.pair(&source, target)?;
+                    result.insert(source.clone(), json!(target));
+                } else {
+                    budget.key(&source)?;
+                }
                 let from = if child.is_instance {
                     format!("{source}/")
                 } else {
                     prefix.from.clone()
                 };
                 let to = if child.is_instance {
-                    format!("{target}/")
+                    target
+                        .as_ref()
+                        .map(|target| format!("{target}/"))
+                        .unwrap_or_default()
                 } else {
                     prefix.to.clone()
                 };
                 let reused = match &prefix.reused {
                     Some(reused) => Some(reused.clone()),
-                    None => copier
-                        .root_reuse(child)?
-                        .map(|key| (key, from.clone(), format!("{target}/"))),
+                    None => copier.root_reuse(child)?.map(|key| {
+                        (
+                            key,
+                            from.clone(),
+                            format!("{}/", target.as_ref().expect("unsubstituted placement")),
+                        )
+                    }),
                 };
                 walk(copier, child, Prefix { from, to, reused }, result, budget)?;
             }
@@ -603,9 +619,6 @@ impl Copier<'_> {
         } else {
             let mut descendants = Map::new();
             for (name, key) in &self.script_scopes[output_scope].components {
-                if self.reuse.contains_key(key) {
-                    continue;
-                }
                 let definition = self.project.documents[&key.0].node(&key.1)?;
                 let expanded =
                     self.project
