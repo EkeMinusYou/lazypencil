@@ -194,9 +194,11 @@ pub fn test_threads(target: &str) -> usize {
 }
 
 pub const INPUT_CONTEXT_REPRODUCTION: &str = "script_bindings::generated_sources::generated_script_override_carriers_keep_metadata_output_and_input_independent";
+pub const EXPLICIT_INPUT_REPRODUCTION: &str = "script_bindings::generated_sources::generated_explicit_input_contexts_compose_with_scopes_and_bindings";
 
-pub fn binding_commands(binary: &Path) -> [Vec<String>; 4] {
+pub fn binding_commands(binary: &Path) -> [Vec<String>; 5] {
     [
+        EXPLICIT_INPUT_REPRODUCTION,
         INPUT_CONTEXT_REPRODUCTION,
         "generated_browser_",
         "script_bindings::",
@@ -208,11 +210,16 @@ pub fn binding_commands(binary: &Path) -> [Vec<String>; 4] {
             filter.into(),
             "--test-threads=1".into(),
         ];
-        if filter == INPUT_CONTEXT_REPRODUCTION {
+        if [EXPLICIT_INPUT_REPRODUCTION, INPUT_CONTEXT_REPRODUCTION].contains(&filter) {
             command.push("--exact".into());
         }
         if filter == "script_bindings::" {
-            command.extend(["--skip".into(), INPUT_CONTEXT_REPRODUCTION.into()]);
+            command.extend([
+                "--skip".into(),
+                EXPLICIT_INPUT_REPRODUCTION.into(),
+                "--skip".into(),
+                INPUT_CONTEXT_REPRODUCTION.into(),
+            ]);
         }
         command
     })
@@ -238,19 +245,20 @@ pub fn focus_bindings(s: &Session) -> Result<()> {
     };
     // Reproduce the changed input boundary before unrelated long layouts. The
     // later binding group excludes this exact same-condition invocation.
-    execute(0, "focus-override-contexts.log")?;
+    execute(0, "focus-input-contexts.log")?;
+    execute(1, "focus-override-contexts.log")?;
     let groups = parallel::run(vec![
         (
             "generated browser layouts",
-            Box::new(|| execute(1, "focus-browser-bindings.log")),
+            Box::new(|| execute(2, "focus-browser-bindings.log")),
         ),
         (
             "script bindings and overrides",
-            Box::new(|| execute(2, "focus-script-bindings.log")),
+            Box::new(|| execute(3, "focus-script-bindings.log")),
         ),
     ]);
     // Preserve the final legacy-copy check even if either joined group failed.
-    let copies = execute(3, "focus-copy-bindings.log");
+    let copies = execute(4, "focus-copy-bindings.log");
     let failures = [("binding groups", groups), ("legacy script copies", copies)]
         .into_iter()
         .filter_map(|(name, result)| result.err().map(|error| format!("{name}: {error:#}")))

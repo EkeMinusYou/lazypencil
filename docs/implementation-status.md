@@ -96,6 +96,8 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 
 ### 次に実装・確認すること
 
+6dbb296の[CI 40876063418](https://github.com/EkeMinusYou/lazypencil/actions/runs/40876063418)では、新しい先行試験が3.47秒で単独入力文脈の不具合を再現した。scope／bindingとの併用・別library・変数変換・失効の両形式とcopy／再copyは通過したが、単独入力文脈では同じ文書内の別部品へ対応してもワーカーに元の名前を渡していた。`prepare_script_refs`で参照名が変わった場合もruntime handleを渡し、cyanの期待画素を維持して修正する。releaseと監査は成功し、coreの残る工程も中断しない。通常consumerと署名sourceの成功とは扱わない。この修正は準備したcarrier合成とまとめて検証する。
+
 次の準備中の差分は、生成ref／子孫変更の`script_override`について、内側のscope・binding・入力文脈、外側の出力／入力を独立して合成する。外側のnull、失効した入力、明示URIに対する失効した出力、内側の同名metadataの保持、metadataのみの出力変更を両形式・4経路・7種類の56組へ追加した。先行ではこの56組を最初に実行する。元URIを継承していて出力guardが失効し、元のコード所有元を確定できない場合と、複数世代の入力所有元・解除は残件である。ローカルは整形と差分を確認し、Rust実行は進行中の6dbb296のCI終了後にGHAで行う。
 
 c8e1c66の[CI 40874923459](https://github.com/EkeMinusYou/lazypencil/actions/runs/40874923459)はcore469件・両構成のコンパイル・release・監査、既存84組を含む先行bindingの12件を成功した。追加した拒否ケースは、元入力libraryの`selection`がコピー先の同名変数と衝突し、目的の描画検査へ進む前に停止した。試験データの変数を明示renameして修正する。通常consumerと署名付きsourceは未実行であり、この候補を全工程成功とはしない。実行は終了しており、準備済みの入力文脈対応とこのfixture修正を合わせて次に検証する。

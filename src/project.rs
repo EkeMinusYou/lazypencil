@@ -1922,7 +1922,10 @@ impl Project {
                 let same_scope = self
                     .lookup_node(node.script_origin(), reference)
                     .is_ok_and(|(path, other)| path == source && other["id"] == definition["id"]);
-                if !same_scope || node.script_bindings.is_some() {
+                if !same_scope
+                    || node.script_bindings.is_some()
+                    || value.as_str() != Some(reference)
+                {
                     let id = definition["id"]
                         .as_str()
                         .expect("definition ID")
