@@ -227,6 +227,13 @@ impl Bound {
         table(&source.variables, &owner.values.variables)?;
         table(&source.themes, &owner.values.themes)?;
         assets(source.assets.as_ref(), &owner)?;
+        let browsers = owner.values.browser_libraries.clone().unwrap_or_default();
+        if let Some(alias) = &source.browser_library {
+            table(&BTreeMap::from([(alias.clone(), alias.clone())]), &browsers)?;
+        }
+        if let Some(libraries) = &source.browser_libraries {
+            table(libraries, &browsers)?;
+        }
         let base = owner.original();
         let mut composition = Composition {
             values: self.original().clone(),

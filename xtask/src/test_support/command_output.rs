@@ -34,6 +34,17 @@ fn terminate(child: &mut Child) -> io::Result<ExitStatus> {
     child.wait()
 }
 pub fn output(command: &mut Command, timeout: Duration, limit: u64) -> io::Result<Output> {
+    output_observed(command, timeout, limit, None::<fn(&[u8]) -> io::Result<()>>)
+}
+
+/// Observe newly written stdout without changing the child's shared file offset.
+/// Observers must not block: command ownership and deadlines stay in this loop.
+pub fn output_observed(
+    command: &mut Command,
+    timeout: Duration,
+    limit: u64,
+    mut observer: Option<impl FnMut(&[u8]) -> io::Result<()>>,
+) -> io::Result<Output> {
     let mut stdout = tempfile::tempfile()?;
     let mut stderr = tempfile::tempfile()?;
     command
@@ -48,14 +59,20 @@ pub fn output(command: &mut Command, timeout: Duration, limit: u64) -> io::Resul
     let mut child = command.spawn()?;
     let mut timed_out = false;
     let mut oversized = false;
+    let mut observed = 0;
     let status = loop {
         if let Some(status) = child.try_wait()? {
+            observe(&stdout, &mut observed, limit, &mut observer)?;
             break status;
         }
         oversized = stdout.metadata()?.len() > limit || stderr.metadata()?.len() > limit;
         if started.elapsed() >= timeout || oversized {
             timed_out = !oversized;
             break terminate(&mut child)?;
+        }
+        if let Err(error) = observe(&stdout, &mut observed, limit, &mut observer) {
+            let _ = terminate(&mut child);
+            return Err(error);
         }
         thread::sleep(Duration::from_millis(10));
     };
@@ -75,4 +92,42 @@ pub fn output(command: &mut Command, timeout: Duration, limit: u64) -> io::Resul
         elapsed: started.elapsed(),
         timed_out,
     })
+}
+
+fn observe(
+    file: &std::fs::File,
+    position: &mut u64,
+    limit: u64,
+    observer: &mut Option<impl FnMut(&[u8]) -> io::Result<()>>,
+) -> io::Result<()> {
+    let Some(observer) = observer else {
+        return Ok(());
+    };
+    let end = file.metadata()?.len();
+    if end > limit {
+        return Err(io::Error::other("Command output exceeded its byte limit"));
+    }
+    let mut buffer = [0; 65536];
+    while *position < end {
+        let length = usize::try_from((end - *position).min(buffer.len() as u64)).unwrap();
+        #[cfg(unix)]
+        let read = {
+            use std::os::unix::fs::FileExt;
+            file.read_at(&mut buffer[..length], *position)?
+        };
+        #[cfg(windows)]
+        let read = {
+            use std::os::windows::fs::FileExt;
+            file.seek_read(&mut buffer[..length], *position)?
+        };
+        if read == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "Command output was truncated",
+            ));
+        }
+        observer(&buffer[..read])?;
+        *position += read as u64;
+    }
+    Ok(())
 }

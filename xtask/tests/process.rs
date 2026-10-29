@@ -603,6 +603,73 @@ fn bounded_commands_preserve_exit_codes_output_and_failure_logs() {
     assert!(process::logged(&mut make("bad"), Duration::from_secs(5), &log, false).is_err());
     assert_eq!(fs::read(log).unwrap(), b"partialfailed");
 }
+
+#[test]
+fn output_observation_delivers_complete_bytes_before_exit_and_keeps_both_streams() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = temp.path().join("response.json");
+    let pid = temp.path().join("pid");
+    fs::write(&config, serde_json::to_vec(&json!({"*":{
+        "pid_file":pid,"stdout":"first α\nsecond β\n","stderr":"separate diagnostics","sleep_ms":1500
+    }})).unwrap()).unwrap();
+    let mut observed = Vec::new();
+    let mut live = false;
+    let output = process::output_observed(
+        Command::new(helper()).arg("fixture-command").arg(&config),
+        Duration::from_secs(15),
+        65536,
+        |bytes| {
+            observed.extend_from_slice(bytes);
+            let child: u32 = fs::read_to_string(&pid)?.parse().unwrap();
+            #[cfg(unix)]
+            {
+                live |= unsafe { libc::kill(child as i32, 0) } == 0;
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = child;
+                live = true;
+            }
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert!(output.status.success() && !output.timed_out && live);
+    assert_eq!(observed, output.stdout);
+    assert_eq!(output.stdout, "first α\nsecond β\n".as_bytes());
+    assert_eq!(output.stderr, b"separate diagnostics");
+}
+
+#[test]
+fn a_failed_stdout_observer_terminates_and_reaps_the_producer() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = temp.path().join("response.json");
+    let pid = temp.path().join("pid");
+    fs::write(
+        &config,
+        serde_json::to_vec(&json!({"*":{
+            "pid_file":pid,"stdout":"invalid compiler message\n","sleep_ms":30000
+        }}))
+        .unwrap(),
+    )
+    .unwrap();
+    let started = Instant::now();
+    let error = process::output_observed(
+        Command::new(helper()).arg("fixture-command").arg(&config),
+        Duration::from_secs(15),
+        65536,
+        |_| Err(io::Error::other("observer rejected the protocol")),
+    )
+    .err()
+    .expect("Observer failure must fail the process");
+    assert!(error.to_string().contains("observer rejected"));
+    assert!(started.elapsed() < Duration::from_secs(6));
+    let child: u32 = fs::read_to_string(pid).unwrap().parse().unwrap();
+    #[cfg(unix)]
+    assert_eq!(unsafe { libc::kill(child as i32, 0) }, -1);
+    #[cfg(not(unix))]
+    let _ = child;
+}
 #[test]
 fn native_process_records_preserve_markers_exit_codes_streams_and_deadline_cleanup() {
     let temp = tempfile::tempdir().unwrap();

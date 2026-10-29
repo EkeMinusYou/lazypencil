@@ -7,6 +7,20 @@ use serde_json::{Value, json};
 use std::{collections::BTreeMap, fs, path::PathBuf, process::Command};
 
 #[test]
+fn binding_submodules_keep_their_script_copy_reproduction_before_complete_verification() {
+    for path in [
+        "src/project/bindings/custom.rs",
+        "src/project/bindings/generated.rs",
+        "src/project/bindings/asset_tests.rs",
+    ] {
+        let paths = [path.to_owned(), "xtask/src/ci/native/compilation.rs".into()];
+        let plan = focus::select(&util::root(), &paths, "auto").unwrap();
+        assert_eq!(plan.suite, "copy", "{path}");
+        assert!(plan.targets.iter().any(|target| target == "script_scope"));
+    }
+}
+
+#[test]
 fn encoded_clipboard_inputs_reproduce_in_the_rendering_attachment_consumer() {
     let root = util::root();
     let paths = [

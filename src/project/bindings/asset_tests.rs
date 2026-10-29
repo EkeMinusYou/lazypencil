@@ -109,6 +109,23 @@ fn custom_captured_views_remain_separate_and_do_not_acquire_parent_aliases() {
         output.asset("script", "nested.js").unwrap_err().code,
         "ASSET_NOT_FOUND"
     );
+    // Native binding validation checks global declarations even when the
+    // selected view does not use them. Copy composition must do the same.
+    for field in ["browser_library", "browser_libraries"] {
+        let mut invalid = raw.clone();
+        invalid[field] = if field == "browser_library" {
+            json!("uncaptured")
+        } else {
+            json!({"unused":"uncaptured"})
+        };
+        assert_eq!(
+            parent
+                .custom_output(&invalid, hash(b"nested.js"))
+                .unwrap_err()
+                .code,
+            "INVALID_DOCUMENT"
+        );
+    }
 }
 
 #[cfg(feature = "rendering")]

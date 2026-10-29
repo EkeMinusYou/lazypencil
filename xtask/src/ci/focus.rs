@@ -960,7 +960,7 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
             "tests/support/script_bindings.rs",
             "tests/support/script_generated_overrides.rs",
         ],
-        &[],
+        &["src/project/bindings/"],
     ) {
         if ["core", "conversation"].contains(&suite.as_str()) {
             suite = "graphics".into();
@@ -975,7 +975,11 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
             "src/project/detach.rs",
             "src/project/import/scripts.rs",
         ],
-        &["src/project/import/scripts/", "tests/support/script_copy"],
+        &[
+            "src/project/import/scripts/",
+            "src/project/bindings/",
+            "tests/support/script_copy",
+        ],
     ) {
         if ["core", "conversation", "graphics"].contains(&suite.as_str()) {
             suite = "copy".into();
