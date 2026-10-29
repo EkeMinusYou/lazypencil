@@ -52,7 +52,33 @@ pub fn project_styles_with_cancellation(
     })
 }
 pub fn project_design_start(store: &Store, style: Option<&str>) -> Result<(Value, Option<Value>)> {
-    let project = Project::load(store)?;
+    prepare_design_start(store, style, None, None)?.finish(store)
+}
+
+pub(crate) struct PreparedDesignStart {
+    project: Project,
+    guidance: Value,
+    style: Option<Value>,
+}
+
+impl PreparedDesignStart {
+    pub(crate) fn finish(self, store: &Store) -> Result<(Value, Option<Value>)> {
+        self.project.verify_unchanged()?;
+        store::require_revision(&store.read()?, &self.project.root_document().revision())?;
+        Ok((self.guidance, self.style))
+    }
+}
+
+pub(crate) fn prepare_design_start(
+    store: &Store,
+    style: Option<&str>,
+    worker: Option<&std::path::Path>,
+    cancel: Option<&CancellationToken>,
+) -> Result<PreparedDesignStart> {
+    let project = match worker {
+        Some(worker) => Project::load_with_remote_worker(store, worker, cancel)?,
+        None => Project::load_with_cancellation(store, cancel)?,
+    };
     let catalog = project.design_catalog()?;
     let guidance = catalog.guidance(None, store.data_dir())?;
     let style = style
@@ -61,7 +87,12 @@ pub fn project_design_start(store: &Store, style: Option<&str>) -> Result<(Value
         .transpose()?;
     project.verify_unchanged()?;
     store::require_revision(&store.read()?, &project.root_document().revision())?;
-    Ok((guidance, style))
+    crate::cancel::check(cancel)?;
+    Ok(PreparedDesignStart {
+        project,
+        guidance,
+        style,
+    })
 }
 fn read(
     store: &Store,

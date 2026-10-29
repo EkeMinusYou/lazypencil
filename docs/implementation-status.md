@@ -4,9 +4,13 @@
 
 ## 現在の状態（2026-10-30）
 
+035e857の[CI 40975584669](https://github.com/EkeMinusYou/lazypencil/actions/runs/40975584669)で、core構成に存在しないFonts variantをmainが参照する修正漏れを検出した。描画ありのvariantだけをfeature付きmatch armへ分ける修正を用意した。既定構成とreleaseの有用な実行は中断せず、終了結果を確認してから次の候補を送る。
+
+TUIの同期ガイド読込みに対しては、既存のConversationに所有thread／取消token／oneshotによる送信準備を追加した。準備中もactiveとして下書きと画像を固定し、next_eventのselectが中断されても同じ取得を保持する。取消・close・dropはthreadをjoinし、取得snapshotを採用前に再照合してから既存の送信処理へ進む。準備失敗はagent turnを作らずphase=preparationで報告する。実HTTPの応答待ちからの取消・再送、close／drop時の接続終了、文書変更の拒否とTUIキー処理の再現を既存のRust試験へ追加した。履歴workerのProject取得にも取消tokenを渡す。これらは整形・差分検査までで、GHA実行はまだである。物理端末IMEの受け入れとは区別する。
+
 ae8f3a2の[CI 40974538895](https://github.com/EkeMinusYou/lazypencil/actions/runs/40974538895)は全jobが終了した。監査とreleaseは成功したが、core／既定構成はMCP unit試験の旧呼出し`worker.project()`が取消引数を渡しておらず、コンパイルで停止した。HTTPの追加試験・consumer・最終sourceの成功根拠にはしない。修正版はこの呼出しを更新し、get_document／read_assetだけでなくget_guidance／list_styles／get_styleにも要求の取消tokenを渡す。既存の実MCP取消試験を5 APIへ広げ、各々の実HTTP応答待ち・worker回収・後続get_documentの成功を確認する。CLIのguidance／style／fontsにもCtrl+Cのhandlerを接続する。整形と差分検査まで確認し、重いbuildは次のGHAで行う。
 
-HTTP画像の導入で、TUIが送信前に同期して行うガイド読込みも通信待ちを含むようになった。イベントループを止めず、取消と終了で所有する処理を回収する対応は残る。MCPの取消修正を、このTUI経路の完了根拠にはしない。
+HTTP画像の導入で、TUIが送信前に同期して行うガイド読込みも通信待ちを含むようになった。上記の後続修正でイベントループから外すが、実行確認は残る。MCPの取消修正を、このTUI経路の完了根拠にはしない。
 
 37267aeの[CI 40973066605](https://github.com/EkeMinusYou/lazypencil/actions/runs/40973066605)は、HTTP画像の拒否・応答待ちの取消／期限・offline・診断と構造修復・GCで通信しない4件をcoreと既定構成で成功した。copy／移動・通信停止後の元テーマ確認まで通過したが、再copy後に新配置のthemeを指定せずdarkを期待した一件で停止した。coreのrepairでは、対応を追加したHTTPS自体を従来の不正URLとして拒否する古い期待値も失敗した。releaseと既存の性能・smokeは成功したが、通常／runtime／pixel等のconsumerと新しいHTTP実WebGL・固定HTTPSの証跡、両構成Clippyと最終sourceはこの候補の成功根拠にしない。
 

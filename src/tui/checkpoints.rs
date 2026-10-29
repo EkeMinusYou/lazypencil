@@ -61,7 +61,7 @@ impl Task {
     pub fn history(store: Store, fonts: Vec<PathBuf>, cursors: Vec<Option<u64>>) -> Result<Self> {
         Self::spawn("history", move |cancel| {
             crate::cancel::check(Some(cancel))?;
-            let mut project = Project::load(&store)?;
+            let mut project = Project::load_with_cancellation(&store, Some(cancel))?;
             for path in &fonts {
                 crate::cancel::check(Some(cancel))?;
                 project.capture_asset(path, "font")?;

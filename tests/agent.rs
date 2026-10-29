@@ -12,6 +12,10 @@ use tokio_util::sync::CancellationToken;
 #[path = "support/fixture.rs"]
 mod fixture_support;
 
+#[cfg(unix)]
+#[path = "support/http_conversation.rs"]
+mod http_conversation;
+
 fn helper() -> PathBuf {
     fixture_support::helper()
 }

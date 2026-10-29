@@ -31,10 +31,15 @@ struct NetworkCounts {
     tls: AtomicUsize,
     turn: AtomicUsize,
     profiles: AtomicUsize,
+    closed_images: AtomicUsize,
     headed_ready: Mutex<Option<serde_json::Value>>,
 }
 
 impl Server {
+    #[allow(dead_code, reason = "Observed by HTTP conversation ownership tests")]
+    pub fn closed_image_requests(&self) -> usize {
+        self.network.closed_images.load(Ordering::SeqCst)
+    }
     #[allow(dead_code, reason = "Observed only by headed-login integration")]
     pub fn headed_login_ready(&self) -> Option<serde_json::Value> {
         self.network.headed_ready.lock().unwrap().clone()
@@ -265,6 +270,7 @@ fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool, network: 
             let started = Instant::now();
             while !stop.load(Ordering::SeqCst) && started.elapsed() < Duration::from_secs(30) {
                 if matches!(stream.peek(&mut [0; 1]), Ok(0)) {
+                    network.closed_images.fetch_add(1, Ordering::SeqCst);
                     return;
                 }
                 thread::sleep(Duration::from_millis(5));

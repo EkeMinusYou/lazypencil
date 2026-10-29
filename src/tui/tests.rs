@@ -8,6 +8,44 @@ use tempfile::TempDir;
 #[path = "../../tests/support/fixture.rs"]
 mod fixture_support;
 
+#[cfg(unix)]
+#[path = "../../tests/support/page_wait_reference.rs"]
+mod http_image_reference;
+
+#[cfg(unix)]
+#[test]
+fn http_prompt_preparation_keeps_navigation_and_control_c_responsive() {
+    let temp = TempDir::new().unwrap();
+    let server = http_image_reference::Server::new();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        std::fs::write(app.conversation.store().path(), json!({"version":"2.21","children":[{"id":"image","type":"rectangle","width":16,"height":16,"fill":{"type":"image","url":format!("http://{}/network/http-image/blocked.png",server.address)}}]}).to_string()).unwrap();
+        app.insert_text("日本語の依頼を保持する");
+        app.save_draft().unwrap();
+        let draft = app.conversation.draft().to_owned();
+        let picker = Backend::halfblocks();
+        let worker = Worker::start(app.conversation.store().clone(), vec![], picker.clone(), 123).unwrap();
+        app.submit().await.unwrap();
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while server.network_counts().0 == 0 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        }).await.unwrap();
+        assert!(app.conversation.active());
+        assert!(!app.key(KeyEvent::new(KeyCode::Char('x'),KeyModifiers::NONE), &picker, &worker).await.unwrap());
+        assert_eq!(app.editor.lines().join("\n"), draft);
+        assert!(!app.key(KeyEvent::new(KeyCode::Tab,KeyModifiers::NONE), &picker, &worker).await.unwrap());
+        assert_eq!(app.focus, Focus::Preview);
+        assert!(!app.key(KeyEvent::new(KeyCode::Char('c'),KeyModifiers::CONTROL), &picker, &worker).await.unwrap());
+        let events = complete(&mut app).await;
+        assert_eq!(events.last().unwrap()["error"]["code"], "CANCELLED");
+        assert_eq!(app.conversation.draft(), draft);
+        assert!(!temp.path().join("sent-turn.txt").exists());
+        app.conversation.close().await.unwrap();
+        worker.cancel();
+    });
+}
+
 fn app(temp: &TempDir, mode: &str) -> App {
     let args = crate::cli::Arguments::try_parse_from([
         "lazypencil".into(),

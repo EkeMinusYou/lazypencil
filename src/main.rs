@@ -225,27 +225,28 @@ fn main() -> ExitCode {
             }
         };
     }
-    if matches!(
-        arguments.command,
+    let cancellable = match &arguments.command {
         lazypencil::cli::Command::Render(_)
-            | lazypencil::cli::Command::Inspect(_)
-            | lazypencil::cli::Command::Validate(_)
-            | lazypencil::cli::Command::Variables(_)
-            | lazypencil::cli::Command::Guidance { .. }
-            | lazypencil::cli::Command::Styles { .. }
-            | lazypencil::cli::Command::Style { .. }
-            | lazypencil::cli::Command::Fonts { .. }
-            | lazypencil::cli::Command::Config { .. }
-            | lazypencil::cli::Command::Layout(_)
-            | lazypencil::cli::Command::Apply(_)
-            | lazypencil::cli::Command::Restore { .. }
-            | lazypencil::cli::Command::History { .. }
-            | lazypencil::cli::Command::Conversations { .. }
-            | lazypencil::cli::Command::Icons { .. }
-            | lazypencil::cli::Command::Assets { .. }
-            | lazypencil::cli::Command::Runtime { .. }
-    ) && let Err(error) = lazypencil::cancel::install_cli_handler()
-    {
+        | lazypencil::cli::Command::Inspect(_)
+        | lazypencil::cli::Command::Validate(_)
+        | lazypencil::cli::Command::Variables(_)
+        | lazypencil::cli::Command::Guidance { .. }
+        | lazypencil::cli::Command::Styles { .. }
+        | lazypencil::cli::Command::Style { .. }
+        | lazypencil::cli::Command::Config { .. }
+        | lazypencil::cli::Command::Layout(_)
+        | lazypencil::cli::Command::Apply(_)
+        | lazypencil::cli::Command::Restore { .. }
+        | lazypencil::cli::Command::History { .. }
+        | lazypencil::cli::Command::Conversations { .. }
+        | lazypencil::cli::Command::Icons { .. }
+        | lazypencil::cli::Command::Assets { .. }
+        | lazypencil::cli::Command::Runtime { .. } => true,
+        #[cfg(feature = "rendering")]
+        lazypencil::cli::Command::Fonts { .. } => true,
+        _ => false,
+    };
+    if cancellable && let Err(error) = lazypencil::cancel::install_cli_handler() {
         eprintln!("{error}");
         return ExitCode::FAILURE;
     }

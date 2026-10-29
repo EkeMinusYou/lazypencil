@@ -311,6 +311,24 @@ impl Session {
     }
 
     fn http_image_reproductions(&self, features: bool, targets: &[String]) -> Result<()> {
+        if targets.iter().any(|target| target == "agent") {
+            self.test(
+                features,
+                "agent",
+                "http_conversation::",
+                &["--test-threads=2"],
+                "focus-http-prompt-preparation.log",
+            )?;
+        }
+        if features && targets.iter().any(|target| target == "tui") {
+            self.test(
+                true,
+                "lib",
+                "tui::tests::http_prompt_preparation_keeps_navigation_and_control_c_responsive",
+                &["--exact", "--test-threads=1"],
+                "focus-http-tui-preparation.log",
+            )?;
+        }
         if targets.iter().any(|target| target == "sampler_sources") {
             self.test(
                 features,

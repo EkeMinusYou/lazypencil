@@ -25,6 +25,7 @@ pub mod history;
 #[cfg(unix)]
 pub(crate) mod lease;
 pub mod management;
+mod preparation;
 mod storage;
 pub use storage::sanitize_event;
 use storage::{Session, Transcript};
@@ -60,6 +61,7 @@ pub struct Conversation {
     ready: bool,
     transcript: Option<Transcript>,
     active: Option<ActiveTurn>,
+    preparation: Option<preparation::Preparation>,
     permissions: DocumentPermissions,
     pending_permissions: HashMap<String, PendingPermission>,
     events: VecDeque<ConversationEvent>,
@@ -125,6 +127,7 @@ impl Conversation {
             ready: false,
             transcript: None,
             active: None,
+            preparation: None,
             permissions: DocumentPermissions::new(),
             pending_permissions: HashMap::new(),
             events: VecDeque::new(),
@@ -151,7 +154,7 @@ impl Conversation {
         &self.session.state.pending_attachments
     }
     pub fn active(&self) -> bool {
-        self.active.is_some()
+        self.active.is_some() || self.preparation.is_some()
     }
     pub fn result(&self) -> Option<&Result<()>> {
         self.result.as_ref()
@@ -302,8 +305,32 @@ impl Conversation {
     }
 
     pub async fn send(&mut self, selection: Option<Value>) -> Result<()> {
+        self.send_with_context(selection, None).await
+    }
+
+    /// Queue prompt-context capture without blocking a frontend's event loop.
+    /// Drive next_event to submit the prepared turn or report its failure.
+    pub fn start_send(&mut self, selection: Option<Value>) -> Result<()> {
         self.require_idle()?;
-        let result = self.send_inner(selection).await;
+        self.validate_send()?;
+        let preparation = preparation::Preparation::start(
+            self.store.clone(),
+            self.args.style.clone(),
+            self.executable.clone(),
+            selection,
+        )?;
+        self.result = None;
+        self.preparation = Some(preparation);
+        Ok(())
+    }
+
+    async fn send_with_context(
+        &mut self,
+        selection: Option<Value>,
+        context: Option<crate::service::PreparedDesignStart>,
+    ) -> Result<()> {
+        self.require_idle()?;
+        let result = self.send_inner(selection, context).await;
         if let Err(error) = &result
             && (self.active()
                 || error.code == "PROJECT_NOT_TRUSTED" && self.args.project_execution.is_some())
@@ -323,7 +350,7 @@ impl Conversation {
         }
         result
     }
-    async fn send_inner(&mut self, selection: Option<Value>) -> Result<()> {
+    fn validate_send(&self) -> Result<()> {
         self.require_project_agent()?;
         if self.draft().trim().is_empty() && self.images().is_empty() {
             return Err(Error::new(
@@ -332,8 +359,25 @@ impl Conversation {
             ));
         }
         self.attachment_limits()?.check_request(self.images())?;
-        let (guidance, style) =
-            crate::service::project_design_start(&self.store, self.args.style.as_deref())?;
+        Ok(())
+    }
+
+    async fn send_inner(
+        &mut self,
+        selection: Option<Value>,
+        context: Option<crate::service::PreparedDesignStart>,
+    ) -> Result<()> {
+        self.validate_send()?;
+        let context = match context {
+            Some(context) => context,
+            None => crate::service::prepare_design_start(
+                &self.store,
+                self.args.style.as_deref(),
+                Some(&self.executable),
+                None,
+            )?,
+        };
+        let (guidance, style) = context.finish(&self.store)?;
         // Start with tokens and example identities; fetch the complete example
         // through MCP only when needed instead of inflating every prompt.
         let style_context = style.as_ref().map(|style| {
@@ -538,6 +582,9 @@ impl Conversation {
             .await
     }
     pub fn cancel(&self) {
+        if let Some(preparation) = &self.preparation {
+            preparation.cancel.cancel();
+        }
         if let Some(active) = &self.active {
             active.cancel.cancel();
         }
@@ -547,6 +594,33 @@ impl Conversation {
         loop {
             if let Some(event) = self.events.pop_front() {
                 return Ok(event);
+            }
+            if let Some(preparation) = self.preparation.as_mut() {
+                // Keep the receiver in self across select cancellation. Dropping
+                // next_event must neither detach nor restart document capture.
+                let result = (&mut preparation.receiver).await.unwrap_or_else(|_| {
+                    Err(Error::new("IO_ERROR", "Prompt context worker stopped"))
+                });
+                let mut preparation = self.preparation.take().expect("prompt preparation");
+                let selection = preparation.selection.take();
+                let result = crate::cancel::check(Some(&preparation.cancel)).and(result);
+                let result = match result {
+                    Ok(context) => self.send_with_context(selection, Some(context)).await,
+                    Err(error) => Err(error),
+                };
+                drop(preparation);
+                if let Err(error) = result
+                    && self.result.is_none()
+                {
+                    // Preparation failed before creating a turn/transcript or
+                    // launching an adapter. The durable draft is untouched.
+                    self.events.push_back(ConversationEvent::Message(json!({
+                        "type":"failed", "phase":"preparation", "session":self.id(),
+                        "error":error,
+                    })));
+                    self.result = Some(Err(error));
+                }
+                continue;
             }
             let Some(host) = self.host.as_mut() else {
                 return std::future::pending().await;
@@ -881,6 +955,7 @@ impl Conversation {
     }
     pub async fn close(&mut self) -> Result<()> {
         self.cancel();
+        drop(self.preparation.take());
         let closed = if let Some(host) = self.host.take() {
             host.close().await
         } else {

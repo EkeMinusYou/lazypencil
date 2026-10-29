@@ -11,6 +11,7 @@ use std::{cell::RefCell, path::PathBuf};
 #[cfg(feature = "rendering")]
 mod calculated_nodes;
 mod guidance;
+pub(crate) use guidance::{PreparedDesignStart, prepare_design_start};
 mod validation;
 pub use crate::project::VariablesRequest;
 #[cfg(feature = "rendering")]
