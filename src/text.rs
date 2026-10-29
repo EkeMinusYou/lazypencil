@@ -109,7 +109,8 @@ impl Fonts {
             coordinates: &coordinates,
         });
         style.set_font_arguments(&arguments);
-        let (mut paragraph, resolved) = (0..=self.fallback_families().len())
+        let ready = self.ready_fallback_count(&spec.family, style.font_style())?;
+        let (mut paragraph, resolved) = (ready..=self.fallback_families().len())
             .find_map(|fallback_count| {
                 let attempt = (|| -> Result<_> {
                     let resolved = self.resolve(

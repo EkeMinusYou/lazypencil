@@ -129,7 +129,7 @@ impl Fonts {
         }
         let sources = files
             .iter()
-            .map(|path| FontFile::capture(path, None))
+            .map(|path| FontFile::capture(&crate::paths::canonical(path)?, None))
             .collect::<Result<Vec<_>>>()?;
         Self::from_files(&sources, None)
     }
@@ -663,6 +663,25 @@ impl Fonts {
             families,
             information,
         })
+    }
+
+    pub(super) fn ready_fallback_count(
+        &mut self,
+        primary: &str,
+        style: FontStyle,
+    ) -> Result<usize> {
+        self.ensure_style(primary, style)?;
+        Ok(self
+            .fallbacks
+            .iter()
+            .take_while(|family| {
+                !self.pending.iter().any(|face| {
+                    face.names
+                        .iter()
+                        .any(|name| name.to_lowercase() == family.to_lowercase())
+                })
+            })
+            .count())
     }
 }
 

@@ -154,3 +154,44 @@ fn changed(path: &Path) -> Error {
         format!("Font changed during the operation: {}", path.display()),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deferred_snapshots_stream_revisions_and_reject_changes_and_cancellation() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let path = directory.path().join("input.ttf");
+        let mut bytes = vec![42; 131_079];
+        std::fs::write(&path, &bytes).unwrap();
+        let snapshot = FontFile::capture(&path, None).unwrap();
+        assert!(
+            snapshot.bytes.is_none(),
+            "Discovery must not retain the complete file"
+        );
+        assert_eq!(snapshot.revision, hash(&bytes));
+        snapshot.verify(None).unwrap();
+        *bytes.last_mut().unwrap() ^= 1;
+        std::fs::write(&path, &bytes).unwrap();
+        assert_eq!(snapshot.verify(None).unwrap_err().code, "REVISION_CONFLICT");
+        assert_eq!(snapshot.read(None).unwrap_err().code, "REVISION_CONFLICT");
+        let cancelled = CancellationToken::new();
+        cancelled.cancel();
+        assert_eq!(
+            snapshot.read(Some(&cancelled)).unwrap_err().code,
+            "CANCELLED"
+        );
+        assert_eq!(
+            FontFile::capture(&path, Some(&cancelled))
+                .err()
+                .unwrap()
+                .code,
+            "CANCELLED"
+        );
+        let captured = FontFile::from_bytes(path, bytes.clone().into());
+        std::fs::remove_file(&captured.path).unwrap();
+        assert_eq!(&*captured.read(None).unwrap(), bytes);
+        captured.verify(None).unwrap();
+    }
+}

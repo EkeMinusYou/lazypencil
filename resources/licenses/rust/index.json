@@ -1,5 +1,5 @@
 {
-  "cargo_lock_sha256": "decab47092349ad1163bfdf6e367232e5a83ec7290f3ea404c8738f5203f211b",
+  "cargo_lock_sha256": "db410540dbe9fb679aff69de343aa142c2287f0c06af2b0ae6152f2685d3d9da",
   "format_version": 1,
   "license_references": [
     {
@@ -6681,7 +6681,7 @@
         }
       ],
       "license": "MIT",
-      "manifest_sha256": "7ac9d8c8d9b1035ba5789e8d1c8872f1f5328b4b2e6b00794de9079b009fe016",
+      "manifest_sha256": "7767c219b02bb197594e9472bdd27aca7a475ba4de271db31544c1a3a8b71e3d",
       "name": "lazypencil",
       "source": "workspace",
       "version": "0.1.0-dev",
@@ -30438,6 +30438,43 @@
         "path_in_vcs": ""
       },
       "version": "3.2.2"
+    },
+    {
+      "archive_sha256": "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31",
+      "attribution_comments": [],
+      "authors": [
+        "Caleb Maclennan <caleb@alerque.com>",
+        "Laurenz Stampfl <laurenz.stampfl@gmail.com>",
+        "Yevhenii Reizner <razrfalcon@gmail.com>",
+        "خالد حسني (Khaled Hosny) <khaled@aliftype.com>"
+      ],
+      "files": [
+        {
+          "blob": "texts/a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2.txt",
+          "kind": "archive",
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+        },
+        {
+          "blob": "texts/f3c9fe731c701ed77fd5fbaac573872af04dc5869385eb9bd5e3c73c42713814.txt",
+          "kind": "archive",
+          "path": "LICENSE-MIT",
+          "sha256": "f3c9fe731c701ed77fd5fbaac573872af04dc5869385eb9bd5e3c73c42713814"
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license_file": null,
+      "manifest_sha256": "6f2984ea56c0ccc30a5432cce5189d4e4a615a9c1527f82c66d517a5e56c25df",
+      "name": "ttf-parser",
+      "repository": "https://github.com/harfbuzz/ttf-parser",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "56c33b910b03ca152f78363ec471c5dfd97c3069"
+        },
+        "path_in_vcs": ""
+      },
+      "version": "0.25.1"
     },
     {
       "archive_sha256": "e48ac77174b19c110a50ab2128b24215ac9cb40e0e12e093fb602d175c569d22",

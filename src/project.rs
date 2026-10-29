@@ -1098,8 +1098,11 @@ impl Project {
             if canonical.to_str().is_none() {
                 return Err(Error::new("INVALID_ARGUMENT", "Font paths must be UTF-8"));
             }
-            if !self.assets.contains_key(&canonical) && !self.font_sources.contains_key(&canonical)
-            {
+            if let Some(asset) = self.assets.get_mut(&canonical) {
+                if asset.kind == "browser_resource" {
+                    asset.kind = "font".into();
+                }
+            } else if !self.font_sources.contains_key(&canonical) {
                 let font = if let Some(file) = self.overlay.get(&canonical) {
                     font_files::FontFile::from_bytes(canonical.clone(), file.bytes.clone())
                 } else {

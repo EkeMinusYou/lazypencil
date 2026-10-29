@@ -1862,6 +1862,10 @@ tree_magic_mini@3.2.2
 Declared license: MIT
 Published package authors: Matt Brubeck <mbrubeck@limpet.net>; Allison Hancock <aahancoc@umich.edu>
 
+ttf-parser@0.25.1
+Declared license: MIT OR Apache-2.0
+Published package authors: Caleb Maclennan <caleb@alerque.com>; Laurenz Stampfl <laurenz.stampfl@gmail.com>; Yevhenii Reizner <razrfalcon@gmail.com>; خالد حسني (Khaled Hosny) <khaled@aliftype.com>
+
 tungstenite@0.30.0
 Declared license: MIT OR Apache-2.0
 Published package authors: Alexey Galakhov; Daniel Abramov
@@ -16275,6 +16279,7 @@ socket2@0.6.5 :: archive :: LICENSE-APACHE
 stable_deref_trait@1.2.1 :: archive :: LICENSE-APACHE
 tar@0.4.46 :: archive :: LICENSE-APACHE
 tempfile@3.27.0 :: archive :: LICENSE-APACHE
+ttf-parser@0.25.1 :: archive :: LICENSE-APACHE
 tungstenite@0.30.0 :: archive :: LICENSE-APACHE
 unicode-segmentation@1.13.3 :: archive :: LICENSE-APACHE
 unicode-truncate@2.0.1 :: archive :: LICENSE-APACHE
@@ -22555,6 +22560,31 @@ SPDX-License-Identifier: Unicode-3.0
 
 Portions of ICU4X may have been adapted from ICU4C and/or ICU4J.
 ICU 1.8.1 to ICU 57.1 © 1995-2016 International Business Machines Corporation and others.
+
+========================================================================
+ttf-parser@0.25.1 :: archive :: LICENSE-MIT
+SHA-256: f3c9fe731c701ed77fd5fbaac573872af04dc5869385eb9bd5e3c73c42713814
+
+Copyright (c) 2018 Yevhenii Reizner
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
 
 ========================================================================
 shell-words@1.1.1 :: archive :: LICENSE-MIT
