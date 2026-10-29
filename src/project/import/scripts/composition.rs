@@ -142,9 +142,11 @@ impl Copier<'_> {
             budget.key(name)?;
             if bound.values.components.contains_key(name) {
                 if let Some(old) = bound.values.descendants.get(name) {
+                    let mapped =
+                        self.copied_override_paths(&expanded, old.values().map(String::as_str))?;
                     for (from, to) in old {
-                        let target = self.copied_override_path(&expanded, to)?;
-                        budget.pair(from, &target)?;
+                        let target = &mapped[to];
+                        budget.pair(from, target)?;
                         paths.insert(from.clone(), json!(target));
                     }
                 }

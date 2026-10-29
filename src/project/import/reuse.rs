@@ -1,6 +1,60 @@
 //! Keep placed node identities distinct from explicitly substituted definitions.
 use super::*;
 
+mod paths;
+
+#[derive(Default)]
+pub(super) struct Source {
+    positions: BTreeMap<Key, BTreeSet<Key>>,
+}
+
+pub(super) struct Mapping<'a> {
+    pub source: &'a str,
+    pub target: Option<&'a str>,
+    pub reused: Option<&'a Key>,
+}
+
+fn position(node: &ResolvedNode) -> Key {
+    (node.component_source.clone(), node.component_key.clone())
+}
+
+fn authored(node: &ResolvedNode) -> Key {
+    node.instance_identity
+        .clone()
+        .unwrap_or_else(|| (node.source_path.clone(), node.source_id.clone()))
+}
+
+fn index_source(
+    project: &Project,
+    node: &ResolvedNode,
+    source: &mut Source,
+    bytes: &mut usize,
+) -> Result<()> {
+    project.check_cancelled()?;
+    let key = position(node);
+    let owner = authored(node);
+    let size = key
+        .0
+        .as_os_str()
+        .len()
+        .saturating_add(key.1.len())
+        .saturating_add(owner.0.as_os_str().len())
+        .saturating_add(owner.1.len())
+        .saturating_add(64);
+    if source.positions.entry(key).or_default().insert(owner) {
+        *bytes = bytes.saturating_add(size);
+        if *bytes > crate::document::MAX_DOCUMENT_BYTES {
+            return Err(copy_error(
+                "Reused component indexes exceed the aggregate byte limit",
+            ));
+        }
+    }
+    for child in &node.children {
+        index_source(project, child, source, bytes)?;
+    }
+    Ok(())
+}
+
 pub(super) fn placement(node: &Value) -> Map<String, Value> {
     // The requested substitution selects the target's body, appearance, code,
     // metadata and descendants. Only the source's placement stays in its parent.
@@ -24,32 +78,11 @@ pub(super) fn placement(node: &Value) -> Map<String, Value> {
     .collect()
 }
 
-fn descendant<'a>(root: &'a ResolvedNode, path: &[&str]) -> Option<&'a ResolvedNode> {
-    let (first, rest) = path.split_first()?;
-    for child in &root.children {
-        if child.component_key == *first {
-            return if rest.is_empty() {
-                Some(child)
-            } else if child.is_instance {
-                descendant(child, rest)
-            } else {
-                None
-            };
-        }
-        if !child.is_instance
-            && let Some(found) = descendant(child, path)
-        {
-            return Some(found);
-        }
-    }
-    None
-}
-
 fn index_paths(
     project: &Project,
     root: &ResolvedNode,
     prefix: &str,
-    paths: &mut BTreeSet<String>,
+    paths: &mut BTreeMap<String, bool>,
     bytes: &mut usize,
 ) -> Result<()> {
     for child in &root.children {
@@ -61,9 +94,12 @@ fn index_paths(
                 "Reused component paths exceed the path or aggregate byte limit",
             ));
         }
-        paths.insert(path.clone());
+        let fresh = !paths.contains_key(&path);
+        paths.entry(path.clone()).or_insert(child.is_instance);
         if child.is_instance {
-            index_paths(project, child, &format!("{path}/"), paths, bytes)?;
+            if fresh {
+                index_paths(project, child, &format!("{path}/"), paths, bytes)?;
+            }
         } else {
             index_paths(project, child, prefix, paths, bytes)?;
         }
@@ -89,7 +125,7 @@ impl Copier<'_> {
                 &mut count,
             )?;
             self.reused_target_nodes = count;
-            let mut paths = BTreeSet::new();
+            let mut paths = BTreeMap::new();
             index_paths(
                 self.project,
                 &expanded,
@@ -99,16 +135,23 @@ impl Copier<'_> {
             )?;
             self.reused_targets.insert(target.into(), paths);
         }
+        let original = self.project.expand(
+            &key.0,
+            self.project.documents[&key.0].node(&key.1)?,
+            None,
+            &[],
+            &mut Vec::new(),
+            &mut 0,
+        )?;
+        let mut source = Source::default();
+        index_source(
+            self.project,
+            &original,
+            &mut source,
+            &mut self.reused_path_bytes,
+        )?;
         if let Some(paths) = self.options.component_paths.get(&self.key(key)?) {
-            let original = self.project.expand(
-                &key.0,
-                self.project.documents[&key.0].node(&key.1)?,
-                None,
-                &[],
-                &mut Vec::new(),
-                &mut 0,
-            )?;
-            let mut source_paths = BTreeSet::new();
+            let mut source_paths = BTreeMap::new();
             index_paths(self.project, &original, "", &mut source_paths, &mut 0)?;
             for (from, to) in paths {
                 self.project.check_cancelled()?;
@@ -119,13 +162,15 @@ impl Copier<'_> {
                         ));
                     }
                 }
-                if !source_paths.contains(from) || !self.reused_targets[target].contains(to) {
+                if !source_paths.contains_key(from) || !self.reused_targets[target].contains_key(to)
+                {
                     return Err(copy_error(
                         "A reused component path must resolve in both the source and selected local definition",
                     ));
                 }
             }
         }
+        self.reused_sources.insert(key.clone(), source);
         self.reuse.insert(key.clone(), target.into());
         Ok(())
     }
@@ -136,14 +181,6 @@ impl Copier<'_> {
             .cloned()
             .or_else(|| self.reuse.get(key).cloned())
             .ok_or_else(|| copy_error("Missing copied placement ID"))
-    }
-
-    pub(super) fn replacement_path(&self, key: &Key, path: &[&str]) -> Result<String> {
-        if let Some(path) = self.available_replacement_path(key, path)? {
-            return Ok(path);
-        }
-        Err(copy_error("A descendant is absent from the reused component; supply an explicit component_paths mapping")
-            .details(json!({"source_key":self.key(key)?,"source_path":path.join("/"),"target":self.reuse[key]})))
     }
 
     pub(super) fn available_replacement_path(
@@ -160,7 +197,7 @@ impl Copier<'_> {
             .and_then(|paths| paths.get(&original))
             .unwrap_or(&original);
         Ok(self.reused_targets[&self.reuse[key]]
-            .contains(replacement)
+            .contains_key(replacement)
             .then(|| replacement.clone()))
     }
 
@@ -168,9 +205,9 @@ impl Copier<'_> {
         if self.reuse.is_empty() {
             return Ok(None);
         }
-        // An instance's component identity names the placement. Its source
-        // identity names the reusable definition, including ref-to-ref chains.
-        let key = (node.component_source.clone(), node.component_key.clone());
+        // A full descendant replacement retains the old address, but its
+        // authored node owns the new body. Do not revive the old substitution.
+        let key = authored(node);
         if self.reuse.contains_key(&key) {
             return Ok(Some(key));
         }
@@ -194,55 +231,40 @@ impl Copier<'_> {
                 original = definition;
             }
         }
-        let key = (node.source_path.clone(), node.source_id.clone());
-        if self.reuse.contains_key(&key) {
-            return Ok(Some(key));
-        }
         Ok(None)
     }
 
-    pub(super) fn copied_override_path(&self, root: &ResolvedNode, path: &str) -> Result<String> {
-        let parts = path.split('/').collect::<Vec<_>>();
-        if descendant(root, &parts).is_none() {
+    pub(super) fn walk_copied_paths(
+        &self,
+        root: &ResolvedNode,
+        visitor: &mut dyn FnMut(Mapping<'_>) -> Result<bool>,
+    ) -> Result<()> {
+        paths::walk(self, root, visitor)
+    }
+
+    pub(super) fn copied_override_paths<'a>(
+        &self,
+        root: &ResolvedNode,
+        requested: impl Iterator<Item = &'a str>,
+    ) -> Result<BTreeMap<String, String>> {
+        let mut wanted = requested.collect::<BTreeSet<_>>();
+        let mut result = BTreeMap::new();
+        if wanted.is_empty() {
+            return Ok(result);
+        }
+        self.walk_copied_paths(root, &mut |path| {
+            if wanted.remove(path.source) {
+                let target = path.target.ok_or_else(|| {
+                    copy_error("A descendant is absent from the reused component; supply an explicit component_paths mapping")
+                        .details(json!({"source_path":path.source,"source_key":path.reused.and_then(|key|self.key(key).ok())}))
+                })?;
+                result.insert(path.source.to_owned(), target.to_owned());
+            }
+            Ok(!wanted.is_empty())
+        })?;
+        if !wanted.is_empty() {
             return Err(copy_error("Missing copied override target"));
         }
-        self.map_descendant(root, &parts)?
-            .ok_or_else(|| copy_error("Missing copied override target"))
-    }
-
-    fn map_descendant(&self, root: &ResolvedNode, path: &[&str]) -> Result<Option<String>> {
-        self.project.check_cancelled()?;
-        if let Some(key) = self.root_reuse(root)? {
-            return self.replacement_path(&key, path).map(Some);
-        }
-        let Some((first, rest)) = path.split_first() else {
-            return Ok(None);
-        };
-        for child in &root.children {
-            let key = (child.component_source.clone(), child.component_key.clone());
-            if child.component_key == *first {
-                let placed = self.placement_target(&key)?;
-                return if rest.is_empty() {
-                    Ok(Some(placed))
-                } else if child.is_instance {
-                    Ok(self
-                        .map_descendant(child, rest)?
-                        .map(|path| format!("{placed}/{path}")))
-                } else {
-                    Ok(None)
-                };
-            }
-            if !child.is_instance && descendant(child, path).is_some() {
-                let mapped = self.map_descendant(child, path)?;
-                // A contained definition was an ordinary grouping boundary.
-                // Its replacement is an instance and needs an explicit prefix.
-                return if self.reuse.contains_key(&key) {
-                    Ok(mapped.map(|path| format!("{}/{path}", self.ids[&key])))
-                } else {
-                    Ok(mapped)
-                };
-            }
-        }
-        Ok(None)
+        Ok(result)
     }
 }

@@ -470,83 +470,15 @@ impl Copier<'_> {
         result: &mut Map<String, Value>,
         budget: &mut Budget,
     ) -> Result<()> {
-        struct Prefix {
-            from: String,
-            to: String,
-            reused: Option<(Key, String, String)>,
-        }
-        fn walk(
-            copier: &Copier<'_>,
-            node: &ResolvedNode,
-            prefix: Prefix,
-            result: &mut Map<String, Value>,
-            budget: &mut Budget,
-        ) -> Result<()> {
-            for child in &node.children {
-                copier.project.check_cancelled()?;
-                let source = format!("{}{}", prefix.from, child.component_key);
-                if source.len() > 4096 {
-                    budget.key(&source)?;
-                }
-                let target = if let Some((key, old, new)) = &prefix.reused {
-                    let relative = source.strip_prefix(old).expect("source prefix");
-                    copier
-                        .available_replacement_path(key, &relative.split('/').collect::<Vec<_>>())?
-                        .map(|path| format!("{new}{path}"))
-                } else {
-                    let key = (child.component_source.clone(), child.component_key.clone());
-                    Some(format!("{}{}", prefix.to, copier.placement_target(&key)?))
-                };
-                // Explicit substitution can remove source-only descendants.
-                // Keep the valid closed map; a generated use of an omitted
-                // path retains the runtime's missing-binding diagnostic.
-                if let Some(target) = &target {
-                    budget.pair(&source, target)?;
-                    result.insert(source.clone(), json!(target));
-                } else {
-                    budget.key(&source)?;
-                }
-                let from = if child.is_instance {
-                    format!("{source}/")
-                } else {
-                    prefix.from.clone()
-                };
-                let to = if child.is_instance {
-                    target
-                        .as_ref()
-                        .map(|target| format!("{target}/"))
-                        .unwrap_or_default()
-                } else {
-                    prefix.to.clone()
-                };
-                let reused = match &prefix.reused {
-                    Some(reused) => Some(reused.clone()),
-                    None => copier.root_reuse(child)?.map(|key| {
-                        (
-                            key,
-                            from.clone(),
-                            format!("{}/", target.as_ref().expect("unsubstituted placement")),
-                        )
-                    }),
-                };
-                walk(copier, child, Prefix { from, to, reused }, result, budget)?;
+        self.walk_copied_paths(root, &mut |path| {
+            if let Some(target) = path.target {
+                budget.pair(path.source, target)?;
+                result.insert(path.source.to_owned(), json!(target));
+            } else {
+                budget.key(path.source)?;
             }
-            Ok(())
-        }
-        let reused = self
-            .root_reuse(root)?
-            .map(|key| (key, String::new(), String::new()));
-        walk(
-            self,
-            root,
-            Prefix {
-                from: String::new(),
-                to: String::new(),
-                reused,
-            },
-            result,
-            budget,
-        )
+            Ok(true)
+        })
     }
 
     pub(super) fn rewrite_script(

@@ -128,6 +128,7 @@ impl Project {
             ids: BTreeMap::new(),
             reuse: BTreeMap::new(),
             reused_targets: BTreeMap::new(),
+            reused_sources: BTreeMap::new(),
             reused_target_nodes: 0,
             reused_path_bytes: 0,
             names: BTreeMap::new(),
@@ -333,7 +334,8 @@ struct Copier<'a> {
     queue: VecDeque<Key>,
     ids: BTreeMap<Key, String>,
     reuse: BTreeMap<Key, String>,
-    reused_targets: BTreeMap<String, BTreeSet<String>>,
+    reused_targets: BTreeMap<String, BTreeMap<String, bool>>,
+    reused_sources: BTreeMap<Key, reuse::Source>,
     reused_target_nodes: usize,
     reused_path_bytes: usize,
     names: BTreeMap<Key, String>,
@@ -832,6 +834,12 @@ impl Copier<'_> {
         Ok(uri)
     }
     fn rewrite_node(&mut self, origin: &Path, node: &Value) -> Result<Value> {
+        self.rewrite_properties(origin, node, true)
+    }
+    fn reused_placement(&self, origin: &Path, node: &Value) -> Result<Option<Value>> {
+        if self.reuse.is_empty() {
+            return Ok(None);
+        }
         let key = (origin.into(), node["id"].as_str().expect("node ID").into());
         if let Some(target) = self.reuse.get(&key).cloned() {
             let mut placement = reuse::placement(node);
@@ -846,12 +854,15 @@ impl Copier<'_> {
             placement.insert("id".into(), json!(self.placement_target(&key)?));
             placement.insert("type".into(), json!("ref"));
             placement.insert("ref".into(), json!(target));
-            return Ok(Value::Object(placement));
+            return Ok(Some(Value::Object(placement)));
         }
-        self.rewrite_properties(origin, node, true)
+        Ok(None)
     }
     fn rewrite_properties(&mut self, origin: &Path, node: &Value, is_node: bool) -> Result<Value> {
         self.project.check_cancelled()?;
+        if is_node && let Some(placement) = self.reused_placement(origin, node)? {
+            return Ok(placement);
+        }
         let info = self.dynamic_info(origin, node)?;
         self.rewrite_properties_info(origin, node, is_node, info)
     }
@@ -942,13 +953,21 @@ impl Copier<'_> {
                 self.project
                     .expand(origin, node, None, &[], &mut Vec::new(), &mut 0)?;
             let mut remapped = Map::new();
-            for (path, changes) in overrides {
+            let mapped_paths =
+                self.copied_override_paths(&expanded, overrides.keys().map(String::as_str))?;
+            let mut entries = overrides.iter().collect::<Vec<_>>();
+            // Keep the source's application order when an instance boundary
+            // disappears and previously different depths become equal.
+            entries.sort_by_key(|(path, _)| path.split('/').count());
+            for (path, changes) in entries {
                 let parts = path.split('/').collect::<Vec<_>>();
-                let mapped_path = self.copied_override_path(&expanded, path)?;
-                let info = if changes.get("type").is_none() {
+                let mapped_path = mapped_paths[path].clone();
+                let value = if changes.get("type").is_some() {
+                    self.rewrite_node(origin, changes)?
+                } else {
                     let target =
                         find_descendant_mut(&mut expanded, &parts).expect("validated override");
-                    if matches!(target.kind(), "script" | "browser") {
+                    let info = if matches!(target.kind(), "script" | "browser") {
                         self.dynamic_info_resolved(
                             target.clone(),
                             (
@@ -958,19 +977,14 @@ impl Copier<'_> {
                         )?
                     } else {
                         None
-                    }
-                } else {
-                    self.dynamic_info(origin, changes)?
+                    };
+                    self.rewrite_properties_info(origin, changes, false, info)?
                 };
-                remapped.insert(
-                    mapped_path,
-                    self.rewrite_properties_info(
-                        origin,
-                        changes,
-                        changes.get("type").is_some(),
-                        info,
-                    )?,
-                );
+                if remapped.insert(mapped_path, value).is_some() {
+                    return Err(copy_error(
+                        "Copied override paths collide after component reuse",
+                    ));
+                }
             }
             result.insert("descendants".into(), Value::Object(remapped));
         }

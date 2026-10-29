@@ -477,7 +477,9 @@ impl Bound {
                 .as_ref()
                 .and_then(|name| self.values.descendants.get(name));
             let mut rewritten = Map::new();
-            for (path, mut properties) in std::mem::take(changes) {
+            let mut entries = std::mem::take(changes).into_iter().collect::<Vec<_>>();
+            entries.sort_by_key(|(path, _)| path.split('/').count());
+            for (path, mut properties) in entries {
                 let path = if original_reference
                     .as_ref()
                     .is_some_and(|name| self.values.components.contains_key(name))

@@ -8,6 +8,9 @@ use serde_json::{Value, json};
 use std::fs;
 use tempfile::TempDir;
 
+#[path = "component_reuse/children.rs"]
+mod children;
+
 fn fixture(version: &str) -> (TempDir, Store) {
     let temp = TempDir::new().unwrap();
     fs::create_dir(temp.path().join(".git")).unwrap();
