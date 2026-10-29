@@ -207,7 +207,11 @@ pub fn binding_commands(binary: &Path) -> [Vec<String>; 3] {
 /// Only the script-bindings group writes codec-script-overrides artifacts.
 pub fn focus_bindings(s: &Session) -> Result<()> {
     let commit = std::env::var("GITHUB_SHA")?;
-    let catalog = s.compile_catalog(&["script_scope".into()], "focus-binding-build", &commit)?;
+    let catalog = if s.temporary.join("early-test-executables.json").exists() {
+        s.verified_catalog(&["script_scope"])?
+    } else {
+        s.compile_catalog(&["script_scope".into()], "focus-binding-build", &commit)?
+    };
     catalog.validate(&s.target, &commit, &["script_scope"])?;
     let checks = binding_commands(&catalog.binaries["script_scope"].path);
     let execute = |index: usize, log: &str| {

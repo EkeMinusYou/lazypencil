@@ -14,6 +14,7 @@ pub fn run(s: &Session) -> Result<()> {
 pub(super) struct Prepared {
     checks: Vec<commands::Invocation>,
     scripts: Vec<commands::Invocation>,
+    units: Vec<commands::Invocation>,
     resources: Vec<commands::Invocation>,
     deadline: Instant,
 }
@@ -40,16 +41,23 @@ pub(super) fn consume_pixels(s: &Session, elapsed: Duration) -> Result<()> {
     let checks = commands::default_tests(&s.root, &binaries)?;
     let paths = RESOURCES.map(|name| catalog.binaries[name].path.as_path());
     let (resources, _) = split_checks(checks, &paths)?;
+    let (graphics, resources) =
+        split_checks(resources, &[catalog.binaries["graphics"].path.as_path()])?;
     let budget = Duration::from_secs(TEST_SECONDS)
         .checked_sub(elapsed)
         .context("Default test budget exhausted during Cargo checks")?;
     let deadline = Instant::now() + budget;
-    // These already ran concurrently on the old normal consumer. Separate
-    // hosts now keep them away from script workers and short launch budgets.
+    // Each target owns its temporary resources and retained filenames. Give
+    // graphics its own lane instead of waiting for font/project checks, while
+    // keeping native work away from scripts and short launch budgets.
     parallel::run(vec![
         (
-            "font, project and native pixels",
+            "font, project and mesh pixels",
             Box::new(|| run_lane(s, &resources, deadline, "lazypencil-native-pixels.log")),
+        ),
+        (
+            "graphics pixels",
+            Box::new(|| run_lane(s, &graphics, deadline, "lazypencil-graphics-pixels.log")),
         ),
         ("emoji", Box::new(|| s.real_emoji("real-emoji.log"))),
     ])
@@ -78,6 +86,7 @@ fn prepare_inner(s: &Session, elapsed: Option<Duration>) -> Result<Prepared> {
     let (scripts, checks) = split_checks(checks, &independent)?;
     let paths = RESOURCES.map(|name| catalog.binaries[name].path.as_path());
     let (resources, checks) = split_checks(checks, &paths)?;
+    let (units, checks) = split_checks(checks, &[catalog.binaries["lib"].path.as_path()])?;
     let budget = Duration::from_secs(TEST_SECONDS)
         .checked_sub(elapsed.unwrap_or_default())
         .context("Default test budget exhausted during Cargo checks")?;
@@ -102,6 +111,7 @@ fn prepare_inner(s: &Session, elapsed: Option<Duration>) -> Result<Prepared> {
     Ok(Prepared {
         checks,
         scripts,
+        units,
         resources,
         deadline,
     })
@@ -146,13 +156,16 @@ fn remaining_inner(s: &Session, prepared: &Prepared, compile_release: bool) -> R
     let Prepared {
         checks,
         scripts,
+        units,
         resources,
         deadline,
     } = prepared;
     // The combined release route keeps two test processes. Without release
     // compilation, its third slot runs independent font/project/pixel checks.
     let checks = if compile_release {
-        [checks.as_slice(), resources.as_slice()].concat()
+        [units.as_slice(), checks.as_slice(), resources.as_slice()].concat()
+    } else if !resources.is_empty() {
+        [units.as_slice(), checks.as_slice()].concat()
     } else {
         checks.clone()
     };
@@ -175,6 +188,14 @@ fn remaining_inner(s: &Session, prepared: &Prepared, compile_release: bool) -> R
         tasks.push((
             "font, project and native pixels",
             Box::new(|| run_lane(s, resources, *deadline, "lazypencil-native-pixels.log")),
+        ));
+    } else {
+        // Library unit tests own their harness process. Integrations own
+        // temporary documents, logs and child processes, so neither needs to
+        // wait for the other after the quiet launch interval has completed.
+        tasks.push((
+            "library unit tests",
+            Box::new(|| run_lane(s, units, *deadline, "lazypencil-unit-tests.log")),
         ));
     }
     let remaining = parallel::run(tasks);

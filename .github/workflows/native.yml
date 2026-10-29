@@ -243,10 +243,10 @@ jobs:
       - name: Prepare affected feature configurations in the combined job
         # Scheduler changes consume the full catalog below; avoid publishing it
         # twice before the same complete suite. Standalone focus keeps its build.
-        if: inputs.phase == 'verify' && inputs.suite != 'ci' && inputs.suite != 'normal-ci' && inputs.suite != 'browser-ci'
+        if: inputs.phase == 'verify' && inputs.lane != 'build' && inputs.suite != 'ci' && inputs.suite != 'normal-ci' && inputs.suite != 'browser-ci'
         run: cargo xtask ci native focus-build --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
       - name: Reproduce affected failures before other tests and Chromium
-        if: (inputs.phase == 'focus' || inputs.phase == 'verify') && inputs.suite != 'ci'
+        if: (inputs.phase == 'focus' || inputs.phase == 'verify' && inputs.lane != 'build') && inputs.suite != 'ci'
         run: cargo xtask ci native focus-reproduce --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
       - name: Reproduce changed native clipboard input before longer tests
         id: native-clipboard-focus
@@ -279,8 +279,8 @@ jobs:
       - name: Build default tests and record executable identities
         id: default-build
         if: ${{ (inputs.lane == 'all' || inputs.lane == 'default' || inputs.lane == 'build') && (inputs.phase != 'focus') }}
-        timeout-minutes: 45
-        run: cargo xtask ci native default-build
+        timeout-minutes: ${{ inputs.lane == 'build' && inputs.phase == 'verify' && 60 || 45 }}
+        run: cargo xtask ci native '${{ inputs.lane == 'build' && inputs.phase == 'verify' && 'build-and-reproduce' || 'default-build' }}' --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
       - name: Reproduce real emoji, TUI and isolated MCP cancellation first
         if: ${{ (inputs.lane == 'all' || inputs.lane == 'default') && (inputs.phase != 'focus') }}
         run: cargo xtask ci native reproduce
@@ -301,8 +301,11 @@ jobs:
           path: ${{ runner.temp }}/terminal-reproduction
           if-no-files-found: error
           retention-days: 3
-      - name: Check all default targets before longer tests and release compilation
-        if: ${{ (inputs.lane == 'all' || inputs.lane == 'default' || inputs.lane == 'build') && (inputs.phase != 'focus') }}
+      - name: Check all default targets independently of compiled test consumers
+        # The independent core host owns this check on the initial Mac target.
+        # Publishing executables does not need to wait for Clippy; the final
+        # workflow gate still requires both hosts to succeed.
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'default' || inputs.lane == 'core' && runner.os == 'macOS') && (inputs.phase != 'focus') }}
         timeout-minutes: 15
         run: cargo xtask ci native default-lint
       - name: Complete Cargo-owned checks and stage the immutable executable catalog

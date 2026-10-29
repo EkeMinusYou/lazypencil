@@ -64,7 +64,7 @@ pub fn build_jobs_for(invocation: &[String], jobs: usize) -> Invocation {
     let cargo = &invocation[..cargo_end];
     let compiles = cargo.first().is_some_and(|argument| argument == "cargo")
         && match cargo.get(1).map(String::as_str) {
-            Some("build" | "rustc") => true,
+            Some("build" | "rustc" | "clippy") => true,
             Some("test") => cargo.iter().any(|argument| argument == "--no-run"),
             _ => false,
         };

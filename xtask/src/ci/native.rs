@@ -42,6 +42,7 @@ pub enum Stage {
     CoreTest,
     CoreLint,
     DefaultBuild,
+    BuildAndReproduce,
     Reproduce,
     DefaultTest,
     DefaultRelease,
@@ -281,7 +282,11 @@ impl Session {
         filter: &str,
         arguments: &[&str],
     ) -> Result<Vec<String>> {
-        if features && self.temporary.join("test-executables.json").exists() {
+        if features
+            && ["test-executables.json", "early-test-executables.json"]
+                .iter()
+                .any(|name| self.temporary.join(name).exists())
+        {
             let catalog = self.verified_catalog(&[])?;
             if let Some(binary) = catalog.binaries.get(target) {
                 let mut args = vec![binary.path.to_string_lossy().into_owned()];
@@ -815,6 +820,52 @@ impl Session {
                 }
                 self.build_catalog(&[])
             }
+            Stage::BuildAndReproduce => {
+                if ["ci", "normal-ci", "browser-ci"].contains(&args.suite.as_str()) {
+                    return self.build_catalog(&[]);
+                }
+                self.run(Arguments {
+                    stage: Stage::FocusBuild,
+                    suite: args.suite.clone(),
+                    targets: args.targets.clone(),
+                })?;
+                let catalog =
+                    self.compile_catalog(&targets, "early-build", &std::env::var("GITHUB_SHA")?)?;
+                util::publish(
+                    &self.temporary.join("early-test-executables.json"),
+                    &util::encode(&catalog)?,
+                    false,
+                )?;
+                // The selected units are already fresh under the same Cargo
+                // conditions. Their immutable executables can run while Cargo
+                // compiles the remaining targets. Join both lanes on failure.
+                parallel::run(vec![
+                    (
+                        "affected reproductions",
+                        Box::new(|| {
+                            self.run(Arguments {
+                                stage: Stage::FocusReproduce,
+                                suite: args.suite.clone(),
+                                targets: args.targets.clone(),
+                            })
+                        }),
+                    ),
+                    (
+                        "remaining test compilation",
+                        Box::new(|| {
+                            // The normal build was checked before the early
+                            // catalog. Keep the test graph active while its
+                            // executables run; do not replace their CLI binary.
+                            let catalog = self.compile_test_catalog(
+                                &[],
+                                "default-build",
+                                &std::env::var("GITHUB_SHA")?,
+                            )?;
+                            self.publish_catalog(&catalog)
+                        }),
+                    ),
+                ])
+            }
             Stage::Reproduce => self.reproduce_inputs(true),
             Stage::DefaultTest => management::default(self),
             Stage::DefaultRelease => normal::run(self),
@@ -967,9 +1018,13 @@ impl Session {
     fn build_catalog(&self, targets: &[String]) -> Result<()> {
         let catalog =
             self.compile_catalog(targets, "default-build", &std::env::var("GITHUB_SHA")?)?;
+        self.publish_catalog(&catalog)
+    }
+
+    fn publish_catalog(&self, catalog: &Catalog) -> Result<()> {
         util::publish(
             &self.temporary.join("test-executables.json"),
-            &util::encode(&catalog)?,
+            &util::encode(catalog)?,
             false,
         )
     }
@@ -977,8 +1032,16 @@ impl Session {
     // Early reproductions need compiler-reported identities before the runtime
     // stage publishes its complete catalog. Keep their records independent.
     fn compile_catalog(&self, targets: &[String], log: &str, commit: &str) -> Result<Catalog> {
-        let [normal, tests] = commands::catalog_builds(targets);
+        let [normal, _] = commands::catalog_builds(targets);
         self.execute(&normal, 2700, &format!("{log}.log"), false)?;
+        self.compile_test_catalog(targets, log, commit)
+    }
+
+    fn compile_test_catalog(&self, targets: &[String], log: &str, commit: &str) -> Result<Catalog> {
+        let [_, mut tests] = commands::catalog_builds(targets);
+        if !targets.is_empty() && self.root.join("src/lib.rs").is_file() {
+            tests.push("--lib".into());
+        }
         let mut command = self.command(&tests);
         let raw = self.capture(&mut command, 2700, &format!("{log}.jsonl"))?;
         let mut binaries = BTreeMap::new();
@@ -1175,7 +1238,12 @@ impl Session {
     }
 
     fn verified_catalog(&self, required: &[&str]) -> Result<Catalog> {
-        let catalog: Catalog = util::json(&self.temporary.join("test-executables.json"))?;
+        let complete = self.temporary.join("test-executables.json");
+        let catalog: Catalog = util::json(&if complete.exists() {
+            complete
+        } else {
+            self.temporary.join("early-test-executables.json")
+        })?;
         catalog.validate(&self.target, &std::env::var("GITHUB_SHA")?, required)?;
         Ok(catalog)
     }
@@ -1282,6 +1350,11 @@ mod tests {
         )
         .unwrap();
         fs::write(session.root.join("src/main.rs"), "fn main() {}\n").unwrap();
+        fs::write(
+            session.root.join("src/lib.rs"),
+            "#[test] fn library_probe() { assert_eq!(10, 10); }\n",
+        )
+        .unwrap();
         let test = session.root.join("tests/script_scope.rs");
         fs::write(
             &test,
@@ -1296,6 +1369,23 @@ mod tests {
         first
             .validate(&session.target, "fixture-source", &["script_scope"])
             .unwrap();
+        assert!(first.binaries.contains_key("lib"));
+        fs::write(
+            session.root.join("tests/remaining.rs"),
+            "#[test] fn remaining_probe() { assert_eq!(20, 20); }\n",
+        )
+        .unwrap();
+        let complete = session
+            .compile_test_catalog(
+                &["script_scope".into(), "remaining".into()],
+                "remaining-build",
+                "fixture-source",
+            )
+            .unwrap();
+        for name in ["lib", "script_scope"] {
+            assert_eq!(first.binaries[name].sha256, complete.binaries[name].sha256);
+        }
+        assert!(complete.binaries.contains_key("remaining"));
         let invocation = |catalog: &Catalog| {
             vec![
                 catalog.binaries["script_scope"]

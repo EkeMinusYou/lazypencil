@@ -1281,6 +1281,7 @@ fn native_build_scheduling_preserves_compiler_arguments_and_test_execution() {
     for args in [
         words(&["cargo", "build", "--locked"]),
         words(&["cargo", "test", "--locked", "--no-run"]),
+        words(&["cargo", "clippy", "--all-targets", "--", "-D", "warnings"]),
         words(&[
             "cargo",
             "rustc",
@@ -1305,7 +1306,6 @@ fn native_build_scheduling_preserves_compiler_arguments_and_test_execution() {
     for args in [
         &["cargo", "test", "--locked", "--", "--no-run"][..],
         &["cargo", "test", "--locked", "--", "--test-threads=2"],
-        &["cargo", "clippy", "--all-targets", "--", "-D", "warnings"],
         &["cargo", "build", "--jobs=1"],
         &["cargo", "build", "-j1"],
         &["cargo", "build", "-j", "1"],
