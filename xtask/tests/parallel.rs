@@ -53,17 +53,24 @@ fn browser_lanes_preserve_every_existing_target_once_with_bounded_parallelism() 
     }
     let binary = std::env::temp_dir().join("verified-script-scope");
     let bindings = lazypencil_xtask::ci::native::browser::binding_commands(&binary);
+    let reproduction = lazypencil_xtask::ci::native::browser::NATIVE_INPUT_GUARDS;
     assert_eq!(
         bindings
             .iter()
             .map(|command| command[1].as_str())
             .collect::<Vec<_>>(),
-        ["generated_browser_", "script_bindings::", "script_copy::"],
+        [reproduction, "generated_browser_", "script_bindings::", "script_copy::"],
         "Keep every original default-feature binding filter"
     );
-    for command in bindings {
+    assert_eq!(bindings[0].last().unwrap(), "--exact");
+    assert_eq!(&bindings[2][3..], ["--skip", reproduction]);
+    let source = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent().unwrap().join("tests/support/script_generated_overrides.rs")).unwrap();
+    assert!(source.contains(&format!("fn {}(", reproduction.rsplit("::").next().unwrap())),
+        "The early exact filter must name an existing regression, never run zero tests");
+    for (index, command) in bindings.into_iter().enumerate() {
         assert_eq!(std::path::Path::new(&command[0]), binary.as_path());
-        assert_eq!(command.len(), 3);
+        assert_eq!(command.len(), match index {0=>4,2=>5,_=>3});
         assert_eq!(command[2], "--test-threads=1");
     }
 }

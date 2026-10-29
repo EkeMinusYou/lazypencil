@@ -542,12 +542,12 @@ jobs:
           path: ${{ runner.temp }}/lazypencil-release-cache
       - name: Stage a complete build for unchanged integration-test reuse
         id: compatible-save
-        if: ${{ (inputs.lane != 'release') && success() && inputs.phase != 'focus' && steps.application-key.outcome == 'success' && steps.compatible-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
+        if: ${{ (inputs.lane != 'release') && !cancelled() && (success() || steps.default-build.outputs.compiled_catalog == github.sha) && inputs.phase != 'focus' && steps.application-key.outcome == 'success' && steps.compatible-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         timeout-minutes: 3
         run: cargo xtask ci cache application stage --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-compatible-cache" --native-key '${{ steps.cache-key.outputs.primary }}${{ inputs.lane == 'core' && '-core' || '' }}'
       - name: Reserve room for the staged successful replacement
-        if: ${{ (inputs.lane != 'release') && success() && steps.compatible-save.outcome == 'success' && github.ref == 'refs/heads/main' }}
+        if: ${{ (inputs.lane != 'release') && !cancelled() && steps.compatible-save.outcome == 'success' && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         timeout-minutes: 3
         env:
@@ -570,7 +570,7 @@ jobs:
         run: cargo xtask ci cache retain --platform '${{ inputs.os }}' --manifest "$RUNNER_TEMP/lazypencil-source/SOURCE-MANIFEST.json" --delete
       - name: Keep completed dependencies after failure or cancellation
         id: cache-prune
-        if: ${{ always() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true' && steps.native-cache.outputs.cache-matched-key != steps.cache-key.outputs.primary && (steps.focus-build.outcome == 'success' || steps.default-build.outcome == 'success' || steps.release-build.outcome == 'success') }}
+        if: ${{ always() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true' && steps.native-cache.outputs.cache-matched-key != steps.cache-key.outputs.primary && (steps.focus-build.outcome == 'success' || steps.default-build.outcome == 'success' || steps.default-build.outputs.compiled_catalog == github.sha || steps.release-build.outcome == 'success') }}
         continue-on-error: true
         run: cargo xtask ci cache prune --source "$RUNNER_TEMP/lazypencil-source"
       - name: Save compatible hosted dependency build artifacts

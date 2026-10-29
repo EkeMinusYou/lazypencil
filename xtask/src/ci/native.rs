@@ -1080,11 +1080,20 @@ impl Session {
     }
 
     fn publish_catalog(&self, catalog: &Catalog) -> Result<()> {
+        let output = std::env::var_os("GITHUB_OUTPUT").map(PathBuf::from);
+        self.publish_catalog_to(catalog, output.as_deref())
+    }
+
+    fn publish_catalog_to(&self, catalog: &Catalog, output: Option<&Path>) -> Result<()> {
+        catalog.validate(&self.target, &catalog.source_commit, &[])?;
         util::publish(
             &self.temporary.join("test-executables.json"),
             &util::encode(catalog)?,
             false,
-        )
+        )?;
+        // A later reproduction may fail while this complete Cargo build is
+        // still reusable. This output proves compilation, never test success.
+        util::github_output(output, &BTreeMap::from([("compiled_catalog".into(), catalog.source_commit.clone())]))
     }
 
     // Early reproductions need compiler-reported identities before the runtime
@@ -1532,7 +1541,19 @@ mod tests {
         assert!(
             String::from_utf8_lossy(&result.stdout).contains("generated_browser_probe ... FAILED")
         );
-        assert_eq!(fs::read(later).unwrap(), b"a later stage owns this catalog");
+        assert_eq!(fs::read(&later).unwrap(), b"a later stage owns this catalog");
+        // Failed runtime assertions must not discard a complete compiler graph.
+        // Publishing still rejects changed executable bytes before recording it.
+        let complete = session.compile_test_catalog(&complete_targets, "failed-test-build", "fixture-source").unwrap();
+        let output = temp.path().join("action-output");
+        session.publish_catalog_to(&complete, Some(&output)).unwrap();
+        assert_eq!(fs::read_to_string(&output).unwrap(), "compiled_catalog=fixture-source\n");
+        let published = fs::read(&later).unwrap();
+        fs::write(&output, b"").unwrap();
+        fs::write(&complete.binaries["script_scope"].path, b"mutated executable").unwrap();
+        assert!(session.publish_catalog_to(&complete, Some(&output)).is_err());
+        assert!(fs::read(&output).unwrap().is_empty());
+        assert_eq!(fs::read(&later).unwrap(), published);
     }
 
     #[test]

@@ -193,13 +193,18 @@ pub fn test_threads(target: &str) -> usize {
     if target == "browser_readiness" { 2 } else { 1 }
 }
 
-pub fn binding_commands(binary: &Path) -> [Vec<String>; 3] {
-    ["generated_browser_", "script_bindings::", "script_copy::"].map(|filter| {
-        vec![
+pub const NATIVE_INPUT_GUARDS: &str = "script_bindings::generated_sources::native_parent_input_guards_use_post_mapping_expressions_and_keep_inherited_controls_separate";
+
+pub fn binding_commands(binary: &Path) -> [Vec<String>; 4] {
+    [NATIVE_INPUT_GUARDS, "generated_browser_", "script_bindings::", "script_copy::"].map(|filter| {
+        let mut command = vec![
             binary.to_string_lossy().into_owned(),
             filter.into(),
             "--test-threads=1".into(),
-        ]
+        ];
+        if filter == NATIVE_INPUT_GUARDS { command.push("--exact".into()); }
+        if filter == "script_bindings::" { command.extend(["--skip".into(), NATIVE_INPUT_GUARDS.into()]); }
+        command
     })
 }
 
@@ -221,18 +226,21 @@ pub fn focus_bindings(s: &Session) -> Result<()> {
             .env("CARGO_MANIFEST_PATH", s.root.join("Cargo.toml"));
         s.execute_command(&mut command, 300, log, false)
     };
+    // Reproduce the changed input boundary before unrelated long layouts. The
+    // later binding group excludes this exact same-condition invocation.
+    execute(0, "focus-native-input-guards.log")?;
     let groups = parallel::run(vec![
         (
             "generated browser layouts",
-            Box::new(|| execute(0, "focus-browser-bindings.log")),
+            Box::new(|| execute(1, "focus-browser-bindings.log")),
         ),
         (
             "script bindings and overrides",
-            Box::new(|| execute(1, "focus-script-bindings.log")),
+            Box::new(|| execute(2, "focus-script-bindings.log")),
         ),
     ]);
     // Preserve the final legacy-copy check even if either joined group failed.
-    let copies = execute(2, "focus-copy-bindings.log");
+    let copies = execute(3, "focus-copy-bindings.log");
     let failures = [("binding groups", groups), ("legacy script copies", copies)]
         .into_iter()
         .filter_map(|(name, result)| result.err().map(|error| format!("{name}: {error:#}")))

@@ -380,11 +380,16 @@ fn copy(store: &Store, include_source: bool, mode: &str) -> Value {
                 json!({"action":"rename","name":format!("{prefix}{name}")}),
             );
         }
+        if mode.starts_with("binding-native-parent-input-")
+            && !(scope == "ui" && mode.ends_with("-library"))
+        {
+            variables.insert(
+                format!("{scope}:native_selection"),
+                json!({"action":"rename","name":format!("{prefix}native_selection")}),
+            );
+        }
     }
     let mut options = json!({"component_prefix":"Copy ","variables":variables});
-    if mode.starts_with("binding-native-parent-input-") {
-        options["variable_prefix"] = json!("copy_");
-    }
     if store.read().unwrap().value()["themes"]
         .get("copy_mode")
         .is_some()
