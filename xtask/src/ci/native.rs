@@ -1642,7 +1642,19 @@ mod tests {
         .unwrap();
         let later = session.temporary.join("test-executables.json");
         assert!(!later.exists());
-        let targets = ["project", "queries", "script_scope", "scripts"].map(str::to_owned);
+        fs::write(
+            session.root.join("tests/sampler_sources.rs"),
+            "#[test] fn file_url_probe() { assert_eq!(10, 10); }\n",
+        )
+        .unwrap();
+        let targets = [
+            "project",
+            "queries",
+            "script_scope",
+            "scripts",
+            "sampler_sources",
+        ]
+        .map(str::to_owned);
         // Unrelated failures must not delay the first reproduction, but they
         // must still fail complete verification through Cargo itself.
         for target in ["project", "queries", "scripts"] {
@@ -1670,7 +1682,11 @@ mod tests {
             .compile_catalog(&early, "early-first", "fixture-source")
             .unwrap();
         first
-            .validate(&session.target, "fixture-source", &["script_scope"])
+            .validate(
+                &session.target,
+                "fixture-source",
+                &["script_scope", "sampler_sources"],
+            )
             .unwrap();
         assert!(first.binaries.contains_key("lib"));
         fs::write(
@@ -1694,7 +1710,7 @@ mod tests {
         let complete = session
             .compile_test_catalog(&complete_targets, "remaining-build", "fixture-source")
             .unwrap();
-        for name in ["lib", "script_scope"] {
+        for name in ["lib", "script_scope", "sampler_sources"] {
             assert_eq!(first.binaries[name].sha256, complete.binaries[name].sha256);
         }
         assert!(complete.binaries.contains_key("remaining"));

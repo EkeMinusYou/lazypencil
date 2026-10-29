@@ -4,6 +4,15 @@
 
 ## 現在の状態（2026-10-30）
 
+badafd3の[CI 40958169976](https://github.com/EkeMinusYou/lazypencil/actions/runs/40958169976)は全工程成功し、全体9分51秒だった。core／既定構成の全試験とClippy、通常開発build、release、通常／pixel／runtime／端末／Materialの全5 consumer、共通画像gateと署名付きsourceを含む。ローカル`file://`文字列samplerの独立copyは、2.19／2.21のテーマ・元URL表示・source削除・移動・再copy・将来編集と、許可領域・URLの予約文字・同一byteへのsymlink変更を検証済み。実WebGLも相対／絶対／file URLの各light・darkの6条件でcopy前後の画像が一致し、最終gateが全12 PNGのhashを照合した。実端末IMEや公開受け入れ全体の完了とは分ける。
+
+builder3分06秒・core6分07秒・release2分19秒、通常3分57秒・runtime5分26秒・pixel2分38秒・Material1分58秒・端末1分05秒・source36秒だった。待機は通常1〜9秒、端末だけ既存のconsumer同時実行数上限により130秒で、runtimeより先に完了した。3eec395の既定304出力・core918出力は失効0件で再利用し、Cargo確認は3.55秒／2.43秒、release15出力も再利用して確認3.94秒だった。広げすぎたFocusCoreを完全coreへ追加しない経路と、300msの起動期限試験をbackground compile終了後へ置く経路が実際に成功した。試験・期限・最終gateは維持し、sourceは1,207ファイル、tar SHA-256 `e965be0745b957d00b4a6e134b381b3ca20210c090a1b3060053d4263dc93e63`で署名workflow／revisionも照合した。10分以内はこの成果物再利用条件の実測であり、本体変更・cold依存・任意のrunner待機での安定達成へ一般化しない。
+
+追加の整理では、新規sampler再現がearly catalogの対象から漏れてCargoを呼んでいた箇所を、先行build対象の一覧へ接続する。既存の小さな実Cargo fixtureでsampler実行ファイルの先行生成と、全体で同じhashの再利用を検査する。英語shaderガイドの「絶対パス・投影衝突を拒否する」という古い案内も現在の実装へ揃え、file URLの条件と残るHTTP(S)／captured script asset keyの制約を案内する。ガイド集合は1.0.50。追加整理のGHAはこれからで、ガイド本文を含む次のアプリ成果物のcompile確認は次に必要な本体検証へまとめる。同条件の全native CIをこの小変更だけのために繰り返さない。未参照素材の回収と元の公開受け入れ条件は残る。
+
+<details>
+<summary>file URL対応の初回失敗と直前の成功記録（現在の結果は上記badafd3）</summary>
+
 明示したローカル`file://` URLを通常のcanonical path・許可領域・依存検査へ接続した。shaderの文字列samplerは元のURL文字列を表示用に保持し、画像だけを既存の管理bundleへコピーする。3eec395の[CI 40956710045](https://github.com/EkeMinusYou/lazypencil/actions/runs/40956710045)では、2.19／2.21のテーマ・移動・再copy・将来編集、URLの予約文字・禁止authority等・同一byteへのsymlink変更の新規3件が既定構成の先行で1.13秒、coreの全試験でも成功した。両構成Clippy・通常開発build・releaseと補助ツール監査も成功した。
 
 同候補のbuilderは、残るcompileと並列に動かした既存dynamic_renderの300ms起動期限試験で、PID file生成前の期限到達により停止した。新しいURL試験の失敗ではなく、実WebGLのURL画像と全5 consumer・最終sourceの成功根拠にもならない。修正では短い起動期限を使う完全dynamic_render targetだけを、開始済みの全compile・再現をjoinした直後へ移す。独立した再現の並列化、元のcase・300ms期限・子回収assertion、standalone focusの実行は維持する。全job終了後に修正版を送る。HTTP(S)等の取得、捕捉scriptのfile-URL asset key、未参照素材の回収は引き続き残る。
@@ -15,6 +24,8 @@
 core移管時に条件を広げすぎ、以前の完全core jobにはなかった広いFocusCoreまで追加していた。320秒の前段にはlib単独とintegrationの異なるCargo入力構成のcompile（150.97秒／168.18秒）を含むため、「同じ試験を320秒削る」とは扱わない。修正では完全core build後の`core-reproduce`へ必要な所有権・会話管理・cleanup workerだけを渡し、従来の完全coreとstandalone focusの各構成は保持する。実行0件だった旧`dynamic::worker::`呼出しだけも除く。1952d08の[Mac先行GHA 40954265977](https://github.com/EkeMinusYou/lazypencil/actions/runs/40954265977)で、補助ツール全試験・Clippy・原本通知の照合が成功した。実Cargo fixtureも新しいcore-reproduce入口から同じ保護を成功した。アプリ本体・同条件の全native検証はこの整理だけのために繰り返さず、全体時間への効果は次に必要なアプリ検証で測る。
 
 同SDKのf53ffee成果物はbcbd67aで実際に再利用できたため、置換済みの旧Mac成果物cache一件だけを整理して1,092,373,112バイトを解放した。両Mac imageの依存cacheと、新しい成果物・異なるSDKのfallbackは保持した。全5 consumerのreceiptと元の画像gateが成功し、署名sourceは1,207ファイル・13,399,707バイト、SHA-256 `b96a778537c61a36be56a6529c2882101da4c426649a9ff70472e4c76a075023`で、workflow／source revisionの署名照合も成功した。重いbuildと試験はGHAだけで実行し、有用な実行を中断していない。
+
+</details>
 
 <details>
 <summary>Font lockfile導入時の失敗とcache改善の履歴（上記625bec7でアプリの最終gateまで検証済み）</summary>
