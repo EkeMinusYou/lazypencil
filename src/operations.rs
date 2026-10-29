@@ -171,7 +171,7 @@ pub enum Operation {
         #[serde(default)]
         index: Option<usize>,
         #[serde(default)]
-        options: ImportOptions,
+        options: Box<ImportOptions>,
         #[serde(default)]
         expected_source_revision: Option<String>,
         #[serde(default)]
