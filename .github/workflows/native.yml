@@ -211,8 +211,12 @@ jobs:
           key: ${{ steps.application-key.outputs.compatible_primary }}
           restore-keys: |
             ${{ steps.application-key.outputs.compatible_prefix }}
+            ${{ steps.application-key.outputs.legacy_compatible_primary }}
+            ${{ steps.application-key.outputs.legacy_compatible_prefix }}
             ${{ steps.application-key.outputs.previous_debug_primary }}
             ${{ steps.application-key.outputs.previous_debug_prefix }}
+            ${{ steps.application-key.outputs.previous_legacy_primary }}
+            ${{ steps.application-key.outputs.previous_legacy_prefix }}
           path: ${{ runner.temp }}/lazypencil-compatible-cache
           lookup-only: ${{ inputs.rebuild_application || steps.application-cache.outputs.cache-hit == 'true' }}
       - name: Validate application reuse or keep a fresh build

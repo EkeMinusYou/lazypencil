@@ -204,6 +204,11 @@ impl Command {
                 let value = match operation.as_str() {
                     "identify" => {
                         let previous_debug = identity.previous_debug_identity()?;
+                        let (legacy_primary, legacy_prefix) = identity.compatible_keys(true)?;
+                        let previous_legacy = previous_debug
+                            .as_ref()
+                            .map(|old| old.compatible_keys(true))
+                            .transpose()?;
                         let checkpoint = if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
                         {
                             application_checkpoint(
@@ -229,6 +234,20 @@ impl Command {
                                 (
                                     "compatible_prefix".into(),
                                     identity.compatible_prefix.clone(),
+                                ),
+                                ("legacy_compatible_primary".into(), legacy_primary),
+                                ("legacy_compatible_prefix".into(), legacy_prefix),
+                                (
+                                    "previous_legacy_primary".into(),
+                                    previous_legacy
+                                        .as_ref()
+                                        .map_or_else(String::new, |keys| keys.0.clone()),
+                                ),
+                                (
+                                    "previous_legacy_prefix".into(),
+                                    previous_legacy
+                                        .as_ref()
+                                        .map_or_else(String::new, |keys| keys.1.clone()),
                                 ),
                                 (
                                     "previous_debug_primary".into(),
@@ -710,11 +729,24 @@ pub struct ApplicationIdentity {
     pub tracked: BTreeMap<String, Entry>,
     pub compatible_primary: String,
     pub compatible_prefix: String,
+    compatible_namespace: String,
     recipe: Value,
     release_only: bool,
 }
 
 impl ApplicationIdentity {
+    /// Legacy lookup does not change the source-bound payload identity.
+    /// Every restored candidate is still checked against its compiler inputs.
+    pub fn compatible_keys(&self, legacy: bool) -> Result<(String, String)> {
+        let prefix = format!(
+            "{}-{}-full-",
+            self.compatible_namespace,
+            compatible_fingerprint(&self.recipe, legacy)?
+        );
+        let source_hash = util::digest(stable_json(&self.recipe["inputs"]));
+        Ok((format!("{prefix}{source_hash}"), prefix))
+    }
+
     /// One reviewed release-only transition. All native/default/test inputs
     /// remain bound to the old fingerprint; callers may restore debug only.
     pub fn previous_debug_identity(&self) -> Result<Option<Self>> {
@@ -728,26 +760,24 @@ impl ApplicationIdentity {
         old.fingerprint = util::digest(stable_json(&old.recipe));
         old.primary = self.primary.replace(&self.fingerprint, &old.fingerprint);
         old.checkpoint = self.checkpoint.replace(&self.fingerprint, &old.fingerprint);
-        let suffix = format!("{}-full-", compatible_fingerprint(&self.recipe)?);
-        let prefix = self
-            .compatible_prefix
-            .strip_suffix(&suffix)
-            .context("Invalid compatible prefix")?;
-        old.compatible_prefix = format!("{prefix}{}-full-", compatible_fingerprint(&old.recipe)?);
-        old.compatible_primary =
-            self.compatible_primary
-                .replacen(&self.compatible_prefix, &old.compatible_prefix, 1);
+        (old.compatible_primary, old.compatible_prefix) = old.compatible_keys(false)?;
         Ok(Some(old))
     }
 }
 
-fn compatible_fingerprint(recipe: &Value) -> Result<String> {
+fn compatible_fingerprint(recipe: &Value, legacy: bool) -> Result<String> {
     let inputs: Vec<Entry> = serde_json::from_value(recipe["inputs"].clone())?;
     let mut common = recipe.clone();
     common["inputs"] = serde_json::to_value(
         inputs
             .iter()
-            .filter(|entry| !compatible::test_source(&entry.path))
+            .filter(|entry| {
+                !(if legacy {
+                    compatible::legacy_test_source(&entry.path)
+                } else {
+                    compatible::candidate_source(&entry.path)
+                })
+            })
             .collect::<Vec<_>>(),
     )?;
     common["scope"] = json!("integration-tests-v1");
@@ -821,9 +851,10 @@ fn application_identity_for(
     } else {
         "tests-v1"
     };
+    let compatible_namespace = format!("{tests_namespace}-{platform}");
     let compatible_prefix = format!(
-        "{tests_namespace}-{platform}-{}-full-",
-        compatible_fingerprint(&recipe)?
+        "{compatible_namespace}-{}-full-",
+        compatible_fingerprint(&recipe, false)?
     );
     Ok(ApplicationIdentity {
         fingerprint: fingerprint.clone(),
@@ -836,6 +867,7 @@ fn application_identity_for(
         tracked: inputs.into_iter().map(|e| (e.path.clone(), e)).collect(),
         compatible_primary: format!("{compatible_prefix}{source_hash}"),
         compatible_prefix,
+        compatible_namespace,
         recipe,
         release_only,
     })

@@ -1,6 +1,11 @@
 use super::*;
 
-pub(super) fn test_source(name: &str) -> bool {
+pub(super) fn candidate_source(name: &str) -> bool {
+    legacy_test_source(name)
+        || (name.starts_with("src/") && name.ends_with(".rs") && util::safe_path(name).is_ok())
+}
+
+pub(super) fn legacy_test_source(name: &str) -> bool {
     name.ends_with(".rs")
         && !name.contains('\\')
         && name.split('/').all(|part| !matches!(part, "" | "." | ".."))
@@ -11,7 +16,8 @@ pub(super) fn test_source(name: &str) -> bool {
             || name.starts_with("xtask/src/test_support/"))
 }
 
-/// Existing integration roots and shared Rust test helpers are candidates.
+/// Existing Rust application sources and shared test helpers are candidates.
+/// Directory names do not establish whether a file is test-only.
 /// The complete cached compiler-unit inventory determines actual consumers.
 /// Every affected unit must be an integration, library-test or binary-test unit.
 /// A helper used by a production library, example or executable rejects reuse,
@@ -92,19 +98,6 @@ fn compatible_inputs(
         .inputs
         .as_ref()
         .context("Missing cached source inputs")?;
-    let source_hash = util::digest(stable_json(&serde_json::to_value(inputs)?));
-    let mut old = identity.clone();
-    let mut debug_only = false;
-    if matched_key != format!("{}{source_hash}", identity.compatible_prefix) {
-        old = identity
-            .previous_debug_identity()?
-            .context("Compatible cache key changed")?;
-        ensure!(
-            matched_key == format!("{}{source_hash}", old.compatible_prefix),
-            "Compatible cache key changed"
-        );
-        debug_only = true;
-    }
     let cached = inputs
         .iter()
         .map(|entry| (entry.path.clone(), entry.clone()))
@@ -114,20 +107,31 @@ fn compatible_inputs(
             && cached.keys().eq(identity.tracked.keys()),
         "Cached source set changed"
     );
-    old.recipe["inputs"] = serde_json::to_value(inputs)?;
-    old.fingerprint = util::digest(stable_json(&old.recipe));
-    ensure!(
-        old.fingerprint == report.fingerprint,
-        "Compatible build recipe changed"
-    );
+    let mut accepted = None;
+    for (mut old, debug_only) in std::iter::once((identity.clone(), false))
+        .chain(identity.previous_debug_identity()?.map(|old| (old, true)))
+    {
+        old.recipe["inputs"] = serde_json::to_value(inputs)?;
+        old.fingerprint = util::digest(stable_json(&old.recipe));
+        if old.fingerprint == report.fingerprint
+            && [false, true].into_iter().any(|legacy| {
+                old.compatible_keys(legacy)
+                    .is_ok_and(|(primary, _)| matched_key == primary)
+            })
+        {
+            accepted = Some((old, debug_only));
+            break;
+        }
+    }
+    let (old, debug_only) = accepted.context("Compatible cache key or build recipe changed")?;
     let mut changed = BTreeSet::new();
     for (name, entry) in &cached {
         util::safe_path(name)?;
         let current = &identity.tracked[name];
         if entry != current {
             ensure!(
-                test_source(name) && entry.mode == current.mode,
-                "Only existing integration-test or Rust helper source edits are compatible"
+                candidate_source(name) && entry.mode == current.mode,
+                "Only existing Rust application or test helper source edits are candidates"
             );
             changed.insert(name.clone());
         }
