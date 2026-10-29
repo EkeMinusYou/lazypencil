@@ -96,6 +96,8 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 
 ### 次に実装・確認すること
 
+c8e1c66の[CI 40874923459](https://github.com/EkeMinusYou/lazypencil/actions/runs/40874923459)はcore469件・両構成のコンパイル・release・監査、既存84組を含む先行bindingの12件を成功した。追加した拒否ケースは、元入力libraryの`selection`がコピー先の同名変数と衝突し、目的の描画検査へ進む前に停止した。試験データの変数を明示renameして修正する。通常consumerと署名付きsourceは未実行であり、この候補を全工程成功とはしない。実行は終了しており、準備済みの入力文脈対応とこのfixture修正を合わせて次に検証する。
+
 次の候補は、明示`script_input_context`の入力一致判定と形式・由来検査を通常文書の読込みと共用する。生成結果の入力文脈を捕捉済みの宣言libraryへ結び、scope／bindingの出力選択と独立して変数・部品を適用する。単独・scope併用・三者併用、変数の改名、別library、失効時に未知libraryを参照しないことを両形式・5経路の60組で検証する。各組の元／copy／再copyと画像を既存の試験へ追加し、先行の最初に実行する。既存のnative入力guardは同条件のbinding群へ移し、通常全試験も維持する。Rustの整形は成功したが、この候補のGHA実行はまだ開始していない。有用なc8e1c66のCIが終了してから送る。carrier・入力所有元の解除・複数世代の継承は引き続き残件である。
 
 5b24cfeの[CI 40872835538](https://github.com/EkeMinusYou/lazypencil/actions/runs/40872835538)は全工程成功した。scope／binding対の84組・16通りのguard判定と既存の通常／core・動的・端末・Material・release・監査・source gateを通過した。この検証と並行して、継承入力の`lexical_inputs`と`input_epoch`の由来検査を追加している。新しい入力と既存の明示入力文脈、古い／別世代の捕捉を区別する。再コピー時は由来を維持し、確定できないケースは引き続き拒否する。明示文脈を通常の所有元として扱うことや、新旧の生成コードへ同じ元式を無条件で渡すことを防ぐためであり、この拒否を全範囲の対応完了とは扱わない。由来検査を含む次の候補は別途GHAで検証する。

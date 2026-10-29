@@ -470,6 +470,12 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
 
 fn copy(store: &Store, include_source: bool, mode: &str) -> Value {
     let mut variables = serde_json::Map::new();
+    if mode == "binding-combined-inherited-nonlexical" {
+        variables.insert(
+            "ui:base:inputs:selection".into(),
+            json!({"action":"rename","name":"input_selection"}),
+        );
+    }
     for (scope, prefix) in [("ui", "ui_"), ("ui:base", "base_")] {
         for name in ["selection", "tone"] {
             variables.insert(
