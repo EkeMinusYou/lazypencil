@@ -595,6 +595,11 @@ pub fn native_identity(
             .any(|s| s == "commit-hash: 4a4ef493e3a1488c6e321570238084b38948f6db")
         && flags == baseline;
     let previous = match tree {
+        // The optional Fontations readers leave native inputs unchanged.
+        // Restore dependencies only; Cargo must recheck unified Rust features.
+        "11d1597cbd47f826b985b5e514b42c0ff8aa9d4a3d378264e88ac38781b0e160" => {
+            Some("80b3b3fc770be2245a731ad66682615c3b4979af5c410c5bf196d10c61aba68b")
+        }
         // The tool migration adds only a terminal test dependency and a Cargo alias.
         // Production dependency declarations, native sources and build flags are unchanged.
         // Removing the retired Shell entry points does not change dependency build inputs.

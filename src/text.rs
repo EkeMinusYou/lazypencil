@@ -139,13 +139,16 @@ impl Fonts {
                     Ok((paragraph, resolved))
                 })();
                 match attempt {
-                    Ok((paragraph, resolved))
+                    Ok((mut paragraph, resolved)) => {
                         if paragraph.unresolved_glyphs().is_some_and(|count| count > 0)
-                            && fallback_count < self.fallback_families().len() =>
-                    {
-                        None
+                            && fallback_count < self.fallback_families().len()
+                        {
+                            None
+                        } else {
+                            Some(Ok((paragraph, resolved)))
+                        }
                     }
-                    value => Some(value),
+                    Err(error) => Some(Err(error)),
                 }
             })
             .expect("at least the primary font is attempted")?;

@@ -1043,6 +1043,12 @@ impl Project {
         self.check_cancelled()?;
         if let Some(file) = self.overlay.get(path).cloned() {
             if !self.assets.contains_key(path) {
+                let kind = if let Some(font) = self.font_sources.remove(path) {
+                    self.byte_count -= font.length;
+                    "font"
+                } else {
+                    kind
+                };
                 self.capture_bytes(path.to_owned(), kind, file.bytes.clone())?;
             }
             return Ok(());
@@ -1052,7 +1058,7 @@ impl Project {
             let bytes = font.read(self.cancel.as_ref())?;
             self.byte_count -= font.length;
             self.font_sources.remove(&path);
-            self.capture_bytes(path.clone(), kind, bytes)?;
+            self.capture_bytes(path.clone(), "font", bytes)?;
         }
         self.runtime_assets.remove(&path);
         if let Some(asset) = self.assets.get_mut(&path) {

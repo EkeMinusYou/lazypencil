@@ -1,5 +1,5 @@
 {
-  "cargo_lock_sha256": "db410540dbe9fb679aff69de343aa142c2287f0c06af2b0ae6152f2685d3d9da",
+  "cargo_lock_sha256": "87c039d1c934981896f15a1d293a8340b951f75e5f18d73f9964d23cd3408ec5",
   "format_version": 1,
   "license_references": [
     {
@@ -3979,6 +3979,52 @@
       "version": "0.2.0"
     },
     {
+      "archive_sha256": "835ae9d781464a79026cde387f9cbc650c9a4909d7cf7e658b127e3c35d2f35d",
+      "attribution_comments": [
+        {
+          "lines": [
+            {
+              "line": 25,
+              "text": "    /// Copyright notice."
+            },
+            {
+              "line": 66,
+              "text": "    /// Such information should be based on legal advice. This is distinctly separate from the copyright."
+            }
+          ],
+          "path": "src/name_id.rs"
+        }
+      ],
+      "authors": [],
+      "files": [
+        {
+          "blob": "texts/eba684204073ed715c4abb48129acdfd2bff8ae48339e6a7da3b341d3027b7f0.txt",
+          "kind": "archive",
+          "path": "LICENSE-APACHE",
+          "sha256": "eba684204073ed715c4abb48129acdfd2bff8ae48339e6a7da3b341d3027b7f0"
+        },
+        {
+          "blob": "texts/7b4c9a3946dfcea7967582760e963e27799e225dcf20565c8ef55324bb017427.txt",
+          "kind": "archive",
+          "path": "LICENSE-MIT",
+          "sha256": "7b4c9a3946dfcea7967582760e963e27799e225dcf20565c8ef55324bb017427"
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license_file": null,
+      "manifest_sha256": "59bf8ca1c20f797b0a3d4390c6de727bfe999bff8cc6ee6fe7a5ccb7146f442e",
+      "name": "font-types",
+      "repository": "https://github.com/googlefonts/fontations",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "ef666662f5985965bbbb726c4f77d15481831a1b"
+        },
+        "path_in_vcs": "font-types"
+      },
+      "version": "0.12.7"
+    },
+    {
       "archive_sha256": "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf",
       "attribution_comments": [
         {
@@ -6681,7 +6727,7 @@
         }
       ],
       "license": "MIT",
-      "manifest_sha256": "7767c219b02bb197594e9472bdd27aca7a475ba4de271db31544c1a3a8b71e3d",
+      "manifest_sha256": "ff95e6c4464208c2707edce1cd1767bbf35453a1087bb8cb2fc1d9bbc09803ca",
       "name": "lazypencil",
       "source": "workspace",
       "version": "0.1.0-dev",
@@ -24027,6 +24073,132 @@
       "version": "0.3.2"
     },
     {
+      "archive_sha256": "bdaa4fffe9ff3ca2c353fa9729792805b9b3e324695ff5a081f860612e81b330",
+      "attribution_comments": [
+        {
+          "lines": [
+            {
+              "line": 2,
+              "text": "# Copyright 2002-2019 Adobe (http://www.adobe.com/)."
+            },
+            {
+              "line": 9,
+              "text": "# copyright notice, this list of conditions and the following"
+            },
+            {
+              "line": 13,
+              "text": "# copyright notice, this list of conditions and the following"
+            },
+            {
+              "line": 21,
+              "text": "# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND"
+            },
+            {
+              "line": 25,
+              "text": "# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR"
+            },
+            {
+              "line": 1503,
+              "text": "copyright;00A9"
+            },
+            {
+              "line": 1504,
+              "text": "copyrightsans;F8E9"
+            },
+            {
+              "line": 1505,
+              "text": "copyrightserif;F6D9"
+            }
+          ],
+          "path": "data/glyphlist.txt"
+        },
+        {
+          "lines": [
+            {
+              "line": 2,
+              "text": "# Copyright 2002-2019 Adobe (http://www.adobe.com/)."
+            },
+            {
+              "line": 9,
+              "text": "# copyright notice, this list of conditions and the following"
+            },
+            {
+              "line": 13,
+              "text": "# copyright notice, this list of conditions and the following"
+            },
+            {
+              "line": 21,
+              "text": "# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND"
+            },
+            {
+              "line": 25,
+              "text": "# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR"
+            }
+          ],
+          "path": "data/zapfdingbats.txt"
+        },
+        {
+          "lines": [
+            {
+              "line": 28,
+              "text": "/// either copyright or trademark text; it is exposed as ID 0. The axes of a"
+            },
+            {
+              "line": 32,
+              "text": "/// and 6, and copyright, version, and notice as IDs 0, 5, and 7."
+            }
+          ],
+          "path": "src/model/name.rs"
+        },
+        {
+          "lines": [
+            {
+              "line": 178,
+              "text": "        // Copyright"
+            }
+          ],
+          "path": "src/ps/cff/v1.rs"
+        },
+        {
+          "lines": [
+            {
+              "line": 249,
+              "text": "    /// Returns the font's copyright or trademark notice."
+            }
+          ],
+          "path": "src/ps/type1.rs"
+        }
+      ],
+      "authors": [],
+      "files": [
+        {
+          "blob": "texts/eba684204073ed715c4abb48129acdfd2bff8ae48339e6a7da3b341d3027b7f0.txt",
+          "kind": "archive",
+          "path": "LICENSE-APACHE",
+          "sha256": "eba684204073ed715c4abb48129acdfd2bff8ae48339e6a7da3b341d3027b7f0"
+        },
+        {
+          "blob": "texts/7b4c9a3946dfcea7967582760e963e27799e225dcf20565c8ef55324bb017427.txt",
+          "kind": "archive",
+          "path": "LICENSE-MIT",
+          "sha256": "7b4c9a3946dfcea7967582760e963e27799e225dcf20565c8ef55324bb017427"
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license_file": null,
+      "manifest_sha256": "c4430f5af4d4925b3ef2f74f4621d2d8781522aad246490e2d0c38bf7687dc00",
+      "name": "read-fonts",
+      "repository": "https://github.com/googlefonts/fontations",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "47a301615fd95acf0da9fb7dbcd0ea7c7df36943"
+        },
+        "path_in_vcs": "read-fonts"
+      },
+      "version": "0.46.0"
+    },
+    {
       "archive_sha256": "ed2bf2547551a7053d6fdfafda3f938979645c44812fbfcda098faae3f1a362d",
       "attribution_comments": [],
       "authors": [
@@ -30438,43 +30610,6 @@
         "path_in_vcs": ""
       },
       "version": "3.2.2"
-    },
-    {
-      "archive_sha256": "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31",
-      "attribution_comments": [],
-      "authors": [
-        "Caleb Maclennan <caleb@alerque.com>",
-        "Laurenz Stampfl <laurenz.stampfl@gmail.com>",
-        "Yevhenii Reizner <razrfalcon@gmail.com>",
-        "خالد حسني (Khaled Hosny) <khaled@aliftype.com>"
-      ],
-      "files": [
-        {
-          "blob": "texts/a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2.txt",
-          "kind": "archive",
-          "path": "LICENSE-APACHE",
-          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
-        },
-        {
-          "blob": "texts/f3c9fe731c701ed77fd5fbaac573872af04dc5869385eb9bd5e3c73c42713814.txt",
-          "kind": "archive",
-          "path": "LICENSE-MIT",
-          "sha256": "f3c9fe731c701ed77fd5fbaac573872af04dc5869385eb9bd5e3c73c42713814"
-        }
-      ],
-      "license": "MIT OR Apache-2.0",
-      "license_file": null,
-      "manifest_sha256": "6f2984ea56c0ccc30a5432cce5189d4e4a615a9c1527f82c66d517a5e56c25df",
-      "name": "ttf-parser",
-      "repository": "https://github.com/harfbuzz/ttf-parser",
-      "source": "registry+https://github.com/rust-lang/crates.io-index",
-      "vcs": {
-        "git": {
-          "sha1": "56c33b910b03ca152f78363ec471c5dfd97c3069"
-        },
-        "path_in_vcs": ""
-      },
-      "version": "0.25.1"
     },
     {
       "archive_sha256": "e48ac77174b19c110a50ab2128b24215ac9cb40e0e12e093fb602d175c569d22",

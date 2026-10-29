@@ -1,14 +1,14 @@
 {
   "files": [
     {
-      "bytes": 1154137,
+      "bytes": 1165202,
       "path": "RUST-NOTICES.txt",
-      "sha256": "e5a6ce6056b6b1a29c9962c4ecaea8d19a691280f1df722efc11c44dc639f2e8"
+      "sha256": "3e56b6fad18cc8a550b4f18fc3ae8ab518591d45371d83343feeaf74ebef1b82"
     },
     {
-      "bytes": 1183170,
+      "bytes": 1187234,
       "path": "index.json",
-      "sha256": "d95567943ae257ba6b9df611ed4685adc5b9283e9a9de62b5adae3d26d3e7bb7"
+      "sha256": "9771cbc261b61cb957a2d351d65a9f971c7f461c5ddb4fcdcf174e54211f233c"
     },
     {
       "bytes": 11357,
@@ -626,6 +626,11 @@
       "sha256": "7abd9b6960dcf7d4d0a48606a5b71bfe37d472db68d70637f3a58a56785f1621"
     },
     {
+      "bytes": 1065,
+      "path": "texts/7b4c9a3946dfcea7967582760e963e27799e225dcf20565c8ef55324bb017427.txt",
+      "sha256": "7b4c9a3946dfcea7967582760e963e27799e225dcf20565c8ef55324bb017427"
+    },
+    {
       "bytes": 1071,
       "path": "texts/7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0.txt",
       "sha256": "7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0"
@@ -1226,6 +1231,11 @@
       "sha256": "eaf40297c75da471f7cda1f3458e8d91b4b2ec866e609527a13acfa93b638652"
     },
     {
+      "bytes": 9701,
+      "path": "texts/eba684204073ed715c4abb48129acdfd2bff8ae48339e6a7da3b341d3027b7f0.txt",
+      "sha256": "eba684204073ed715c4abb48129acdfd2bff8ae48339e6a7da3b341d3027b7f0"
+    },
+    {
       "bytes": 1049,
       "path": "texts/ecc269ef87fd38a1d98e30bfac9ba964a9dbd9315c3770fed98d4d7cb5882055.txt",
       "sha256": "ecc269ef87fd38a1d98e30bfac9ba964a9dbd9315c3770fed98d4d7cb5882055"
@@ -1269,11 +1279,6 @@
       "bytes": 2195,
       "path": "texts/f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2.txt",
       "sha256": "f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2"
-    },
-    {
-      "bytes": 1061,
-      "path": "texts/f3c9fe731c701ed77fd5fbaac573872af04dc5869385eb9bd5e3c73c42713814.txt",
-      "sha256": "f3c9fe731c701ed77fd5fbaac573872af04dc5869385eb9bd5e3c73c42713814"
     },
     {
       "bytes": 1058,
