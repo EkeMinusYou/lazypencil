@@ -9,26 +9,6 @@ pub fn output(command: &mut Command, timeout: Duration) -> Result<Output> {
 }
 
 pub fn output_limited(command: &mut Command, timeout: Duration, limit: u64) -> Result<Output> {
-    clean_cargo_environment(command);
-    Ok(command_output::output(command, timeout, limit)?)
-}
-
-pub fn output_observed(
-    command: &mut Command,
-    timeout: Duration,
-    limit: u64,
-    observer: impl FnMut(&[u8]) -> std::io::Result<()>,
-) -> Result<Output> {
-    clean_cargo_environment(command);
-    Ok(command_output::output_observed(
-        command,
-        timeout,
-        limit,
-        Some(observer),
-    )?)
-}
-
-fn clean_cargo_environment(command: &mut Command) {
     if matches!(
         Path::new(command.get_program())
             .file_name()
@@ -58,6 +38,7 @@ fn clean_cargo_environment(command: &mut Command) {
             command.env_remove(name);
         }
     }
+    Ok(command_output::output(command, timeout, limit)?)
 }
 
 pub fn checked(command: &mut Command, timeout: Duration) -> Result<Vec<u8>> {

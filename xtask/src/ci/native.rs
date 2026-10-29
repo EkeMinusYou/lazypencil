@@ -18,7 +18,6 @@ mod binaries;
 pub mod browser;
 mod candidate;
 mod clipboard;
-mod compilation;
 mod management;
 mod normal;
 pub mod parallel;
@@ -332,31 +331,15 @@ impl Session {
     }
 
     pub fn capture(&self, command: &mut Command, seconds: u64, path: &str) -> Result<Vec<u8>> {
-        self.capture_observed(command, seconds, path, |_| Ok(()))
-    }
-
-    fn capture_observed(
-        &self,
-        command: &mut Command,
-        seconds: u64,
-        path: &str,
-        mut observer: impl FnMut(&[u8]) -> std::io::Result<()>,
-    ) -> Result<Vec<u8>> {
         self.require_consumer_command(command)?;
         let invocation = std::iter::once(command.get_program())
             .chain(command.get_args())
             .map(|argument| argument.to_string_lossy().into_owned())
             .collect::<Vec<_>>();
         let started = Instant::now();
-        let mut stdout = fs::File::create(self.temporary.join(path))?;
-        let result = process::output_observed(
+        let result = process::output(
             command.current_dir(&self.root),
             Duration::from_secs(seconds),
-            64 * 1024 * 1024,
-            |bytes| {
-                stdout.write_all(bytes)?;
-                observer(bytes)
-            },
         );
         self.record_timing(
             &invocation,
@@ -872,22 +855,40 @@ impl Session {
                 if ["ci", "normal-ci", "browser-ci"].contains(&args.suite.as_str()) {
                     return self.build_catalog(&[]);
                 }
-                if self.separate_core()?
+                let narrow = self.separate_core()?
                     && std::env::var("RUNTIME_PARALLEL").as_deref() != Ok("true")
                     && !targets
                         .iter()
                         .any(|target| target == "conversation_history")
-                    && !(args.suite == "dynamic" && has("agent"))
-                {
-                    return compilation::build_and_reproduce(self, &args.suite, &targets);
+                    && !(args.suite == "dynamic" && has("agent"));
+                let early = if narrow {
+                    commands::reproduction_targets(&args.suite, &targets)
+                } else {
+                    targets.clone()
+                };
+                if narrow && early.is_empty() {
+                    return self.build_catalog(&[]);
                 }
-                self.run(Arguments {
-                    stage: Stage::FocusBuild,
-                    suite: args.suite.clone(),
-                    targets: args.targets.clone(),
-                })?;
+                if narrow {
+                    for command in
+                        commands::plan_with_core(&self.root, &args.suite, &targets, true)?.build
+                    {
+                        self.execute(
+                            &commands::reproduction_build(&command, &early),
+                            2400,
+                            "focus-build.log",
+                            true,
+                        )?;
+                    }
+                } else {
+                    self.run(Arguments {
+                        stage: Stage::FocusBuild,
+                        suite: args.suite.clone(),
+                        targets: args.targets.clone(),
+                    })?;
+                }
                 let catalog =
-                    self.compile_catalog(&targets, "early-build", &std::env::var("GITHUB_SHA")?)?;
+                    self.compile_catalog(&early, "early-build", &std::env::var("GITHUB_SHA")?)?;
                 util::publish(
                     &self.temporary.join("early-test-executables.json"),
                     &util::encode(&catalog)?,
@@ -1103,17 +1104,59 @@ impl Session {
         }
         let mut command = self.command(&tests);
         let raw = self.capture(&mut command, 2700, &format!("{log}.jsonl"))?;
-        let catalog = compilation::catalog(&raw, &self.target, commit)?;
+        let mut binaries = BTreeMap::new();
+        for line in raw.split(|b| *b == b'\n').filter(|l| !l.is_empty()) {
+            let event: Value = serde_json::from_slice(line)?;
+            if event["reason"] == "compiler-artifact"
+                && event["profile"]["test"] == true
+                && event["package_id"]
+                    .as_str()
+                    .is_some_and(|id| id.contains("#lazypencil@"))
+                && let Some(path) = event["executable"].as_str()
+            {
+                let path = PathBuf::from(path);
+                ensure!(
+                    path.starts_with(self.target.join("debug/deps")),
+                    "Unexpected test executable path"
+                );
+                let name = event["target"]["name"]
+                    .as_str()
+                    .context("Test target name required")?;
+                let key = if event["target"]["kind"]
+                    .as_array()
+                    .is_some_and(|k| k.contains(&json!("lib")))
+                {
+                    "lib"
+                } else {
+                    name
+                };
+                ensure!(
+                    binaries
+                        .insert(
+                            key.to_owned(),
+                            Binary {
+                                sha256: util::file_digest(&path)?,
+                                path
+                            }
+                        )
+                        .is_none(),
+                    "Duplicate test executable"
+                );
+            }
+        }
         let required: Vec<_> = if targets.is_empty() {
             vec!["mcp", "tui", "optional_icons"]
         } else {
             targets.iter().map(String::as_str).collect()
         };
         ensure!(
-            required.iter().all(|s| catalog.binaries.contains_key(*s)),
+            required.iter().all(|s| binaries.contains_key(*s)),
             "Missing parallel test binaries"
         );
-        Ok(catalog)
+        Ok(Catalog {
+            source_commit: commit.into(),
+            binaries,
+        })
     }
     fn runtime_lanes(&self, with_material: bool) -> Result<()> {
         let prepared_browser = browser::prepare(self)?;
@@ -1271,7 +1314,7 @@ impl Session {
         Ok(catalog)
     }
 }
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 struct Binary {
     path: PathBuf,
     sha256: String,
@@ -1386,8 +1429,32 @@ mod tests {
         .unwrap();
         let later = session.temporary.join("test-executables.json");
         assert!(!later.exists());
+        let targets = ["project", "queries", "script_scope", "scripts"].map(str::to_owned);
+        // Unrelated failures must not delay the first reproduction, but they
+        // must still fail complete verification through Cargo itself.
+        for target in ["project", "queries", "scripts"] {
+            fs::write(
+                session.root.join(format!("tests/{target}.rs")),
+                "compile_error!(\"not an early reproduction\");\n",
+            )
+            .unwrap();
+        }
+        let early = commands::reproduction_targets("copy", &targets);
+        for command in commands::plan_with_core(&session.root, "copy", &targets, true)
+            .unwrap()
+            .build
+        {
+            session
+                .execute(
+                    &commands::reproduction_build(&command, &early),
+                    60,
+                    "early-only-build.log",
+                    true,
+                )
+                .unwrap();
+        }
         let first = session
-            .compile_catalog(&["script_scope".into()], "early-first", "fixture-source")
+            .compile_catalog(&early, "early-first", "fixture-source")
             .unwrap();
         first
             .validate(&session.target, "fixture-source", &["script_scope"])
@@ -1398,12 +1465,21 @@ mod tests {
             "#[test] fn remaining_probe() { assert_eq!(20, 20); }\n",
         )
         .unwrap();
-        let complete = session
-            .compile_test_catalog(
-                &["script_scope".into(), "remaining".into()],
-                "remaining-build",
-                "fixture-source",
+        let complete_targets: Vec<_> = targets.into_iter().chain(["remaining".into()]).collect();
+        assert!(
+            session
+                .compile_test_catalog(&complete_targets, "later-failure", "fixture-source")
+                .is_err()
+        );
+        for target in ["project", "queries", "scripts"] {
+            fs::write(
+                session.root.join(format!("tests/{target}.rs")),
+                "#[test] fn later_probe() {}\n",
             )
+            .unwrap();
+        }
+        let complete = session
+            .compile_test_catalog(&complete_targets, "remaining-build", "fixture-source")
             .unwrap();
         for name in ["lib", "script_scope"] {
             assert_eq!(first.binaries[name].sha256, complete.binaries[name].sha256);

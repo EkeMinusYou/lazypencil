@@ -256,6 +256,71 @@ pub struct Plan {
     pub build: Vec<Invocation>,
     pub checks: Vec<Invocation>,
 }
+
+/// Integration binaries used by FocusReproduce, rather than every target
+/// selected for the later complete verification. The library is always built
+/// separately through --lib. This changes build order, never the final suite.
+pub fn reproduction_targets(suite: &str, targets: &[String]) -> Vec<String> {
+    let mut required: Vec<_> = targets
+        .iter()
+        .filter(|name| {
+            [
+                "agent",
+                "user_agent_config",
+                "graphics",
+                "tui",
+                "user_config",
+                "font_sources",
+                "native_layout",
+                "conversation_history",
+                "mcp",
+                "script_scope",
+                "attachments",
+            ]
+            .contains(&name.as_str())
+        })
+        .cloned()
+        .collect();
+    for target in if suite == "dynamic" {
+        &["dynamic_render", "shader_uniforms"][..]
+    } else if suite == "shader" {
+        &["shader_uniforms"][..]
+    } else {
+        &[][..]
+    } {
+        if !required.iter().any(|name| name == target) {
+            required.push((*target).to_owned());
+        }
+    }
+    required
+}
+
+pub fn reproduction_build(command: &Invocation, required: &[String]) -> Invocation {
+    // Keep optional/core feature builds intact. Only the ordinary --no-run
+    // compilation can leave unrelated integration binaries to the full build.
+    if command.get(1).is_none_or(|verb| verb != "test")
+        || !command.iter().any(|arg| arg == "--no-run")
+        || command
+            .iter()
+            .any(|arg| ["--no-default-features", "--features"].contains(&arg.as_str()))
+    {
+        return command.clone();
+    }
+    let mut result = Vec::new();
+    let mut arguments = command.iter();
+    while let Some(argument) = arguments.next() {
+        if argument == "--test" {
+            let target = arguments.next().expect("Validated test target");
+            if required.contains(target) {
+                result.extend([argument.clone(), target.clone()]);
+            }
+        } else {
+            result.push(argument.clone());
+        }
+    }
+    result
+}
+
 pub fn plan(root: &Path, suite: &str, targets: &[String]) -> Result<Plan> {
     plan_with_core(root, suite, targets, false)
 }
