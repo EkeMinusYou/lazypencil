@@ -50,8 +50,68 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
         "unknown-context" => {
             changes["metadata"] = json!({"type":"test","lazypencil":{"script_scope":{"version":1,"script_uri":"override.js","library":"uncaptured"}}});
         }
-        "explicit-bindings" => {
-            changes["metadata"] = json!({"type":"test","lazypencil":{"script_bindings":{"version":1,"script_uri":"override.js","components":{"badge":"badge"},"variables":{"tone":"tone"}}}});
+        "explicit-bindings"
+        | "binding-library"
+        | "binding-mapped"
+        | "binding-catalog"
+        | "binding-inputs"
+        | "binding-stale-inputs"
+        | "binding-inherited-inputs"
+        | "binding-metadata"
+        | "binding-unknown-target"
+        | "binding-unknown-library"
+        | "binding-unmanifested-asset"
+        | "binding-combined" => {
+            let mut bindings = json!({"version":1,"script_uri":"override.js","components":{"badge":"badge"},"variables":{"tone":"tone"}});
+            if ["binding-library", "binding-inputs", "binding-stale-inputs"].contains(&mode) {
+                bindings["library"] = json!("base");
+            }
+            if mode == "binding-mapped" {
+                bindings["components"]["badge"] = json!("alternate");
+                bindings["variables"]["tone"] = json!("accent");
+            }
+            if ["binding-inputs", "binding-stale-inputs"].contains(&mode) {
+                let inputs = json!({"selected":"badge","stale":"$missing"});
+                changes["inputs"] = inputs.clone();
+                bindings["inputs_hash"] = json!(if mode == "binding-inputs" {
+                    lazypencil::document::hash(inputs.to_string().as_bytes())
+                } else {
+                    "a".repeat(64)
+                });
+                bindings["input_components"] = json!({"badge":"badge"});
+            }
+            if mode == "binding-inherited-inputs" {
+                let inputs = json!({"selected":"$selection","stale":"$missing"});
+                bindings["inputs_hash"] =
+                    json!(lazypencil::document::hash(inputs.to_string().as_bytes()));
+                bindings["input_components"] = json!({"badge":"alternate"});
+            }
+            if mode == "binding-metadata" {
+                changes.as_object_mut().unwrap().remove("scriptUri");
+                bindings["script_uri"] = json!("base.js");
+                fs::write(temp.path().join("library/base.js"), REPLACEMENT).unwrap();
+            }
+            if mode == "binding-catalog" {
+                bindings["version"] = json!(2);
+                bindings["components"] = json!({"component-slot":"badge"});
+                bindings["variables"] = json!({"variable-slot":"tone"});
+                bindings["assets"] = json!({});
+                bindings["script_scopes"] = json!({"":{"components":{"badge":"component-slot"},"variables":{"tone":"variable-slot"},"themes":{},"assets":{},"libraries":{"":""},"browser_libraries":{}}});
+            }
+            if mode == "binding-unknown-target" {
+                bindings["components"]["badge"] = json!("missing");
+            }
+            if mode == "binding-unknown-library" {
+                bindings["library"] = json!("uncaptured");
+            }
+            if mode == "binding-unmanifested-asset" {
+                bindings["assets"] = json!({"script:alias.js":"unmanifested.js"});
+            }
+            changes["metadata"] = json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":{"script_bindings":bindings}});
+            if mode == "binding-combined" {
+                changes["metadata"]["lazypencil"]["script_scope"] =
+                    json!({"version":1,"script_uri":"override.js","library":"base"});
+            }
         }
         "stale-scope" | "stale-input-scope" => {
             let mut scope = json!({"version":1,"script_uri":"old.js","library":"uncaptured"});
@@ -157,6 +217,13 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
             {"id":"use","type":"ref","ref":"ui:generator"}
         ]}),
     );
+    if ["binding-mapped", "binding-inherited-inputs"].contains(&mode) {
+        let path = temp.path().join("library/ui.pen");
+        let mut ui: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        ui["variables"]["accent"] = json!({"type":"color","value":"#00ffff"});
+        ui["children"].as_array_mut().unwrap().push(json!({"id":"alternate","name":"UI alternate","type":"rectangle","reusable":true,"width":10,"height":10,"fill":"#00ffff"}));
+        write(&path, ui);
+    }
     if mode == "themed-variable" {
         let path = temp.path().join("library/base.pen");
         let mut base: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
@@ -311,6 +378,8 @@ fn independent_case(
         "metadata-both",
     ]
     .contains(&mode)
+        || mode == "explicit-bindings"
+        || mode.starts_with("binding-")
     {
         "generated"
     } else {
@@ -320,16 +389,21 @@ fn independent_case(
         "explicit-context",
         "explicit-input-context",
         "metadata-input",
+        "binding-library",
+        "binding-inputs",
+        "binding-stale-inputs",
     ]
     .contains(&mode)
     {
         Color::RED
+    } else if mode == "binding-mapped" {
+        Color::CYAN
     } else {
         Color::GREEN
     };
     let render = |store: &Store, stage: &str| {
         let png = preview_colours(store, [first, output, output], metadata);
-        if [
+        if ([
             "explicit-context",
             "explicit-input-context",
             "active-input-scope",
@@ -341,6 +415,8 @@ fn independent_case(
             "saved-input-owner",
         ]
         .contains(&mode)
+            || mode == "explicit-bindings"
+            || mode.starts_with("binding-"))
             && let Some(root) = std::env::var_os("LAZYPENCIL_TEST_TUI_ARTIFACTS")
         {
             let root = std::path::PathBuf::from(root).join("generated-script-scopes");
@@ -349,7 +425,9 @@ fn independent_case(
             fs::write(root.join(format!("{name}.png")), &png).unwrap();
             fs::write(root.join(format!("{name}.json")), serde_json::to_vec_pretty(&json!({
                 "source_commit":std::env::var("GITHUB_SHA").ok(),"png_sha256":lazypencil::document::hash(&png),
-                "width":36,"height":12,"red_first":first==Color::RED,"red_output":output==Color::RED
+                "width":36,"height":12,"red_first":first==Color::RED,"red_output":output==Color::RED,
+                "first_rgba":[first.r(),first.g(),first.b(),first.a()],
+                "output_rgba":[output.r(),output.g(),output.b(),output.a()]
             })).unwrap()).unwrap();
         }
         png
@@ -461,7 +539,10 @@ fn generated_code_overrides_reject_unmanifested_sources_explicit_contexts_and_bi
     for (include_source, mode, count, expected) in [
         (false, "inherit", 1, "ASSET_NOT_FOUND"),
         (true, "unknown-context", 1, "INVALID_DOCUMENT"),
-        (true, "explicit-bindings", 1, "UNSUPPORTED_FEATURE"),
+        (true, "binding-unknown-target", 1, "INVALID_DOCUMENT"),
+        (true, "binding-unknown-library", 1, "INVALID_DOCUMENT"),
+        (true, "binding-unmanifested-asset", 1, "ASSET_NOT_FOUND"),
+        (true, "binding-combined", 1, "UNSUPPORTED_FEATURE"),
         (true, "inherited-unknown-input-scope", 1, "INVALID_DOCUMENT"),
         (true, "metadata-unknown-source", 1, "INVALID_DOCUMENT"),
         (true, "bad-variable", 1, "INVALID_DOCUMENT"),
@@ -492,6 +573,41 @@ fn generated_code_overrides_reject_unmanifested_sources_explicit_contexts_and_bi
         }
         assert_eq!(fs::read(store.path()).unwrap(), bytes);
     }
+}
+
+#[test]
+fn generated_custom_bindings_compose_names_libraries_catalogs_and_saved_inputs() {
+    std::thread::scope(|threads| {
+        for version in ["2.19", "2.21"] {
+            threads.spawn(move || {
+                for style in ["direct", "descendant", "replacement", "children", "script"] {
+                    for mode in [
+                        "explicit-bindings",
+                        "binding-library",
+                        "binding-mapped",
+                        "binding-catalog",
+                        "binding-inputs",
+                        "binding-stale-inputs",
+                    ] {
+                        let first = match mode {
+                            "binding-inputs" => Color::RED,
+                            "binding-stale-inputs" => Color::GREEN,
+                            "binding-mapped" if style == "script" => Color::CYAN,
+                            "binding-library" => Color::RED,
+                            _ if style == "script" => Color::GREEN,
+                            _ => Color::RED,
+                        };
+                        let _fixture = independent_case(version, style, mode, first);
+                    }
+                }
+                for style in ["direct", "descendant", "replacement", "children"] {
+                    let _fixture =
+                        independent_case(version, style, "binding-inherited-inputs", Color::CYAN);
+                    let _fixture = independent_case(version, style, "binding-metadata", Color::RED);
+                }
+            });
+        }
+    });
 }
 
 #[test]

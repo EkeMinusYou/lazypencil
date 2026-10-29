@@ -1,6 +1,117 @@
 use super::*;
 
 #[cfg(feature = "rendering")]
+fn custom_parent() -> Bound {
+    let scope = |badge: &str, libraries: Value| {
+        json!({
+            "components":{"badge":badge,"alternate":"alternate-slot","card":"card-slot"},
+            "variables":{"tone":"tone-slot","accent":"accent-slot"},"themes":{"mode":"mode-slot"},
+            "assets":{"script:nested.js":"assets/nested.js"},"libraries":libraries,"browser_libraries":{}
+        })
+    };
+    Bound::from_values(PathBuf::from("/captured/main.pen"), false, parse(&json!({
+        "version":2,"script_uri":"generator.js","assets":{"script:nested.js":"assets/nested.js"},
+        "components":{"badge-slot":"copied-badge","alternate-slot":"copied-alternate","card-slot":"copied-card","base-slot":"base-badge"},
+        "variables":{"tone-slot":"copied-tone","accent-slot":"copied-accent"},"themes":{"mode-slot":"copied-mode"},
+        "descendants":{"card-slot":{"label":"copied-label"}},
+        "descendant_contexts":{"card-slot":{"label":{"parent":"","instance":false,"target_instance":false}}},
+        "script_scopes":{"":scope("badge-slot", json!({"":"","base":"base"})),"base":scope("base-slot",json!({"":"base"}))}
+    })).unwrap()).unwrap()
+}
+
+#[cfg(feature = "rendering")]
+#[test]
+fn custom_bindings_keep_key_shadowing_identity_fallbacks_paths_and_closed_assets() {
+    let parent = custom_parent();
+    let raw = json!({"version":1,"script_uri":"nested.js",
+        "components":{"badge":"alternate","old":"card"},
+        "input_components":{"selection":"badge"},
+        "variables":{"tone":"accent","accent":"tone"},"themes":{"old-mode":"mode"},
+        "descendants":{"old":{"old-label":"label"}},
+        "descendant_contexts":{"old":{"old-label":{"parent":"","instance":false,"target_instance":true}}},
+        "assets":{"script:alias.js":"nested.js"}
+    });
+    let output = parent.custom_output(&raw, hash(b"nested.js")).unwrap();
+    assert_eq!(output.component("badge").unwrap(), "copied-alternate");
+    assert_eq!(output.component("alternate").unwrap(), "copied-alternate");
+    assert_eq!(output.component("old").unwrap(), "copied-card");
+    assert_eq!(output.component("card").unwrap(), "copied-card");
+    assert_eq!(
+        output.values.descendants["old"]["old-label"],
+        "copied-label"
+    );
+    assert_eq!(output.values.descendants["card"]["label"], "copied-label");
+    assert!(!output.values.descendant_contexts["old"]["old-label"].target_instance);
+    assert_eq!(output.values.variables["tone"], "copied-accent");
+    assert_eq!(output.values.variables["accent"], "copied-tone");
+    assert_eq!(output.values.themes["old-mode"], "copied-mode");
+    assert_eq!(output.values.themes["mode"], "copied-mode");
+    assert_eq!(
+        output.values.input_components.as_ref().unwrap()["selection"],
+        "copied-badge"
+    );
+    assert_eq!(
+        output.asset("script", "alias.js").unwrap(),
+        "assets/nested.js"
+    );
+    assert_eq!(
+        output.asset("script", "nested.js").unwrap(),
+        "assets/nested.js"
+    );
+    assert_eq!(
+        output.asset("script", "missing.js").unwrap_err().code,
+        "ASSET_NOT_FOUND"
+    );
+    assert_eq!(
+        output.selected("").unwrap().component("badge").unwrap(),
+        "copied-alternate"
+    );
+    assert_eq!(
+        output.selected("base").unwrap().component("badge").unwrap(),
+        "base-badge"
+    );
+    for (field, value) in [
+        ("library", json!("missing")),
+        ("components", json!({"badge":"missing"})),
+        ("descendants", json!({"old":{"old-label":"missing"}})),
+    ] {
+        let mut invalid = raw.clone();
+        invalid[field] = value;
+        assert_eq!(
+            parent
+                .custom_output(&invalid, hash(b"nested.js"))
+                .unwrap_err()
+                .code,
+            "INVALID_DOCUMENT"
+        );
+    }
+}
+
+#[cfg(feature = "rendering")]
+#[test]
+fn custom_captured_views_remain_separate_and_do_not_acquire_parent_aliases() {
+    let parent = custom_parent();
+    let raw = json!({"version":2,"script_uri":"nested.js","assets":{},
+        "components":{"first":"badge","second":"alternate"},
+        "script_scopes":{
+            "":{"components":{"badge":"first"},"variables":{},"themes":{},"assets":{},"libraries":{"":"","view":"second"},"browser_libraries":{}},
+            "second":{"components":{"badge":"second"},"variables":{},"themes":{},"assets":{},"libraries":{"":"second"},"browser_libraries":{}}
+        }
+    });
+    let output = parent.custom_output(&raw, hash(b"nested.js")).unwrap();
+    assert_eq!(output.component("badge").unwrap(), "copied-badge");
+    let view = output.selected("view").unwrap();
+    assert_eq!(view.component("badge").unwrap(), "copied-alternate");
+    assert!(view.selected("base").is_err());
+    assert!(view.selected("view").is_err());
+    assert!(output.selected("base").is_err());
+    assert_eq!(
+        output.asset("script", "nested.js").unwrap_err().code,
+        "ASSET_NOT_FOUND"
+    );
+}
+
+#[cfg(feature = "rendering")]
 #[test]
 fn inherited_script_uri_guards_use_original_provenance_instead_of_relocated_spellings() {
     let project = Project::local(Document::parse(json!({"version":"2.21","children":[{

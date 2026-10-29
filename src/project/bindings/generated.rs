@@ -7,7 +7,13 @@ pub(super) struct Selection {
 }
 
 pub(in crate::project) fn has_scope(node: &Value) -> bool {
-    node.pointer("/metadata/lazypencil/script_scope").is_some()
+    ["script_scope", "script_bindings"]
+        .into_iter()
+        .any(|field| {
+            node.pointer("/metadata/lazypencil")
+                .and_then(|namespace| namespace.get(field))
+                .is_some()
+        })
 }
 
 pub(in crate::project) fn has_pending_scopes(node: &Value) -> bool {
@@ -66,6 +72,36 @@ pub(super) fn selection(parent: &Bound, node: &Value) -> Result<Option<Selection
     let Some(namespace) = node.pointer("/metadata/lazypencil") else {
         return Ok(None);
     };
+    if let Some(value) = namespace.get("script_bindings") {
+        if ["script_scope", "script_input_context", "script_override"]
+            .iter()
+            .any(|key| namespace.get(*key).is_some())
+        {
+            return Err(Error::new(
+                "UNSUPPORTED_FEATURE",
+                "Combined generated explicit script contexts require composition",
+            ));
+        }
+        let uri = node
+            .get("scriptUri")
+            .and_then(Value::as_str)
+            .ok_or_else(|| invalid("A generated script needs scriptUri"))?;
+        let output = parent.custom_output(value, hash(uri.as_bytes()))?;
+        let input = node.get("inputs").map(|inputs| {
+            let mut owner = parent.clone();
+            if output.values.inputs_hash.as_ref() == Some(&super::super::scope::value_hash(inputs))
+            {
+                owner.values.components = output
+                    .values
+                    .input_components
+                    .as_ref()
+                    .unwrap_or(&output.values.components)
+                    .clone();
+            }
+            owner
+        });
+        return Ok(Some(Selection { output, input }));
+    }
     let Some(scope) = namespace.get("script_scope") else {
         return Ok(None);
     };
@@ -156,6 +192,7 @@ impl Selection {
         };
         let namespace = super::super::scope::metadata_namespace(node)?;
         namespace.remove("script_scope");
+        namespace.remove("script_bindings");
         if let Some(input) = input {
             namespace.insert("script_input_context".into(), input);
         }
@@ -164,6 +201,93 @@ impl Selection {
 }
 
 impl Bound {
+    fn generated_source_hash(target: &ResolvedNode, state: &GeneratedState) -> Result<String> {
+        state.uri_hash.clone().or_else(|| {
+            if let Some(bound) = &target.script_bindings && bound.values.assets.is_some() {
+                bound.original().source_uri_hash.clone()
+            } else {
+                target.properties.get("scriptUri").and_then(Value::as_str).map(|uri| hash(uri.as_bytes()))
+            }
+        }).ok_or_else(|| Error::new("UNSUPPORTED_FEATURE", "The inherited source lacks original URI provenance; copy it again from its source"))
+    }
+
+    fn inherited_raw_inputs(target: &ResolvedNode) -> Result<Option<Value>> {
+        if let Some(context) = &target.input_context {
+            return context.values.original_values().map(Some).ok_or_else(|| Error::new("UNSUPPORTED_FEATURE", "The inherited inputs lack original expression provenance; copy them again from their source"));
+        }
+        if target
+            .script_bindings
+            .as_ref()
+            .is_some_and(|bound| bound.inputs_bound && bound.values.assets.is_some())
+        {
+            return Err(Error::new(
+                "UNSUPPORTED_FEATURE",
+                "The inherited inputs lack original expression provenance; copy them again from their source",
+            ));
+        }
+        Ok(target.properties.get("inputs").cloned())
+    }
+
+    pub(in crate::project) fn compose_generated_bindings(
+        &self,
+        value: &Value,
+        changes: &mut Value,
+        target: &ResolvedNode,
+        state: &GeneratedState,
+        uri: &str,
+        budget: &mut usize,
+    ) -> Result<(Option<Value>, Option<Value>)> {
+        let source = parse(value)?;
+        let uri_hash = Self::generated_source_hash(target, state)?;
+        if hash(source.script_uri.as_bytes()) != uri_hash {
+            return Ok((None, None));
+        }
+        let output = self.custom_output(value, uri_hash.clone())?;
+        let provided = changes.get("inputs").cloned();
+        let inherited = if provided.is_none() && source.inputs_hash.is_some() {
+            Self::inherited_raw_inputs(target)?
+        } else {
+            None
+        };
+        let raw = provided.as_ref().or(inherited.as_ref());
+        let active = raw.is_some_and(|raw| {
+            source.inputs_hash.as_ref() == Some(&super::super::scope::value_hash(raw))
+        });
+        let input = if provided.is_some() || active {
+            let raw = raw.expect("provided or guarded inputs");
+            let mut owner = self.clone();
+            if provided.is_none()
+                && let Some(context) = &target.input_context
+            {
+                owner.values.variables = context.values.variables.clone();
+                owner.values.components = context.values.components.clone();
+            }
+            if active {
+                owner.values.components = output
+                    .values
+                    .input_components
+                    .as_ref()
+                    .unwrap_or(&output.values.components)
+                    .clone();
+            }
+            changes["inputs"] = raw.clone();
+            let selection = Selection {
+                output: output.clone(),
+                input: Some(owner),
+            };
+            selection.apply(changes, budget)?;
+            changes
+                .pointer("/metadata/lazypencil/script_input_context")
+                .cloned()
+        } else {
+            None
+        };
+        Ok((
+            Some(output.inherited_output_with_hash(uri, None, Some(uri_hash), budget)?),
+            input,
+        ))
+    }
+
     pub(in crate::project) fn compose_generated_scope(
         &self,
         scope: &Value,
@@ -186,13 +310,7 @@ impl Bound {
             ));
         }
         let scope = super::super::scope::parse_scope(scope)?;
-        let uri_hash = state.uri_hash.clone().or_else(|| {
-            if let Some(bound) = &target.script_bindings && bound.values.assets.is_some() {
-                bound.original().source_uri_hash.clone()
-            } else {
-                target.properties.get("scriptUri").and_then(Value::as_str).map(|uri| hash(uri.as_bytes()))
-            }
-        }).ok_or_else(|| Error::new("UNSUPPORTED_FEATURE", "The inherited source lacks original URI provenance; copy it again from its source"))?;
+        let uri_hash = Self::generated_source_hash(target, state)?;
         let output = if uri_hash == hash(scope.script_uri.as_bytes()) {
             Some(self.selected(&scope.library)?.inherited_output_with_hash(
                 uri,
@@ -207,20 +325,7 @@ impl Bound {
         };
         let provided = changes.get("inputs").cloned();
         let inherited = if provided.is_none() && scope.inputs.is_some() {
-            if let Some(context) = &target.input_context {
-                Some(context.values.original_values().ok_or_else(|| Error::new("UNSUPPORTED_FEATURE", "The inherited inputs lack original expression provenance; copy them again from their source"))?)
-            } else if target
-                .script_bindings
-                .as_ref()
-                .is_some_and(|bound| bound.inputs_bound && bound.values.assets.is_some())
-            {
-                return Err(Error::new(
-                    "UNSUPPORTED_FEATURE",
-                    "The inherited inputs lack original expression provenance; copy them again from their source",
-                ));
-            } else {
-                target.properties.get("inputs").cloned()
-            }
+            Self::inherited_raw_inputs(target)?
         } else {
             None
         };

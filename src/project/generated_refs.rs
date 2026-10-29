@@ -274,6 +274,44 @@ impl Project {
         let mut explicit_output = None;
         let mut explicit_input = None;
         let mut scoped = false;
+        if let Some(value) = metadata
+            .as_ref()
+            .and_then(|metadata| metadata.pointer("/lazypencil/script_bindings"))
+            && !bindings.generated_output(value)?
+        {
+            if ["script_scope", "script_input_context", "script_override"]
+                .iter()
+                .any(|key| {
+                    metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.get("lazypencil"))
+                        .and_then(|namespace| namespace.get(*key))
+                        .is_some()
+                })
+            {
+                return Err(Error::new(
+                    "UNSUPPORTED_FEATURE",
+                    "Combined generated explicit script contexts require composition",
+                ));
+            }
+            let (output, input) = bindings.compose_generated_bindings(
+                value,
+                changes,
+                target,
+                context,
+                &uri,
+                inherited_bytes,
+            )?;
+            explicit_output = output;
+            explicit_input = input;
+            metadata
+                .as_mut()
+                .and_then(|metadata| metadata.pointer_mut("/lazypencil"))
+                .and_then(Value::as_object_mut)
+                .expect("binding owner")
+                .remove("script_bindings");
+            scoped = true;
+        }
         if let Some(scope) = metadata
             .as_ref()
             .and_then(|metadata| metadata.pointer("/lazypencil/script_scope"))

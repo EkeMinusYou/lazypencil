@@ -4,6 +4,8 @@ use super::*;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "rendering")]
+mod custom;
+#[cfg(feature = "rendering")]
 mod generated;
 #[cfg(feature = "rendering")]
 pub(super) use generated::{
@@ -525,7 +527,9 @@ impl Bound {
             if node["type"] == "script" {
                 super::scope::discard_inactive_generated_scope(node)?;
             }
-            discard_inactive_generated_bindings(node)?;
+            if node["type"] == "script" {
+                discard_inactive_generated_bindings(node)?;
+            }
         }
         let selected = if self.values.assets.is_some() {
             generated::selection(self, node)?

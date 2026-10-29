@@ -69,6 +69,8 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 
 cbc868bでは、bindings v3に元URIのhash、input context v2に元入力のhashと変換された式の差分を保存する。参照先の展開後にこの出自とguardを照合し、metadataだけのsource選択と継承入力のscopeを別々に合成する。生成URIの変換前情報はJSONへ一時項目を足さず、Rustの並行する構造で後段へ渡す。入力scopeが変数と部品の両方で実効入力文書を使う修正も含む。元の型の読取り、失効したguard、未使用controls、宣言済みnamespaceと出力budgetは維持する。継承4経路・両形式、stale guardと別の保存済み入力所有元の実worker／copy／再copyの新規30組は完全GHAで成功し、追加90 PNGも独立照合した。元URIの絶対パスは新規メタデータへ書かず、出自のない旧copyは必要な継承guardだけ再copyを案内する。custom bindingと複合envelopeはこの修正の後も残る。
 
+次の候補では、生成したcustom script_bindingsを捕捉済みの部品・変数・テーマ・子孫経路・素材へ合成する。明示キーがtarget identityより優先する規則、raw catalog内の独立view、入力hash付きinput_components、継承入力とmetadataだけの出力変更を扱う。未知の対象・library・未登録素材と複合文脈は拒否し、構築中の出力budgetを維持する。5経路・両形式と継承4経路の元source／copy／再copy試験、名前のshadow・path・閉じた素材とviewの単体試験を追加する。Rustと実workerのGHA結果は未検証である。元からcustom bindingを持つgeneratorの入れ子で、論理対応と実文書の所有元を分ける処理、および複合envelope全体はこの候補の後も残件とする。
+
 - 生成 script のcustom `script_bindings`と、明示 `script_scope`／入力文脈／上書きcarrierを組み合わせた独立合成。これらの組合せは `bindings.rs` と `generated_refs.rs` で拒否する。単独のscript_scopeによるmetadataだけのsource選択・継承入力guardはcbc868bで検証済み。失効したscript_bindingsが生成URIの再配置で復活する別の不具合はd37e4f2で修正・Mac完全CIと6 PNGの独立照合済み。有効なcustom／複合文脈の合成を、これらの修正だけで完了扱いにしない。
 - TUI preview と別の bound MCP が、同じ認証済みブラウザープロファイルを同時利用する統合。専用 profile の作成・ログイン・永続ストレージ・所有者回収は実装済みだが、現在の lease は二つ目の独立 owner を拒否する。
 - 追加フォントの遅延読み込み。入力容量・フェイス数の上限と OS FontMgr の遅延作成は実装済みだが、指定ファイルの全件読み取り・登録が残る。
