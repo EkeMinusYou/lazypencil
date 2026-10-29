@@ -4,6 +4,13 @@
 
 ## 現在の状態（2026-10-30）
 
+9d44879の[CI 40965036046](https://github.com/EkeMinusYou/lazypencil/actions/runs/40965036046)は全工程成功した。素材を保持するStore／ProjectとCLI／MCP／TUI／promptの共有lease、Store終了後のProjectとclone、取消、実CLIの応答が書き出し中の場合の排他拒否、新旧の履歴metadataと別文書ownerの拒否が、両feature構成の試験を通過した。doctor／runtime statusはlease取得から除外し、元の「データ・設定・lock directoryを作らずbrowserを起動しない」検査も成功した。両構成Clippy、通常開発build、release、全5 consumerと共通画像gate・署名付きsourceを含む。英語ガイド1.0.50もこの本体へcompileして検証済みになった。sourceは1,209ファイル、tar SHA-256 `4301ee5a08b3dfcb360f2245edf1d9b58e4625698dbd0bbd2e88a2de52fc7cd3`で、署名workflow／revisionを照合した。参照走査・確認revision付きの素材削除は、引き続き実装する。
+
+全体11分22秒、builder5分53秒・core9分31秒・release4分35秒、通常4分00秒・runtime3分36秒・pixel2分25秒・Material1分36秒・端末1分13秒・source28秒だった。完成成果物の再利用条件だった下記badafd3の9分51秒と区別し、10分以内の安定達成とはしない。既定構成builderは前回7fa75b3のimage20260907.0337.1から20261028.0489.1へ変わり、対応する完成成果物がなかった。coreは同じ旧imageだったが、前回はcore --no-run成功後の試験失敗で完成buildを保存しない経路になっていた。coreの再compileは139.39秒だった。次の小修正では、core-build stepの成功を既存の検証済み入力・hash照合を使うcheckpoint保存の条件にも加えた。新しい成果物形式や試験結果の再利用は追加せず、同じ完全成果物を二重保存しない。actionlintは成功した。障害後の実保存／復元と所要時間の効果は次に該当する実行で確認し、main等のproduction入力変更時の再利用拒否は維持する。この修正だけで今回の139秒をすべて省けるとは扱わず、同一入力の再実行と試験専用変更での再利用を改善する。全native検証はこのYAML条件だけのために繰り返さない。
+
+<details>
+<summary>素材の寿命保護の準備・診断の失敗と直前候補の記録（現在の結果は上記9d44879）</summary>
+
 7fa75b3の[Mac補助ツールGHA 40962628149](https://github.com/EkeMinusYou/lazypencil/actions/runs/40962628149)は全試験・Clippy・原本照合まで成功した。本体[CI 40963196991](https://github.com/EkeMinusYou/lazypencil/actions/runs/40963196991)では新しいlease3件・履歴owner・実CLIの出力中保護が先行と両feature構成で成功し、release・pixel／runtime／端末／Materialも成功した。core／通常consumerは既存のdoctor／runtime statusの無状態診断で、広すぎるmainの共有leaseがlock directoryを作ったことを検出した。素材を参照しないこの2コマンドだけを取得対象から外し、元の試験・assertionを維持する。main変更ではこの診断とassetsを先行対象に含め、early catalogにもruntimeを準備する。全job終了後に修正版を送る。完全Clippyと最終sourceはこの候補で完了した根拠にせず、修正版で確認する。
 
 管理素材回収の保護として、Store／保持ProjectとCLI／MCP／TUI／promptの寿命に共有leaseを接続し、保守用Storeの排他取得を追加した。文書ロック・依存ロックは維持し、異なるdata directoryでも同じper-user leaseを共有する。新しい履歴へ元文書のcanonical pathを保存し、旧metadataの読取りと別文書への付け替え拒否を扱う。実CLIの出力を小さいUnix socket bufferで止めた状態の排他拒否、Storeの終了後もProjectが保持する保護、複数owner・clone・取消と旧履歴の回帰を追加した。bbbb520のMac補助ツールGHAは、素材試験を追加するstore/content.rsの古い対象選択fixture一件で停止した。期待値を対応する範囲へ揃え、Projectのguardを最後にdropする順序と、製品のcompiler入力へ混ぜない独立unit試験ファイルも整理した。本体のGHA前であり、回収の参照走査・確認revision・削除は引き続き実装する。
@@ -13,6 +20,8 @@ badafd3の[CI 40958169976](https://github.com/EkeMinusYou/lazypencil/actions/run
 builder3分06秒・core6分07秒・release2分19秒、通常3分57秒・runtime5分26秒・pixel2分38秒・Material1分58秒・端末1分05秒・source36秒だった。待機は通常1〜9秒、端末だけ既存のconsumer同時実行数上限により130秒で、runtimeより先に完了した。3eec395の既定304出力・core918出力は失効0件で再利用し、Cargo確認は3.55秒／2.43秒、release15出力も再利用して確認3.94秒だった。広げすぎたFocusCoreを完全coreへ追加しない経路と、300msの起動期限試験をbackground compile終了後へ置く経路が実際に成功した。試験・期限・最終gateは維持し、sourceは1,207ファイル、tar SHA-256 `e965be0745b957d00b4a6e134b381b3ca20210c090a1b3060053d4263dc93e63`で署名workflow／revisionも照合した。10分以内はこの成果物再利用条件の実測であり、本体変更・cold依存・任意のrunner待機での安定達成へ一般化しない。
 
 追加の整理では、新規sampler再現がearly catalogの対象から漏れてCargoを呼んでいた箇所を、先行build対象の一覧へ接続した。1c5d470の[Mac補助ツールGHA 40959774593](https://github.com/EkeMinusYou/lazypencil/actions/runs/40959774593)で全試験・Clippy・ライセンス原本の照合が成功した。既存の小さな実Cargo fixtureもsampler実行ファイルの先行生成と、全体で同じhashの再利用を成功した。英語shaderガイドの「絶対パス・投影衝突を拒否する」という古い案内も現在の実装へ揃え、file URLの条件と残るHTTP(S)／captured script asset keyの制約を案内する。ガイド集合は1.0.50。ガイド本文を含む次のアプリ成果物のcompile確認は次に必要な本体検証へまとめ、上記badafd3のバイナリーを新版ガイドのcompile証拠にはしない。同条件の全native CIをこの小変更だけのために繰り返さない。未参照素材の回収と元の公開受け入れ条件は残る。
+
+</details>
 
 <details>
 <summary>file URL対応の初回失敗と直前の成功記録（現在の結果は上記badafd3）</summary>

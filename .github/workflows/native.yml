@@ -274,6 +274,7 @@ jobs:
         timeout-minutes: 10
         run: cargo xtask ci native clipboard
       - name: Build core test binaries
+        id: core-build
         if: ${{ (inputs.lane == 'all' || inputs.lane == 'core') && (inputs.phase != 'focus') }}
         timeout-minutes: 40
         run: cargo xtask ci native core-build
@@ -552,7 +553,9 @@ jobs:
           path: ${{ runner.temp }}/lazypencil-release-cache
       - name: Stage a complete build for unchanged integration-test reuse
         id: compatible-save
-        if: ${{ (inputs.lane != 'release') && !cancelled() && (success() || steps.default-build.outputs.compiled_catalog == github.sha) && inputs.phase != 'focus' && steps.application-key.outcome == 'success' && steps.compatible-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
+        # Core --no-run success preserves compiler outputs after a later test
+        # failure, under the same input verification used by default builds.
+        if: ${{ (inputs.lane != 'release') && !cancelled() && (success() || (inputs.lane == 'core' && steps.core-build.outcome == 'success') || steps.default-build.outputs.compiled_catalog == github.sha) && inputs.phase != 'focus' && steps.application-key.outcome == 'success' && steps.compatible-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         timeout-minutes: 3
         run: cargo xtask ci cache application stage --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-compatible-cache" --native-key '${{ steps.cache-key.outputs.primary }}${{ inputs.lane == 'core' && '-core' || '' }}'
@@ -573,7 +576,7 @@ jobs:
         run: cargo xtask ci cache retain --platform '${{ inputs.os }}' --manifest "$RUNNER_TEMP/lazypencil-source/SOURCE-MANIFEST.json" --delete
       - name: Keep completed dependencies after failure or cancellation
         id: cache-prune
-        if: ${{ always() && steps.native-cache.outcome == 'success' && (steps.focus-build.outcome == 'success' || steps.default-build.outcome == 'success' || steps.default-build.outputs.compiled_catalog == github.sha || steps.release-build.outcome == 'success') }}
+        if: ${{ always() && steps.native-cache.outcome == 'success' && ((inputs.lane == 'core' && steps.core-build.outcome == 'success') || steps.focus-build.outcome == 'success' || steps.default-build.outcome == 'success' || steps.default-build.outputs.compiled_catalog == github.sha || steps.release-build.outcome == 'success') }}
         continue-on-error: true
         run: cargo xtask ci cache native-checkpoint --primary '${{ steps.cache-key.outputs.primary }}' --checkpoint '${{ steps.cache-key.outputs.checkpoint }}' --matched-key '${{ steps.native-cache.outputs.cache-matched-key }}' --core-only "$CORE_ONLY_CACHE" --complete-catalog '${{ steps.default-build.outputs.compiled_catalog }}' --release-verified '${{ inputs.phase == 'full' && steps.release-smoke.outcome == 'success' }}' --source "$RUNNER_TEMP/lazypencil-source"
       - name: Save compatible hosted dependency build artifacts
