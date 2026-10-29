@@ -202,12 +202,9 @@ fn inherited_script_uri_guards_use_original_provenance_instead_of_relocated_spel
     let mut changes = json!({"metadata":{"type":"test","lazypencil":{"script_scope":{
         "version":1,"script_uri":"assets/nested.js","library":"uncaptured"
     }}}});
-    let scope = changes
-        .pointer("/metadata/lazypencil/script_scope")
-        .unwrap()
-        .clone();
+    let scope = changes.pointer("/metadata/lazypencil").unwrap().clone();
     let (output, input) = parent
-        .compose_generated_scope(
+        .compose_generated_scopes(
             &scope,
             &mut changes,
             &target,
@@ -218,13 +215,10 @@ fn inherited_script_uri_guards_use_original_provenance_instead_of_relocated_spel
         .unwrap();
     assert!(output.is_none() && input.is_none());
     changes["metadata"]["lazypencil"]["script_scope"]["script_uri"] = json!("nested.js");
-    let scope = changes
-        .pointer("/metadata/lazypencil/script_scope")
-        .unwrap()
-        .clone();
+    let scope = changes.pointer("/metadata/lazypencil").unwrap().clone();
     assert_eq!(
         parent
-            .compose_generated_scope(
+            .compose_generated_scopes(
                 &scope,
                 &mut changes,
                 &target,
@@ -234,6 +228,59 @@ fn inherited_script_uri_guards_use_original_provenance_instead_of_relocated_spel
             )
             .unwrap_err()
             .code,
+        "INVALID_DOCUMENT"
+    );
+}
+
+#[cfg(feature = "rendering")]
+#[test]
+fn combined_scope_guards_preserve_independent_output_input_and_variable_owners() {
+    let parent = custom_parent();
+    let input = json!({"selected":"$tone"});
+    let input_hash = super::super::scope::value_hash(&input);
+    for scope_output in [false, true] {
+        for binding_output in [false, true] {
+            for scope_input in [false, true] {
+                for binding_input in [false, true] {
+                    let mut node = json!({"type":"script","scriptUri":"nested.js","inputs":input,"metadata":{"lazypencil":{
+                        "script_scope":{"version":1,"script_uri":if scope_output {"nested.js"} else {"old.js"},"library":if scope_output {"base"} else {"unreachable"},"inputs":{"hash":if scope_input {input_hash.clone()} else {"a".repeat(64)},"library":if scope_input {"base"} else {"unreachable"}}},
+                        "script_bindings":{"version":1,"script_uri":if binding_output {"nested.js"} else {"old.js"},"library":if binding_output {""} else {"unreachable"},"components":{"badge":if binding_output {"alternate"} else {"missing"}},"variables":{"tone":"accent"},"inputs_hash":if binding_input {input_hash.clone()} else {"b".repeat(64)},"input_components":{"badge":"alternate"}}
+                    }}});
+                    let selected = generated::selection(&parent, &node).unwrap().unwrap();
+                    assert_eq!(
+                        selected.output.component("badge").unwrap(),
+                        if binding_output {
+                            "copied-alternate"
+                        } else if scope_output {
+                            "base-badge"
+                        } else {
+                            "copied-badge"
+                        }
+                    );
+                    selected.apply(&mut node, &mut 0).unwrap();
+                    let context = &node["metadata"]["lazypencil"]["script_input_context"];
+                    assert_eq!(context["variables"]["tone"], "copied-tone");
+                    assert_eq!(node["inputs"]["selected"], "$copied-tone");
+                    assert_eq!(
+                        context["components"]["badge"],
+                        if binding_output && binding_input {
+                            "copied-alternate"
+                        } else if scope_input {
+                            "base-badge"
+                        } else {
+                            "copied-badge"
+                        }
+                    );
+                }
+            }
+        }
+    }
+    let node = json!({"type":"script","scriptUri":"nested.js","metadata":{"lazypencil":{
+        "script_scope":{"version":1,"script_uri":"nested.js","library":"unreachable"},
+        "script_bindings":{"version":1,"script_uri":"nested.js","components":{"badge":"badge"}}
+    }}});
+    assert_eq!(
+        generated::selection(&parent, &node).err().unwrap().code,
         "INVALID_DOCUMENT"
     );
 }

@@ -29,6 +29,34 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
     .unwrap();
     let mut changes = json!({"scriptUri":"override.js"});
     match mode {
+        mode if mode.starts_with("binding-combined-")
+            || mode.starts_with("binding-native-parent-combined-") =>
+        {
+            let variant = mode
+                .strip_prefix("binding-combined-")
+                .or_else(|| mode.strip_prefix("binding-native-parent-combined-"))
+                .unwrap();
+            let inherited = variant.starts_with("inherited-");
+            let inputs = if inherited {
+                json!({"selected":"$selection","stale":"$missing"})
+            } else {
+                let inputs = json!({"selected":"badge"});
+                changes["inputs"] = inputs.clone();
+                inputs
+            };
+            let hash = lazypencil::document::hash(inputs.to_string().as_bytes());
+            let stale_inputs = variant == "stale-inputs";
+            let stale_binding = variant == "stale-binding-output";
+            let stale_scope = variant == "stale-scope-output";
+            changes["metadata"] = json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":{
+                "script_scope":{"version":1,"script_uri":if stale_scope {"old.js"} else {"override.js"},"library":if stale_scope {"uncaptured"} else {"base"},
+                    "inputs":{"hash":if stale_inputs {"a".repeat(64)} else {hash.clone()},"library":if variant == "inherited-scope-input" {""} else {"base"}}},
+                "script_bindings":{"version":1,"script_uri":if stale_binding {"old.js"} else {"override.js"},"library":if stale_binding {"uncaptured"} else {""},
+                    "components":{"badge":"badge"},"variables":{"tone":"tone"},
+                    "inputs_hash":if stale_inputs || ["scope-input","stale-scope-output","inherited-scope-input"].contains(&variant) {"b".repeat(64)} else {hash},
+                    "input_components":{"badge":"alternate"}}
+            }});
+        }
         mode if mode.starts_with("binding-native-parent-input-") => {
             let inherited = mode.contains("-inherited-");
             let stale = mode.contains("-stale");
@@ -257,7 +285,9 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
             {"id":"use","type":"ref","ref":"ui:generator"}
         ]}),
     );
-    if ["binding-mapped", "binding-inherited-inputs"].contains(&mode) {
+    if ["binding-mapped", "binding-inherited-inputs"].contains(&mode)
+        || mode.starts_with("binding-combined-")
+    {
         let path = temp.path().join("library/ui.pen");
         let mut ui: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         ui["variables"]["accent"] = json!({"type":"color","value":"#00ffff"});
@@ -515,6 +545,7 @@ fn independent_case(
             "binding-library",
             "binding-inputs",
             "binding-stale-inputs",
+            "binding-combined-stale-binding-output",
         ]
         .contains(&mode)
     {
@@ -665,7 +696,6 @@ fn generated_code_overrides_reject_unmanifested_sources_explicit_contexts_and_bi
         (true, "binding-unknown-target", 1, "INVALID_DOCUMENT"),
         (true, "binding-unknown-library", 1, "INVALID_DOCUMENT"),
         (true, "binding-unmanifested-asset", 1, "ASSET_NOT_FOUND"),
-        (true, "binding-combined", 1, "UNSUPPORTED_FEATURE"),
         (true, "inherited-unknown-input-scope", 1, "INVALID_DOCUMENT"),
         (true, "metadata-unknown-source", 1, "INVALID_DOCUMENT"),
         (true, "bad-variable", 1, "INVALID_DOCUMENT"),
@@ -696,6 +726,51 @@ fn generated_code_overrides_reject_unmanifested_sources_explicit_contexts_and_bi
         }
         assert_eq!(fs::read(store.path()).unwrap(), bytes);
     }
+}
+
+#[test]
+fn generated_scope_and_binding_guards_compose_without_overwriting_each_other() {
+    std::thread::scope(|threads| {
+        for version in ["2.19", "2.21"] {
+            threads.spawn(move || {
+                for style in ["script", "direct", "descendant", "replacement", "children"] {
+                    for (mode, first) in [
+                        (
+                            "binding-combined",
+                            if style == "script" {
+                                Color::GREEN
+                            } else {
+                                Color::RED
+                            },
+                        ),
+                        ("binding-combined-scope-input", Color::RED),
+                        ("binding-combined-binding-input", Color::CYAN),
+                        ("binding-combined-stale-binding-output", Color::RED),
+                        ("binding-combined-stale-scope-output", Color::RED),
+                        ("binding-combined-stale-inputs", Color::GREEN),
+                    ] {
+                        let _fixture = independent_case(version, style, mode, first);
+                    }
+                }
+                for style in ["direct", "descendant", "replacement", "children"] {
+                    for (mode, first) in [
+                        ("binding-combined-inherited-binding-input", Color::CYAN),
+                        ("binding-combined-inherited-scope-input", Color::GREEN),
+                    ] {
+                        let _fixture = independent_case(version, style, mode, first);
+                    }
+                }
+                for style in ["script", "direct"] {
+                    for (mode, first) in [
+                        ("binding-native-parent-combined-scope-input", Color::RED),
+                        ("binding-native-parent-combined-binding-input", Color::CYAN),
+                    ] {
+                        let _fixture = independent_case(version, style, mode, first);
+                    }
+                }
+            });
+        }
+    });
 }
 
 #[test]

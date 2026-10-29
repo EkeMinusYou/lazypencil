@@ -96,6 +96,8 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 
 ### 次に実装・確認すること
 
+`script_scope`と`script_bindings`の対は共通の判定処理へ統合した。出力のURI guardと入力hashを独立して評価し、有効なbindingだけを対応する側で優先する。直接生成・ref・子孫変更・ノード置換・children置換、継承入力とnative parentを含む84組の元／copy／再copy、および16通りの独立guardの単体検査を追加した。新しい結果はGHA確認待ち。明示的な`script_input_context`と`script_override`を含む全体の合成、および入力文脈を解除した際の元の所有情報の保存は引き続き必要であり、この対の追加だけで完成扱いにはしない。
+
 フォント遅延読み込みの依存監査では、ebf2587のCI 40868196098が`ttf-parser`の保守終了（RUSTSEC-2026-0192）を検出した。例外で通さず、名前表の解析をFontationsの`read-fonts` 0.46.0へ変更した。通常CIを発火しない準備コミットからGHA 40868725136で393 packageの原本通知を再生成・再照合し、ローカルでも271通知ファイルと現lockfileを検証した。旧候補はcore試験とcore Clippyを成功した一方、描画・releaseの両方が同じ可変参照のコンパイルエラーで停止したため、修正後へ持ち越す。残る旧候補のdefault Clippyも同じコードをコンパイルできないので、その時点で終了した。旧パーサーでの結果を置換後の検証結果として扱わない。
 
 同実行では依存宣言の変更によってnative cacheが見つからず、先行コンパイル370.44秒・releaseコンパイル486.14秒を要した。変更は任意のフォントメタデータ用Rust依存だけで、Skiaのvendor・設定・コンパイラー条件に差分がないことを確認した。既存の監査済み移行経路で、現dependency treeから5eaa691の同一条件の依存cacheを再利用する。アプリ成果物の再利用には広げず、統合されたRust featureと新規依存はCargoが再判定する。コンパイラー・flag変更時の拒否とともに、実際の再利用は次のGHAで確認する。

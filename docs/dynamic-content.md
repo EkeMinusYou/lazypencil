@@ -2,6 +2,8 @@
 
 設計日: 2026-10-23
 
+生成した`script_scope`と`script_bindings`を同時に指定する場合、出力URIのguardと保存入力のhashを別々に照合する。有効なbindingが出力を優先し、保存した参照入力は有効なbindingの`input_components`、有効なscopeの入力library、元の入力所有元の順に選ぶ。変数式は入力所有元の変数表を維持する。この共通判定とcopy／再copyの追加試験はGHA確認待ちである。明示`script_input_context`・`script_override`を含む全体の合成は引き続き未完了であり、この対の対応だけで完成とはしない。
+
 状態: JavaScript・Webページ・GLSL、CLI／MCP／TUI、実行上限・保持page・再生・取得方針・専用profileを実装し、確定済みc9ffb37では旧方針のMac／Linux2環境で検証した。初回リリースはmacOS Apple Siliconのみに変更した。入力22ケースも現在のworker／描画試験に含み、改めて未検証には戻さない。明示scriptスコープの合成、認証profileの同時利用、fill-stage object samplingなどの制約とMacの最終受け入れは残る。[現在の残件](implementation-status.md#remaining-work)
 
 `.pen` の `script` ノード、`browser` ノード、`shader` の塗り・エフェクトを、初期リリースの正式な対応対象とする。元データを保存できるだけでは完了とせず、実行と画像化、AI による入力・参照コードの編集、CLI・MCP・TUI への統合までを含める。
