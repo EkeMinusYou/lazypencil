@@ -29,6 +29,46 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
     .unwrap();
     let mut changes = json!({"scriptUri":"override.js"});
     match mode {
+        mode if mode.starts_with("binding-input-context-") => {
+            let variant = mode.strip_prefix("binding-input-context-").unwrap();
+            let variable = variant == "variable";
+            let inputs = if variable {
+                json!({"selected":"$selection","stale":"$missing"})
+            } else {
+                json!({"selected":"badge"})
+            };
+            changes["inputs"] = inputs.clone();
+            let mut context = json!({"version":1,"values":inputs,"variables":{},"components":{"badge":"alternate"}});
+            if variable {
+                context["values"]["selected"] = json!("$choice");
+                context["variables"] = json!({"selection":"choice","choice":"tone"});
+            }
+            if variant == "library" {
+                context["library"] = json!("base");
+                context["components"] = json!({"badge":"badge"});
+            }
+            if variant == "stale" {
+                context["values"]["selected"] = json!("different");
+                context["library"] = json!("uncaptured");
+                context["variables"] = json!({"missing":"missing"});
+                context["components"] = json!({"missing":"missing"});
+            }
+            let hash = lazypencil::document::hash(inputs.to_string().as_bytes());
+            let mut namespace = json!({
+                "script_input_context":context,
+                "script_scope":{"version":1,"script_uri":"override.js","library":"base","inputs":{"hash":hash,"library":"base"}},
+                "script_bindings":{"version":1,"script_uri":"override.js","components":{"badge":"badge"},"variables":{"tone":"tone"},"inputs_hash":hash,"input_components":{"badge":"badge"}}
+            });
+            if variant == "scope" {
+                namespace.as_object_mut().unwrap().remove("script_bindings");
+            }
+            if variant == "only" {
+                namespace.as_object_mut().unwrap().remove("script_scope");
+                namespace.as_object_mut().unwrap().remove("script_bindings");
+            }
+            changes["metadata"] =
+                json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":namespace});
+        }
         mode if mode.starts_with("binding-combined-")
             || mode.starts_with("binding-native-parent-combined-") =>
         {
@@ -287,10 +327,14 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
     );
     if ["binding-mapped", "binding-inherited-inputs"].contains(&mode)
         || mode.starts_with("binding-combined-")
+        || mode.starts_with("binding-input-context-")
     {
         let path = temp.path().join("library/ui.pen");
         let mut ui: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         ui["variables"]["accent"] = json!({"type":"color","value":"#00ffff"});
+        if mode == "binding-input-context-variable" {
+            ui["variables"]["choice"] = json!({"type":"string","value":"badge"});
+        }
         ui["children"].as_array_mut().unwrap().push(json!({"id":"alternate","name":"UI alternate","type":"rectangle","reusable":true,"width":10,"height":10,"fill":"#00ffff"}));
         write(&path, ui);
     }
@@ -563,6 +607,7 @@ fn independent_case(
             "binding-inputs",
             "binding-stale-inputs",
             "binding-combined-stale-binding-output",
+            "binding-input-context-scope",
         ]
         .contains(&mode)
     {
@@ -638,6 +683,29 @@ fn independent_case(
     );
 
     (temp, second, before)
+}
+
+#[test]
+fn generated_explicit_input_contexts_compose_with_scopes_and_bindings() {
+    std::thread::scope(|threads| {
+        for version in ["2.19", "2.21"] {
+            threads.spawn(move || {
+                for style in ["script", "direct", "descendant", "replacement", "children"] {
+                    for (variant, first) in [
+                        ("combined", Color::CYAN),
+                        ("library", Color::RED),
+                        ("variable", Color::CYAN),
+                        ("stale", Color::GREEN),
+                        ("scope", Color::CYAN),
+                        ("only", Color::CYAN),
+                    ] {
+                        let mode = format!("binding-input-context-{variant}");
+                        let _fixture = independent_case(version, style, &mode, first);
+                    }
+                }
+            });
+        }
+    });
 }
 
 #[test]

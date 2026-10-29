@@ -287,6 +287,51 @@ fn combined_scope_guards_preserve_independent_output_input_and_variable_owners()
 
 #[cfg(feature = "rendering")]
 #[test]
+fn explicit_generated_input_context_owns_expressions_and_components_independently() {
+    let parent = custom_parent();
+    for (library, variable, component) in [
+        ("", "copied-accent", "copied-alternate"),
+        ("base", "copied-tone", "base-badge"),
+    ] {
+        let mut node = json!({"type":"script","scriptUri":"nested.js","inputs":{"selected":"$selection"},"metadata":{"lazypencil":{
+            "script_scope":{"version":1,"script_uri":"nested.js","library":"base"},
+            "script_bindings":{"version":1,"script_uri":"nested.js","components":{"badge":"badge"}},
+            "script_input_context":{"version":1,"library":library,"values":{"selected":"$tone"},"variables":{"selection":"tone"},"components":{"badge":if library.is_empty() {"alternate"} else {"badge"}}}
+        }}});
+        if library.is_empty() {
+            node["metadata"]["lazypencil"]["script_input_context"]["values"]["selected"] =
+                json!("$accent");
+            node["metadata"]["lazypencil"]["script_input_context"]["variables"]["selection"] =
+                json!("accent");
+            node["metadata"]["lazypencil"]["script_input_context"]["variables"]["accent"] =
+                json!("tone");
+        }
+        let selected = generated::selection(&parent, &node).unwrap().unwrap();
+        assert_eq!(selected.output.component("badge").unwrap(), "copied-badge");
+        selected.apply(&mut node, &mut 0).unwrap();
+        let context = &node["metadata"]["lazypencil"]["script_input_context"];
+        assert_eq!(node["inputs"]["selected"], format!("${variable}"));
+        assert_eq!(context["components"]["badge"], component);
+        assert_eq!(context["source_values"]["selected"], "$selection");
+    }
+    let context = json!({"version":1,"library":"missing","values":{"selected":"different"},"variables":{"tone":"missing"},"components":{"badge":"missing"}});
+    let mut node = json!({"type":"script","scriptUri":"nested.js","inputs":{"selected":"badge"},"metadata":{"lazypencil":{"script_input_context":context}}});
+    let selected = generated::selection(&parent, &node).unwrap().unwrap();
+    selected.apply(&mut node, &mut 0).unwrap();
+    assert_eq!(
+        node["metadata"]["lazypencil"]["script_input_context"]["components"]["badge"],
+        "copied-badge"
+    );
+    node["metadata"]["lazypencil"]["script_input_context"] = context;
+    node["inputs"]["selected"] = json!("different");
+    assert_eq!(
+        generated::selection(&parent, &node).err().unwrap().code,
+        "INVALID_DOCUMENT"
+    );
+}
+
+#[cfg(feature = "rendering")]
+#[test]
 fn combined_inherited_guards_require_known_lexical_input_ownership() {
     let input = json!({"selected":"badge"});
     let context = super::super::script_context::capture(

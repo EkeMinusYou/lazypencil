@@ -193,11 +193,11 @@ pub fn test_threads(target: &str) -> usize {
     if target == "browser_readiness" { 2 } else { 1 }
 }
 
-pub const NATIVE_INPUT_GUARDS: &str = "script_bindings::generated_sources::native_parent_input_guards_use_post_mapping_expressions_and_keep_inherited_controls_separate";
+pub const INPUT_CONTEXT_REPRODUCTION: &str = "script_bindings::generated_sources::generated_explicit_input_contexts_compose_with_scopes_and_bindings";
 
 pub fn binding_commands(binary: &Path) -> [Vec<String>; 4] {
     [
-        NATIVE_INPUT_GUARDS,
+        INPUT_CONTEXT_REPRODUCTION,
         "generated_browser_",
         "script_bindings::",
         "script_copy::",
@@ -208,11 +208,11 @@ pub fn binding_commands(binary: &Path) -> [Vec<String>; 4] {
             filter.into(),
             "--test-threads=1".into(),
         ];
-        if filter == NATIVE_INPUT_GUARDS {
+        if filter == INPUT_CONTEXT_REPRODUCTION {
             command.push("--exact".into());
         }
         if filter == "script_bindings::" {
-            command.extend(["--skip".into(), NATIVE_INPUT_GUARDS.into()]);
+            command.extend(["--skip".into(), INPUT_CONTEXT_REPRODUCTION.into()]);
         }
         command
     })
@@ -238,7 +238,7 @@ pub fn focus_bindings(s: &Session) -> Result<()> {
     };
     // Reproduce the changed input boundary before unrelated long layouts. The
     // later binding group excludes this exact same-condition invocation.
-    execute(0, "focus-native-input-guards.log")?;
+    execute(0, "focus-input-contexts.log")?;
     let groups = parallel::run(vec![
         (
             "generated browser layouts",

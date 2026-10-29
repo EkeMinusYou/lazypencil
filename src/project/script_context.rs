@@ -23,6 +23,46 @@ pub(super) struct Inputs {
 }
 
 impl Inputs {
+    pub(super) fn matches(
+        &self,
+        raw: Option<&Value>,
+        mut equivalent: impl FnMut(&str, &str, bool) -> bool,
+    ) -> bool {
+        raw.and_then(Value::as_object).is_some_and(|raw| {
+            raw.len() == self.values.len()
+                && self.values.iter().all(|(name, expected)| {
+                    let Some(actual) = raw.get(name) else {
+                        return false;
+                    };
+                    if actual == expected {
+                        return true;
+                    }
+                    let (Some(actual), Some(expected)) = (actual.as_str(), expected.as_str())
+                    else {
+                        return false;
+                    };
+                    if self
+                        .components
+                        .get(actual)
+                        .is_some_and(|target| target == expected)
+                        || self.components.values().any(|target| target == expected)
+                            && equivalent(actual, expected, true)
+                    {
+                        return true;
+                    }
+                    let (Some(actual), Some(expected)) =
+                        (actual.strip_prefix('$'), expected.strip_prefix('$'))
+                    else {
+                        return false;
+                    };
+                    self.variables
+                        .get(actual)
+                        .is_some_and(|target| target == expected)
+                        || equivalent(actual, expected, false)
+                })
+        })
+    }
+
     pub(super) fn original_values(&self) -> Option<Value> {
         self.source_hash.as_ref()?;
         let mut values = self.values.clone();
@@ -106,12 +146,7 @@ impl Bound {
     }
 }
 
-pub(super) fn bind(
-    project: &Project,
-    node: &ResolvedNode,
-    value: &Value,
-    owner: &Path,
-) -> Result<Option<Bound>> {
+pub(super) fn parse(value: &Value) -> Result<Inputs> {
     if value.to_string().len() > 4 * 1024 * 1024 {
         return Err(invalid("Copied input context exceeds 4 MiB"));
     }
@@ -150,58 +185,36 @@ pub(super) fn bind(
     {
         return Err(invalid("Invalid copied input context names"));
     }
+    Ok(values)
+}
+
+pub(super) fn bind(
+    project: &Project,
+    node: &ResolvedNode,
+    value: &Value,
+    owner: &Path,
+) -> Result<Option<Bound>> {
+    let values = parse(value)?;
     let origin = project.scope_document(owner, values.library.as_deref().unwrap_or(""));
-    let raw = node.properties.get("inputs").and_then(Value::as_object);
-    let matches = raw.is_some_and(|raw| {
-        raw.len() == values.values.len()
-            && values.values.iter().all(|(name, expected)| {
-                let Some(actual) = raw.get(name) else {
-                    return false;
-                };
-                if actual == expected {
-                    return true;
-                }
-                if let (Some(actual), Some(expected)) = (actual.as_str(), expected.as_str())
-                    && (values
-                        .components
-                        .get(actual)
-                        .is_some_and(|target| target == expected)
-                        || values.components.values().any(|v| v == expected)
-                            && origin.as_ref().ok().is_some_and(|origin| {
-                                project
-                                    .lookup_node(node.property_source("inputs"), actual)
-                                    .ok()
-                                    .zip(project.lookup_node(origin, expected).ok())
-                                    .is_some_and(|((a, first), (b, second))| {
-                                        a == b && first["id"] == second["id"]
-                                    })
-                            }))
-                {
-                    return true;
-                }
-                let Some(actual) = actual.as_str().and_then(|v| v.strip_prefix('$')) else {
-                    return false;
-                };
-                let Some(expected) = expected.as_str().and_then(|v| v.strip_prefix('$')) else {
-                    return false;
-                };
-                values
-                    .variables
-                    .get(actual)
-                    .is_some_and(|target| target == expected)
-                    || project
-                        .variable_key(node.property_source("inputs"), actual)
-                        .ok()
-                        .zip(
-                            origin
-                                .as_ref()
-                                .ok()
-                                .and_then(|origin| project.variable_key(origin, expected).ok()),
-                        )
-                        .is_some_and(|(a, b)| a == b)
-            })
-    });
-    if !matches {
+    if !values.matches(
+        node.properties.get("inputs"),
+        |actual, expected, component| {
+            let Ok(origin) = &origin else { return false };
+            if component {
+                project
+                    .lookup_node(node.property_source("inputs"), actual)
+                    .ok()
+                    .zip(project.lookup_node(origin, expected).ok())
+                    .is_some_and(|((a, first), (b, second))| a == b && first["id"] == second["id"])
+            } else {
+                project
+                    .variable_key(node.property_source("inputs"), actual)
+                    .ok()
+                    .zip(project.variable_key(origin, expected).ok())
+                    .is_some_and(|(a, b)| a == b)
+            }
+        },
+    ) {
         return Ok(None);
     }
     let origin = origin?;

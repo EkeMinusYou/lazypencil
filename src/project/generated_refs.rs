@@ -291,6 +291,8 @@ impl Project {
             .as_ref()
             .and_then(|metadata| metadata.get("lazypencil"))
             && (namespace.get("script_scope").is_some()
+                || namespace.get("script_input_context").is_some()
+                    && namespace.get("script_bindings").is_none()
                 || namespace
                     .get("script_bindings")
                     .map(|value| bindings.generated_output(value).map(|canonical| !canonical))

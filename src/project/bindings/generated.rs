@@ -4,6 +4,7 @@ use super::*;
 pub(super) struct Selection {
     pub output: Bound,
     input: Option<(Bound, Value)>,
+    input_values: Option<Value>,
     output_active: bool,
 }
 
@@ -16,6 +17,7 @@ fn native_inputs(parent: &Bound, node: &Value) -> Result<Option<Selection>> {
             Ok(Selection {
                 output: parent.document_scope()?.into_owned(),
                 input: Some(parent.generated_inputs(raw)?),
+                input_values: None,
                 output_active: false,
             })
         })
@@ -23,7 +25,7 @@ fn native_inputs(parent: &Bound, node: &Value) -> Result<Option<Selection>> {
 }
 
 pub(in crate::project) fn has_scope(node: &Value) -> bool {
-    ["script_scope", "script_bindings"]
+    ["script_scope", "script_bindings", "script_input_context"]
         .into_iter()
         .any(|field| {
             node.pointer("/metadata/lazypencil")
@@ -88,8 +90,8 @@ pub(super) fn selection(parent: &Bound, node: &Value) -> Result<Option<Selection
     let Some(namespace) = node.pointer("/metadata/lazypencil") else {
         return native_inputs(parent, node);
     };
-    if namespace.get("script_scope").is_none() && namespace.get("script_bindings").is_none() {
-        return if ["script_input_context", "script_override"]
+    if !has_scope(node) {
+        return if ["script_override"]
             .iter()
             .any(|key| namespace.get(*key).is_some())
         {
@@ -121,17 +123,19 @@ struct Scopes<'a> {
     scope: Option<super::super::scope::ScriptScope>,
     bindings: Option<Bindings>,
     binding_value: Option<&'a Value>,
+    input_context: Option<super::super::script_context::Inputs>,
+    input_value: Option<&'a Value>,
 }
 
 impl<'a> Scopes<'a> {
     fn parse(namespace: &'a Value) -> Result<Self> {
-        if ["script_input_context", "script_override"]
+        if ["script_override"]
             .iter()
             .any(|key| namespace.get(*key).is_some())
         {
             return Err(Error::new(
                 "UNSUPPORTED_FEATURE",
-                "Generated input contexts and override carriers require independent composition",
+                "Generated override carriers require independent composition",
             ));
         }
         let binding_value = namespace.get("script_bindings");
@@ -142,6 +146,11 @@ impl<'a> Scopes<'a> {
                 .transpose()?,
             bindings: binding_value.map(parse).transpose()?,
             binding_value,
+            input_context: namespace
+                .get("script_input_context")
+                .map(super::super::script_context::parse)
+                .transpose()?,
+            input_value: namespace.get("script_input_context"),
         })
     }
 
@@ -156,6 +165,18 @@ impl<'a> Scopes<'a> {
         let mut output = parent.document_scope()?.into_owned();
         let mut output_active = false;
         let mut input_active = false;
+        // Evaluate explicit context against the lexical controls, before an
+        // independent scope or binding changes their component namespace.
+        let explicit = self
+            .input_context
+            .as_ref()
+            .zip(self.input_value)
+            .zip(input.as_ref())
+            .map(|((context, value), (owner, raw))| {
+                parent.explicit_generated_input(context, value, owner, raw)
+            })
+            .transpose()?
+            .flatten();
         if let Some(scope) = &self.scope {
             if hash(scope.script_uri.as_bytes()) == uri_hash {
                 output = parent.document_scope()?.selected(&scope.library)?;
@@ -196,9 +217,16 @@ impl<'a> Scopes<'a> {
                 }
             }
         }
+        let input_values = explicit.map(|(owner, values)| {
+            let raw = input.as_ref().expect("explicit controls").1.clone();
+            input = Some((owner, raw));
+            input_active = true;
+            values
+        });
         Ok(Selection {
             output,
             input: input.filter(|_| provided || input_active),
+            input_values,
             output_active,
         })
     }
@@ -236,8 +264,10 @@ fn known_variables(bound: &Bound, value: &mut Value) {
 impl Selection {
     pub(super) fn apply(&self, node: &mut Value, budget: &mut usize) -> Result<()> {
         let input = if let Some((bound, original)) = &self.input {
-            let mut values = original.clone();
-            known_variables(bound, &mut values);
+            let mut values = self.input_values.as_ref().unwrap_or(original).clone();
+            if self.input_values.is_none() {
+                known_variables(bound, &mut values);
+            }
             let context = super::super::script_context::capture(
                 Some(original),
                 json!({"version":1,"values":values,"variables":bound.values.variables,"components":bound.values.components}),
@@ -264,6 +294,62 @@ impl Selection {
 }
 
 impl Bound {
+    fn explicit_generated_input(
+        &self,
+        context: &super::super::script_context::Inputs,
+        value: &Value,
+        lexical: &Bound,
+        raw: &Value,
+    ) -> Result<Option<(Bound, Value)>> {
+        let canonical = self.generated_input(value)?;
+        let namespace = if canonical {
+            Ok(self.clone())
+        } else {
+            self.document_scope()?
+                .selected(context.library.as_deref().unwrap_or(""))
+        };
+        let lookup = |table: &BTreeMap<String, String>, name: &str| {
+            table
+                .get(name)
+                .cloned()
+                .or_else(|| table.values().find(|value| value.as_str() == name).cloned())
+        };
+        if !context.matches(Some(raw), |actual, expected, component| {
+            let Ok(namespace) = &namespace else {
+                return false;
+            };
+            let (first, second) = if component {
+                (&lexical.values.components, &namespace.values.components)
+            } else {
+                (&lexical.values.variables, &namespace.values.variables)
+            };
+            lookup(first, actual)
+                .zip(if canonical {
+                    Some(expected.into())
+                } else {
+                    lookup(second, expected)
+                })
+                .is_some_and(|(first, second)| first == second)
+        }) {
+            return Ok(None);
+        }
+        let mut owner = namespace?;
+        let mut values = json!(context.values);
+        if canonical {
+            owner.values.variables = context.variables.clone();
+            owner.values.components = context.components.clone();
+        } else {
+            // Context values already name target variables, not logical map
+            // keys. Map through the owning document before installing aliases.
+            known_variables(&owner, &mut values);
+            owner.values.variables =
+                super::custom::table(&context.variables, &owner.values.variables)?;
+            owner.values.components =
+                super::custom::table(&context.components, &owner.values.components)?;
+        }
+        Ok(Some((owner, values)))
+    }
+
     fn generated_source_hash(target: &ResolvedNode, state: &GeneratedState) -> Result<String> {
         state.uri_hash.clone().or_else(|| {
             if let Some(bound) = &target.script_bindings && bound.values.assets.is_some() {
@@ -310,6 +396,7 @@ impl Bound {
             .scope
             .as_ref()
             .is_some_and(|scope| scope.inputs.is_some())
+            || scopes.input_context.is_some()
             || scopes.bindings.as_ref().is_some_and(|bindings| {
                 bindings.inputs_hash.is_some() && hash(bindings.script_uri.as_bytes()) == uri_hash
             });
@@ -434,8 +521,7 @@ impl Bound {
     }
 
     pub(in crate::project) fn generated_input(&self, value: &Value) -> Result<bool> {
-        let values: super::super::script_context::Inputs = serde_json::from_value(value.clone())
-            .map_err(|_| invalid("Invalid generated input context"))?;
+        let values = super::super::script_context::parse(value)?;
         Ok(values.library.is_none()
             && values
                 .variables

@@ -135,7 +135,7 @@ fn private_key(namespace: &str, section: &str, name: &str) -> String {
     )
 }
 
-fn table(
+pub(super) fn table(
     values: &BTreeMap<String, String>,
     owner: &BTreeMap<String, String>,
 ) -> Result<BTreeMap<String, String>> {

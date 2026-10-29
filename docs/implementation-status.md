@@ -96,6 +96,8 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 
 ### 次に実装・確認すること
 
+次の候補は、明示`script_input_context`の入力一致判定と形式・由来検査を通常文書の読込みと共用する。生成結果の入力文脈を捕捉済みの宣言libraryへ結び、scope／bindingの出力選択と独立して変数・部品を適用する。単独・scope併用・三者併用、変数の改名、別library、失効時に未知libraryを参照しないことを両形式・5経路の60組で検証する。各組の元／copy／再copyと画像を既存の試験へ追加し、先行の最初に実行する。既存のnative入力guardは同条件のbinding群へ移し、通常全試験も維持する。Rustの整形は成功したが、この候補のGHA実行はまだ開始していない。有用なc8e1c66のCIが終了してから送る。carrier・入力所有元の解除・複数世代の継承は引き続き残件である。
+
 5b24cfeの[CI 40872835538](https://github.com/EkeMinusYou/lazypencil/actions/runs/40872835538)は全工程成功した。scope／binding対の84組・16通りのguard判定と既存の通常／core・動的・端末・Material・release・監査・source gateを通過した。この検証と並行して、継承入力の`lexical_inputs`と`input_epoch`の由来検査を追加している。新しい入力と既存の明示入力文脈、古い／別世代の捕捉を区別する。再コピー時は由来を維持し、確定できないケースは引き続き拒否する。明示文脈を通常の所有元として扱うことや、新旧の生成コードへ同じ元式を無条件で渡すことを防ぐためであり、この拒否を全範囲の対応完了とは扱わない。由来検査を含む次の候補は別途GHAで検証する。
 
 `script_scope`と`script_bindings`の対は共通の判定処理へ統合した。出力のURI guardと入力hashを独立して評価し、有効なbindingだけを対応する側で優先する。直接生成・ref・子孫変更・ノード置換・children置換、継承入力とnative parentを含む84組の元／copy／再copy、および16通りの独立guardの単体検査を追加した。新しい結果はGHA確認待ち。明示的な`script_input_context`と`script_override`を含む全体の合成、および入力文脈を解除した際の元の所有情報の保存は引き続き必要であり、この対の追加だけで完成扱いにはしない。

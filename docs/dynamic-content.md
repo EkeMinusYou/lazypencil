@@ -4,7 +4,9 @@
 
 継承入力を組み合わせるコピーでは、入力文脈v2の`lexical_inputs`と、入力文脈／bindings v3・v4の`input_epoch`を内部の由来情報として使う。通常の入力所有元かどうかと、同じコピー世代に属するかを区別し、再コピーでは元の世代を維持する。旧データや別の入力文脈で由来を確定できない場合は推測して適用しない。これらは利用者が変更するselectorではなく、明示入力文脈・carrier・複数世代の全合成を完了するものでもない。この追加の由来検査はGHA確認待ちである。
 
-生成した`script_scope`と`script_bindings`を同時に指定する場合、出力URIのguardと保存入力のhashを別々に照合する。有効なbindingが出力を優先し、保存した参照入力は有効なbindingの`input_components`、有効なscopeの入力library、元の入力所有元の順に選ぶ。変数式は入力所有元の変数表を維持する。この共通判定とcopy／再copyの追加試験はGHA確認待ちである。明示`script_input_context`・`script_override`を含む全体の合成は引き続き未完了であり、この対の対応だけで完成とはしない。
+生成した`script_scope`と`script_bindings`を同時に指定する場合、出力URIのguardと保存入力のhashを別々に照合する。有効なbindingが出力を優先し、保存した参照入力は有効なbindingの`input_components`、有効なscopeの入力library、元の入力所有元の順に選ぶ。変数式は入力所有元の変数表を維持する。この対の84組・独立した16通りのguardは5b24cfeのGHAで成功した。847件の既定構成・469件のcoreに従来のnamed caseの欠落はなかった。
+
+明示`script_input_context`は通常文書と生成結果で入力一致の判定・形式検査を共用する。提供入力が一致した場合、その文脈の変数・部品の対応を出力scope／bindingと別に捕捉する。文脈のlibraryは生成元の捕捉済み文書から解決し、失効した文脈の未宣言libraryは参照しない。コピー後もJavaScriptは変更しない。単独文脈・scopeとの併用・三者併用、変数の改名・別library・失効の60組とcopy／再copyの追加試験はGHA確認待ち。`script_override`を含む合成、元の所有元への復帰、複数世代の継承入力は引き続き未完了であり、この追加だけで完成とはしない。
 
 状態: JavaScript・Webページ・GLSL、CLI／MCP／TUI、実行上限・保持page・再生・取得方針・専用profileを実装し、確定済みc9ffb37では旧方針のMac／Linux2環境で検証した。初回リリースはmacOS Apple Siliconのみに変更した。入力22ケースも現在のworker／描画試験に含み、改めて未検証には戻さない。明示scriptスコープの合成、認証profileの同時利用、fill-stage object samplingなどの制約とMacの最終受け入れは残る。[現在の残件](implementation-status.md#remaining-work)
 
