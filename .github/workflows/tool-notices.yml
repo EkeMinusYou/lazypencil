@@ -1,6 +1,12 @@
-name: Refresh tool workspace Rust notices
+name: Refresh Rust notices
 on:
   workflow_dispatch:
+    inputs:
+      workspace:
+        description: Workspace whose original dependency notices should be collected
+        type: choice
+        default: tools
+        options: [tools, application]
 permissions:
   contents: read
 concurrency:
@@ -11,6 +17,8 @@ env:
   CARGO_INCREMENTAL: '0'
   CARGO_PROFILE_DEV_DEBUG: '0'
   CARGO_PROFILE_TEST_DEBUG: '0'
+  NOTICE_ROOT: ${{ inputs.workspace == 'application' && '.' || 'xtask' }}
+  NOTICE_UPSTREAM: ${{ inputs.workspace == 'application' && 'resources/licenses/rust/upstream.json' || 'xtask/notices/upstream.json' }}
 jobs:
   notices:
     runs-on: ubuntu-24.04
@@ -22,17 +30,17 @@ jobs:
       - uses: ./.github/actions/xtask
         with:
           verify: 'false'
-      - name: Fetch the complete locked tool dependency inventory without native builds
+      - name: Fetch the locked dependency inventory without native builds
         timeout-minutes: 10
-        run: cargo fetch --locked --manifest-path xtask/Cargo.toml
+        run: cargo fetch --locked --manifest-path "$NOTICE_ROOT/Cargo.toml"
       - name: Reconstruct notices from checksum-verified original crate archives
-        run: cargo xtask notices rust collect --root xtask --upstream xtask/notices/upstream.json --output "$RUNNER_TEMP/tool-rust-notices"
+        run: cargo xtask notices rust collect --root "$NOTICE_ROOT" --upstream "$NOTICE_UPSTREAM" --output "$RUNNER_TEMP/rust-notices"
       - name: Reverify every notice against the locked original archives
-        run: cargo xtask notices rust verify --root xtask --bundle "$RUNNER_TEMP/tool-rust-notices" --cargo-home "$HOME/.cargo"
+        run: cargo xtask notices rust verify --root "$NOTICE_ROOT" --bundle "$RUNNER_TEMP/rust-notices" --cargo-home "$HOME/.cargo"
       - name: Retain the proposed notices for source review
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: tool-rust-notices-${{ github.sha }}-attempt-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/tool-rust-notices
+          name: rust-notices-${{ inputs.workspace }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rust-notices
           if-no-files-found: error
           retention-days: 3
