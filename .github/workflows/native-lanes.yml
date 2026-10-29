@@ -60,8 +60,11 @@ jobs:
     needs: build
     strategy:
       fail-fast: false
+      # Leave room for the independent core host. Start long consumers first;
+      # terminal can finish in the first released slot before runtime completes.
+      max-parallel: 4
       matrix:
-        suite: [normal, pixels, terminal, runtime, material]
+        suite: [runtime, normal, pixels, material, terminal]
     name: Test ${{ matrix.suite }} from the shared build
     runs-on: ${{ inputs.os }}
     timeout-minutes: 60
