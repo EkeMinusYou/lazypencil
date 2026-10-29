@@ -280,6 +280,7 @@ impl Session {
         self.execute_command(&mut command, 300, log, true)
     }
     fn core_reproductions(&self, suite: &str, targets: &[String]) -> Result<()> {
+        self.http_image_reproductions(false, targets)?;
         self.asset_maintenance_reproductions(false, targets)?;
         if std::env::var("RUNTIME_PARALLEL").as_deref() == Ok("true") {
             self.execute(
@@ -305,6 +306,35 @@ impl Session {
                 &["--test-threads=2"],
                 "focus-history-core.log",
             )?;
+        }
+        Ok(())
+    }
+
+    fn http_image_reproductions(&self, features: bool, targets: &[String]) -> Result<()> {
+        if targets.iter().any(|target| target == "sampler_sources") {
+            self.test(
+                features,
+                "lib",
+                "remote_images::tests::",
+                &["--test-threads=2"],
+                "focus-http-image-policy.log",
+            )?;
+            self.test(
+                features,
+                "sampler_sources",
+                "http_images::",
+                &["--test-threads=2"],
+                "focus-http-images.log",
+            )?;
+            if targets.iter().any(|target| target == "mcp") {
+                self.test(
+                    features,
+                    "mcp",
+                    "http_image_metadata_cancellation_reaps_worker_and_unblocks_document_access",
+                    &["--exact", "--test-threads=1"],
+                    "focus-http-image-mcp-cancel.log",
+                )?;
+            }
         }
         Ok(())
     }
@@ -661,22 +691,9 @@ impl Session {
             }
             Stage::FocusReproduce => {
                 let separate_core = self.separate_core()?;
+                self.http_image_reproductions(!core, &targets)?;
                 self.asset_maintenance_reproductions(!core, &targets)?;
                 if has("sampler_sources") {
-                    self.test(
-                        !core,
-                        "lib",
-                        "remote_images::tests::",
-                        &["--test-threads=2"],
-                        "focus-http-image-policy.log",
-                    )?;
-                    self.test(
-                        !core,
-                        "sampler_sources",
-                        "http_images::",
-                        &["--test-threads=2"],
-                        "focus-http-images.log",
-                    )?;
                     self.test(
                         !core,
                         "sampler_sources",

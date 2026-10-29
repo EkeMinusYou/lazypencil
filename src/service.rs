@@ -447,6 +447,15 @@ pub fn document_metadata_with_fonts(
     store: &Store,
     font_files: &[std::path::PathBuf],
 ) -> Result<Value> {
+    document_metadata_with_cancellation(store, font_files, None)
+}
+
+pub fn document_metadata_with_cancellation(
+    store: &Store,
+    font_files: &[PathBuf],
+    cancel: Option<&tokio_util::sync::CancellationToken>,
+) -> Result<Value> {
+    crate::cancel::check(cancel)?;
     let document = store.read()?;
     let mut result = document.summary();
     result["path"] = json!(store.path());
@@ -471,7 +480,14 @@ pub fn document_metadata_with_fonts(
     {
         result["capabilities"]["graphics"]["blend_modes"] = json!(crate::render::BLEND_MODES);
     }
-    match Project::from_document_with_data(store.path(), document, &[], Some(store.data_dir())) {
+    match Project::from_document_with_overlay_and_cancellation(
+        store.path(),
+        document,
+        &[],
+        Some(store.data_dir()),
+        &Default::default(),
+        cancel,
+    ) {
         Ok(mut project) => {
             project.add_font_files(font_files)?;
             result["configuration"] = project.configuration();
@@ -482,6 +498,7 @@ pub fn document_metadata_with_fonts(
                 result["resolution_error"] = json!(error);
             }
         }
+        Err(error) if error.code == "CANCELLED" => return Err(error),
         Err(error) => result["dependency_error"] = json!(error),
     }
     Ok(result)

@@ -47,7 +47,7 @@ fn remote_image_changes_prepare_http_cancellation_and_retention_before_full_test
     ] {
         let plan = focus::select(&util::root(), &[path.into()], "auto").unwrap();
         let targets = ci::commands::reproduction_targets(&plan.suite, &plan.targets);
-        for target in ["sampler_sources", "runtime", "assets"] {
+        for target in ["sampler_sources", "runtime", "assets", "mcp"] {
             assert!(
                 plan.targets.iter().any(|name| name == target),
                 "{path}: {plan:?}"

@@ -70,3 +70,24 @@ pub fn output(
         stderr: std::fs::read(stderr.path()).unwrap(),
     }
 }
+
+#[cfg(unix)]
+pub fn child_pids(parent: u32) -> Vec<u32> {
+    let mut command = std::process::Command::new("ps");
+    command.args(["-axo", "pid=,ppid="]);
+    let result = output(&mut command, std::time::Duration::from_secs(5));
+    assert!(
+        result.status.success(),
+        "Cannot inspect owned child processes"
+    );
+    String::from_utf8(result.stdout)
+        .unwrap()
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let pid = fields.next()?.parse::<u32>().ok()?;
+            let ppid = fields.next()?.parse::<u32>().ok()?;
+            (ppid == parent).then_some(pid)
+        })
+        .collect()
+}

@@ -4,7 +4,11 @@
 
 ## 現在の状態（2026-10-30）
 
-HTTP(S)画像の捕捉と文字列samplerの独立copyを追加した。通常画像・shader入力をメモリ内のremote_image依存に捕捉し、既存の管理bundleとsampler_imagesで原文・別テーマを保持する。通信はChromium downloadの所有者pipe・取消／回収を共用し、offline、通信・byte・redirect上限とURL／応答の秘匿を扱う。不完全なHTTP画像も診断と構造修復を可能にし、GCは通信しない。元通信・source停止後のcopy／移動／再copy、未来のURL編集、拒否・取消・期限・構造修復を既存sampler_sourcesへ追加した。既存の実WebGL証跡もHTTPのlight／darkと、repository所有の固定HTTPS画像のhash照合を含める。補助CLI試験の共通出力・回収処理を使い、素材回収側にあった同じ処理を整理した。ローカルは整形と差分検査までで、この新しい候補のGHAは未実行である。下記9865944の成功とは区別する。
+37267aeの[CI 40973066605](https://github.com/EkeMinusYou/lazypencil/actions/runs/40973066605)は、HTTP画像の拒否・応答待ちの取消／期限・offline・診断と構造修復・GCで通信しない4件をcoreと既定構成で成功した。copy／移動・通信停止後の元テーマ確認まで通過したが、再copy後に新配置のthemeを指定せずdarkを期待した一件で停止した。coreのrepairでは、対応を追加したHTTPS自体を従来の不正URLとして拒否する古い期待値も失敗した。releaseと既存の性能・smokeは成功したが、通常／runtime／pixel等のconsumerと新しいHTTP実WebGL・固定HTTPSの証跡、両構成Clippyと最終sourceはこの候補の成功根拠にしない。
+
+修正では、不正URL試験をFTPと資格情報入りHTTPSへ揃え、URI検査の失敗を取得失敗へ混ぜない。再copy後のlight／darkを明示して両方の保存画像と原文を確認し、将来のURL変更も検査する。MCPのget_document／read_asset等と一部CLIのHTTP読込みで開始時の取消tokenを渡す経路も補強した。実MCPの通知取消・後続の文書アクセス、実CLIのCtrl+Cと所有HTTP workerのwait／回収を既存のClientと共通のbounded process helperで検証する。HTTP画像のunit・sampler・MCPをcoreの先行へも接続し、WebGLではbefore／after一致に加えてyellow／blueの実画素を確認する。Mac補助ツールGHA 40972596115は94c067cで全試験・Clippy・原本照合が成功した。この後続修正のGHAは次に実行し、下記9865944の成功とは区別する。
+
+HTTP(S)画像の捕捉と文字列samplerの独立copyは新しい実装である。通常画像・shader入力をメモリ内のremote_image依存に捕捉し、既存の管理bundleとsampler_imagesで原文・別テーマを保持する。通信はChromium downloadの所有者pipe・取消／回収を共用し、offline、通信・byte・redirect上限とURL／応答の秘匿を扱う。不完全なHTTP画像も診断と構造修復を可能にし、GCは通信しない。埋め込みdata画像URLと、捕捉scriptのfile-URL／HTTP asset keyは残る。英語ガイドは1.0.51。ローカルは整形と差分検査までとし、重いbuildはGHAだけで行う。有用な実行は中断せず、37267aeの全job終了後に修正版を送る。
 
 9865944の[CI 40968788345](https://github.com/EkeMinusYou/lazypencil/actions/runs/40968788345)は全工程成功した。管理素材回収の `assets prune FILE --project-root DIR` は、確認・revision付き適用・保持履歴と別文書による保護・変更拒否・使用中拒否・隔離後の回収／復元を、core／既定構成で検証済みになった。新規CLI試験7件とunit試験4件を含む。選んだrootの別文書・全stored文字列・読み込んだlibraryとbrowser資源・選んだdata directoryの全保持checkpointを調べ、内容hashの一致する単体素材とmanifest全体を照合したbundleだけを候補にする。動的script・不明な旧owner・未解決入力・symlinkなどは理由付きで保持する。manifestを削除した後のbundleの部分回収、最終空directoryの前後に中断したjournalの回収、参照が戻った完全payloadの復元と復元先の衝突も成功した。参照の不明な素材を捨てたり、全異常終了・電源断の受け入れを済んだと宣言するものではない。コマンドの範囲と上限は[管理素材の仕様](mcp.md#project-asset-maintenance)に記載する。
 

@@ -188,17 +188,24 @@ fn http_sampler_copy_preserves_both_versions_themes_text_after_network_and_sourc
             ]),
         );
         let target = copied["generated_ids"]["0"]["id"].as_str().unwrap();
-        let scene = Project::load(&moved).unwrap().resolve().unwrap();
-        assert_eq!(
-            scene
-                .roots
-                .iter()
-                .find(|node| node.id() == target)
-                .unwrap()
-                .children[0]
-                .properties["content"],
-            urls[1]
-        );
+        for (index, mode) in ["light", "dark"].into_iter().enumerate() {
+            edit(
+                &moved,
+                &format!("http-recopied-{mode}"),
+                json!([{"op":"set_theme","target":target,"set":{"mode":mode}}]),
+            );
+            let project = Project::load(&moved).unwrap();
+            let scene = project.resolve().unwrap();
+            let node = scene.roots.iter().find(|node| node.id() == target).unwrap();
+            assert_eq!(node.children[0].properties["content"], urls[index]);
+            let path = Path::new(
+                node.properties["fill"]["uniforms"]["image"][0]
+                    .as_str()
+                    .unwrap(),
+            );
+            assert!(path.starts_with(moved.path().parent().unwrap().join("assets/lazypencil")));
+            assert!(!project.asset(path).unwrap().bytes.is_empty());
+        }
         let future = reference::Server::new();
         fs::remove_file(moved.path().parent().unwrap().join("lazypencil.toml")).unwrap();
         let uri = format!(
@@ -269,7 +276,7 @@ fn http_images_reject_invalid_redirects_responses_credentials_and_offline_withou
         "http:relative".into(),
     ] {
         let (_temp, store) = fixture_image(uri);
-        assert!(!load(&store).unwrap().assets_complete());
+        assert!(load(&store).is_err());
     }
     assert_eq!(server.network_counts(), before);
 }
@@ -341,6 +348,72 @@ fn http_image_cancellation_and_deadlines_stop_an_actual_blocked_response() {
     }
 }
 
+#[cfg(unix)]
+#[test]
+fn http_image_cli_interrupt_reaps_the_worker_during_an_asset_read() {
+    struct Owner(std::process::Child);
+    impl Drop for Owner {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let observed = Arc::new(AtomicBool::new(false));
+    let server = reference::Server::with_selector_probe(observed.clone());
+    let (_temp, store) = fixture_image(format!(
+        "http://{}/network/http-image/blocked.png",
+        server.address
+    ));
+    let before = fs::read(store.path()).unwrap();
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let mut child = Owner(
+        Command::new(env!("CARGO_BIN_EXE_lazypencil"))
+            .arg("--json")
+            .arg("--data-dir")
+            .arg(store.data_dir())
+            .args(["assets", "read"])
+            .arg(store.path())
+            .arg("--hash")
+            .arg("0".repeat(64))
+            .stdin(std::process::Stdio::null())
+            .stdout(output.reopen().unwrap())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !observed.load(Ordering::SeqCst) {
+        assert!(
+            Instant::now() < deadline,
+            "CLI image request never reached the owned server"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let workers = fixture_support::child_pids(child.0.id());
+    assert_eq!(workers.len(), 1);
+    assert_eq!(unsafe { libc::kill(child.0.id() as i32, libc::SIGINT) }, 0);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while child.0.try_wait().unwrap().is_none() {
+        assert!(
+            Instant::now() < deadline,
+            "Interrupted HTTP image acquisition did not finish"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let result: Value = serde_json::from_slice(&fs::read(output.path()).unwrap()).unwrap();
+    assert_eq!(result["error"]["code"], "CANCELLED", "{result}");
+    assert_eq!(
+        unsafe { libc::kill(workers[0] as i32, 0) },
+        -1,
+        "HTTP worker was not reaped"
+    );
+    assert_eq!(
+        std::io::Error::last_os_error().raw_os_error(),
+        Some(libc::ESRCH)
+    );
+    assert_eq!(fs::read(store.path()).unwrap(), before);
+}
+
 #[test]
 fn http_image_retention_review_never_starts_a_network_acquisition() {
     let server = reference::Server::new();
@@ -404,6 +477,7 @@ fn http_image_failures_remain_inspectable_and_structurally_repairable() {
 #[cfg(feature = "rendering")]
 pub(super) fn real_webgl_case(evidence: &mut Vec<Value>) -> Value {
     use lazypencil::{dynamic::DynamicRuntime, render};
+    use skia_safe::{Color, Data, Image};
     let (temp, store, server, _urls) = fixture("2.21");
     let mut runtime = DynamicRuntime::new(temp.path())
         .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
@@ -419,11 +493,26 @@ pub(super) fn real_webgl_case(evidence: &mut Vec<Value>) -> Value {
             &mut project.load_fonts().unwrap(),
         )
         .unwrap();
-        originals.push(
+        let rendered =
             render::png_with_runtime(&project, &snapshot, &Default::default(), &mut runtime, None)
-                .unwrap()
-                .png,
+                .unwrap();
+        let image = Image::from_encoded(Data::new_copy(&rendered.png))
+            .unwrap()
+            .make_raster_image(None, None)
+            .unwrap();
+        assert_eq!(
+            image.peek_pixels().unwrap().get_color((10, 10)),
+            if mode == "light" {
+                Color::YELLOW
+            } else {
+                Color::BLUE
+            }
         );
+        assert_eq!(
+            image.peek_pixels().unwrap().get_color((75, 10)),
+            Color::BLUE
+        );
+        originals.push(rendered.png);
     }
     let result = apply(&store, copy_operations(), false);
     let target = result["generated_ids"]["0"]["id"].as_str().unwrap();

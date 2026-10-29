@@ -535,7 +535,11 @@ impl DocumentWorker {
             }
             "get_document" => {
                 let _: Empty = parse(arguments)?;
-                let mut value = service::document_metadata_with_fonts(&self.store, &self.fonts)?;
+                let mut value = service::document_metadata_with_cancellation(
+                    &self.store,
+                    &self.fonts,
+                    Some(cancel),
+                )?;
                 value["guidance"] = json!({"entry_tool":"get_guidance","entry_id":"start","language":"en","styles_tool":"list_styles"});
                 value["guidance"]["project_design"] = value["configuration"]["design"].clone();
                 if let Some(attachments) = &self.attachments {
@@ -580,7 +584,7 @@ impl DocumentWorker {
             }
             "list_components" => {
                 let args: Page = parse(arguments)?;
-                let project = self.project()?;
+                let project = self.project(Some(cancel))?;
                 let components = project.components();
                 let identity = format!(
                     "{}:{}",
@@ -727,7 +731,7 @@ impl DocumentWorker {
             #[cfg(feature = "rendering")]
             "list_fonts" => {
                 let _: Empty = parse(arguments)?;
-                let project = self.project()?;
+                let project = self.project(Some(cancel))?;
                 let mut fonts = project.load_fonts()?;
                 let inventory = fonts.inventory()?;
                 project.verify_unchanged()?;
@@ -754,8 +758,8 @@ impl DocumentWorker {
         Ok(result)
     }
 
-    fn project(&self) -> Result<Project> {
-        let mut project = Project::load(&self.store)?;
+    fn project(&self, cancel: Option<&tokio_util::sync::CancellationToken>) -> Result<Project> {
+        let mut project = Project::load_with_cancellation(&self.store, cancel)?;
         project.add_font_files(&self.fonts)?;
         Ok(project)
     }
@@ -765,8 +769,7 @@ impl DocumentWorker {
         args: &crate::assets::ReadAssetRequest,
         cancel: &tokio_util::sync::CancellationToken,
     ) -> Result<Value> {
-        let mut project = self.project()?;
-        project.set_cancellation(Some(cancel));
+        let project = self.project(Some(cancel))?;
         let result = crate::assets::read_asset(&project, args);
         #[cfg(feature = "rendering")]
         if result

@@ -622,13 +622,20 @@ impl Project {
         Ok((value, aliases))
     }
     pub fn load(store: &Store) -> Result<Self> {
+        Self::load_with_cancellation(store, None)
+    }
+
+    pub fn load_with_cancellation(
+        store: &Store,
+        cancel: Option<&tokio_util::sync::CancellationToken>,
+    ) -> Result<Self> {
         Self::from_document_with_activity(
             store.path(),
             store.read()?,
             &[],
             Some(store.data_dir()),
             &BTreeMap::new(),
-            None,
+            cancel,
             store.asset_activity(),
         )
     }

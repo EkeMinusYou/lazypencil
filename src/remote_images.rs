@@ -90,6 +90,8 @@ pub(crate) fn fetch(
     timeout: Duration,
     cancel: Option<&CancellationToken>,
 ) -> Result<Arc<[u8]>> {
+    let cli_cancel = crate::cancel::token();
+    let cancel = cancel.or_else(|| crate::cancel::cli_handler_installed().then_some(&cli_cancel));
     crate::cancel::check(cancel)?;
     let mut url = validate(uri)?;
     url.set_fragment(None);

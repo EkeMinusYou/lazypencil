@@ -761,7 +761,8 @@ fn a_missing_reference_still_requires_an_explicit_dependency_precondition() {
 #[test]
 fn unsafe_urls_and_existing_directories_are_not_treated_as_missing_files() {
     for uri in [
-        "https://example.invalid/lost.png",
+        "ftp://example.invalid/lost.png",
+        "https://user:private@host.invalid/lost.png",
         "file:///lost.png",
         "directory.png",
     ] {

@@ -32,6 +32,7 @@ impl Project {
     ) -> Result<()> {
         self.check_cancelled()?;
         if kind == "image" && crate::remote_images::is_http(uri) {
+            crate::remote_images::validate(uri)?;
             // Maintenance only discovers local retention roots. It must not
             // acquire the network while scanning documents or old history.
             if !self.remote_images_allowed {

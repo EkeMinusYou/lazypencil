@@ -228,6 +228,9 @@ fn main() -> ExitCode {
     if matches!(
         arguments.command,
         lazypencil::cli::Command::Render(_)
+            | lazypencil::cli::Command::Inspect(_)
+            | lazypencil::cli::Command::Validate(_)
+            | lazypencil::cli::Command::Variables(_)
             | lazypencil::cli::Command::Config { .. }
             | lazypencil::cli::Command::Layout(_)
             | lazypencil::cli::Command::Apply(_)

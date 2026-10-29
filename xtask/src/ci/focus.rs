@@ -952,7 +952,7 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         &["src/remote_images.rs", "src/project/remote_images.rs"],
         &["src/remote_images/"],
     ) {
-        targets.extend(["sampler_sources", "runtime", "assets"].map(str::to_owned));
+        targets.extend(["sampler_sources", "runtime", "assets", "mcp"].map(str::to_owned));
     }
     if any(paths, &["src/render.rs"], &["src/render/"]) {
         targets.extend(["graphics", "render"].map(str::to_owned));
