@@ -4,7 +4,14 @@
 
 ## 現在の状態（2026-10-30）
 
-作業中の候補は、Unixの認証profileを一つのprivate page workerから利用し、TUIの保持描画と別bound MCPを同じChromiumへ接続する。元のguardian leaseは維持し、取得全体を直列化しつつ、保持ページ・取消・終了回収をownerごとに分ける。owner別8ページ・16接続と通信／資源上限を設け、network policy変更時は起動条件を変えて再起動する。実MCPと保持描画の同時利用・owner別eviction・取消／強制終了・通信方針切替の試験を準備した。コンパイルと通信単体試験は成功したが、実Chromiumによる共有の統合試験はまだ未実行であり、下記の検証済み基準と区別する。
+最新の全工程成功はe786e3eの[CI 40925838163](https://github.com/EkeMinusYou/lazypencil/actions/runs/40925838163)である。Unixの認証profileを一つのprivate page workerから利用し、TUIの保持描画経路と別bound MCPを同じChromiumへ接続する実装を検証した。元のguardian leaseは維持し、取得全体を直列化しつつ、保持ページ・取消・終了回収をownerごとに分ける。owner別8ページ・16接続と通信／資源上限を設け、network policy変更時は起動条件を変えて再起動する。実Chromiumによる共有4件は41.47秒で成功した。同時利用とowner別eviction、取消／強制終了後の他owner保持、同じfile URLに対するproject別素材分離、通信方針切替と永続ストレージを確認した。可視TUIと実IMEの受け入れとは区別する。
+
+監査・core・既定構成builder・release・通常／pixel／runtime／端末／Materialの全5 consumerと最終source工程は成功した。workflow全体は約13分15秒、builder7分14秒・core7分19秒・release6分36秒・runtime4分37秒だった。全体10分目標は未達であり、異なる変更やrunner条件の時間差を修正単独の効果とは扱わない。
+
+次の差分では、置換cacheの保存前に古いapp cacheを削除する処理を廃止する。a4aa5e6のログではdefault側が17:34:35 UTCにcore cacheも削除し、core側の17:34:41の復元がmissして不要な約1分51秒のcompileを生じた。保存済みcacheだけを、同じfeature構成・compiler／SDK文脈・wire format内で整理する。回帰試験は、保存前のfallback保持と、保存後も別構成／compiler／wire formatを保持することを検査する。容量確保には初回対象外のLinux完成app cache二つだけを削除し、1,948,360,456バイトを解放した。Linuxを含む依存cacheは保持した。この差分のremote検証はまだ未実施である。
+
+<details>
+<summary>共有profile対応の準備と失敗履歴（e786e3eで上記範囲を検証済み）</summary>
 
 初回候補8740ab0のCI 40915028991は、`dispose_tab`の二つの分岐が`Result<()>`と`Result<Value>`を返す型不一致でcore／既定構成のコンパイルを停止した。返却値をunitへ揃え、修正版で検証する。機能試験の成功とは扱わない。依存cacheは拡張済みの`complete-native-v2`を実際に復元し、この失敗までにregistry依存の再コンパイルはなかった。監査は成功し、残ったreleaseは未割当だった。
 
@@ -18,9 +25,11 @@
 
 runtimeは割当後、共有profile4件を12.53秒で失敗として返した。全件が入れ子のChromium guardian起動時の`owner_start`／Broken pipeであり、後続の長いbrowser／lifecycle群を開始する前に停止した。起動ownerを監視するスレッドがEOF後にfd 0を閉じ、macOSの後続posix_spawnでCLOEXEC pipeへ番号が再利用されることを確認した。小さい独立Rustプロセスでも、stdinを開いたままなら子のhandshakeが成功し、閉じるとBroken pipe／子のUnexpectedEofを再現した。監視には標準入力を借用するStdinLockを使い、EOFを観測した後もfd 0を閉じない修正を準備した。通常のguardian lease・製品の期限・試験範囲は維持し、修正版の実共有と全runtimeの成功は別途確認する。
 
+</details>
+
 再起動後のKittyアクセスもコンピューター操作ツールが`net.kovidgoyal.kitty`を安全上の理由で拒否した。実IMEの成功とは扱わず、元の実端末受け入れを維持する。
 
-最新の全工程成功は5b7139dの[CI 40900801284](https://github.com/EkeMinusYou/lazypencil/actions/runs/40900801284)である。依存cacheの保存・選択・整理と、ビルドreceiptへ束縛した実行hostの記録を追加した。MacとLinuxの補助ツール全試験・新しい保存条件／拒否条件・Clippyが成功した。既定858件・core470件のnamed caseと回数にec9d668からの欠落はなく、全1,980 PNGはbyte一致し、今回sourceと36×12の寸法も一致した。同じ画像の復号・三段階比較は繰り返していない。本体と47試験実行ファイルも前回とhash一致した。全5 consumerの元receiptはbyte一致し、個別host記録・試験完了結果とのhash対応と最終gateを成功した。Chromium・端末・Material・42描画計測・監査・署名付きsourceも成功し、source archiveは13,352,641バイト、SHA-256 `f6059197697fdbdac87041a73ae4a8e4aa2202256167b519d8c1682609b23a44`で、source／workflow／run attempt 1の署名を照合した。
+前回の全工程成功は5b7139dの[CI 40900801284](https://github.com/EkeMinusYou/lazypencil/actions/runs/40900801284)である。依存cacheの保存・選択・整理と、ビルドreceiptへ束縛した実行hostの記録を追加した。MacとLinuxの補助ツール全試験・新しい保存条件／拒否条件・Clippyが成功した。既定858件・core470件のnamed caseと回数にec9d668からの欠落はなく、全1,980 PNGはbyte一致し、今回sourceと36×12の寸法も一致した。同じ画像の復号・三段階比較は繰り返していない。本体と47試験実行ファイルも前回とhash一致した。全5 consumerの元receiptはbyte一致し、個別host記録・試験完了結果とのhash対応と最終gateを成功した。Chromium・端末・Material・42描画計測・監査・署名付きsourceも成功し、source archiveは13,352,641バイト、SHA-256 `f6059197697fdbdac87041a73ae4a8e4aa2202256167b519d8c1682609b23a44`で、source／workflow／run attempt 1の署名を照合した。
 
 全体19分04秒、再試行なし。builder7分43秒・core7分01秒・release2分36秒、通常4分40秒・pixel2分10秒・runtime3分08秒・端末1分11秒・Material1分42秒・source37秒だった。builder完了から先頭consumer開始まで5分08秒あり、そのうちruntime job作成から割当まで5分07秒だった。元の期限と全試験は維持しており、10分目標は未達である。前回32分33秒との差を修正単独の効果とはしない。
 
@@ -140,7 +149,7 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 
 ### 次に実装・確認すること
 
-コピー済み定義のコード所有元保持は2c9ac33、入力文脈の世代別復元は4252fe2、新たに生成したscriptと後続の上書きはd7cc9c6で検証済みである。元source削除後と再copyを含み、通常metadataによる元設定の保持、失効した出力設定からコード所有元への復帰を確認した。必要な元情報を保存していない旧captureは、推測で接続せず元sourceからの再copyを案内する既存の診断を維持する。拡張済み依存cacheのwarm再利用はb09a329のコンパイル段階で確認できた。認証profileの同時利用の統合試験と、初回Skia buildの重複・CI待機を引き続き確認する。
+コピー済み定義のコード所有元保持は2c9ac33、入力文脈の世代別復元は4252fe2、新たに生成したscriptと後続の上書きはd7cc9c6で検証済みである。元source削除後と再copyを含み、通常metadataによる元設定の保持、失効した出力設定からコード所有元への復帰を確認した。必要な元情報を保存していない旧captureは、推測で接続せず元sourceからの再copyを案内する既存の診断を維持する。拡張済み依存cacheのwarm再利用はb09a329のコンパイル段階で確認できた。認証profileの同時利用はe786e3eで検証済みであり、初回Skia buildの重複・CI待機とcache整理の競合を引き続き改善する。
 
 提供入力に対する明示入力文脈60組、refの上書きcarrier56組、および単独入力文脈の参照名転送は7431326で検証済みである。以下の準備中・再実行待ちという記述は当時の履歴であり、現在の未完了一覧には数えない。
 
@@ -176,7 +185,7 @@ cbc868bでは、bindings v3に元URIのhash、input context v2に元入力のhas
 </details>
 
 
-- TUI preview と別の bound MCP が、同じ認証済みブラウザープロファイルを同時利用する統合。専用 profile の作成・ログイン・永続ストレージ・所有者回収は実装済みだが、現在の lease は二つ目の独立 owner を拒否する。
+- TUIの保持描画経路と別bound MCPによる同じ認証profileの同時利用はe786e3eで検証済み。以前の「二つ目の独立ownerを拒否する」という制約は解消した。可視TUIでの実IME等の確認は下記に残す。
 
 ab8c785の既定構成builderは7分42秒、通常consumer3分24秒、pixel consumer3分01秒、runtime consumer3分07秒、source gate32秒だった。初回305198bは追加した単体試験補助のString型不一致で停止したため成功扱いせず、core・releaseの完了後に修正した。既存bindings単体試験をcfg(test)の別ファイルへ分け、以後の試験補助だけの修正が本体のcompiler入力に混ざることを防ぐ。署名済みsourceは1,186ファイル・13,275,319バイト、SHA-256 `5254036df2833e5e628a2fcfb9680eff2272cd1be95433e91556a55ff5e0fdc9`。検証後の差分は文書更新と、PNG報告用revisionを実行時環境から読む試験補助1行のみで、同条件のnative全検証は重ねない。この最終の補助変更自体のremote実行とは区別する。
 
@@ -206,7 +215,7 @@ macOS の常用メモリは `7fe854b` の既存候補で172.03MiB、cached feedb
 ### 完成までの順序と概算
 
 1. 拡張済み依存cacheのwarm再利用と、異なるMac 15 imageでの通常consumerの実成功はb09a329で確認した。全5 consumerの最終gate・10分目標と、初回Skia build直後の重複compileの改善は残る。試験専用入力の再利用はec9d668、独立コピーの生成script所有元はd7cc9c6で検証済みになった。
-2. 同時認証利用：旧3〜5実働日の概算を再評価する。旧見積もりに含めた追加フォントの遅延読み込みは検証済みになった。
+2. 同時認証利用はe786e3eの全工程CIで検証済み。旧3〜5実働日の概算には、既に検証済みの追加フォント遅延読み込みとこの対応が含まれており、現在の残工数には加算しない。
 3. 各個別仕様の残る互換・資源処理（非local sampler、欠損修復、素材回収、font lockfileなど）を具体化する。追加分の工数は未確定。
 4. 不足する受け入れ確認、保証環境の確定、配布・文書整理：2〜4実働日の概算。
 

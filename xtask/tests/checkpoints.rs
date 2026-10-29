@@ -1,5 +1,5 @@
 use lazypencil_xtask::ci::cache;
-use serde_json::json;
+use serde_json::{Value, json};
 use std::collections::BTreeSet;
 
 #[test]
@@ -166,7 +166,7 @@ fn manifest_retention_expires_old_release_sources_but_preserves_test_only_change
 }
 
 #[test]
-fn replacement_reservation_requires_both_platform_and_source_before_any_remote_operation() {
+fn prepublication_retirement_is_rejected_before_any_remote_operation() {
     let output = lazypencil_xtask::process::output(
         std::process::Command::new(env!("CARGO_BIN_EXE_xtask")).args([
             "ci",
@@ -183,81 +183,54 @@ fn replacement_reservation_requires_both_platform_and_source_before_any_remote_o
     assert_eq!(output.status.code(), Some(2));
     let error = String::from_utf8(output.stderr).unwrap();
     assert!(
-        error.contains("--platform") && error.contains("--manifest"),
+        error.contains("unexpected argument") && error.contains("--before-replacement"),
         "{error}"
     );
     assert!(output.stdout.is_empty());
 }
 
 #[test]
-fn replacement_reservation_retires_only_older_application_sources_on_the_owned_platform() {
+fn publication_retires_only_the_replaced_configuration_compiler_and_wire_format() {
     let current = "a".repeat(64);
     let old = "b".repeat(64);
     let context = "c".repeat(64);
-    let entry = |id, key: String, reference: &str| json!({"id":id,"key":key,"ref":reference,"version":"layout"});
-    let entries = vec![
-        entry(
-            1,
-            format!("tests-v1-ubuntu-24.04-{context}-full-{old}"),
-            "refs/heads/main",
-        ),
-        entry(
-            2,
-            format!("application-v2-ubuntu-24.04-{old}-{context}-focus-402-1"),
-            "refs/heads/main",
-        ),
-        entry(
-            3,
-            format!("tests-v1-ubuntu-24.04-{context}-full-{current}"),
-            "refs/heads/main",
-        ),
-        entry(
-            4,
-            format!("application-v2-ubuntu-24.04-{current}-{context}-focus-403-1"),
-            "refs/heads/main",
-        ),
-        entry(
-            5,
-            format!("release-v1-ubuntu-24.04-{old}-{context}-full"),
-            "refs/heads/main",
-        ),
-        entry(
-            6,
-            format!("tests-v1-ubuntu-24.04-arm-{context}-full-{old}"),
-            "refs/heads/main",
-        ),
-        entry(
-            7,
-            format!("tests-v1-ubuntu-24.04-{context}-full-{old}"),
-            "refs/pull/1/merge",
-        ),
-        entry(
-            8,
-            format!("native-v2-ubuntu-24.04-{context}"),
-            "refs/heads/main",
-        ),
-        entry(
-            9,
-            format!("xtask-v1-Linux-X64-image-rust1.94.0-{context}"),
-            "refs/heads/main",
-        ),
-        entry(
-            10,
-            format!("tests-v2-ubuntu-24.04-{context}-full-{old}"),
-            "refs/heads/main",
-        ),
+    let other_context = "d".repeat(64);
+    let entry = |id, key: String, wire: &str| json!({"id":id,"key":key,"ref":"refs/heads/main","version":wire,"created_at":format!("2026-01-01T00:00:{id:02}Z")});
+    let key = |role: &str, platform: &str, context: &str, source: &str| {
+        format!("{role}-v1-{platform}-{context}-full-{source}")
+    };
+    let mut entries = vec![
+        entry(1, key("tests", "macos-15", &context, &old), "wire"),
+        entry(2, key("tests-core", "macos-15", &context, &old), "wire"),
+        entry(3, key("tests", "macos-15", &other_context, &old), "wire"),
+        entry(4, key("tests", "macos-15", &context, &old), "other-wire"),
+        entry(5, key("tests", "ubuntu-24.04", &context, &old), "wire"),
+        entry(6, format!("native-v2-macos-15-{context}"), "wire"),
     ];
-    let selected = cache::obsolete_before_replacement(&entries, "ubuntu-24.04", &current).unwrap();
-    assert_eq!(
-        selected
+    let removed = |entries: &[Value]| {
+        cache::obsolete(entries, Some(&current))
+            .unwrap()
             .iter()
             .map(|entry| entry["id"].as_u64().unwrap())
-            .collect::<Vec<_>>(),
-        [1, 2]
+            .collect::<Vec<_>>()
+    };
+    assert!(removed(&entries).is_empty(), "Staging is not publication");
+    entries.push(entry(
+        7,
+        key("tests", "macos-15", &context, &current),
+        "wire",
+    ));
+    assert_eq!(
+        removed(&entries),
+        [1],
+        "Publishing default outputs cannot erase the core or another compiler's fallback"
     );
-    assert!(cache::obsolete_before_replacement(&entries, "ubuntu-24.04.*", &current).is_err());
-    assert!(cache::obsolete_before_replacement(&entries, "ubuntu-24.04", "").is_err());
-    assert!(cache::obsolete_before_replacement(&entries, "ubuntu-24.04", &"a".repeat(63)).is_err());
+    entries.push(entry(
+        8,
+        key("tests-core", "macos-15", &context, &current),
+        "wire",
+    ));
+    assert_eq!(removed(&entries), [1, 2]);
 }
 
 #[test]

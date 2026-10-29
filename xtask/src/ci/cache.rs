@@ -127,14 +127,10 @@ pub enum Command {
     Retain {
         #[arg(long)]
         delete: bool,
-        #[arg(long, conflicts_with_all = ["platform", "manifest", "before_replacement"])]
+        #[arg(long, conflicts_with_all = ["platform", "manifest"])]
         before_tools_replacement: Option<String>,
         #[arg(long, requires = "before_tools_replacement")]
         tools_matched_key: Option<String>,
-        /// Retire older application sources after staging a successful full build,
-        /// before uploading its replacement. Upload failure may lose app reuse.
-        #[arg(long, requires_all = ["platform", "manifest"])]
-        before_replacement: bool,
         #[arg(long, value_parser = ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-15"])]
         platform: Option<String>,
         #[arg(long, env = "GITHUB_REPOSITORY")]
@@ -390,7 +386,6 @@ impl Command {
                 delete,
                 before_tools_replacement,
                 tools_matched_key,
-                before_replacement,
                 platform,
                 repository,
                 manifest,
@@ -417,27 +412,16 @@ impl Command {
                     })
                     .collect::<Vec<_>>();
                 let manifest = manifest.map(|p| util::json::<Manifest>(&p)).transpose()?;
-                let source_hash = manifest.as_ref().map(source_fingerprint).transpose()?;
                 let mut obsolete = if let Some(primary) = before_tools_replacement {
                     obsolete_tools_before_replacement(
                         &entries,
                         &primary,
                         tools_matched_key.as_deref().unwrap_or_default(),
                     )?
-                } else if before_replacement {
-                    obsolete_before_replacement(
-                        &entries,
-                        platform
-                            .as_deref()
-                            .context("Replacement platform required")?,
-                        source_hash
-                            .as_deref()
-                            .context("Replacement source required")?,
-                    )?
                 } else if let Some(manifest) = manifest.as_ref() {
                     obsolete_for_manifest(&entries, manifest)?
                 } else {
-                    obsolete(&entries, source_hash.as_deref())?
+                    obsolete(&entries, None)?
                 };
                 if let Some(platform) = platform {
                     // Each finished platform retires only its own application
@@ -1423,42 +1407,6 @@ pub fn obsolete_tools_before_replacement(
         .collect())
 }
 
-/// Only rebuildable application snapshots are retired before publishing a
-/// locally staged, successful replacement. Dependency caches are never selected.
-pub fn obsolete_before_replacement(
-    entries: &[Value],
-    platform: &str,
-    source_hash: &str,
-) -> Result<Vec<Value>> {
-    ensure!(
-        ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-15"].contains(&platform)
-            && Regex::new(r"^[0-9a-f]{64}$")?.is_match(source_hash),
-        "Invalid replacement identity"
-    );
-    let tests = Regex::new(&format!(
-        r"^tests(?:-core)?-v1-{}-[0-9a-f]{{64}}-full-([0-9a-f]{{64}})$",
-        regex::escape(platform)
-    ))?;
-    let application = Regex::new(&format!(
-        r"^application-v2-{}-([0-9a-f]{{64}})-[0-9a-f]{{64}}-(?:full|focus(?:-[1-9][0-9]*-[1-9][0-9]*)?)$",
-        regex::escape(platform)
-    ))?;
-    Ok(entries
-        .iter()
-        .filter(|entry| {
-            entry["ref"] == "refs/heads/main"
-                && entry["id"].as_u64().is_some()
-                && entry["key"].as_str().is_some_and(|key| {
-                    tests
-                        .captures(key)
-                        .or_else(|| application.captures(key))
-                        .is_some_and(|captures| &captures[1] != source_hash)
-                })
-        })
-        .cloned()
-        .collect())
-}
-
 pub fn obsolete(entries: &[Value], source_hash: Option<&str>) -> Result<Vec<Value>> {
     obsolete_with_sources(entries, source_hash, None)
 }
@@ -1496,13 +1444,13 @@ fn obsolete_with_sources(
         r"^release-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-([0-9a-f]{64})-[0-9a-f]{64}-(full|focus)(?:-[1-9][0-9]*-[1-9][0-9]*)?$",
     )?;
     let tests = Regex::new(
-        r"^(tests(?:-core)?)-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-[0-9a-f]{64}-full-([0-9a-f]{64})$",
+        r"^(tests(?:-core)?)-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-([0-9a-f]{64})-full-([0-9a-f]{64})$",
     )?;
     let compatible_sources = keys
         .iter()
         .filter_map(|(key, _)| tests.captures(key))
         .filter(|caps| &caps[1] == "tests")
-        .map(|caps| (caps[2].to_owned(), caps[3].to_owned()))
+        .map(|caps| (caps[2].to_owned(), caps[4].to_owned()))
         .collect::<BTreeSet<_>>();
     let mut selected = BTreeMap::new();
     let mut groups = BTreeMap::<(String, String), Vec<&Value>>::new();
@@ -1620,9 +1568,12 @@ fn obsolete_with_sources(
             }
         }
         if let Some(caps) = tests.captures(key) {
+            // A default build cannot retire the core fallback, nor can one
+            // compiler/SDK context retire another runner's reusable outputs.
+            // Count only published checkpoints in the same cache wire format.
             groups
                 .entry((
-                    format!("{}:{}:{version}", &caps[1], &caps[2]),
+                    format!("{}:{}:{}:{version}", &caps[1], &caps[2], &caps[3]),
                     "full".into(),
                 ))
                 .or_default()

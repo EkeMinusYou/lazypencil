@@ -552,13 +552,6 @@ jobs:
         continue-on-error: true
         timeout-minutes: 3
         run: cargo xtask ci cache application stage --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-compatible-cache" --native-key '${{ steps.cache-key.outputs.primary }}${{ inputs.lane == 'core' && '-core' || '' }}'
-      - name: Reserve room for the staged successful replacement
-        if: ${{ (inputs.lane != 'release') && !cancelled() && steps.compatible-save.outcome == 'success' && github.ref == 'refs/heads/main' }}
-        continue-on-error: true
-        timeout-minutes: 3
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: cargo xtask ci cache retain --before-replacement --platform '${{ inputs.os }}' --manifest "$RUNNER_TEMP/lazypencil-source/SOURCE-MANIFEST.json" --delete
       - name: Save the complete integration-test checkpoint
         id: compatible-published
         if: ${{ (inputs.lane != 'release') && !cancelled() && steps.compatible-save.outcome == 'success' }}
