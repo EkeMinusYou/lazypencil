@@ -15,13 +15,26 @@ impl Fixture {
     fn new(name: &str) -> Self {
         let cases: Vec<Value> =
             serde_json::from_str(include_str!("fixtures/notices.json")).unwrap();
-        let data = cases.into_iter().find(|v| v["name"] == name).unwrap();
+        let mut data = cases.into_iter().find(|v| v["name"] == name).unwrap();
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().to_path_buf();
         for (name, bytes) in data["inputs"].as_object().unwrap() {
             let path = root.join(name);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, STANDARD.decode(bytes.as_str().unwrap()).unwrap()).unwrap();
+        }
+        if name.starts_with("skia") {
+            let bytes = b"/* SDK fixture: retain identity, not source bytes. */\r\n";
+            fs::write(root.join("system.h"), bytes).unwrap();
+            data["index"]["external_headers"] = json!([{
+                "path":"../system.h",
+                "resolved_path":root.canonicalize().unwrap().join("system.h"),
+                "bytes":bytes.len(),
+                "sha256":util::digest(bytes),
+            }]);
+            data["index"]["limits"]["external_headers"] = json!(
+                "Declared/resolved paths, sizes and SHA-256 identify external header inputs; their source bytes and license texts are not copied or classified."
+            );
         }
         Self {
             _temp: temp,
@@ -44,13 +57,22 @@ impl Fixture {
         self.write(name, util::encode(value).unwrap());
     }
     fn expected(&self) -> notices::Files {
-        self.data["bundle"]
+        let mut files: notices::Files = self.data["bundle"]
             .as_object()
             .unwrap()
             .iter()
             .filter(|(name, _)| name.as_str() != "manifest.json")
             .map(|(n, b)| (n.clone(), STANDARD.decode(b.as_str().unwrap()).unwrap()))
-            .collect()
+            .collect();
+        if self.data["name"].as_str().unwrap().starts_with("skia") {
+            // Only the new, machine-specific header identity extends the
+            // legacy byte-exact fixtures; their original notice blobs stay fixed.
+            files.insert(
+                "inventory.json".into(),
+                util::encode(&self.data["index"]).unwrap(),
+            );
+        }
+        files
     }
     fn skia(&self) -> anyhow::Result<(Value, notices::Files)> {
         let (mut index, mut texts) = skia::build_from_graph(
@@ -112,6 +134,58 @@ impl Fixture {
 fn checked_in_rust_notices_match_workspace_manifests_and_original_license_bytes() {
     let root = util::root();
     rust::verify(&root, &root.join("resources/licenses/rust"), None).unwrap();
+}
+
+#[test]
+fn external_native_headers_keep_reviewable_identity_without_copying_sdk_text() {
+    let f = Fixture::new("skia");
+    let (index, texts) = f.skia().unwrap();
+    assert_eq!(
+        index["external_headers"],
+        f.data["index"]["external_headers"]
+    );
+    assert_eq!(index["external_headers"].as_array().unwrap().len(), 1);
+    let files = skia::files(&index, texts).unwrap();
+    assert!(
+        files
+            .values()
+            .all(|bytes| !String::from_utf8_lossy(bytes).contains("SDK fixture:"))
+    );
+    let original = fs::read(f.path("system.h")).unwrap();
+    let mut changed = original.clone();
+    changed[3] = b'X';
+    f.write("system.h", changed);
+    let (changed, _) = f.skia().unwrap();
+    assert_eq!(
+        changed["external_headers"][0]["bytes"],
+        index["external_headers"][0]["bytes"]
+    );
+    assert_ne!(
+        changed["external_headers"][0]["sha256"],
+        index["external_headers"][0]["sha256"]
+    );
+    fs::remove_file(f.path("system.h")).unwrap();
+    assert!(
+        f.skia()
+            .unwrap_err()
+            .to_string()
+            .contains("Fingerprinting external header")
+    );
+    #[cfg(unix)]
+    {
+        f.write("other.h", &original);
+        std::os::unix::fs::symlink(f.path("other.h"), f.path("system.h")).unwrap();
+        let (linked, _) = f.skia().unwrap();
+        assert_eq!(linked["external_headers"][0]["path"], "../system.h");
+        assert_eq!(
+            linked["external_headers"][0]["resolved_path"],
+            json!(f.root.canonicalize().unwrap().join("other.h"))
+        );
+        assert_eq!(
+            linked["external_headers"][0]["sha256"],
+            index["external_headers"][0]["sha256"]
+        );
+    }
 }
 
 #[test]

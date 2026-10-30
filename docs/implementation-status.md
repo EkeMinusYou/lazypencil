@@ -494,6 +494,7 @@ HTTP(S)文字列samplerはa00289f、未参照のproject素材回収は9865944、
 
 公開前の確認・決定：
 
+- native通知の追加レビューでは、6badaf5候補の収集済みSkia source／inline headerコメント3962件が全て可読通知に残り、原文46ファイルがpackage manifestへ対応することを照合した。FTL・HarfBuzz・ICUの辞書／追加条件、JPEG／PNG／WebP・Wuffs・zlib・Khronosと、実link mapのring／QuickJS／Skia／compiler_builtinsの対応を確認した。これは全commentの完全なライセンス分類やlive codeの同定ではない。別のSDK等のheader1575件は件数しか記録しておらず、後から入力を照合できないため、既存inventoryへ宣言path・解決path・size・hashだけを追加する。SDK本文は通知束へ複製しない。欠損・同sizeの変更・SDK symlinkの解決先と本文非同梱を既存Rust fixtureで検査し、Mac補助・実配布経路で確認する。新しい全体CIや同じ性能測定は重ねない。
 - 配布素材の適用確認では、6badaf5候補のasset inventoryと現sourceを照合し、Noto Sans JPの未変更font／OFL、Lucide geometry／ISC・Feather由来MITの4 hashが一致した。OFLの同梱条件と名前・単独販売の制約、両icon通知の保持を原文で確認した。別途取得のiconはgeometry／fontを本体へ同梱せず、元licenseと出自を保持する。MPL対象option-extは変更なしの対応source archive・原文・取得案内を配布に含む。同梱素材のこの範囲は確認済みとし、native inline header／system入力などの最終適用確認や、正式公開全体とは区別する。
 - 最低macOSは実測結果に基づき15.7.9へ固定した。保証端末は引き続き確定し、MacでKitty／Sixel両方と、保証する端末による画像・日本語・キーボード操作の条件を維持する。利用者が報告したKittyの日本語確定・候補／カーソル位置・Preview操作・resize・clipboard添付は受け入れ済みとする。ズーム点滅の修正後、Sixel、未申告の入力方式と宣言する tmux／SSH の範囲は別途確認する。
 - Codex／Claudeのサブスクリプション経路は画像付き実編集とguide／style取得を確認済み。2026-10-30の決定により、この成功を実接続の利用確認とし、Claude APIなどAPIキー経路の追加実接続は初回の必須残件から除く。API接続の実装・認証経路の区別・既存の自動試験は維持し、未確認の組合せを検証済みと表示しない。Codex API／自作project guide／初期画像添付の既存成功も保持する。Mac実端末は利用者が確認する方針へ更新した。

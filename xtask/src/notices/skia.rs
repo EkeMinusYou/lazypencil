@@ -270,6 +270,7 @@ pub fn build_from_graph(
     let mut paths = BTreeMap::<String, BTreeSet<&str>>::new();
     let mut generated = BTreeMap::new();
     let mut excluded = BTreeMap::<String, u64>::new();
+    let mut external_headers = BTreeMap::new();
     for (kind, names) in [("graph", graph), ("recorded_header", headers)] {
         for name in names {
             let original = directory.join(name);
@@ -326,6 +327,18 @@ pub fn build_from_graph(
                     kind == "recorded_header",
                     "Graph input escapes source/build roots: {name}"
                 );
+                // Keep identity evidence without copying SDK or other external
+                // source text into the redistributable notice bundle.
+                let parent = path.parent().context("External header has no parent")?;
+                let filename = path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .context("Invalid external header name")?;
+                let mut record = fingerprint(parent, filename, 32 * 1024 * 1024)
+                    .with_context(|| format!("Fingerprinting external header: {name}"))?;
+                record["path"] = json!(name);
+                record["resolved_path"] = json!(path);
+                external_headers.insert(name.to_owned(), record);
                 *excluded
                     .entry("system_or_external_headers".into())
                     .or_default() += 1;
@@ -449,8 +462,8 @@ pub fn build_from_graph(
         .collect::<Result<Vec<_>>>()?;
     Ok((
         json!({"format_version":1,"scope":"Observed Skia build inputs and original notice candidates; binary linkage and complete attribution review are not established.",
-        "targets":TARGETS,"components":used,"inputs":inputs,"generated_inputs":generated.into_values().collect::<Vec<_>>(),"build_files":build_files,"excluded_inputs":excluded,"source_comments":comments,"notice_files":notices,"review_findings":findings,"license_references":[],
-        "limits":{"source_comments":"License/copyright comment candidates in the first 65536 bytes of each observed C/C++/assembly source or header.","recorded_headers":"All recorded objects in this build directory, which can include unused or stale targets; missing files are rejected.","excluded":"System/external headers, Rust toolchain, QuickJS, fonts, icons, and optional runtimes need separate inventories."}}),
+        "targets":TARGETS,"components":used,"inputs":inputs,"generated_inputs":generated.into_values().collect::<Vec<_>>(),"build_files":build_files,"excluded_inputs":excluded,"external_headers":external_headers.into_values().collect::<Vec<_>>(),"source_comments":comments,"notice_files":notices,"review_findings":findings,"license_references":[],
+        "limits":{"source_comments":"License/copyright comment candidates in the first 65536 bytes of each observed C/C++/assembly source or header.","recorded_headers":"All recorded objects in this build directory, which can include unused or stale targets; missing files are rejected.","external_headers":"Declared/resolved paths, sizes and SHA-256 identify external header inputs; their source bytes and license texts are not copied or classified.","excluded":"System/external headers, Rust toolchain, QuickJS, fonts, icons, and optional runtimes need separate inventories."}}),
         texts,
     ))
 }
