@@ -4,19 +4,29 @@
 
 ## 現在の状態（2026-10-30）
 
-後続候補は、現在のsource用checkpointが見つからない場合だけ同じplatformの既存application cacheを候補として取得する。保存payloadとkeyは増やさず、取得したkeyを記録された全source hash・build recipe・native条件へ結び直し、既存のcompiler dep-infoで変更した入力の全consumerを検査する。完全cacheを優先し、部分成果物のsource間再利用はその補完がない場合だけ行う。本体のconsumer・不一致条件・欠落dep-infoは拒否し、変更した試験unitだけを捨ててCargoの判定へ戻す。既存の実Cargo fixtureで、共有helper変更、未変更library／別試験のfresh、未生成unitのbuild、変更assertionの実行、異なるSDK／不正key／本体変更の拒否を確認する。整形・差分検査とactionlintまで成功し、GHAでの結果と短縮時間はまだ未確認である。
+9059fbaの[全体CI 40991417079](https://github.com/EkeMinusYou/lazypencil/actions/runs/40991417079)は全工程成功した。Macのcore／既定構成の全試験・Clippy、通常開発build、release／smoke／性能測定、全5 consumer、共通画像gateと署名付きsourceを含む。捕捉scriptのfile URL／HTTP asset key、入れ子namespace所有、移動・offline再copyを検証済みとする。実WebGLでは`.pen` 2.19／2.21 × file URL／HTTPの4条件で、file URLのJS／GLSLとURL samplerを実行し、元sourceとserverの削除後・offline再copy後もyellow画素と同一PNGを確認した。追加12 PNGは40×20、SHA-256 `90128eeca6c00ebb136f1303df9febe31849ad22777ee34950445cc244a17e41`で、取得した全byte列のhashとreport・今回sourceを独立照合した。従来のsampler 10条件・20 PNGも維持した。
 
-35a0c2aの[Mac先行 40987713100](https://github.com/EkeMinusYou/lazypencil/actions/runs/40987713100)は終了した。同じjobの補助ツール全試験／Clippy、アプリの対象build／Clippy、asset binding unit 16件、URLの拒否条件と入れ子namespaceの所有が成功した。通常のURL素材copy試験は、生成結果を実行していないProjectに画像が捕捉済みと仮定した箇所で停止した。捕捉は使用時に行う既存契約なので、試験で明示捕捉してbyte列を確認し、ローカルPNGは元ファイルとの全byte一致も検査するよう修正した。移動・offline再copyとPNG一致の元の検査は維持し、この修正のGHA確認は残る。script_bindings群の2並列はこの停止より後なので、所要時間の効果はまだ未測定である。
+全体13分27秒で、10分目標は未達である。builder5分44秒・core11分01秒・release4分28秒、通常3分26秒・runtime6分02秒・pixel2分25秒・端末1分13秒・Material2分00秒、source44秒だった。builderは先行と同じimage 20260907.0337.1で62ファイルを再利用し、対象の不足分buildは16.31秒だった。binding 18件は2並列で140.44秒、他の試験実行ファイルのcompileと重なっており、単独先行の98.37秒との統制比較にはしない。core／releaseはimage 20261028.0489.1で、異なるfeature／imageの部分cacheを正当に拒否した。coreにはtool検証・2分27秒のtest build・異なる目的のClippy／通常buildが残り、runtimeの追加条件も含め最終gateを省略していない。完全成果物の保存後に同じsourceの部分checkpointを整理し、同じpayloadを重ねて残さなかった。
 
-今回のassertion失敗後も、検証済み部分成果物62ファイル・686,824,620 byteをfocus checkpointへ保存した。圧縮済み263,311,002 byte、image 20261028.0489.1である。build成功／後段試験失敗時の保存条件が実際に成功した。ただし現在のfocus keyはsource入力全体に束縛され、試験だけを変更した次commitへの部分成果物引継ぎは、完全compatible cacheがない場合にまだ不足する。次の重い再検証前に、既存のcompiler入力検査・restore_compatibleを使ってこの経路を確認し、試験修正だけで本体を再buildする手戻りを優先して減らす。古いコードや試験結果を無条件に再利用しない。
+署名付きsource tar SHA-256は`878807f0001962e313640810b4da382d9384486dcec1ea1cf98588ba2b272ea7`。検証済みprovenanceのsubject、source revision、GitHub OIDC issuer、ci.yml／mainの署名identityとrun 40991417079／attempt 1を照合した。実端末IME・大量文字列の展開上限・仕様確認と最終公開の残件は以下に維持する。有用なCIは中断せず、ローカルでは重いbuildを行っていない。
+
+9059fbaの[Mac先行 40990537751](https://github.com/EkeMinusYou/lazypencil/actions/runs/40990537751)は8分31秒で成功した。同じjobの補助ツール全試験／Clippy、新しい実Cargoの部分cache回帰、対象アプリbuild／ClippyとURL素材の正負両条件が成功した。file URL／HTTP画像とfile URLのJS／GLSL、元source削除・project移動・offline再copy・PNG一致、入れ子namespaceの所有を含む。library 201件、assets 23件、sampler_sources 30件とscript_scopeの残る5件も成功した。実WebGLのURL shader条件は、この先行では既存ignored経路として未実行だったが、冒頭の全体runtimeで成功した。
+
+この先行はimage 20260907.0337.1であり、35a0c2aの20261028.0489.1の部分cacheを取得した後、recipe照合で拒否して正当に再buildした。本体の実cache再利用の成功とはしない。実Cargo回帰では、試験helperの変更後に未変更library／別試験をfreshのまま保持し、変更した試験を再compileして失敗assertionを実行した。SDK相当のnative key差・不正key・本体consumerの変更も拒否した。2並列のbinding 18件は98.37秒で成功し、前回ab9ce04の162.04秒より短かったがimageとsourceが異なるので統制比較にはしない。exact再現・全filter・期限とjoinは維持した。部分成果物62ファイル・686,824,636 byteは既存focus keyへ一度保存した。同じ9059fbaの全体検証と10分目標の結果は冒頭を参照する。
+
+9059fbaでは、現在のsource用checkpointが見つからない場合だけ同じplatformの既存application cacheを候補として取得する。保存payloadとkeyは増やさず、取得したkeyを記録された全source hash・build recipe・native条件へ結び直し、既存のcompiler dep-infoで変更した入力の全consumerを検査する。完全cacheを優先し、部分成果物のsource間再利用はその補完がない場合だけ行う。本体のconsumer・不一致条件・欠落dep-infoは拒否し、変更した試験unitだけを捨ててCargoの判定へ戻す。既存の実Cargo fixtureの結果は上記9059fbaで成功した。同じimageでの実アプリのsource間引継ぎと、その短縮時間はまだ未確認である。
+
+35a0c2aの[Mac先行 40987713100](https://github.com/EkeMinusYou/lazypencil/actions/runs/40987713100)は終了した。同じjobの補助ツール全試験／Clippy、アプリの対象build／Clippy、asset binding unit 16件、URLの拒否条件と入れ子namespaceの所有が成功した。通常のURL素材copy試験は、生成結果を実行していないProjectに画像が捕捉済みと仮定した箇所で停止した。捕捉は使用時に行う既存契約なので、試験で明示捕捉してbyte列を確認し、ローカルPNGは元ファイルとの全byte一致も検査するよう修正した。この失敗は上記9059fbaで解消し、移動・offline再copyとPNG一致も成功した。script_bindings群の2並列も同先行で成功した。
+
+今回のassertion失敗後も、検証済み部分成果物62ファイル・686,824,620 byteをfocus checkpointへ保存した。圧縮済み263,311,002 byte、image 20261028.0489.1である。build成功／後段試験失敗時の保存条件が実際に成功した。当時はsource入力全体に束縛されたfocus keyを検索するため、完全compatible cacheがない場合の次commitへの部分成果物引継ぎが不足した。9059fbaで既存のcompiler入力検査を使うfallbackを追加し、実Cargo回帰が成功した。実hostの同条件引継ぎの確認は残る。古いコードや試験結果を無条件に再利用しない。
 
 ab9ce04の[全体CI 40984270681](https://github.com/EkeMinusYou/lazypencil/actions/runs/40984270681)は全工程成功した。data画像の両feature構成・実QuickJS・実WebGL、core／既定の全試験とClippy、通常開発build、release、全5 consumer、共通画像gateと署名付きsourceを含む。sampler比較は従来8条件を保ってdataのlight／darkを加えた10条件・20 PNGが成功した。追加4 PNGは101×51で元／copyのbyte列とhashが一致し、yellow／blueの独立した画素検査も通った。source tar SHA-256は`0353f1625f17f70c765ea33350eb437afdec948062372e57a338e01f4baf8fa5`。provenanceのsubject、GitHub OIDC issuer、ci.yml／mainの署名identity、source revisionとrunの対応を照合した。
 
 全体は16分06秒で10分目標は未達。builder9分56秒・core8分43秒・release4分12秒、通常4分07秒・runtime4分41秒・pixel2分38秒・端末1分14秒・Material1分48秒・source36秒だった。先行image 20261028.0489.1に対し全体builderは20260907.0337.1だったため、その先行成果物を再利用せず`reused:false`とした。同一環境の成功例a00289fとは区別し、SDKの差そのものを今回確認したとはしない。builderのbuild／再現stepは390秒で、先行compile167.164秒、script binding群162.040秒、generated browser群39.144秒を含む。完全cacheは1,112,052,243 byteの転送を含め54秒かかった。待機や圧縮を推測で一括の原因にせず、目的・条件の一致を確認して削減する。
 
-後続候補f1549a6は、捕捉scriptのfile URL素材キー（image／shader／script）とHTTP(S)画像キーへの対応である。キーとJS原文を保持し、コードのネットワーク取得は許さない。再宣言は元のcode namespaceの捕捉素材を優先し、元ファイルやサーバーがなくても再copyできるようにする。両文書版のdry-run・元削除・移動・offline再copy、許可root外・資格情報入り画像URL・remote codeの拒否、異なるcode/output namespaceの単体回帰、実WebGLの4条件・追加12 PNGのgateを準備した。英語ガイドは1.0.53。[Mac補助ツール 40986766024](https://github.com/EkeMinusYou/lazypencil/actions/runs/40986766024)は全試験・Clippy・原本照合を成功した。アプリの新しいRust／gateはGHA未検証であり、上記ab9ce04の成功には含めない。
+後続候補f1549a6は、捕捉scriptのfile URL素材キー（image／shader／script）とHTTP(S)画像キーへの対応である。キーとJS原文を保持し、コードのネットワーク取得は許さない。再宣言は元のcode namespaceの捕捉素材を優先し、元ファイルやサーバーがなくても再copyできるようにする。両文書版のdry-run・元削除・移動・offline再copy、許可root外・資格情報入り画像URL・remote codeの拒否、異なるcode/output namespaceの単体回帰、実WebGLの4条件・追加12 PNGのgateを準備した。英語ガイドは1.0.53。[Mac補助ツール 40986766024](https://github.com/EkeMinusYou/lazypencil/actions/runs/40986766024)は全試験・Clippy・原本照合を成功した。アプリのnative範囲は上記9059fbaで検証済みである。実WebGLの追加gateは上記9059fbaの全体runtimeで成功した。
 
-続く差分では、importされたgeneratorのURL別名をそのnamespaceへ保持し、rootは素材byte列を共有しても別名を借りないよう整理した。入れ子のgeneratorの元削除・offline再copyと画素を既存sampler targetへ追加する。先行のscript_bindings群は、既定構成の通常検証で既に成功している2並列へ揃える。filter・先行exact再現・元の300秒期限・全workerのjoinと失敗集約は維持する。既存native.ymlのverify_toolsで変更したRust補助の試験／Clippyをアプリ先行と同じjob内で先に行い、別jobでのbootstrapを重ねない。これらは整形・差分検査とactionlintまでで、次の先行で確認する。
+続く差分では、importされたgeneratorのURL別名をそのnamespaceへ保持し、rootは素材byte列を共有しても別名を借りないよう整理した。入れ子のgeneratorの元削除・offline再copyと画素を既存sampler targetへ追加する。先行のscript_bindings群は、既定構成の通常検証で既に成功している2並列へ揃える。filter・先行exact再現・元の300秒期限・全workerのjoinと失敗集約は維持する。既存native.ymlのverify_toolsで変更したRust補助の試験／Clippyをアプリ先行と同じjob内で先に行い、別jobでのbootstrapを重ねない。これらは上記9059fbaの先行で成功した。
 
 <details>
 <summary>data画像とHTTP画像の先行・修正履歴（現在の結果は冒頭ab9ce04）</summary>
@@ -380,11 +390,10 @@ macOS の常用メモリは `7fe854b` の既存候補で172.03MiB、cached feedb
 
 ### 完成までの順序と概算
 
-1. 捕捉scriptのfile-URL／HTTP asset keyの候補と、入れ子のnamespace所有の修正をMac先行で確認し、成功後に同じcommitを全体へ広げる。data画像はab9ce04の完全CI、HTTP画像とTUI送信準備・取消はa00289fで検証済みであり、改めて未実装には戻さない。
-2. 多数のinstanceへ大きな文字列を展開する際のメモリ境界を確認・実装する。非local画像一般が未対応という古い扱いはしない。
-3. 既存ログに基づき、部分／完全成果物の再利用と長い先行試験の配置を整理する。先行4分49秒・全体16分06秒を直近の実測とし、全体10分以内は未達として改善する。image不一致による正当な再buildと、同一条件の不要な再buildを分ける。Cargoの鮮度判定、各feature・検証目的・元の期限と最終gateは維持する。
-4. 公開仕様に意味の記載がないdevice presetとfill-stage object samplingを確認し、推測を本家互換として実装済みにしない。
-5. 不足するMac実端末・接続・性能の受け入れ、保証環境と配布候補、旧参照素材の履歴の扱い、文書を確定する。既に有効な同条件の証拠を再利用する。
+1. 多数のinstanceへ大きな文字列を展開する際のメモリ境界を確認・実装する。捕捉scriptのfile URL／HTTP asset keyと入れ子namespaceは9059fbaの完全CIで検証済みとなったため、未実装には戻さない。
+2. 既存ログに基づき、部分／完全成果物の再利用と長い先行試験の配置を整理する。直近は先行8分31秒・全体13分27秒であり、全体10分以内は未達として改善する。image不一致による正当な再buildと、同一条件の不要な再buildを分ける。Cargoの鮮度判定、各feature・検証目的・元の期限と最終gateは維持する。
+3. 公開仕様に意味の記載がないdevice presetとfill-stage object samplingを確認し、推測を本家互換として実装済みにしない。
+4. 不足するMac実端末・接続・性能の受け入れ、保証環境と配布候補、旧参照素材の履歴の扱い、文書を確定する。既に有効な同条件の証拠を再利用する。
 
 初回Mac Apple Siliconのみで、現在の残件に対する暫定概算は5〜10実働日程度とする。仕様確認・実機環境確保・権利処理の待ち時間は別で、完成日の確約には使わない。旧3環境時代の8〜15日や、解消済みの同時認証・追加フォント・素材回収・font lockfileを含む古い概算は現在の残工数へ加算しない。Linux／Windows／Intel Macを初回へ戻さず、機能・互換性・性能・配布の元の完成条件は維持する。
 
