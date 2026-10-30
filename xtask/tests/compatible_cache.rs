@@ -34,13 +34,25 @@ fn full_builder_defers_long_bindings_but_focus_and_complete_tests_retain_failure
     f.source = source;
     fs::remove_file(f.source.join("examples/preview.rs")).unwrap();
     fs::write(f.source.join("src/main.rs"), "fn main() {}\n").unwrap();
-    for name in ["mcp", "tui", "optional_icons"] {
+    for name in ["mcp", "optional_icons"] {
         fs::write(
             f.source.join(format!("tests/{name}.rs")),
             "#[test] fn complete_catalog_probe() {}\n",
         )
         .unwrap();
     }
+    fs::write(
+        f.source.join("tests/tui.rs"),
+        r#"
+#[test]
+fn real_pty_handles_japanese_input_live_turns_resize_and_image_protocols() {
+    let root = std::path::PathBuf::from(std::env::var_os("RUNNER_TEMP").unwrap());
+    assert!(root.join("test-executables.json").is_file(),
+        "Short-budget terminal checks must wait for the complete compilation");
+}
+"#,
+    )
+    .unwrap();
     fs::write(
         f.source.join("tests/script_scope.rs"),
         r#"
@@ -69,7 +81,7 @@ mod script_copy {
                     "--suite",
                     "copy",
                     "--targets",
-                    "[\"script_scope\"]",
+                    "[\"script_scope\",\"tui\"]",
                 ])
                 .env("GITHUB_ACTIONS", "true")
                 .env("GITHUB_SHA", "fixture-source")
@@ -100,6 +112,12 @@ mod script_copy {
         fs::read_to_string(root.join("focus-generated-code-owner.log"))
             .unwrap()
             .contains("1 passed; 0 failed")
+    );
+    assert!(
+        fs::read_to_string(root.join("focus-terminal-modes.log"))
+            .unwrap()
+            .contains("1 passed; 0 failed"),
+        "The builder must still run the unchanged terminal case after compilation"
     );
     let logs = [
         "focus-browser-bindings.log",

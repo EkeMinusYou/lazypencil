@@ -4,6 +4,10 @@
 
 ## 現在の状態（2026-10-30）
 
+852fd5eの[全体41022532753](https://github.com/EkeMinusYou/lazypencil/actions/runs/41022532753)は全jobが終了し、修正したassets先行・全core試験／Clippy／通常開発build・監査・releaseは成功した。既定builderは残りのcompileと並行した既存PTYのscript-configで、500万回計算を行うCLI layoutが元の2秒JS期限に達して停止した。製品の期限・計算回数・待機条件は変えず、PTY一式を既存の300ms dynamic再現と同じくcompile join後へ移す。standalone focusは元どおりcompile後に実行し、開始済みの全laneのjoinも維持する。既存の小さな実Cargo scheduler fixtureへTUI caseを加え、完成catalogの公開後に実行されることと、試験自体が省略されないことを確認する。製品コードと利用者向け3cc43daバイナリは変更しない。まず軽量な補助ツールGHAでこの変更を検証する。
+
+CI履歴から別imageの先行cacheの早すぎる削除も確認した。3cc43daのfull builderは20261028.0489.1で、20260907.0337.1のsource一致focus key（188,614,612 byte）を07:40:01Zの既存retentionで削除した。そのため次の852fd5e／旧imageはfocusを復元できず、古いfullのsource set不一致もあって再compileした。誤再利用は既存のcompiler条件照合で拒否されているが、別contextを同じsourceだけで置換済みとする保持判断は改善が必要である。依存cacheの枠を圧迫する無制限保持や、compiler条件の照合を緩める対処は行わない。
+
 3cc43daの[全体41020569224](https://github.com/EkeMinusYou/lazypencil/actions/runs/41020569224)は全jobが終了した。監査・既定builder／Clippy・全5 consumer・release・元の性能gateは成功したが、coreの既存assets試験だけが応答drain中のset_read_timeoutでEINVALとなった。coreの後続Clippy／通常開発buildと最終sourceは未完了であり、全工程成功とはしない。[macOS kernelのsosetoptlock](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/uipc_socket.c)はshutdown済みsocketへの設定をEINVALで拒否する。試験側は、pairの両端が生きている時に一度だけnonblockingへ設定し、元の絶対10秒期限で最初の1 byteからEOFまで読む形へ修正する。小さい送信buffer、送信中のmaintenance拒否、全JSON・128KiB上限、正常終了と回収のassertionは維持する。製品コードは変えず、有用な全jobの終了後にこの試験修正を送る。
 
 同release候補は632ファイル・archive SHA-256 `6cb6c401…eb95973`で、展開前後のhashとsource／target／本体を照合した。元の20起動／80操作／100 worker profileと通常200MiB gateは成功し、入力／初回preview／完全出力p95は47.66／341.01／297.46ms、cached feedback p95は31.81ms、通常bound最大RSSは177.03MiB、30.046秒idle CPU上限は0.433%だった。OS cacheは統制せず、以前との差をadapter単独の効果とはしない。先行imageは20260907.0337.1、全体builderは20261028.0489.1のため、異なるimageの先行成果物は流用せず再compileした。完成304ファイルは保存済みで、試験だけの修正では実際のcompiler入力を検査して再利用する。

@@ -541,6 +541,19 @@ impl Session {
         );
         Ok(result.stdout)
     }
+    fn focus_terminal_reproduction(&self, suite: &str, targets: &[String]) -> Result<()> {
+        if commands::terminal_reproduction(suite, targets).is_some() {
+            self.test(
+                true,
+                "tui",
+                focus::TERMINAL_MODES,
+                &["--exact", "--test-threads=1"],
+                "focus-terminal-modes.log",
+            )?;
+        }
+        Ok(())
+    }
+
     fn focus_launch_reproduction(&self, suite: &str) -> Result<()> {
         if suite == "dynamic" {
             self.test(
@@ -796,14 +809,8 @@ impl Session {
                 if std::env::var("RUNTIME_PARALLEL").as_deref() == Ok("true") {
                     management::focus(self)?;
                 }
-                if commands::terminal_reproduction(&args.suite, &targets).is_some() {
-                    self.test(
-                        true,
-                        "tui",
-                        focus::TERMINAL_MODES,
-                        &["--exact", "--test-threads=1"],
-                        "focus-terminal-modes.log",
-                    )?;
+                if !concurrent_compilation {
+                    self.focus_terminal_reproduction(&args.suite, &targets)?;
                 }
                 if args.suite == "candidate" && has("tui") {
                     self.test(
@@ -1161,9 +1168,10 @@ impl Session {
                         }),
                     ),
                 ])?;
-                // The dynamic target tests 300ms launch/operation/render
-                // budgets with a real child. Compilation must have joined
-                // before it runs, just as in the full terminal consumer.
+                // The PTY tests a two-second JavaScript budget, and dynamic
+                // tests 300ms launch/operation/render budgets. Run both after
+                // compilation joins, as on the quiet full terminal consumer.
+                self.focus_terminal_reproduction(&args.suite, &targets)?;
                 self.focus_launch_reproduction(&args.suite)
             }
             Stage::Reproduce => self.reproduce_inputs(true),
