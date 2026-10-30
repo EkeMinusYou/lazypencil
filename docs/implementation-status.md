@@ -4,13 +4,17 @@
 
 ## 現在の状態（2026-10-31）
 
-直近の全体CIでterminalがMaterial後に617秒のrunner再割り当てを待ったため、短い2組を同じMac jobで順次実行する変更を準備した。terminalの静かな起動区間を先に完了し、Materialのfont／network処理は後に実行する。一方の失敗で他方を省略せず、元の5組の独立receiptと共有画像gateを維持する。実行ファイルは必要targetの和集合を一度だけ転送し、アプリの重複梱包と2回目のrunner割り当てを除く。試験内容・期限・feature構成・性能基準は変更しない。Macの軽量補助試験、続いて一度の全体CIで確認するまでは改善効果を確定しない。
+直近の全体CIでterminalがMaterial後に617秒のrunner再割り当てを待ったため、c6d8c1fで短い2組を同じMac jobで順次実行するよう変更した。terminalの静かな起動区間を先に完了し、Materialのfont／network処理は後に実行する。一方の失敗で他方を省略せず、元の5組の独立receiptと共有画像gateを維持する。実行ファイルは必要targetの和集合を一度だけ転送し、アプリの重複梱包と2回目のrunner割り当てを除く。試験内容・期限・feature構成・性能基準は変更しない。[Mac補助41095888968](https://github.com/EkeMinusYou/lazypencil/actions/runs/41095888968)で全試験・Clippy・原文照合が成功し、両失敗の保持・静かな区間の順序・subsetの和集合・改変拒否の回帰を確認した。runner待機604秒、実行3分24秒だった。
+
+同じsourceの[全体41097979957](https://github.com/EkeMinusYou/lazypencil/actions/runs/41097979957)はattempt 1の終了ログで、全5組・両構成・両Clippy・通常開発build・元の共有画像gate・監査・署名付きsourceが成功した。terminalの元の3コマンドとMaterialの2コマンドは同じhostで順に成功し、独立した2 receiptのbuild／execution digestも一致した。群間のrunner再割り当てはなく、共通成果物は49,819,258 byteで、以前の2組の合計80,176,988 byteから30,357,730 byte（約38%）減った。後続catalog／release確認は全体0.77／0.68秒で、Skia両crateはfreshだった。残るtarget buildは117.05秒、Cargo JSON411 artifactの365件がfresh、46件はintegration test44・bin1・example1であり、必要な初回compileと不要な再buildを区別する。release本体のSHA-256は性能検証済みの`f3a765ff…f3f37de8`と一致し、同条件の数値計測は重ねない。
+
+同runの開始からsource終了ログまでは33分51秒で、10分以内は未達である。初回の対象／release compileは535.10／637.45秒、normal／pixels／shortのjob開始ログはconsumer作成から約13分後だった。前回41分との条件が異なるため、全差分を配置変更だけの効果とはしない。sourceは1,237ファイル、SHA-256 `8a2a12b0b2fe26abe505d176469c7f70dda2fa5591403cca05bd66fcc13ee404`で、ローカルでもsource／signer c6d8c1f・ci.yml／main・GitHub hosted・run 41097979957／attempt 1の署名を検証した。取得archiveは確認後に削除した。GitHubのrun／job APIはqueued等の古い表示を返しており、最終ログ・artifact・署名とメタデータを区別する。再試行・追加の全体CIや、同条件の性能・実端末検証は行わない。
 
 初回の端末基準は、利用者の受け入れ報告と導入版の観測を基に、Macのローカル直接接続におけるKitty 0.49.2／Kitty protocolとWezTerm `20240203-110809-5046fc22`／Sixelに定めた。2026-10-31の再観測でも導入版は同じで、本体ファイルのmtimeはそれぞれ2026-10-01／2024-02-04だった。元の試験時に版を独立記録したという主張にはせず、Mac実機の操作・Sixelの体感性能は利用者の報告、数値性能は基準GHAの元のgateで受け入れる。端末選定と受け入れ済みの実画面項目を残件から外し、未確認の他版・入力方式・tmux／SSHへ保証を広げない。[範囲と根拠](tui.md#initial-terminal-support)
 
 bb4261eでは、Skia sourceの展開後に`skia/include`のdirectory mtimeがCargo開始より新しくなる問題を修正した。tar 0.4.46がdirectory mtimeを復元しないため、Unixで子の展開後にarchive本来の時刻を復元する。Cargoの`rerun-if-changed`・fingerprint・cache時刻やheaderの監視は変えない。[Mac補助41085046254](https://github.com/EkeMinusYou/lazypencil/actions/runs/41085046254)で、旧展開の不要な再build、修正後のfresh判定と、実header変更後の生成コードの更新を実Cargoで検証した。既存のroot／infra除外とdirectory属性の回帰も成功した。重いbuildはGHAのみで行った。
 
-同sourceの[全体41085635166](https://github.com/EkeMinusYou/lazypencil/actions/runs/41085635166)はattempt 1で全工程成功した。既定のcatalog確認はCargo 0.95秒（command全体1.04秒）、release後のCargo確認は0.97秒（全体1.06秒）となり、両方でskia-bindings／skia-safeがfreshだった。以前のSkia include更新による2分50秒〜3分01秒の再buildを除いた。初回対象compile10分01秒・release13分54秒、残るintegration target122.34秒は別に必要で、最終Cargo JSON411 artifactの365件がfresh、46件が本体library-test／integration targetだった。全工程ゼロcompileとはしない。全体は41分で、core／builderのrunner待ちは378／375秒、runtime／normalは604／603秒、terminalは617秒だった。全5 consumer、両構成・Clippy・通常開発build、元の共通画像gate・監査・署名付きsourceを維持し、再試行は行っていない。このcold／長い割当待ちを含む実行を10分以内とはせず、同条件の全体CIを追加しない。
+同sourceの[全体41085635166](https://github.com/EkeMinusYou/lazypencil/actions/runs/41085635166)はattempt 1で全工程成功した。既定のcatalog確認はCargo 0.95秒（command全体1.04秒）、release後のCargo確認は0.97秒（全体1.06秒）となり、両方でskia-bindings／skia-safeがfreshだった。以前のSkia include更新による2分50秒〜3分01秒の再buildを除いた。初回対象compile10分01秒・release13分54秒、残るintegration target122.34秒は別に必要で、最終Cargo JSON411 artifactの365件がfresh、46件がintegration test44件・bin1件・example1件だった。全工程ゼロcompileとはしない。全体は41分で、core／builderのrunner待ちは378／375秒、runtime／normalは604／603秒、terminalは617秒だった。全5 consumer、両構成・Clippy・通常開発build、元の共通画像gate・監査・署名付きsourceを維持し、再試行は行っていない。このcold／長い割当待ちを含む実行を10分以内とはせず、同条件の全体CIを追加しない。
 
 [配布・性能41091988972](https://github.com/EkeMinusYou/lazypencil/actions/runs/41091988972)は6分10秒で成功し、同じrelease出力15ファイルを再利用した。本体はe1a90fd候補と同じSHA-256 `f3a765ff2b2bc55b41f52b5c20e74e6320bb7043d4b9fb5347b2fcd8f3f37de8`で、637ファイルのbb4261e候補archiveは`2b0851b4343f000187e5dc3fdfae5131dfdc2ebaf925d33ef3940936aa485ccf`だった。CI内でsource／signer bb4261e・release-evidence.yml／main・GitHub hosted・run／attempt 1の署名を検証した。このbb4261e archiveをローカルで署名検証したとはせず、e1a90fd archiveへの既存のローカル検証と区別する。隔離candidate smokeの補完3 shellと元のJavaScript 256画素も成功した。
 
@@ -530,7 +534,7 @@ ab8c785の既定構成builderは7分42秒、通常consumer3分24秒、pixel cons
 
 画像添付仕様との追加の差分：
 
-- 元エンコード保存と縮小版のCLI／TUI操作、入力スレッドによる変換・保存、キャンセル時の候補回収、ユーザーの `[attachments]` 設定は `c11a0f9` でMac先行・両feature構成の完全検証・監査・署名sourceまで成功した。設定を下げた後の送信拒否・段階的な縮小による修復・元画像と下書き保持、実ACPが受信した縮小PNGを含む。既定8枚・各20MiB・合計各50MiB・16Mi画素とネイティブ単体の安全上限は維持する。PNG検査は既存Rust補助バイナリのpng-inspectへ移行済みで、試験コードの検査経路はTUI featureに依存しない。個別feature構成の過去の実行根拠は、現在の通常CIのcore／既定2構成と区別して扱う。物理IMEと最終受け入れは引き続き確認する。
+- 元エンコード保存と縮小版のCLI／TUI操作、入力スレッドによる変換・保存、キャンセル時の候補回収、ユーザーの `[attachments]` 設定は `c11a0f9` でMac先行・両feature構成の完全検証・監査・署名sourceまで成功した。設定を下げた後の送信拒否・段階的な縮小による修復・元画像と下書き保持、実ACPが受信した縮小PNGを含む。既定8枚・各20MiB・合計各50MiB・16Mi画素とネイティブ単体の安全上限は維持する。PNG検査は既存Rust補助バイナリのpng-inspectへ移行済みで、試験コードの検査経路はTUI featureに依存しない。個別feature構成の過去の実行根拠は、現在の通常CIのcore／既定2構成と区別して扱う。物理IMEと画像貼り付けは冒頭の利用者報告で受け入れ済みであり、同条件の再確認を残件へ戻さない。正式版の最終公開判定とは区別する。
 
 HTTP(S)文字列samplerはa00289f、未参照のproject素材回収は9865944、font lockfileは625bec7の完全CIで検証済みである。data画像の後続対応と捕捉scriptのfile-URL／HTTP asset keyは冒頭の状態を参照する。欠損library／設定fontの診断と修復も検証済みである。runtime導入の取消・保存同期は `99cc153` の完全CIで通常導入と取消試験を成功した。通信待ちを所有する子プロセス、lock待機・分割転送・hash・展開の取消、公開前のfile／directory同期と新規ancestor同期、取消時の未完成物回収と既存Rust補助バイナリを使う回帰試験を含む。コンパイル・通常の実通信と取消の成功から、全異常終了経路・電源断時の耐障害性・最終配布の受け入れ完了とはしない。Browserが広告するdevice IDはdesktop／phone／tabletだけで、全Pencil presetへの対応を宣言しない。GLSLの宣言・構造体・前処理は実装済みだが、fill-stage `pencil:object` は未対応である。2026-10-30に[公開形式仕様](https://docs.pencil.dev/for-developers/the-pen-format)を再確認したところ、deviceIdは文字列でpreset一覧の定義がなく、object画像の意味はeffect段階で明記されている一方、fill段階の評価順序は明記されていない。利用者も追加の仕様資料を持っていないと回答した。この二点を仕様確認待ちとして残し、推測した動作を本家互換とは宣言しない。元の必須条件は維持する。
 
@@ -540,7 +544,7 @@ HTTP(S)文字列samplerはa00289f、未参照のproject素材回収は9865944、
 - 配布素材の適用確認では、6badaf5候補のasset inventoryと現sourceを照合し、Noto Sans JPの未変更font／OFL、Lucide geometry／ISC・Feather由来MITの4 hashが一致した。OFLの同梱条件と名前・単独販売の制約、両icon通知の保持を原文で確認した。別途取得のiconはgeometry／fontを本体へ同梱せず、元licenseと出自を保持する。MPL対象option-extは変更なしの対応source archive・原文・取得案内を配布に含む。同梱素材のこの範囲は確認済みとし、native inline header／system入力などの最終適用確認や、正式公開全体とは区別する。
 - 最低macOSは実測結果に基づき15.7.9へ固定した。初回端末の基準は冒頭のKitty／WezTermとし、MacでKitty／Sixel両方と画像・日本語・キーボード操作の条件を維持する。利用者が報告したKittyの日本語確定・候補／カーソル位置・Preview操作・resize・clipboard添付と、その後のKitty修正候補の動作、WezTerm／Sixelの応答・初期表示は受け入れ済みである。未申告の入力方式と、tmux／SSHの範囲を検証済みへ広げない。
 - Codex／Claudeのサブスクリプション経路は画像付き実編集とguide／style取得を確認済み。2026-10-30の決定により、この成功を実接続の利用確認とし、Claude APIなどAPIキー経路の追加実接続は初回の必須残件から除く。API接続の実装・認証経路の区別・既存の自動試験は維持し、未確認の組合せを検証済みと表示しない。Codex API／自作project guide／初期画像添付の既存成功も保持する。Mac実端末は利用者が確認する方針へ更新した。
-- 定義したcold/warm・基準環境とChromium別予算の数値gateは446aa94とaeb174bで成功した。実端末の操作・Sixelの体感性能は利用者の報告で受け入れ済みであり、物理端末の数値測定やOS再起動直後の測定を実施済みとはしない。e1a90fd候補の環境・署名・元のnotice／ソース提供条件は冒頭の配布検証と既存のbounded reviewで照合済み。正式版の最終公開判定とは区別し、過去の同条件の有効な証拠を再利用する。
+- 定義したcold/warm・基準環境とChromium別予算の数値gateは、補完追加後の本体についてbb4261eの配布・性能41091988972で成功した。446aa94とaeb174bも各source当時の有効な結果として保持する。実端末の操作・Sixelの体感性能は利用者の報告で受け入れ済みであり、物理端末の数値測定やOS再起動直後の測定を実施済みとはしない。候補の環境・署名・元のnotice／ソース提供条件は冒頭の配布検証と既存のbounded reviewで照合済み。正式版の最終公開判定とは区別し、過去の同条件の有効な証拠を再利用する。
 - 旧PNG11点・派生JSON3点は、2026-10-30の承認に基づき公開mainの全履歴から除去した。559コミットの対象外全ファイル・内容・モードとHEAD treeの一致、全新参照から14パス・17 blob版への到達不能を確認した。履歴整理前の1,225 artifact・158 sourceに除去前source・不明sourceは0件だった。過去配布の判断やGitHub保持objectの物理消去は別である。ローカル全体GCは対象外の復旧データも巻き込むため実行せず、reflog等は保全した。[根拠](design-guidance.md#pencil-の-skill-とライセンス)
 
 ### 既知の障害と、完了扱いしないこと
@@ -551,7 +555,7 @@ HTTP(S)文字列samplerはa00289f、未参照のproject素材回収は9865944、
 
 旧3環境CI全体の安定した短縮は未達だった。初回Macのみへ変更し、Linux nativeの待機・再ビルド・必須確認を外した。実行時間が単純に1/3になるとは見積もらない。`c9ffb37` は38分28秒、先行17分30秒、全体 job は x64 16分35秒・arm64 17分57秒・Mac20分05秒だった。先行範囲と runner image が異なり、元の27〜29分との統制比較ではない。Mac release 再利用0.87秒、同一環境での先行成果物再利用、変更した試験だけの無効化、独立試験の並列化には個別の成功根拠がある。9d6613b当時は14分43秒（依存変更・Wasm検証を含む）。5eaa691は12分06秒（本体変更と新規124組）、f9cc4daは10分17秒（本体全50単位を再build）だった。copy先行の06bab20は10分31秒、本体再利用の028e522は8分30秒だった。旧62675c9の12分51秒・788f4c2の9分51秒・旧3環境と条件を分け、全体10分以内の維持は引き続き改善する。
 
-macOSの最新の通常bound観測は04c610eで最大184.91MiB、warm feedback p95は38.84msだった。Chromium込みは1264.64MiB・idle CPU上限1.797%で、通常と別Chromium予算の数値gateは成功した。同じ本体hashの446aa94の186.98MiB／24.58msなど、以前のsource／環境の値との差を単独変更の効果とはしない。古い「200MiB未達」を現在の既知不具合に数えず、物理端末の性能受け入れ完了とも扱わない。[性能記録](performance.md)
+macOSの最新の数値観測は、補完追加後の同一本体に対するbb4261eの配布・性能41091988972である。通常bound最大175.58MiB、最初のfeedback p95は39.88ms、idle CPU上限0.432%で、Chromium込みは1203.70MiB・1.391%だった。元の全試行・30秒以上のidleと正常終了・所有子回収を含む数値gateは成功した。04c610eや446aa94など、以前のsource／環境との差を単独変更の効果とはしない。実端末の操作・Sixel体感性能も冒頭の利用者報告で受け入れ済みであり、PTYの数値と物理端末の報告を区別する。[性能記録](performance.md)
 
 本家との総合デザイン品質比較は当初から保留。任意フォント・全モデルの網羅、crates.io 公開、Linux／Windows／Intel Macを、新たな初回必須スコープとして追加しない。明示した元の機能・互換性・性能・配布条件も削除しない。
 
@@ -559,7 +563,7 @@ macOSの最新の通常bound観測は04c610eで最大184.91MiB、warm feedback p
 
 大きな文字列の展開上限は74f37fdの完全CIで検証済みとなった。捕捉scriptのfile URL／HTTP asset key・入れ子namespaceと同様、未実装へ戻さない。
 
-1. CI配置と10分目標の対象確認は0d36cd0の全体8分44秒で完了した。部分／完全成果物の再利用、profile／通常consumerの並列化、全結果回収と失敗保持、HTTP切断観測も検証済み。今後は必要な変更に対する通常CIで観測し、同じ条件の先行・全体・性能計測を重ねない。cold cacheや実compiler入力変更時にも必ず同じ時間になる保証とは区別し、Cargoの鮮度判定、各feature・検証目的・元の期限と最終gateを維持する。
+1. CIの部分／完全成果物の再利用、独立試験の並列化、全結果回収と失敗保持、HTTP切断観測は検証済み。0d36cd0のwarm全体8分44秒はその条件の実績として保持し、後続のcold buildや長いrunner待機にも10分以内を保証したとはしない。bb4261eで不要なSkia再buildを除去し、続くc6d8c1fではrunner再割り当て削減と全5組の成功を冒頭の終了ログで確認したが、cold compile・割り当て待ちを含む10分目標は未達である。Cargoの鮮度判定、各feature・検証目的・元の期限と最終gateを維持し、同じ条件の先行・全体・性能計測を重ねない。
 2. 公開仕様に意味の記載がないdevice presetとfill-stage object samplingを確認し、推測を本家互換として実装済みにしない。
 3. 仕様確認後の最終配布候補・版と公開文書を確定する。端末基準は冒頭のKitty／WezTermに定め、報告済みの実画面・体感性能、両サブスクリプション、Codex API／自作guideを含む有効な同条件の証拠を再利用する。旧参照素材の公開履歴削除は完了しており、未実施へ戻さない。
 
