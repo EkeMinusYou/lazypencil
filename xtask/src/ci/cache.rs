@@ -1473,7 +1473,7 @@ fn obsolete_with_sources(
         r"^application-v([12])-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-([0-9a-f]{64})(?:-([0-9a-f]{64}))?-(full|focus)(?:-[1-9][0-9]*-[1-9][0-9]*)?$",
     )?;
     let releases = Regex::new(
-        r"^release-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-([0-9a-f]{64})-[0-9a-f]{64}-(full|focus)(?:-[1-9][0-9]*-[1-9][0-9]*)?$",
+        r"^release-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-([0-9a-f]{64})-(?P<context>[0-9a-f]{64})-(?P<phase>full|focus)(?:-[1-9][0-9]*-[1-9][0-9]*)?$",
     )?;
     let tests = Regex::new(
         r"^(tests(?:-core)?)-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-([0-9a-f]{64})-full-([0-9a-f]{64})$",
@@ -1582,19 +1582,21 @@ fn obsolete_with_sources(
                 selected.insert(id, entry.clone());
                 continue;
             }
-            let phase = &caps[3];
-            if phase == "focus"
-                && keys.contains(&(
-                    format!("{}full", &key[..caps.get(3).unwrap().start()]).as_str(),
-                    version,
-                ))
+            let phase = caps.name("phase").unwrap();
+            if phase.as_str() == "focus"
+                && keys.contains(&(format!("{}full", &key[..phase.start()]).as_str(), version))
             {
                 selected.insert(id, entry.clone());
             } else {
                 // The current all-output source hash includes tests and must
                 // not invalidate a compatible release-only checkpoint.
+                // SDK/compiler contexts and cache layouts remain independent:
+                // publishing on one runner must not evict another's outputs.
                 groups
-                    .entry((format!("release:{}", &caps[1]), phase.into()))
+                    .entry((
+                        format!("release:{}:{}:{version}", &caps[1], &caps["context"]),
+                        phase.as_str().into(),
+                    ))
                     .or_default()
                     .push(entry);
             }

@@ -261,7 +261,7 @@ fn application_checkpoints_do_not_collide_across_later_focused_runs_or_retries()
 }
 
 #[test]
-fn release_retention_is_independent_of_test_sources_and_application_cache_groups() {
+fn release_retention_preserves_other_compiler_contexts_layouts_and_test_sources() {
     let stem = format!(
         "release-v1-ubuntu-24.04-{}-{}",
         "a".repeat(64),
@@ -299,6 +299,21 @@ fn release_retention_is_independent_of_test_sources_and_application_cache_groups
             "f".repeat(64)
         ),
     ));
+    assert_eq!(removed(&entries), [1, 2]);
+    // A newer source replaces the preceding full output only within the same
+    // compiler context, without losing the other SDK's independently usable map.
+    entries.push(entry(
+        6,
+        format!(
+            "release-v1-ubuntu-24.04-{}-{}-full",
+            "e".repeat(64),
+            "b".repeat(64)
+        ),
+    ));
+    assert_eq!(removed(&entries), [1, 2, 4]);
+    let mut other_layout = entry(7, format!("{stem}-full"));
+    other_layout["version"] = json!("other-layout");
+    entries.push(other_layout);
     assert_eq!(removed(&entries), [1, 2, 4]);
 }
 

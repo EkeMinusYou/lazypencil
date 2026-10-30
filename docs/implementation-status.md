@@ -4,6 +4,10 @@
 
 ## 現在の状態（2026-10-30）
 
+0051dbaの[対象配布検証41003192032](https://github.com/EkeMinusYou/lazypencil/actions/runs/41003192032)は7分41秒で全工程成功した。元の補助試験・Clippy・notice・候補smoke・署名を維持し、同じTUI測定と全体CIは重ねていない。前のad6744dと同じnative keyのcomplete依存cacheを37秒で復元し、releaseビルド工程は10分54秒から2分29秒となった。mapped release本体はまだmissしており、本体再compileゼロとはしない。両sourceの実行ファイルhashは同じ`42f0e546…9764e0`で、256画素の黄色・不透明検査、ソース／ビルドツリー非公開のsmokeも成功した。ad6744dの測定は生値から統計、6／14 roleの全trace最大RSS・量子化込みidle CPUを再算し一致した。保存65 PNGも7fe854bの検証済み基準と全byte一致した。
+
+後続ではrelease cacheの整理単位にcompiler／SDK contextとwire layoutを含め、別環境の出力を同じOSの新しい出力だけで追い出さない。既存の保持試験に別context・別layoutの対照を加え、同条件の古い世代の整理は維持する。手動配布workflowも既存のrelease-only stage／saveを使って成功したsmokeのコンパイラー成果物を保存し、完全hit時は保存を重ねない。Cargo JSON／stderrと既存timing記録も元のevidence artifactへ含める。新しいcache形式・保存用の別成果物は追加しない。整形・actionlint・差分検査までで、この後続差分のGHA確認は次の対象配布実行にまとめる。
+
 ad6744dの[配布候補・TUI測定41001393923](https://github.com/EkeMinusYou/lazypencil/actions/runs/41001393923)は全工程成功した。配布候補632ファイル、実行ファイルSHA-256 `42f0e546ef28508d8d1e2bd71ebecacdc0d898f73091b3a794ee2642099764e0`はac6df19のrelease計測と同じだった。候補archive SHA-256 `f43737fc893b53418b5c35b388d4f4fc490a7e53bcc02fb2e9affd6ed915b830`、検証済みprovenanceのsubject・source・release-evidence.yml／main・run／attempt 1を照合した。ソース／ビルドツリーを隠した導入smokeと16×16の黄色画像を確認したが、当時のsmokeはPNG寸法／hashとscript実行情報までの検査だった。後続では既存PNG decoderで全256画素の黄色・不透明を要求し、キャッシュ修正と合わせた配布経路で確認する。
 
 元の20起動・80操作・100 worker profileを保持し、入力準備／初回previewのp95は53.32／312.82ms、完全出力は252.51ms、cached camera feedbackは28.01ms（最大96.42ms）だった。通常のbound process群の観測最大RSSは199.02MiBで元の200MiB gateに成功し、30.047秒のidle CPU上限は0.433%。別Chromium込み観測は1,255.06MiB、30.101秒のidle CPU上限1.595%だった。全試行の通常終了、下書き空・agent非起動、両process群の回収を照合した。OS cacheは統制せず、物理表示・transient kernel peak・全性能受け入れとはしない。画素・生データの追加照合は既存成果物を使い、同じ測定は繰り返さない。
