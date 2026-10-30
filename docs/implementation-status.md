@@ -4,6 +4,12 @@
 
 ## 現在の状態（2026-10-30）
 
+後続候補は、現在のsource用checkpointが見つからない場合だけ同じplatformの既存application cacheを候補として取得する。保存payloadとkeyは増やさず、取得したkeyを記録された全source hash・build recipe・native条件へ結び直し、既存のcompiler dep-infoで変更した入力の全consumerを検査する。完全cacheを優先し、部分成果物のsource間再利用はその補完がない場合だけ行う。本体のconsumer・不一致条件・欠落dep-infoは拒否し、変更した試験unitだけを捨ててCargoの判定へ戻す。既存の実Cargo fixtureで、共有helper変更、未変更library／別試験のfresh、未生成unitのbuild、変更assertionの実行、異なるSDK／不正key／本体変更の拒否を確認する。整形・差分検査とactionlintまで成功し、GHAでの結果と短縮時間はまだ未確認である。
+
+35a0c2aの[Mac先行 40987713100](https://github.com/EkeMinusYou/lazypencil/actions/runs/40987713100)は終了した。同じjobの補助ツール全試験／Clippy、アプリの対象build／Clippy、asset binding unit 16件、URLの拒否条件と入れ子namespaceの所有が成功した。通常のURL素材copy試験は、生成結果を実行していないProjectに画像が捕捉済みと仮定した箇所で停止した。捕捉は使用時に行う既存契約なので、試験で明示捕捉してbyte列を確認し、ローカルPNGは元ファイルとの全byte一致も検査するよう修正した。移動・offline再copyとPNG一致の元の検査は維持し、この修正のGHA確認は残る。script_bindings群の2並列はこの停止より後なので、所要時間の効果はまだ未測定である。
+
+今回のassertion失敗後も、検証済み部分成果物62ファイル・686,824,620 byteをfocus checkpointへ保存した。圧縮済み263,311,002 byte、image 20261028.0489.1である。build成功／後段試験失敗時の保存条件が実際に成功した。ただし現在のfocus keyはsource入力全体に束縛され、試験だけを変更した次commitへの部分成果物引継ぎは、完全compatible cacheがない場合にまだ不足する。次の重い再検証前に、既存のcompiler入力検査・restore_compatibleを使ってこの経路を確認し、試験修正だけで本体を再buildする手戻りを優先して減らす。古いコードや試験結果を無条件に再利用しない。
+
 ab9ce04の[全体CI 40984270681](https://github.com/EkeMinusYou/lazypencil/actions/runs/40984270681)は全工程成功した。data画像の両feature構成・実QuickJS・実WebGL、core／既定の全試験とClippy、通常開発build、release、全5 consumer、共通画像gateと署名付きsourceを含む。sampler比較は従来8条件を保ってdataのlight／darkを加えた10条件・20 PNGが成功した。追加4 PNGは101×51で元／copyのbyte列とhashが一致し、yellow／blueの独立した画素検査も通った。source tar SHA-256は`0353f1625f17f70c765ea33350eb437afdec948062372e57a338e01f4baf8fa5`。provenanceのsubject、GitHub OIDC issuer、ci.yml／mainの署名identity、source revisionとrunの対応を照合した。
 
 全体は16分06秒で10分目標は未達。builder9分56秒・core8分43秒・release4分12秒、通常4分07秒・runtime4分41秒・pixel2分38秒・端末1分14秒・Material1分48秒・source36秒だった。先行image 20261028.0489.1に対し全体builderは20260907.0337.1だったため、その先行成果物を再利用せず`reused:false`とした。同一環境の成功例a00289fとは区別し、SDKの差そのものを今回確認したとはしない。builderのbuild／再現stepは390秒で、先行compile167.164秒、script binding群162.040秒、generated browser群39.144秒を含む。完全cacheは1,112,052,243 byteの転送を含め54秒かかった。待機や圧縮を推測で一括の原因にせず、目的・条件の一致を確認して削減する。

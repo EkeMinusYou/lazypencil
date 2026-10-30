@@ -181,7 +181,10 @@ fn release_recipe_transition_reuses_debug_only_and_overlays_the_new_release_delt
         &f.target,
         &f.exact,
         &f.full,
-        &old.compatible_primary,
+        cache::CacheMatches {
+            full: &old.compatible_primary,
+            ..Default::default()
+        },
         &current,
     )
     .unwrap();
@@ -561,7 +564,10 @@ fn real_cargo_rebuilds_only_the_edited_test_and_accepts_same_source_focused_outp
                 &f.target,
                 &f.exact,
                 &f.full,
-                &old.compatible_primary,
+                cache::CacheMatches {
+                    full: &old.compatible_primary,
+                    ..Default::default()
+                },
                 &current,
             )
             .unwrap();
@@ -572,7 +578,10 @@ fn real_cargo_rebuilds_only_the_edited_test_and_accepts_same_source_focused_outp
                 &f.target,
                 &f.exact,
                 &f.full,
-                &old.compatible_primary,
+                cache::CacheMatches {
+                    full: &old.compatible_primary,
+                    ..Default::default()
+                },
                 &current,
             )
             .unwrap();
@@ -598,6 +607,90 @@ fn real_cargo_rebuilds_only_the_edited_test_and_accepts_same_source_focused_outp
             "The changed assertion must actually execute"
         );
     }
+}
+
+#[test]
+fn older_partial_checkpoint_reuses_only_unchanged_compiler_units_after_helper_edits() {
+    let f = Fixture::new();
+    let helper = f.source.join("tests/support/common.rs");
+    fs::create_dir_all(helper.parent().unwrap()).unwrap();
+    fs::write(&helper, "pub const VALUE: u8 = 1;\n").unwrap();
+    fs::write(f.source.join("tests/one.rs"),
+        "#[path=\"support/common.rs\"] mod helper;\n#[test] fn value() { assert_eq!(helper::VALUE, 1); }\n").unwrap();
+    f.manifest();
+    assert_eq!(f.build(&["--test", "one", "--test", "two"]).len(), 3);
+    let old = f.identity();
+    let key = cache::application_checkpoint(&old.checkpoint, "401", "1").unwrap();
+    cache::stage_tests(&f.source, &f.target, &f.exact, &old).unwrap();
+    fs::write(&helper, "pub const VALUE: u8 = 2;\n").unwrap();
+    f.manifest();
+    f.clear();
+    let current = f.identity();
+    assert_ne!(old.primary, current.primary);
+    assert_eq!(old.application_prefix, current.application_prefix);
+    for bad_key in [
+        format!("{key}-0"),
+        format!("{}-0-1", old.checkpoint),
+        current.checkpoint.clone(),
+    ] {
+        assert!(
+            cache::restore_compatible(&f.source, &f.target, &f.exact, &bad_key, &current).is_err()
+        );
+        assert!(!f.target.exists());
+    }
+    let incompatible =
+        cache::application_identity(&f.source, &f.target, "native-v2-ubuntu-24.04-other-sdk")
+            .unwrap();
+    assert!(
+        cache::restore_compatible(&f.source, &f.target, &f.exact, &key, &incompatible).is_err()
+    );
+    assert!(!f.target.exists());
+    let original = fs::read(f.source.join("src/lib.rs")).unwrap();
+    fs::write(
+        f.source.join("src/lib.rs"),
+        "pub fn fixture() -> u8 { 2 }\n",
+    )
+    .unwrap();
+    f.manifest();
+    assert!(
+        cache::restore_compatible(&f.source, &f.target, &f.exact, &key, &f.identity()).is_err()
+    );
+    assert!(
+        !f.target.exists(),
+        "A production edit reused an old partial build"
+    );
+    fs::write(f.source.join("src/lib.rs"), original).unwrap();
+    f.manifest();
+    let report = cache::restore_combined(
+        &f.source,
+        &f.target,
+        &f.exact,
+        &f.full,
+        cache::CacheMatches {
+            focused: &key,
+            ..Default::default()
+        },
+        &current,
+    )
+    .unwrap();
+    assert_eq!(report["reused"], true);
+    assert_eq!(report["changed_tests"], json!(["tests/support/common.rs"]));
+    let built = f.build(&[]);
+    assert!(
+        built["lazypencil"].0 && built["two"].0,
+        "Unchanged units rebuilt"
+    );
+    assert!(!built["one"].0, "Changed helper reused stale code");
+    assert!(
+        !built["library-tests"].0 && !built["preview"].0,
+        "Missing units were not built"
+    );
+    let output =
+        process::output(&mut Command::new(&built["one"].1), Duration::from_secs(15)).unwrap();
+    assert!(
+        !output.timed_out && !output.status.success(),
+        "The changed assertion did not execute"
+    );
 }
 
 #[test]
@@ -653,8 +746,18 @@ fn shared_helpers_invalidate_every_consumer_without_rebuilding_unrelated_outputs
                 );
                 f.clear();
             }
-            cache::restore_combined(&f.source, &f.target, &f.exact, &f.full, &old_key, &current)
-                .unwrap();
+            cache::restore_combined(
+                &f.source,
+                &f.target,
+                &f.exact,
+                &f.full,
+                cache::CacheMatches {
+                    full: &old_key,
+                    ..Default::default()
+                },
+                &current,
+            )
+            .unwrap();
             let built = f.build(&[]);
             assert_eq!(built.len(), 6);
             for name in ["lazypencil", "two", "preview"] {
@@ -895,7 +998,10 @@ fn helper_reuse_rejects_production_consumers_and_incomplete_unit_dep_info() {
                     &f.target,
                     &f.exact,
                     &f.full,
-                    &old.compatible_primary,
+                    cache::CacheMatches {
+                        full: &old.compatible_primary,
+                        ..Default::default()
+                    },
                     &current,
                 )
                 .unwrap();

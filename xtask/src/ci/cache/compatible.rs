@@ -114,10 +114,11 @@ fn compatible_inputs(
         old.recipe["inputs"] = serde_json::to_value(inputs)?;
         old.fingerprint = util::digest(stable_json(&old.recipe));
         if old.fingerprint == report.fingerprint
-            && [false, true].into_iter().any(|legacy| {
-                old.compatible_keys(legacy)
-                    .is_ok_and(|(primary, _)| matched_key == primary)
-            })
+            && (old.matches_source_key(matched_key)
+                || [false, true].into_iter().any(|legacy| {
+                    old.compatible_keys(legacy)
+                        .is_ok_and(|(primary, _)| matched_key == primary)
+                }))
         {
             accepted = Some((old, debug_only));
             break;
@@ -237,6 +238,13 @@ pub fn stage_focused(
     stage_filtered(source, target, directory, identity, Some(&selected), true)
 }
 
+/// Cache lookup results are candidates, not evidence of compiler compatibility.
+#[derive(Default)]
+pub struct CacheMatches<'a> {
+    pub full: &'a str,
+    pub focused: &'a str,
+}
+
 /// A valid same-source focused build overlays a compatible full build last.
 /// Any partial failed overlay is removed before accepting another payload.
 pub fn restore_combined(
@@ -244,10 +252,10 @@ pub fn restore_combined(
     target: &Path,
     exact: &Path,
     compatible: &Path,
-    matched_key: &str,
+    matched: CacheMatches<'_>,
     identity: &ApplicationIdentity,
 ) -> Result<Value> {
-    let retained = match restore_compatible(source, target, compatible, matched_key, identity) {
+    let retained = match restore_compatible(source, target, compatible, matched.full, identity) {
         Ok(report) => Some(report),
         Err(error) => {
             eprintln!("Compatible test cache unavailable: {error:#}");
@@ -271,9 +279,19 @@ pub fn restore_combined(
             // exact overlay, discard it and restore the validated full payload.
             prune(source, target)?;
             if retained.is_some() {
-                restore_compatible(source, target, compatible, matched_key, identity)
+                restore_compatible(source, target, compatible, matched.full, identity)
             } else {
-                Ok(json!({"reused":false}))
+                // An older partial checkpoint can retain production and
+                // unrelated test units too. Use the same input/ownership
+                // checks as full caches; never reuse cached test results.
+                match restore_compatible(source, target, exact, matched.focused, identity) {
+                    Ok(report) => Ok(report),
+                    Err(error) => {
+                        eprintln!("Cross-source focused cache unavailable: {error:#}");
+                        prune(source, target)?;
+                        Ok(json!({"reused":false}))
+                    }
+                }
             }
         }
     }

@@ -94,8 +94,11 @@ fn script_image_url_keys_keep_code_and_captured_bytes_after_source_removal_move_
                 [format!("image:{uri}")]
             .as_str()
             .unwrap();
-            let project = Project::load(&store).unwrap();
+            let mut project = Project::load(&store).unwrap();
             let image = project.resolve_file(store.path(), asset).unwrap();
+            // Script image inputs are captured when their output uses them.
+            // Inspect the copied bytes explicitly before evaluating the script.
+            project.capture_asset(&image, "image").unwrap();
             assert!(
                 project
                     .asset(&image)
@@ -103,6 +106,13 @@ fn script_image_url_keys_keep_code_and_captured_bytes_after_source_removal_move_
                     .bytes
                     .starts_with(b"\x89PNG\r\n\x1a\n")
             );
+            if !http {
+                assert_eq!(
+                    project.asset(&image).unwrap().bytes.as_ref(),
+                    include_bytes!("../../examples/assets/crop-source.png")
+                );
+            }
+            project.verify_unchanged().unwrap();
             assert_eq!(
                 fs::read_to_string(
                     project

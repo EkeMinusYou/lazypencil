@@ -60,7 +60,7 @@ const FLAG_PREFIXES: &[&str] = &[
 pub mod artifact;
 mod compatible;
 pub mod native_snapshots;
-pub use compatible::{restore_combined, restore_compatible, stage_focused};
+pub use compatible::{CacheMatches, restore_combined, restore_compatible, stage_focused};
 
 #[derive(Subcommand)]
 pub enum Command {
@@ -111,6 +111,8 @@ pub enum Command {
         compatible_directory: Option<PathBuf>,
         #[arg(long, default_value = "")]
         matched_key: String,
+        #[arg(long, default_value = "")]
+        focused_matched_key: String,
         #[arg(long)]
         release_only: bool,
         #[arg(long)]
@@ -249,6 +251,7 @@ impl Command {
                 operation,
                 compatible_directory,
                 matched_key,
+                focused_matched_key,
                 release_only,
                 source,
                 target,
@@ -285,6 +288,10 @@ impl Command {
                                 ("checkpoint_prefix".into(), checkpoint_prefix.clone()),
                                 ("checkpoint_legacy".into(), identity.checkpoint.clone()),
                                 (
+                                    "application_prefix".into(),
+                                    identity.application_prefix.clone(),
+                                ),
+                                (
                                     "compatible_primary".into(),
                                     identity.compatible_primary.clone(),
                                 ),
@@ -320,7 +327,7 @@ impl Command {
                                 ),
                             ]),
                         )?;
-                        json!({"primary":identity.primary,"checkpoint":checkpoint,"checkpoint_prefix":checkpoint_prefix,"checkpoint_legacy":identity.checkpoint,"source_commit":identity.source_commit})
+                        json!({"primary":identity.primary,"checkpoint":checkpoint,"checkpoint_prefix":checkpoint_prefix,"checkpoint_legacy":identity.checkpoint,"application_prefix":identity.application_prefix,"source_commit":identity.source_commit})
                     }
                     "stage" if release_only => stage(&source, &target, &directory, &identity)?,
                     "stage" => stage_tests(&source, &target, &directory, &identity)?,
@@ -342,7 +349,10 @@ impl Command {
                         compatible_directory
                             .as_deref()
                             .context("Missing compatible directory")?,
-                        &matched_key,
+                        CacheMatches {
+                            full: &matched_key,
+                            focused: &focused_matched_key,
+                        },
                         &identity,
                     )?,
                     "restore-or-prune" => match restore(&source, &target, &directory, &identity) {
@@ -771,6 +781,7 @@ pub struct ApplicationIdentity {
     pub source_commit: String,
     pub primary: String,
     pub checkpoint: String,
+    pub application_prefix: String,
     pub tracked: BTreeMap<String, Entry>,
     pub compatible_primary: String,
     pub compatible_prefix: String,
@@ -780,6 +791,26 @@ pub struct ApplicationIdentity {
 }
 
 impl ApplicationIdentity {
+    /// A broad lookup is only a candidate. Bind its exact source and recipe
+    /// before using compiler dep-info to decide which units can be retained.
+    fn matches_source_key(&self, key: &str) -> bool {
+        let source_hash = util::digest(stable_json(&self.recipe["inputs"]));
+        let prefix = format!(
+            "{}{source_hash}-{}-",
+            self.application_prefix, self.fingerprint
+        );
+        let Some(suffix) = key.strip_prefix(&prefix) else {
+            return false;
+        };
+        if matches!(suffix, "full" | "focus") {
+            return true;
+        }
+        suffix
+            .strip_prefix("focus-")
+            .and_then(|generation| generation.split_once('-'))
+            .is_some_and(|(run, attempt)| valid_generation_id(run) && valid_generation_id(attempt))
+    }
+
     /// Legacy lookup does not change the source-bound payload identity.
     /// Every restored candidate is still checked against its compiler inputs.
     pub fn compatible_keys(&self, legacy: bool) -> Result<(String, String)> {
@@ -909,6 +940,7 @@ fn application_identity_for(
             .into(),
         primary: format!("{namespace}-{platform}-{source_hash}-{fingerprint}-full"),
         checkpoint: format!("{namespace}-{platform}-{source_hash}-{fingerprint}-focus"),
+        application_prefix: format!("{namespace}-{platform}-"),
         tracked: inputs.into_iter().map(|e| (e.path.clone(), e)).collect(),
         compatible_primary: format!("{compatible_prefix}{source_hash}"),
         compatible_prefix,

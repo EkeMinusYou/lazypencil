@@ -1856,6 +1856,7 @@ fn application_identify_cli_emits_unique_generation_keys_and_ordered_compatible_
         let report: Value = serde_json::from_slice(&result.stdout).unwrap();
         assert_eq!(report["primary"], identity.primary);
         assert_eq!(report["checkpoint_legacy"], identity.checkpoint);
+        assert_eq!(report["application_prefix"], "application-v2-ubuntu-24.04-");
         assert_eq!(
             report["checkpoint_prefix"],
             format!("{}-", identity.checkpoint)
@@ -1870,6 +1871,7 @@ fn application_identify_cli_emits_unique_generation_keys_and_ordered_compatible_
             "checkpoint",
             "checkpoint_prefix",
             "checkpoint_legacy",
+            "application_prefix",
         ] {
             assert!(
                 outputs

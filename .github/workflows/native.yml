@@ -243,6 +243,7 @@ jobs:
           restore-keys: |
             ${{ steps.application-key.outputs.checkpoint_prefix }}
             ${{ steps.application-key.outputs.checkpoint_legacy }}
+            ${{ steps.application-key.outputs.application_prefix }}
           path: ${{ runner.temp }}/lazypencil-application-cache
           lookup-only: ${{ inputs.rebuild_application }}
       - name: Restore unchanged integration-test outputs from a full build
@@ -266,7 +267,7 @@ jobs:
         id: application-reuse
         if: steps.application-key.outcome == 'success'
         timeout-minutes: 3
-        run: cargo xtask ci cache application restore-compatible --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --compatible-directory "$RUNNER_TEMP/lazypencil-compatible-cache" --matched-key '${{ steps.compatible-cache.outputs.cache-matched-key }}' --native-key '${{ steps.cache-key.outputs.primary }}${{ inputs.lane == 'core' && '-core' || '' }}'
+        run: cargo xtask ci cache application restore-compatible --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --compatible-directory "$RUNNER_TEMP/lazypencil-compatible-cache" --matched-key '${{ steps.compatible-cache.outputs.cache-matched-key }}' --focused-matched-key '${{ steps.application-cache.outputs.cache-matched-key }}' --native-key '${{ steps.cache-key.outputs.primary }}${{ inputs.lane == 'core' && '-core' || '' }}'
       - name: Identify release outputs independently of test changes
         id: release-key
         if: ${{ (inputs.lane == 'all' || inputs.lane == 'release') && (steps.cache-key.outcome == 'success' && (inputs.phase != 'focus' || inputs.suite == 'release' || inputs.suite == 'candidate' || inputs.measure_tui)) }}
