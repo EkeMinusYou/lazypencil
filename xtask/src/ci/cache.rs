@@ -1268,7 +1268,14 @@ pub fn stage_current_tests(
                 break;
             };
             let modified = output_modified(path)?;
-            if entry.modified != Some(modified) {
+            // Cargo regenerates external build-system dep-info aliases even
+            // when every unit is fresh. Unit fingerprint times distinguish
+            // actual rebuilding; content/mode checks still cover every file.
+            let unit_metadata = Path::new(name)
+                .components()
+                .nth(1)
+                .is_some_and(|component| component.as_os_str() == ".fingerprint");
+            if unit_metadata && entry.modified != Some(modified) {
                 eprintln!(
                     "Application checkpoint output time changed: {name}: {:?} -> {modified:?}",
                     entry.modified
