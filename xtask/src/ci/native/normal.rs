@@ -5,6 +5,9 @@ const TEST_SECONDS: u64 = 900;
 pub(super) const QUIET: [&str; 3] = ["tui", "dynamic_render", "runtime_config"];
 const INDEPENDENT: [&str; 1] = ["script_scope"];
 const RESOURCES: [&str; 4] = ["font_sources", "project", "graphics", "mesh"];
+// These targets own independent projects and retained filenames. The unit
+// lane otherwise finished about two minutes before the integration lane.
+const UNIT_LANE: [&str; 4] = ["lib", "blends", "imports", "sampler_sources"];
 
 pub fn run(s: &Session) -> Result<()> {
     let prepared = prepare(s)?;
@@ -98,7 +101,8 @@ fn prepare_inner(s: &Session, elapsed: Option<Duration>) -> Result<Prepared> {
     let (scripts, checks) = split_checks(checks, &independent)?;
     let paths = RESOURCES.map(|name| catalog.binaries[name].path.as_path());
     let (resources, checks) = split_checks(checks, &paths)?;
-    let (units, checks) = split_checks(checks, &[catalog.binaries["lib"].path.as_path()])?;
+    let paths = UNIT_LANE.map(|name| catalog.binaries[name].path.as_path());
+    let (units, checks) = split_checks(checks, &paths)?;
     let budget = Duration::from_secs(TEST_SECONDS)
         .checked_sub(elapsed.unwrap_or_default())
         .context("Default test budget exhausted during Cargo checks")?;
@@ -212,7 +216,7 @@ fn remaining_inner(s: &Session, prepared: &Prepared, compile_release: bool) -> R
         // temporary documents, logs and child processes, so neither needs to
         // wait for the other after the quiet launch interval has completed.
         tasks.push((
-            "library unit tests",
+            "library and independent integration tests",
             Box::new(|| run_lane(s, units, *deadline, "lazypencil-unit-tests.log")),
         ));
     }

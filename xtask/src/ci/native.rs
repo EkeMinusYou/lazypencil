@@ -1424,17 +1424,33 @@ impl Session {
         })
     }
     fn runtime_lanes(&self, with_material: bool) -> Result<()> {
-        // The affected profile integration runs before starting the longer
-        // browser/lifecycle lanes. Each case owns its complete process tree.
+        // Profile checks own distinct temporary data, CDP ports and logs. Run
+        // the MCP profile checks alongside login/storage checks, then join
+        // both before competing software WebGL and lifecycle producers start.
         let catalog = self.verified_catalog(&["mcp"])?;
-        self.mcp_check(
-            &catalog,
-            "mcp",
-            "shared_profiles::",
-            false,
-            "chromium-profiles.log",
-        )?;
-        let prepared_browser = browser::prepare(self)?;
+        let mut prepared_browser = None;
+        parallel::run(vec![
+            (
+                "shared authentication profiles",
+                Box::new(|| {
+                    self.mcp_check(
+                        &catalog,
+                        "mcp",
+                        "shared_profiles::",
+                        false,
+                        "chromium-profiles.log",
+                    )
+                }),
+            ),
+            (
+                "browser login and storage",
+                Box::new(|| {
+                    prepared_browser = Some(browser::prepare(self)?);
+                    Ok(())
+                }),
+            ),
+        ])?;
+        let prepared_browser = prepared_browser.context("Browser preparation did not complete")?;
         // MCP and idle lifecycle clients own separate documents, process trees
         // and automatic CDP ports. Material has an independent settings path.
         parallel::run(vec![

@@ -4,6 +4,8 @@
 
 ## 現在の状態（2026-10-30）
 
+51ed911の既存consumer記録を再確認した。runtimeの試験stepは約224秒で、shared profile 30.32秒、headed login 13.90秒、storage 49.78秒が直列、その後のbrowser readiness 120.98秒が最長だった。MCP共有profileとlogin／storageは別のTempDir・CDP port・logを所有するため、両者だけを並列にし、全join後に元のWebGL／lifecycle群へ進む。通常consumerは約195秒で、library lane64.99秒に対しscript-scope170.35秒、その他integration合計が長かった。固有のproject／出力名を使うblends・imports・sampler_sourcesをlibrary laneへ移し、元のinvocation・harness thread数・15分の共通budgetは維持する。短い起動期限を持つquiet群、画像gate、性能計測の順序は変えない。これは準備中の変更で、実fixture・補助gateとMac対象検証の後に全体を一度だけ確認する。
+
 6badaf5の[配布検証41041417999](https://github.com/EkeMinusYou/lazypencil/actions/runs/41041417999)は8分43秒で成功した。補助全試験・Clippy、原本通知の収集と再検証、実候補の梱包・隔離導入smoke・署名付きprovenanceを含む。取得した候補archiveのSHA-256は`e400dbb7bec16198879c3a268e996ab713f6ced3e932676921821cb6b761b77b`で、署名のsubjectと一致した。署名のissuer、source 6badaf5、release-evidence.yml／main、run／attempt 1も照合した。package manifestは635ファイルを記録し、Mac arm64・0.1.0-dev・本体`b0297f24…07b0759`が一致した。WebPのPATENTSとSkCMSのLICENSE／出自NOTICEは、実archiveから抽出し、manifestのsize／hashおよび原本byteと照合した。`release_ready:false`を維持し、この二つの不足の解消を全ライセンス適用レビューや正式公開の完了とはしない。
 
 追加の配布レビューでは、link mapに`libskcms.skcms.o`と`libskcms.skcms_TransformBaseline.o`がある一方、旧候補に独立したSkCMS原本licenseが無いことも確認した。固定Skia snapshot `61e7ca4e…5778f6`はSkCMS revision `6010f358…7c58d`のsourceを取り込み、README.chromium／version.sha1へ記録しているが、LICENSEそのものは省いている。候補の観測済み7 source／header hashと、その固定snapshotのbyte一致を確認し、[対応revisionの原本LICENSE](https://skia.googlesource.com/skcms/+/6010f3583977f651726b24228f7e6a377e47c58d/LICENSE)を既存の`resources/licenses/native/skcms/`へ収録した。原本SHA-256は`e59bb5c5…fbe2e36`で、置換・改変しない。既存の配布必須ファイル一覧へLICENSEと出自NOTICEを加え、整合するindexから消した場合も候補公開を拒否する既存試験へ接続し、上記workflowで成功した。
