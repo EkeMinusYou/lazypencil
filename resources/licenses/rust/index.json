@@ -1,5 +1,5 @@
 {
-  "cargo_lock_sha256": "87c039d1c934981896f15a1d293a8340b951f75e5f18d73f9964d23cd3408ec5",
+  "cargo_lock_sha256": "fd3f1a6870ac4f69a780b1e5d9158c4a4b11af09c69b9a72dd423774c0333367",
   "format_version": 1,
   "license_references": [
     {
@@ -1811,6 +1811,48 @@
         "path_in_vcs": "clap_builder"
       },
       "version": "4.6.7"
+    },
+    {
+      "archive_sha256": "037e2a1a92236d0aff7e845093f64661d6df4c02c9fcc61a60e9e1d736fa392f",
+      "attribution_comments": [
+        {
+          "lines": [
+            {
+              "line": 1,
+              "text": "// Copyright ⓒ 2015-2018 Kevin B. Knapp"
+            }
+          ],
+          "path": "src/lib.rs"
+        }
+      ],
+      "authors": [],
+      "files": [
+        {
+          "blob": "texts/249fdb6694467dd615b259f7ddde07be3f8ae5a72cecebb0e24f6629af4215fe.txt",
+          "kind": "archive",
+          "path": "LICENSE-APACHE",
+          "sha256": "249fdb6694467dd615b259f7ddde07be3f8ae5a72cecebb0e24f6629af4215fe"
+        },
+        {
+          "blob": "texts/6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6.txt",
+          "kind": "archive",
+          "path": "LICENSE-MIT",
+          "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license_file": null,
+      "manifest_sha256": "f69e1ea7a31a2c24ff3dd7ee34abe4b71dd394a0205cbfbecd4e5886993b74d2",
+      "name": "clap_complete",
+      "repository": "https://github.com/clap-rs/clap",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "2cb76fdf385396f86f37af49784504da560b6e47"
+        },
+        "path_in_vcs": "clap_complete"
+      },
+      "version": "4.6.11"
     },
     {
       "archive_sha256": "f9c751b79415d4e559e3d1fcf128e09e720eb673a06d26cf6f392d37d75b66e0",
@@ -6285,6 +6327,40 @@
       "version": "0.3.14"
     },
     {
+      "archive_sha256": "82cb6a9f675da968c63b6208c641b9dca58fc0133ae53375736b1767b0cab8bd",
+      "attribution_comments": [],
+      "authors": [
+        "Nick Fitzgerald <fitzgen@gmail.com>"
+      ],
+      "files": [
+        {
+          "blob": "texts/a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2.txt",
+          "kind": "archive",
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+        },
+        {
+          "blob": "texts/7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0.txt",
+          "kind": "archive",
+          "path": "LICENSE-MIT",
+          "sha256": "7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0"
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license_file": null,
+      "manifest_sha256": "1d75aec5d64f513b726a1ed892449330b6f74e46a68fe77376cffa187cb112b4",
+      "name": "is_executable",
+      "repository": "https://github.com/fitzgen/is_executable",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "5c04d8657805f59c5209580ba27f380770235f71"
+        },
+        "path_in_vcs": ""
+      },
+      "version": "1.0.6"
+    },
+    {
       "archive_sha256": "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695",
       "attribution_comments": [],
       "authors": [],
@@ -6727,7 +6803,7 @@
         }
       ],
       "license": "MIT",
-      "manifest_sha256": "ff95e6c4464208c2707edce1cd1767bbf35453a1087bb8cb2fc1d9bbc09803ca",
+      "manifest_sha256": "6bf0ab238c757eac3ea478731712d05a58c1cbe460687a8296971e4e972ff649",
       "name": "lazypencil",
       "source": "workspace",
       "version": "0.1.0-dev",

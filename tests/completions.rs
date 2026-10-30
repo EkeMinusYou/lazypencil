@@ -198,7 +198,7 @@ fn generated_hooks_register_and_execute_in_bash_zsh_and_fish() {
             "/bin/zsh",
             // Only ZLE's final display is replaced; registration and the real
             // executable's completion query both run in the isolated shell.
-            r#"autoload -Uz compinit; compinit -D; source "$1"; shift; [[ ${_comps[lazypencil]} == _clap_dynamic_completer_lazypencil ]] || exit 3; _describe() { print -rl -- "${other[@]%%:*}" "${dirs[@]%%:*}"; }; words=("$@"); CURRENT=${#words}; _clap_dynamic_completer_lazypencil"#,
+            r#"autoload -Uz compinit; compinit -D -i -d "$1.dump"; source "$1"; shift; [[ ${_comps[lazypencil]} == _clap_dynamic_completer_lazypencil ]] || exit 3; _describe() { print -rl -- "${other[@]%%:*}" "${dirs[@]%%:*}"; }; words=("$@"); CURRENT=${#words}; _clap_dynamic_completer_lazypencil"#,
         ),
         (
             "fish",
@@ -214,7 +214,7 @@ fn generated_hooks_register_and_execute_in_bash_zsh_and_fish() {
         } else if shell == "zsh" {
             command.arg("-f");
         } else {
-            command.arg("--no-config");
+            command.args(["--no-config", "--private"]);
         }
         command
             .current_dir(temp.path())

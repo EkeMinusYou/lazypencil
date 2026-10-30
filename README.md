@@ -249,7 +249,7 @@ Manual runtime/process/release workflows are diagnostic entry points, not reason
 
 ### Licenses and build evidence
 
-The application [Rust inventory](resources/licenses/rust/index.json) covers 393 locked packages; tool notices are independent. Original blobs, archive/source hashes and reviewed supplements accompany readable notices. The `option-ext` MPL-2.0 allowance retains its exact source archive and terms. Noto Sans JP retains OFL-1.1; optional packs and external Chromium/ACP adapters retain their licenses.
+The application [Rust inventory](resources/licenses/rust/index.json) covers 395 locked packages; tool notices are independent. Original blobs, archive/source hashes and reviewed supplements accompany readable notices. The `option-ext` MPL-2.0 allowance retains its exact source archive and terms. Noto Sans JP retains OFL-1.1; optional packs and external Chromium/ACP adapters retain their licenses.
 
 ```sh
 cargo xtask notices rust verify

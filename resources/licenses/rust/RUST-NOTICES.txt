@@ -226,6 +226,12 @@ Verbatim source attribution comments:
 // Copyright ⓒ 2015-2016 Kevin B. Knapp and [`clap-rs` contributors](https://github.com/clap-rs/clap/graphs/contributors).
   Source: src/lib.rs:1
 
+clap_complete@4.6.11
+Declared license: MIT OR Apache-2.0
+Verbatim source attribution comments:
+// Copyright ⓒ 2015-2018 Kevin B. Knapp
+  Source: src/lib.rs:1
+
 clap_derive@4.6.7
 Declared license: MIT OR Apache-2.0
 Verbatim source attribution comments:
@@ -705,6 +711,10 @@ Published package authors: David Tolnay <dtolnay@gmail.com>
 instability@0.3.14
 Declared license: MIT
 Published package authors: Stephen M. Coakley <me@stephencoakley.com>; The Ratatui Developers
+
+is_executable@1.0.6
+Declared license: MIT OR Apache-2.0
+Published package authors: Nick Fitzgerald <fitzgen@gmail.com>
 
 is_terminal_polyfill@1.70.2
 Declared license: MIT OR Apache-2.0
@@ -7280,6 +7290,7 @@ DEALINGS IN THE SOFTWARE.
 ========================================================================
 clap@4.6.7 :: archive :: LICENSE-APACHE
 clap_builder@4.6.7 :: archive :: LICENSE-APACHE
+clap_complete@4.6.11 :: archive :: LICENSE-APACHE
 clap_derive@4.6.7 :: archive :: LICENSE-APACHE
 clap_lex@1.1.1 :: archive :: LICENSE-APACHE
 serde_spanned@1.1.2 :: archive :: LICENSE-APACHE
@@ -12368,6 +12379,7 @@ anstyle-query@1.1.5 :: archive :: LICENSE-MIT
 anstyle-wincon@3.0.11 :: archive :: LICENSE-MIT
 clap@4.6.7 :: archive :: LICENSE-MIT
 clap_builder@4.6.7 :: archive :: LICENSE-MIT
+clap_complete@4.6.11 :: archive :: LICENSE-MIT
 clap_derive@4.6.7 :: archive :: LICENSE-MIT
 clap_lex@1.1.1 :: archive :: LICENSE-MIT
 colorchoice@1.0.5 :: archive :: LICENSE-MIT
@@ -13004,6 +13016,7 @@ DEALINGS IN THE SOFTWARE.
 ========================================================================
 fs2@0.4.3 :: archive :: LICENSE-MIT
 heck@0.5.0 :: archive :: LICENSE-MIT
+is_executable@1.0.6 :: archive :: LICENSE-MIT
 unicode-segmentation@1.13.3 :: archive :: LICENSE-MIT
 unicode-width@0.2.2 :: archive :: LICENSE-MIT
 unicode-xid@0.2.6 :: archive :: LICENSE-MIT
@@ -16300,6 +16313,7 @@ idna@1.1.0 :: archive :: LICENSE-APACHE
 idna_adapter@1.2.2 :: archive :: LICENSE-APACHE
 indexmap@1.9.3 :: archive :: LICENSE-APACHE
 indexmap@2.14.2 :: archive :: LICENSE-APACHE
+is_executable@1.0.6 :: archive :: LICENSE-APACHE
 itertools@0.13.0 :: archive :: LICENSE-APACHE
 itertools@0.14.0 :: archive :: LICENSE-APACHE
 js-sys@0.3.106 :: archive :: LICENSE-APACHE
