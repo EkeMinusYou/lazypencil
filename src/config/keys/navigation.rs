@@ -53,7 +53,7 @@ bindings! {
     next_panel => NextPanel(ALL, ["Tab"]),
     previous_panel => PreviousPanel(ALL, ["Shift+Tab"]),
     help => Help(ALL, ["F1", "?"]),
-    commands => Commands(ALL, ["Ctrl+p"]),
+    commands => Commands(ALL, ["Alt+p"]),
     quit => Quit(VIEWING, ["q"]),
     refresh => Refresh(VIEWING, ["r"]),
     open_preview => OpenPreview(VIEWING, ["o"]),

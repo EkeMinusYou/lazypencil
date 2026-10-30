@@ -26,11 +26,13 @@ AI に形式の説明だけを渡す構成を改め、設計手順、視覚ス�
 
 初期版のガイド・スタイル・作例は lazypencil 向けに独自に記述し、プロジェクトの MIT ライセンスで提供する。現時点で本家・非公式 Skill の本文やスタイル素材は取り込まない。後で第三者の素材を採用する場合は、取得元・版・対象ファイル・ライセンス・必要な表示を記録する。
 
-2026-10-26 に現行条件を再確認した。[EULA](https://www.pen.dev/eula) は2026-10-15発効、[利用規約](https://www.pen.dev/terms-of-use) は2026-10-19発効で、それぞれ3節に競合するモデル／サービス開発へのソフトウェア・出力利用と、別途書面契約に関する条件がある。ユーザーから個別の書面許諾・契約はないと確認したため、追加の本家出力の取得・比較利用は進めない。現在のソースでは従来の参照 PNG 11点と派生観測 JSON を除き、自作入力を `tests/fixtures/render-corpus` に残して、独立した数学的期待値・公開 CC0 アルゴリズム・明示した入力契約による試験へ移行した。置換後の対象3環境の成功と全画素の独立照合は [source `bc763f9` の CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40224848234) まで確認している。試験数・スキーマ・画素差の判定基準を維持し、本家との一致の証明とは扱わない。旧 Git 履歴と過去の CI artifact には従来のファイルが残る。この変更では履歴を書き換えず、過去の利用や配布を含む公開前の権利確認が完了したとはしない。
+2026-10-26 に現行条件を再確認した。[EULA](https://www.pen.dev/eula) は2026-10-15発効、[利用規約](https://www.pen.dev/terms-of-use) は2026-10-19発効で、それぞれ3節に競合するモデル／サービス開発へのソフトウェア・出力利用と、別途書面契約に関する条件がある。ユーザーから個別の書面許諾・契約はないと確認したため、追加の本家出力の取得・比較利用は進めない。現在のソースでは従来の参照 PNG 11点と派生観測 JSON を除き、自作入力を `tests/fixtures/render-corpus` に残して、独立した数学的期待値・公開 CC0 アルゴリズム・明示した入力契約による試験へ移行した。置換後の対象3環境の成功と全画素の独立照合は [source `bc763f9` の CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40224848234) まで確認している。試験数・スキーマ・画素差の判定基準を維持し、本家との一致の証明とは扱わない。この時点では履歴を書き換えていなかった。後続の追跡と承認済みの履歴削除は以下のとおりで、過去利用の権利確認を代替しない。
 
-2026-10-30の追跡確認では、GitHub公開APIから取得できる1,225 artifact・158 sourceは全て除去commit `0401ccd972cd107311244934b8daaaffc9ee959e` の子孫であり、除去前sourceと不明sourceは0件だった。最古の作成時刻は2026-10-27T04:33:50Z。したがって、上記の「過去CI artifactに残る」は当時の状態であり、現在の一覧に除去前の成果物が存在するという意味ではない。各archiveの全byteに旧素材がないことまでは検査していない。旧Git履歴と過去の配布を含む権利確認は引き続き未完了で、削除・履歴書換えは実行していない。
+2026-10-30の履歴整理前の追跡では、GitHub公開APIの1,225 artifact・158 sourceは全て当時の除去commit `0401ccd972cd107311244934b8daaaffc9ee959e` の子孫で、除去前sourceと不明sourceは0件だった。最古の作成時刻は2026-10-27T04:33:50Z。各archiveの全byteに旧素材がないことまでは検査していない。
 
-同日、元repo／GitHubを変更せず、9e613bfを基に14パスだけを除外した私有の履歴案をGit標準のfast-export／fast-importで作成した。mainの556コミットとmerge 1件を保ち、HEAD treeは元と同じ`d03e17413ce0b59ce925155f4c299befc1a922f3`、旧素材の17 blob版は全refから除外され、strict fsckとbundle verifyも成功した。ただし元の全556コミットに署名headerがあり、この案では除去されている。Gitの[署名の扱い](https://git-scm.com/docs/git-fast-export#Documentation/git-fast-export.txt---signed-commitsverbatimwarn-verbatimwarn-stripstripabort)に従い、過去の署名が新しい履歴に有効であるとは扱わない。確認用bundleは一時領域に約13MiB、SHA-256 `dea4a4564a9ace2653feb4566fe40c914e1dafbdc9d44266ad3403bb4c6538d8`。重複する一時bare repoは除去した。実際の公開履歴の強制更新は別途承認が必要であり、この準備から過去配布の権利確認完了やGitHub側の旧object消去を宣言しない。
+同日、利用者の明示承認に基づき、旧PNG11点・派生JSON3点の14パスをGit標準のfast-export／fast-importで全参照から除去し、mainを`force-with-lease`で更新した。559コミットとmerge1件を保持し、全559組で対象外の全ファイル・内容・モードが一致した。直前`d934198`と新`639d180`のHEAD treeは同じ`25899d7432e459d9633374ad9ea50a6237440bb1`で、旧素材17 blob版と14パスは新しい全参照から到達不能、strict fsckも成功した。GitHubのmain・ローカルmain・追跡ref・既存ローカルbranchを新履歴へ揃えた。過去署名は[Gitの署名の扱い](https://git-scm.com/docs/git-fast-export#Documentation/git-fast-export.txt---signed-commitsverbatimwarn-verbatimwarn-stripstripabort)に従い除去しており、新履歴に有効な旧署名があるとは扱わない。既存CI／provenanceのsource SHAは当時の識別子として保持する（例：旧9e613bf→新3768caa）。
+
+ローカルreflogと到達不能objectには旧データが残る。即時の全体GCは自動承認審査に拒否され、読み取り調査でも対象外の復旧用17コミット・40 blobを検出したため実行しない。これらの復旧データを保全し、履歴削除からGitHub側の旧object・cacheの物理消去や過去配布の権利確認完了を宣言しない。
 
 ## 配布する指針
 

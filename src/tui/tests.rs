@@ -86,6 +86,64 @@ fn runtime() -> tokio::runtime::Runtime {
 }
 
 #[test]
+fn emacs_prompt_keys_edit_unicode_lines_keep_yanks_bounded_and_preserve_undo() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let worker = Worker::start(
+            app.conversation.store().clone(),
+            vec![],
+            Backend::halfblocks(),
+            147,
+        )
+        .unwrap();
+        let text = "前の行\n日本語 abc suffix";
+        app.insert_text(text);
+        press(&mut app, KeyCode::Char('p'), KeyModifiers::CONTROL, &worker).await;
+        assert_eq!(app.editor.cursor().0, 0);
+        assert!(app.modal.is_none());
+        press(&mut app, KeyCode::Char('n'), KeyModifiers::CONTROL, &worker).await;
+        assert_eq!(app.editor.cursor().0, 1);
+        press(&mut app, KeyCode::Char('a'), KeyModifiers::CONTROL, &worker).await;
+        for _ in 0..3 {
+            press(&mut app, KeyCode::Char('f'), KeyModifiers::CONTROL, &worker).await;
+        }
+        press(&mut app, KeyCode::Char('u'), KeyModifiers::CONTROL, &worker).await;
+        assert_eq!(app.editor.lines(), ["前の行", " abc suffix"]);
+        press(&mut app, KeyCode::Char('_'), KeyModifiers::CONTROL, &worker).await;
+        assert_eq!(app.editor.lines().join("\n"), text);
+        press(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL, &worker).await;
+        press(&mut app, KeyCode::Char('w'), KeyModifiers::CONTROL, &worker).await;
+        assert_eq!(app.editor.lines(), ["前の行", "日本語 abc "]);
+        press(&mut app, KeyCode::Char('y'), KeyModifiers::CONTROL, &worker).await;
+        assert_eq!(app.editor.lines().join("\n"), text);
+        press(&mut app, KeyCode::Char('a'), KeyModifiers::CONTROL, &worker).await;
+        press(&mut app, KeyCode::Char('k'), KeyModifiers::CONTROL, &worker).await;
+        assert_eq!(app.editor.lines(), ["前の行", ""]);
+        press(&mut app, KeyCode::Char('y'), KeyModifiers::CONTROL, &worker).await;
+        assert_eq!(app.editor.lines().join("\n"), text);
+        app.save_draft().unwrap();
+        assert_eq!(app.conversation.draft(), text);
+        app.editor = editor(&"x".repeat(1024 * 1024));
+        press(&mut app, KeyCode::Char('b'), KeyModifiers::CONTROL, &worker).await;
+        assert_eq!(app.editor.cursor().1, 1024 * 1024 - 1);
+        press(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL, &worker).await;
+        press(&mut app, KeyCode::Char('u'), KeyModifiers::CONTROL, &worker).await;
+        assert!(app.editor.is_empty());
+        app.insert_text("保持する");
+        press(&mut app, KeyCode::Char('y'), KeyModifiers::CONTROL, &worker).await;
+        assert_eq!(app.editor.lines(), ["保持する"]);
+        assert_eq!(app.status, "Prompt exceeds 1 MiB");
+        press(&mut app, KeyCode::Char('p'), KeyModifiers::ALT, &worker).await;
+        assert!(matches!(
+            app.modal,
+            Some(checkpoints::Modal::Commands { .. })
+        ));
+        assert!(!temp.path().join("sent-turn.txt").exists());
+    });
+}
+
+#[test]
 fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes() {
     use ratatui::{Terminal, backend::TestBackend, layout::Position};
 
@@ -1269,7 +1327,7 @@ fn saved_log_browser_pages_formats_refreshes_and_preserves_drafts_images_and_doc
         let path = saved_log(&app, 1, &body);
         for number in 2..=55 { saved_log(&app, number, "別の応答"); }
         let worker = Worker::start(app.conversation.store().clone(), vec![], Backend::halfblocks(), 139).unwrap();
-        press(&mut app, KeyCode::Char('p'), KeyModifiers::CONTROL, &worker).await;
+        press(&mut app, KeyCode::Char('p'), KeyModifiers::ALT, &worker).await;
         for _ in 0..5 { press(&mut app, KeyCode::Down, KeyModifiers::NONE, &worker).await; }
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
         document_result(&mut app, &worker).await;
@@ -1673,7 +1731,7 @@ fn checkpoint_palette_reviews_before_restoring_and_keeps_draft_and_images() {
             127,
         )
         .unwrap();
-        press(&mut app, KeyCode::Char('p'), KeyModifiers::CONTROL, &worker).await;
+        press(&mut app, KeyCode::Char('p'), KeyModifiers::ALT, &worker).await;
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
         document_result(&mut app, &worker).await;
         press(&mut app, KeyCode::Down, KeyModifiers::NONE, &worker).await;

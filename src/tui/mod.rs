@@ -251,12 +251,9 @@ impl App {
         loop {
             if self.dirty {
                 let mut cells = self.cells;
-                screen
-                    .terminal
-                    .draw(|frame| {
-                        cells = self.draw(frame);
-                    })
-                    .map_err(terminal::io)?;
+                screen.draw(|frame| {
+                    cells = self.draw(frame);
+                })?;
                 self.dirty = false;
                 if cells != self.cells {
                     self.cells = cells;
@@ -284,7 +281,7 @@ impl App {
                             Ok(true) => { self.save_draft()?; return Ok(()); },
                             Ok(false) => {}, Err(error) => self.error(error),
                         }
-                        if modal && !self.has_modal() || camera != self.camera.as_ref().map(|camera| camera.generation) { screen.redraw()?; }
+                        if modal && !self.has_modal() || camera != self.camera.as_ref().map(|camera| camera.generation) { screen.redraw(); }
                         self.dirty = true;
                     },
                     Some(Ok(Event::Paste(text))) if self.focus == Focus::Prompt && !self.conversation.active() && !self.has_modal() => {
@@ -300,7 +297,7 @@ impl App {
                     self.accept_preview(output);
                     // Replacing a Kitty image ID removes its placements. Resend
                     // every placeholder instead of diffing unchanged image cells.
-                    if current { screen.redraw()?; }
+                    if current { screen.redraw(); }
                 },
                 _ = async {
                     if let Some(deadline) = playback_deadline {
@@ -336,7 +333,7 @@ impl App {
                 output = async { (&mut self.document_task.as_mut().unwrap().receiver).await.unwrap_or_else(|error| Err(Error::new("IO_ERROR", format!("Document worker stopped: {error}")))) }, if self.document_task.is_some() => {
                     let modal = self.has_modal();
                     self.finish_document_result(output, worker);
-                    if modal && !self.has_modal() { screen.redraw()?; }
+                    if modal && !self.has_modal() { screen.redraw(); }
                     self.dirty = true;
                 },
                 _ = timer.tick() => {
@@ -751,6 +748,23 @@ impl App {
                 self.submit().await?;
                 return Ok(false);
             }
+            if key.modifiers == KeyModifiers::CONTROL {
+                match key.code {
+                    KeyCode::Char('u') => {
+                        self.draft_changed |= self.editor.delete_line_by_head();
+                        return Ok(false);
+                    }
+                    KeyCode::Char('_' | '/') => {
+                        self.draft_changed |= self.editor.undo();
+                        return Ok(false);
+                    }
+                    KeyCode::Char('y') => {
+                        self.insert_text(&self.editor.yank_text());
+                        return Ok(false);
+                    }
+                    _ => {}
+                }
+            }
             if key.code == KeyCode::Enter
                 && self.editor.lines().len() == 1
                 && self.editor.lines()[0].starts_with('/')
@@ -759,7 +773,8 @@ impl App {
             }
             // Bound interactive input as well as bracketed and clipboard pastes.
             if self.editor.lines().iter().map(String::len).sum::<usize>() >= 1024 * 1024
-                && matches!(key.code, KeyCode::Char(_) | KeyCode::Enter)
+                && (key.code == KeyCode::Enter
+                    || matches!(key.code, KeyCode::Char(_)) && !ctrl && !alt)
             {
                 return Err(Error::new("INVALID_ARGUMENT", "Prompt exceeds 1 MiB"));
             }

@@ -1,12 +1,15 @@
 use crate::{Error, Result};
 use crossterm::{
-    cursor,
+    SynchronizedUpdate, cursor,
     event::{
         DisableBracketedPaste, EnableBracketedPaste, KeyboardEnhancementFlags,
         PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    terminal::{
+        EndSynchronizedUpdate, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
+        enable_raw_mode,
+    },
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io::{Stdout, Write};
@@ -16,6 +19,7 @@ pub struct Screen {
     pub picker: super::graphics::Backend,
     pub startup_text: String,
     id: u32,
+    force_redraw: bool,
 }
 struct Restore {
     id: u32,
@@ -30,11 +34,23 @@ impl Screen {
     pub fn camera_image_id(&self) -> u32 {
         self.id ^ 0x8000_0000
     }
-    pub fn redraw(&mut self) -> Result<()> {
-        // Terminal::clear queries the cursor and races EventStream's stdin reader.
-        // A fullscreen resize also invalidates the back buffer without reading stdin.
-        let area = self.terminal.size().map_err(io)?.into();
-        self.terminal.resize(area).map_err(io)
+    pub fn redraw(&mut self) {
+        self.force_redraw = true;
+    }
+    pub fn draw(&mut self, draw: impl FnOnce(&mut ratatui::Frame)) -> Result<()> {
+        // Keep image-placement erasure and its replacement in one display update.
+        // Clearing before this transaction exposes a blank screen during zooms.
+        std::io::stdout()
+            .sync_update(|_| {
+                if self.force_redraw {
+                    // Avoid Terminal::clear's cursor query racing EventStream's reader.
+                    let area = self.terminal.size().map_err(io)?.into();
+                    self.terminal.resize(area).map_err(io)?;
+                    self.force_redraw = false;
+                }
+                self.terminal.draw(draw).map(|_| ()).map_err(io)
+            })
+            .map_err(io)?
     }
     pub fn enter(protocol: super::ImageProtocol, id: u32) -> Result<Self> {
         enable_raw_mode().map_err(io)?;
@@ -62,6 +78,7 @@ impl Screen {
             picker,
             startup_text,
             id,
+            force_redraw: false,
         })
     }
 }
@@ -86,6 +103,7 @@ fn restore(id: u32, tmux: bool) {
     }
     let _ = execute!(
         stdout,
+        EndSynchronizedUpdate,
         PopKeyboardEnhancementFlags,
         DisableBracketedPaste,
         LeaveAlternateScreen,

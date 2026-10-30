@@ -39,6 +39,10 @@ Terminal stdin/stdout and at least 50 columns × 16 rows are required. `--json` 
 | Prompt: `Enter` | Insert a newline |
 | Prompt: `Alt+Enter`, `Ctrl+Enter`, `Ctrl+S` | Submit text and pending images |
 | Prompt: `Ctrl+V` / `Alt+V` | Explicitly read this host's image, copied image files, or text clipboard |
+| Prompt: `Ctrl+A` / `Ctrl+E`, `Ctrl+B` / `Ctrl+F` | Move to line start/end or one character backward/forward |
+| Prompt: `Ctrl+P` / `Ctrl+N`, `Alt+B` / `Alt+F` | Move to the previous/next line or backward/forward by word |
+| Prompt: `Ctrl+U` / `Ctrl+K`, `Ctrl+W` / `Alt+D` | Kill to line start/end or the previous/next word; line-boundary kills join lines |
+| Prompt: `Ctrl+Y`, `Ctrl+_` / `Ctrl+/` | Yank killed text within the prompt size limit, or undo an edit |
 | Prompt: `/attach <quoted path> [WIDTHxHEIGHT\|original]` then Enter | Attach a static PNG, JPEG, or WebP file with an optional explicit send size |
 | Prompt: `/paste-image [WIDTHxHEIGHT\|original]` then Enter | Invoke clipboard input with an optional explicit send size |
 | Prompt: `/clear-images` then Enter | Remove pending images |
@@ -57,7 +61,7 @@ Terminal stdin/stdout and at least 50 columns × 16 rows are required. `--json` 
 | Outside Prompt: `r` | Refresh, including browser captures |
 | Outside Prompt: `o`, or `/open-preview` | Open a saved complete PNG in the OS viewer |
 | `F1`, or `/help` | Show help |
-| `Ctrl+P`, or `/commands` | Open the command palette |
+| `Alt+P`, or `/commands` | Open the command palette; Ctrl+P is previous-line editing |
 | `/history` then Enter | Browse checkpoints without starting an agent |
 | `/logs`, `/conversations` then Enter | Read current saved turns or browse saved conversations |
 | `Ctrl+C` | Cancel active input/agent work; exit when idle |
