@@ -49,23 +49,23 @@ jobs:
           key: shader-wasm-v1-linux-x64-rust1.94.0-${{ hashFiles('src/shader/preprocessor/Cargo.lock', 'src/shader/preprocessor/Cargo.toml', 'src/shader/preprocessor/vendor/**', 'xtask/src/ci/component.rs') }}
           restore-keys: shader-wasm-v1-linux-x64-rust1.94.0-
       - name: Verify the isolated source and locked inputs
-        run: cargo xtask ci component source
+        run: xtask/target/debug/xtask ci component source
       - name: Rebuild and check the component
         id: compile
         timeout-minutes: 8
         env:
           EXACT_COMPONENT_CACHE: ${{ steps.wasm-cache.outputs.cache-hit }}
-        run: cargo xtask ci component build
+        run: xtask/target/debug/xtask ci component build
       - name: Reproduce macro semantics and memory exhaustion in a JavaScript engine
         timeout-minutes: 2
-        run: cargo xtask ci component test
+        run: xtask/target/debug/xtask ci component test
       - name: Collect original package notices
-        run: cargo xtask ci component notices
+        run: xtask/target/debug/xtask ci component notices
       - name: Collect evidence for the actual Wasm standard-library target
         timeout-minutes: 8
-        run: cargo xtask ci component toolchain
+        run: xtask/target/debug/xtask ci component toolchain
       - name: Bind the component and tests to the current source
-        run: cargo xtask ci component evidence
+        run: xtask/target/debug/xtask ci component evidence
       - name: Retain source-bound module and notice evidence
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
@@ -74,11 +74,11 @@ jobs:
           if-no-files-found: error
           retention-days: 3
       - name: Verify the stored module matches the rebuilt component
-        run: cargo xtask ci component verify
+        run: xtask/target/debug/xtask ci component verify
       - name: Keep only component dependencies
         id: prune
         if: always() && steps.compile.outcome == 'success'
-        run: cargo xtask ci component prune
+        run: xtask/target/debug/xtask ci component prune
       - name: Retain compiled dependencies after later regression failures
         if: ${{ !cancelled() && steps.compile.outcome == 'success' && steps.prune.outcome == 'success' && steps.wasm-cache.outputs.cache-hit != 'true' }}
         continue-on-error: true

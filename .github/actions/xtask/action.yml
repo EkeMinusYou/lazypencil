@@ -93,26 +93,26 @@ runs:
     - name: Verify Rust tools before application builds
       if: inputs.verify == 'true'
       shell: bash
-      run: cargo xtask ci tools verify
+      run: xtask/target/debug/xtask ci tools verify
     - name: Retire superseded compatible tool sources after verification
       if: inputs.retire-old-tools == 'true' && inputs.verify == 'true' && github.ref == 'refs/heads/main'
       continue-on-error: true
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
-      run: cargo xtask ci cache retain --delete --before-tools-replacement '${{ steps.tools.outputs.cache-primary-key }}' --tools-matched-key '${{ steps.tools.outputs.cache-matched-key }}'
+      run: xtask/target/debug/xtask ci cache retain --delete --before-tools-replacement '${{ steps.tools.outputs.cache-primary-key }}' --tools-matched-key '${{ steps.tools.outputs.cache-matched-key }}'
     - name: Verify source inputs before reserving publication headroom
       id: source-headroom
       if: inputs.reserve-source-headroom == 'true' && github.ref == 'refs/heads/main'
       shell: bash
-      run: cargo xtask ci native source
+      run: xtask/target/debug/xtask ci native source
     - name: Retire obsolete sources and duplicate downloads before publishing tools
       if: steps.source-headroom.outcome == 'success'
       continue-on-error: true
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
-      run: cargo xtask ci cache retain --manifest "$RUNNER_TEMP/lazypencil-source/SOURCE-MANIFEST.json" --delete
+      run: xtask/target/debug/xtask ci cache retain --manifest "$RUNNER_TEMP/lazypencil-source/SOURCE-MANIFEST.json" --delete
     - name: Save verified source-bound tools
       if: inputs.verify == 'true' && steps.tools.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
       continue-on-error: true
@@ -124,7 +124,7 @@ runs:
       id: executable-manifest
       if: inputs.verify == 'true' && runner.os != 'Windows' && steps.executables.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
       shell: bash
-      run: cargo xtask ci tools stage --output "$RUNNER_TEMP/lazypencil-tools-cache"
+      run: xtask/target/debug/xtask ci tools stage --output "$RUNNER_TEMP/lazypencil-tools-cache"
     - name: Publish verified executable-only tools for execution jobs
       id: executable-published
       if: steps.executable-manifest.outcome == 'success'
@@ -139,7 +139,7 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
-      run: cargo xtask ci cache retain --delete --before-tools-replacement '${{ steps.executables.outputs.cache-primary-key }}' --tools-matched-key '${{ steps.executables.outputs.cache-primary-key }}'
+      run: xtask/target/debug/xtask ci cache retain --delete --before-tools-replacement '${{ steps.executables.outputs.cache-primary-key }}' --tools-matched-key '${{ steps.executables.outputs.cache-primary-key }}'
     - name: Keep completed dependencies when the tool gate fails
       id: failed-dependencies
       if: ${{ failure() && steps.build.outcome == 'success' && steps.dependencies.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}

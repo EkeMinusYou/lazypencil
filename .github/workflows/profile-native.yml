@@ -44,7 +44,7 @@ jobs:
           SOURCE_REVISION: ${{ inputs.revision }}
           ARCHIVE_SHA256: ${{ inputs.archive_sha256 }}
           BINARY_SHA256: ${{ inputs.binary_sha256 }}
-        run: cargo xtask profile-native --run "$SOURCE_RUN" --revision "$SOURCE_REVISION" --archive-sha256 "$ARCHIVE_SHA256" --binary-sha256 "$BINARY_SHA256" --output "$RUNNER_TEMP/native-profile"
+        run: xtask/target/debug/xtask profile-native --run "$SOURCE_RUN" --revision "$SOURCE_REVISION" --archive-sha256 "$ARCHIVE_SHA256" --binary-sha256 "$BINARY_SHA256" --output "$RUNNER_TEMP/native-profile"
       - name: Retain CPU samples and unchanged rendered output
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6

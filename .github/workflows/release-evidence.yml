@@ -50,7 +50,7 @@ jobs:
       - name: Install Linux native dependencies
         if: runner.os == 'Linux'
         timeout-minutes: 20
-        run: cargo xtask ci linux-dependencies
+        run: xtask/target/debug/xtask ci linux-dependencies
       - name: Restore verified Cargo downloads
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
@@ -62,11 +62,11 @@ jobs:
           key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
       - name: Verify and extract the complete source distribution
-        run: cargo xtask ci native source
+        run: xtask/target/debug/xtask ci native source
       - name: Identify compatible native dependency caches
         id: cache-key
         continue-on-error: true
-        run: cargo xtask ci cache native --platform '${{ inputs.os }}' --image "$ImageVersion"
+        run: xtask/target/debug/xtask ci cache native --platform '${{ inputs.os }}' --image "$ImageVersion"
       - name: Restore dependencies from native verification
         if: steps.cache-key.outcome == 'success'
         continue-on-error: true
@@ -84,14 +84,14 @@ jobs:
             ${{ runner.temp }}/lazypencil-source/vendor/skia-bindings/skia
             ${{ runner.temp }}/lazypencil-material-fonts
       - name: Prepare original standard-library evidence
-        run: cargo xtask ci toolchain-evidence --output "$RUNNER_TEMP/toolchain-evidence"
+        run: xtask/target/debug/xtask ci toolchain-evidence --output "$RUNNER_TEMP/toolchain-evidence"
       - name: Remove application outputs from dependency fallback caches
-        run: cargo xtask ci cache prune --source "$RUNNER_TEMP/lazypencil-source"
+        run: xtask/target/debug/xtask ci cache prune --source "$RUNNER_TEMP/lazypencil-source"
       - name: Identify source-bound mapped release outputs
         id: release-key
         if: steps.cache-key.outcome == 'success'
         continue-on-error: true
-        run: cargo xtask ci cache application identify --release-only --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-release-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
+        run: xtask/target/debug/xtask ci cache application identify --release-only --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-release-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
       - name: Restore verified release outputs from native CI
         id: release-cache
         if: steps.release-key.outcome == 'success'
@@ -106,17 +106,17 @@ jobs:
       - name: Validate release reuse or keep a fresh build
         if: steps.release-key.outcome == 'success'
         timeout-minutes: 3
-        run: cargo xtask ci cache application restore-or-prune --release-only --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-release-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
+        run: xtask/target/debug/xtask ci cache application restore-or-prune --release-only --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-release-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
       - name: Compile the release executable and record selected Cargo artifacts
         id: release-build
-        run: cargo xtask ci native evidence-build
+        run: xtask/target/debug/xtask ci native evidence-build
       - name: Collect and reverify original notices against this build
         id: notices
-        run: cargo xtask evidence --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --cargo-json "$RUNNER_TEMP/release-cargo.jsonl" --revision '${{ github.sha }}' --output "$RUNNER_TEMP/release-evidence" --toolchain-evidence "$RUNNER_TEMP/toolchain-evidence" --link-map "$CARGO_TARGET_DIR/release/lazypencil.map"
+        run: xtask/target/debug/xtask evidence --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --cargo-json "$RUNNER_TEMP/release-cargo.jsonl" --revision '${{ github.sha }}' --output "$RUNNER_TEMP/release-evidence" --toolchain-evidence "$RUNNER_TEMP/toolchain-evidence" --link-map "$CARGO_TARGET_DIR/release/lazypencil.map"
       - name: Package and smoke the source-bound binary candidate
         id: candidate-smoke
         timeout-minutes: 10
-        run: cargo xtask ci native candidate
+        run: xtask/target/debug/xtask ci native candidate
       - name: Retain the verified candidate and isolated smoke evidence
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
@@ -142,16 +142,16 @@ jobs:
       - name: Install real Linux terminal emulators
         if: runner.os == 'Linux'
         timeout-minutes: 20
-        run: cargo xtask ci linux-terminal-dependencies
+        run: xtask/target/debug/xtask ci linux-terminal-dependencies
       - name: Prepare pinned Kitty for owned macOS terminal windows
         if: runner.os == 'macOS' && inputs.macos_terminal_gui
         timeout-minutes: 15
-        run: cargo xtask fixtures kitty-ui --output "$RUNNER_TEMP/kitty-ui.app"
+        run: xtask/target/debug/xtask fixtures kitty-ui --output "$RUNNER_TEMP/kitty-ui.app"
       - name: Verify real-terminal pixels, committed text and keyboard operations
         id: terminal-test
         if: runner.os == 'Linux' || inputs.macos_terminal_gui
         timeout-minutes: 10
-        run: cargo xtask terminal --candidate "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/terminal-evidence"
+        run: xtask/target/debug/xtask terminal --candidate "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/terminal-evidence"
       - name: Retain real-emulator screenshots and source-bound report
         if: ${{ always() && (steps.terminal-test.outcome == 'success' || steps.terminal-test.outcome == 'failure') }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -169,7 +169,7 @@ jobs:
       - name: Verify the candidate signer workflow and source revision
         env:
           GH_TOKEN: ${{ github.token }}
-        run: cargo xtask ci provenance --kind candidate --artifact "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/candidate-provenance/verification.json"
+        run: xtask/target/debug/xtask ci provenance --kind candidate --artifact "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/candidate-provenance/verification.json"
       - name: Retain the signed candidate provenance
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
@@ -182,14 +182,14 @@ jobs:
       - name: Install the verified Chromium runtime with the packaged executable
         if: inputs.measure_tui
         timeout-minutes: 15
-        run: cargo xtask ci native browser-setup --suite candidate
+        run: xtask/target/debug/xtask ci native browser-setup --suite candidate
       - name: Measure source-bound TUI input, output and idle resources
         id: tui-measurement
         if: inputs.measure_tui
         timeout-minutes: 15
         env:
           ALLOCATION_DIAGNOSTICS: ${{ inputs.allocation_diagnostics }}
-        run: cargo xtask measure-tui --candidate "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/tui-measurement" --chromium-resources ${{ inputs.os == 'macos-15' && '--enforce-targets' || '--enforce-memory-target' }} --allocation-diagnostics "$ALLOCATION_DIAGNOSTICS"
+        run: xtask/target/debug/xtask measure-tui --candidate "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/tui-measurement" --chromium-resources ${{ inputs.os == 'macos-15' && '--enforce-targets' || '--enforce-memory-target' }} --allocation-diagnostics "$ALLOCATION_DIAGNOSTICS"
       - name: Retain TUI measurements and diagnostic logs
         if: ${{ always() && (steps.tui-measurement.outcome == 'success' || steps.tui-measurement.outcome == 'failure') }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -203,7 +203,7 @@ jobs:
         if: ${{ !cancelled() && steps.release-key.outcome == 'success' && steps.release-cache.outputs.cache-hit != 'true' && steps.candidate-smoke.outcome == 'success' && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         timeout-minutes: 3
-        run: cargo xtask ci cache application stage --release-only --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-release-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
+        run: xtask/target/debug/xtask ci cache application stage --release-only --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-release-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
       - name: Save the verified release checkpoint
         if: ${{ !cancelled() && steps.release-save.outcome == 'success' }}
         continue-on-error: true

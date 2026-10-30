@@ -620,7 +620,7 @@ consumerは実行専用であり、元のbuild receiptとそのhashを変更し�
 
 完全アプリ成果物もrun／attemptの世代keyで保存し、依存を再構築した後の新しい成果物が古い固定keyに妨げられないようにする。ソースと実際のcompiler入力の検査は維持する。全出力の内容・mode、Cargo unitメタデータの実mtime・入力環境が一致する場合は同じ完全payloadを追加保存しない。fresh時も再生成される外部向けdep-infoの別名は時刻だけの差で再保存しない。mtimeは保存要否の判断資料として記録するだけで、Cargoのfingerprintやコンパイル用ファイルの時刻を変更しない。新しい完全成果物の保存後だけ、同じfeature／compiler context／wire formatの置換済み世代を整理する。
 
-補助ツールを実行するだけのjobは、OS／CPU／runner image／Rust版／ツール入力に束縛した2実行ファイルとSHA256一覧を優先して復元する。チェックサム確認後に既存Rust stage処理で配置し、Cargoのビルドツリーは転送しない。試験・Clippyを行うjobは従来どおり完全ツールcacheを使い、検証後だけ小さい実行ファイルcacheを公開する。小さいcacheのmiss／取得失敗時は既存のbuild経路へ戻し、異なるSDK・cache形式・完全ツール／依存cacheを置換済みと推測して削除しない。
+補助ツールを実行するだけのjobは、OS／CPU／runner image／Rust版／ツール入力に束縛した2実行ファイルとSHA256一覧を優先して復元する。チェックサム確認後に既存Rust stage処理で配置し、Cargoのビルドツリーは転送しない。CIの後続処理は配置済み`xtask/target/debug/xtask`を直接呼び、開発用の`cargo run` aliasによる暗黙の再buildを避ける。ローカル開発は従来どおり`cargo xtask …`を使う。試験・Clippyを行うjobは従来どおり完全ツールcacheを使い、検証後だけ小さい実行ファイルcacheを公開する。小さいcacheのmiss／取得失敗時は既存のbuild経路へ戻し、異なるSDK・cache形式・完全ツール／依存cacheを置換済みと推測して削除しない。
 
 ## 実装段階
 

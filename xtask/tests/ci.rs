@@ -583,7 +583,9 @@ fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() 
         std::fs::read_to_string(util::root().join(".github/workflows/native.yml")).unwrap();
     assert!(
         workflow.find("native candidate\n").unwrap()
-            < workflow.find("cargo xtask measure-tui").unwrap()
+            < workflow
+                .find("xtask/target/debug/xtask measure-tui")
+                .unwrap()
     );
     assert!(workflow.contains(
         "if: (inputs.phase == 'focus' || inputs.lane == 'release') && inputs.measure_tui"
@@ -606,18 +608,18 @@ fn release_evidence_restores_only_mapped_release_outputs_before_cargo_verificati
         .find("application restore-or-prune --release-only")
         .unwrap();
     let compile = workflow
-        .find("cargo xtask ci native evidence-build")
+        .find("xtask/target/debug/xtask ci native evidence-build")
         .unwrap();
     assert!(identify < restore && restore < compile);
     assert!(workflow.contains("steps.release-key.outputs.primary"));
     assert!(workflow.contains("lazypencil-release-cache"));
     assert!(!workflow.contains("lazypencil-application-cache"));
     for required in [
-        "cargo xtask evidence",
-        "cargo xtask ci native candidate",
-        "cargo xtask terminal --candidate",
-        "cargo xtask ci provenance",
-        "cargo xtask measure-tui",
+        "xtask/target/debug/xtask evidence",
+        "xtask/target/debug/xtask ci native candidate",
+        "xtask/target/debug/xtask terminal --candidate",
+        "xtask/target/debug/xtask ci provenance",
+        "xtask/target/debug/xtask measure-tui",
     ] {
         assert!(workflow.contains(required), "{required}");
     }

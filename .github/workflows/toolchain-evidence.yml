@@ -31,9 +31,9 @@ jobs:
       - name: Install original copyright documentation
         run: rustup toolchain install 1.94.0 --profile minimal --component rust-docs
       - name: Verify pinned standard-library supplements
-        run: cargo xtask notices toolchain verify-upstream --upstream resources/licenses/toolchain/upstream.json
+        run: xtask/target/debug/xtask notices toolchain verify-upstream --upstream resources/licenses/toolchain/upstream.json
       - name: Reconstruct installed library evidence from pinned original sources
-        run: cargo xtask ci toolchain-evidence --output "$RUNNER_TEMP/toolchain-evidence"
+        run: xtask/target/debug/xtask ci toolchain-evidence --output "$RUNNER_TEMP/toolchain-evidence"
       - name: Retain small notice evidence without source trees or compiler binaries
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:

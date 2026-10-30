@@ -83,10 +83,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           FOCUS_PLATFORM: ${{ inputs.focus_os || 'auto' }}
           REQUESTED_OS: ${{ inputs.os || 'all' }}
-        run: cargo xtask ci plan --platform "$FOCUS_PLATFORM" --matrix "$REQUESTED_OS"
+        run: xtask/target/debug/xtask ci plan --platform "$FOCUS_PLATFORM" --matrix "$REQUESTED_OS"
       - name: Verify the stored shader component when its inputs are unchanged
         if: steps.focus.outputs.preprocessor != 'true'
-        run: cargo xtask shader
+        run: xtask/target/debug/xtask shader
 
   audit:
     needs: plan
@@ -107,14 +107,14 @@ jobs:
           retire-old-tools: 'true'
       - name: Verify checked-in Rust and native reference notices
         run: |
-          cargo xtask notices rust verify
-          cargo xtask notices skia verify-upstream --upstream resources/licenses/native/upstream.json
-          cargo xtask notices toolchain verify-upstream --upstream resources/licenses/toolchain/upstream.json
+          xtask/target/debug/xtask notices rust verify
+          xtask/target/debug/xtask notices skia verify-upstream --upstream resources/licenses/native/upstream.json
+          xtask/target/debug/xtask notices toolchain verify-upstream --upstream resources/licenses/toolchain/upstream.json
       - name: Identify the pinned audit tool and compiler
         id: audit-tool-key
         run: |
           rustup toolchain install stable --profile minimal
-          cargo xtask ci cache audit identify --directory "$RUNNER_TEMP/lazypencil-audit-tool"
+          xtask/target/debug/xtask ci cache audit identify --directory "$RUNNER_TEMP/lazypencil-audit-tool"
       - name: Restore the pinned audit tool
         id: audit-tool-cache
         continue-on-error: true
@@ -126,7 +126,7 @@ jobs:
             ${{ runner.temp }}/lazypencil-audit-tool/manifest.json
       - name: Verify or install the pinned audit tool
         timeout-minutes: 10
-        run: cargo xtask ci cache audit ensure --directory "$RUNNER_TEMP/lazypencil-audit-tool"
+        run: xtask/target/debug/xtask ci cache audit ensure --directory "$RUNNER_TEMP/lazypencil-audit-tool"
       - name: Save the verified audit tool
         if: github.ref == 'refs/heads/main' && steps.audit-tool-cache.outputs.cache-hit != 'true'
         continue-on-error: true
@@ -144,9 +144,9 @@ jobs:
       - name: Compare notices with exact locked registry sources
         run: |
           cargo fetch --locked
-          cargo xtask notices rust verify --cargo-home "$HOME/.cargo"
+          xtask/target/debug/xtask notices rust verify --cargo-home "$HOME/.cargo"
           cargo fetch --locked --manifest-path xtask/Cargo.toml
-          cargo xtask notices rust verify --root xtask --bundle xtask/notices --cargo-home "$HOME/.cargo"
+          xtask/target/debug/xtask notices rust verify --root xtask --bundle xtask/notices --cargo-home "$HOME/.cargo"
 
   shader-preprocessor:
     name: Check isolated shader preprocessing
@@ -196,18 +196,18 @@ jobs:
       - name: Require all final verification jobs to succeed
         env:
           VERIFICATION_RESULTS: ${{ toJSON(needs) }}
-        run: cargo xtask ci gate
+        run: xtask/target/debug/xtask ci gate
       - name: Collect all independent Mac test consumers
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           pattern: native-test-*-${{ github.sha }}
           path: ${{ runner.temp }}/consumer-evidence
       - name: Require matching consumers and every original shared image check
-        run: cargo xtask ci native evidence-gate
+        run: xtask/target/debug/xtask ci native evidence-gate
       - name: Build and verify the complete source artifact
         run: |
-          cargo xtask dist source --output dist/lazypencil-source.tar.gz
-          cargo xtask dist verify-source dist/lazypencil-source.tar.gz --extract "$RUNNER_TEMP/cache-source"
+          xtask/target/debug/xtask dist source --output dist/lazypencil-source.tar.gz
+          xtask/target/debug/xtask dist verify-source dist/lazypencil-source.tar.gz --extract "$RUNNER_TEMP/cache-source"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: lazypencil-source-${{ github.sha }}-attempt-${{ github.run_attempt }}
@@ -220,7 +220,7 @@ jobs:
         timeout-minutes: 3
         env:
           GH_TOKEN: ${{ github.token }}
-        run: cargo xtask ci cache retain --manifest "$RUNNER_TEMP/cache-source/SOURCE-MANIFEST.json" --delete
+        run: xtask/target/debug/xtask ci cache retain --manifest "$RUNNER_TEMP/cache-source/SOURCE-MANIFEST.json" --delete
       - name: Attest the fully verified source archive
         id: source-attestation
         if: github.ref == 'refs/heads/main'
@@ -232,7 +232,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: cargo xtask ci provenance --kind source --artifact "$GITHUB_WORKSPACE/dist/lazypencil-source.tar.gz" --output "$RUNNER_TEMP/source-provenance/verification.json"
+        run: xtask/target/debug/xtask ci provenance --kind source --artifact "$GITHUB_WORKSPACE/dist/lazypencil-source.tar.gz" --output "$RUNNER_TEMP/source-provenance/verification.json"
       - name: Retain the signed source provenance
         if: github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6

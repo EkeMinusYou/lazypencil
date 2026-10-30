@@ -39,11 +39,11 @@ jobs:
           key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
       - name: Verify and extract complete source
-        run: cargo xtask ci native source
+        run: xtask/target/debug/xtask ci native source
       - name: Verify distributed dependency notices
-        run: cargo xtask ci native notices
+        run: xtask/target/debug/xtask ci native notices
       - name: Reproduce helper startup then verify all core process lifecycles
-        run: cargo xtask ci native process
+        run: xtask/target/debug/xtask ci native process
       - name: Retain source-bound process evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6

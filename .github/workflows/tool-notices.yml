@@ -34,9 +34,9 @@ jobs:
         timeout-minutes: 10
         run: cargo fetch --locked --manifest-path "$NOTICE_ROOT/Cargo.toml"
       - name: Reconstruct notices from checksum-verified original crate archives
-        run: cargo xtask notices rust collect --root "$NOTICE_ROOT" --upstream "$NOTICE_UPSTREAM" --output "$RUNNER_TEMP/rust-notices"
+        run: xtask/target/debug/xtask notices rust collect --root "$NOTICE_ROOT" --upstream "$NOTICE_UPSTREAM" --output "$RUNNER_TEMP/rust-notices"
       - name: Reverify every notice against the locked original archives
-        run: cargo xtask notices rust verify --root "$NOTICE_ROOT" --bundle "$RUNNER_TEMP/rust-notices" --cargo-home "$HOME/.cargo"
+        run: xtask/target/debug/xtask notices rust verify --root "$NOTICE_ROOT" --bundle "$RUNNER_TEMP/rust-notices" --cargo-home "$HOME/.cargo"
       - name: Retain the proposed notices for source review
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
