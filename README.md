@@ -242,7 +242,7 @@ Manual runtime/process/release workflows are diagnostic entry points, not reason
 
 ### Licenses and build evidence
 
-The application [Rust inventory](resources/licenses/rust/index.json) covers 391 locked packages; tool notices are independent. Original blobs, archive/source hashes and reviewed supplements accompany readable notices. The `option-ext` MPL-2.0 allowance retains its exact source archive and terms. Noto Sans JP retains OFL-1.1; optional packs and external Chromium/ACP adapters retain their licenses.
+The application [Rust inventory](resources/licenses/rust/index.json) covers 393 locked packages; tool notices are independent. Original blobs, archive/source hashes and reviewed supplements accompany readable notices. The `option-ext` MPL-2.0 allowance retains its exact source archive and terms. Noto Sans JP retains OFL-1.1; optional packs and external Chromium/ACP adapters retain their licenses.
 
 ```sh
 cargo xtask notices rust verify
@@ -257,7 +257,7 @@ Native evidence covers actual Skia/QuickJS/wrapper and asset inputs, original no
 
 Three-target native gates retain 42 release-render observations and same-binary linkage reports. Prior Linux binaries required glibc symbols through 2.39; a prior Mac binary declared minimum OS 11.0. These declarations do not prove minimum-OS execution or resolve every transitive system library. Minimum macOS/guaranteed terminals and final Mac-binary publication remain open. Linux ABI results are retained for later support.
 
-Current source excludes retired Pencil-exported reference PNGs and derived JSON; tests use owned inputs and independently calculated expectations. Old Git history and past CI artifacts retain the retired files; their public-release handling is unresolved. See [permission/history status](docs/design-guidance.md#pencil-の-skill-とライセンス).
+Current source excludes retired Pencil-exported reference PNGs and derived JSON; tests use owned inputs and independently calculated expectations. Old Git history retains the retired files. The October 30 artifact inventory listed only sources after their removal; this does not establish the contents of every archive or resolve past distribution. Public-release handling remains unresolved. See [permission/history status](docs/design-guidance.md#pencil-の-skill-とライセンス).
 
 ## License
 
