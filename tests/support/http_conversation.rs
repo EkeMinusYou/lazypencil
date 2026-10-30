@@ -80,7 +80,7 @@ fn http_prompt_preparation_yields_preserves_draft_and_recovers_after_cancellatio
     conversation.add_image(image.clone()).unwrap();
     runtime().block_on(async {
         let started = Instant::now();
-        conversation.start_send(None).unwrap();
+        conversation.start_send(None).await.unwrap();
         assert!(started.elapsed() < Duration::from_secs(10));
         blocked(&server).await;
         assert!(conversation.active());
@@ -121,7 +121,7 @@ fn http_prompt_preparation_yields_preserves_draft_and_recovers_after_cancellatio
             .unwrap()
             .replace("blocked.png", "yellow.png");
         fs::write(conversation.store().path(), document).unwrap();
-        conversation.start_send(None).unwrap();
+        conversation.start_send(None).await.unwrap();
         let result = tokio::time::timeout(Duration::from_secs(10), async {
             loop {
                 if let ConversationEvent::Message(value) = conversation.next_event().await.unwrap()
@@ -153,7 +153,7 @@ fn http_prompt_preparation_close_and_drop_cancel_the_owned_capture() {
         let state = conversation.directory().join("session.json");
         let draft = conversation.draft().to_owned();
         runtime().block_on(async {
-            conversation.start_send(None).unwrap();
+            conversation.start_send(None).await.unwrap();
             blocked(&server).await;
             let started = Instant::now();
             if close {
@@ -186,7 +186,7 @@ fn http_prompt_preparation_rejects_a_document_changed_before_submission() {
     .unwrap();
     let draft = conversation.draft().to_owned();
     runtime().block_on(async {
-        conversation.start_send(None).unwrap();
+        conversation.start_send(None).await.unwrap();
         blocked(&server).await;
         let revised = json!({"version":"2.21","children":[]}).to_string();
         fs::write(conversation.store().path(), &revised).unwrap();

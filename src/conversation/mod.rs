@@ -310,18 +310,21 @@ impl Conversation {
 
     /// Queue prompt-context capture without blocking a frontend's event loop.
     /// Drive next_event to submit the prepared turn or report its failure.
-    pub fn start_send(&mut self, selection: Option<Value>) -> Result<()> {
+    pub async fn start_send(&mut self, selection: Option<Value>) -> Result<()> {
         self.require_idle()?;
-        self.validate_send()?;
-        let preparation = preparation::Preparation::start(
-            self.store.clone(),
-            self.args.style.clone(),
-            self.executable.clone(),
-            selection,
-        )?;
-        self.result = None;
-        self.preparation = Some(preparation);
-        Ok(())
+        let result = (|| {
+            self.validate_send()?;
+            let preparation = preparation::Preparation::start(
+                self.store.clone(),
+                self.args.style.clone(),
+                self.executable.clone(),
+                selection,
+            )?;
+            self.result = None;
+            self.preparation = Some(preparation);
+            Ok(())
+        })();
+        self.finish_send_attempt(result).await
     }
 
     async fn send_with_context(
@@ -331,6 +334,10 @@ impl Conversation {
     ) -> Result<()> {
         self.require_idle()?;
         let result = self.send_inner(selection, context).await;
+        self.finish_send_attempt(result).await
+    }
+
+    async fn finish_send_attempt(&mut self, result: Result<()>) -> Result<()> {
         if let Err(error) = &result
             && (self.active()
                 || error.code == "PROJECT_NOT_TRUSTED" && self.args.project_execution.is_some())

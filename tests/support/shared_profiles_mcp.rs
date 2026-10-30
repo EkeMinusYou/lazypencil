@@ -16,12 +16,7 @@ use std::{
     },
 };
 
-#[path = "page_wait_reference.rs"]
-#[allow(
-    dead_code,
-    reason = "Shared HTTP fixture also serves other integration targets"
-)]
-mod reference;
+use super::http_image_reference as reference;
 
 struct Study {
     _temp: TempDir,

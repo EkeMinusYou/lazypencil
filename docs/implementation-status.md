@@ -4,6 +4,12 @@
 
 ## 現在の状態（2026-10-30）
 
+7315b7cの[CI 40977346959](https://github.com/EkeMinusYou/lazypencil/actions/runs/40977346959)は全jobが終了した。監査・release、coreの全試験とcore Clippyが成功した。先行の送信準備3試験とTUIキー処理1試験、HTTP画像6試験とunit、MCPの5 API取消も成功した。送信準備の取消・再送・下書きと添付画像保持・close／drop・文書変更拒否を実HTTPで確認した。
+
+builderの既存実PTY試験はproject-agent-configで停止した。start_sendの初期検査が、失効したproject実行許可を拒否した後に、接続済みadapterを閉じる元の処理を通らなかった。初期拒否も元の非同期終了処理を共用するよう修正し、下書き保持とadapter回収の元のassertion／期限を維持する。既定構成ClippyはMCP試験内で同じHTTP fixtureを二重modしていた点で停止したため、shared_profilesもrootの同じモジュールをuseする。lint抑制や試験省略では解消しない。runtime consumerとHTTP実WebGL／固定HTTPS、共通画像gate・最終sourceの成功根拠にはしない。
+
+次の修正は既存native.ymlのfocus処理をworkflow_dispatchから単独起動し、tui／agent／mcp／sampler_sourcesを先に確認する。既存xtaskのbuild・lint・reproduceとcompiler入力を検査するcacheをそのまま使い、新しい検証基盤や試験基準は作らない。先行成功後、同じcommitで全体CIへ進める。ローカルのcargo fmt／差分検査とactionlintは成功し、重いbuildはGHAのみで行う。以下の候補の未実行という記載は各source当時の記録とし、現在の結果はこの冒頭を優先する。
+
 035e857の[CI 40975584669](https://github.com/EkeMinusYou/lazypencil/actions/runs/40975584669)は全jobが終了した。監査・release・builderと通常／pixel／端末／Materialのconsumerは成功した。既定構成の先行でHTTP画像6試験、unit、実MCPの5 API取消が成功し、テーマ・source削除後のcopy／recopy・将来編集、実CLIのCtrl+Cとworker回収を確認した。coreは存在しないFonts variantをmainが参照する修正漏れで停止したため、描画ありのvariantだけをfeature付きmatch armへ分けた。
 
 runtime consumerは実WebGLのHTTP条件で停止した。新規HTTPの長いURLラベルがframeの外へ広がり、shader effectの領域を拡大するfixtureだったため、右半分を検査する座標が左半分に入っていた。HTTP用fixtureのframeへclipを明示し、yellow／blueの期待画素とcopy前後の一致の両方を維持する。固定HTTPSの正の取得はこのassertionより後のため未実行で、HTTP比較のPNGも未完成である。原本画像gate・最終source・両構成の全体合格とはしない。有用な実行は中断せず、終了後にこれらと送信準備をまとめて次の候補へ送る。

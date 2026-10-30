@@ -1,6 +1,32 @@
 name: Hosted native verification
 
 on:
+  workflow_dispatch:
+    inputs:
+      os:
+        description: Initial release environment for the focused reproduction
+        type: choice
+        default: macos-15
+        options: [macos-15]
+      phase:
+        description: Prepare and test affected targets before full CI
+        type: choice
+        default: focus
+        options: [focus]
+      lane:
+        description: Reuse the default build lane and its compiler conditions
+        type: choice
+        default: build
+        options: [build]
+      suite:
+        description: Existing affected-test plan
+        type: choice
+        default: graphics
+        options: [graphics, dynamic, copy, browser, core, conversation]
+      targets:
+        description: JSON array of existing integration test target names
+        type: string
+        default: '["tui", "agent"]'
   workflow_call:
     inputs:
       os:

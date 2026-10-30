@@ -993,7 +993,7 @@ impl App {
         self.save_draft()?;
         let target = self.selected_node().map(|node| node.target.clone());
         let text = self.conversation.draft().to_string();
-        self.conversation.start_send(target)?;
+        self.conversation.start_send(target).await?;
         self.turn_pending = true;
         self.append(&format!(
             "\nYou: {text}\n[{} images]\n",
