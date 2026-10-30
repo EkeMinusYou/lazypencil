@@ -189,7 +189,7 @@ jobs:
         timeout-minutes: 15
         env:
           ALLOCATION_DIAGNOSTICS: ${{ inputs.allocation_diagnostics }}
-        run: cargo xtask measure-tui --candidate "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/tui-measurement" --chromium-resources --enforce-memory-target --allocation-diagnostics "$ALLOCATION_DIAGNOSTICS"
+        run: cargo xtask measure-tui --candidate "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/tui-measurement" --chromium-resources ${{ inputs.os == 'macos-15' && '--enforce-targets' || '--enforce-memory-target' }} --allocation-diagnostics "$ALLOCATION_DIAGNOSTICS"
       - name: Retain TUI measurements and diagnostic logs
         if: ${{ always() && (steps.tui-measurement.outcome == 'success' || steps.tui-measurement.outcome == 'failure') }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6

@@ -123,6 +123,87 @@ fn ordinary_memory_gate_includes_active_and_idle_bound_workers_and_requires_obse
 #[cfg(unix)]
 use std::time::Duration;
 
+#[test]
+fn initial_mac_targets_check_raw_latency_trials_and_both_resource_budgets() {
+    use lazypencil_xtask::performance::tui::require_targets;
+    use serde_json::json;
+    let report = json!({"target":"aarch64-apple-darwin",
+        "samples":vec![json!({"input_ready_ms":500.0,"first_preview_ms":2000.0,"interaction_ms":vec![250.0;4],
+            "cached_camera_interaction_outputs":vec![json!({"elapsed_ms":100.0});4]});20],
+        "bound_resources":{"trace":{"maximum_observed_application_rss_bytes":200*1024*1024},
+            "idle":{"maximum_sampled_application_rss_bytes":200*1024*1024,"seconds":30.0,"application_cpu_upper_percent":0.999}},
+        "chromium_resources":{"trace":{"maximum_observed_application_rss_bytes":1536_u64*1024*1024},
+            "idle":{"maximum_sampled_application_rss_bytes":1536_u64*1024*1024,"seconds":30.0,"application_cpu_upper_percent":1.999}}
+    });
+    require_targets(&report).unwrap();
+    for (path, rejected) in [
+        ("/target", json!("aarch64-unknown-linux-gnu")),
+        ("/samples/0/input_ready_ms", json!(500.001)),
+        ("/samples/0/first_preview_ms", json!(2000.001)),
+        ("/samples/0/input_ready_ms", json!(null)),
+        ("/samples/0/first_preview_ms", json!(-1.0)),
+        ("/samples/0/cached_camera_interaction_outputs", json!([])),
+        (
+            "/bound_resources/trace/maximum_observed_application_rss_bytes",
+            json!(200 * 1024 * 1024 + 1),
+        ),
+        (
+            "/bound_resources/idle/maximum_sampled_application_rss_bytes",
+            json!(200 * 1024 * 1024 + 1),
+        ),
+        (
+            "/bound_resources/idle/application_cpu_upper_percent",
+            json!(1.0),
+        ),
+        ("/bound_resources/idle/seconds", json!(29.999)),
+        (
+            "/chromium_resources/trace/maximum_observed_application_rss_bytes",
+            json!(1536_u64 * 1024 * 1024 + 1),
+        ),
+        (
+            "/chromium_resources/idle/maximum_sampled_application_rss_bytes",
+            json!(1536_u64 * 1024 * 1024 + 1),
+        ),
+        (
+            "/chromium_resources/idle/application_cpu_upper_percent",
+            json!(2.0),
+        ),
+        ("/chromium_resources/idle/seconds", json!(null)),
+    ] {
+        let mut invalid = report.clone();
+        *invalid.pointer_mut(path).unwrap() = rejected;
+        assert!(require_targets(&invalid).is_err(), "Accepted {path}");
+    }
+    let mut too_few = report.clone();
+    too_few["samples"].as_array_mut().unwrap().pop();
+    assert!(require_targets(&too_few).is_err());
+    let mut complete_first = report.clone();
+    for sample in complete_first["samples"].as_array_mut().unwrap() {
+        sample["cached_camera_interaction_outputs"] = json!([null, null, null, null]);
+        sample["interaction_ms"] = json!([100.0, 100.0, 100.0, 100.0]);
+    }
+    require_targets(&complete_first).unwrap();
+    for sample in complete_first["samples"].as_array_mut().unwrap() {
+        sample["interaction_ms"] = json!([101.0, 101.0, 101.0, 101.0]);
+    }
+    assert!(
+        require_targets(&complete_first).is_err(),
+        "Missing interim frames cannot silently drop slow interactions"
+    );
+    // Nearest-rank p95 allows four slow values in the original 80 interactions,
+    // but a fifth must fail. Do not silently replace p95 with an average/max.
+    let mut tail = report;
+    for output in tail["samples"][19]["cached_camera_interaction_outputs"]
+        .as_array_mut()
+        .unwrap()
+    {
+        output["elapsed_ms"] = json!(101.0);
+    }
+    require_targets(&tail).unwrap();
+    tail["samples"][18]["cached_camera_interaction_outputs"][3]["elapsed_ms"] = json!(101.0);
+    assert!(require_targets(&tail).is_err());
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn live_proc_arguments_are_read_despite_zero_reported_file_size() {

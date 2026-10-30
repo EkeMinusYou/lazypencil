@@ -24,28 +24,116 @@ pub struct Arguments {
     /// Fail after retaining all observations if ordinary bound RSS exceeds 200 MiB.
     #[arg(long)]
     pub enforce_memory_target: bool,
+    /// Require the initial Mac latency, memory and idle CPU targets after all trials.
+    #[arg(long, requires = "chromium_resources")]
+    pub enforce_targets: bool,
     /// Capture owned macOS allocator summaries after the original idle interval.
     #[arg(long, action = clap::ArgAction::Set, default_value_t = false)]
     pub allocation_diagnostics: bool,
 }
 
-pub fn require_memory_target(report: &serde_json::Value) -> Result<()> {
+fn maximum_rss(report: &serde_json::Value, scope: &str) -> Result<u64> {
     let mut peak = 0;
     for path in [
-        "/bound_resources/trace/maximum_observed_application_rss_bytes",
-        "/bound_resources/idle/maximum_sampled_application_rss_bytes",
+        "trace/maximum_observed_application_rss_bytes",
+        "idle/maximum_sampled_application_rss_bytes",
     ] {
         peak = peak.max(
             report
-                .pointer(path)
+                .pointer(&format!("/{scope}/{path}"))
                 .and_then(serde_json::Value::as_u64)
-                .context("Missing ordinary bound application RSS observation")?,
+                .with_context(|| format!("Missing {scope} application RSS observation"))?,
         );
     }
+    Ok(peak)
+}
+
+pub fn require_memory_target(report: &serde_json::Value) -> Result<()> {
+    let peak = maximum_rss(report, "bound_resources")?;
     ensure!(
         peak <= 200 * 1024 * 1024,
         "Ordinary bound application RSS exceeded 200 MiB: {peak} bytes; complete observations retained"
     );
+    Ok(())
+}
+
+/// Assess the existing observations, without changing workloads or rerunning a
+/// sample. PTY output receipt is distinct from physical terminal presentation.
+pub fn require_targets(report: &serde_json::Value) -> Result<()> {
+    use serde_json::Value;
+    ensure!(
+        report["target"] == "aarch64-apple-darwin",
+        "Performance targets require the initial Mac host"
+    );
+    let number = |value: &Value| -> Result<f64> {
+        let value = value.as_f64().context("Missing performance observation")?;
+        ensure!(
+            value.is_finite() && value >= 0.0,
+            "Invalid performance observation"
+        );
+        Ok(value)
+    };
+    let samples = report["samples"]
+        .as_array()
+        .context("Missing startup trials")?;
+    ensure!(
+        samples.len() >= 20,
+        "Performance targets require at least 20 startup trials"
+    );
+    let mut feedback = Vec::new();
+    for sample in samples {
+        ensure!(
+            number(&sample["input_ready_ms"])? <= 500.0,
+            "TUI input exceeded 500 ms; observations retained"
+        );
+        ensure!(
+            number(&sample["first_preview_ms"])? <= 2000.0,
+            "Initial preview exceeded 2000 ms; observations retained"
+        );
+        let cached = sample["cached_camera_interaction_outputs"]
+            .as_array()
+            .context("Missing cached camera outputs")?;
+        let complete = sample["interaction_ms"]
+            .as_array()
+            .context("Missing complete interaction outputs")?;
+        ensure!(
+            cached.len() == 4 && complete.len() == 4,
+            "Incomplete zoom/pan trials"
+        );
+        for (output, complete) in cached.iter().zip(complete) {
+            let complete = number(complete)?;
+            // A complete frame may beat the temporary cached feedback. Keep
+            // all four observations even when no interim frame was needed.
+            feedback.push(if output.is_null() {
+                complete
+            } else {
+                number(&output["elapsed_ms"])?.min(complete)
+            });
+        }
+    }
+    let statistics = super::sample_statistics(&feedback)?;
+    ensure!(
+        statistics["p95_nearest_rank"].as_f64().unwrap() <= 100.0,
+        "Cached feedback p95 exceeded 100 ms; observations retained"
+    );
+    require_memory_target(report)?;
+    let chromium_peak = maximum_rss(report, "chromium_resources")?;
+    ensure!(
+        chromium_peak <= 1536 * 1024 * 1024,
+        "Chromium-inclusive RSS exceeded 1536 MiB: {chromium_peak} bytes; observations retained"
+    );
+    for (scope, limit) in [("bound_resources", 1.0), ("chromium_resources", 2.0)] {
+        let idle = &report[scope]["idle"];
+        ensure!(
+            number(&idle["seconds"])? >= 30.0,
+            "Incomplete {scope} idle interval"
+        );
+        let cpu = number(&idle["application_cpu_upper_percent"])?;
+        ensure!(
+            cpu < limit,
+            "{scope} idle CPU reached {cpu}% (limit below {limit}%); observations retained"
+        );
+    }
     Ok(())
 }
 
@@ -1003,6 +1091,28 @@ mod hosted {
 
     pub(super) fn run(arguments: Arguments) -> Result<()> {
         let deadline = Instant::now() + Duration::from_secs(600);
+        let mut host = json!({
+            "os":std::env::consts::OS,"arch":std::env::consts::ARCH,
+            "cpu_parallelism":std::thread::available_parallelism()?.get(),
+            "runner_image":std::env::var("ImageVersion")?
+        });
+        if cfg!(target_os = "macos") {
+            host["os_version"] = json!(
+                String::from_utf8(crate::process::checked(
+                    Command::new("sw_vers").arg("-productVersion"),
+                    Duration::from_secs(5)
+                )?)?
+                .trim()
+            );
+            let bytes: u64 = String::from_utf8(crate::process::checked(
+                Command::new("sysctl").args(["-n", "hw.memsize"]),
+                Duration::from_secs(5),
+            )?)?
+            .trim()
+            .parse()?;
+            ensure!(bytes > 0, "Missing physical memory observation");
+            host["physical_memory_bytes"] = json!(bytes);
+        }
         let candidate = std::path::absolute(arguments.candidate)?;
         let output = std::path::absolute(arguments.output)?;
         fs::create_dir(&output)?;
@@ -1185,7 +1295,7 @@ mod hosted {
         let preview = crate::performance::sample_statistics(&preview)?;
         let interactions = crate::performance::sample_statistics(&interactions)?;
         let activity = active_resources_trial(&binary, &helper, &output, deadline)?;
-        let report = json!({"format_version":1,"candidate":identity,"helper":helper_identity,"target":evidence::linkage::native_host()?,"pty":{"columns":160,"rows":54,"pixel_width":1920,"pixel_height":1080,"protocol":"kitty","display_emulator":false},"cache_condition":"Fresh app/data directories per sample; OS page/font caches uncontrolled, individual samples retained with first at index 0; no concurrent tasks in this job","samples":samples,"input_ready_ms":input,"first_preview_ms":preview,"interaction_output_ms":interactions,"idle":idle,"active_resources":activity,"scope":"PTY input echo and complete Kitty output receipt, including observer backpressure; sampled process trees can miss short-lived descendants. Not physical presentation, a controlled cold-start benchmark, transient peak RSS, external AI/adapter/terminal resource usage or full performance acceptance"});
+        let report = json!({"format_version":1,"candidate":identity,"helper":helper_identity,"target":evidence::linkage::native_host()?,"host":host,"pty":{"columns":160,"rows":54,"pixel_width":1920,"pixel_height":1080,"protocol":"kitty","display_emulator":false},"cache_condition":"Fresh app/data directories per sample; OS page/font caches uncontrolled, individual samples retained with first at index 0; no concurrent tasks in this job","samples":samples,"input_ready_ms":input,"first_preview_ms":preview,"interaction_output_ms":interactions,"idle":idle,"active_resources":activity,"scope":"PTY input echo and complete Kitty output receipt, including observer backpressure; sampled process trees can miss short-lived descendants. Not physical presentation, a controlled cold-start benchmark, transient peak RSS, external AI/adapter/terminal resource usage or full performance acceptance"});
         let mut report = report;
         // Retain all completed original trials even if a later resource check fails.
         util::publish(&output.join("report.json"), &util::encode(&report)?, false)?;
@@ -1225,7 +1335,9 @@ mod hosted {
             report["chromium_runtime"] = runtime;
             util::publish(&output.join("report.json"), &util::encode(&report)?, true)?;
         }
-        if arguments.enforce_memory_target {
+        if arguments.enforce_targets {
+            require_targets(&report)?;
+        } else if arguments.enforce_memory_target {
             require_memory_target(&report)?;
         }
         util::print(

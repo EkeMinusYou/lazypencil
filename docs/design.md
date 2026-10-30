@@ -4,7 +4,7 @@
 
 更新日: 2026-10-30
 
-設計版: 0.13
+設計版: 0.14
 
 状態: 基本設計と初回対応範囲は確定。Rust、Skia CPU／SkParagraph、MIT、固定 Noto Sans JP、Kitty／Sixel、JavaScript／Web ページ／GLSL を採用し、対応文書版は2.19／2.21、新規作成は2.21である。初回リリースはmacOS Apple Siliconのみに変更した。過去の3環境の検証は履歴として保持し、機能実装とMacの公開受け入れは未完了。[現在の実装・検証・残件](implementation-status.md#current-status) を正本とし、下記の受け入れ条件は維持する。
 
@@ -524,7 +524,7 @@ lazypencil runtime setup chromium
 
 ### 初期の性能目標
 
-次は実測値ではなく、実装を評価するための暫定目標である。初期検証で基準機・文書・フォント・端末を固定し、結果を記録して調整する。
+次を初回Macの性能目標とする。通常文書の元の数値目標は維持し、基準機・文書・フォント・端末条件を記録して評価する。
 
 | 項目 | 暫定目標 |
 | --- | --- |
@@ -535,7 +535,13 @@ lazypencil runtime setup chromium
 | 本体の常用メモリ | 基準文書でプロセス群の RSS 合計 200 MiB 以下 |
 | 待機時 CPU | 平均 1% 未満を目指し、定期的な全描画をしない |
 
-上記の描画時間・メモリ目標は、Web ページ・シェーダーの実行を含まない通常の文書を基準とする。本体のメモリには MCP 子プロセスと起動中の JavaScript ワーカーも含める。Web ページ・シェーダーを含む文書では Chromium のプロセス群も加えた合計を別に測り、性能目標を P0 で定める。通常文書と同じ使用量であるとは扱わない。AI ランタイム・ACP アダプター・端末も別に集計し、アセットのサイズ、コールド・ウォーム状態、測定回数とばらつきを記録する。
+上記の描画時間・メモリ目標は、Web ページ・シェーダーの実行を含まない通常の文書を基準とする。本体のメモリには MCP 子プロセスと起動中の JavaScript ワーカーも含める。Web ページ・シェーダーを含む文書では Chromium のプロセス群も加えた合計を別に測り、下記の別予算で評価する。通常文書と同じ使用量であるとは扱わない。AI ランタイム・ACP アダプター・端末も別に集計し、アセットのサイズ、コールド・ウォーム状態、測定回数とばらつきを記録する。
+
+初回の基準環境はGitHub-hosted `macos-15` arm64とし、実際のOS版・runner image・利用可能CPU数・物理メモリを報告書へ記録する。文書・画像・Noto Sans JPの固定入力、160×54セル・1920×1080相当のKittyプロトコル出力を使う。コールドは新しい本体プロセスと設定／データ領域での初回入力・描画、ウォームは同一プロセスで初回描画後のパン／ズームと定義する。OSのpage／font cacheは統制せず、その状態を明示する。OS再起動直後の保証や物理端末の表示時間を、このPTY結果で代替しない。
+
+20起動・各4操作の80応答と既存のworker観測を維持し、各起動500ms以下・各初回preview2秒以下、80操作の最初の画像応答（cached feedbackと完成画像の早い方）のnearest-rank p95を100ms以下とする。通常プロセス群はRSS 200MiB以下・30秒以上の待機CPU上限1%未満を維持する。別の固定Chromium作例は同じ1,000ノードの配置へオフラインページとsoftware shaderを加え、本体・MCP・JS・Chromium群の合計RSSを1536MiB以下、30秒以上の待機CPU上限を2%未満とする。この別予算は過去の同一本体の約1201MiB・1.262%の観測を基に設定し、通常文書の基準を置き換えない。任意の外部サイトの使用量をこの数値で保証しない。
+
+既存の`measure-tui --enforce-targets`が、全観測を保存した後に上記を判定する。試験・build終了後の独立release runnerで測り、失敗時も元の全試行とtraceを残す。数値判定の実装・GHA結果と、実端末を含む性能の最終受け入れは[性能記録](performance.md)で区別する。
 
 ### 実装技術と配布
 
@@ -630,7 +636,7 @@ Rust、Skia CPU・SkParagraph、MIT ライセンス、標準フォントの Noto
 - 依存は Cargo.toml／Cargo.lock、Chromium156.0.8078.47と取得元・hashは runtime manifest に記録済み。MCP は2025-11-25を広告する。更新時は影響する接続・描画条件を検証する。
 - Noto Sans JP は Google Fonts revision66a36c8c94b1a5d992ee4e7f392fccfe4945767c の可変 wght TTF を同梱し、元の OFL・metadata・hashを保持する。追加フォントは設定・CLIから利用可能。ファミリー単位の遅延読み込みと文字不足に応じたfallback登録は9d6613bで検証済み。再現用font lockfileも実装し、JSON版1のschema・明示取得・revision付き更新・共通照合を[フォント仕様](fonts.md#reproducibility-lockfile)へ定めた。最終CIと公開受け入れは[現状](implementation-status.md#current-status)で区別する。
 - JavaScript／browser／shader／cache／会話保持の設定と上限は実装済み。[設定](configuration.md) と各サービスの Rust 定義を正本とする。画像入力の既定は8枚・単体20MiB・合計各50MiB・16Mi画素で、ユーザーの`[attachments]`設定と明示的な送信用縮小をc11a0f9の完全CIで検証済み。単体デコーダーの安全上限と設定可能な範囲は [画像入力](image-attachments.md) に明記する。
-- 最低macOSは15.7.9に固定した。保証端末、統制した性能条件と Chromium の別予算、配布候補の最終受け入れは未確定。Macの対象機能とOS／CPU以外の元の完成条件は変えない。
+- 最低macOSは15.7.9に固定した。性能のcold／warm条件とChromiumの別予算は上記に定めた。保証端末、数値gateのGHA確認と実端末を含む性能、配布候補の最終受け入れは残る。Macの対象機能とOS／CPU以外の元の完成条件は変えない。
 - 本家との総合デザイン品質比較は当初から保留。許諾を確認していない本家出力を取得・配布する前提にはしない。
 
 部品アドレス・編集バッチ・計算結果・画像添付は個別仕様へ接続済み。実装済み、個別条件で検証済み、公開受け入れ済みを区別する。すべての詳細を新たな設計待ちに戻さず、[現在の残件](implementation-status.md#remaining-work) から完成を進める。
