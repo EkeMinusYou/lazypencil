@@ -1011,7 +1011,10 @@ impl Session {
                     )?;
                 }
                 if args.suite == "normal-ci" {
-                    return normal::run(self);
+                    // This reproduces the normal scheduler. The mandatory
+                    // release lane owns release compilation independently.
+                    let prepared = normal::prepare(self)?;
+                    return normal::remaining(self, &prepared, false);
                 }
                 if args.suite == "browser-ci" {
                     if std::env::var("RUNTIME_PARALLEL").as_deref() == Ok("true") {
@@ -1223,8 +1226,9 @@ impl Session {
                         .copied()
                         .chain(["mcp", "native_layout", "optional_icons", "tui"])
                         .collect::<std::collections::BTreeSet<_>>();
-                    self.build_catalog(
+                    self.runtime_catalog(
                         &targets.into_iter().map(str::to_owned).collect::<Vec<_>>(),
+                        &std::env::var("GITHUB_SHA")?,
                     )?;
                     browser::focus_inputs(self)?;
                 }
@@ -1594,6 +1598,52 @@ impl Session {
         Ok(())
     }
 
+    fn runtime_catalog(&self, required: &[String], commit: &str) -> Result<()> {
+        let path = self.temporary.join("test-executables.json");
+        if !path.exists() {
+            let catalog = self.compile_catalog(required, "runtime-catalog", commit)?;
+            return self.publish_catalog(&catalog);
+        }
+        let previous: Catalog = util::json(&path)?;
+        previous.validate(&self.target, commit, &[])?;
+        if required
+            .iter()
+            .all(|name| previous.binaries.contains_key(name))
+        {
+            return Ok(());
+        }
+        let targets = previous
+            .binaries
+            .keys()
+            .chain(required)
+            .filter(|name| !["lib", "lazypencil"].contains(&name.as_str()))
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let application = util::file_digest(&self.executable("debug"))?;
+        let expanded = self.compile_catalog(&targets, "runtime-catalog", commit)?;
+        let required = targets.iter().map(String::as_str).collect::<Vec<_>>();
+        expanded.validate(&self.target, commit, &required)?;
+        for (name, old) in previous.binaries {
+            let new = expanded
+                .binaries
+                .get(&name)
+                .context("Lost compiled target")?;
+            ensure!(
+                old.path == new.path && old.sha256 == new.sha256,
+                "Runtime preparation changed an already tested executable: {name}"
+            );
+        }
+        ensure!(
+            application == util::file_digest(&self.executable("debug"))?,
+            "Runtime preparation changed the tested application"
+        );
+        // Only this serial preparation step may extend a verified catalog.
+        // Consumers keep their immutable receipts and never invoke Cargo.
+        util::publish(&path, &util::encode(&expanded)?, true)
+    }
+
     fn verified_catalog(&self, required: &[&str]) -> Result<Catalog> {
         let complete = self.temporary.join("test-executables.json");
         let catalog: Catalog = util::json(&if complete.exists() {
@@ -1961,6 +2011,38 @@ mod tests {
         let published = fs::read(&published_path).unwrap();
         let recorded: Catalog = serde_json::from_slice(&published).unwrap();
         assert_eq!(recorded.source_commit, "fixture-source");
+        publication
+            .runtime_catalog(&["script_scope".into()], "fixture-source")
+            .unwrap();
+        assert_eq!(fs::read(&published_path).unwrap(), published);
+        assert!(!publication.temporary.join("runtime-catalog.jsonl").exists());
+        fs::write(
+            session.root.join("tests/runtime_added.rs"),
+            "#[test] fn additional_runtime_probe() {}\n",
+        )
+        .unwrap();
+        publication
+            .runtime_catalog(&["runtime_added".into()], "fixture-source")
+            .unwrap();
+        let extended_bytes = fs::read(&published_path).unwrap();
+        let extended: Catalog = serde_json::from_slice(&extended_bytes).unwrap();
+        assert!(extended.binaries.contains_key("runtime_added"));
+        for (name, old) in &recorded.binaries {
+            assert_eq!(extended.binaries[name].path, old.path);
+            assert_eq!(extended.binaries[name].sha256, old.sha256);
+        }
+        assert!(
+            publication
+                .runtime_catalog(&["runtime_added".into()], "foreign-source")
+                .is_err()
+        );
+        fs::write(&extended.binaries["runtime_added"].path, b"mutated runtime").unwrap();
+        assert!(
+            publication
+                .runtime_catalog(&["runtime_added".into()], "fixture-source")
+                .is_err()
+        );
+        assert_eq!(fs::read(&published_path).unwrap(), extended_bytes);
         fs::remove_file(&published_path).unwrap();
         fs::write(&output, b"").unwrap();
         fs::write(

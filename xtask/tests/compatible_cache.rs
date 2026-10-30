@@ -71,7 +71,7 @@ mod script_copy {
     .unwrap();
     // Invoke the real scheduler in a child with its own Actions outputs. The
     // tiny source owns no application dependencies or external resources.
-    let run = |stage: &str| {
+    let run = |stage: &str, suite: &str, targets: &str| {
         let output = process::output(
             Command::new(env!("CARGO_BIN_EXE_xtask"))
                 .args([
@@ -79,9 +79,9 @@ mod script_copy {
                     "native",
                     stage,
                     "--suite",
-                    "copy",
+                    suite,
                     "--targets",
-                    "[\"script_scope\",\"tui\"]",
+                    targets,
                 ])
                 .env("GITHUB_ACTIONS", "true")
                 .env("GITHUB_SHA", "fixture-source")
@@ -101,7 +101,8 @@ mod script_copy {
         );
         output
     };
-    let builder = run("build-and-reproduce");
+    let targets = "[\"script_scope\",\"tui\"]";
+    let builder = run("build-and-reproduce", "copy", targets);
     assert!(
         builder.status.success(),
         "{}",
@@ -151,7 +152,7 @@ mod script_copy {
             "A complete test omitted {case}: {log}"
         );
     }
-    let focus = run("focus-reproduce");
+    let focus = run("focus-reproduce", "copy", targets);
     assert!(!focus.status.success());
     // Both parallel groups and the final legacy-copy group must finish even
     // when their deliberately failing assertions reject standalone focus.
@@ -162,6 +163,59 @@ mod script_copy {
             "{name}: {log}"
         );
     }
+    // Exercise the normal focus route with the same real tiny Cargo catalog.
+    // The failing script lane must not hide the independent failure or later
+    // successful targets, nor trigger an unrelated release compilation.
+    for name in [
+        "blends",
+        "imports",
+        "sampler_sources",
+        "font_sources",
+        "project",
+        "graphics",
+        "mesh",
+        "dynamic_render",
+        "runtime_config",
+    ] {
+        fs::write(
+            f.source.join(format!("tests/{name}.rs")),
+            format!(
+                "#[test] fn normal_{name}_sentinel() {{ assert!({}); }}\n",
+                name != "blends"
+            ),
+        )
+        .unwrap();
+    }
+    let built = run("default-build", "normal-ci", "[]");
+    assert!(
+        built.status.success(),
+        "{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    let normal = run("focus-test", "normal-ci", "[]");
+    assert!(!normal.status.success());
+    let integrations = fs::read_to_string(root.join("lazypencil-tests.log")).unwrap();
+    for (name, outcome) in [
+        ("blends", "FAILED"),
+        ("imports", "ok"),
+        ("sampler_sources", "ok"),
+    ] {
+        assert_eq!(
+            integrations
+                .matches(&format!("test normal_{name}_sentinel ... {outcome}"))
+                .count(),
+            1,
+            "Normal focus must execute each unchanged target once: {integrations}"
+        );
+    }
+    let scripts = fs::read_to_string(root.join("lazypencil-script-scope.log")).unwrap();
+    assert!(scripts.contains("full_consumer_sentinel ... FAILED"));
+    let pixels = fs::read_to_string(root.join("lazypencil-native-pixels.log")).unwrap();
+    assert!(pixels.contains("test normal_graphics_sentinel ... ok"));
+    assert!(
+        !f.target.join("release").exists(),
+        "Normal scheduler focus must leave release compilation to its own lane"
+    );
 }
 
 #[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]

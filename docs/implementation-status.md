@@ -4,7 +4,11 @@
 
 ## 現在の状態（2026-10-30）
 
-51ed911の既存consumer記録を再確認した。runtimeの試験stepは約224秒で、shared profile 30.32秒、headed login 13.90秒、storage 49.78秒が直列、その後のbrowser readiness 120.98秒が最長だった。MCP共有profileとlogin／storageは別のTempDir・CDP port・logを所有するため、両者だけを並列にし、全join後に元のWebGL／lifecycle群へ進む。通常consumerは約195秒で、library lane64.99秒に対しscript-scope170.35秒、その他integration合計が長かった。固有のproject／出力名を使うblends・imports・sampler_sourcesをlibrary laneへ移し、元のinvocation・harness thread数・15分の共通budgetは維持する。短い起動期限を持つquiet群、画像gate、性能計測の順序は変えない。これは準備中の変更で、実fixture・補助gateとMac対象検証の後に全体を一度だけ確認する。
+51ed911の既存consumer記録を再確認した。runtimeの試験stepは約224秒で、shared profile 30.32秒、headed login 13.90秒、storage 49.78秒が直列、その後のbrowser readiness 120.98秒が最長だった。MCP共有profileとlogin／storageは別のTempDir・CDP port・logを所有するため、両者だけを並列にし、全join後に元のWebGL／lifecycle群へ進む。通常consumerは約195秒で、library lane64.99秒に対しscript-scope170.35秒、その他integration合計が長かった。固有のproject／出力名を使うblends・imports・sampler_sourcesをlibrary laneへ移し、元のinvocation・harness thread数・15分の共通budgetは維持する。短い起動期限を持つquiet群、画像gate、性能計測の順序は変えない。
+
+c8318b6の[補助gate41044105093](https://github.com/EkeMinusYou/lazypencil/actions/runs/41044105093)は3分23秒で成功した。[対象41044480884](https://github.com/EkeMinusYou/lazypencil/actions/runs/41044480884)は通常全試験・Clippy・描画を成功した後、runtime準備で既存catalogへ二度保存しようとして停止した。runtime本体群は未実行であり、先行成功とはしない。normal-ci経路が旧combined releaseと同じ関数を使い、不要なrelease buildに294.25秒を費やしたことも記録した。通常schedulerの対象検証だけは既存のrelease無し経路へ接続し、独立release laneとdeferred combined releaseを維持する。runtime準備は、source・全binary hashが一致するcatalogを再利用し、不足時だけ既存targetとのunionをCargoで生成して元の実行ファイルと本体の不変を確認する。既存の実Cargo fixtureへ、二度保存の再現、全既存targetの保持、未変更時のcompile省略、foreign source／改変拒否と、通常focusの失敗保持・release非生成を追加した。これらの修正はMac補助gateと対象検証待ちで、全体CIはまだ繰り返していない。
+
+同対象の新image20261028.0489.1では、51ed911のmodern focus key `…41030602390-1`から12ファイルと、cc20e37の完全cacheから有効な292ファイルを実復元した。古い12ファイルはcompiler入力の差で除外し、検査済みfocus分で補完している。同じcontextでの新focus key実復元は確認済みとなり、独立した未確認項目へは戻さない。対象全体は別の接続エラーで失敗しており、全体10分以内の安定達成やruntimeの並列化効果とは区別する。
 
 6badaf5の[配布検証41041417999](https://github.com/EkeMinusYou/lazypencil/actions/runs/41041417999)は8分43秒で成功した。補助全試験・Clippy、原本通知の収集と再検証、実候補の梱包・隔離導入smoke・署名付きprovenanceを含む。取得した候補archiveのSHA-256は`e400dbb7bec16198879c3a268e996ab713f6ced3e932676921821cb6b761b77b`で、署名のsubjectと一致した。署名のissuer、source 6badaf5、release-evidence.yml／main、run／attempt 1も照合した。package manifestは635ファイルを記録し、Mac arm64・0.1.0-dev・本体`b0297f24…07b0759`が一致した。WebPのPATENTSとSkCMSのLICENSE／出自NOTICEは、実archiveから抽出し、manifestのsize／hashおよび原本byteと照合した。`release_ready:false`を維持し、この二つの不足の解消を全ライセンス適用レビューや正式公開の完了とはしない。
 
@@ -491,7 +495,7 @@ macOSの最新の通常bound観測は446aa94で最大186.98MiB、warm feedback p
 
 大きな文字列の展開上限は74f37fdの完全CIで検証済みとなった。捕捉scriptのfile URL／HTTP asset key・入れ子namespaceと同様、未実装へ戻さない。
 
-1. 既存ログに基づき、部分／完全成果物の再利用と長い先行試験の配置を仕上げる。先行は51ed911で4分14秒、ab943caで2分36秒だった。全体の最新成功は51ed911で11分44秒であり、全体10分以内の安定達成と、新focus keyの同じcompiler contextでの実復元は残る。長いbinding群の重複削減・並列laneの全結果回収・失敗保持は検証済み。6badaf5の配布のみの8分43秒を全体CIの短縮成功とは扱わない。image不一致による正当な再buildと、同一条件の不要な再buildを分け、Cargoの鮮度判定、各feature・検証目的・元の期限と最終gateは維持する。
+1. 既存ログに基づき、部分／完全成果物の再利用と長い先行試験の配置を仕上げる。先行は51ed911で4分14秒、ab943caで2分36秒だった。全体の最新成功は51ed911で11分44秒であり、全体10分以内の安定達成は残る。新focus keyの同じcompiler contextでの実復元はc8318b6で確認済み。長いbinding群の重複削減・並列laneの全結果回収・失敗保持は検証済みで、追加したprofile／通常consumerの並列化と対象経路の修正は冒頭の状態を優先する。6badaf5の配布のみの8分43秒を全体CIの短縮成功とは扱わない。image不一致による正当な再buildと、同一条件の不要な再buildを分け、Cargoの鮮度判定、各feature・検証目的・元の期限と最終gateは維持する。
 2. 公開仕様に意味の記載がないdevice presetとfill-stage object samplingを確認し、推測を本家互換として実装済みにしない。
 3. 不足するMac実端末・性能の受け入れ、保証環境と配布候補、文書を確定する。Kittyの報告済み5項目、両サブスクリプション、Codex API／自作guideを含む有効な同条件の証拠を再利用する。旧参照素材の公開履歴削除は完了しており、未実施へ戻さない。
 
