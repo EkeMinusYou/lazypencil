@@ -48,6 +48,8 @@ const FREETYPE_TERMS: &[&str] = &[
 ];
 // The primary libjpeg-turbo notice delegates its IJG terms to README.ijg.
 const JPEG_TERMS: &[&str] = &["LICENSE.md", "README.ijg"];
+// WebP source headers explicitly refer to the additional IP grant in PATENTS.
+const WEBP_TERMS: &[&str] = &["COPYING", "AUTHORS", "PATENTS"];
 
 fn sha(value: &Value, width: usize) -> bool {
     value.as_str().is_some_and(|s| {
@@ -392,6 +394,7 @@ pub fn build_from_graph(
         let (label, required): (&str, &[&str]) = match name.as_str() {
             "freetype" => ("FreeType", FREETYPE_TERMS),
             "libjpeg-turbo" => ("libjpeg-turbo", JPEG_TERMS),
+            "libwebp" => ("libwebp", WEBP_TERMS),
             _ => ("", &[]),
         };
         for relative in required {

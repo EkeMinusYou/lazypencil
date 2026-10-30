@@ -115,57 +115,86 @@ fn checked_in_rust_notices_match_workspace_manifests_and_original_license_bytes(
 }
 
 #[test]
-fn jpeg_delegated_terms_and_product_credit_are_explicit_and_required() {
-    let mut f = Fixture::new("skia");
-    let (index, texts) = f.skia().unwrap();
-    let original = skia::files(&index, texts).unwrap();
-    let credit = "This software is based in part on the work of the Independent JPEG Group.";
-    assert!(!String::from_utf8_lossy(&original["SKIA-NOTICES.txt"]).contains(credit));
-    let paths = ["LICENSE.md", "README.ijg"];
-    let prefix = "source/third_party/externals/libjpeg-turbo/";
-    for path in paths {
+fn delegated_codec_terms_and_product_credits_are_byte_exact_and_required() {
+    for (component, paths, credit) in [
+        (
+            "libjpeg-turbo",
+            &["LICENSE.md", "README.ijg"][..],
+            Some("This software is based in part on the work of the Independent JPEG Group."),
+        ),
+        ("libwebp", &["COPYING", "AUTHORS", "PATENTS"][..], None),
+    ] {
+        let mut f = Fixture::new("skia");
+        let (index, texts) = f.skia().unwrap();
+        let original = skia::files(&index, texts).unwrap();
+        if let Some(credit) = credit {
+            assert!(!String::from_utf8_lossy(&original["SKIA-NOTICES.txt"]).contains(credit));
+        }
+        let prefix = format!("source/third_party/externals/{component}/");
+        for path in paths {
+            f.write(
+                &format!("{prefix}{path}"),
+                format!("Original fixture terms for {path}\r\nCopyright fixture author\r\n"),
+            );
+        }
         f.write(
-            &format!("{prefix}{path}"),
-            format!("Original fixture terms for {path}\r\nCopyright fixture author\r\n"),
+            &format!("{prefix}native.c"),
+            b"/* Fixture native input. */\n",
         );
-    }
-    f.write(
-        &format!("{prefix}native.c"),
-        b"/* Fixture native input. */\n",
-    );
-    f.data["graph"] = json!(format!(
-        "{}../source/third_party/externals/libjpeg-turbo/native.c\n",
-        f.data["graph"].as_str().unwrap()
-    ));
-    let (index, texts) = f.skia().unwrap();
-    for path in paths {
-        let name = format!("third_party/externals/libjpeg-turbo/{path}");
-        let record = index["notice_files"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|record| record["path"] == name)
-            .unwrap();
-        let bytes = fs::read(f.path(&format!("source/{name}"))).unwrap();
-        assert_eq!(record["sha256"], util::digest(&bytes));
-        assert_eq!(texts[record["blob"].as_str().unwrap()], bytes);
-    }
-    let files = skia::files(&index, texts).unwrap();
-    let rendered = String::from_utf8(files["SKIA-NOTICES.txt"].clone()).unwrap();
-    assert!(rendered.split_once("\n====").unwrap().0.contains(credit));
-    let output = f.path("published");
-    notices::publish_bundle(&output, &files).unwrap();
-    notices::verify_expected(&output, &files).unwrap();
-    for path in paths {
-        let original = f.path(&format!("{prefix}{path}"));
-        let bytes = fs::read(&original).unwrap();
-        fs::remove_file(&original).unwrap();
-        let error = f.skia().unwrap_err().to_string();
-        assert!(
-            error.contains("Missing original libjpeg-turbo terms"),
-            "{path}: {error}"
-        );
-        fs::write(original, bytes).unwrap();
+        f.data["graph"] = json!(format!(
+            "{}../source/third_party/externals/{component}/native.c\n",
+            f.data["graph"].as_str().unwrap()
+        ));
+        let (index, texts) = f.skia().unwrap();
+        for path in paths {
+            let name = format!("third_party/externals/{component}/{path}");
+            let record = index["notice_files"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|record| record["path"] == name)
+                .unwrap();
+            let bytes = fs::read(f.path(&format!("source/{name}"))).unwrap();
+            assert_eq!(record["sha256"], util::digest(&bytes));
+            assert_eq!(texts[record["blob"].as_str().unwrap()], bytes);
+        }
+        let files = skia::files(&index, texts).unwrap();
+        let rendered = String::from_utf8(files["SKIA-NOTICES.txt"].clone()).unwrap();
+        if let Some(credit) = credit {
+            assert!(rendered.split_once("\n====").unwrap().0.contains(credit));
+        }
+        for path in paths {
+            assert!(rendered.contains(&format!(
+                "Original fixture terms for {path}\r\nCopyright fixture author\r\n"
+            )));
+        }
+        let output = f.path("published");
+        notices::publish_bundle(&output, &files).unwrap();
+        notices::verify_expected(&output, &files).unwrap();
+        for path in paths {
+            let original = f.path(&format!("{prefix}{path}"));
+            let bytes = fs::read(&original).unwrap();
+            fs::remove_file(&original).unwrap();
+            let error = f.skia().unwrap_err().to_string();
+            assert!(
+                error.contains(&format!("Missing original {component} terms")),
+                "{path}: {error}"
+            );
+            fs::write(original, bytes).unwrap();
+        }
+        #[cfg(unix)]
+        {
+            let original = f.path(&format!("{prefix}{}", paths.last().unwrap()));
+            let saved = original.with_extension("saved");
+            fs::rename(&original, &saved).unwrap();
+            std::os::unix::fs::symlink(&saved, &original).unwrap();
+            assert!(
+                f.skia()
+                    .unwrap_err()
+                    .to_string()
+                    .contains(&format!("Missing original {component} terms"))
+            );
+        }
     }
 }
 

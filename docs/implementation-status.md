@@ -4,6 +4,8 @@
 
 ## 現在の状態（2026-10-30）
 
+配布レビューで、446aa94候補のlibwebp通知に、実際のsource commentが参照する`PATENTS`が含まれていないことを確認した。`COPYING`・`AUTHORS`は同梱済みだが、追加IP grantの原文も既存のSkia通知収集へ含め、3点の欠損・symlink時は停止するよう修正した。JPEGの既存回帰を共通のcodec用tableへまとめ、原文byte・CRLF・hashの保持、必要ファイルの欠損とリンク拒否を同じ試験で確認する。原本は[固定libwebp revisionのPATENTS](https://raw.githubusercontent.com/webmproject/libwebp/845d5476a866141ba35ac133f856fa62f0b7445f/PATENTS)で、代替の許諾文は作らない。FreeTypeのFTL原文とbinary用帰属文は既存候補に含まれており、その追加修正は不要だった。新しい収集の補助GHAと候補への実同梱は確認待ちで、最終的な全ライセンス適用レビューの完了とはしない。本体・依存関係・性能条件は変えず、同じTUI計測と全consumerは繰り返さない。
+
 446aa94の[性能対象配布41035893847](https://github.com/EkeMinusYou/lazypencil/actions/runs/41035893847)は7分47秒で成功した。既存`measure-tui`のMac数値gateを、通常500ms／2秒／warm feedback p95 100ms／200MiB／待機CPU 1%未満、別の固定Chromium作例1536MiB・2%未満に定め、全観測保存後に判定した。[Mac補助ツール41035390452](https://github.com/EkeMinusYou/lazypencil/actions/runs/41035390452)も3分43秒で全試験・Clippy・原本照合と新しい境界値／欠損／p95回帰を成功した。20起動・80操作・100 worker観測と30秒以上のidleを維持し、生データを再集計した。coldは新規process・設定／data、warmは同一processで初回描画後とし、OS page／font cacheは未統制であることを明示する。完成画像がcached feedbackより早い操作も除外しない。実環境はmacOS15.8.2・image20261028.0489.1・3 CPU・物理7GiBだった。数値基準は通過したが、物理表示やOS再起動直後を確認済みとはしない。
 
 最新の51ed911の[統合CI41031176732](https://github.com/EkeMinusYou/lazypencil/actions/runs/41031176732)は11分44秒で全工程成功した。監査、core／既定構成の全試験・両Clippy・通常開発build、release、全5 consumer、共通画像gateと署名付きsourceを維持した。builder5分06秒・core4分15秒・release1分41秒、通常3分59秒・runtime4分55秒・画像2分41秒・Material1分34秒・端末1分03秒、source42秒だった。builderは旧imageの852fd5eから292ファイルを再利用し、実際に変更helperを参照する12ファイルだけを無効化した。新imageの先行成果物は環境不一致で流用せず、全体保存と最終整理後も保持された。source tarは1228ファイル・SHA-256 `b7b17faf…bbf2d3b`で、署名検証結果のsource／ci.yml／main／run／attempt 1を照合した。全体10分以内の安定達成とはせず、同じcompiler contextでの新focus keyの実復元は次の該当実行で確認する。
