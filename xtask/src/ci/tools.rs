@@ -51,7 +51,13 @@ impl Command {
                 // fallback caches never contain this package's outputs.
                 let times =
                     fs::FileTimes::new().set_modified(UNIX_EPOCH + Duration::from_secs(946684800));
-                for path in util::walk_filtered(&workspace, |p| p.starts_with(&target))? {
+                let mut inputs = util::walk_filtered(&workspace, |p| p.starts_with(&target))?;
+                // The archive regression compiles this isolated Rust helper,
+                // not the Skia crate. The Actions tool key includes it too.
+                inputs.push(
+                    root.join("vendor/skia-bindings/build_support/binary_cache/source_archive.rs"),
+                );
+                for path in inputs {
                     fs::File::open(path)?.set_times(times)?;
                 }
                 let temporary =

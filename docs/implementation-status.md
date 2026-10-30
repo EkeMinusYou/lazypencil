@@ -4,6 +4,8 @@
 
 ## 現在の状態（2026-10-31）
 
+直近CIのcold build後に繰り返したSkia再buildを調べ、vendorのsource展開が`skia/include`をCargo開始時刻より新しいdirectory mtimeのまま残すことと、tar 0.4.46がdirectory mtimeを復元しないことを確認した。Unixでarchive本来のdirectory mtimeを子の展開後に復元する修正を準備した。Cargoの`rerun-if-changed`・fingerprint・cache時刻やheaderの監視は変更しない。既存のRust補助試験へ、旧展開での再buildの再現、修正後のfresh判定と実header変更後の生成コードを実Cargoで確かめる回帰を追加した。最初にMacの補助workflowで確認し、重いnative buildや同条件の完了済み試験をローカルでは繰り返さない。この段落の修正はまだGHA未検証であり、以下のe1a90fdの成功には含めない。
+
 利用者が希望したcompletionはシェルのTab補完であり、TUI内の補完は今回の対象へ加えない。4c1a958で`completions SHELL`と共通の動的補完エンジン、同梱catalogueの候補、値・パスのhint、導入手順・配布README・既存candidate smokeへの検査を追加した。補完は文書・設定・agent・Chromium・lockの準備前に終了する。e1a90fdの[Mac core先行41076121661](https://github.com/EkeMinusYou/lazypencil/actions/runs/41076121661)は成功し、補完3試験は1.70秒、続く通常構成でも1.81秒で成功した。Bash・Zsh・Fishの生成hookを実shellで読み込み、深いサブコマンド、固定値・同梱catalogue、日本語・空白のあるpath、設定・文書・data・lockへの非接触を確認した。通常構成ではTUIの画像protocol候補も確認した。[導入手順](completions.md)と[設計](design.md#シェルのtab補完)に対応範囲を反映した。
 
 同じコミットの[全体41077139807](https://github.com/EkeMinusYou/lazypencil/actions/runs/41077139807)は最終attempt 2で全工程成功した。attempt 1は画像consumerだけがrunner未割り当てのままGitHub側でcancelされ、注記は`The job was not acquired by Runner of type hosted even after multiple attempts`とMac arm64のcapacity不足だった。未実行の画像jobだけを再投入し、同runの共有binaryで2分34秒で成功した。成功済みのbuild・core・release・通常・runtime・Material・terminalは再実行せず、全5結果・元の共有画像gate・監査・両Clippy・通常開発build・署名付きsourceを維持した。初回作成から最終成功まで38分45秒で、通常／runtimeのrunner待ちは約10分だった。通常構成の一致する依存cacheはなく対象build9分16秒、release build12分46秒と後続Cargo確認3分01秒も含む。先行cache自体は取得できたが、coreと通常構成のfeature差を無視した再利用はしない。この実行を10分目標の達成とはせず、試験や期限を削った追加の全体検証も行わない。

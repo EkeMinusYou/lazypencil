@@ -85,18 +85,8 @@ fn download_dependencies() {
             let tar = GzDecoder::new(Cursor::new(archive));
             let mut archive = tar::Archive::new(tar);
             let dir = std::env::current_dir().unwrap();
-            for entry in archive.entries().expect("failed to iterate over archive") {
-                let mut entry = entry.unwrap();
-                let path = entry.path().unwrap();
-                let mut components = path.components();
-                let root = components.next().unwrap();
-                // skip pax headers.
-                if root.as_os_str() == unpack_dir.as_os_str()
-                    && (dep.path_filter)(components.as_path())
-                {
-                    entry.unpack_in(&dir).unwrap();
-                }
-            }
+            super::source_archive::unpack(&mut archive, &dir, unpack_dir, dep.path_filter)
+                .expect("failed to unpack dependency archive");
         }
 
         // Move unpack directory to the target repository directory

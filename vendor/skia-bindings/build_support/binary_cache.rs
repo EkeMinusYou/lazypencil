@@ -7,6 +7,7 @@ mod env;
 mod export;
 mod git;
 mod github_actions;
+mod source_archive;
 mod utils;
 
 const SKIA_LICENSE: &str = "skia/LICENSE";

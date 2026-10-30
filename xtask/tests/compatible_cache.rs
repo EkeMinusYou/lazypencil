@@ -12,6 +12,156 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+#[cfg(unix)]
+#[path = "../../vendor/skia-bindings/build_support/binary_cache/source_archive.rs"]
+mod source_archive;
+
+#[cfg(unix)]
+fn skia_source_fixture() -> Vec<u8> {
+    let mut archive = tar::Builder::new(Vec::new());
+    for (path, directory, bytes) in [
+        ("skia", true, ""),
+        ("skia/include", true, ""),
+        ("skia/include/value.h", false, "1"),
+        ("skia/include/empty", true, ""),
+        ("skia/include/empty/nested", true, ""),
+        ("skia/infra", true, ""),
+        ("skia/infra/excluded", false, "not an input"),
+        ("other-root/unrelated", false, "not Skia"),
+    ] {
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(if directory {
+            tar::EntryType::Directory
+        } else {
+            tar::EntryType::Regular
+        });
+        header.set_mode(0o755);
+        header.set_mtime(1_600_000_000);
+        header.set_size(bytes.len() as u64);
+        archive
+            .append_data(&mut header, path, bytes.as_bytes())
+            .unwrap();
+    }
+    archive.into_inner().unwrap()
+}
+
+#[test]
+#[cfg(unix)]
+fn skia_source_extraction_preserves_directory_metadata_and_existing_filters() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut archive = tar::Archive::new(std::io::Cursor::new(skia_source_fixture()));
+    source_archive::unpack(
+        &mut archive,
+        temp.path(),
+        std::path::Path::new("skia"),
+        |path| !path.starts_with("infra"),
+    )
+    .unwrap();
+    for path in ["skia", "skia/include", "skia/include/empty/nested"] {
+        assert_eq!(
+            fs::metadata(temp.path().join(path))
+                .unwrap()
+                .modified()
+                .unwrap(),
+            SystemTime::UNIX_EPOCH + Duration::from_secs(1_600_000_000),
+            "Archived directory metadata must follow descendant extraction: {path}"
+        );
+    }
+    assert_eq!(
+        fs::read(temp.path().join("skia/include/value.h")).unwrap(),
+        b"1"
+    );
+    assert!(!temp.path().join("skia/infra").exists());
+    assert!(!temp.path().join("other-root").exists());
+}
+
+#[test]
+#[cfg(unix)]
+fn real_cargo_keeps_extracted_headers_fresh_and_rebuilds_actual_header_edits() {
+    for legacy in [true, false] {
+        let f = Fixture::new();
+        fs::write(f.source.join("source.tar"), skia_source_fixture()).unwrap();
+        fs::write(
+            f.source.join("source_archive.rs"),
+            include_str!("../../vendor/skia-bindings/build_support/binary_cache/source_archive.rs"),
+        )
+        .unwrap();
+        let mut manifest = fs::read_to_string(f.source.join("Cargo.toml")).unwrap();
+        manifest.push_str("[build-dependencies]\ntar={version='=0.4.46',default-features=false}\n");
+        fs::write(f.source.join("Cargo.toml"), manifest).unwrap();
+        fs::write(
+            f.source.join("build.rs"),
+            format!(
+                r#"
+mod source_archive;
+fn main() {{
+    let directory = std::path::Path::new("skia/include");
+    if !directory.exists() {{
+        // Reproduce acquisition after Cargo records this build's start.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let bytes = std::fs::read("source.tar").unwrap();
+        let mut archive = tar::Archive::new(std::io::Cursor::new(bytes));
+        if {legacy} {{
+            for entry in archive.entries().unwrap() {{
+                entry.unwrap().unpack_in(".").unwrap();
+            }}
+        }} else {{
+            source_archive::unpack(&mut archive, std::path::Path::new("."),
+                std::path::Path::new("skia"), |path| !path.starts_with("infra")).unwrap();
+        }}
+    }}
+    println!("cargo:rerun-if-changed=skia/include");
+    let value = std::fs::read_to_string(directory.join("value.h")).unwrap();
+    let generated = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("value.rs");
+    std::fs::write(generated, format!("pub fn fixture() -> u8 {{{{ {{value}} }}}}")).unwrap();
+}}
+"#
+            ),
+        )
+        .unwrap();
+        fs::write(
+            f.source.join("src/lib.rs"),
+            "include!(concat!(env!(\"OUT_DIR\"), \"/value.rs\"));\n",
+        )
+        .unwrap();
+        fs::write(
+            f.source.join("tests/one.rs"),
+            "#[test] fn compiled_header() { assert_eq!(lazypencil::fixture(), std::env::var(\"EXPECTED_HEADER\").unwrap().parse::<u8>().unwrap()); }\n",
+        )
+        .unwrap();
+        process::checked(
+            Command::new("cargo")
+                .current_dir(&f.source)
+                .args(["generate-lockfile", "--offline"]),
+            Duration::from_secs(30),
+        )
+        .unwrap();
+        let first = f.build(&["--test", "one"]);
+        assert!(!first["lazypencil"].0);
+        let second = f.build(&["--test", "one"]);
+        assert_eq!(
+            second["lazypencil"].0, !legacy,
+            "The original extraction must reproduce one redundant rebuild; archived metadata must remain fresh"
+        );
+        process::checked(
+            Command::new(&second["one"].1).env("EXPECTED_HEADER", "1"),
+            Duration::from_secs(20),
+        )
+        .unwrap();
+        fs::write(f.source.join("skia/include/value.h"), "2").unwrap();
+        let edited = f.build(&["--test", "one"]);
+        assert!(
+            !edited["lazypencil"].0,
+            "Actual header edits must invalidate Cargo outputs"
+        );
+        process::checked(
+            Command::new(&edited["one"].1).env("EXPECTED_HEADER", "2"),
+            Duration::from_secs(20),
+        )
+        .unwrap();
+    }
+}
+
 struct Fixture {
     _temp: tempfile::TempDir,
     source: PathBuf,

@@ -38,7 +38,7 @@ runs:
       uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
       with:
         path: xtask/target
-        key: xtask-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LAZYPENCIL_RUNNER_IMAGE }}-rust1.94.0-${{ hashFiles('xtask/**', '!xtask/target/**', '.github/actions/xtask/action.yml') }}
+        key: xtask-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LAZYPENCIL_RUNNER_IMAGE }}-rust1.94.0-${{ hashFiles('xtask/**', '!xtask/target/**', '.github/actions/xtask/action.yml', 'vendor/skia-bindings/build_support/binary_cache/source_archive.rs') }}
         restore-keys: xtask-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LAZYPENCIL_RUNNER_IMAGE }}-rust1.94.0-
     - name: Restore dependency-only bootstrap checkpoints
       id: dependencies
