@@ -2,7 +2,11 @@
 
 use crate::{Error, Result};
 use image::DynamicImage;
-use ratatui::layout::Size;
+use ratatui::{
+    buffer::Buffer,
+    layout::{Rect, Size},
+    widgets::Widget,
+};
 #[cfg(unix)]
 use ratatui_image::picker::cap_parser::{Parser, QueryStdioOptions};
 use ratatui_image::{
@@ -12,6 +16,29 @@ use ratatui_image::{
 };
 #[cfg(unix)]
 use std::io::Write;
+
+/// Bind a Kitty virtual placement to the same cell grid as its placeholders.
+pub struct Image<'a>(pub &'a Protocol);
+
+impl Widget for Image<'_> {
+    fn render(self, area: Rect, buffer: &mut Buffer) {
+        ratatui_image::Image::new(self.0).render(area, buffer);
+        if matches!(self.0, Protocol::Kitty(_))
+            && !area.is_empty()
+            && let Some(cell) = buffer.cell_mut((area.x, area.y))
+            && let Some((before, after)) = cell.symbol().split_once("a=T,U=1,")
+        {
+            // ratatui-image 11.1 leaves c/r unspecified. Kitty then chooses the
+            // image's native pixel size, which can differ from the placeholder
+            // grid after font/DPI changes or missing terminal pixel metrics.
+            // Enrich its first transmission without adding a second placement
+            // (unqualified a=p creates another, ambiguously selected placement).
+            let size = self.0.size();
+            let symbol = format!("{before}a=T,U=1,c={},r={},{after}", size.width, size.height);
+            cell.set_symbol(&symbol);
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct Backend {
@@ -231,60 +258,5 @@ fn startup_text(bytes: &[u8]) -> String {
 mod observer;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
-
-    #[test]
-    fn compressed_and_raw_kitty_transfers_preserve_identical_rgba_without_changing_placement() {
-        let colors = [
-            [255, 0, 0, 255],
-            [0, 255, 0, 127],
-            [0, 0, 255, 0],
-            [18, 52, 86, 200],
-        ];
-        let source = image::RgbaImage::from_fn(64, 32, |x, y| {
-            image::Rgba(colors[((x / 8 + y / 4) % 4) as usize])
-        });
-        let area = Rect::new(0, 0, 64, 32);
-        let size = Size::new(64, 32);
-        let mut lengths = Vec::new();
-        for compressed in [false, true] {
-            let backend = Backend {
-                font: FontSize::new(1, 1),
-                protocol: ProtocolType::Kitty,
-                tmux: false,
-                kitty_compression: compressed,
-            };
-            let protocol = backend
-                .encode(DynamicImage::ImageRgba8(source.clone()), size, 77)
-                .unwrap();
-            assert_eq!(protocol.size(), size);
-            let mut buffer = Buffer::empty(area);
-            ratatui_image::Image::new(&protocol).render(area, &mut buffer);
-            let mut wire = String::new();
-            for y in 0..area.height {
-                for x in 0..area.width {
-                    wire.push_str(buffer[(x, y)].symbol());
-                }
-            }
-            assert_eq!(wire.contains("o=z,"), compressed);
-            let mut decoder = observer::KittyFrames::default();
-            for bytes in wire.as_bytes().chunks(137) {
-                decoder.feed(bytes).unwrap();
-            }
-            assert_eq!(decoder.images.len(), 1);
-            assert_eq!(decoder.compressed_frames, usize::from(compressed));
-            assert_eq!(
-                (decoder.images[0].width, decoder.images[0].height),
-                (64, 32)
-            );
-            assert_eq!(decoder.images[0].rgba(), source.as_raw().as_slice());
-            lengths.push(wire.len());
-        }
-        assert!(
-            lengths[1] < lengths[0],
-            "Compressed transport must reduce bytes"
-        );
-    }
-}
+#[path = "graphics_tests.rs"]
+mod tests;

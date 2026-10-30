@@ -4,6 +4,10 @@
 
 ## 現在の状態（2026-10-30）
 
+利用者の追試で、Kitty本体ではプレビュー画像が枠の左上で途中まで表示される問題が報告された。同じKittyプロトコルを指定したGhosttyでは表示が正常との報告であり、Sixelや全操作の受け入れとは分ける。ratatui-image 11.1の仮想配置は画像のpixel寸法だけを指定し、placeholderと対応する列数／行数を送らない。セル寸法の推定と実際が異なると自然寸法の配置がplaceholder gridより小さくなるため、初回の同じ送信へc/rを付けるadapterを追加する。配置の重複・再送・新たな端末queryは追加せず、圧縮有無・tmux・セル寸法の差・反復drawを既存graphics単体試験で確認する。試験はcfg(test)の別fileへ分け、試験だけの変更を本体のcompiler入力へ混ぜない。ローカルfmt／actionlint／差分は成功し、GHA検証は次に行う。実画面での修正成功はまだ宣言しない。
+
+ca6dfe0の[対象配布検証41018345998](https://github.com/EkeMinusYou/lazypencil/actions/runs/41018345998)は5分43秒で成功した。2436006の同compiler／SDKのrelease出力15ファイルを再利用し、Cargoの368単位は全てfreshで再compileは0だった。本体hashは引き続き`279b4e3a…ae92cd`、候補archiveは`cee04291…3f0c9fbc`で、署名検証結果のsubject・source・release-evidence.yml／main・run／attempt 1を照合した。TUI計測や全体CIは重ねていない。5b113a1のraw link mapから抽出した依存識別子263件は重複数まで9e613bfの照合結果と一致し、4 archiveの904 member組と、同梱Rust／標準library inventory3点のhashも一致した。この同一部分の対応情報を再利用し、archive byte・inline header・正確なlive code・法的判断の完了とはしない。通常native CIのrelease Cargo JSONだけが保存pathから漏れていたため、既存artifactへ1行追加した。元の5b113a1の欠落ログが復元されたとは扱わず、今後の必要なCIで保存を確認する。
+
 5b113a1の[全体CI41016352538](https://github.com/EkeMinusYou/lazypencil/actions/runs/41016352538)は13分36秒で全工程成功した。監査・Wasm、core／既定の全試験とClippy、通常開発build、release・元の42描画観測、全5 consumer、共通画像gate、署名付きsourceを含む。builderは同commit・同imageの先行50ファイルを再利用し、完成322ファイルを保存した。builder4分44秒・core7分59秒・release8分04秒、通常2分29秒・runtime5分38秒・pixel1分47秒・端末1分12秒・Material1分33秒、source44秒だった。端末consumerはbuilder終了から開始まで160秒で、consumerの同時実行数制限を含む。前の全tracked fallbackを回避したが、全体10分以内とはしない。1227ファイルのsource tar SHA-256 `d6b9a63d…a7dded5`と署名検証結果のsource／ci.yml／main／run／attempt 1を照合した。
 
 同実行の配布候補は632ファイル・本体SHA-256 `279b4e3a…ae92cd`で、案内済み2436006候補の実行ファイルと一致した。新しいパッケージSHA-256は`b4dff53b…4fd29d`。元の20起動／80操作・100 worker profileと通常200MiB gateを維持し、入力／初回preview／完全出力のp95は51.29／330.43／227.62ms、cached feedbackは24.13ms、通常bound最大RSSは191.34MiB、30.051秒idle CPU上限は0.632%だった。別Chromium込みは1174.25MiB・30.134秒・1.659%。両process群の通常終了と回収も成功した。OS cacheは統制せず、物理表示の点滅解消・全性能受け入れ・正式公開済みとはしない。候補のrelease_readyはfalseのままである。

@@ -1267,9 +1267,9 @@ impl App {
         let inner = block.inner(panes[1]);
         frame.render_widget(block, panes[1]);
         if let Some(camera) = &self.camera {
-            frame.render_widget(ratatui_image::Image::new(&camera.protocol), inner);
+            frame.render_widget(graphics::Image(&camera.protocol), inner);
         } else if let Some(preview) = &self.preview {
-            frame.render_widget(ratatui_image::Image::new(&preview.protocol), inner);
+            frame.render_widget(graphics::Image(&preview.protocol), inner);
         } else {
             frame.render_widget(
                 Paragraph::new("No complete preview\nRendering errors appear below.")

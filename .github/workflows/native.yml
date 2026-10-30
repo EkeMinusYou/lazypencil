@@ -543,6 +543,7 @@ jobs:
             ${{ runner.temp }}/ci-timings.jsonl
             ${{ runner.temp }}/test-executables.json
             ${{ runner.temp }}/default-build.jsonl
+            ${{ runner.temp }}/release-cargo.jsonl
             ${{ runner.temp }}/tui-artifacts/
             ${{ runner.temp }}/render-regressions/
             ${{ runner.temp }}/chromium-*.json
