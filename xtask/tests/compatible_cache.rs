@@ -220,7 +220,7 @@ fn rebuilt_dependencies_refresh_application_generations_without_changing_compile
     );
 
     // Recreate an unchanged dependency, as a rebuilt native snapshot does.
-    // Cargo must rebuild the older application; no test changes file times.
+    // Cargo must rebuild the older application; compiler output times stay intact.
     std::thread::sleep(Duration::from_millis(20));
     process::checked(
         Command::new("cargo")
@@ -983,6 +983,8 @@ impl Fixture {
             "examples/preview.rs",
         ];
         for extra in [
+            "dependency/Cargo.toml",
+            "dependency/src/lib.rs",
             "src/main.rs",
             "src/verification.rs",
             "tests/three.rs",
