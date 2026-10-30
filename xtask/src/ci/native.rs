@@ -974,7 +974,10 @@ impl Session {
                         &["--test-threads=2"],
                         "focus-bindings.log",
                     )?;
-                    browser::focus_bindings(self)?;
+                    // A standalone focus owns all affected groups. In the
+                    // full pipeline, reproduce the exact failure first and
+                    // leave the long groups to the mandatory normal consumer.
+                    browser::focus_bindings(self, !concurrent_compilation)?;
                 }
                 if !concurrent_compilation {
                     self.focus_launch_reproduction(&args.suite)?;
@@ -1782,7 +1785,15 @@ mod tests {
         let test = session.root.join("tests/script_scope.rs");
         fs::write(
             &test,
-            "#[test] fn generated_browser_probe() { assert_eq!(10, 10); }\n",
+            "#[test] fn generated_browser_probe() { assert_eq!(10, 10); }\n\
+             #[test] fn generated_browser_full_consumer_sentinel() { panic!(\"full consumer sentinel\"); }\n\
+             mod script_bindings {\n\
+               pub mod generated_sources {\n\
+                 #[test] fn generated_replacements_keep_their_code_owner_under_later_overrides() {}\n\
+               }\n\
+               #[test] fn full_consumer_sentinel() { panic!(\"full consumer sentinel\"); }\n\
+             }\n\
+             mod script_copy { #[test] fn full_consumer_sentinel() { panic!(\"full consumer sentinel\"); } }\n",
         )
         .unwrap();
         let later = session.temporary.join("test-executables.json");
@@ -1826,6 +1837,44 @@ mod tests {
         let first = session
             .compile_catalog(&early, "early-first", "fixture-source")
             .unwrap();
+        // The builder reproduces its exact failure first. Deliberately failing
+        // deferred groups must still fail the unchanged full consumer command.
+        let binary = &first.binaries["script_scope"].path;
+        let builder = browser::binding_commands(binary, false);
+        assert_eq!(builder.len(), 1);
+        let result =
+            process::output(&mut session.command(&builder[0]), Duration::from_secs(30)).unwrap();
+        assert!(!result.timed_out && result.status.success());
+        assert!(String::from_utf8_lossy(&result.stdout).contains("1 passed; 0 failed"));
+        let all_bindings = browser::binding_commands(binary, true);
+        let normal = commands::default_test("script_scope", binary).unwrap();
+        for (index, invocation) in all_bindings
+            .iter()
+            .skip(1)
+            .chain(std::iter::once(&normal))
+            .enumerate()
+        {
+            let result =
+                process::output(&mut session.command(invocation), Duration::from_secs(30)).unwrap();
+            assert!(
+                !result.timed_out && !result.status.success(),
+                "A deferred failure vanished from complete verification"
+            );
+            assert!(String::from_utf8_lossy(&result.stdout).contains("full_consumer_sentinel"));
+            if index == 3 {
+                let log = String::from_utf8_lossy(&result.stdout);
+                for case in [
+                    "generated_browser_full_consumer_sentinel",
+                    "script_bindings::full_consumer_sentinel",
+                    "script_copy::full_consumer_sentinel",
+                ] {
+                    assert!(
+                        log.contains(&format!("test {case} ... FAILED")),
+                        "A full consumer omitted {case}"
+                    );
+                }
+            }
+        }
         first
             .validate(
                 &session.target,

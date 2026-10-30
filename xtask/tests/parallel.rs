@@ -52,7 +52,7 @@ fn browser_lanes_preserve_every_existing_target_once_with_bounded_parallelism() 
         );
     }
     let binary = std::env::temp_dir().join("verified-script-scope");
-    let bindings = lazypencil_xtask::ci::native::browser::binding_commands(&binary);
+    let bindings = lazypencil_xtask::ci::native::browser::binding_commands(&binary, true);
     let reproduction = lazypencil_xtask::ci::native::browser::BINDING_REPRODUCTION;
     assert_eq!(
         bindings

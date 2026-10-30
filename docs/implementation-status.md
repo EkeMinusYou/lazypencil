@@ -4,6 +4,8 @@
 
 ## 現在の状態（2026-10-30）
 
+次のCI候補は、全体builderとnormal consumerで重ねていた長いbinding群の配置を整理する。74f37fdのbuilderではbinding 18件が162.84秒、generated-browser 5件が51.25秒で、normal consumerも同じ共有`script_scope`実行ファイルの34非ignored試験を110.50秒で実行していた。全体builderは最初のexact再現を維持し、長いbinding／generated-browser／legacy-copy群は変更しないnormalの完全targetで確認する。単独focusは従来の全群・filter・harness thread数・300秒期限を維持する。新しいtest結果cacheやconsumerのskipは追加しない。既存の小さな実Cargo fixtureへ、builderのexactは通る一方、後段の各群とnormalには意図した失敗が残る対照を加え、試験の消失を検査する。整形・差分検査までで、GHAでの補助検証と実際の時間は未確認である。
+
 74f37fdの[全体CI 40995928928](https://github.com/EkeMinusYou/lazypencil/actions/runs/40995928928)は全工程成功した。展開budgetはcore／既定構成の全試験・Clippy、通常開発build、release／smoke／42回の描画計測、全5 consumer、共通画像gateと署名付きsourceを通過した。多数のinstanceに対する無制限の文字列複製は対応済みとし、128MiBの複製作業量budgetとprocess RSSを混同しない。従来sampler 10条件・20 PNGとscript URL 4条件・12 PNGを維持した。取得成果物ではnonceに依存しない24 PNGが9059fbaとbyte一致した。絶対path／file URLの8 PNGは一時pathを本文として表示するため、異なるsource間の画像全体一致には使わず、同じ実行内での元／copy一致と期待shader画素の元のgateを確認した。
 
 全体15分25秒で10分目標は未達。builder9分47秒・core8分48秒・release3分19秒、通常2分52秒・runtime4分08秒・pixel2分39秒・端末1分04秒・Material1分40秒、source37秒だった。focusはimage 20261028.0489.1、builderは20260907.0337.1であり、部分cacheは正当に拒否して`reused:false`となった。先行用test buildは2分52秒、binding 18件は他のcompileと重なって162.84秒だった。registry依存全体の再codegenと決めつけず、正当なimage／feature差と同条件の不要なbuildを分ける。署名付きsource tar SHA-256は`9f74412be6c16b8172a8ca4a22c8d108a28f2b228b6941987c3214f81d64013c`で、subject・source revision・GitHub OIDC issuer・ci.yml／main署名identityとrun／attempt 1を照合した。

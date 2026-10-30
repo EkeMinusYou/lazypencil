@@ -195,13 +195,15 @@ pub fn test_threads(target: &str) -> usize {
 
 pub const BINDING_REPRODUCTION: &str = "script_bindings::generated_sources::generated_replacements_keep_their_code_owner_under_later_overrides";
 
-pub fn binding_commands(binary: &Path) -> [Vec<String>; 4] {
+pub fn binding_commands(binary: &Path, complete: bool) -> Vec<Vec<String>> {
     [
         BINDING_REPRODUCTION,
         "generated_browser_",
         "script_bindings::",
         "script_copy::",
     ]
+    .into_iter()
+    .take(if complete { 4 } else { 1 })
     .map(|filter| {
         // Complete default verification already runs these owned cases with
         // two harness threads. Retain separate logs and the original filters.
@@ -219,11 +221,12 @@ pub fn binding_commands(binary: &Path) -> [Vec<String>; 4] {
         }
         command
     })
+    .collect()
 }
 
 /// These CPU/layout checks own distinct temporary projects and script workers.
 /// Only the script-bindings group writes codec-script-overrides artifacts.
-pub fn focus_bindings(s: &Session) -> Result<()> {
+pub fn focus_bindings(s: &Session, complete: bool) -> Result<()> {
     let commit = std::env::var("GITHUB_SHA")?;
     let catalog = if s.temporary.join("early-test-executables.json").exists() {
         s.verified_catalog(&["script_scope"])?
@@ -231,7 +234,7 @@ pub fn focus_bindings(s: &Session) -> Result<()> {
         s.compile_catalog(&["script_scope".into()], "focus-binding-build", &commit)?
     };
     catalog.validate(&s.target, &commit, &["script_scope"])?;
-    let checks = binding_commands(&catalog.binaries["script_scope"].path);
+    let checks = binding_commands(&catalog.binaries["script_scope"].path, complete);
     let execute = |index: usize, log: &str| {
         let mut command = s.command(&checks[index]);
         command
@@ -242,6 +245,12 @@ pub fn focus_bindings(s: &Session) -> Result<()> {
     // Reproduce the changed input boundary before unrelated long layouts. The
     // later binding group excludes this exact same-condition invocation.
     execute(0, "focus-generated-code-owner.log")?;
+    if !complete {
+        // The mandatory normal consumer runs this same immutable catalog's
+        // complete default target. Do not hold every consumer behind a second
+        // copy of its long binding, generated-browser and legacy-copy groups.
+        return Ok(());
+    }
     let groups = parallel::run(vec![
         (
             "generated browser layouts",
