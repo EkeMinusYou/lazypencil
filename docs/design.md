@@ -201,6 +201,10 @@ TUI は承認要求をダイアログで受け付ける。CLI は対話端末が
 
 ## MCP と CLI の編集インターフェース
 
+### シェルのTab補完
+
+`lazypencil completions SHELL`で、インストールしたCLIの定義から補完hookを生成する。初回Mac版はBash・Zsh・Fishを対象とし、深いサブコマンド、公開option、固定の選択肢、同梱guide／style／icon pack／node type、ファイル・ディレクトリのpathを補完する。文書内node IDやagent側のmodel IDは自由入力とする。補完要求は文書・ユーザー設定・agent・Chromium・文書lockの準備前に完了し、project固有の候補のためにこれらへ接続しない。導入手順と詳細は[シェル補完](completions.md)に定める。
+
 ### 文書への束縛
 
 MCP サーバーは `lazypencil mcp --file <path>` で起動し、一つの文書に束縛する。起動時にパスを正規化し、ツール呼び出しで別の任意ファイルへ切り替えられる設計にはしない。依存ライブラリと許可済みの作例・添付は読み取り可能にするが、依存文書への書き込みは行わない。複数文書を編集する外部クライアントは、文書ごとにサーバーを登録する。

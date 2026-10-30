@@ -2,9 +2,15 @@
 
 <a id="current-status"></a>
 
-## 現在の状態（2026-10-30）
+## 現在の状態（2026-10-31）
 
-利用者が希望したcompletionはシェルのTab補完であり、TUI内の補完は今回の対象へ加えない。4c1a958で`completions SHELL`と共通の動的補完エンジン、同梱catalogueの候補、値・パスのhint、導入手順・配布README・既存candidate smokeへの検査を追加した。補完は文書・設定・agent・Chromium・lockの準備前に終了する。Rustの原文資料は[41075010647](https://github.com/EkeMinusYou/lazypencil/actions/runs/41075010647)で全395件を生成・再検証した。追加はclap_complete4.6.11とis_executable1.0.6の2件で、既存393件はworkspace自身のmanifest hash以外に変更がなく、原文blobの集合も同じだった。これを実行試験の成功とはせず、Macのcore構成で`tests/completions.rs`を先に確認する。ローカルのnative buildは行っていない。
+利用者が希望したcompletionはシェルのTab補完であり、TUI内の補完は今回の対象へ加えない。4c1a958で`completions SHELL`と共通の動的補完エンジン、同梱catalogueの候補、値・パスのhint、導入手順・配布README・既存candidate smokeへの検査を追加した。補完は文書・設定・agent・Chromium・lockの準備前に終了する。e1a90fdの[Mac core先行41076121661](https://github.com/EkeMinusYou/lazypencil/actions/runs/41076121661)は成功し、補完3試験は1.70秒、続く通常構成でも1.81秒で成功した。Bash・Zsh・Fishの生成hookを実shellで読み込み、深いサブコマンド、固定値・同梱catalogue、日本語・空白のあるpath、設定・文書・data・lockへの非接触を確認した。通常構成ではTUIの画像protocol候補も確認した。[導入手順](completions.md)と[設計](design.md#シェルのtab補完)に対応範囲を反映した。
+
+同じコミットの[全体41077139807](https://github.com/EkeMinusYou/lazypencil/actions/runs/41077139807)は最終attempt 2で全工程成功した。attempt 1は画像consumerだけがrunner未割り当てのままGitHub側でcancelされ、注記は`The job was not acquired by Runner of type hosted even after multiple attempts`とMac arm64のcapacity不足だった。未実行の画像jobだけを再投入し、同runの共有binaryで2分34秒で成功した。成功済みのbuild・core・release・通常・runtime・Material・terminalは再実行せず、全5結果・元の共有画像gate・監査・両Clippy・通常開発build・署名付きsourceを維持した。初回作成から最終成功まで38分45秒で、通常／runtimeのrunner待ちは約10分だった。通常構成の一致する依存cacheはなく対象build9分16秒、release build12分46秒と後続Cargo確認3分01秒も含む。先行cache自体は取得できたが、coreと通常構成のfeature差を無視した再利用はしない。この実行を10分目標の達成とはせず、試験や期限を削った追加の全体検証も行わない。
+
+[配布41080846308](https://github.com/EkeMinusYou/lazypencil/actions/runs/41080846308)も成功した。14分45秒のうちrunner待ち10分43秒、job実行4分01秒で、同sourceのrelease出力15ファイルを復元し本体はCargoのfresh判定で再利用した。source／native build treeを隠した既存candidate smokeで、Bash・Zsh・Fishのhook生成とdata非生成、従来のJavaScript 256画素を確認した。取得した637ファイルの候補archiveはSHA-256 `e2352485d204a089730d3663755f2291fd1322e8b38906ad15007d563208148f`、本体は`f3a765ff2b2bc55b41f52b5c20e74e6320bb7043d4b9fb5347b2fcd8f3f37de8`で、manifest・smokeと一致した。ローカルでもgh attestation verifyでsource／signer e1a90fd・release-evidence.yml／main・GitHub hosted・run 41080846308／attempt 1を指定して署名を検証した。検証用cacheは許可済みのLibrary/Caches以下へ分離し、通常のgh設定は変更していない。大きな取得archiveは照合後に削除し、Mac用本体と小さな確認資料を`/private/tmp/lazypencil-completions-e1a90fd/`へ保持した。仕様2点・保証環境と最終公開の受け入れは引き続き未完了である。
+
+Rustの原文資料は[41075010647](https://github.com/EkeMinusYou/lazypencil/actions/runs/41075010647)で全395件を生成・再検証した。追加はclap_complete4.6.11とis_executable1.0.6の2件で、既存393件はworkspace自身のmanifest hash以外に変更がなく、原文blobの集合も同じだった。ローカルのnative buildは行っていない。
 
 利用者は案内したaeb174b候補をMacのWezTerm／Sixelで確認し、操作が大幅に速くなり、初回も画像が先に表示され問題ないと回答した。この環境でのSixel応答・初期表示の修正は受け入れ済みとし、同条件の確認を繰り返さない。確認後にインストール済みCLIから`20240203-110809-5046fc22`を取得した。これは導入済み版の観測であり、元の試験時に利用者が版を記録したという主張ではない。Kittyの修正確認も保持する。以下の遅さ・初期表示の報告は修正前の経緯であり、現在の不具合へ加算しない。
 
