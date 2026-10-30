@@ -32,9 +32,12 @@ impl Fixture {
                 "bytes":bytes.len(),
                 "sha256":util::digest(bytes),
                 "spdx_annotations":["MIT"],
+                "comment_fingerprints":[{"line":2,
+                    "utf8_text_bytes":b"/* SPDX-License-Identifier: MIT */".len(),
+                    "utf8_text_sha256":util::digest(b"/* SPDX-License-Identifier: MIT */")}],
             }]);
             data["index"]["limits"]["external_headers"] = json!(
-                "Declared/resolved paths, sizes and SHA-256 identify external header inputs. SPDX annotations in their first 16384 bytes are recorded verbatim; absent annotations stay empty. Source bytes and license texts are not copied or classified."
+                "Declared/resolved paths, sizes and SHA-256 identify external header inputs. SPDX annotations in their first 16384 bytes are recorded verbatim; absent annotations stay empty. Notice candidates from the same lossy-UTF-8 prefix retain only locations and UTF-8 text sizes/hashes. Source bytes and license texts are not copied or classified."
             );
         }
         Self {

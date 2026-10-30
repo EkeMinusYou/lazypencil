@@ -10,6 +10,8 @@ const NOTICE_FILES: &[&str] = &[
     "licenses/rust/RUST-NOTICES.txt",
     "licenses/native/skcms/LICENSE",
     "licenses/native/skcms/NOTICE.txt",
+    "licenses/native/clang-neon/ORIGINAL-NOTICE.txt",
+    "licenses/native/clang-neon/NOTICE.txt",
     "licenses/shader-preprocessor/packages/RUST-NOTICES.txt",
     "licenses/shader-preprocessor/toolchain/inventory/TOOLCHAIN-NOTICES.txt",
     "quickjs/QUICKJS-NOTICES.txt",

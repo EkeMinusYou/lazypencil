@@ -1,0 +1,30 @@
+Clang-generated ARM Neon header notice
+======================================
+
+ORIGINAL-NOTICE.txt preserves the emitted MIT permission notice without
+adding copyright owners or dates. It is taken from NeonEmitter::run() in:
+
+Repository: https://github.com/llvm/llvm-project
+Release: llvmorg-19.1.7
+Revision: cd708029e0b2869e80abe31ddb175f7c35361f90
+Source: clang/utils/TableGen/NeonEmitter.cpp
+https://github.com/llvm/llvm-project/blob/cd708029e0b2869e80abe31ddb175f7c35361f90/clang/utils/TableGen/NeonEmitter.cpp#L2323
+
+The original comment, through its closing */ without a following newline,
+has SHA-256:
+9b77668d392a0ae397ee684776d2237389c40358433b50f8ae6ce464357e9691
+
+ORIGINAL-NOTICE.txt includes one following newline and has SHA-256:
+b7517e19e410d772a48e614d2cc0c8742d19a2feebe5a6b19e9326596c8e020d
+
+The initial Mac build observes arm_neon.h from Xcode 16.4 / Clang 17 with
+whole-file SHA-256:
+398e874688d461272fd9c9ad311d05898b102e9e33eed8f846c0b1e74b1782af
+
+Its identity and notice-comment fingerprints are retained in the native
+inventory. Compare the comment fingerprint above when reviewing that input;
+the complete Apple header is not claimed to equal the upstream generator's
+output. Future toolchain updates require reviewing this correspondence.
+
+This is the generated header's permission notice. The compiler and generator
+have their own licenses. No SDK header implementation is included here.

@@ -319,6 +319,12 @@ Rust の別プロセスへ `rquickjs` 0.14.0 と、その配布ソースが含�
 
 実行・入力変更・生成図形と日本語・部品参照・入れ子のスクリプト・実行時素材の更新・取消・無限ループ・メモリ不足を `tests/scripts.rs`、`tests/script_render.rs`、`tests/mcp.rs` で検証した。実行時依存の編集前条件は実 CLI・MCP、ドライラン、再送、準備中の外部素材変更でも試験している。独自の `examples/script-chart.pen` は960×600で描画し目視確認した。生成ノードの詳細取得は `tests/calculated_nodes.rs` で、元ソースの位置と抜粋は `tests/script_diagnostics.rs` で検証する。TUI の基本プレビュー・待機時終了・明示更新は下記の実 PTY 試験で確認した。本家の旧ヘッダー、公式例との互換性、TUI の全操作と各 OS の試験は引き続き必要である。
 
+## Browser の deviceId
+
+`deviceId`はbrowserノード内のWebページに適用する端末エミュレーションのプリセット名で、実行するMacや利用者の識別番号ではない。[公開スキーマ](https://docs.pencil.dev/for-developers/the-pen-format)は文字列型と、省略時にレスポンシブ表示になることを定義しているが、本家のID一覧と各設定値は掲載していない。
+
+lazypencilの現行実装では、省略または`desktop`はmobile／touchを無効、`phone`・`tablet`は有効にする。表示寸法はノードの計算済みwidth／height、deviceScaleFactorは描画scaleから取得し、IDの指定だけで機種固有の寸法やUser-Agentへ切り替える処理はない。これらの基本モードと、本家の全プリセットIDの互換性は別に扱う。本家固有の未対応IDは推測して読み替えず、描画時に`UNSUPPORTED_FEATURE`を返す。元の全device preset対応の条件は維持し、必要な対応関係は未確定として残す。
+
 ## Web ページ・GLSL の初期実装の検証状況
 
 Chrome for Testing headless shell 156.0.8078.47 の版別公式 ZIP と全ファイルのサイズ・ハッシュを固定した。専用コマンドから HTTPS 取得または固定したローカル ZIP の導入・検査・再利用を行い、変更された導入先は上書きせず拒否する。[全3環境の検証 `d6c5808`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40633683855) では、macOS Apple Silicon・Linux x64／arm64 の管理runtimeを実際に導入・検査し、sandboxを有効にしたpage／shader・MCP・PTY試験を実行した。過去のWindows結果は初回リリースの対象へ含めない。[導入と試験手順](runtimes.md)

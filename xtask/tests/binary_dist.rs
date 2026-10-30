@@ -10,6 +10,8 @@ const NOTICES: &[&str] = &[
     "licenses/rust/RUST-NOTICES.txt",
     "licenses/native/skcms/LICENSE",
     "licenses/native/skcms/NOTICE.txt",
+    "licenses/native/clang-neon/ORIGINAL-NOTICE.txt",
+    "licenses/native/clang-neon/NOTICE.txt",
     "licenses/shader-preprocessor/packages/RUST-NOTICES.txt",
     "licenses/shader-preprocessor/toolchain/inventory/TOOLCHAIN-NOTICES.txt",
     "quickjs/QUICKJS-NOTICES.txt",
@@ -188,6 +190,8 @@ fn candidates_reject_changed_sources_binaries_missing_notices_and_self_consisten
         "missing-notice",
         "missing-skcms-license",
         "missing-skcms-provenance",
+        "missing-neon-notice",
+        "missing-neon-provenance",
         "unlisted",
         "separator-alias",
     ] {
@@ -219,6 +223,22 @@ fn candidates_reject_changed_sources_binaries_missing_notices_and_self_consisten
             "missing-skcms-provenance" => {
                 fs::remove_file(arguments.evidence.join("licenses/native/skcms/NOTICE.txt"))
                     .unwrap();
+            }
+            "missing-neon-notice" => {
+                fs::remove_file(
+                    arguments
+                        .evidence
+                        .join("licenses/native/clang-neon/ORIGINAL-NOTICE.txt"),
+                )
+                .unwrap();
+            }
+            "missing-neon-provenance" => {
+                fs::remove_file(
+                    arguments
+                        .evidence
+                        .join("licenses/native/clang-neon/NOTICE.txt"),
+                )
+                .unwrap();
             }
             "unlisted" => {
                 fs::write(arguments.evidence.join("extra"), "Unlisted").unwrap();

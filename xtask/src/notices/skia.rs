@@ -340,11 +340,20 @@ pub fn build_from_graph(
                     .map(|capture| capture[1].trim().to_owned())
                     .filter(|annotation| !annotation.is_empty())
                     .collect::<BTreeSet<_>>();
+                let comments = super::source_comments(name, &prefix)?
+                    .into_iter()
+                    .map(|comment| {
+                        let text = string(&comment["text"])?;
+                        Ok(json!({"line":comment["line"],"utf8_text_bytes":text.len(),
+                            "utf8_text_sha256":util::digest(text)}))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
                 external_headers.insert(
                     name.to_owned(),
                     json!({
                         "path":name,"resolved_path":path,"bytes":bytes.len(),
                         "sha256":util::digest(&bytes),"spdx_annotations":annotations,
+                        "comment_fingerprints":comments,
                     }),
                 );
                 *excluded
@@ -471,7 +480,7 @@ pub fn build_from_graph(
     Ok((
         json!({"format_version":1,"scope":"Observed Skia build inputs and original notice candidates; binary linkage and complete attribution review are not established.",
         "targets":TARGETS,"components":used,"inputs":inputs,"generated_inputs":generated.into_values().collect::<Vec<_>>(),"build_files":build_files,"excluded_inputs":excluded,"external_headers":external_headers.into_values().collect::<Vec<_>>(),"source_comments":comments,"notice_files":notices,"review_findings":findings,"license_references":[],
-        "limits":{"source_comments":"License/copyright comment candidates in the first 65536 bytes of each observed C/C++/assembly source or header.","recorded_headers":"All recorded objects in this build directory, which can include unused or stale targets; missing files are rejected.","external_headers":"Declared/resolved paths, sizes and SHA-256 identify external header inputs. SPDX annotations in their first 16384 bytes are recorded verbatim; absent annotations stay empty. Source bytes and license texts are not copied or classified.","excluded":"System/external headers, Rust toolchain, QuickJS, fonts, icons, and optional runtimes need separate inventories."}}),
+        "limits":{"source_comments":"License/copyright comment candidates in the first 65536 bytes of each observed C/C++/assembly source or header.","recorded_headers":"All recorded objects in this build directory, which can include unused or stale targets; missing files are rejected.","external_headers":"Declared/resolved paths, sizes and SHA-256 identify external header inputs. SPDX annotations in their first 16384 bytes are recorded verbatim; absent annotations stay empty. Notice candidates from the same lossy-UTF-8 prefix retain only locations and UTF-8 text sizes/hashes. Source bytes and license texts are not copied or classified.","excluded":"System/external headers, Rust toolchain, QuickJS, fonts, icons, and optional runtimes need separate inventories."}}),
         texts,
     ))
 }
