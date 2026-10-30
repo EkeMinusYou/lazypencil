@@ -337,6 +337,8 @@ fill-stage `pencil:object` は、まずその組み合わせが本家で有効�
 
 検討した公開issueの投稿先は[highagency/pen-desktop-releases](https://github.com/highagency/pen-desktop-releases/issues)、件名案は`.pen format clarification: browser deviceId presets and shader-fill pencil:object`だった。投稿やメール送信は行っていない。
 
+2026-10-31に[公開仕様](https://docs.pencil.dev/for-developers/the-pen-format)を再確認した。版は2.21・更新日は2026-10-13で、deviceIdの列挙とfill段階のobject画像の評価順・範囲は確認できなかった。公式公開issueの対象語検索でも、この2点を確定する回答は見つからなかった。見つかったdeviceIdの[issue 12](https://github.com/highagency/pen-desktop-releases/issues/12)は認証、shaderの[issue 10](https://github.com/highagency/pen-desktop-releases/issues/10)は再読込みの報告で、両方ともコメント0件だった。この確認を組合せの有効／無効の仕様根拠にはせず、2点は引き続き未確定とする。
+
 > We are implementing an independent MIT-licensed reader/renderer for .pen files, based on the published format. Could you clarify the supported browser deviceId values and their emulation settings, including precedence relative to node width/height, for formats 2.19/2.21? Is pencil:object valid in a shader fill, or only in shader effects? If valid in a fill, which rendering stage supplies its pixels, and what are its bounds/coordinates? Please also clarify the permitted use of the supplied specification/examples for independent compatibility implementation and testing under EULA Section 3, including any written permission needed to create and retain comparison fixtures.
 
 ## Web ページ・GLSL の初期実装の検証状況
