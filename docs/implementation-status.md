@@ -4,7 +4,13 @@
 
 ## 現在の状態（2026-10-30）
 
-aa10717の[Mac補助検証40999973535](https://github.com/EkeMinusYou/lazypencil/actions/runs/40999973535)は全補助試験・Clippy・元のライセンス資料検証を成功した。以下の重複削減について、既存の小さなCargo統合fixtureから実xtaskを起動し、build-and-reproduceがexactだけを成功して完全catalogを公開する一方、normalの完全targetは意図した三群の失敗を全て検出し、単独focusも両並列群と最後のcopy群を終了して失敗することを確認した。以前のargv単位の対照を置き換え、重ねて試験していない。全体時間は後続の完全CIで確認する。先行群は他のcompileと重なっていたため、162秒全量を全体短縮の予測に使わない。READMEの古い入力文脈・共有認証・非ローカルsampler・API未確認という記述も、既存の成功範囲と残る受け入れへ揃える。
+ac6df19の[全体CI 41000322063](https://github.com/EkeMinusYou/lazypencil/actions/runs/41000322063)は8分47秒で全工程成功した。core／既定の全試験・Clippy、通常開発build、release・元の42描画観測、全5 consumer、共通画像gateと署名付きsourceを維持した。builderは74f37fdの同条件の304ファイルを再利用し、無効化0件、Cargo JSONの408単位（本体50単位を含む）は全てfresh、catalog確認4.14秒だった。通常consumerの771 named実行記録（ignoredを含む）は74f37fdと回数ごと一致し、script_scopeは従来の34成功・2 ignoredを維持した。builder2分21秒・core4分46秒・release3分27秒、通常2分48秒・runtime4分58秒・pixel1分57秒・端末1分19秒・Material1分14秒、source42秒だった。これは変更した補助処理と未変更アプリ成果物の再利用条件であり、本体変更時の再compileを含む74f37fdからの差全量を重複削減の効果にはしない。browser-ci選択の全体経路は長い先行群を元から実行しないため、copy／graphics系の新しい分岐そのものは下記の実scheduler fixtureでの成功と区別する。
+
+途中のAPIはruntimeをqueued・runner未割当と表示し続けたが、終了後の確定時刻と実ログでは04:01:57Z作成・04:02:04Z開始・04:07:02Z完了だった。約5分の待機という途中の説明を訂正し、7秒の割当と4分58秒の実行を採用する。source tarの1,227ファイルとSHA-256 `ca130f239bb7fd7e38ff1d8ac1c458b94f956475a4b35452526eab87c9c44340`、検証済み署名のsubject・source revision・ci.yml／main・run／attempt 1を照合した。同条件の完全CIを重ねて実行せず、後続は文書への結果記録だけとする。
+
+同じGHA製74f37fd・Codex ACP 2.2.2・gpt-6.1-solで、API経路の初期画像添付も確認した。自作360×160 PNGの本文をプロンプトに書かず添付し、モデルは「ORBIT 5837」を読み取り、画像fillを残さずNoto Sans JPの編集可能なtextへ作成した。MCP 21呼出し、api_key報告、保存会話の添付hash、独立したlayoutのvalid／complete・診断0件、MCP／CLIのPNG hashと省略base64の再構成hashを照合し、画像も目視した。推定背景色は元の#5327A8に対して#5128A4であり、完全な画像再現とはしない。一時認証領域と80MiBの実行ファイルは削除し、記録約524KiBだけ保持した。Claude API・物理端末pasteの受け入れとは別である。[接続記録](agents.md#verification)
+
+aa10717の[Mac補助検証40999973535](https://github.com/EkeMinusYou/lazypencil/actions/runs/40999973535)は全補助試験・Clippy・元のライセンス資料検証を成功した。以下の重複削減について、既存の小さなCargo統合fixtureから実xtaskを起動し、build-and-reproduceがexactだけを成功して完全catalogを公開する一方、normalの完全targetは意図した三群の失敗を全て検出し、単独focusも両並列群と最後のcopy群を終了して失敗することを確認した。以前のargv単位の対照を置き換え、重ねて試験していない。後続の全体CIの結果と適用経路は冒頭を参照する。先行群は他のcompileと重なっていたため、162秒全量を全体短縮の予測に使わない。READMEの古い入力文脈・共有認証・非ローカルsampler・API未確認という記述も、既存の成功範囲と残る受け入れへ揃えた。
 
 次のCI候補は、全体builderとnormal consumerで重ねていた長いbinding群の配置を整理する。74f37fdのbuilderではbinding 18件が162.84秒、generated-browser 5件が51.25秒で、normal consumerも同じ共有`script_scope`実行ファイルの34非ignored試験を110.50秒で実行していた。全体builderは最初のexact再現を維持し、長いbinding／generated-browser／legacy-copy群は変更しないnormalの完全targetで確認する。単独focusは従来の全群・filter・harness thread数・300秒期限を維持する。新しいtest結果cacheやconsumerのskipは追加しない。補助検証の成功と後続の確認範囲は上記を参照する。
 
@@ -401,7 +407,7 @@ HTTP(S)文字列samplerはa00289f、未参照のproject素材回収は9865944、
 公開前の確認・決定：
 
 - 最低macOSと保証端末を、実測結果に基づいて固定する。MacでKitty／Sixel両方と、保証する端末による画像・日本語・キーボード操作の条件を維持する。macSKK の未確定文字／候補表示の報告、実端末と clipboard の組合せ、宣言する tmux／SSH の範囲は未受け入れ。
-- CodexのAPI経路と自作project guideの実生成は74f37fdで確認済み。Claude API・APIの初期画像添付などの未確認経路と、完成条件に対応する接続環境は引き続き確認する。未確認の全モデル組合せを新しい実装要求にはしない。
+- CodexのAPI経路・自作project guideの実生成・APIでの初期画像添付は74f37fdで確認済み。Claude APIなどの未確認経路と、完成条件に対応する接続環境は引き続き確認する。未確認の全モデル組合せを新しい実装要求にはしない。
 - 統制した cold/warm・基準環境の性能、Chromium を含む別予算、最終配布候補の環境・署名・元の notice／ソース提供条件を確認する。過去の同条件の有効な証拠は再利用する。
 - 旧参照 PNG 11点・派生 JSON 3点は現行ソースから除去済み。旧 Git 履歴と過去 CI artifact の扱いは未確定で、公開前の権利処理は完了していない。履歴の強制書換えは実行していない。[根拠](design-guidance.md#pencil-の-skill-とライセンス)
 
@@ -419,7 +425,7 @@ macOS の常用メモリは `7fe854b` の既存候補で172.03MiB、cached feedb
 
 大きな文字列の展開上限は74f37fdの完全CIで検証済みとなった。捕捉scriptのfile URL／HTTP asset key・入れ子namespaceと同様、未実装へ戻さない。
 
-1. 既存ログに基づき、部分／完全成果物の再利用と長い先行試験の配置を整理する。直近は先行5分47秒・全体15分25秒であり、全体10分以内は未達として改善する。image不一致による正当な再buildと、同一条件の不要な再buildを分ける。Cargoの鮮度判定、各feature・検証目的・元の期限と最終gateは維持する。
+1. 既存ログに基づき、部分／完全成果物の再利用と長い先行試験の配置を整理する。先行5分47秒、補助変更・未変更アプリの再利用では全体8分47秒で成功した。本体変更を含む74f37fdの全体15分25秒とは条件を分け、全条件で10分以内とはしない。長いbinding群の重複削減は実scheduler fixtureで失敗保持まで確認済みであり、実アプリ変更での時間は次の必要な検証で確認する。image不一致による正当な再buildと、同一条件の不要な再buildを分ける。Cargoの鮮度判定、各feature・検証目的・元の期限と最終gateは維持する。
 2. 公開仕様に意味の記載がないdevice presetとfill-stage object samplingを確認し、推測を本家互換として実装済みにしない。
 3. 不足するMac実端末・接続・性能の受け入れ、保証環境と配布候補、旧参照素材の履歴の扱い、文書を確定する。Codex API／自作guideの今回の成功を含む、有効な同条件の証拠を再利用する。
 
