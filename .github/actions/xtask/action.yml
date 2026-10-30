@@ -31,9 +31,18 @@ runs:
       run: |
         rustup toolchain install 1.94.0 --profile minimal --component clippy --component rustfmt
         rustup default 1.94.0
+    - name: Restore verified executable-only tools for jobs that do not compile them
+      id: executables
+      if: inputs.prebuilt == '' && runner.os != 'Windows'
+      continue-on-error: true
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        lookup-only: ${{ inputs.verify == 'true' }}
+        path: ${{ runner.temp }}/lazypencil-tools-cache
+        key: xtask-binaries-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LAZYPENCIL_RUNNER_IMAGE }}-rust1.94.0-${{ hashFiles('xtask/**', '!xtask/target/**', '.github/actions/xtask/action.yml', 'vendor/skia-bindings/build_support/binary_cache/source_archive.rs') }}
     - name: Restore tools bound to these sources
       id: tools
-      if: inputs.prebuilt == ''
+      if: inputs.prebuilt == '' && (inputs.verify == 'true' || steps.executables.outputs.cache-hit != 'true')
       continue-on-error: true
       uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
       with:
@@ -42,7 +51,7 @@ runs:
         restore-keys: xtask-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LAZYPENCIL_RUNNER_IMAGE }}-rust1.94.0-
     - name: Restore dependency-only bootstrap checkpoints
       id: dependencies
-      if: inputs.prebuilt == '' && steps.tools.outputs.cache-hit != 'true'
+      if: inputs.prebuilt == '' && (inputs.verify == 'true' || steps.executables.outputs.cache-hit != 'true') && steps.tools.outputs.cache-hit != 'true'
       continue-on-error: true
       uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
       with:
@@ -51,12 +60,12 @@ runs:
         key: xtask-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LAZYPENCIL_RUNNER_IMAGE }}-rust1.94.0-${{ hashFiles('xtask/Cargo.lock', 'xtask/Cargo.toml') }}
         restore-keys: xtask-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LAZYPENCIL_RUNNER_IMAGE }}-rust1.94.0-
     - name: Discard old tool units while retaining Cargo-owned dependencies
-      if: inputs.prebuilt == '' && steps.tools.outputs.cache-hit != 'true'
+      if: inputs.prebuilt == '' && (inputs.verify == 'true' || steps.executables.outputs.cache-hit != 'true') && steps.tools.outputs.cache-hit != 'true'
       shell: bash
       run: cargo clean --locked --manifest-path xtask/Cargo.toml --target-dir xtask/target --package lazypencil-xtask
     - name: Build the lightweight tools and native fixtures
       id: build
-      if: inputs.prebuilt == '' && steps.tools.outputs.cache-hit != 'true'
+      if: inputs.prebuilt == '' && (inputs.verify == 'true' || steps.executables.outputs.cache-hit != 'true') && steps.tools.outputs.cache-hit != 'true'
       shell: bash
       run: cargo build --locked --manifest-path xtask/Cargo.toml --target-dir xtask/target --bins
     - name: Download the same run's native tools without the Cargo build tree
@@ -66,12 +75,18 @@ runs:
         name: ${{ inputs.prebuilt }}
         path: xtask/target/debug
     - name: Verify native tool bytes before executing them
-      if: inputs.prebuilt != ''
+      if: inputs.prebuilt != '' || inputs.verify != 'true' && steps.executables.outputs.cache-hit == 'true'
       shell: bash
-      working-directory: xtask/target/debug
+      working-directory: ${{ inputs.prebuilt != '' && 'xtask/target/debug' || format('{0}/lazypencil-tools-cache', runner.temp) }}
       run: |
         shasum -a 256 --check SHA256SUMS
         chmod +x xtask lazypencil-test-helper
+    - name: Install verified cached executables without a Cargo build tree
+      if: inputs.prebuilt == '' && inputs.verify != 'true' && steps.executables.outputs.cache-hit == 'true'
+      shell: bash
+      run: |
+        "$RUNNER_TEMP/lazypencil-tools-cache/xtask" ci tools stage --output xtask/target/debug
+        chmod +x xtask/target/debug/xtask xtask/target/debug/lazypencil-test-helper
     - name: Prepare isolated test paths and source freshness
       shell: bash
       run: xtask/target/debug/xtask ci tools prepare
@@ -105,6 +120,26 @@ runs:
       with:
         path: xtask/target
         key: ${{ steps.tools.outputs.cache-primary-key }}
+    - name: Stage verified tool executables without the Cargo tree
+      id: executable-manifest
+      if: inputs.verify == 'true' && runner.os != 'Windows' && steps.executables.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+      shell: bash
+      run: cargo xtask ci tools stage --output "$RUNNER_TEMP/lazypencil-tools-cache"
+    - name: Publish verified executable-only tools for execution jobs
+      id: executable-published
+      if: steps.executable-manifest.outcome == 'success'
+      continue-on-error: true
+      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        key: ${{ steps.executables.outputs.cache-primary-key }}
+        path: ${{ runner.temp }}/lazypencil-tools-cache
+    - name: Retire replaced executable-only sources after verification
+      if: inputs.retire-old-tools == 'true' && inputs.verify == 'true' && github.ref == 'refs/heads/main' && (steps.executable-published.outcome == 'success' || steps.executables.outputs.cache-hit == 'true')
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: cargo xtask ci cache retain --delete --before-tools-replacement '${{ steps.executables.outputs.cache-primary-key }}' --tools-matched-key '${{ steps.executables.outputs.cache-primary-key }}'
     - name: Keep completed dependencies when the tool gate fails
       id: failed-dependencies
       if: ${{ failure() && steps.build.outcome == 'success' && steps.dependencies.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}

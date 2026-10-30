@@ -1541,7 +1541,7 @@ pub fn obsolete_tools_before_replacement(
     matched: &str,
 ) -> Result<Vec<Value>> {
     let regex = Regex::new(
-        r"^(xtask-v1-(?:Linux|macOS|Windows)-(?:X64|ARM64)-[A-Za-z0-9_.]+-rust[0-9.]+)-[0-9a-f]{64}$",
+        r"^(xtask(?:-binaries)?-v1-(?:Linux|macOS|Windows)-(?:X64|ARM64)-[A-Za-z0-9_.]+-rust[0-9.]+)-[0-9a-f]{64}$",
     )?;
     let group = regex
         .captures(primary)
@@ -1623,7 +1623,7 @@ fn obsolete_with_sources(
     let mut selected = BTreeMap::new();
     let mut groups = BTreeMap::<(String, String), Vec<&Value>>::new();
     let tools = Regex::new(
-        r"^(xtask-v1-(?:Linux|macOS|Windows)-(?:X64|ARM64)-[A-Za-z0-9_.]+-rust[0-9.]+)-[0-9a-f]{64}$",
+        r"^(xtask(?:-binaries)?-v1-(?:Linux|macOS|Windows)-(?:X64|ARM64)-[A-Za-z0-9_.]+-rust[0-9.]+)-[0-9a-f]{64}$",
     )?;
     let mut tool_groups = BTreeMap::<(String, String), Vec<&Value>>::new();
     let downloads =

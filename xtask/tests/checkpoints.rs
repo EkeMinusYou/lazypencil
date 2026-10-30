@@ -693,6 +693,30 @@ fn tool_dependencies_retire_only_after_a_newer_complete_matching_sdk_and_format(
     let prefix = "Linux-ARM64-image_one-rust1.94.0";
     let dependency = |prefix: &str| format!("xtask-deps-v1-{prefix}-{}", "a".repeat(64));
     let source = format!("xtask-v1-{prefix}-{}", "b".repeat(64));
+    assert!(
+        cache::obsolete(
+            &[
+                entry(
+                    1,
+                    dependency(prefix),
+                    "2026-10-01",
+                    "one",
+                    "refs/heads/main"
+                ),
+                entry(
+                    2,
+                    format!("xtask-binaries-v1-{prefix}-{}", "b".repeat(64)),
+                    "2026-10-02",
+                    "one",
+                    "refs/heads/main"
+                ),
+            ],
+            None
+        )
+        .unwrap()
+        .is_empty(),
+        "Executable-only tools do not replace Cargo dependencies"
+    );
     let entries = vec![
         entry(
             1,

@@ -2088,67 +2088,84 @@ fn checkpoint_artifacts_reject_links_traversal_duplicates_and_corrupt_trailers_b
 
 #[test]
 fn verified_tool_replacement_retires_only_the_restored_sdk_and_cache_format() {
-    let prefix = "xtask-v1-Linux-ARM64-20261023.149.3-rust1.94.0";
-    let primary = format!("{prefix}-{}", "a".repeat(64));
-    let matched = format!("{prefix}-{}", "b".repeat(64));
-    let entry = |id, key: &str, version: &str, reference: &str| json!({"id":id,"key":key,"version":version,"ref":reference});
-    let entries = vec![
-        entry(1, &matched, "current", "refs/heads/main"),
-        entry(2, &primary, "current", "refs/heads/main"),
-        entry(
-            3,
-            &format!("{prefix}-{}", "c".repeat(64)),
-            "other",
-            "refs/heads/main",
-        ),
-        entry(4, &matched, "current", "refs/pull/1/merge"),
-        entry(
-            5,
-            &matched.replace("20261023.149.3", "20261026.166.1"),
-            "current",
-            "refs/heads/main",
-        ),
-        entry(
-            6,
-            "native-v2-ubuntu-24.04-arm-existing",
-            "current",
-            "refs/heads/main",
-        ),
-    ];
-    let obsolete = cache::obsolete_tools_before_replacement(&entries, &primary, &matched).unwrap();
-    assert_eq!(
-        cache::obsolete_tools_before_replacement(&entries, &primary, &primary).unwrap(),
-        obsolete,
-        "An exact verified hit must still retire older compatible sources"
-    );
-    assert_eq!(
-        obsolete
-            .iter()
-            .map(|entry| entry["id"].as_u64().unwrap())
-            .collect::<Vec<_>>(),
-        [1]
-    );
-    assert!(
-        cache::obsolete_tools_before_replacement(&entries, &primary, "")
-            .unwrap()
-            .is_empty()
-    );
-    let mut ambiguous = entries.clone();
-    ambiguous.push(entry(7, &matched, "second-format", "refs/heads/main"));
-    assert!(
-        cache::obsolete_tools_before_replacement(&ambiguous, &primary, &matched)
-            .unwrap()
-            .is_empty()
-    );
-    assert!(cache::obsolete_tools_before_replacement(&entries, "unreviewed", &matched).is_err());
-    assert!(
-        cache::obsolete_tools_before_replacement(
-            &entries,
-            &primary,
-            &matched.replace("ARM64", "X64")
-        )
-        .is_err()
-    );
+    for prefix in [
+        "xtask-v1-Linux-ARM64-20261023.149.3-rust1.94.0",
+        "xtask-binaries-v1-Linux-ARM64-20261023.149.3-rust1.94.0",
+    ] {
+        let primary = format!("{prefix}-{}", "a".repeat(64));
+        let matched = format!("{prefix}-{}", "b".repeat(64));
+        let entry = |id, key: &str, version: &str, reference: &str| json!({"id":id,"key":key,"version":version,"ref":reference});
+        let entries = vec![
+            entry(1, &matched, "current", "refs/heads/main"),
+            entry(2, &primary, "current", "refs/heads/main"),
+            entry(
+                3,
+                &format!("{prefix}-{}", "c".repeat(64)),
+                "other",
+                "refs/heads/main",
+            ),
+            entry(4, &matched, "current", "refs/pull/1/merge"),
+            entry(
+                5,
+                &matched.replace("20261023.149.3", "20261026.166.1"),
+                "current",
+                "refs/heads/main",
+            ),
+            entry(
+                6,
+                "native-v2-ubuntu-24.04-arm-existing",
+                "current",
+                "refs/heads/main",
+            ),
+            entry(
+                7,
+                &if prefix.starts_with("xtask-binaries-") {
+                    matched.replace("xtask-binaries-v1", "xtask-v1")
+                } else {
+                    matched.replace("xtask-v1", "xtask-binaries-v1")
+                },
+                "current",
+                "refs/heads/main",
+            ),
+        ];
+        let obsolete =
+            cache::obsolete_tools_before_replacement(&entries, &primary, &matched).unwrap();
+        assert_eq!(
+            cache::obsolete_tools_before_replacement(&entries, &primary, &primary).unwrap(),
+            obsolete,
+            "An exact verified hit must still retire older compatible sources"
+        );
+        assert_eq!(
+            obsolete
+                .iter()
+                .map(|entry| entry["id"].as_u64().unwrap())
+                .collect::<Vec<_>>(),
+            [1]
+        );
+        assert!(
+            cache::obsolete_tools_before_replacement(&entries, &primary, "")
+                .unwrap()
+                .is_empty()
+        );
+        let mut ambiguous = entries.clone();
+        ambiguous.push(entry(7, &matched, "second-format", "refs/heads/main"));
+        assert!(
+            cache::obsolete_tools_before_replacement(&ambiguous, &primary, &matched)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            cache::obsolete_tools_before_replacement(&entries, "unreviewed", &matched).is_err()
+        );
+        assert!(
+            cache::obsolete_tools_before_replacement(
+                &entries,
+                &primary,
+                &matched.replace("ARM64", "X64")
+            )
+            .is_err()
+        );
+    }
 }
 
 #[test]
