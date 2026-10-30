@@ -4,6 +4,8 @@
 
 ## 現在の状態（2026-10-30）
 
+後続候補では、部品・変数の展開に128MiBの操作単位の複製作業量budgetを追加する。node数だけでは抑えられない長い文字列・キー・propertyを複製前に計上し、全rootと各script layout passの生成結果で共有する。参照先の検索では部品／変数の定義を借用し、毎回の丸ごと複製を避ける。上限超過は`RESOURCE_LIMIT`とし、Data URI・テキストの原文や文書を変更しない。変数一覧も共有budgetを使う。小さな上限で実際の部品・変数・生成出力を展開する既存Rust unitへ、両形式・literal／aliasの値保持と、途中拒否・無変更の回帰を追加した。英語ガイドは1.0.54。整形・差分検査までであり、GHA確認はまだである。128MiBは複製作業量の保守的な見積もりで、process RSSの保証ではない。
+
 9059fbaの[全体CI 40991417079](https://github.com/EkeMinusYou/lazypencil/actions/runs/40991417079)は全工程成功した。Macのcore／既定構成の全試験・Clippy、通常開発build、release／smoke／性能測定、全5 consumer、共通画像gateと署名付きsourceを含む。捕捉scriptのfile URL／HTTP asset key、入れ子namespace所有、移動・offline再copyを検証済みとする。実WebGLでは`.pen` 2.19／2.21 × file URL／HTTPの4条件で、file URLのJS／GLSLとURL samplerを実行し、元sourceとserverの削除後・offline再copy後もyellow画素と同一PNGを確認した。追加12 PNGは40×20、SHA-256 `90128eeca6c00ebb136f1303df9febe31849ad22777ee34950445cc244a17e41`で、取得した全byte列のhashとreport・今回sourceを独立照合した。従来のsampler 10条件・20 PNGも維持した。
 
 全体13分27秒で、10分目標は未達である。builder5分44秒・core11分01秒・release4分28秒、通常3分26秒・runtime6分02秒・pixel2分25秒・端末1分13秒・Material2分00秒、source44秒だった。builderは先行と同じimage 20260907.0337.1で62ファイルを再利用し、対象の不足分buildは16.31秒だった。binding 18件は2並列で140.44秒、他の試験実行ファイルのcompileと重なっており、単独先行の98.37秒との統制比較にはしない。core／releaseはimage 20261028.0489.1で、異なるfeature／imageの部分cacheを正当に拒否した。coreにはtool検証・2分27秒のtest build・異なる目的のClippy／通常buildが残り、runtimeの追加条件も含め最終gateを省略していない。完全成果物の保存後に同じsourceの部分checkpointを整理し、同じpayloadを重ねて残さなかった。

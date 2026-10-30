@@ -1112,6 +1112,7 @@ mod tests {
             .generated_children(
                 &owner,
                 &[json!({"type":"script","scriptUri":"nested.js","width":20,"height":20})],
+                &mut Default::default(),
             )
             .unwrap();
         let source_hash = crate::document::hash(code.as_bytes());
@@ -1162,6 +1163,7 @@ mod tests {
             .generated_children(
                 &owner,
                 &[json!({"type":"script","scriptUri":"nested.js","width":20,"height":20})],
+                &mut Default::default(),
             )
             .unwrap();
         let error = Error::new("SCRIPT_EXECUTION_FAILED", "oversized code").details(json!({"script_path":crate::paths::canonical(temp.path().join("nested.js")).unwrap(),"source_hash":crate::document::hash(large.as_bytes())}));

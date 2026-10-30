@@ -21,6 +21,8 @@ mod browser_resources;
 pub(crate) use browser_resources::filesystem as secure_filesystem;
 pub use browser_resources::{BrowserResourceRoot, BrowserResources};
 mod detach;
+mod expansion;
+pub(crate) use expansion::{Expansion, MAX_EXPANSION_BYTES};
 #[cfg(feature = "rendering")]
 mod failed_code;
 pub(crate) mod font_files;
@@ -359,7 +361,7 @@ impl Project {
                 "An instance path requires a root instance",
             ));
         }
-        let mut count = 0;
+        let mut count = Expansion::default();
         let mut expanded = self.expand(origin, node, None, &[], &mut Vec::new(), &mut count)?;
         assign_addresses(&mut expanded, None, &[]);
         if address.instance_path.is_empty() {
@@ -382,7 +384,7 @@ impl Project {
 
     pub fn expanded_library_roots(&self, alias: Option<&str>) -> Result<Vec<ResolvedNode>> {
         let origin = self.library_path(alias)?;
-        let mut count = 0;
+        let mut count = Expansion::default();
         self.documents[origin].value()["children"]
             .as_array()
             .expect("parsed document")
@@ -397,7 +399,7 @@ impl Project {
     }
 
     pub(crate) fn validate_structure(&self) -> Result<()> {
-        let mut count = 0;
+        let mut count = Expansion::default();
         for node in self.root_document().value()["children"]
             .as_array()
             .expect("parsed document")
@@ -1625,16 +1627,21 @@ impl Project {
     }
 
     fn lookup_node(&self, origin: &Path, name: &str) -> Result<(PathBuf, Value)> {
+        self.lookup_node_ref(origin, name)
+            .map(|(path, node)| (path, node.clone()))
+    }
+
+    fn lookup_node_ref(&self, origin: &Path, name: &str) -> Result<(PathBuf, &Value)> {
         if let Some((path, id)) = self.runtime_refs.get(name) {
-            return Ok((path.clone(), self.documents[path].node(id)?.clone()));
+            return Ok((path.clone(), self.documents[path].node(id)?));
         }
         if let Ok(node) = self.documents[origin].node(name) {
-            return Ok((origin.into(), node.clone()));
+            return Ok((origin.into(), node));
         }
         if let Some((alias, member)) = name.split_once(':')
             && let Some(path) = self.imported_path(origin, alias)?
         {
-            return self.lookup_node(path, member);
+            return self.lookup_node_ref(path, member);
         }
         let mut matches = Vec::new();
         for path in self
@@ -1645,7 +1652,7 @@ impl Project {
             .collect::<BTreeSet<_>>()
         {
             if let Ok(node) = self.documents[path].node(name) {
-                matches.push((path.clone(), node.clone()));
+                matches.push((path.clone(), node));
             }
         }
         match matches.len() {
@@ -1714,20 +1721,22 @@ impl Project {
         }
     }
     fn resolve_impl(&self, icons: bool) -> Result<ResolvedScene> {
+        self.resolve_bounded(icons, &mut Expansion::default())
+    }
+
+    fn resolve_bounded(&self, icons: bool, count: &mut Expansion) -> Result<ResolvedScene> {
         for document in self.documents.values() {
             self.check_cancelled()?;
             crate::operations::validate_local(document)?;
         }
-        let mut count = 0;
         let mut roots = Vec::new();
         for node in self.root_document().value()["children"]
             .as_array()
             .expect("parsed document")
         {
-            let mut resolved =
-                self.expand(&self.root, node, None, &[], &mut Vec::new(), &mut count)?;
+            let mut resolved = self.expand(&self.root, node, None, &[], &mut Vec::new(), count)?;
             assign_addresses(&mut resolved, None, &[]);
-            self.resolve_properties(&mut resolved, &self.default_theme(&self.root)?)?;
+            self.resolve_properties(&mut resolved, &self.default_theme(&self.root)?, count)?;
             if icons {
                 self.bind_icons(&mut resolved);
             }
@@ -1756,11 +1765,11 @@ impl Project {
         instance: Option<&str>,
         path: &[String],
         active: &mut Vec<(PathBuf, String)>,
-        count: &mut usize,
+        count: &mut Expansion,
     ) -> Result<ResolvedNode> {
         self.check_cancelled()?;
-        *count += 1;
-        if *count > MAX_NODES || active.len() > 128 || path.len() > 256 {
+        count.nodes += 1;
+        if count.nodes > MAX_NODES || active.len() > 128 || path.len() > 256 {
             return Err(invalid(
                 "Expanded document exceeds its node or reference depth limit",
             ));
@@ -1768,6 +1777,10 @@ impl Project {
         let id = node["id"]
             .as_str()
             .ok_or_else(|| invalid("A component child requires an ID"))?;
+        count.reserve(instance.unwrap_or(id).len())?;
+        for part in path {
+            count.key(part)?;
+        }
         let address = NodeAddress {
             node_id: instance.unwrap_or(id).into(),
             instance_path: if instance.is_some() {
@@ -1780,7 +1793,7 @@ impl Project {
             let reference = node["ref"]
                 .as_str()
                 .ok_or_else(|| invalid("An instance requires a component reference"))?;
-            let (source, definition) = self.lookup_node(origin, reference)?;
+            let (source, definition) = self.lookup_node_ref(origin, reference)?;
             if definition["reusable"] != true {
                 return Err(invalid(format!("Component {reference:?} is not reusable")));
             }
@@ -1799,8 +1812,7 @@ impl Project {
             }
             active.push(key);
             let root = instance.unwrap_or(id);
-            let mut resolved =
-                self.expand(&source, &definition, Some(root), path, active, count)?;
+            let mut resolved = self.expand(&source, definition, Some(root), path, active, count)?;
             resolved.address = address;
             resolved.component_key = id.into();
             resolved.component_source = origin.into();
@@ -1855,13 +1867,20 @@ impl Project {
         }
         // Children are expanded separately. Cloning their entire subtrees at
         // every ancestor multiplies embedded image bytes by the tree depth.
+        count.reserve(std::mem::size_of::<ResolvedNode>())?;
+        count.reserve(origin.as_os_str().len().saturating_mul(4))?;
         let properties: Map<String, Value> = node
             .as_object()
             .ok_or_else(|| invalid("Node must be an object"))?
             .iter()
             .filter(|(key, _)| key.as_str() != "children")
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect();
+            .map(|(key, value)| {
+                count.key(key)?;
+                count.key(key)?;
+                count.reserve(origin.as_os_str().len())?;
+                Ok((key.clone(), count.clone_value(value)?))
+            })
+            .collect::<Result<_>>()?;
         let children = node.get("children");
         let property_sources = properties
             .keys()
@@ -1924,7 +1943,7 @@ impl Project {
         changes: &Map<String, Value>,
         origin: &Path,
         active: &mut Vec<(PathBuf, String)>,
-        count: &mut usize,
+        count: &mut Expansion,
     ) -> Result<()> {
         let carrier = script_context::override_value(changes)?;
         let browser_carrier = browser_context::override_value(changes)?;
@@ -1969,9 +1988,16 @@ impl Project {
                 target
                     .as_object_mut()
                     .ok_or_else(|| invalid("theme must be an object"))?
-                    .extend(map.clone());
+                    .extend({
+                        count.value(value)?;
+                        map.clone()
+                    });
             } else {
-                node.properties.insert(key.clone(), value.clone());
+                count.key(key)?;
+                count.key(key)?;
+                count.reserve(origin.as_os_str().len())?;
+                node.properties
+                    .insert(key.clone(), count.clone_value(value)?);
             }
             node.property_sources.insert(key.clone(), origin.into());
         }
@@ -2093,6 +2119,7 @@ impl Project {
         &self,
         node: &mut ResolvedNode,
         inherited: &BTreeMap<String, String>,
+        budget: &mut Expansion,
     ) -> Result<()> {
         self.check_cancelled()?;
         let theme = self.effective_theme(node, inherited)?;
@@ -2117,10 +2144,15 @@ impl Project {
                     .as_object()
                     .ok_or_else(|| invalid("Script inputs must be an object"))?;
                 let values = match &header {
-                    Some(header) => self.resolve_script_input_values(node, header, values)?,
+                    Some(header) => {
+                        self.resolve_script_inputs_bounded(node, header, values, budget)?
+                    }
                     // Generated code may not be captured yet. Its declared
                     // inputs are resolved once after capture, before execution.
-                    None => values.clone(),
+                    None => {
+                        budget.object(values)?;
+                        values.clone()
+                    }
                 };
                 node.properties
                     .insert("inputs".into(), Value::Object(values));
@@ -2135,32 +2167,41 @@ impl Project {
                 continue;
             }
             let origin = node.property_sources.get(key).unwrap_or(&node.source_path);
-            *value = self.resolve_value(origin, value, &theme, &mut Vec::new())?;
+            *value = self.resolve_value_bounded(origin, value, &theme, &mut Vec::new(), budget)?;
         }
         for child in &mut node.children {
-            self.resolve_properties(child, &theme)?;
+            self.resolve_properties(child, &theme, budget)?;
         }
         Ok(())
     }
 
-    pub(crate) fn resolve_script_input_values(
+    pub(crate) fn resolve_script_inputs_bounded(
         &self,
         node: &ResolvedNode,
         header: &crate::script::header::Header,
         values: &Map<String, Value>,
+        budget: &mut Expansion,
     ) -> Result<Map<String, Value>> {
         values
             .iter()
             .map(|(name, value)| {
+                budget.key(name)?;
                 let value = if header.inputs.iter().any(|input| &input.name == name) {
+                    budget.value(value)?;
                     let (origin, value) = if let Some(context) = &node.input_context {
                         (context.origin.as_path(), context.expression(name, value)?)
                     } else {
                         (node.property_source("inputs"), value.clone())
                     };
-                    self.resolve_value(origin, &value, &node.theme, &mut Vec::new())?
+                    self.resolve_value_bounded(
+                        origin,
+                        &value,
+                        &node.theme,
+                        &mut Vec::new(),
+                        budget,
+                    )?
                 } else {
-                    value.clone()
+                    budget.clone_value(value)?
                 };
                 Ok((name.clone(), value))
             })
@@ -2265,12 +2306,16 @@ impl Project {
         &mut self,
         script: &ResolvedNode,
         nodes: &[Value],
+        budget: &mut Expansion,
     ) -> Result<Vec<ResolvedNode>> {
         let origin = script
             .script_bindings
             .as_ref()
             .map(|bindings| bindings.origin.clone())
             .unwrap_or_else(|| script.script_origin().to_path_buf());
+        for node in nodes {
+            budget.value(node)?;
+        }
         let mut nodes = nodes.to_vec();
         let mut counter = 0;
         let mut ids = BTreeSet::new();
@@ -2311,12 +2356,11 @@ impl Project {
                 )?;
             }
         }
-        let mut count = 0;
         let mut result = Vec::new();
         let mut generated = 0;
         for node in nodes {
-            let mut node = self.expand(&origin, &node, None, &[], &mut Vec::new(), &mut count)?;
-            self.resolve_properties(&mut node, &script.theme)?;
+            let mut node = self.expand(&origin, &node, None, &[], &mut Vec::new(), budget)?;
+            self.resolve_properties(&mut node, &script.theme, budget)?;
             mark_generated(&mut node, &script.address, &script.id(), &mut generated);
             result.push(node);
         }
@@ -2349,6 +2393,7 @@ impl Project {
         Ok(result)
     }
 
+    #[cfg(feature = "rendering")]
     fn resolve_value(
         &self,
         origin: &Path,
@@ -2356,15 +2401,28 @@ impl Project {
         theme: &BTreeMap<String, String>,
         active: &mut Vec<(PathBuf, String)>,
     ) -> Result<Value> {
+        self.resolve_value_bounded(origin, value, theme, active, &mut Expansion::default())
+    }
+
+    fn resolve_value_bounded(
+        &self,
+        origin: &Path,
+        value: &Value,
+        theme: &BTreeMap<String, String>,
+        active: &mut Vec<(PathBuf, String)>,
+        budget: &mut Expansion,
+    ) -> Result<Value> {
         self.check_cancelled()?;
+        budget.reserve(std::mem::size_of::<Value>())?;
         Ok(match value {
             Value::String(value) if value.starts_with('$') && value.len() > 1 => {
-                self.variable(origin, &value[1..], theme, active)?
+                self.variable_bounded(origin, &value[1..], theme, active, None, budget)?
             }
             Value::Object(object) => Value::Object(
                 object
                     .iter()
                     .map(|(k, v)| {
+                        budget.key(k)?;
                         Ok((
                             k.clone(),
                             if k == "uniforms" && v.is_object() {
@@ -2373,17 +2431,18 @@ impl Project {
                                         .expect("checked object")
                                         .iter()
                                         .map(|(name, value)| {
+                                            budget.key(name)?;
                                             Ok((
                                                 name.clone(),
                                                 if object.get("type").and_then(Value::as_str)
                                                     == Some("shader")
                                                 {
                                                     self.resolve_shader_uniform(
-                                                        origin, value, theme, active,
+                                                        origin, value, theme, active, budget,
                                                     )?
                                                 } else {
-                                                    self.resolve_value(
-                                                        origin, value, theme, active,
+                                                    self.resolve_value_bounded(
+                                                        origin, value, theme, active, budget,
                                                     )?
                                                 },
                                             ))
@@ -2391,9 +2450,9 @@ impl Project {
                                         .collect::<Result<_>>()?,
                                 )
                             } else if literal_property(k) {
-                                v.clone()
+                                budget.clone_value(v)?
                             } else {
-                                self.resolve_value(origin, v, theme, active)?
+                                self.resolve_value_bounded(origin, v, theme, active, budget)?
                             },
                         ))
                     })
@@ -2402,21 +2461,11 @@ impl Project {
             Value::Array(array) => Value::Array(
                 array
                     .iter()
-                    .map(|v| self.resolve_value(origin, v, theme, active))
+                    .map(|v| self.resolve_value_bounded(origin, v, theme, active, budget))
                     .collect::<Result<_>>()?,
             ),
-            _ => value.clone(),
+            _ => budget.clone_value(value)?,
         })
-    }
-
-    fn variable(
-        &self,
-        origin: &Path,
-        name: &str,
-        theme: &BTreeMap<String, String>,
-        active: &mut Vec<(PathBuf, String)>,
-    ) -> Result<Value> {
-        self.variable_with_file_origin(origin, name, theme, active, None)
     }
 
     fn resolve_shader_uniform(
@@ -2425,12 +2474,14 @@ impl Project {
         value: &Value,
         theme: &BTreeMap<String, String>,
         active: &mut Vec<(PathBuf, String)>,
+        budget: &mut Expansion,
     ) -> Result<Value> {
+        budget.reserve(std::mem::size_of::<Value>())?;
         if let Value::Array(values) = value {
             return Ok(Value::Array(
                 values
                     .iter()
-                    .map(|value| self.resolve_shader_uniform(origin, value, theme, active))
+                    .map(|value| self.resolve_shader_uniform(origin, value, theme, active, budget))
                     .collect::<Result<_>>()?,
             ));
         }
@@ -2439,11 +2490,11 @@ impl Project {
             .and_then(|value| value.strip_prefix('$'))
             .filter(|name| !name.is_empty())
         else {
-            return self.resolve_value(origin, value, theme, active);
+            return self.resolve_value_bounded(origin, value, theme, active, budget);
         };
         let mut source = origin.to_path_buf();
         let result =
-            self.variable_with_file_origin(origin, name, theme, active, Some(&mut source))?;
+            self.variable_bounded(origin, name, theme, active, Some(&mut source), budget)?;
         if let Some(uri) = result
             .as_str()
             .filter(|uri| !uri.is_empty() && !uri.starts_with('#') && !uri.starts_with("pencil:"))
@@ -2461,16 +2512,17 @@ impl Project {
         Ok(result)
     }
 
-    fn variable_with_file_origin(
+    fn variable_bounded(
         &self,
         origin: &Path,
         name: &str,
         theme: &BTreeMap<String, String>,
         active: &mut Vec<(PathBuf, String)>,
         file_origin: Option<&mut PathBuf>,
+        budget: &mut Expansion,
     ) -> Result<Value> {
         self.check_cancelled()?;
-        let (source, definition) = self.lookup_variable(origin, name)?;
+        let (source, definition) = self.lookup_variable_ref(origin, name)?;
         let key = (source.clone(), name.to_string());
         if active.contains(&key) || active.len() > 128 {
             return Err(Error::new(
@@ -2511,12 +2563,12 @@ impl Project {
             .and_then(|value| value.strip_prefix('$'))
             .filter(|name| !name.is_empty())
         {
-            self.variable_with_file_origin(&source, alias, theme, active, file_origin)?
+            self.variable_bounded(&source, alias, theme, active, file_origin, budget)?
         } else {
             if let Some(origin) = file_origin {
                 *origin = source.clone();
             }
-            self.resolve_value(&source, value, theme, active)?
+            self.resolve_value_bounded(&source, value, theme, active, budget)?
         };
         active.pop();
         let valid = match definition["type"].as_str() {
@@ -2534,17 +2586,22 @@ impl Project {
     }
 
     fn lookup_variable(&self, origin: &Path, name: &str) -> Result<(PathBuf, Value)> {
+        self.lookup_variable_ref(origin, name)
+            .map(|(path, value)| (path, value.clone()))
+    }
+
+    fn lookup_variable_ref(&self, origin: &Path, name: &str) -> Result<(PathBuf, &Value)> {
         if let Some(value) = self.documents[origin]
             .value()
             .get("variables")
             .and_then(|v| v.get(name))
         {
-            return Ok((origin.into(), value.clone()));
+            return Ok((origin.into(), value));
         }
         if let Some((alias, member)) = name.split_once(':')
             && let Some(path) = self.imported_path(origin, alias)?
         {
-            return self.lookup_variable(path, member);
+            return self.lookup_variable_ref(path, member);
         }
         let mut matches = Vec::new();
         for path in self
@@ -2559,7 +2616,7 @@ impl Project {
                 .get("variables")
                 .and_then(|v| v.get(name))
             {
-                matches.push((path.clone(), value.clone()));
+                matches.push((path.clone(), value));
             }
         }
         match matches.len() {

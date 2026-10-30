@@ -104,17 +104,20 @@ impl Project {
         let mut values = Map::new();
         let mut sources = Map::new();
         let mut diagnostics = Vec::new();
+        let mut budget = Expansion::default();
         for name in names.iter().skip(offset).take(request.limit) {
             self.check_cancelled()?;
-            let (source, definition) = self.lookup_variable(&scope, name)?;
-            variables.insert(name.clone(), definition);
+            let (source, definition) = self.lookup_variable_ref(&scope, name)?;
+            budget.key(name)?;
+            variables.insert(name.clone(), budget.clone_value(definition)?);
             let mut value_source = source.clone();
-            match self.variable_with_file_origin(
+            match self.variable_bounded(
                 &scope,
                 name,
                 &theme,
                 &mut Vec::new(),
                 Some(&mut value_source),
+                &mut budget,
             ) {
                 Ok(value) => {
                     values.insert(name.clone(), value);
@@ -123,7 +126,12 @@ impl Project {
                         json!({"definition":source,"value":value_source}),
                     );
                 }
-                Err(error) if matches!(error.code, "CANCELLED" | "REVISION_CONFLICT") => {
+                Err(error)
+                    if matches!(
+                        error.code,
+                        "CANCELLED" | "REVISION_CONFLICT" | "RESOURCE_LIMIT"
+                    ) =>
+                {
                     return Err(error);
                 }
                 Err(error) => {

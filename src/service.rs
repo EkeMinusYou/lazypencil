@@ -467,6 +467,7 @@ pub fn document_metadata_with_cancellation(
         "schema":document.version(),"supported_schemas":crate::document::SUPPORTED_DOCUMENT_VERSIONS,"default_schema":crate::document::DOCUMENT_VERSION,"rendering":cfg!(feature="rendering"),"dynamic_content":cfg!(feature="rendering"),
         "asset_repair":{"declared_images_and_code":true,"declared_libraries":true,"configured_font_diagnostics":true,"max_missing_references":1024,"allow_new_missing":false,"restore_reports_missing":true},
         "instance_overrides":true,"managed_assets":true,"attachments":false,
+        "document_expansion":{"allocation_budget_bytes":crate::project::MAX_EXPANSION_BYTES,"shared_across_roots":true,"shared_generated_outputs":true,"preserve_string_values":true,"limit_error":"RESOURCE_LIMIT","budget_is_process_rss":false},
         "variables":{"resolved_values":true,"sources":true,"node_theme_context":true,"property_namespace":true,"pagination":true},
         "node_reads":{"calculated":cfg!(feature="rendering"),"generated":cfg!(feature="rendering"),"snapshot_reuse":cfg!(feature="rendering")},
         "validation":{"structure":true,"layout":cfg!(feature="rendering"),"diagnostic_pagination":true,"rendered_visual_check":false},
@@ -1219,7 +1220,7 @@ mod write_tests {
         let store = Store::open(&path, Some(temp.path().join("data"))).unwrap();
         let mut project = Project::load(&store).unwrap();
         let script = project.resolve().unwrap().roots.remove(0);
-        project.generated_children(&script, &[json!({"type":"rectangle","width":20,"height":20,"fill":{"type":"image","url":"generated.png"}})]).unwrap();
+        project.generated_children(&script, &[json!({"type":"rectangle","width":20,"height":20,"fill":{"type":"image","url":"generated.png"}})], &mut Default::default()).unwrap();
         assert_eq!(project.runtime_dependencies().len(), 1);
         let before = store.read().unwrap();
         let conditions = WriteConditions {

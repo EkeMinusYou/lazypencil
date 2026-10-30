@@ -4,7 +4,7 @@ use crate::{
     document::hash,
     geometry::Rect,
     layout::{self, LayoutSnapshot},
-    project::{Project, ResolvedNode},
+    project::{Expansion, Project, ResolvedNode},
     text::Fonts,
 };
 use serde_json::{Value, json};
@@ -50,6 +50,7 @@ pub fn compute(
         for node in &scene.roots {
             validate_tree(node, 0, &mut count)?;
         }
+        let mut expansion_budget = Expansion::scene(&scene.roots)?;
         let mut snapshot = layout::compute_checked(scene.clone(), fonts, &check)?;
         check()?;
         let sizes = snapshot
@@ -69,6 +70,7 @@ pub fn compute(
                 &mut runs,
                 &mut changed,
                 deadline,
+                &mut expansion_budget,
             )?;
         }
         if !changed {
@@ -156,6 +158,7 @@ fn expand(
     runs: &mut usize,
     changed: &mut bool,
     deadline: Instant,
+    expansion_budget: &mut Expansion,
 ) -> Result<()> {
     require_budget(deadline)?;
     let enabled = inherited_enabled && node.properties.get("enabled") != Some(&Value::Bool(false));
@@ -206,7 +209,7 @@ fn expand(
             .unwrap_or_default();
         if !node.script_inputs_resolved {
             inputs = project
-                .resolve_script_input_values(node, &header, &inputs)
+                .resolve_script_inputs_bounded(node, &header, &inputs, expansion_budget)
                 .map_err(context)?;
             if node.properties.contains_key("inputs") {
                 node.properties
@@ -258,7 +261,7 @@ fn expand(
                         .details(json!({"node":node.address,"axis":key})));
                 }
             }
-            node.children = project.generated_children(node, &output.nodes)?;
+            node.children = project.generated_children(node, &output.nodes, expansion_budget)?;
             let metadata = json!({"node_id":id,"source_path":path,"source_hash":source_hash,"bindings_revision":bindings_revision,"width":width,"height":height,
                 "inputs_hash":hash(serde_json::to_string(&inputs).expect("inputs").as_bytes()),"output_hash":hash(serde_json::to_string(&output.nodes).expect("nodes").as_bytes()),
                 "output_root_count":output.nodes.len(),"engine":ENGINE,"limits":runtime.settings(),"reads_width":output.reads_width,"reads_height":output.reads_height});
@@ -278,7 +281,16 @@ fn expand(
     }
     for child in &mut node.children {
         expand(
-            child, enabled, sizes, project, runtime, cached, runs, changed, deadline,
+            child,
+            enabled,
+            sizes,
+            project,
+            runtime,
+            cached,
+            runs,
+            changed,
+            deadline,
+            expansion_budget,
         )?;
     }
     Ok(())

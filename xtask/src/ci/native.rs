@@ -311,6 +311,15 @@ impl Session {
     }
 
     fn image_reproductions(&self, features: bool, targets: &[String]) -> Result<()> {
+        if targets.iter().any(|target| target == "project") {
+            self.test(
+                features,
+                "lib",
+                "project::expansion::tests::",
+                &["--test-threads=2"],
+                "focus-project-expansion.log",
+            )?;
+        }
         if targets.iter().any(|target| target == "agent") {
             self.test(
                 features,
