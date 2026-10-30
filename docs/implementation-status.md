@@ -4,6 +4,10 @@
 
 ## 現在の状態（2026-10-30）
 
+364c070の[Mac先行 40978531324](https://github.com/EkeMinusYou/lazypencil/actions/runs/40978531324)は、対象build／Clippyと実PTYの元15ケースを成功した。許可失効時のadapter終了、送信準備3件とTUIキー処理1件、HTTP画像6件、unitと実MCPの5 API取消を含む。APIの修正はこの先行で確認できたが、既存build laneの全体用catalog公開をfocusにも呼ぶ条件が残り、未生成catalogの読取りで停止した。focusの全対象試験と、全体CIの成功にはしない。
+
+呼び出し条件の修正は、全体向けのcatalog／consumer用artifact公開をfocusから外す。単独先行では既存stage-focusedが入力とhashを検査した部分成果物を既存application cacheのkeyへ保存し、同じpayloadをartifactにも重ねて保存しない。workflow_callの既存artifact経路は変更せず、単独dispatchのcache_focused_outputsで選ぶ。Cargoの再ビルド判定・compiler入力検査と全体の試験／gateは維持する。この後続修正はactionlintと差分検査までで、再度の単独先行で未実行だった全対象試験と受け渡しを確認し、その同じcommitで全体CIへ進める。
+
 7315b7cの[CI 40977346959](https://github.com/EkeMinusYou/lazypencil/actions/runs/40977346959)は全jobが終了した。監査・release、coreの全試験とcore Clippyが成功した。先行の送信準備3試験とTUIキー処理1試験、HTTP画像6試験とunit、MCPの5 API取消も成功した。送信準備の取消・再送・下書きと添付画像保持・close／drop・文書変更拒否を実HTTPで確認した。
 
 builderの既存実PTY試験はproject-agent-configで停止した。start_sendの初期検査が、失効したproject実行許可を拒否した後に、接続済みadapterを閉じる元の処理を通らなかった。初期拒否も元の非同期終了処理を共用するよう修正し、下書き保持とadapter回収の元のassertion／期限を維持する。既定構成ClippyはMCP試験内で同じHTTP fixtureを二重modしていた点で停止したため、shared_profilesもrootの同じモジュールをuseする。lint抑制や試験省略では解消しない。runtime consumerとHTTP実WebGL／固定HTTPS、共通画像gate・最終sourceの成功根拠にはしない。

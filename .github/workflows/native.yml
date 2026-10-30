@@ -27,6 +27,10 @@ on:
         description: JSON array of existing integration test target names
         type: string
         default: '["tui", "agent"]'
+      cache_focused_outputs:
+        description: Cache checked partial compiler outputs for a following full run
+        type: boolean
+        default: true
   workflow_call:
     inputs:
       os:
@@ -59,6 +63,9 @@ on:
       focused_application:
         type: string
         default: ''
+      cache_focused_outputs:
+        type: boolean
+        default: false
       rebuild_application:
         type: boolean
         default: false
@@ -363,11 +370,11 @@ jobs:
         timeout-minutes: 45
         run: cargo xtask ci native default-development-build
       - name: Stage same-run native tools for consumers
-        if: inputs.lane == 'build'
+        if: inputs.lane == 'build' && inputs.phase != 'focus'
         run: cargo xtask ci tools stage --output "$RUNNER_TEMP/native-tools"
       - name: Share tools without their Cargo build tree
         id: native-tools-upload
-        if: inputs.lane == 'build'
+        if: inputs.lane == 'build' && inputs.phase != 'focus'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: native-tools-${{ github.sha }}
@@ -377,11 +384,11 @@ jobs:
           overwrite: true
           if-no-files-found: error
       - name: Complete Cargo-owned checks and stage the immutable executable catalog
-        if: inputs.lane == 'build'
+        if: inputs.lane == 'build' && inputs.phase != 'focus'
         run: cargo xtask ci native binaries-stage
       - name: Share executables without duplicating the complete Cargo checkpoint
         id: binaries-upload
-        if: inputs.lane == 'build'
+        if: inputs.lane == 'build' && inputs.phase != 'focus'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: native-executables-${{ github.sha }}
@@ -392,7 +399,7 @@ jobs:
           if-no-files-found: error
       - name: Share only the executable targets used by runtime verification
         id: runtime-binaries-upload
-        if: inputs.lane == 'build'
+        if: inputs.lane == 'build' && inputs.phase != 'focus'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: native-runtime-executables-${{ github.sha }}
@@ -403,7 +410,7 @@ jobs:
           if-no-files-found: error
       - name: Share terminal checks without unrelated executables
         id: terminal-binaries-upload
-        if: inputs.lane == 'build'
+        if: inputs.lane == 'build' && inputs.phase != 'focus'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: native-terminal-executables-${{ github.sha }}
@@ -414,7 +421,7 @@ jobs:
           if-no-files-found: error
       - name: Share Material checks without unrelated executables
         id: material-binaries-upload
-        if: inputs.lane == 'build'
+        if: inputs.lane == 'build' && inputs.phase != 'focus'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: native-material-executables-${{ github.sha }}
@@ -548,7 +555,7 @@ jobs:
         run: cargo xtask ci cache application stage-focused --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-application-cache" --compatible-directory "$RUNNER_TEMP/lazypencil-compatible-cache" --matched-key '${{ steps.compatible-cache.outputs.cache-matched-key }}' --native-key '${{ steps.cache-key.outputs.primary }}${{ inputs.lane == 'core' && '-core' || '' }}'
       - name: Archive focused outputs without changing Cargo file times
         id: application-artifact-pack
-        if: ${{ !cancelled() && steps.application-save.outcome == 'success' && steps.application-save.outputs.staged == 'true' }}
+        if: ${{ !cancelled() && !inputs.cache_focused_outputs && steps.application-save.outcome == 'success' && steps.application-save.outputs.staged == 'true' }}
         continue-on-error: true
         timeout-minutes: 12
         run: cargo xtask ci cache artifact pack --directory "$RUNNER_TEMP/lazypencil-application-cache" --archive "$RUNNER_TEMP/lazypencil-application-transport/checkpoint.tar.gz"
@@ -564,6 +571,13 @@ jobs:
           retention-days: 1
           overwrite: true
           if-no-files-found: error
+      - name: Cache verified partial outputs for the following full verification
+        if: ${{ !cancelled() && inputs.cache_focused_outputs && steps.application-save.outcome == 'success' && steps.application-save.outputs.staged == 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          key: ${{ steps.application-key.outputs.primary }}
+          path: ${{ runner.temp }}/lazypencil-application-cache
       - name: Stage mapped release outputs independently of tests
         id: release-save
         if: ${{ (inputs.lane == 'all' || inputs.lane == 'release') && (!cancelled() && steps.release-key.outcome == 'success' && steps.release-cache.outputs.cache-hit != 'true' && (steps.release-smoke.outcome == 'success' || steps.focus-release.outcome == 'success' || steps.default-release.outcome == 'success') && github.ref == 'refs/heads/main') }}
