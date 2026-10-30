@@ -66,6 +66,8 @@ Use `assets put design.pen --kind image --input reference.jpg` to create a check
 
 Image fills and shader image inputs can use HTTP(S) URLs. A project snapshot keeps the acquired image bytes in memory; standalone copies retain them locally while preserving shared string values and themes. `runtime.browser.network_policy = "offline"` prevents acquisition, and copied local images remain available offline. See [HTTP image limits and capture conditions](docs/dynamic-content.md#http画像の取得と保持).
 
+Embedded `data:image/png`, `data:image/jpeg`, and `data:image/webp` URLs use the same static-image validation, with base64 or percent-encoded bytes and a 20 MiB decoded source limit. They work offline and retain their original URL spelling when copied or detached, without writing a separate managed image file. See [embedded image handling](docs/dynamic-content.md#埋め込み画像).
+
 Asset uploads and component imports coordinate with dependency readers through the destination's writer lock, including absent files. `assets put` and MCP uploads can be cancelled while waiting for that lock and before publication. Existing content is rechecked after waiting and is never overwritten. See [managed asset behavior](docs/mcp.md#managed-assets).
 
 Review unused project assets with `assets prune design.pen --project-root /path/to/project --json`. Repeat with `--expected-revision REVIEWED_SHA256` to apply. Include all sibling documents sharing assets in the chosen root and select their retained history with `--data-dir` when needed. Review never deletes files; active frontends block maintenance. Uncertain references retain assets, and interrupted cleanup is reviewed by the same command. See [asset maintenance](docs/mcp.md#project-asset-maintenance) for scope and recovery conditions.

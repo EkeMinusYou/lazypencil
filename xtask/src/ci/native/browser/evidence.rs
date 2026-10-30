@@ -112,7 +112,7 @@ pub fn required_images_for(root: &Path, commit: &str, platform: &str) -> Result<
     let cases = sampler["cases"]
         .as_array()
         .context("Missing sampler copy images")?;
-    ensure!(cases.len() == 8, "Expected eight sampler copy conditions");
+    ensure!(cases.len() == 10, "Expected ten sampler copy conditions");
     let https = &sampler["https_image"];
     ensure!(
         https["source_commit"] == "094a4c284e66c4ce8a96ffd4d027db614f3ea659"
@@ -121,7 +121,7 @@ pub fn required_images_for(root: &Path, commit: &str, platform: &str) -> Result<
             && https["bytes"] == 3722,
         "Missing verified repository HTTPS image capture"
     );
-    for kind in ["relative", "absolute", "file_url", "http"] {
+    for kind in ["relative", "absolute", "file_url", "http", "data"] {
         let absolute = kind == "absolute";
         for theme in ["light", "dark"] {
             let rows: Vec<_> = cases
@@ -138,7 +138,7 @@ pub fn required_images_for(root: &Path, commit: &str, platform: &str) -> Result<
             );
             let row = rows[0];
             let (width, height) = dimensions(row)?;
-            let label = if matches!(kind, "file_url" | "http") {
+            let label = if matches!(kind, "file_url" | "http" | "data") {
                 kind.into()
             } else {
                 absolute.to_string()

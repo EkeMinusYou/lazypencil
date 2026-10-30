@@ -44,6 +44,8 @@ fn remote_image_changes_prepare_http_cancellation_and_retention_before_full_test
         "src/remote_images.rs",
         "src/project/remote_images.rs",
         "src/remote_images/tests.rs",
+        "src/inline_images.rs",
+        "src/inline_images/tests.rs",
     ] {
         let plan = focus::select(&util::root(), &[path.into()], "auto").unwrap();
         let targets = ci::commands::reproduction_targets(&plan.suite, &plan.targets);

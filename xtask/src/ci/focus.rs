@@ -949,8 +949,12 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     }
     if any(
         paths,
-        &["src/remote_images.rs", "src/project/remote_images.rs"],
-        &["src/remote_images/"],
+        &[
+            "src/remote_images.rs",
+            "src/inline_images.rs",
+            "src/project/remote_images.rs",
+        ],
+        &["src/remote_images/", "src/inline_images/"],
     ) {
         targets.extend(["sampler_sources", "runtime", "assets", "mcp"].map(str::to_owned));
     }

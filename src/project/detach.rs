@@ -123,6 +123,10 @@ impl Project {
         let uri = value
             .as_str()
             .ok_or_else(|| invalid("An asset URI must be a string"))?;
+        if crate::inline_images::is_data(uri) {
+            crate::inline_images::validate(uri)?;
+            return Ok(());
+        }
         if crate::remote_images::is_http(uri) {
             crate::remote_images::validate(uri)?;
             return Ok(());
@@ -559,6 +563,10 @@ impl Project {
             if let Some(uri) = value.as_str()
                 && !uri.is_empty()
             {
+                if crate::inline_images::is_data(uri) {
+                    crate::inline_images::validate(uri)?;
+                    return Ok(());
+                }
                 if crate::remote_images::is_http(uri) {
                     crate::remote_images::validate(uri)?;
                     return Ok(());

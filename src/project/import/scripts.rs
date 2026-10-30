@@ -88,8 +88,12 @@ impl Copier<'_> {
                     crate::operations::ScriptAssetKind::Shader => "shader",
                     crate::operations::ScriptAssetKind::Script => "script",
                 };
-                super::super::bindings::asset_key(kind, &asset.uri)?;
                 let owner = info.generated_origin();
+                if kind == "image" && crate::inline_images::is_data(&asset.uri) {
+                    self.project.capture_image(owner, &asset.uri)?;
+                    continue;
+                }
+                super::super::bindings::asset_key(kind, &asset.uri)?;
                 let path = self.project.resolve_file(owner, &asset.uri)?;
                 self.project.capture_asset(&path, kind)?;
                 self.script_images

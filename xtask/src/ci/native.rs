@@ -333,6 +333,20 @@ impl Session {
             self.test(
                 features,
                 "lib",
+                "inline_images::tests::",
+                &["--test-threads=2"],
+                "focus-embedded-image-policy.log",
+            )?;
+            self.test(
+                features,
+                "sampler_sources",
+                "inline_images::",
+                &["--test-threads=2"],
+                "focus-embedded-images.log",
+            )?;
+            self.test(
+                features,
+                "lib",
                 "remote_images::tests::",
                 &["--test-threads=2"],
                 "focus-http-image-policy.log",

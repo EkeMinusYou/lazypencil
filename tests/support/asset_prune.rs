@@ -245,6 +245,44 @@ fn dynamic_scripts_unknown_legacy_owners_and_symbolic_links_retain_uncertain_ass
 }
 
 #[test]
+fn embedded_image_payloads_do_not_pin_unrelated_files_but_unknown_media_remain_uncertain() {
+    use base64::Engine;
+    for supported in [true, false] {
+        let fixture = Fixture::new();
+        let (_, orphan) = fixture.asset(b"unreferenced code", "glsl");
+        let uri = if supported {
+            format!(
+                "data:image/png;base64,{}",
+                base64::engine::general_purpose::STANDARD
+                    .encode(include_bytes!("../../examples/assets/crop-source.png"))
+            )
+        } else {
+            "data:image/svg+xml,%3Csvg%3E%3C/svg%3E".into()
+        };
+        fs::write(
+            &fixture.file,
+            json!({"version":"2.21","children":[{"id":"image","type":"rectangle","width":1,"height":1,"fill":{"type":"image","url":uri}}]}).to_string(),
+        )
+        .unwrap();
+        let review = fixture.command(None);
+        if supported {
+            assert_eq!(review["uncertain"], json!([]), "{review}");
+            assert_eq!(candidates(&review), vec![orphan.clone()]);
+            let applied = fixture.command(review["revision"].as_str());
+            assert_eq!(applied["errors"], json!([]), "{applied}");
+            assert!(!orphan.exists());
+        } else {
+            assert!(
+                !review["uncertain"].as_array().unwrap().is_empty(),
+                "{review}"
+            );
+            assert!(candidates(&review).is_empty());
+            assert!(orphan.exists());
+        }
+    }
+}
+
+#[test]
 fn busy_activity_and_unowned_or_tampered_assets_are_never_deleted() {
     use fs2::FileExt;
     let fixture = Fixture::new();

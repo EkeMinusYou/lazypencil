@@ -6,6 +6,9 @@ use tempfile::TempDir;
 #[path = "support/http_images.rs"]
 mod http_images;
 
+#[path = "support/inline_images.rs"]
+mod inline_images;
+
 fn write(path: &Path, value: Value) {
     fs::write(path, value.to_string()).unwrap();
 }
@@ -1218,6 +1221,7 @@ fn real_webgl_independent_sampler_copy_matches_pixels_after_original_sources_are
             }
         }
     }
+    inline_images::real_webgl_case(&mut evidence);
     let https_image = http_images::real_webgl_case(&mut evidence);
     if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
         fs::write(

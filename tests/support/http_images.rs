@@ -14,7 +14,7 @@ mod fixture_support;
 #[path = "page_wait_reference.rs"]
 mod reference;
 
-fn cli(store: &Store, args: &[&str]) -> Value {
+pub(super) fn cli(store: &Store, args: &[&str]) -> Value {
     let mut command = Command::new(env!("CARGO_BIN_EXE_lazypencil"));
     command
         .arg("--json")
@@ -28,7 +28,7 @@ fn cli(store: &Store, args: &[&str]) -> Value {
     value
 }
 
-fn apply(store: &Store, operations: Value, dry: bool) -> Value {
+pub(super) fn apply(store: &Store, operations: Value, dry: bool) -> Value {
     let request = tempfile::NamedTempFile::new().unwrap();
     let metadata = cli(store, &["inspect", store.path().to_str().unwrap()]);
     fs::write(request.path(), operations.to_string()).unwrap();

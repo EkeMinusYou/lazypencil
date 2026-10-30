@@ -57,7 +57,13 @@ impl Project {
         if dependencies.iter().any(|d| {
             !matches!(
                 d.kind.as_str(),
-                "document" | "script" | "shader" | "image" | "remote_image" | "icon_pack"
+                "document"
+                    | "script"
+                    | "shader"
+                    | "image"
+                    | "remote_image"
+                    | "embedded_image"
+                    | "icon_pack"
             )
         }) {
             return None;

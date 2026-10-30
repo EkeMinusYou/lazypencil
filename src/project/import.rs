@@ -816,6 +816,11 @@ impl Copier<'_> {
             path
         };
         let bytes = self.project.asset(&path)?.bytes.clone();
+        if kind == "image" && crate::inline_images::is_data(uri) {
+            // The bytes already travel with this URI. Preserve its spelling
+            // and avoid creating an unnecessary managed copy on disk.
+            return Ok(uri.into());
+        }
         let extension = match kind {
             "shader" => "glsl",
             "script" => "js",

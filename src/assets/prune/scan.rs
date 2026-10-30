@@ -206,7 +206,11 @@ impl Scan {
                 }
                 let path = if text.starts_with("file:") {
                     crate::paths::local_file_url(text).ok()
-                } else if !text.is_empty() && !text.contains("://") && !text.starts_with('$') {
+                } else if !text.is_empty()
+                    && !text.contains("://")
+                    && !crate::inline_images::is_data(text)
+                    && !text.starts_with('$')
+                {
                     owner.parent().map(|parent| parent.join(text))
                 } else {
                     None

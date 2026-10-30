@@ -31,11 +31,19 @@ impl Project {
         kind: &str,
     ) -> Result<()> {
         self.check_cancelled()?;
-        if kind == "image" && crate::remote_images::is_http(uri) {
-            crate::remote_images::validate(uri)?;
+        let inline = crate::inline_images::is_data(uri);
+        if kind == "image" && (inline || crate::remote_images::is_http(uri)) {
+            if !inline {
+                crate::remote_images::validate(uri)?;
+            }
             // Maintenance only discovers local retention roots. It must not
             // acquire the network while scanning documents or old history.
             if !self.remote_images_allowed {
+                if inline {
+                    // Unsupported embedded media may hide external references;
+                    // maintenance keeps its conservative unresolved-input policy.
+                    crate::inline_images::validate(uri)?;
+                }
                 return Ok(());
             }
             match self.capture_image(origin, uri) {
@@ -44,11 +52,15 @@ impl Project {
                     return Err(error);
                 }
                 Err(error) => {
-                    let key = crate::remote_images::identity(uri);
-                    if !self.remote_failures.contains_key(&key) {
-                        if self.remote_failures.len() >= 1024 {
+                    let key = if inline {
+                        crate::inline_images::identity(uri)
+                    } else {
+                        crate::remote_images::identity(uri)
+                    };
+                    if !self.captured_image_failures.contains_key(&key) {
+                        if self.captured_image_failures.len() >= 1024 {
                             return Err(invalid(
-                                "A project may report at most 1024 failed HTTP images",
+                                "A project may report at most 1024 failed captured images",
                             ));
                         }
                         self.byte_count = self
@@ -58,7 +70,7 @@ impl Project {
                         if self.byte_count > MAX_PROJECT_BYTES {
                             return Err(invalid("Project dependencies exceed 128 MiB"));
                         }
-                        self.remote_failures
+                        self.captured_image_failures
                             .insert(key, error.details(json!({"origin":origin})));
                     }
                     return Ok(());
@@ -153,12 +165,12 @@ impl Project {
         self.missing_assets
             .values()
             .map(MissingAsset::diagnostic)
-            .chain(self.remote_failures.iter().map(|(path, error)| json!({"code":error.code,"message":error.message,"path":path,"kind":"remote_image","origin":error.details.as_ref().and_then(|details| details.get("origin"))})))
+            .chain(self.captured_image_failures.iter().map(|(path, error)| json!({"code":error.code,"message":error.message,"path":path,"kind":captured_image_kind(path),"origin":error.details.as_ref().and_then(|details| details.get("origin"))})))
             .collect()
     }
 
     pub fn assets_complete(&self) -> bool {
-        self.missing_assets.is_empty() && self.remote_failures.is_empty()
+        self.missing_assets.is_empty() && self.captured_image_failures.is_empty()
     }
 
     pub(crate) fn refresh_missing_assets(&mut self) -> Result<()> {
@@ -179,7 +191,7 @@ impl Project {
     pub(crate) fn require_assets(&self) -> Result<()> {
         if self.assets_complete()
             || self.font_lock_capture
-                && self.remote_failures.is_empty()
+                && self.captured_image_failures.is_empty()
                 && self
                     .missing_assets
                     .values()
@@ -195,13 +207,13 @@ impl Project {
     }
 
     pub(crate) fn require_no_new_missing(&self, before: &Project) -> Result<()> {
-        for path in self.remote_failures.keys() {
-            if !before.remote_failures.contains_key(path) {
+        for path in self.captured_image_failures.keys() {
+            if !before.captured_image_failures.contains_key(path) {
                 return Err(Error::new(
                     "ASSET_NOT_FOUND",
-                    "An edit cannot introduce a new unavailable HTTP image",
+                    "An edit cannot introduce a new unavailable captured image",
                 )
-                .details(json!({"path":path,"kind":"remote_image"})));
+                .details(json!({"path":path,"kind":captured_image_kind(path)})));
             }
         }
         let mut allowed = BTreeSet::new();

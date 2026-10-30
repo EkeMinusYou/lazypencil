@@ -200,7 +200,13 @@ CLI は取得条件を満たした一時点の PNG を出力する。TUI は同�
 
 ### 宣言と数値入力
 
-ローカル`file://` URLの文字列samplerは、percent encodingを復号したファイルへ通常の許可領域・依存検査を適用する。独立コピーはURL原文を表示用に保持し、画像だけを`sampler_images`で転送する。元sourceの削除・project移動・再copy後も元URLを開かず、利用者が変数を新しいURLへ変更した場合は新しい参照を検査する。HTTP(S)の取得・通常画像とsamplerの共通捕捉・独立コピーも新たに実装し、GHA確認待ちである。詳細は下記のHTTP画像の条件を参照する。埋め込みdata画像URLと、捕捉scriptのfile-URL／HTTP asset keyは引き続き未対応である。新しいURL対応の検証状況は[現在の状態](implementation-status.md#current-status)を参照する。
+ローカル`file://` URLの文字列samplerは、percent encodingを復号したファイルへ通常の許可領域・依存検査を適用する。独立コピーはURL原文を表示用に保持し、画像だけを`sampler_images`で転送する。元sourceの削除・project移動・再copy後も元URLを開かず、利用者が変数を新しいURLへ変更した場合は新しい参照を検査する。HTTP(S)の取得・通常画像とsamplerの共通捕捉・独立コピーはa00289fの完全CIで検証済みである。埋め込みdata画像の後続対応と、捕捉scriptのfile-URL／HTTP asset keyの残件は[現在の状態](implementation-status.md#current-status)で区別する。
+
+### 埋め込み画像
+
+画像fillとshaderの文字列samplerは、明示した`data:image/png`／`data:image/jpeg`／`data:image/webp`を処理する。末尾の`;base64`がある場合は標準base64、それ以外はpercent encodingでbyte列を復号する。`+`を空白へ置き換えず、元のURL・変数のalias・theme・文字列表示を保持する。リテラルのfragmentは画像payloadから外し、元文書には残す。画像MIMEと実際の静的containerが一致することを検査する。復号後の符号化済み画像は20MiB、headerは4,096 byte、URLは最大で20MiBの全byteをpercent encodingした長さにheaderを加えた範囲とする。既存の文書64MiB・Project128MiBと描画時のdecode／画素上限も適用する。
+
+画像のbyte列は`embedded_image`のhash付き論理IDで一度だけ捕捉し、local path・import・script／shaderコードの参照には流用しない。ネットワークworkerを起動せず、offlineでも処理する。コピー・切り離し・生成scriptの独立コピーでは原文URLを運び、同じpayloadの管理画像ファイルを追加しない。明示`script_assets`のimageに列挙しても余分なファイルを作らない。壊れた画像はpayloadを診断に出さず不完全なassetとしてinspect／構造修復を可能にする。素材回収は対応する画像を復号せず、未対応mediaは未解決入力として保守的に保持する。GHAでの検証状態は[現在の状態](implementation-status.md#current-status)を参照する。
 
 ### HTTP画像の取得と保持
 

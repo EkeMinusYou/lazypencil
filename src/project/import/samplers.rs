@@ -54,11 +54,15 @@ impl Copier<'_> {
                     let path = self.project.capture_image(&key.0, &bound)?;
                     let bytes = self.project.asset(&path)?.bytes.clone();
                     image_extension(&bytes)?;
+                    if crate::inline_images::is_data(uri) && bound == uri {
+                        continue;
+                    }
                     images
                         .entry((
                             key.0.clone(),
                             Path::new(uri).is_absolute()
                                 || crate::remote_images::is_http(uri)
+                                || crate::inline_images::is_data(uri)
                                 || crate::paths::local_file_url(uri).is_ok(),
                         ))
                         .or_default()

@@ -4,6 +4,16 @@
 
 ## 現在の状態（2026-10-30）
 
+a00289fの[Mac先行 40979332548](https://github.com/EkeMinusYou/lazypencil/actions/runs/40979332548)と、同じcommitの[全体CI 40980024513](https://github.com/EkeMinusYou/lazypencil/actions/runs/40980024513)は全工程成功した。HTTP画像の通常／テーマ／copy／再copy・元source削除・実WebGLのyellow／blue画素とbefore／after一致、固定された本repositoryのHTTPS画像取得が検証済みになった。MCPの5 API取消、TUIの送信準備中の取消・close／drop・下書きと画像保持、許可失効後のadapter回収も成功した。物理macSKKの候補表示・実端末受け入れとは区別する。
+
+先行は6分24秒で、対象はtui／agent／mcp／sampler_sourcesだった。入力とhashを検査した74ファイルの部分成果物を既存application cacheへ一度だけ保存し、全体builderが同じcommitの成果物として復元した。全体用catalogとconsumer artifactはfocusで生成・公開せず、以前のfocus終盤の失敗は解消した。全体CIは13分32秒で、10分以内の安定達成は未完了。builder8分03秒・core8分28秒・release8分42秒、通常3分53秒・runtime4分00秒・pixel2分41秒・端末1分16秒・Material1分41秒、source29秒だった。両feature構成の全試験・Clippy、通常開発build、release／性能／候補、全5 consumer・共通画像gate・署名付きsourceを成功した。同条件の検証を記録更新だけのために繰り返さない。
+
+後続の未コミット差分は、通常画像／文字列samplerと生成scriptのPNG／JPEG／WebP data URL対応である。原文とthemeを残し、ネットワークや余分な素材ファイルを使わない。復号・取消・不正入力の診断と構造修復、両文書版のcopy／detach／再copy、元画像削除後のraster一致、実WebGLの画像比較と素材回収の回帰を既存試験へ追加している。英語ガイドは1.0.52。これらはGHA未検証であり、a00289fの成功には含めない。大きな文字列を繰り返し展開する場合のメモリ上限も引き続き確認する。捕捉scriptのfile-URL／HTTP asset key、仕様確認・Mac実端末・最終配布の残件は維持する。
+
+### a00289f以前の経緯（以下は当時の状態）
+
+以下の失敗・確認待ちは各source当時の経緯であり、解消した範囲は冒頭のa00289fの結果を優先する。
+
 364c070の[Mac先行 40978531324](https://github.com/EkeMinusYou/lazypencil/actions/runs/40978531324)は、対象build／Clippyと実PTYの元15ケースを成功した。許可失効時のadapter終了、送信準備3件とTUIキー処理1件、HTTP画像6件、unitと実MCPの5 API取消を含む。APIの修正はこの先行で確認できたが、既存build laneの全体用catalog公開をfocusにも呼ぶ条件が残り、未生成catalogの読取りで停止した。focusの全対象試験と、全体CIの成功にはしない。
 
 呼び出し条件の修正は、全体向けのcatalog／consumer用artifact公開をfocusから外す。単独先行では既存stage-focusedが入力とhashを検査した部分成果物を既存application cacheのkeyへ保存し、同じpayloadをartifactにも重ねて保存しない。workflow_callの既存artifact経路は変更せず、単独dispatchのcache_focused_outputsで選ぶ。Cargoの再ビルド判定・compiler入力検査と全体の試験／gateは維持する。この後続修正はactionlintと差分検査までで、再度の単独先行で未実行だった全対象試験と受け渡しを確認し、その同じcommitで全体CIへ進める。

@@ -366,6 +366,10 @@ impl Bound {
     }
 
     fn asset(&self, kind: &str, uri: &str) -> Result<String> {
+        if kind == "image" && crate::inline_images::is_data(uri) {
+            crate::inline_images::validate(uri)?;
+            return Ok(uri.into());
+        }
         let Some(assets) = &self.values.assets else {
             return Ok(uri.into());
         };

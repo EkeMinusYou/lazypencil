@@ -61,7 +61,21 @@ pub struct Asset {
 
 impl Dependency {
     pub(crate) fn is_file(&self) -> bool {
-        self.kind != "remote_image"
+        !matches!(self.kind.as_str(), "remote_image" | "embedded_image")
+    }
+}
+
+impl Asset {
+    fn is_captured_image(&self) -> bool {
+        matches!(self.kind.as_str(), "remote_image" | "embedded_image")
+    }
+}
+
+fn captured_image_kind(path: &Path) -> &'static str {
+    if crate::inline_images::is_key(path) {
+        "embedded_image"
+    } else {
+        "remote_image"
     }
 }
 
@@ -225,7 +239,7 @@ pub struct Project {
     remote_images_allowed: bool,
     remote_worker: Option<PathBuf>,
     remote_deadline: Option<std::time::Instant>,
-    remote_failures: BTreeMap<PathBuf, Error>,
+    captured_image_failures: BTreeMap<PathBuf, Error>,
     // Fields drop in declaration order. Release the lease after captured inputs.
     _asset_activity: Option<Arc<crate::store::AssetActivity>>,
 }
@@ -289,7 +303,7 @@ impl Project {
             remote_images_allowed: false,
             remote_worker: None,
             remote_deadline: None,
-            remote_failures: BTreeMap::new(),
+            captured_image_failures: BTreeMap::new(),
             file_bindings: Default::default(),
         })
     }
@@ -788,7 +802,7 @@ impl Project {
             remote_images_allowed: options.remote_images,
             remote_worker: options.remote_worker.map(Path::to_owned),
             remote_deadline: None,
-            remote_failures: BTreeMap::new(),
+            captured_image_failures: BTreeMap::new(),
             root: path.clone(),
             documents: BTreeMap::new(),
             imports: BTreeMap::new(),
@@ -1070,7 +1084,7 @@ impl Project {
                     }),
             )
             .chain(self.missing_assets.values().map(|asset| asset.dependency()))
-            .chain(self.remote_failures.iter().map(|(path, error)| {
+            .chain(self.captured_image_failures.iter().map(|(path, error)| {
                 Dependency {
                     path: path.clone(),
                     revision: hash(
@@ -1078,7 +1092,7 @@ impl Project {
                             .to_string()
                             .as_bytes(),
                     ),
-                    kind: "remote_image".into(),
+                    kind: captured_image_kind(path).into(),
                     version: None,
                     availability: Some("missing"),
                 }
@@ -1218,7 +1232,7 @@ impl Project {
         let browser_paths = browser_resources::protected_paths(self);
         for (path, asset) in &self.assets {
             self.check_cancelled()?;
-            if asset.kind == "remote_image" {
+            if asset.is_captured_image() {
                 continue;
             }
             if !self.overlay_published && self.overlay.contains_key(path) {
@@ -1251,17 +1265,13 @@ impl Project {
 
     pub fn capture_asset(&mut self, path: &Path, kind: &str) -> Result<()> {
         self.check_cancelled()?;
-        if self
-            .assets
-            .get(path)
-            .is_some_and(|asset| asset.kind == "remote_image")
-        {
+        if self.assets.get(path).is_some_and(Asset::is_captured_image) {
             return if kind == "image" {
                 Ok(())
             } else {
                 Err(Error::new(
                     "ASSET_NOT_FOUND",
-                    "Captured HTTP images cannot be used as code or local files",
+                    "Captured images cannot be used as code or local files",
                 ))
             };
         }
@@ -1524,7 +1534,7 @@ impl Project {
         {
             return crate::paths::local_file_url(uri);
         }
-        if uri.contains("://") {
+        if crate::inline_images::is_data(uri) || uri.contains("://") {
             return Err(Error::new(
                 "ASSET_NOT_FOUND",
                 "Only explicit local file references are allowed here",

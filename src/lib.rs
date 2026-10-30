@@ -24,6 +24,7 @@ pub mod icons;
 #[cfg(feature = "rendering")]
 pub mod image_geometry;
 pub mod image_input;
+mod inline_images;
 #[cfg(feature = "rendering")]
 pub mod layout;
 mod managed;
