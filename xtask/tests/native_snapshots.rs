@@ -111,9 +111,8 @@ fn extended_dependencies_retire_only_their_baseline_and_partial_snapshots_after_
             .map(|entry| entry["id"].as_u64().unwrap())
             .collect::<Vec<_>>()
     };
-    assert_eq!(
-        removed(&entries),
-        [],
+    assert!(
+        removed(&entries).is_empty(),
         "The release baseline must not retire the complementary default graph"
     );
     entries.push(entry(7, complete, "wire", "refs/heads/main"));
