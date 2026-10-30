@@ -1267,11 +1267,20 @@ pub fn stage_current_tests(
                 unchanged = false;
                 break;
             };
-            if entry.modified != Some(output_modified(path)?)
-                || entry.bytes != fs::metadata(path)?.len()
+            let modified = output_modified(path)?;
+            if entry.modified != Some(modified) {
+                eprintln!(
+                    "Application checkpoint output time changed: {name}: {:?} -> {modified:?}",
+                    entry.modified
+                );
+                unchanged = false;
+                break;
+            }
+            if entry.bytes != fs::metadata(path)?.len()
                 || entry.mode != util::raw_mode(path)?
                 || entry.sha256 != util::file_digest(path)?
             {
+                eprintln!("Application checkpoint output content or mode changed: {name}");
                 unchanged = false;
                 break;
             }
@@ -1280,6 +1289,8 @@ pub fn stage_current_tests(
         {
             return Ok(json!({"files":0,"bytes":0}));
         }
+    } else {
+        eprintln!("Application checkpoint metadata, output set or compiler identity changed");
     }
     stage_tests(source, target, directory, identity)
 }
