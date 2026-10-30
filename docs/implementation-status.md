@@ -4,6 +4,8 @@
 
 ## 現在の状態（2026-10-30）
 
+8ca0376の[Mac先行 40994538109](https://github.com/EkeMinusYou/lazypencil/actions/runs/40994538109)は対象build／Clippyを成功した。新しい4 unit中、実際の128MiB上限による約1MiB source ×256 instanceの拒否・元ファイル保持と、未解決propertyの累積拒否が成功した。残る2件は、試験fixtureが通常image URLのliteral欄を変数として使い、`$image_alias`をファイルとして取得したため停止した。既存のURL解釈を変えず、変数画像の試験は正式に対応しているshader samplerへ修正する。検査済みの部分成果物62ファイル・634,357,286 byteは後段assertion失敗後も既存focus keyへ保存済みで、次の試験だけの修正で同条件ならcompiler入力を検査して再利用する。新規4試験全体と後続の既存試験の成功はまだ未確認である。
+
 926945fの[Mac先行 40994061870](https://github.com/EkeMinusYou/lazypencil/actions/runs/40994061870)は本体の対象Clippyを成功したが、新規unitが`Error.details`のOption型を扱わず、試験のcompileで停止した。詳細の存在を確認してからlimit_bytesを読むよう修正する。これまでの失敗は新しい上限処理の試験実行結果には数えず、成功済みの補助ツール検証は同条件で繰り返さない。
 
 2988fb5の[Mac先行 40993626094](https://github.com/EkeMinusYou/lazypencil/actions/runs/40993626094)は終了し、補助ツールの全試験／Clippyは成功した。アプリの先行Clippyは、共通expandの引数を追加した際に、detach／import／変数文脈などの呼出し13箇所へ新しいbudgetを渡していなかったため、型不一致で停止した。新しい展開試験とアプリ機能の成功根拠にはしない。修正では全呼出しを照合し、既存component再利用表は従来の合計node数に加えて同じ共有budgetを保持する。ローカル整形・差分検査までで、次の対象試験で確認する。

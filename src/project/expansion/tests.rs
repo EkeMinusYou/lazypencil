@@ -15,9 +15,14 @@ fn fixture(version: &str, variables: bool) -> (tempfile::TempDir, Project, Strin
             .encode(include_bytes!("../../../examples/assets/crop-source.png"))
     );
     let text = "ちょっと変換\n$literal 😀".repeat(128);
+    let fill = if variables {
+        json!({"type":"shader","url":"sample.glsl","uniforms":{"tex":"$image_alias"}})
+    } else {
+        json!({"type":"image","url":uri})
+    };
     let mut children = vec![
         json!({"id":"card","type":"frame","reusable":true,"width":40,"height":20,"children":[
-            {"id":"image","type":"rectangle","width":40,"height":20,"fill":{"type":"image","url":if variables {"$image_alias"} else {&uri}}},
+        {"id":"image","type":"rectangle","width":40,"height":20,"fill":fill},
             {"id":"text","type":"text","content":if variables {"$copy_text"} else {&text},"fontSize":12}
         ]}),
     ];
@@ -27,6 +32,11 @@ fn fixture(version: &str, variables: bool) -> (tempfile::TempDir, Project, Strin
     children.push(
         json!({"id":"generator","type":"script","scriptUri":"generator.js","width":40,"height":20}),
     );
+    fs::write(
+        temp.path().join("sample.glsl"),
+        "uniform sampler2D tex; void main() { gl_FragColor = texture2D(tex, vec2(0.5)); }",
+    )
+    .unwrap();
     fs::write(
         temp.path().join("generator.js"),
         format!("/** @schema {version} */\nreturn [];"),
@@ -53,7 +63,15 @@ fn root_and_variable_expansion_share_a_preallocation_budget_without_changing_val
             let (_temp, project, uri, text) = fixture(version, variables);
             let scene = project.resolve().unwrap();
             for root in &scene.roots[..25] {
-                assert_eq!(root.children[0].properties["fill"]["url"], uri);
+                let fill = &root.children[0].properties["fill"];
+                assert_eq!(
+                    if variables {
+                        &fill["uniforms"]["tex"]
+                    } else {
+                        &fill["url"]
+                    },
+                    &uri
+                );
                 assert_eq!(root.children[1].properties["content"], text);
             }
             let mut budget = Expansion {
