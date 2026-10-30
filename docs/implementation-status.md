@@ -4,6 +4,8 @@
 
 ## 現在の状態（2026-10-30）
 
+利用者は残確認への返答としてKittyの動作に問題がなく、MacのWezTermでもSixelの表示・ズームは動いたと報告した。Kittyの画像欠け・点滅修正を従来の未確認へ戻さない。Sixelは操作が遅く、初回読み込み中に一瞬エラーらしい文字列が見えたという残件がある。正確な文字列・試験したWezTermの版は不明で、再実行は依頼していない。対処として、Sixelの入力スレッドでの暫定画像の追加符号化を省き、既存workerで最新の完成画像だけを符号化する。解像度・256色・書き出し画素は維持する。初回placeholderも通常のLoadingと実際の失敗を区別する。この変更自体のGHA検証と実表示の改善はまだ未確認である。
+
 7b6739cの[配布検証41063712899](https://github.com/EkeMinusYou/lazypencil/actions/runs/41063712899)は6分59秒で成功した。同じworkflowの先頭でxtask全試験・Clippyを通し、欠損通知の拒否、CRLF／複数SPDXの保持、外部headerの同size変更・欠損・symlink、SDK本文を複製しないことを既存試験で確認した。Skia inventoryは外部headerの先頭16KiBにあるSPDX原文と通知commentの位置・長さ・hashを保持する。1575件の入力identityは前候補と同一で、840件にSPDX、1551件に通知commentのhashがある。注記のないもののlicenseを推測して補わない。
 
 生成arm_neon.hのMIT通知原文と出自を追加同梱した。実際のXcode 16.4／Clang 17入力の全体hashは`398e8746…82af`、先頭commentのhashは`9b77668d…9691`で、公開LLVM generator由来の原文と一致した。これはheader全体が公開generator出力と等しいという主張ではない。取得した637ファイルの候補は旧635ファイルにこの通知と出自の2ファイルだけを追加し、SDK実装本文は追加していない。実archiveの通知2ファイルは現source、Skia inventoryは配布資料と全byte一致した。archive SHA-256 `c4a0eee40c356a52ac63b930c4fa0dc276928371b27d880c51e89f997c2ebb34`を独立に計算し、ローカルのgh attestation verifyでもsource／signer 7b6739c・release-evidence.yml／main・GitHub hosted・run 41063712899／attempt 1を照合した。

@@ -13,6 +13,12 @@ impl super::App {
         picker: &super::graphics::Backend,
     ) -> crate::Result<()> {
         self.camera = None;
+        // Sixel must quantize and transfer every interim frame. Keep that
+        // expensive work off the input thread and let the coalescing worker
+        // deliver only the exact frame, at the existing resolution/palette.
+        if picker.protocol_type() == ratatui_image::picker::ProtocolType::Sixel {
+            return Ok(());
+        }
         let Some(preview) = &self.preview else {
             return Ok(());
         };

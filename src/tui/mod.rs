@@ -166,6 +166,7 @@ struct App {
     view: View,
     playback: playback::Playback,
     preview: Option<Preview>,
+    preview_failed: bool,
     camera: Option<camera::Camera>,
     camera_id: u32,
     generation: u64,
@@ -212,6 +213,7 @@ impl App {
             view: View::default(),
             playback: playback::Playback::default(),
             preview: None,
+            preview_failed: false,
             camera: None,
             camera_id: 0x8000_0001,
             generation: 0,
@@ -348,6 +350,7 @@ impl App {
             return;
         }
         if !check_only {
+            self.preview_failed = false;
             if self.camera.take().is_some() {
                 self.status = "Rendering requested preview".into();
             }
@@ -378,6 +381,7 @@ impl App {
         self.camera = None;
         match output.result {
             Ok(mut preview) => {
+                self.preview_failed = false;
                 if !preview.attachment {
                     self.view = preview.view;
                     if !preview.time_dependent && !preview.live_pages {
@@ -412,6 +416,7 @@ impl App {
             Err(error) => {
                 self.playback.stop();
                 self.preview = None;
+                self.preview_failed = true;
                 self.error(error);
             }
         }
@@ -1272,8 +1277,12 @@ impl App {
             frame.render_widget(graphics::Image(&preview.protocol), inner);
         } else {
             frame.render_widget(
-                Paragraph::new("No complete preview\nRendering errors appear below.")
-                    .wrap(Wrap { trim: false }),
+                Paragraph::new(if self.preview_failed {
+                    "Preview unavailable\nSee status and Conversation for details."
+                } else {
+                    "Loading preview…"
+                })
+                .wrap(Wrap { trim: false }),
                 inner,
             );
         }

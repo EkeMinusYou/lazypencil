@@ -1522,6 +1522,138 @@ fn custom_prompt_keys_keep_focus_and_modal_precedence_and_send_actual_images() {
 }
 
 #[test]
+fn initial_preview_loading_is_distinct_from_failure_and_explicit_retry() {
+    use ratatui::{Terminal, backend::TestBackend};
+    fn screen(app: &mut App) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(100, 36)).unwrap();
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect()
+    }
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let initial = screen(&mut app);
+        assert!(initial.contains("Loading preview…"));
+        assert!(!initial.contains("Rendering errors"));
+        assert!(!initial.contains("Preview unavailable"));
+        app.accept_preview(preview::Output {
+            generation: app.generation,
+            result: Err(Error::new("RENDER_ERROR", "Owned preview failure")),
+        });
+        let failed = screen(&mut app);
+        assert!(failed.contains("Preview unavailable"));
+        assert!(failed.contains("Owned preview failure"));
+        assert!(!failed.contains("Loading preview…"));
+        let worker = Worker::start(
+            app.conversation.store().clone(),
+            vec![],
+            Backend::halfblocks(),
+            173,
+        )
+        .unwrap();
+        app.cells = Size::new(20, 8);
+        app.request(&worker, false, true);
+        // An obsolete failure must not replace the retry's loading state.
+        app.accept_preview(preview::Output {
+            generation: app.generation - 1,
+            result: Err(Error::new("RENDER_ERROR", "Stale preview failure")),
+        });
+        assert!(screen(&mut app).contains("Loading preview…"));
+        app.accept_preview(
+            tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap(),
+        );
+        assert!(app.preview.is_some());
+        let loaded = screen(&mut app);
+        assert!(!loaded.contains("Loading preview…"));
+        assert!(!loaded.contains("Preview unavailable"));
+        assert!(app.log.contains("Owned preview failure"));
+        assert!(!app.log.contains("Stale preview failure"));
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
+fn sixel_camera_gestures_use_the_coalescing_worker_without_interim_encodes() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        std::fs::write(app.conversation.store().path(), json!({"version":"2.21","children":[
+            {"type":"rectangle","id":"shape","x":24,"y":16,"width":120,"height":80,"fill":"#2563EB"}
+        ]}).to_string()).unwrap();
+        let saved = std::fs::read(app.conversation.store().path()).unwrap();
+        let (picker, _) = Backend::detect(ImageProtocol::Sixel).unwrap();
+        let worker = Worker::start(
+            app.conversation.store().clone(),
+            vec![],
+            picker.clone(),
+            179,
+        )
+        .unwrap();
+        app.cells = Size::new(20, 8);
+        app.view.zoom = Some(1.0);
+        app.request(&worker, false, false);
+        app.accept_preview(
+            tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap(),
+        );
+        assert!(app.preview.is_some());
+        app.focus = Focus::Preview;
+        for key in [
+            KeyCode::Right,
+            KeyCode::Char('+'),
+            KeyCode::Down,
+            KeyCode::Char('-'),
+        ] {
+            app.key(KeyEvent::new(key, KeyModifiers::NONE), &picker, &worker)
+                .await
+                .unwrap();
+            assert!(
+                app.camera.is_none(),
+                "Sixel must not encode an interim frame on the input thread"
+            );
+        }
+        let requested = app.view;
+        let latest = tokio::time::timeout(Duration::from_secs(15), async {
+            loop {
+                let output = worker.next().await;
+                if output.generation == app.generation {
+                    break output;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        app.accept_preview(latest);
+        let final_frame = app.preview.as_ref().unwrap();
+        assert!(matches!(
+            final_frame.protocol,
+            ratatui_image::protocol::Protocol::Sixel(_)
+        ));
+        assert_eq!(final_frame.view.center, requested.center);
+        assert_eq!(final_frame.view.zoom, requested.zoom);
+        assert!(!final_frame.image.png().unwrap().is_empty());
+        assert_eq!(
+            std::fs::read(app.conversation.store().path()).unwrap(),
+            saved
+        );
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
 fn cached_camera_feedback_keeps_exact_exports_and_generation_ownership_separate() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {
