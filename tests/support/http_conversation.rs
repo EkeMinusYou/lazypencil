@@ -51,6 +51,57 @@ async fn disconnected(server: &reference::Server) {
     .expect("Cancelled preparation retained the HTTP connection");
 }
 
+#[cfg(unix)]
+#[test]
+fn http_fixture_observes_an_abortive_peer_close_after_response_headers() {
+    use std::{
+        io::{Read, Write},
+        net::TcpStream,
+        os::fd::AsRawFd,
+    };
+    let server = reference::Server::new();
+    let mut stream = TcpStream::connect(server.address).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    write!(
+        stream,
+        "GET /network/http-image/blocked.png HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+        server.address
+    )
+    .unwrap();
+    let mut header = Vec::new();
+    while !header.ends_with(b"\r\n\r\n") {
+        assert!(header.len() < 4096);
+        let mut byte = [0];
+        stream.read_exact(&mut byte).unwrap();
+        header.push(byte[0]);
+    }
+    assert!(header.starts_with(b"HTTP/1.1 200 OK\r\n"));
+    let linger = libc::linger {
+        l_onoff: 1,
+        l_linger: 0,
+    };
+    // This owned, connected descriptor and correctly sized value request RST
+    // on close instead of FIN. No unowned socket or process is affected.
+    assert_eq!(
+        unsafe {
+            libc::setsockopt(
+                stream.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_LINGER,
+                std::ptr::from_ref(&linger).cast(),
+                std::mem::size_of_val(&linger) as libc::socklen_t,
+            )
+        },
+        0,
+        "{}",
+        std::io::Error::last_os_error()
+    );
+    drop(stream);
+    runtime().block_on(disconnected(&server));
+}
+
 #[test]
 fn http_prompt_preparation_yields_preserves_draft_and_recovers_after_cancellation() {
     let temp = TempDir::new().unwrap();
