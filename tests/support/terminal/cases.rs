@@ -266,6 +266,34 @@ pub fn run(
         }
     };
     h.finish()?;
+    if case == "user-navigation-config" {
+        // Inspect the completed stream once, after the existing exit/drain checks.
+        // Scanning the growing output on every wait poll can starve PTY reads.
+        let mut synchronized = false;
+        let mut clears = 0;
+        for offset in 0..h.output.len() {
+            let bytes = &h.output[offset..];
+            if bytes.starts_with(b"\x1b[?2026h") {
+                synchronized = true;
+            }
+            if bytes.starts_with(b"\x1b[?2026l") {
+                synchronized = false;
+            }
+            if bytes.starts_with(b"\x1b[2J") {
+                assert!(
+                    synchronized,
+                    "A fullscreen clear must not expose a blank camera frame"
+                );
+                clears += 1;
+            }
+        }
+        assert!(
+            !synchronized,
+            "Normal exit must finish synchronized updates"
+        );
+        assert!(clears > 0, "The case must exercise image-placement redraws");
+        report["synchronized_full_redraws"] = clears.into();
+    }
     if !report.is_null() {
         report["exit_code"] = 0.into();
         report["terminal_modes_restored"] = true.into();
@@ -856,41 +884,6 @@ fn navigation(h: &mut Harness) -> Result<Value> {
     assert!(h.turns().is_empty());
     no_agent(h);
     assert_eq!(state(h)["draft"], format!("{text} 続き"));
-    h.wait("completed synchronized redraw", 15.0, |h| {
-        let begins = h
-            .output
-            .windows(8)
-            .filter(|bytes| *bytes == b"\x1b[?2026h")
-            .count();
-        let ends = h
-            .output
-            .windows(8)
-            .filter(|bytes| *bytes == b"\x1b[?2026l")
-            .count();
-        begins > 0 && begins == ends
-    })?;
-    let mut synchronized = false;
-    let mut synchronized_clears = 0;
-    for offset in 0..h.output.len() {
-        let bytes = &h.output[offset..];
-        if bytes.starts_with(b"\x1b[?2026h") {
-            synchronized = true;
-        }
-        if bytes.starts_with(b"\x1b[?2026l") {
-            synchronized = false;
-        }
-        if bytes.starts_with(b"\x1b[2J") {
-            assert!(
-                synchronized,
-                "A fullscreen clear must not expose a blank camera frame"
-            );
-            synchronized_clears += 1;
-        }
-    }
-    assert!(
-        synchronized_clears > 0,
-        "The case must exercise image-placement redraws"
-    );
     let mut frames = serde_json::Map::new();
     for (name, index, frame) in [
         ("before", before_index, before),
@@ -903,6 +896,6 @@ fn navigation(h: &mut Harness) -> Result<Value> {
         );
     }
     Ok(
-        json!({"source_commit":source_commit(),"case":h.case,"frames":frames,"draft_sha256":hash(format!("{text} 続き")),"help_end_reached":true,"startup_keys_retained":true,"synchronized_full_redraws":synchronized_clears,"turns":h.turns().len()}),
+        json!({"source_commit":source_commit(),"case":h.case,"frames":frames,"draft_sha256":hash(format!("{text} 続き")),"help_end_reached":true,"startup_keys_retained":true,"turns":h.turns().len()}),
     )
 }

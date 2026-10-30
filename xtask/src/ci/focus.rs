@@ -1201,10 +1201,20 @@ pub fn changed_paths(root: &Path) -> Result<Vec<String>> {
                 .iter()
                 .any(|j| j["name"] == "Verified source artifact" && j["conclusion"] == "success")
             {
-                let mut sha = run["head_sha"]
+                let original = run["head_sha"]
                     .as_str()
-                    .context("Missing source identity")?
-                    .to_owned();
+                    .context("Missing source identity")?;
+                let mut sha = verified_baseline(root, original, || {
+                    let commit = api(root, &format!("repos/{repo}/git/commits/{original}"))?;
+                    ensure!(
+                        commit["sha"] == original,
+                        "Verified source identity changed"
+                    );
+                    Ok(commit["tree"]["sha"]
+                        .as_str()
+                        .context("Missing verified file tree")?
+                        .to_owned())
+                })?;
                 let event: Value = util::json(Path::new(&std::env::var("GITHUB_EVENT_PATH")?))?;
                 let base = event["pull_request"]["base"]["sha"]
                     .as_str()
@@ -1224,6 +1234,44 @@ pub fn changed_paths(root: &Path) -> Result<Vec<String>> {
         anyhow::bail!("No verified all-platform baseline")
     }
     paths_since(root, baseline(root))
+}
+
+fn verified_baseline(
+    root: &Path,
+    original: &str,
+    verified_tree: impl FnOnce() -> Result<String>,
+) -> Result<String> {
+    let hash =
+        |value: &str| value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit());
+    ensure!(hash(original), "Invalid verified source identity");
+    let available = process::output(
+        Command::new("git").current_dir(root).args([
+            "cat-file",
+            "-e",
+            &format!("{original}^{{commit}}"),
+        ]),
+        Duration::from_secs(10),
+    )?;
+    if available.status.success() && !available.timed_out {
+        return Ok(original.to_owned());
+    }
+    let tree = verified_tree()?;
+    ensure!(hash(&tree), "Invalid verified file tree");
+    let ancestry = process::text(Command::new("git").current_dir(root).args([
+        "log",
+        "--no-color",
+        "--no-show-signature",
+        "--format=%H %T",
+        "HEAD",
+    ]))?;
+    let matching = ancestry
+        .lines()
+        .filter_map(|line| line.split_once(' '))
+        .find(|(commit, candidate)| hash(commit) && *candidate == tree)
+        .context("Verified source tree is absent from the current ancestry")?
+        .0;
+    eprintln!("Using file-identical verified baseline {original} -> {matching} (tree {tree})");
+    Ok(matching.to_owned())
 }
 
 fn paths_since(root: &Path, baseline: Result<String>) -> Result<Vec<String>> {
@@ -1320,14 +1368,54 @@ mod history_tests {
         git(&["add", "changed.rs", "unchanged.rs"]);
         git(&["commit", "--quiet", "-m", "Fixture baseline"]);
         let baseline = git(&["rev-parse", "HEAD"]).trim().to_owned();
+        let tree = git(&["rev-parse", "HEAD^{tree}"]).trim().to_owned();
         fs::write(root.join("changed.rs"), "after").unwrap();
         fs::write(root.join("untracked.rs"), "not a compiler input").unwrap();
         assert!(paths_since(root, Ok(baseline.clone())).unwrap().is_empty());
         git(&["add", "changed.rs"]);
         git(&["commit", "--quiet", "-m", "Fixture change"]);
-        assert_eq!(paths_since(root, Ok(baseline)).unwrap(), ["changed.rs"]);
+        assert_eq!(
+            paths_since(root, Ok(baseline.clone())).unwrap(),
+            ["changed.rs"]
+        );
+        assert_eq!(
+            verified_baseline(root, &baseline, || panic!(
+                "An available baseline needs no API lookup"
+            ))
+            .unwrap(),
+            baseline
+        );
+        let missing = "f".repeat(40);
+        let mapped = verified_baseline(root, &missing, || Ok(tree)).unwrap();
+        assert_eq!(mapped, baseline);
+        assert_eq!(paths_since(root, Ok(mapped)).unwrap(), ["changed.rs"]);
         let all = ["changed.rs", "unchanged.rs"];
         assert_eq!(paths_since(root, Ok("f".repeat(40))).unwrap(), all);
+        assert_eq!(
+            paths_since(
+                root,
+                verified_baseline(root, &missing, || Ok("0".repeat(40)))
+            )
+            .unwrap(),
+            all
+        );
+        fs::write(root.join("changed.rs"), "unrelated branch").unwrap();
+        git(&["add", "changed.rs"]);
+        let unrelated_tree = git(&["write-tree"]).trim().to_owned();
+        let unrelated = git(&["commit-tree", &unrelated_tree, "-m", "Unrelated fixture"])
+            .trim()
+            .to_owned();
+        git(&["update-ref", "refs/heads/unrelated", &unrelated]);
+        git(&["read-tree", "HEAD"]);
+        fs::write(root.join("changed.rs"), "after").unwrap();
+        assert_eq!(
+            paths_since(
+                root,
+                verified_baseline(root, &missing, || Ok(unrelated_tree))
+            )
+            .unwrap(),
+            all
+        );
         assert_eq!(
             paths_since(root, Err(anyhow::anyhow!("History lookup failed"))).unwrap(),
             all
