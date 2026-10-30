@@ -14,10 +14,10 @@ on:
         default: focus
         options: [focus]
       lane:
-        description: Reuse the default build lane and its compiler conditions
+        description: Select the cached core or default compiler context
         type: choice
         default: build
-        options: [build]
+        options: [build, core]
       suite:
         description: Existing affected-test plan
         type: choice
