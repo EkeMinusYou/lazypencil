@@ -20,6 +20,132 @@ struct Fixture {
     exact: PathBuf,
 }
 
+#[test]
+fn full_builder_defers_long_bindings_but_focus_and_complete_tests_retain_failures() {
+    use lazypencil_xtask::ci::commands;
+    let mut f = Fixture::new();
+    let source = f
+        ._temp
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join("lazypencil-source");
+    fs::rename(&f.source, &source).unwrap();
+    f.source = source;
+    fs::remove_file(f.source.join("examples/preview.rs")).unwrap();
+    fs::write(f.source.join("src/main.rs"), "fn main() {}\n").unwrap();
+    for name in ["mcp", "tui", "optional_icons"] {
+        fs::write(
+            f.source.join(format!("tests/{name}.rs")),
+            "#[test] fn complete_catalog_probe() {}\n",
+        )
+        .unwrap();
+    }
+    fs::write(
+        f.source.join("tests/script_scope.rs"),
+        r#"
+#[test] fn generated_browser_full_consumer_sentinel() { panic!("full consumer sentinel"); }
+mod script_bindings {
+    pub mod generated_sources {
+        #[test] fn generated_replacements_keep_their_code_owner_under_later_overrides() {}
+    }
+    #[test] fn full_consumer_sentinel() { panic!("full consumer sentinel"); }
+}
+mod script_copy {
+    #[test] fn full_consumer_sentinel() { panic!("full consumer sentinel"); }
+}
+"#,
+    )
+    .unwrap();
+    // Invoke the real scheduler in a child with its own Actions outputs. The
+    // tiny source owns no application dependencies or external resources.
+    let run = |stage: &str| {
+        let output = process::output(
+            Command::new(env!("CARGO_BIN_EXE_xtask"))
+                .args([
+                    "ci",
+                    "native",
+                    stage,
+                    "--suite",
+                    "copy",
+                    "--targets",
+                    "[\"script_scope\"]",
+                ])
+                .env("GITHUB_ACTIONS", "true")
+                .env("GITHUB_SHA", "fixture-source")
+                .env("RUNNER_TEMP", f._temp.path().canonicalize().unwrap())
+                .env("CARGO_TARGET_DIR", &f.target)
+                .env("LAZYPENCIL_CI_TEST_PROFILE", "optimized-debug-v1")
+                .env("LAZYPENCIL_CI_SEPARATE_CORE", "true")
+                .env("RUNTIME_PARALLEL", "false")
+                .env("GITHUB_OUTPUT", f._temp.path().join("action-output"))
+                .env("GITHUB_ENV", f._temp.path().join("action-environment")),
+            Duration::from_secs(120),
+        )
+        .unwrap();
+        assert!(
+            !output.timed_out,
+            "{stage} exceeded the tiny fixture budget"
+        );
+        output
+    };
+    let builder = run("build-and-reproduce");
+    assert!(
+        builder.status.success(),
+        "{}",
+        String::from_utf8_lossy(&builder.stderr)
+    );
+    let root = f._temp.path();
+    assert!(
+        fs::read_to_string(root.join("focus-generated-code-owner.log"))
+            .unwrap()
+            .contains("1 passed; 0 failed")
+    );
+    let logs = [
+        "focus-browser-bindings.log",
+        "focus-script-bindings.log",
+        "focus-copy-bindings.log",
+    ];
+    assert!(logs.iter().all(|name| !root.join(name).exists()));
+    let catalog: Value = util::json(&root.join("test-executables.json")).unwrap();
+    let binary = PathBuf::from(
+        catalog["binaries"]["script_scope"]["path"]
+            .as_str()
+            .unwrap(),
+    );
+    let normal = commands::default_test("script_scope", &binary).unwrap();
+    let result = process::output(
+        Command::new(&normal[0])
+            .args(&normal[1..])
+            .current_dir(&f.source),
+        Duration::from_secs(30),
+    )
+    .unwrap();
+    assert!(!result.timed_out && !result.status.success());
+    let log = String::from_utf8_lossy(&result.stdout);
+    for case in [
+        "generated_browser_full_consumer_sentinel",
+        "script_bindings::full_consumer_sentinel",
+        "script_copy::full_consumer_sentinel",
+    ] {
+        assert!(
+            log.contains(&format!("test {case} ... FAILED")),
+            "A complete test omitted {case}: {log}"
+        );
+    }
+    let focus = run("focus-reproduce");
+    assert!(!focus.status.success());
+    // Both parallel groups and the final legacy-copy group must finish even
+    // when their deliberately failing assertions reject standalone focus.
+    for name in logs {
+        let log = fs::read_to_string(root.join(name)).unwrap();
+        assert!(
+            log.contains("full_consumer_sentinel") && log.contains("FAILED"),
+            "{name}: {log}"
+        );
+    }
+}
+
 #[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
 #[test]
 fn release_codegen_override_rebuilds_only_application_units_and_keeps_test_edits_fresh() {
