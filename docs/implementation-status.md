@@ -4,6 +4,12 @@
 
 ## 現在の状態（2026-10-30）
 
+最新のcc20e37の[統合CI41025696050](https://github.com/EkeMinusYou/lazypencil/actions/runs/41025696050)は12分00秒で全工程成功した。監査、core／既定構成の全試験・両Clippy・通常開発build、release、全5 consumer、共通画像gateと署名付きsourceを維持した。assetsのsocket終了競合と、compileと重ねたPTYの2秒JS期限の失敗は解消した。端末再現はcompile join後に元の全case・期限で32.876秒で成功した。builderは3cc43daの298ファイルを再利用し、変更したassetsの6ファイルだけを無効化した。source tarは1228ファイル・SHA-256 `04ced788…83de54cd`で、署名検証結果のsource／ci.yml／main／run／attempt 1を照合した。全体10分以内の安定達成と、下記の別compiler contextの先行cache保持は未完了である。
+
+本体SHA-256は`b0297f24…07b0759`で、利用者向け3cc43da候補と一致する。通常bound最大RSSは191.52MiBで元の200MiB gateを成功し、入力／初回preview／完全出力p95は32.80／268.64／221.30ms、cached feedback p95は28.50ms、30.139秒idle CPU上限は0.398%だった。同条件の20起動／80操作等を維持し、OS cacheの統制や物理表示の受け入れ完了とはしない。Kitty修正候補の実表示・Mac Sixel、対応環境と性能条件、未定義の互換性2点、最終配布レビューは残る。[残件](#remaining-work)
+
+以下のsource別記録は各実行時点の経緯であり、その時点の「次に確認する」を現在の未完了へ加算しない。最新結果と上記の残件を優先する。
+
 852fd5eの[全体41022532753](https://github.com/EkeMinusYou/lazypencil/actions/runs/41022532753)は全jobが終了し、修正したassets先行・全core試験／Clippy／通常開発build・監査・releaseは成功した。既定builderは残りのcompileと並行した既存PTYのscript-configで、500万回計算を行うCLI layoutが元の2秒JS期限に達して停止した。製品の期限・計算回数・待機条件は変えず、PTY一式を既存の300ms dynamic再現と同じくcompile join後へ移す。standalone focusは元どおりcompile後に実行し、開始済みの全laneのjoinも維持する。既存の小さな実Cargo scheduler fixtureへTUI caseを加え、完成catalogの公開後に実行されることと、試験自体が省略されないことを確認する。製品コードと利用者向け3cc43daバイナリは変更しない。まず軽量な補助ツールGHAでこの変更を検証する。
 
 CI履歴から別imageの先行cacheの早すぎる削除も確認した。3cc43daのfull builderは20261028.0489.1で、20260907.0337.1のsource一致focus key（188,614,612 byte）を07:40:01Zの既存retentionで削除した。そのため次の852fd5e／旧imageはfocusを復元できず、古いfullのsource set不一致もあって再compileした。誤再利用は既存のcompiler条件照合で拒否されているが、別contextを同じsourceだけで置換済みとする保持判断は改善が必要である。依存cacheの枠を圧迫する無制限保持や、compiler条件の照合を緩める対処は行わない。
@@ -457,7 +463,7 @@ HTTP(S)文字列samplerはa00289f、未参照のproject素材回収は9865944、
 
 旧3環境CI全体の安定した短縮は未達だった。初回Macのみへ変更し、Linux nativeの待機・再ビルド・必須確認を外した。実行時間が単純に1/3になるとは見積もらない。`c9ffb37` は38分28秒、先行17分30秒、全体 job は x64 16分35秒・arm64 17分57秒・Mac20分05秒だった。先行範囲と runner image が異なり、元の27〜29分との統制比較ではない。Mac release 再利用0.87秒、同一環境での先行成果物再利用、変更した試験だけの無効化、独立試験の並列化には個別の成功根拠がある。9d6613b当時は14分43秒（依存変更・Wasm検証を含む）。5eaa691は12分06秒（本体変更と新規124組）、f9cc4daは10分17秒（本体全50単位を再build）だった。copy先行の06bab20は10分31秒、本体再利用の028e522は8分30秒だった。旧62675c9の12分51秒・788f4c2の9分51秒・旧3環境と条件を分け、全体10分以内の維持は引き続き改善する。
 
-macOSの最新の通常bound観測は5b113a1で最大191.34MiB、cached feedback p95は24.13msだった。同じ本体hashの2436006の180.28MiB／33.64ms、ad6744dの199.02MiB／28.01msと7fe854bの172.03MiB／32.72msは以前のsource／環境の結果として区別する。古い「200MiB未達」を現在の既知不具合に数えない。この標本結果から、統制条件・物理端末の性能受け入れ完了とはしない。[性能記録](performance.md)
+macOSの最新の通常bound観測はcc20e37で最大191.52MiB、cached feedback p95は28.50msだった。同じ本体hashの3cc43daの177.03MiB／31.81msなど、以前のsource／環境の値との差を単独変更の効果とはしない。古い「200MiB未達」を現在の既知不具合に数えず、統制条件・物理端末の性能受け入れ完了とも扱わない。[性能記録](performance.md)
 
 本家との総合デザイン品質比較は当初から保留。任意フォント・全モデルの網羅、crates.io 公開、Linux／Windows／Intel Macを、新たな初回必須スコープとして追加しない。明示した元の機能・互換性・性能・配布条件も削除しない。
 
