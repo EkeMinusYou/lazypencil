@@ -264,12 +264,27 @@ fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool, network: 
         } else {
             bytes.len()
         };
-        if write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n").is_err() { return; }
+        if let Err(error) = write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n"
+        ) {
+            if route == "blocked.png" && disconnected_socket(&error) {
+                network.closed_images.fetch_add(1, Ordering::SeqCst);
+            }
+            return;
+        }
         if route == "blocked.png" {
             probe.store(true, Ordering::SeqCst);
             let started = Instant::now();
             while !stop.load(Ordering::SeqCst) && started.elapsed() < Duration::from_secs(30) {
-                if matches!(stream.peek(&mut [0; 1]), Ok(0)) {
+                // macOS retains a socket error across MSG_PEEK calls. A peer
+                // reset is closed, even when repeated peeks never return EOF.
+                let closed = match stream.peek(&mut [0; 1]) {
+                    Ok(0) => true,
+                    Err(error) => disconnected_socket(&error),
+                    _ => false,
+                };
+                if closed {
                     network.closed_images.fetch_add(1, Ordering::SeqCst);
                     return;
                 }
@@ -374,4 +389,14 @@ fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool, network: 
         thread::sleep(Duration::from_millis(5));
     }
     let _ = stream.write_all(body.as_bytes());
+}
+
+fn disconnected_socket(error: &std::io::Error) -> bool {
+    matches!(
+        error.kind(),
+        std::io::ErrorKind::ConnectionReset
+            | std::io::ErrorKind::ConnectionAborted
+            | std::io::ErrorKind::BrokenPipe
+            | std::io::ErrorKind::NotConnected
+    )
 }

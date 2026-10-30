@@ -55,77 +55,33 @@ jobs:
       suite: ${{ inputs.suite }}
       targets: ${{ inputs.targets }}
       rebuild_application: ${{ inputs.rebuild_application }}
+  runtime:
+    if: inputs.os == 'macos-15'
+    needs: build
+    name: Test runtime from the shared build
+    uses: ./.github/workflows/native-consumer.yml
+    with:
+      os: ${{ inputs.os }}
+      suite: runtime
+      native_tools_artifact: ${{ needs.build.outputs.native_tools_artifact }}
+      binaries_artifact: ${{ needs.build.outputs.runtime_binaries_artifact }}
   tests:
     if: inputs.os == 'macos-15'
     needs: build
     strategy:
       fail-fast: false
-      # Leave room for the independent core host. Start long consumers first;
-      # terminal can finish in the first released slot before runtime completes.
-      max-parallel: 4
+      # Core and release may still own two of the five hosted Mac slots.
+      # Keep runtime independent; matrix order does not guarantee priority.
+      max-parallel: 2
       matrix:
-        suite: [runtime, normal, pixels, material, terminal]
+        suite: [normal, pixels, material, terminal]
     name: Test ${{ matrix.suite }} from the shared build
-    runs-on: ${{ inputs.os }}
-    timeout-minutes: 60
-    env:
-      CARGO_BUILD_JOBS: '1'
-      CARGO_INCREMENTAL: '0'
-      CARGO_TERM_COLOR: always
-      CARGO_PROFILE_DEV_DEBUG: '0'
-      CARGO_PROFILE_TEST_DEBUG: '0'
-      LAZYPENCIL_CI_TEST_PROFILE: optimized-debug-v1
-      HEADED_BROWSER_TESTS: ${{ matrix.suite == 'runtime' }}
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/xtask
-        with:
-          prebuilt: ${{ needs.build.outputs.native_tools_artifact }}
-      - name: Verify and normalize the same complete source distribution
-        run: xtask/target/debug/xtask ci native source
-      - name: Download this run's single compiled catalog
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
-        with:
-          name: ${{ matrix.suite == 'runtime' && needs.build.outputs.runtime_binaries_artifact || matrix.suite == 'terminal' && needs.build.outputs.terminal_binaries_artifact || matrix.suite == 'material' && needs.build.outputs.material_binaries_artifact || needs.build.outputs.binaries_artifact }}
-          path: ${{ runner.temp }}/native-binaries
-      - name: Restore pinned emoji inputs
-        if: matrix.suite == 'pixels'
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          key: emoji-fonts-v1-${{ hashFiles('tests/fixtures/fonts/emoji-upstream.json') }}
-          path: |
-            ${{ runner.temp }}/emoji-fonts/LICENSE
-            ${{ runner.temp }}/emoji-fonts/NotoColorEmoji.ttf
-            ${{ runner.temp }}/emoji-fonts/Noto-COLRv1.ttf
-      - name: Restore pinned Material inputs independently of Cargo build caches
-        if: matrix.suite == 'material'
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          key: material-fonts-v1-${{ hashFiles('resources/icons/catalogue.json') }}
-          path: ${{ runner.temp }}/lazypencil-material-fonts
-      - name: Prepare the runtime catalog and publish managed browser paths
-        if: matrix.suite == 'runtime'
-        run: xtask/target/debug/xtask ci native runtime-prepare
-      - name: Run all tests assigned to this consumer
-        run: xtask/target/debug/xtask ci native '${{ matrix.suite }}-consumer'
-      - name: Retain independent source-bound results and all failure diagnostics
-        if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: native-test-${{ matrix.suite }}-${{ github.sha }}
-          path: |
-            ${{ runner.temp }}/*.log
-            ${{ runner.temp }}/*.json
-            ${{ runner.temp }}/ci-timings.jsonl
-            ${{ runner.temp }}/codec-reference/codec-*
-            ${{ runner.temp }}/tui-artifacts/
-            ${{ runner.temp }}/clipboard-evidence/
-            ${{ runner.temp }}/render-regressions/
-          overwrite: true
-          retention-days: 3
-          if-no-files-found: error
+    uses: ./.github/workflows/native-consumer.yml
+    with:
+      os: ${{ inputs.os }}
+      suite: ${{ matrix.suite }}
+      native_tools_artifact: ${{ needs.build.outputs.native_tools_artifact }}
+      binaries_artifact: ${{ matrix.suite == 'terminal' && needs.build.outputs.terminal_binaries_artifact || matrix.suite == 'material' && needs.build.outputs.material_binaries_artifact || needs.build.outputs.binaries_artifact }}
   deferred:
     if: inputs.os != 'macos-15'
     strategy:
