@@ -30,6 +30,8 @@ AI に形式の説明だけを渡す構成を改め、設計手順、視覚ス�
 
 2026-10-30の追跡確認では、GitHub公開APIから取得できる1,225 artifact・158 sourceは全て除去commit `0401ccd972cd107311244934b8daaaffc9ee959e` の子孫であり、除去前sourceと不明sourceは0件だった。最古の作成時刻は2026-10-27T04:33:50Z。したがって、上記の「過去CI artifactに残る」は当時の状態であり、現在の一覧に除去前の成果物が存在するという意味ではない。各archiveの全byteに旧素材がないことまでは検査していない。旧Git履歴と過去の配布を含む権利確認は引き続き未完了で、削除・履歴書換えは実行していない。
 
+同日、元repo／GitHubを変更せず、9e613bfを基に14パスだけを除外した私有の履歴案をGit標準のfast-export／fast-importで作成した。mainの556コミットとmerge 1件を保ち、HEAD treeは元と同じ`d03e17413ce0b59ce925155f4c299befc1a922f3`、旧素材の17 blob版は全refから除外され、strict fsckとbundle verifyも成功した。ただし元の全556コミットに署名headerがあり、この案では除去されている。Gitの[署名の扱い](https://git-scm.com/docs/git-fast-export#Documentation/git-fast-export.txt---signed-commitsverbatimwarn-verbatimwarn-stripstripabort)に従い、過去の署名が新しい履歴に有効であるとは扱わない。確認用bundleは一時領域に約13MiB、SHA-256 `dea4a4564a9ace2653feb4566fe40c914e1dafbdc9d44266ad3403bb4c6538d8`。重複する一時bare repoは除去した。実際の公開履歴の強制更新は別途承認が必要であり、この準備から過去配布の権利確認完了やGitHub側の旧object消去を宣言しない。
+
 ## 配布する指針
 
 | 指針 | 内容 |

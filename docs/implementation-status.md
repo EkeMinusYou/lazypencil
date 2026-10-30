@@ -4,9 +4,11 @@
 
 ## 現在の状態（2026-10-30）
 
+9e613bfの[対象配布検証41004068263](https://github.com/EkeMinusYou/lazypencil/actions/runs/41004068263)は7分03秒で全工程成功した。既存の補助全試験・Clippy、SDK／wire layout別の保持回帰、元のnotice・署名、全256画素smokeを含む。新しく保持したCargo JSONでは368単位中366依存単位がfreshで、再compileは本体lib／binの2単位のみ、128.85秒だった。本体SHA-256は従来と同じ`42f0e546…9764e0`。release-onlyの検査済み15ファイル・309,147,292 byteを既存full keyへ保存し、圧縮後123,457,737 byteの存在をAPIで確認した。別SDKの既存123,457,643 byteも残る。新しく保存した出力の次回復元まではこの実行で確認しておらず、保存成功を復元済みと記録しない。全体CIと同じTUI測定は繰り返していない。
+
 0051dbaの[対象配布検証41003192032](https://github.com/EkeMinusYou/lazypencil/actions/runs/41003192032)は7分41秒で全工程成功した。元の補助試験・Clippy・notice・候補smoke・署名を維持し、同じTUI測定と全体CIは重ねていない。前のad6744dと同じnative keyのcomplete依存cacheを37秒で復元し、releaseビルド工程は10分54秒から2分29秒となった。mapped release本体はまだmissしており、本体再compileゼロとはしない。両sourceの実行ファイルhashは同じ`42f0e546…9764e0`で、256画素の黄色・不透明検査、ソース／ビルドツリー非公開のsmokeも成功した。ad6744dの測定は生値から統計、6／14 roleの全trace最大RSS・量子化込みidle CPUを再算し一致した。保存65 PNGも7fe854bの検証済み基準と全byte一致した。
 
-後続ではrelease cacheの整理単位にcompiler／SDK contextとwire layoutを含め、別環境の出力を同じOSの新しい出力だけで追い出さない。既存の保持試験に別context・別layoutの対照を加え、同条件の古い世代の整理は維持する。手動配布workflowも既存のrelease-only stage／saveを使って成功したsmokeのコンパイラー成果物を保存し、完全hit時は保存を重ねない。Cargo JSON／stderrと既存timing記録も元のevidence artifactへ含める。新しいcache形式・保存用の別成果物は追加しない。整形・actionlint・差分検査までで、この後続差分のGHA確認は次の対象配布実行にまとめる。
+release cacheの整理単位にcompiler／SDK contextとwire layoutを含め、別環境の出力を同じOSの新しい出力だけで追い出さない。既存の保持試験に別context・別layoutの対照を加え、同条件の古い世代の整理は維持する。手動配布workflowも既存のrelease-only stage／saveを使って成功したsmokeのコンパイラー成果物を保存し、完全hit時は保存を重ねない。Cargo JSON／stderrと既存timing記録も元のevidence artifactへ含める。新しいcache形式・保存用の別成果物は追加しない。これらは上記9e613bfで検証済みとなった。
 
 ad6744dの[配布候補・TUI測定41001393923](https://github.com/EkeMinusYou/lazypencil/actions/runs/41001393923)は全工程成功した。配布候補632ファイル、実行ファイルSHA-256 `42f0e546ef28508d8d1e2bd71ebecacdc0d898f73091b3a794ee2642099764e0`はac6df19のrelease計測と同じだった。候補archive SHA-256 `f43737fc893b53418b5c35b388d4f4fc490a7e53bcc02fb2e9affd6ed915b830`、検証済みprovenanceのsubject・source・release-evidence.yml／main・run／attempt 1を照合した。ソース／ビルドツリーを隠した導入smokeと16×16の黄色画像を確認したが、当時のsmokeはPNG寸法／hashとscript実行情報までの検査だった。後続では既存PNG decoderで全256画素の黄色・不透明を要求し、キャッシュ修正と合わせた配布経路で確認する。
 
@@ -429,7 +431,7 @@ HTTP(S)文字列samplerはa00289f、未参照のproject素材回収は9865944、
 
 旧3環境CI全体の安定した短縮は未達だった。初回Macのみへ変更し、Linux nativeの待機・再ビルド・必須確認を外した。実行時間が単純に1/3になるとは見積もらない。`c9ffb37` は38分28秒、先行17分30秒、全体 job は x64 16分35秒・arm64 17分57秒・Mac20分05秒だった。先行範囲と runner image が異なり、元の27〜29分との統制比較ではない。Mac release 再利用0.87秒、同一環境での先行成果物再利用、変更した試験だけの無効化、独立試験の並列化には個別の成功根拠がある。9d6613b当時は14分43秒（依存変更・Wasm検証を含む）。5eaa691は12分06秒（本体変更と新規124組）、f9cc4daは10分17秒（本体全50単位を再build）だった。copy先行の06bab20は10分31秒、本体再利用の028e522は8分30秒だった。旧62675c9の12分51秒・788f4c2の9分51秒・旧3環境と条件を分け、全体10分以内の維持は引き続き改善する。
 
-macOS の常用メモリは `7fe854b` の既存候補で172.03MiB、cached feedback p95 は32.72msだった。古い「200MiB未達」を現在の既知不具合に数えない。この標本結果から、全環境・統制条件・物理端末の性能受け入れ完了とはしない。[性能記録](performance.md)
+macOSの最新の通常bound観測はad6744dで最大199.02MiB、cached feedback p95は28.01msだった。7fe854bの172.03MiB／32.72msは以前のsource／環境の結果として区別する。古い「200MiB未達」を現在の既知不具合に数えない。この標本結果から、統制条件・物理端末の性能受け入れ完了とはしない。[性能記録](performance.md)
 
 本家との総合デザイン品質比較は当初から保留。任意フォント・全モデルの網羅、crates.io 公開、Linux／Windows／Intel Macを、新たな初回必須スコープとして追加しない。明示した元の機能・互換性・性能・配布条件も削除しない。
 
