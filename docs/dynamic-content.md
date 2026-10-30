@@ -325,6 +325,18 @@ Rust の別プロセスへ `rquickjs` 0.14.0 と、その配布ソースが含�
 
 lazypencilの現行実装では、省略または`desktop`はmobile／touchを無効、`phone`・`tablet`は有効にする。表示寸法はノードの計算済みwidth／height、deviceScaleFactorは描画scaleから取得し、IDの指定だけで機種固有の寸法やUser-Agentへ切り替える処理はない。これらの基本モードと、本家の全プリセットIDの互換性は別に扱う。本家固有の未対応IDは推測して読み替えず、描画時に`UNSUPPORTED_FEATURE`を返す。元の全device preset対応の条件は維持し、必要な対応関係は未確定として残す。
 
+## 互換性2点の解決手順
+
+deviceIdは、有効なIDの一覧と各IDの設定値、ノードのwidth／heightと端末寸法の優先関係を、対象版を明記した公開仕様または提供元の回答で確定する。その後、既存Chromium取得処理へ対応を追加し、独自の検証用ページでviewport、DPR、mobile／touch、User-Agentが回答に一致することを既存のbrowser試験で確認する。第三者の端末一覧があるだけではPencilとの対応を確定した根拠にしない。
+
+fill-stage `pencil:object` は、まずその組み合わせが本家で有効かを確認する。公開スキーマは共通のuniform型を使うが、object画像の意味を明記しているのはeffect段階であり、fillでの許可や評価順を断定する根拠にはしない。無効という仕様が確認できれば現在の拒否動作を照合する。有効なら、既存の塗り・stroke・子・effectのどの段階を入力にするか、座標／範囲を確定して実装し、既存の`tests/dynamic_render.rs`の塗り／effectと`tests/shader_uniforms.rs`を拡張する。自己参照の評価順を推測して本家互換と呼ばない。
+
+仕様確認と比較用データの利用条件を先に確認する。[現行EULA §3](https://www.pen.dev/eula)は、Softwareやoutputsを競合model／serviceの開発・改善へ使うことに制限を設けている。アプリ内部の解析や出力の採取を当然に許された検証経路とはせず、必要な比較は用途・配布範囲を含む許諾確認後に行う。公開仕様や回答が得られなければ、独自動作の実装だけで完全互換の完成条件を満たしたとはしない。
+
+以下は公式窓口`hq@pen.dev`向けの未送信の確認文案である。
+
+> We are implementing an independent MIT-licensed reader/renderer for .pen files, based on the published format. Could you clarify the supported browser deviceId values and their emulation settings, including precedence relative to node width/height, for formats 2.19/2.21? Is pencil:object valid in a shader fill, or only in shader effects? If valid in a fill, which rendering stage supplies its pixels, and what are its bounds/coordinates? Please also clarify the permitted use of the supplied specification/examples for independent compatibility implementation and testing under EULA Section 3, including any written permission needed to create and retain comparison fixtures.
+
 ## Web ページ・GLSL の初期実装の検証状況
 
 Chrome for Testing headless shell 156.0.8078.47 の版別公式 ZIP と全ファイルのサイズ・ハッシュを固定した。専用コマンドから HTTPS 取得または固定したローカル ZIP の導入・検査・再利用を行い、変更された導入先は上書きせず拒否する。[全3環境の検証 `d6c5808`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40633683855) では、macOS Apple Silicon・Linux x64／arm64 の管理runtimeを実際に導入・検査し、sandboxを有効にしたpage／shader・MCP・PTY試験を実行した。過去のWindows結果は初回リリースの対象へ含めない。[導入と試験手順](runtimes.md)

@@ -4,13 +4,15 @@
 
 ## 現在の状態（2026-10-30）
 
+利用者は案内したaeb174b候補をMacのWezTerm／Sixelで確認し、操作が大幅に速くなり、初回も画像が先に表示され問題ないと回答した。この環境でのSixel応答・初期表示の修正は受け入れ済みとし、同条件の確認を繰り返さない。確認後にインストール済みCLIから`20240203-110809-5046fc22`を取得した。これは導入済み版の観測であり、元の試験時に利用者が版を記録したという主張ではない。Kittyの修正確認も保持する。以下の遅さ・初期表示の報告は修正前の経緯であり、現在の不具合へ加算しない。
+
 利用者は残確認への返答としてKittyの動作に問題がなく、MacのWezTermでもSixelの表示・ズームは動いたと報告した。Kittyの画像欠け・点滅修正を従来の未確認へ戻さない。Sixelは操作が遅く、初回読み込み中に一瞬エラーらしい文字列が見えたという報告がある。正確な文字列・試験したWezTermの版は不明で、再実行は依頼していない。aeb174bではSixelの入力スレッドでの暫定画像の追加符号化を省き、既存workerで最新の完成画像だけを符号化する。解像度・256色・書き出し画素は維持した。初回placeholderを`Loading preview…`とし、実際の失敗・明示的な再試行・古い世代の失敗を区別した。報告された一瞬の文字列と旧placeholderの一致は未確定であり、実際の診断は隠さない。
 
 aeb174bの[全体CI41066304052](https://github.com/EkeMinusYou/lazypencil/actions/runs/41066304052)は25分48秒で全工程成功した。追加したLoading／失敗／再試行とSixel連続操作の2回帰試験はruntimeのlibrary試験で成功し、core／既定・両Clippy・通常開発build・全5 consumer・元の共通画像gate・署名付きsourceを維持した。buildの依存cacheはhitしたが、取得が`Egress is over the account limit`で拒否され、初回対象compileに9分39秒かかった。後続のCargo確認もSkia includeの更新を理由に再buildし2分50秒を要した。この実行の10分目標は未達であり、以前のwarm 8分44秒と同条件とはしない。試験・期限を削って短縮せず、追加の全体CIも起動しない。
 
 同sourceの637ファイルの候補archiveはSHA-256 `84264c2bea0ba3eeb18b53907fe757f08678d25e2bdbe8bddb04548bdd2d333b`、本体は`22dc541d…bd3b40f`で、取得byteのhashがpackage manifest・隔離smoke・build記録と一致した。候補内source archiveも独立にhashを計算し、`49e112fa…766272d`がCIの署名検証済みprovenanceのsubjectと一致した。署名者はci.yml／main、source aeb174b・GitHub hosted・run 41066304052／attempt 1である。候補binary自体の署名検証を行ったという主張ではない。取得用の大きなarchiveは削除し、Mac用修正候補は`/private/tmp/lazypencil-sixel-aeb174b/lazypencil`へ保持した。
 
-数値gateはmacOS15.7.9・image `20260907.0337.1`・3CPU／7GiBで元の20起動・80操作・100 worker profileを成功した。入力／初回preview最大27.58／169.81ms、最初のfeedback p95 17.68ms、通常最大168.50MiB・idle CPU上限0.531%／30.145秒、Chromium込み1184.14MiB・1.162%／30.125秒で、両群の正常終了・子回収も成功した。これはKitty PTYの観測であり、WezTermの実表示速度やSixel変更単独の改善率とはしない。修正後のSixel体感速度・初回実表示と、仕様未確定2点・最終公開の受け入れは未完了である。
+数値gateはmacOS15.7.9・image `20260907.0337.1`・3CPU／7GiBで元の20起動・80操作・100 worker profileを成功した。入力／初回preview最大27.58／169.81ms、最初のfeedback p95 17.68ms、通常最大168.50MiB・idle CPU上限0.531%／30.145秒、Chromium込み1184.14MiB・1.162%／30.125秒で、両群の正常終了・子回収も成功した。これはKitty PTYの観測であり、WezTermの実表示速度やSixel変更単独の改善率とはしない。修正後のSixel体感速度・初回実表示は冒頭の利用者報告で受け入れ済みとなった。仕様未確定2点・保証端末の版範囲・最終公開の受け入れは未完了である。
 
 7b6739cの[配布検証41063712899](https://github.com/EkeMinusYou/lazypencil/actions/runs/41063712899)は6分59秒で成功した。同じworkflowの先頭でxtask全試験・Clippyを通し、欠損通知の拒否、CRLF／複数SPDXの保持、外部headerの同size変更・欠損・symlink、SDK本文を複製しないことを既存試験で確認した。Skia inventoryは外部headerの先頭16KiBにあるSPDX原文と通知commentの位置・長さ・hashを保持する。1575件の入力identityは前候補と同一で、840件にSPDX、1551件に通知commentのhashがある。注記のないもののlicenseを推測して補わない。
 
