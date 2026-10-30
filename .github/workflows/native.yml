@@ -137,6 +137,8 @@ jobs:
       LAZYPENCIL_CI_SEPARATE_CORE: ${{ inputs.lane == 'build' }}
       FOCUS_SUITE: ${{ inputs.suite }}
       FOCUS_TARGETS: ${{ inputs.targets }}
+      # Preserve Cargo's own rebuild reasons in the existing focused logs.
+      CARGO_LOG: ${{ inputs.phase == 'focus' && 'cargo::core::compiler::fingerprint=info' || '' }}
       CORE_ONLY_CACHE: ${{ inputs.lane == 'core' || inputs.phase == 'focus' && !(inputs.measure_tui || inputs.native_clipboard || inputs.runtime_parallel) && (inputs.suite == 'core' || inputs.suite == 'conversation') }}
       RUNTIME_PARALLEL: ${{ inputs.runtime_parallel }}
       HEADED_BROWSER_TESTS: ${{ inputs.lane == 'default' || inputs.lane == 'all' && (inputs.phase == 'full' || inputs.runtime_parallel || contains(fromJSON(inputs.targets), 'browser_readiness')) || inputs.phase == 'focus' && inputs.runtime_parallel }}
@@ -148,10 +150,10 @@ jobs:
       - uses: ./.github/actions/xtask
         id: tools
         with:
-          verify: ${{ inputs.verify_tools || inputs.lane == 'all' || inputs.lane == 'core' }}
+          verify: ${{ inputs.verify_tools || inputs.lane == 'all' || inputs.lane == 'core' && inputs.phase != 'focus' }}
           retire-old-tools: 'true'
       - name: Install Fish for shell completion integration tests
-        if: runner.os == 'macOS' && inputs.lane != 'release' && (inputs.lane == 'core' || inputs.lane == 'all' || contains(fromJSON(inputs.targets), 'completions'))
+        if: runner.os == 'macOS' && inputs.lane != 'release' && (inputs.phase != 'focus' && (inputs.lane == 'core' || inputs.lane == 'all') || contains(fromJSON(inputs.targets), 'completions'))
         timeout-minutes: 10
         env:
           HOMEBREW_NO_AUTO_UPDATE: '1'
