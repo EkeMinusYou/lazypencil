@@ -171,7 +171,15 @@ pub fn run(s: &Session) -> Result<()> {
                     .is_some_and(|items| items.len() == 1),
             "Installed candidate did not execute and render the generated node"
         );
-        performance::png(&image, &report, 16, 16)?;
+        let png = performance::png(&image, &report, 16, 16)?;
+        let raster = crate::terminal::raster::decode_png(&png)?;
+        ensure!(
+            raster
+                .pixels
+                .iter()
+                .all(|pixel| *pixel == [255, 255, 0, 255]),
+            "Installed candidate did not paint every generated JavaScript pixel"
+        );
         Ok(report)
     })();
     hidden.restore()?;
@@ -180,6 +188,7 @@ pub fn run(s: &Session) -> Result<()> {
         &s.temporary.join("candidate-smoke.json"),
         &util::encode(&json!({
             "source_commit":std::env::var("GITHUB_SHA")?,"candidate":result,"verified":verified,
+            "verified_script_pixels":256,
             "source_tree_available":false,"native_build_tree_available":false,"image":"candidate-smoke.png","render":report,
         }))?,
         false,

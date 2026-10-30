@@ -4,6 +4,12 @@
 
 ## 現在の状態（2026-10-30）
 
+ad6744dの[配布候補・TUI測定41001393923](https://github.com/EkeMinusYou/lazypencil/actions/runs/41001393923)は全工程成功した。配布候補632ファイル、実行ファイルSHA-256 `42f0e546ef28508d8d1e2bd71ebecacdc0d898f73091b3a794ee2642099764e0`はac6df19のrelease計測と同じだった。候補archive SHA-256 `f43737fc893b53418b5c35b388d4f4fc490a7e53bcc02fb2e9affd6ed915b830`、検証済みprovenanceのsubject・source・release-evidence.yml／main・run／attempt 1を照合した。ソース／ビルドツリーを隠した導入smokeと16×16の黄色画像を確認したが、当時のsmokeはPNG寸法／hashとscript実行情報までの検査だった。後続では既存PNG decoderで全256画素の黄色・不透明を要求し、キャッシュ修正と合わせた配布経路で確認する。
+
+元の20起動・80操作・100 worker profileを保持し、入力準備／初回previewのp95は53.32／312.82ms、完全出力は252.51ms、cached camera feedbackは28.01ms（最大96.42ms）だった。通常のbound process群の観測最大RSSは199.02MiBで元の200MiB gateに成功し、30.047秒のidle CPU上限は0.433%。別Chromium込み観測は1,255.06MiB、30.101秒のidle CPU上限1.595%だった。全試行の通常終了、下書き空・agent非起動、両process群の回収を照合した。OS cacheは統制せず、物理表示・transient kernel peak・全性能受け入れとはしない。画素・生データの追加照合は既存成果物を使い、同じ測定は繰り返さない。
+
+この配布実行は16分59秒だった。release用workflowだけが旧baseline keyを検索し、現存するcomplete依存cacheを検索しなかったため、該当native keyはmissした。releaseのビルド工程は10分54秒で、結果の実行ファイルは前回と同じだった。通常CIと同じpreferred／complete／旧baseline順へ揃える4行の修正を準備し、actionlintと差分検査を通過した。新しいcache形式・成果物重複保存・Cargoの鮮度判定の迂回は追加しない。全体CIとTUI測定を重ねず、後続の配布検証だけで復元を確認する。
+
 ac6df19の[全体CI 41000322063](https://github.com/EkeMinusYou/lazypencil/actions/runs/41000322063)は8分47秒で全工程成功した。core／既定の全試験・Clippy、通常開発build、release・元の42描画観測、全5 consumer、共通画像gateと署名付きsourceを維持した。builderは74f37fdの同条件の304ファイルを再利用し、無効化0件、Cargo JSONの408単位（本体50単位を含む）は全てfresh、catalog確認4.14秒だった。通常consumerの771 named実行記録（ignoredを含む）は74f37fdと回数ごと一致し、script_scopeは従来の34成功・2 ignoredを維持した。builder2分21秒・core4分46秒・release3分27秒、通常2分48秒・runtime4分58秒・pixel1分57秒・端末1分19秒・Material1分14秒、source42秒だった。これは変更した補助処理と未変更アプリ成果物の再利用条件であり、本体変更時の再compileを含む74f37fdからの差全量を重複削減の効果にはしない。browser-ci選択の全体経路は長い先行群を元から実行しないため、copy／graphics系の新しい分岐そのものは下記の実scheduler fixtureでの成功と区別する。
 
 途中のAPIはruntimeをqueued・runner未割当と表示し続けたが、終了後の確定時刻と実ログでは04:01:57Z作成・04:02:04Z開始・04:07:02Z完了だった。約5分の待機という途中の説明を訂正し、7秒の割当と4分58秒の実行を採用する。source tarの1,227ファイルとSHA-256 `ca130f239bb7fd7e38ff1d8ac1c458b94f956475a4b35452526eab87c9c44340`、検証済み署名のsubject・source revision・ci.yml／main・run／attempt 1を照合した。同条件の完全CIを重ねて実行せず、後続は文書への結果記録だけとする。
