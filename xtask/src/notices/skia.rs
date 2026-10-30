@@ -271,6 +271,9 @@ pub fn build_from_graph(
     let mut generated = BTreeMap::new();
     let mut excluded = BTreeMap::<String, u64>::new();
     let mut external_headers = BTreeMap::new();
+    let spdx = Regex::new(
+        r"(?m)^[ \t]*(?://|/\*|\*)?[ \t]*SPDX-License-Identifier:[ \t]*([A-Za-z0-9:.+()\t -]+?)[ \t]*(?:\*/)?[ \t]*$",
+    )?;
     for (kind, names) in [("graph", graph), ("recorded_header", headers)] {
         for name in names {
             let original = directory.join(name);
@@ -329,16 +332,21 @@ pub fn build_from_graph(
                 );
                 // Keep identity evidence without copying SDK or other external
                 // source text into the redistributable notice bundle.
-                let parent = path.parent().context("External header has no parent")?;
-                let filename = path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .context("Invalid external header name")?;
-                let mut record = fingerprint(parent, filename, 32 * 1024 * 1024)
+                let bytes = util::read(&path, 32 * 1024 * 1024)
                     .with_context(|| format!("Fingerprinting external header: {name}"))?;
-                record["path"] = json!(name);
-                record["resolved_path"] = json!(path);
-                external_headers.insert(name.to_owned(), record);
+                let prefix = String::from_utf8_lossy(&bytes[..bytes.len().min(16384)]);
+                let annotations = spdx
+                    .captures_iter(&prefix)
+                    .map(|capture| capture[1].trim().to_owned())
+                    .filter(|annotation| !annotation.is_empty())
+                    .collect::<BTreeSet<_>>();
+                external_headers.insert(
+                    name.to_owned(),
+                    json!({
+                        "path":name,"resolved_path":path,"bytes":bytes.len(),
+                        "sha256":util::digest(&bytes),"spdx_annotations":annotations,
+                    }),
+                );
                 *excluded
                     .entry("system_or_external_headers".into())
                     .or_default() += 1;
@@ -463,7 +471,7 @@ pub fn build_from_graph(
     Ok((
         json!({"format_version":1,"scope":"Observed Skia build inputs and original notice candidates; binary linkage and complete attribution review are not established.",
         "targets":TARGETS,"components":used,"inputs":inputs,"generated_inputs":generated.into_values().collect::<Vec<_>>(),"build_files":build_files,"excluded_inputs":excluded,"external_headers":external_headers.into_values().collect::<Vec<_>>(),"source_comments":comments,"notice_files":notices,"review_findings":findings,"license_references":[],
-        "limits":{"source_comments":"License/copyright comment candidates in the first 65536 bytes of each observed C/C++/assembly source or header.","recorded_headers":"All recorded objects in this build directory, which can include unused or stale targets; missing files are rejected.","external_headers":"Declared/resolved paths, sizes and SHA-256 identify external header inputs; their source bytes and license texts are not copied or classified.","excluded":"System/external headers, Rust toolchain, QuickJS, fonts, icons, and optional runtimes need separate inventories."}}),
+        "limits":{"source_comments":"License/copyright comment candidates in the first 65536 bytes of each observed C/C++/assembly source or header.","recorded_headers":"All recorded objects in this build directory, which can include unused or stale targets; missing files are rejected.","external_headers":"Declared/resolved paths, sizes and SHA-256 identify external header inputs. SPDX annotations in their first 16384 bytes are recorded verbatim; absent annotations stay empty. Source bytes and license texts are not copied or classified.","excluded":"System/external headers, Rust toolchain, QuickJS, fonts, icons, and optional runtimes need separate inventories."}}),
         texts,
     ))
 }

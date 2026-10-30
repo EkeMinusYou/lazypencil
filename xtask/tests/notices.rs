@@ -24,16 +24,17 @@ impl Fixture {
             fs::write(path, STANDARD.decode(bytes.as_str().unwrap()).unwrap()).unwrap();
         }
         if name.starts_with("skia") {
-            let bytes = b"/* SDK fixture: retain identity, not source bytes. */\r\n";
+            let bytes = b"/* SDK fixture: retain identity, not source bytes. */\r\n/* SPDX-License-Identifier: MIT */\r\n";
             fs::write(root.join("system.h"), bytes).unwrap();
             data["index"]["external_headers"] = json!([{
                 "path":"../system.h",
                 "resolved_path":root.canonicalize().unwrap().join("system.h"),
                 "bytes":bytes.len(),
                 "sha256":util::digest(bytes),
+                "spdx_annotations":["MIT"],
             }]);
             data["index"]["limits"]["external_headers"] = json!(
-                "Declared/resolved paths, sizes and SHA-256 identify external header inputs; their source bytes and license texts are not copied or classified."
+                "Declared/resolved paths, sizes and SHA-256 identify external header inputs. SPDX annotations in their first 16384 bytes are recorded verbatim; absent annotations stay empty. Source bytes and license texts are not copied or classified."
             );
         }
         Self {
@@ -153,7 +154,11 @@ fn external_native_headers_keep_reviewable_identity_without_copying_sdk_text() {
     );
     let original = fs::read(f.path("system.h")).unwrap();
     let mut changed = original.clone();
-    changed[3] = b'X';
+    let annotation = changed
+        .windows(3)
+        .position(|bytes| bytes == b"MIT")
+        .unwrap();
+    changed[annotation..annotation + 3].copy_from_slice(b"ISC");
     f.write("system.h", changed);
     let (changed, _) = f.skia().unwrap();
     assert_eq!(
@@ -163,6 +168,16 @@ fn external_native_headers_keep_reviewable_identity_without_copying_sdk_text() {
     assert_ne!(
         changed["external_headers"][0]["sha256"],
         index["external_headers"][0]["sha256"]
+    );
+    assert_eq!(
+        changed["external_headers"][0]["spdx_annotations"],
+        json!(["ISC"])
+    );
+    f.write("system.h", b"/* Unannotated fixture header. */\n");
+    let (unannotated, _) = f.skia().unwrap();
+    assert_eq!(
+        unannotated["external_headers"][0]["spdx_annotations"],
+        json!([])
     );
     fs::remove_file(f.path("system.h")).unwrap();
     assert!(
