@@ -54,7 +54,7 @@ jobs:
             ${{ runner.temp }}/emoji-fonts/NotoColorEmoji.ttf
             ${{ runner.temp }}/emoji-fonts/Noto-COLRv1.ttf
       - name: Restore pinned Material inputs independently of Cargo build caches
-        if: inputs.suite == 'material'
+        if: inputs.suite == 'material' || inputs.suite == 'short'
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           key: material-fonts-v1-${{ hashFiles('resources/icons/catalogue.json') }}
@@ -83,6 +83,24 @@ jobs:
             ${{ runner.temp }}/tui-artifacts/
             ${{ runner.temp }}/clipboard-evidence/
             ${{ runner.temp }}/render-regressions/
+          overwrite: true
+          retention-days: 3
+          if-no-files-found: error
+      - name: Retain the terminal result for the unchanged five-suite gate
+        if: always() && inputs.suite == 'short'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: native-test-terminal-${{ github.sha }}
+          path: ${{ runner.temp }}/terminal-evidence/
+          overwrite: true
+          retention-days: 3
+          if-no-files-found: error
+      - name: Retain the Material result for the unchanged five-suite gate
+        if: always() && inputs.suite == 'short'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: native-test-material-${{ github.sha }}
+          path: ${{ runner.temp }}/material-evidence/
           overwrite: true
           retention-days: 3
           if-no-files-found: error

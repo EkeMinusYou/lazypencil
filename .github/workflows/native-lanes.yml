@@ -90,20 +90,15 @@ jobs:
     # independent tests when the shared build succeeded.
     if: ${{ !cancelled() && inputs.os == 'macos-15' && needs.build.result == 'success' }}
     needs: [build, release]
-    strategy:
-      fail-fast: false
-      # Reserve immediate capacity for all three long consumers. The two
-      # shorter checks share the slot released by the isolated release lane.
-      max-parallel: 1
-      matrix:
-        suite: [material, terminal]
-    name: Test ${{ matrix.suite }} from the shared build
+    # Keep the quiet launch interval and Material checks on one allocation;
+    # a sequential matrix would queue for another Mac between its two jobs.
+    name: Test terminal and Material from the shared build
     uses: ./.github/workflows/native-consumer.yml
     with:
       os: ${{ inputs.os }}
-      suite: ${{ matrix.suite }}
+      suite: short
       native_tools_artifact: ${{ needs.build.outputs.native_tools_artifact }}
-      binaries_artifact: ${{ matrix.suite == 'terminal' && needs.build.outputs.terminal_binaries_artifact || needs.build.outputs.material_binaries_artifact }}
+      binaries_artifact: ${{ needs.build.outputs.short_binaries_artifact }}
   deferred:
     if: inputs.os != 'macos-15'
     strategy:

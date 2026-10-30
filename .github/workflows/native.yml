@@ -87,10 +87,8 @@ on:
         value: ${{ jobs.verify.outputs.binaries_artifact }}
       runtime_binaries_artifact:
         value: ${{ jobs.verify.outputs.runtime_binaries_artifact }}
-      terminal_binaries_artifact:
-        value: ${{ jobs.verify.outputs.terminal_binaries_artifact }}
-      material_binaries_artifact:
-        value: ${{ jobs.verify.outputs.material_binaries_artifact }}
+      short_binaries_artifact:
+        value: ${{ jobs.verify.outputs.short_binaries_artifact }}
       native_tools_artifact:
         value: ${{ jobs.verify.outputs.native_tools_artifact }}
 
@@ -125,8 +123,7 @@ jobs:
       application_artifact: ${{ steps.application-artifact-upload.outcome == 'success' && steps.application-key.outputs.checkpoint_legacy || '' }}
       binaries_artifact: ${{ steps.binaries-upload.outcome == 'success' && format('native-executables-{0}', github.sha) || '' }}
       runtime_binaries_artifact: ${{ steps.runtime-binaries-upload.outcome == 'success' && format('native-runtime-executables-{0}', github.sha) || '' }}
-      terminal_binaries_artifact: ${{ steps.terminal-binaries-upload.outcome == 'success' && format('native-terminal-executables-{0}', github.sha) || '' }}
-      material_binaries_artifact: ${{ steps.material-binaries-upload.outcome == 'success' && format('native-material-executables-{0}', github.sha) || '' }}
+      short_binaries_artifact: ${{ steps.short-binaries-upload.outcome == 'success' && format('native-short-executables-{0}', github.sha) || '' }}
       native_tools_artifact: ${{ steps.native-tools-upload.outcome == 'success' && format('native-tools-{0}', github.sha) || '' }}
     permissions:
       contents: read
@@ -446,24 +443,13 @@ jobs:
           retention-days: 1
           overwrite: true
           if-no-files-found: error
-      - name: Share terminal checks without unrelated executables
-        id: terminal-binaries-upload
+      - name: Share terminal and Material checks without unrelated executables
+        id: short-binaries-upload
         if: inputs.lane == 'build' && inputs.phase != 'focus'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: native-terminal-executables-${{ github.sha }}
-          path: ${{ runner.temp }}/native-terminal-binaries/catalog.tar.zst
-          compression-level: 0
-          retention-days: 1
-          overwrite: true
-          if-no-files-found: error
-      - name: Share Material checks without unrelated executables
-        id: material-binaries-upload
-        if: inputs.lane == 'build' && inputs.phase != 'focus'
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: native-material-executables-${{ github.sha }}
-          path: ${{ runner.temp }}/native-material-binaries/catalog.tar.zst
+          name: native-short-executables-${{ github.sha }}
+          path: ${{ runner.temp }}/native-short-binaries/catalog.tar.zst
           compression-level: 0
           retention-days: 1
           overwrite: true

@@ -54,6 +54,7 @@ pub enum Stage {
     PixelsConsumer,
     TerminalConsumer,
     MaterialConsumer,
+    ShortConsumer,
     RuntimePrepare,
     RuntimeConsumer,
     EvidenceGate,
@@ -615,6 +616,7 @@ impl Session {
                 self.material_tests()?;
                 binaries::completed(self, "material")
             }
+            Stage::ShortConsumer => binaries::consume_short(self),
             Stage::RuntimePrepare => {
                 let _ = binaries::restore(self, binaries::Subset::Runtime)?;
                 self.reproduce_inputs(false)?;

@@ -22,6 +22,7 @@ pub(super) enum Subset {
     Runtime,
     Terminal,
     Material,
+    Short,
 }
 
 impl Subset {
@@ -31,6 +32,12 @@ impl Subset {
             Self::Runtime => Some(runtime_targets()),
             Self::Terminal => Some(normal::QUIET.into_iter().collect()),
             Self::Material => Some(["mcp", "optional_icons"].into_iter().collect()),
+            Self::Short => Some(
+                normal::QUIET
+                    .into_iter()
+                    .chain(["mcp", "optional_icons"])
+                    .collect(),
+            ),
         }
     }
 }
@@ -195,11 +202,7 @@ pub(super) fn stage(s: &Session, elapsed: Duration) -> Result<()> {
         (
             "consumer subsets",
             Box::new(|| {
-                for (name, subset) in [
-                    ("runtime", Subset::Runtime),
-                    ("terminal", Subset::Terminal),
-                    ("material", Subset::Material),
-                ] {
+                for (name, subset) in [("runtime", Subset::Runtime), ("short", Subset::Short)] {
                     pack(
                         s,
                         &receipt,
@@ -370,8 +373,28 @@ pub(super) fn restore(s: &Session, subset: Subset) -> Result<Duration> {
 }
 
 pub(super) fn completed(s: &Session, mode: &str) -> Result<()> {
+    completed_at(s, mode, &s.temporary)
+}
+
+fn completed_at(s: &Session, mode: &str, destination: &Path) -> Result<()> {
+    if destination != s.temporary.as_path() {
+        fs::create_dir_all(destination)?;
+        for name in ["binary-receipt.json", "execution-host.json"] {
+            util::publish(
+                &destination.join(name),
+                &util::read(&s.temporary.join(name), LIMIT)?,
+                false,
+            )?;
+        }
+        // Preserve any optional image evidence with its original producer.
+        // Moving it also prevents the next sequential suite from claiming it.
+        let images = s.temporary.join("codec-reference");
+        if images.exists() {
+            fs::rename(images, destination.join("codec-reference"))?;
+        }
+    }
     util::publish(
-        &s.temporary.join("consumer-result.json"),
+        &destination.join("consumer-result.json"),
         &util::encode(&json!({
             "commit":std::env::var("GITHUB_SHA")?, "run":std::env::var("GITHUB_RUN_ID")?,
             "mode":mode, "binaries":util::file_digest(&directory(s).join("receipt.json"))?,
@@ -379,6 +402,35 @@ pub(super) fn completed(s: &Session, mode: &str) -> Result<()> {
         }))?,
         false,
     )
+}
+
+pub(super) fn consume_short(s: &Session) -> Result<()> {
+    let elapsed = restore(s, Subset::Short)?;
+    short_checks(
+        || {
+            normal::consume_terminal(s, elapsed)?;
+            completed_at(s, "terminal", &s.temporary.join("terminal-evidence"))
+        },
+        || {
+            s.material_tests()?;
+            completed_at(s, "material", &s.temporary.join("material-evidence"))
+        },
+    )
+}
+
+fn short_checks(
+    terminal: impl FnOnce() -> Result<()>,
+    material: impl FnOnce() -> Result<()>,
+) -> Result<()> {
+    // Finish the quiet launch tests before starting font/network work. Evaluate
+    // both results before propagating either failure, as the matrix did.
+    let results = [("terminal", terminal()), ("material", material())];
+    let failures = results
+        .into_iter()
+        .filter_map(|(name, result)| result.err().map(|error| format!("{name}: {error:#}")))
+        .collect::<Vec<_>>();
+    ensure!(failures.is_empty(), "{}", failures.join("\n"));
+    Ok(())
 }
 
 pub(super) fn gate(s: &Session) -> Result<()> {
@@ -457,6 +509,34 @@ pub(super) fn gate(s: &Session) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn short_checks_keep_both_failures_and_finish_quiet_work_first() {
+        let order = std::cell::RefCell::new(Vec::new());
+        let result = short_checks(
+            || {
+                order.borrow_mut().push("terminal");
+                anyhow::bail!("launch failure")
+            },
+            || {
+                order.borrow_mut().push("material");
+                anyhow::bail!("font failure")
+            },
+        );
+        assert_eq!(*order.borrow(), ["terminal", "material"]);
+        let error = format!("{:#}", result.unwrap_err());
+        assert!(error.contains("terminal: launch failure"));
+        assert!(error.contains("material: font failure"));
+        assert_eq!(
+            Subset::Short.targets().unwrap(),
+            Subset::Terminal
+                .targets()
+                .unwrap()
+                .union(&Subset::Material.targets().unwrap())
+                .copied()
+                .collect()
+        );
+    }
 
     #[test]
     fn transport_rejects_changed_bytes_and_compiler_conditions_before_execution() {

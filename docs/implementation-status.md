@@ -4,6 +4,8 @@
 
 ## 現在の状態（2026-10-31）
 
+直近の全体CIでterminalがMaterial後に617秒のrunner再割り当てを待ったため、短い2組を同じMac jobで順次実行する変更を準備した。terminalの静かな起動区間を先に完了し、Materialのfont／network処理は後に実行する。一方の失敗で他方を省略せず、元の5組の独立receiptと共有画像gateを維持する。実行ファイルは必要targetの和集合を一度だけ転送し、アプリの重複梱包と2回目のrunner割り当てを除く。試験内容・期限・feature構成・性能基準は変更しない。Macの軽量補助試験、続いて一度の全体CIで確認するまでは改善効果を確定しない。
+
 初回の端末基準は、利用者の受け入れ報告と導入版の観測を基に、Macのローカル直接接続におけるKitty 0.49.2／Kitty protocolとWezTerm `20240203-110809-5046fc22`／Sixelに定めた。2026-10-31の再観測でも導入版は同じで、本体ファイルのmtimeはそれぞれ2026-10-01／2024-02-04だった。元の試験時に版を独立記録したという主張にはせず、Mac実機の操作・Sixelの体感性能は利用者の報告、数値性能は基準GHAの元のgateで受け入れる。端末選定と受け入れ済みの実画面項目を残件から外し、未確認の他版・入力方式・tmux／SSHへ保証を広げない。[範囲と根拠](tui.md#initial-terminal-support)
 
 bb4261eでは、Skia sourceの展開後に`skia/include`のdirectory mtimeがCargo開始より新しくなる問題を修正した。tar 0.4.46がdirectory mtimeを復元しないため、Unixで子の展開後にarchive本来の時刻を復元する。Cargoの`rerun-if-changed`・fingerprint・cache時刻やheaderの監視は変えない。[Mac補助41085046254](https://github.com/EkeMinusYou/lazypencil/actions/runs/41085046254)で、旧展開の不要な再build、修正後のfresh判定と、実header変更後の生成コードの更新を実Cargoで検証した。既存のroot／infra除外とdirectory属性の回帰も成功した。重いbuildはGHAのみで行った。
