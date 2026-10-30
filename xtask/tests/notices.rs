@@ -163,10 +163,15 @@ fn delegated_codec_terms_and_product_credits_are_byte_exact_and_required() {
         if let Some(credit) = credit {
             assert!(rendered.split_once("\n====").unwrap().0.contains(credit));
         }
+        // The readable summary normalizes line endings; source blobs above
+        // retain the original bytes, including CRLF, and their exact hashes.
         for path in paths {
-            assert!(rendered.contains(&format!(
-                "Original fixture terms for {path}\r\nCopyright fixture author\r\n"
-            )));
+            assert!(
+                rendered.contains(&format!(
+                    "Original fixture terms for {path}\nCopyright fixture author\n"
+                )),
+                "Missing readable {component}/{path}"
+            );
         }
         let output = f.path("published");
         notices::publish_bundle(&output, &files).unwrap();
