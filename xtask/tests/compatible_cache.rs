@@ -703,6 +703,7 @@ fn complementary_dependency_archives_stay_fresh_and_rebuild_real_source_edits() 
         let mut args = [
             "cargo",
             "build",
+            "-vv",
             "--locked",
             "--offline",
             "--bins",
@@ -715,6 +716,13 @@ fn complementary_dependency_archives_stay_fresh_and_rebuild_real_source_edits() 
         }
         args
     };
+    // Match actions/cache's POSIX tar transport, including subsecond mtimes.
+    // The Rust tar builder's GNU headers round these down to whole seconds.
+    let tar = if cfg!(target_os = "macos") {
+        "gtar"
+    } else {
+        "tar"
+    };
     let mut snapshots = Vec::new();
     for release in [true, false] {
         if f.target.exists() {
@@ -722,19 +730,39 @@ fn complementary_dependency_archives_stay_fresh_and_rebuild_real_source_edits() 
         }
         assert!(!f.cargo_units(&arguments(release)).0["unchanged_dependency:lib"]);
         cache::prune(&f.source, &f.target).unwrap();
-        let mut archive = tar::Builder::new(Vec::new());
-        archive.append_dir_all(".", &f.target).unwrap();
-        snapshots.push(archive.into_inner().unwrap());
+        let archive = f._temp.path().join(format!("{release}.tar"));
+        process::checked(
+            Command::new(tar)
+                .args(["--posix", "-cf"])
+                .arg(&archive)
+                .arg("-C")
+                .arg(&f.target)
+                .args(["--delay-directory-restore", "."]),
+            Duration::from_secs(120),
+        )
+        .unwrap();
+        snapshots.push(archive);
     }
     fs::remove_dir_all(&f.target).unwrap();
+    fs::create_dir_all(&f.target).unwrap();
     for snapshot in snapshots {
-        tar::Archive::new(std::io::Cursor::new(snapshot))
-            .unpack(&f.target)
-            .unwrap();
+        process::checked(
+            Command::new(tar)
+                .arg("-xf")
+                .arg(snapshot)
+                .arg("-C")
+                .arg(&f.target)
+                .arg("--delay-directory-restore"),
+            Duration::from_secs(120),
+        )
+        .unwrap();
     }
     for release in [false, true] {
-        let (units, _) = f.cargo_units(&arguments(release));
-        assert!(units["unchanged_dependency:lib"]);
+        let (units, stderr) = f.cargo_units(&arguments(release));
+        assert!(
+            units["unchanged_dependency:lib"],
+            "release={release}: {stderr}"
+        );
         assert!(!units["lazypencil:lib"] && !units["lazypencil:bin"]);
     }
     std::thread::sleep(Duration::from_millis(20));
