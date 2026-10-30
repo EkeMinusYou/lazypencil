@@ -4,7 +4,13 @@
 
 ## 現在の状態（2026-10-30）
 
-利用者は残確認への返答としてKittyの動作に問題がなく、MacのWezTermでもSixelの表示・ズームは動いたと報告した。Kittyの画像欠け・点滅修正を従来の未確認へ戻さない。Sixelは操作が遅く、初回読み込み中に一瞬エラーらしい文字列が見えたという残件がある。正確な文字列・試験したWezTermの版は不明で、再実行は依頼していない。対処として、Sixelの入力スレッドでの暫定画像の追加符号化を省き、既存workerで最新の完成画像だけを符号化する。解像度・256色・書き出し画素は維持する。初回placeholderも通常のLoadingと実際の失敗を区別する。この変更自体のGHA検証と実表示の改善はまだ未確認である。
+利用者は残確認への返答としてKittyの動作に問題がなく、MacのWezTermでもSixelの表示・ズームは動いたと報告した。Kittyの画像欠け・点滅修正を従来の未確認へ戻さない。Sixelは操作が遅く、初回読み込み中に一瞬エラーらしい文字列が見えたという報告がある。正確な文字列・試験したWezTermの版は不明で、再実行は依頼していない。aeb174bではSixelの入力スレッドでの暫定画像の追加符号化を省き、既存workerで最新の完成画像だけを符号化する。解像度・256色・書き出し画素は維持した。初回placeholderを`Loading preview…`とし、実際の失敗・明示的な再試行・古い世代の失敗を区別した。報告された一瞬の文字列と旧placeholderの一致は未確定であり、実際の診断は隠さない。
+
+aeb174bの[全体CI41066304052](https://github.com/EkeMinusYou/lazypencil/actions/runs/41066304052)は25分48秒で全工程成功した。追加したLoading／失敗／再試行とSixel連続操作の2回帰試験はruntimeのlibrary試験で成功し、core／既定・両Clippy・通常開発build・全5 consumer・元の共通画像gate・署名付きsourceを維持した。buildの依存cacheはhitしたが、取得が`Egress is over the account limit`で拒否され、初回対象compileに9分39秒かかった。後続のCargo確認もSkia includeの更新を理由に再buildし2分50秒を要した。この実行の10分目標は未達であり、以前のwarm 8分44秒と同条件とはしない。試験・期限を削って短縮せず、追加の全体CIも起動しない。
+
+同sourceの637ファイルの候補archiveはSHA-256 `84264c2bea0ba3eeb18b53907fe757f08678d25e2bdbe8bddb04548bdd2d333b`、本体は`22dc541d…bd3b40f`で、取得byteのhashがpackage manifest・隔離smoke・build記録と一致した。候補内source archiveも独立にhashを計算し、`49e112fa…766272d`がCIの署名検証済みprovenanceのsubjectと一致した。署名者はci.yml／main、source aeb174b・GitHub hosted・run 41066304052／attempt 1である。候補binary自体の署名検証を行ったという主張ではない。取得用の大きなarchiveは削除し、Mac用修正候補は`/private/tmp/lazypencil-sixel-aeb174b/lazypencil`へ保持した。
+
+数値gateはmacOS15.7.9・image `20260907.0337.1`・3CPU／7GiBで元の20起動・80操作・100 worker profileを成功した。入力／初回preview最大27.58／169.81ms、最初のfeedback p95 17.68ms、通常最大168.50MiB・idle CPU上限0.531%／30.145秒、Chromium込み1184.14MiB・1.162%／30.125秒で、両群の正常終了・子回収も成功した。これはKitty PTYの観測であり、WezTermの実表示速度やSixel変更単独の改善率とはしない。修正後のSixel体感速度・初回実表示と、仕様未確定2点・最終公開の受け入れは未完了である。
 
 7b6739cの[配布検証41063712899](https://github.com/EkeMinusYou/lazypencil/actions/runs/41063712899)は6分59秒で成功した。同じworkflowの先頭でxtask全試験・Clippyを通し、欠損通知の拒否、CRLF／複数SPDXの保持、外部headerの同size変更・欠損・symlink、SDK本文を複製しないことを既存試験で確認した。Skia inventoryは外部headerの先頭16KiBにあるSPDX原文と通知commentの位置・長さ・hashを保持する。1575件の入力identityは前候補と同一で、840件にSPDX、1551件に通知commentのhashがある。注記のないもののlicenseを推測して補わない。
 
@@ -508,7 +514,7 @@ HTTP(S)文字列samplerはa00289f、未参照のproject素材回収は9865944、
 
 - native通知の追加レビューでは、6badaf5候補の収集済みSkia source／inline headerコメント3962件が全て可読通知に残り、原文46ファイルがpackage manifestへ対応することを照合した。FTL・HarfBuzz・ICUの辞書／追加条件、JPEG／PNG／WebP・Wuffs・zlib・Khronosと、実link mapのring／QuickJS／Skia／compiler_builtinsの対応を確認した。これは全commentの完全なライセンス分類やlive codeの同定ではない。SDK等の入力追跡不足は3111343で修正し、7b6739cでSPDX原文・通知comment hashとNeon原文通知の対応も実候補で確認済みとなった。元pathと解決先を区別し、欠損は拒否し、同sizeの内容変更もhashへ反映する。SDK本文を通知束へ複製しない。入力の識別・通知保持と最終公開時の適用確認は区別する。
 - 配布素材の適用確認では、6badaf5候補のasset inventoryと現sourceを照合し、Noto Sans JPの未変更font／OFL、Lucide geometry／ISC・Feather由来MITの4 hashが一致した。OFLの同梱条件と名前・単独販売の制約、両icon通知の保持を原文で確認した。別途取得のiconはgeometry／fontを本体へ同梱せず、元licenseと出自を保持する。MPL対象option-extは変更なしの対応source archive・原文・取得案内を配布に含む。同梱素材のこの範囲は確認済みとし、native inline header／system入力などの最終適用確認や、正式公開全体とは区別する。
-- 最低macOSは実測結果に基づき15.7.9へ固定した。保証端末は引き続き確定し、MacでKitty／Sixel両方と、保証する端末による画像・日本語・キーボード操作の条件を維持する。利用者が報告したKittyの日本語確定・候補／カーソル位置・Preview操作・resize・clipboard添付は受け入れ済みとする。ズーム点滅の修正後、Sixel、未申告の入力方式と宣言する tmux／SSH の範囲は別途確認する。
+- 最低macOSは実測結果に基づき15.7.9へ固定した。保証端末は引き続き確定し、MacでKitty／Sixel両方と、保証する端末による画像・日本語・キーボード操作の条件を維持する。利用者が報告したKittyの日本語確定・候補／カーソル位置・Preview操作・resize・clipboard添付と、その後のKitty修正候補の動作は受け入れ済みとする。WezTermのSixelも基本の表示・ズームは利用者報告があり、修正後の応答・初期表示は冒頭の状態を参照する。未申告の入力方式と、宣言するtmux／SSHの範囲を検証済みへ広げない。
 - Codex／Claudeのサブスクリプション経路は画像付き実編集とguide／style取得を確認済み。2026-10-30の決定により、この成功を実接続の利用確認とし、Claude APIなどAPIキー経路の追加実接続は初回の必須残件から除く。API接続の実装・認証経路の区別・既存の自動試験は維持し、未確認の組合せを検証済みと表示しない。Codex API／自作project guide／初期画像添付の既存成功も保持する。Mac実端末は利用者が確認する方針へ更新した。
 - 定義したcold/warm・基準環境とChromium別予算の数値gateは446aa94で成功した。実端末の性能、最終配布候補の環境・署名・元のnotice／ソース提供条件は引き続き確認する。OS再起動直後の測定を実施済みとはしない。過去の同条件の有効な証拠は再利用する。
 - 旧PNG11点・派生JSON3点は、2026-10-30の承認に基づき公開mainの全履歴から除去した。559コミットの対象外全ファイル・内容・モードとHEAD treeの一致、全新参照から14パス・17 blob版への到達不能を確認した。履歴整理前の1,225 artifact・158 sourceに除去前source・不明sourceは0件だった。過去配布の判断やGitHub保持objectの物理消去は別である。ローカル全体GCは対象外の復旧データも巻き込むため実行せず、reflog等は保全した。[根拠](design-guidance.md#pencil-の-skill-とライセンス)
