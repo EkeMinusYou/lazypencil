@@ -1081,7 +1081,7 @@ fn dependency_checkpoint_and_application_retention_require_matching_main_layouts
     let entry = |id, key: String, reference: &str| json!({"id":id,"key":key,"ref":reference,"version":"layout","created_at":format!("2026-10-{id:02}T00:00:00Z")});
     let mut entries = vec![
         entry(1, "checkpoint-native-v2-current".into(), "refs/heads/main"),
-        entry(2, "native-v2-current".into(), "refs/heads/main"),
+        entry(2, "complete-native-v2-current".into(), "refs/heads/main"),
         entry(3, "checkpoint-native-v2-missing".into(), "refs/heads/main"),
         entry(4, "native-v2-missing".into(), "refs/pull/1/merge"),
     ];

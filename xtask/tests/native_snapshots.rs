@@ -28,11 +28,12 @@ fn release_baselines_are_extended_once_without_replacing_native_or_application_i
             Some(complete.as_str()),
         ),
         (primary.as_str(), false, false, true, None),
-        (primary.as_str(), true, false, false, None),
-        // Every warm lane keeps the existing complete checkpoint unchanged.
+        (primary.as_str(), true, false, false, Some(core.as_str())),
+        // Warm default/release lanes keep the complete graph unchanged.
+        // Core may still need its distinct feature graph.
         (complete.as_str(), false, true, false, None),
         (complete.as_str(), false, false, true, None),
-        (complete.as_str(), true, false, false, None),
+        (complete.as_str(), true, false, false, Some(core.as_str())),
         (core.as_str(), true, false, false, None),
         // Cold/default and legacy builds do not claim a current release graph.
         ("", false, true, false, Some(checkpoint.as_str())),
@@ -112,8 +113,8 @@ fn extended_dependencies_retire_only_their_baseline_and_partial_snapshots_after_
     };
     assert_eq!(
         removed(&entries),
-        [2],
-        "The release baseline remains until publication"
+        [],
+        "The release baseline must not retire the complementary default graph"
     );
     entries.push(entry(7, complete, "wire", "refs/heads/main"));
     assert_eq!(removed(&entries), [1, 2]);

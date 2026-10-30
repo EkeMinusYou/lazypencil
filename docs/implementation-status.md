@@ -4,6 +4,8 @@
 
 ## 現在の状態（2026-10-31）
 
+c6d8c1fのcache保存ログと現一覧を照合し、release baselineだけでcold default checkpointを保存直後に削除する不具合を確認した。buildの751,120,084 byteとcoreの906,052,643 byteがそれぞれ直後の`retain`で削除されていた。修正では両graphを持つcomplete cacheの保存後だけ削除し、同条件のbaselineへcheckpointを標準cache actionで重ねて復元する。coreは専用keyへ保存し、同runのdefault checkpointとの衝突を避ける。Cargoの鮮度判定、compiler／image／入力／flagsの束縛と全試験条件は変えない。この修正はMacの軽量補助試験から確認し、実際のcache保持・復元効果は未検証として扱う。
+
 直近の全体CIでterminalがMaterial後に617秒のrunner再割り当てを待ったため、c6d8c1fで短い2組を同じMac jobで順次実行するよう変更した。terminalの静かな起動区間を先に完了し、Materialのfont／network処理は後に実行する。一方の失敗で他方を省略せず、元の5組の独立receiptと共有画像gateを維持する。実行ファイルは必要targetの和集合を一度だけ転送し、アプリの重複梱包と2回目のrunner割り当てを除く。試験内容・期限・feature構成・性能基準は変更しない。[Mac補助41095888968](https://github.com/EkeMinusYou/lazypencil/actions/runs/41095888968)で全試験・Clippy・原文照合が成功し、両失敗の保持・静かな区間の順序・subsetの和集合・改変拒否の回帰を確認した。runner待機604秒、実行3分24秒だった。
 
 同じsourceの[全体41097979957](https://github.com/EkeMinusYou/lazypencil/actions/runs/41097979957)はattempt 1の終了ログで、全5組・両構成・両Clippy・通常開発build・元の共有画像gate・監査・署名付きsourceが成功した。terminalの元の3コマンドとMaterialの2コマンドは同じhostで順に成功し、独立した2 receiptのbuild／execution digestも一致した。群間のrunner再割り当てはなく、共通成果物は49,819,258 byteで、以前の2組の合計80,176,988 byteから30,357,730 byte（約38%）減った。後続catalog／release確認は全体0.77／0.68秒で、Skia両crateはfreshだった。残るtarget buildは117.05秒、Cargo JSON411 artifactの365件がfresh、46件はintegration test44・bin1・example1であり、必要な初回compileと不要な再buildを区別する。release本体のSHA-256は性能検証済みの`f3a765ff…f3f37de8`と一致し、同条件の数値計測は重ねない。

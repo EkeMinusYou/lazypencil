@@ -642,8 +642,15 @@ fn newest_compatible_checkpoint_survives_until_a_complete_main_cache_replaces_it
             .collect::<Vec<_>>()
     };
     assert_eq!(removed(&entries), [1, 2]);
-    entries.push(entry(7, primary, "layout-a", "refs/heads/main"));
-    assert_eq!(removed(&entries), [1, 2, 3]);
+    entries.push(entry(7, primary.clone(), "layout-a", "refs/heads/main"));
+    assert_eq!(removed(&entries), [1, 2]);
+    entries.push(entry(
+        8,
+        format!("complete-{primary}"),
+        "layout-a",
+        "refs/heads/main",
+    ));
+    assert_eq!(removed(&entries), [1, 2, 3, 7]);
 }
 #[test]
 fn tool_dependencies_retire_only_after_a_newer_complete_matching_sdk_and_format() {

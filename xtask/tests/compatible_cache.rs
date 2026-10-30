@@ -676,6 +676,82 @@ fn source_fallback_uses_cargo_ownership_to_discard_stale_tests_and_keep_unchange
     );
 }
 
+#[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
+#[test]
+fn complementary_dependency_archives_stay_fresh_and_rebuild_real_source_edits() {
+    let f = Fixture::new();
+    f.add_dependency();
+    fs::write(f.source.join("Cargo.toml"), "[package]\nname='lazypencil'\nversion='0.1.0'\nedition='2024'\n[workspace]\n[dependencies]\nunchanged_dependency={path='dependency'}\n").unwrap();
+    fs::write(
+        f.source.join("src/lib.rs"),
+        "pub fn fixture() -> u8 { unchanged_dependency::value() }\n",
+    )
+    .unwrap();
+    fs::write(
+        f.source.join("src/main.rs"),
+        "fn main() { println!(\"{}\", lazypencil::fixture()); }\n",
+    )
+    .unwrap();
+    process::checked(
+        Command::new("cargo")
+            .current_dir(&f.source)
+            .args(["generate-lockfile", "--offline"]),
+        Duration::from_secs(120),
+    )
+    .unwrap();
+    let arguments = |release| {
+        let mut args = [
+            "cargo",
+            "build",
+            "--locked",
+            "--offline",
+            "--bins",
+            "--message-format=json",
+        ]
+        .map(str::to_owned)
+        .to_vec();
+        if release {
+            args.push("--release".into());
+        }
+        args
+    };
+    let mut snapshots = Vec::new();
+    for release in [true, false] {
+        if f.target.exists() {
+            fs::remove_dir_all(&f.target).unwrap();
+        }
+        assert!(!f.cargo_units(&arguments(release)).0["unchanged_dependency:lib"]);
+        cache::prune(&f.source, &f.target).unwrap();
+        let mut archive = tar::Builder::new(Vec::new());
+        archive.append_dir_all(".", &f.target).unwrap();
+        snapshots.push(archive.into_inner().unwrap());
+    }
+    fs::remove_dir_all(&f.target).unwrap();
+    for snapshot in snapshots {
+        tar::Archive::new(std::io::Cursor::new(snapshot))
+            .unpack(&f.target)
+            .unwrap();
+    }
+    for release in [false, true] {
+        let (units, _) = f.cargo_units(&arguments(release));
+        assert!(units["unchanged_dependency:lib"]);
+        assert!(!units["lazypencil:lib"] && !units["lazypencil:bin"]);
+    }
+    std::thread::sleep(Duration::from_millis(20));
+    fs::write(
+        f.source.join("dependency/src/lib.rs"),
+        "pub fn value() -> u8 { 2 }\n",
+    )
+    .unwrap();
+    assert!(!f.cargo_units(&arguments(false)).0["unchanged_dependency:lib"]);
+    let output = process::checked(
+        &mut Command::new(f.target.join("debug/lazypencil")),
+        Duration::from_secs(15),
+    )
+    .unwrap();
+    assert_eq!(output, b"2\n");
+}
+
 impl Fixture {
     #[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
     fn add_dependency(&self) {

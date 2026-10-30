@@ -51,17 +51,19 @@ pub fn publication(input: Publication<'_>) -> Result<Option<String>> {
         checkpoint_key(input.primary, parts[0], parts[1], parts[2])? == input.checkpoint,
         "Invalid dependency checkpoint"
     );
-    if input.matched == complete || input.matched == preferred {
+    // Restoring the default/release graph does not prove that core's distinct
+    // feature graph was cached. Retain its completed extension separately.
+    if input.core_only {
+        return Ok((input.matched != preferred).then_some(preferred));
+    }
+    if input.matched == complete {
         return Ok(None);
     }
     if input.matched == input.primary {
-        return Ok((!input.core_only && input.full_catalog).then_some(complete));
+        return Ok(input.full_catalog.then_some(complete));
     }
     if input.release_verified {
         return Ok(Some(input.primary.to_owned()));
-    }
-    if input.core_only {
-        return Ok(Some(preferred));
     }
     Ok(Some(input.checkpoint.to_owned()))
 }

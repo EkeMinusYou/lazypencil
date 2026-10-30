@@ -1584,9 +1584,9 @@ fn obsolete_with_sources(
             let primary = generations
                 .captures(suffix)
                 .map_or_else(|| suffix.to_owned(), |caps| caps[1].to_owned());
-            if keys.contains(&(primary.as_str(), version))
-                || keys.contains(&(format!("complete-{primary}").as_str(), version))
-            {
+            // A release baseline and a cold default checkpoint contain
+            // complementary graphs. Only their verified union replaces both.
+            if keys.contains(&(format!("complete-{primary}").as_str(), version)) {
                 selected.insert(id, entry.clone());
             } else {
                 checkpoints
