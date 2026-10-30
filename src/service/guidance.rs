@@ -85,8 +85,6 @@ pub(crate) fn prepare_design_start(
         .or_else(|| catalog.default_style())
         .map(|id| catalog.style(id, store.data_dir()))
         .transpose()?;
-    project.verify_unchanged()?;
-    store::require_revision(&store.read()?, &project.root_document().revision())?;
     crate::cancel::check(cancel)?;
     Ok(PreparedDesignStart {
         project,

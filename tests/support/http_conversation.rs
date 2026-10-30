@@ -61,6 +61,23 @@ fn http_prompt_preparation_yields_preserves_draft_and_recovers_after_cancellatio
     );
     let before = fs::read(conversation.store().path()).unwrap();
     let draft = conversation.draft().to_owned();
+    let png = include_bytes!("../../examples/assets/crop-source.png");
+    let hash = lazypencil::document::hash(png);
+    let image = lazypencil::attachments::Attachment {
+        id: format!("img_{hash}"),
+        display_name: "stored.png".into(),
+        width: u32::from_be_bytes(png[16..20].try_into().unwrap()),
+        height: u32::from_be_bytes(png[20..24].try_into().unwrap()),
+        bytes: png.len(),
+        source_bytes: Some(png.len()),
+        original: None,
+        hash,
+    };
+    let images = conversation.directory().join("attachments");
+    lazypencil::store::create_private_directory(&images).unwrap();
+    let image_path = images.join(format!("{}.png", image.hash));
+    fs::write(&image_path, png).unwrap();
+    conversation.add_image(image.clone()).unwrap();
     runtime().block_on(async {
         let started = Instant::now();
         conversation.start_send(None).unwrap();
@@ -68,6 +85,7 @@ fn http_prompt_preparation_yields_preserves_draft_and_recovers_after_cancellatio
         blocked(&server).await;
         assert!(conversation.active());
         assert!(conversation.set_draft("replacement".into()).is_err());
+        assert!(conversation.clear_images().is_err());
         // Repeated frontend select losses must retain the same request, not
         // cancel it, launch another worker or consume the oneshot result.
         for _ in 0..3 {
@@ -90,6 +108,9 @@ fn http_prompt_preparation_yields_preserves_draft_and_recovers_after_cancellatio
         assert_eq!(value["error"]["code"], "CANCELLED");
         assert!(!conversation.active());
         assert_eq!(conversation.draft(), draft);
+        assert_eq!(conversation.images().len(), 1);
+        assert_eq!(conversation.images()[0].id, image.id);
+        assert_eq!(fs::read(&image_path).unwrap().as_slice(), png.as_slice());
         assert_eq!(fs::read(conversation.store().path()).unwrap(), before);
         assert!(!temp.path().join("sent-turn.txt").exists());
         disconnected(&server).await;

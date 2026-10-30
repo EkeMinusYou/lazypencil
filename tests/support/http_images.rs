@@ -76,6 +76,12 @@ pub(super) fn fixture(version: &str) -> (TempDir, Store, reference::Server, [Str
     data["variables"]["leaf"]["value"] =
         json!([{"value":urls[0]},{"theme":{"mode":"dark"},"value":urls[1]}]);
     write(&source, data);
+    let library = temp.path().join("library/ui.lib.pen");
+    let mut data: Value = serde_json::from_slice(&fs::read(&library).unwrap()).unwrap();
+    // The raw URL label is much wider than a local filename. Clip it to the
+    // tile so shader-effect bounds retain the intended two sampler halves.
+    data["children"][0]["clip"] = json!(true);
+    write(&library, data);
     for path in [
         source,
         temp.path().join("library/ui.lib.pen"),

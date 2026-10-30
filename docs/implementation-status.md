@@ -4,7 +4,9 @@
 
 ## 現在の状態（2026-10-30）
 
-035e857の[CI 40975584669](https://github.com/EkeMinusYou/lazypencil/actions/runs/40975584669)で、core構成に存在しないFonts variantをmainが参照する修正漏れを検出した。描画ありのvariantだけをfeature付きmatch armへ分ける修正を用意した。既定構成とreleaseの有用な実行は中断せず、終了結果を確認してから次の候補を送る。
+035e857の[CI 40975584669](https://github.com/EkeMinusYou/lazypencil/actions/runs/40975584669)は全jobが終了した。監査・release・builderと通常／pixel／端末／Materialのconsumerは成功した。既定構成の先行でHTTP画像6試験、unit、実MCPの5 API取消が成功し、テーマ・source削除後のcopy／recopy・将来編集、実CLIのCtrl+Cとworker回収を確認した。coreは存在しないFonts variantをmainが参照する修正漏れで停止したため、描画ありのvariantだけをfeature付きmatch armへ分けた。
+
+runtime consumerは実WebGLのHTTP条件で停止した。新規HTTPの長いURLラベルがframeの外へ広がり、shader effectの領域を拡大するfixtureだったため、右半分を検査する座標が左半分に入っていた。HTTP用fixtureのframeへclipを明示し、yellow／blueの期待画素とcopy前後の一致の両方を維持する。固定HTTPSの正の取得はこのassertionより後のため未実行で、HTTP比較のPNGも未完成である。原本画像gate・最終source・両構成の全体合格とはしない。有用な実行は中断せず、終了後にこれらと送信準備をまとめて次の候補へ送る。
 
 TUIの同期ガイド読込みに対しては、既存のConversationに所有thread／取消token／oneshotによる送信準備を追加した。準備中もactiveとして下書きと画像を固定し、next_eventのselectが中断されても同じ取得を保持する。取消・close・dropはthreadをjoinし、取得snapshotを採用前に再照合してから既存の送信処理へ進む。準備失敗はagent turnを作らずphase=preparationで報告する。実HTTPの応答待ちからの取消・再送、close／drop時の接続終了、文書変更の拒否とTUIキー処理の再現を既存のRust試験へ追加した。履歴workerのProject取得にも取消tokenを渡す。これらは整形・差分検査までで、GHA実行はまだである。物理端末IMEの受け入れとは区別する。
 
