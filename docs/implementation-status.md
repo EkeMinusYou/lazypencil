@@ -4,9 +4,13 @@
 
 ## 現在の状態（2026-10-30）
 
-追加の配布レビューでは、link mapに`libskcms.skcms.o`と`libskcms.skcms_TransformBaseline.o`がある一方、候補に独立したSkCMS原本licenseが無いことも確認した。固定Skia snapshot `61e7ca4e…5778f6`はSkCMS revision `6010f358…7c58d`のsourceを取り込み、README.chromium／version.sha1へ記録しているが、LICENSEそのものは省いている。候補の観測済み7 source／header hashと、その固定snapshotのbyte一致を確認し、[対応revisionの原本LICENSE](https://skia.googlesource.com/skcms/+/6010f3583977f651726b24228f7e6a377e47c58d/LICENSE)を既存の`resources/licenses/native/skcms/`へ収録した。原本SHA-256は`e59bb5c5…fbe2e36`で、置換・改変しない。既存の配布必須ファイル一覧へLICENSEと出自NOTICEを加え、整合するindexから消した場合も候補公開を拒否する既存試験へ接続する。WebPの[補助GHA41039135893](https://github.com/EkeMinusYou/lazypencil/actions/runs/41039135893)は3分38秒で成功した。SkCMSを含めた梱包は、既存配布workflowの冒頭の補助全試験を通してから一度だけ確認する。性能計測と全consumerは繰り返さない。
+6badaf5の[配布検証41041417999](https://github.com/EkeMinusYou/lazypencil/actions/runs/41041417999)は8分43秒で成功した。補助全試験・Clippy、原本通知の収集と再検証、実候補の梱包・隔離導入smoke・署名付きprovenanceを含む。取得した候補archiveのSHA-256は`e400dbb7bec16198879c3a268e996ab713f6ced3e932676921821cb6b761b77b`で、署名のsubjectと一致した。署名のissuer、source 6badaf5、release-evidence.yml／main、run／attempt 1も照合した。package manifestは635ファイルを記録し、Mac arm64・0.1.0-dev・本体`b0297f24…07b0759`が一致した。WebPのPATENTSとSkCMSのLICENSE／出自NOTICEは、実archiveから抽出し、manifestのsize／hashおよび原本byteと照合した。`release_ready:false`を維持し、この二つの不足の解消を全ライセンス適用レビューや正式公開の完了とはしない。
 
-配布レビューで、446aa94候補のlibwebp通知に、実際のsource commentが参照する`PATENTS`が含まれていないことを確認した。`COPYING`・`AUTHORS`は同梱済みだが、追加IP grantの原文も既存のSkia通知収集へ含め、3点の欠損・symlink時は停止するよう修正した。JPEGの既存回帰を共通のcodec用tableへまとめ、原文byte・CRLF・hashの保持、必要ファイルの欠損とリンク拒否を同じ試験で確認する。原本は[固定libwebp revisionのPATENTS](https://raw.githubusercontent.com/webmproject/libwebp/845d5476a866141ba35ac133f856fa62f0b7445f/PATENTS)で、代替の許諾文は作らない。FreeTypeのFTL原文とbinary用帰属文は既存候補に含まれており、その追加修正は不要だった。新しい収集の補助GHAと候補への実同梱は確認待ちで、最終的な全ライセンス適用レビューの完了とはしない。本体・依存関係・性能条件は変えず、同じTUI計測と全consumerは繰り返さない。
+追加の配布レビューでは、link mapに`libskcms.skcms.o`と`libskcms.skcms_TransformBaseline.o`がある一方、旧候補に独立したSkCMS原本licenseが無いことも確認した。固定Skia snapshot `61e7ca4e…5778f6`はSkCMS revision `6010f358…7c58d`のsourceを取り込み、README.chromium／version.sha1へ記録しているが、LICENSEそのものは省いている。候補の観測済み7 source／header hashと、その固定snapshotのbyte一致を確認し、[対応revisionの原本LICENSE](https://skia.googlesource.com/skcms/+/6010f3583977f651726b24228f7e6a377e47c58d/LICENSE)を既存の`resources/licenses/native/skcms/`へ収録した。原本SHA-256は`e59bb5c5…fbe2e36`で、置換・改変しない。既存の配布必須ファイル一覧へLICENSEと出自NOTICEを加え、整合するindexから消した場合も候補公開を拒否する既存試験へ接続し、上記workflowで成功した。
+
+配布レビューで、446aa94候補のlibwebp通知に、実際のsource commentが参照する`PATENTS`が含まれていないことを確認した。`COPYING`・`AUTHORS`は同梱済みだが、追加IP grantの原文も既存のSkia通知収集へ含め、3点の欠損・symlink時は停止するよう修正した。JPEGの既存回帰を共通のcodec用tableへまとめ、原文byte・CRLF・hashの保持、必要ファイルの欠損とリンク拒否を同じ試験で確認した。最初の29a8536では、原文blobと異なりLFへ正規化する既存の可読summaryにCRLFを期待した試験だけが失敗した。96213e4でその期待値を修正し、raw byte／CRLFの検査は維持した。[補助GHA41039135893](https://github.com/EkeMinusYou/lazypencil/actions/runs/41039135893)は3分38秒で成功し、6badaf5の実候補に収録した原文SHA-256も`cc3273e0…f5023c`と一致した。原本は[固定libwebp revisionのPATENTS](https://raw.githubusercontent.com/webmproject/libwebp/845d5476a866141ba35ac133f856fa62f0b7445f/PATENTS)で、代替の許諾文は作っていない。FreeTypeのFTL原文とbinary用帰属文は既存候補に含まれており、その追加修正は不要だった。
+
+6badaf5のreleaseはrunner imageが20260907.0337.1で、直前の再利用成功446aa94の20261028.0489.1とは異なった。compiled source hashは同じ`e883f66d…9d3297`だが、recipeを含む完全keyは`9d62252e…8baf60`で、そのcontextの既存release cacheが無かったため`reused:false`となった。別contextの`72def206…3d5de`を流用せず、同じ本体を再buildして15ファイルを約124MBのcacheへ保存した。両contextのcacheが残っていることもAPIで確認した。これは通知変更によるsource失効や同条件成果物の消失とは区別する。本体hashが同じため、446aa94の性能計測と51ed911の全consumerを繰り返さなかった。
 
 446aa94の[性能対象配布41035893847](https://github.com/EkeMinusYou/lazypencil/actions/runs/41035893847)は7分47秒で成功した。既存`measure-tui`のMac数値gateを、通常500ms／2秒／warm feedback p95 100ms／200MiB／待機CPU 1%未満、別の固定Chromium作例1536MiB・2%未満に定め、全観測保存後に判定した。[Mac補助ツール41035390452](https://github.com/EkeMinusYou/lazypencil/actions/runs/41035390452)も3分43秒で全試験・Clippy・原本照合と新しい境界値／欠損／p95回帰を成功した。20起動・80操作・100 worker観測と30秒以上のidleを維持し、生データを再集計した。coldは新規process・設定／data、warmは同一processで初回描画後とし、OS page／font cacheは未統制であることを明示する。完成画像がcached feedbackより早い操作も除外しない。実環境はmacOS15.8.2・image20261028.0489.1・3 CPU・物理7GiBだった。数値基準は通過したが、物理表示やOS再起動直後を確認済みとはしない。
 
@@ -477,7 +481,7 @@ HTTP(S)文字列samplerはa00289f、未参照のproject素材回収は9865944、
 
 旧3環境CI全体の安定した短縮は未達だった。初回Macのみへ変更し、Linux nativeの待機・再ビルド・必須確認を外した。実行時間が単純に1/3になるとは見積もらない。`c9ffb37` は38分28秒、先行17分30秒、全体 job は x64 16分35秒・arm64 17分57秒・Mac20分05秒だった。先行範囲と runner image が異なり、元の27〜29分との統制比較ではない。Mac release 再利用0.87秒、同一環境での先行成果物再利用、変更した試験だけの無効化、独立試験の並列化には個別の成功根拠がある。9d6613b当時は14分43秒（依存変更・Wasm検証を含む）。5eaa691は12分06秒（本体変更と新規124組）、f9cc4daは10分17秒（本体全50単位を再build）だった。copy先行の06bab20は10分31秒、本体再利用の028e522は8分30秒だった。旧62675c9の12分51秒・788f4c2の9分51秒・旧3環境と条件を分け、全体10分以内の維持は引き続き改善する。
 
-macOSの最新の通常bound観測はcc20e37で最大191.52MiB、cached feedback p95は28.50msだった。同じ本体hashの3cc43daの177.03MiB／31.81msなど、以前のsource／環境の値との差を単独変更の効果とはしない。古い「200MiB未達」を現在の既知不具合に数えず、統制条件・物理端末の性能受け入れ完了とも扱わない。[性能記録](performance.md)
+macOSの最新の通常bound観測は446aa94で最大186.98MiB、warm feedback p95は24.58msだった。同じ本体hashのcc20e37の191.52MiB／28.50ms、3cc43daの177.03MiB／31.81msなど、以前のsource／環境の値との差を単独変更の効果とはしない。通常と別Chromium予算の数値gateは成功し、古い「200MiB未達」を現在の既知不具合に数えない。統制条件・物理端末の性能受け入れ完了とも扱わない。[性能記録](performance.md)
 
 本家との総合デザイン品質比較は当初から保留。任意フォント・全モデルの網羅、crates.io 公開、Linux／Windows／Intel Macを、新たな初回必須スコープとして追加しない。明示した元の機能・互換性・性能・配布条件も削除しない。
 
@@ -485,7 +489,7 @@ macOSの最新の通常bound観測はcc20e37で最大191.52MiB、cached feedback
 
 大きな文字列の展開上限は74f37fdの完全CIで検証済みとなった。捕捉scriptのfile URL／HTTP asset key・入れ子namespaceと同様、未実装へ戻さない。
 
-1. 既存ログに基づき、部分／完全成果物の再利用と長い先行試験の配置を整理する。先行5分47秒、補助変更・未変更アプリの再利用では全体8分47秒で成功した。本体変更を含む74f37fdの全体15分25秒とは条件を分け、全条件で10分以内とはしない。長いbinding群の重複削減は実scheduler fixtureで失敗保持まで確認済みであり、実アプリ変更での時間は次の必要な検証で確認する。image不一致による正当な再buildと、同一条件の不要な再buildを分ける。Cargoの鮮度判定、各feature・検証目的・元の期限と最終gateは維持する。
+1. 既存ログに基づき、部分／完全成果物の再利用と長い先行試験の配置を仕上げる。先行は51ed911で4分14秒、ab943caで2分36秒だった。全体の最新成功は51ed911で11分44秒であり、全体10分以内の安定達成と、新focus keyの同じcompiler contextでの実復元は残る。長いbinding群の重複削減・並列laneの全結果回収・失敗保持は検証済み。6badaf5の配布のみの8分43秒を全体CIの短縮成功とは扱わない。image不一致による正当な再buildと、同一条件の不要な再buildを分け、Cargoの鮮度判定、各feature・検証目的・元の期限と最終gateは維持する。
 2. 公開仕様に意味の記載がないdevice presetとfill-stage object samplingを確認し、推測を本家互換として実装済みにしない。
 3. 不足するMac実端末・性能の受け入れ、保証環境と配布候補、文書を確定する。Kittyの報告済み5項目、両サブスクリプション、Codex API／自作guideを含む有効な同条件の証拠を再利用する。旧参照素材の公開履歴削除は完了しており、未実施へ戻さない。
 
