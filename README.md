@@ -224,7 +224,7 @@ cargo xtask dist binary --executable /build/release/lazypencil \
 cargo xtask dist verify-binary /tmp/lazypencil-candidate.tar.gz --extract /tmp/lazypencil-install
 ```
 
-The [release-evidence workflow](.github/workflows/release-evidence.yml) reuses valid mapped release outputs, runs Cargo freshness checks, gathers original notices/build/linkage evidence, packages the candidate and smokes the installed binary with source/build trees hidden. Packaging and independent source/notice/pixel checks passed on all three targets. `release_ready: false` remains until physical-terminal acceptance, applicability and final publication review is complete.
+The [release-evidence workflow](.github/workflows/release-evidence.yml) reuses valid mapped release outputs, runs Cargo freshness checks, gathers original notices/build/linkage evidence, packages the candidate and smokes the installed binary with source/build trees hidden. The current Mac candidate passed packaging and independent source/notice/pixel checks; earlier three-target results are historical evidence for deferred support. `release_ready: false` remains until physical-terminal acceptance, applicability and final publication review is complete.
 
 Signed GitHub build provenance is implemented for final source and manual candidates. Verify the archive against its reviewed source/signer commit:
 

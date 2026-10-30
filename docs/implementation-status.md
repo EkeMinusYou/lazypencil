@@ -4,6 +4,12 @@
 
 ## 現在の状態（2026-10-30）
 
+0d36cd0の[全体CI41054850254](https://github.com/EkeMinusYou/lazypencil/actions/runs/41054850254)は8分44秒で全工程成功し、この条件で10分以内を確認した。試験・期限・全5 consumer・両Clippy・通常開発build・元の共有画像gate・署名付きsourceを維持した。長いruntime／normal／pixelsは共有build終了3〜7秒後に開始し、Materialの後に実行するterminalの開始待ちは8秒だった。build3分04秒、core7分31秒、release2分06秒、runtime4分03秒・normal3分37秒・pixels2分53秒・Material2分07秒・terminal1分17秒、source35秒。前回11分29秒との差は2分45秒だが、変更入力・cacheの温まり方や性能計測の選択も異なり、配置変更だけの効果とはしない。同条件の反復や新しい全体CIは追加しない。
+
+共有buildは04c610eの322ファイルを失効0件で復元し、Cargo JSON全408 artifactがfreshだった。releaseも検査済み15ファイルを再利用した。coreは918ファイルを失効0件で復元したが、別feature構成の依存成果物が既定構成の依存cacheに不足しており、Cargoのtest build119.78秒を含む。全構成の再compileが0件とはしない。性能入力は未変更のためplanはmeasure_tui=falseを選び、同じ本体の04c610eの数値gate成功を再利用した。取得した1231ファイルのsource archiveはSHA-256 `bcb7a26b68e85d2a2c1c4a0c263bf0deac9abfe7210541f088137a011a5b400d`がCI記録と一致し、ローカルでもgh attestation verifyでsource／signer 0d36cd0・ci.yml／main・GitHub hostedを指定して署名検証した。正式版の公開・実画面の残件・互換性2点を完了扱いにはしない。
+
+以下の04c610e以前の記録は各source当時の結果であり、「次に確認する」や当時の失敗を現在の未完了へ加算しない。現在の残件は[次に実装・確認すること](#remaining-work)を参照する。
+
 04c610eの[全体CI41052187835](https://github.com/EkeMinusYou/lazypencil/actions/runs/41052187835)は11分29秒で全工程成功した。coreのHTTP切断観測、core／既定の全試験・両Clippy・通常開発build、全5 consumer、release・数値性能gate、元の共有画像gate、署名付きsourceを維持した。sourceは1231ファイル・SHA-256 `6542f86549eb3d8f885a8d6d064f51ec810d6903a7a28081b8a3d7bb523323e5`で、署名検証結果のsubject・source 04c610e・ci.yml／main・run／attempt 1と照合した。先行04c610eの12ファイルと有効な既存274ファイルを受け入れ、残る実compiler入力変更をCargoで再判定した。最後のcatalog用Cargo JSONは408 artifact中405 fresh、再compile報告はbrowser_readiness／agent／mcpの3 test targetであり、これとは別に先行対象build79.35秒を含むため全工程の再compile数とはしない。
 
 同全体のruntimeはbuilder終了7秒後に開始したが、2並列のshort matrixでterminalが238秒待ち、最終sourceより前の最長経路になった。job時間はbuilder5分03秒・core6分37秒・release6分15秒、normal3分44秒・runtime3分27秒・pixels2分24秒・Material1分46秒・terminal1分08秒、source37秒だった。10分以内の全体完了とはしない。次の配置はruntime／normal／pixelsを独立させ、Material／terminalだけをrelease終了後の1枠で順次実行する。release失敗時もbuild成功・非cancelなら両試験を実行し、結果を省略しない。全5 receiptと元の最終gateを維持し、Rust実装・試験内容・期限はこの配置変更で変えない。このYAML変更はactionlintで確認済みで、同じRust入力の先行を重ねず、次の全体で配置と最終結果を確認する。
@@ -488,6 +494,7 @@ HTTP(S)文字列samplerはa00289f、未参照のproject素材回収は9865944、
 
 公開前の確認・決定：
 
+- 配布素材の適用確認では、6badaf5候補のasset inventoryと現sourceを照合し、Noto Sans JPの未変更font／OFL、Lucide geometry／ISC・Feather由来MITの4 hashが一致した。OFLの同梱条件と名前・単独販売の制約、両icon通知の保持を原文で確認した。別途取得のiconはgeometry／fontを本体へ同梱せず、元licenseと出自を保持する。MPL対象option-extは変更なしの対応source archive・原文・取得案内を配布に含む。同梱素材のこの範囲は確認済みとし、native inline header／system入力などの最終適用確認や、正式公開全体とは区別する。
 - 最低macOSは実測結果に基づき15.7.9へ固定した。保証端末は引き続き確定し、MacでKitty／Sixel両方と、保証する端末による画像・日本語・キーボード操作の条件を維持する。利用者が報告したKittyの日本語確定・候補／カーソル位置・Preview操作・resize・clipboard添付は受け入れ済みとする。ズーム点滅の修正後、Sixel、未申告の入力方式と宣言する tmux／SSH の範囲は別途確認する。
 - Codex／Claudeのサブスクリプション経路は画像付き実編集とguide／style取得を確認済み。2026-10-30の決定により、この成功を実接続の利用確認とし、Claude APIなどAPIキー経路の追加実接続は初回の必須残件から除く。API接続の実装・認証経路の区別・既存の自動試験は維持し、未確認の組合せを検証済みと表示しない。Codex API／自作project guide／初期画像添付の既存成功も保持する。Mac実端末は利用者が確認する方針へ更新した。
 - 定義したcold/warm・基準環境とChromium別予算の数値gateは446aa94で成功した。実端末の性能、最終配布候補の環境・署名・元のnotice／ソース提供条件は引き続き確認する。OS再起動直後の測定を実施済みとはしない。過去の同条件の有効な証拠は再利用する。
@@ -501,7 +508,7 @@ HTTP(S)文字列samplerはa00289f、未参照のproject素材回収は9865944、
 
 旧3環境CI全体の安定した短縮は未達だった。初回Macのみへ変更し、Linux nativeの待機・再ビルド・必須確認を外した。実行時間が単純に1/3になるとは見積もらない。`c9ffb37` は38分28秒、先行17分30秒、全体 job は x64 16分35秒・arm64 17分57秒・Mac20分05秒だった。先行範囲と runner image が異なり、元の27〜29分との統制比較ではない。Mac release 再利用0.87秒、同一環境での先行成果物再利用、変更した試験だけの無効化、独立試験の並列化には個別の成功根拠がある。9d6613b当時は14分43秒（依存変更・Wasm検証を含む）。5eaa691は12分06秒（本体変更と新規124組）、f9cc4daは10分17秒（本体全50単位を再build）だった。copy先行の06bab20は10分31秒、本体再利用の028e522は8分30秒だった。旧62675c9の12分51秒・788f4c2の9分51秒・旧3環境と条件を分け、全体10分以内の維持は引き続き改善する。
 
-macOSの最新の通常bound観測は446aa94で最大186.98MiB、warm feedback p95は24.58msだった。同じ本体hashのcc20e37の191.52MiB／28.50ms、3cc43daの177.03MiB／31.81msなど、以前のsource／環境の値との差を単独変更の効果とはしない。通常と別Chromium予算の数値gateは成功し、古い「200MiB未達」を現在の既知不具合に数えない。統制条件・物理端末の性能受け入れ完了とも扱わない。[性能記録](performance.md)
+macOSの最新の通常bound観測は04c610eで最大184.91MiB、warm feedback p95は38.84msだった。Chromium込みは1264.64MiB・idle CPU上限1.797%で、通常と別Chromium予算の数値gateは成功した。同じ本体hashの446aa94の186.98MiB／24.58msなど、以前のsource／環境の値との差を単独変更の効果とはしない。古い「200MiB未達」を現在の既知不具合に数えず、物理端末の性能受け入れ完了とも扱わない。[性能記録](performance.md)
 
 本家との総合デザイン品質比較は当初から保留。任意フォント・全モデルの網羅、crates.io 公開、Linux／Windows／Intel Macを、新たな初回必須スコープとして追加しない。明示した元の機能・互換性・性能・配布条件も削除しない。
 
@@ -509,7 +516,7 @@ macOSの最新の通常bound観測は446aa94で最大186.98MiB、warm feedback p
 
 大きな文字列の展開上限は74f37fdの完全CIで検証済みとなった。捕捉scriptのfile URL／HTTP asset key・入れ子namespaceと同様、未実装へ戻さない。
 
-1. 既存ログに基づき、部分／完全成果物の再利用と長い試験の配置を仕上げる。最新の対象確認04c610eは6分15秒、全体成功は11分29秒であり、全体10分以内の安定達成は残る。新focus keyの同じcompiler contextでの実復元、profile／通常consumerの並列化、全結果回収と失敗保持、HTTP切断観測の修正は検証済み。準備済みのjob配置変更は次の全体で確認し、同じRust入力の先行検証を重ねない。image不一致による正当な再buildと、同一条件の不要な再buildを分け、Cargoの鮮度判定、各feature・検証目的・元の期限と最終gateは維持する。
+1. CI配置と10分目標の対象確認は0d36cd0の全体8分44秒で完了した。部分／完全成果物の再利用、profile／通常consumerの並列化、全結果回収と失敗保持、HTTP切断観測も検証済み。今後は必要な変更に対する通常CIで観測し、同じ条件の先行・全体・性能計測を重ねない。cold cacheや実compiler入力変更時にも必ず同じ時間になる保証とは区別し、Cargoの鮮度判定、各feature・検証目的・元の期限と最終gateを維持する。
 2. 公開仕様に意味の記載がないdevice presetとfill-stage object samplingを確認し、推測を本家互換として実装済みにしない。
 3. 不足するMac実端末・性能の受け入れ、保証環境と配布候補、文書を確定する。Kittyの報告済み5項目、両サブスクリプション、Codex API／自作guideを含む有効な同条件の証拠を再利用する。旧参照素材の公開履歴削除は完了しており、未実施へ戻さない。
 

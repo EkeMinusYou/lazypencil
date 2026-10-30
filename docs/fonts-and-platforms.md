@@ -61,7 +61,7 @@ MacでのChromium、ソフトウェアWebGL、外部AI、パス・ロック・�
 
 ### 端末内の画像
 
-Kitty Graphics Protocol と Sixel の両方を初期リリースの対応対象とする。最初に Kitty を実装し、続いて Sixel を実装する。端末の応答で利用可否を調べ、設定でも選択できるようにする。OS・CPU の対応と端末の画像プロトコルの対応は別々に公開する。
+Kitty Graphics Protocol と Sixel の両方を初期リリースの対応対象とし、両backendを実装済みである。autoでの端末応答による判定と、明示的なbackend指定を提供する。OS・CPU の対応と端末の画像プロトコルの対応は別々に公開する。
 
 Sixel では色の量子化、転送量、再描画・拡大縮小の応答も確認する。PNG 出力を画質の基準とし、端末内の表示方式による差を記録する。Macで保証する端末による画像閲覧・日本語入力・キーボード操作と、Kitty／Sixel両方のbackendの動作を受け入れ条件にする。Linuxの成功だけでMacの端末を受け入れ済みとは扱わない。画像非対応端末では既存の外部ビューアへの導線を提供する。
 
@@ -69,7 +69,7 @@ P0 でクロスプラットフォーム上の問題が判明した場合は、�
 
 ### 現在の検証根拠
 
-初回Macの最新の全工程成功は[51ed911の統合CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/41031176732)で、両feature構成・通常／動的描画・フォント・native clipboard・実PTY・releaseを含む。最低OSは上記の実行結果から固定した。利用者による日本語入力・候補／カーソル・Preview操作・resize・貼り付けの5項目は受け入れ済みだが、修正後Kittyの画像欠け・点滅、Mac Sixelと保証端末の確定、最終公開は残る。標準Mac VMではKittyのOpenGL初期化が失敗する。旧3環境の[c9ffb37](https://github.com/EkeMinusYou/lazypencil/actions/runs/40679529757)とLinuxの実Kitty／Sixel画像は履歴であり、Macの実画面の受け入れを代替しない。[現在の残件](implementation-status.md#remaining-work)
+初回Macの全工程成功は[04c610eの統合CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/41052187835)で確認した。両feature構成・通常／動的描画・フォント・実PTY・releaseと数値性能gateを含み、同じ本体のnative clipboard・サブスクリプション・利用者確認は既存の成功を再利用する。最低OSは上記の実行結果から固定した。利用者による日本語入力・候補／カーソル・Preview操作・resize・貼り付けの5項目は受け入れ済みだが、修正後Kittyの画像欠け・点滅、Mac Sixelと保証端末の確定、最終公開は残る。標準Mac VMではKittyのOpenGL初期化が失敗する。旧3環境の[c9ffb37](https://github.com/EkeMinusYou/lazypencil/actions/runs/40679529757)とLinuxの実Kitty／Sixel画像は履歴であり、Macの実画面の受け入れを代替しない。[現在の残件](implementation-status.md#remaining-work)
 
 <details>
 <summary>初期ローカル／コンテナー検証の履歴（当時の source に限定）</summary>
@@ -88,6 +88,6 @@ P0 でクロスプラットフォーム上の問題が判明した場合は、�
 
 要求中の資料取得記録と会話ログ失敗時の処理を含む262ファイルのソースでも、同じ Linux 環境で通常389・描画なし232試験、両構成の静的検査、配布関連12試験、release ビルドと mesh／1,000ノードの描画が終了コード0で成功した。その後の素材公開のロック・取消の修正はこの固定ソースに含めず、macOS の通常395・描画なし238試験等で別に検証した。
 
-CI は初回対象の macOS Apple Silicon・Linux x64／arm64 で配布ソースから検証する。対象試験の成功後に3環境へ広げ、両 feature 構成・Chromium・実 PTY・release を含む検証を維持する。Windows と Intel Mac の実行は初回の gate に含めない。設定の存在と各 source の成功実績は区別し、詳しい記録は [実装状況](implementation-status.md) に残す。
+当時のCIはmacOS Apple Silicon・Linux x64／arm64で配布ソースから検証した。現在の初回対象は上記のMacのみで、旧3環境方針は現在のgateへ加算しない。各sourceの成功実績と後日の対応方針は[実装状況](implementation-status.md)で区別する。
 
 </details>
