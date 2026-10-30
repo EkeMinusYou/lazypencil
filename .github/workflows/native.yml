@@ -31,6 +31,10 @@ on:
         description: Cache checked partial compiler outputs for a following full run
         type: boolean
         default: true
+      verify_tools:
+        description: Check changed Rust tools before native compilation in this job
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       os:
@@ -64,6 +68,9 @@ on:
         type: string
         default: ''
       cache_focused_outputs:
+        type: boolean
+        default: false
+      verify_tools:
         type: boolean
         default: false
       rebuild_application:
@@ -140,7 +147,7 @@ jobs:
       - uses: ./.github/actions/xtask
         id: tools
         with:
-          verify: ${{ inputs.lane == 'all' || inputs.lane == 'core' }}
+          verify: ${{ inputs.verify_tools || inputs.lane == 'all' || inputs.lane == 'core' }}
           retire-old-tools: 'true'
       - name: Cache verified Cargo downloads
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5

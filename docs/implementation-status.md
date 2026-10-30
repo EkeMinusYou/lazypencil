@@ -8,7 +8,12 @@ ab9ce04の[全体CI 40984270681](https://github.com/EkeMinusYou/lazypencil/actio
 
 全体は16分06秒で10分目標は未達。builder9分56秒・core8分43秒・release4分12秒、通常4分07秒・runtime4分41秒・pixel2分38秒・端末1分14秒・Material1分48秒・source36秒だった。先行image 20261028.0489.1に対し全体builderは20260907.0337.1だったため、その先行成果物を再利用せず`reused:false`とした。同一環境の成功例a00289fとは区別し、SDKの差そのものを今回確認したとはしない。builderのbuild／再現stepは390秒で、先行compile167.164秒、script binding群162.040秒、generated browser群39.144秒を含む。完全cacheは1,112,052,243 byteの転送を含め54秒かかった。待機や圧縮を推測で一括の原因にせず、目的・条件の一致を確認して削減する。
 
-後続の作業ツリーは、捕捉scriptのfile URL素材キー（image／shader／script）とHTTP(S)画像キーへの対応である。キーとJS原文を保持し、コードのネットワーク取得は許さない。再宣言は元のcode namespaceの捕捉素材を優先し、元ファイルやサーバーがなくても再copyできるようにする。両文書版のdry-run・元削除・移動・offline再copy、許可root外・資格情報入り画像URL・remote codeの拒否、異なるcode/output namespaceの単体回帰、実WebGLの4条件・追加12 PNGのgateを準備した。英語ガイドは1.0.53。新しいRust／gateはGHA未検証であり、上記ab9ce04の成功には含めない。
+後続候補f1549a6は、捕捉scriptのfile URL素材キー（image／shader／script）とHTTP(S)画像キーへの対応である。キーとJS原文を保持し、コードのネットワーク取得は許さない。再宣言は元のcode namespaceの捕捉素材を優先し、元ファイルやサーバーがなくても再copyできるようにする。両文書版のdry-run・元削除・移動・offline再copy、許可root外・資格情報入り画像URL・remote codeの拒否、異なるcode/output namespaceの単体回帰、実WebGLの4条件・追加12 PNGのgateを準備した。英語ガイドは1.0.53。[Mac補助ツール 40986766024](https://github.com/EkeMinusYou/lazypencil/actions/runs/40986766024)は全試験・Clippy・原本照合を成功した。アプリの新しいRust／gateはGHA未検証であり、上記ab9ce04の成功には含めない。
+
+続く差分では、importされたgeneratorのURL別名をそのnamespaceへ保持し、rootは素材byte列を共有しても別名を借りないよう整理した。入れ子のgeneratorの元削除・offline再copyと画素を既存sampler targetへ追加する。先行のscript_bindings群は、既定構成の通常検証で既に成功している2並列へ揃える。filter・先行exact再現・元の300秒期限・全workerのjoinと失敗集約は維持する。既存native.ymlのverify_toolsで変更したRust補助の試験／Clippyをアプリ先行と同じjob内で先に行い、別jobでのbootstrapを重ねない。これらは整形・差分検査とactionlintまでで、次の先行で確認する。
+
+<details>
+<summary>data画像とHTTP画像の先行・修正履歴（現在の結果は冒頭ab9ce04）</summary>
 
 ab9ce04の[Mac先行 40983705220](https://github.com/EkeMinusYou/lazypencil/actions/runs/40983705220)は全工程成功した。対象はsampler_sources／assets、全体経過は4分49秒。既定構成のlibrary 201件、assets 23件、sampler_sources 27件（既存ignored 3件は全体runtime側）と対象build／Clippy、新規再現が成功した。data画像の両形式・base64／percent、copy／detach／再copyとtheme／原文保持、元PNG／JPEG削除後の同一raster、通常部品のdata画像を含むscript namespaceと追加manifest付き再copy、不正入力の診断・修復、素材回収で未知mediaを保護する回帰を含む。
 
@@ -27,6 +32,8 @@ a00289fの[Mac先行 40979332548](https://github.com/EkeMinusYou/lazypencil/acti
 後続候補58d90d2以降は、通常画像／文字列samplerと生成scriptのPNG／JPEG／WebP data URL対応である。原文とthemeを残し、ネットワークや余分な素材ファイルを使わない。英語ガイドは1.0.52。58d90d2の[Mac補助ツール 40982534055](https://github.com/EkeMinusYou/lazypencil/actions/runs/40982534055)は全試験・Clippy・原本照合を成功した。アプリの確認済み範囲と失敗は冒頭を参照し、a00289fの全体成功には含めない。階層展開で子孫の画像文字列を祖先ごとに複製する処理を整理し、部分成果物の保存keyを既存focus checkpointへ分けた。部分成果物だけで完全cacheのhitを装い、未変更unitの補完を止める条件を避ける。実WebGL比較・20 PNGの共通gate、素材回収の追加回帰と両feature構成の全体成功は引き続き確認する。大きな文字列を多数のinstanceへ展開する場合のメモリ上限、捕捉scriptのfile-URL／HTTP asset key、仕様確認・Mac実端末・最終配布の残件は維持する。
 
 a00289fのsource tar SHA-256は`4b41cc6d148cccfc592ae09c327421324c34249a3c3130613760cdc88799d276`。検証済みprovenanceのsubject、source revision、ci.yml／mainの署名identityとrun 40980024513の対応を照合した。HTTPのlight／darkを含む8条件・16 PNGの比較gateが成功しており、後続data画像の10条件・20 PNGへ拡張する未検証のgateとは区別する。
+
+</details>
 
 ### a00289f以前の経緯（以下は当時の状態）
 
@@ -367,9 +374,9 @@ macOS の常用メモリは `7fe854b` の既存候補で172.03MiB、cached feedb
 
 ### 完成までの順序と概算
 
-1. 準備済みdata画像対応とscript copyの修正をMac先行で確認し、成功後に同じcommitを両feature構成・実WebGL・共通画像gateまで広げる。HTTP画像、TUI送信準備・取消はa00289fで検証済みであり、改めて未実装には戻さない。
-2. 捕捉scriptのfile-URL／HTTP asset keyと、多数のinstanceへ大きな文字列を展開する際のメモリ境界を確認・実装する。非local画像一般が未対応という古い扱いはしない。
-3. 既存ログに基づき、部分／完全成果物の再利用と長い先行試験の配置を整理する。先行6分24秒・全体13分32秒を直近の実測とし、全体10分以内は未達として改善する。Cargoの鮮度判定、各feature・検証目的・元の期限と最終gateは維持する。
+1. 捕捉scriptのfile-URL／HTTP asset keyの候補と、入れ子のnamespace所有の修正をMac先行で確認し、成功後に同じcommitを全体へ広げる。data画像はab9ce04の完全CI、HTTP画像とTUI送信準備・取消はa00289fで検証済みであり、改めて未実装には戻さない。
+2. 多数のinstanceへ大きな文字列を展開する際のメモリ境界を確認・実装する。非local画像一般が未対応という古い扱いはしない。
+3. 既存ログに基づき、部分／完全成果物の再利用と長い先行試験の配置を整理する。先行4分49秒・全体16分06秒を直近の実測とし、全体10分以内は未達として改善する。image不一致による正当な再buildと、同一条件の不要な再buildを分ける。Cargoの鮮度判定、各feature・検証目的・元の期限と最終gateは維持する。
 4. 公開仕様に意味の記載がないdevice presetとfill-stage object samplingを確認し、推測を本家互換として実装済みにしない。
 5. 不足するMac実端末・接続・性能の受け入れ、保証環境と配布候補、旧参照素材の履歴の扱い、文書を確定する。既に有効な同条件の証拠を再利用する。
 

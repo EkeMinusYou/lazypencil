@@ -93,7 +93,14 @@ fn browser_lanes_preserve_every_existing_target_once_with_bounded_parallelism() 
                 _ => 3,
             }
         );
-        assert_eq!(command[2], "--test-threads=1");
+        assert_eq!(
+            command[2],
+            if index == 2 {
+                "--test-threads=2"
+            } else {
+                "--test-threads=1"
+            }
+        );
     }
 }
 

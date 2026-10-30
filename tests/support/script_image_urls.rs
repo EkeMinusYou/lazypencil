@@ -162,6 +162,85 @@ fn script_image_url_keys_keep_code_and_captured_bytes_after_source_removal_move_
 }
 
 #[test]
+fn imported_generator_url_aliases_stay_in_their_own_captured_namespace() {
+    for version in ["2.19", "2.21"] {
+        let server = Server::new();
+        let (temp, store, uri, _, _) = fixture(version, Some(&server));
+        let library = temp.path().join("project/library");
+        let path = library.join("library.pen");
+        let mut document: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        document["imports"] = json!({"nested":"nested.pen"});
+        write(&path, document);
+        fs::write(library.join("generator #1.js"), format!("/** @schema {version} */\nreturn [{{id:'nested',type:'ref',ref:'nested:generator'}}];")).unwrap();
+        let output = json!([{"id":"image","type":"rectangle","width":40,"height":20,"fill":{"type":"image","url":uri}}]);
+        fs::write(
+            library.join("nested.js"),
+            format!("/** @schema {version} */\nreturn {output};"),
+        )
+        .unwrap();
+        write(
+            &library.join("nested.pen"),
+            json!({"version":version,"children":[
+                {"id":"generator","type":"script","reusable":true,"width":40,"height":20,"scriptUri":"nested.js"},
+                {"id":"declared","type":"rectangle","reusable":true,"width":40,"height":20,"fill":{"type":"image","url":uri}}
+            ]}),
+        );
+        #[cfg(feature = "rendering")]
+        let before = raster(&store);
+        let copied = apply(
+            &store,
+            json!([
+                {"op":"import_component","source":{"library_alias":"ui","node_id":"generator"},"mode":"copy"},
+                {"op":"delete","target":"use"},
+                {"op":"remove_import","alias":"ui"}
+            ]),
+            false,
+        );
+        let target = copied["generated_ids"]["0"]["id"].as_str().unwrap();
+        let component = copied["generated_ids"]["0"]["component_id"]
+            .as_str()
+            .unwrap();
+        let document = store.read().unwrap();
+        let bindings =
+            &document.node(component).unwrap()["metadata"]["lazypencil"]["script_bindings"];
+        let key = format!("image:{uri}");
+        let active = bindings["script_namespace"].as_str().unwrap_or("");
+        assert!(
+            bindings["script_scopes"][active]["assets"]
+                .get(&key)
+                .is_none()
+        );
+        assert!(
+            bindings["script_scopes"]
+                .as_object()
+                .unwrap()
+                .values()
+                .any(|scope| scope["assets"].get(&key).is_some())
+        );
+        fs::remove_dir_all(library).unwrap();
+        drop(server);
+        fs::write(
+            temp.path().join("project/lazypencil.toml"),
+            "[runtime.browser]\nnetwork_policy='offline'\n",
+        )
+        .unwrap();
+        #[cfg(feature = "rendering")]
+        assert_eq!(raster(&store), before);
+        apply(
+            &store,
+            json!([
+                {"op":"import_component","source":{"node_id":component},"mode":"copy"},
+                {"op":"delete","target":target}
+            ]),
+            false,
+        );
+        Project::load(&store).unwrap().verify_unchanged().unwrap();
+        #[cfg(feature = "rendering")]
+        assert_eq!(raster(&store), before);
+    }
+}
+
+#[test]
 fn script_asset_url_declarations_do_not_grant_remote_code_or_files_outside_project_roots() {
     for kind in ["image", "script", "shader"] {
         let (temp, store, _, _, _) = fixture("2.21", None);

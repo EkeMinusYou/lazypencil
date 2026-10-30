@@ -203,10 +203,13 @@ pub fn binding_commands(binary: &Path) -> [Vec<String>; 4] {
         "script_copy::",
     ]
     .map(|filter| {
+        // Complete default verification already runs these owned cases with
+        // two harness threads. Retain separate logs and the original filters.
+        let threads = if filter == "script_bindings::" { 2 } else { 1 };
         let mut command = vec![
             binary.to_string_lossy().into_owned(),
             filter.into(),
-            "--test-threads=1".into(),
+            format!("--test-threads={threads}"),
         ];
         if filter == BINDING_REPRODUCTION {
             command.push("--exact".into());

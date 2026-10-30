@@ -342,11 +342,14 @@ impl Copier<'_> {
                     )?)
                 };
                 let target = self.asset(&owner, &source_uri, &kind)?;
-                let explicit = owner == origin
-                    || crate::remote_images::is_http(&uri)
-                    || crate::paths::local_file_url(&uri).is_ok()
-                    || Path::new(&uri).is_absolute();
-                for uri in [relative, explicit.then_some(uri)].into_iter().flatten() {
+                // An imported namespace retains its own URL aliases. The root
+                // manifest still owns its target bytes without borrowing that
+                // namespace's spelling (or conflicting per-document bindings).
+                let relative = relative.or_else(|| (owner != origin).then(|| target.clone()));
+                for uri in [relative, (owner == origin).then_some(uri)]
+                    .into_iter()
+                    .flatten()
+                {
                     let key = super::super::bindings::asset_key(&kind, &uri)?;
                     if let Some(previous) = map.get(&key) {
                         if previous != &target {
