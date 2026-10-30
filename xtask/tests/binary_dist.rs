@@ -8,6 +8,8 @@ use std::{fs, io::Cursor, path::Path};
 const REVISION: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const NOTICES: &[&str] = &[
     "licenses/rust/RUST-NOTICES.txt",
+    "licenses/native/skcms/LICENSE",
+    "licenses/native/skcms/NOTICE.txt",
     "licenses/shader-preprocessor/packages/RUST-NOTICES.txt",
     "licenses/shader-preprocessor/toolchain/inventory/TOOLCHAIN-NOTICES.txt",
     "quickjs/QUICKJS-NOTICES.txt",
@@ -184,6 +186,8 @@ fn candidates_reject_changed_sources_binaries_missing_notices_and_self_consisten
         "map",
         "notice",
         "missing-notice",
+        "missing-skcms-license",
+        "missing-skcms-provenance",
         "unlisted",
         "separator-alias",
     ] {
@@ -208,6 +212,13 @@ fn candidates_reject_changed_sources_binaries_missing_notices_and_self_consisten
             }
             "missing-notice" => {
                 fs::remove_file(arguments.evidence.join(NOTICES[0])).unwrap();
+            }
+            "missing-skcms-license" => {
+                fs::remove_file(arguments.evidence.join("licenses/native/skcms/LICENSE")).unwrap();
+            }
+            "missing-skcms-provenance" => {
+                fs::remove_file(arguments.evidence.join("licenses/native/skcms/NOTICE.txt"))
+                    .unwrap();
             }
             "unlisted" => {
                 fs::write(arguments.evidence.join("extra"), "Unlisted").unwrap();

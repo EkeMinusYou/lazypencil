@@ -8,6 +8,8 @@ const SOURCE: &str = "source/lazypencil-source.tar.gz";
 const EXECUTABLE: &str = "bin/lazypencil";
 const NOTICE_FILES: &[&str] = &[
     "licenses/rust/RUST-NOTICES.txt",
+    "licenses/native/skcms/LICENSE",
+    "licenses/native/skcms/NOTICE.txt",
     "licenses/shader-preprocessor/packages/RUST-NOTICES.txt",
     "licenses/shader-preprocessor/toolchain/inventory/TOOLCHAIN-NOTICES.txt",
     "quickjs/QUICKJS-NOTICES.txt",

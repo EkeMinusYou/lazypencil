@@ -1,0 +1,25 @@
+SkCMS original license
+======================
+
+The original, unmodified BSD license is included beside this notice as LICENSE.
+Its SHA-256 is:
+e59bb5c5c6ba426a9ac4ba9fe667ad14c5166b12aa25be8af1d122b14fbe2e36
+
+Upstream repository: https://skia.googlesource.com/skcms
+Revision: 6010f3583977f651726b24228f7e6a377e47c58d
+Original license:
+https://skia.googlesource.com/skcms/+/6010f3583977f651726b24228f7e6a377e47c58d/LICENSE
+
+The current rust-skia Skia snapshot m153-0.101.2, commit
+61e7ca4e99062cdd0ab69445d5963fb3365778f6, records this revision in
+modules/skcms/README.chromium and modules/skcms/version.sha1. That snapshot
+contains the SkCMS sources but omits their standalone LICENSE. The original
+license is retained here in addition to the source copyright comments and
+Skia notices collected in build evidence. Seven observed SkCMS source/header
+input hashes in the reviewed build inventory matched that Skia snapshot.
+Future Skia/SkCMS upgrades must
+review this correspondence and retain the applicable original terms.
+
+This notice does not replace the original license or claim that every SkCMS
+function remains live after linking. The release link map includes the
+libskcms.skcms.o and libskcms.skcms_TransformBaseline.o object declarations.
