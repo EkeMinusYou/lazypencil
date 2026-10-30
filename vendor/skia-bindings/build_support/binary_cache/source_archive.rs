@@ -27,9 +27,11 @@ pub fn unpack<R: io::Read>(
     }
     directories.sort_by(|a, b| b.path_bytes().cmp(&a.path_bytes()));
     for mut directory in directories {
+        if !directory.unpack_in(destination)? {
+            continue;
+        }
         #[cfg(unix)]
-        let archived = {
-            let path = destination.join(directory.path()?);
+        {
             let mtime = std::time::SystemTime::UNIX_EPOCH
                 .checked_add(std::time::Duration::from_secs(
                     directory.header().mtime()?.max(1),
@@ -37,12 +39,9 @@ pub fn unpack<R: io::Read>(
                 .ok_or_else(|| {
                     io::Error::new(io::ErrorKind::InvalidData, "Invalid directory mtime")
                 })?;
-            (path, mtime)
-        };
-        directory.unpack_in(destination)?;
-        #[cfg(unix)]
-        std::fs::File::open(archived.0)?
-            .set_times(std::fs::FileTimes::new().set_modified(archived.1))?;
+            std::fs::File::open(destination.join(directory.path()?))?
+                .set_times(std::fs::FileTimes::new().set_modified(mtime))?;
+        }
     }
     Ok(())
 }

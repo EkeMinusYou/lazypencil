@@ -435,7 +435,7 @@ TUI では、表示範囲とズームに応じた解像度で描画する。パ�
 
 画像バックエンドは Kitty Graphics Protocol と Sixel の両方を初期リリースに含める。最初に Kitty を実装し、続いて Sixel を実装する。端末の応答で利用可否を調べ、設定で上書きできるようにする。iTerm2 固有の画像プロトコルは追加バックエンドとして分離する。[Kitty の仕様](https://sw.kovidgoyal.net/kitty/graphics-protocol/)、[Microsoft の Sixel 対応紹介](https://devblogs.microsoft.com/commandline/windows-terminal-preview-1-22-release/)、[iTerm2 の画像表示](https://iterm2.com/documentation-images.html)
 
-非対応端末では、TUI の会話・ノード一覧と画像ファイル出力を利用できるようにし、外部ビューアを開く操作を提供する。外部ビューアにはキーボードによるパン・ズームを保証しない。端末内の高精細プレビューを保証する端末・バージョンは、実機試験を通した一覧で示す。
+非対応端末では、TUI の会話・ノード一覧と画像ファイル出力を利用できるようにし、外部ビューアを開く操作を提供する。外部ビューアにはキーボードによるパン・ズームを保証しない。初回の端末基準は、利用者によるMac実機の受け入れ報告と導入版の観測を基に、直接ローカル接続のKitty 0.49.2（Kitty protocol）とWezTerm `20240203-110809-5046fc22`（Sixel）に定める。報告時に版を独立記録したとはせず、根拠と範囲を[端末仕様](tui.md#initial-terminal-support)へ記録する。未確認の他版・入力方式・tmux／SSHへ保証を広げない。
 
 tmux・SSH 経由の画像表示は別の互換試験項目とし、端末単体で表示できることから対応を推定しない。
 
@@ -640,7 +640,7 @@ Rust、Skia CPU・SkParagraph、MIT ライセンス、標準フォントの Noto
 - 依存は Cargo.toml／Cargo.lock、Chromium156.0.8078.47と取得元・hashは runtime manifest に記録済み。MCP は2025-11-25を広告する。更新時は影響する接続・描画条件を検証する。
 - Noto Sans JP は Google Fonts revision66a36c8c94b1a5d992ee4e7f392fccfe4945767c の可変 wght TTF を同梱し、元の OFL・metadata・hashを保持する。追加フォントは設定・CLIから利用可能。ファミリー単位の遅延読み込みと文字不足に応じたfallback登録は9d6613bで検証済み。再現用font lockfileも実装し、JSON版1のschema・明示取得・revision付き更新・共通照合を[フォント仕様](fonts.md#reproducibility-lockfile)へ定めた。最終CIと公開受け入れは[現状](implementation-status.md#current-status)で区別する。
 - JavaScript／browser／shader／cache／会話保持の設定と上限は実装済み。[設定](configuration.md) と各サービスの Rust 定義を正本とする。画像入力の既定は8枚・単体20MiB・合計各50MiB・16Mi画素で、ユーザーの`[attachments]`設定と明示的な送信用縮小をc11a0f9の完全CIで検証済み。単体デコーダーの安全上限と設定可能な範囲は [画像入力](image-attachments.md) に明記する。
-- 最低macOSは15.7.9に固定した。性能のcold／warm条件とChromium別予算は上記に定め、数値gateをGHAで確認した。保証端末と実端末の性能、配布候補の最終受け入れは残る。Macの対象機能とOS／CPU以外の元の完成条件は変えない。
+- 最低macOSは15.7.9に固定した。性能のcold／warm条件とChromium別予算は上記に定め、数値gateをGHAで確認した。端末基準は上記Kitty／WezTermに定め、実端末の操作とSixelの体感速度・初期表示は利用者の報告で受け入れ済みとする。実端末の数値を計測したとはせず、配布候補の最終公開判定は残る。Macの対象機能とOS／CPU以外の元の完成条件は変えない。
 - 本家との総合デザイン品質比較は当初から保留。許諾を確認していない本家出力を取得・配布する前提にはしない。
 
 部品アドレス・編集バッチ・計算結果・画像添付は個別仕様へ接続済み。実装済み、個別条件で検証済み、公開受け入れ済みを区別する。すべての詳細を新たな設計待ちに戻さず、[現在の残件](implementation-status.md#remaining-work) から完成を進める。

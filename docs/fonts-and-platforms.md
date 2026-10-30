@@ -1,6 +1,6 @@
 # lazypencil フォントと対応環境
 
-更新日: 2026-10-30（現行コードと既存検証記録の照合）
+更新日: 2026-10-31（現行コードと既存検証記録の照合）
 
 状態: 初回はmacOS Apple Siliconのみを対象とし、Linux x64／arm64とWindowsは後日対応として既存実装を保持する。標準フォントに Noto Sans JP、端末画像に Kitty Graphics Protocol と Sixel を採用する。Noto Sans JP の配布データは版・ハッシュを固定済み。ユーザーによるフォント追加は `--font`、TTF・OTF・TTC・OTC の読み取りと各フェイスの取得、基本のフォールバックを実装・試験した。プロジェクト設定のファイル・検索先・既定書体・任意代替列・言語も CLI・MCP・TUI で共通化した。ユーザー共通の `config.toml` と項目ごとのプロジェクト上書きも実装した。可変wghtと指定のカラー絵文字fixture、ファミリー単位の遅延読み込みは検証済み。再現用lockfileも実装し、下記の条件で検証した。任意の絵文字列・全可変軸・OSフォントの自動変更監視・Macの最終受け入れは残る。[現在の実装と検証](fonts.md)、[設定](configuration.md)
 
@@ -53,7 +53,7 @@ TUI の会話・メニューの文字は端末のフォントに従う。デザ�
 
 初回リリースはmacOS Apple Silicon（arm64）のみとする。CLI・MCP・TUI、JavaScript／Webページ／GLSL、フォント・保存・AI接続・画像貼付・性能・配布の元の完成条件はMacで満たす。
 
-最低macOSは15.7.9（24G830）に固定する。51ed911の[統合CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/41031176732)では、15.7.9で既定構成のbuild・core・実Chromium／WebGLを含むruntime、15.8.2（24H232）で通常consumerとreleaseが成功した。同じrelease本体のSHA-256は`b0297f24…07b0759`で、利用者向け3cc43da候補と一致する。runner名からOS版を推測せず、各jobのOperating System記録とconsumerの実行host記録を用いる。Mach-Oのdeployment宣言11.0は、それ以前のmacOSを保証する根拠にしない。保証する物理端末・Kitty／Sixelの最終受け入れは別途残る。
+最低macOSは15.7.9（24G830）に固定する。51ed911の[統合CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/41031176732)では、15.7.9で既定構成のbuild・core・実Chromium／WebGLを含むruntime、15.8.2（24H232）で通常consumerとreleaseが成功した。同じrelease本体のSHA-256は`b0297f24…07b0759`で、利用者向け3cc43da候補と一致する。runner名からOS版を推測せず、各jobのOperating System記録とconsumerの実行host記録を用いる。Mach-Oのdeployment宣言11.0は、それ以前のmacOSを保証する根拠にしない。初回の端末基準はKitty 0.49.2／Kitty protocolとWezTerm `20240203-110809-5046fc22`／Sixelのローカル直接接続とする。利用者の実機受け入れと、その後の導入版の観測を区別して[端末仕様](tui.md#initial-terminal-support)へ記録した。
 
 Linux x64／arm64とWindowsは後日対応とし、既存コード・runtime catalogue・テストfixtureと明示診断経路を保持する。通常CIではLinuxアプリをビルドせず、Linuxのディストリビューション／ABI条件は初回の完成条件に含めない。Intel Macは対象外。依存ライブラリのプリビルドが存在するだけで対応済みとは扱わない。
 
@@ -69,7 +69,7 @@ P0 でクロスプラットフォーム上の問題が判明した場合は、�
 
 ### 現在の検証根拠
 
-初回Macの全工程成功は[04c610eの統合CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/41052187835)で確認した。両feature構成・通常／動的描画・フォント・実PTY・releaseと数値性能gateを含み、同じ本体のnative clipboard・サブスクリプション・利用者確認は既存の成功を再利用する。最低OSは上記の実行結果から固定した。利用者による日本語入力・候補／カーソル・Preview操作・resize・貼り付けの5項目は受け入れ済みだが、修正後Kittyの画像欠け・点滅、Mac Sixelと保証端末の確定、最終公開は残る。標準Mac VMではKittyのOpenGL初期化が失敗する。旧3環境の[c9ffb37](https://github.com/EkeMinusYou/lazypencil/actions/runs/40679529757)とLinuxの実Kitty／Sixel画像は履歴であり、Macの実画面の受け入れを代替しない。[現在の残件](implementation-status.md#remaining-work)
+直近の初回Macの全工程成功は[e1a90fdの統合CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/41077139807)で確認した。両feature構成・通常／動的描画・フォント・実PTY・release・補完と署名付きsourceを含み、既存のnative clipboard・サブスクリプションとaeb174bの数値性能gateの成功を保持する。最低OSは上記の実行結果から固定した。利用者による日本語入力・候補／カーソル・Preview操作・resize・貼り付けの5項目、その後のKittyの画像欠け・点滅修正、WezTerm／Sixelの応答・初期表示は受け入れ済みである。端末基準は上記2版に定めた。標準Mac VMのKittyのOpenGL初期化失敗は、利用者の実画面受け入れを取り消すものではない。旧3環境の[c9ffb37](https://github.com/EkeMinusYou/lazypencil/actions/runs/40679529757)とLinuxの実Kitty／Sixel画像は履歴として保持する。仕様2点と最終公開判定は[現在の残件](implementation-status.md#remaining-work)で区別する。
 
 <details>
 <summary>初期ローカル／コンテナー検証の履歴（当時の source に限定）</summary>

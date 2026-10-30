@@ -4,7 +4,17 @@
 
 ## 現在の状態（2026-10-31）
 
-直近CIのcold build後に繰り返したSkia再buildを調べ、vendorのsource展開が`skia/include`をCargo開始時刻より新しいdirectory mtimeのまま残すことと、tar 0.4.46がdirectory mtimeを復元しないことを確認した。Unixでarchive本来のdirectory mtimeを子の展開後に復元する修正を準備した。Cargoの`rerun-if-changed`・fingerprint・cache時刻やheaderの監視は変更しない。既存のRust補助試験へ、旧展開での再buildの再現、修正後のfresh判定と実header変更後の生成コードを実Cargoで確かめる回帰を追加した。最初にMacの補助workflowで確認し、重いnative buildや同条件の完了済み試験をローカルでは繰り返さない。この段落の修正はまだGHA未検証であり、以下のe1a90fdの成功には含めない。
+初回の端末基準は、利用者の受け入れ報告と導入版の観測を基に、Macのローカル直接接続におけるKitty 0.49.2／Kitty protocolとWezTerm `20240203-110809-5046fc22`／Sixelに定めた。2026-10-31の再観測でも導入版は同じで、本体ファイルのmtimeはそれぞれ2026-10-01／2024-02-04だった。元の試験時に版を独立記録したという主張にはせず、Mac実機の操作・Sixelの体感性能は利用者の報告、数値性能は基準GHAの元のgateで受け入れる。端末選定と受け入れ済みの実画面項目を残件から外し、未確認の他版・入力方式・tmux／SSHへ保証を広げない。[範囲と根拠](tui.md#initial-terminal-support)
+
+bb4261eでは、Skia sourceの展開後に`skia/include`のdirectory mtimeがCargo開始より新しくなる問題を修正した。tar 0.4.46がdirectory mtimeを復元しないため、Unixで子の展開後にarchive本来の時刻を復元する。Cargoの`rerun-if-changed`・fingerprint・cache時刻やheaderの監視は変えない。[Mac補助41085046254](https://github.com/EkeMinusYou/lazypencil/actions/runs/41085046254)で、旧展開の不要な再build、修正後のfresh判定と、実header変更後の生成コードの更新を実Cargoで検証した。既存のroot／infra除外とdirectory属性の回帰も成功した。重いbuildはGHAのみで行った。
+
+同sourceの[全体41085635166](https://github.com/EkeMinusYou/lazypencil/actions/runs/41085635166)はattempt 1で全工程成功した。既定のcatalog確認はCargo 0.95秒（command全体1.04秒）、release後のCargo確認は0.97秒（全体1.06秒）となり、両方でskia-bindings／skia-safeがfreshだった。以前のSkia include更新による2分50秒〜3分01秒の再buildを除いた。初回対象compile10分01秒・release13分54秒、残るintegration target122.34秒は別に必要で、最終Cargo JSON411 artifactの365件がfresh、46件が本体library-test／integration targetだった。全工程ゼロcompileとはしない。全体は41分で、core／builderのrunner待ちは378／375秒、runtime／normalは604／603秒、terminalは617秒だった。全5 consumer、両構成・Clippy・通常開発build、元の共通画像gate・監査・署名付きsourceを維持し、再試行は行っていない。このcold／長い割当待ちを含む実行を10分以内とはせず、同条件の全体CIを追加しない。
+
+[配布・性能41091988972](https://github.com/EkeMinusYou/lazypencil/actions/runs/41091988972)は6分10秒で成功し、同じrelease出力15ファイルを再利用した。本体はe1a90fd候補と同じSHA-256 `f3a765ff2b2bc55b41f52b5c20e74e6320bb7043d4b9fb5347b2fcd8f3f37de8`で、637ファイルのbb4261e候補archiveは`2b0851b4343f000187e5dc3fdfae5131dfdc2ebaf925d33ef3940936aa485ccf`だった。CI内でsource／signer bb4261e・release-evidence.yml／main・GitHub hosted・run／attempt 1の署名を検証した。このbb4261e archiveをローカルで署名検証したとはせず、e1a90fd archiveへの既存のローカル検証と区別する。隔離candidate smokeの補完3 shellと元のJavaScript 256画素も成功した。
+
+補完追加後の本体に対する未確認だったTUI数値gateを、この配布検証で全試験終了後に一度だけ確認した。macOS15.8.2・image `20261028.0489.1`・3CPU／7GiBで20起動・80操作・100 worker profileを維持した。入力／初回preview最大67.60／323.46ms、最初のfeedback p95 39.88ms（完成画像p95 214.91ms）、通常RSS最大175.58MiB・idle CPU上限0.432%／30.077秒、Chromium込み1203.70MiB・1.391%／30.197秒で全基準を成功した。全試行と両resource群の正常終了・所有子回収も成功した。Kitty PTYの数値であり、WezTermの実表示の数値や単独変更の改善率ではない。[性能の範囲](performance.md)
+
+レビューで追加した、tarが展開を拒否したpathの時刻を触らないguardと、その拒否pathを含む回帰は、上記bb4261eの検証後に準備した。これだけを次のMac補助試験で確認し、成功済みの全体native検証や同一本体の性能計測は繰り返さない。仕様2点は公開資料では未確定のままで、利用者の2026-10-31の指示により公式への公開投稿・メール送信は行わない。同じ送信許可を繰り返し求めず、仕様が確定したという扱いにもしない。
 
 利用者が希望したcompletionはシェルのTab補完であり、TUI内の補完は今回の対象へ加えない。4c1a958で`completions SHELL`と共通の動的補完エンジン、同梱catalogueの候補、値・パスのhint、導入手順・配布README・既存candidate smokeへの検査を追加した。補完は文書・設定・agent・Chromium・lockの準備前に終了する。e1a90fdの[Mac core先行41076121661](https://github.com/EkeMinusYou/lazypencil/actions/runs/41076121661)は成功し、補完3試験は1.70秒、続く通常構成でも1.81秒で成功した。Bash・Zsh・Fishの生成hookを実shellで読み込み、深いサブコマンド、固定値・同梱catalogue、日本語・空白のあるpath、設定・文書・data・lockへの非接触を確認した。通常構成ではTUIの画像protocol候補も確認した。[導入手順](completions.md)と[設計](design.md#シェルのtab補完)に対応範囲を反映した。
 
@@ -512,7 +522,7 @@ cbc868bでは、bindings v3に元URIのhash、input context v2に元入力のhas
 </details>
 
 
-- TUIの保持描画経路と別bound MCPによる同じ認証profileの同時利用はe786e3eで検証済み。以前の「二つ目の独立ownerを拒否する」という制約は解消した。可視TUIでの実IME等の確認は下記に残す。
+- TUIの保持描画経路と別bound MCPによる同じ認証profileの同時利用はe786e3eで検証済み。以前の「二つ目の独立ownerを拒否する」という制約は解消した。可視TUIの日本語・操作・貼り付けと修正後のKitty／Sixelの受け入れは、冒頭の利用者報告と端末基準を正本とする。
 
 ab8c785の既定構成builderは7分42秒、通常consumer3分24秒、pixel consumer3分01秒、runtime consumer3分07秒、source gate32秒だった。初回305198bは追加した単体試験補助のString型不一致で停止したため成功扱いせず、core・releaseの完了後に修正した。既存bindings単体試験をcfg(test)の別ファイルへ分け、以後の試験補助だけの修正が本体のcompiler入力に混ざることを防ぐ。署名済みsourceは1,186ファイル・13,275,319バイト、SHA-256 `5254036df2833e5e628a2fcfb9680eff2272cd1be95433e91556a55ff5e0fdc9`。検証後の差分は文書更新と、PNG報告用revisionを実行時環境から読む試験補助1行のみで、同条件のnative全検証は重ねない。この最終の補助変更自体のremote実行とは区別する。
 
@@ -526,9 +536,9 @@ HTTP(S)文字列samplerはa00289f、未参照のproject素材回収は9865944、
 
 - native通知の追加レビューでは、6badaf5候補の収集済みSkia source／inline headerコメント3962件が全て可読通知に残り、原文46ファイルがpackage manifestへ対応することを照合した。FTL・HarfBuzz・ICUの辞書／追加条件、JPEG／PNG／WebP・Wuffs・zlib・Khronosと、実link mapのring／QuickJS／Skia／compiler_builtinsの対応を確認した。これは全commentの完全なライセンス分類やlive codeの同定ではない。SDK等の入力追跡不足は3111343で修正し、7b6739cでSPDX原文・通知comment hashとNeon原文通知の対応も実候補で確認済みとなった。元pathと解決先を区別し、欠損は拒否し、同sizeの内容変更もhashへ反映する。SDK本文を通知束へ複製しない。入力の識別・通知保持と最終公開時の適用確認は区別する。
 - 配布素材の適用確認では、6badaf5候補のasset inventoryと現sourceを照合し、Noto Sans JPの未変更font／OFL、Lucide geometry／ISC・Feather由来MITの4 hashが一致した。OFLの同梱条件と名前・単独販売の制約、両icon通知の保持を原文で確認した。別途取得のiconはgeometry／fontを本体へ同梱せず、元licenseと出自を保持する。MPL対象option-extは変更なしの対応source archive・原文・取得案内を配布に含む。同梱素材のこの範囲は確認済みとし、native inline header／system入力などの最終適用確認や、正式公開全体とは区別する。
-- 最低macOSは実測結果に基づき15.7.9へ固定した。保証端末は引き続き確定し、MacでKitty／Sixel両方と、保証する端末による画像・日本語・キーボード操作の条件を維持する。利用者が報告したKittyの日本語確定・候補／カーソル位置・Preview操作・resize・clipboard添付と、その後のKitty修正候補の動作は受け入れ済みとする。WezTermのSixelも基本の表示・ズームは利用者報告があり、修正後の応答・初期表示は冒頭の状態を参照する。未申告の入力方式と、宣言するtmux／SSHの範囲を検証済みへ広げない。
+- 最低macOSは実測結果に基づき15.7.9へ固定した。初回端末の基準は冒頭のKitty／WezTermとし、MacでKitty／Sixel両方と画像・日本語・キーボード操作の条件を維持する。利用者が報告したKittyの日本語確定・候補／カーソル位置・Preview操作・resize・clipboard添付と、その後のKitty修正候補の動作、WezTerm／Sixelの応答・初期表示は受け入れ済みである。未申告の入力方式と、tmux／SSHの範囲を検証済みへ広げない。
 - Codex／Claudeのサブスクリプション経路は画像付き実編集とguide／style取得を確認済み。2026-10-30の決定により、この成功を実接続の利用確認とし、Claude APIなどAPIキー経路の追加実接続は初回の必須残件から除く。API接続の実装・認証経路の区別・既存の自動試験は維持し、未確認の組合せを検証済みと表示しない。Codex API／自作project guide／初期画像添付の既存成功も保持する。Mac実端末は利用者が確認する方針へ更新した。
-- 定義したcold/warm・基準環境とChromium別予算の数値gateは446aa94で成功した。実端末の性能、最終配布候補の環境・署名・元のnotice／ソース提供条件は引き続き確認する。OS再起動直後の測定を実施済みとはしない。過去の同条件の有効な証拠は再利用する。
+- 定義したcold/warm・基準環境とChromium別予算の数値gateは446aa94とaeb174bで成功した。実端末の操作・Sixelの体感性能は利用者の報告で受け入れ済みであり、物理端末の数値測定やOS再起動直後の測定を実施済みとはしない。e1a90fd候補の環境・署名・元のnotice／ソース提供条件は冒頭の配布検証と既存のbounded reviewで照合済み。正式版の最終公開判定とは区別し、過去の同条件の有効な証拠を再利用する。
 - 旧PNG11点・派生JSON3点は、2026-10-30の承認に基づき公開mainの全履歴から除去した。559コミットの対象外全ファイル・内容・モードとHEAD treeの一致、全新参照から14パス・17 blob版への到達不能を確認した。履歴整理前の1,225 artifact・158 sourceに除去前source・不明sourceは0件だった。過去配布の判断やGitHub保持objectの物理消去は別である。ローカル全体GCは対象外の復旧データも巻き込むため実行せず、reflog等は保全した。[根拠](design-guidance.md#pencil-の-skill-とライセンス)
 
 ### 既知の障害と、完了扱いしないこと
@@ -549,9 +559,9 @@ macOSの最新の通常bound観測は04c610eで最大184.91MiB、warm feedback p
 
 1. CI配置と10分目標の対象確認は0d36cd0の全体8分44秒で完了した。部分／完全成果物の再利用、profile／通常consumerの並列化、全結果回収と失敗保持、HTTP切断観測も検証済み。今後は必要な変更に対する通常CIで観測し、同じ条件の先行・全体・性能計測を重ねない。cold cacheや実compiler入力変更時にも必ず同じ時間になる保証とは区別し、Cargoの鮮度判定、各feature・検証目的・元の期限と最終gateを維持する。
 2. 公開仕様に意味の記載がないdevice presetとfill-stage object samplingを確認し、推測を本家互換として実装済みにしない。
-3. 不足するMac実端末・性能の受け入れ、保証環境と配布候補、文書を確定する。Kittyの報告済み5項目、両サブスクリプション、Codex API／自作guideを含む有効な同条件の証拠を再利用する。旧参照素材の公開履歴削除は完了しており、未実施へ戻さない。
+3. 仕様確認後の最終配布候補・版と公開文書を確定する。端末基準は冒頭のKitty／WezTermに定め、報告済みの実画面・体感性能、両サブスクリプション、Codex API／自作guideを含む有効な同条件の証拠を再利用する。旧参照素材の公開履歴削除は完了しており、未実施へ戻さない。
 
-初回Mac Apple Siliconのみで、現在の残件に対する暫定概算は5〜10実働日程度とする。仕様確認・実機環境確保・権利処理の待ち時間は別で、完成日の確約には使わない。旧3環境時代の8〜15日や、解消済みの同時認証・追加フォント・素材回収・font lockfileを含む古い概算は現在の残工数へ加算しない。Linux／Windows／Intel Macを初回へ戻さず、機能・互換性・性能・配布の元の完成条件は維持する。
+当時の暫定概算5〜10実働日は、現在は受け入れ済みの実端末確認も含んでいたため、現在の確定残工数とはしない。仕様2点の回答によって必要な実装が変わるため、その実装工数は回答後に算出する。仕様確認などの外部待ちと実働を分け、解消済みの同時認証・追加フォント・素材回収・font lockfile・実端末項目を加算しない。Linux／Windows／Intel Macを初回へ戻さず、機能・互換性・性能・配布の元の完成条件は維持する。
 
 
 <details>

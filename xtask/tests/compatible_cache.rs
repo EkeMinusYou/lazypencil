@@ -42,6 +42,18 @@ fn skia_source_fixture() -> Vec<u8> {
             .append_data(&mut header, path, bytes.as_bytes())
             .unwrap();
     }
+    // A raw header exercises tar's rejected-path result, which append_data
+    // deliberately refuses to construct. It must not restore metadata outside
+    // the extraction root after unpack_in returns false.
+    let mut rejected = tar::Header::new_gnu();
+    rejected.set_entry_type(tar::EntryType::Directory);
+    rejected.set_mode(0o755);
+    rejected.set_mtime(1_600_000_000);
+    rejected.set_size(0);
+    let path = b"skia/../../outside";
+    rejected.as_mut_bytes()[..path.len()].copy_from_slice(path);
+    rejected.set_cksum();
+    archive.append(&rejected, std::io::empty()).unwrap();
     archive.into_inner().unwrap()
 }
 
@@ -49,17 +61,22 @@ fn skia_source_fixture() -> Vec<u8> {
 #[cfg(unix)]
 fn skia_source_extraction_preserves_directory_metadata_and_existing_filters() {
     let temp = tempfile::tempdir().unwrap();
+    let destination = temp.path().join("destination");
+    fs::create_dir(&destination).unwrap();
+    let outside = temp.path().join("outside");
+    fs::create_dir(&outside).unwrap();
+    let outside_mtime = fs::metadata(&outside).unwrap().modified().unwrap();
     let mut archive = tar::Archive::new(std::io::Cursor::new(skia_source_fixture()));
     source_archive::unpack(
         &mut archive,
-        temp.path(),
+        &destination,
         std::path::Path::new("skia"),
         |path| !path.starts_with("infra"),
     )
     .unwrap();
     for path in ["skia", "skia/include", "skia/include/empty/nested"] {
         assert_eq!(
-            fs::metadata(temp.path().join(path))
+            fs::metadata(destination.join(path))
                 .unwrap()
                 .modified()
                 .unwrap(),
@@ -68,11 +85,15 @@ fn skia_source_extraction_preserves_directory_metadata_and_existing_filters() {
         );
     }
     assert_eq!(
-        fs::read(temp.path().join("skia/include/value.h")).unwrap(),
+        fs::read(destination.join("skia/include/value.h")).unwrap(),
         b"1"
     );
-    assert!(!temp.path().join("skia/infra").exists());
-    assert!(!temp.path().join("other-root").exists());
+    assert!(!destination.join("skia/infra").exists());
+    assert!(!destination.join("other-root").exists());
+    assert_eq!(
+        fs::metadata(&outside).unwrap().modified().unwrap(),
+        outside_mtime
+    );
 }
 
 #[test]
