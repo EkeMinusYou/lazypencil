@@ -4,6 +4,8 @@
 
 ## 現在の状態（2026-10-30）
 
+3111343の[Mac補助41057383188](https://github.com/EkeMinusYou/lazypencil/actions/runs/41057383188)は全試験・Clippy・原本照合を成功し、[配布検証41057871078](https://github.com/EkeMinusYou/lazypencil/actions/runs/41057871078)も7分24秒で成功した。Skia inventoryに、従来は件数だけだった外部header1575件の宣言／解決path・size・SHA-256を保持した。実候補からのinventoryと配布資料は全byte一致し、Apple SDK1547件・Clang resource header28件、解決先1574個を確認した。635ファイルの構成は旧候補と同じで、SDK本文を追加同梱していない。可読Skia通知のhashも旧候補と一致する。releaseの15ファイルとCargo全368 artifactを再利用し、本体は`b0297f24…07b0759`のままだった。候補archive SHA-256 `02f5b478a7b4434aff340f05d0caf322ae559042f329619395b34a4df53acec8`、source／signer 3111343・release-evidence.yml／main・run／attempt 1を、取得archiveへのローカル署名検証で照合した。補助側だけの変更であり、0d36cd0の全体CIと04c610eの性能成功は再利用する。入力追跡の不足を解消した結果であって、未確認のheader利用条件・実画面・互換性2点や正式公開まで完了したとはしない。
+
 0d36cd0の[全体CI41054850254](https://github.com/EkeMinusYou/lazypencil/actions/runs/41054850254)は8分44秒で全工程成功し、この条件で10分以内を確認した。試験・期限・全5 consumer・両Clippy・通常開発build・元の共有画像gate・署名付きsourceを維持した。長いruntime／normal／pixelsは共有build終了3〜7秒後に開始し、Materialの後に実行するterminalの開始待ちは8秒だった。build3分04秒、core7分31秒、release2分06秒、runtime4分03秒・normal3分37秒・pixels2分53秒・Material2分07秒・terminal1分17秒、source35秒。前回11分29秒との差は2分45秒だが、変更入力・cacheの温まり方や性能計測の選択も異なり、配置変更だけの効果とはしない。同条件の反復や新しい全体CIは追加しない。
 
 共有buildは04c610eの322ファイルを失効0件で復元し、Cargo JSON全408 artifactがfreshだった。releaseも検査済み15ファイルを再利用した。coreは918ファイルを失効0件で復元したが、別feature構成の依存成果物が既定構成の依存cacheに不足しており、Cargoのtest build119.78秒を含む。全構成の再compileが0件とはしない。性能入力は未変更のためplanはmeasure_tui=falseを選び、同じ本体の04c610eの数値gate成功を再利用した。取得した1231ファイルのsource archiveはSHA-256 `bcb7a26b68e85d2a2c1c4a0c263bf0deac9abfe7210541f088137a011a5b400d`がCI記録と一致し、ローカルでもgh attestation verifyでsource／signer 0d36cd0・ci.yml／main・GitHub hostedを指定して署名検証した。正式版の公開・実画面の残件・互換性2点を完了扱いにはしない。
@@ -494,7 +496,7 @@ HTTP(S)文字列samplerはa00289f、未参照のproject素材回収は9865944、
 
 公開前の確認・決定：
 
-- native通知の追加レビューでは、6badaf5候補の収集済みSkia source／inline headerコメント3962件が全て可読通知に残り、原文46ファイルがpackage manifestへ対応することを照合した。FTL・HarfBuzz・ICUの辞書／追加条件、JPEG／PNG／WebP・Wuffs・zlib・Khronosと、実link mapのring／QuickJS／Skia／compiler_builtinsの対応を確認した。これは全commentの完全なライセンス分類やlive codeの同定ではない。別のSDK等のheader1575件は件数しか記録しておらず、後から入力を照合できないため、既存inventoryへ宣言path・解決path・size・hashだけを追加する。SDK本文は通知束へ複製しない。欠損・同sizeの変更・SDK symlinkの解決先と本文非同梱を既存Rust fixtureで検査し、Mac補助・実配布経路で確認する。新しい全体CIや同じ性能測定は重ねない。
+- native通知の追加レビューでは、6badaf5候補の収集済みSkia source／inline headerコメント3962件が全て可読通知に残り、原文46ファイルがpackage manifestへ対応することを照合した。FTL・HarfBuzz・ICUの辞書／追加条件、JPEG／PNG／WebP・Wuffs・zlib・Khronosと、実link mapのring／QuickJS／Skia／compiler_builtinsの対応を確認した。これは全commentの完全なライセンス分類やlive codeの同定ではない。SDK等の入力追跡不足は3111343で修正し、Mac補助・実候補で確認済みとなった。元pathと解決先を区別し、欠損は拒否し、同sizeの内容変更もhashへ反映する。SDK本文を通知束へ複製しない。入力の識別と各headerの利用条件の最終適用確認は区別する。
 - 配布素材の適用確認では、6badaf5候補のasset inventoryと現sourceを照合し、Noto Sans JPの未変更font／OFL、Lucide geometry／ISC・Feather由来MITの4 hashが一致した。OFLの同梱条件と名前・単独販売の制約、両icon通知の保持を原文で確認した。別途取得のiconはgeometry／fontを本体へ同梱せず、元licenseと出自を保持する。MPL対象option-extは変更なしの対応source archive・原文・取得案内を配布に含む。同梱素材のこの範囲は確認済みとし、native inline header／system入力などの最終適用確認や、正式公開全体とは区別する。
 - 最低macOSは実測結果に基づき15.7.9へ固定した。保証端末は引き続き確定し、MacでKitty／Sixel両方と、保証する端末による画像・日本語・キーボード操作の条件を維持する。利用者が報告したKittyの日本語確定・候補／カーソル位置・Preview操作・resize・clipboard添付は受け入れ済みとする。ズーム点滅の修正後、Sixel、未申告の入力方式と宣言する tmux／SSH の範囲は別途確認する。
 - Codex／Claudeのサブスクリプション経路は画像付き実編集とguide／style取得を確認済み。2026-10-30の決定により、この成功を実接続の利用確認とし、Claude APIなどAPIキー経路の追加実接続は初回の必須残件から除く。API接続の実装・認証経路の区別・既存の自動試験は維持し、未確認の組合せを検証済みと表示しない。Codex API／自作project guide／初期画像添付の既存成功も保持する。Mac実端末は利用者が確認する方針へ更新した。
