@@ -93,7 +93,10 @@ fn public_resolution_rejects_small_source_with_excessive_instance_expansion() {
     let project = Project::load(&store).unwrap();
     let error = project.resolve().err().unwrap();
     assert_eq!(error.code, "RESOURCE_LIMIT");
-    assert_eq!(error.details["limit_bytes"], MAX_EXPANSION_BYTES);
+    assert_eq!(
+        error.details.as_ref().unwrap()["limit_bytes"],
+        MAX_EXPANSION_BYTES
+    );
     assert_eq!(fs::read_to_string(store.path()).unwrap(), document);
     project.verify_unchanged().unwrap();
 }
