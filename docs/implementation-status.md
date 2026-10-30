@@ -4,6 +4,19 @@
 
 ## 現在の状態（2026-10-30）
 
+74f37fdの[全体CI 40995928928](https://github.com/EkeMinusYou/lazypencil/actions/runs/40995928928)は全工程成功した。展開budgetはcore／既定構成の全試験・Clippy、通常開発build、release／smoke／42回の描画計測、全5 consumer、共通画像gateと署名付きsourceを通過した。多数のinstanceに対する無制限の文字列複製は対応済みとし、128MiBの複製作業量budgetとprocess RSSを混同しない。従来sampler 10条件・20 PNGとscript URL 4条件・12 PNGを維持した。取得成果物ではnonceに依存しない24 PNGが9059fbaとbyte一致した。絶対path／file URLの8 PNGは一時pathを本文として表示するため、異なるsource間の画像全体一致には使わず、同じ実行内での元／copy一致と期待shader画素の元のgateを確認した。
+
+全体15分25秒で10分目標は未達。builder9分47秒・core8分48秒・release3分19秒、通常2分52秒・runtime4分08秒・pixel2分39秒・端末1分04秒・Material1分40秒、source37秒だった。focusはimage 20261028.0489.1、builderは20260907.0337.1であり、部分cacheは正当に拒否して`reused:false`となった。先行用test buildは2分52秒、binding 18件は他のcompileと重なって162.84秒だった。registry依存全体の再codegenと決めつけず、正当なimage／feature差と同条件の不要なbuildを分ける。署名付きsource tar SHA-256は`9f74412be6c16b8172a8ca4a22c8d108a28f2b228b6941987c3214f81d64013c`で、subject・source revision・GitHub OIDC issuer・ci.yml／main署名identityとrun／attempt 1を照合した。
+
+同sourceのGHA製debug実行ファイルをreceiptのcommit／arm64／SHA-256へ照合し、macOS 27.2 arm64でCodex ACP 2.2.2・gpt-6.1-solのAPI経路と自作project guideの実生成を確認した。API key自体は表示・記録せず、隔離したruntime領域とlazypencil設定・データ領域を使用した。`api_key`のadapter report、document-bound MCP 14呼出し、automatic guideの資源hash、160×80の色・本文・余白・Noto Sans JP、layout診断0件を照合した。MCPの倍率3の480×240 PNGは独立CLI描画のSHA-256 `81ccc3ad8a451ff5b571b6dea4714ff597c650fd19012e86c663d063716d8229`と一致し、会話ログで省略されたbase64本文のhashも再構成して一致した。node IDは仕様どおりengineが採番し、モデルも指定IDからの変更を報告した。これは請求書の独立監査、初期画像添付のAPI経路、Claude APIやrelease binary全体の受け入れではない。認証用の一時領域と80MiBの実行ファイルは終了後に削除し、検証記録・画像だけ約528KiBを残した。[実接続の記録](agents.md#verification)
+
+74f37fdの[Mac先行 40995253192](https://github.com/EkeMinusYou/lazypencil/actions/runs/40995253192)は5分47秒で成功した。新しい展開上限4試験は最初の再現工程で0.14秒で成功し、約1MiBの元source ×256 instanceの実128MiB上限による拒否、元ファイル保持、両形式のliteral画像／変数sampler・日本語textの原文、全rootと複数の生成結果での共有budgetを確認した。対象build／Clippy、既定library 205件・project 46件・sampler_sources 30件とscript_scopeの残る5件、既存の先行binding群も成功した。同じcommitの[全体CI 40995928928](https://github.com/EkeMinusYou/lazypencil/actions/runs/40995928928)も全工程成功した。詳細は冒頭の結果を参照する。
+
+同じimage 20261028.0489.1で、8ca0376の部分成果物から56ファイルを再利用し、変更した`src/project/expansion/tests.rs`を実際に使うlibrary試験の6ファイルを失効させた。cached recipe・全入力hash・compiler dep-infoの所有検査が通り、Cargoの後続確認と変更した試験の実行が成功した。先行Clippyは41.29秒、test buildは57.87秒であり、前者にはregistry依存のCheckingも含むため、依存の全工程がfreshだったとは記録しない。本体・試験のコンパイル単位ごとのfresh判定を示すCargo JSONはこの先行のログにはなく、無条件の本体再compileゼロも宣言しない。次の部分checkpointを既存keyへ一度保存し、試験結果をcacheして省略する処理は追加していない。
+
+<details>
+<summary>展開budgetの準備・失敗と修正（先行結果は上記74f37fd）</summary>
+
 8ca0376の[Mac先行 40994538109](https://github.com/EkeMinusYou/lazypencil/actions/runs/40994538109)は対象build／Clippyを成功した。新しい4 unit中、実際の128MiB上限による約1MiB source ×256 instanceの拒否・元ファイル保持と、未解決propertyの累積拒否が成功した。残る2件は、試験fixtureが通常image URLのliteral欄を変数として使い、`$image_alias`をファイルとして取得したため停止した。既存のURL解釈を変えず、変数画像の試験は正式に対応しているshader samplerへ修正する。検査済みの部分成果物62ファイル・634,357,286 byteは後段assertion失敗後も既存focus keyへ保存済みで、次の試験だけの修正で同条件ならcompiler入力を検査して再利用する。新規4試験全体と後続の既存試験の成功はまだ未確認である。
 
 926945fの[Mac先行 40994061870](https://github.com/EkeMinusYou/lazypencil/actions/runs/40994061870)は本体の対象Clippyを成功したが、新規unitが`Error.details`のOption型を扱わず、試験のcompileで停止した。詳細の存在を確認してからlimit_bytesを読むよう修正する。これまでの失敗は新しい上限処理の試験実行結果には数えず、成功済みの補助ツール検証は同条件で繰り返さない。
@@ -12,11 +25,13 @@
 
 後続候補では、部品・変数の展開に128MiBの操作単位の複製作業量budgetを追加する。node数だけでは抑えられない長い文字列・キー・propertyを複製前に計上し、全rootと各script layout passの生成結果で共有する。参照先の検索では部品／変数の定義を借用し、毎回の丸ごと複製を避ける。上限超過は`RESOURCE_LIMIT`とし、Data URI・テキストの原文や文書を変更しない。変数一覧も共有budgetを使う。小さな上限で実際の部品・変数・生成出力を展開する既存Rust unitへ、両形式・literal／aliasの値保持と、途中拒否・無変更の回帰を追加した。英語ガイドは1.0.54。整形・差分検査までであり、GHA確認はまだである。128MiBは複製作業量の保守的な見積もりで、process RSSの保証ではない。
 
+</details>
+
 9059fbaの[全体CI 40991417079](https://github.com/EkeMinusYou/lazypencil/actions/runs/40991417079)は全工程成功した。Macのcore／既定構成の全試験・Clippy、通常開発build、release／smoke／性能測定、全5 consumer、共通画像gateと署名付きsourceを含む。捕捉scriptのfile URL／HTTP asset key、入れ子namespace所有、移動・offline再copyを検証済みとする。実WebGLでは`.pen` 2.19／2.21 × file URL／HTTPの4条件で、file URLのJS／GLSLとURL samplerを実行し、元sourceとserverの削除後・offline再copy後もyellow画素と同一PNGを確認した。追加12 PNGは40×20、SHA-256 `90128eeca6c00ebb136f1303df9febe31849ad22777ee34950445cc244a17e41`で、取得した全byte列のhashとreport・今回sourceを独立照合した。従来のsampler 10条件・20 PNGも維持した。
 
 全体13分27秒で、10分目標は未達である。builder5分44秒・core11分01秒・release4分28秒、通常3分26秒・runtime6分02秒・pixel2分25秒・端末1分13秒・Material2分00秒、source44秒だった。builderは先行と同じimage 20260907.0337.1で62ファイルを再利用し、対象の不足分buildは16.31秒だった。binding 18件は2並列で140.44秒、他の試験実行ファイルのcompileと重なっており、単独先行の98.37秒との統制比較にはしない。core／releaseはimage 20261028.0489.1で、異なるfeature／imageの部分cacheを正当に拒否した。coreにはtool検証・2分27秒のtest build・異なる目的のClippy／通常buildが残り、runtimeの追加条件も含め最終gateを省略していない。完全成果物の保存後に同じsourceの部分checkpointを整理し、同じpayloadを重ねて残さなかった。
 
-署名付きsource tar SHA-256は`878807f0001962e313640810b4da382d9384486dcec1ea1cf98588ba2b272ea7`。検証済みprovenanceのsubject、source revision、GitHub OIDC issuer、ci.yml／mainの署名identityとrun 40991417079／attempt 1を照合した。実端末IME・大量文字列の展開上限・仕様確認と最終公開の残件は以下に維持する。有用なCIは中断せず、ローカルでは重いbuildを行っていない。
+署名付きsource tar SHA-256は`878807f0001962e313640810b4da382d9384486dcec1ea1cf98588ba2b272ea7`。検証済みprovenanceのsubject、source revision、GitHub OIDC issuer、ci.yml／mainの署名identityとrun 40991417079／attempt 1を照合した。大量文字列の展開上限は後続74f37fdで検証済みとなった。実端末IME・仕様確認と最終公開の残件は以下に維持する。有用なCIは中断せず、ローカルでは重いbuildを行っていない。
 
 9059fbaの[Mac先行 40990537751](https://github.com/EkeMinusYou/lazypencil/actions/runs/40990537751)は8分31秒で成功した。同じjobの補助ツール全試験／Clippy、新しい実Cargoの部分cache回帰、対象アプリbuild／ClippyとURL素材の正負両条件が成功した。file URL／HTTP画像とfile URLのJS／GLSL、元source削除・project移動・offline再copy・PNG一致、入れ子namespaceの所有を含む。library 201件、assets 23件、sampler_sources 30件とscript_scopeの残る5件も成功した。実WebGLのURL shader条件は、この先行では既存ignored経路として未実行だったが、冒頭の全体runtimeで成功した。
 
@@ -382,7 +397,7 @@ HTTP(S)文字列samplerはa00289f、未参照のproject素材回収は9865944、
 公開前の確認・決定：
 
 - 最低macOSと保証端末を、実測結果に基づいて固定する。MacでKitty／Sixel両方と、保証する端末による画像・日本語・キーボード操作の条件を維持する。macSKK の未確定文字／候補表示の報告、実端末と clipboard の組合せ、宣言する tmux／SSH の範囲は未受け入れ。
-- 実エージェントの API/provider とプロジェクト独自指示を含む未確認経路、および完成条件に対応する接続環境を確認する。未確認の全モデル組合せを新しい実装要求にはしない。
+- CodexのAPI経路と自作project guideの実生成は74f37fdで確認済み。Claude API・APIの初期画像添付などの未確認経路と、完成条件に対応する接続環境は引き続き確認する。未確認の全モデル組合せを新しい実装要求にはしない。
 - 統制した cold/warm・基準環境の性能、Chromium を含む別予算、最終配布候補の環境・署名・元の notice／ソース提供条件を確認する。過去の同条件の有効な証拠は再利用する。
 - 旧参照 PNG 11点・派生 JSON 3点は現行ソースから除去済み。旧 Git 履歴と過去 CI artifact の扱いは未確定で、公開前の権利処理は完了していない。履歴の強制書換えは実行していない。[根拠](design-guidance.md#pencil-の-skill-とライセンス)
 
@@ -398,10 +413,11 @@ macOS の常用メモリは `7fe854b` の既存候補で172.03MiB、cached feedb
 
 ### 完成までの順序と概算
 
-1. 多数のinstanceへ大きな文字列を展開する際のメモリ境界を確認・実装する。捕捉scriptのfile URL／HTTP asset keyと入れ子namespaceは9059fbaの完全CIで検証済みとなったため、未実装には戻さない。
-2. 既存ログに基づき、部分／完全成果物の再利用と長い先行試験の配置を整理する。直近は先行8分31秒・全体13分27秒であり、全体10分以内は未達として改善する。image不一致による正当な再buildと、同一条件の不要な再buildを分ける。Cargoの鮮度判定、各feature・検証目的・元の期限と最終gateは維持する。
-3. 公開仕様に意味の記載がないdevice presetとfill-stage object samplingを確認し、推測を本家互換として実装済みにしない。
-4. 不足するMac実端末・接続・性能の受け入れ、保証環境と配布候補、旧参照素材の履歴の扱い、文書を確定する。既に有効な同条件の証拠を再利用する。
+大きな文字列の展開上限は74f37fdの完全CIで検証済みとなった。捕捉scriptのfile URL／HTTP asset key・入れ子namespaceと同様、未実装へ戻さない。
+
+1. 既存ログに基づき、部分／完全成果物の再利用と長い先行試験の配置を整理する。直近は先行5分47秒・全体15分25秒であり、全体10分以内は未達として改善する。image不一致による正当な再buildと、同一条件の不要な再buildを分ける。Cargoの鮮度判定、各feature・検証目的・元の期限と最終gateは維持する。
+2. 公開仕様に意味の記載がないdevice presetとfill-stage object samplingを確認し、推測を本家互換として実装済みにしない。
+3. 不足するMac実端末・接続・性能の受け入れ、保証環境と配布候補、旧参照素材の履歴の扱い、文書を確定する。Codex API／自作guideの今回の成功を含む、有効な同条件の証拠を再利用する。
 
 初回Mac Apple Siliconのみで、現在の残件に対する暫定概算は5〜10実働日程度とする。仕様確認・実機環境確保・権利処理の待ち時間は別で、完成日の確約には使わない。旧3環境時代の8〜15日や、解消済みの同時認証・追加フォント・素材回収・font lockfileを含む古い概算は現在の残工数へ加算しない。Linux／Windows／Intel Macを初回へ戻さず、機能・互換性・性能・配布の元の完成条件は維持する。
 
