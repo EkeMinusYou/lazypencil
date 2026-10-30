@@ -186,6 +186,9 @@ mod script_copy {
         )
         .unwrap();
     }
+    // This is a new complete-build scenario, after the earlier copy scenario
+    // published its own immutable catalog. Only discard that fixture index.
+    fs::remove_file(root.join("test-executables.json")).unwrap();
     let built = run("default-build", "normal-ci", "[]");
     assert!(
         built.status.success(),
