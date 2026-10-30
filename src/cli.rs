@@ -11,6 +11,9 @@ use clap::{Args, Parser, Subcommand};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
+mod completion;
+
+pub const COMPLETE_ENV: &str = "LAZYPENCIL_COMPLETE";
 
 #[derive(Debug, Parser)]
 #[command(
@@ -25,6 +28,7 @@ pub struct Arguments {
         long,
         global = true,
         env = "LAZYPENCIL_DATA_DIR",
+        value_hint = clap::ValueHint::DirPath,
         help = "Override the persistent user data directory"
     )]
     pub data_dir: Option<PathBuf>,
@@ -71,6 +75,7 @@ pub enum Command {
     },
     /// Read a bundled or trusted project guide (defaults to the workflow guide).
     Guidance {
+        #[arg(add = clap_complete::ArgValueCandidates::new(completion::guides))]
         id: Option<String>,
         #[arg(long)]
         file: Option<PathBuf>,
@@ -88,6 +93,7 @@ pub enum Command {
     },
     /// Read a style, its tokens, and its editable example.
     Style {
+        #[arg(add = clap_complete::ArgValueCandidates::new(completion::styles))]
         id: String,
         #[arg(long)]
         file: Option<PathBuf>,
@@ -144,6 +150,11 @@ pub enum Command {
     Recover { file: PathBuf },
     /// Report build and environment information without changing a design.
     Doctor,
+    /// Generate a shell completion hook from this build's CLI definition.
+    Completions {
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -260,7 +271,7 @@ pub struct Inspect {
     pub expand_instances: bool,
     #[arg(long)]
     pub name: Option<String>,
-    #[arg(long = "type")]
+    #[arg(long = "type", add = clap_complete::ArgValueCandidates::new(completion::node_types))]
     pub node_type: Option<String>,
     #[arg(long, default_value_t = 1)]
     pub depth: usize,
@@ -277,9 +288,12 @@ pub struct Inspect {
 #[derive(Debug, Subcommand)]
 pub enum IconCommand {
     /// Read the complete embedded upstream license without installing the pack.
-    License { pack: String },
+    License {
+        #[arg(add = clap_complete::ArgValueCandidates::new(completion::icon_packs))]
+        pack: String,
+    },
     List {
-        #[arg(long)]
+        #[arg(long, add = clap_complete::ArgValueCandidates::new(completion::icon_packs))]
         pack: Option<String>,
         #[arg(long)]
         name: Option<String>,
@@ -289,6 +303,7 @@ pub enum IconCommand {
         cursor: Option<String>,
     },
     Setup {
+        #[arg(add = clap_complete::ArgValueCandidates::new(completion::icon_packs))]
         pack: String,
         /// Exact pinned upstream archive or font file for offline installation.
         #[arg(long, visible_alias = "input")]
@@ -333,7 +348,7 @@ pub enum AssetCommand {
     /// Review unused managed assets; provide the reviewed revision to apply.
     Prune {
         file: PathBuf,
-        #[arg(long)]
+        #[arg(long, value_hint = clap::ValueHint::DirPath)]
         project_root: PathBuf,
         #[arg(long)]
         expected_revision: Option<String>,
@@ -341,7 +356,7 @@ pub enum AssetCommand {
     /// Store a validated image, JavaScript source, or GLSL source without changing the document.
     Put {
         file: PathBuf,
-        #[arg(long)]
+        #[arg(long, value_enum)]
         kind: crate::assets::AssetKind,
         #[arg(long)]
         input: PathBuf,
@@ -390,7 +405,7 @@ pub enum BrowserProfileCommand {
     /// Open a supplied full Chromium browser for interactive authentication.
     Login {
         name: String,
-        #[arg(long)]
+        #[arg(long, value_hint = clap::ValueHint::ExecutablePath)]
         browser: PathBuf,
         #[arg(long)]
         url: String,
@@ -511,6 +526,10 @@ pub struct Render {
 pub fn run(arguments: &Arguments) -> Result<Value> {
     let open = |path: &Path| Store::open(path, arguments.data_dir.clone());
     match &arguments.command {
+        Command::Completions { shell } => {
+            let script = completion::registration(*shell)?;
+            Ok(json!({"shell":shell.to_string(),"script":script}))
+        }
         Command::Config { command } => match command {
             ConfigCommand::Init { user: true, .. } => crate::config::initialize_user(),
             ConfigCommand::Init { path, .. } => {

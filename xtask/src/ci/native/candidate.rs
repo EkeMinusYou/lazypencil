@@ -150,6 +150,21 @@ pub fn run(s: &Session) -> Result<()> {
                 ),
             "Installed version mismatch"
         );
+        for shell in ["bash", "zsh", "fish"] {
+            let hook = process::checked(
+                Command::new(&executable)
+                    .current_dir(inputs.path())
+                    .env("LAZYPENCIL_CONFIG_DIR", inputs.path().join("configuration"))
+                    .env("LAZYPENCIL_DATA_DIR", inputs.path().join("completion-data"))
+                    .args(["completions", shell]),
+                Duration::from_secs(30),
+            )?;
+            ensure!(
+                String::from_utf8(hook)?.contains("LAZYPENCIL_COMPLETE")
+                    && !inputs.path().join("completion-data").exists(),
+                "Installed candidate did not generate a standalone {shell} hook"
+            );
+        }
         let stdout = process::checked(
             Command::new(&executable)
                 .current_dir(inputs.path())
@@ -189,6 +204,7 @@ pub fn run(s: &Session) -> Result<()> {
         &util::encode(&json!({
             "source_commit":std::env::var("GITHUB_SHA")?,"candidate":result,"verified":verified,
             "verified_script_pixels":256,
+            "verified_completion_shells":["bash","zsh","fish"],
             "source_tree_available":false,"native_build_tree_available":false,"image":"candidate-smoke.png","render":report,
         }))?,
         false,

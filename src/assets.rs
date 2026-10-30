@@ -9,7 +9,7 @@ const MAX_CODE_BYTES: usize = 1024 * 1024;
 
 pub mod prune;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema, clap::ValueEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum AssetKind {
     Image,

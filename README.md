@@ -14,6 +14,11 @@ The initial release is complete only when the [design acceptance conditions](doc
 
 ## Try the current CLI
 
+Enable Bash, Zsh or Fish Tab completion with `lazypencil completions SHELL`.
+See [shell setup and completion behavior](docs/completions.md) for startup-file
+instructions and examples. Hooks follow the installed CLI definition and its
+bundled catalogues without loading a project or starting an agent.
+
 The editable example uses the bundled font and requires no browser or AI service:
 
 ```sh

@@ -153,6 +153,12 @@ jobs:
         with:
           verify: ${{ inputs.verify_tools || inputs.lane == 'all' || inputs.lane == 'core' }}
           retire-old-tools: 'true'
+      - name: Install Fish for shell completion integration tests
+        if: runner.os == 'macOS' && inputs.lane != 'release' && (inputs.lane == 'core' || inputs.lane == 'all' || contains(fromJSON(inputs.targets), 'completions'))
+        timeout-minutes: 10
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+        run: brew install --formula --force-bottle fish
       - name: Cache verified Cargo downloads
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:

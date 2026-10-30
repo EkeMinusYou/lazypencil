@@ -62,6 +62,12 @@ jobs:
       - name: Prepare the runtime catalog and publish managed browser paths
         if: inputs.suite == 'runtime'
         run: xtask/target/debug/xtask ci native runtime-prepare
+      - name: Install Fish for shell completion integration tests
+        if: runner.os == 'macOS' && inputs.suite == 'normal'
+        timeout-minutes: 10
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+        run: brew install --formula --force-bottle fish
       - name: Run all tests assigned to this consumer
         run: xtask/target/debug/xtask ci native "${CONSUMER_SUITE}-consumer"
       - name: Retain independent source-bound results and all failure diagnostics

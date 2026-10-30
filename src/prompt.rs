@@ -77,7 +77,7 @@ pub struct PromptArgs {
     #[arg(long)]
     pub style: Option<String>,
     /// Explicit ACP executable override; no shell parsing or automatic installation.
-    #[arg(long)]
+    #[arg(long, value_hint = clap::ValueHint::ExecutablePath)]
     pub adapter: Option<PathBuf>,
     #[arg(long = "adapter-arg", allow_hyphen_values = true, requires = "adapter")]
     pub adapter_args: Vec<String>,

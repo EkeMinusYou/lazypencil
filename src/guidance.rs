@@ -96,6 +96,21 @@ const GUIDES: &[Guide] = &[
 ];
 const STYLES: &str = include_str!("../resources/styles/manifest.json");
 
+pub(crate) fn guide_ids() -> impl Iterator<Item = &'static str> {
+    GUIDES.iter().map(|guide| guide.id)
+}
+
+pub(crate) fn bundled_style_ids() -> Result<Vec<String>> {
+    let catalog = catalog()?;
+    let styles = catalog["styles"]
+        .as_array()
+        .ok_or_else(|| Error::new("INTERNAL_ERROR", "Invalid bundled style catalog"))?;
+    Ok(styles
+        .iter()
+        .filter_map(|style| style["id"].as_str().map(str::to_owned))
+        .collect())
+}
+
 pub fn get_guidance(id: Option<&str>) -> Result<Value> {
     let id = id.unwrap_or("start");
     let guide = GUIDES

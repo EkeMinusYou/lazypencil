@@ -2,6 +2,10 @@ use clap::{CommandFactory, FromArgMatches};
 use std::{io::Write, process::ExitCode};
 
 fn main() -> ExitCode {
+    // Completion queries finish before worker setup, configuration, or locks.
+    clap_complete::CompleteEnv::with_factory(lazypencil::cli::Arguments::command)
+        .var(lazypencil::cli::COMPLETE_ENV)
+        .complete();
     if std::env::args_os()
         .nth(1)
         .is_some_and(|argument| argument == "__http_image_worker")
@@ -122,6 +126,7 @@ fn main() -> ExitCode {
     let uses_assets = !matches!(
         &arguments.command,
         lazypencil::cli::Command::Doctor
+            | lazypencil::cli::Command::Completions { .. }
             | lazypencil::cli::Command::Assets {
                 command: lazypencil::cli::AssetCommand::Prune { .. }
             }
@@ -273,6 +278,14 @@ fn main() -> ExitCode {
         return ExitCode::from(code);
     }
     let output = if !arguments.json
+        && matches!(
+            arguments.command,
+            lazypencil::cli::Command::Completions { .. }
+        )
+        && code == 0
+    {
+        value["script"].as_str().unwrap_or_default().to_string()
+    } else if !arguments.json
         && matches!(arguments.command, lazypencil::cli::Command::Guidance { .. })
         && code == 0
     {

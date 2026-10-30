@@ -343,7 +343,7 @@ pub fn create(arguments: &Arguments) -> Result<Value> {
     files.insert(EXECUTABLE.into(), (binary, 0o755));
     files.insert(SOURCE.into(), (source, 0o644));
     files.insert("LICENSE".into(), license);
-    files.insert("README.txt".into(),(format!("lazypencil binary candidate\nTarget: {target}\nSource: {revision}\n\nExtract this directory and run bin/lazypencil --help. Place bin/lazypencil on PATH to install. Chromium is obtained separately with lazypencil runtime setup chromium.\n\nThis is a verification candidate. Review status is retained in build-evidence/build.json. No signing, minimum OS acceptance or final release approval is implied. The matching project source archive and all original collected third-party notices are included.\n").into_bytes(),0o644));
+    files.insert("README.txt".into(),(format!("lazypencil binary candidate\nTarget: {target}\nSource: {revision}\n\nExtract this directory and run bin/lazypencil --help. Place bin/lazypencil on PATH to install. Chromium is obtained separately with lazypencil runtime setup chromium.\n\nFor shell Tab completion, load the output of lazypencil completions bash, zsh, or fish from that shell's startup file. The matching source archive contains docs/completions.md with setup instructions. Regenerate hooks on shell startup after upgrades.\n\nThis is a verification candidate. Review status is retained in build-evidence/build.json. No signing, minimum OS acceptance or final release approval is implied. The matching project source archive and all original collected third-party notices are included.\n").into_bytes(),0o644));
     ensure!(
         files.len() < MAX_FILES
             && files
