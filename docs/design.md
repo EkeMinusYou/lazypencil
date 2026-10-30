@@ -526,7 +526,7 @@ lazypencil runtime setup chromium
 
 次を初回Macの性能目標とする。通常文書の元の数値目標は維持し、基準機・文書・フォント・端末条件を記録して評価する。
 
-| 項目 | 暫定目標 |
+| 項目 | 初回目標 |
 | --- | --- |
 | 基準文書 | 1,000 ノード、ローカルアセット、1920 × 1080 相当の表示領域 |
 | TUI 起動から入力可能になるまで | 500 ms 以下。描画・AI 起動は非同期 |
@@ -541,7 +541,7 @@ lazypencil runtime setup chromium
 
 20起動・各4操作の80応答と既存のworker観測を維持し、各起動500ms以下・各初回preview2秒以下、80操作の最初の画像応答（cached feedbackと完成画像の早い方）のnearest-rank p95を100ms以下とする。通常プロセス群はRSS 200MiB以下・30秒以上の待機CPU上限1%未満を維持する。別の固定Chromium作例は同じ1,000ノードの配置へオフラインページとsoftware shaderを加え、本体・MCP・JS・Chromium群の合計RSSを1536MiB以下、30秒以上の待機CPU上限を2%未満とする。この別予算は過去の同一本体の約1201MiB・1.262%の観測を基に設定し、通常文書の基準を置き換えない。任意の外部サイトの使用量をこの数値で保証しない。
 
-既存の`measure-tui --enforce-targets`が、全観測を保存した後に上記を判定する。試験・build終了後の独立release runnerで測り、失敗時も元の全試行とtraceを残す。数値判定の実装・GHA結果と、実端末を含む性能の最終受け入れは[性能記録](performance.md)で区別する。
+既存の`measure-tui --enforce-targets`が、全観測を保存した後に上記を判定する。試験・build終了後の独立release runnerで測り、失敗時も元の全試行とtraceを残す。446aa94の[対象配布検証](https://github.com/EkeMinusYou/lazypencil/actions/runs/41035893847)は、macOS15.8.2・image20261028.0489.1・3 CPU・7GiBの基準環境で全数値gateを成功した。20起動・80操作・100 worker観測を維持し、基準文書と本体hashも従来と一致した。数値gateと実端末を含む最終受け入れは[性能記録](performance.md)で区別する。
 
 ### 実装技術と配布
 
@@ -636,7 +636,7 @@ Rust、Skia CPU・SkParagraph、MIT ライセンス、標準フォントの Noto
 - 依存は Cargo.toml／Cargo.lock、Chromium156.0.8078.47と取得元・hashは runtime manifest に記録済み。MCP は2025-11-25を広告する。更新時は影響する接続・描画条件を検証する。
 - Noto Sans JP は Google Fonts revision66a36c8c94b1a5d992ee4e7f392fccfe4945767c の可変 wght TTF を同梱し、元の OFL・metadata・hashを保持する。追加フォントは設定・CLIから利用可能。ファミリー単位の遅延読み込みと文字不足に応じたfallback登録は9d6613bで検証済み。再現用font lockfileも実装し、JSON版1のschema・明示取得・revision付き更新・共通照合を[フォント仕様](fonts.md#reproducibility-lockfile)へ定めた。最終CIと公開受け入れは[現状](implementation-status.md#current-status)で区別する。
 - JavaScript／browser／shader／cache／会話保持の設定と上限は実装済み。[設定](configuration.md) と各サービスの Rust 定義を正本とする。画像入力の既定は8枚・単体20MiB・合計各50MiB・16Mi画素で、ユーザーの`[attachments]`設定と明示的な送信用縮小をc11a0f9の完全CIで検証済み。単体デコーダーの安全上限と設定可能な範囲は [画像入力](image-attachments.md) に明記する。
-- 最低macOSは15.7.9に固定した。性能のcold／warm条件とChromiumの別予算は上記に定めた。保証端末、数値gateのGHA確認と実端末を含む性能、配布候補の最終受け入れは残る。Macの対象機能とOS／CPU以外の元の完成条件は変えない。
+- 最低macOSは15.7.9に固定した。性能のcold／warm条件とChromium別予算は上記に定め、数値gateをGHAで確認した。保証端末と実端末の性能、配布候補の最終受け入れは残る。Macの対象機能とOS／CPU以外の元の完成条件は変えない。
 - 本家との総合デザイン品質比較は当初から保留。許諾を確認していない本家出力を取得・配布する前提にはしない。
 
 部品アドレス・編集バッチ・計算結果・画像添付は個別仕様へ接続済み。実装済み、個別条件で検証済み、公開受け入れ済みを区別する。すべての詳細を新たな設計待ちに戻さず、[現在の残件](implementation-status.md#remaining-work) から完成を進める。

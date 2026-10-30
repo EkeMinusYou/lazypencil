@@ -4,13 +4,13 @@
 
 ## 現在の状態（2026-10-30）
 
-性能条件の残件として、既存`measure-tui`へMacの数値目標全体の判定を追加した。通常の500ms／2秒／cached feedback p95 100ms／200MiB／待機CPU 1%未満は維持し、別の固定Chromium作例へ1536MiB・待機CPU 2%未満を定めた。coldは新規process・設定／data、warmは同一processで初回描画後とし、OS page／font cacheは未統制であることを明示する。20起動・80操作・既存worker観測・30秒以上のidle・全観測保存を維持し、完成画像がcached feedbackより早い場合も80応答から除外しない。実OS・CPU数・物理memoryを既存reportへ加える。境界値・欠損・p95回帰の補助検証後に性能の対象配布検証を実行する。新しい数値gateのGHA確認は未完了であり、実画面の受け入れ完了とも扱わない。
+446aa94の[性能対象配布41035893847](https://github.com/EkeMinusYou/lazypencil/actions/runs/41035893847)は7分47秒で成功した。既存`measure-tui`のMac数値gateを、通常500ms／2秒／warm feedback p95 100ms／200MiB／待機CPU 1%未満、別の固定Chromium作例1536MiB・2%未満に定め、全観測保存後に判定した。[Mac補助ツール41035390452](https://github.com/EkeMinusYou/lazypencil/actions/runs/41035390452)も3分43秒で全試験・Clippy・原本照合と新しい境界値／欠損／p95回帰を成功した。20起動・80操作・100 worker観測と30秒以上のidleを維持し、生データを再集計した。coldは新規process・設定／data、warmは同一processで初回描画後とし、OS page／font cacheは未統制であることを明示する。完成画像がcached feedbackより早い操作も除外しない。実環境はmacOS15.8.2・image20261028.0489.1・3 CPU・物理7GiBだった。数値基準は通過したが、物理表示やOS再起動直後を確認済みとはしない。
 
 最新の51ed911の[統合CI41031176732](https://github.com/EkeMinusYou/lazypencil/actions/runs/41031176732)は11分44秒で全工程成功した。監査、core／既定構成の全試験・両Clippy・通常開発build、release、全5 consumer、共通画像gateと署名付きsourceを維持した。builder5分06秒・core4分15秒・release1分41秒、通常3分59秒・runtime4分55秒・画像2分41秒・Material1分34秒・端末1分03秒、source42秒だった。builderは旧imageの852fd5eから292ファイルを再利用し、実際に変更helperを参照する12ファイルだけを無効化した。新imageの先行成果物は環境不一致で流用せず、全体保存と最終整理後も保持された。source tarは1228ファイル・SHA-256 `b7b17faf…bbf2d3b`で、署名検証結果のsource／ci.yml／main／run／attempt 1を照合した。全体10分以内の安定達成とはせず、同じcompiler contextでの新focus keyの実復元は次の該当実行で確認する。
 
 cache保持修正2ca6efdの[Mac補助ツール41029446527](https://github.com/EkeMinusYou/lazypencil/actions/runs/41029446527)は2分54秒で全試験・Clippy・原本照合を成功した。別context／feature／wireと最新世代の保持、directory交換の拒否条件、実Cargoでの古い部分成果物の安全な再利用を含む。続く[51ed911先行41030602390](https://github.com/EkeMinusYou/lazypencil/actions/runs/41030602390)は4分14秒で成功した。既存完全成果物の292ファイルを再利用し、関係する12ファイルを27,051,528 byteの部分成果物として保存した。圧縮後は9,517,415 byteで、既存fullと同じwire versionをAPIで確認した。完全成果物約905MBの重複保存はしない。対象test buildは5.10秒、元の端末再現は32.57秒だった。日本語／ZWJの下書き、全3サイズと再開後のカーソル、agent非起動、正常終了とmode復元も報告書で照合した。
 
-本体SHA-256は`b0297f24…07b0759`で、利用者向け3cc43da候補と一致する。通常bound最大RSSは191.52MiBで元の200MiB gateを成功し、入力／初回preview／完全出力p95は32.80／268.64／221.30ms、cached feedback p95は28.50ms、30.139秒idle CPU上限は0.398%だった。同条件の20起動／80操作等を維持し、OS cacheの統制や物理表示の受け入れ完了とはしない。Kitty修正候補の実表示・Mac Sixel、対応環境と性能条件、未定義の互換性2点、最終配布レビューは残る。[残件](#remaining-work)
+本体SHA-256は`b0297f24…07b0759`で、利用者向け3cc43da候補と一致する。446aa94の通常bound最大RSSは186.98MiB、入力／初回preview最大は54.70／306.00ms、warm feedback p95は24.58ms、30.068秒idle CPU上限は0.366%だった。Chromium込みは1195.31MiB・30.135秒・1.195%で、両群の正常終了・子回収も成功した。既定の全試行と固定文書は維持し、本体の変更による改善とはしない。既存release出力15ファイルを再利用し、候補632ファイル・archive SHA-256 `8b6cf8dd…3c8d494`と署名のsource／release-evidence.yml／main／run／attempt 1を照合した。同じ本体の統合証拠は51ed911を再利用し、この補助変更で全consumerを繰り返さなかった。Kitty修正候補の実表示・Mac Sixel、保証端末と実画面の性能、未定義の互換性2点、最終配布レビューは残る。[残件](#remaining-work)
 
 以下のsource別記録は各実行時点の経緯であり、その時点の「次に確認する」を現在の未完了へ加算しない。最新結果と上記の残件を優先する。
 
@@ -462,7 +462,7 @@ HTTP(S)文字列samplerはa00289f、未参照のproject素材回収は9865944、
 
 - 最低macOSは実測結果に基づき15.7.9へ固定した。保証端末は引き続き確定し、MacでKitty／Sixel両方と、保証する端末による画像・日本語・キーボード操作の条件を維持する。利用者が報告したKittyの日本語確定・候補／カーソル位置・Preview操作・resize・clipboard添付は受け入れ済みとする。ズーム点滅の修正後、Sixel、未申告の入力方式と宣言する tmux／SSH の範囲は別途確認する。
 - Codex／Claudeのサブスクリプション経路は画像付き実編集とguide／style取得を確認済み。2026-10-30の決定により、この成功を実接続の利用確認とし、Claude APIなどAPIキー経路の追加実接続は初回の必須残件から除く。API接続の実装・認証経路の区別・既存の自動試験は維持し、未確認の組合せを検証済みと表示しない。Codex API／自作project guide／初期画像添付の既存成功も保持する。Mac実端末は利用者が確認する方針へ更新した。
-- 定義したcold/warm・基準環境とChromium別予算の数値gate、実端末の性能、最終配布候補の環境・署名・元のnotice／ソース提供条件を確認する。OS再起動直後の測定を実施済みとはしない。過去の同条件の有効な証拠は再利用する。
+- 定義したcold/warm・基準環境とChromium別予算の数値gateは446aa94で成功した。実端末の性能、最終配布候補の環境・署名・元のnotice／ソース提供条件は引き続き確認する。OS再起動直後の測定を実施済みとはしない。過去の同条件の有効な証拠は再利用する。
 - 旧PNG11点・派生JSON3点は、2026-10-30の承認に基づき公開mainの全履歴から除去した。559コミットの対象外全ファイル・内容・モードとHEAD treeの一致、全新参照から14パス・17 blob版への到達不能を確認した。履歴整理前の1,225 artifact・158 sourceに除去前source・不明sourceは0件だった。過去配布の判断やGitHub保持objectの物理消去は別である。ローカル全体GCは対象外の復旧データも巻き込むため実行せず、reflog等は保全した。[根拠](design-guidance.md#pencil-の-skill-とライセンス)
 
 ### 既知の障害と、完了扱いしないこと
