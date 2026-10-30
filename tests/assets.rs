@@ -52,6 +52,9 @@ fn cli_asset_output_keeps_maintenance_excluded_until_the_response_is_written() {
     fs::write(store.path(), json!({"version":"2.21","children":[{"id":"script","type":"script","scriptUri":"generator.js","width":1,"height":1}]}).to_string()).unwrap();
     let locks = temp.path().join("isolated-locks");
     let (mut output, writer) = UnixStream::pair().unwrap();
+    // macOS rejects setsockopt after the peer has shut down. Set the reader's
+    // mode while both ends are live, then drain to EOF under one deadline.
+    output.set_nonblocking(true).unwrap();
     let bytes: libc::c_int = 4096;
     // Bound the real output buffer, so receiving its first byte proves main
     // is publishing a result while most of that result still cannot be sent.
@@ -101,11 +104,19 @@ fn cli_asset_output_keeps_maintenance_excluded_until_the_response_is_written() {
             .unwrap(),
     );
     let deadline = Instant::now() + Duration::from_secs(10);
-    output
-        .set_read_timeout(Some(Duration::from_secs(10)))
-        .unwrap();
+    let mut read = |buffer: &mut [u8]| loop {
+        assert!(Instant::now() < deadline, "CLI output deadline");
+        match output.read(buffer) {
+            Ok(count) => break count,
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(error) => panic!("CLI output read: {error}"),
+        }
+    };
     let mut first = [0u8; 1];
-    output.read_exact(&mut first).unwrap();
+    assert_eq!(read(&mut first), 1, "CLI must start its response");
     assert_eq!(first, *b"{");
     let activity = fs::OpenOptions::new()
         .read(true)
@@ -123,18 +134,11 @@ fn cli_asset_output_keeps_maintenance_excluded_until_the_response_is_written() {
     let mut result = first.to_vec();
     let mut buffer = [0u8; 8192];
     loop {
-        output
-            .set_read_timeout(Some(
-                deadline
-                    .checked_duration_since(Instant::now())
-                    .expect("CLI output deadline"),
-            ))
-            .unwrap();
-        let read = output.read(&mut buffer).unwrap();
-        if read == 0 {
+        let count = read(&mut buffer);
+        if count == 0 {
             break;
         }
-        result.extend_from_slice(&buffer[..read]);
+        result.extend_from_slice(&buffer[..count]);
         assert!(result.len() < 128 * 1024);
     }
     let result: Value = serde_json::from_slice(&result).unwrap();
