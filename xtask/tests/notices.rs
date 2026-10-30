@@ -173,6 +173,12 @@ fn external_native_headers_keep_reviewable_identity_without_copying_sdk_text() {
         changed["external_headers"][0]["spdx_annotations"],
         json!(["ISC"])
     );
+    f.write("system.h", b"// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception\n/* SPDX-License-Identifier: MIT */\n");
+    let (multiple, _) = f.skia().unwrap();
+    assert_eq!(
+        multiple["external_headers"][0]["spdx_annotations"],
+        json!(["Apache-2.0 WITH LLVM-exception", "MIT"])
+    );
     f.write("system.h", b"/* Unannotated fixture header. */\n");
     let (unannotated, _) = f.skia().unwrap();
     assert_eq!(

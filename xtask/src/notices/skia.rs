@@ -272,7 +272,7 @@ pub fn build_from_graph(
     let mut excluded = BTreeMap::<String, u64>::new();
     let mut external_headers = BTreeMap::new();
     let spdx = Regex::new(
-        r"(?m)^[ \t]*(?://|/\*|\*)?[ \t]*SPDX-License-Identifier:[ \t]*([A-Za-z0-9:.+()\t -]+?)[ \t]*(?:\*/)?[ \t]*$",
+        r"(?m)^[ \t]*(?://|/\*|\*)?[ \t]*SPDX-License-Identifier:[ \t]*([A-Za-z0-9:.+()\t -]+?)[ \t]*(?:\*/)?[ \t]*\r?$",
     )?;
     for (kind, names) in [("graph", graph), ("recorded_header", headers)] {
         for name in names {
