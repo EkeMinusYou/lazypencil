@@ -258,6 +258,170 @@ fn application_checkpoints_do_not_collide_across_later_focused_runs_or_retries()
         cache::application_checkpoint(&release, "402", "1").unwrap(),
         format!("{release}-402-1")
     );
+    for namespace in ["tests-v1", "tests-core-v1"] {
+        let base = format!(
+            "{namespace}-macos-15-{}-focus-{}",
+            "a".repeat(64),
+            "b".repeat(64)
+        );
+        assert_eq!(
+            cache::application_checkpoint(&base, "402", "2").unwrap(),
+            format!("{base}-402-2")
+        );
+        assert!(
+            cache::application_checkpoint(&base.replace("-focus-", "-full-"), "402", "2").is_err()
+        );
+    }
+}
+
+#[test]
+fn focused_retention_requires_the_same_compiler_source_features_and_cache_layout() {
+    let source = "a".repeat(64);
+    let context = "b".repeat(64);
+    let other = "c".repeat(64);
+    let entry = |id, role, platform, context, phase, source, wire| {
+        json!({
+            "id":id,"key":format!("{role}-v1-{platform}-{context}-{phase}-{source}"),
+            "version":wire,"ref":"refs/heads/main","created_at":format!("2026-10-{id:02}")
+        })
+    };
+    let mut entries = vec![
+        entry(
+            1,
+            "tests",
+            "macos-15",
+            &context,
+            "focus",
+            format!("{source}-401-1"),
+            "wire",
+        ),
+        entry(
+            2,
+            "tests",
+            "macos-15",
+            &context,
+            "focus",
+            format!("{source}-402-1"),
+            "wire",
+        ),
+        entry(
+            3,
+            "tests",
+            "macos-15",
+            &other,
+            "focus",
+            format!("{source}-402-1"),
+            "wire",
+        ),
+        entry(
+            4,
+            "tests",
+            "macos-15",
+            &context,
+            "focus",
+            format!("{source}-402-1"),
+            "other-wire",
+        ),
+        entry(
+            5,
+            "tests-core",
+            "macos-15",
+            &context,
+            "focus",
+            format!("{source}-402-1"),
+            "wire",
+        ),
+        entry(
+            6,
+            "tests",
+            "ubuntu-24.04",
+            &context,
+            "focus",
+            format!("{source}-402-1"),
+            "wire",
+        ),
+        entry(
+            7,
+            "tests",
+            "macos-15",
+            &context,
+            "full",
+            other.clone(),
+            "wire",
+        ),
+    ];
+    let removed = |entries: &[Value]| {
+        cache::obsolete(entries, Some(&other))
+            .unwrap()
+            .iter()
+            .map(|e| e["id"].as_u64().unwrap())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        removed(&entries),
+        [1],
+        "A source change alone cannot retire another image's focused build"
+    );
+    entries.push(entry(
+        8,
+        "tests",
+        "macos-15",
+        &context,
+        "full",
+        source.clone(),
+        "wire",
+    ));
+    assert_eq!(
+        removed(&entries),
+        [1, 2, 7],
+        "Only the matching context and layout are covered"
+    );
+    entries.push(entry(
+        9, "tests", "macos-15", &other, "full", source, "wire",
+    ));
+    assert_eq!(removed(&entries), [1, 2, 3, 7]);
+}
+
+#[test]
+fn checkpoint_exchange_preserves_payloads_and_refuses_ambiguous_or_linked_paths() {
+    use std::fs;
+    let temp = tempfile::tempdir().unwrap();
+    let first = temp.path().join("partial");
+    let second = temp.path().join("complete");
+    assert!(cache::artifact::exchange(&first, &second).is_err());
+    fs::create_dir(&first).unwrap();
+    fs::write(first.join("payload"), b"partial").unwrap();
+    cache::artifact::exchange(&first, &second).unwrap();
+    assert!(!first.exists());
+    assert_eq!(fs::read(second.join("payload")).unwrap(), b"partial");
+    cache::artifact::exchange(&first, &second).unwrap();
+    fs::create_dir(&second).unwrap();
+    fs::write(second.join("payload"), b"complete").unwrap();
+    cache::artifact::exchange(&first, &second).unwrap();
+    for invalid in [
+        first.clone(),
+        first.join("nested"),
+        first.join("../complete"),
+    ] {
+        assert!(cache::artifact::exchange(&first, &invalid).is_err());
+    }
+    let file = temp.path().join("file");
+    fs::write(&file, b"file").unwrap();
+    assert!(cache::artifact::exchange(&first, &file).is_err());
+    #[cfg(unix)]
+    {
+        let linked = temp.path().join("linked");
+        std::os::unix::fs::symlink(&second, &linked).unwrap();
+        assert!(cache::artifact::exchange(&first, &linked).is_err());
+    }
+    assert_eq!(fs::read(first.join("payload")).unwrap(), b"complete");
+    assert_eq!(fs::read(second.join("payload")).unwrap(), b"partial");
+    assert!(!fs::read_dir(temp.path()).unwrap().any(|e| {
+        e.unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".checkpoint-exchange-")
+    }));
 }
 
 #[test]

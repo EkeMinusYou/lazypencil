@@ -64,6 +64,12 @@ pub use compatible::{CacheMatches, restore_combined, restore_compatible, stage_f
 
 #[derive(Subcommand)]
 pub enum Command {
+    Exchange {
+        #[arg(long)]
+        first: PathBuf,
+        #[arg(long)]
+        second: PathBuf,
+    },
     Artifact {
         #[arg(value_parser = ["pack", "unpack"])]
         operation: String,
@@ -159,6 +165,10 @@ pub enum Command {
 impl Command {
     pub fn run(self) -> Result<()> {
         match self {
+            Self::Exchange { first, second } => {
+                artifact::exchange(&first, &second)?;
+                util::print(&json!({"exchanged":true}))
+            }
             Self::Artifact {
                 operation,
                 directory,
@@ -280,6 +290,17 @@ impl Command {
                             identity.checkpoint.clone()
                         };
                         let checkpoint_prefix = format!("{}-", identity.checkpoint);
+                        let (focused_base, focused_prefix) = identity.focused_keys()?;
+                        let focused_checkpoint =
+                            if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
+                                application_checkpoint(
+                                    &focused_base,
+                                    &std::env::var("GITHUB_RUN_ID")?,
+                                    &std::env::var("GITHUB_RUN_ATTEMPT")?,
+                                )?
+                            } else {
+                                focused_base.clone()
+                            };
                         util::github_output(
                             github_output.as_deref(),
                             &BTreeMap::from([
@@ -287,6 +308,12 @@ impl Command {
                                 ("checkpoint".into(), checkpoint.clone()),
                                 ("checkpoint_prefix".into(), checkpoint_prefix.clone()),
                                 ("checkpoint_legacy".into(), identity.checkpoint.clone()),
+                                ("focused_checkpoint".into(), focused_checkpoint),
+                                (
+                                    "focused_checkpoint_prefix".into(),
+                                    format!("{focused_base}-"),
+                                ),
+                                ("focused_prefix".into(), focused_prefix),
                                 (
                                     "application_prefix".into(),
                                     identity.application_prefix.clone(),
@@ -712,7 +739,7 @@ fn valid_generation_id(value: &str) -> bool {
 /// Keep later completed focused outputs distinct from an older immutable cache.
 pub fn application_checkpoint(base: &str, run: &str, attempt: &str) -> Result<String> {
     ensure!(
-        Regex::new(r"^(?:application-v2|release-v1)-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-[0-9a-f]{64}-[0-9a-f]{64}-focus$")?.is_match(base)
+        Regex::new(r"^(?:(?:application-v2|release-v1)-(?:ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-[0-9a-f]{64}-[0-9a-f]{64}-focus|tests(?:-core)?-v1-(?:ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-[0-9a-f]{64}-focus-[0-9a-f]{64})$")?.is_match(base)
             && [run, attempt].into_iter().all(valid_generation_id),
         "Invalid application checkpoint identity"
     );
@@ -821,6 +848,30 @@ impl ApplicationIdentity {
         );
         let source_hash = util::digest(stable_json(&self.recipe["inputs"]));
         Ok((format!("{prefix}{source_hash}"), prefix))
+    }
+
+    /// Share the full checkpoint's compiler context and cache wire layout.
+    /// Only the phase differs; source validation and dep-info remain mandatory.
+    pub fn focused_keys(&self) -> Result<(String, String)> {
+        let prefix = format!(
+            "{}-{}-focus-",
+            self.compatible_namespace,
+            compatible_fingerprint(&self.recipe, false)?
+        );
+        let source_hash = util::digest(stable_json(&self.recipe["inputs"]));
+        Ok((format!("{prefix}{source_hash}"), prefix))
+    }
+
+    fn matches_focused_key(&self, key: &str) -> bool {
+        self.focused_keys().is_ok_and(|(base, _)| {
+            key == base
+                || key
+                    .strip_prefix(&format!("{base}-"))
+                    .and_then(|generation| generation.split_once('-'))
+                    .is_some_and(|(run, attempt)| {
+                        valid_generation_id(run) && valid_generation_id(attempt)
+                    })
+        })
     }
 
     /// One reviewed release-only transition. All native/default/test inputs
@@ -1476,14 +1527,8 @@ fn obsolete_with_sources(
         r"^release-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-([0-9a-f]{64})-(?P<context>[0-9a-f]{64})-(?P<phase>full|focus)(?:-[1-9][0-9]*-[1-9][0-9]*)?$",
     )?;
     let tests = Regex::new(
-        r"^(tests(?:-core)?)-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-([0-9a-f]{64})-full-([0-9a-f]{64})$",
+        r"^(tests(?:-core)?)-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-([0-9a-f]{64})-(full|focus)-([0-9a-f]{64})(?:-[1-9][0-9]*-[1-9][0-9]*)?$",
     )?;
-    let compatible_sources = keys
-        .iter()
-        .filter_map(|(key, _)| tests.captures(key))
-        .filter(|caps| &caps[1] == "tests")
-        .map(|caps| (caps[2].to_owned(), caps[4].to_owned()))
-        .collect::<BTreeSet<_>>();
     let mut selected = BTreeMap::new();
     let mut groups = BTreeMap::<(String, String), Vec<&Value>>::new();
     let tools = Regex::new(
@@ -1552,14 +1597,9 @@ fn obsolete_with_sources(
         }
         if let Some(caps) = re.captures(key) {
             let phase = &caps[5];
-            // Full compatible payloads replace the old full cache and any
-            // same-source focus checkpoints, rather than duplicating gigabytes
-            // of identical binaries. Never delete the old fallback first.
-            if &caps[1] == "2" && compatible_sources.contains(&(caps[2].into(), caps[3].into())) {
-                selected.insert(id, entry.clone());
-                continue;
-            }
-            if source_hash.is_some_and(|s| &caps[1] == "1" || phase == "focus" && s != &caps[3]) {
+            // Legacy keys cannot identify a source-independent compiler context.
+            // Do not infer replacement from a modern cache's source hash alone.
+            if source_hash.is_some() && &caps[1] == "1" {
                 selected.insert(id, entry.clone());
                 continue;
             }
@@ -1572,7 +1612,7 @@ fn obsolete_with_sources(
                 selected.insert(id, entry.clone());
             } else {
                 groups
-                    .entry((caps[2].into(), phase.into()))
+                    .entry((format!("legacy:{}:{version}", &caps[2]), phase.into()))
                     .or_default()
                     .push(entry);
             }
@@ -1602,13 +1642,22 @@ fn obsolete_with_sources(
             }
         }
         if let Some(caps) = tests.captures(key) {
+            let phase = &caps[4];
+            let full = format!(
+                "{}-v1-{}-{}-full-{}",
+                &caps[1], &caps[2], &caps[3], &caps[5]
+            );
+            if phase == "focus" && keys.contains(&(full.as_str(), version)) {
+                selected.insert(id, entry.clone());
+                continue;
+            }
             // A default build cannot retire the core fallback, nor can one
             // compiler/SDK context retire another runner's reusable outputs.
             // Count only published checkpoints in the same cache wire format.
             groups
                 .entry((
                     format!("{}:{}:{}:{version}", &caps[1], &caps[2], &caps[3]),
-                    "full".into(),
+                    phase.into(),
                 ))
                 .or_default()
                 .push(entry);

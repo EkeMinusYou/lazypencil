@@ -115,6 +115,7 @@ fn compatible_inputs(
         old.fingerprint = util::digest(stable_json(&old.recipe));
         if old.fingerprint == report.fingerprint
             && (old.matches_source_key(matched_key)
+                || old.matches_focused_key(matched_key)
                 || [false, true].into_iter().any(|legacy| {
                     old.compatible_keys(legacy)
                         .is_ok_and(|(primary, _)| matched_key == primary)

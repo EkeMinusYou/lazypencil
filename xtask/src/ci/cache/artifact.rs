@@ -1,4 +1,4 @@
-//! Same-run transport; compiler/source verification stays in cache::restore.
+//! Checkpoint transport; compiler/source verification stays in cache::restore.
 use super::*;
 use flate2::read::MultiGzDecoder;
 use std::{
@@ -7,6 +7,87 @@ use std::{
 };
 
 const MAX_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+
+/// Use one Actions cache path for partial and full payloads, without copying
+/// either payload. Only sibling directories owned by this job may be exchanged.
+pub fn exchange(first: &Path, second: &Path) -> Result<()> {
+    let parent = first
+        .parent()
+        .context("Checkpoint parent required")?
+        .canonicalize()?;
+    ensure!(
+        second
+            .parent()
+            .context("Checkpoint parent required")?
+            .canonicalize()?
+            == parent,
+        "Checkpoint directories must be siblings"
+    );
+    let resolve = |path: &Path| -> Result<PathBuf> {
+        let name = path.file_name().context("Checkpoint name required")?;
+        ensure!(
+            path.components().all(|part| !matches!(
+                part,
+                std::path::Component::ParentDir | std::path::Component::CurDir
+            )),
+            "Ambiguous checkpoint directory"
+        );
+        Ok(parent.join(name))
+    };
+    let first = resolve(first)?;
+    let second = resolve(second)?;
+    ensure!(first != second, "Checkpoint directories must be distinct");
+    let exists = |path: &Path| -> Result<bool> {
+        match fs::symlink_metadata(path) {
+            Ok(metadata) => {
+                ensure!(
+                    metadata.is_dir(),
+                    "Checkpoint must be an unlinked directory"
+                );
+                Ok(true)
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(error.into()),
+        }
+    };
+    match (exists(&first)?, exists(&second)?) {
+        (false, false) => anyhow::bail!("No checkpoint to exchange"),
+        (true, false) => fs::rename(&first, &second)?,
+        (false, true) => fs::rename(&second, &first)?,
+        (true, true) => {
+            // Keep recovery data on a failed rollback, rather than letting a
+            // temporary-directory destructor delete the only remaining copy.
+            let temporary = tempfile::Builder::new()
+                .prefix(".checkpoint-exchange-")
+                .tempdir_in(&parent)?
+                .keep();
+            let held = temporary.join("held");
+            let result = (|| -> Result<()> {
+                fs::rename(&first, &held)?;
+                if let Err(error) = fs::rename(&second, &first) {
+                    fs::rename(&held, &first).context("Checkpoint exchange rollback failed")?;
+                    return Err(error.into());
+                }
+                if let Err(error) = fs::rename(&held, &second) {
+                    fs::rename(&first, &second).context("Checkpoint exchange rollback failed")?;
+                    fs::rename(&held, &first).context("Checkpoint exchange rollback failed")?;
+                    return Err(error.into());
+                }
+                Ok(())
+            })();
+            // remove_dir cannot remove a held payload after failed rollback.
+            let cleanup = fs::remove_dir(&temporary);
+            result.with_context(|| {
+                format!(
+                    "Checkpoint exchange failed; recovery directory: {}",
+                    temporary.display()
+                )
+            })?;
+            cleanup?;
+        }
+    }
+    Ok(())
+}
 
 fn members(report: &ApplicationReport) -> Result<BTreeSet<String>> {
     ensure!(

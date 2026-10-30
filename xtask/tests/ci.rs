@@ -1866,6 +1866,19 @@ fn application_identify_cli_emits_unique_generation_keys_and_ordered_compatible_
             format!("{}-402-{attempt}", identity.checkpoint)
         );
         let outputs = fs::read_to_string(output).unwrap();
+        let (focused, focused_prefix) = identity.focused_keys().unwrap();
+        for (key, expected) in [
+            ("focused_checkpoint", format!("{focused}-402-{attempt}")),
+            ("focused_checkpoint_prefix", format!("{focused}-")),
+            ("focused_prefix", focused_prefix),
+        ] {
+            assert!(
+                outputs
+                    .lines()
+                    .any(|line| line == format!("{key}={expected}")),
+                "Missing {key}"
+            );
+        }
         for key in [
             "primary",
             "checkpoint",

@@ -764,8 +764,12 @@ fn older_partial_checkpoint_reuses_only_unchanged_compiler_units_after_helper_ed
     f.manifest();
     assert_eq!(f.build(&["--test", "one", "--test", "two"]).len(), 3);
     let old = f.identity();
-    let key = cache::application_checkpoint(&old.checkpoint, "401", "1").unwrap();
-    cache::stage_tests(&f.source, &f.target, &f.exact, &old).unwrap();
+    let (base, _) = old.focused_keys().unwrap();
+    let key = cache::application_checkpoint(&base, "401", "1").unwrap();
+    // Actions restores both phases at the same transport path, then parks the
+    // partial snapshot separately before validating and overlaying its units.
+    cache::stage_tests(&f.source, &f.target, &f.full, &old).unwrap();
+    cache::artifact::exchange(&f.full, &f.exact).unwrap();
     fs::write(&helper, "pub const VALUE: u8 = 2;\n").unwrap();
     f.manifest();
     f.clear();
@@ -774,7 +778,11 @@ fn older_partial_checkpoint_reuses_only_unchanged_compiler_units_after_helper_ed
     assert_eq!(old.application_prefix, current.application_prefix);
     for bad_key in [
         format!("{key}-0"),
-        format!("{}-0-1", old.checkpoint),
+        format!("{base}-0-1"),
+        format!("{base}-01-1"),
+        format!("{base}-401-18446744073709551616"),
+        key.replacen("tests-v1", "tests-core-v1", 1),
+        current.focused_keys().unwrap().0,
         current.checkpoint.clone(),
     ] {
         assert!(
@@ -1285,7 +1293,7 @@ fn compatible_cache_retention_is_bounded_and_preserves_other_platforms_and_versi
 }
 
 #[test]
-fn full_compatible_checkpoint_replaces_duplicate_legacy_payloads_only_after_it_exists() {
+fn modern_full_does_not_prove_a_legacy_checkpoint_has_the_same_compiler_context() {
     let entry = |id, key: String, reference: &str| {
         json!({"id":id,"key":key,
         "ref":reference,"version":"format","created_at":"2026-10-26"})
@@ -1323,6 +1331,6 @@ fn full_compatible_checkpoint_replaces_duplicate_legacy_payloads_only_after_it_e
             .iter()
             .map(|v| v["id"].as_u64().unwrap())
             .collect::<Vec<_>>(),
-        [1, 2]
+        [2]
     );
 }
