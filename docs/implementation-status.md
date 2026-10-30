@@ -4,7 +4,11 @@
 
 ## 現在の状態（2026-10-30）
 
-e0ae734の[Mac core対象41050138088](https://github.com/EkeMinusYou/lazypencil/actions/runs/41050138088)で、HTTP response headerを読み終えた所有socketをSO_LINGER=0でRST終了し、元の10秒切断観測が失敗することを再現した。新しい再現だけが失敗し、既存HTTP準備3試験は成功した。サーバー側はEOFだけでなくConnectionReset／ConnectionAborted／BrokenPipe／NotConnectedを切断と認識し、header送信中の終了も観測するよう修正する。TimeoutやWouldBlockを切断扱いせず、元の待機期限・文書／下書き保持のassertionは維持する。アプリ本体を修正した結果ではなく、試験観測の修正である。Mac対象で先に確認し、次の全体へまとめる。
+04c610eの[全体CI41052187835](https://github.com/EkeMinusYou/lazypencil/actions/runs/41052187835)は11分29秒で全工程成功した。coreのHTTP切断観測、core／既定の全試験・両Clippy・通常開発build、全5 consumer、release・数値性能gate、元の共有画像gate、署名付きsourceを維持した。sourceは1231ファイル・SHA-256 `6542f86549eb3d8f885a8d6d064f51ec810d6903a7a28081b8a3d7bb523323e5`で、署名検証結果のsubject・source 04c610e・ci.yml／main・run／attempt 1と照合した。先行04c610eの12ファイルと有効な既存274ファイルを受け入れ、残る実compiler入力変更をCargoで再判定した。最後のcatalog用Cargo JSONは408 artifact中405 fresh、再compile報告はbrowser_readiness／agent／mcpの3 test targetであり、これとは別に先行対象build79.35秒を含むため全工程の再compile数とはしない。
+
+同全体のruntimeはbuilder終了7秒後に開始したが、2並列のshort matrixでterminalが238秒待ち、最終sourceより前の最長経路になった。job時間はbuilder5分03秒・core6分37秒・release6分15秒、normal3分44秒・runtime3分27秒・pixels2分24秒・Material1分46秒・terminal1分08秒、source37秒だった。10分以内の全体完了とはしない。次の配置はruntime／normal／pixelsを独立させ、Material／terminalだけをrelease終了後の1枠で順次実行する。release失敗時もbuild成功・非cancelなら両試験を実行し、結果を省略しない。全5 receiptと元の最終gateを維持し、Rust実装・試験内容・期限はこの配置変更で変えない。このYAML変更はactionlintで確認済みで、同じRust入力の先行を重ねず、次の全体で配置と最終結果を確認する。
+
+e0ae734の[Mac core対象41050138088](https://github.com/EkeMinusYou/lazypencil/actions/runs/41050138088)で、HTTP response headerを読み終えた所有socketをSO_LINGER=0でRST終了し、元の10秒切断観測が失敗することを再現した。04c610eではサーバー側がEOFに加えてConnectionReset／ConnectionAborted／BrokenPipe／NotConnectedと、header送信中の切断を観測するよう修正した。TimeoutやWouldBlockを切断扱いせず、元の待機期限・文書／下書き保持のassertionは維持した。[Mac core対象41051302745](https://github.com/EkeMinusYou/lazypencil/actions/runs/41051302745)でHTTP全4試験が1.35秒、対象全体が6分15秒で成功し、続く全体CIも成功した。アプリ本体の不具合や未確認事項としては残さない。
 
 全体06f2a86ではcore・release・normal・pixels・Materialの5 jobが先にMac枠を使い、runtimeはbuilder終了後100秒待っていた。[GitHubの通常Mac上限は5](https://docs.github.com/en/actions/reference/limits#job-concurrency-limits-for-github-hosted-runners)で、matrixの並び順だけを優先順とは扱えない。runtimeを独立job、残る4 consumerを2並列とし、既存の同じ手順を共通workflowへ移す。実行内容・60分job期限・全5結果と元の共有画像gateは維持し、consumer数・再コンパイル・同じ完全成果物の保存は増やさない。通常40件・runtime22件のnative argv multisetは51ed911と06f2a86で完全一致し、両群の失敗0も照合した。これらは準備済みで、新しいjob配置の実時間は次の全体検証待ちである。
 
@@ -505,7 +509,7 @@ macOSの最新の通常bound観測は446aa94で最大186.98MiB、warm feedback p
 
 大きな文字列の展開上限は74f37fdの完全CIで検証済みとなった。捕捉scriptのfile URL／HTTP asset key・入れ子namespaceと同様、未実装へ戻さない。
 
-1. 既存ログに基づき、部分／完全成果物の再利用と長い先行試験の配置を仕上げる。先行は51ed911で4分14秒、ab943caで2分36秒だった。全体の最新成功は51ed911で11分44秒であり、全体10分以内の安定達成は残る。新focus keyの同じcompiler contextでの実復元はc8318b6で確認済み。長いbinding群の重複削減・並列laneの全結果回収・失敗保持は検証済みで、追加したprofile／通常consumerの並列化と対象経路の修正は冒頭の状態を優先する。6badaf5の配布のみの8分43秒を全体CIの短縮成功とは扱わない。image不一致による正当な再buildと、同一条件の不要な再buildを分け、Cargoの鮮度判定、各feature・検証目的・元の期限と最終gateは維持する。
+1. 既存ログに基づき、部分／完全成果物の再利用と長い試験の配置を仕上げる。最新の対象確認04c610eは6分15秒、全体成功は11分29秒であり、全体10分以内の安定達成は残る。新focus keyの同じcompiler contextでの実復元、profile／通常consumerの並列化、全結果回収と失敗保持、HTTP切断観測の修正は検証済み。準備済みのjob配置変更は次の全体で確認し、同じRust入力の先行検証を重ねない。image不一致による正当な再buildと、同一条件の不要な再buildを分け、Cargoの鮮度判定、各feature・検証目的・元の期限と最終gateは維持する。
 2. 公開仕様に意味の記載がないdevice presetとfill-stage object samplingを確認し、推測を本家互換として実装済みにしない。
 3. 不足するMac実端末・性能の受け入れ、保証環境と配布候補、文書を確定する。Kittyの報告済み5項目、両サブスクリプション、Codex API／自作guideを含む有効な同条件の証拠を再利用する。旧参照素材の公開履歴削除は完了しており、未実施へ戻さない。
 

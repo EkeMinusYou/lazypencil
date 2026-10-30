@@ -65,23 +65,45 @@ jobs:
       suite: runtime
       native_tools_artifact: ${{ needs.build.outputs.native_tools_artifact }}
       binaries_artifact: ${{ needs.build.outputs.runtime_binaries_artifact }}
-  tests:
+  normal:
     if: inputs.os == 'macos-15'
     needs: build
+    name: Test normal from the shared build
+    uses: ./.github/workflows/native-consumer.yml
+    with:
+      os: ${{ inputs.os }}
+      suite: normal
+      native_tools_artifact: ${{ needs.build.outputs.native_tools_artifact }}
+      binaries_artifact: ${{ needs.build.outputs.binaries_artifact }}
+  pixels:
+    if: inputs.os == 'macos-15'
+    needs: build
+    name: Test pixels from the shared build
+    uses: ./.github/workflows/native-consumer.yml
+    with:
+      os: ${{ inputs.os }}
+      suite: pixels
+      native_tools_artifact: ${{ needs.build.outputs.native_tools_artifact }}
+      binaries_artifact: ${{ needs.build.outputs.binaries_artifact }}
+  tests:
+    # Release completion frees a hosted Mac slot. Its failure must not skip
+    # independent tests when the shared build succeeded.
+    if: ${{ !cancelled() && inputs.os == 'macos-15' && needs.build.result == 'success' }}
+    needs: [build, release]
     strategy:
       fail-fast: false
-      # Core and release may still own two of the five hosted Mac slots.
-      # Keep runtime independent; matrix order does not guarantee priority.
-      max-parallel: 2
+      # Reserve immediate capacity for all three long consumers. The two
+      # shorter checks share the slot released by the isolated release lane.
+      max-parallel: 1
       matrix:
-        suite: [normal, pixels, material, terminal]
+        suite: [material, terminal]
     name: Test ${{ matrix.suite }} from the shared build
     uses: ./.github/workflows/native-consumer.yml
     with:
       os: ${{ inputs.os }}
       suite: ${{ matrix.suite }}
       native_tools_artifact: ${{ needs.build.outputs.native_tools_artifact }}
-      binaries_artifact: ${{ matrix.suite == 'terminal' && needs.build.outputs.terminal_binaries_artifact || matrix.suite == 'material' && needs.build.outputs.material_binaries_artifact || needs.build.outputs.binaries_artifact }}
+      binaries_artifact: ${{ matrix.suite == 'terminal' && needs.build.outputs.terminal_binaries_artifact || needs.build.outputs.material_binaries_artifact }}
   deferred:
     if: inputs.os != 'macos-15'
     strategy:
