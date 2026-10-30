@@ -153,6 +153,9 @@ jobs:
     needs: plan
     if: needs.plan.outputs.preprocessor == 'true'
     uses: ./.github/workflows/shader-preprocessor.yml
+    with:
+      # The audit job owns the same helper tests and gates the verified source.
+      verify_tools: false
 
   native:
     name: Verify / ${{ matrix.os }}

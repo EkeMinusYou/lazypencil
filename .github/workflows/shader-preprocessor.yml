@@ -1,7 +1,16 @@
 name: Isolated shader preprocessing
 on:
   workflow_call:
+    inputs:
+      verify_tools:
+        type: boolean
+        default: true
   workflow_dispatch:
+    inputs:
+      verify_tools:
+        description: Verify Rust helpers before the standalone shader check
+        type: boolean
+        default: true
 permissions:
   contents: read
 env:
@@ -21,7 +30,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/xtask
         with:
-          verify: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
+          verify: ${{ inputs.verify_tools && 'true' || 'false' }}
       - name: Install the standalone Wasm target and original copyright documentation
         run: rustup toolchain install 1.94.0 --profile minimal --component rust-docs --target wasm32-unknown-unknown
       - name: Cache verified component downloads

@@ -1322,6 +1322,9 @@ mod history_tests {
         let baseline = git(&["rev-parse", "HEAD"]).trim().to_owned();
         fs::write(root.join("changed.rs"), "after").unwrap();
         fs::write(root.join("untracked.rs"), "not a compiler input").unwrap();
+        assert!(paths_since(root, Ok(baseline.clone())).unwrap().is_empty());
+        git(&["add", "changed.rs"]);
+        git(&["commit", "--quiet", "-m", "Fixture change"]);
         assert_eq!(paths_since(root, Ok(baseline)).unwrap(), ["changed.rs"]);
         let all = ["changed.rs", "unchanged.rs"];
         assert_eq!(paths_since(root, Ok("f".repeat(40))).unwrap(), all);
