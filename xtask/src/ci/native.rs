@@ -1618,7 +1618,7 @@ impl Session {
             .chain(required)
             .filter(|name| !["lib", "lazypencil"].contains(&name.as_str()))
             .cloned()
-            .collect::<BTreeSet<_>>()
+            .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
         let application = util::file_digest(&self.executable("debug"))?;

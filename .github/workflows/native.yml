@@ -467,7 +467,7 @@ jobs:
         if: inputs.lane == 'release'
         run: cargo xtask ci native focus-release
       - name: Install and diagnose the verified sandboxed Chromium runtime
-        if: inputs.lane == 'default' || inputs.lane == 'release' && inputs.measure_tui || inputs.lane == 'all' && (inputs.phase == 'full' || inputs.measure_tui || inputs.runtime_parallel || inputs.suite == 'dynamic' || inputs.suite == 'shader' || inputs.suite == 'copy' || inputs.suite == 'browser' || inputs.suite == 'browser-ci' || inputs.suite == 'render' || (inputs.suite == 'candidate' && contains(fromJSON(inputs.targets), 'dynamic_render')))
+        if: inputs.phase == 'focus' && inputs.runtime_parallel || inputs.lane == 'default' || inputs.lane == 'release' && inputs.measure_tui || inputs.lane == 'all' && (inputs.phase == 'full' || inputs.measure_tui || inputs.runtime_parallel || inputs.suite == 'dynamic' || inputs.suite == 'shader' || inputs.suite == 'copy' || inputs.suite == 'browser' || inputs.suite == 'browser-ci' || inputs.suite == 'render' || (inputs.suite == 'candidate' && contains(fromJSON(inputs.targets), 'dynamic_render')))
         timeout-minutes: 15
         run: cargo xtask ci native browser-setup --suite "${{ inputs.lane == 'release' && 'release' || inputs.lane != 'all' && 'pipeline' || inputs.suite }}"
       - name: Verify fixture-owned native clipboard images and actual Ctrl+V delivery
