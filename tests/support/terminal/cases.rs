@@ -410,7 +410,16 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
         h.wait("IME anchor follows the resized prompt", 15.0, |h| {
             let text = h.screen.text();
             let lines = text.lines().collect::<Vec<_>>();
-            h.screen.cursor().1 != previous.1
+            // Resizing the observer can move its old cursor before the redraw
+            // arrives. Require the new layout before accepting the IME anchor.
+            lines.iter().any(|line| {
+                line.starts_with("┌Prompt ")
+                    && line.ends_with('┐')
+                    && line.chars().count() == columns as usize
+            }) && lines
+                .get(rows as usize - 1)
+                .is_some_and(|line| line.starts_with("Tab / Shift+Tab panels"))
+                && h.screen.cursor().1 != previous.1
                 && lines
                     .iter()
                     .position(|line| line.contains(first))

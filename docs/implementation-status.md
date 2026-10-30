@@ -4,6 +4,8 @@
 
 ## 現在の状態（2026-10-30）
 
+cache保持修正2ca6efdの[Mac補助ツール41029446527](https://github.com/EkeMinusYou/lazypencil/actions/runs/41029446527)は2分54秒で全試験・Clippy・原本照合を成功した。別context／feature／wireと最新世代の保持、directory交換の拒否条件、実Cargoでの古い部分成果物の安全な再利用を含む。[対象native先行41029800045](https://github.com/EkeMinusYou/lazypencil/actions/runs/41029800045)もcc20e37の304ファイルを失効0件で復元し、対象のCargo test buildは0.79秒だった。一方、既存IME試験はresize後の旧画面を誤って受け入れ、古い行番号で後続入力を待って停止した。145×38の保存画面に50列の枠が残り、50×16にも前の画面が切れた枠が残る。新しい幅のPrompt枠と最下行を確認してから、元の日本語／ZWJ・カーソル・保存下書きを照合するよう修正する。製品コード・入力内容・15秒期限は変更せず、全体CIは先行成功後に一度だけ実行する。この試験修正はGHA確認待ちである。
+
 最新のcc20e37の[統合CI41025696050](https://github.com/EkeMinusYou/lazypencil/actions/runs/41025696050)は12分00秒で全工程成功した。監査、core／既定構成の全試験・両Clippy・通常開発build、release、全5 consumer、共通画像gateと署名付きsourceを維持した。assetsのsocket終了競合と、compileと重ねたPTYの2秒JS期限の失敗は解消した。端末再現はcompile join後に元の全case・期限で32.876秒で成功した。builderは3cc43daの298ファイルを再利用し、変更したassetsの6ファイルだけを無効化した。source tarは1228ファイル・SHA-256 `04ced788…83de54cd`で、署名検証結果のsource／ci.yml／main／run／attempt 1を照合した。全体10分以内の安定達成と、下記の別compiler contextの先行cache保持は未完了である。
 
 本体SHA-256は`b0297f24…07b0759`で、利用者向け3cc43da候補と一致する。通常bound最大RSSは191.52MiBで元の200MiB gateを成功し、入力／初回preview／完全出力p95は32.80／268.64／221.30ms、cached feedback p95は28.50ms、30.139秒idle CPU上限は0.398%だった。同条件の20起動／80操作等を維持し、OS cacheの統制や物理表示の受け入れ完了とはしない。Kitty修正候補の実表示・Mac Sixel、対応環境と性能条件、未定義の互換性2点、最終配布レビューは残る。[残件](#remaining-work)
