@@ -1853,11 +1853,16 @@ impl Project {
             active.pop();
             return Ok(resolved);
         }
-        let mut properties = node
+        // Children are expanded separately. Cloning their entire subtrees at
+        // every ancestor multiplies embedded image bytes by the tree depth.
+        let properties: Map<String, Value> = node
             .as_object()
             .ok_or_else(|| invalid("Node must be an object"))?
-            .clone();
-        let children = properties.remove("children");
+            .iter()
+            .filter(|(key, _)| key.as_str() != "children")
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+        let children = node.get("children");
         let property_sources = properties
             .keys()
             .map(|key| (key.clone(), origin.into()))

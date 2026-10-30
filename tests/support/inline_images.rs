@@ -3,14 +3,18 @@ use super::*;
 use base64::Engine;
 
 fn data(bytes: &[u8], base64: bool) -> String {
+    data_uri("image/png", bytes, base64)
+}
+
+fn data_uri(mime: &str, bytes: &[u8], base64: bool) -> String {
     if base64 {
         format!(
-            "data:image/png;base64,{}",
+            "data:{mime};base64,{}",
             base64::engine::general_purpose::STANDARD.encode(bytes)
         )
     } else {
         format!(
-            "data:image/png,{}",
+            "data:{mime},{}",
             bytes
                 .iter()
                 .map(|byte| format!("%{byte:02X}"))
@@ -214,23 +218,36 @@ fn raster(store: &Store) -> Vec<u8> {
 #[cfg(feature = "rendering")]
 #[test]
 fn embedded_images_match_local_image_pixels_after_the_original_file_is_removed() {
-    let png = include_bytes!("../../examples/assets/crop-source.png");
+    let mut surface = skia_safe::surfaces::raster_n32_premul((40, 20)).unwrap();
+    surface.canvas().clear(skia_safe::Color::RED);
+    let jpeg =
+        skia_safe::jpeg_encoder::encode_image(None, &surface.image_snapshot(), &Default::default())
+            .unwrap();
+    let images = [
+        (
+            "image/png",
+            include_bytes!("../../examples/assets/crop-source.png").as_slice(),
+        ),
+        ("image/jpeg", jpeg.as_bytes()),
+    ];
     for version in ["2.19", "2.21"] {
-        let temp = TempDir::new().unwrap();
-        let file = temp.path().join("main.pen");
-        let image = temp.path().join("image.png");
-        fs::write(&image, png).unwrap();
-        let mut document = json!({"version":version,"children":[{"id":"image","type":"rectangle","width":100,"height":50,"fill":{"type":"image","url":"image.png","mode":"contain"}}]});
-        write(&file, document.clone());
-        let store = Store::open(&file, Some(temp.path().join("data"))).unwrap();
-        let expected = raster(&store);
-        fs::remove_file(image).unwrap();
-        for base64 in [false, true] {
-            document["children"][0]["fill"]["url"] = json!(data(png, base64));
+        for (mime, bytes) in images {
+            let temp = TempDir::new().unwrap();
+            let file = temp.path().join("main.pen");
+            let image = temp.path().join("image.png");
+            fs::write(&image, bytes).unwrap();
+            let mut document = json!({"version":version,"children":[{"id":"image","type":"rectangle","width":100,"height":50,"fill":{"type":"image","url":"image.png","mode":"contain"}}]});
             write(&file, document.clone());
-            assert_eq!(raster(&store), expected);
+            let store = Store::open(&file, Some(temp.path().join("data"))).unwrap();
+            let expected = raster(&store);
+            fs::remove_file(image).unwrap();
+            for base64 in [false, true] {
+                document["children"][0]["fill"]["url"] = json!(data_uri(mime, bytes, base64));
+                write(&file, document.clone());
+                assert_eq!(raster(&store), expected);
+            }
+            assert!(!temp.path().join("assets").exists());
         }
-        assert!(!temp.path().join("assets").exists());
     }
 }
 

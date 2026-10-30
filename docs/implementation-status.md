@@ -8,7 +8,9 @@ a00289fの[Mac先行 40979332548](https://github.com/EkeMinusYou/lazypencil/acti
 
 先行は6分24秒で、対象はtui／agent／mcp／sampler_sourcesだった。入力とhashを検査した74ファイルの部分成果物を既存application cacheへ一度だけ保存し、全体builderが同じcommitの成果物として復元した。全体用catalogとconsumer artifactはfocusで生成・公開せず、以前のfocus終盤の失敗は解消した。全体CIは13分32秒で、10分以内の安定達成は未完了。builder8分03秒・core8分28秒・release8分42秒、通常3分53秒・runtime4分00秒・pixel2分41秒・端末1分16秒・Material1分41秒、source29秒だった。両feature構成の全試験・Clippy、通常開発build、release／性能／候補、全5 consumer・共通画像gate・署名付きsourceを成功した。同条件の検証を記録更新だけのために繰り返さない。
 
-後続の未コミット差分は、通常画像／文字列samplerと生成scriptのPNG／JPEG／WebP data URL対応である。原文とthemeを残し、ネットワークや余分な素材ファイルを使わない。復号・取消・不正入力の診断と構造修復、両文書版のcopy／detach／再copy、元画像削除後のraster一致、実WebGLの画像比較と素材回収の回帰を既存試験へ追加している。英語ガイドは1.0.52。これらはGHA未検証であり、a00289fの成功には含めない。大きな文字列を繰り返し展開する場合のメモリ上限も引き続き確認する。捕捉scriptのfile-URL／HTTP asset key、仕様確認・Mac実端末・最終配布の残件は維持する。
+後続候補58d90d2以降は、通常画像／文字列samplerと生成scriptのPNG／JPEG／WebP data URL対応である。原文とthemeを残し、ネットワークや余分な素材ファイルを使わない。復号・取消・不正入力の診断と構造修復、両文書版のcopy／detach／再copy、元画像削除後のPNG／JPEG raster一致、実WebGLの画像比較と素材回収の回帰を既存試験へ追加している。英語ガイドは1.0.52。58d90d2の[Mac補助ツール 40982534055](https://github.com/EkeMinusYou/lazypencil/actions/runs/40982534055)は全試験・Clippy・原本照合を成功した。アプリの新規Rust処理はGHA未検証であり、a00289fの成功には含めない。階層展開で子孫の画像文字列を祖先ごとに複製する処理を整理し、部分成果物の保存keyを既存focus checkpointへ分ける修正も準備した。これにより部分成果物だけで完全cacheのhitを装い、未変更unitの補完を止める条件を避ける。actionlintと整形・差分検査は成功した。大きな文字列を多数のinstanceへ展開する場合のメモリ上限も引き続き確認する。捕捉scriptのfile-URL／HTTP asset key、仕様確認・Mac実端末・最終配布の残件は維持する。
+
+a00289fのsource tar SHA-256は`4b41cc6d148cccfc592ae09c327421324c34249a3c3130613760cdc88799d276`。検証済みprovenanceのsubject、source revision、ci.yml／mainの署名identityとrun 40980024513の対応を照合した。HTTPのlight／darkを含む8条件・16 PNGの比較gateが成功しており、後続data画像の10条件・20 PNGへ拡張する未検証のgateとは区別する。
 
 ### a00289f以前の経緯（以下は当時の状態）
 
