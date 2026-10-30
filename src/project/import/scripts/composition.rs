@@ -203,6 +203,10 @@ impl Copier<'_> {
                 crate::operations::ScriptAssetKind::Shader => "shader",
                 crate::operations::ScriptAssetKind::Script => "script",
             };
+            if kind == "image" && crate::inline_images::is_data(&asset.uri) {
+                self.project.capture_image(output, &asset.uri)?;
+                continue;
+            }
             let key = crate::project::bindings::asset_key(kind, &asset.uri)?;
             let target = self.asset(output, &asset.uri, kind)?;
             if !source.script_scopes.is_empty() {
@@ -281,6 +285,13 @@ impl Copier<'_> {
         }
         let active = values["script_namespace"].as_str().unwrap_or("").to_owned();
         for asset in additional {
+            if matches!(asset.kind, crate::operations::ScriptAssetKind::Image)
+                && crate::inline_images::is_data(&asset.uri)
+            {
+                // These were captured above and travel in generated output,
+                // rather than occupying a filesystem binding key.
+                continue;
+            }
             if let Some(scopes) = values.get_mut("script_scopes") {
                 let kind = match asset.kind {
                     crate::operations::ScriptAssetKind::Image => "image",

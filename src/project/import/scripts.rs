@@ -314,6 +314,10 @@ impl Copier<'_> {
                 } else {
                     uri.clone()
                 };
+                if kind == "image" && crate::inline_images::is_data(&source_uri) {
+                    self.project.capture_image(&owner, &source_uri)?;
+                    continue;
+                }
                 let path = self.project.resolve_file(&owner, &source_uri)?;
                 let target = self.asset(&owner, &source_uri, &kind)?;
                 let relative = relative_uri(&origin, &path)?;

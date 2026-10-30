@@ -4,11 +4,15 @@
 
 ## 現在の状態（2026-10-30）
 
+ebf068fの[Mac先行 40983097793](https://github.com/EkeMinusYou/lazypencil/actions/runs/40983097793)は、対象build／Clippyと埋め込み画像unit 3件を成功した。通常PNG／JPEGの元ファイル削除後のraster一致、生成scriptの独立copy／元source削除／再copy、不正画像の診断・構造修復、文字列samplerのtheme保持も成功した。通常画像のcopy／detach試験は、コピー後の先頭rootを対象と決め打ちしてfillを読んだ箇所で停止したため、生成IDで対象nodeを選ぶ。全対象試験と素材回収の追加回帰はまだ成功根拠にしない。
+
+後続候補では、scriptの捕捉namespace内にある通常のdata画像と、再copy時の追加script_assetsのdata画像をファイルパスへ変換せず検証・保持する。既存の生成script回帰へ通常部品のdata画像と再copyでの追加宣言を加える。先行のbuild成功後に試験assertionが失敗しても、既存の入力／hash検査を通すdebug成果物をfocus checkpointへ保存できるようにする。試験結果はcacheせず、後続の試験を省略しない。整形・差分検査とactionlintは成功し、アプリの後続差分は次の同じMac先行で確認する。重いbuildはGHAのみで行い、実行中の有用なCIは中断していない。
+
 a00289fの[Mac先行 40979332548](https://github.com/EkeMinusYou/lazypencil/actions/runs/40979332548)と、同じcommitの[全体CI 40980024513](https://github.com/EkeMinusYou/lazypencil/actions/runs/40980024513)は全工程成功した。HTTP画像の通常／テーマ／copy／再copy・元source削除・実WebGLのyellow／blue画素とbefore／after一致、固定された本repositoryのHTTPS画像取得が検証済みになった。MCPの5 API取消、TUIの送信準備中の取消・close／drop・下書きと画像保持、許可失効後のadapter回収も成功した。物理macSKKの候補表示・実端末受け入れとは区別する。
 
 先行は6分24秒で、対象はtui／agent／mcp／sampler_sourcesだった。入力とhashを検査した74ファイルの部分成果物を既存application cacheへ一度だけ保存し、全体builderが同じcommitの成果物として復元した。全体用catalogとconsumer artifactはfocusで生成・公開せず、以前のfocus終盤の失敗は解消した。全体CIは13分32秒で、10分以内の安定達成は未完了。builder8分03秒・core8分28秒・release8分42秒、通常3分53秒・runtime4分00秒・pixel2分41秒・端末1分16秒・Material1分41秒、source29秒だった。両feature構成の全試験・Clippy、通常開発build、release／性能／候補、全5 consumer・共通画像gate・署名付きsourceを成功した。同条件の検証を記録更新だけのために繰り返さない。
 
-後続候補58d90d2以降は、通常画像／文字列samplerと生成scriptのPNG／JPEG／WebP data URL対応である。原文とthemeを残し、ネットワークや余分な素材ファイルを使わない。復号・取消・不正入力の診断と構造修復、両文書版のcopy／detach／再copy、元画像削除後のPNG／JPEG raster一致、実WebGLの画像比較と素材回収の回帰を既存試験へ追加している。英語ガイドは1.0.52。58d90d2の[Mac補助ツール 40982534055](https://github.com/EkeMinusYou/lazypencil/actions/runs/40982534055)は全試験・Clippy・原本照合を成功した。アプリの新規Rust処理はGHA未検証であり、a00289fの成功には含めない。階層展開で子孫の画像文字列を祖先ごとに複製する処理を整理し、部分成果物の保存keyを既存focus checkpointへ分ける修正も準備した。これにより部分成果物だけで完全cacheのhitを装い、未変更unitの補完を止める条件を避ける。actionlintと整形・差分検査は成功した。大きな文字列を多数のinstanceへ展開する場合のメモリ上限も引き続き確認する。捕捉scriptのfile-URL／HTTP asset key、仕様確認・Mac実端末・最終配布の残件は維持する。
+後続候補58d90d2以降は、通常画像／文字列samplerと生成scriptのPNG／JPEG／WebP data URL対応である。原文とthemeを残し、ネットワークや余分な素材ファイルを使わない。英語ガイドは1.0.52。58d90d2の[Mac補助ツール 40982534055](https://github.com/EkeMinusYou/lazypencil/actions/runs/40982534055)は全試験・Clippy・原本照合を成功した。アプリの確認済み範囲と失敗は冒頭を参照し、a00289fの全体成功には含めない。階層展開で子孫の画像文字列を祖先ごとに複製する処理を整理し、部分成果物の保存keyを既存focus checkpointへ分けた。部分成果物だけで完全cacheのhitを装い、未変更unitの補完を止める条件を避ける。実WebGL比較・20 PNGの共通gate、素材回収の追加回帰と両feature構成の全体成功は引き続き確認する。大きな文字列を多数のinstanceへ展開する場合のメモリ上限、捕捉scriptのfile-URL／HTTP asset key、仕様確認・Mac実端末・最終配布の残件は維持する。
 
 a00289fのsource tar SHA-256は`4b41cc6d148cccfc592ae09c327421324c34249a3c3130613760cdc88799d276`。検証済みprovenanceのsubject、source revision、ci.yml／mainの署名identityとrun 40980024513の対応を照合した。HTTPのlight／darkを含む8条件・16 PNGの比較gateが成功しており、後続data画像の10条件・20 PNGへ拡張する未検証のgateとは区別する。
 
@@ -330,7 +334,7 @@ ab8c785の既定構成builderは7分42秒、通常consumer3分24秒、pixel cons
 
 - 元エンコード保存と縮小版のCLI／TUI操作、入力スレッドによる変換・保存、キャンセル時の候補回収、ユーザーの `[attachments]` 設定は `c11a0f9` でMac先行・両feature構成の完全検証・監査・署名sourceまで成功した。設定を下げた後の送信拒否・段階的な縮小による修復・元画像と下書き保持、実ACPが受信した縮小PNGを含む。既定8枚・各20MiB・合計各50MiB・16Mi画素とネイティブ単体の安全上限は維持する。PNG検査は既存Rust補助バイナリのpng-inspectへ移行済みで、試験コードの検査経路はTUI featureに依存しない。個別feature構成の過去の実行根拠は、現在の通常CIのcore／既定2構成と区別して扱う。物理IMEと最終受け入れは引き続き確認する。
 
-個別仕様に残る制約も、完了扱いにしない。独立copyの非localな文字列samplerと未参照のproject素材回収は各サービス文書の現行範囲を参照する。font lockfileは625bec7の完全CIで検証済みで、公開受け入れ全体は冒頭で区別している。欠損library／設定fontの診断と修復は上記のとおり検証済みである。runtime導入の取消・保存同期は `99cc153` の完全CIで通常導入と取消試験を成功した。通信待ちを所有する子プロセス、lock待機・分割転送・hash・展開の取消、公開前のfile／directory同期と新規ancestor同期、取消時の未完成物回収と既存Rust補助バイナリを使う回帰試験を含む。コンパイル・通常の実通信と取消の成功から、全異常終了経路・電源断時の耐障害性・最終配布の受け入れ完了とはしない。Browserが広告するdevice IDはdesktop／phone／tabletだけで、全Pencil presetへの対応を宣言しない。GLSLの宣言・構造体・前処理は実装済みだが、fill-stage `pencil:object` は未対応である。2026-10-30に[公開形式仕様](https://docs.pencil.dev/for-developers/the-pen-format)を再確認したところ、deviceIdは文字列でpreset一覧の定義がなく、object画像の意味はeffect段階で明記されている一方、fill段階の評価順序は明記されていない。この二点を仕様確認待ちとして残し、推測した動作を本家互換とは宣言しない。元の必須条件は維持する。
+HTTP(S)文字列samplerはa00289f、未参照のproject素材回収は9865944、font lockfileは625bec7の完全CIで検証済みである。data画像の後続対応と捕捉scriptのfile-URL／HTTP asset keyは冒頭の状態を参照する。欠損library／設定fontの診断と修復も検証済みである。runtime導入の取消・保存同期は `99cc153` の完全CIで通常導入と取消試験を成功した。通信待ちを所有する子プロセス、lock待機・分割転送・hash・展開の取消、公開前のfile／directory同期と新規ancestor同期、取消時の未完成物回収と既存Rust補助バイナリを使う回帰試験を含む。コンパイル・通常の実通信と取消の成功から、全異常終了経路・電源断時の耐障害性・最終配布の受け入れ完了とはしない。Browserが広告するdevice IDはdesktop／phone／tabletだけで、全Pencil presetへの対応を宣言しない。GLSLの宣言・構造体・前処理は実装済みだが、fill-stage `pencil:object` は未対応である。2026-10-30に[公開形式仕様](https://docs.pencil.dev/for-developers/the-pen-format)を再確認したところ、deviceIdは文字列でpreset一覧の定義がなく、object画像の意味はeffect段階で明記されている一方、fill段階の評価順序は明記されていない。この二点を仕様確認待ちとして残し、推測した動作を本家互換とは宣言しない。元の必須条件は維持する。
 
 公開前の確認・決定：
 
@@ -351,12 +355,13 @@ macOS の常用メモリは `7fe854b` の既存候補で172.03MiB、cached feedb
 
 ### 完成までの順序と概算
 
-1. 拡張済み依存cacheのwarm再利用と、異なるMac 15 imageでの通常consumerの実成功はb09a329で確認した。全5 consumerの最終gateもc38fc1cまで複数回成功している。10分目標と、新imageの補助tool依存checkpoint、初回Skia build直後の重複compileの改善は残る。試験専用入力の再利用はec9d668、独立コピーの生成script所有元はd7cc9c6で検証済みになった。
-2. 同時認証利用はe786e3eの全工程CIで検証済み。旧3〜5実働日の概算には、既に検証済みの追加フォント遅延読み込みとこの対応が含まれており、現在の残工数には加算しない。
-3. 各個別仕様の残る互換処理（非local samplerなど）を具体化する。素材回収は9865944の完全CIで、選んだroot／data directoryの範囲と不明な参照の保護を含むCLIとして検証済みになった。font lockfileは625bec7の完全CIでCLI／実MCP／TUI workerと最終gateまで検証済みになった。欠損library／設定fontの診断と修復はc38fc1cで検証済みになった。残る追加分の工数は未確定。
-4. 不足する受け入れ確認、保証環境の確定、配布・文書整理：2〜4実働日の概算。
+1. 準備済みdata画像対応とscript copyの修正をMac先行で確認し、成功後に同じcommitを両feature構成・実WebGL・共通画像gateまで広げる。HTTP画像、TUI送信準備・取消はa00289fで検証済みであり、改めて未実装には戻さない。
+2. 捕捉scriptのfile-URL／HTTP asset keyと、多数のinstanceへ大きな文字列を展開する際のメモリ境界を確認・実装する。非local画像一般が未対応という古い扱いはしない。
+3. 既存ログに基づき、部分／完全成果物の再利用と長い先行試験の配置を整理する。先行6分24秒・全体13分32秒を直近の実測とし、全体10分以内は未達として改善する。Cargoの鮮度判定、各feature・検証目的・元の期限と最終gateは維持する。
+4. 公開仕様に意味の記載がないdevice presetとfill-stage object samplingを確認し、推測を本家互換として実装済みにしない。
+5. 不足するMac実端末・接続・性能の受け入れ、保証環境と配布候補、旧参照素材の履歴の扱い、文書を確定する。既に有効な同条件の証拠を再利用する。
 
-上記は旧3環境方針での概算である。初回Macのみへの変更で、Linuxの環境確認・配布・最低版調整は初回から外れる。共通の機能不足はそのまま残るため、全工数を単純に1/3にはしない。前回提示した8〜15実働日は主要4項目と確認作業に対する1人換算の概算だった。画像添付など個別仕様との差分の追加工数は含めていないため、製品全体の完成日を確約する総見積もりには使わない。実機環境確保・権利処理の待ち時間も別である。完成目標に沿って実装を再開している。変更箇所を1環境で先行検証し、元の最終合格基準を維持する。同じ入力・環境・目的で確認済みの内容を、根拠なく再検証しない。
+初回Mac Apple Siliconのみで、現在の残件に対する暫定概算は5〜10実働日程度とする。仕様確認・実機環境確保・権利処理の待ち時間は別で、完成日の確約には使わない。旧3環境時代の8〜15日や、解消済みの同時認証・追加フォント・素材回収・font lockfileを含む古い概算は現在の残工数へ加算しない。Linux／Windows／Intel Macを初回へ戻さず、機能・互換性・性能・配布の元の完成条件は維持する。
 
 
 <details>

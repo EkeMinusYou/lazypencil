@@ -82,10 +82,9 @@ fn embedded_image_paints_copy_and_detach_without_managed_files_in_both_formats()
             );
             let project = Project::load(&store).unwrap();
             assert_captured(&project, store.path(), &uri, png);
-            assert_eq!(
-                project.resolve().unwrap().roots[0].properties["fill"]["url"],
-                uri
-            );
+            let scene = project.resolve().unwrap();
+            let node = scene.roots.iter().find(|node| node.id() == target).unwrap();
+            assert_eq!(node.properties["fill"]["url"], uri);
             assert!(!temp.path().join("assets").exists());
         }
     }
@@ -273,7 +272,7 @@ fn generated_embedded_images_survive_independent_script_copy_source_removal_and_
         .unwrap();
         write(
             &temp.path().join("library/library.pen"),
-            json!({"version":version,"children":[{"id":"generator","type":"script","reusable":true,"width":32,"height":16,"scriptUri":"generator.js"}]}),
+            json!({"version":version,"children":[{"id":"generator","type":"script","reusable":true,"width":32,"height":16,"scriptUri":"generator.js"},{"id":"embedded_tile","type":"rectangle","reusable":true,"width":32,"height":16,"fill":{"type":"image","url":uri}}]}),
         );
         let file = temp.path().join("main.pen");
         write(
@@ -318,10 +317,14 @@ fn generated_embedded_images_survive_independent_script_copy_source_removal_and_
             .unwrap();
         fs::remove_dir_all(temp.path().join("library")).unwrap();
         assert_eq!(render(), expected);
+        let manifest = serde_json::Map::from_iter([(
+            component.to_owned(),
+            json!([{"kind":"image","uri":uri}]),
+        )]);
         apply(
             &store,
             json!([
-                {"op":"import_component","source":{"node_id":component},"mode":"copy"},
+                {"op":"import_component","source":{"node_id":component},"mode":"copy","options":{"script_assets":manifest}},
                 {"op":"delete","target":target}
             ]),
             false,
