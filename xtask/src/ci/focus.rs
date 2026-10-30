@@ -1223,14 +1223,21 @@ pub fn changed_paths(root: &Path) -> Result<Vec<String>> {
         }
         anyhow::bail!("No verified all-platform baseline")
     }
-    let bytes = match baseline(root) {
-        Ok(base) => process::text(Command::new("git").current_dir(root).args([
+    paths_since(root, baseline(root))
+}
+
+fn paths_since(root: &Path, baseline: Result<String>) -> Result<Vec<String>> {
+    let changes = baseline.and_then(|base| {
+        process::text(Command::new("git").current_dir(root).args([
             "diff",
             "--name-only",
             "-z",
             &base,
             "HEAD",
-        ]))?,
+        ]))
+    });
+    let bytes = match changes {
+        Ok(bytes) => bytes,
         Err(error) => {
             eprintln!("Expanding focus: {error:#}");
             process::text(
@@ -1286,6 +1293,43 @@ pub fn build_before_lint(suite: &str, matched_key: &str) -> bool {
 #[cfg(test)]
 mod history_tests {
     use super::*;
+
+    #[test]
+    fn unavailable_baseline_objects_expand_to_all_tracked_files_after_a_history_rewrite() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        let git = |args: &[&str]| {
+            process::text(
+                Command::new("git")
+                    .current_dir(root)
+                    .args([
+                        "-c",
+                        "commit.gpgsign=false",
+                        "-c",
+                        "user.name=Fixture",
+                        "-c",
+                        "user.email=fixture@example.invalid",
+                    ])
+                    .args(args),
+            )
+            .unwrap()
+        };
+        git(&["init", "--quiet"]);
+        fs::write(root.join("changed.rs"), "before").unwrap();
+        fs::write(root.join("unchanged.rs"), "keep").unwrap();
+        git(&["add", "changed.rs", "unchanged.rs"]);
+        git(&["commit", "--quiet", "-m", "Fixture baseline"]);
+        let baseline = git(&["rev-parse", "HEAD"]).trim().to_owned();
+        fs::write(root.join("changed.rs"), "after").unwrap();
+        fs::write(root.join("untracked.rs"), "not a compiler input").unwrap();
+        assert_eq!(paths_since(root, Ok(baseline)).unwrap(), ["changed.rs"]);
+        let all = ["changed.rs", "unchanged.rs"];
+        assert_eq!(paths_since(root, Ok("f".repeat(40))).unwrap(), all);
+        assert_eq!(
+            paths_since(root, Err(anyhow::anyhow!("History lookup failed"))).unwrap(),
+            all
+        );
+    }
 
     fn response(success: bool, stdout: &[u8], stderr: &[u8]) -> process::Output {
         #[cfg(unix)]
