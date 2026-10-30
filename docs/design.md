@@ -2,9 +2,9 @@
 
 作成日: 2026-10-23
 
-更新日: 2026-10-28
+更新日: 2026-10-30
 
-設計版: 0.12
+設計版: 0.13
 
 状態: 基本設計と初回対応範囲は確定。Rust、Skia CPU／SkParagraph、MIT、固定 Noto Sans JP、Kitty／Sixel、JavaScript／Web ページ／GLSL を採用し、対応文書版は2.19／2.21、新規作成は2.21である。初回リリースはmacOS Apple Siliconのみに変更した。過去の3環境の検証は履歴として保持し、機能実装とMacの公開受け入れは未完了。[現在の実装・検証・残件](implementation-status.md#current-status) を正本とし、下記の受け入れ条件は維持する。
 
@@ -547,7 +547,7 @@ lazypencil runtime setup chromium
 
 外部アダプターに Node.js などが必要な場合でも、それを本体の画像出力・閲覧の必須依存にはしない。未導入のエージェントを選んだ場合は、必要なパッケージと接続手順を案内する。ユーザーの確認なしにインストールや更新を行わない。
 
-初回リリースの対応環境は macOS Apple Silicon（`aarch64-apple-darwin`）のみとする。Linux x64／arm64・Windows の既存実装、runtime catalogue、診断fixtureは保持するが、追加対応・配布・必須CI・公開判定は後日に回す。Intel Mac は対象外とする。保存・描画・3種類の動的コンテンツ・AI接続・TUI・性能・配布をMacで検証し、最低macOSと保証端末を実際の結果に基づいて固定する。[フォントと対応環境](fonts-and-platforms.md)
+初回リリースの対応環境は macOS 15.7.9以降のApple Silicon（`aarch64-apple-darwin`）とする。最低版は実行済みの15.7.9から定め、15.8.2での通常試験とreleaseの成功も保持する。Linux x64／arm64・Windows の既存実装、runtime catalogue、診断fixtureは保持するが、追加対応・配布・必須CI・公開判定は後日に回す。Intel Mac は対象外とする。保存・描画・3種類の動的コンテンツ・AI接続・TUI・性能・配布をMacで検証し、保証端末の実画面確認は別途完了させる。[フォントと対応環境](fonts-and-platforms.md)
 
 ## 検証と受け入れ条件
 
@@ -598,7 +598,7 @@ lazypencil runtime setup chromium
 
 対象選択では補助ツールのバイナリーを準備し、ソースを検査してキャッシュ保存用の空きを確保する。Linuxの補助ツール全試験・Clippyは後続の監査jobへまとめ、Mac検証と並列に実行する。Mac固有の補助ツール検証も保持し、署名付きsourceの最終gateはMac検証と監査の両方の成功を要求する。対象選択から移した試験を省略したり、失敗を成功へ読み替えたりしない。
 
-重いビルドはGHAで行う。通常のnative対象はMac1環境とする。core・既定構成のビルド・releaseを並列に進め、既定構成の実行ファイルは一度だけ作る。同じ台帳から通常・pixel/font・端末・runtime・Materialの5 consumerへ渡し、別Macで試験する。同時起動は4 consumerまでとし、長いruntime／通常／pixel／Materialを優先して、短い端末系を最初に空いた枠へ入れる。consumerはコンパイラー・image・ビルド条件・ソース・hashを照合してから実行する。consumerでnativeビルドや依存cacheの再展開は行わず、runtime側の転送は実際に使う12対象と本体へ絞る。受け渡しはtar/Zstandard（128MiBの照合window）の単一streamとし、静的リンク部分をファイル間でも圧縮する。Actionsによる個別ファイルの再圧縮を除き、展開時はreceiptにある通常ファイルだけを受け付け、その後のcompiler条件・hash検査を維持する。consumerでCargoが呼ばれた場合は実行前に失敗させる。
+重いビルドはGHAで行う。通常のnative対象はMac1環境とする。core・既定構成のビルド・releaseを並列に進め、既定構成の実行ファイルは一度だけ作る。同じ台帳から通常・pixel/font・端末・runtime・Materialの5 consumerへ渡し、別Macで試験する。同時起動は4 consumerまでとし、長いruntime／通常／pixel／Materialを優先して、短い端末系を最初に空いた枠へ入れる。consumerはコンパイラー・image・ビルド条件・ソース・hashを照合してから実行する。consumerでnativeビルドや依存cacheの再展開は行わず、runtime側の転送は実際に使う11試験実行ファイル（library試験を含む）と本体の計12本へ絞る。受け渡しはtar/Zstandard（128MiBの照合window）の単一streamとし、静的リンク部分をファイル間でも圧縮する。Actionsによる個別ファイルの再圧縮を除き、展開時はreceiptにある通常ファイルだけを受け付け、その後のcompiler条件・hash検査を維持する。consumerでCargoが呼ばれた場合は実行前に失敗させる。
 
 ビルドcacheは引き続きcompiler・runner image・入力・flagsへ束縛する。現在のrelease依存を持つbaselineを既定構成の完全buildで拡張したcacheを優先し、保存が確認できた後に同じ環境・wire formatの旧baselineを整理する。warm hitでは同じ完全cacheを追加保存しない。cold／旧入力／先行試験だけのcacheは、現在のrelease依存も揃ったものとは扱わない。
 
@@ -630,7 +630,7 @@ Rust、Skia CPU・SkParagraph、MIT ライセンス、標準フォントの Noto
 - 依存は Cargo.toml／Cargo.lock、Chromium156.0.8078.47と取得元・hashは runtime manifest に記録済み。MCP は2025-11-25を広告する。更新時は影響する接続・描画条件を検証する。
 - Noto Sans JP は Google Fonts revision66a36c8c94b1a5d992ee4e7f392fccfe4945767c の可変 wght TTF を同梱し、元の OFL・metadata・hashを保持する。追加フォントは設定・CLIから利用可能。ファミリー単位の遅延読み込みと文字不足に応じたfallback登録は9d6613bで検証済み。再現用font lockfileも実装し、JSON版1のschema・明示取得・revision付き更新・共通照合を[フォント仕様](fonts.md#reproducibility-lockfile)へ定めた。最終CIと公開受け入れは[現状](implementation-status.md#current-status)で区別する。
 - JavaScript／browser／shader／cache／会話保持の設定と上限は実装済み。[設定](configuration.md) と各サービスの Rust 定義を正本とする。画像入力の既定は8枚・単体20MiB・合計各50MiB・16Mi画素で、ユーザーの`[attachments]`設定と明示的な送信用縮小をc11a0f9の完全CIで検証済み。単体デコーダーの安全上限と設定可能な範囲は [画像入力](image-attachments.md) に明記する。
-- 最低macOS、保証端末、統制した性能条件と Chromium の別予算、配布候補の最終受け入れは未確定。Macの対象機能とOS／CPU以外の元の完成条件は変えない。
+- 最低macOSは15.7.9に固定した。保証端末、統制した性能条件と Chromium の別予算、配布候補の最終受け入れは未確定。Macの対象機能とOS／CPU以外の元の完成条件は変えない。
 - 本家との総合デザイン品質比較は当初から保留。許諾を確認していない本家出力を取得・配布する前提にはしない。
 
 部品アドレス・編集バッチ・計算結果・画像添付は個別仕様へ接続済み。実装済み、個別条件で検証済み、公開受け入れ済みを区別する。すべての詳細を新たな設計待ちに戻さず、[現在の残件](implementation-status.md#remaining-work) から完成を進める。

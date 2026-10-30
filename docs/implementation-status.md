@@ -12,6 +12,8 @@ cache保持修正2ca6efdの[Mac補助ツール41029446527](https://github.com/Ek
 
 以下のsource別記録は各実行時点の経緯であり、その時点の「次に確認する」を現在の未完了へ加算しない。最新結果と上記の残件を優先する。
 
+最低macOSは既存の実行結果に基づき15.7.9（24G830）に固定した。51ed911では旧imageの15.7.9で既定build・core・runtime、新imageの15.8.2（24H232）で通常consumer・releaseが成功した。最低版と保証端末の実画面は分け、Mach-Oの宣言11.0をより古いOSの受け入れへ置き換えない。ab943caの[対象検証41032897539](https://github.com/EkeMinusYou/lazypencil/actions/runs/41032897539)も2分36秒で成功し、旧imageの完全成果物304ファイルを失効0件で再利用した。新imageのfocused keyには該当せず、その実復元成功とはしない。未変更の完全成果物に対する先行保存は0件で、同じ約905MBを重複保存しなかった。この試行だけのために同じ検証や全体CIを繰り返さない。
+
 2ca6efdの[対象native先行41029800045](https://github.com/EkeMinusYou/lazypencil/actions/runs/41029800045)はcc20e37の304ファイルを失効0件で復元し、対象のCargo test buildは0.79秒だったが、既存IME試験がresize後の旧画面を誤って受け入れ、古い行番号で後続入力を待って停止した。145×38の保存画面に50列の枠が残り、50×16にも前の画面が切れた枠が残った。新しい幅のPrompt枠と最下行を確認してから、元の日本語／ZWJ・カーソル・保存下書きを照合する51ed911で解消した。製品コード・入力内容・15秒期限は変更せず、先行成功後に全体CIを一度だけ実行した。
 
 直前のcc20e37の[統合CI41025696050](https://github.com/EkeMinusYou/lazypencil/actions/runs/41025696050)は12分00秒で全工程成功した。assetsのsocket終了競合と、compileと重ねたPTYの2秒JS期限の失敗は解消した。端末再現はcompile join後に元の全case・期限で32.876秒で成功した。builderは3cc43daの298ファイルを再利用し、変更したassetsの6ファイルだけを無効化した。source tarは1228ファイル・SHA-256 `04ced788…83de54cd`で、署名検証結果のsource／ci.yml／main／run／attempt 1を照合した。この時点では別compiler contextの先行cache保持が未修正だった。
@@ -456,7 +458,7 @@ HTTP(S)文字列samplerはa00289f、未参照のproject素材回収は9865944、
 
 公開前の確認・決定：
 
-- 最低macOSと保証端末を、実測結果に基づいて固定する。MacでKitty／Sixel両方と、保証する端末による画像・日本語・キーボード操作の条件を維持する。利用者が報告したKittyの日本語確定・候補／カーソル位置・Preview操作・resize・clipboard添付は受け入れ済みとする。ズーム点滅の修正後、Sixel、未申告の入力方式と宣言する tmux／SSH の範囲は別途確認する。
+- 最低macOSは実測結果に基づき15.7.9へ固定した。保証端末は引き続き確定し、MacでKitty／Sixel両方と、保証する端末による画像・日本語・キーボード操作の条件を維持する。利用者が報告したKittyの日本語確定・候補／カーソル位置・Preview操作・resize・clipboard添付は受け入れ済みとする。ズーム点滅の修正後、Sixel、未申告の入力方式と宣言する tmux／SSH の範囲は別途確認する。
 - Codex／Claudeのサブスクリプション経路は画像付き実編集とguide／style取得を確認済み。2026-10-30の決定により、この成功を実接続の利用確認とし、Claude APIなどAPIキー経路の追加実接続は初回の必須残件から除く。API接続の実装・認証経路の区別・既存の自動試験は維持し、未確認の組合せを検証済みと表示しない。Codex API／自作project guide／初期画像添付の既存成功も保持する。Mac実端末は利用者が確認する方針へ更新した。
 - 統制した cold/warm・基準環境の性能、Chromium を含む別予算、最終配布候補の環境・署名・元の notice／ソース提供条件を確認する。過去の同条件の有効な証拠は再利用する。
 - 旧PNG11点・派生JSON3点は、2026-10-30の承認に基づき公開mainの全履歴から除去した。559コミットの対象外全ファイル・内容・モードとHEAD treeの一致、全新参照から14パス・17 blob版への到達不能を確認した。履歴整理前の1,225 artifact・158 sourceに除去前source・不明sourceは0件だった。過去配布の判断やGitHub保持objectの物理消去は別である。ローカル全体GCは対象外の復旧データも巻き込むため実行せず、reflog等は保全した。[根拠](design-guidance.md#pencil-の-skill-とライセンス)

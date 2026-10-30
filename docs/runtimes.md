@@ -1,6 +1,6 @@
 # Browser runtime installation
 
-Initial-release support is macOS Apple Silicon only. Linux x64/arm64 and Windows are deferred; existing runtime catalogue entries, implementations and explicitly requested diagnostics are retained. Intel Mac is unsupported. Normal native CI and manual-workflow defaults select Mac. Lightweight Linux audit/packaging hosts are not Linux application acceptance.
+Initial-release support is macOS 15.7.9 or later on Apple Silicon; see [platform evidence](fonts-and-platforms.md#対応環境と後日のクロスプラットフォーム対応). Linux x64/arm64 and Windows are deferred; existing runtime catalogue entries, implementations and explicitly requested diagnostics are retained. Intel Mac is unsupported. Normal native CI and manual-workflow defaults select Mac. Lightweight Linux audit/packaging hosts are not Linux application acceptance.
 
 Static Skia rendering and script-generated geometry do not require Chromium. Browser nodes and GLSL fills/effects require a separate headless browser installation. Rendering never downloads or updates a runtime.
 
@@ -124,7 +124,7 @@ On a hosted Linux runner with that restriction enabled, the workflow loads an Ap
 
 ## Current verification and historical runs
 
-The completed baseline [c9ffb37](https://github.com/EkeMinusYou/lazypencil/actions/runs/40679529757) passed sandboxed page/shader, MCP, PTY, profile and runtime/source checks on all three targets in the earlier cross-platform scope. Managed installation and checksum/integrity cases passed; these do not certify filesystem power-loss durability or minimum OS. Product read-only host facts are not a startup probe. Minimum environments and shared-profile multi-client acceptance remain open.
+The latest [51ed911 Mac pipeline](https://github.com/EkeMinusYou/lazypencil/actions/runs/41031176732) passed all final gates. Its runtime consumer executed on macOS 15.7.9 and its normal/release jobs on 15.8.2. Managed installation, sandboxed pages/shaders, MCP, PTY, integrity and source checks retain their original conditions. Same-profile retained-preview/bound-MCP sharing passed at `e786e3e` and subsequent complete gates; it is not an unimplemented multi-client feature. The initial OS baseline is fixed at 15.7.9; physical terminal acceptance and publication remain open. These results do not certify filesystem power-loss durability, and product read-only host facts remain distinct from a startup probe. The [c9ffb37 three-platform run](https://github.com/EkeMinusYou/lazypencil/actions/runs/40679529757) belongs to the earlier cross-platform scope.
 
 <details>
 <summary>Earlier source-scoped integration results</summary>
