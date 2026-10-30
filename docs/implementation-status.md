@@ -4,6 +4,8 @@
 
 ## 現在の状態（2026-10-30）
 
+2988fb5の[Mac先行 40993626094](https://github.com/EkeMinusYou/lazypencil/actions/runs/40993626094)は終了し、補助ツールの全試験／Clippyは成功した。アプリの先行Clippyは、共通expandの引数を追加した際に、detach／import／変数文脈などの呼出し13箇所へ新しいbudgetを渡していなかったため、型不一致で停止した。新しい展開試験とアプリ機能の成功根拠にはしない。修正では全呼出しを照合し、既存component再利用表は従来の合計node数に加えて同じ共有budgetを保持する。ローカル整形・差分検査までで、次の対象試験で確認する。
+
 後続候補では、部品・変数の展開に128MiBの操作単位の複製作業量budgetを追加する。node数だけでは抑えられない長い文字列・キー・propertyを複製前に計上し、全rootと各script layout passの生成結果で共有する。参照先の検索では部品／変数の定義を借用し、毎回の丸ごと複製を避ける。上限超過は`RESOURCE_LIMIT`とし、Data URI・テキストの原文や文書を変更しない。変数一覧も共有budgetを使う。小さな上限で実際の部品・変数・生成出力を展開する既存Rust unitへ、両形式・literal／aliasの値保持と、途中拒否・無変更の回帰を追加した。英語ガイドは1.0.54。整形・差分検査までであり、GHA確認はまだである。128MiBは複製作業量の保守的な見積もりで、process RSSの保証ではない。
 
 9059fbaの[全体CI 40991417079](https://github.com/EkeMinusYou/lazypencil/actions/runs/40991417079)は全工程成功した。Macのcore／既定構成の全試験・Clippy、通常開発build、release／smoke／性能測定、全5 consumer、共通画像gateと署名付きsourceを含む。捕捉scriptのfile URL／HTTP asset key、入れ子namespace所有、移動・offline再copyを検証済みとする。実WebGLでは`.pen` 2.19／2.21 × file URL／HTTPの4条件で、file URLのJS／GLSLとURL samplerを実行し、元sourceとserverの削除後・offline再copy後もyellow画素と同一PNGを確認した。追加12 PNGは40×20、SHA-256 `90128eeca6c00ebb136f1303df9febe31849ad22777ee34950445cc244a17e41`で、取得した全byte列のhashとreport・今回sourceを独立照合した。従来のsampler 10条件・20 PNGも維持した。

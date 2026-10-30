@@ -245,7 +245,14 @@ impl Project {
                     }))
             && matches!(node["type"].as_str(), Some("script" | "browser" | "ref"))
         {
-            Some(self.expand(origin, node, None, &[], &mut Vec::new(), &mut 0)?)
+            Some(self.expand(
+                origin,
+                node,
+                None,
+                &[],
+                &mut Vec::new(),
+                &mut Expansion::default(),
+            )?)
         } else {
             None
         };
@@ -307,7 +314,14 @@ impl Project {
             );
         }
         if let Some(overrides) = node.get("descendants").and_then(Value::as_object) {
-            let mut expanded = self.expand(origin, node, None, &[], &mut Vec::new(), &mut 0)?;
+            let mut expanded = self.expand(
+                origin,
+                node,
+                None,
+                &[],
+                &mut Vec::new(),
+                &mut Expansion::default(),
+            )?;
             let mut relocated = Map::new();
             for (path, changes) in overrides {
                 let parts = path.split('/').collect::<Vec<_>>();

@@ -124,9 +124,14 @@ impl Copier<'_> {
         budget.pair(name, &id)?;
         values["components"][name] = json!(id);
         let definition = self.project.documents[&key.0].node(&key.1)?;
-        let expanded =
-            self.project
-                .expand(&key.0, definition, None, &[], &mut Vec::new(), &mut 0)?;
+        let expanded = self.project.expand(
+            &key.0,
+            definition,
+            None,
+            &[],
+            &mut Vec::new(),
+            &mut Expansion::default(),
+        )?;
         let mut paths = Map::new();
         let mut contexts = Map::new();
         self.override_paths(&expanded, &mut paths, &mut contexts, budget)?;

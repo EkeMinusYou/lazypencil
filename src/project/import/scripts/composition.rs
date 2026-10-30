@@ -136,7 +136,7 @@ impl Copier<'_> {
                 None,
                 &[],
                 &mut Vec::new(),
-                &mut 0,
+                &mut Expansion::default(),
             )?;
             let mut paths = Map::new();
             let mut contexts = Map::new();

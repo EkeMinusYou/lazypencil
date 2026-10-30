@@ -15,9 +15,14 @@ impl Copier<'_> {
         if !matches!(node["type"].as_str(), Some("script" | "browser" | "ref")) {
             return Ok(None);
         }
-        let resolved = self
-            .project
-            .expand(origin, node, None, &[], &mut Vec::new(), &mut 0)?;
+        let resolved = self.project.expand(
+            origin,
+            node,
+            None,
+            &[],
+            &mut Vec::new(),
+            &mut Expansion::default(),
+        )?;
         self.dynamic_info_resolved(
             resolved,
             (origin.into(), node["id"].as_str().expect("node ID").into()),

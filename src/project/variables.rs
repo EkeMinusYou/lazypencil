@@ -179,7 +179,7 @@ impl Project {
             None,
             &[],
             &mut Vec::new(),
-            &mut 0,
+            &mut Expansion::default(),
         )?;
         assign_addresses(&mut root, None, &[]);
         fn find<'a>(

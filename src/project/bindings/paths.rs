@@ -109,9 +109,14 @@ impl Paths<'_> {
                         .get(origin)
                         .ok_or_else(|| invalid("Missing generated component document"))?
                         .node(id)?;
-                    let root =
-                        self.project
-                            .expand(origin, node, None, &[], &mut Vec::new(), &mut 0)?;
+                    let root = self.project.expand(
+                        origin,
+                        node,
+                        None,
+                        &[],
+                        &mut Vec::new(),
+                        &mut Expansion::default(),
+                    )?;
                     let mut contexts = BTreeMap::new();
                     self.capture(&root, "", "", &mut contexts)?;
                     self.current.insert(key.clone(), contexts);

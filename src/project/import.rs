@@ -129,7 +129,7 @@ impl Project {
             reuse: BTreeMap::new(),
             reused_targets: BTreeMap::new(),
             reused_sources: BTreeMap::new(),
-            reused_target_nodes: 0,
+            reused_target_expansion: Expansion::default(),
             reused_path_bytes: 0,
             names: BTreeMap::new(),
             vars: BTreeMap::new(),
@@ -337,7 +337,7 @@ struct Copier<'a> {
     reuse: BTreeMap<Key, String>,
     reused_targets: BTreeMap<String, BTreeMap<String, bool>>,
     reused_sources: BTreeMap<Key, reuse::Source>,
-    reused_target_nodes: usize,
+    reused_target_expansion: Expansion,
     reused_path_bytes: usize,
     names: BTreeMap<Key, String>,
     vars: BTreeMap<Key, String>,
@@ -723,9 +723,14 @@ impl Copier<'_> {
         if node["type"] == "ref"
             && let Some(overrides) = node.get("descendants").and_then(Value::as_object)
         {
-            let mut expanded =
-                self.project
-                    .expand(origin, node, None, &[], &mut Vec::new(), &mut 0)?;
+            let mut expanded = self.project.expand(
+                origin,
+                node,
+                None,
+                &[],
+                &mut Vec::new(),
+                &mut Expansion::default(),
+            )?;
             for (path, changes) in overrides {
                 if changes.get("type").is_none() {
                     let target =
@@ -957,9 +962,14 @@ impl Copier<'_> {
             );
         }
         if let Some(overrides) = node.get("descendants").and_then(Value::as_object) {
-            let mut expanded =
-                self.project
-                    .expand(origin, node, None, &[], &mut Vec::new(), &mut 0)?;
+            let mut expanded = self.project.expand(
+                origin,
+                node,
+                None,
+                &[],
+                &mut Vec::new(),
+                &mut Expansion::default(),
+            )?;
             let mut remapped = Map::new();
             let mapped_paths =
                 self.copied_override_paths(&expanded, overrides.keys().map(String::as_str))?;

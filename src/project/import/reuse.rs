@@ -118,16 +118,14 @@ impl Copier<'_> {
         self.existing_component(target)?;
         if !self.reused_targets.contains_key(target) {
             let definition = self.project.root_document().node(target)?;
-            let mut count = self.reused_target_nodes;
             let expanded = self.project.expand(
                 &self.project.root,
                 definition,
                 None,
                 &[],
                 &mut Vec::new(),
-                &mut count,
+                &mut self.reused_target_expansion,
             )?;
-            self.reused_target_nodes = count;
             let mut paths = BTreeMap::new();
             index_paths(
                 self.project,
@@ -144,7 +142,7 @@ impl Copier<'_> {
             None,
             &[],
             &mut Vec::new(),
-            &mut 0,
+            &mut Expansion::default(),
         )?;
         let mut source = Source::default();
         index_source(
