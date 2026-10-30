@@ -72,8 +72,10 @@ jobs:
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
-          key: ${{ steps.cache-key.outputs.primary }}
+          key: ${{ steps.cache-key.outputs.preferred }}
           restore-keys: |
+            ${{ steps.cache-key.outputs.complete }}
+            ${{ steps.cache-key.outputs.primary }}
             ${{ format('checkpoint-{0}-', steps.cache-key.outputs.primary) }}
             ${{ format('checkpoint-{0}', steps.cache-key.outputs.primary) }}
             ${{ steps.cache-key.outputs.legacy }}

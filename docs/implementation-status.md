@@ -409,9 +409,11 @@ HTTP(S)文字列samplerはa00289f、未参照のproject素材回収は9865944、
 - 最低macOSと保証端末を、実測結果に基づいて固定する。MacでKitty／Sixel両方と、保証する端末による画像・日本語・キーボード操作の条件を維持する。macSKK の未確定文字／候補表示の報告、実端末と clipboard の組合せ、宣言する tmux／SSH の範囲は未受け入れ。
 - CodexのAPI経路・自作project guideの実生成・APIでの初期画像添付は74f37fdで確認済み。Claude APIなどの未確認経路と、完成条件に対応する接続環境は引き続き確認する。未確認の全モデル組合せを新しい実装要求にはしない。
 - 統制した cold/warm・基準環境の性能、Chromium を含む別予算、最終配布候補の環境・署名・元の notice／ソース提供条件を確認する。過去の同条件の有効な証拠は再利用する。
-- 旧参照 PNG 11点・派生 JSON 3点は現行ソースから除去済み。旧 Git 履歴と過去 CI artifact の扱いは未確定で、公開前の権利処理は完了していない。履歴の強制書換えは実行していない。[根拠](design-guidance.md#pencil-の-skill-とライセンス)
+- 旧参照 PNG 11点・派生 JSON 3点は現行ソースから除去済みだが、旧Git履歴と過去の配布を含む権利処理は完了していない。2026-10-30のGitHub公開API一覧1,225 artifact・158 sourceは全て除去commit 0401ccdの子孫で、除去前sourceや不明sourceは0件だった。「除去前のCI artifactが現在も残る」という断定は取り下げる。これは全archiveの内容不存在を検査した結果ではなく、Git履歴の除去や過去利用の判断も代替しない。履歴の強制書換えは実行していない。[根拠](design-guidance.md#pencil-の-skill-とライセンス)
 
 ### 既知の障害と、完了扱いしないこと
+
+2026-10-30にWezTermの代替経路も一次資料で調べた。設定説明はSoftwareをCPU rasterizationとするが、[公式変更履歴](https://github.com/wezterm/wezterm/blob/main/docs/changelog.md)では従来のCPU rendererを除去し、Mesa software fallbackの対象をX11／Wayland／Windowsとする。[現在のMac実装](https://github.com/wezterm/wezterm/blob/main/window/src/os/macos/window.rs)もEGL失敗後にOpenGL 3.2 Core・NSOpenGLPFAAcceleratedのCGLへ移る。これはMacでSoftware指定だけによりGPU不要になる根拠にはならない。新たな端末fixtureや同条件の失敗CIは追加せず、Macでの実表示・macSKK受け入れは引き続き残す。WezTermが実機で動かないと判定したものではない。
 
 標準 macOS GHA の Kitty 0.49.2 は、取得・ハッシュ・署名・両実行ファイルの版検査後に NSGL／OpenGL 3.3 の初期化で失敗した。`3d711d9` の失敗はアプリ起動前であり、日本語入力の不具合や可視画面の成功とは扱わない。実 Kitty 12段階試験は既存 release-evidence の `macos_terminal_gui` に保持しているが、GPU付きlarger runnerはGitHub Team／Enterprise Cloudの組織向けである。[公式の利用条件](https://docs.github.com/en/enterprise-cloud%40latest/actions/concepts/runners/larger-runners)。現在のrepository ownerは個人アカウントであり、このflagだけで利用できる経路とは扱わず、未実行のまま残す。アカウント移管・契約変更は実行していない。利用者への反復した手動確認依頼を検証計画の前提にしない。
 
