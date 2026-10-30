@@ -118,7 +118,7 @@ fn compatible_inputs(
                 || old.matches_focused_key(matched_key)
                 || [false, true].into_iter().any(|legacy| {
                     old.compatible_keys(legacy)
-                        .is_ok_and(|(primary, _)| matched_key == primary)
+                        .is_ok_and(|(primary, _)| matches_checkpoint(&primary, matched_key))
                 }))
         {
             accepted = Some((old, debug_only));

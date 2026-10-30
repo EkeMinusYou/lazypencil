@@ -301,6 +301,16 @@ impl Command {
                             } else {
                                 focused_base.clone()
                             };
+                        let complete_checkpoint =
+                            if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
+                                application_checkpoint(
+                                    &identity.compatible_primary,
+                                    &std::env::var("GITHUB_RUN_ID")?,
+                                    &std::env::var("GITHUB_RUN_ATTEMPT")?,
+                                )?
+                            } else {
+                                identity.compatible_primary.clone()
+                            };
                         util::github_output(
                             github_output.as_deref(),
                             &BTreeMap::from([
@@ -309,6 +319,7 @@ impl Command {
                                 ("checkpoint_prefix".into(), checkpoint_prefix.clone()),
                                 ("checkpoint_legacy".into(), identity.checkpoint.clone()),
                                 ("focused_checkpoint".into(), focused_checkpoint),
+                                ("complete_checkpoint".into(), complete_checkpoint),
                                 (
                                     "focused_checkpoint_prefix".into(),
                                     format!("{focused_base}-"),
@@ -357,7 +368,7 @@ impl Command {
                         json!({"primary":identity.primary,"checkpoint":checkpoint,"checkpoint_prefix":checkpoint_prefix,"checkpoint_legacy":identity.checkpoint,"application_prefix":identity.application_prefix,"source_commit":identity.source_commit})
                     }
                     "stage" if release_only => stage(&source, &target, &directory, &identity)?,
-                    "stage" => stage_tests(&source, &target, &directory, &identity)?,
+                    "stage" => stage_current_tests(&source, &target, &directory, &identity)?,
                     "stage-focused" => stage_focused(
                         &source,
                         &target,
@@ -736,14 +747,22 @@ fn valid_generation_id(value: &str) -> bool {
         && value.parse::<u64>().is_ok_and(|n| n > 0)
 }
 
-/// Keep later completed focused outputs distinct from an older immutable cache.
+/// Keep rebuilt outputs distinct from an older immutable cache.
 pub fn application_checkpoint(base: &str, run: &str, attempt: &str) -> Result<String> {
     ensure!(
-        Regex::new(r"^(?:(?:application-v2|release-v1)-(?:ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-[0-9a-f]{64}-[0-9a-f]{64}-focus|tests(?:-core)?-v1-(?:ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-[0-9a-f]{64}-focus-[0-9a-f]{64})$")?.is_match(base)
+        Regex::new(r"^(?:(?:application-v2|release-v1)-(?:ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-[0-9a-f]{64}-[0-9a-f]{64}-focus|tests(?:-core)?-v1-(?:ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-[0-9a-f]{64}-(?:focus|full)-[0-9a-f]{64})$")?.is_match(base)
             && [run, attempt].into_iter().all(valid_generation_id),
         "Invalid application checkpoint identity"
     );
     Ok(format!("{base}-{run}-{attempt}"))
+}
+
+fn matches_checkpoint(base: &str, key: &str) -> bool {
+    key == base
+        || key
+            .strip_prefix(&format!("{base}-"))
+            .and_then(|generation| generation.split_once('-'))
+            .is_some_and(|(run, attempt)| valid_generation_id(run) && valid_generation_id(attempt))
 }
 
 /// Cache entries are immutable; each completed phase needs its own checkpoint.
@@ -863,15 +882,8 @@ impl ApplicationIdentity {
     }
 
     fn matches_focused_key(&self, key: &str) -> bool {
-        self.focused_keys().is_ok_and(|(base, _)| {
-            key == base
-                || key
-                    .strip_prefix(&format!("{base}-"))
-                    .and_then(|generation| generation.split_once('-'))
-                    .is_some_and(|(run, attempt)| {
-                        valid_generation_id(run) && valid_generation_id(attempt)
-                    })
-        })
+        self.focused_keys()
+            .is_ok_and(|(base, _)| matches_checkpoint(&base, key))
     }
 
     /// One reviewed release-only transition. All native/default/test inputs
@@ -1189,6 +1201,9 @@ struct OutputEntry {
     sha256: String,
     bytes: u64,
     mode: u32,
+    // Publication metadata only: never apply these times to compiler files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    modified: Option<(u64, u32)>,
 }
 #[derive(Serialize, Deserialize)]
 struct ApplicationReport {
@@ -1217,6 +1232,63 @@ pub fn stage_tests(
     identity: &ApplicationIdentity,
 ) -> Result<Value> {
     stage_filtered(source, target, directory, identity, None, true)
+}
+
+/// Refresh immutable checkpoints after Cargo rebuilds against newer dependencies.
+/// A fully warm graph needs no second copy, including when the source commit
+/// changed only documentation. Legacy manifests get one metadata-aware update.
+pub fn stage_current_tests(
+    source: &Path,
+    target: &Path,
+    directory: &Path,
+    identity: &ApplicationIdentity,
+) -> Result<Value> {
+    let files = outputs(target)?
+        .into_iter()
+        .filter(|path| !path.strip_prefix(target).unwrap().starts_with("release"))
+        .collect::<Vec<_>>();
+    if let Ok(report) = util::json::<ApplicationReport>(&directory.join("manifest.json"))
+        && report.fingerprint == identity.fingerprint
+        && report.files.len() == files.len()
+        && !files.is_empty()
+    {
+        let cached = report
+            .files
+            .iter()
+            .map(|entry| (entry.path.as_str(), entry))
+            .collect::<BTreeMap<_, _>>();
+        let mut unchanged = cached.len() == report.files.len();
+        for path in &files {
+            let name = path
+                .strip_prefix(target)?
+                .to_str()
+                .context("Invalid output filename")?;
+            let Some(entry) = cached.get(name) else {
+                unchanged = false;
+                break;
+            };
+            if entry.modified != Some(output_modified(path)?)
+                || entry.bytes != fs::metadata(path)?.len()
+                || entry.mode != util::raw_mode(path)?
+                || entry.sha256 != util::file_digest(path)?
+            {
+                unchanged = false;
+                break;
+            }
+        }
+        if unchanged && input_environment(&files, source, &identity.tracked)? == report.environment
+        {
+            return Ok(json!({"files":0,"bytes":0}));
+        }
+    }
+    stage_tests(source, target, directory, identity)
+}
+
+fn output_modified(path: &Path) -> Result<(u64, u32)> {
+    let modified = fs::metadata(path)?
+        .modified()?
+        .duration_since(std::time::UNIX_EPOCH)?;
+    Ok((modified.as_secs(), modified.subsec_nanos()))
 }
 
 fn stage_filtered(
@@ -1277,6 +1349,7 @@ fn stage_filtered(
             sha256: util::file_digest(&path)?,
             bytes: fs::metadata(&path)?.len(),
             mode: util::raw_mode(&path)?,
+            modified: Some(output_modified(&path)?),
         });
     }
     let result = json!({"files":entries.len(),"bytes":entries.iter().map(|e|e.bytes).sum::<u64>()});
@@ -1647,7 +1720,11 @@ fn obsolete_with_sources(
                 "{}-v1-{}-{}-full-{}",
                 &caps[1], &caps[2], &caps[3], &caps[5]
             );
-            if phase == "focus" && keys.contains(&(full.as_str(), version)) {
+            if phase == "focus"
+                && keys
+                    .iter()
+                    .any(|(key, wire)| *wire == version && matches_checkpoint(&full, key))
+            {
                 selected.insert(id, entry.clone());
                 continue;
             }

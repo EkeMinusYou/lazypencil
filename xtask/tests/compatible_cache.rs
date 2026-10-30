@@ -191,6 +191,111 @@ struct Fixture {
     exact: PathBuf,
 }
 
+#[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
+#[test]
+fn rebuilt_dependencies_refresh_application_generations_without_changing_compiler_times() {
+    let f = Fixture::new();
+    f.add_dependency();
+    fs::write(f.source.join("Cargo.toml"),
+        "[package]\nname='lazypencil'\nversion='0.1.0'\nedition='2024'\n[workspace]\n[dependencies]\nunchanged_dependency={path='dependency'}\n").unwrap();
+    fs::write(
+        f.source.join("src/lib.rs"),
+        "pub fn fixture() -> u8 { unchanged_dependency::value() }\n",
+    )
+    .unwrap();
+    process::checked(
+        Command::new("cargo")
+            .current_dir(&f.source)
+            .args(["generate-lockfile", "--offline"]),
+        Duration::from_secs(120),
+    )
+    .unwrap();
+    f.manifest();
+    f.build(&[]);
+    let identity = f.identity();
+    cache::stage_tests(&f.source, &f.target, &f.full, &identity).unwrap();
+    assert_eq!(
+        cache::stage_current_tests(&f.source, &f.target, &f.full, &identity).unwrap()["files"],
+        0
+    );
+
+    // Recreate an unchanged dependency, as a rebuilt native snapshot does.
+    // Cargo must rebuild the older application; no test changes file times.
+    std::thread::sleep(Duration::from_millis(20));
+    process::checked(
+        Command::new("cargo")
+            .current_dir(&f.source)
+            .env("CARGO_TARGET_DIR", &f.target)
+            .args(["clean", "--offline", "--package", "unchanged_dependency"]),
+        Duration::from_secs(120),
+    )
+    .unwrap();
+    let rebuilt = f.build(&[]);
+    assert!(!rebuilt["unchanged_dependency"].0);
+    assert!(!rebuilt["lazypencil"].0 && !rebuilt["one"].0);
+    let times = rebuilt
+        .values()
+        .map(|(_, path)| {
+            (
+                path.clone(),
+                fs::metadata(path).unwrap().modified().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        cache::stage_current_tests(&f.source, &f.target, &f.full, &identity).unwrap()["files"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    for (path, modified) in times {
+        assert_eq!(fs::metadata(path).unwrap().modified().unwrap(), modified);
+    }
+    assert_eq!(
+        cache::stage_current_tests(&f.source, &f.target, &f.full, &identity).unwrap()["files"],
+        0
+    );
+    let generation =
+        cache::application_checkpoint(&identity.compatible_primary, "402", "1").unwrap();
+    cache::prune(&f.source, &f.target).unwrap();
+    cache::restore_compatible(&f.source, &f.target, &f.full, &generation, &identity).unwrap();
+    assert!(f.build(&[]).values().all(|(fresh, _)| *fresh));
+    assert_eq!(
+        cache::stage_current_tests(&f.source, &f.target, &f.full, &identity).unwrap()["files"],
+        0
+    );
+
+    // Legacy manifests remain readable and receive publication metadata once.
+    let path = f.full.join("manifest.json");
+    let mut report: Value = util::json(&path).unwrap();
+    for entry in report["files"].as_array_mut().unwrap() {
+        entry.as_object_mut().unwrap().remove("modified");
+    }
+    fs::write(path, util::encode(&report).unwrap()).unwrap();
+    assert!(
+        cache::stage_current_tests(&f.source, &f.target, &f.full, &identity).unwrap()["files"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert_eq!(
+        cache::stage_current_tests(&f.source, &f.target, &f.full, &identity).unwrap()["files"],
+        0
+    );
+
+    f.edit();
+    cache::prune(&f.source, &f.target).unwrap();
+    cache::restore_compatible(&f.source, &f.target, &f.full, &generation, &f.identity()).unwrap();
+    let changed = f.build(&[]);
+    assert!(!changed["one"].0);
+    for name in ["unchanged_dependency", "lazypencil", "two", "library-tests"] {
+        assert!(
+            changed[name].0,
+            "{name} must stay fresh after a test-only edit"
+        );
+    }
+}
+
 #[test]
 fn full_builder_defers_long_bindings_but_focus_and_complete_tests_retain_failures() {
     use lazypencil_xtask::ci::commands;

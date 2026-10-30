@@ -9,10 +9,10 @@ on:
         default: macos-15
         options: [macos-15]
       phase:
-        description: Prepare and test affected targets before full CI
+        description: Test affected targets or verify the selected existing lane
         type: choice
         default: focus
-        options: [focus]
+        options: [focus, verify]
       lane:
         description: Select the cached core or default compiler context
         type: choice
@@ -294,8 +294,9 @@ jobs:
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
-          key: ${{ steps.application-key.outputs.compatible_primary }}
+          key: ${{ steps.application-key.outputs.complete_checkpoint }}
           restore-keys: |
+            ${{ steps.application-key.outputs.compatible_primary }}
             ${{ steps.application-key.outputs.compatible_prefix }}
             ${{ steps.application-key.outputs.legacy_compatible_primary }}
             ${{ steps.application-key.outputs.legacy_compatible_prefix }}
@@ -645,17 +646,17 @@ jobs:
         id: compatible-save
         # Core --no-run success preserves compiler outputs after a later test
         # failure, under the same input verification used by default builds.
-        if: ${{ (inputs.lane != 'release') && !cancelled() && (success() || (inputs.lane == 'core' && steps.core-build.outcome == 'success') || steps.default-build.outputs.compiled_catalog == github.sha) && inputs.phase != 'focus' && steps.application-key.outcome == 'success' && steps.compatible-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' }}
+        if: ${{ (inputs.lane != 'release') && !cancelled() && (success() || (inputs.lane == 'core' && steps.core-build.outcome == 'success') || steps.default-build.outputs.compiled_catalog == github.sha) && inputs.phase != 'focus' && steps.application-key.outcome == 'success' && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         timeout-minutes: 3
         run: cargo xtask ci cache application stage --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-compatible-cache" --native-key '${{ steps.cache-key.outputs.primary }}${{ inputs.lane == 'core' && '-core' || '' }}'
       - name: Save the complete integration-test checkpoint
         id: compatible-published
-        if: ${{ (inputs.lane != 'release') && !cancelled() && steps.compatible-save.outcome == 'success' }}
+        if: ${{ (inputs.lane != 'release') && !cancelled() && steps.compatible-save.outcome == 'success' && steps.compatible-save.outputs.staged == 'true' }}
         continue-on-error: true
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
-          key: ${{ steps.application-key.outputs.compatible_primary }}
+          key: ${{ steps.application-key.outputs.complete_checkpoint }}
           path: ${{ runner.temp }}/lazypencil-compatible-cache
       - name: Retire superseded checkpoints after publication
         if: ${{ (inputs.lane != 'release') && !cancelled() && steps.compatible-published.outcome == 'success' && github.ref == 'refs/heads/main' }}

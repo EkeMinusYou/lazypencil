@@ -268,10 +268,45 @@ fn application_checkpoints_do_not_collide_across_later_focused_runs_or_retries()
             cache::application_checkpoint(&base, "402", "2").unwrap(),
             format!("{base}-402-2")
         );
-        assert!(
-            cache::application_checkpoint(&base.replace("-focus-", "-full-"), "402", "2").is_err()
+        let full = base.replace("-focus-", "-full-");
+        assert_eq!(
+            cache::application_checkpoint(&full, "402", "2").unwrap(),
+            format!("{full}-402-2")
         );
     }
+}
+
+#[test]
+fn complete_application_generations_retire_only_their_replaced_context_and_wire() {
+    let base = format!(
+        "tests-core-v1-macos-15-{}-full-{}",
+        "a".repeat(64),
+        "b".repeat(64)
+    );
+    let old = cache::application_checkpoint(&base, "401", "1").unwrap();
+    let latest = cache::application_checkpoint(&base, "402", "1").unwrap();
+    let entry = |id, key: String, wire: &str| {
+        json!({
+            "id":id,"key":key,"version":wire,"ref":"refs/heads/main",
+            "created_at":format!("2026-10-{id:02}T00:00:00Z")
+        })
+    };
+    let entries = vec![
+        entry(1, old, "wire"),
+        entry(2, base.replace("-full-", "-focus-"), "wire"),
+        entry(3, latest, "wire"),
+        entry(4, base.replace("-full-", "-focus-"), "other-wire"),
+        entry(5, base.replace(&"a".repeat(64), &"c".repeat(64)), "wire"),
+        entry(6, base.replace("tests-core-", "tests-"), "wire"),
+    ];
+    let obsolete = cache::obsolete(&entries, Some(&"b".repeat(64))).unwrap();
+    assert_eq!(
+        obsolete
+            .iter()
+            .map(|entry| entry["id"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        [1, 2]
+    );
 }
 
 #[test]
