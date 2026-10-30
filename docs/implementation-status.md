@@ -4,6 +4,18 @@
 
 ## 現在の状態（2026-10-30）
 
+ab9ce04の[全体CI 40984270681](https://github.com/EkeMinusYou/lazypencil/actions/runs/40984270681)は全工程成功した。data画像の両feature構成・実QuickJS・実WebGL、core／既定の全試験とClippy、通常開発build、release、全5 consumer、共通画像gateと署名付きsourceを含む。sampler比較は従来8条件を保ってdataのlight／darkを加えた10条件・20 PNGが成功した。追加4 PNGは101×51で元／copyのbyte列とhashが一致し、yellow／blueの独立した画素検査も通った。source tar SHA-256は`0353f1625f17f70c765ea33350eb437afdec948062372e57a338e01f4baf8fa5`。provenanceのsubject、GitHub OIDC issuer、ci.yml／mainの署名identity、source revisionとrunの対応を照合した。
+
+全体は16分06秒で10分目標は未達。builder9分56秒・core8分43秒・release4分12秒、通常4分07秒・runtime4分41秒・pixel2分38秒・端末1分14秒・Material1分48秒・source36秒だった。先行image 20261028.0489.1に対し全体builderは20260907.0337.1だったため、その先行成果物を再利用せず`reused:false`とした。同一環境の成功例a00289fとは区別し、SDKの差そのものを今回確認したとはしない。builderのbuild／再現stepは390秒で、先行compile167.164秒、script binding群162.040秒、generated browser群39.144秒を含む。完全cacheは1,112,052,243 byteの転送を含め54秒かかった。待機や圧縮を推測で一括の原因にせず、目的・条件の一致を確認して削減する。
+
+後続の作業ツリーは、捕捉scriptのfile URL素材キー（image／shader／script）とHTTP(S)画像キーへの対応である。キーとJS原文を保持し、コードのネットワーク取得は許さない。再宣言は元のcode namespaceの捕捉素材を優先し、元ファイルやサーバーがなくても再copyできるようにする。両文書版のdry-run・元削除・移動・offline再copy、許可root外・資格情報入り画像URL・remote codeの拒否、異なるcode/output namespaceの単体回帰、実WebGLの4条件・追加12 PNGのgateを準備した。英語ガイドは1.0.53。新しいRust／gateはGHA未検証であり、上記ab9ce04の成功には含めない。
+
+ab9ce04の[Mac先行 40983705220](https://github.com/EkeMinusYou/lazypencil/actions/runs/40983705220)は全工程成功した。対象はsampler_sources／assets、全体経過は4分49秒。既定構成のlibrary 201件、assets 23件、sampler_sources 27件（既存ignored 3件は全体runtime側）と対象build／Clippy、新規再現が成功した。data画像の両形式・base64／percent、copy／detach／再copyとtheme／原文保持、元PNG／JPEG削除後の同一raster、通常部品のdata画像を含むscript namespaceと追加manifest付き再copy、不正入力の診断・修復、素材回収で未知mediaを保護する回帰を含む。
+
+検査済みの部分成果物50ファイル・631,552,577 byteを既存の`application-v2-…-focus-40983705220-1` checkpointへ保存した。完全成果物のkeyと区別した保存と、同じpayloadをartifactにも二重保存しない経路が成功した。今回は正常経路なので、後段assertion失敗時の保存条件を実証した結果とはしない。Mac imageは20261028.0489.1で、a00289fの先行とは対象試験とimageが異なるため、所要時間差を変更単独の効果にはしない。
+
+この先行の後、同じcommitの全体CIも冒頭のとおり成功した。実端末IME・最終公開の受け入れと大きな文字列の多数instance展開は、data画像のこの検証結果とは区別する。有用な実行を中断せず、重いbuildはGHAだけで行った。
+
 ebf068fの[Mac先行 40983097793](https://github.com/EkeMinusYou/lazypencil/actions/runs/40983097793)は、対象build／Clippyと埋め込み画像unit 3件を成功した。通常PNG／JPEGの元ファイル削除後のraster一致、生成scriptの独立copy／元source削除／再copy、不正画像の診断・構造修復、文字列samplerのtheme保持も成功した。通常画像のcopy／detach試験は、コピー後の先頭rootを対象と決め打ちしてfillを読んだ箇所で停止したため、生成IDで対象nodeを選ぶ。全対象試験と素材回収の追加回帰はまだ成功根拠にしない。
 
 後続候補では、scriptの捕捉namespace内にある通常のdata画像と、再copy時の追加script_assetsのdata画像をファイルパスへ変換せず検証・保持する。既存の生成script回帰へ通常部品のdata画像と再copyでの追加宣言を加える。先行のbuild成功後に試験assertionが失敗しても、既存の入力／hash検査を通すdebug成果物をfocus checkpointへ保存できるようにする。試験結果はcacheせず、後続の試験を省略しない。整形・差分検査とactionlintは成功し、アプリの後続差分は次の同じMac先行で確認する。重いbuildはGHAのみで行い、実行中の有用なCIは中断していない。

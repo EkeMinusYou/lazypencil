@@ -330,6 +330,20 @@ pub(super) fn bind_value(
 }
 
 impl Bound {
+    /// Repeated declarations refer to the program's already captured bytes.
+    /// Code and output namespaces can differ after generated overrides.
+    pub(super) fn captured_asset(&self, kind: &str, uri: &str) -> Result<Option<&str>> {
+        let key = asset_key(kind, uri)?;
+        let original = self.original();
+        let assets = match &original.code_namespace {
+            Some(namespace) => Some(&original.script_scopes[namespace].assets),
+            None => self.values.assets.as_ref(),
+        };
+        Ok(assets
+            .and_then(|assets| assets.get(&key))
+            .map(String::as_str))
+    }
+
     pub(super) fn equivalent(&self, other: &Self) -> bool {
         self.origin == other.origin
             && self.inputs_bound == other.inputs_bound
@@ -801,13 +815,30 @@ pub(super) fn rewrite_generated_paths(
 }
 
 pub(super) fn asset_key(kind: &str, uri: &str) -> Result<String> {
-    if !matches!(kind, "image" | "shader" | "script")
-        || !valid_name(uri)
-        || uri.contains("://")
-        || uri.starts_with("file:")
+    if !matches!(kind, "image" | "shader" | "script") || !valid_name(uri) {
+        return Err(invalid(
+            "A copied script asset needs a bounded URI and known kind",
+        ));
+    }
+    if crate::remote_images::is_http(uri) && kind == "image" {
+        crate::remote_images::validate(uri)?;
+        return Ok(format!("{kind}:{uri}"));
+    }
+    if uri
+        .get(..5)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("file:"))
+    {
+        crate::paths::local_file_url(uri)?;
+        // The key preserves the program's original spelling. Resolving its
+        // target still requires canonical bindings and allowed-root checks.
+        return Ok(format!("{kind}:{uri}"));
+    }
+    if uri.contains("://")
+        || crate::inline_images::is_data(uri)
+        || crate::remote_images::is_http(uri)
     {
         return Err(invalid(
-            "A copied script asset needs a local file URI and known kind",
+            "Copied script URLs require a local file URL or an HTTP image",
         ));
     }
     let path = Path::new(uri);

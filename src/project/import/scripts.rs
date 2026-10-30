@@ -68,8 +68,12 @@ impl Copier<'_> {
             if let Some(assets) = &bound.original().assets {
                 for (key, uri) in assets {
                     let (kind, _) = key.split_once(':').expect("validated asset binding");
-                    let path = self.project.resolve_file(&bound.origin, uri)?;
-                    self.project.capture_asset(&path, kind)?;
+                    if kind == "image" {
+                        self.project.capture_image(&bound.origin, uri)?;
+                    } else {
+                        let path = self.project.resolve_file(&bound.origin, uri)?;
+                        self.project.capture_asset(&path, kind)?;
+                    }
                     self.script_images
                         .insert((bound.origin.clone(), uri.clone(), kind.into()));
                 }
@@ -94,8 +98,19 @@ impl Copier<'_> {
                     continue;
                 }
                 super::super::bindings::asset_key(kind, &asset.uri)?;
-                let path = self.project.resolve_file(owner, &asset.uri)?;
-                self.project.capture_asset(&path, kind)?;
+                if let Some(bound) = &info.resolved.script_bindings
+                    && bound.captured_asset(kind, &asset.uri)?.is_some()
+                {
+                    // Existing bound assets were captured above. Do not turn
+                    // a repeated original URL into a new network/file read.
+                    continue;
+                }
+                if kind == "image" {
+                    self.project.capture_image(owner, &asset.uri)?;
+                } else {
+                    let path = self.project.resolve_file(owner, &asset.uri)?;
+                    self.project.capture_asset(&path, kind)?;
+                }
                 self.script_images
                     .insert((owner.into(), asset.uri, kind.into()));
             }
@@ -318,13 +333,20 @@ impl Copier<'_> {
                     self.project.capture_image(&owner, &source_uri)?;
                     continue;
                 }
-                let path = self.project.resolve_file(&owner, &source_uri)?;
+                let relative = if kind == "image" && crate::remote_images::is_http(&source_uri) {
+                    None
+                } else {
+                    Some(relative_uri(
+                        &origin,
+                        &self.project.resolve_file(&owner, &source_uri)?,
+                    )?)
+                };
                 let target = self.asset(&owner, &source_uri, &kind)?;
-                let relative = relative_uri(&origin, &path)?;
-                for uri in [Some(relative), (owner == origin).then_some(uri)]
-                    .into_iter()
-                    .flatten()
-                {
+                let explicit = owner == origin
+                    || crate::remote_images::is_http(&uri)
+                    || crate::paths::local_file_url(&uri).is_ok()
+                    || Path::new(&uri).is_absolute();
+                for uri in [relative, explicit.then_some(uri)].into_iter().flatten() {
                     let key = super::super::bindings::asset_key(&kind, &uri)?;
                     if let Some(previous) = map.get(&key) {
                         if previous != &target {

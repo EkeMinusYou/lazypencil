@@ -208,7 +208,10 @@ impl Copier<'_> {
                 continue;
             }
             let key = crate::project::bindings::asset_key(kind, &asset.uri)?;
-            let target = self.asset(output, &asset.uri, kind)?;
+            let source_uri = bound
+                .captured_asset(kind, &asset.uri)?
+                .unwrap_or(&asset.uri);
+            let target = self.asset(output, source_uri, kind)?;
             if !source.script_scopes.is_empty() {
                 let active = source.script_namespace.as_deref().unwrap_or("");
                 if let Some(previous) = source.script_scopes[active].assets.get(&key)
@@ -299,7 +302,10 @@ impl Copier<'_> {
                     crate::operations::ScriptAssetKind::Script => "script",
                 };
                 let key = crate::project::bindings::asset_key(kind, &asset.uri)?;
-                let target = self.asset(output, &asset.uri, kind)?;
+                let source_uri = bound
+                    .captured_asset(kind, &asset.uri)?
+                    .unwrap_or(&asset.uri);
+                let target = self.asset(output, source_uri, kind)?;
                 if scopes[&active]["assets"].get(&key).is_none() {
                     budget.pair(&key, &target)?;
                 }

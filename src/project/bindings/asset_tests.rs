@@ -818,12 +818,57 @@ fn asset_keys_remove_dot_spelling_without_merging_parent_traversal_origins() {
 #[test]
 fn asset_keys_do_not_grant_schemes_unknown_kinds_or_control_paths() {
     for (kind, uri) in [
-        ("image", "https://example.com/image.png"),
-        ("script", "file:///outside.js"),
+        ("script", "https://example.com/source.js"),
+        ("shader", "http://example.com/paint.glsl"),
+        ("image", "https://user:private@example.com/image.png"),
+        ("image", "file://remote.example/image.png"),
+        ("script", "file:///code.js#fragment"),
+        ("image", "data:image/png;base64,any-payload"),
         ("binary", "asset.bin"),
         ("image", "bad\nname.png"),
         ("image", ""),
     ] {
         assert!(asset_key(kind, uri).is_err());
     }
+}
+
+#[test]
+fn asset_keys_preserve_validated_image_urls_and_local_file_url_spelling() {
+    let image = "https://example.com/a%20b.png?variant=dark#original";
+    assert_eq!(asset_key("image", image).unwrap(), format!("image:{image}"));
+    for kind in ["image", "script", "shader"] {
+        for uri in [
+            "file:///library/a%20b.bin",
+            "FILE://localhost/library/a%23b.bin",
+        ] {
+            assert_eq!(asset_key(kind, uri).unwrap(), format!("{kind}:{uri}"));
+        }
+    }
+}
+
+#[test]
+fn repeated_asset_declarations_use_captured_code_ownership_without_borrowing_output_aliases() {
+    let uri = "https://example.com/input.png?theme=dark";
+    let key = asset_key("image", uri).unwrap();
+    let scope = |name: &str, target: &str| {
+        json!({
+            "components":{},"variables":{},"themes":{},
+            "assets":{(key.clone()):target},"libraries":{"":name},"browser_libraries":{}
+        })
+    };
+    let values = parse(&json!({
+        "version":4,"script_uri":"source.js","source_uri_hash":hash(b"source.js"),
+        "code_namespace":"code","script_namespace":"",
+        "components":{},"variables":{},"themes":{},"descendants":{},
+        "assets":{(key.clone()):"output.png","image:@lazypencil/code/0":"code.png"},
+        "script_scopes":{"":scope("", "output.png"),"code":scope("code", "code.png")}
+    }))
+    .unwrap();
+    let bound = Bound::from_values(PathBuf::from("/captured/main.pen"), false, values).unwrap();
+    assert_eq!(bound.values.assets.as_ref().unwrap()[&key], "output.png");
+    assert_eq!(
+        bound.captured_asset("image", uri).unwrap(),
+        Some("code.png")
+    );
+    assert_eq!(bound.captured_asset("image", "other.png").unwrap(), None);
 }

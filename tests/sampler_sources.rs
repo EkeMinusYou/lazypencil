@@ -9,6 +9,9 @@ mod http_images;
 #[path = "support/inline_images.rs"]
 mod inline_images;
 
+#[path = "support/script_image_urls.rs"]
+mod script_image_urls;
+
 fn write(path: &Path, value: Value) {
     fs::write(path, value.to_string()).unwrap();
 }

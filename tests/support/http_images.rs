@@ -13,8 +13,15 @@ use tokio_util::sync::CancellationToken;
 mod fixture_support;
 #[path = "page_wait_reference.rs"]
 mod reference;
+pub(super) use reference::Server;
 
 pub(super) fn cli(store: &Store, args: &[&str]) -> Value {
+    let value = cli_result(store, args);
+    assert!(value.get("error").is_none(), "{value}");
+    value
+}
+
+pub(super) fn cli_result(store: &Store, args: &[&str]) -> Value {
     let mut command = Command::new(env!("CARGO_BIN_EXE_lazypencil"));
     command
         .arg("--json")
@@ -24,7 +31,11 @@ pub(super) fn cli(store: &Store, args: &[&str]) -> Value {
     let output = fixture_support::output(&mut command, Duration::from_secs(35));
     let value: Value = serde_json::from_slice(&output.stdout)
         .unwrap_or_else(|error| panic!("{error}: {}", String::from_utf8_lossy(&output.stderr)));
-    assert!(output.status.success(), "{value}");
+    assert_eq!(
+        output.status.success(),
+        value.get("error").is_none(),
+        "{value}"
+    );
     value
 }
 

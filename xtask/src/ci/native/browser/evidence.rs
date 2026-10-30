@@ -156,6 +156,47 @@ pub fn required_images_for(root: &Path, commit: &str, platform: &str) -> Result<
             );
         }
     }
+    let script_urls = report("codec-script-image-urls.json")?;
+    let cases = script_urls["cases"]
+        .as_array()
+        .context("Missing script URL images")?;
+    ensure!(
+        cases.len() == 4,
+        "Expected four script URL image conditions"
+    );
+    for version in ["2.19", "2.21"] {
+        for kind in ["file_url", "http"] {
+            let rows: Vec<_> = cases
+                .iter()
+                .filter(|row| row["document_version"] == version && row["source_kind"] == kind)
+                .collect();
+            ensure!(
+                rows.len() == 1,
+                "Missing or duplicate script URL image condition"
+            );
+            let row = rows[0];
+            let (width, height) = dimensions(row)?;
+            let prefix = format!("codec-script-image-urls-{version}-{kind}");
+            let original = png(
+                &format!("{prefix}-before.png"),
+                &row["png_hash"],
+                width,
+                height,
+            )?;
+            for phase in ["after", "recopy"] {
+                ensure!(
+                    original
+                        == png(
+                            &format!("{prefix}-{phase}.png"),
+                            &row["png_hash"],
+                            width,
+                            height
+                        )?,
+                    "Captured script URL pixels differ"
+                );
+            }
+        }
+    }
     let projection = report("codec-sampler-projection.json")?;
     let cases = projection["cases"]
         .as_array()

@@ -478,6 +478,7 @@ pub fn document_metadata_with_cancellation(
         "fonts":{"rendering":cfg!(feature="rendering"),"formats":["ttf","otf","ttc","otc"],"face_metadata":true,"variation_control":["wght"],"fallback_policy":"project configuration or requested family, bundled default, explicit files","project_configuration":true,"lockfile":cfg!(feature="rendering")},
         "detach_instance":{"local_stored":true,"external":true,"inherited":true,"preserve_nested_refs":true,"external_scripts":true,"script_scope_metadata_version":1,"shader_sampler_variables":true,"checked_semantics":true},
         "import_component":{"modes":["link","copy"],"sources":["local","declared_library","local_file","bundled_style"],"dry_run_writes":false,"copy_scripts":true,"copy_string_sampler_variables":true,"copy_absolute_string_sampler_paths":true,"copy_http_string_sampler_urls":true,"sampler_copy_format":"imported_literal_variables","reuse_contained_definitions":true},
+        "script_asset_bindings":{"local_paths":true,"local_file_urls":true,"http_images":true,"https_images":true,"embedded_images":"self_contained","remote_code":false,"uri_spelling":"preserved","redeclare_captured_without_refetch":true,"max_key_bytes":4096,"max_binding_bytes":4194304},
         "image_sources":{"local":true,"local_file_url":true,"http":true,"https":true,"embedded_data_url":true,"network_policy":"runtime.browser","remote_dependency_kind":"remote_image","remote_snapshot":"captured_bytes","embedded_dependency_kind":"embedded_image"}
     });
     #[cfg(feature = "rendering")]

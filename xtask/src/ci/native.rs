@@ -280,7 +280,7 @@ impl Session {
         self.execute_command(&mut command, 300, log, true)
     }
     fn core_reproductions(&self, suite: &str, targets: &[String]) -> Result<()> {
-        self.http_image_reproductions(false, targets)?;
+        self.image_reproductions(false, targets)?;
         self.asset_maintenance_reproductions(false, targets)?;
         if std::env::var("RUNTIME_PARALLEL").as_deref() == Ok("true") {
             self.execute(
@@ -310,7 +310,7 @@ impl Session {
         Ok(())
     }
 
-    fn http_image_reproductions(&self, features: bool, targets: &[String]) -> Result<()> {
+    fn image_reproductions(&self, features: bool, targets: &[String]) -> Result<()> {
         if targets.iter().any(|target| target == "agent") {
             self.test(
                 features,
@@ -330,6 +330,20 @@ impl Session {
             )?;
         }
         if targets.iter().any(|target| target == "sampler_sources") {
+            self.test(
+                features,
+                "lib",
+                "project::bindings::asset_tests::",
+                &["--test-threads=2"],
+                "focus-script-url-policy.log",
+            )?;
+            self.test(
+                features,
+                "sampler_sources",
+                "script_image_urls::",
+                &["--test-threads=2"],
+                "focus-script-image-urls.log",
+            )?;
             self.test(
                 features,
                 "lib",
@@ -723,7 +737,7 @@ impl Session {
             }
             Stage::FocusReproduce => {
                 let separate_core = self.separate_core()?;
-                self.http_image_reproductions(!core, &targets)?;
+                self.image_reproductions(!core, &targets)?;
                 self.asset_maintenance_reproductions(!core, &targets)?;
                 if has("sampler_sources") {
                     self.test(
