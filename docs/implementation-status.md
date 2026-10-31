@@ -4,6 +4,8 @@
 
 ## 現在の状態（2026-11-01）
 
+公開後の修正 `1abefde` では、macOS／Linux のユーザー設定を `$XDG_CONFIG_HOME/lazypencil/config.toml`（未設定・空・相対パスなら `~/.config/lazypencil/config.toml`）へ変更した。`LAZYPENCIL_CONFIG_DIR` は最優先のまま、旧macOS設定の自動移行・読込は行わない。[設定の先行検証41225498628](https://github.com/EkeMinusYou/lazypencil/actions/runs/41225498628)、[全体CI41225821313](https://github.com/EkeMinusYou/lazypencil/actions/runs/41225821313)、[パッケージ検証41226205181](https://github.com/EkeMinusYou/lazypencil/actions/runs/41226205181)は成功した。パッケージは同commitのrelease成果物を再利用し、ローカルでも署名と保存先を確認してインストール済み。公開済みv0.1.0の配布物は変更しておらず、この修正の新規公開は行っていない。
+
 0.1.0のリリース準備を完了した。source 58e8424の[全体41200184501](https://github.com/EkeMinusYou/lazypencil/actions/runs/41200184501)は元の全5群・両構成・Clippy・監査・画像／署名gateを成功し、[最終配布・性能41201303069](https://github.com/EkeMinusYou/lazypencil/actions/runs/41201303069)も成功した。梱包・インストール後のdoctor・build evidenceは`release_ready:true`、残レビューは空で、版・Mac target・最低15.7.9・承認済み制限2点が一致する。638ファイルの配布物は全体検証と同じ本体`144273246f4e2f41f3c0edfb90efc09d47e9fa7947c31fb5f27573e328d504e6`を再利用した。archive SHA-256は`9522394f4d2979fc2f6e290f59e6f89c93a99bf7af6b98727f28c183d2aff675`。ローカルでも同commit・release-evidence.yml・main・GitHub hostedの署名と同梱用bundleを検証し、GitHubのアップロード済みdigestとも一致した。[v0.1.0](https://github.com/EkeMinusYou/lazypencil/releases/tag/v0.1.0)を2026-11-01に公開した。Mac archive・署名bundle・checksumの3添付と、公開タグが検証済みsource 58e8424を指すことを確認した。
 
 最終本体の性能はmacOS15.8.2・image20261028.0489.1・3CPU／7GiBで、元の20起動・80操作・100 worker profileを維持して合格した。入力／初回preview最大55.92／391.63ms、最初のfeedback p95 32.12ms、完成出力p95 218.53msだった。通常の最大観測RSS191.73MiB・idle CPU上限0.397%／30.259秒、Chromium込み1217.89MiB・1.230%／30.087秒で、正常終了・所有子回収も成功した。実端末と両subscriptionの受け入れは、変更していない入力・描画・接続処理の既存証拠を再利用した。
