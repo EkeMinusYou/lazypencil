@@ -101,6 +101,16 @@ fn checksum(bytes: &[u8]) -> u32 {
 
 /// Rebuild directory offsets and checksums; glyph and shaping tables stay unchanged.
 pub(super) fn extract(bytes: &[u8], index: u32) -> Result<Cow<'_, [u8]>> {
+    extract_bounded(bytes, index, MAX_BYTES)
+}
+
+pub(super) fn extract_bounded(bytes: &[u8], index: u32, max_bytes: usize) -> Result<Cow<'_, [u8]>> {
+    if bytes.len() > max_bytes {
+        return Err(invalid(&format!(
+            "Font source exceeds {} MiB",
+            max_bytes / (1024 * 1024)
+        )));
+    }
     let count = count(bytes)?;
     if index >= count {
         return Err(invalid("Font collection index is out of range"));
@@ -158,8 +168,11 @@ pub(super) fn extract(bytes: &[u8], index: u32) -> Result<Cow<'_, [u8]>> {
     let mut head = None;
     for (index, (tag, body)) in tables.into_iter().enumerate() {
         let offset = output.len();
-        if offset + body.len() + 3 > MAX_BYTES {
-            return Err(invalid("Extracted font exceeds 64 MiB"));
+        if offset + body.len() + 3 > max_bytes {
+            return Err(invalid(&format!(
+                "Extracted font exceeds {} MiB",
+                max_bytes / (1024 * 1024)
+            )));
         }
         output.extend_from_slice(body);
         output.resize(output.len().next_multiple_of(4), 0);

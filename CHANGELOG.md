@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Load large macOS system emoji fonts within a separate bounded capture budget, defer system fallbacks until needed, and reuse captures when requested styles select the same installed face.
 - Accept `normal` and `bold` text font weights, including string variables, without rewriting document values.
 - Prevent repeated preview failures from flooding Conversation or repainting the terminal; show the actual diagnostic in Preview and list supported versions for unsupported documents.
 - Use `$XDG_CONFIG_HOME/lazypencil/config.toml` for user configuration on macOS and Linux, falling back to `~/.config/lazypencil/config.toml`. The former macOS configuration location is no longer read or automatically migrated. `LAZYPENCIL_CONFIG_DIR` remains the highest-priority override.

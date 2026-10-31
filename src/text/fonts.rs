@@ -16,6 +16,9 @@ use std::{
 const MAX_FONT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_FACES: usize = 256;
 const MAX_TOTAL_BYTES: usize = 128 * 1024 * 1024;
+// The observed Mac ships a 183 MiB Apple Color Emoji collection. Keep captured
+// system fonts in a separate bounded budget; supplied font limits stay intact.
+const MAX_SYSTEM_BYTES: usize = 256 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -107,6 +110,7 @@ pub struct Fonts {
     system_requests: BTreeSet<(String, i32, i32, i32)>,
     fallbacks: Vec<String>,
     loaded_bytes: usize,
+    system_bytes: usize,
     default_family: String,
     locale: String,
     pending: Vec<PendingFace>,
@@ -176,6 +180,7 @@ impl Fonts {
             system_requests: BTreeSet::new(),
             fallbacks: vec![],
             loaded_bytes: 0,
+            system_bytes: 0,
             default_family: DEFAULT_FONT_FAMILY.into(),
             locale: "ja".into(),
             pending: Vec::new(),
@@ -393,11 +398,24 @@ impl Fonts {
         if self.registered.len() >= MAX_FACES {
             return Err(invalid("Configured fonts exceed 256 faces"));
         }
-        let total = self
-            .loaded_bytes
+        let system = info.source == "system:font-data";
+        let (loaded, limit, message) = if system {
+            (
+                self.system_bytes,
+                MAX_SYSTEM_BYTES,
+                "Loaded system font data exceeds 256 MiB",
+            )
+        } else {
+            (
+                self.loaded_bytes,
+                MAX_TOTAL_BYTES,
+                "Loaded font data exceeds 128 MiB",
+            )
+        };
+        let total = loaded
             .checked_add(size)
-            .filter(|total| *total <= MAX_TOTAL_BYTES)
-            .ok_or_else(|| invalid("Loaded font data exceeds 128 MiB"))?;
+            .filter(|total| *total <= limit)
+            .ok_or_else(|| invalid(message))?;
         if info.family.is_empty() || info.family.len() > 256 {
             return Err(invalid("Invalid font family name"));
         }
@@ -410,7 +428,11 @@ impl Fonts {
         if let Some(lock) = &self.lock {
             lock.require_face(&info)?;
         }
-        self.loaded_bytes = total;
+        if system {
+            self.system_bytes = total;
+        } else {
+            self.loaded_bytes = total;
+        }
         info.family = self
             .families
             .entry(info.family.to_lowercase())
@@ -444,18 +466,7 @@ impl Fonts {
         if self.system_requests.contains(&request) {
             return Ok(self.families[&key].clone());
         }
-        let actual = self
-            .system()
-            .family_names()
-            .find(|name| name.to_lowercase() == key)
-            .ok_or_else(|| {
-                Error::new(
-                    "ASSET_NOT_FOUND",
-                    format!(
-                        "Font family {family:?} is unavailable; add its font file or install it"
-                    ),
-                )
-            })?;
+        let actual = self.system_family(family)?;
         let face = self
             .system()
             .match_family_style(&actual, style)
@@ -465,6 +476,19 @@ impl Fonts {
                     format!("Cannot load font family {family:?}"),
                 )
             })?;
+        // Different requested weights can select the same installed static face.
+        // Do not capture that face again, especially for large bitmap fonts.
+        let selected = face.font_style();
+        let selected_request = (
+            key.clone(),
+            *selected.weight(),
+            *selected.width(),
+            selected.slant() as i32,
+        );
+        if self.system_requests.contains(&selected_request) {
+            self.system_requests.insert(request);
+            return Ok(self.families[&key].clone());
+        }
         if self.registered.len() >= MAX_FACES {
             return Err(invalid("Font resolution exceeds 256 faces"));
         }
@@ -474,10 +498,22 @@ impl Fonts {
                 format!("Cannot capture the bytes of font family {family:?}"),
             )
         })?;
-        if bytes.len() > MAX_FONT_BYTES {
-            return Err(invalid("A system font exceeds 64 MiB"));
+        if bytes.len() > MAX_SYSTEM_BYTES {
+            return Err(invalid("A system font exceeds 256 MiB"));
         }
-        let normalized = super::container::extract(&bytes, index)?;
+        let source_hash = hash(&bytes);
+        if let Some(captured) = self.registered.values().find(|info| {
+            info.source == "system:font-data"
+                && info.hash == source_hash
+                && info.face_index == index
+        }) {
+            let family = captured.family.clone();
+            self.families.insert(key, family.clone());
+            self.system_requests.insert(selected_request);
+            self.system_requests.insert(request);
+            return Ok(family);
+        }
+        let normalized = super::container::extract_bounded(&bytes, index, MAX_SYSTEM_BYTES)?;
         let size = normalized.len();
         let frozen = self
             .file_face(&normalized)?
@@ -487,7 +523,7 @@ impl Fonts {
             FontInfo {
                 family: actual.clone(),
                 source: "system:font-data".into(),
-                hash: hash(&bytes),
+                hash: source_hash,
                 face_index: index,
                 face_hash: hash(&normalized),
                 postscript_name: None,
@@ -500,8 +536,24 @@ impl Fonts {
             },
             size,
         )?;
+        self.system_requests.insert(selected_request);
         self.system_requests.insert(request);
         Ok(actual)
+    }
+
+    fn system_family(&mut self, family: &str) -> Result<String> {
+        let key = family.to_lowercase();
+        self.system()
+            .family_names()
+            .find(|name| name.to_lowercase() == key)
+            .ok_or_else(|| {
+                Error::new(
+                    "ASSET_NOT_FOUND",
+                    format!(
+                        "Font family {family:?} is unavailable; add its font file or install it"
+                    ),
+                )
+            })
     }
 
     pub fn ensure_family(&mut self, family: &str) -> Result<FontInfo> {
@@ -550,7 +602,9 @@ impl Fonts {
             let family = if self.explicit.contains(&family.to_lowercase()) {
                 self.families[&family.to_lowercase()].clone()
             } else {
-                self.ensure_style(family, FontStyle::normal())?
+                // Validate availability now; capture glyph data only if shaping
+                // actually needs this fallback family.
+                self.system_family(family)?
             };
             if !names.contains(&family) {
                 names.push(family);
@@ -567,6 +621,11 @@ impl Fonts {
     }
 
     pub fn inventory(&mut self) -> Result<Vec<FontInfo>> {
+        // Explicit inventory and lock operations capture declared fallbacks,
+        // including ones that ordinary text has not needed yet.
+        for family in self.fallbacks.clone() {
+            self.ensure_style(&family, FontStyle::normal())?;
+        }
         while !self.pending.is_empty() {
             self.load_pending(0)?;
         }
@@ -720,6 +779,81 @@ fn invalid(message: impl Into<String>) -> Error {
 mod sharing_tests {
     use super::*;
     use crate::text::{TextBlock, TextSpec};
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn system_emoji_fallback_is_lazy_captured_once_and_painted_in_regular_and_bold_text() {
+        let mut fonts = Fonts::new(&[]).unwrap();
+        fonts
+            .set_fallback_families(&[DEFAULT_FONT_FAMILY.into(), "Apple Color Emoji".into()])
+            .unwrap();
+        assert_eq!(fonts.system_bytes, 0);
+        fonts
+            .layout(
+                &TextSpec {
+                    content: "日本語 Plain text".into(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+        assert_eq!(fonts.system_bytes, 0);
+        let mut emoji_info = None;
+        let mut retained = None;
+        for weight in [400, 700, 400] {
+            let block = fonts
+                .layout(
+                    &TextSpec {
+                        content: "日本語 👍".into(),
+                        weight,
+                        size: 48.0,
+                        ..Default::default()
+                    },
+                    None,
+                )
+                .unwrap();
+            let captured = block
+                .metrics
+                .fonts
+                .iter()
+                .find(|font| font.family == "Apple Color Emoji")
+                .expect("The emoji must use the configured system fallback");
+            assert_eq!(captured.source, "system:font-data");
+            assert_eq!(captured.hash.len(), 64);
+            assert_eq!(captured.face_hash.len(), 64);
+            if let Some((hash, face_hash)) = &emoji_info {
+                assert_eq!((&captured.hash, &captured.face_hash), (hash, face_hash));
+            } else {
+                emoji_info = Some((captured.hash.clone(), captured.face_hash.clone()));
+            }
+            assert!(fonts.system_bytes > 0 && fonts.system_bytes <= MAX_SYSTEM_BYTES);
+            if let Some(retained) = retained {
+                assert_eq!(fonts.system_bytes, retained);
+            } else {
+                retained = Some(fonts.system_bytes);
+            }
+            assert_eq!(
+                fonts
+                    .registered
+                    .values()
+                    .filter(|font| font.family == "Apple Color Emoji")
+                    .count(),
+                1
+            );
+            let mut surface = skia_safe::surfaces::raster_n32_premul((500, 130)).unwrap();
+            surface.canvas().clear(skia_safe::Color::WHITE);
+            block.paragraph.paint(surface.canvas(), (10.0, 10.0));
+            let image = surface.image_snapshot();
+            let pixels = image.peek_pixels().unwrap();
+            assert!(
+                (0..image.height()).any(|y| (0..image.width()).any(|x| {
+                    let color = pixels.get_color((x, y));
+                    color.r() != color.g() || color.g() != color.b()
+                })),
+                "The system emoji must paint colored pixels"
+            );
+        }
+    }
 
     #[test]
     fn unused_families_do_not_create_native_faces_or_eagerly_load_configured_fallbacks() {
