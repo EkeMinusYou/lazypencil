@@ -29,6 +29,75 @@ fn scene(version: &str) -> (TempDir, Store) {
 }
 
 #[test]
+fn named_font_weights_match_numeric_pixels_and_variables_without_rewriting_source() {
+    for version in ["2.19", "2.21"] {
+        let (_root, store) = scene(version);
+        let template = store.read().unwrap().value().clone();
+        let mut weight_images = vec![];
+        for (keyword, numeric) in [("normal", "400"), ("bold", "700")] {
+            let mut images = vec![];
+            let mut metrics = vec![];
+            for value in [keyword, numeric, "$weight"] {
+                let mut document = template.clone();
+                document["children"][0]["children"][0]["fontWeight"] = json!(value);
+                document["variables"] = json!({"weight":{"type":"string","value":keyword}});
+                let source = serde_json::to_string(&document).unwrap();
+                fs::write(store.path(), &source).unwrap();
+                let project = Project::from_document(
+                    store.path(),
+                    Document::parse(source.clone()).unwrap(),
+                    &[],
+                )
+                .unwrap();
+                let mut fonts = Fonts::new(&[]).unwrap();
+                let snapshot = layout::compute(project.resolve().unwrap(), &mut fonts).unwrap();
+                let title = snapshot
+                    .items
+                    .iter()
+                    .find(|item| item.record.id == "title")
+                    .unwrap();
+                metrics.push(serde_json::to_value(&title.record.text).unwrap());
+                images.push(
+                    render::png(&project, &snapshot, &RenderOptions::default())
+                        .unwrap()
+                        .png,
+                );
+                assert_eq!(fs::read_to_string(store.path()).unwrap(), source);
+            }
+            assert_eq!(metrics[0], metrics[1]);
+            assert_eq!(metrics[0], metrics[2]);
+            assert_eq!(images[0], images[1]);
+            assert_eq!(images[0], images[2]);
+            weight_images.push(images.remove(0));
+        }
+        assert_ne!(weight_images[0], weight_images[1]);
+        for value in [
+            json!("regular"),
+            json!("bolder"),
+            json!("400.5"),
+            json!(400),
+        ] {
+            let mut document = template.clone();
+            document["children"][0]["children"][0]["fontWeight"] = value;
+            fs::write(store.path(), document.to_string()).unwrap();
+            let project = Project::from_document(
+                store.path(),
+                Document::parse(document.to_string()).unwrap(),
+                &[],
+            )
+            .unwrap();
+            assert_eq!(
+                layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap())
+                    .err()
+                    .unwrap()
+                    .code,
+                "INVALID_DOCUMENT"
+            );
+        }
+    }
+}
+
+#[test]
 fn native_cancellation_static_runtime_computation_stops_and_recovers_without_a_worker() {
     for version in ["2.19", "2.21"] {
         let (root, store) = scene(version);

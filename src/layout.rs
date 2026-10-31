@@ -626,9 +626,11 @@ impl Solver<'_> {
             .transpose()?
             .unwrap_or_default();
         let weight = match node.properties.get("fontWeight") {
+            Some(Value::String(s)) if s == "normal" => 400,
+            Some(Value::String(s)) if s == "bold" => 700,
             Some(Value::String(s)) => s
                 .parse()
-                .map_err(|_| invalid("Font weight must be an integer string"))?,
+                .map_err(|_| invalid("Font weight must be normal, bold, or an integer string"))?,
             None => 400,
             _ => return Err(invalid("Font weight must be a string")),
         };

@@ -2,6 +2,8 @@
 
 The current SkParagraph path uses the same shaped Paragraph for text measurements and PNG painting. Noto Sans JP is bundled at the revision and hashes in [the manifest](../resources/fonts/manifest.json), under the complete [OFL 1.1 notice](../resources/fonts/OFL.txt). Other fonts can be supplied as files without installing them in the OS.
 
+Text `fontWeight` accepts integer strings and the absolute keywords `normal` (400) and `bold` (700), including resolved string variables. Measurement and painting use the same numeric weight without rewriting the stored value. Relative weights and other names are not inferred.
+
 Paragraph glyphs use `FontHinting::None` for both measurement and painting. Skia's glyph-path extraction uses unhinted geometry; the shared policy keeps inner outlines within the corresponding glyph ink on FreeType as well as CoreText. Text metrics expose `hinting: "none"` as rendering metadata, not a saved `.pen` property. Raster antialiasing and native backend differences still require platform-specific comparison; this setting does not promise byte-identical PNGs across operating systems. Browser-node fonts retain the page's Chromium/CSS behavior.
 
 ## Adding and inspecting fonts
