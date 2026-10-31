@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Use `$XDG_CONFIG_HOME/lazypencil/config.toml` for user configuration on macOS and Linux, falling back to `~/.config/lazypencil/config.toml`. The former macOS configuration location is no longer read or automatically migrated. `LAZYPENCIL_CONFIG_DIR` remains the highest-priority override.
+
 ## 0.1.0
 
 Initial release for macOS 15.7.9 or later on Apple Silicon.

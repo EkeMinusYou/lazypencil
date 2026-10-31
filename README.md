@@ -27,6 +27,8 @@ Add the extracted `bin` directory to your shell startup configuration to keep it
 
 ## Try the CLI
 
+User settings on macOS and Linux use `$XDG_CONFIG_HOME/lazypencil/config.toml`, or `~/.config/lazypencil/config.toml` when the base is unset, empty or relative. Run `lazypencil config init --user` to create the file and `lazypencil config show --user` to inspect it. `LAZYPENCIL_CONFIG_DIR` overrides the directory. This is a change after 0.1.0; the former macOS configuration location is no longer read or automatically migrated. See [configuration](docs/configuration.md).
+
 Enable Bash, Zsh or Fish Tab completion with `lazypencil completions SHELL`.
 See [shell setup and completion behavior](docs/completions.md) for startup-file
 instructions and examples. Hooks follow the installed CLI definition and its

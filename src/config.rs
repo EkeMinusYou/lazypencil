@@ -524,15 +524,7 @@ pub fn user_config_path() -> Result<PathBuf> {
     let directory = std::env::var_os("LAZYPENCIL_CONFIG_DIR")
         .map(PathBuf::from)
         .map(Ok)
-        .unwrap_or_else(|| {
-            directories::ProjectDirs::from("dev", "lazypencil", "lazypencil")
-                .map(|dirs| dirs.config_dir().to_path_buf())
-                .ok_or_else(|| {
-                    invalid(
-                        "Cannot determine user configuration directory; set LAZYPENCIL_CONFIG_DIR",
-                    )
-                })
-        })?;
+        .unwrap_or_else(default_user_config_directory)?;
     if directory.as_os_str().is_empty()
         || directory.to_str().is_none()
         || directory.as_os_str().as_encoded_bytes().len() > 4096
@@ -543,6 +535,28 @@ pub fn user_config_path() -> Result<PathBuf> {
         ));
     }
     Ok(absolute(&directory)?.join("config.toml"))
+}
+
+#[cfg(not(windows))]
+fn default_user_config_directory() -> Result<PathBuf> {
+    // XDG requires an absolute base; empty and relative values are ignored.
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .or_else(|| directories::BaseDirs::new().map(|dirs| dirs.home_dir().join(".config")))
+        .ok_or_else(|| {
+            invalid("Cannot determine user configuration directory; set LAZYPENCIL_CONFIG_DIR")
+        })?;
+    Ok(base.join("lazypencil"))
+}
+
+#[cfg(windows)]
+fn default_user_config_directory() -> Result<PathBuf> {
+    directories::ProjectDirs::from("dev", "lazypencil", "lazypencil")
+        .map(|dirs| dirs.config_dir().to_path_buf())
+        .ok_or_else(|| {
+            invalid("Cannot determine user configuration directory; set LAZYPENCIL_CONFIG_DIR")
+        })
 }
 
 fn absolute(path: &Path) -> Result<PathBuf> {

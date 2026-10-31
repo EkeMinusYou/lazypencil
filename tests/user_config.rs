@@ -502,6 +502,82 @@ fn native_user_configuration_commands_create_once_and_project_defaults_inherit()
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn user_configuration_uses_xdg_or_home_without_reading_the_legacy_location() {
+    let f = Fixture::new();
+    let home = f.temp.path().join("home");
+    let xdg = f.temp.path().join("設定 directory");
+    let legacy = home.join("Library/Application Support/dev.lazypencil.lazypencil");
+    fs::create_dir_all(&legacy).unwrap();
+    fs::write(legacy.join("config.toml"), "invalid legacy configuration").unwrap();
+    let mut command = f.command(&["config", "show", "--user"]);
+    command
+        .env_remove("LAZYPENCIL_CONFIG_DIR")
+        .env("HOME", &home)
+        .env_remove("XDG_CONFIG_HOME");
+    for (value, expected) in [
+        (None, home.join(".config/lazypencil/config.toml")),
+        (
+            Some("".as_ref()),
+            home.join(".config/lazypencil/config.toml"),
+        ),
+        (
+            Some("relative/config".as_ref()),
+            home.join(".config/lazypencil/config.toml"),
+        ),
+        (Some(xdg.as_os_str()), xdg.join("lazypencil/config.toml")),
+    ] {
+        if let Some(value) = value {
+            command.env("XDG_CONFIG_HOME", value);
+        } else {
+            command.env_remove("XDG_CONFIG_HOME");
+        }
+        let output = command.output().unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let shown: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(shown["requested_path"], json!(expected));
+        assert!(shown["path"].is_null());
+        assert!(!expected.parent().unwrap().exists());
+    }
+    assert_eq!(
+        fs::read_to_string(legacy.join("config.toml")).unwrap(),
+        "invalid legacy configuration"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn user_configuration_initializes_xdg_and_explicit_directory_takes_precedence() {
+    let f = Fixture::new();
+    let xdg = f.temp.path().join("xdg");
+    let selected = xdg.join("lazypencil/config.toml");
+    let mut command = f.command(&["config", "init", "--user"]);
+    command
+        .env_remove("LAZYPENCIL_CONFIG_DIR")
+        .env("XDG_CONFIG_HOME", &xdg);
+    let output = command.output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let initialized: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(initialized["requested_path"], json!(selected));
+    fs::write(&selected, "[fonts]\nlocale='en-US'\n").unwrap();
+    assert!(!command.output().unwrap().status.success());
+    let mut show = f.command(&["config", "show", "--user"]);
+    show.env("XDG_CONFIG_HOME", &xdg);
+    let overridden: Value = serde_json::from_slice(&show.output().unwrap().stdout).unwrap();
+    assert_eq!(
+        overridden["requested_path"],
+        json!(f.user.join("config.toml"))
+    );
+    assert!(overridden["path"].is_null());
+    show.env_remove("LAZYPENCIL_CONFIG_DIR");
+    let output = show.output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let shown: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(shown["requested_path"], json!(selected));
+    assert_eq!(shown["settings"]["fonts"]["locale"], "en-US");
+}
+
 #[test]
 fn user_bytes_change_dependencies_and_committed_retries_survive_bad_user_configuration() {
     let f = Fixture::new();
