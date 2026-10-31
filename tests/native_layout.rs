@@ -133,7 +133,7 @@ fn legacy_center_vertical_alignment_matches_middle_in_bounds_and_both_painters()
                     .find(|item| item.record.id == "title")
                     .unwrap();
                 assert!(title.record.text.as_ref().unwrap().height > title.record.rect.height);
-                bounds.push(serde_json::to_value(&title.record.visual_bounds).unwrap());
+                bounds.push(title.record.visual_bounds);
                 images.push(
                     render::png(&project, &snapshot, &RenderOptions::default())
                         .unwrap()
