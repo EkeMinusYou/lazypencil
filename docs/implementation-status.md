@@ -4,6 +4,8 @@
 
 ## 現在の状態（2026-10-31）
 
+利用者の決定により、本家固有のbrowser device presetとshaderの塗り段階の`pencil:object`を初回の[制限事項](dynamic-content.md#initial-compatibility-limitations)へ変更した。ほかの完成条件を維持してコード・現行CI・既存の配布／性能／実端末／両subscription記録を照合し、新たな必須の機能不具合は確認されなかった。現在の本体は性能・候補導入確認と同じ`f3a765ff…f3f37de8`である。追加の限定確認では、同本体を隔離設定・自作文書で実行し、2.19／2.21とも2設定とコメントを保持したまま別ノードを編集でき、width以外の全byteが一致した。未知deviceは`UNSUPPORTED_FEATURE`、塗りobject参照は`SHADER_COMPILE_FAILED`で終了し、不完全なPNGを生成しなかった。ローカルbuild・LLM要求・全体CIの再実行はしていない。技術的には初回リリースの仕上げへ進めるが、現在の0.1.0-dev・候補専用manifestと残レビュー文言を正式版の版・状態・実際の証拠へ揃え、最終archive／出自を確定する作業は残る。
+
 54d319aの[全体41126485463](https://github.com/EkeMinusYou/lazypencil/actions/runs/41126485463)はattempt 1で全工程成功し、作成からAPI最終更新まで**9分15秒**だった。元の全5群・両feature構成・両Clippy・通常開発build・画像gate・監査・署名に加え、今回対象となったshader前処理も通過した。既定411 artifactはすべてfresh、coreと既定構成の完全アプリpayloadはともに0 byte、native依存の追加保存もなかった。release本体は既存性能合格の`f3a765ff…f3f37de8`と一致し、物理端末・性能の同条件確認は繰り返していない。source 1,237ファイルの署名照合は同commit・main・ci.yml・run／attemptに束縛して成功した。補助ツールをCargo alias経由で再buildする経路を除き、今回のcache再利用条件では10分以内を達成した。cold／本体変更／runner混雑時の所要時間を保証する結果ではない。
 
 c98a99cの[全体41124267662](https://github.com/EkeMinusYou/lazypencil/actions/runs/41124267662)も元の全gateを維持して成功し、全体11分36秒だった。既定411 artifactはすべてfresh、release本体は既存の性能合格hashと一致し、完全アプリpayloadの重複保存は0 byte、native依存の追加保存もなかった。builder5分16秒・core4分28秒・release3分24秒、通常3分54秒・runtime3分17秒・pixel2分28秒・端末／Material共通2分34秒、source1分31秒だった。この実行では10分目標を満たさず、後続の補助ツール呼び出し修正54d319aで達成した。物理端末・性能の同条件確認は繰り返さない。
@@ -584,10 +586,10 @@ macOSの最新の数値観測は、補完追加後の同一本体に対するbb4
 大きな文字列の展開上限は74f37fdの完全CIで検証済みとなった。捕捉scriptのfile URL／HTTP asset key・入れ子namespaceと同様、未実装へ戻さない。
 
 1. CI改善は54d319aの全体9分15秒で確認済み。部分／完全成果物の再利用、Cargoの実入力と鮮度判定、独立試験の並列化、全結果回収・失敗保持、全5組・両feature構成・Clippy・元の期限・最終画像／署名gateを維持している。同じ条件の先行・全体・性能計測を重ねず、cold／割り当て混雑時の保証と区別する。CI短縮だけを理由に新しい実装や検証基盤を追加しない。
-2. 公開仕様に意味の記載がないdevice presetとfill-stage object samplingを確認し、推測を本家互換として実装済みにしない。
-3. 仕様確認後の最終配布候補・版と公開文書を確定する。現状は0.1.0-dev・release_ready:falseで、`xtask/src/dist/binary.rs`の梱包／検証もrelease-candidate専用である。正式版の判定を反映する際はCLIの状態表示、build evidence、配布manifestとその検証を揃える。互換性未確定のままflagだけを変更しない。端末基準は冒頭のKitty／WezTermに定め、報告済みの実画面・体感性能、両サブスクリプション、Codex API／自作guideを含む有効な同条件の証拠を再利用する。旧参照素材の公開履歴削除は完了しており、未実施へ戻さない。
+2. device presetとfill-stage object samplingは、利用者が承認した初回の制限事項としてREADME・設計・動的コンテンツ仕様へ明記した。保持・明示的な描画拒否を確認済み。将来の仕様確認・追加対応は初回公開の停止条件とせず、推測を本家互換として表示しない。
+3. 次は最終配布候補・版と公開文書を確定する。現状は0.1.0-dev・release_ready:falseで、`xtask/src/dist/binary.rs`の梱包／検証もrelease-candidate専用である。正式版の判定を反映する際はCLIの状態表示、build evidence、配布manifestとその検証を揃える。候補用の固定flagだけを変更せず、承認済み制限と実際に確認済みのsource／notice／端末・性能条件に合わせて判定と残レビュー表示を揃える。端末基準は冒頭のKitty／WezTermに定め、報告済みの実画面・体感性能、両サブスクリプション、Codex API／自作guideを含む有効な同条件の証拠を再利用する。旧参照素材の公開履歴削除は完了しており、未実施へ戻さない。
 
-当時の暫定概算5〜10実働日は、現在は受け入れ済みの実端末確認も含んでいたため、現在の確定残工数とはしない。仕様2点の回答によって必要な実装が変わるため、その実装工数は回答後に算出する。仕様確認などの外部待ちと実働を分け、解消済みの同時認証・追加フォント・素材回収・font lockfile・実端末項目を加算しない。Linux／Windows／Intel Macを初回へ戻さず、機能・互換性・性能・配布の元の完成条件は維持する。
+当時の暫定概算5〜10実働日は、現在は受け入れ済みの実端末確認も含んでいたため、現在の確定残工数とはしない。2点の将来対応に必要な仕様確認・実装工数は初回の残工数に含めない。残る正式版確定作業とGHAの割当待ちを分け、解消済みの同時認証・追加フォント・素材回収・font lockfile・実端末項目を加算しない。Linux／Windows／Intel Macを初回へ戻さず、機能・互換性・性能・配布の元の完成条件は維持する。
 
 
 <details>

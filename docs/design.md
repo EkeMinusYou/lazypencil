@@ -561,7 +561,7 @@ lazypencil runtime setup chromium
 
 ## 検証と受け入れ条件
 
-以下の条件は、初回リリースの対象であるmacOS Apple Siliconで満たす。通常CIはcore構成、既定構成と描画・Chromium、releaseと計測を独立したMac jobで並列実行する。変更箇所の再現試験は該当構成のjob内で完全試験より先に実行し、ビルド済み成果物をそのまま使う。依存監査も並列に行い、全jobの成功後だけソース配布物を確定する。Linux・Windows・Intel Macの成功を初回の必須条件にはしない。OS／CPUの範囲以外の機能・互換性・性能・ライセンス・配布・実端末の完成条件は維持する。
+以下の条件は、初回リリースの対象であるmacOS Apple Siliconで満たす。通常CIはcore構成、既定構成と描画・Chromium、releaseと計測を独立したMac jobで並列実行する。変更箇所の再現試験は該当構成のjob内で完全試験より先に実行し、ビルド済み成果物をそのまま使う。依存監査も並列に行い、全jobの成功後だけソース配布物を確定する。Linux・Windows・Intel Macの成功を初回の必須条件にはしない。2026-10-31の決定により、本家固有のbrowser device preset互換とshaderの塗り段階の`pencil:object`だけを初回の[制限事項](dynamic-content.md#initial-compatibility-limitations)とする。この2点以外の機能・互換性・性能・ライセンス・配布・実端末の完成条件は維持する。
 
 ### 文書と保存
 
