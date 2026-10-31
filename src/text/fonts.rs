@@ -761,11 +761,12 @@ impl Fonts {
             .fallbacks
             .iter()
             .take_while(|family| {
-                !self.pending.iter().any(|face| {
-                    face.names
-                        .iter()
-                        .any(|name| name.to_lowercase() == family.to_lowercase())
-                })
+                self.families.contains_key(&family.to_lowercase())
+                    && !self.pending.iter().any(|face| {
+                        face.names
+                            .iter()
+                            .any(|name| name.to_lowercase() == family.to_lowercase())
+                    })
             })
             .count())
     }
