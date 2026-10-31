@@ -768,7 +768,7 @@ impl Solver<'_> {
             let vertical = self.string(index, "textAlignVertical", "top");
             let offset = match vertical {
                 "top" => 0.0,
-                "middle" => (rect.height - metrics.height) / 2.0,
+                "middle" | "center" => (rect.height - metrics.height) / 2.0,
                 "bottom" => rect.height - metrics.height,
                 _ => return Err(invalid("Unknown vertical text alignment")),
             };
@@ -805,7 +805,7 @@ impl Solver<'_> {
             };
             let y = match self.string(index, "textAlignVertical", "top") {
                 "bottom" => rect.height - text.height,
-                "middle" => (rect.height - text.height) / 2.0,
+                "middle" | "center" => (rect.height - text.height) / 2.0,
                 _ => 0.0,
             };
             local =

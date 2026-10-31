@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Accept legacy vertical text alignment `center` as an alias of `middle` in layout and native/backdrop rendering, preserving the stored value.
 - Load large macOS system emoji fonts within a separate bounded capture budget, defer system fallbacks until needed, and reuse captures when requested styles select the same installed face.
 - Accept `normal` and `bold` text font weights, including string variables, without rewriting document values.
 - Prevent repeated preview failures from flooding Conversation or repainting the terminal; show the actual diagnostic in Preview and list supported versions for unsupported documents.

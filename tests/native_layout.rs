@@ -98,6 +98,57 @@ fn named_font_weights_match_numeric_pixels_and_variables_without_rewriting_sourc
 }
 
 #[test]
+fn legacy_center_vertical_alignment_matches_middle_in_bounds_and_both_painters() {
+    for version in ["2.19", "2.21"] {
+        let (_root, store) = scene(version);
+        let template = store.read().unwrap().value().clone();
+        for backdrop in [false, true] {
+            let mut images = vec![];
+            let mut bounds = vec![];
+            for alignment in ["center", "middle", "top"] {
+                let mut document = template.clone();
+                let title = &mut document["children"][0]["children"][0];
+                title["textGrowth"] = json!("fixed-width-height");
+                title["width"] = json!(200);
+                title["height"] = json!(16);
+                title["textAlignVertical"] = json!(alignment);
+                if backdrop {
+                    document["children"][0]["children"].as_array_mut().unwrap().push(json!({
+                        "id":"frost","type":"rectangle","layoutPosition":"absolute","x":0,"y":0,"width":320,"height":128,"fill":"#ffffff20","effect":{"type":"background_blur","radius":2}
+                    }));
+                }
+                let source = document.to_string();
+                fs::write(store.path(), &source).unwrap();
+                let project = Project::from_document(
+                    store.path(),
+                    Document::parse(source.clone()).unwrap(),
+                    &[],
+                )
+                .unwrap();
+                let mut fonts = Fonts::new(&[]).unwrap();
+                let snapshot = layout::compute(project.resolve().unwrap(), &mut fonts).unwrap();
+                let title = snapshot
+                    .items
+                    .iter()
+                    .find(|item| item.record.id == "title")
+                    .unwrap();
+                assert!(title.record.text.as_ref().unwrap().height > title.record.rect.height);
+                bounds.push(serde_json::to_value(&title.record.visual_bounds).unwrap());
+                images.push(
+                    render::png(&project, &snapshot, &RenderOptions::default())
+                        .unwrap()
+                        .png,
+                );
+                assert_eq!(fs::read_to_string(store.path()).unwrap(), source);
+            }
+            assert_eq!(bounds[0], bounds[1]);
+            assert_eq!(images[0], images[1]);
+            assert_ne!(images[0], images[2]);
+        }
+    }
+}
+
+#[test]
 fn native_cancellation_static_runtime_computation_stops_and_recovers_without_a_worker() {
     for version in ["2.19", "2.21"] {
         let (root, store) = scene(version);

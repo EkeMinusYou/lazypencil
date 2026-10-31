@@ -619,7 +619,7 @@ impl Renderer<'_> {
             .unwrap_or("top")
         {
             "top" => 0.0,
-            "middle" => (rect.height() - block.metrics.height) / 2.0,
+            "middle" | "center" => (rect.height() - block.metrics.height) / 2.0,
             "bottom" => rect.height() - block.metrics.height,
             _ => return Err(invalid("Unknown text vertical alignment")),
         };

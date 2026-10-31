@@ -27,6 +27,8 @@
 
 ## コンポーネントとライブラリ
 
+テキストの縦整列は公開スキーマの `middle` に加え、旧文書をPencilで保存した際に残る `textAlignVertical: "center"` も同じ中央揃えとして読み込む。レイアウト・文字の見た目の範囲・通常描画・背景ぼかし用の描画で同じ意味を使い、保存済みの値は書き換えない。
+
 ### 参照の解決
 
 `reusable` な定義と `ref` のインスタンスを区別し、描画時にだけ実効ツリーを作る。保存時にインスタンスを通常の図形へ展開しない。外部ライブラリは `imports` から解決し、`.lib.pen` を含む参照元を依存文書として読み取る。[公式の部品仕様](https://docs.pencil.dev/core-concepts/components)、[ライブラリ](https://docs.pencil.dev/core-concepts/design-libraries)
