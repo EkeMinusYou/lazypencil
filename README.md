@@ -12,7 +12,20 @@ The complete scope is recorded in the [design](docs/design.md), [component and l
 
 The initial release is complete only when the [design acceptance conditions](docs/design.md#検証と受け入れ条件) are met on macOS Apple Silicon, including CLI/MCP/TUI, all three dynamic-content types, both AI integrations, performance, Kitty/Sixel and clipboard behavior, and distributable binaries with complete licensing materials. The initial scope also excludes the two explicit [compatibility limitations](docs/dynamic-content.md#initial-compatibility-limitations) below; all other functional and quality criteria remain.
 
-## Try the current CLI
+## Install the CLI
+
+Use the Apple Silicon archive from [GitHub Releases](https://github.com/EkeMinusYou/lazypencil/releases). Verify its build provenance as described below, then extract the complete directory:
+
+```sh
+tar -xzf lazypencil-0.1.0-aarch64-apple-darwin.tar.gz
+export PATH="$PWD/lazypencil-0.1.0-aarch64-apple-darwin/bin:$PATH"
+lazypencil --version
+lazypencil --json doctor
+```
+
+Add the extracted `bin` directory to your shell startup configuration to keep it on `PATH`. Keep the matching source, release declaration and license files with the distribution. Basic editing and native rendering do not require Rust, Node.js or Chromium. Browser nodes and GLSL use `lazypencil runtime setup chromium`; AI prompts require an installed and authenticated ACP adapter as described below.
+
+## Try the CLI
 
 Enable Bash, Zsh or Fish Tab completion with `lazypencil completions SHELL`.
 See [shell setup and completion behavior](docs/completions.md) for startup-file

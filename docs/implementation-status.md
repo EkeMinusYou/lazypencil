@@ -4,6 +4,8 @@
 
 ## 現在の状態（2026-10-31）
 
+0.1.0では`resources/release.json`へ版・対応target・最低OS・承認済み制限をまとめ、release buildのdoctor、build evidence、配布manifestとREADMEへ同じ宣言を渡す。debug／機能限定／対象外buildを正式版とは扱わず、資料不足・残レビュー・宣言の差し替えは梱包時に拒否する。17fd64eの軽量検証は自プロジェクトの版上げによるnotice lockfileの不一致だけで失敗し、既存Rust収集workflow41199351369で再生成・検証した。395件のうち、他の依存情報と通知原文は不変であり、差分は自プロジェクトの版・manifest hash・lock hashと可読名だけだった。457dee0の[Mac補助41199513928](https://github.com/EkeMinusYou/lazypencil/actions/runs/41199513928)は全試験・Clippy・source検査を成功した。本体と最終配布物の検証は続けて行う。
+
 利用者の決定により、本家固有のbrowser device presetとshaderの塗り段階の`pencil:object`を初回の[制限事項](dynamic-content.md#initial-compatibility-limitations)へ変更した。ほかの完成条件を維持してコード・現行CI・既存の配布／性能／実端末／両subscription記録を照合し、新たな必須の機能不具合は確認されなかった。現在の本体は性能・候補導入確認と同じ`f3a765ff…f3f37de8`である。追加の限定確認では、同本体を隔離設定・自作文書で実行し、2.19／2.21とも2設定とコメントを保持したまま別ノードを編集でき、width以外の全byteが一致した。未知deviceは`UNSUPPORTED_FEATURE`、塗りobject参照は`SHADER_COMPILE_FAILED`で終了し、不完全なPNGを生成しなかった。ローカルbuild・LLM要求・全体CIの再実行はしていない。技術的には初回リリースの仕上げへ進めるが、0.1.0用の共通リリース宣言・状態表示・配布manifestを整合させる実装を準備し、最終archive／出自の検証へ進める。
 
 54d319aの[全体41126485463](https://github.com/EkeMinusYou/lazypencil/actions/runs/41126485463)はattempt 1で全工程成功し、作成からAPI最終更新まで**9分15秒**だった。元の全5群・両feature構成・両Clippy・通常開発build・画像gate・監査・署名に加え、今回対象となったshader前処理も通過した。既定411 artifactはすべてfresh、coreと既定構成の完全アプリpayloadはともに0 byte、native依存の追加保存もなかった。release本体は既存性能合格の`f3a765ff…f3f37de8`と一致し、物理端末・性能の同条件確認は繰り返していない。source 1,237ファイルの署名照合は同commit・main・ci.yml・run／attemptに束縛して成功した。補助ツールをCargo alias経由で再buildする経路を除き、今回のcache再利用条件では10分以内を達成した。cold／本体変更／runner混雑時の所要時間を保証する結果ではない。
