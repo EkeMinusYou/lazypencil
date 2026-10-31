@@ -359,7 +359,20 @@ fn doctor_and_runtime_status_do_not_launch_an_explicit_browser_or_create_local_s
         );
         let mut value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         if arguments[0] == "doctor" {
-            assert_eq!(value["release_ready"], false);
+            assert_eq!(
+                value["release_ready"],
+                cfg!(all(
+                    target_os = "macos",
+                    target_arch = "aarch64",
+                    feature = "rendering",
+                    feature = "tui",
+                    not(debug_assertions)
+                ))
+            );
+            let release: serde_json::Value =
+                serde_json::from_str(include_str!("../resources/release.json")).unwrap();
+            assert_eq!(value["version"], release["version"]);
+            assert_eq!(value["release"], release);
             value = value["chromium"].take();
         }
         assert_eq!(value["available"], true);

@@ -20,12 +20,10 @@ const MAX_LINE: usize = 4 * 1024 * 1024;
 pub mod link_map;
 pub mod linkage;
 mod release_build;
-const GAPS: &[&str] = &[
-    "Cargo declarations and Skia graph inputs do not establish final binary linkage or used archive members.",
-    "System-library attribution and final Rust source-to-binary/linkage verification remain required.",
-    "The wrapper's Skia/system inline headers remain part of final native source-to-binary review; its reviewed owned C++ inputs and original MIT notice are recorded separately.",
-    "Font/icon source declarations and original notices are collected; final applicability, other assets, and optional runtimes still require review.",
-    "Complete legal review, signed build provenance, packaging, signing, and publication remain required.",
+const REVIEW_NOTES: &[&str] = &[
+    "The raw linker map and archive-member inventory include referenced inputs, including sections the linker may discard.",
+    "Original notices and source identities cover the collected inputs; external runtimes retain their separate terms.",
+    "Verify signed GitHub build provenance separately. This evidence does not assert Apple code signing or notarization.",
 ];
 
 #[derive(Args)]
@@ -104,6 +102,7 @@ pub fn source_identity(root: &Path, revision: &str) -> Result<Value> {
 pub struct CargoObservations {
     pub executable: PathBuf,
     pub application_fresh: bool,
+    pub release_capable: bool,
     pub native_packages: BTreeMap<String, Value>,
     pub ignored_lines: u64,
 }
@@ -232,6 +231,14 @@ pub fn cargo_observations(events: &Path, root: &Path, target: &Path) -> Result<C
     Ok(CargoObservations {
         executable,
         application_fresh: binary["fresh"].as_bool().unwrap(),
+        release_capable: binary["profile"]["debug_assertions"] == false
+            && binary["features"].as_array().is_some_and(|features| {
+                ["rendering", "tui"].iter().all(|required| {
+                    features
+                        .iter()
+                        .any(|feature| feature.as_str() == Some(*required))
+                })
+            }),
         native_packages: selected,
         ignored_lines: ignored,
     })
@@ -372,6 +379,7 @@ pub fn collect(arguments: &Arguments) -> Result<Value> {
     let CargoObservations {
         executable,
         application_fresh,
+        release_capable,
         native_packages: selected,
         ignored_lines: ignored,
     } = cargo_observations(events, &root, &target)?;
@@ -504,7 +512,25 @@ pub fn collect(arguments: &Arguments) -> Result<Value> {
     let standard = standard_evidence
         .map(|path| toolchain::attach(path, &stage.join("toolchain"), &compiler, rustc))
         .transpose()?;
-    let mut gaps = GAPS.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    let release_path = root.join(dist::release::SOURCE_PATH);
+    let release = if release_path.is_file() {
+        Some(dist::release::Release::parse(
+            &util::read(&release_path, 16 * 1024)?,
+            string(&source["package"]["version"])?,
+        )?)
+    } else {
+        None
+    };
+    let mut gaps = Vec::<String>::new();
+    if !release
+        .as_ref()
+        .is_some_and(|policy| policy.ready_for(&host))
+    {
+        gaps.push("This source/target is not declared as a stable release.".into());
+    }
+    if !release_capable {
+        gaps.push("This build does not include release-mode rendering and TUI.".into());
+    }
     if standard.is_none() {
         gaps.push("Rust standard-library evidence has not been attached to this build.".into());
     }
@@ -514,6 +540,7 @@ pub fn collect(arguments: &Arguments) -> Result<Value> {
     if static_link_map.is_none() {
         gaps.push("The final link map has not been attached to this build.".into());
     }
+    let release_ready = gaps.is_empty();
     ensure!(
         source_identity(&root, revision)? == source,
         "Sources changed during evidence collection"
@@ -558,7 +585,7 @@ pub fn collect(arguments: &Arguments) -> Result<Value> {
     .into_iter()
     .map(|s| (s, std::env::var(s).ok()))
     .collect::<BTreeMap<_, _>>();
-    let metadata = json!({"format_version":1,"release_ready":false,"source":source,"binary":binary,"application_artifact_fresh":application_fresh,"compiler":compiler,"dynamic_linkage":dynamic_linkage,"static_link_map":static_link_map,"static_link_inputs":static_link_inputs,"native_packages":selected,"native_archives":archives,"rust_notices":rust,"skia_notices":skia,"skia_wrapper_notices":wrapper,"quickjs_notices":quickjs,"asset_notices":assets,"toolchain_notices":standard,"shader_preprocessor":shader,"cargo_output":cargo_output,"ignored_non_cargo_lines":ignored,"remaining_review":gaps,"hosted":hosted});
+    let metadata = json!({"format_version":1,"release_ready":release_ready,"release":release,"review_notes":REVIEW_NOTES,"application_release_capable":release_capable,"source":source,"binary":binary,"application_artifact_fresh":application_fresh,"compiler":compiler,"dynamic_linkage":dynamic_linkage,"static_link_map":static_link_map,"static_link_inputs":static_link_inputs,"native_packages":selected,"native_archives":archives,"rust_notices":rust,"skia_notices":skia,"skia_wrapper_notices":wrapper,"quickjs_notices":quickjs,"asset_notices":assets,"toolchain_notices":standard,"shader_preprocessor":shader,"cargo_output":cargo_output,"ignored_non_cargo_lines":ignored,"remaining_review":gaps,"hosted":hosted});
     util::publish(&stage.join("build.json"), &util::encode(&metadata)?, false)?;
     let files = util::walk(&stage)?
         .iter()
@@ -588,6 +615,6 @@ pub fn collect(arguments: &Arguments) -> Result<Value> {
     }
     publication?;
     Ok(
-        json!({"release_ready":false,"source_revision":revision,"binary_sha256":binary["sha256"],"files":files.len()+1,"remaining_review":gaps}),
+        json!({"release_ready":release_ready,"source_revision":revision,"binary_sha256":binary["sha256"],"files":files.len()+1,"remaining_review":gaps}),
     )
 }

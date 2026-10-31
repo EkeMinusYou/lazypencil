@@ -133,7 +133,7 @@ pub fn run(s: &Session) -> Result<()> {
     )?;
     let image = s.temporary.join("candidate-smoke.png");
     let mut hidden = Hidden::new(&[s.root.clone(), s.target.clone()], &s.temporary)?;
-    let smoke = (|| -> Result<Value> {
+    let smoke = (|| -> Result<(Value, Value)> {
         let version = process::checked(
             Command::new(&executable)
                 .arg("--version")
@@ -149,6 +149,20 @@ pub fn run(s: &Session) -> Result<()> {
                         .context("Missing package version")?
                 ),
             "Installed version mismatch"
+        );
+        let doctor: Value = serde_json::from_slice(&process::checked(
+            Command::new(&executable)
+                .current_dir(inputs.path())
+                .env("LAZYPENCIL_CONFIG_DIR", inputs.path().join("configuration"))
+                .args(["--json", "--data-dir"])
+                .arg(inputs.path().join("private"))
+                .arg("doctor"),
+            Duration::from_secs(30),
+        )?)?;
+        ensure!(
+            doctor["release_ready"] == verified["release_ready"]
+                && doctor["release"] == verified["release"],
+            "Installed release declaration differs from its verified package"
         );
         for shell in ["bash", "zsh", "fish"] {
             let hook = process::checked(
@@ -195,16 +209,17 @@ pub fn run(s: &Session) -> Result<()> {
                 .all(|pixel| *pixel == [255, 255, 0, 255]),
             "Installed candidate did not paint every generated JavaScript pixel"
         );
-        Ok(report)
+        Ok((report, doctor))
     })();
     hidden.restore()?;
-    let report = smoke?;
+    let (report, doctor) = smoke?;
     util::publish(
         &s.temporary.join("candidate-smoke.json"),
         &util::encode(&json!({
             "source_commit":std::env::var("GITHUB_SHA")?,"candidate":result,"verified":verified,
             "verified_script_pixels":256,
             "verified_completion_shells":["bash","zsh","fish"],
+            "verified_release_ready":doctor["release_ready"],"verified_release":doctor["release"],
             "source_tree_available":false,"native_build_tree_available":false,"image":"candidate-smoke.png","render":report,
         }))?,
         false,

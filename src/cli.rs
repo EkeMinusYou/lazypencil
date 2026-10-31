@@ -1091,6 +1091,16 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
         }
         Command::Doctor => {
             let data = store::data_directory(arguments.data_dir.clone())?;
+            let release: Value = serde_json::from_str(include_str!("../resources/release.json"))
+                .map_err(|error| Error::new("INTERNAL_ERROR", error.to_string()))?;
+            let release_ready = cfg!(all(
+                target_os = "macos",
+                target_arch = "aarch64",
+                feature = "rendering",
+                feature = "tui",
+                not(debug_assertions)
+            )) && release["channel"] == "stable"
+                && release["version"] == env!("CARGO_PKG_VERSION");
             Ok(json!({
             "version":env!("CARGO_PKG_VERSION"),"os":std::env::consts::OS,"architecture":std::env::consts::ARCH,
             "document_version":crate::document::DOCUMENT_VERSION,
@@ -1100,7 +1110,8 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
             "user_configuration":crate::config::user_config_path().map(|path|json!({"path":path})).unwrap_or_else(|error|json!({"error":error})),
             "skia_compiled":cfg!(feature="rendering"),
             "chromium":crate::runtime::status(&data),
-            "release_ready":false,
+            "release_ready":release_ready,
+            "release":release,
             }))
         }
     }

@@ -1,0 +1,17 @@
+{
+  "format_version": 1,
+  "version": "0.1.0",
+  "channel": "stable",
+  "target": "aarch64-apple-darwin",
+  "minimum_os": "15.7.9",
+  "limitations": [
+    {
+      "id": "pencil-browser-device-presets",
+      "description": "Pencil-specific browser device presets are unsupported. Omitted deviceId and basic desktop/phone/tablet modes are supported; other IDs return UNSUPPORTED_FEATURE. Basic modes do not emulate a particular device model or User-Agent."
+    },
+    {
+      "id": "shader-fill-object-sampling",
+      "description": "Shader fills cannot sample pencil:object and return SHADER_COMPILE_FAILED. Object sampling in shader effects is supported."
+    }
+  ]
+}

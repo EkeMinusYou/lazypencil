@@ -118,6 +118,22 @@ impl Fixture {
     }
 }
 #[test]
+fn release_capability_requires_optimized_non_debug_rendering_and_tui() {
+    let mut fixture = Fixture::new();
+    fixture.records[0]["features"] = json!(["default", "rendering", "tui"]);
+    fixture.records[0]["profile"]["debug_assertions"] = json!(false);
+    fixture.save();
+    assert!(fixture.observe().unwrap().release_capable);
+    fixture.records[0]["profile"]["debug_assertions"] = json!(true);
+    fixture.save();
+    assert!(!fixture.observe().unwrap().release_capable);
+    fixture.records[0]["profile"]["debug_assertions"] = json!(false);
+    fixture.records[0]["features"] = json!(["rendering"]);
+    fixture.save();
+    assert!(!fixture.observe().unwrap().release_capable);
+}
+
+#[test]
 fn selected_native_inputs_pair_by_package_identity_without_copying_environment() {
     let mut f = Fixture::new();
     fs::create_dir(
@@ -130,10 +146,12 @@ fn selected_native_inputs_pair_by_package_identity_without_copying_environment()
         native_packages: selected,
         ignored_lines: ignored,
         application_fresh,
+        release_capable,
     } = f.observe().unwrap();
     assert_eq!(binary, f.target.join("release/lazypencil"));
     assert_eq!(ignored, 1);
     assert!(!application_fresh);
+    assert!(!release_capable);
     assert_eq!(selected["skia_bindings"]["fresh"], true);
     assert_eq!(selected["rquickjs_sys"]["fresh"], true);
     assert!(

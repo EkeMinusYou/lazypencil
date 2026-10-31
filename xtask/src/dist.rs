@@ -15,6 +15,7 @@ use unicode_casefold::UnicodeCaseFold;
 use unicode_normalization::UnicodeNormalization;
 
 pub mod binary;
+pub mod release;
 
 pub const MAX_FILES: usize = 10_000;
 pub const MAX_BYTES: u64 = 256 * 1024 * 1024;
@@ -318,9 +319,9 @@ pub fn package_identity(files: &Files) -> Result<Value> {
             "Source omits xtask or its lockfile"
         );
     }
-    Ok(
-        json!({"name": name, "version": version, "rust_version": package.get("rust-version").and_then(toml::Value::as_str)}),
-    )
+    let identity = json!({"name": name, "version": version, "rust_version": package.get("rust-version").and_then(toml::Value::as_str)});
+    release::from_source(files, &identity)?;
+    Ok(identity)
 }
 
 fn git(root: &Path, args: &[&str]) -> Result<String> {

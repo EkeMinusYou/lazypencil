@@ -57,6 +57,8 @@ impl Command {
                 inputs.push(
                     root.join("vendor/skia-bindings/build_support/binary_cache/source_archive.rs"),
                 );
+                // Packaging regressions compile the same declaration shipped by the application.
+                inputs.push(root.join("resources/release.json"));
                 for path in inputs {
                     fs::File::open(path)?.set_times(times)?;
                 }

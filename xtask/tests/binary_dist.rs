@@ -50,6 +50,10 @@ fn index(root: &Path) {
 }
 
 fn fixture(target: &str) -> (tempfile::TempDir, binary::Arguments) {
+    fixture_for_release(target, false)
+}
+
+fn fixture_for_release(target: &str, stable: bool) -> (tempfile::TempDir, binary::Arguments) {
     let temp = tempfile::TempDir::new().unwrap();
     let root = temp.path().join("source");
     fs::create_dir_all(root.join("src")).unwrap();
@@ -65,13 +69,28 @@ fn fixture(target: &str) -> (tempfile::TempDir, binary::Arguments) {
     ] {
         fs::write(root.join(name), bytes).unwrap();
     }
+    let version = if stable { "0.1.0" } else { "0.1.0-dev" };
+    if stable {
+        fs::write(
+            root.join("Cargo.toml"),
+            "[package]\nname='lazypencil'\nversion='0.1.0'\n",
+        )
+        .unwrap();
+        fs::create_dir(root.join("resources")).unwrap();
+        fs::write(
+            root.join("resources/release.json"),
+            include_bytes!("../../resources/release.json"),
+        )
+        .unwrap();
+    }
     let source_archive = temp.path().join("source.tar.gz");
+
     dist::source(&root, &source_archive, 0, true).unwrap();
     let mut source_files = dist::read_archive(&source_archive).unwrap();
-    let manifest = "lazypencil-0.1.0-dev/SOURCE-MANIFEST.json";
-    let mut source: Value = serde_json::from_slice(&source_files[manifest].0).unwrap();
+    let manifest = format!("lazypencil-{version}/SOURCE-MANIFEST.json");
+    let mut source: Value = serde_json::from_slice(&source_files[&manifest].0).unwrap();
     source["git"] = json!({"revision":REVISION,"dirty":false});
-    source_files.get_mut(manifest).unwrap().0 = util::encode(&source).unwrap();
+    source_files.get_mut(&manifest).unwrap().0 = util::encode(&source).unwrap();
     archive(&source_archive, &source_files);
     let evidence = temp.path().join("evidence");
     fs::create_dir(&evidence).unwrap();
@@ -97,15 +116,35 @@ fn fixture(target: &str) -> (tempfile::TempDir, binary::Arguments) {
     let executable = temp.path().join("lazypencil");
     fs::write(&executable, &bytes).unwrap();
     let linkage = json!({"host":target,"binary_sha256":util::digest(&bytes),"declarations":{"format":"fixture"}});
-    let map = b"Original fixture linker map\n";
-    let build = json!({"format_version":1,"release_ready":false,"remaining_review":["Fixture review remains"],
+    let map: &[u8] = if stable {
+        b"# Object files:\n[  0] linker synthesized\n[  1] /build/libfixture.a(one.o)\n# Sections:\n"
+    } else {
+        b"Original fixture linker map\n"
+    };
+    let release = if stable {
+        serde_json::from_slice::<Value>(include_bytes!("../../resources/release.json")).unwrap()
+    } else {
+        Value::Null
+    };
+
+    let mut build = json!({"format_version":1,"release_ready":stable,"release":release,"application_release_capable":stable,"remaining_review":if stable { json!([]) } else { json!(["Fixture review remains"]) },
         "compiler":format!("rustc fixture\nhost: {target}\n"),
-        "source":{"revision":REVISION,"manifest_sha256":util::digest(&source_files[manifest].0),"package":source["package"]},
+        "source":{"revision":REVISION,"manifest_sha256":util::digest(&source_files[&manifest].0),"package":source["package"]},
         "binary":{"sha256":util::digest(&bytes),"bytes":bytes.len()},"dynamic_linkage":linkage,
         "static_link_map":{"sha256":util::digest(map),"bytes":map.len()}});
+    if stable {
+        build["toolchain_notices"] = json!({"fixture":true});
+        build["static_link_inputs"] =
+            lazypencil_xtask::evidence::link_map::archive_references(map).unwrap();
+        fs::write(
+            evidence.join("link-map-inputs.json"),
+            util::encode(&build["static_link_inputs"]).unwrap(),
+        )
+        .unwrap();
+    }
     for (name, bytes) in [
         ("build.json", util::encode(&build).unwrap()),
-        ("SOURCE-MANIFEST.json", source_files[manifest].0.clone()),
+        ("SOURCE-MANIFEST.json", source_files[&manifest].0.clone()),
         ("LICENSE", fs::read(root.join("LICENSE")).unwrap()),
         ("linkage/linkage.json", util::encode(&linkage).unwrap()),
         ("link-map.map", map.to_vec()),
@@ -136,6 +175,85 @@ fn fixture(target: &str) -> (tempfile::TempDir, binary::Arguments) {
             output,
         },
     )
+}
+
+#[test]
+fn stable_release_keeps_source_bound_limits_and_review_status() {
+    let (temp, arguments) = fixture_for_release("aarch64-apple-darwin", true);
+    binary::create(&arguments).unwrap();
+    let installed = temp.path().join("installed");
+    let verified = binary::verify(&arguments.output, Some(&installed)).unwrap();
+    assert_eq!(verified["release_ready"], true);
+    assert_eq!(verified["kind"], "release");
+    assert_eq!(verified["release"]["minimum_os"], "15.7.9");
+    assert_eq!(
+        verified["release"]["limitations"].as_array().unwrap().len(),
+        2
+    );
+    assert_eq!(
+        fs::read(installed.join("RELEASE.json")).unwrap(),
+        include_bytes!("../../resources/release.json")
+    );
+    let readme = fs::read_to_string(installed.join("README.txt")).unwrap();
+    assert!(readme.contains("pencil:object") && readme.contains("device presets"));
+}
+
+#[test]
+fn stable_release_rejects_missing_evidence_or_substituted_scope() {
+    for case in ["review", "features", "toolchain", "link-inputs", "scope"] {
+        let (_temp, arguments) = fixture_for_release("aarch64-apple-darwin", true);
+        let mut build: Value = util::json(&arguments.evidence.join("build.json")).unwrap();
+        match case {
+            "review" => build["remaining_review"] = json!(["Unresolved review"]),
+            "features" => build["application_release_capable"] = json!(false),
+            "toolchain" => build["toolchain_notices"] = Value::Null,
+            "link-inputs" => build["static_link_inputs"] = Value::Null,
+            "scope" => build["release"]["limitations"] = json!([]),
+            _ => unreachable!(),
+        }
+        fs::write(
+            arguments.evidence.join("build.json"),
+            util::encode(&build).unwrap(),
+        )
+        .unwrap();
+        index(&arguments.evidence);
+        assert!(binary::create(&arguments).is_err(), "{case}");
+        assert!(!arguments.output.exists());
+    }
+    let (_temp, arguments) = fixture_for_release("x86_64-unknown-linux-gnu", true);
+    assert!(binary::create(&arguments).is_err());
+    assert!(!arguments.output.exists());
+}
+
+#[test]
+fn release_declarations_reject_version_or_scope_errors() {
+    use lazypencil_xtask::dist::release::Release;
+    let declaration: Value =
+        serde_json::from_slice(include_bytes!("../../resources/release.json")).unwrap();
+    assert!(Release::parse(&util::encode(&declaration).unwrap(), "0.1.0-dev").is_err());
+    for case in [
+        "format",
+        "channel",
+        "target",
+        "minimum",
+        "duplicate",
+        "unknown",
+    ] {
+        let mut changed = declaration.clone();
+        match case {
+            "format" => changed["format_version"] = json!(2),
+            "channel" => changed["channel"] = json!("unverified"),
+            "target" => changed["target"] = json!("x86_64-apple-darwin"),
+            "minimum" => changed["minimum_os"] = json!("unknown"),
+            "duplicate" => changed["limitations"][1] = changed["limitations"][0].clone(),
+            "unknown" => changed["unchecked"] = json!(true),
+            _ => unreachable!(),
+        }
+        assert!(
+            Release::parse(&util::encode(&changed).unwrap(), "0.1.0").is_err(),
+            "{case}"
+        );
+    }
 }
 
 #[test]

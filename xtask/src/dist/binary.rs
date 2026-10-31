@@ -1,4 +1,4 @@
-//! Source-bound binary candidates, including every original collected notice.
+//! Source-bound binary releases and candidates, including original collected notices.
 
 use super::*;
 use clap::Args;
@@ -54,6 +54,8 @@ struct Package {
     format_version: u32,
     kind: String,
     release_ready: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    release: Option<release::Release>,
     package: Value,
     target: String,
     source_revision: String,
@@ -163,9 +165,13 @@ fn executable_target(bytes: &[u8], target: &str) -> Result<()> {
 fn validate(files: &Files, package: &Package) -> Result<()> {
     ensure!(
         package.format_version == 1
-            && package.kind == "release-candidate"
-            && !package.release_ready,
-        "Unsupported binary candidate manifest"
+            && package.kind
+                == if package.release_ready {
+                    "release"
+                } else {
+                    "release-candidate"
+                },
+        "Unsupported binary package manifest"
     );
     ensure!(
         package.source_revision.len() == 40
@@ -211,6 +217,25 @@ fn validate(files: &Files, package: &Package) -> Result<()> {
         .get(&format!("{source_prefix}/{}", super::MANIFEST))
         .context("Missing source manifest")?
         .0;
+    let declaration = source_members.get(&format!("{source_prefix}/{}", release::SOURCE_PATH));
+    let release = declaration
+        .map(|(bytes, _)| {
+            release::Release::parse(bytes, package.package["version"].as_str().unwrap())
+        })
+        .transpose()?;
+    ensure!(
+        package.release == release,
+        "Release declaration differs from source"
+    );
+    ensure!(
+        match declaration {
+            Some((bytes, _)) => files
+                .get(release::PACKAGE_PATH)
+                .is_some_and(|(stored, _)| stored == bytes),
+            None => !files.contains_key(release::PACKAGE_PATH),
+        },
+        "Packaged release declaration differs from source"
+    );
     let evidence = files
         .iter()
         .filter_map(|(name, value)| {
@@ -236,6 +261,25 @@ fn validate(files: &Files, package: &Package) -> Result<()> {
                 .is_some_and(|items| items.iter().all(Value::is_string)),
         "Missing build review status"
     );
+    ensure!(
+        build["release_ready"] == package.release_ready
+            && build["release"] == serde_json::to_value(&release)?,
+        "Package and build release status differ"
+    );
+    if package.release_ready {
+        ensure!(
+            release
+                .as_ref()
+                .is_some_and(|policy| policy.ready_for(&package.target))
+                && build["remaining_review"]
+                    .as_array()
+                    .is_some_and(Vec::is_empty)
+                && build["application_release_capable"] == true
+                && build["toolchain_notices"].is_object()
+                && build["static_link_inputs"].is_object(),
+            "Release lacks declared support or completed build evidence"
+        );
+    }
     ensure!(
         build["source"]["revision"] == package.source_revision
             && build["source"]["manifest_sha256"] == util::digest(source_manifest)
@@ -331,6 +375,25 @@ pub fn create(arguments: &Arguments) -> Result<Value> {
         .as_str()
         .context("Binary candidates require clean source provenance")?
         .to_owned();
+    let source_members = super::read_archive(&arguments.source_archive)?;
+    let source_prefix = format!(
+        "{}-{}",
+        verified["package"]["name"]
+            .as_str()
+            .context("Missing package name")?,
+        verified["package"]["version"]
+            .as_str()
+            .context("Missing package version")?
+    );
+    let declaration = source_members.get(&format!("{source_prefix}/{}", release::SOURCE_PATH));
+    let release = declaration
+        .map(|(bytes, _)| {
+            release::Release::parse(bytes, verified["package"]["version"].as_str().unwrap())
+        })
+        .transpose()?;
+    let release_ready = build["release_ready"]
+        .as_bool()
+        .context("Missing build release status")?;
     let binary = util::read(&arguments.executable, MAX_BYTES)?;
     let license = evidence
         .get("LICENSE")
@@ -343,7 +406,25 @@ pub fn create(arguments: &Arguments) -> Result<Value> {
     files.insert(EXECUTABLE.into(), (binary, 0o755));
     files.insert(SOURCE.into(), (source, 0o644));
     files.insert("LICENSE".into(), license);
-    files.insert("README.txt".into(),(format!("lazypencil binary candidate\nTarget: {target}\nSource: {revision}\n\nExtract this directory and run bin/lazypencil --help. Place bin/lazypencil on PATH to install. Chromium is obtained separately with lazypencil runtime setup chromium.\n\nFor shell Tab completion, load the output of lazypencil completions bash, zsh, or fish from that shell's startup file. The matching source archive contains docs/completions.md with setup instructions. Regenerate hooks on shell startup after upgrades.\n\nThis is a verification candidate. Review status is retained in build-evidence/build.json. No signing, minimum OS acceptance or final release approval is implied. The matching project source archive and all original collected third-party notices are included.\n").into_bytes(),0o644));
+    if let Some((bytes, _)) = declaration {
+        files.insert(release::PACKAGE_PATH.into(), (bytes.clone(), 0o644));
+    }
+    let kind = if release_ready {
+        "release"
+    } else {
+        "verification candidate"
+    };
+    let mut support = String::new();
+    if let Some(policy) = &release {
+        support.push_str(&format!(
+            "\nSupported release target: {}\nMinimum macOS: {}\nKnown compatibility limitations:\n",
+            policy.target, policy.minimum_os
+        ));
+        for limitation in &policy.limitations {
+            support.push_str(&format!("- {}\n", limitation.description));
+        }
+    }
+    files.insert("README.txt".into(), (format!("lazypencil {kind}\nTarget: {target}\nSource: {revision}\n\nExtract this directory and run bin/lazypencil --help. Place bin/lazypencil on PATH to install. Chromium is obtained separately with lazypencil runtime setup chromium.\n\nFor shell Tab completion, load the output of lazypencil completions bash, zsh, or fish from that shell's startup file. The matching source archive contains docs/completions.md with setup instructions. Regenerate hooks on shell startup after upgrades.\n\nBuild review status is retained in build-evidence/build.json. Verify GitHub build provenance separately; this package manifest does not assert Apple code signing or notarization. The matching project source archive and all original collected third-party notices are included.\n{support}").into_bytes(), 0o644));
     ensure!(
         files.len() < MAX_FILES
             && files
@@ -355,8 +436,14 @@ pub fn create(arguments: &Arguments) -> Result<Value> {
     );
     let package = Package {
         format_version: 1,
-        kind: "release-candidate".into(),
-        release_ready: false,
+        kind: if release_ready {
+            "release"
+        } else {
+            "release-candidate"
+        }
+        .into(),
+        release_ready,
+        release,
         package: verified["package"].clone(),
         target,
         source_revision: revision,
@@ -465,6 +552,6 @@ pub fn verify(archive: &Path, extract: Option<&Path>) -> Result<Value> {
         extract_files(&files, MANIFEST, bytes, extract)?;
     }
     Ok(
-        json!({"release_ready":false,"kind":package.kind,"package":package.package,"target":package.target,"source_revision":package.source_revision,"binary_sha256":util::digest(&files[EXECUTABLE].0),"files":files.len(),"sha256":util::file_digest(archive)?}),
+        json!({"release_ready":package.release_ready,"release":package.release,"kind":package.kind,"package":package.package,"target":package.target,"source_revision":package.source_revision,"binary_sha256":util::digest(&files[EXECUTABLE].0),"files":files.len(),"sha256":util::file_digest(archive)?}),
     )
 }
