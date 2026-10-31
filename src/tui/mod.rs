@@ -166,7 +166,7 @@ struct App {
     view: View,
     playback: playback::Playback,
     preview: Option<Preview>,
-    preview_failed: bool,
+    preview_error: Option<Error>,
     camera: Option<camera::Camera>,
     camera_id: u32,
     generation: u64,
@@ -213,7 +213,7 @@ impl App {
             view: View::default(),
             playback: playback::Playback::default(),
             preview: None,
-            preview_failed: false,
+            preview_error: None,
             camera: None,
             camera_id: 0x8000_0001,
             generation: 0,
@@ -295,11 +295,9 @@ impl App {
                     None => { self.save_draft()?; return Ok(()); },
                 },
                 output = worker.next() => {
-                    let current = output.generation == self.generation;
-                    self.accept_preview(output);
                     // Replacing a Kitty image ID removes its placements. Resend
                     // every placeholder instead of diffing unchanged image cells.
-                    if current { screen.redraw(); }
+                    if self.accept_preview(output) { screen.redraw(); }
                 },
                 _ = async {
                     if let Some(deadline) = playback_deadline {
@@ -350,7 +348,7 @@ impl App {
             return;
         }
         if !check_only {
-            self.preview_failed = false;
+            self.preview_error = None;
             if self.camera.take().is_some() {
                 self.status = "Rendering requested preview".into();
             }
@@ -374,14 +372,25 @@ impl App {
             attachment,
         });
     }
-    fn accept_preview(&mut self, output: preview::Output) {
+    fn accept_preview(&mut self, output: preview::Output) -> bool {
         if output.generation != self.generation {
-            return;
+            return false;
+        }
+        // Background polls still retry failed renders, but identical failures
+        // must not flood the conversation, overwrite status, or repaint Kitty.
+        if let Err(error) = &output.result
+            && self.preview_error.as_ref().is_some_and(|previous| {
+                previous.code == error.code
+                    && previous.message == error.message
+                    && previous.details == error.details
+            })
+        {
+            return false;
         }
         self.camera = None;
         match output.result {
             Ok(mut preview) => {
-                self.preview_failed = false;
+                self.preview_error = None;
                 if !preview.attachment {
                     self.view = preview.view;
                     if !preview.time_dependent && !preview.live_pages {
@@ -416,11 +425,12 @@ impl App {
             Err(error) => {
                 self.playback.stop();
                 self.preview = None;
-                self.preview_failed = true;
+                self.preview_error = Some(error.clone());
                 self.error(error);
             }
         }
         self.dirty = true;
+        true
     }
     fn start_playback(&mut self, fps: u32, now: Instant) -> Result<()> {
         if !self.preview.as_ref().is_some_and(|preview| {
@@ -1277,10 +1287,9 @@ impl App {
             frame.render_widget(graphics::Image(&preview.protocol), inner);
         } else {
             frame.render_widget(
-                Paragraph::new(if self.preview_failed {
-                    "Preview unavailable\nSee status and Conversation for details."
-                } else {
-                    "Loading preview…"
+                Paragraph::new(match &self.preview_error {
+                    Some(error) => format!("Preview unavailable\n{}", clean(&error.to_string())),
+                    None => "Loading preview…".into(),
                 })
                 .wrap(Wrap { trim: false }),
                 inner,

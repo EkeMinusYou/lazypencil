@@ -1585,6 +1585,67 @@ fn initial_preview_loading_is_distinct_from_failure_and_explicit_retry() {
 }
 
 #[test]
+fn repeated_preview_errors_are_quiet_without_blocking_repair_or_explicit_retry() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let store = app.conversation.store().clone();
+        let worker = Worker::start(store.clone(), vec![], Backend::halfblocks(), 174).unwrap();
+        app.cells = Size::new(20, 8);
+        app.insert_text("日本語の未送信プロンプト");
+        let mut previous_version = None;
+        for (version, check_only, changed) in [
+            ("2.9", false, true),
+            ("2.9", true, false),
+            ("2.9", true, false),
+            ("2.8", true, true),
+            ("2.21", true, true),
+            ("2.9", true, true),
+            ("2.9", false, true),
+        ] {
+            let document = json!({"version":version,"children":[{
+                "id":"shape","type":"rectangle","width":80,"height":40,"fill":"#FF0000"
+            }]})
+            .to_string();
+            if previous_version != Some(version) {
+                std::fs::write(store.path(), &document).unwrap();
+                previous_version = Some(version);
+            }
+            app.request(&worker, check_only, !check_only);
+            let output = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .expect("Failed previews must remain retryable");
+            let log = app.log.clone();
+            app.status = "Unrelated user action".into();
+            app.dirty = false;
+            assert_eq!(app.accept_preview(output), changed);
+            assert_eq!(app.dirty, changed);
+            if !changed {
+                assert_eq!(app.log, log);
+                assert_eq!(app.status, "Unrelated user action");
+            }
+            if version == "2.21" {
+                assert!(app.preview.is_some());
+                assert!(app.preview_error.is_none());
+            } else {
+                assert!(app.preview.is_none());
+                assert_eq!(
+                    app.preview_error.as_ref().unwrap().code,
+                    "UNSUPPORTED_VERSION"
+                );
+                assert!(app.log.contains("supported versions are 2.19, 2.21"));
+            }
+            assert_eq!(std::fs::read_to_string(store.path()).unwrap(), document);
+            assert_eq!(app.editor.lines(), &["日本語の未送信プロンプト"]);
+            assert!(!app.conversation.active());
+        }
+        assert_eq!(app.log.matches("Cannot resolve version 2.9 at").count(), 3);
+        assert_eq!(app.log.matches("Cannot resolve version 2.8 at").count(), 1);
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
 fn sixel_camera_gestures_use_the_coalescing_worker_without_interim_encodes() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {

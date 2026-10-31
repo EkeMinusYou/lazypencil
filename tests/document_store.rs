@@ -555,7 +555,7 @@ fn supported_versions_survive_transactions_restores_and_rejected_edits_verbatim(
 
 #[test]
 fn unrecognized_wire_versions_remain_read_only_without_running_the_edit() {
-    for version in ["2.18", "2.20", "2.22", "9", "2.19.0"] {
+    for version in ["2.9", "2.18", "2.20", "2.22", "9", "2.19.0"] {
         let (_temp, store) = setup();
         let original = fixture().replace("2.21", version);
         fs::write(store.path(), &original).unwrap();

@@ -955,9 +955,10 @@ impl Project {
             return Err(Error::new(
                 "UNSUPPORTED_VERSION",
                 format!(
-                    "Cannot resolve version {} at {}",
+                    "Cannot resolve version {} at {}; supported versions are {}",
                     document.version(),
-                    path.display()
+                    path.display(),
+                    crate::document::SUPPORTED_DOCUMENT_VERSIONS.join(", ")
                 ),
             ));
         }
