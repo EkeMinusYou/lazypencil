@@ -4,9 +4,11 @@
 
 ## 現在の状態（2026-10-31）
 
-0.1.0では`resources/release.json`へ版・対応target・最低OS・承認済み制限をまとめ、release buildのdoctor、build evidence、配布manifestとREADMEへ同じ宣言を渡す。debug／機能限定／対象外buildを正式版とは扱わず、資料不足・残レビュー・宣言の差し替えは梱包時に拒否する。17fd64eの軽量検証は自プロジェクトの版上げによるnotice lockfileの不一致だけで失敗し、既存Rust収集workflow41199351369で再生成・検証した。395件のうち、他の依存情報と通知原文は不変であり、差分は自プロジェクトの版・manifest hash・lock hashと可読名だけだった。457dee0の[Mac補助41199513928](https://github.com/EkeMinusYou/lazypencil/actions/runs/41199513928)は全試験・Clippy・source検査を成功した。本体と最終配布物の検証は続けて行う。
+0.1.0のリリース準備を完了した。source 58e8424の[全体41200184501](https://github.com/EkeMinusYou/lazypencil/actions/runs/41200184501)は元の全5群・両構成・Clippy・監査・画像／署名gateを成功し、[最終配布・性能41201303069](https://github.com/EkeMinusYou/lazypencil/actions/runs/41201303069)も成功した。梱包・インストール後のdoctor・build evidenceは`release_ready:true`、残レビューは空で、版・Mac target・最低15.7.9・承認済み制限2点が一致する。638ファイルの配布物は全体検証と同じ本体`144273246f4e2f41f3c0edfb90efc09d47e9fa7947c31fb5f27573e328d504e6`を再利用した。archive SHA-256は`9522394f4d2979fc2f6e290f59e6f89c93a99bf7af6b98727f28c183d2aff675`。ローカルでも同commit・release-evidence.yml・main・GitHub hostedの署名と同梱用bundleを検証し、GitHubのアップロード済みdigestとも一致した。[v0.1.0の下書き](https://github.com/EkeMinusYou/lazypencil/releases/tag/untagged-9c25ef99dfc32347bfe3)へMac archive・署名bundle・checksumを配置済みで、公開状態は下書きのままとした。
 
-利用者の決定により、本家固有のbrowser device presetとshaderの塗り段階の`pencil:object`を初回の[制限事項](dynamic-content.md#initial-compatibility-limitations)へ変更した。ほかの完成条件を維持してコード・現行CI・既存の配布／性能／実端末／両subscription記録を照合し、新たな必須の機能不具合は確認されなかった。現在の本体は性能・候補導入確認と同じ`f3a765ff…f3f37de8`である。追加の限定確認では、同本体を隔離設定・自作文書で実行し、2.19／2.21とも2設定とコメントを保持したまま別ノードを編集でき、width以外の全byteが一致した。未知deviceは`UNSUPPORTED_FEATURE`、塗りobject参照は`SHADER_COMPILE_FAILED`で終了し、不完全なPNGを生成しなかった。ローカルbuild・LLM要求・全体CIの再実行はしていない。技術的には初回リリースの仕上げへ進めるが、0.1.0用の共通リリース宣言・状態表示・配布manifestを整合させる実装を準備し、最終archive／出自の検証へ進める。
+最終本体の性能はmacOS15.8.2・image20261028.0489.1・3CPU／7GiBで、元の20起動・80操作・100 worker profileを維持して合格した。入力／初回preview最大55.92／391.63ms、最初のfeedback p95 32.12ms、完成出力p95 218.53msだった。通常の最大観測RSS191.73MiB・idle CPU上限0.397%／30.259秒、Chromium込み1217.89MiB・1.230%／30.087秒で、正常終了・所有子回収も成功した。実端末と両subscriptionの受け入れは、変更していない入力・描画・接続処理の既存証拠を再利用した。
+
+利用者の決定により、本家固有のbrowser device presetとshaderの塗り段階の`pencil:object`を初回の[制限事項](dynamic-content.md#initial-compatibility-limitations)へ変更した。ほかの完成条件を維持してコード・現行CI・既存の配布／性能／実端末／両subscription記録を照合し、新たな必須の機能不具合は確認されなかった。現在の本体は性能・候補導入確認と同じ`f3a765ff…f3f37de8`である。追加の限定確認では、同本体を隔離設定・自作文書で実行し、2.19／2.21とも2設定とコメントを保持したまま別ノードを編集でき、width以外の全byteが一致した。未知deviceは`UNSUPPORTED_FEATURE`、塗りobject参照は`SHADER_COMPILE_FAILED`で終了し、不完全なPNGを生成しなかった。ローカルbuild・LLM要求・全体CIの再実行はしていない。技術的には初回リリースの仕上げへ進めるが、0.1.0の共通リリース宣言・状態表示・配布manifestと最終archive／出自の照合は冒頭の結果で完了した。
 
 54d319aの[全体41126485463](https://github.com/EkeMinusYou/lazypencil/actions/runs/41126485463)はattempt 1で全工程成功し、作成からAPI最終更新まで**9分15秒**だった。元の全5群・両feature構成・両Clippy・通常開発build・画像gate・監査・署名に加え、今回対象となったshader前処理も通過した。既定411 artifactはすべてfresh、coreと既定構成の完全アプリpayloadはともに0 byte、native依存の追加保存もなかった。release本体は既存性能合格の`f3a765ff…f3f37de8`と一致し、物理端末・性能の同条件確認は繰り返していない。source 1,237ファイルの署名照合は同commit・main・ci.yml・run／attemptに束縛して成功した。補助ツールをCargo alias経由で再buildする経路を除き、今回のcache再利用条件では10分以内を達成した。cold／本体変更／runner混雑時の所要時間を保証する結果ではない。
 
@@ -510,7 +512,7 @@ GHAのテスト用buildだけlazypencil packageをopt-level 1とし、debug asse
 
 <a id="remaining-work"></a>
 
-### 次に実装・確認すること
+### 初回リリースの確認状況
 
 欠損libraryの修復はf4363a3の先行に加え、c38fc1cの全工程CIで検証済みである。宣言された通常／入れ子の`.pen`が存在しない場合も、欠損path・用途・元documentとabsence revisionを捕捉し、inspect／stored readと共通編集の依存条件を利用できる。`remove_import`→`add_import`の一バッチで参照先を差し替えるか、instanceとimportを一緒に削除する。未使用の欠損importだけなら部分修復できるが、保存結果に未解決のcomponent／variable参照は許さず、別libraryの同名IDへ推測で接続しない。appearanceの競合、dry-run／保存／再送、入れ子、禁止pathとCLI／実MCPを含む。この範囲を残る実装不足には数えない。
 
@@ -579,19 +581,19 @@ HTTP(S)文字列samplerはa00289f、未参照のproject素材回収は9865944、
 
 旧3環境CI全体の安定した短縮は未達だった。初回Macのみへ変更し、Linux nativeの待機・再ビルド・必須確認を外した。実行時間が単純に1/3になるとは見積もらない。`c9ffb37` は38分28秒、先行17分30秒、全体 job は x64 16分35秒・arm64 17分57秒・Mac20分05秒だった。先行範囲と runner image が異なり、元の27〜29分との統制比較ではない。Mac release 再利用0.87秒、同一環境での先行成果物再利用、変更した試験だけの無効化、独立試験の並列化には個別の成功根拠がある。9d6613b当時は14分43秒（依存変更・Wasm検証を含む）。5eaa691は12分06秒（本体変更と新規124組）、f9cc4daは10分17秒（本体全50単位を再build）だった。copy先行の06bab20は10分31秒、本体再利用の028e522は8分30秒だった。旧62675c9の12分51秒・788f4c2の9分51秒・旧3環境は当時の条件の記録である。現在の全体は冒頭の54d319aで9分15秒を確認済みであり、これらの過去の時間を現在の必須残件へ加算しない。cold／割り当て混雑時も10分以内という保証はしない。
 
-macOSの最新の数値観測は、補完追加後の同一本体に対するbb4261eの配布・性能41091988972である。通常bound最大175.58MiB、最初のfeedback p95は39.88ms、idle CPU上限0.432%で、Chromium込みは1203.70MiB・1.391%だった。元の全試行・30秒以上のidleと正常終了・所有子回収を含む数値gateは成功した。04c610eや446aa94など、以前のsource／環境との差を単独変更の効果とはしない。実端末の操作・Sixel体感性能も冒頭の利用者報告で受け入れ済みであり、PTYの数値と物理端末の報告を区別する。[性能記録](performance.md)
+macOSの最新の数値観測は、0.1.0本体の41201303069である。通常191.73MiB・feedback p95 32.12ms・idle CPU上限0.397%、Chromium込み1217.89MiB・1.230%で元の全基準を成功した。元の全試行・30秒以上のidle・正常終了・所有子回収を含む。bb4261eなど以前の本体／環境との差を単独変更の改善率とはせず、実端末の受け入れも冒頭の利用者報告と分ける。[性能記録](performance.md)
 
 本家との総合デザイン品質比較は当初から保留。任意フォント・全モデルの網羅、crates.io 公開、Linux／Windows／Intel Macを、新たな初回必須スコープとして追加しない。明示した元の機能・互換性・性能・配布条件も削除しない。
 
-### 完成までの順序と概算
+### 完了した範囲と公開操作
 
 大きな文字列の展開上限は74f37fdの完全CIで検証済みとなった。捕捉scriptのfile URL／HTTP asset key・入れ子namespaceと同様、未実装へ戻さない。
 
-1. CI改善は54d319aの全体9分15秒で確認済み。部分／完全成果物の再利用、Cargoの実入力と鮮度判定、独立試験の並列化、全結果回収・失敗保持、全5組・両feature構成・Clippy・元の期限・最終画像／署名gateを維持している。同じ条件の先行・全体・性能計測を重ねず、cold／割り当て混雑時の保証と区別する。CI短縮だけを理由に新しい実装や検証基盤を追加しない。
+1. CIの実入力照合・成果物再利用・独立試験並列化・全結果回収・元の期限とgateを維持した。0.1.0の全体は14分45秒で、411 artifact中367がfresh、再compileは版上げを含む自パッケージ44件だけだった。coreは先行41199729211の成果物を復元した。以前の54d319aのwarm全体9分15秒はその条件の成功であり、今回の再buildを含む時間と区別する。確認済みの同条件の全体試験は重ねない。
 2. device presetとfill-stage object samplingは、利用者が承認した初回の制限事項としてREADME・設計・動的コンテンツ仕様へ明記した。保持・明示的な描画拒否を確認済み。将来の仕様確認・追加対応は初回公開の停止条件とせず、推測を本家互換として表示しない。
-3. 次は最終配布候補・版と公開文書を確定する。0.1.0と`resources/release.json`を正本に、対応Macの通常release buildと検証候補を区別し、配布物に同じ宣言を含める実装を準備した。正式版の判定を反映する際はCLIの状態表示、build evidence、配布manifestとその検証を揃える。候補用の固定flagだけを変更せず、承認済み制限と実際に確認済みのsource／notice／端末・性能条件に合わせて判定と残レビュー表示を揃える。端末基準は冒頭のKitty／WezTermに定め、報告済みの実画面・体感性能、両サブスクリプション、Codex API／自作guideを含む有効な同条件の証拠を再利用する。旧参照素材の公開履歴削除は完了しており、未実施へ戻さない。
+3. 0.1.0の版・状態表示・build evidence・配布manifest・原文通知・最終配布物の検証は完了し、下書きへ配置した。GitHub Releaseの公開操作は未実行である。Appleコード署名／公証済みとは表示せず、GitHub署名付き出自を提供する。実端末・両subscription・同じ処理に対する既存証拠を保持し、旧素材の履歴削除や完了済みレビューを未実施へ戻さない。
 
-当時の暫定概算5〜10実働日は、現在は受け入れ済みの実端末確認も含んでいたため、現在の確定残工数とはしない。2点の将来対応に必要な仕様確認・実装工数は初回の残工数に含めない。残る正式版確定作業とGHAの割当待ちを分け、解消済みの同時認証・追加フォント・素材回収・font lockfile・実端末項目を加算しない。Linux／Windows／Intel Macを初回へ戻さず、機能・互換性・性能・配布の元の完成条件は維持する。
+当時の暫定概算5〜10実働日は、現在は受け入れ済みの実端末確認も含んでいたため、現在の確定残工数とはしない。2点の将来対応に必要な仕様確認・実装工数は初回の残工数に含めない。正式版確定作業は完了した。今後のGHA割当待ちと機能拡張を初回の残件に加算せず、解消済みの同時認証・追加フォント・素材回収・font lockfile・実端末項目を加算しない。Linux／Windows／Intel Macを初回へ戻さず、機能・互換性・性能・配布の元の完成条件は維持する。
 
 
 <details>
