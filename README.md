@@ -2,7 +2,7 @@
 
 A terminal-first editor and renderer for `.pen` design files, written in Rust.
 
-**Version:** 0.1.0 (release prepared; publication pending). See the [release notes](CHANGELOG.md) for features and known limitations, and [implementation status](docs/implementation-status.md) for requirements and verification evidence.
+**Version:** [0.1.0](https://github.com/EkeMinusYou/lazypencil/releases/tag/v0.1.0). See the [release notes](CHANGELOG.md) for features and known limitations, and [implementation status](docs/implementation-status.md) for requirements and verification evidence.
 
 **Initial release platform:** macOS 15.7.9 or later on Apple Silicon (`aarch64-apple-darwin`). The minimum follows successful hosted execution on 15.7.9; current verification also includes 15.8.2. Initial terminal support covers direct local sessions in Kitty 0.49.2 (Kitty Graphics Protocol) and WezTerm `20240203-110809-5046fc22` (Sixel). User checks accepted Kitty operation and the corrected Sixel responsiveness/initial display; the listed installed versions were observed after acceptance. See [terminal support and evidence](docs/tui.md#initial-terminal-support). Linux x64/arm64 and Windows support are deferred; their existing code, runtime catalogues and diagnostic fixtures are retained. Intel Mac remains unsupported. Earlier cross-platform results are historical evidence, not initial-release commitments.
 

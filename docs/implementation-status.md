@@ -2,9 +2,9 @@
 
 <a id="current-status"></a>
 
-## 現在の状態（2026-10-31）
+## 現在の状態（2026-11-01）
 
-0.1.0のリリース準備を完了した。source 58e8424の[全体41200184501](https://github.com/EkeMinusYou/lazypencil/actions/runs/41200184501)は元の全5群・両構成・Clippy・監査・画像／署名gateを成功し、[最終配布・性能41201303069](https://github.com/EkeMinusYou/lazypencil/actions/runs/41201303069)も成功した。梱包・インストール後のdoctor・build evidenceは`release_ready:true`、残レビューは空で、版・Mac target・最低15.7.9・承認済み制限2点が一致する。638ファイルの配布物は全体検証と同じ本体`144273246f4e2f41f3c0edfb90efc09d47e9fa7947c31fb5f27573e328d504e6`を再利用した。archive SHA-256は`9522394f4d2979fc2f6e290f59e6f89c93a99bf7af6b98727f28c183d2aff675`。ローカルでも同commit・release-evidence.yml・main・GitHub hostedの署名と同梱用bundleを検証し、GitHubのアップロード済みdigestとも一致した。[v0.1.0の下書き](https://github.com/EkeMinusYou/lazypencil/releases/tag/untagged-9c25ef99dfc32347bfe3)へMac archive・署名bundle・checksumを配置済みで、公開状態は下書きのままとした。
+0.1.0のリリース準備を完了した。source 58e8424の[全体41200184501](https://github.com/EkeMinusYou/lazypencil/actions/runs/41200184501)は元の全5群・両構成・Clippy・監査・画像／署名gateを成功し、[最終配布・性能41201303069](https://github.com/EkeMinusYou/lazypencil/actions/runs/41201303069)も成功した。梱包・インストール後のdoctor・build evidenceは`release_ready:true`、残レビューは空で、版・Mac target・最低15.7.9・承認済み制限2点が一致する。638ファイルの配布物は全体検証と同じ本体`144273246f4e2f41f3c0edfb90efc09d47e9fa7947c31fb5f27573e328d504e6`を再利用した。archive SHA-256は`9522394f4d2979fc2f6e290f59e6f89c93a99bf7af6b98727f28c183d2aff675`。ローカルでも同commit・release-evidence.yml・main・GitHub hostedの署名と同梱用bundleを検証し、GitHubのアップロード済みdigestとも一致した。[v0.1.0](https://github.com/EkeMinusYou/lazypencil/releases/tag/v0.1.0)を2026-11-01に公開した。Mac archive・署名bundle・checksumの3添付と、公開タグが検証済みsource 58e8424を指すことを確認した。
 
 最終本体の性能はmacOS15.8.2・image20261028.0489.1・3CPU／7GiBで、元の20起動・80操作・100 worker profileを維持して合格した。入力／初回preview最大55.92／391.63ms、最初のfeedback p95 32.12ms、完成出力p95 218.53msだった。通常の最大観測RSS191.73MiB・idle CPU上限0.397%／30.259秒、Chromium込み1217.89MiB・1.230%／30.087秒で、正常終了・所有子回収も成功した。実端末と両subscriptionの受け入れは、変更していない入力・描画・接続処理の既存証拠を再利用した。
 
@@ -591,7 +591,7 @@ macOSの最新の数値観測は、0.1.0本体の41201303069である。通常19
 
 1. CIの実入力照合・成果物再利用・独立試験並列化・全結果回収・元の期限とgateを維持した。0.1.0の全体は14分45秒で、411 artifact中367がfresh、再compileは版上げを含む自パッケージ44件だけだった。coreは先行41199729211の成果物を復元した。以前の54d319aのwarm全体9分15秒はその条件の成功であり、今回の再buildを含む時間と区別する。確認済みの同条件の全体試験は重ねない。
 2. device presetとfill-stage object samplingは、利用者が承認した初回の制限事項としてREADME・設計・動的コンテンツ仕様へ明記した。保持・明示的な描画拒否を確認済み。将来の仕様確認・追加対応は初回公開の停止条件とせず、推測を本家互換として表示しない。
-3. 0.1.0の版・状態表示・build evidence・配布manifest・原文通知・最終配布物の検証は完了し、下書きへ配置した。GitHub Releaseの公開操作は未実行である。Appleコード署名／公証済みとは表示せず、GitHub署名付き出自を提供する。実端末・両subscription・同じ処理に対する既存証拠を保持し、旧素材の履歴削除や完了済みレビューを未実施へ戻さない。
+3. 0.1.0の版・状態表示・build evidence・配布manifest・原文通知・最終配布物の検証は完了し、公開済みのv0.1.0へ配置した。Appleコード署名／公証済みとは表示せず、GitHub署名付き出自を提供する。実端末・両subscription・同じ処理に対する既存証拠を保持し、旧素材の履歴削除や完了済みレビューを未実施へ戻さない。
 
 当時の暫定概算5〜10実働日は、現在は受け入れ済みの実端末確認も含んでいたため、現在の確定残工数とはしない。2点の将来対応に必要な仕様確認・実装工数は初回の残工数に含めない。正式版確定作業は完了した。今後のGHA割当待ちと機能拡張を初回の残件に加算せず、解消済みの同時認証・追加フォント・素材回収・font lockfile・実端末項目を加算しない。Linux／Windows／Intel Macを初回へ戻さず、機能・互換性・性能・配布の元の完成条件は維持する。
 
