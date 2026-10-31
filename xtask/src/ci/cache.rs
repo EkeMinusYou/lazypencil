@@ -201,6 +201,12 @@ impl Command {
                 let primary = report["primary"].as_str().unwrap();
                 let preferred = native_snapshots::preferred_key(primary, core_only)?;
                 let complete = native_snapshots::complete_key(primary)?;
+                let legacy = report["legacy"].as_str().unwrap();
+                let legacy_preferred = if legacy.is_empty() {
+                    String::new()
+                } else {
+                    native_snapshots::preferred_key(legacy, core_only)?
+                };
                 let checkpoint = if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
                     checkpoint_key(
                         primary,
@@ -219,6 +225,7 @@ impl Command {
                         ("preferred".into(), preferred),
                         ("complete".into(), complete),
                         ("legacy".into(), report["legacy"].as_str().unwrap().into()),
+                        ("legacy_preferred".into(), legacy_preferred),
                         ("checkpoint".into(), checkpoint),
                     ]),
                 )?;
@@ -707,6 +714,12 @@ pub fn native_identity(
             .any(|s| s == "commit-hash: 4a4ef493e3a1488c6e321570238084b38948f6db")
         && flags == baseline;
     let previous = match tree {
+        // The 0.1.0 release changes only this package's version in Cargo.toml/lock.
+        // Dependency versions, native inputs and compiler flags are identical.
+        // Application outputs are pruned and must pass their own source checks.
+        "9d9ec938606c1c29c9ac36d0868af4b0bf3d61be85d66449287258edbb680e1b" => {
+            Some("4cd30528eaee7f6025192ea093fe203e7c59be06b95b84c8cf0c00f66790f6fa")
+        }
         // The optional Fontations readers leave native inputs unchanged.
         // Restore dependencies only; Cargo must recheck unified Rust features.
         "11d1597cbd47f826b985b5e514b42c0ff8aa9d4a3d378264e88ac38781b0e160" => {

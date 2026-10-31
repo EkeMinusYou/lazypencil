@@ -1099,7 +1099,9 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
                 feature = "rendering",
                 feature = "tui",
                 not(debug_assertions)
-            )) && release["channel"] == "stable"
+            )) && release["format_version"] == 1
+                && release["target"] == "aarch64-apple-darwin"
+                && release["channel"] == "stable"
                 && release["version"] == env!("CARGO_PKG_VERSION");
             Ok(json!({
             "version":env!("CARGO_PKG_VERSION"),"os":std::env::consts::OS,"architecture":std::env::consts::ARCH,

@@ -215,6 +215,7 @@ jobs:
             ${{ steps.cache-key.outputs.primary }}
             ${{ format('checkpoint-{0}-', steps.cache-key.outputs.primary) }}
             ${{ format('checkpoint-{0}', steps.cache-key.outputs.primary) }}
+            ${{ steps.cache-key.outputs.legacy_preferred }}
             ${{ steps.cache-key.outputs.legacy }}
             ${{ inputs.phase != 'focus' && format('core-{0}', steps.cache-key.outputs.primary) || '' }}
           path: |

@@ -2,7 +2,7 @@
 
 A terminal-first editor and renderer for `.pen` design files, written in Rust.
 
-**Development status:** the Mac implementation has passed its recorded functional, performance, terminal and subscription acceptance checks. The first public release version and final binary package are not yet finalized. See [implementation status](docs/implementation-status.md) for requirements and verification evidence.
+**Version:** 0.1.0. See the [release notes](CHANGELOG.md) for features and known limitations, and [implementation status](docs/implementation-status.md) for requirements and verification evidence.
 
 **Initial release platform:** macOS 15.7.9 or later on Apple Silicon (`aarch64-apple-darwin`). The minimum follows successful hosted execution on 15.7.9; current verification also includes 15.8.2. Initial terminal support covers direct local sessions in Kitty 0.49.2 (Kitty Graphics Protocol) and WezTerm `20240203-110809-5046fc22` (Sixel). User checks accepted Kitty operation and the corrected Sixel responsiveness/initial display; the listed installed versions were observed after acceptance. See [terminal support and evidence](docs/tui.md#initial-terminal-support). Linux x64/arm64 and Windows support are deferred; their existing code, runtime catalogues and diagnostic fixtures are retained. Intel Mac remains unsupported. Earlier cross-platform results are historical evidence, not initial-release commitments.
 
@@ -22,9 +22,9 @@ bundled catalogues without loading a project or starting an agent.
 The editable example uses the bundled font and requires no browser or AI service:
 
 ```sh
-cargo run -- inspect examples/welcome.pen
-cargo run -- layout examples/welcome.pen
-cargo run -- render examples/welcome.pen --output welcome.png
+lazypencil inspect examples/welcome.pen
+lazypencil layout examples/welcome.pen
+lazypencil render examples/welcome.pen --output welcome.png
 ```
 
 `render` writes a PNG; `layout` reports positions, text metrics, a snapshot ID, and overflow diagnostics. `--json` returns structured results and errors. Additional font files can be supplied with repeated `--font` options on `inspect`, `variables`, `validate`, `apply`, `layout`, `render`, and `restore`.
@@ -35,13 +35,13 @@ Use `fonts list --font /path/to/family.ttc` to inspect every supplied face, styl
 
 Argument errors also honor `--json`, including invalid numbers, unknown options, and missing required arguments. They return `error.code: "INVALID_ARGUMENT"` on stdout and exit with status 2. Help and version remain readable text with status 0. A `--json` string after the `--` separator is positional input rather than a request for JSON output.
 
-The [graphics example](examples/graphics-study.pen) demonstrates Japanese text decorations and combined glyph/decoration outlines, per-side rectangular borders, image crops, and normal inner shadows. Run `cargo run -- render examples/graphics-study.pen --output graphics-study.png`. See [graphics implementation](docs/graphics.md) for verified behavior and remaining compatibility work.
+The [graphics example](examples/graphics-study.pen) demonstrates Japanese text decorations and combined glyph/decoration outlines, per-side rectangular borders, image crops, and normal inner shadows. Run `lazypencil render examples/graphics-study.pen --output graphics-study.png`. See [graphics implementation](docs/graphics.md) for verified behavior and remaining compatibility work.
 
 The [backdrop example](examples/backdrop-panel.pen) demonstrates native background blur with sharp foreground text. It needs no browser installation. `render --node NODE_ID` crops the composited document to that node's visual bounds; `render --region X Y WIDTH HEIGHT` selects an explicit crop. Both retain scene context and sample filter inputs outside the requested viewport.
 
-The [shadow study](examples/shadow-blends.pen) compares all eighteen native color modes on outer and inner shadows. Run `cargo run -- render examples/shadow-blends.pen --output shadow-blends.png`. Translucent shadow, paint, and parent opacity use source-over alpha, including linear burn/dodge. See [shadow and paint blending](docs/graphics.md#shadow-and-paint-blending) for behavior and remaining compatibility work.
+The [shadow study](examples/shadow-blends.pen) compares all eighteen native color modes on outer and inner shadows. Run `lazypencil render examples/shadow-blends.pen --output shadow-blends.png`. Translucent shadow, paint, and parent opacity use source-over alpha, including linear burn/dodge. See [shadow and paint blending](docs/graphics.md#shadow-and-paint-blending) for behavior and remaining compatibility work.
 
-The [mesh study](examples/mesh-study.pen) demonstrates native color grids with moved points and Bézier handles, a hero surface, Japanese/Latin text, and a mesh border. Run `cargo run -- render examples/mesh-study.pen --output mesh-study.png`. It needs no browser or external assets. See [mesh behavior and limits](docs/graphics.md#mesh-gradients), including the documented defaults and auto-handle rules that still require Pencil compatibility comparison.
+The [mesh study](examples/mesh-study.pen) demonstrates native color grids with moved points and Bézier handles, a hero surface, Japanese/Latin text, and a mesh border. Run `lazypencil render examples/mesh-study.pen --output mesh-study.png`. It needs no browser or external assets. See [mesh behavior and limits](docs/graphics.md#mesh-gradients), including the documented defaults and auto-handle rules that still require Pencil compatibility comparison.
 
 The [icon study](examples/icon-study.pen) uses native Lucide vector geometry with Japanese labels, gradients, and transparency. Search with `icons list --name settings`. Lucide is bundled; Feather, Phosphor Regular, and Material Symbols Outlined/Rounded/Sharp are pinned optional packs installed explicitly with `icons setup PACK`. Material accepts real continuous font weights from 100 to 700, including fractional values. `icons license PACK` reads the complete embedded license without installing it. After optional setup, [the icon families study](examples/icon-families.pen) compares all six libraries and three Material weights without a browser. See [icon packs](docs/icons.md) for quoted setup commands, offline inputs, provenance, and current verification scope.
 
@@ -58,7 +58,7 @@ To edit a file, read its current `revision` and `dependency_revision` with `insp
 ```
 
 ```sh
-cargo run -- apply design.pen --operations edits.json --expected-revision REVISION --expected-dependency-revision DEPENDENCY_REVISION --request-id edit-1
+lazypencil apply design.pen --operations edits.json --expected-revision REVISION --expected-dependency-revision DEPENDENCY_REVISION --request-id edit-1
 ```
 
 Use `--dry-run` to validate a batch without saving. Reusing the same request ID and payload returns the saved result. `history`, `restore`, and `recover` expose checkpoints and interrupted-save recovery. The data directory can be set with `--data-dir` or `LAZYPENCIL_DATA_DIR`; document locks remain in a shared per-user cache directory. `doctor` reports both locations.
@@ -84,8 +84,8 @@ CLI, MCP, TUI and the three dynamic-content paths are implemented within the doc
 ## Script-generated designs
 
 ```sh
-cargo run -- render examples/script-chart.pen --output script-chart.png
-cargo run -- guidance scripts
+lazypencil render examples/script-chart.pen --output script-chart.png
+lazypencil guidance scripts
 ```
 
 The original chart example combines editable `.pen` layout, Noto Sans JP, and generated geometry. Script nodes use a separate Rust worker with QuickJS-NG 0.16.2 through the pinned `rquickjs` 0.14.0 binding. Headers accept explicit `@schema 2.19`, `@schema 2.21` and legacy `@schema 2.11`, with six typed input kinds; header compatibility does not enable 2.11 document files. The engine exposes `pencil.width`, `pencil.height`, and `pencil.input`; output is measured and painted by the same Skia path as ordinary nodes. Generated children remain derived data and carry `generated_by` metadata.
@@ -105,9 +105,9 @@ Files discovered only in generated content appear in `runtime_dependencies`, sep
 Independent script copies capture declared assets, component/variable/theme bindings and local browser resources. Generated browser scope/override composition, URL ownership and recopy passed both schemas, including 162 namespace images per target in the completed baseline. Explicit component reuse includes definitions contained inside a copied parent, with separate placement IDs and explicit descendant-path mappings. Stored and runtime-authored replacement children preserve their addresses through reuse, source removal and recopy. Generated script scopes support explicit or inherited source URIs and independently guarded inherited inputs, retaining their original spelling through copy and recopy. Custom generated bindings translate logical names, declared libraries and hash-guarded ref-input maps through captured namespaces. Subsequent complete Mac gates verified explicit input-context composition, generation-specific input restoration and code-owner preservation under later overrides, including source removal and recopy. Older captures missing the required provenance require recopying from their original source. See [copy semantics](docs/mcp.md#importing-components) and [verified context behavior](docs/dynamic-content.md).
 
 ```sh
-cargo run -- runtime setup chromium
-cargo run -- runtime status
-cargo run -- render examples/dynamic-panel.pen --time 0.5 --output dynamic-panel.png
+lazypencil runtime setup chromium
+lazypencil runtime status
+lazypencil render examples/dynamic-panel.pen --time 0.5 --output dynamic-panel.png
 ```
 
 The setup command explicitly downloads a pinned Chrome for Testing headless shell and verifies its archive and installed files. Rendering never downloads a runtime. [Runtime installation](docs/runtimes.md) covers offline archives, custom executables, platforms, licensing, and testing.
@@ -121,7 +121,7 @@ Browser nodes capture HTTP(S) or HTML data pages with dimensions, zoom, scroll, 
 
 These values are retained when editing unrelated document content. Rendering rejects the unsupported combination rather than reporting a complete image. The initial release does not claim full Pencil compatibility.
 
-The original dynamic-panel example combines a local HTML data page, GLSL, and native Japanese text without external page resources. The [uniform study](examples/uniform-study.pen) reuses one shader with flat color arrays, grouped float declarations, and column-major matrices. With Chromium installed, render it using `cargo run -- render examples/uniform-study.pen --output uniform-study.png`. Numeric arrays and GLSL constant-expression dimensions are checked against the active linked WebGL inputs; defaults remain transient zero values. One-dimensional sampler2D arrays accept lists of captured image URLs, including per-element string variables with aliases and themes. The runtime binds the active image prefix and uses transparent defaults for unset elements. Fixed-image lists and local relative string sampler variables can be copied independently while preserving shared text strings, aliases and themes through ordinary imported variable libraries. Absolute local paths, local file URLs, HTTP(S) images and conflicting path projections use portable image bindings while preserving the original text, aliases and themes. Embedded static-image data URLs retain their original strings and payloads. These paths passed complete Mac verification, including source removal and offline recopy. See [declaration rules and limits](docs/dynamic-content.md#宣言と数値入力).
+The original dynamic-panel example combines a local HTML data page, GLSL, and native Japanese text without external page resources. The [uniform study](examples/uniform-study.pen) reuses one shader with flat color arrays, grouped float declarations, and column-major matrices. With Chromium installed, render it using `lazypencil render examples/uniform-study.pen --output uniform-study.png`. Numeric arrays and GLSL constant-expression dimensions are checked against the active linked WebGL inputs; defaults remain transient zero values. One-dimensional sampler2D arrays accept lists of captured image URLs, including per-element string variables with aliases and themes. The runtime binds the active image prefix and uses transparent defaults for unset elements. Fixed-image lists and local relative string sampler variables can be copied independently while preserving shared text strings, aliases and themes through ordinary imported variable libraries. Absolute local paths, local file URLs, HTTP(S) images and conflicting path projections use portable image bindings while preserving the original text, aliases and themes. Embedded static-image data URLs retain their original strings and payloads. These paths passed complete Mac verification, including source removal and offline recopy. See [declaration rules and limits](docs/dynamic-content.md#宣言と数値入力).
 
 Page and shader processes expire independently after 60 idle seconds by default; cached images remain available and refresh restarts processes. Captured settings configure launch/acquisition/idle/cache limits. Earlier three-target gates cover policy reload, retained TUI DOM, playback/time controls, additional waits, selectors, animation and offline-network behavior. Dedicated authentication profiles and visible login are verified. Shared profile acquisition by retained preview and a separate bound MCP client passed complete Mac gates, including isolation, cancellation/death, captured resources and network-policy changes. Physical-terminal and vendor-account acceptance remain separate. See [runtime behavior](docs/runtimes.md), [capture policies](docs/dynamic-content.md#取得条件と再現性) and [remaining scope](docs/implementation-status.md#remaining-work).
 
@@ -130,11 +130,11 @@ Local file pages require explicit resource roots within the existing project rea
 ## MCP and design guidance
 
 ```sh
-cargo run -- mcp --file /absolute/path/design.pen
-cargo run -- guidance
-cargo run -- guidance operations
-cargo run -- styles
-cargo run -- style standard-ui --json
+lazypencil mcp --file /absolute/path/design.pen
+lazypencil guidance
+lazypencil guidance operations
+lazypencil styles
+lazypencil style standard-ui --json
 ```
 
 The stdio MCP server uses the same editing and rendering services as the CLI. It returns PNG image content and can reuse a calculation snapshot between layout inspection and rendering. See the [MCP guide](docs/mcp.md) for supported tools, protocol version, limits, and current gaps.
@@ -146,9 +146,9 @@ Fifteen original English guides cover the workflow, real editing operations, lay
 With an ACP adapter explicitly installed and its runtime authenticated:
 
 ```sh
-cargo run -- prompt new.pen --create --agent codex "日本語の設定画面を作って"
-cargo run -- prompt new.pen --agent claude --image reference.png "Improve this design"
-cargo run -- prompt new.pen --image reference.jpg --image-max-size 1024x768 "Use this reference"
+lazypencil prompt new.pen --create --agent codex "日本語の設定画面を作って"
+lazypencil prompt new.pen --agent claude --image reference.png "Improve this design"
+lazypencil prompt new.pen --image reference.jpg --image-max-size 1024x768 "Use this reference"
 ```
 
 The host supports ACP v1, image blocks, document-bound MCP, native session reload, permissions, and cancellation. It checks adapter-reported authentication against the requested subscription/API route and cancels a conflicting change. `--model` and `--mode` select advertised options; document-tool preauthorization does not approve shell or unrelated file operations. `--json prompt` streams NDJSON.
@@ -236,7 +236,7 @@ cargo xtask dist binary --executable /build/release/lazypencil \
 cargo xtask dist verify-binary /tmp/lazypencil-candidate.tar.gz --extract /tmp/lazypencil-install
 ```
 
-The [release-evidence workflow](.github/workflows/release-evidence.yml) reuses valid mapped release outputs, runs Cargo freshness checks, gathers original notices/build/linkage evidence, packages the candidate and smokes the installed binary with source/build trees hidden. The current Mac candidate passed packaging and independent source/notice/pixel checks; earlier three-target results are historical evidence for deferred support. Physical-terminal acceptance and the recorded source/notice checks are complete for their stated scope. `release_ready: false` still identifies a verification candidate: the release version, final manifest and publication review remain to be finalized. This metadata is not an automatic readiness evaluator.
+The [release-evidence workflow](.github/workflows/release-evidence.yml) reuses valid mapped release outputs, runs Cargo freshness checks, gathers original notices/build/linkage evidence, packages the candidate and smokes the installed binary with source/build trees hidden. The current Mac candidate passed packaging and independent source/notice/pixel checks; earlier three-target results are historical evidence for deferred support. Physical-terminal acceptance and the recorded source/notice checks are complete for their stated scope. `release_ready` distinguishes supported, fully evidenced release packages from verification candidates. It does not replace verification of the signed build provenance. The source-bound `resources/release.json` declares the version, supported target, minimum macOS and known limitations. `doctor` reports that declaration; debug, reduced-feature and deferred-platform builds are not marked release-ready. The packager requires matching source/binary evidence and no unresolved build-review entries before emitting a release. GitHub provenance verification remains a separate check.
 
 Signed GitHub build provenance is implemented for final source and manual candidates. Verify the archive against its reviewed source/signer commit:
 

@@ -1460,12 +1460,36 @@ fn native_identity_binds_compiler_image_flags_and_dependency_tree_but_not_schedu
     .unwrap();
     assert_eq!(migrated["legacy"], baseline["primary"]);
     assert_ne!(migrated["primary"], baseline["primary"]);
+    let release_tree = "9d9ec938606c1c29c9ac36d0868af4b0bf3d61be85d66449287258edbb680e1b";
+    let release_baseline = cache::native_identity(
+        "macos-15",
+        "20261028.0489.1",
+        "4cd30528eaee7f6025192ea093fe203e7c59be06b95b84c8cf0c00f66790f6fa",
+        &compiler,
+        &flags(),
+    )
+    .unwrap();
+    let release_identity = cache::native_identity(
+        "macos-15",
+        "20261028.0489.1",
+        release_tree,
+        &compiler,
+        &flags(),
+    )
+    .unwrap();
+    assert_eq!(release_identity["legacy"], release_baseline["primary"]);
+    assert_ne!(release_identity["primary"], release_baseline["primary"]);
     for (name, value) in [
         ("RUSTFLAGS", "--cfg changed"),
         ("SKIA_SOURCE_DIR", "/changed"),
     ] {
         let mut env = flags();
         env.insert(name.into(), value.into());
+        assert_eq!(
+            cache::native_identity("macos-15", "20261028.0489.1", release_tree, &compiler, &env)
+                .unwrap()["legacy"],
+            ""
+        );
         assert_eq!(
             cache::native_identity("macos-15", "20260907.0337.1", font_tree, &compiler, &env)
                 .unwrap()["legacy"],

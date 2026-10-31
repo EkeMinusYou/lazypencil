@@ -199,6 +199,34 @@ fn stable_release_keeps_source_bound_limits_and_review_status() {
 }
 
 #[test]
+fn recomputed_package_hashes_cannot_replace_source_bound_release_limits() {
+    let (temp, arguments) = fixture_for_release("aarch64-apple-darwin", true);
+    binary::create(&arguments).unwrap();
+    let mut files = dist::read_archive(&arguments.output).unwrap();
+    let prefix = "lazypencil-0.1.0-aarch64-apple-darwin";
+    let declaration_path = format!("{prefix}/RELEASE.json");
+    let mut declaration: Value = serde_json::from_slice(&files[&declaration_path].0).unwrap();
+    declaration["limitations"] = json!([]);
+    let bytes = util::encode(&declaration).unwrap();
+    let manifest_path = format!("{prefix}/PACKAGE-MANIFEST.json");
+    let mut manifest: Value = serde_json::from_slice(&files[&manifest_path].0).unwrap();
+    let entry = manifest["files"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|entry| entry["path"] == "RELEASE.json")
+        .unwrap();
+    entry["bytes"] = json!(bytes.len());
+    entry["sha256"] = json!(util::digest(&bytes));
+    files.get_mut(&declaration_path).unwrap().0 = bytes;
+    files.get_mut(&manifest_path).unwrap().0 = util::encode(&manifest).unwrap();
+    archive(&arguments.output, &files);
+    let output = temp.path().join("invalid");
+    assert!(binary::verify(&arguments.output, Some(&output)).is_err());
+    assert!(!output.exists());
+}
+
+#[test]
 fn stable_release_rejects_missing_evidence_or_substituted_scope() {
     for case in ["review", "features", "toolchain", "link-inputs", "scope"] {
         let (_temp, arguments) = fixture_for_release("aarch64-apple-darwin", true);
