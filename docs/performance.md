@@ -61,6 +61,23 @@ For 40 keys at 50 ms intervals, pan completed 31 exact and nine cached frames; a
 
 Validation passed after the final source changes: 223 library tests, 12 rendering integration tests and 11 ordinary TUI integration tests; the two existing native-clipboard/Chromium cases remain ignored. Core-only and rendering-only compilation, formatting and diff checks passed. Clippy passed with the same existing compatibility exclusions recorded at the checkpoint. This performance work did not modify the installed executable or sibling UI worktree; independent UI updates continued. As requested, integration is deferred until that UI work finishes.
 
+## Completed UI integration checkpoint, 2026-11-01
+
+Commit `a1d9774` combines the completed conversation-layout, input, theme and minimal-hint UI work with the native-resolution preview optimization. [All 80 integrated observations and continuous-input trials](measurements/preview-integrated-30ms-2026-11-01.json) meet the 30 ms median target. [Source hashes, UI snapshot, build command and validation](measurements/preview-integrated-30ms-2026-11-01-verification.json) identify the exact combined code. The release binary SHA-256 is `045ab94b51b2bf4b5b877ce4ff21cf56ce967c5db637be6c7bc398e6d81f5167`; this integration build uses 16 codegen units for the application package, with release optimization and thin LTO. The standalone default-profile result above remains separately recorded.
+
+| Operation | Complete image median | p95 | Maximum |
+| --- | ---: | ---: | ---: |
+| Zoom in | 20.40 ms | 27.60 ms | 147.16 ms |
+| Zoom out | 19.22 ms | 24.49 ms | 26.74 ms |
+| Pan right | 18.51 ms | 25.45 ms | 66.59 ms |
+| Pan left | 19.29 ms | 24.35 ms | 24.42 ms |
+
+The integrated UI uses the original 224 × 57 cells / 2688 × 1140 PTY geometry and delivers the same 1272 × 1040 native pixels. The initial image and every operation's RGBA hash match the standalone accepted renderer exactly, with no additional scaling, interpolation or blur. Synchronized-update-end medians are 24.68–26.67 ms. The first uncached zoom remains a 147.16 ms outlier and is included.
+
+At 50 ms input intervals, continuous pan/zoom produced 36/38 exact frames, restored their original pixels, and finished their last synchronized image 39.57/27.79 ms after the final key. This remains owned-PTY timing, not a physical-display bound or a guarantee for uncached zooms and larger/dynamic scenes.
+
+The combined code passed 227 library tests, 12 rendering integration tests and 11 TUI integration tests; two environment-specific TUI cases remain ignored. Clippy passed with the previously recorded compatibility exclusions. Additional tree-navigation and file-title work began in the independent UI task before deployment, so this completed checkpoint is committed but not installed. The user's instruction to wait for UI completion still governs local replacement.
+
 ## Current interpretation, 2026-10-31
 
 The final 0.1.0 [distribution and performance run](https://github.com/EkeMinusYou/lazypencil/actions/runs/41201303069) passed in 6m12s. The packaged binary `14427324…28d504e6` is identical to the successful [complete run](https://github.com/EkeMinusYou/lazypencil/actions/runs/41200184501), with release artifact reuse confirmed. All 20 starts, 80 interactions and 100 worker profiles were retained on macOS 15.8.2 / image 20261028.0489.1 / 3 CPUs / 7 GiB. Maximum input/first-preview latency was 55.92/391.63ms; first-feedback p95 was 32.12ms and complete-output p95 218.53ms. Bound application maximum observed RSS was 191.73MiB and idle CPU upper bound 0.397% over 30.259s. Including Chromium, these were 1217.89MiB and 1.230% over 30.087s. Every original threshold and normal-exit/owned-process cleanup check passed. These are PTY/resource observations, not new physical-terminal measurements or kernel peak-RSS guarantees. Existing physical-terminal and subscription acceptance remains valid for the unchanged input, rendering and adapter code. The complete run took 14m45s with 367/411 artifacts fresh; only 44 application artifacts rebuilt for the version/release changes. Core restored the preceding focused outputs. This is distinct from the earlier 9m15s populated-cache run below; no duplicate warm full run was added just to obtain a faster number.
