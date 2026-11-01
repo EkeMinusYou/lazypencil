@@ -98,8 +98,8 @@ impl Backend {
             && std::env::var_os("KONSOLE_VERSION").is_none();
         if direct_kitty {
             backend.protocol = ProtocolType::Kitty;
-            // Direct Kitty supports ZLIB. Keep other Kitty-compatible terminals
-            // uncompressed without adding a late capability reply to stdin.
+            // Direct Kitty supports ZLIB without a capability query. Other
+            // compatible terminals opt in only after a positive probe reply.
             backend.kitty_compression = true;
         }
         // Explicit protocols and a direct Kitty terminal need no capability query.
@@ -123,6 +123,7 @@ impl Backend {
                 && std::env::var_os("KONSOLE_VERSION").is_none()
             {
                 backend.protocol = ProtocolType::Kitty;
+                backend.kitty_compression = responses.contains(&Response::KittyCompression);
             }
         }
         backend.protocol = match selected {
@@ -186,7 +187,13 @@ fn probe(tmux: bool) -> Result<(Vec<Response>, String)> {
         }
     }
     let _flags = Flags(fd, original);
-    let query = Parser::query(tmux, QueryStdioOptions::default());
+    let query = Parser::query(
+        tmux,
+        QueryStdioOptions {
+            kitty_compression: true,
+            ..Default::default()
+        },
+    );
     let mut stdout = std::io::stdout();
     stdout
         .write_all(query.as_bytes())

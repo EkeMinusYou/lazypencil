@@ -489,7 +489,8 @@ fn encoded(h: &mut Harness) -> Result {
             "Decoded Sixel must contain actual red design pixels"
         );
     }
-    if h.case == "auto-kitty" {
+    if matches!(h.case.as_str(), "auto-kitty" | "auto-kitty-raw") {
+        assert_eq!(h.frames.compressed_frames > 0, h.case == "auto-kitty");
         h.paste("自動判定後の日本語")?;
         h.draft("自動判定後の日本語")?;
     }

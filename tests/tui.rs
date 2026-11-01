@@ -17,6 +17,7 @@ fn real_pty_handles_japanese_input_live_turns_resize_and_image_protocols() {
         "sixel",
         "auto-none",
         "auto-kitty",
+        "auto-kitty-raw",
         "auto-sixel",
         "restore",
         "restore-conflict",

@@ -131,6 +131,7 @@ impl Harness {
             "user-navigation-config",
             "ime-commit",
             "kitty-no-color",
+            "auto-kitty-raw",
         ]
         .contains(&case)
         {
@@ -240,7 +241,7 @@ impl Harness {
             self.output.extend_from_slice(bytes);
             self.frames.feed(bytes)?;
             self.screen.feed(bytes);
-            if ["auto-kitty", "auto-sixel"].contains(&self.case.as_str())
+            if ["auto-kitty", "auto-kitty-raw", "auto-sixel"].contains(&self.case.as_str())
                 && !self.probe_answered
                 && self.contains_bytes(b"\x1b[5n")
             {
@@ -253,6 +254,12 @@ impl Harness {
                     self.key(b"\x1b_Gi=31;")?;
                     std::thread::sleep(Duration::from_millis(10));
                     self.key(b"OK\x1b\\\x1b[?1;2c")?;
+                    assert!(self.contains_bytes(b"_Gi=32,"));
+                    self.key(if self.case == "auto-kitty" {
+                        b"\x1b_Gi=32;OK\x1b\\"
+                    } else {
+                        b"\x1b_Gi=32;EINVAL:compression unsupported\x1b\\"
+                    })?;
                 } else {
                     self.key(b"\x1b[?1;2;4c\x1b[6;20;10t\x1b[0n")?;
                 }
