@@ -89,18 +89,14 @@ pub(crate) struct RenderedPreview {
 /// Geometry belongs to one captured layout and stays on the preview thread.
 #[derive(Default)]
 pub(crate) struct PreviewRenderer {
-    shapes: RefCell<BTreeMap<usize, Path>>,
-    pictures: RefCell<BTreeMap<u32, skia_safe::Picture>>,
+    cache: Option<RasterCache>,
     recordable: Option<bool>,
-    raster_pool: RefCell<raster_pool::RasterPool>,
 }
 
 impl PreviewRenderer {
     pub(crate) fn clear(&mut self) {
-        self.shapes.get_mut().clear();
-        self.pictures.get_mut().clear();
+        self.cache = None;
         self.recordable = None;
-        *self.raster_pool.get_mut() = Default::default();
     }
 
     pub(crate) fn render(
@@ -129,20 +125,20 @@ impl PreviewRenderer {
                 _ => true,
             }
         }
+        let cache = self.cache.get_or_insert_with(|| RasterCache::new(snapshot));
         let recordable = *self.recordable.get_or_insert_with(|| {
             snapshot.items.iter().all(|item| {
                 item.node.kind() != "browser" && item.node.properties.values().all(static_value)
-            }) && !background_nodes(snapshot).iter().any(|flag| *flag)
+            }) && !cache.background_nodes.iter().any(|flag| *flag)
         });
         let result = (|| {
-            let raster = raster_impl_with_shapes(
+            let raster = raster_impl_cached(
                 project,
                 snapshot,
                 options,
                 Some(&mut *runtime),
-                Some(&self.shapes),
-                recordable.then_some(&self.pictures),
-                Some(&self.raster_pool),
+                Some(cache),
+                recordable,
             )?;
             if let Some(observer) = observer.as_mut() {
                 observer("render_raster_ms");
@@ -238,7 +234,7 @@ mod tests {
                     );
                 }
             }
-            assert!(!retained.shapes.borrow().is_empty());
+            assert!(!retained.cache.as_ref().unwrap().shapes.borrow().is_empty());
         }
     }
 }

@@ -15,6 +15,7 @@ use std::{cell::RefCell, collections::BTreeMap, path::PathBuf, rc::Rc};
 
 const MAX_PIXELS: u64 = 32 * 1024 * 1024;
 
+mod atlas;
 mod backdrop;
 mod blending;
 mod mesh;
@@ -191,24 +192,64 @@ fn png_impl(
     })
 }
 
+/// Snapshot-scoped analysis and drawing resources for viewport-only renders.
+struct RasterCache {
+    shapes: RefCell<BTreeMap<usize, Path>>,
+    pictures: RefCell<BTreeMap<u32, skia_safe::Picture>>,
+    pool: RefCell<raster_pool::RasterPool>,
+    atlas: RefCell<atlas::AtlasCache>,
+    background_nodes: Vec<bool>,
+    padding: RefCell<BTreeMap<u32, u32>>,
+}
+
+impl RasterCache {
+    #[cfg(feature = "tui")]
+    fn new(snapshot: &LayoutSnapshot) -> Self {
+        Self {
+            shapes: RefCell::default(),
+            pictures: RefCell::default(),
+            pool: RefCell::default(),
+            atlas: RefCell::default(),
+            background_nodes: background_nodes(snapshot),
+            padding: RefCell::default(),
+        }
+    }
+
+    fn padding(&self, snapshot: &LayoutSnapshot, scale: f32) -> Result<u32> {
+        let key = scale.to_bits();
+        if let Some(padding) = self.padding.borrow().get(&key) {
+            return Ok(*padding);
+        }
+        let padding = backdrop_padding(snapshot, scale)?;
+        let mut entries = self.padding.borrow_mut();
+        if entries.len() >= 2 {
+            entries.pop_first();
+        }
+        entries.insert(key, padding);
+        Ok(padding)
+    }
+}
+
 fn raster_impl(
     project: &Project,
     snapshot: &LayoutSnapshot,
     options: &RenderOptions,
     runtime: Option<&mut crate::dynamic::DynamicRuntime>,
 ) -> Result<RenderedRaster> {
-    raster_impl_with_shapes(project, snapshot, options, runtime, None, None, None)
+    raster_impl_cached(project, snapshot, options, runtime, None, false)
 }
 
-fn raster_impl_with_shapes(
+fn raster_impl_cached(
     project: &Project,
     snapshot: &LayoutSnapshot,
     options: &RenderOptions,
     mut runtime: Option<&mut crate::dynamic::DynamicRuntime>,
-    shapes: Option<&RefCell<BTreeMap<usize, Path>>>,
-    pictures: Option<&RefCell<BTreeMap<u32, skia_safe::Picture>>>,
-    pool: Option<&RefCell<raster_pool::RasterPool>>,
+    cache: Option<&RasterCache>,
+    recordable: bool,
 ) -> Result<RenderedRaster> {
+    let shapes = cache.map(|cache| &cache.shapes);
+    let pictures = cache.filter(|_| recordable).map(|cache| &cache.pictures);
+    let pool = cache.map(|cache| &cache.pool);
     if let Some(runtime) = runtime.as_deref() {
         runtime.check()?;
     }
@@ -264,8 +305,14 @@ fn raster_impl_with_shapes(
     if let Some(runtime) = runtime.as_deref_mut() {
         runtime.prepare_pages(project, snapshot)?;
     }
-    let padding = backdrop_padding(snapshot, options.scale)?;
-    let background_nodes = background_nodes(snapshot);
+    let padding = match cache {
+        Some(cache) => cache.padding(snapshot, options.scale)?,
+        None => backdrop_padding(snapshot, options.scale)?,
+    };
+    let background_nodes = match cache {
+        Some(cache) => std::borrow::Cow::Borrowed(cache.background_nodes.as_slice()),
+        None => std::borrow::Cow::Owned(background_nodes(snapshot)),
+    };
     let (working_width, working_height) =
         raster_dimensions(width + 2 * padding as u64, height + 2 * padding as u64)?;
     let rasters = Rc::new(backdrop::RasterBudget::default());
@@ -365,17 +412,30 @@ fn raster_impl_with_shapes(
                 -region.x * options.scale,
                 -region.y * options.scale,
             ));
-            if let Some(pool) = pool {
-                pool.borrow_mut().draw(
+            let retained = match cache {
+                Some(cache) => cache.atlas.borrow_mut().draw(
                     canvas,
                     picture,
                     &transform,
-                    (working_width, working_height),
                     options.background,
                     &renderer.rasters,
-                )?;
-            } else {
-                canvas.draw_picture(picture, Some(&transform), None);
+                    &mut cache.pool.borrow_mut(),
+                )?,
+                None => false,
+            };
+            if !retained {
+                if let Some(pool) = pool {
+                    pool.borrow_mut().draw(
+                        canvas,
+                        picture,
+                        &transform,
+                        (working_width, working_height),
+                        options.background,
+                        &renderer.rasters,
+                    )?;
+                } else {
+                    canvas.draw_picture(picture, Some(&transform), None);
+                }
             }
         } else {
             for root in &snapshot.roots {
