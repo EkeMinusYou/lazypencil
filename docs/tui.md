@@ -4,6 +4,16 @@ The initial release targets macOS Apple Silicon only. Linux x64/arm64 and Window
 
 The default build includes `lazypencil tui`, using the same document, renderer, attachment service, permissions, and live ACP conversations as the CLI. It provides viewing and prompting, without manual drawing or property editing.
 
+Nodes and Preview use the full content height. Conversation, Attachments, and Prompt share one bordered region in the right column. Panel navigation enters that region at Prompt. Empty attachments take no space; pending images appear directly above the prompt.
+
+The prompt uses a subtle blue-gray input surface, a neutral `›` marker, and one row of padding above and below the text. It starts at one text row and expands to three as newlines are entered; longer drafts scroll within those rows. It has no separate caption or border, and empty-state guidance appears only inside the input. Request activity appears in the shared header and Conversation badge. The native cursor and IME anchor follow the padded text area.
+
+The workspace uses rounded frames with colored section icons: `▤` Nodes, `▣` Preview, and `◉` Conversation. The focused panel has a green border and heading; inactive borders stay neutral. History, attachments, and prompt share one outer focus frame without internal border lines. Attachment selection uses a blue row. Panel titles and borders omit shortcut hints. The bottom footer retains the global key legend below the status line; Help lists all configured keys. Pending images use `▧` with filenames and dimensions. User and agent headings use distinct symbols and colors; tool activity uses yellow `●`, green `✓`, or red `✕`, with consecutive activity rows grouped together. These symbols use ordinary Unicode rather than a required icon font, and remain distinct with `NO_COLOR`.
+
+Conversation text renders Markdown headings, bold/italic emphasis, strikethrough, lists, tasks, quotes, links, tables, and inline/fenced code. Link destinations remain visible; code stays literal, including status-looking text. Partial responses render as they arrive. Parsed history is cached until new output arrives, and saved logs retain their original text.
+
+The header and Conversation badge share [Herdr's lifecycle terminology](https://herdr.dev/tui/docs/agents/): gray `○ Idle` means no request is active, blue `● Working` includes request preparation and execution, and yellow `! Blocked` means an explicit permission dialog needs a response. Permission waiting takes precedence over Working; answering resumes Working and completing or cancelling returns to Idle. These labels describe request activity, independently of connection or preview readiness. Ordinary questions in completed assistant text do not create a Blocked state.
+
 ## Initial terminal support
 
 The initial Mac terminal baseline is Kitty 0.49.2 with Kitty Graphics Protocol and WezTerm `20240203-110809-5046fc22` with Sixel, in direct local sessions. These installed versions were observed after the user's acceptance reports, not independently recorded during each original test. The physical environment reports macOS 27.2; the minimum OS evidence comes separately from hosted execution on 15.7.9 and 15.8.2.
@@ -12,7 +22,7 @@ The user accepted Japanese commit/caret/candidates, preview zoom/pan/fit, resize
 
 ## Preview behavior
 
-The Preview title shows viewing shortcuts and update state, without the image protocol name. `--image-protocol` remains available for explicit selection.
+The Preview title shows its name and update state. `--image-protocol` remains available for explicit selection.
 
 The user confirmed that the current candidate displays previews in direct Kitty and Ghostty sessions. A blank preview remains reported specifically with Ghostty plus Herdr CLI 0.9.5. Herdr has an [open report of missing placeholder images on Ghostty in 0.9.5](https://github.com/herdrdev/herdr/issues/5614), although its pane-switch reproduction does not establish the cause of this report. That combination is not verified; the cause in the intermediary graphics path has not been established. Use a direct terminal session for the confirmed full-resolution path. This report does not invalidate the direct-terminal acceptance above.
 
@@ -24,7 +34,7 @@ At source `50c170e`, the [focused tests](https://github.com/EkeMinusYou/lazypenc
 
 Document previews pass owned raster pixels directly to the terminal encoder. PNG compression is deferred until `/open-preview` or `o` requests an export; the worker does not compress and decompress each frame. Preview pixels stay bounded by the existing window-size limit, are replaced with the displayed frame, and contain no thread-bound Skia objects. Attachment previews retain their original PNG bytes.
 
-For static document previews in Kitty/halfblocks, camera gestures immediately reproject the last complete frame while the worker renders the requested view. The panel shows `updating` and the status says `Cached preview`; uncovered areas use the preview background, and temporary zooming uses nearest-neighbor sampling. Each gesture reads the last complete frame, so repeated operations do not compound resampling. The exact render replaces this feedback and remains the export source; opening a PNG while temporary feedback is displayed requires waiting for completion. The extra reusable pixel copy is capped at 16 MiB and retains only the displayed complete frame. Sixel keeps the last complete frame while the existing background worker renders and encodes the latest requested view: it does not quantize and transfer an additional interim frame on the input thread. Exact Sixel resolution, the 256-color encoder and export pixels are unchanged. Larger previews and dynamic/page playback also keep the normal exact-render path. Refresh, time changes, attachments, errors and accepted replacement frames clear temporary feedback; stale worker generations cannot replace it.
+For static document previews in Kitty/halfblocks, camera gestures immediately reproject the last complete frame while the worker renders the requested view. The panel shows a yellow `↻` and the status says `Cached preview`; uncovered areas use the preview background, and temporary zooming uses nearest-neighbor sampling. Each gesture reads the last complete frame, so repeated operations do not compound resampling. The exact render replaces this feedback and remains the export source; opening a PNG while temporary feedback is displayed requires waiting for completion. The extra reusable pixel copy is capped at 16 MiB and retains only the displayed complete frame. Sixel keeps the last complete frame while the existing background worker renders and encodes the latest requested view: it does not quantize and transfer an additional interim frame on the input thread. Exact Sixel resolution, the 256-color encoder and export pixels are unchanged. Larger previews and dynamic/page playback also keep the normal exact-render path. Refresh, time changes, attachments, errors and accepted replacement frames clear temporary feedback; stale worker generations cannot replace it.
 
 Before the first complete frame, the panel says `Loading preview…`. Only a failed current preview says `Preview unavailable`, with the actual diagnostic shown in Preview and retained in status and Conversation. Background polls continue to retry failures so external file/dependency repairs recover automatically. Identical consecutive preview failures do not append duplicate Conversation entries, overwrite status, or trigger a terminal redraw. A changed diagnostic, recovery followed by another failure, or an explicit retry is reported again. An explicit retry returns to the loading state; obsolete worker errors cannot replace it.
 
@@ -61,7 +71,9 @@ Terminal stdin/stdout and at least 50 columns × 16 rows are required. `--json` 
 
 | Focus / key | Action |
 | --- | --- |
-| `Tab` / `Shift+Tab` | Cycle Prompt, Preview, Nodes, Attachments, Conversation |
+| `Tab` / `Shift+Tab` | Cycle Prompt, Preview, Nodes |
+| Right region: `Alt+Up` / `Alt+Down` | Switch between conversation history, pending attachments, and Prompt; skip attachments when empty |
+| Conversation / Attachments: `Esc` | Return to Prompt |
 | Prompt: `Enter` | Insert a newline |
 | Prompt: `Alt+Enter`, `Ctrl+Enter`, `Ctrl+S` | Submit text and pending images |
 | Prompt: `Ctrl+V` / `Alt+V` | Explicitly read this host's image, copied image files, or text clipboard |
@@ -79,7 +91,7 @@ Terminal stdin/stdout and at least 50 columns × 16 rows are required. `--json` 
 | Prompt: `/play [fps]`, `/pause` then Enter | Start bounded playback (1–10 fps) or stop requesting frames |
 | Prompt: `/time <seconds>` then Enter | Seek shader time without modifying the document |
 | Nodes: `/` | Search names and IDs; Enter keeps the filter, Esc clears it |
-| Nodes: arrows, then `f` / Enter | Select and fit a node; its address accompanies the next AI request |
+| Nodes: arrows, then `f` / Enter | Select and fit a node while keeping focus in Nodes; its address accompanies the next AI request |
 | Nodes: `Esc` | Clear the editing target |
 | Attachments: arrows | Preview pending images in order |
 | Attachments: `d`, Delete, Backspace | Remove a pending image without changing its source |
@@ -105,7 +117,7 @@ paste = ["F6"]
 
 Omitted actions retain their defaults; each explicit list replaces that action's list. Submit accepts 1–8 shortcuts and paste accepts 0–8 (`paste = []` disables clipboard shortcuts while `/paste-image` remains available). Keys support `Enter`, ASCII letters with `Ctrl` or `Alt`, and `F2`–`F24`, optionally combining `Ctrl`, `Alt` and `Shift`. Names are case insensitive and modifier matching is exact. Plain Enter remains a newline; F1, Ctrl+C/Ctrl+P and legacy Ctrl+H/I/J/M aliases are reserved. Duplicate bindings, overlaps between actions and unsupported keys fail with `CONFIGURATION_ERROR`. The terminal must transmit the chosen key distinctly; configuration cannot add keyboard-protocol support to a terminal.
 
-Bindings are captured before entering the terminal and remain fixed for that invocation. The prompt border and help show the effective keys. They act only in the idle prompt; permission dialogs, checkpoint dialogs, search, help and other panels retain their own input handling. Project files cannot remap user shortcuts. Normal viewing and global actions are configured separately under `[tui.navigation]`, described below.
+Bindings are captured before entering the terminal and remain fixed for that invocation. Help shows the effective keys. They act only in the idle prompt; permission dialogs, checkpoint dialogs, search, help and other panels retain their own input handling. Project files cannot remap user shortcuts. Normal viewing and global actions are configured separately under `[tui.navigation]`, described below.
 
 ### Viewing and global shortcuts
 

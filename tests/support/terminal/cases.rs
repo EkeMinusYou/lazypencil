@@ -207,13 +207,7 @@ pub fn run(
     }
     let mut h = Harness::start(binary, root, &document, environment, case, configuration)?;
     h.wait("initial UI", 15.0, |h| {
-        h.contains_bytes(
-            if matches!(case, "user-key-config" | "user-navigation-config") {
-                b"F5 sends"
-            } else {
-                b"Ctrl+V"
-            },
-        )
+        h.screen.find_text("›").is_some() && h.screen.text().contains("Conversation")
     })?;
     let mut report = match case {
         "account-startup" => {
@@ -354,6 +348,9 @@ pub fn run(
 }
 
 fn ime_commit(h: &mut Harness) -> Result<Value> {
+    fn prompt_origin(h: &Harness) -> Option<(u16, u16)> {
+        h.screen.find_text("›").map(|(x, y)| (x + 2, y))
+    }
     // Model the documented Kitty pure-text event, not bracketed paste. With
     // report-all-keys but no associated text, an IME commit has key number zero
     // and its actual characters are absent from the byte stream.
@@ -407,13 +404,15 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
                 .text()
                 .lines()
                 .position(|line| line.contains(first))
-                .is_some_and(|row| h.screen.cursor() == (17, row as u16))
+                .is_some_and(|row| {
+                    prompt_origin(h).is_some_and(|(x, _)| h.screen.cursor() == (x + 16, row as u16))
+                })
         },
     )?;
     let first_cursor = h.screen.cursor();
     h.key(b"\x1b[D")?;
     h.wait("IME anchor follows editing in wide text", 15.0, |h| {
-        h.screen.cursor() == (15, first_cursor.1)
+        h.screen.cursor() == (first_cursor.0 - 2, first_cursor.1)
     })?;
     h.key(b"\x1b[C")?;
     h.wait("IME anchor returns to the insertion point", 15.0, |h| {
@@ -434,36 +433,50 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
     h.wait(
         "IME anchor follows a rendered combining/ZWJ cluster",
         15.0,
-        |h| h.screen.cursor() == (6, first_cursor.1 + 1),
+        |h| prompt_origin(h).is_some_and(|(x, top)| h.screen.cursor() == (x + 5, top + 1)),
     )?;
+    let cluster = "👩‍💻".as_bytes();
+    assert!(
+        h.output
+            .windows(cluster.len())
+            .any(|bytes| bytes == cluster)
+    );
     let second_cursor = h.screen.cursor();
     let mut resize_cursors = Vec::new();
     for (columns, rows) in [(80, 24), (50, 16), (145, 38)] {
         let previous = h.screen.cursor();
+        let repaint_start = h.output.len();
         h.resize(columns, rows)?;
         h.wait("IME anchor follows the resized prompt", 15.0, |h| {
             let text = h.screen.text();
             let lines = text.lines().collect::<Vec<_>>();
             // Resizing the observer can move its old cursor before the redraw
             // arrives. Require the new layout before accepting the IME anchor.
-            lines.iter().any(|line| {
-                line.starts_with("┌Prompt ")
-                    && line.ends_with('┐')
-                    && line.chars().count() == columns as usize
+            prompt_origin(h).is_some_and(|(x, top)| {
+                h.screen.cursor() == (x + 5, top + 1)
+                    && lines
+                        .get(top as usize)
+                        .is_some_and(|line| line.contains("日本語"))
+                    && lines.get(top as usize + 1).is_some_and(|line| {
+                        // vt100 counts ZWJ components separately, so padded
+                        // cells can overwrite one component in its model.
+                        // Exact draft text and emitted emoji bytes are
+                        // checked separately from this visible prefix.
+                        line.contains("か\u{3099}") && line.contains('👩')
+                    })
             }) && lines
                 .get(rows as usize - 1)
                 .is_some_and(|line| line.starts_with("Tab / Shift+Tab panels"))
                 && h.screen.cursor().1 != previous.1
-                && lines
-                    .iter()
-                    .position(|line| line.contains(first))
-                    .is_some_and(|row| {
-                        h.screen.cursor() == (6, row as u16 + 1)
-                            && lines.get(row + 1).is_some_and(|line| line.contains(second))
-                    })
                 && h.session()
                     .is_some_and(|session| session["draft"] == expected)
         })?;
+        assert!(
+            h.output[repaint_start..]
+                .windows(cluster.len())
+                .any(|bytes| bytes == cluster),
+            "Emit the complete ZWJ cluster after resizing to {columns}x{rows}"
+        );
         // Snapshot the same observed frame; another pump can read the clear
         // belonging to a second resize redraw before its text arrives.
         h.save_screen(&format!("ime-commit-{columns}x{rows}-screen.txt"))?;
@@ -475,7 +488,7 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
     expected.push_str(suffix);
     h.draft(&expected)?;
     h.wait("IME commit remains usable after resizing", 15.0, |h| {
-        h.screen.cursor() == (11, row)
+        prompt_origin(h).is_some_and(|(x, _)| h.screen.cursor() == (x + 10, row))
             && h.screen
                 .text()
                 .lines()

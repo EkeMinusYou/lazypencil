@@ -11,7 +11,7 @@ readme = "README.md"
 [features]
 default = ["rendering", "tui"]
 rendering = ["dep:skia-safe", "dep:read-fonts"]
-tui = ["rendering", "dep:arboard", "dep:crossterm", "dep:ratatui", "dep:ratatui-image", "dep:ratatui-textarea", "dep:image", "dep:shell-words"]
+tui = ["rendering", "dep:arboard", "dep:crossterm", "dep:ratatui", "dep:ratatui-image", "dep:ratatui-textarea", "dep:image", "dep:shell-words", "dep:pulldown-cmark"]
 
 [dependencies]
 arboard = { version = "3.7.0", features = ["wayland-data-control"], optional = true }
@@ -52,6 +52,7 @@ tungstenite = { version = "0.30.0", default-features = false, features = ["hands
 url = "2.5.7"
 zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 ctrlc = "3.5.2"
+pulldown-cmark = { version = "0.13.6", default-features = false, features = ["simd"], optional = true }
 
 [dev-dependencies]
 vt100 = "=0.18.1"

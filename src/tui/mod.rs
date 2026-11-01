@@ -3,14 +3,17 @@
 mod account;
 mod camera;
 mod checkpoints;
+mod composer;
 mod graphics;
 mod images;
+mod markdown;
 mod playback;
 mod preview;
 mod saved;
 mod terminal;
 #[cfg(test)]
 mod tests;
+mod theme;
 
 use crate::config::keys::NavigationAction as Nav;
 use crate::{
@@ -29,7 +32,7 @@ use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect, Size},
     style::{Color, Modifier, Style},
-    text::{Line, Text},
+    text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
 };
 use ratatui_textarea::{CursorMove, TextArea};
@@ -69,15 +72,32 @@ enum Focus {
 }
 impl Focus {
     fn next(self, backwards: bool) -> Self {
-        let order = [
-            Self::Prompt,
-            Self::Preview,
-            Self::Nodes,
-            Self::Attachments,
-            Self::Conversation,
-        ];
+        let current = if self.in_conversation() {
+            Self::Prompt
+        } else {
+            self
+        };
+        current.cycle(&[Self::Prompt, Self::Preview, Self::Nodes], backwards)
+    }
+    fn in_conversation(self) -> bool {
+        matches!(self, Self::Prompt | Self::Attachments | Self::Conversation)
+    }
+    fn next_section(self, backwards: bool, attachments: bool) -> Self {
+        let order: &[Self] = if attachments {
+            &[Self::Conversation, Self::Attachments, Self::Prompt]
+        } else {
+            &[Self::Conversation, Self::Prompt]
+        };
+        let current = if self == Self::Attachments && !attachments {
+            Self::Prompt
+        } else {
+            self
+        };
+        current.cycle(order, backwards)
+    }
+    fn cycle(self, order: &[Self], backwards: bool) -> Self {
         let index = order.iter().position(|item| *item == self).unwrap();
-        order[(index + if backwards { 4 } else { 1 }) % 5]
+        order[(index + if backwards { order.len() - 1 } else { 1 }) % order.len()]
     }
 }
 struct Permission {
@@ -128,11 +148,6 @@ pub fn run(args: &TuiArgs, data: Option<PathBuf>, json_output: bool) -> Result<(
         let mut app = App::new(conversation);
         app.keys = settings.keys;
         app.navigation = settings.navigation;
-        app.status = format!(
-            "Session {} · {} shows shortcuts",
-            app.conversation.id(),
-            app.navigation.label(Nav::Help)
-        );
         if !screen.startup_text.is_empty() {
             app.insert_text(&screen.startup_text);
         }
@@ -182,6 +197,7 @@ struct App {
     filter: String,
     searching: bool,
     log: String,
+    history: Option<Paragraph<'static>>,
     scroll: u16,
     status: String,
     authentication: String,
@@ -210,7 +226,7 @@ struct App {
 impl App {
     fn new(conversation: Conversation) -> Self {
         let editor = editor(conversation.draft());
-        let status = format!("Session {} · F1 shows shortcuts", conversation.id());
+        let status = format!("Session {}", conversation.id());
         Self {
             conversation,
             keys: Default::default(),
@@ -232,6 +248,7 @@ impl App {
             filter: String::new(),
             searching: false,
             log: String::new(),
+            history: None,
             scroll: 0,
             status,
             authentication: "checking".into(),
@@ -504,7 +521,7 @@ impl App {
             ));
         }
         self.playback.start(self.view.time, fps, now)?;
-        self.status = format!("Playing dynamic preview · ≤{fps}fps · Space in Preview pauses");
+        self.status = format!("Playing dynamic preview · ≤{fps}fps");
         Ok(())
     }
     fn pause_playback(&mut self) {
@@ -597,6 +614,7 @@ impl App {
         self.append(&format!("\n{}\n", error));
     }
     fn append(&mut self, text: &str) {
+        self.history = None;
         self.log.push_str(&clean(text));
         if self.log.len() > 256 * 1024 {
             let mut index = self.log.len() - 192 * 1024;
@@ -807,10 +825,22 @@ impl App {
             self.nodes.select(Some(0));
             return Ok(false);
         }
-        if global(Nav::NextPanel) || global(Nav::PreviousPanel) {
-            let backwards = global(Nav::PreviousPanel);
+        let section = self.focus.in_conversation()
+            && (global(Nav::PreviousSection) || global(Nav::NextSection));
+        let return_to_prompt = matches!(self.focus, Focus::Attachments | Focus::Conversation)
+            && key.code == KeyCode::Esc;
+        if section || return_to_prompt || global(Nav::NextPanel) || global(Nav::PreviousPanel) {
             let was_attachment = self.focus == Focus::Attachments;
-            self.focus = self.focus.next(backwards);
+            self.focus = if return_to_prompt {
+                Focus::Prompt
+            } else if section {
+                self.focus.next_section(
+                    global(Nav::PreviousSection),
+                    !self.conversation.images().is_empty(),
+                )
+            } else {
+                self.focus.next(global(Nav::PreviousPanel))
+            };
             if self.focus == Focus::Attachments
                 && !self.conversation.images().is_empty()
                 && self.attachments.selected().is_none()
@@ -933,7 +963,6 @@ impl App {
                     self.nodes.select(None);
                 } else if action(Nav::ActivateNode) || action(Nav::FitSelected) {
                     self.fit_selected(picker)?;
-                    self.focus = Focus::Preview;
                     self.request(worker, false, false);
                     self.camera_feedback(picker)?;
                 }
@@ -963,6 +992,9 @@ impl App {
                         } else {
                             None
                         });
+                        if count == 1 {
+                            self.focus = Focus::Prompt;
+                        }
                     }
                 } else {
                     return Ok(false);
@@ -985,13 +1017,18 @@ impl App {
     fn help_text(&self) -> String {
         let label = |action| self.navigation.label(action);
         let mut text = format!(
-            "{} / {}: switch panels\n{}: command palette; /history: checkpoints\nPrompt: Enter inserts a newline; {} sends\n{}: paste image, copied image files, or text\n",
+            "{} / {}: switch Prompt, Preview, Nodes\n{}: command palette; /history: checkpoints\nPrompt: Enter inserts a newline; {} sends\n{}: paste image, copied image files, or text\n",
             label(Nav::NextPanel),
             label(Nav::PreviousPanel),
             label(Nav::Commands),
             self.keys.submit_label(),
             self.keys.paste_label()
         );
+        text.push_str(&format!(
+            "{} / {}: switch conversation sections; Esc returns to Prompt\n",
+            label(Nav::PreviousSection),
+            label(Nav::NextSection)
+        ));
         text.push_str("/attach <quoted path> [WIDTHxHEIGHT|original]: attach PNG, JPEG or WebP\n/paste-image [WIDTHxHEIGHT|original]: read this host's clipboard\n/resize-image <number> <WIDTHxHEIGHT|original>: choose send size\n/clear-images: remove pending images\n");
         for (action, description) in [
             (Nav::Help, "show or hide help outside dialogs"),
@@ -1101,11 +1138,12 @@ impl App {
         self.conversation.start_send(target).await?;
         self.turn_pending = true;
         self.append(&format!(
-            "\nYou: {text}\n[{} images]\n",
-            self.conversation.images().len()
+            "\nYou: {text}\n[{} images]\n\n{:?}:\n",
+            self.conversation.images().len(),
+            self.conversation.settings().agent,
         ));
         self.scroll = 0;
-        self.status = "Agent running · Ctrl+C cancels".into();
+        self.status = "Agent running".into();
         Ok(())
     }
     async fn command(&mut self, worker: &Worker) -> Result<bool> {
@@ -1268,6 +1306,17 @@ impl App {
         self.status = format!("Opened {}", path.display());
         Ok(())
     }
+    fn agent_activity(&self) -> Span<'static> {
+        let (label, color) = if !self.permissions.is_empty() {
+            ("! Blocked", theme::RUNNING)
+        } else if self.conversation.active() {
+            ("● Working", theme::KEY)
+        } else {
+            ("○ Idle", theme::MUTED)
+        };
+        Span::styled(label, Style::default().fg(color))
+    }
+
     fn draw(&mut self, frame: &mut Frame) -> Size {
         let area = frame.area();
         if area.width < 50 || area.height < 16 {
@@ -1282,25 +1331,37 @@ impl App {
         let sections = Layout::vertical([
             Constraint::Length(1),
             Constraint::Min(4),
-            Constraint::Length(3),
-            Constraint::Length(5),
             Constraint::Length(2),
         ])
         .split(area);
-        let state = if self.conversation.active() {
-            "running"
-        } else {
-            "idle"
-        };
         frame.render_widget(
-            Paragraph::new(format!(
-                "lazypencil · {:?} · account: {} · {state} · session: {} · {}",
-                self.conversation.settings().agent,
-                self.authentication,
-                &self.conversation.id()[..8],
-                clean(&self.conversation.store().path().display().to_string())
-            ))
-            .style(Style::default().fg(Color::Cyan)),
+            Paragraph::new(Line::from(vec![
+                Span::styled(
+                    "✎ lazypencil",
+                    Style::default()
+                        .fg(theme::AGENT)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" · ", Style::default().fg(theme::MUTED)),
+                Span::styled(
+                    format!("{:?}", self.conversation.settings().agent),
+                    Style::default()
+                        .fg(theme::PREVIEW)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" · ", Style::default().fg(theme::MUTED)),
+                self.agent_activity(),
+                Span::styled(" · account: ", Style::default().fg(theme::MUTED)),
+                Span::raw(self.authentication.clone()),
+                Span::styled(
+                    format!(
+                        " · session: {} · {}",
+                        &self.conversation.id()[..8],
+                        clean(&self.conversation.store().path().display().to_string())
+                    ),
+                    Style::default().fg(theme::MUTED),
+                ),
+            ])),
             sections[0],
         );
         let panes = Layout::horizontal([
@@ -1336,26 +1397,25 @@ impl App {
         }
         frame.render_stateful_widget(
             List::new(items)
-                .block(panel(nodes_title, self.focus == Focus::Nodes))
-                .highlight_style(
-                    Style::default()
-                        .bg(Color::DarkGray)
-                        .add_modifier(Modifier::BOLD),
-                )
+                .block(panel(
+                    theme::title("▤", nodes_title, theme::NODES, self.focus == Focus::Nodes),
+                    self.focus == Focus::Nodes,
+                ))
+                .highlight_style(theme::selected(self.focus == Focus::Nodes))
                 .highlight_symbol("› "),
             panes[0],
             &mut self.nodes,
         );
         let block = panel(
-            format!(
-                "Preview{} · {} / {} zoom",
+            theme::title(
+                if self.camera.is_some() { "↻" } else { "▣" },
+                "Preview",
                 if self.camera.is_some() {
-                    " · updating"
+                    theme::RUNNING
                 } else {
-                    ""
+                    theme::PREVIEW
                 },
-                self.navigation.label(Nav::ZoomIn),
-                self.navigation.label(Nav::ZoomOut)
+                self.focus == Focus::Preview,
             ),
             self.focus == Focus::Preview,
         );
@@ -1375,100 +1435,36 @@ impl App {
                 inner,
             );
         }
-        let logblock = panel(
-            format!(
-                "Conversation · {} / {}",
-                self.navigation.label(Nav::ScrollUp),
-                self.navigation.label(Nav::ScrollDown)
-            ),
-            self.focus == Focus::Conversation,
-        );
-        let logarea = logblock.inner(panes[2]);
-        let paragraph = Paragraph::new(self.log.as_str()).wrap(Wrap { trim: false });
-        let lines = paragraph.line_count(logarea.width).min(u16::MAX as usize) as u16;
-        let scroll = lines
-            .saturating_sub(logarea.height)
-            .saturating_sub(self.scroll);
-        frame.render_widget(paragraph.scroll((scroll, 0)).block(logblock), panes[2]);
-        let attachments = self
-            .conversation
-            .images()
-            .iter()
-            .enumerate()
-            .map(|(index, image)| ListItem::new(images::label(image, index)))
-            .collect::<Vec<_>>();
-        frame.render_stateful_widget(
-            List::new(attachments)
-                .block(panel(
-                    "Attachments · d removes",
-                    self.focus == Focus::Attachments,
-                ))
-                .highlight_style(Style::default().bg(Color::DarkGray)),
-            sections[2],
-            &mut self.attachments,
-        );
-        let prompt_title = format!(
-            "Prompt · {} sends · {} pastes",
-            self.keys.submit_label(),
-            self.keys.paste_label()
-        );
-        self.editor.set_block(panel(
-            if self.conversation.active() {
-                "Prompt · running".to_owned()
-            } else {
-                prompt_title
-            },
-            self.focus == Focus::Prompt,
-        ));
-        let editing =
-            self.focus == Focus::Prompt && !self.conversation.active() && !self.has_modal();
-        // The pinned widget's logical columns count ZWJ components separately.
-        // Mark its rendered caret instead of repeating that width calculation.
-        // Remove the private marker before the frame reaches the terminal.
-        self.editor.set_cursor_style(if editing {
-            Style::default().add_modifier(Modifier::HIDDEN)
-        } else {
-            Style::default()
-        });
-        frame.render_widget(&self.editor, sections[3]);
-        if editing {
-            let inner = self.editor.block().unwrap().inner(sections[3]);
-            let mut cursor = None;
-            let buffer = frame.buffer_mut();
-            for y in inner.y..inner.bottom() {
-                for x in inner.x..inner.right() {
-                    let cell = &mut buffer[(x, y)];
-                    if cell.modifier.contains(Modifier::HIDDEN) {
-                        cursor.get_or_insert((x, y));
-                        cell.modifier.remove(Modifier::HIDDEN);
-                    }
-                }
-            }
-            // Paragraph clipping can drop the caret span at a wide-glyph
-            // boundary. Retain the widget's visible viewport position then.
-            if cursor.is_none() {
-                let logical = self.editor.screen_cursor();
-                let (top, left) = self.editor.scroll_offset();
-                if let (Some(row), Some(col)) = (
-                    logical.row.checked_sub(usize::from(top)),
-                    logical.col.checked_sub(usize::from(left)),
-                ) && row < usize::from(inner.height)
-                    && col < usize::from(inner.width)
-                {
-                    cursor = Some((inner.x + col as u16, inner.y + row as u16));
-                }
-            }
-            if let Some(position) = cursor {
-                frame.set_cursor_position(position);
-            }
-        }
+        self.draw_conversation(frame, panes[2]);
+        let key = |label: String| {
+            Span::styled(
+                label,
+                Style::default().fg(theme::KEY).add_modifier(Modifier::BOLD),
+            )
+        };
+        let description = |label| Span::styled(label, Style::default().fg(theme::MUTED));
         frame.render_widget(
             Paragraph::new(Text::from(vec![
                 Line::from(self.status.clone()),
-                Line::from(format!("{} / {} panels · {} commands · {} help · {} exits outside prompt · Ctrl+C cancels/exits", self.navigation.label(Nav::NextPanel), self.navigation.label(Nav::PreviousPanel), self.navigation.label(Nav::Commands), self.navigation.label(Nav::Help), self.navigation.label(Nav::Quit))),
+                Line::from(vec![
+                    key(format!(
+                        "{} / {}",
+                        self.navigation.label(Nav::NextPanel),
+                        self.navigation.label(Nav::PreviousPanel)
+                    )),
+                    description(" panels · "),
+                    key(self.navigation.label(Nav::Commands)),
+                    description(" commands · "),
+                    key(self.navigation.label(Nav::Help)),
+                    description(" help · "),
+                    key(self.navigation.label(Nav::Quit)),
+                    description(" exits outside prompt · "),
+                    key("Ctrl+C".into()),
+                    description(" cancels/exits"),
+                ]),
             ]))
             .wrap(Wrap { trim: false }),
-            sections[4],
+            sections[2],
         );
         if self.help {
             let popup = centered(area, 100, 26);
@@ -1557,14 +1553,16 @@ fn editor(text: &str) -> TextArea<'static> {
     editor
 }
 fn panel(title: impl Into<Line<'static>>, focused: bool) -> Block<'static> {
+    let title = title.into();
+    let style = Style::default()
+        .fg(if focused { theme::FOCUS } else { theme::MUTED })
+        .add_modifier(Modifier::BOLD)
+        .patch(title.style);
     Block::default()
         .borders(Borders::ALL)
-        .title(title)
-        .border_style(Style::default().fg(if focused {
-            Color::Cyan
-        } else {
-            Color::DarkGray
-        }))
+        .border_set(ratatui::symbols::border::ROUNDED)
+        .title(title.style(style))
+        .border_style(Style::default().fg(if focused { theme::FOCUS } else { theme::FRAME }))
 }
 fn centered(area: Rect, width: u16, height: u16) -> Rect {
     let width = width.min(area.width);

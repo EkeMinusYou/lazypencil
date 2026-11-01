@@ -144,6 +144,126 @@ fn emacs_prompt_keys_edit_unicode_lines_keep_yanks_bounded_and_preserve_undo() {
 }
 
 #[test]
+fn conversation_region_defaults_to_prompt_and_keeps_history_and_attachments_accessible() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let worker = Worker::start(
+            app.conversation.store().clone(),
+            vec![],
+            Backend::halfblocks(),
+            181,
+        )
+        .unwrap();
+        let draft = "日本語の下書き\n編集中の本文";
+        app.insert_text(draft);
+        app.save_draft().unwrap();
+        for (key, expected) in [
+            (KeyCode::Tab, Focus::Preview),
+            (KeyCode::Tab, Focus::Nodes),
+            (KeyCode::Tab, Focus::Prompt),
+            (KeyCode::BackTab, Focus::Nodes),
+            (KeyCode::BackTab, Focus::Preview),
+            (KeyCode::BackTab, Focus::Prompt),
+        ] {
+            press(
+                &mut app,
+                key,
+                if key == KeyCode::BackTab {
+                    KeyModifiers::SHIFT
+                } else {
+                    KeyModifiers::NONE
+                },
+                &worker,
+            )
+            .await;
+            assert_eq!(app.focus, expected);
+        }
+        press(&mut app, KeyCode::Up, KeyModifiers::ALT, &worker).await;
+        assert_eq!(app.focus, Focus::Conversation);
+        press(&mut app, KeyCode::PageUp, KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.scroll, 5);
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.focus, Focus::Prompt);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 36)).unwrap();
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        let empty = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(empty.contains("Conversation"));
+        assert!(!empty.contains("Attachments"));
+        let transcript = "\nYou: Keep this message\n[0 images]\n\nCodex:\nAgent response\n\n[in_progress] mcp.lazypencil.read_nodes\n\n[completed] Tool\n\nRequest complete\n";
+        app.append(transcript);
+        terminal.draw(|frame| { app.draw(frame); }).unwrap();
+        let rendered = terminal.backend().buffer().content.iter().map(|cell| cell.symbol()).collect::<String>();
+        for content in ["Keep this message", "Codex", "Agent response", "read nodes", "Request complete"] {
+            assert!(rendered.contains(content), "{content}");
+        }
+        assert!(!rendered.contains("[in_progress]"));
+        assert!(!rendered.contains("[0 images]"));
+        assert_eq!(app.log, transcript);
+        assert!(app.history.is_some());
+        app.append("\n**New response**\n");
+        assert!(app.history.is_none());
+        terminal.draw(|frame| { app.draw(frame); }).unwrap();
+        let updated = terminal.backend().buffer().content.iter().map(|cell| cell.symbol()).collect::<String>();
+        assert!(updated.contains("New response"));
+        assert!(!updated.contains("**New response**"));
+        app.accept_input(fake_clipboard(
+            Path::new("unused"),
+            None,
+            &CancellationToken::new(),
+        ));
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        let attached = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(attached.contains("Attachments"));
+        press(&mut app, KeyCode::Up, KeyModifiers::ALT, &worker).await;
+        assert_eq!(app.focus, Focus::Attachments);
+        assert_eq!(app.attachments.selected(), Some(0));
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.attachments.selected(), Some(1));
+        press(&mut app, KeyCode::Up, KeyModifiers::ALT, &worker).await;
+        assert_eq!(app.focus, Focus::Conversation);
+        press(&mut app, KeyCode::Down, KeyModifiers::ALT, &worker).await;
+        assert_eq!(app.focus, Focus::Attachments);
+        press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.conversation.images().len(), 1);
+        press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE, &worker).await;
+        assert!(app.conversation.images().is_empty());
+        assert_eq!(app.focus, Focus::Prompt);
+        press(&mut app, KeyCode::Up, KeyModifiers::ALT, &worker).await;
+        assert_eq!(app.focus, Focus::Conversation);
+        press(&mut app, KeyCode::Tab, KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.focus, Focus::Preview);
+        press(&mut app, KeyCode::BackTab, KeyModifiers::SHIFT, &worker).await;
+        assert_eq!(app.focus, Focus::Prompt);
+        assert_eq!(app.editor.lines().join("\n"), draft);
+        assert_eq!(app.conversation.draft(), draft);
+        assert!(!app.conversation.active());
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
 fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes() {
     use ratatui::{Terminal, backend::TestBackend, layout::Position};
 
@@ -151,15 +271,21 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
     runtime().block_on(async {
         let mut app = app(&temp, "echo");
         let mut terminal = Terminal::new(TestBackend::new(100, 36)).unwrap();
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        assert_eq!(terminal.backend().cursor_position(), Position::new(74, 31));
         for (text, expected) in [
-            ("ちょっと".to_owned(), Position::new(9, 30)),
-            ("か\u{3099} 😀".to_owned(), Position::new(6, 30)),
-            ("か\u{3099} 👩‍💻".to_owned(), Position::new(6, 30)),
-            ("🇯🇵".to_owned(), Position::new(3, 30)),
-            ("👨‍👩‍👧‍👦".to_owned(), Position::new(3, 30)),
-            ("日\tA".to_owned(), Position::new(6, 30)),
-            ("日".repeat(80), Position::new(98, 30)),
-            ("一\n二\n三\n四\n五".to_owned(), Position::new(3, 32)),
+            ("ちょっと".to_owned(), Position::new(82, 31)),
+            ("か\u{3099} 😀".to_owned(), Position::new(79, 31)),
+            ("か\u{3099} 👩‍💻".to_owned(), Position::new(79, 31)),
+            ("🇯🇵".to_owned(), Position::new(76, 31)),
+            ("👨‍👩‍👧‍👦".to_owned(), Position::new(76, 31)),
+            ("日\tA".to_owned(), Position::new(79, 31)),
+            ("日".repeat(80), Position::new(97, 31)),
+            ("一\n二\n三\n四\n五".to_owned(), Position::new(76, 31)),
         ] {
             app.editor = editor(&text);
             terminal
@@ -195,9 +321,9 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
                 app.draw(frame);
             })
             .unwrap();
-        assert_eq!(terminal.backend().cursor_position(), Position::new(3, 30));
-        assert_eq!(terminal.backend().buffer()[(1, 30)].bg, Color::LightBlue);
-        assert_eq!(terminal.backend().buffer()[(2, 30)].bg, Color::LightBlue);
+        assert_eq!(terminal.backend().cursor_position(), Position::new(76, 31));
+        assert_eq!(terminal.backend().buffer()[(74, 31)].bg, Color::LightBlue);
+        assert_eq!(terminal.backend().buffer()[(75, 31)].bg, Color::LightBlue);
         assert!(
             terminal
                 .backend()
@@ -213,14 +339,14 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
                 app.draw(frame);
             })
             .unwrap();
-        assert_eq!(terminal.backend().cursor_position(), Position::new(3, 12));
+        assert_eq!(terminal.backend().cursor_position(), Position::new(41, 11));
         app.editor = editor(&"日".repeat(80));
         terminal
             .draw(|frame| {
                 app.draw(frame);
             })
             .unwrap();
-        assert_eq!(terminal.backend().cursor_position(), Position::new(48, 10));
+        assert_eq!(terminal.backend().cursor_position(), Position::new(47, 11));
         let draft = app.editor.lines().join("\n");
         app.help = true;
         terminal
@@ -615,7 +741,7 @@ fn explicit_send_resize_preserves_the_draft_original_and_persisted_dimensions() 
             resized.read_original(app.conversation.directory()).unwrap(),
             bytes
         );
-        assert!(super::images::label(resized, 0).contains("320×160 → 80×40"));
+        assert!(super::images::dimensions(resized).contains("320×160 → 80×40"));
         assert_eq!(app.editor.lines().join("\n"), "日本語の下書きを保持");
         let saved: Value = serde_json::from_slice(
             &std::fs::read(app.conversation.directory().join("session.json")).unwrap(),
@@ -953,7 +1079,9 @@ fn permission_modal_can_answer_and_cancel_without_blocking_the_event_loop() {
             )
             .unwrap();
             app.insert_text("許可を確認する");
+            assert_eq!(app.agent_activity().content, "○ Idle");
             app.submit().await.unwrap();
+            assert_eq!(app.agent_activity().content, "● Working");
             loop {
                 let event =
                     tokio::time::timeout(Duration::from_secs(5), app.conversation.next_event())
@@ -983,6 +1111,7 @@ fn permission_modal_can_answer_and_cancel_without_blocking_the_event_loop() {
                 1,
                 "Prompt shortcuts cannot answer a permission"
             );
+            assert_eq!(app.agent_activity().content, "! Blocked");
             app.key(
                 KeyEvent::new(
                     if cancel {
@@ -1001,7 +1130,9 @@ fn permission_modal_can_answer_and_cancel_without_blocking_the_event_loop() {
             )
             .await
             .unwrap();
+            assert_eq!(app.agent_activity().content, "● Working");
             let events = complete(&mut app).await;
+            assert_eq!(app.agent_activity().content, "○ Idle");
             assert_eq!(
                 events.last().unwrap()["type"],
                 if cancel { "failed" } else { "complete" },
@@ -1876,6 +2007,18 @@ fn custom_navigation_preserves_typing_search_modals_and_moves_the_actual_preview
         assert_eq!(app.nodes.selected(), Some(0));
         press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE, &worker).await;
         assert_eq!(app.nodes.selected(), Some(1));
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.focus, Focus::Nodes);
+        assert_eq!(app.selected_node().unwrap().id, "second");
+        assert_eq!(app.view.center, [140.0, 20.0]);
+        assert!(app.camera.is_some());
+        press(&mut app, KeyCode::Char('p'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.nodes.selected(), Some(0));
+        press(&mut app, KeyCode::Char('f'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.focus, Focus::Nodes);
+        assert_eq!(app.selected_node().unwrap().id, "first");
+        assert_eq!(app.view.center, [40.0, 20.0]);
+        assert!(app.camera.is_some());
         press(&mut app, KeyCode::Char('/'), KeyModifiers::NONE, &worker).await;
         press(&mut app, KeyCode::Char('t'), KeyModifiers::NONE, &worker).await;
         press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE, &worker).await;
@@ -1890,7 +2033,7 @@ fn custom_navigation_preserves_typing_search_modals_and_moves_the_actual_preview
         press(&mut app, KeyCode::F(10), KeyModifiers::NONE, &worker).await;
         assert_eq!(app.scroll, 0);
         press(&mut app, KeyCode::F(7), KeyModifiers::NONE, &worker).await;
-        assert_eq!(app.focus, Focus::Attachments);
+        assert_eq!(app.focus, Focus::Nodes);
         assert_eq!(std::fs::read(store.path()).unwrap(), saved);
         assert!(app.key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE), &picker, &worker).await.unwrap());
         app.conversation.close().await.unwrap();

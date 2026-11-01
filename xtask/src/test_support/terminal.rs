@@ -41,6 +41,29 @@ impl Screen {
         let (y, x) = self.parser.screen().cursor_position();
         (x, y)
     }
+    pub fn find_text(&self, text: &str) -> Option<(u16, u16)> {
+        let first = text.chars().next()?;
+        let screen = self.parser.screen();
+        let (rows, columns) = screen.size();
+        for row in 0..rows.get() {
+            for column in 0..columns.get() {
+                if !screen.cell(row, column)?.contents().starts_with(first) {
+                    continue;
+                }
+                let mut candidate = String::new();
+                for x in column..columns.get() {
+                    candidate.push_str(screen.cell(row, x)?.contents());
+                    if candidate == text {
+                        return Some((column, row));
+                    }
+                    if !text.starts_with(&candidate) {
+                        break;
+                    }
+                }
+            }
+        }
+        None
+    }
     pub fn kitty_placeholder_foregrounds(&self) -> Vec<Option<[u8; 3]>> {
         let screen = self.parser.screen();
         let (rows, columns) = screen.size();

@@ -255,8 +255,9 @@ impl App {
                 image.width, image.height
             ),
             _ => format!(
-                "{} images attached · Tab to Attachments to review or remove",
-                self.conversation.images().len()
+                "{} images attached · {} to review or remove",
+                self.conversation.images().len(),
+                self.navigation.label(Nav::PreviousSection)
             ),
         };
         true
@@ -281,8 +282,8 @@ impl App {
     }
 }
 
-pub(super) fn label(image: &Attachment, index: usize) -> String {
-    let size = image
+pub(super) fn dimensions(image: &Attachment) -> String {
+    image
         .original
         .as_ref()
         .filter(|original| (original.width, original.height) != (image.width, image.height))
@@ -292,12 +293,7 @@ pub(super) fn label(image: &Attachment, index: usize) -> String {
                 original.width, original.height, image.width, image.height
             )
         })
-        .unwrap_or_else(|| format!("{}×{}", image.width, image.height));
-    format!(
-        "[Image {}] {} · {size} · PNG",
-        index + 1,
-        clean(&image.display_name)
-    )
+        .unwrap_or_else(|| format!("{}×{}", image.width, image.height))
 }
 
 #[cfg(test)]

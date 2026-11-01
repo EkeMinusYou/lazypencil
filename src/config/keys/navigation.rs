@@ -13,6 +13,7 @@ const ATTACHMENTS: u8 = 8;
 const CONVERSATION: u8 = 16;
 const ALL: u8 = PROMPT | PREVIEW | NODES | ATTACHMENTS | CONVERSATION;
 const VIEWING: u8 = ALL & !PROMPT;
+const CONVERSATION_REGION: u8 = PROMPT | ATTACHMENTS | CONVERSATION;
 
 macro_rules! bindings {
     ($( $field:ident => $action:ident ($scope:expr, [$($default:literal),*]) ),* $(,)?) => {
@@ -52,6 +53,8 @@ macro_rules! bindings {
 bindings! {
     next_panel => NextPanel(ALL, ["Tab"]),
     previous_panel => PreviousPanel(ALL, ["Shift+Tab"]),
+    previous_section => PreviousSection(CONVERSATION_REGION, ["Alt+Up"]),
+    next_section => NextSection(CONVERSATION_REGION, ["Alt+Down"]),
     help => Help(ALL, ["F1", "?"]),
     commands => Commands(ALL, ["Alt+p"]),
     quit => Quit(VIEWING, ["q"]),
