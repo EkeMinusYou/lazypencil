@@ -1757,6 +1757,9 @@ mod tests {
                 "Cargo.lock",
                 "version=4\n[[package]]\nname='lazypencil'\nversion='0.1.0'\n",
             ),
+            // Parallel core reproduction also selects the library, as it does
+            // for the real application. Keep both compiler contexts available.
+            ("src/lib.rs", ""),
             (
                 "src/main.rs",
                 "fn main(){println!(\"{}\",cfg!(feature=\"tui\"));}\n",
