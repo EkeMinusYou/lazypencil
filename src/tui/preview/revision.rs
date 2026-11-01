@@ -265,7 +265,7 @@ mod mapped_write_tests {
         let expected = store.read().unwrap().revision();
         let mut guard = RevisionGuard::default();
         let position = original.find("\"a\"").unwrap() + 1;
-        for letter in [b'b', b'c', b'd'] {
+        for letter in *b"bcd" {
             guard.verify(&store, &expected).unwrap();
             unsafe {
                 mapping.0.cast::<u8>().add(position).write(letter);
