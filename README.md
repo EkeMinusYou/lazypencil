@@ -188,6 +188,8 @@ Lists, formatted messages and complete raw transcripts are paged, with bounded r
 
 ## Terminal preview and prompts
 
+At startup, the TUI checks the selected adapter's account without sending a prompt. The header shows the reported account email/name, authentication route and plan when available; checking, not signed in, unavailable, and not reported are distinct. Account identity stays in memory and is not saved to conversation logs. The check uses the same launch directory and inherited runtime environment (including `CODEX_HOME`) as prompting.
+
 ```sh
 lazypencil tui design.pen
 lazypencil tui new.pen --create --agent claude --image reference.png

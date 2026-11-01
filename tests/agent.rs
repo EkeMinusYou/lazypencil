@@ -114,6 +114,122 @@ fn embedded_conversation_uses_the_real_helper_for_supervision_and_bound_mcp_edit
 }
 
 #[test]
+fn account_inspection_never_creates_or_prompts_a_provider_session() {
+    for (mode, source) in [
+        ("auth-inspect-account", Some("subscription")),
+        ("auth-inspect-none", Some("not_authenticated")),
+        ("echo", None),
+    ] {
+        let directory = TempDir::new().unwrap();
+        runtime().block_on(async {
+            let report = AgentHost::inspect_authentication(
+                options(mode, directory.path()),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                report
+                    .as_ref()
+                    .map(|report| serde_json::to_value(report).unwrap()["source"]
+                        .as_str()
+                        .unwrap()
+                        .to_owned()),
+                source.map(str::to_owned)
+            );
+            if source == Some("subscription") {
+                let report = report.unwrap();
+                assert_eq!(
+                    report.identity.as_deref(),
+                    Some("must-not-log@example.test")
+                );
+                assert!(
+                    !serde_json::to_string(&report)
+                        .unwrap()
+                        .contains("must-not-log")
+                );
+            }
+            if source.is_some() {
+                let methods = std::fs::read_to_string(
+                    directory.path().join("received-account-methods.jsonl"),
+                )
+                .unwrap();
+                let methods: Vec<Value> = methods
+                    .lines()
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .collect();
+                assert_eq!(methods, [json!({"method":"initialize"})]);
+                #[cfg(unix)]
+                account_adapter_reaped(directory.path());
+            }
+            assert!(!directory.path().join("sent-turn.txt").exists());
+        });
+    }
+}
+
+#[test]
+fn account_inspection_deadlines_and_cancellation_end_the_owned_connection() {
+    for cancelled in [false, true] {
+        let directory = TempDir::new().unwrap();
+        runtime().block_on(async {
+            let mut opts = options("auth-inspect-hang", directory.path());
+            opts.auth_status_timeout = Duration::from_millis(100);
+            let cancel = CancellationToken::new();
+            let stop = if cancelled {
+                opts.auth_status_timeout = Duration::from_secs(5);
+                let cancel = cancel.clone();
+                let initialized = directory.path().join("received-account-methods.jsonl");
+                Some(tokio::spawn(async move {
+                    tokio::time::timeout(Duration::from_secs(5), async {
+                        while !initialized.exists() {
+                            tokio::time::sleep(Duration::from_millis(10)).await;
+                        }
+                    })
+                    .await
+                    .unwrap();
+                    cancel.cancel();
+                }))
+            } else {
+                None
+            };
+            let result = tokio::time::timeout(
+                Duration::from_secs(10),
+                AgentHost::inspect_authentication(opts, cancel),
+            )
+            .await
+            .unwrap();
+            if let Some(stop) = stop {
+                stop.await.unwrap();
+            }
+            assert_eq!(
+                result.unwrap_err().code,
+                if cancelled {
+                    "CANCELLED"
+                } else {
+                    "AGENT_ERROR"
+                }
+            );
+            #[cfg(unix)]
+            account_adapter_reaped(directory.path());
+            assert!(!directory.path().join("sent-turn.txt").exists());
+        });
+    }
+}
+
+#[cfg(unix)]
+fn account_adapter_reaped(directory: &Path) {
+    let pid: i32 = std::fs::read_to_string(directory.join("account-adapter.pid"))
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert_ne!(
+        unsafe { libc::kill(pid, 0) },
+        0,
+        "Account inspection must reap its adapter"
+    );
+}
+
+#[test]
 fn reported_authentication_must_match_the_requested_route_before_prompting() {
     for (mode, subscription, allowed) in [
         ("auth-account", true, true),

@@ -22,12 +22,29 @@ pub struct AuthReport {
     pub evidence: AuthEvidence,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plan: Option<String>,
+    /// Display-only identity; never serialize it into events or saved state.
+    #[serde(skip)]
+    pub identity: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AuthEvidence {
     AdapterReport,
+}
+
+fn display_text(value: &Value, limit: usize) -> Option<String> {
+    value
+        .as_str()
+        .filter(|value| {
+            !value.trim().is_empty()
+                && value.len() <= limit
+                && !value.chars().any(|character| {
+                    character.is_control()
+                        || matches!(character, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+                })
+        })
+        .map(|value| value.trim().to_owned())
 }
 
 impl AuthReport {
@@ -42,12 +59,7 @@ impl AuthReport {
             _ => AuthSource::Unknown,
         };
         let plan = if source == AuthSource::Subscription {
-            status["account"]["plan"]
-                .as_str()
-                .filter(|plan| {
-                    !plan.is_empty() && plan.len() <= 128 && !plan.chars().any(char::is_control)
-                })
-                .map(str::to_owned)
+            display_text(&status["account"]["plan"], 128)
         } else {
             None
         };
@@ -55,6 +67,63 @@ impl AuthReport {
             source,
             evidence: AuthEvidence::AdapterReport,
             plan,
+            identity: (source == AuthSource::Subscription)
+                .then(|| {
+                    ["email", "name", "id"]
+                        .into_iter()
+                        .find_map(|key| display_text(&status["account"][key], 320))
+                })
+                .flatten(),
+        }
+    }
+
+    pub fn display(&self) -> String {
+        let source = match self.source {
+            AuthSource::Subscription => "subscription",
+            AuthSource::ApiKey => "API key",
+            AuthSource::Gateway => "gateway",
+            AuthSource::External => "external provider",
+            AuthSource::NotAuthenticated => "not signed in",
+            AuthSource::Unknown => "not reported",
+        };
+        let mut display = source.to_owned();
+        if let Some(identity) = &self.identity {
+            display = format!("{identity} · {source}");
+        } else if self.source == AuthSource::Subscription {
+            display.push_str(" · account not reported");
+        }
+        if let Some(plan) = &self.plan {
+            display.push_str(&format!(" · {plan}"));
+        }
+        display
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_identity_is_bounded_and_never_serialized() {
+        let report = AuthReport::from_notification(
+            &json!({"authStatus":{"kind":"account","account":{"email":"person@example.test","plan":"pro"},"accessToken":"private-token"}}),
+        );
+        assert!(report.display().contains("person@example.test"));
+        let serialized = serde_json::to_string(&report).unwrap();
+        assert!(
+            !serialized.contains("person@example.test") && !serialized.contains("private-token")
+        );
+        let saved: AuthReport = serde_json::from_str(&serialized).unwrap();
+        assert!(saved.identity.is_none());
+        for email in [
+            "\x1b]52;injection".into(),
+            "person\u{202e}@example.test".into(),
+            "x".repeat(321),
+        ] {
+            let report = AuthReport::from_notification(
+                &json!({"authStatus":{"kind":"account","account":{"email":email}}}),
+            );
+            assert!(report.identity.is_none());
         }
     }
 }

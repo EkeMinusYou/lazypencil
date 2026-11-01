@@ -216,6 +216,37 @@ pub fn run(
         )
     })?;
     let mut report = match case {
+        "account-startup" => {
+            h.visible("must-not-log@example.test")?;
+            no_agent(&h);
+            let methods = fs::read_to_string(root.join("received-account-methods.jsonl"))?;
+            assert_eq!(
+                methods
+                    .lines()
+                    .map(|line| serde_json::from_str::<Value>(line).unwrap())
+                    .collect::<Vec<_>>(),
+                [json!({"method":"initialize"})]
+            );
+            fs::write(root.join("account-changed"), "changed")?;
+            h.paste("Check the selected account")?;
+            h.key(b"\x13")?;
+            h.visible("other-account@example.test")?;
+            h.wait("account turn complete", 15.0, |h| h.count("complete") == 1)?;
+            for saved in std::iter::once(state(&h)).chain(h.turns()) {
+                let saved = saved.to_string();
+                for private in [
+                    "must-not-log@example.test",
+                    "other-account@example.test",
+                    "fixture-not-a-token",
+                ] {
+                    assert!(
+                        !saved.contains(private),
+                        "Display identity must stay out of saved events"
+                    );
+                }
+            }
+            Value::Null
+        }
         "ime-commit" => ime_commit(&mut h)?,
         "user-navigation-config" => navigation(&mut h)?,
         "session-selection" => conversations::selection(&mut h)?,

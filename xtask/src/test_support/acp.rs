@@ -153,7 +153,13 @@ impl<'a> Peer<'a> {
         )
     }
     fn auth(&self, kind: &str) -> Result {
-        self.send(json!({"method":"_auth/status_update","params":{"authStatus":{"kind":kind,"label":"Fixture account","account":{"plan":"test-plan","email":"must-not-log@example.test"},"accessToken":"fixture-not-a-token","vendor":{"secret":"must-not-log"}}}}))
+        let email = if self.mode == "auth-inspect-account" && Path::new("account-changed").exists()
+        {
+            "other-account@example.test"
+        } else {
+            "must-not-log@example.test"
+        };
+        self.send(json!({"method":"_auth/status_update","params":{"authStatus":{"kind":kind,"label":"Fixture account","account":{"plan":"test-plan","email":email},"accessToken":"fixture-not-a-token","vendor":{"secret":"must-not-log"}}}}))
     }
     fn config(&self) -> Value {
         json!([{"id":"model","name":"Model","category":"model","type":"select","currentValue":self.model,"options":[{"group":"fixture","name":"Fixture","options":[{"value":"fixture-model","name":"Fixture"},{"value":"fixture-model-2","name":"Fixture 2"}]}]}])
@@ -178,6 +184,13 @@ impl<'a> Peer<'a> {
         }
         if mode == "crash" {
             std::process::exit(9);
+        }
+        if mode.starts_with("auth-inspect-") {
+            fs::write("account-adapter.pid", std::process::id().to_string())?;
+            append_json(
+                "received-account-methods.jsonl",
+                &json!({"method":message["method"]}),
+            )?;
         }
         let error_phase = match mode {
             "protocol-error-initialize" | "protocol-error-frame" => Some("initialize"),
@@ -217,6 +230,13 @@ impl<'a> Peer<'a> {
                     caps["_meta"] = json!({"authStatus":{}});
                 }
                 self.response(&message,json!({"protocolVersion":if mode=="wrong-version"{2}else{1},"agentCapabilities":caps,"agentInfo":{"name":"acp-fixture","version":"1"},"authMethods":[{"id":"fixture-auth","name":"Fixture"}]}))?;
+                if mode.starts_with("auth-inspect-") && mode != "auth-inspect-hang" {
+                    self.auth(if mode == "auth-inspect-none" {
+                        "none"
+                    } else {
+                        "account"
+                    })?;
+                }
             }
             "authenticate" => {
                 assert_eq!(params["methodId"], "fixture-auth");

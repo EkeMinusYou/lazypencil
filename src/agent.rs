@@ -100,10 +100,21 @@ pub struct AgentHost {
     events: mpsc::Receiver<AgentEvent>,
     shutdown: CancellationToken,
     task: Option<tokio::task::JoinHandle<Result<()>>>,
+    authentication: watch::Receiver<Option<AuthReport>>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Purpose {
+    Conversation,
+    Authentication,
 }
 
 impl AgentHost {
     pub fn spawn(options: AgentOptions) -> Result<Self> {
+        Self::spawn_for(options, Purpose::Conversation)
+    }
+
+    fn spawn_for(options: AgentOptions, purpose: Purpose) -> Result<Self> {
         if options.restart_session && options.session_id.is_none() {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
@@ -130,9 +141,10 @@ impl AgentHost {
         let (sender, events) = mpsc::channel(32);
         let shutdown = CancellationToken::new();
         let stop = shutdown.clone();
+        let (auth_sender, authentication) = watch::channel(None);
         let task = tokio::spawn(async move {
             let reporting = sender.clone();
-            let result = run(options, receiver, sender, stop).await;
+            let result = run(options, receiver, sender, stop, auth_sender, purpose).await;
             if let Err(error) = &result {
                 let _ = reporting
                     .send(AgentEvent::Message(
@@ -147,7 +159,41 @@ impl AgentHost {
             events,
             shutdown,
             task: Some(task),
+            authentication,
         })
+    }
+
+    pub fn authentication(&self) -> Option<AuthReport> {
+        self.authentication.borrow().clone()
+    }
+
+    /// Initialize the selected runtime without a session, tools, login or prompt.
+    pub async fn inspect_authentication(
+        mut options: AgentOptions,
+        cancel: CancellationToken,
+    ) -> Result<Option<AuthReport>> {
+        options.mcp_servers.clear();
+        options.session_id = None;
+        options.restart_session = false;
+        options.auth_method = None;
+        let mut host = Self::spawn_for(options, Purpose::Authentication)?;
+        let result = loop {
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => break Err(Error::new("CANCELLED", "Account check cancelled")),
+                event = host.next_event() => match event {
+                    Some(AgentEvent::Message(value)) if value["type"] == "connection_error" => {
+                        break Err(agent_error(value["error"]["message"].as_str()
+                            .unwrap_or("Account check failed")));
+                    },
+                    Some(AgentEvent::Permission { reply, .. }) => { let _ = reply.send(None); },
+                    Some(_) => {},
+                    None => break Ok(host.authentication()),
+                }
+            }
+        };
+        let closed = host.close().await;
+        result.and_then(|report| closed.map(|_| report))
     }
 
     pub async fn next_event(&mut self) -> Option<AgentEvent> {
@@ -198,6 +244,8 @@ async fn run(
     commands: mpsc::Receiver<Turn>,
     events: mpsc::Sender<AgentEvent>,
     shutdown: CancellationToken,
+    auth_sender: watch::Sender<Option<AuthReport>>,
+    purpose: Purpose,
 ) -> Result<()> {
     let setup_started = std::time::Instant::now();
     let mut process = tokio::select! {
@@ -240,7 +288,7 @@ async fn run(
     let permission_events = events.clone();
     let notification_events = events.clone();
     let permission_shutdown = shutdown.clone();
-    let (auth_sender, auth_receiver) = watch::channel(None::<AuthReport>);
+    let auth_receiver = auth_sender.subscribe();
     // Host errors cross the SDK boundary out of band. Adapter-controlled error
     // data must never impersonate a host error or become public diagnostics.
     let host_error = Arc::new(Mutex::new(None));
@@ -251,7 +299,8 @@ async fn run(
             let value = if notification.method == "_auth/status_update" {
                 let report = AuthReport::from_notification(&notification.params);
                 auth_sender.send_replace(Some(report.clone()));
-                // Only retain route metadata, never the account email, credentials, or vendor extras.
+                // Serialize route metadata only. Display identity stays in the
+                // live watch channel; credentials and vendor extras are discarded.
                 json!({"type":"auth_status","authentication":report})
             } else if notification.method == "session/update" {
                 json!({"type":"update","notification":notification.params})
@@ -278,7 +327,7 @@ async fn run(
             responder.respond(RequestPermissionResponse::new(outcome))
         }, acp::on_receive_request!())
         .connect_with(transport, async move |connection: acp::ConnectionTo<acp::Agent>| {
-            conversation(&connection, &options, commands, &events, &shutdown, current_cancel, auth_receiver).await
+            conversation(&connection, &options, commands, &events, &shutdown, current_cancel, auth_receiver, purpose).await
                 .map_err(|error| {
                     *captured_error.lock().expect("host error lock") = Some(error);
                     acp::Error::internal_error()
@@ -317,6 +366,7 @@ async fn conversation(
     shutdown: &CancellationToken,
     current_cancel: Arc<Mutex<Option<CancellationToken>>>,
     mut authentication: watch::Receiver<Option<AuthReport>>,
+    purpose: Purpose,
 ) -> Result<()> {
     let setup = async {
         let initialized = connection
@@ -335,6 +385,24 @@ async fn conversation(
             .meta
             .as_ref()
             .is_some_and(|meta| meta.contains_key("authStatus"));
+        if purpose == Purpose::Authentication {
+            if auth_supported && authentication.borrow().is_none() {
+                tokio::time::timeout(options.auth_status_timeout, async {
+                    while authentication.borrow().is_none() {
+                        authentication
+                            .changed()
+                            .await
+                            .map_err(|_| agent_error("Account reporting ended"))?;
+                    }
+                    Ok::<_, Error>(())
+                })
+                .await
+                .map_err(|_| {
+                    agent_error("Account status was not reported before the deadline")
+                })??;
+            }
+            return Ok(None);
+        }
         emit(
             events,
             json!({"type":"initialized", "response":initialized, "billing_source":"unknown"}),
@@ -417,16 +485,19 @@ async fn conversation(
             "session_origin":if restart {"restarted"} else if options.session_id.is_some() {"loaded"} else {"new"},
             "replaces_session_id":if restart {options.session_id.as_deref()} else {None},
             "restart_reason":if restart {Some(if options.restart_session {"user_requested"} else {"load_session_unsupported"})} else {None}})).await?;
-        Ok((
+        Ok(Some((
             session,
             initialized.agent_capabilities.prompt_capabilities.image,
             policy,
-        ))
+        )))
     };
-    let (session, images, auth_policy) = tokio::select! {
+    let outcome = tokio::select! {
         biased;
         _ = shutdown.cancelled() => return Ok(()),
         result = tokio::time::timeout(options.setup_timeout, setup) => result.map_err(|_| agent_error("ACP initialization or session setup timed out"))??,
+    };
+    let Some((session, images, auth_policy)) = outcome else {
+        return Ok(());
     };
     loop {
         let turn = tokio::select! {

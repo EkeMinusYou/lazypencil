@@ -188,6 +188,8 @@ impl Harness {
                 .arg("--adapter-arg=acp")
                 .arg(if case == "basic" {
                     "--adapter-arg=image-inspect-audit"
+                } else if case == "account-startup" {
+                    "--adapter-arg=auth-inspect-account"
                 } else {
                     "--adapter-arg=image-inspect"
                 });

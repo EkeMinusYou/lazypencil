@@ -506,13 +506,39 @@ impl Conversation {
         Ok(())
     }
 
-    fn agent_options(&self) -> Result<AgentOptions> {
+    #[cfg(feature = "tui")]
+    pub(crate) fn authentication(&self) -> Option<crate::agent::auth::AuthReport> {
+        self.host.as_ref().and_then(AgentHost::authentication)
+    }
+
+    #[cfg(feature = "tui")]
+    pub(crate) fn authentication_options(&self) -> Result<AgentOptions> {
+        let mut options = self.adapter_options()?;
+        options.setup_timeout = Duration::from_secs(10);
+        Ok(options)
+    }
+
+    fn adapter_options(&self) -> Result<AgentOptions> {
         self.require_project_agent()?;
         let command = if self.command.components().count() > 1 {
             crate::paths::canonical(&self.command)?
         } else {
             self.command.clone()
         };
+        let mut options = AgentOptions::new(
+            command,
+            self.store.path().parent().expect("document parent"),
+        );
+        options.args = self.args.adapter_args.clone();
+        options.supervisor_executable = Some(self.executable.clone());
+        options.subscription = self.args.auth == AuthMode::Subscription;
+        options.require_auth_status = self.args.require_auth_status;
+        options.turn_timeout = Duration::from_secs(self.args.timeout);
+        Ok(options)
+    }
+
+    fn agent_options(&self) -> Result<AgentOptions> {
+        let mut options = self.adapter_options()?;
         let mut args = vec![
             "--data-dir".into(),
             utf8(self.store.data_dir())?,
@@ -527,14 +553,6 @@ impl Conversation {
         for font in &self.args.fonts {
             args.extend(["--font".into(), utf8(font)?]);
         }
-        let mut options = AgentOptions::new(
-            command,
-            self.store.path().parent().expect("document parent"),
-        );
-        options.args = self.args.adapter_args.clone();
-        options.supervisor_executable = Some(self.executable.clone());
-        options.subscription = self.args.auth == AuthMode::Subscription;
-        options.require_auth_status = self.args.require_auth_status;
         options.auth_method = self.args.auth_method.clone();
         options.model = self.args.model.clone();
         options.session_mode = self.args.mode.clone().or_else(|| {
@@ -546,7 +564,6 @@ impl Conversation {
         options.session_id = self.session.state.native_session_id.clone();
         options.allow_session_restart = true;
         options.restart_session = self.args.restart_session && options.session_id.is_some();
-        options.turn_timeout = Duration::from_secs(self.args.timeout);
         let mut environment = vec![EnvVariable::new(
             "LAZYPENCIL_CONFIG_DIR",
             utf8(

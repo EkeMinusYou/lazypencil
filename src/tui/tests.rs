@@ -1286,7 +1286,7 @@ fn saved_log_selection_preserves_drafts_images_and_native_context_and_closes_the
         app.authentication = "subscription".into();
         app.select_conversation(saved::SessionChange::Existing(second.clone()), &worker).await.unwrap();
         assert_eq!(app.editor.lines().join("\n"), "Second unsent draft");
-        assert_eq!(app.authentication, "unknown");
+        assert_eq!(app.authentication, "checking");
         assert!(app.conversation.images().is_empty() && app.permissions.is_empty());
         assert!(!std::fs::read_dir(&first_directory).unwrap().flatten().any(|entry| entry.file_name().to_string_lossy().starts_with("grant-")));
         app.submit().await.unwrap();

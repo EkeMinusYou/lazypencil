@@ -1,5 +1,6 @@
 //! Terminal viewing and prompting, sharing the same document and ACP services as CLI.
 
+mod account;
 mod camera;
 mod checkpoints;
 mod graphics;
@@ -144,6 +145,9 @@ pub fn run(args: &TuiArgs, data: Option<PathBuf>, json_output: bool) -> Result<(
             input.cancel.cancel();
         }
         worker.cancel();
+        if let Some(check) = app.account_check.take() {
+            check.close().await;
+        }
         let session_id = app.conversation.id().to_string();
         let closed = app.conversation.close().await;
         drop(app.document_task.take());
@@ -179,6 +183,8 @@ struct App {
     scroll: u16,
     status: String,
     authentication: String,
+    account_check: Option<account::Check>,
+    account_pending: bool,
     permissions: VecDeque<Permission>,
     input: Option<InputJob>,
     document_task: Option<checkpoints::Task>,
@@ -224,7 +230,9 @@ impl App {
             log: String::new(),
             scroll: 0,
             status,
-            authentication: "unknown".into(),
+            authentication: "checking".into(),
+            account_check: None,
+            account_pending: true,
             permissions: VecDeque::new(),
             input: None,
             document_task: None,
@@ -248,6 +256,23 @@ impl App {
         timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut termination = Box::pin(termination());
         loop {
+            if self.conversation.active() {
+                self.account_pending = false;
+                if let Some(check) = &self.account_check {
+                    check.cancel.cancel();
+                }
+            }
+            if self.account_pending && self.account_check.is_none() {
+                self.account_pending = false;
+                match account::Check::start(&self.conversation) {
+                    Ok(check) => self.account_check = Some(check),
+                    Err(error) => {
+                        self.authentication = "unavailable".into();
+                        self.error(error);
+                    }
+                }
+                self.dirty = true;
+            }
             if self.dirty {
                 let mut cells = self.cells;
                 screen.draw(|frame| {
@@ -321,6 +346,20 @@ impl App {
                     }
                     self.sync_turn(worker);
                     self.dirty = true;
+                },
+                result = async { self.account_check.as_mut().unwrap().result().await }, if self.account_check.is_some() => {
+                    let check = self.account_check.take().expect("account check");
+                    if !check.cancel.is_cancelled() && !self.account_pending && !self.conversation.active() {
+                        match result {
+                            Ok(Some(report)) => self.authentication = report.display(),
+                            Ok(None) => self.authentication = "not reported".into(),
+                            Err(error) => {
+                                self.authentication = "unavailable".into();
+                                self.error(error);
+                            }
+                        }
+                        self.dirty = true;
+                    }
                 },
                 content = async { (&mut self.input.as_mut().unwrap().receiver).await.unwrap_or_else(|error| Err(Error::new("CLIPBOARD_UNAVAILABLE", error.to_string()))) }, if self.input.is_some() => {
                     self.input.take();
@@ -560,10 +599,16 @@ impl App {
                 }
             }
             Some("auth_status") => {
-                self.authentication = value["authentication"]["source"]
-                    .as_str()
-                    .unwrap_or("unknown")
-                    .to_string();
+                self.authentication = self
+                    .conversation
+                    .authentication()
+                    .map(|report| report.display())
+                    .unwrap_or_else(|| {
+                        value["authentication"]["source"]
+                            .as_str()
+                            .unwrap_or("not reported")
+                            .into()
+                    });
                 self.status = format!(
                     "Authentication: {}",
                     value["authentication"]["source"]
@@ -572,6 +617,9 @@ impl App {
                 );
             }
             Some("ready") => {
+                if let Some(report) = self.conversation.authentication() {
+                    self.authentication = report.display();
+                }
                 self.status = "Agent ready".into();
             }
             Some("session_restarted") => {
@@ -992,7 +1040,11 @@ impl App {
         self.last_draft_save = Instant::now();
         self.attachments.select(None);
         self.permissions.clear();
-        self.authentication = "unknown".into();
+        self.authentication = "checking".into();
+        self.account_pending = true;
+        if let Some(check) = &self.account_check {
+            check.cancel.cancel();
+        }
         self.log.clear();
         self.scroll = 0;
         self.status = format!(
@@ -1216,10 +1268,10 @@ impl App {
         };
         frame.render_widget(
             Paragraph::new(format!(
-                "lazypencil · {:?} · {state} · session: {} · auth: {} · {}",
+                "lazypencil · {:?} · account: {} · {state} · session: {} · {}",
                 self.conversation.settings().agent,
-                &self.conversation.id()[..8],
                 self.authentication,
+                &self.conversation.id()[..8],
                 clean(&self.conversation.store().path().display().to_string())
             ))
             .style(Style::default().fg(Color::Cyan)),
