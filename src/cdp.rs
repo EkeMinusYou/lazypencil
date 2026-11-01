@@ -454,12 +454,21 @@ impl Browser {
         expression: &str,
         budget: &Budget<'_>,
     ) -> Result<Value> {
-        let result = self.command(
+        let result = match self.command(
             Some(session),
             "Runtime.evaluate",
             json!({"expression":expression,"awaitPromise":true,"returnByValue":true}),
             budget,
-        )?;
+        ) {
+            Ok(result) => result,
+            Err(error) => {
+                // A redirect can replace the execution context after the last
+                // readiness check. Report a denied navigation as a page failure
+                // rather than masking it with the resulting protocol error.
+                self.check_page_network_location(session, budget)?;
+                return Err(error);
+            }
+        };
         if let Some(exception) = result.get("exceptionDetails") {
             return Err(diagnostics::evaluation_error(self.purpose, exception));
         }

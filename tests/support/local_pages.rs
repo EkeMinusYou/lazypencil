@@ -290,21 +290,26 @@ fn offline_network_policy_blocks_http_websocket_and_tls_routes_for_pages_and_wor
     assert_eq!(server.network_counts(), resumed_counts);
     document["children"][0]["url"] = format!("{}index.html?theme=$mode#keep", f.base).into();
     fs::write(f.store.path(), document.to_string()).unwrap();
-    fs::write(
-        f.site().join("index.html"),
-        format!(
-            "<script>location.replace({})</script>",
-            json!(format!("http://{}/network/green", server.address))
-        ),
-    )
-    .unwrap();
-    let redirected = f.capture(&mut runtime, false, None).err().unwrap();
-    assert_eq!(
-        redirected.code, "PAGE_LOAD_FAILED",
-        "Unexpected redirect failure: {redirected:?}"
-    );
-    assert!(runtime.process_ids().is_empty());
-    assert_eq!(server.network_counts(), resumed_counts);
+    let destination = json!(format!("http://{}/network/green", server.address));
+    for script in [
+        format!("location.replace({destination})"),
+        // Navigate inside the capture evaluation, after its policy precheck.
+        // The pending animation-frame promise loses its execution context.
+        format!("window.scrollTo=()=>location.replace({destination})"),
+    ] {
+        fs::write(
+            f.site().join("index.html"),
+            format!("<script>{script}</script>"),
+        )
+        .unwrap();
+        let redirected = f.capture(&mut runtime, false, None).err().unwrap();
+        assert_eq!(
+            redirected.code, "PAGE_LOAD_FAILED",
+            "Unexpected redirect failure: {redirected:?}"
+        );
+        assert!(runtime.process_ids().is_empty());
+        assert_eq!(server.network_counts(), resumed_counts);
+    }
     document["children"][0]["url"] = format!("http://{}/network/green", server.address).into();
     fs::write(f.store.path(), document.to_string()).unwrap();
     policy("online");
