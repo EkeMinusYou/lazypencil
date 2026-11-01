@@ -1,0 +1,81 @@
+{
+  "format_version": 1,
+  "source_commit": "302a76768cbef5655cace24b335d826f52fe1bd0",
+  "main_commit": "8cb85ba15cd4a0c7f562fc5935ca51ee557a6f4e",
+  "source_sha256": {
+    "scripts/measure_preview.py": "1b5d9255db4ad9c10868ef10f3dea0a098688beec5926d3b3fb2b2617008c90f",
+    "src/render.rs": "58c55dc9b77469f03c6d3240816392aa957a8f46ed9c9d7dc14486e90ea15848",
+    "src/render/atlas.rs": "eb390481ea9ba49580567a34ff5856aaad9b1219f9644a368afcfe17f46757b5",
+    "src/render/backdrop.rs": "c366957d225b1a3f8d52f856efe56c233115a407bb3a339b87f0deb4251688b2",
+    "src/render/preview.rs": "1c5b1d6d54f29d25dcf514cfb576bdaf9ee685133fa8835ee93e0357ab21b5c6",
+    "src/render/raster_pool.rs": "ce6f5100c9316cfae00f9491ed323485b22c89ac8afeea35268b1def6589fb2c",
+    "src/store.rs": "de0e28636bc17d4531b953e85b8b46fbebb6dd5786553eec03ce8c3d677da783",
+    "src/tui/camera.rs": "751b91dde2bf876817c9fa9e19406b18aec2f3ff29d379d59cd2a283db2bc9fe",
+    "src/tui/mod.rs": "4b3ee865d518ef4c273e1463de543f5ee44f68a6fabfa2f949df2d3402f23539",
+    "src/tui/nodes.rs": "c74659bceffc249c689d6879702f90ebf9f78d1597f85336b69cfc0f27c46c4f",
+    "src/tui/outbox.rs": "dbe1ce36e6a459de6bb761f8f74d28e897097f7a3aac94bb013cd1a4a2b5b1e8",
+    "src/tui/preview.rs": "be9a5019c6993cc1486118516c1f5564a9db22ac7c3ab010b298bc80f82c7ffa",
+    "src/tui/preview/revision.rs": "c65ea9a1e6674b90d113cb55de3a9e9f561bfc01057c38f7e9d099765386eefa",
+    "src/tui/tests.rs": "9580dda61d5dfabb67b910c134aa795ba00e9b7e395bca9bc174fd08f2caec35",
+    "tests/support/terminal/cases.rs": "eed75d8091f89f896043578d2575d2174cf9d4419794ae81b65925d660b541db"
+  },
+  "release_profile": "Repository defaults: thin LTO and one codegen unit",
+  "binary_sha256": "7ceb6232f2b732102f82a5d5581700b998885a21226a43f4db8bf13c33155f93",
+  "report": {
+    "path": "docs/measurements/preview-main-2026-11-02.json",
+    "sha256": "3b622d07dabf190b23f6d227ab70178890c4215a85f69588e883eee51666e37b",
+    "samples_per_action": 20,
+    "median_limit_ms": 30,
+    "independently_recomputed": true
+  },
+  "previous_capture_rgba_matches": {
+    "zoom_in": true,
+    "zoom_out": true,
+    "pan_right": true,
+    "pan_left": true
+  },
+  "validation": {
+    "library_tests_passed": 235,
+    "render_tests_passed": 12,
+    "tui_tests_passed": 12,
+    "tui_tests_ignored": 2,
+    "clippy": "Passed with existing deprecated and chunks_exact_to_as_chunks compatibility exclusions",
+    "core_check": "Passed",
+    "rendering_only_check": "Passed",
+    "logs": {
+      "tests-build-final.log": {
+        "path": "/private/tmp/lazypencil-main-merge-20261102/tests-build-final.log",
+        "sha256": "54c1ace63abd07909b102c0a7caf0dbe4224255fd62a59fd4972129a69cfc572"
+      },
+      "clippy-final.log": {
+        "path": "/private/tmp/lazypencil-main-merge-20261102/clippy-final.log",
+        "sha256": "28cfa96a90352fb04c653cd660507beed1152e1cfa0d9ee879c49da76487c354"
+      },
+      "core-check.log": {
+        "path": "/private/tmp/lazypencil-main-merge-20261102/core-check.log",
+        "sha256": "168f7e01b6f1a4f10c73ad8bf93ebcfe471409e5b350f5931e203040d620c5d0"
+      },
+      "rendering-check.log": {
+        "path": "/private/tmp/lazypencil-main-merge-20261102/rendering-check.log",
+        "sha256": "ec0d94e5d015e2d65f3bbec6a7019dcc1eb13fdfce18202f02ae5f4a353e5ea4"
+      },
+      "lib-tests.log": {
+        "path": "/private/tmp/lazypencil-main-merge-20261102/lib-tests.log",
+        "sha256": "122537fd9ea8ead639eb837c412cb0deedc650d1e9b58c1e09b26daf061bdc3f"
+      },
+      "render-tests.log": {
+        "path": "/private/tmp/lazypencil-main-merge-20261102/render-tests.log",
+        "sha256": "1f62e34aafbf30faf768ff42a9230cd9194097a9067f8ca3828fc616f09d1f93"
+      },
+      "tui-tests.log": {
+        "path": "/private/tmp/lazypencil-main-merge-20261102/tui-tests.log",
+        "sha256": "8df19a517e938ca0b2cb10875b210cd88cfda80fd6b896a26a58e336d1dc51a9"
+      },
+      "release-build.log": {
+        "path": "/private/tmp/lazypencil-main-merge-20261102/release-build.log",
+        "sha256": "2aae5b34f0d31d6c95afd95d2aab0e0e01e644a269c5547252ffce4db6e44d1a"
+      }
+    }
+  },
+  "scope": "Owned PTY receipt, explicit Kitty/ZLIB, 1272x1040 pixels, real document read-only, false adapter, no physical-display timing claim. No local installation changed for this PR."
+}

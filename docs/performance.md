@@ -78,6 +78,21 @@ At 50 ms input intervals, continuous pan/zoom produced 36/38 exact frames, resto
 
 The combined code passed 227 library tests, 12 rendering integration tests and 11 TUI integration tests; two environment-specific TUI cases remain ignored. Clippy passed with the previously recorded compatibility exclusions. Additional tree-navigation and file-title work began in the independent UI task before deployment, so this completed checkpoint is committed but not installed. The user's instruction to wait for UI completion still governs local replacement.
 
+## Updated-main acceptance, 2026-11-02
+
+After merging `8cb85ba` (the completed UI work), implementation `302a767` preserves the node hierarchy, queue, input behavior and agent status while retaining the preview caches. [All 80 observations and continuous-input trials](measurements/preview-main-2026-11-02.json), with [source hashes and verification](measurements/preview-main-2026-11-02-verification.json), meet the 30 ms median target on the same read-only 9,421-node document. This is a default-profile release build, with thin LTO and one codegen unit; its SHA-256 is `7ceb6232f2b732102f82a5d5581700b998885a21226a43f4db8bf13c33155f93`.
+
+| Operation | Complete image median | p95 | Maximum |
+| --- | ---: | ---: | ---: |
+| Zoom in | 19.80 ms | 25.93 ms | 148.56 ms |
+| Zoom out | 18.25 ms | 24.19 ms | 24.80 ms |
+| Pan right | 18.17 ms | 24.32 ms | 64.96 ms |
+| Pan left | 18.20 ms | 23.68 ms | 24.10 ms |
+
+The owned PTY remains 224 × 57 cells / 2688 × 1140 pixels with a 1272 × 1040 Kitty/ZLIB image. These measurements end at full image receipt and do not claim physical-display timing. No resolution reduction or interpolation was added. The first uncached zoom took 148.56 ms and is included; the target is a median, not a maximum-latency promise. The single startup took 2.45 s. The pixel-rounding qualifications and cache bounds above still apply.
+
+At 50 ms input intervals, the pan/zoom bursts completed 38/39 exact frames, restored the initial image, and finished their final synchronized image 28.09/26.51 ms after the last key. The document and measured executable were unchanged and both processes exited normally. All 235 library tests, 12 rendering tests and 12 ordinary TUI tests passed; two environment-specific TUI cases remain ignored. Formatting, both feature checks and Clippy passed, with the existing compiler-compatibility exclusions documented above. The outbox guard has a separate behavior-preserving Clippy cleanup. Local installation is unchanged; this change is being prepared for pull-request review.
+
 ## Current interpretation, 2026-10-31
 
 The final 0.1.0 [distribution and performance run](https://github.com/EkeMinusYou/lazypencil/actions/runs/41201303069) passed in 6m12s. The packaged binary `14427324…28d504e6` is identical to the successful [complete run](https://github.com/EkeMinusYou/lazypencil/actions/runs/41200184501), with release artifact reuse confirmed. All 20 starts, 80 interactions and 100 worker profiles were retained on macOS 15.8.2 / image 20261028.0489.1 / 3 CPUs / 7 GiB. Maximum input/first-preview latency was 55.92/391.63ms; first-feedback p95 was 32.12ms and complete-output p95 218.53ms. Bound application maximum observed RSS was 191.73MiB and idle CPU upper bound 0.397% over 30.259s. Including Chromium, these were 1217.89MiB and 1.230% over 30.087s. Every original threshold and normal-exit/owned-process cleanup check passed. These are PTY/resource observations, not new physical-terminal measurements or kernel peak-RSS guarantees. Existing physical-terminal and subscription acceptance remains valid for the unchanged input, rendering and adapter code. The complete run took 14m45s with 367/411 artifacts fresh; only 44 application artifacts rebuilt for the version/release changes. Core restored the preceding focused outputs. This is distinct from the earlier 9m15s populated-cache run below; no duplicate warm full run was added just to obtain a faster number.
