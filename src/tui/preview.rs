@@ -108,6 +108,8 @@ pub struct Node {
     pub display_name: String,
     pub bounds: Rect,
     pub target: Value,
+    pub parent: Option<usize>,
+    pub children: Vec<usize>,
 }
 pub struct Output {
     pub generation: u64,
@@ -360,8 +362,9 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             let protocol = encode(picker, image.bitmap, request.cells, image_id)?;
             timing.mark("terminal_encode_ms");
             let nodes = navigation.get_or_insert_with(|| layout.items.iter().map(|item| Node {
-                id: item.record.id.clone(), name: item.node.properties.get("name").and_then(Value::as_str).unwrap_or(&item.record.id).into(), display_name: super::clean(item.node.properties.get("name").and_then(Value::as_str).unwrap_or(&item.record.id)), bounds: item.record.visual_bounds,
+                id: item.record.id.clone(), name: item.node.properties.get("name").and_then(Value::as_str).unwrap_or(&item.record.id).into(), display_name: super::nodes::node_label(item.node.properties.get("name").and_then(Value::as_str).unwrap_or(&item.record.id)), bounds: item.record.visual_bounds,
                 target: json!({"id":item.record.id,"address":item.record.address,"source_id":item.record.source_id,"source_path":item.record.source_path,"generated_by":item.record.generated_by}),
+                parent: item.parent, children: item.children.clone(),
             }).collect()).clone();
             let time_dependent = image.dynamic_artifacts.iter().any(|artifact| {
                 artifact["acquisition"]["kind"] == "shader"

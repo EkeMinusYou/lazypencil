@@ -114,10 +114,10 @@ impl App {
         + Send
         + 'static,
     ) -> Result<()> {
-        if self.conversation.active() || self.input.is_some() {
+        if self.input.is_some() {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
-                "Finish or cancel the active image operation or agent request first",
+                "Finish or cancel the active image operation first",
             ));
         }
         let directory = self.conversation.directory().to_owned();
@@ -227,6 +227,14 @@ impl App {
                 self.insert_text(text);
                 self.status = "Pasted text".into();
                 return false;
+            }
+            PreparedInput::Images(_)
+                if self.conversation.active() || !self.outbox.queued.is_empty() =>
+            {
+                Err(Error::new(
+                    "INVALID_ARGUMENT",
+                    "Image attachments can be added after the queued prompts finish",
+                ))
             }
             PreparedInput::Images(images) => self.conversation.add_images(images.clone()),
             PreparedInput::Resized {

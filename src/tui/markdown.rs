@@ -218,7 +218,10 @@ impl Renderer {
                     }
                     TagEnd::Link | TagEnd::Image => {
                         if let Some(Some(destination)) = self.links.pop() {
-                            self.push(&format!(" ({destination})"), self.style.fg(theme::MUTED));
+                            self.push(
+                                &format!(" ({destination})"),
+                                self.style.fg(theme::SECONDARY),
+                            );
                         }
                     }
                     TagEnd::TableCell => self.push(" │ ", self.style.fg(theme::MUTED)),

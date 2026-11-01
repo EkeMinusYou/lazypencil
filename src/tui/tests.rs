@@ -33,7 +33,7 @@ fn http_prompt_preparation_keeps_navigation_and_control_c_responsive() {
         }).await.unwrap();
         assert!(app.conversation.active());
         assert!(!app.key(KeyEvent::new(KeyCode::Char('x'),KeyModifiers::NONE), &picker, &worker).await.unwrap());
-        assert_eq!(app.editor.lines().join("\n"), draft);
+        assert_eq!(app.editor.lines().join("\n"), "x");
         assert!(!app.key(KeyEvent::new(KeyCode::Tab,KeyModifiers::NONE), &picker, &worker).await.unwrap());
         assert_eq!(app.focus, Focus::Preview);
         assert!(!app.key(KeyEvent::new(KeyCode::Char('c'),KeyModifiers::CONTROL), &picker, &worker).await.unwrap());
@@ -199,7 +199,7 @@ fn conversation_region_defaults_to_prompt_and_keeps_history_and_attachments_acce
             .iter()
             .map(|cell| cell.symbol())
             .collect::<String>();
-        assert!(empty.contains("Conversation"));
+        assert!(empty.contains("Agent"));
         assert!(!empty.contains("Attachments"));
         let transcript = "\nYou: Keep this message\n[0 images]\n\nCodex:\nAgent response\n\n[in_progress] mcp.lazypencil.read_nodes\n\n[completed] Tool\n\nRequest complete\n";
         app.append(transcript);
@@ -277,6 +277,17 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
             })
             .unwrap();
         assert_eq!(terminal.backend().cursor_position(), Position::new(74, 31));
+        assert_eq!(terminal.backend().buffer()[(74, 31)].symbol(), "D");
+        assert_eq!(terminal.backend().buffer()[(75, 31)].symbol(), "e");
+        app.focus = Focus::Nodes;
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        assert!(!terminal.backend().cursor_visible());
+        assert_eq!(terminal.backend().buffer()[(74, 31)].symbol(), "D");
+        app.focus = Focus::Prompt;
         for (text, expected) in [
             ("ちょっと".to_owned(), Position::new(82, 31)),
             ("か\u{3099} 😀".to_owned(), Position::new(79, 31)),
@@ -383,6 +394,112 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
 }
 
 #[test]
+fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        std::fs::write(
+            app.conversation.store().path(),
+            json!({"version":"2.21","children":[
+                {"type":"rectangle","id":"shape","width":80,"height":40,"fill":"#00FF00"}
+            ]})
+            .to_string(),
+        )
+        .unwrap();
+        let worker = Worker::start(
+            app.conversation.store().clone(),
+            vec![],
+            Backend::halfblocks(),
+            185,
+        )
+        .unwrap();
+        app.cells = Size::new(20, 8);
+        app.view.zoom = Some(1.0);
+        app.request(&worker, false, false);
+        app.accept_preview(
+            tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap(),
+        );
+        app.authentication = "fixture@example.test · subscription · team".into();
+        app.preview.as_mut().unwrap().summary["diagnostics"] = json!([{"severity":"warning"}]);
+        app.view.zoom = Some(2.0);
+        assert_eq!(
+            app.preview_title(),
+            "Preview · 100%",
+            "Pending zoom must not describe the old image"
+        );
+        assert_eq!(app.preview_timeline(), None);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(160, 40)).unwrap();
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        let region = |area: Rect| {
+            let mut text = String::new();
+            for y in area.y..area.bottom() {
+                for x in area.x..area.right() {
+                    text.push_str(terminal.backend().buffer()[(x, y)].symbol());
+                }
+                text.push('\n');
+            }
+            text.replace(' ', "")
+        };
+        let header = region(Rect::new(0, 0, 160, 1));
+        assert!(header.contains("lazypencil") && header.contains(".pen"));
+        for value in ["Codex", "account:", "session:", "subscription"] {
+            assert!(
+                header.contains(value),
+                "Missing agent metadata in the global header: {value}"
+            );
+        }
+        assert!(!header.contains("Idle"));
+        let nodes = region(Rect::new(0, 1, 35, 37));
+        assert!(nodes.contains("1node") && nodes.contains("1diagnostic"));
+        let preview = region(Rect::new(35, 1, 77, 37));
+        assert!(preview.contains("Preview·100%"));
+        assert!(!preview.contains("Playback"));
+        let agent = region(Rect::new(112, 1, 48, 37));
+        assert!(agent.contains("Agent") && agent.contains("Idle"));
+        for value in ["Codex", "fixture@example.test", "subscription", "session:"] {
+            assert!(
+                !agent.contains(value),
+                "Metadata must not occupy the Agent history: {value}"
+            );
+        }
+        let footer = region(Rect::new(0, 38, 160, 2));
+        assert!(!footer.contains("node") && !footer.contains("100%") && !footer.contains("t="));
+        assert!(footer.contains("Tab/Shift+Tab"));
+        app.accept_input(fake_clipboard(
+            Path::new("unused"),
+            None,
+            &CancellationToken::new(),
+        ));
+        app.focus = Focus::Attachments;
+        app.attachments.select(Some(0));
+        app.request(&worker, false, false);
+        app.accept_preview(
+            tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap(),
+        );
+        assert_eq!(app.preview.as_ref().unwrap().nodes.len(), 1);
+        assert_eq!(
+            app.preview.as_ref().unwrap().summary["diagnostics"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(app.preview_title(), "Preview");
+        assert_eq!(app.preview_timeline(), None);
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
 fn playback_preserves_input_pauses_on_seek_errors_and_static_output_and_drops_late_frames() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {
@@ -442,16 +559,16 @@ fn playback_preserves_input_pauses_on_seek_errors_and_static_output_and_drops_la
         app.accept_preview(output);
         assert!(app.playback.active());
         assert_eq!(app.editor.lines(), &["kept draft "]);
-        assert!(app.status.contains("playing"));
+        assert!(app.preview_timeline().unwrap().contains("playing"));
         app.playback_tick(&worker, now + Duration::from_secs(3)).unwrap();
         app.pause_playback();
-        assert!(app.status.contains("t=2.000s"), "Status describes the complete image");
+        assert!(app.preview_timeline().unwrap().contains("Playback 2.000s"), "Timeline describes the complete image");
         assert!(app.status.contains("finishing requested frame"));
         let mut output = tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap();
         output.result.as_mut().unwrap().time_dependent = true;
         app.accept_preview(output);
         assert!(!app.playback.active());
-        assert!(app.status.contains("t=3.000s"));
+        assert!(app.preview_timeline().unwrap().contains("Playback 3.000s"));
         assert!(!app.status.contains("finishing requested frame"));
         app.start_playback(5, now + Duration::from_secs(3)).unwrap();
         press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL, &worker).await;
@@ -917,7 +1034,11 @@ fn control_v_attaches_ordered_rgba_images_and_two_turns_share_one_agent() {
                     } else {
                         KeyCode::Char(character)
                     },
-                    KeyModifiers::NONE,
+                    if character == '\n' {
+                        KeyModifiers::ALT
+                    } else {
+                        KeyModifiers::NONE
+                    },
                 ),
                 &picker,
                 &worker,
@@ -948,7 +1069,7 @@ fn control_v_attaches_ordered_rgba_images_and_two_turns_share_one_agent() {
             &CancellationToken::new(),
         ));
         app.key(
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT),
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
             &picker,
             &worker,
         )
@@ -1112,6 +1233,10 @@ fn permission_modal_can_answer_and_cancel_without_blocking_the_event_loop() {
                 "Prompt shortcuts cannot answer a permission"
             );
             assert_eq!(app.agent_activity().content, "! Blocked");
+            assert_eq!(
+                app.activity_line(Instant::now()).unwrap().spans[0].style.fg,
+                app.agent_activity().style.fg
+            );
             app.key(
                 KeyEvent::new(
                     if cancel {
@@ -1144,6 +1269,290 @@ fn permission_modal_can_answer_and_cancel_without_blocking_the_event_loop() {
             app.conversation.close().await.unwrap();
         });
     }
+}
+
+#[test]
+fn tool_updates_keep_names_and_share_a_separate_block_from_prose() {
+    let temp = TempDir::new().unwrap();
+    let mut app = app(&temp, "echo");
+    app.append("Inspecting the document.\n");
+    for (id, title) in [
+        ("read", "mcp.lazypencil.read_nodes"),
+        ("render", "mcp.lazypencil.render"),
+    ] {
+        app.message(&json!({"type":"update","notification":{"update":{"sessionUpdate":"tool_call","toolCallId":id,"title":title,"status":"in_progress"}}}));
+    }
+    for id in ["render", "read"] {
+        app.message(&json!({"type":"update","notification":{"update":{"sessionUpdate":"tool_call_update","toolCallId":id,"status":"completed"}}}));
+    }
+    app.append("\nThe document is ready.\n");
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(180, 36)).unwrap();
+    terminal
+        .draw(|frame| {
+            app.draw(frame);
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let rows = (0..36)
+        .map(|y| {
+            (0..180)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>();
+    let first = rows
+        .iter()
+        .position(|line| line.contains("Inspecting the document."))
+        .unwrap();
+    let tools = rows
+        .iter()
+        .position(|line| line.contains("┌ Tools"))
+        .unwrap();
+    let read = rows
+        .iter()
+        .position(|line| line.contains("│ ✓ read nodes"))
+        .unwrap();
+    let render = rows
+        .iter()
+        .position(|line| line.contains("│ ✓ render"))
+        .unwrap();
+    let last = rows
+        .iter()
+        .position(|line| line.contains("The document is ready."))
+        .unwrap();
+    assert!(first + 1 < tools && tools < read && read < render && render + 1 < last);
+    assert_eq!(
+        rows.iter()
+            .filter(|line| line.contains("read nodes"))
+            .count(),
+        1
+    );
+    assert!(
+        !rows
+            .iter()
+            .any(|line| line.contains("● read nodes") || line.contains("✓ Tool"))
+    );
+    assert_eq!(app.tool_calls.len(), 2);
+}
+
+#[test]
+fn activity_indicator_follows_the_latest_output_and_scrolls_with_history() {
+    fn row(
+        terminal: &ratatui::Terminal<ratatui::backend::TestBackend>,
+        needle: &str,
+    ) -> Option<u16> {
+        let buffer = terminal.backend().buffer();
+        (0..buffer.area.height).find(|&y| {
+            (0..buffer.area.width)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect::<String>()
+                .contains(needle)
+        })
+    }
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let worker = Worker::start(
+            app.conversation.store().clone(),
+            vec![],
+            Backend::halfblocks(),
+            192,
+        )
+        .unwrap();
+        app.insert_text("Inspect the design");
+        app.submit().await.unwrap();
+        app.append("Checking the document now.\n");
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 36)).unwrap();
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        let response = row(&terminal, "Checking the document now.").unwrap();
+        let activity = row(&terminal, "Working…").unwrap();
+        assert_eq!(
+            activity,
+            response + 2,
+            "The indicator follows the last response with one blank line"
+        );
+        assert!(
+            activity < 12,
+            "Short conversations must not pin the indicator to the input"
+        );
+        for number in 0..45 {
+            app.append(&format!("\nOutput line {number:02}\n"));
+        }
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        assert_eq!(
+            row(&terminal, "Working…").unwrap(),
+            row(&terminal, "Output line 44").unwrap() + 2
+        );
+        app.scroll = 5;
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        assert!(
+            row(&terminal, "Working…").is_none(),
+            "The indicator scrolls away with the latest output"
+        );
+        app.scroll = 0;
+        terminal.backend_mut().resize(100, 24);
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        assert!(row(&terminal, "Working…").is_some());
+        complete(&mut app).await;
+        app.sync_turn(&worker);
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        assert!(row(&terminal, "Working…").is_none());
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
+fn follow_up_queue_keeps_typing_live_and_sends_in_order_without_erasing_the_next_draft() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let worker = Worker::start(
+            app.conversation.store().clone(),
+            vec![],
+            Backend::halfblocks(),
+            188,
+        )
+        .unwrap();
+        app.insert_text("First request");
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+        assert!(app.conversation.active());
+        assert_eq!(app.editor.lines(), &[""]);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 36)).unwrap();
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        let caret = terminal.backend().cursor_position();
+        assert_eq!(terminal.backend().buffer()[caret].symbol(), "A");
+        assert_eq!(
+            terminal.backend().buffer()[(caret.x + 1, caret.y)].symbol(),
+            "d"
+        );
+        let started = app.turn_started.unwrap();
+        assert_eq!(
+            app.activity_line(started).unwrap().spans[0].style.fg,
+            app.agent_activity().style.fg
+        );
+        let first = app.activity_line(started).unwrap().to_string();
+        let later = app
+            .activity_line(started + Duration::from_millis(1200))
+            .unwrap()
+            .to_string();
+        assert!(first.contains("Working… 0s"));
+        assert!(later.contains("Working… 1s"));
+        assert_ne!(first.chars().next(), later.chars().next());
+        for text in ["Second request", "Third request"] {
+            for ch in text.chars() {
+                press(&mut app, KeyCode::Char(ch), KeyModifiers::NONE, &worker).await;
+            }
+            press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+            assert_eq!(app.editor.lines(), &[""]);
+        }
+        assert_eq!(app.outbox.queued.len(), 2);
+        app.insert_text("Unsent next draft");
+        app.save_draft().unwrap();
+        assert_eq!(app.conversation.draft(), "First request");
+        let restored = outbox::Outbox::load(app.conversation.directory()).unwrap();
+        assert!(restored.paused);
+        assert_eq!(restored.draft.as_deref(), Some("Unsent next draft"));
+        assert_eq!(
+            restored
+                .queued
+                .iter()
+                .map(|entry| entry.text.as_str())
+                .collect::<Vec<_>>(),
+            ["Second request", "Third request"]
+        );
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 36)).unwrap();
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        assert!(
+            terminal.backend().cursor_visible(),
+            "Typing stays available while the agent works"
+        );
+        app.focus = Focus::Conversation;
+        assert_eq!(complete(&mut app).await.last().unwrap()["type"], "complete");
+        app.sync_turn(&worker);
+        assert_eq!(app.focus, Focus::Prompt);
+        for (index, text) in ["Second request", "Third request"].into_iter().enumerate() {
+            app.send_queued().await.unwrap();
+            assert_eq!(app.conversation.draft(), text);
+            assert_eq!(app.editor.lines(), &["Unsent next draft"]);
+            assert_eq!(app.outbox.queued.len(), 1 - index);
+            app.focus = Focus::Nodes;
+            assert_eq!(complete(&mut app).await.last().unwrap()["type"], "complete");
+            app.sync_turn(&worker);
+            assert_eq!(
+                app.focus,
+                Focus::Nodes,
+                "Completion does not steal document navigation focus"
+            );
+        }
+        assert_eq!(app.conversation.draft(), "Unsent next draft");
+        assert_eq!(app.editor.lines(), &["Unsent next draft"]);
+        assert!(app.activity_line(Instant::now()).is_none());
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
+fn cancelling_a_turn_pauses_follow_ups_and_restores_input_focus() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let worker = Worker::start(
+            app.conversation.store().clone(),
+            vec![],
+            Backend::halfblocks(),
+            189,
+        )
+        .unwrap();
+        app.insert_text("Cancelled request");
+        app.submit().await.unwrap();
+        app.insert_text("Queued follow-up");
+        app.submit().await.unwrap();
+        app.focus = Focus::Conversation;
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL, &worker).await;
+        assert_eq!(complete(&mut app).await.last().unwrap()["type"], "failed");
+        app.sync_turn(&worker);
+        assert_eq!(app.focus, Focus::Prompt);
+        assert_eq!(app.editor.lines(), &["Cancelled request"]);
+        assert!(app.outbox.paused);
+        app.send_queued().await.unwrap();
+        assert!(!app.conversation.active());
+        assert_eq!(app.outbox.queued.len(), 1);
+        app.editor = editor("/clear-queue");
+        app.command(&worker).await.unwrap();
+        assert!(app.outbox.queued.is_empty());
+        app.conversation.close().await.unwrap();
+    });
 }
 
 #[test]
@@ -1929,6 +2338,182 @@ fn cached_camera_feedback_keeps_exact_exports_and_generation_ownership_separate(
 }
 
 #[test]
+fn nodes_tree_keeps_duplicate_names_distinct_through_search_refresh_and_attachments() {
+    async fn rendered(app: &mut App, worker: &Worker) {
+        loop {
+            let output = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap();
+            if output.generation == app.generation {
+                assert!(app.accept_preview(output));
+                assert!(app.preview_error.is_none());
+                break;
+            }
+        }
+    }
+    fn visible(app: &App) -> Vec<String> {
+        let nodes = &app.preview.as_ref().unwrap().nodes;
+        app.filtered_nodes()
+            .iter()
+            .map(|row| nodes[row.index].id.clone())
+            .collect()
+    }
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let path = app.conversation.store().path().to_path_buf();
+        let mut document = json!({"version":"2.21","children":[{
+            "type":"frame","id":"sidebar","name":"Sidebar","width":160,"height":80,"layout":"none",
+            "children":[
+                {"type":"frame","id":"room-a","name":"Room A","width":40,"height":40,"layout":"none","children":[
+                    {"type":"rectangle","id":"icon-a","name":"Icon","width":8,"height":8,"fill":"#00FF00"}
+                ]},
+                {"type":"frame","id":"room-b","name":"Room B","x":80,"width":40,"height":40,"layout":"none","children":[
+                    {"type":"rectangle","id":"icon-b","name":"Icon","width":8,"height":8,"fill":"#0000FF"}
+                ]}
+            ]
+        }]});
+        std::fs::write(&path, document.to_string()).unwrap();
+        let picker = Backend::halfblocks();
+        let worker = Worker::start(app.conversation.store().clone(), vec![], picker, 182).unwrap();
+        app.cells = Size::new(20, 12);
+        app.request(&worker, false, false);
+        rendered(&mut app, &worker).await;
+        assert_eq!(visible(&app), ["sidebar"]);
+        app.focus = Focus::Nodes;
+        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 36)).unwrap();
+        let position = |terminal: &ratatui::Terminal<ratatui::backend::TestBackend>| {
+            let name = ["S", "i", "d", "e", "b", "a", "r"];
+            terminal.backend().buffer().content.windows(name.len()).position(|cells| cells.iter().zip(name).all(|(cell, symbol)| cell.symbol() == symbol)).unwrap()
+        };
+        terminal.draw(|frame| { app.draw(frame); }).unwrap();
+        let before_selection = position(&terminal);
+        assert_eq!(before_selection % 120, 3, "Root labels should only reserve the branch marker and its separator");
+        press(&mut app, KeyCode::Char('j'), KeyModifiers::NONE, &worker).await;
+        terminal.draw(|frame| { app.draw(frame); }).unwrap();
+        assert_eq!(position(&terminal), before_selection, "Starting selection must not shift the tree");
+        press(&mut app, KeyCode::Char('l'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(visible(&app), ["sidebar", "room-a", "room-b"]);
+        press(&mut app, KeyCode::Char(' '), KeyModifiers::NONE, &worker).await;
+        assert_eq!(visible(&app), ["sidebar"]);
+        press(&mut app, KeyCode::Char(' '), KeyModifiers::NONE, &worker).await;
+        assert_eq!(visible(&app), ["sidebar", "room-a", "room-b"]);
+        press(&mut app, KeyCode::Char('l'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selected_node().unwrap().id, "room-a");
+        press(&mut app, KeyCode::Char('l'), KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Char('l'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selected_node().unwrap().id, "icon-a");
+        press(&mut app, KeyCode::Char('h'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selected_node().unwrap().id, "room-a");
+        assert_eq!(visible(&app), ["sidebar", "room-a", "room-b"]);
+        press(&mut app, KeyCode::Char('h'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(visible(&app), ["sidebar"]);
+        assert_eq!(app.selected_node().unwrap().id, "sidebar");
+        press(&mut app, KeyCode::Char('h'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(visible(&app), ["sidebar"]);
+        press(&mut app, KeyCode::Char('/'), KeyModifiers::NONE, &worker).await;
+        for character in "Icon".chars() {
+            press(&mut app, KeyCode::Char(character), KeyModifiers::NONE, &worker).await;
+        }
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+        assert_eq!(visible(&app), ["sidebar", "room-a", "icon-a", "room-b", "icon-b"]);
+        assert_eq!(app.selected_node().unwrap().id, "icon-a");
+        press(&mut app, KeyCode::Char('j'), KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Char('j'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selected_node().unwrap().id, "icon-b");
+        press(&mut app, KeyCode::Char('h'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selected_node().unwrap().id, "room-b");
+        assert_eq!(visible(&app), ["sidebar", "room-a", "icon-a", "room-b"]);
+        press(&mut app, KeyCode::Char('l'), KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Char('l'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selected_node().unwrap().id, "icon-b");
+        press(&mut app, KeyCode::Char('/'), KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selected_node().unwrap().id, "icon-b");
+        assert_eq!(visible(&app), ["sidebar", "room-a", "room-b", "icon-b"]);
+        terminal.draw(|frame| { app.draw(frame); }).unwrap();
+        assert_eq!(app.selected_node().unwrap().target["address"]["node_id"], "icon-b");
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.focus, Focus::Nodes);
+        rendered(&mut app, &worker).await;
+        let old_row = app.nodes.selected();
+        document["children"][0]["children"].as_array_mut().unwrap().reverse();
+        std::fs::write(&path, document.to_string()).unwrap();
+        app.request(&worker, false, true);
+        rendered(&mut app, &worker).await;
+        assert_eq!(app.selected_node().unwrap().id, "icon-b");
+        assert_ne!(app.nodes.selected(), old_row);
+        assert_eq!(visible(&app), ["sidebar", "room-b", "icon-b", "room-a"]);
+        app.accept_input(fake_clipboard(Path::new("unused"), None, &CancellationToken::new()));
+        app.focus = Focus::Attachments;
+        app.attachments.select(Some(0));
+        app.request(&worker, false, false);
+        rendered(&mut app, &worker).await;
+        assert!(app.preview.as_ref().unwrap().attachment);
+        assert_eq!(app.selected_node().unwrap().id, "icon-b");
+        app.focus = Focus::Nodes;
+        document["children"][0]["children"][0]["children"] = json!([]);
+        std::fs::write(&path, document.to_string()).unwrap();
+        app.request(&worker, false, true);
+        rendered(&mut app, &worker).await;
+        assert!(app.selected_node().is_none(), "Deleting a target must never select another node by row number");
+        press(&mut app, KeyCode::Char('j'), KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Char('l'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selected_node().unwrap().id, "room-b");
+        press(&mut app, KeyCode::Char('h'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selected_node().unwrap().id, "sidebar");
+        let instances = json!({"version":"2.21","children":[
+            {"type":"frame","id":"component","name":"Card","reusable":true,"layout":"none","width":24,"height":24,"children":[
+                {"type":"rectangle","id":"glyph","name":"Icon","width":8,"height":8,"fill":"#FF0000"}
+            ]},
+            {"type":"ref","id":"instance-a","name":"Card A","ref":"component","x":40},
+            {"type":"ref","id":"instance-b","name":"Card B","ref":"component","x":80}
+        ]});
+        std::fs::write(&path, instances.to_string()).unwrap();
+        app.request(&worker, false, true);
+        rendered(&mut app, &worker).await;
+        app.filter = "glyph".into();
+        app.search_nodes(None);
+        let preview = app.preview.as_ref().unwrap();
+        let repeated = preview.nodes.iter().enumerate().filter(|(_, node)| {
+            node.target["source_id"] == "glyph"
+                && node.target["address"]["instance_path"].as_array().is_some_and(|path| !path.is_empty())
+        }).collect::<Vec<_>>();
+        assert_eq!(repeated.len(), 2);
+        assert_ne!(repeated[0].1.id, repeated[1].1.id);
+        for (index, node) in &repeated {
+            let parent = &preview.nodes[node.parent.unwrap()];
+            assert!(parent.children.contains(index));
+            assert_eq!(parent.target["address"]["node_id"], node.target["address"]["node_id"]);
+            let parent_path = parent.target["address"]["instance_path"].as_array().unwrap();
+            let child_path = node.target["address"]["instance_path"].as_array().unwrap();
+            assert_eq!(child_path.len(), parent_path.len() + 1);
+            assert_eq!(&child_path[..parent_path.len()], parent_path);
+        }
+        let second = repeated[1].0;
+        let expected = repeated[1].1.target.clone();
+        let row = app.filtered_nodes().iter().position(|row| row.index == second).unwrap();
+        app.nodes.select(Some(row));
+        assert_eq!(app.selected_node().unwrap().target, expected);
+        let pages = json!({"version":"2.21","children":(0..40).map(|index| json!({
+            "type":"rectangle","id":format!("page-{index}"),"name":format!("Item {index:02}"),"x":index*10,"width":8,"height":8,"fill":"#0000FF"
+        })).collect::<Vec<_>>()});
+        app.filter.clear();
+        std::fs::write(&path, pages.to_string()).unwrap();
+        app.request(&worker, false, true);
+        rendered(&mut app, &worker).await;
+        terminal.draw(|frame| { app.draw(frame); }).unwrap();
+        app.nodes.select(Some(0));
+        for (key, expected) in [('d',15),('d',30),('d',39),('u',24),('u',9),('u',0)] {
+            press(&mut app, KeyCode::Char(key), KeyModifiers::CONTROL, &worker).await;
+            assert_eq!(app.nodes.selected(), Some(expected));
+            assert_eq!(app.selected_node().unwrap().id, format!("page-{expected}"));
+        }
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
 fn custom_navigation_preserves_typing_search_modals_and_moves_the_actual_preview() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {
@@ -1959,10 +2544,10 @@ fn custom_navigation_preserves_typing_search_modals_and_moves_the_actual_preview
         };
         app.navigation.validate(&app.keys).unwrap();
         app.editor = editor("");
-        for character in "xadtzv".chars() {
+        for character in "xadtzvhjkl".chars() {
             press(&mut app, KeyCode::Char(character), KeyModifiers::NONE, &worker).await;
         }
-        assert_eq!(app.editor.lines().join("\n"), "xadtzv");
+        assert_eq!(app.editor.lines().join("\n"), "xadtzvhjkl");
         assert!(!app.help && app.modal.is_none() && !app.conversation.active());
         press(&mut app, KeyCode::F(6), KeyModifiers::NONE, &worker).await;
         assert_eq!(app.focus, Focus::Preview);

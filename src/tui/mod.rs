@@ -7,6 +7,8 @@ mod composer;
 mod graphics;
 mod images;
 mod markdown;
+mod nodes;
+mod outbox;
 mod playback;
 mod preview;
 mod saved;
@@ -193,10 +195,13 @@ struct App {
     generation: u64,
     cells: Size,
     nodes: ListState,
+    node_tree: nodes::Tree,
     attachments: ListState,
     filter: String,
     searching: bool,
     log: String,
+    tool_calls: std::collections::HashMap<String, composer::ToolDisplay>,
+    turn_sequence: u64,
     history: Option<Paragraph<'static>>,
     scroll: u16,
     status: String,
@@ -215,6 +220,8 @@ struct App {
     dirty: bool,
     draft_changed: bool,
     turn_pending: bool,
+    turn_started: Option<Instant>,
+    outbox: outbox::Outbox,
     last_draft_save: std::time::Instant,
     input_reader: fn(
         &Path,
@@ -227,7 +234,7 @@ impl App {
     fn new(conversation: Conversation) -> Self {
         let editor = editor(conversation.draft());
         let status = format!("Session {}", conversation.id());
-        Self {
+        let mut app = Self {
             conversation,
             keys: Default::default(),
             navigation: Default::default(),
@@ -244,10 +251,13 @@ impl App {
             generation: 0,
             cells: Size::new(0, 0),
             nodes: ListState::default(),
+            node_tree: nodes::Tree::default(),
             attachments: ListState::default(),
             filter: String::new(),
             searching: false,
             log: String::new(),
+            tool_calls: Default::default(),
+            turn_sequence: 0,
             history: None,
             scroll: 0,
             status,
@@ -266,9 +276,13 @@ impl App {
             dirty: true,
             draft_changed: false,
             turn_pending: false,
+            turn_started: None,
+            outbox: Default::default(),
             last_draft_save: std::time::Instant::now(),
             input_reader: read_input,
-        }
+        };
+        app.restore_outbox();
+        app
     }
     async fn event_loop(&mut self, screen: &mut terminal::Screen, worker: &Worker) -> Result<()> {
         let mut events = EventStream::new();
@@ -277,6 +291,12 @@ impl App {
         timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut termination = Box::pin(termination());
         loop {
+            self.sync_turn(worker);
+            if let Err(error) = self.send_queued().await {
+                self.outbox.paused = true;
+                self.error(error);
+                self.dirty = true;
+            }
             if self.conversation.active() {
                 self.account_pending = false;
                 if let Some(check) = &self.account_check {
@@ -307,9 +327,22 @@ impl App {
             }
             let playback_deadline = self.playback.deadline();
             let camera_deadline = self.camera_deadline;
+            let activity_deadline = (self.conversation.active() && !self.has_modal())
+                .then(|| Instant::now() + Duration::from_millis(200));
             tokio::select! {
+                _ = async {
+                    if let Some(deadline) = activity_deadline {
+                        tokio::time::sleep_until(deadline.into()).await;
+                    } else {
+                        std::future::pending::<()>().await;
+                    }
+                } => { self.dirty = true; },
                 signal = tokio::signal::ctrl_c() => {
                     signal.map_err(terminal::io)?;
+                    if self.conversation.active() {
+                        self.outbox.paused = true;
+                        self.outbox.save(self.conversation.directory())?;
+                    }
                     if let Some(task) = &self.document_task {
                         task.cancel.cancel();
                         if self.conversation.active() { self.conversation.cancel(); self.permissions.clear(); }
@@ -330,7 +363,7 @@ impl App {
                         if modal && !self.has_modal() || camera != self.camera.as_ref().map(|camera| camera.generation) { screen.redraw(); }
                         self.dirty = true;
                     },
-                    Some(Ok(Event::Paste(text))) if self.focus == Focus::Prompt && !self.conversation.active() && !self.has_modal() => {
+                    Some(Ok(Event::Paste(text))) if self.focus == Focus::Prompt && !self.has_modal() => {
                         self.insert_text(&text); self.dirty = true;
                     },
                     Some(Ok(Event::Resize(_, _))) => { self.dirty = true; },
@@ -469,6 +502,7 @@ impl App {
         self.camera = None;
         match output.result {
             Ok(mut preview) => {
+                let selected = self.selected_node().map(|node| node.id.clone());
                 self.preview_error = None;
                 if !preview.attachment {
                     self.view = preview.view;
@@ -479,31 +513,26 @@ impl App {
                 self.status = if preview.attachment {
                     "Attachment preview".into()
                 } else {
-                    let state = self
-                        .playback
-                        .fps()
-                        .map_or_else(String::new, |fps| format!(" · playing ≤{fps}fps"));
-                    format!(
-                        "{} nodes · {} diagnostics · {:.0}% · t={:.3}s{state}",
-                        preview.nodes.len(),
-                        preview.summary["diagnostics"]
-                            .as_array()
-                            .map_or(0, Vec::len),
-                        self.view.zoom.unwrap_or(1.0) * 100.0,
-                        self.view.time
-                    )
+                    String::new()
                 };
                 // Preserve the document node list while browsing an attachment.
                 if preview.attachment
                     && let Some(previous) = &mut self.preview
                 {
                     preview.nodes = std::mem::take(&mut previous.nodes);
+                    preview.summary["diagnostics"] = previous.summary["diagnostics"].clone();
                 }
+                let document = !preview.attachment;
                 self.preview = Some(preview);
+                if document {
+                    self.refresh_nodes(selected.as_deref());
+                }
             }
             Err(error) => {
                 self.playback.stop();
                 self.preview = None;
+                self.node_tree.rebuild(&[], &self.filter);
+                self.nodes.select(None);
                 self.preview_error = Some(error.clone());
                 self.error(error);
             }
@@ -521,21 +550,19 @@ impl App {
             ));
         }
         self.playback.start(self.view.time, fps, now)?;
-        self.status = format!("Playing dynamic preview · ≤{fps}fps");
+        self.status.clear();
         Ok(())
     }
     fn pause_playback(&mut self) {
         self.playback.stop();
-        self.status = match self.preview.as_ref().filter(|preview| !preview.attachment) {
-            Some(preview) => {
-                let pending = if preview.view.time != self.view.time {
-                    " · finishing requested frame"
-                } else {
-                    ""
-                };
-                format!("Playback paused · t={:.3}s{pending}", preview.view.time)
-            }
-            None => "Playback paused".into(),
+        self.status = if self
+            .preview
+            .as_ref()
+            .is_some_and(|preview| !preview.attachment && preview.view.time != self.view.time)
+        {
+            "finishing requested frame".into()
+        } else {
+            String::new()
         };
     }
     fn playback_tick(&mut self, worker: &Worker, now: Instant) -> Result<()> {
@@ -577,9 +604,20 @@ impl App {
         Ok(())
     }
     fn save_draft(&mut self) -> Result<()> {
-        if self.draft_changed && !self.conversation.active() {
-            self.conversation
-                .set_draft(self.editor.lines().join("\n"))?;
+        if self.draft_changed {
+            let text = self.editor.lines().join("\n");
+            if !self.conversation.active() {
+                self.conversation.set_draft(text.clone())?;
+            }
+            self.outbox.draft = if self.conversation.active()
+                || self.turn_pending
+                || !self.outbox.queued.is_empty()
+            {
+                Some(text)
+            } else {
+                None
+            };
+            self.outbox.save(self.conversation.directory())?;
             self.draft_changed = false;
             self.last_draft_save = std::time::Instant::now();
         }
@@ -587,12 +625,24 @@ impl App {
     }
     fn sync_turn(&mut self, worker: &Worker) {
         // Completion is recorded before the final frontend message is dequeued.
-        // Clear once on the actual state transition, preserving any next draft.
+        // Synchronize once on the actual state transition, preserving any next draft.
         if self.turn_pending && !self.conversation.active() {
             self.permissions.clear();
-            self.editor = editor(self.conversation.draft());
-            self.draft_changed = false;
             self.turn_pending = false;
+            self.turn_started = None;
+            let failed = self.conversation.result().is_some_and(Result::is_err);
+            self.outbox.paused |= failed;
+            if failed && self.editor.lines().iter().all(String::is_empty) {
+                self.editor = editor(self.conversation.draft());
+            }
+            if self.focus.in_conversation() {
+                self.focus = Focus::Prompt;
+            }
+            self.draft_changed = true;
+            if let Err(error) = self.save_draft() {
+                self.error(error);
+            }
+            self.dirty = true;
             self.request(worker, false, false);
         }
     }
@@ -622,6 +672,13 @@ impl App {
                 index += 1;
             }
             self.log.drain(..index);
+            let visible: std::collections::HashSet<String> = self
+                .log
+                .lines()
+                .filter_map(|line| line.strip_prefix("[tool_call] "))
+                .filter_map(|id| serde_json::from_str(id).ok())
+                .collect();
+            self.tool_calls.retain(|id, _| visible.contains(id));
         }
     }
     fn message(&mut self, value: &Value) {
@@ -635,9 +692,31 @@ impl App {
                         }
                     }
                     Some("tool_call" | "tool_call_update") => {
-                        let title = update["title"].as_str().unwrap_or("Tool");
-                        let status = update["status"].as_str().unwrap_or("running");
-                        self.append(&format!("\n[{status}] {title}\n"));
+                        if let Some(id) = update["toolCallId"].as_str() {
+                            let id = format!("{}:{id}", self.turn_sequence);
+                            let fresh = !self.tool_calls.contains_key(&id);
+                            let tool = self.tool_calls.entry(id.clone()).or_default();
+                            if let Some(title) =
+                                update["title"].as_str().filter(|title| !title.is_empty())
+                            {
+                                tool.title = clean(title).replace(['\n', '\t'], " ");
+                            }
+                            if let Some(status) = update["status"].as_str() {
+                                tool.status = status.into();
+                            }
+                            if fresh {
+                                self.append(&format!(
+                                    "\n[tool_call] {}\n",
+                                    serde_json::to_string(&id).expect("tool id")
+                                ));
+                            } else {
+                                self.history = None;
+                            }
+                        } else {
+                            let title = update["title"].as_str().unwrap_or("Tool");
+                            let status = update["status"].as_str().unwrap_or("running");
+                            self.append(&format!("\n[{status}] {title}\n"));
+                        }
                     }
                     _ => {}
                 }
@@ -664,7 +743,7 @@ impl App {
                 if let Some(report) = self.conversation.authentication() {
                     self.authentication = report.display();
                 }
-                self.status = "Agent ready".into();
+                self.status.clear();
             }
             Some("session_restarted") => {
                 self.append("\nStarted a new native session with current document context and bounded local history. Previous model memory was not restored.\n");
@@ -699,6 +778,10 @@ impl App {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let alt = key.modifiers.contains(KeyModifiers::ALT);
         if key.code == KeyCode::Char('c') && ctrl {
+            if self.conversation.active() {
+                self.outbox.paused = true;
+                self.outbox.save(self.conversation.directory())?;
+            }
             if let Some(task) = &self.document_task {
                 task.cancel.cancel();
                 if self.conversation.active() {
@@ -810,6 +893,7 @@ impl App {
             return Ok(false);
         }
         if self.searching {
+            let selected = self.selected_node().map(|node| node.id.clone());
             match key.code {
                 KeyCode::Esc => {
                     self.searching = false;
@@ -822,7 +906,7 @@ impl App {
                 KeyCode::Char(c) if !ctrl && !alt => self.filter.push(c),
                 _ => {}
             }
-            self.nodes.select(Some(0));
+            self.search_nodes(selected.as_deref());
             return Ok(false);
         }
         let section = self.focus.in_conversation()
@@ -836,7 +920,7 @@ impl App {
             } else if section {
                 self.focus.next_section(
                     global(Nav::PreviousSection),
-                    !self.conversation.images().is_empty(),
+                    !self.conversation.active() && !self.conversation.images().is_empty(),
                 )
             } else {
                 self.focus.next(global(Nav::PreviousPanel))
@@ -853,8 +937,12 @@ impl App {
             return Ok(false);
         }
         if self.focus == Focus::Prompt {
-            if self.conversation.active() {
-                return Ok(false);
+            if key.code == KeyCode::Enter
+                && key.modifiers.is_empty()
+                && self.editor.lines().len() == 1
+                && self.editor.lines()[0].starts_with('/')
+            {
+                return self.command(worker).await;
             }
             if self.keys.pastes(key) {
                 self.start_input(None)?;
@@ -862,6 +950,14 @@ impl App {
             }
             if self.keys.submits(key) {
                 self.submit().await?;
+                return Ok(false);
+            }
+            if key.code == KeyCode::Enter
+                && key
+                    .modifiers
+                    .intersects(KeyModifiers::ALT | KeyModifiers::SHIFT)
+            {
+                self.insert_text("\n");
                 return Ok(false);
             }
             if key.modifiers == KeyModifiers::CONTROL {
@@ -880,12 +976,6 @@ impl App {
                     }
                     _ => {}
                 }
-            }
-            if key.code == KeyCode::Enter
-                && self.editor.lines().len() == 1
-                && self.editor.lines()[0].starts_with('/')
-            {
-                return self.command(worker).await;
             }
             // Bound interactive input as well as bracketed and clipboard pastes.
             if self.editor.lines().iter().map(String::len).sum::<usize>() >= 1024 * 1024
@@ -951,14 +1041,28 @@ impl App {
             Focus::Nodes => {
                 let count = self.filtered_nodes().len();
                 if action(Nav::PreviousItem) {
-                    self.nodes
-                        .select(Some(self.nodes.selected().unwrap_or(0).saturating_sub(1)));
+                    self.nodes.select(
+                        (count > 0).then(|| self.nodes.selected().unwrap_or(0).saturating_sub(1)),
+                    );
                 } else if action(Nav::NextItem) {
-                    self.nodes.select(Some(
-                        (self.nodes.selected().map_or(0, |n| n + 1)).min(count.saturating_sub(1)),
-                    ));
+                    self.nodes.select((count > 0).then(|| {
+                        (self.nodes.selected().map_or(0, |n| n + 1)).min(count.saturating_sub(1))
+                    }));
+                } else if action(Nav::ExpandNode)
+                    || action(Nav::CollapseNode)
+                    || action(Nav::ToggleNode)
+                {
+                    self.navigate_node_tree(if action(Nav::ExpandNode) {
+                        Nav::ExpandNode
+                    } else if action(Nav::CollapseNode) {
+                        Nav::CollapseNode
+                    } else {
+                        Nav::ToggleNode
+                    });
                 } else if action(Nav::SearchNodes) {
                     self.searching = true;
+                } else if action(Nav::NodePageUp) || action(Nav::NodePageDown) {
+                    self.page_nodes(action(Nav::NodePageUp));
                 } else if action(Nav::ClearSelection) {
                     self.nodes.select(None);
                 } else if action(Nav::ActivateNode) || action(Nav::FitSelected) {
@@ -1017,7 +1121,7 @@ impl App {
     fn help_text(&self) -> String {
         let label = |action| self.navigation.label(action);
         let mut text = format!(
-            "{} / {}: switch Prompt, Preview, Nodes\n{}: command palette; /history: checkpoints\nPrompt: Enter inserts a newline; {} sends\n{}: paste image, copied image files, or text\n",
+            "{} / {}: switch Prompt, Preview, Nodes\n{}: command palette; /history: checkpoints\nPrompt: {} sends; Alt+Enter / Shift+Enter inserts a newline\n{}: paste image, copied image files, or text\n",
             label(Nav::NextPanel),
             label(Nav::PreviousPanel),
             label(Nav::Commands),
@@ -1025,11 +1129,11 @@ impl App {
             self.keys.paste_label()
         );
         text.push_str(&format!(
-            "{} / {}: switch conversation sections; Esc returns to Prompt\n",
+            "{} / {}: switch Agent sections; Esc returns to Prompt\n",
             label(Nav::PreviousSection),
             label(Nav::NextSection)
         ));
-        text.push_str("/attach <quoted path> [WIDTHxHEIGHT|original]: attach PNG, JPEG or WebP\n/paste-image [WIDTHxHEIGHT|original]: read this host's clipboard\n/resize-image <number> <WIDTHxHEIGHT|original>: choose send size\n/clear-images: remove pending images\n");
+        text.push_str("/attach <quoted path> [WIDTHxHEIGHT|original]: attach PNG, JPEG or WebP\n/paste-image [WIDTHxHEIGHT|original]: read this host's clipboard\n/resize-image <number> <WIDTHxHEIGHT|original>: choose send size\n/clear-images: remove pending images\n/resume-queue: resume saved or paused follow-ups; /clear-queue: discard queued prompts\n");
         for (action, description) in [
             (Nav::Help, "show or hide help outside dialogs"),
             (Nav::PanLeft, "Preview: pan left"),
@@ -1054,10 +1158,18 @@ impl App {
             (Nav::SearchNodes, "Nodes: search names and IDs"),
             (Nav::ClearSelection, "Nodes: clear the editing target"),
             (Nav::ActivateNode, "Nodes: select and fit the target"),
+            (Nav::ExpandNode, "Nodes: expand or enter a branch"),
+            (
+                Nav::CollapseNode,
+                "Nodes: close the parent branch and select it",
+            ),
+            (Nav::ToggleNode, "Nodes: toggle a branch"),
+            (Nav::NodePageUp, "Nodes: move up half a page"),
+            (Nav::NodePageDown, "Nodes: move down half a page"),
             (Nav::RemoveAttachment, "Attachments: remove pending image"),
-            (Nav::ScrollUp, "Conversation: scroll back"),
-            (Nav::ScrollDown, "Conversation: scroll forward"),
-            (Nav::FollowOutput, "Conversation: follow new output"),
+            (Nav::ScrollUp, "Agent history: scroll back"),
+            (Nav::ScrollDown, "Agent history: scroll forward"),
+            (Nav::FollowOutput, "Agent history: follow new output"),
             (Nav::Refresh, "refresh preview, including browser captures"),
             (Nav::OpenPreview, "open complete PNG in external viewer"),
             (Nav::Quit, "outside Prompt: close conversation and exit"),
@@ -1098,8 +1210,11 @@ impl App {
             return Ok(());
         }
         self.editor = editor(self.conversation.draft());
+        self.outbox = Default::default();
+        self.restore_outbox();
         self.draft_changed = false;
         self.turn_pending = false;
+        self.turn_started = None;
         self.last_draft_save = Instant::now();
         self.attachments.select(None);
         self.permissions.clear();
@@ -1109,6 +1224,7 @@ impl App {
             check.cancel.cancel();
         }
         self.log.clear();
+        self.tool_calls.clear();
         self.scroll = 0;
         self.status = format!(
             "Selected conversation {} · sends only on submit",
@@ -1132,18 +1248,42 @@ impl App {
                 "Wait for image input before sending",
             ));
         }
+        if self.conversation.active() || !self.outbox.queued.is_empty() {
+            let text = self.editor.lines().join("\n");
+            if !text.trim().is_empty() {
+                let selection = self.selected_node().map(|node| node.target.clone());
+                self.outbox.push(outbox::Prompt { text, selection })?;
+                self.editor = editor("");
+            } else if self.conversation.active() {
+                return Err(Error::new("INVALID_ARGUMENT", "Enter a follow-up prompt"));
+            }
+            if !self.conversation.active() {
+                self.outbox.paused = false;
+            }
+            self.outbox.draft = Some(self.editor.lines().join("\n"));
+            self.outbox.save(self.conversation.directory())?;
+            self.draft_changed = false;
+            self.status.clear();
+            return self.send_queued().await;
+        }
         self.save_draft()?;
         let target = self.selected_node().map(|node| node.target.clone());
         let text = self.conversation.draft().to_string();
         self.conversation.start_send(target).await?;
+        self.outbox.paused = false;
         self.turn_pending = true;
+        self.turn_sequence = self.turn_sequence.wrapping_add(1);
+        self.turn_started = Some(Instant::now());
         self.append(&format!(
             "\nYou: {text}\n[{} images]\n\n{:?}:\n",
             self.conversation.images().len(),
             self.conversation.settings().agent,
         ));
         self.scroll = 0;
-        self.status = "Agent running".into();
+        self.status.clear();
+        self.editor = editor("");
+        self.outbox.draft = Some(String::new());
+        self.outbox.save(self.conversation.directory())?;
         Ok(())
     }
     async fn command(&mut self, worker: &Worker) -> Result<bool> {
@@ -1151,6 +1291,14 @@ impl App {
         let words = shell_words::split(&line)
             .map_err(|error| Error::new("INVALID_ARGUMENT", error.to_string()))?;
         match words.first().map(String::as_str) {
+            Some("/clear-queue") if words.len() == 1 => {
+                self.outbox.queued.clear();
+                self.outbox.paused = false;
+                self.status = "Prompt queue cleared".into();
+            }
+            Some("/resume-queue") if words.len() == 1 => {
+                self.outbox.paused = false;
+            }
             Some("/attach") if (2..=3).contains(&words.len()) => {
                 let bounds = images::input_bounds(
                     words.get(2).map(String::as_str),
@@ -1230,7 +1378,7 @@ impl App {
             _ => {
                 return Err(Error::new(
                     "INVALID_ARGUMENT",
-                    "Commands: /attach <quoted path> [WIDTHxHEIGHT|original], /paste-image [WIDTHxHEIGHT|original], /resize-image <number> <WIDTHxHEIGHT|original>, /clear-images, /open-preview, /time <nonnegative seconds>, /play [fps], /pause, /commands, /history, /logs, /conversations, /help, /quit",
+                    "Commands: /resume-queue, /clear-queue, /attach <quoted path> [WIDTHxHEIGHT|original], /paste-image [WIDTHxHEIGHT|original], /resize-image <number> <WIDTHxHEIGHT|original>, /clear-images, /open-preview, /time <nonnegative seconds>, /play [fps], /pause, /commands, /history, /logs, /conversations, /help, /quit",
                 ));
             }
         }
@@ -1239,29 +1387,11 @@ impl App {
         self.save_draft()?;
         Ok(false)
     }
-    fn filtered_nodes(&self) -> Vec<usize> {
-        self.preview
-            .as_ref()
-            .map(|preview| {
-                preview
-                    .nodes
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, node)| {
-                        self.filter.is_empty()
-                            || node
-                                .name
-                                .to_lowercase()
-                                .contains(&self.filter.to_lowercase())
-                            || node.id.to_lowercase().contains(&self.filter.to_lowercase())
-                    })
-                    .map(|(index, _)| index)
-                    .collect()
-            })
-            .unwrap_or_default()
+    fn filtered_nodes(&self) -> &[nodes::Row] {
+        self.node_tree.rows()
     }
     fn selected_node(&self) -> Option<&preview::Node> {
-        let index = *self.filtered_nodes().get(self.nodes.selected()?)?;
+        let index = self.filtered_nodes().get(self.nodes.selected()?)?.index;
         self.preview.as_ref()?.nodes.get(index)
     }
     fn fit_selected(&mut self, picker: &graphics::Backend) -> Result<()> {
@@ -1310,11 +1440,39 @@ impl App {
         let (label, color) = if !self.permissions.is_empty() {
             ("! Blocked", theme::RUNNING)
         } else if self.conversation.active() {
-            ("● Working", theme::KEY)
+            ("● Working", theme::WORKING)
         } else {
-            ("○ Idle", theme::MUTED)
+            ("○ Idle", theme::SECONDARY)
         };
         Span::styled(label, Style::default().fg(color))
+    }
+
+    fn preview_title(&self) -> String {
+        match self.preview.as_ref().filter(|preview| !preview.attachment) {
+            Some(preview) => {
+                // Cached camera feedback displays the requested zoom; otherwise the
+                // terminal still shows the last completed frame while rendering.
+                let view = if self.camera.is_some() {
+                    self.view
+                } else {
+                    preview.view
+                };
+                format!("Preview · {:.0}%", view.zoom.unwrap_or(1.0) * 100.0)
+            }
+            None => "Preview".into(),
+        }
+    }
+
+    fn preview_timeline(&self) -> Option<String> {
+        let preview = self.preview.as_ref().filter(|preview| {
+            !preview.attachment && (preview.time_dependent || preview.live_pages)
+        })?;
+        let playing = if self.playback.fps().is_some() {
+            " · playing"
+        } else {
+            ""
+        };
+        Some(format!("Playback {:.3}s{playing}", preview.view.time))
     }
 
     fn draw(&mut self, frame: &mut Frame) -> Size {
@@ -1344,21 +1502,37 @@ impl App {
                 ),
                 Span::styled(" · ", Style::default().fg(theme::MUTED)),
                 Span::styled(
+                    clean(
+                        &self
+                            .conversation
+                            .store()
+                            .path()
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy(),
+                    )
+                    .replace(['\n', '\t'], " "),
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" · ", Style::default().fg(theme::MUTED)),
+                Span::styled(
                     format!("{:?}", self.conversation.settings().agent),
                     Style::default()
                         .fg(theme::PREVIEW)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(" · ", Style::default().fg(theme::MUTED)),
-                self.agent_activity(),
-                Span::styled(" · account: ", Style::default().fg(theme::MUTED)),
-                Span::raw(self.authentication.clone()),
+                Span::styled("account: ", Style::default().fg(theme::MUTED)),
                 Span::styled(
-                    format!(
-                        " · session: {} · {}",
-                        &self.conversation.id()[..8],
-                        clean(&self.conversation.store().path().display().to_string())
-                    ),
+                    clean(&self.authentication),
+                    Style::default().fg(theme::MUTED),
+                ),
+                Span::styled(
+                    format!(" · session: {} · ", &self.conversation.id()[..8]),
+                    Style::default().fg(theme::MUTED),
+                ),
+                Span::styled(
+                    clean(&self.conversation.store().path().display().to_string()),
                     Style::default().fg(theme::MUTED),
                 ),
             ])),
@@ -1370,46 +1544,11 @@ impl App {
             Constraint::Percentage(30),
         ])
         .split(sections[1]);
-        let nodes_title = if self.searching || !self.filter.is_empty() {
-            format!("Nodes /{}", self.filter)
-        } else {
-            "Nodes".into()
-        };
-        let indices = self.filtered_nodes();
-        let items: Vec<_> = indices
-            .iter()
-            .map(|index| {
-                ListItem::new(
-                    self.preview.as_ref().unwrap().nodes[*index]
-                        .display_name
-                        .as_str(),
-                )
-            })
-            .collect();
-        if let Some(index) = self.nodes.selected()
-            && index >= items.len()
-        {
-            self.nodes.select(if items.is_empty() {
-                None
-            } else {
-                Some(items.len() - 1)
-            });
-        }
-        frame.render_stateful_widget(
-            List::new(items)
-                .block(panel(
-                    theme::title("▤", nodes_title, theme::NODES, self.focus == Focus::Nodes),
-                    self.focus == Focus::Nodes,
-                ))
-                .highlight_style(theme::selected(self.focus == Focus::Nodes))
-                .highlight_symbol("› "),
-            panes[0],
-            &mut self.nodes,
-        );
-        let block = panel(
+        self.draw_nodes(frame, panes[0]);
+        let mut block = panel(
             theme::title(
                 if self.camera.is_some() { "↻" } else { "▣" },
-                "Preview",
+                self.preview_title(),
                 if self.camera.is_some() {
                     theme::RUNNING
                 } else {
@@ -1419,6 +1558,12 @@ impl App {
             ),
             self.focus == Focus::Preview,
         );
+        if let Some(timeline) = self.preview_timeline() {
+            block = block.title_bottom(Line::styled(
+                format!(" {timeline} "),
+                Style::default().fg(theme::SECONDARY),
+            ));
+        }
         let inner = block.inner(panes[1]);
         frame.render_widget(block, panes[1]);
         if let Some(camera) = &self.camera {
@@ -1442,7 +1587,7 @@ impl App {
                 Style::default().fg(theme::KEY).add_modifier(Modifier::BOLD),
             )
         };
-        let description = |label| Span::styled(label, Style::default().fg(theme::MUTED));
+        let description = |label| Span::styled(label, Style::default().fg(theme::SECONDARY));
         frame.render_widget(
             Paragraph::new(Text::from(vec![
                 Line::from(self.status.clone()),
