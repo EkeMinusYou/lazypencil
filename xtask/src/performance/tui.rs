@@ -4,9 +4,7 @@ use clap::Args;
 use std::path::PathBuf;
 
 #[cfg(unix)]
-#[path = "../test_support/terminal.rs"]
-#[allow(dead_code)]
-mod observer;
+use super::observer;
 
 #[derive(Args)]
 pub struct Arguments {

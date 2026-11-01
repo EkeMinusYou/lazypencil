@@ -93,6 +93,24 @@ The owned PTY remains 224 × 57 cells / 2688 × 1140 pixels with a 1272 × 1040 
 
 At 50 ms input intervals, the pan/zoom bursts completed 38/39 exact frames, restored the initial image, and finished their final synchronized image 28.09/26.51 ms after the last key. The document and measured executable were unchanged and both processes exited normally. All 235 library tests, 12 rendering tests and 12 ordinary TUI tests passed; two environment-specific TUI cases remain ignored. Formatting, both feature checks and Clippy passed, with the existing compiler-compatibility exclusions documented above. The outbox guard has a separate behavior-preserving Clippy cleanup. Local installation is unchanged; this change is being prepared for pull-request review.
 
+## Reproducing local preview measurements
+
+The maintained observer is now `xtask measure-preview`, implemented in Rust and sharing the terminal image decoder used by the existing tests. It replaces the ad hoc Python helper; historical reports and their source checksums remain unchanged. Build the observer in release mode before measuring: a debug observer adds decoding and parsing backpressure to the application.
+
+```sh
+cargo build --locked --release --jobs 2 --manifest-path xtask/Cargo.toml --bin xtask
+xtask/target/release/xtask measure-preview \
+  --binary /path/to/release/lazypencil \
+  --document /path/to/document.pen \
+  --output /tmp/new-preview-measurement --label wide \
+  --geometry 57,224,2688,1140 --samples 20 --bursts \
+  --median-limit-ms 30
+```
+
+The output directory must be new. This Unix-only command owns its PTY and child session, uses explicit Kitty output and isolated settings, and selects `/usr/bin/false` as the adapter. It preserves every sample, separates complete image receipt from synchronized-update completion and cached feedback, requires changed images and restored round-trip pixels, and checks that the document and executable remain unchanged. `--reference-report` additionally requires the same document, terminal geometry, protocol, sample count, and decoded image hash for every operation. The 30 ms acceptance option covers complete-image medians only. Optional capture and profiling runs are kept separate and cannot use that acceptance option. OS caches, host load and physical display presentation remain outside this measurement.
+
+A release-mode parity run against the unchanged updated-main executable completed [all 80 observations and both bursts](measurements/preview-rust-observer-2026-11-02.json). Every decoded image matched the prior accepted report. Complete-image medians were 16.79/15.71/16.07/15.81 ms for zoom in/out and pan right/left; synchronized-update medians were 22.14/20.90/21.32/21.00 ms. The changed observer has lower overhead, so these times are a tooling validation, not evidence of a further renderer speedup. The first uncached zoom still took 141.43 ms. Both burst trials restored the original pixels, the child exited normally, and document/executable hashes were unchanged.
+
 ## Current interpretation, 2026-10-31
 
 The final 0.1.0 [distribution and performance run](https://github.com/EkeMinusYou/lazypencil/actions/runs/41201303069) passed in 6m12s. The packaged binary `14427324…28d504e6` is identical to the successful [complete run](https://github.com/EkeMinusYou/lazypencil/actions/runs/41200184501), with release artifact reuse confirmed. All 20 starts, 80 interactions and 100 worker profiles were retained on macOS 15.8.2 / image 20261028.0489.1 / 3 CPUs / 7 GiB. Maximum input/first-preview latency was 55.92/391.63ms; first-feedback p95 was 32.12ms and complete-output p95 218.53ms. Bound application maximum observed RSS was 191.73MiB and idle CPU upper bound 0.397% over 30.259s. Including Chromium, these were 1217.89MiB and 1.230% over 30.087s. Every original threshold and normal-exit/owned-process cleanup check passed. These are PTY/resource observations, not new physical-terminal measurements or kernel peak-RSS guarantees. Existing physical-terminal and subscription acceptance remains valid for the unchanged input, rendering and adapter code. The complete run took 14m45s with 367/411 artifacts fresh; only 44 application artifacts rebuilt for the version/release changes. Core restored the preceding focused outputs. This is distinct from the earlier 9m15s populated-cache run below; no duplicate warm full run was added just to obtain a faster number.

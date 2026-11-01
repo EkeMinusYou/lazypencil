@@ -22,6 +22,7 @@ enum Task {
     Fixtures(lazypencil_xtask::fixtures::Command),
     Measure(lazypencil_xtask::performance::Arguments),
     MeasureTui(lazypencil_xtask::performance::tui::Arguments),
+    MeasurePreview(lazypencil_xtask::performance::preview::Arguments),
     ProfileNative(lazypencil_xtask::performance::profile::Arguments),
     Terminal(lazypencil_xtask::terminal::Arguments),
     #[command(subcommand)]
@@ -41,6 +42,7 @@ fn main() -> Result<()> {
         Task::Fixtures(command) => command.run(),
         Task::Measure(arguments) => arguments.run(),
         Task::MeasureTui(arguments) => arguments.run(),
+        Task::MeasurePreview(arguments) => arguments.run(),
         Task::ProfileNative(arguments) => arguments.run(),
         Task::Terminal(arguments) => arguments.run(),
         Task::Notices(command) => command.run(),
