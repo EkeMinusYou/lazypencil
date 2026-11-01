@@ -65,10 +65,10 @@ impl App {
     pub(super) fn restore_outbox(&mut self) {
         match Outbox::load(self.conversation.directory()) {
             Ok(outbox) => {
-                if let Some(draft) = &outbox.draft {
-                    if !draft.is_empty() || self.conversation.draft().is_empty() {
-                        self.editor = editor(draft);
-                    }
+                if let Some(draft) = &outbox.draft
+                    && (!draft.is_empty() || self.conversation.draft().is_empty())
+                {
+                    self.editor = editor(draft);
                 }
                 if !outbox.queued.is_empty() {
                     self.status = "Queued prompts restored; /resume-queue sends them".into();
