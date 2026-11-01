@@ -35,16 +35,6 @@
         "--locked",
         "--no-default-features",
         "--lib",
-        "conversation::management::",
-        "--",
-        "--test-threads=2"
-      ],
-      [
-        "cargo",
-        "test",
-        "--locked",
-        "--no-default-features",
-        "--lib",
         "conversation::history::",
         "--",
         "--test-threads=2"
@@ -130,7 +120,9 @@
         "--test",
         "mcp",
         "--",
-        "--test-threads=2"
+        "--test-threads=2",
+        "--skip",
+        "conversation::management::"
       ]
     ]
   },
@@ -164,16 +156,6 @@
       ]
     ],
     "checks": [
-      [
-        "cargo",
-        "test",
-        "--locked",
-        "--no-default-features",
-        "--lib",
-        "conversation::management::",
-        "--",
-        "--test-threads=2"
-      ],
       [
         "cargo",
         "test",
@@ -345,6 +327,8 @@
         "--",
         "--test-threads=2",
         "--skip",
+        "conversation::management::",
+        "--skip",
         "script_bindings::",
         "--skip",
         "generated_browser_",
@@ -490,6 +474,8 @@
         "script_scope",
         "--",
         "--test-threads=2",
+        "--skip",
+        "conversation::management::",
         "--skip",
         "script_bindings::",
         "--skip",

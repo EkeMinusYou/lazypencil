@@ -283,30 +283,22 @@ impl Session {
     fn core_reproductions(&self, suite: &str, targets: &[String]) -> Result<()> {
         self.image_reproductions(false, targets)?;
         self.asset_maintenance_reproductions(false, targets)?;
-        if std::env::var("RUNTIME_PARALLEL").as_deref() == Ok("true") {
+        let parallel = std::env::var("RUNTIME_PARALLEL").as_deref() == Ok("true");
+        let history = !["core", "conversation"].contains(&suite)
+            && targets
+                .iter()
+                .any(|target| target == "conversation_history");
+        if parallel || history {
             self.execute(
                 &commands::management_tests(false),
-                900,
+                if parallel { 900 } else { 300 },
                 "focus-management-core.log",
-                false,
+                !parallel,
             )?;
         }
         if suite == "dynamic" && targets.iter().any(|target| target == "agent") {
             self.test(false,"agent","browser_ownership::killed_profile_owners_reap_children_preserve_persistent_data_and_release_only_their_lease",
                 &["--exact","--test-threads=1"],"focus-profile-ownership.log")?;
-        }
-        if !["core", "conversation"].contains(&suite)
-            && targets
-                .iter()
-                .any(|target| target == "conversation_history")
-        {
-            self.test(
-                false,
-                "lib",
-                "conversation::management::",
-                &["--test-threads=2"],
-                "focus-history-core.log",
-            )?;
         }
         Ok(())
     }
@@ -808,7 +800,9 @@ impl Session {
                         "focus-agent-environment.log",
                     )?;
                 }
-                if std::env::var("RUNTIME_PARALLEL").as_deref() == Ok("true") {
+                if std::env::var("RUNTIME_PARALLEL").as_deref() == Ok("true")
+                    || !core && has("conversation_history")
+                {
                     management::focus(self)?;
                 }
                 if !concurrent_compilation {
@@ -879,15 +873,13 @@ impl Session {
                     )?;
                 }
                 if !core && has("conversation_history") {
-                    for filter in ["conversation::management::", "conversation::history::"] {
-                        self.test(
-                            true,
-                            "lib",
-                            filter,
-                            &["--test-threads=2"],
-                            "focus-history.log",
-                        )?;
-                    }
+                    self.test(
+                        true,
+                        "lib",
+                        "conversation::history::",
+                        &["--test-threads=2"],
+                        "focus-history.log",
+                    )?;
                     self.test(
                         true,
                         "conversation_history",

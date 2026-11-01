@@ -537,9 +537,10 @@ fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() 
     assert_eq!(preview.targets, expected);
     assert!(ci::commands::terminal_reproduction(&preview.suite, &preview.targets).is_some());
     let combined = ci::commands::plan(&util::root(), &preview.suite, &preview.targets).unwrap();
-    assert_eq!(combined.checks.len(), 3);
+    assert_eq!(combined.checks.len(), 4);
+    assert_eq!(combined.checks[0], ci::commands::management_tests(true));
     assert!(
-        combined.checks[0]
+        combined.checks[1]
             .windows(2)
             .any(|pair| pair == ["--test", "tui"])
     );

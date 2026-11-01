@@ -512,8 +512,9 @@ pub fn plan_with_core(
         let mut normal = append(&common, &["--lib"]);
         normal.extend(selected(targets, &[]));
         normal.extend(words(&["--", "--test-threads=2"]));
+        normal.extend(skips([MANAGEMENT_REPRODUCTION]));
         normal.extend(input_skip);
-        let mut checks = vec![normal];
+        let mut checks = vec![management_tests(true), normal];
         for (target, name) in [
             ("dynamic_render", focus::RENDER_BROWSER),
             ("shader_uniforms", focus::SHADER_REGRESSIONS[1]),
@@ -638,15 +639,7 @@ pub fn plan_with_core(
     }
     let history = has("conversation_history");
     if history && core {
-        checks.push(append(
-            &common,
-            &[
-                "--lib",
-                "conversation::management::",
-                "--",
-                "--test-threads=2",
-            ],
-        ));
+        checks.push(management_tests(false));
         checks.push(append(
             &common,
             &["--lib", "conversation::history::", "--", "--test-threads=2"],
@@ -869,9 +862,9 @@ pub fn plan_with_core(
             excluded.insert("native_layout");
         }
         let mut c = append(&common, &["--lib"]);
-        let isolated_management = suite == "candidate" && has("tui") && !history;
+        let isolated_management = !history;
         if isolated_management {
-            checks.push(management_tests(true));
+            checks.push(management_tests(!core));
         }
         c.extend(selected(targets, &excluded.into_iter().collect::<Vec<_>>()));
         c.extend(words(&["--", "--test-threads=2"]));

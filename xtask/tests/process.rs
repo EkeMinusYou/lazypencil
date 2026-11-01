@@ -353,7 +353,18 @@ fn focused_scheduling_preserves_reproduction_order_and_excludes_only_repeated_co
         let plan =
             commands::plan(&util::root(), case["suite"].as_str().unwrap(), &targets).unwrap();
         assert_eq!(json!(plan.build), case["build"]);
-        assert_eq!(json!(plan.checks), case["checks"], "{}", case["suite"]);
+        // Shared-worker commands have their own coverage/serialization contract
+        // below; avoid duplicating that canonical command in every snapshot.
+        let checks = plan
+            .checks
+            .iter()
+            .filter(|command| {
+                !command
+                    .windows(2)
+                    .any(|args| args == ["--lib", commands::MANAGEMENT_REPRODUCTION])
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(json!(checks), case["checks"], "{}", case["suite"]);
         let combined = commands::plan_with_core(
             &util::root(),
             case["suite"].as_str().unwrap(),
@@ -395,7 +406,40 @@ fn focused_scheduling_preserves_reproduction_order_and_excludes_only_repeated_co
 }
 
 #[test]
-fn tui_candidate_tests_isolate_the_process_global_cleanup_worker_without_omitting_the_library() {
+fn focused_library_checks_isolate_the_shared_cleanup_worker_and_preserve_other_parallel_tests() {
+    for suite in ["core", "conversation", "graphics", "copy", "candidate"] {
+        for history in [false, true] {
+            let mut targets = vec!["document_store".into()];
+            if history {
+                targets.push("conversation_history".into());
+            }
+            let plan = commands::plan(&util::root(), suite, &targets).unwrap();
+            let features = !matches!(suite, "core" | "conversation");
+            let isolated = plan
+                .checks
+                .iter()
+                .filter(|command| {
+                    command
+                        .windows(2)
+                        .any(|args| args == ["--lib", commands::MANAGEMENT_REPRODUCTION])
+                })
+                .collect::<Vec<_>>();
+            // Default-feature history checks own this group in FocusReproduce.
+            let early = features && history;
+            assert_eq!(isolated.len(), usize::from(!early), "{suite}/{history}");
+            if let Some(command) = isolated.first() {
+                assert_eq!(**command, commands::management_tests(features));
+            }
+            let remaining = plan.checks.last().unwrap();
+            assert!(remaining.contains(&"--lib".into()));
+            assert!(remaining.contains(&"--test-threads=2".into()));
+            assert!(
+                remaining
+                    .windows(2)
+                    .any(|args| args == ["--skip", commands::MANAGEMENT_REPRODUCTION])
+            );
+        }
+    }
     let plan =
         commands::plan(&util::root(), "candidate", &["render".into(), "tui".into()]).unwrap();
     assert_eq!(plan.checks.len(), 2);
@@ -521,8 +565,14 @@ fn renderer_focus_runs_native_cases_and_exact_dynamic_pixels_before_the_full_sco
         .map(|s| (*s).into())
         .collect::<Vec<_>>();
     let plan = commands::plan(&util::root(), "render", &targets).unwrap();
-    assert_eq!(plan.checks.len(), 3);
-    let normal = &plan.checks[0];
+    assert_eq!(plan.checks.len(), 4);
+    assert_eq!(plan.checks[0], commands::management_tests(true));
+    let normal = &plan.checks[1];
+    assert!(
+        normal
+            .windows(2)
+            .any(|args| args == ["--skip", commands::MANAGEMENT_REPRODUCTION])
+    );
     assert!(normal.iter().any(|arg| arg == "--lib"));
     let selected = normal
         .windows(2)
@@ -540,7 +590,7 @@ fn renderer_focus_runs_native_cases_and_exact_dynamic_pixels_before_the_full_sco
             .iter()
             .any(|arg| ["--ignored", "--include-ignored"].contains(&arg.as_str()))
     );
-    for (command, (target, filter)) in plan.checks[1..].iter().zip([
+    for (command, (target, filter)) in plan.checks[2..].iter().zip([
         ("dynamic_render", focus::RENDER_BROWSER),
         ("shader_uniforms", focus::SHADER_REGRESSIONS[1]),
     ]) {
