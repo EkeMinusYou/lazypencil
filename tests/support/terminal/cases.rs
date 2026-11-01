@@ -207,13 +207,7 @@ pub fn run(
     }
     let mut h = Harness::start(binary, root, &document, environment, case, configuration)?;
     h.wait("initial UI", 15.0, |h| {
-        h.contains_bytes(
-            if matches!(case, "user-key-config" | "user-navigation-config") {
-                b"F5 sends"
-            } else {
-                b"Ctrl+V"
-            },
-        )
+        h.screen.find_text("›").is_some() && h.screen.text().contains("Agent")
     })?;
     let mut report = match case {
         "account-startup" => {
@@ -270,6 +264,10 @@ pub fn run(
         }
         "basic" => {
             basic(&mut h)?;
+            Value::Null
+        }
+        "queued-followups" => {
+            queued_followups(&mut h)?;
             Value::Null
         }
         "user-agent-config" => {
@@ -354,6 +352,9 @@ pub fn run(
 }
 
 fn ime_commit(h: &mut Harness) -> Result<Value> {
+    fn prompt_origin(h: &Harness) -> Option<(u16, u16)> {
+        h.screen.find_text("›").map(|(x, y)| (x + 2, y))
+    }
     // Model the documented Kitty pure-text event, not bracketed paste. With
     // report-all-keys but no associated text, an IME commit has key number zero
     // and its actual characters are absent from the byte stream.
@@ -407,13 +408,15 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
                 .text()
                 .lines()
                 .position(|line| line.contains(first))
-                .is_some_and(|row| h.screen.cursor() == (17, row as u16))
+                .is_some_and(|row| {
+                    prompt_origin(h).is_some_and(|(x, _)| h.screen.cursor() == (x + 16, row as u16))
+                })
         },
     )?;
     let first_cursor = h.screen.cursor();
     h.key(b"\x1b[D")?;
     h.wait("IME anchor follows editing in wide text", 15.0, |h| {
-        h.screen.cursor() == (15, first_cursor.1)
+        h.screen.cursor() == (first_cursor.0 - 2, first_cursor.1)
     })?;
     h.key(b"\x1b[C")?;
     h.wait("IME anchor returns to the insertion point", 15.0, |h| {
@@ -426,7 +429,7 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
     );
     assert_eq!(negotiated & 2, 0, "Do not duplicate legacy key releases");
     assert_eq!(negotiated & 8, 0, "Keep native IME text on the UTF-8 path");
-    h.key(b"\r")?;
+    h.key(b"\x1b\r")?;
     let second = "か\u{3099} 👩‍💻";
     h.key(&commit(negotiated, second))?;
     let mut expected = format!("{first}\n{second}");
@@ -434,36 +437,50 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
     h.wait(
         "IME anchor follows a rendered combining/ZWJ cluster",
         15.0,
-        |h| h.screen.cursor() == (6, first_cursor.1 + 1),
+        |h| prompt_origin(h).is_some_and(|(x, top)| h.screen.cursor() == (x + 5, top + 1)),
     )?;
+    let cluster = "👩‍💻".as_bytes();
+    assert!(
+        h.output
+            .windows(cluster.len())
+            .any(|bytes| bytes == cluster)
+    );
     let second_cursor = h.screen.cursor();
     let mut resize_cursors = Vec::new();
     for (columns, rows) in [(80, 24), (50, 16), (145, 38)] {
         let previous = h.screen.cursor();
+        let repaint_start = h.output.len();
         h.resize(columns, rows)?;
         h.wait("IME anchor follows the resized prompt", 15.0, |h| {
             let text = h.screen.text();
             let lines = text.lines().collect::<Vec<_>>();
             // Resizing the observer can move its old cursor before the redraw
             // arrives. Require the new layout before accepting the IME anchor.
-            lines.iter().any(|line| {
-                line.starts_with("┌Prompt ")
-                    && line.ends_with('┐')
-                    && line.chars().count() == columns as usize
+            prompt_origin(h).is_some_and(|(x, top)| {
+                h.screen.cursor() == (x + 5, top + 1)
+                    && lines
+                        .get(top as usize)
+                        .is_some_and(|line| line.contains("日本語"))
+                    && lines.get(top as usize + 1).is_some_and(|line| {
+                        // vt100 counts ZWJ components separately, so padded
+                        // cells can overwrite one component in its model.
+                        // Exact draft text and emitted emoji bytes are
+                        // checked separately from this visible prefix.
+                        line.contains("か\u{3099}") && line.contains('👩')
+                    })
             }) && lines
                 .get(rows as usize - 1)
                 .is_some_and(|line| line.starts_with("Tab / Shift+Tab panels"))
                 && h.screen.cursor().1 != previous.1
-                && lines
-                    .iter()
-                    .position(|line| line.contains(first))
-                    .is_some_and(|row| {
-                        h.screen.cursor() == (6, row as u16 + 1)
-                            && lines.get(row + 1).is_some_and(|line| line.contains(second))
-                    })
                 && h.session()
                     .is_some_and(|session| session["draft"] == expected)
         })?;
+        assert!(
+            h.output[repaint_start..]
+                .windows(cluster.len())
+                .any(|bytes| bytes == cluster),
+            "Emit the complete ZWJ cluster after resizing to {columns}x{rows}"
+        );
         // Snapshot the same observed frame; another pump can read the clear
         // belonging to a second resize redraw before its text arrives.
         h.save_screen(&format!("ime-commit-{columns}x{rows}-screen.txt"))?;
@@ -475,7 +492,7 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
     expected.push_str(suffix);
     h.draft(&expected)?;
     h.wait("IME commit remains usable after resizing", 15.0, |h| {
-        h.screen.cursor() == (11, row)
+        prompt_origin(h).is_some_and(|(x, _)| h.screen.cursor() == (x + 10, row))
             && h.screen
                 .text()
                 .lines()
@@ -552,7 +569,7 @@ fn font(h: &mut Harness) -> Result {
             && h.screen
                 .text()
                 .lines()
-                .any(|s| s.starts_with("1 nodes · 0 diagnostics ·"))
+                .any(|s| s.contains("1 node · 0 diagnostics"))
     })?;
     let saved = fs::read(&h.document)?;
     let before = h.frames.images.last().unwrap().clone();
@@ -616,7 +633,7 @@ fn agent(h: &mut Harness, design: &Value) -> Result {
     assert_eq!(state(h)["agent"], "claude");
     no_agent(h);
     h.paste("保存したエージェント設定で送信")?;
-    h.key(b"\x1b\r")?;
+    h.key(b"\r")?;
     h.wait("configured agent completed turn", 15.0, |h| {
         h.count("complete") == 1
     })?;
@@ -739,12 +756,98 @@ fn project_agent(h: &mut Harness, design: &Value) -> Result {
     Ok(())
 }
 
+fn queued_followups(h: &mut Harness) -> Result {
+    h.paste("First request")?;
+    h.key(b"\r")?;
+    h.wait("first request started", 15.0, |h| {
+        h.root.join("started-turn-1").exists()
+    })?;
+    h.wait("loading indicator before the first response", 15.0, |h| {
+        h.screen.text().contains("Working…")
+    })?;
+    assert_eq!(h.count("complete"), 0);
+    h.wait(
+        "loading indicator advances while the agent is silent",
+        5.0,
+        |h| {
+            let text = h.screen.text();
+            text.contains("Working…") && !text.contains("Working… 0s")
+        },
+    )?;
+    for (index, text) in ["Second request", "Third request"].into_iter().enumerate() {
+        h.paste(text)?;
+        h.key(b"\r")?;
+        h.wait("follow-up queued while working", 15.0, |h| {
+            h.screen.text().contains(&format!("{} queued", index + 1))
+        })?;
+    }
+    h.paste("Unsent next draft")?;
+    h.wait("next draft is saved separately", 15.0, |h| {
+        files(&h.root.join("data"), |name| name == "prompt-outbox.json")
+            .iter()
+            .any(|path| {
+                read_json(path).is_some_and(|state| {
+                    state["draft"] == "Unsent next draft"
+                        && state["queued"]
+                            .as_array()
+                            .is_some_and(|queue| queue.len() == 2)
+                })
+            })
+    })?;
+    h.key(b"\x1b[1;3A")?;
+    for turn in 1..=3 {
+        fs::write(h.root.join(format!("release-turn-{turn}")), "release")?;
+        if turn < 3 {
+            h.wait("next queued request starts automatically", 15.0, |h| {
+                h.root.join(format!("started-turn-{}", turn + 1)).exists()
+            })?;
+        }
+    }
+    h.wait("queue drained and editor restored", 15.0, |h| {
+        h.count("complete") == 3 && h.screen.text().contains("Idle")
+    })?;
+    h.draft("Unsent next draft")?;
+    h.paste(" appended")?;
+    h.draft("Unsent next draft appended")?;
+    h.key(b"\r")?;
+    h.wait(
+        "submission works after completing queued turns",
+        15.0,
+        |h| h.root.join("started-turn-4").exists(),
+    )?;
+    fs::write(h.root.join("release-turn-4"), "release")?;
+    h.wait("fourth request completed", 15.0, |h| {
+        h.count("complete") == 4 && !h.screen.text().contains("Working…")
+    })?;
+    let prompts = fs::read_to_string(h.root.join("received-prompts.jsonl"))?;
+    let prompts = prompts
+        .lines()
+        .map(serde_json::from_str::<Value>)
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    for (prompt, expected) in prompts.iter().zip([
+        "First request",
+        "Second request",
+        "Third request",
+        "Unsent next draft appended",
+    ]) {
+        assert!(
+            prompt["prompt"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|block| block["text"] == expected)
+        );
+    }
+    assert_eq!(prompts.len(), 4);
+    Ok(())
+}
+
 fn basic(h: &mut Harness) -> Result {
     let text = "日本語の入力\nhjkl + - q は本文です";
     h.paste(text)?;
     h.draft(text)?;
     no_agent(h);
-    h.key(b"\x1b\r")?;
+    h.key(b"\r")?;
     h.wait("first completed turn", 15.0, |h| h.count("complete") == 1)?;
     h.wait("visible turn completion", 15.0, |h| {
         h.screen.contains_words("Request", "complete")

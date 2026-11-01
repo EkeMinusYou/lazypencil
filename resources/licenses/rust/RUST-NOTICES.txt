@@ -1131,6 +1131,32 @@ proc-macro2@1.0.107
 Declared license: MIT OR Apache-2.0
 Published package authors: David Tolnay <dtolnay@gmail.com>; Alex Crichton <alex@alexcrichton.com>
 
+pulldown-cmark@0.13.6
+Declared license: MIT
+Published package authors: Raph Levien <raph.levien@gmail.com>; Marcus Klaas de Vries <mail@marcusklaas.nl>
+Verbatim source attribution comments:
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  Source: src/entities.rs:16, src/html.rs:16, src/lib.rs:16, src/linklabel.rs:16, src/main.rs:16, src/parse.rs:16, src/puncttable.rs:16, src/scanners.rs:16
+// Copyright 2015 Google Inc. All rights reserved.
+  Source: src/entities.rs:1, src/html.rs:1, src/lib.rs:1, src/main.rs:1, src/puncttable.rs:1, src/scanners.rs:1
+// Copyright 2017 Google Inc. All rights reserved.
+  Source: src/parse.rs:1
+// Copyright 2018 Google LLC
+  Source: src/linklabel.rs:1, src/tree.rs:1
+// The above copyright notice and this permission notice shall be included in
+  Source: src/entities.rs:10, src/html.rs:10, src/lib.rs:10, src/linklabel.rs:10, src/main.rs:10, src/parse.rs:10, src/puncttable.rs:10, src/scanners.rs:10
+
+pulldown-cmark-escape@0.11.0
+Declared license: MIT
+Published package authors: Raph Levien <raph.levien@gmail.com>; Marcus Klaas de Vries <mail@marcusklaas.nl>
+Verbatim source attribution comments:
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  Source: src/lib.rs:16
+// Copyright 2015 Google Inc. All rights reserved.
+  Source: src/lib.rs:1
+// The above copyright notice and this permission notice shall be included in
+  Source: src/lib.rs:10
+
 pxfm@0.1.30
 Declared license: BSD-3-Clause OR Apache-2.0
 Published package authors: Radzivon Bartoshyk
@@ -1916,6 +1942,10 @@ Published package authors: Chip Senkbeil <chip@senkbeil.org>
 
 typenum@1.20.1
 Declared license: MIT OR Apache-2.0
+
+unicase@2.10.0
+Declared license: MIT OR Apache-2.0
+Published package authors: Sean McArthur <sean@seanmonstar.com>
 
 unicode-ident@1.0.27
 Declared license: (MIT OR Apache-2.0) AND Unicode-3.0
@@ -9840,6 +9870,31 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ========================================================================
+unicase@2.10.0 :: archive :: LICENSE-MIT
+SHA-256: 4f6bd11a0f17fe5b085ace1daaedb7b002a08316850dd9577c246c6a68a68e8c
+
+Copyright (c) 2014-2026 Sean McArthur
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+
+========================================================================
 signal-hook@0.3.18 :: archive :: LICENSE-MIT
 signal-hook-mio@0.2.5 :: archive :: LICENSE-MIT
 signal-hook-registry@1.4.8 :: archive :: LICENSE-MIT
@@ -16355,6 +16410,7 @@ stable_deref_trait@1.2.1 :: archive :: LICENSE-APACHE
 tar@0.4.46 :: archive :: LICENSE-APACHE
 tempfile@3.27.0 :: archive :: LICENSE-APACHE
 tungstenite@0.30.0 :: archive :: LICENSE-APACHE
+unicase@2.10.0 :: archive :: LICENSE-APACHE
 unicode-segmentation@1.13.3 :: archive :: LICENSE-APACHE
 unicode-truncate@2.0.1 :: archive :: LICENSE-APACHE
 unicode-width@0.2.2 :: archive :: LICENSE-APACHE
@@ -18812,6 +18868,33 @@ Permission is granted to anyone to use this software for any purpose, including 
 2. Altered source versions must be plainly marked as such, and must not be misrepresented as being the original software.
 
 3. This notice may not be removed or altered from any source distribution.
+
+========================================================================
+pulldown-cmark@0.13.6 :: archive :: LICENSE
+pulldown-cmark-escape@0.11.0 :: archive :: LICENSE
+SHA-256: c4f10f55904bdb9f27d3fbf94c354926d6cfe8b982276e556238c258941b243b
+
+The MIT License
+
+Copyright 2015 Google Inc. All rights reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 
 ========================================================================
 anstream@1.0.0 :: archive :: LICENSE-APACHE

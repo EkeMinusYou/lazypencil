@@ -430,6 +430,11 @@ impl<'a> Peer<'a> {
     }
     fn prompt(&mut self, params: &Value) -> Result {
         let mode = self.mode;
+        if mode == "queued-followups" {
+            append_json("received-prompts.jsonl", params)?;
+            fs::write(format!("started-turn-{}", self.turns), b"ready")?;
+            self.resource_barrier(&format!("release-turn-{}", self.turns))?;
+        }
         let blocks = params["prompt"].as_array().ok_or("Missing prompt blocks")?;
         let text = blocks
             .iter()

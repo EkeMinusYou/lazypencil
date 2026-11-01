@@ -26,7 +26,7 @@ impl super::App {
             || preview.time_dependent
             || preview.live_pages
             || self.playback.active()
-            || self.focus != super::Focus::Preview
+            || !matches!(self.focus, super::Focus::Preview | super::Focus::Nodes)
             || (preview.view.center == self.view.center && preview.view.zoom == self.view.zoom)
         {
             return Ok(());

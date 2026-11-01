@@ -1,2 +1,5 @@
+[build]
+jobs = 2
+
 [alias]
 xtask = "run --quiet --manifest-path xtask/Cargo.toml --target-dir xtask/target --bin xtask --"
