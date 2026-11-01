@@ -172,6 +172,8 @@ struct App {
     preview: Option<Preview>,
     preview_error: Option<Error>,
     camera: Option<camera::Camera>,
+    camera_deadline: Option<Instant>,
+    camera_was_visible: bool,
     camera_id: u32,
     generation: u64,
     cells: Size,
@@ -220,6 +222,8 @@ impl App {
             preview: None,
             preview_error: None,
             camera: None,
+            camera_deadline: None,
+            camera_was_visible: false,
             camera_id: 0x8000_0001,
             generation: 0,
             cells: Size::new(0, 0),
@@ -285,6 +289,7 @@ impl App {
                 }
             }
             let playback_deadline = self.playback.deadline();
+            let camera_deadline = self.camera_deadline;
             tokio::select! {
                 signal = tokio::signal::ctrl_c() => {
                     signal.map_err(terminal::io)?;
@@ -320,6 +325,25 @@ impl App {
                     // Replacing a Kitty image ID removes its placements. Resend
                     // every placeholder instead of diffing unchanged image cells.
                     if self.accept_preview(output) { screen.redraw(); }
+                },
+                _ = async {
+                    if let Some(deadline) = camera_deadline {
+                        tokio::time::sleep_until(deadline.into()).await;
+                    } else {
+                        std::future::pending::<()>().await;
+                    }
+                } => {
+                    self.camera_deadline = None;
+                    // An already completed exact frame always wins over interim work.
+                    if worker.try_next().is_some_and(|output| self.accept_preview(output)) {
+                        screen.redraw();
+                    } else {
+                        if let Err(error) = self.render_camera_feedback(&screen.picker) {
+                            self.error(error);
+                        }
+                        if self.camera.is_some() { screen.redraw(); }
+                        self.dirty = true;
+                    }
                 },
                 _ = async {
                     if let Some(deadline) = playback_deadline {
@@ -385,7 +409,8 @@ impl App {
         }
         if !check_only {
             self.preview_error = None;
-            if self.camera.take().is_some() {
+            self.camera_was_visible = self.camera.take().is_some();
+            if self.camera_was_visible {
                 self.status = "Rendering requested preview".into();
             }
             self.generation += 1;
@@ -412,6 +437,7 @@ impl App {
         if output.generation != self.generation {
             return false;
         }
+        self.camera_deadline = None;
         // Background polls still retry failed renders, but identical failures
         // must not flood the conversation, overwrite status, or repaint Kitty.
         if let Err(error) = &output.result
@@ -1210,7 +1236,7 @@ impl App {
         Ok(())
     }
     fn open_preview(&mut self) -> Result<()> {
-        if self.camera.is_some() {
+        if self.camera.is_some() || self.camera_deadline.is_some() {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
                 "The camera preview is updating; wait for the complete image before exporting",
@@ -1291,7 +1317,13 @@ impl App {
         let indices = self.filtered_nodes();
         let items: Vec<_> = indices
             .iter()
-            .map(|index| ListItem::new(clean(&self.preview.as_ref().unwrap().nodes[*index].name)))
+            .map(|index| {
+                ListItem::new(
+                    self.preview.as_ref().unwrap().nodes[*index]
+                        .display_name
+                        .as_str(),
+                )
+            })
             .collect();
         if let Some(index) = self.nodes.selected()
             && index >= items.len()

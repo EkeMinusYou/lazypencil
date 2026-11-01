@@ -2131,3 +2131,107 @@ fn checkpoint_history_pages_cover_the_boundary_without_duplicates_or_missing_ent
         assert_eq!(page.cursors, vec![None]);
     });
 }
+
+#[test]
+fn kitty_camera_defers_interim_work_without_starving_feedback_or_exporting_stale_pixels() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        std::fs::write(
+            app.conversation.store().path(),
+            json!({"version":"2.21","children":[{
+                "id":"shape","type":"rectangle","width":160,"height":100,"fill":"#2563EB"
+            }]})
+            .to_string(),
+        )
+        .unwrap();
+        let (picker, _) = Backend::detect(ImageProtocol::Kitty).unwrap();
+        let worker = Worker::start(
+            app.conversation.store().clone(),
+            vec![],
+            picker.clone(),
+            175,
+        )
+        .unwrap();
+        app.cells = Size::new(20, 8);
+        app.request(&worker, false, false);
+        app.accept_preview(
+            tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap(),
+        );
+        let original = app
+            .preview
+            .as_ref()
+            .unwrap()
+            .image
+            .png()
+            .unwrap()
+            .into_owned();
+        app.focus = Focus::Preview;
+        assert!(
+            !app.key(
+                KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+                &picker,
+                &worker
+            )
+            .await
+            .unwrap()
+        );
+        let first_deadline = app
+            .camera_deadline
+            .expect("Kitty should defer interim encoding");
+        assert!(app.camera.is_none());
+        assert!(
+            app.open_preview()
+                .unwrap_err()
+                .message
+                .contains("complete image")
+        );
+        assert!(
+            !app.key(
+                KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+                &picker,
+                &worker
+            )
+            .await
+            .unwrap()
+        );
+        assert_eq!(
+            app.camera_deadline,
+            Some(first_deadline),
+            "Repeated gestures must not postpone feedback indefinitely"
+        );
+        let generation = app.generation;
+        assert!(!app.accept_preview(preview::Output {
+            generation: generation - 1,
+            result: Err(Error::new("RENDER_ERROR", "Superseded preview")),
+        }));
+        assert_eq!(app.camera_deadline, Some(first_deadline));
+        app.camera_deadline = None;
+        app.render_camera_feedback(&picker).unwrap();
+        assert_eq!(app.camera.as_ref().unwrap().generation, generation);
+        assert_eq!(
+            app.preview.as_ref().unwrap().image.png().unwrap().as_ref(),
+            original
+        );
+        tokio::time::timeout(Duration::from_secs(15), async {
+            loop {
+                let output = worker.next().await;
+                if output.generation == generation {
+                    app.accept_preview(output);
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert!(app.camera.is_none());
+        assert!(app.camera_deadline.is_none());
+        assert_ne!(
+            app.preview.as_ref().unwrap().image.png().unwrap().as_ref(),
+            original
+        );
+        app.conversation.close().await.unwrap();
+    });
+}

@@ -12,6 +12,26 @@ impl super::App {
         &mut self,
         picker: &super::graphics::Backend,
     ) -> crate::Result<()> {
+        if picker.protocol_type() == ratatui_image::picker::ProtocolType::Kitty
+            && !self.camera_was_visible
+        {
+            // Let short exact renders finish without a competing projection,
+            // compression pass and image transfer on the input thread. Keep the
+            // first deadline across superseding gestures so feedback cannot starve.
+            self.camera_deadline.get_or_insert_with(|| {
+                std::time::Instant::now() + std::time::Duration::from_millis(40)
+            });
+            self.status = "Rendering requested preview".into();
+            return Ok(());
+        }
+        self.camera_deadline = None;
+        self.render_camera_feedback(picker)
+    }
+
+    pub(super) fn render_camera_feedback(
+        &mut self,
+        picker: &super::graphics::Backend,
+    ) -> crate::Result<()> {
         self.camera = None;
         // Sixel must quantize and transfer every interim frame. Keep that
         // expensive work off the input thread and let the coalescing worker
