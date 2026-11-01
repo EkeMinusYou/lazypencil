@@ -1,6 +1,20 @@
 use super::*;
 use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
 
+#[cfg(unix)]
+#[test]
+fn startup_graphics_replies_after_status_preserve_only_typed_text() {
+    let bytes = "\x1b[6;20;10t\x1b[0n日本語\x1b_Gi=31;OK\x1b\\の下書き".as_bytes();
+    let mut parser = Parser::new();
+    let responses = bytes
+        .iter()
+        .flat_map(|byte| parser.push(char::from(*byte)))
+        .collect::<Vec<_>>();
+    assert!(responses.contains(&Response::Kitty));
+    assert!(responses.contains(&Response::Status));
+    assert_eq!(startup_text(bytes), "日本語の下書き");
+}
+
 #[test]
 fn kitty_virtual_placements_match_placeholder_cells_with_changed_pixel_metrics() {
     let size = Size::new(80, 24);

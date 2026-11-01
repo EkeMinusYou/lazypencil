@@ -196,7 +196,9 @@ fn probe(tmux: bool) -> Result<(Vec<Response>, String)> {
     let mut parser = Parser::new();
     let mut responses = vec![];
     let mut bytes = vec![];
-    'query: while Instant::now() < deadline && bytes.len() < 65536 {
+    // Multiplexers may answer DSR before their asynchronous graphics reply.
+    // Drain the existing bounded window instead of treating DSR as a barrier.
+    while Instant::now() < deadline && bytes.len() < 65536 {
         let mut descriptor = libc::pollfd {
             fd,
             events: libc::POLLIN,
@@ -223,14 +225,8 @@ fn probe(tmux: bool) -> Result<(Vec<Response>, String)> {
         }
         let input = &input[..count as usize];
         bytes.extend_from_slice(input);
-        let mut complete = false;
         for byte in input {
-            let values = parser.push(char::from(*byte));
-            complete |= values.contains(&Response::Status);
-            responses.extend(values);
-        }
-        if complete {
-            break 'query;
+            responses.extend(parser.push(char::from(*byte)));
         }
     }
     Ok((responses, startup_text(&bytes)))

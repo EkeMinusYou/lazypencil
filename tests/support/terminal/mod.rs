@@ -244,13 +244,18 @@ impl Harness {
                 && !self.probe_answered
                 && self.contains_bytes(b"\x1b[5n")
             {
-                let mut reply = if self.image_case == "kitty" {
-                    b"\x1b_Gi=31;OK\x1b\\\x1b[?1;2c".to_vec()
+                if self.image_case == "kitty" {
+                    // An intermediary can answer DSR before forwarding graphics
+                    // replies. DSR must not end detection or leak the later APC
+                    // into the prompt. Keep the pieces inside the probe budget.
+                    self.key(b"\x1b[6;20;10t\x1b[0n")?;
+                    std::thread::sleep(Duration::from_millis(40));
+                    self.key(b"\x1b_Gi=31;")?;
+                    std::thread::sleep(Duration::from_millis(10));
+                    self.key(b"OK\x1b\\\x1b[?1;2c")?;
                 } else {
-                    b"\x1b[?1;2;4c".to_vec()
-                };
-                reply.extend(b"\x1b[6;20;10t\x1b[0n");
-                self.key(&reply)?;
+                    self.key(b"\x1b[?1;2;4c\x1b[6;20;10t\x1b[0n")?;
+                }
                 self.probe_answered = true;
             }
             if self.output.len() >= 64 * 1024 * 1024 {
