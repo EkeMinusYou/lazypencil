@@ -11,7 +11,7 @@ use skia_safe::{
     PathFillType, Point, RRect, Rect as SkRect, TileMode, Vector, canvas::SaveLayerRec, gradient,
     image_filters, paint,
 };
-use std::{collections::BTreeMap, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, collections::BTreeMap, path::PathBuf, rc::Rc};
 
 const MAX_PIXELS: u64 = 32 * 1024 * 1024;
 
@@ -19,6 +19,7 @@ mod backdrop;
 mod blending;
 mod mesh;
 mod polygon;
+mod raster_pool;
 use backdrop::{background_nodes, composite_layer};
 pub use blending::{MODES as BLEND_MODES, blend};
 
@@ -74,8 +75,10 @@ struct RenderedRaster {
 
 #[cfg(feature = "tui")]
 mod preview;
+#[cfg(all(feature = "tui", test))]
+use preview::preview_with_runtime_observed;
 #[cfg(feature = "tui")]
-pub(crate) use preview::{PreviewPixels, preview_with_runtime_observed};
+pub(crate) use preview::{PreviewPixels, PreviewRenderer};
 
 pub fn png(
     project: &Project,
@@ -192,7 +195,19 @@ fn raster_impl(
     project: &Project,
     snapshot: &LayoutSnapshot,
     options: &RenderOptions,
+    runtime: Option<&mut crate::dynamic::DynamicRuntime>,
+) -> Result<RenderedRaster> {
+    raster_impl_with_shapes(project, snapshot, options, runtime, None, None, None)
+}
+
+fn raster_impl_with_shapes(
+    project: &Project,
+    snapshot: &LayoutSnapshot,
+    options: &RenderOptions,
     mut runtime: Option<&mut crate::dynamic::DynamicRuntime>,
+    shapes: Option<&RefCell<BTreeMap<usize, Path>>>,
+    pictures: Option<&RefCell<BTreeMap<u32, skia_safe::Picture>>>,
+    pool: Option<&RefCell<raster_pool::RasterPool>>,
 ) -> Result<RenderedRaster> {
     if let Some(runtime) = runtime.as_deref() {
         runtime.check()?;
@@ -283,10 +298,94 @@ fn raster_impl(
         own_pass: None,
         tight_text_layer_hints: true,
         rasters,
+        shapes,
+        recording: false,
     };
     // Node selection determines the viewport; compositing keeps scene context.
-    for root in &snapshot.roots {
-        renderer.node(*root)?;
+    if let Some(pictures) = pictures {
+        let scale = options.scale.to_bits();
+        if !pictures.borrow().contains_key(&scale) {
+            let recording_viewport = Affine::scale(options.scale, options.scale);
+            let bounds = snapshot
+                .bounds
+                .transformed(recording_viewport)
+                .outset(2.0, 2.0);
+            let mut recorder = skia_safe::PictureRecorder::new();
+            let recording_canvas = recorder.begin_recording(
+                SkRect::from_xywh(bounds.x, bounds.y, bounds.width, bounds.height),
+                true,
+            );
+            let mut recording = Renderer {
+                project,
+                snapshot,
+                canvas: recording_canvas,
+                viewport: recording_viewport,
+                images: BTreeMap::new(),
+                runtime: renderer.runtime.as_deref_mut(),
+                raster_scale: options.scale,
+                time: options.time,
+                artifacts: Vec::new(),
+                skip_effect: None,
+                external_backdrop: None,
+                backdrop_padding: 0,
+                background_nodes: &background_nodes,
+                coverage: None,
+                own_pass: None,
+                tight_text_layer_hints: false,
+                rasters: renderer.rasters.clone(),
+                shapes,
+                recording: true,
+            };
+            for root in &snapshot.roots {
+                recording.node(*root)?;
+            }
+            let picture = recorder
+                .finish_recording_as_picture(None)
+                .ok_or_else(|| invalid("Cannot retain preview drawing commands"))?;
+            let mut pictures = pictures.borrow_mut();
+            // Keep vector commands for at most two zoom levels, bounded to 32 MiB.
+            while pictures.len() >= 2
+                || pictures
+                    .values()
+                    .map(|p| p.approximate_bytes_used())
+                    .sum::<usize>()
+                    + picture.approximate_bytes_used()
+                    > 32 * 1024 * 1024
+            {
+                if pictures.pop_first().is_none() {
+                    break;
+                }
+            }
+            if picture.approximate_bytes_used() <= 32 * 1024 * 1024 {
+                pictures.insert(scale, picture);
+            }
+        }
+        if let Some(picture) = pictures.borrow().get(&scale) {
+            let transform = matrix(Affine::translation(
+                -region.x * options.scale,
+                -region.y * options.scale,
+            ));
+            if let Some(pool) = pool {
+                pool.borrow_mut().draw(
+                    canvas,
+                    picture,
+                    &transform,
+                    (working_width, working_height),
+                    options.background,
+                    &renderer.rasters,
+                )?;
+            } else {
+                canvas.draw_picture(picture, Some(&transform), None);
+            }
+        } else {
+            for root in &snapshot.roots {
+                renderer.node(*root)?;
+            }
+        }
+    } else {
+        for root in &snapshot.roots {
+            renderer.node(*root)?;
+        }
     }
     if let Some(runtime) = renderer.runtime.as_deref() {
         runtime.check()?;
@@ -336,6 +435,8 @@ struct Renderer<'a> {
     own_pass: Option<(usize, OwnPass)>,
     tight_text_layer_hints: bool,
     rasters: Rc<backdrop::RasterBudget>,
+    shapes: Option<&'a RefCell<BTreeMap<usize, Path>>>,
+    recording: bool,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -399,6 +500,9 @@ impl Renderer<'_> {
     }
 
     fn visible(&self, index: usize) -> bool {
+        if self.recording {
+            return true;
+        }
         let bounds = self.snapshot.items[index]
             .record
             .visual_bounds
@@ -520,7 +624,18 @@ impl Renderer<'_> {
             self.canvas.save_layer(&record);
         }
         let rect = SkRect::from_xywh(0.0, 0.0, item.record.rect.width, item.record.rect.height);
-        let shape = shape(node, rect)?;
+        let shape = if let Some(shapes) = self.shapes {
+            let mut shapes = shapes.borrow_mut();
+            if let Some(shape) = shapes.get(&index) {
+                shape.clone()
+            } else {
+                let shape = shape(node, rect)?;
+                shapes.insert(index, shape.clone());
+                shape
+            }
+        } else {
+            shape(node, rect)?
+        };
         if matches!(kind, "text" | "note" | "prompt" | "context") {
             self.text(
                 index,
@@ -706,7 +821,7 @@ impl Renderer<'_> {
         filter: Option<&ImageFilter>,
     ) -> Option<SkRect> {
         let inverse = transform.inverse()?;
-        if preserve_origin {
+        if preserve_origin && !self.recording {
             // Keep the original device origin in filtered, transparent and
             // offscreen passes. Shrink only the opposite edges; the extra
             // pixel lets Skia clamp the origin to the unchanged device clip.
@@ -1049,6 +1164,8 @@ impl Renderer<'_> {
             own_pass: None,
             tight_text_layer_hints: false,
             rasters: self.rasters.clone(),
+            shapes: self.shapes,
+            recording: self.recording,
         };
         nested.node(index)?;
         self.artifacts.extend(nested.artifacts);

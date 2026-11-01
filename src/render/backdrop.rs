@@ -142,6 +142,8 @@ impl Renderer<'_> {
             own_pass: pass.map(|pass| (index, pass)),
             tight_text_layer_hints: false,
             rasters: self.rasters.clone(),
+            shapes: self.shapes,
+            recording: self.recording,
         };
         painter.node(index)?;
         self.images.append(&mut painter.images);
@@ -239,6 +241,8 @@ impl Renderer<'_> {
                 own_pass: None,
                 tight_text_layer_hints: false,
                 rasters: self.rasters.clone(),
+                shapes: self.shapes,
+                recording: self.recording,
             };
             let layer = source.backdrop_layer(child)?;
             self.images.append(&mut source.images);
@@ -284,6 +288,8 @@ impl Renderer<'_> {
                 own_pass: None,
                 tight_text_layer_hints: false,
                 rasters: self.rasters.clone(),
+                shapes: self.shapes,
+                recording: self.recording,
             };
             let mapping = Matrix::translate((padding as f32, padding as f32));
             let stroke_background =
