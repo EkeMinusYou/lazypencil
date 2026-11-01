@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-pub const TEMPLATE: &str = "\n[tui.keys]\n# Each explicit list replaces that action's defaults.\n# submit = [\"Ctrl+Enter\", \"Alt+Enter\", \"Ctrl+s\"]\n# paste = [\"Ctrl+v\", \"Alt+v\"]\n\n[tui.navigation]\n# next_panel = [\"Tab\"]\n# previous_panel = [\"Shift+Tab\"]\n# help = [\"F1\", \"?\"]\n# commands = [\"Alt+p\"]\n# pan_left = [\"Left\", \"h\"]\n# pan_right = [\"Right\", \"l\"]\n# zoom_in = [\"+\", \"=\"]\n# zoom_out = [\"-\"]\n";
+pub const TEMPLATE: &str = "\n[tui.keys]\n# Each explicit list replaces that action's defaults.\n# submit = [\"Enter\", \"Ctrl+Enter\", \"Ctrl+s\"]\n# paste = [\"Ctrl+v\", \"Alt+v\"]\n\n[tui.navigation]\n# next_panel = [\"Tab\"]\n# previous_panel = [\"Shift+Tab\"]\n# help = [\"F1\", \"?\"]\n# commands = [\"Alt+p\"]\n# pan_left = [\"Left\", \"h\"]\n# pan_right = [\"Right\", \"l\"]\n# zoom_in = [\"+\", \"=\"]\n# zoom_out = [\"-\"]\n";
 
 mod navigation;
 pub use navigation::{NavigationAction, NavigationKeys};
@@ -28,7 +28,7 @@ impl TuiSettings {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct PromptKeys {
-    /// Shortcuts active only in the idle prompt. Enter alone remains a newline.
+    /// Prompt submission shortcuts. Enter sends or queues a prompt by default.
     #[schemars(length(min = 1, max = 8))]
     pub submit: Vec<String>,
     /// An empty list disables clipboard shortcuts; /paste-image remains available.
@@ -39,9 +39,7 @@ pub struct PromptKeys {
 impl Default for PromptKeys {
     fn default() -> Self {
         Self {
-            submit: ["Ctrl+Enter", "Alt+Enter", "Ctrl+s"]
-                .map(str::to_owned)
-                .into(),
+            submit: ["Enter", "Ctrl+Enter", "Ctrl+s"].map(str::to_owned).into(),
             paste: ["Ctrl+v", "Alt+v"].map(str::to_owned).into(),
         }
     }
@@ -159,9 +157,13 @@ fn parse_shortcut(value: &str, navigation: bool) -> Result<Shortcut> {
             "Prompt shortcuts support Enter, ASCII letters, or F2–F24",
         ));
     };
-    if !navigation && !matches!(shortcut.key, Key::Function(_)) && !shortcut.ctrl && !shortcut.alt {
+    if !navigation
+        && !matches!(shortcut.key, Key::Enter | Key::Function(_))
+        && !shortcut.ctrl
+        && !shortcut.alt
+    {
         return Err(invalid(
-            "Letter and Enter shortcuts require Ctrl or Alt to preserve text input",
+            "Letter shortcuts require Ctrl or Alt to preserve text input",
         ));
     }
     // Legacy terminals encode these as cancellation, palette, Tab, newline or
@@ -206,6 +208,13 @@ impl PromptKeys {
             if !seen.insert(parse(value)?) {
                 return Err(invalid("Duplicate or conflicting prompt shortcuts"));
             }
+        }
+        if self.paste.iter().any(|value| {
+            parse(value).is_ok_and(|key| key.key == Key::Enter && !key.ctrl && !key.alt)
+        }) {
+            return Err(invalid(
+                "Plain Enter is reserved for prompt submission or newline input",
+            ));
         }
         Ok(())
     }
@@ -338,6 +347,15 @@ mod tests {
     #[test]
     fn defaults_and_alternate_terminal_keys_are_valid() {
         PromptKeys::default().validate().unwrap();
+        assert_eq!(PromptKeys::default().submit[0], "Enter");
+        assert!(
+            PromptKeys {
+                submit: vec!["F5".into()],
+                paste: vec!["Enter".into()]
+            }
+            .validate()
+            .is_err()
+        );
         let mut keys = PromptKeys {
             submit: vec!["F2".into(), "Alt+Shift+Enter".into()],
             paste: vec!["Ctrl+Alt+v".into()],
@@ -351,8 +369,6 @@ mod tests {
     #[test]
     fn reserved_and_ambiguous_input_is_rejected() {
         for value in [
-            "Enter",
-            "Shift+Enter",
             "q",
             "Shift+q",
             "Ctrl+c",
@@ -417,5 +433,9 @@ mod tests {
         }));
         assert!(keys.pastes(KeyEvent::new(KeyCode::F(12), KeyModifiers::NONE)));
         assert!(!keys.pastes(KeyEvent::new(KeyCode::F(12), KeyModifiers::ALT)));
+        let defaults = PromptKeys::default();
+        assert!(defaults.submits(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
+        assert!(!defaults.submits(KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT)));
+        assert!(!defaults.submits(KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT)));
     }
 }

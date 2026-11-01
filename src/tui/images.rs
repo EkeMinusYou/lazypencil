@@ -114,10 +114,10 @@ impl App {
         + Send
         + 'static,
     ) -> Result<()> {
-        if self.conversation.active() || self.input.is_some() {
+        if self.input.is_some() {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
-                "Finish or cancel the active image operation or agent request first",
+                "Finish or cancel the active image operation first",
             ));
         }
         let directory = self.conversation.directory().to_owned();
@@ -228,6 +228,14 @@ impl App {
                 self.status = "Pasted text".into();
                 return false;
             }
+            PreparedInput::Images(_)
+                if self.conversation.active() || !self.outbox.queued.is_empty() =>
+            {
+                Err(Error::new(
+                    "INVALID_ARGUMENT",
+                    "Image attachments can be added after the queued prompts finish",
+                ))
+            }
             PreparedInput::Images(images) => self.conversation.add_images(images.clone()),
             PreparedInput::Resized {
                 index,
@@ -255,8 +263,9 @@ impl App {
                 image.width, image.height
             ),
             _ => format!(
-                "{} images attached · Tab to Attachments to review or remove",
-                self.conversation.images().len()
+                "{} images attached · {} to review or remove",
+                self.conversation.images().len(),
+                self.navigation.label(Nav::PreviousSection)
             ),
         };
         true
@@ -281,8 +290,8 @@ impl App {
     }
 }
 
-pub(super) fn label(image: &Attachment, index: usize) -> String {
-    let size = image
+pub(super) fn dimensions(image: &Attachment) -> String {
+    image
         .original
         .as_ref()
         .filter(|original| (original.width, original.height) != (image.width, image.height))
@@ -292,12 +301,7 @@ pub(super) fn label(image: &Attachment, index: usize) -> String {
                 original.width, original.height, image.width, image.height
             )
         })
-        .unwrap_or_else(|| format!("{}×{}", image.width, image.height));
-    format!(
-        "[Image {}] {} · {size} · PNG",
-        index + 1,
-        clean(&image.display_name)
-    )
+        .unwrap_or_else(|| format!("{}×{}", image.width, image.height))
 }
 
 #[cfg(test)]

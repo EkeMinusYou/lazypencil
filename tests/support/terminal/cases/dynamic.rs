@@ -26,7 +26,7 @@ pub(super) fn children(h: &Harness) -> Vec<i32> {
 }
 fn timeline(h: &Harness) -> f64 {
     let text = h.screen.text();
-    text.split("t=")
+    text.split("Playback ")
         .skip(1)
         .find_map(|tail| tail.split_once('s').and_then(|(n, _)| n.parse().ok()))
         .unwrap_or(-1.0)
@@ -37,8 +37,7 @@ fn dynamic_pixels(h: &Harness, page: [u8; 4], shader: [u8; 4]) -> bool {
         .all(|color| h.last_color(color))
 }
 fn paused(h: &Harness) -> bool {
-    !h.screen.text().to_lowercase().contains("playing")
-        && !h.screen.text().contains("finishing requested frame")
+    !h.screen.text().contains("playing") && !h.screen.text().contains("finishing requested frame")
 }
 fn frame_cap(h: &Harness, first: usize, started: Instant) {
     assert!(
@@ -115,7 +114,7 @@ pub fn idle(h: &mut Harness) -> Result {
     h.wait("time command changes actual shader pixels", 15.0, |h| {
         h.frames.images.len() > frames
             && h.last_color(YELLOW)
-            && h.screen.text().contains("t=1.000s")
+            && h.screen.text().contains("Playback 1.000s")
     })?;
     assert_eq!(observed(h), original, "Seeking reuses existing runtimes");
     assert_eq!(state(h)["draft"], "");
@@ -131,7 +130,7 @@ pub fn idle(h: &mut Harness) -> Result {
     h.wait("time command restores shader pixels", 15.0, |h| {
         h.frames.images.len() > frames
             && dynamic_pixels(h, MAGENTA, BLUE)
-            && h.screen.text().contains("t=0.000s")
+            && h.screen.text().contains("Playback 0.000s")
     })?;
     assert_eq!(observed(h), original);
     frames = h.frames.images.len();
@@ -209,8 +208,13 @@ pub fn script(h: &mut Harness) -> Result {
         "/** @schema 2.21 */ let total=0;for(let i=0;i<5000000;i++)total+=i;return [{type:'rectangle',width:180,height:90,fill:total>0?'#00FF00':'#FF0000'}];",
     )?;
     let source_bytes = fs::read(&source)?;
-    let green =
-        |h: &Harness| status(h).starts_with("2 nodes · 0 diagnostics ·") && h.last_color(GREEN);
+    let green = |h: &Harness| {
+        h.screen
+            .text()
+            .lines()
+            .any(|line| line.contains("2 nodes · 0 diagnostics"))
+            && h.last_color(GREEN)
+    };
     h.wait("recovered script preview", 15.0, green)?;
     let frames = h.frames.images.len();
     let configuration = configuration.replace("heap_mib=8", "heap_mib=12");
