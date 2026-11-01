@@ -89,6 +89,7 @@ pub struct Preview {
     pub attachment: bool,
     pub time_dependent: bool,
     pub live_pages: bool,
+    pub frame_time: std::time::Duration,
 }
 pub(crate) enum PreviewImage {
     Png(Vec<u8>),
@@ -300,6 +301,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                     attachment: true,
                     time_dependent: false,
                     live_pages: false,
+                    frame_time: std::time::Duration::ZERO,
                 }));
             }
             let unchanged = !request.refresh
@@ -345,6 +347,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 ..Default::default()
             };
             timing.mark("snapshot_ms");
+            let frame_started = Instant::now();
             let image = renderer.render(
                 project,
                 layout,
@@ -359,6 +362,16 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 return Ok(None);
             }
             timing.mark("verification_ms");
+            // Native retained scenes keep direct pixels for low-latency camera
+            // updates. Other scenes retain a lossless PNG instead of a full
+            // framebuffer, and release its raw storage before terminal encoding.
+            let retained_image = if image.retain_raw_pixels {
+                PreviewImage::Pixels(image.pixels)
+            } else {
+                let png = image.pixels.png()?;
+                drop(image.pixels);
+                PreviewImage::Png(png)
+            };
             let protocol = encode(picker, image.bitmap, request.cells, image_id)?;
             timing.mark("terminal_encode_ms");
             let nodes = navigation.get_or_insert_with(|| layout.items.iter().map(|item| Node {
@@ -379,13 +392,14 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             timing.mark("metadata_ms");
             Ok(Some(Preview {
                 protocol,
-                image: PreviewImage::Pixels(image.pixels),
+                image: retained_image,
                 view,
                 nodes,
                 summary,
                 attachment: false,
                 time_dependent,
                 live_pages,
+                frame_time: frame_started.elapsed(),
             }))
         })();
         let cancelled = cancel.is_cancelled();

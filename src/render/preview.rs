@@ -1,4 +1,4 @@
-//! Owned pixels for terminal previews; PNG encoding is deferred until export.
+//! Owned pixels for fast terminal previews and exact on-demand PNG encoding.
 use super::*;
 
 pub(crate) struct PreviewPixels {
@@ -7,8 +7,9 @@ pub(crate) struct PreviewPixels {
     // Preserve premultiplied pixels for on-demand PNG export. No Skia object
     // crosses the preview worker's thread boundary.
     rgba: Vec<u8>,
-    // Only the displayed frame retains a reusable straight-alpha copy. Large
-    // windows keep the ordinary render path without another large allocation.
+    opaque: bool,
+    // Nonopaque frames need a separate straight-alpha copy. Opaque camera
+    // feedback borrows rgba directly; large windows retain no camera copy.
     camera_pixels: Option<image::RgbaImage>,
 }
 
@@ -32,31 +33,49 @@ impl PreviewPixels {
         ) {
             return Err(Error::new("RENDER_ERROR", "Cannot copy preview pixels"));
         }
-        let mut bitmap = image::RgbaImage::new(width, height);
-        let unpremul = info.with_alpha_type(skia_safe::AlphaType::Unpremul);
-        if !image.read_pixels(
-            &unpremul,
-            bitmap.as_mut(),
-            width as usize * 4,
-            (0, 0),
-            skia_safe::image::CachingHint::Disallow,
-        ) {
-            return Err(Error::new("RENDER_ERROR", "Cannot convert preview pixels"));
-        }
+        let opaque = rgba.chunks_exact(4).all(|pixel| pixel[3] == 255);
+        let bitmap = if opaque {
+            // Straight and premultiplied pixels are identical for opaque images.
+            image::RgbaImage::from_raw(width, height, rgba.clone())
+                .expect("Read pixels have the checked image dimensions")
+        } else {
+            let mut bitmap = image::RgbaImage::new(width, height);
+            let unpremul = info.with_alpha_type(skia_safe::AlphaType::Unpremul);
+            if !image.read_pixels(
+                &unpremul,
+                bitmap.as_mut(),
+                width as usize * 4,
+                (0, 0),
+                skia_safe::image::CachingHint::Disallow,
+            ) {
+                return Err(Error::new("RENDER_ERROR", "Cannot convert preview pixels"));
+            }
+            bitmap
+        };
         Ok((
             Self {
                 width,
                 height,
                 rgba,
-                camera_pixels: (u64::from(width) * u64::from(height) * 4 <= 16 * 1024 * 1024)
+                opaque,
+                camera_pixels: (!opaque
+                    && u64::from(width) * u64::from(height) * 4 <= 16 * 1024 * 1024)
                     .then(|| bitmap.clone()),
             },
             image::DynamicImage::ImageRgba8(bitmap),
         ))
     }
 
-    pub(crate) fn camera_pixels(&self) -> Option<&image::RgbaImage> {
-        self.camera_pixels.as_ref()
+    pub(crate) fn camera_pixels(&self) -> Option<image::ImageBuffer<image::Rgba<u8>, &[u8]>> {
+        if self.rgba.len() > 16 * 1024 * 1024 {
+            return None;
+        }
+        let bytes = if self.opaque {
+            self.rgba.as_slice()
+        } else {
+            self.camera_pixels.as_ref()?.as_raw().as_slice()
+        };
+        image::ImageBuffer::from_raw(self.width, self.height, bytes)
     }
 
     pub(crate) fn png(&self) -> Result<Vec<u8>> {
@@ -84,6 +103,7 @@ pub(crate) struct RenderedPreview {
     pub pixels: PreviewPixels,
     pub bitmap: image::DynamicImage,
     pub dynamic_artifacts: Vec<Value>,
+    pub retain_raw_pixels: bool,
 }
 
 /// Geometry belongs to one captured layout and stays on the preview thread.
@@ -152,6 +172,7 @@ impl PreviewRenderer {
                 pixels,
                 bitmap,
                 dynamic_artifacts: raster.dynamic_artifacts,
+                retain_raw_pixels: recordable,
             })
         })();
         runtime.render_result(result)
@@ -173,6 +194,36 @@ pub(crate) fn preview_with_runtime_observed(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preview_pixel_storage_preserves_export_and_borrows_opaque_camera_bytes() {
+        for pixel in [[18, 52, 86, 255], [8, 16, 32, 64]] {
+            let info = skia_safe::ImageInfo::new(
+                (2, 2),
+                skia_safe::ColorType::RGBA8888,
+                skia_safe::AlphaType::Premul,
+                None,
+            );
+            let image =
+                skia_safe::images::raster_from_data(&info, Data::new_copy(&pixel.repeat(4)), 8)
+                    .unwrap();
+            let (pixels, bitmap) = PreviewPixels::from_image(&image).unwrap();
+            let camera = pixels.camera_pixels().unwrap();
+            assert_eq!(camera.as_raw(), &bitmap.to_rgba8().as_raw().as_slice());
+            assert_eq!(
+                camera.as_raw().as_ptr() == pixels.rgba.as_ptr(),
+                pixel[3] == 255
+            );
+            let mut options = skia_safe::png_encoder::Options::default();
+            options.z_lib_level = 1;
+            assert_eq!(
+                pixels.png().unwrap(),
+                skia_safe::png_encoder::encode_image(None, &image, &options)
+                    .unwrap()
+                    .as_bytes()
+            );
+        }
+    }
 
     #[test]
     fn retained_geometry_preserves_exact_camera_pixels_and_clears_on_reload() {

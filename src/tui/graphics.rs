@@ -143,13 +143,19 @@ impl Backend {
     pub fn tmux_detected(&self) -> bool {
         self.tmux
     }
-    pub fn encode(&self, image: DynamicImage, size: Size, id: u32) -> Result<Protocol> {
-        let image = Resize::Fit(None).resize(
-            &image,
-            self.font,
-            size,
-            Some(image::Rgba([248, 250, 252, 255])),
-        );
+    pub fn encode(&self, mut image: DynamicImage, size: Size, id: u32) -> Result<Protocol> {
+        let width = u32::from(size.width) * u32::from(self.font.width);
+        let height = u32::from(size.height) * u32::from(self.font.height);
+        if image.width() != width || image.height() != height {
+            let resized = Resize::Fit(None).resize(
+                &image,
+                self.font,
+                size,
+                Some(image::Rgba([248, 250, 252, 255])),
+            );
+            drop(image);
+            image = resized;
+        }
         let result = match self.protocol {
             ProtocolType::Kitty => {
                 Kitty::new(image, size, id, self.tmux, self.kitty_compression).map(Protocol::Kitty)

@@ -2896,6 +2896,7 @@ fn kitty_camera_defers_interim_work_without_starving_feedback_or_exporting_stale
             .png()
             .unwrap()
             .into_owned();
+        app.preview.as_mut().unwrap().frame_time = Duration::from_millis(1);
         app.focus = Focus::Preview;
         assert!(
             !app.key(
@@ -2960,6 +2961,40 @@ fn kitty_camera_defers_interim_work_without_starving_feedback_or_exporting_stale
             app.preview.as_ref().unwrap().image.png().unwrap().as_ref(),
             original
         );
+        // Slow exact frames should not delay feedback, including PNG-backed frames.
+        let png = app
+            .preview
+            .as_ref()
+            .unwrap()
+            .image
+            .png()
+            .unwrap()
+            .into_owned();
+        app.preview.as_mut().unwrap().image = preview::PreviewImage::Png(png);
+        app.preview.as_mut().unwrap().frame_time = Duration::from_millis(100);
+        app.key(
+            KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+            &picker,
+            &worker,
+        )
+        .await
+        .unwrap();
+        assert!(app.camera_deadline.is_none());
+        assert_eq!(app.camera.as_ref().unwrap().generation, app.generation);
+        assert!(app.open_preview().is_err());
+        let generation = app.generation;
+        tokio::time::timeout(Duration::from_secs(15), async {
+            loop {
+                let output = worker.next().await;
+                if output.generation == generation {
+                    app.accept_preview(output);
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert!(app.camera.is_none() && app.camera_deadline.is_none());
         app.conversation.close().await.unwrap();
     });
 }
