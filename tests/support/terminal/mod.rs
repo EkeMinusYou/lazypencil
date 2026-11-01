@@ -130,6 +130,7 @@ impl Harness {
             "script-config",
             "user-navigation-config",
             "ime-commit",
+            "kitty-no-color",
         ]
         .contains(&case)
         {

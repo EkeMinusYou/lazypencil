@@ -37,6 +37,27 @@ impl Widget for Image<'_> {
             let symbol = format!("{before}a=T,U=1,c={},r={},{after}", size.width, size.height);
             cell.set_symbol(&symbol);
         }
+        if matches!(self.0, Protocol::Kitty(_))
+            && crossterm::style::Colored::ansi_color_disabled_memoized()
+        {
+            // Kitty encodes image IDs in foreground RGB, even in a colorless UI.
+            // Crossterm suppresses those SGR fields with NO_COLOR. Emit only this
+            // protocol metadata explicitly, and restore the default foreground
+            // after each cell so ordinary text still respects NO_COLOR.
+            for y in area.top()..area.bottom() {
+                for x in area.left()..area.right() {
+                    if let Some(cell) = buffer.cell_mut((x, y))
+                        && cell.symbol().contains('\u{10eeee}')
+                        && let ratatui::style::Color::Rgb(r, g, b) = cell.fg
+                    {
+                        cell.set_symbol(&format!(
+                            "\x1b[38;2;{r};{g};{b}m{}\x1b[39m",
+                            cell.symbol()
+                        ));
+                    }
+                }
+            }
+        }
     }
 }
 

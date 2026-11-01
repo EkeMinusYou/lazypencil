@@ -41,6 +41,19 @@ impl Screen {
         let (y, x) = self.parser.screen().cursor_position();
         (x, y)
     }
+    pub fn kitty_placeholder_foregrounds(&self) -> Vec<Option<[u8; 3]>> {
+        let screen = self.parser.screen();
+        let (rows, columns) = screen.size();
+        (0..rows.get())
+            .flat_map(|row| (0..columns.get()).map(move |column| (row, column)))
+            .filter_map(|(row, column)| screen.cell(row, column))
+            .filter(|cell| cell.contents().contains('\u{10eeee}'))
+            .map(|cell| match cell.fgcolor() {
+                vt100::Color::Rgb(r, g, b) => Some([r, g, b]),
+                _ => None,
+            })
+            .collect()
+    }
     pub fn contains_words(&self, first: &str, second: &str) -> bool {
         let text = self.text();
         text.match_indices(first).any(|(position, _)| {

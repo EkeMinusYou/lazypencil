@@ -78,6 +78,9 @@ pub fn run(
 ) -> Result {
     let mut environment: BTreeMap<OsString, OsString> = std::env::vars_os().collect();
     environment.extend(extra_environment.iter().cloned());
+    if case == "kitty-no-color" {
+        environment.insert("NO_COLOR".into(), "1".into());
+    }
     let mut document = root.join("design.pen");
     if case == "session-deletion-small" {
         let parent = root
@@ -466,6 +469,18 @@ fn encoded(h: &mut Harness) -> Result {
             !h.frames.images.is_empty()
         })?;
         assert!(h.frames.images[0].has_color([255, 0, 0, 255]));
+        h.wait("Kitty placeholders", 15.0, |h| {
+            !h.screen.kitty_placeholder_foregrounds().is_empty()
+        })?;
+        let id = *h.frames.transmitted_resources.iter().next().unwrap();
+        let [_, r, g, b] = id.to_be_bytes();
+        assert!(
+            h.screen
+                .kitty_placeholder_foregrounds()
+                .iter()
+                .all(|color| *color == Some([r, g, b])),
+            "Kitty placeholder foreground must retain the transmitted image ID"
+        );
     } else {
         h.wait("complete Sixel image", 15.0, |h| sixel(&h.output).is_some())?;
         let (red, total) = observer::sixel_red_pixels(sixel(&h.output).unwrap())?;

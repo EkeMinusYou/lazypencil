@@ -32,6 +32,11 @@ fn real_pty_handles_japanese_input_live_turns_resize_and_image_protocols() {
 }
 
 #[test]
+fn real_pty_no_color_preserves_kitty_image_identifiers() {
+    run_pty_case("kitty-no-color");
+}
+
+#[test]
 fn real_pty_custom_navigation_preserves_draft_and_changes_preview_pixels() {
     run_pty_case("user-navigation-config");
 }

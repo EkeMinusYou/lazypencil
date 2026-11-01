@@ -211,6 +211,9 @@ impl Emulator {
                 },
             ])
             .current_dir(root)
+            // Exercise Kitty's image-ID colors under NO_COLOR in the explicit
+            // case; the auto case retains normal colored terminal output.
+            .env("NO_COLOR", if protocol == "kitty" { "1" } else { "" })
             .env("LAZYPENCIL_CONFIG_DIR", root.join("user"))
             .stdin(Stdio::null())
             .stdout(fs::File::create(root.join("emulator.stdout.log"))?)
