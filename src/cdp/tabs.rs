@@ -387,11 +387,6 @@ impl Browser {
         }
     }
 
-    /// Close removed nodes without resetting the retained nodes that remain.
-    pub fn retain_page_keys(&mut self, keys: &BTreeSet<String>, budget: &Budget<'_>) -> Result<()> {
-        self.retain_pages(|entry| keys.contains(&entry.key), budget)
-    }
-
     /// Retire stale inputs even when the owning node is outside the viewport.
     pub fn retain_page_signatures(
         &mut self,

@@ -765,13 +765,11 @@ impl Solver<'_> {
             }
         }
         if let Some(metrics) = self.items[index].record.text.clone() {
-            let vertical = self.string(index, "textAlignVertical", "top");
-            let offset = match vertical {
-                "top" => 0.0,
-                "middle" | "center" => (rect.height - metrics.height) / 2.0,
-                "bottom" => rect.height - metrics.height,
-                _ => return Err(invalid("Unknown vertical text alignment")),
-            };
+            let offset = crate::text::vertical_offset(
+                self.string(index, "textAlignVertical", "top"),
+                rect.height,
+                metrics.height,
+            )?;
             if metrics.height > rect.height + 0.01 || metrics.longest_line > rect.width + 0.01 {
                 self.warn(index,"TEXT_OVERFLOW","The shaped text extends beyond its text box",json!({"text_width":metrics.longest_line,"text_height":metrics.height,"vertical_offset":offset,"box":rect}));
             }
@@ -803,11 +801,11 @@ impl Solver<'_> {
                 "center" => (rect.width - text.longest_line) / 2.0,
                 _ => 0.0,
             };
-            let y = match self.string(index, "textAlignVertical", "top") {
-                "bottom" => rect.height - text.height,
-                "middle" | "center" => (rect.height - text.height) / 2.0,
-                _ => 0.0,
-            };
+            let y = crate::text::vertical_offset(
+                self.string(index, "textAlignVertical", "top"),
+                rect.height,
+                text.height,
+            )?;
             local =
                 local.union(Rect::new(x, y, text.longest_line, text.height).outset(stroke, stroke));
             if let Some(block) = self.blocks.get(&index) {

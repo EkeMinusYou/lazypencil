@@ -12,6 +12,18 @@ use skia_safe::{
 pub const DEFAULT_FONT_FAMILY: &str = "Noto Sans JP";
 pub const DEFAULT_FONT_BYTES: &[u8] = include_bytes!("../resources/fonts/NotoSansJP.ttf");
 
+pub(crate) fn vertical_offset(alignment: &str, box_height: f32, text_height: f32) -> Result<f32> {
+    match alignment {
+        "top" => Ok(0.0),
+        "middle" | "center" => Ok((box_height - text_height) / 2.0),
+        "bottom" => Ok(box_height - text_height),
+        _ => Err(Error::new(
+            "INVALID_DOCUMENT",
+            "Unknown text vertical alignment",
+        )),
+    }
+}
+
 pub(crate) fn bundled_manifest() -> serde_json::Value {
     serde_json::from_str(include_str!("../resources/fonts/manifest.json"))
         .expect("Pinned font manifest")

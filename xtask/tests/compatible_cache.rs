@@ -719,26 +719,7 @@ fn release_recipe_transition_reuses_debug_only_and_overlays_the_new_release_delt
 #[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
 #[test]
 fn source_fallback_uses_cargo_ownership_to_discard_stale_tests_and_keep_unchanged_dependencies() {
-    let f = Fixture::new();
-    f.add_dependency();
-    fs::write(f.source.join("Cargo.toml"), "[package]\nname='lazypencil'\nversion='0.1.0'\nedition='2024'\n[workspace]\n[dependencies]\nunchanged_dependency={path='dependency'}\n").unwrap();
-    fs::write(
-        f.source.join("src/lib.rs"),
-        "pub fn fixture() -> u8 { unchanged_dependency::value() }\n",
-    )
-    .unwrap();
-    fs::write(
-        f.source.join("src/main.rs"),
-        "fn main() { println!(\"{}\", lazypencil::fixture()); }\n",
-    )
-    .unwrap();
-    process::checked(
-        Command::new("cargo")
-            .current_dir(&f.source)
-            .args(["generate-lockfile", "--offline"]),
-        Duration::from_secs(120),
-    )
-    .unwrap();
+    let f = Fixture::dependent_application();
     f.manifest();
     f.build(&[]);
     f.edit();
@@ -784,26 +765,7 @@ fn source_fallback_uses_cargo_ownership_to_discard_stale_tests_and_keep_unchange
 #[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
 #[test]
 fn complementary_dependency_archives_stay_fresh_and_rebuild_real_source_edits() {
-    let f = Fixture::new();
-    f.add_dependency();
-    fs::write(f.source.join("Cargo.toml"), "[package]\nname='lazypencil'\nversion='0.1.0'\nedition='2024'\n[workspace]\n[dependencies]\nunchanged_dependency={path='dependency'}\n").unwrap();
-    fs::write(
-        f.source.join("src/lib.rs"),
-        "pub fn fixture() -> u8 { unchanged_dependency::value() }\n",
-    )
-    .unwrap();
-    fs::write(
-        f.source.join("src/main.rs"),
-        "fn main() { println!(\"{}\", lazypencil::fixture()); }\n",
-    )
-    .unwrap();
-    process::checked(
-        Command::new("cargo")
-            .current_dir(&f.source)
-            .args(["generate-lockfile", "--offline"]),
-        Duration::from_secs(120),
-    )
-    .unwrap();
+    let f = Fixture::dependent_application();
     let arguments = |release| {
         let mut args = [
             "cargo",
@@ -886,6 +848,31 @@ fn complementary_dependency_archives_stay_fresh_and_rebuild_real_source_edits() 
 }
 
 impl Fixture {
+    #[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
+    fn dependent_application() -> Self {
+        let f = Self::new();
+        f.add_dependency();
+        fs::write(f.source.join("Cargo.toml"), "[package]\nname='lazypencil'\nversion='0.1.0'\nedition='2024'\n[workspace]\n[dependencies]\nunchanged_dependency={path='dependency'}\n").unwrap();
+        fs::write(
+            f.source.join("src/lib.rs"),
+            "pub fn fixture() -> u8 { unchanged_dependency::value() }\n",
+        )
+        .unwrap();
+        fs::write(
+            f.source.join("src/main.rs"),
+            "fn main() { println!(\"{}\", lazypencil::fixture()); }\n",
+        )
+        .unwrap();
+        process::checked(
+            Command::new("cargo")
+                .current_dir(&f.source)
+                .args(["generate-lockfile", "--offline"]),
+            Duration::from_secs(120),
+        )
+        .unwrap();
+        f
+    }
+
     #[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
     fn add_dependency(&self) {
         fs::create_dir_all(self.source.join("dependency/src")).unwrap();

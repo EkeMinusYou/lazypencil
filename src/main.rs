@@ -22,10 +22,7 @@ fn main() -> ExitCode {
     {
         return match lazypencil::runtime::profiles::serve_page_worker() {
             Ok(()) => ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!("{error}");
-                ExitCode::from(error.exit_code())
-            }
+            Err(error) => failure(error, None),
         };
     }
     if std::env::args_os()
@@ -34,10 +31,7 @@ fn main() -> ExitCode {
     {
         return match lazypencil::runtime::serve_download_worker() {
             Ok(()) => ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!("{error}");
-                ExitCode::from(error.exit_code())
-            }
+            Err(error) => failure(error, None),
         };
     }
     #[cfg(any(windows, unix))]
@@ -48,10 +42,7 @@ fn main() -> ExitCode {
         return match lazypencil::cdp::serve_process_worker() {
             Ok(true) => ExitCode::SUCCESS,
             Ok(false) => ExitCode::FAILURE,
-            Err(error) => {
-                eprintln!("{error}");
-                ExitCode::from(error.exit_code())
-            }
+            Err(error) => failure(error, None),
         };
     }
     #[cfg(any(windows, unix))]
@@ -62,10 +53,7 @@ fn main() -> ExitCode {
         return match lazypencil::agent::serve_process_worker() {
             Ok(true) => ExitCode::SUCCESS,
             Ok(false) => ExitCode::FAILURE,
-            Err(error) => {
-                eprintln!("{error}");
-                ExitCode::from(error.exit_code())
-            }
+            Err(error) => failure(error, None),
         };
     }
     #[cfg(feature = "tui")]
@@ -75,10 +63,7 @@ fn main() -> ExitCode {
     {
         return match lazypencil::clipboard::serve_worker() {
             Ok(()) => ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!("{error}");
-                ExitCode::from(error.exit_code())
-            }
+            Err(error) => failure(error, None),
         };
     }
     if std::env::args_os()
@@ -87,10 +72,7 @@ fn main() -> ExitCode {
     {
         return match lazypencil::script::serve_worker() {
             Ok(()) => ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!("{error}");
-                ExitCode::from(error.exit_code())
-            }
+            Err(error) => failure(error, None),
         };
     }
     lazypencil::remote_images::initialize_worker();
@@ -140,48 +122,17 @@ fn main() -> ExitCode {
     {
         Ok(activity) => activity,
         Err(error) => {
-            if arguments.json {
-                let value = if matches!(arguments.command, lazypencil::cli::Command::Prompt(_)) {
-                    serde_json::json!({"type":"error","error":error})
-                } else {
-                    serde_json::json!({"error":error})
-                };
-                let _ = writeln!(std::io::stdout().lock(), "{value}");
-            } else {
-                eprintln!("{error}");
-            }
-            return ExitCode::from(error.exit_code());
+            return failure(error, Some(&arguments));
         }
     };
     if let Err(error) = lazypencil::config::agents::resolve_arguments(&mut arguments, &matches) {
-        if arguments.json {
-            let value = if matches!(arguments.command, lazypencil::cli::Command::Prompt(_)) {
-                serde_json::json!({"type":"error","error":error})
-            } else {
-                serde_json::json!({"error":error})
-            };
-            let _ = writeln!(std::io::stdout().lock(), "{value}");
-        } else {
-            eprintln!("{error}");
-        }
-        return ExitCode::from(error.exit_code());
+        return failure(error, Some(&arguments));
     }
     #[cfg(feature = "tui")]
     if let lazypencil::cli::Command::Tui(options) = &arguments.command {
         return match lazypencil::tui::run(options, arguments.data_dir.clone(), arguments.json) {
             Ok(()) => ExitCode::SUCCESS,
-            Err(error) => {
-                if arguments.json {
-                    let _ = writeln!(
-                        std::io::stdout().lock(),
-                        "{}",
-                        serde_json::json!({"error":error})
-                    );
-                } else {
-                    eprintln!("{error}");
-                }
-                ExitCode::from(error.exit_code())
-            }
+            Err(error) => failure(error, Some(&arguments)),
         };
     }
     if let lazypencil::cli::Command::Mcp {
@@ -205,10 +156,7 @@ fn main() -> ExitCode {
             },
         ) {
             Ok(()) => ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!("{error}");
-                ExitCode::from(error.exit_code())
-            }
+            Err(error) => failure(error, None),
         };
     }
     if let lazypencil::cli::Command::Prompt(options) = &arguments.command {
@@ -216,18 +164,7 @@ fn main() -> ExitCode {
             lazypencil::prompt::run_cli(options, arguments.data_dir.clone(), arguments.json)
         }) {
             Ok(()) => ExitCode::SUCCESS,
-            Err(error) => {
-                if arguments.json {
-                    let _ = writeln!(
-                        std::io::stdout().lock(),
-                        "{}",
-                        serde_json::json!({"type":"error","error":error})
-                    );
-                } else {
-                    eprintln!("{error}");
-                }
-                ExitCode::from(error.exit_code())
-            }
+            Err(error) => failure(error, Some(&arguments)),
         };
     }
     let cancellable = match &arguments.command {
@@ -319,4 +256,18 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
     ExitCode::from(code)
+}
+
+fn failure(error: lazypencil::Error, arguments: Option<&lazypencil::cli::Arguments>) -> ExitCode {
+    if let Some(arguments) = arguments.filter(|arguments| arguments.json) {
+        let value = if matches!(&arguments.command, lazypencil::cli::Command::Prompt(_)) {
+            serde_json::json!({"type":"error","error":error})
+        } else {
+            serde_json::json!({"error":error})
+        };
+        let _ = writeln!(std::io::stdout().lock(), "{value}");
+    } else {
+        eprintln!("{error}");
+    }
+    ExitCode::from(error.exit_code())
 }

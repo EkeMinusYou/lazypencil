@@ -410,7 +410,7 @@ impl Bound {
         }
         for property in ["fill", "stroke", "effect"] {
             if let Some(value) = node.get_mut(property) {
-                for fill in shader_values_mut(value) {
+                for fill in property_values_mut(value) {
                     if fill["enabled"] == false {
                         continue;
                     }
@@ -428,12 +428,8 @@ impl Bound {
                         && let Some(uniforms) =
                             fill.get_mut("uniforms").and_then(Value::as_object_mut)
                     {
-                        for value in uniforms.values_mut().flat_map(shader_values_mut) {
-                            if let Some(uri) = value.as_str().filter(|uri| {
-                                !uri.is_empty()
-                                    && !uri.starts_with(['$', '#'])
-                                    && !uri.starts_with("pencil:")
-                            }) {
+                        for value in uniforms.values_mut().flat_map(property_values_mut) {
+                            if let Some(uri) = shader_asset_uri(value) {
                                 *value = json!(self.asset("image", uri)?);
                             }
                         }

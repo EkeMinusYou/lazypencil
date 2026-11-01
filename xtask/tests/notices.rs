@@ -213,19 +213,47 @@ fn external_native_headers_keep_reviewable_identity_without_copying_sdk_text() {
 }
 
 #[test]
-fn delegated_codec_terms_and_product_credits_are_byte_exact_and_required() {
-    for (component, paths, credit) in [
+fn delegated_terms_and_product_credits_are_byte_exact_and_required() {
+    for (component, label, paths, credits) in [
         (
             "libjpeg-turbo",
+            "libjpeg-turbo",
             &["LICENSE.md", "README.ijg"][..],
-            Some("This software is based in part on the work of the Independent JPEG Group."),
+            &["This software is based in part on the work of the Independent JPEG Group."][..],
         ),
-        ("libwebp", &["COPYING", "AUTHORS", "PATENTS"][..], None),
+        (
+            "libwebp",
+            "libwebp",
+            &["COPYING", "AUTHORS", "PATENTS"][..],
+            &[][..],
+        ),
+        (
+            "freetype",
+            "FreeType",
+            &[
+                "LICENSE.TXT",
+                "docs/FTL.TXT",
+                "docs/GPLv2.TXT",
+                "src/bdf/README",
+                "src/pcf/README",
+                "src/gzip/zlib.h",
+                "src/base/fthash.c",
+                "include/freetype/internal/fthash.h",
+                "src/autofit/ft-hb-ft.c",
+                "src/autofit/ft-hb-decls.h",
+                "src/autofit/ft-hb-types.h",
+                "src/autofit/hb-script-list.h",
+            ][..],
+            &[
+                "FreeType is used under the FreeType License (FTL).",
+                "based in part on the work of the FreeType Team",
+            ][..],
+        ),
     ] {
         let mut f = Fixture::new("skia");
         let (index, texts) = f.skia().unwrap();
         let original = skia::files(&index, texts).unwrap();
-        if let Some(credit) = credit {
+        for &credit in credits {
             assert!(!String::from_utf8_lossy(&original["SKIA-NOTICES.txt"]).contains(credit));
         }
         let prefix = format!("source/third_party/externals/{component}/");
@@ -258,7 +286,7 @@ fn delegated_codec_terms_and_product_credits_are_byte_exact_and_required() {
         }
         let files = skia::files(&index, texts).unwrap();
         let rendered = String::from_utf8(files["SKIA-NOTICES.txt"].clone()).unwrap();
-        if let Some(credit) = credit {
+        for &credit in credits {
             assert!(rendered.split_once("\n====").unwrap().0.contains(credit));
         }
         // The readable summary normalizes line endings; source blobs above
@@ -280,7 +308,7 @@ fn delegated_codec_terms_and_product_credits_are_byte_exact_and_required() {
             fs::remove_file(&original).unwrap();
             let error = f.skia().unwrap_err().to_string();
             assert!(
-                error.contains(&format!("Missing original {component} terms")),
+                error.contains(&format!("Missing original {label} terms")),
                 "{path}: {error}"
             );
             fs::write(original, bytes).unwrap();
@@ -295,74 +323,9 @@ fn delegated_codec_terms_and_product_credits_are_byte_exact_and_required() {
                 f.skia()
                     .unwrap_err()
                     .to_string()
-                    .contains(&format!("Missing original {component} terms"))
+                    .contains(&format!("Missing original {label} terms"))
             );
         }
-    }
-}
-
-#[test]
-fn freetype_delegated_terms_are_complete_byte_exact_and_required() {
-    let mut f = Fixture::new("skia");
-    let paths = [
-        "LICENSE.TXT",
-        "docs/FTL.TXT",
-        "docs/GPLv2.TXT",
-        "src/bdf/README",
-        "src/pcf/README",
-        "src/gzip/zlib.h",
-        "src/base/fthash.c",
-        "include/freetype/internal/fthash.h",
-        "src/autofit/ft-hb-ft.c",
-        "src/autofit/ft-hb-decls.h",
-        "src/autofit/ft-hb-types.h",
-        "src/autofit/hb-script-list.h",
-    ];
-    let prefix = "source/third_party/externals/freetype/";
-    for path in paths {
-        f.write(
-            &format!("{prefix}{path}"),
-            format!("Original fixture terms for {path}\r\nCopyright fixture author\r\n"),
-        );
-    }
-    f.write(
-        &format!("{prefix}native.c"),
-        b"/* Fixture native input. */\n",
-    );
-    f.data["graph"] = json!(format!(
-        "{}../source/third_party/externals/freetype/native.c\n",
-        f.data["graph"].as_str().unwrap()
-    ));
-    let (index, texts) = f.skia().unwrap();
-    for path in paths {
-        let name = format!("third_party/externals/freetype/{path}");
-        let record = index["notice_files"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|record| record["path"] == name)
-            .unwrap();
-        let bytes = fs::read(f.path(&format!("source/{name}"))).unwrap();
-        assert_eq!(record["sha256"], util::digest(&bytes));
-        assert_eq!(texts[record["blob"].as_str().unwrap()], bytes);
-    }
-    let files = skia::files(&index, texts).unwrap();
-    let rendered = String::from_utf8(files["SKIA-NOTICES.txt"].clone()).unwrap();
-    assert!(rendered.contains("FreeType is used under the FreeType License (FTL)."));
-    assert!(rendered.contains("based in part on the work of the FreeType Team"));
-    let output = f.path("published");
-    notices::publish_bundle(&output, &files).unwrap();
-    notices::verify_expected(&output, &files).unwrap();
-    for path in paths {
-        let original = f.path(&format!("{prefix}{path}"));
-        let bytes = fs::read(&original).unwrap();
-        fs::remove_file(&original).unwrap();
-        let error = f.skia().unwrap_err().to_string();
-        assert!(
-            error.contains("Missing original FreeType terms"),
-            "{path}: {error}"
-        );
-        fs::write(original, bytes).unwrap();
     }
 }
 

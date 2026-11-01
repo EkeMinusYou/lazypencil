@@ -2884,11 +2884,7 @@ fn collect_assets(
     }
     for key in ["fill", "stroke", "effect"] {
         if let Some(payload) = value.get(key) {
-            let fills = payload
-                .as_array()
-                .map(|v| v.iter().collect::<Vec<_>>())
-                .unwrap_or_else(|| vec![payload]);
-            for fill in fills {
+            for fill in property_values(payload) {
                 if fill["enabled"] == false {
                     continue;
                 }
@@ -2910,15 +2906,10 @@ fn collect_assets(
                 {
                     for uniform in uniforms
                         .values()
-                        .flat_map(shader_values)
-                        .filter_map(Value::as_str)
+                        .flat_map(property_values)
+                        .filter_map(shader_asset_uri)
                     {
-                        if !uniform.starts_with(['#', '$'])
-                            && !uniform.starts_with("pencil:")
-                            && !uniform.is_empty()
-                        {
-                            output.push((origin.into(), uniform.into(), "image".into()));
-                        }
+                        output.push((origin.into(), uniform.into(), "image".into()));
                     }
                 }
             }
@@ -2943,14 +2934,20 @@ fn collect_assets(
     Ok(())
 }
 
-fn shader_values(value: &Value) -> &[Value] {
+fn shader_asset_uri(value: &Value) -> Option<&str> {
+    value.as_str().filter(|uri| {
+        !uri.is_empty() && !uri.starts_with(['#', '$']) && !uri.starts_with("pencil:")
+    })
+}
+
+fn property_values(value: &Value) -> &[Value] {
     value
         .as_array()
         .map(Vec::as_slice)
         .unwrap_or_else(|| std::slice::from_ref(value))
 }
 
-fn shader_values_mut(value: &mut Value) -> &mut [Value] {
+fn property_values_mut(value: &mut Value) -> &mut [Value] {
     match value {
         Value::Array(values) => values,
         value => std::slice::from_mut(value),

@@ -179,10 +179,6 @@ impl Store {
 
     /// Check retries before expensive preparation outside the document lock.
     /// Transactions repeat this check after taking their own lock.
-    pub fn replay_result(&self, request_id: &str, fingerprint: &str) -> Result<Option<Value>> {
-        self.replay_result_with_cancellation(request_id, fingerprint, None)
-    }
-
     pub fn replay_result_with_cancellation(
         &self,
         request_id: &str,

@@ -118,15 +118,6 @@ pub fn put_asset_with_cancellation(
     }
 }
 
-pub fn put_file(
-    store: &Store,
-    kind: AssetKind,
-    path: &Path,
-    mime: Option<&str>,
-) -> Result<ManagedAsset> {
-    put_file_with_cancellation(store, kind, path, mime, None)
-}
-
 pub fn put_file_with_cancellation(
     store: &Store,
     kind: AssetKind,

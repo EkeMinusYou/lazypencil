@@ -105,25 +105,6 @@ impl InputImage {
     }
 }
 
-pub fn read_clipboard(executable: &Path, cancel: &CancellationToken) -> Result<InputContent> {
-    read_clipboard_with_bounds(executable, None, cancel)
-}
-
-pub fn read_clipboard_with_bounds(
-    executable: &Path,
-    bounds: Option<image_input::ImageBounds>,
-    cancel: &CancellationToken,
-) -> Result<InputContent> {
-    read_clipboard_with_options(
-        executable,
-        AttachmentOptions {
-            bounds,
-            ..Default::default()
-        },
-        cancel,
-    )
-}
-
 pub fn read_clipboard_with_options(
     executable: &Path,
     options: AttachmentOptions,

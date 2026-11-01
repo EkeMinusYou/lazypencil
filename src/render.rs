@@ -612,17 +612,14 @@ impl Renderer<'_> {
             .text_blocks
             .get(&index)
             .ok_or_else(|| Error::new("RENDER_ERROR", "Missing measured paragraph"))?;
-        let offset = match node
-            .properties
-            .get("textAlignVertical")
-            .and_then(Value::as_str)
-            .unwrap_or("top")
-        {
-            "top" => 0.0,
-            "middle" | "center" => (rect.height() - block.metrics.height) / 2.0,
-            "bottom" => rect.height() - block.metrics.height,
-            _ => return Err(invalid("Unknown text vertical alignment")),
-        };
+        let offset = crate::text::vertical_offset(
+            node.properties
+                .get("textAlignVertical")
+                .and_then(Value::as_str)
+                .unwrap_or("top"),
+            rect.height(),
+            block.metrics.height,
+        )?;
         let default = Value::String("#000000".into());
         let fill = node.properties.get("fill").unwrap_or(&default);
         let bounds = SkRect::from_xywh(

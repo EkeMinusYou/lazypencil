@@ -1008,11 +1008,7 @@ impl Copier<'_> {
         }
         for key in ["fill", "stroke", "effect"] {
             if let Some(payload) = result.get_mut(key) {
-                let fills = match payload {
-                    Value::Array(values) => values.iter_mut().collect::<Vec<_>>(),
-                    value => vec![value],
-                };
-                for fill in fills {
+                for fill in property_values_mut(payload) {
                     let shader = fill["type"] == "shader";
                     if fill["type"] == "image" || shader {
                         let kind = if shader { "shader" } else { "image" };
@@ -1028,18 +1024,10 @@ impl Copier<'_> {
                             && let Some(uniforms) =
                                 fill.get_mut("uniforms").and_then(Value::as_object_mut)
                         {
-                            for value in uniforms.values_mut().flat_map(shader_values_mut) {
-                                if let Some(uri) = value.as_str() {
-                                    if uri.starts_with('$') {
-                                        continue;
-                                    }
-                                    if !uri.is_empty()
-                                        && !uri.starts_with('#')
-                                        && !uri.starts_with("pencil:")
-                                    {
-                                        let uri = self.asset(origin, uri, "image")?;
-                                        *value = json!(uri);
-                                    }
+                            for value in uniforms.values_mut().flat_map(property_values_mut) {
+                                if let Some(uri) = shader_asset_uri(value) {
+                                    let uri = self.asset(origin, uri, "image")?;
+                                    *value = json!(uri);
                                 }
                             }
                         }

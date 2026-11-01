@@ -180,11 +180,7 @@ impl Project {
         }
         for key in ["fill", "stroke", "effect"] {
             if let Some(payload) = object.get_mut(key) {
-                let fills = match payload {
-                    Value::Array(items) => items.iter_mut().collect::<Vec<_>>(),
-                    item => vec![item],
-                };
-                for fill in fills {
+                for fill in property_values_mut(payload) {
                     let shader = fill["type"] == "shader";
                     if fill["type"] == "image" || shader {
                         if let Some(url) = fill.get_mut("url") {
@@ -194,12 +190,8 @@ impl Project {
                             && let Some(uniforms) =
                                 fill.get_mut("uniforms").and_then(Value::as_object_mut)
                         {
-                            for value in uniforms.values_mut().flat_map(shader_values_mut) {
-                                if value.as_str().is_some_and(|s| {
-                                    !s.is_empty()
-                                        && !s.starts_with(['#', '$'])
-                                        && !s.starts_with("pencil:")
-                                }) {
+                            for value in uniforms.values_mut().flat_map(property_values_mut) {
+                                if shader_asset_uri(value).is_some() {
                                     self.detached_uri(origin, value)?;
                                 }
                             }
@@ -616,11 +608,7 @@ impl Project {
             }
             for key in ["fill", "stroke", "effect"] {
                 if let Some(value) = result.get_mut(key) {
-                    let fills = match value {
-                        Value::Array(items) => items.iter_mut().collect::<Vec<_>>(),
-                        item => vec![item],
-                    };
-                    for fill in fills {
+                    for fill in property_values_mut(value) {
                         let shader = fill["type"] == "shader";
                         if fill["type"] == "image" || shader {
                             if let Some(uri) = fill.get_mut("url") {
@@ -630,12 +618,8 @@ impl Project {
                                 && let Some(uniforms) =
                                     fill.get_mut("uniforms").and_then(Value::as_object_mut)
                             {
-                                for value in uniforms.values_mut().flat_map(shader_values_mut) {
-                                    if value.as_str().is_some_and(|s| {
-                                        !s.is_empty()
-                                            && !s.starts_with(['#', '$'])
-                                            && !s.starts_with("pencil:")
-                                    }) {
+                                for value in uniforms.values_mut().flat_map(property_values_mut) {
+                                    if shader_asset_uri(value).is_some() {
                                         asset_uri(project, node.property_source(key), value)?;
                                     }
                                 }

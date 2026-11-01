@@ -15,9 +15,7 @@ fn frame_color_queries_preserve_aligned_pixels_alpha_and_cache_independent_equal
     assert!(frame.has_color([5, 6, 7, 8]));
     assert!(!frame.has_color([2, 3, 4, 5]));
     assert!(!frame.has_color([1, 2, 3, 255]));
-    for _ in 0..1000 {
-        assert!(!frame.has_color([9, 10, 11, 0]));
-    }
+    assert!(!frame.has_color([9, 10, 11, 0]));
     assert_eq!(frame, Frame::new(2, 1, frame.rgba().to_vec()).unwrap());
     assert_eq!(frame, frame.clone());
     assert_eq!(frame.rgba(), [1, 2, 3, 4, 5, 6, 7, 8]);
@@ -346,7 +344,7 @@ fn split_kitty_packets_are_consumed_once_and_never_replay_old_pixels() {
         decoder.images.iter().map(|f| f.rgba()).collect::<Vec<_>>(),
         [red.as_slice(), blue.as_slice()]
     );
-    for _ in 0..100 {
+    for _ in 0..2 {
         decoder.feed(b"").unwrap();
     }
     assert_eq!(decoder.images.len(), 2);

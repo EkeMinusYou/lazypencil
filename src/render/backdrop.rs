@@ -489,17 +489,14 @@ impl Renderer<'_> {
                 .text_blocks
                 .get(&index)
                 .ok_or_else(|| invalid("Missing backdrop text mask"))?;
-            let offset = match node
-                .properties
-                .get("textAlignVertical")
-                .and_then(Value::as_str)
-                .unwrap_or("top")
-            {
-                "top" => 0.0,
-                "middle" | "center" => (item.record.rect.height - block.metrics.height) / 2.0,
-                "bottom" => item.record.rect.height - block.metrics.height,
-                _ => return Err(invalid("Unknown text vertical alignment")),
-            };
+            let offset = crate::text::vertical_offset(
+                node.properties
+                    .get("textAlignVertical")
+                    .and_then(Value::as_str)
+                    .unwrap_or("top"),
+                item.record.rect.height,
+                block.metrics.height,
+            )?;
             block.paragraph.paint(canvas, (0.0, offset));
         } else {
             let path = shape(

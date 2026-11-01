@@ -5,7 +5,7 @@ type ImageFiles = BTreeMap<String, Arc<[u8]>>;
 impl Copier<'_> {
     pub(super) fn scan_sampler_values(&mut self, origin: &Path, node: &Value) -> Result<()> {
         for property in ["fill", "stroke", "effect"] {
-            for fill in shader_values(&node[property]) {
+            for fill in property_values(&node[property]) {
                 if fill["type"] != "shader" {
                     continue;
                 }
@@ -14,7 +14,7 @@ impl Copier<'_> {
                     .and_then(Value::as_object)
                     .into_iter()
                     .flat_map(Map::values)
-                    .flat_map(shader_values)
+                    .flat_map(property_values)
                 {
                     if let Some(name) = value.as_str().and_then(|value| value.strip_prefix('$')) {
                         let key = self.project.variable_key(origin, name)?;
