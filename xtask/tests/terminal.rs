@@ -234,6 +234,21 @@ fn compressed_kitty_cannot_bypass_aggregate_retained_pixel_and_frame_limits() {
 }
 
 #[test]
+fn kitty_placeholder_observer_distinguishes_rgb_ids_from_colorless_cells() {
+    let wire = "\x1b[38;2;18;52;86m\u{10eeee}\u{305}\x1b[39mX\u{10eeee}";
+    for chunk in [1, 7, wire.len()] {
+        let mut screen = Screen::new(12, 2);
+        for part in wire.as_bytes().chunks(chunk) {
+            screen.feed(part);
+        }
+        assert_eq!(
+            screen.kitty_placeholder_foregrounds(),
+            [Some([18, 52, 86]), None]
+        );
+    }
+}
+
+#[test]
 fn real_macos_capture_preserves_spaces_and_streamed_utf8() {
     let fixture: Value =
         util::json(&util::root().join("tests/fixtures/terminal/macos-saved-log-refresh.json"))
