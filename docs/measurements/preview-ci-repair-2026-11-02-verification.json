@@ -1,0 +1,48 @@
+{
+  "format_version": 1,
+  "source_commit": "b47ba86a642290bc1e6aef685b5805c625fd2fb5",
+  "binary_sha256": "b4edf6c82fb115382fb2d1bab07f91a1c091ca209667459dc64a22934ceede4d",
+  "source_sha256": {
+    "src/render/preview.rs": "02802db8ad981637dfff8efdf2ffee6f7789eeed3da21cdd8e1dc8e973a18e66",
+    "src/tui/camera.rs": "bc3f88ffc6bfb1fbdc4af81cb320ac7838a1b044ea2e25592b4562bb26de80cc",
+    "src/tui/graphics.rs": "6d8cc42b73bfb0c26f0aed8e97f9ae34aec3516ff31da562e67a0aa13ec0e2c2",
+    "src/tui/preview.rs": "8559f813c51dd1422f6992348ed2d25fbd0ead41da0be70c94f6bd65b5687cd7",
+    "src/tui/tests.rs": "df1cac2254bfa91283ac13dddf8cd79208c29d250541e17328be83792d938348"
+  },
+  "validation_log_sha256": {
+    "compact-preview-tests.log": "475aaa416bf918fa279c4b3c1c6835b7a3dcbd06ca226f93a54013b46c85e792",
+    "camera-final-tests.log": "fc0c9f154bdf2ed78fa1134feb8580f68c48a12796befe3975cf02a4daab8966",
+    "camera-final-feedback-test.log": "d5bef6cbfb3c578f267f4114235de49ed966db0037e18eca60efa4e64eb2187f",
+    "camera-final-clippy.log": "dd49decbcfa2e6006a805b5fd94885a66d23565c1846ee90eb45d803ea21b383",
+    "camera-final-release.log": "50913d9806338870da5364dcad16b95d0883d6b4c21d274c78e0deeaac3a7e7e"
+  },
+  "real_document_report": "preview-ci-repair-2026-11-02.json",
+  "local_memory": {
+    "scope": "Sampled local TUI and owned script worker only; false adapter, no agent turn or bound MCP. Not the hosted six-role or kernel-peak acceptance measurement. ps RSS sampled around 20ms polling; OS caches and load uncontrolled.",
+    "geometry": {
+      "columns": 160,
+      "pixel_height": 1080,
+      "pixel_width": 1920,
+      "rows": 54
+    },
+    "document_sha256": "c9abf402c5bfa63a046919c4cef28942547b57e9d0a7fdd0feca77dac2916467",
+    "before": {
+      "binary_sha256": "7ceb6232f2b732102f82a5d5581700b998885a21226a43f4db8bf13c33155f93",
+      "maximum_tui_rss_bytes": 102694912,
+      "maximum_owned_rss_bytes": 113229824
+    },
+    "after": {
+      "binary_sha256": "b4edf6c82fb115382fb2d1bab07f91a1c091ca209667459dc64a22934ceede4d",
+      "maximum_tui_rss_bytes": 90685440,
+      "maximum_owned_rss_bytes": 101187584
+    },
+    "all_80_exact_images_match": true,
+    "raw_logs": {
+      "before_report_sha256": "65614e52f14789be8cf61f3d280fa82044aa78d820d648ca5d79da17d0bb0f57",
+      "after_report_sha256": "f92dfc0413e229c7f3cc74d42d6b4190ccd20ec7326ebf95f576193bfdd87eec",
+      "before_rss_trace_sha256": "fccd3fd79f5098c91d8c7a119710d2bac7df79ad5dd34d204d1c8f921ad8c86e",
+      "after_rss_trace_sha256": "d59be8835d94d23fde829d5c6c7d1781ce3eac11483588a9bd44b79e2bf6006c",
+      "directory": "/private/tmp/lazypencil-main-merge-20261102"
+    }
+  }
+}
