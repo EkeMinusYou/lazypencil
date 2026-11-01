@@ -254,6 +254,62 @@ mod hosted {
         time::{Duration, Instant},
     };
 
+    fn prompt_ready(screen: &observer::Screen) -> bool {
+        let Some((x, y)) = screen.find_text("›") else {
+            return false;
+        };
+        let input = (x + 2, y);
+        screen.cursor() == input
+            && [
+                "Describe a design change…",
+                "Describe a change…",
+                "Message…",
+            ]
+            .iter()
+            .any(|hint| screen.find_text(hint) == Some(input))
+    }
+
+    fn resource_turn_complete(screen: &observer::Screen) -> bool {
+        screen.text().contains("完了 1") && screen.find_text("○ Idle").is_some()
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn prompt_readiness_requires_the_empty_composer_and_its_input_cursor() {
+            for hint in [
+                "Describe a design change…",
+                "Describe a change…",
+                "Message…",
+            ] {
+                let mut screen = observer::Screen::new(160, 54);
+                screen.feed(format!("\x1b[10;5H› {hint}\x1b[10;7H").as_bytes());
+                assert!(prompt_ready(&screen));
+                screen.feed(b"\x1b[1;1H");
+                assert!(!prompt_ready(&screen), "Unfocused input must not be ready");
+            }
+            let mut screen = observer::Screen::new(160, 54);
+            screen.feed(b"Prompt");
+            assert!(
+                !prompt_ready(&screen),
+                "The retired panel title is insufficient"
+            );
+        }
+
+        #[test]
+        fn completed_resource_turn_requires_both_reply_and_idle_agent_status() {
+            let mut screen = observer::Screen::new(160, 54);
+            screen.feed("\x1b[3;5H○ Idle".as_bytes());
+            assert!(!resource_turn_complete(&screen));
+            screen.feed("\x1b[4;5H完了 1".as_bytes());
+            assert!(resource_turn_complete(&screen));
+            screen.feed("\x1b[3;5H● Working".as_bytes());
+            assert!(!resource_turn_complete(&screen));
+        }
+    }
+
     #[derive(Clone, Copy, Default)]
     struct ObserverTime {
         screen_ms: f64,
@@ -624,9 +680,7 @@ mod hosted {
         let mut terminal = Terminal::start(binary, helper, &root, deadline)?;
         let sampling_start_delay_ms = terminal.started.elapsed().as_secs_f64() * 1000.0;
         terminal.activity = Some(resources::ActiveTrace::new(terminal.child.id())?);
-        terminal.wait("resource trial prompt", |t| {
-            t.screen.text().contains("Prompt")
-        })?;
+        terminal.wait("resource trial prompt", |t| prompt_ready(&t.screen))?;
         terminal.wait("resource trial complete preview", |t| {
             t.last_frame.is_some()
         })?;
@@ -972,13 +1026,7 @@ mod hosted {
             }
             fs::write(root.join("bound-render-release"), b"complete")?;
             terminal.wait("completed resource turn", |t| {
-                root.join("bound-render-closed.json").is_file()
-                    && t.screen.text().contains("完了 1")
-                    && t.screen
-                        .text()
-                        .lines()
-                        .next()
-                        .is_some_and(|line| line.contains("idle"))
+                root.join("bound-render-closed.json").is_file() && resource_turn_complete(&t.screen)
             })?;
             // Retain the raw trace on failure, including identity mismatches.
             let trace = terminal.activity.as_mut().unwrap().finish_bound(&roles)?;
@@ -1137,7 +1185,7 @@ mod hosted {
             let fixture = fixtures::performance(&root, "dashboard")?;
             fs::write(root.join("lazypencil.toml"), b"version=1\n")?;
             let mut terminal = Terminal::start(&binary, &helper, &root, deadline)?;
-            terminal.wait("prompt", |t| t.screen.text().contains("Prompt"))?;
+            terminal.wait("prompt", |t| prompt_ready(&t.screen))?;
             let marker = b"measurement-ready";
             terminal.key(marker)?;
             terminal.wait("prompt echo", |t| {
