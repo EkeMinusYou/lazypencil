@@ -178,7 +178,6 @@ struct App {
     log: String,
     scroll: u16,
     status: String,
-    protocol: String,
     authentication: String,
     permissions: VecDeque<Permission>,
     input: Option<InputJob>,
@@ -225,7 +224,6 @@ impl App {
             log: String::new(),
             scroll: 0,
             status,
-            protocol: "Halfblocks".into(),
             authentication: "unknown".into(),
             permissions: VecDeque::new(),
             input: None,
@@ -245,7 +243,6 @@ impl App {
     }
     async fn event_loop(&mut self, screen: &mut terminal::Screen, worker: &Worker) -> Result<()> {
         let mut events = EventStream::new();
-        self.protocol = format!("{:?}", screen.picker.protocol_type());
         self.camera_id = screen.camera_image_id();
         let mut timer = tokio::time::interval(Duration::from_secs(1));
         timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -1267,13 +1264,12 @@ impl App {
         );
         let block = panel(
             format!(
-                "Preview{} · {} · {} / {} zoom",
+                "Preview{} · {} / {} zoom",
                 if self.camera.is_some() {
                     " · updating"
                 } else {
                     ""
                 },
-                self.protocol,
                 self.navigation.label(Nav::ZoomIn),
                 self.navigation.label(Nav::ZoomOut)
             ),
