@@ -131,9 +131,9 @@ impl Harness {
             "user-navigation-config",
             "ime-commit",
             "kitty-no-color",
-            "herdr-kitty",
-            "herdr-kitty-no-color",
-            "herdr-kitty-held",
+            "kitty-placements",
+            "kitty-placements-no-color",
+            "kitty-held",
             "auto-kitty-raw",
         ]
         .contains(&case)
@@ -156,7 +156,7 @@ impl Harness {
             ws_xpixel: 0,
             ws_ypixel: 0,
         };
-        if case == "herdr-kitty-held" {
+        if case == "kitty-held" {
             size.ws_xpixel = size.ws_col * 10;
             size.ws_ypixel = size.ws_row * 10;
         }
@@ -184,6 +184,7 @@ impl Harness {
         command
             .current_dir(root)
             .env_remove("HERDR_ENV")
+            .env_remove("HC_TERMINAL_ID")
             .envs(&environment)
             .arg("--data-dir")
             .arg(root.join("data"))
@@ -204,7 +205,7 @@ impl Harness {
                     "--adapter-arg=image-inspect"
                 });
         }
-        if case == "herdr-kitty-held" {
+        if case == "kitty-held" {
             command.env("LAZYPENCIL_PROFILE_INPUT", "owned-local-measurement");
         }
         command

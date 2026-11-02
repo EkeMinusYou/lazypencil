@@ -50,13 +50,13 @@ fn real_pty_queues_follow_ups_and_restores_typing_after_completion() {
 
 #[test]
 fn real_pty_pan_handles_taps_and_repeats_without_replaying_after_release() {
-    run_pty_case("herdr-kitty-held");
+    run_pty_case("kitty-held");
 }
 
 #[test]
-fn real_pty_herdr_uses_rectangular_images_without_placeholder_row_seams() {
-    run_pty_case("herdr-kitty");
-    run_pty_case("herdr-kitty-no-color");
+fn real_pty_kitty_uses_rectangular_images_without_application_markers() {
+    run_pty_case("kitty-placements");
+    run_pty_case("kitty-placements-no-color");
 }
 
 #[test]

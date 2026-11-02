@@ -323,8 +323,7 @@ impl App {
         self.camera_id = screen.camera_image_id();
         self.presentation.rectangular(
             screen.picker.protocol_type() == ratatui_image::picker::ProtocolType::Kitty
-                && !screen.picker.tmux_detected()
-                && std::env::var_os("HERDR_ENV").is_some(),
+                && !screen.picker.tmux_detected(),
         );
         let mut timer = tokio::time::interval(Duration::from_secs(1));
         timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
