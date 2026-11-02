@@ -490,7 +490,7 @@ fn diagnostics(h: &mut Harness, design: &Value) -> Result {
         reference["node_references"][0]["target"]["address"]["node_id"],
         "child-b"
     );
-    h.paste("Diagnosticsをすべて対応して")?;
+    h.paste("文書全体のレイアウト上の問題を確認して修正してください")?;
     h.key(b"\x13")?;
     h.wait(
         "document-wide diagnostic request reaches the agent",
@@ -499,14 +499,11 @@ fn diagnostics(h: &mut Harness, design: &Value) -> Result {
     )?;
     let all = read_json(&h.root.join("received-turn-2.json")).unwrap();
     assert!(
-        all["text"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|text| text
-                .as_str()
-                .is_some_and(|text| text.contains("validate_document")
-                    && text.contains("next_cursor as cursor")))
+        all["text"].as_array().unwrap().iter().any(|text| text
+            .as_str()
+            .is_some_and(|text| text.contains("validate_document")
+                && text.contains("next_cursor")
+                && text.contains("snapshot_id")))
     );
     assert!(
         all["text"]

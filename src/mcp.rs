@@ -159,11 +159,7 @@ pub fn serve_with_preview_context(
 impl ServerHandler for Server {
     fn get_info(&self) -> ServerConfig {
         let instructions = if self.preview_control {
-            format!(
-                "{INSTRUCTIONS}\n\n{}\n\n{}",
-                crate::preview_control::INSTRUCTIONS,
-                crate::preview_control::DIAGNOSTICS_INSTRUCTIONS
-            )
+            format!("{INSTRUCTIONS}\n\n{}", crate::preview_control::INSTRUCTIONS)
         } else {
             INSTRUCTIONS.into()
         };
@@ -298,7 +294,7 @@ fn tools() -> Vec<Tool> {
         ),
         tool::<service::ValidateRequest>(
             "validate_document",
-            "Validate structure and references, or use scope:'layout' for measured text, geometry and overflow diagnostics from the same calculation as get_layout/render. Layout scope executes scripts and can reuse snapshot_id. Optional expected revisions reject stale input; diagnostic pages bind to the calculation. Warnings do not invalidate a document; errors do. This does not perform a rendered visual check or validate every graphics/browser/shader capability.",
+            "Query current diagnostics without a UI or attached reference. Default scope:'structure' checks structure and references; scope:'layout' adds measured text, geometry and overflow diagnostics from the same calculation as get_layout/render and executes scripts. Follow next_cursor as cursor, reusing snapshot_id for layout pages. Inspect issues within the user's requested scope; after repairs validate again without the pre-edit snapshot_id or cursor. Optional expected revisions reject stale input. Warnings do not invalidate a document; errors do. Validation does not perform a rendered visual check or validate every graphics/browser/shader capability.",
             true,
         ),
         tool::<History>(
