@@ -2,8 +2,8 @@ use crate::{Error, Result};
 use crossterm::{
     SynchronizedUpdate, cursor,
     event::{
-        DisableBracketedPaste, EnableBracketedPaste, KeyboardEnhancementFlags,
-        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+        DisableBracketedPaste, DisableFocusChange, EnableBracketedPaste, EnableFocusChange,
+        KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
     terminal::{
@@ -20,6 +20,7 @@ pub struct Screen {
     pub startup_text: String,
     id: u32,
     force_redraw: bool,
+    preview_keys: bool,
 }
 struct Restore {
     id: u32,
@@ -36,6 +37,21 @@ impl Screen {
     }
     pub fn redraw(&mut self) {
         self.force_redraw = true;
+    }
+    pub fn preview_keys(&mut self, enabled: bool) -> Result<()> {
+        if self.preview_keys != enabled {
+            // Text-producing keys need both flags to report press/repeat/release
+            // directly. Keep that mode scoped to navigation so IME commits in
+            // Prompt and node search retain their UTF-8 representation.
+            execute!(
+                std::io::stdout(),
+                PopKeyboardEnhancementFlags,
+                PushKeyboardEnhancementFlags(keyboard_flags(enabled))
+            )
+            .map_err(io)?;
+            self.preview_keys = enabled;
+        }
+        Ok(())
     }
     pub fn draw(&mut self, draw: impl FnOnce(&mut ratatui::Frame)) -> Result<()> {
         // Keep text and image-slot replacement in one display update. Never
@@ -63,14 +79,8 @@ impl Screen {
             std::io::stdout(),
             EnterAlternateScreen,
             EnableBracketedPaste,
-            // Preserve UTF-8 text commits from IMEs. Crossterm exposes key codes,
-            // not Kitty's associated-text payload for key-number-zero events.
-            // Keep enhanced modified/alternate keys, but do not request key-up
-            // reports: older Kitty emits legacy Tab/Backspace on release too.
-            PushKeyboardEnhancementFlags(
-                KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-                    | KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
-            )
+            EnableFocusChange,
+            PushKeyboardEnhancementFlags(keyboard_flags(false))
         )
         .map_err(io)?;
         let (picker, startup_text) = super::graphics::Backend::detect(protocol)?;
@@ -83,6 +93,7 @@ impl Screen {
             startup_text,
             id,
             force_redraw: false,
+            preview_keys: false,
         })
     }
 }
@@ -91,6 +102,17 @@ impl Drop for Screen {
         restore(self.id, self.picker.tmux_detected());
     }
 }
+fn keyboard_flags(preview: bool) -> KeyboardEnhancementFlags {
+    let base = KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+        | KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS;
+    if preview {
+        base | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+            | KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
+    } else {
+        base
+    }
+}
+
 fn restore(id: u32, tmux: bool) {
     let mut stdout = std::io::stdout();
     let deletion = [id, id ^ 1, id ^ 0x8000_0000, id ^ 0x8000_0001]
@@ -110,6 +132,7 @@ fn restore(id: u32, tmux: bool) {
         EndSynchronizedUpdate,
         PopKeyboardEnhancementFlags,
         DisableBracketedPaste,
+        DisableFocusChange,
         LeaveAlternateScreen,
         cursor::Show
     );

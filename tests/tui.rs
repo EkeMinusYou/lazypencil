@@ -49,7 +49,7 @@ fn real_pty_queues_follow_ups_and_restores_typing_after_completion() {
 }
 
 #[test]
-fn real_pty_held_hjkl_keeps_moving_and_legacy_repeats_restore_the_viewport() {
+fn real_pty_held_pan_moves_without_repeats_and_stops_on_release_and_focus_loss() {
     run_pty_case("herdr-kitty-held");
 }
 

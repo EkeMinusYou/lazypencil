@@ -7,6 +7,7 @@ mod composer;
 mod controls;
 mod diagnostics;
 mod graphics;
+mod held;
 mod images;
 mod markdown;
 mod nodes;
@@ -316,6 +317,8 @@ impl App {
             preview_control.client(self.conversation.store().path(), self.conversation.id()),
         );
         let mut events = EventStream::new();
+        let mut held = held::Held::default();
+        let mut terminal_focused = true;
         self.camera_id = screen.camera_image_id();
         self.presentation.rectangular(
             screen.picker.protocol_type() == ratatui_image::picker::ProtocolType::Kitty
@@ -350,6 +353,11 @@ impl App {
                 }
                 self.dirty = true;
             }
+            let navigating = self.focus == Focus::Preview && !self.has_modal();
+            if !navigating || !terminal_focused {
+                held.clear();
+            }
+            screen.preview_keys(navigating)?;
             if self.dirty {
                 let mut cells = self.cells;
                 screen.draw(|frame| {
@@ -363,6 +371,7 @@ impl App {
                     self.request(worker, false, false);
                 }
             }
+            let held_deadline = held.deadline();
             let playback_deadline = self.playback.deadline();
             let camera_deadline = self.camera_deadline;
             let activity_deadline = (self.conversation.active() && !self.has_modal())
@@ -391,7 +400,13 @@ impl App {
                 },
                 signal = &mut termination => { signal.map_err(terminal::io)?; self.save_draft()?; return Ok(()); },
                 event = events.next() => match event {
-                    Some(Ok(Event::Key(key))) if key.kind != KeyEventKind::Release => {
+                    Some(Ok(Event::Key(key))) => {
+                        let pan = [Nav::PanLeft, Nav::PanRight, Nav::PanUp, Nav::PanDown]
+                            .into_iter().any(|action| self.navigation.matches(action, key));
+                        if !held.input(key, navigating && terminal_focused && pan
+                            && screen.picker.keyboard_events(), Instant::now()) {
+                            continue;
+                        }
                         let modal = self.has_modal();
                         match self.key(key, &screen.picker, worker).await {
                             Ok(true) => { self.save_draft()?; return Ok(()); },
@@ -403,10 +418,26 @@ impl App {
                     Some(Ok(Event::Paste(text))) if self.focus == Focus::Prompt && !self.has_modal() => {
                         self.insert_text(&text); self.dirty = true;
                     },
+                    Some(Ok(Event::FocusLost)) => { terminal_focused = false; held.clear(); },
+                    Some(Ok(Event::FocusGained)) => { terminal_focused = true; },
                     Some(Ok(Event::Resize(_, _))) => { self.presentation.invalidate(); self.dirty = true; },
                     Some(Ok(_)) => {},
                     Some(Err(error)) => return Err(terminal::io(error)),
                     None => { self.save_draft()?; return Ok(()); },
+                },
+                _ = async {
+                    if let Some(deadline) = held_deadline {
+                        tokio::time::sleep_until(deadline.into()).await;
+                    } else {
+                        std::future::pending::<()>().await;
+                    }
+                } => {
+                    if let Some(key) = held.tick(Instant::now()) {
+                        if let Err(error) = self.key(key, &screen.picker, worker).await {
+                            self.error(error);
+                        }
+                        self.dirty = true;
+                    }
                 },
                 incoming = preview_control.next() => {
                     let incoming = incoming.ok_or_else(|| Error::new("PREVIEW_UNAVAILABLE", "Preview control listener stopped"))?;

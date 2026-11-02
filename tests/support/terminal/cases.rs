@@ -734,40 +734,81 @@ fn encoded(h: &mut Harness) -> Result {
     no_agent(h);
     Ok(())
 }
+fn keyboard_flags(bytes: &[u8]) -> Option<u16> {
+    bytes
+        .windows(3)
+        .enumerate()
+        .filter_map(|(start, prefix)| {
+            if prefix != b"\x1b[>" {
+                return None;
+            }
+            let rest = &bytes[start + 3..];
+            let end = rest.iter().position(|byte| !byte.is_ascii_digit())?;
+            if end == 0 || rest[end] != b'u' {
+                return None;
+            }
+            std::str::from_utf8(&rest[..end]).ok()?.parse().ok()
+        })
+        .next_back()
+}
+
 fn held_navigation(h: &mut Harness) -> Result {
     let saved = fs::read(&h.document)?;
     h.wait("initial held-key preview", 15.0, |h| {
         !h.frames.images.is_empty()
     })?;
     let initial = h.frames.images.last().unwrap().clone();
+    assert_eq!(keyboard_flags(&h.output), Some(5));
     h.key(b"\t\t")?;
-    for (letter, opposite) in [(b'h', b'l'), (b'j', b'k'), (b'k', b'j'), (b'l', b'h')] {
-        for repetition in 0..4 {
-            let exact = h.frames.images.last().cloned();
-            let camera = h.frames.last_camera.clone();
-            let placements = h.frames.camera_placement_updates;
-            if repetition == 0 {
-                h.key(&[letter])?;
-            } else {
-                h.key(format!("\x1b[{};1:2u", letter).as_bytes())?;
-            }
-            h.wait(
-                "held key produces another visible camera update",
-                15.0,
-                |h| h.frames.images.last() != exact.as_ref() || h.frames.last_camera != camera,
-            )?;
-        }
+    h.wait(
+        "Preview requests direct press, repeat and release reports",
+        15.0,
+        |h| keyboard_flags(&h.output) == Some(15),
+    )?;
+    for letter in [b'h', b'j', b'k', b'l'] {
+        let placements = h.frames.camera_placement_updates;
+        h.key(format!("\x1b[{};1:1u", letter).as_bytes())?;
+        // A single press must move multiple times before any repeat or release.
+        h.wait("held press moves without OS repeat events", 3.0, |h| {
+            h.frames.camera_placement_updates >= placements + 3
+        })?;
         h.key(format!("\x1b[{};1:3u", letter).as_bytes())?;
-        h.key(&[opposite; 4])?;
+        h.pump_for(0.3)?;
+        let stopped = h.frames.camera_placement_updates;
+        let exact = h.frames.images.last().cloned();
+        h.pump_for(0.2)?;
+        assert_eq!(h.frames.camera_placement_updates, stopped);
+        assert_eq!(h.frames.images.last(), exact.as_ref());
         h.key(b"?")?;
         h.visible("Help ·")?;
+        h.wait("Help restores text-safe keyboard mode", 15.0, |h| {
+            keyboard_flags(&h.output) == Some(5)
+        })?;
         h.key(b"\x1b")?;
         h.hidden("Help ·")?;
-        h.wait("legacy repeats restore the original viewport", 15.0, |h| {
+        h.wait("closing Help restores direct navigation keys", 15.0, |h| {
+            keyboard_flags(&h.output) == Some(15)
+        })?;
+        h.key(b"0")?;
+        h.wait("fit restores the original viewport", 15.0, |h| {
             h.frames.images.last() == Some(&initial)
         })?;
     }
-    h.key(b"\t")?;
+    h.key(b"\x1b[104;1:1u")?;
+    h.wait("movement starts before focus loss", 3.0, |h| {
+        h.frames.images.last() != Some(&initial)
+    })?;
+    h.key(b"\x1b[O")?;
+    h.pump_for(0.3)?;
+    let stopped = h.frames.camera_placement_updates;
+    h.pump_for(0.2)?;
+    assert_eq!(h.frames.camera_placement_updates, stopped);
+    h.key(b"\x1b[I")?;
+    h.key(b"\x1b[104;1:1u")?;
+    h.key(b"\x1b[9;1:1u")?;
+    h.wait("Prompt restores UTF-8 IME keyboard mode", 15.0, |h| {
+        keyboard_flags(&h.output) == Some(5)
+    })?;
     h.paste("hjklは本文です")?;
     h.draft("hjklは本文です")?;
     assert_eq!(fs::read(&h.document)?, saved);

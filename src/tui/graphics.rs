@@ -304,6 +304,7 @@ pub struct Backend {
     protocol: ProtocolType,
     tmux: bool,
     kitty_compression: bool,
+    keyboard_events: bool,
 }
 impl Backend {
     pub fn halfblocks() -> Self {
@@ -312,6 +313,7 @@ impl Backend {
             protocol: ProtocolType::Halfblocks,
             tmux: false,
             kitty_compression: false,
+            keyboard_events: false,
         }
     }
     pub fn detect(selected: super::ImageProtocol) -> Result<(Self, String)> {
@@ -339,11 +341,13 @@ impl Backend {
             // compatible terminals opt in only after a positive probe reply.
             backend.kitty_compression = true;
         }
-        // Explicit protocols and a direct Kitty terminal need no capability query.
-        // A late APC reply otherwise reaches Crossterm as ordinary prompt text.
-        if selected == super::ImageProtocol::Auto && !direct_kitty {
-            let (responses, input) = probe(backend.tmux)?;
-            startup = input;
+        // Probe keyboard support before EventStream owns stdin. Explicit image
+        // protocols skip graphics queries so late APC replies cannot become text.
+        let graphics = selected == super::ImageProtocol::Auto && !direct_kitty;
+        let (responses, input, keyboard_events) = probe(backend.tmux, graphics)?;
+        startup.push_str(&input);
+        backend.keyboard_events = keyboard_events;
+        if graphics {
             for response in &responses {
                 if let Response::CellSize(Some((width, height))) = response
                     && (1..=256).contains(width)
@@ -370,6 +374,9 @@ impl Backend {
             super::ImageProtocol::Auto => backend.protocol,
         };
         Ok((backend, startup))
+    }
+    pub fn keyboard_events(&self) -> bool {
+        self.keyboard_events
     }
     pub fn font_size(&self) -> FontSize {
         self.font
@@ -410,7 +417,7 @@ impl Backend {
 }
 
 #[cfg(unix)]
-fn probe(tmux: bool) -> Result<(Vec<Response>, String)> {
+fn probe(tmux: bool, graphics: bool) -> Result<(Vec<Response>, String, bool)> {
     use std::{
         os::fd::AsRawFd,
         time::{Duration, Instant},
@@ -419,7 +426,7 @@ fn probe(tmux: bool) -> Result<(Vec<Response>, String)> {
     let fd = stdin.as_raw_fd();
     let original = unsafe { libc::fcntl(fd, libc::F_GETFL) };
     if original < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, original | libc::O_NONBLOCK) } < 0 {
-        return Ok((vec![], String::new()));
+        return Ok((vec![], String::new(), false));
     }
     struct Flags(i32, i32);
     impl Drop for Flags {
@@ -430,19 +437,23 @@ fn probe(tmux: bool) -> Result<(Vec<Response>, String)> {
         }
     }
     let _flags = Flags(fd, original);
-    let query = Parser::query(
-        tmux,
-        QueryStdioOptions {
-            kitty_compression: true,
-            ..Default::default()
-        },
-    );
+    let query = if graphics {
+        Parser::query(
+            tmux,
+            QueryStdioOptions {
+                kitty_compression: true,
+                ..Default::default()
+            },
+        )
+    } else {
+        String::new()
+    } + "\x1b[?u\x1b[c";
     let mut stdout = std::io::stdout();
     stdout
         .write_all(query.as_bytes())
         .map_err(super::terminal::io)?;
     stdout.flush().map_err(super::terminal::io)?;
-    let deadline = Instant::now() + Duration::from_millis(350);
+    let deadline = Instant::now() + Duration::from_millis(if graphics { 350 } else { 100 });
     let mut parser = Parser::new();
     let mut responses = vec![];
     let mut bytes = vec![];
@@ -478,12 +489,26 @@ fn probe(tmux: bool) -> Result<(Vec<Response>, String)> {
         for byte in input {
             responses.extend(parser.push(char::from(*byte)));
         }
+        if !graphics && keyboard_reply(&bytes) {
+            break;
+        }
     }
-    Ok((responses, startup_text(&bytes)))
+    Ok((responses, startup_text(&bytes), keyboard_reply(&bytes)))
 }
 #[cfg(not(unix))]
-fn probe(_: bool) -> Result<(Vec<Response>, String)> {
-    Ok((vec![], String::new()))
+fn probe(_: bool, _: bool) -> Result<(Vec<Response>, String, bool)> {
+    Ok((vec![], String::new(), false))
+}
+
+#[cfg(unix)]
+fn keyboard_reply(bytes: &[u8]) -> bool {
+    bytes.windows(3).enumerate().any(|(index, prefix)| {
+        prefix == b"\x1b[?"
+            && bytes[index + 3..]
+                .iter()
+                .position(|byte| !byte.is_ascii_digit())
+                .is_some_and(|end| end > 0 && bytes[index + 3 + end] == b'u')
+    })
 }
 
 #[cfg(unix)]
@@ -505,7 +530,9 @@ fn startup_text(bytes: &[u8]) -> String {
                 .position(|byte| (0x40..=0x7e).contains(byte))
         {
             let command = bytes[index + 2 + end];
-            if matches!(command, b'c' | b't' | b'n') {
+            if matches!(command, b'c' | b't' | b'n')
+                || (command == b'u' && bytes[index + 2] == b'?')
+            {
                 index += 3 + end;
                 continue;
             }
