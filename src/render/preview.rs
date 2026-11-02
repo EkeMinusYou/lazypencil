@@ -138,7 +138,7 @@ impl PreviewRenderer {
                 Value::Object(fields) => {
                     !matches!(
                         fields.get("type").and_then(Value::as_str),
-                        Some("image" | "shader" | "mesh_gradient" | "background_blur")
+                        Some("shader" | "mesh_gradient" | "background_blur")
                     ) && fields.values().all(static_value)
                 }
                 Value::Array(values) => values.iter().all(static_value),
@@ -227,9 +227,16 @@ mod tests {
 
     #[test]
     fn retained_geometry_preserves_exact_camera_pixels_and_clears_on_reload() {
+        for images in [false, true] {
+            retained_geometry_case(images);
+        }
+    }
+
+    fn retained_geometry_case(images: bool) {
         let directory = tempfile::TempDir::new().unwrap();
         let path = directory.path().join("design.pen");
-        let document = json!({"version":"2.21","children":[{
+        let asset = directory.path().join("image.png");
+        let mut document = json!({"version":"2.21","children":[{
             "id":"frame","type":"frame","layout":"none","x":-30,"y":-10,
             "width":200,"height":140,"clip":true,"fill":"#F8FAFC",
             "children":[{
@@ -240,13 +247,33 @@ mod tests {
             },{
                 "id":"text","type":"text","x":20,"y":80,"content":"日本語 abc",
                 "fontFamily":"Noto Sans JP","fontSize":14,"fill":"#123456"
+            },{
+                "id":"image","type":"rectangle","x":110.25,"y":17.5,
+                "width":61.5,"height":43.25,"rotation":13,"cornerRadius":7,
+                "fill":{"type":"image","url":"image.png","mode":"cover","opacity":0.75}
             }]
         }]});
+        if !images {
+            document["children"][0]["children"]
+                .as_array_mut()
+                .unwrap()
+                .pop();
+        }
         std::fs::write(&path, document.to_string()).unwrap();
         let store = crate::store::Store::open(&path, Some(directory.path().join("data"))).unwrap();
         let mut retained = PreviewRenderer::default();
         let mut dynamic = crate::dynamic::DynamicRuntime::new(store.data_dir());
         for changed in [false, true] {
+            image::RgbaImage::from_fn(7, 5, |x, y| {
+                image::Rgba([
+                    x as u8 * 30,
+                    y as u8 * 40,
+                    if changed { 210 } else { 50 },
+                    180,
+                ])
+            })
+            .save(&asset)
+            .unwrap();
             if changed {
                 let mut document = document.clone();
                 document["children"][0]["children"][0]["geometry"] = json!("M0 0 L80 60 L0 60 Z");
@@ -290,13 +317,142 @@ mod tests {
                         .render(&project, &snapshot, &options, &mut dynamic, None, None)
                         .unwrap();
                     assert_eq!(
-                        cached.pixels.png().unwrap(),
-                        original.png,
+                        crate::document::hash(&cached.pixels.png().unwrap()),
+                        crate::document::hash(&original.png),
                         "scale={scale}, x={x}, changed={changed}"
                     );
                 }
             }
             assert!(!retained.cache.as_ref().unwrap().shapes.borrow().is_empty());
+            assert_eq!(
+                retained
+                    .cache
+                    .as_ref()
+                    .unwrap()
+                    .pictures
+                    .borrow()
+                    .values()
+                    .any(|entry| !entry.images.is_empty()),
+                images,
+                "The pixel comparison must exercise both vector and image commands"
+            );
+        }
+    }
+
+    #[test]
+    fn oversized_static_images_use_the_uncached_path_without_changing_pixels() {
+        let directory = tempfile::TempDir::new().unwrap();
+        image::RgbaImage::from_pixel(3000, 3000, image::Rgba([12, 34, 56, 200]))
+            .save(directory.path().join("large.png"))
+            .unwrap();
+        let path = directory.path().join("design.pen");
+        std::fs::write(
+            &path,
+            json!({"version":"2.21","children":[{
+                "type":"rectangle","id":"image","width":80,"height":60,
+                "fill":{"type":"image","url":"large.png","mode":"cover"}
+            }]})
+            .to_string(),
+        )
+        .unwrap();
+        let store = crate::store::Store::open(&path, Some(directory.path().join("data"))).unwrap();
+        let project = Project::load(&store).unwrap();
+        let snapshot = crate::layout::compute(
+            project.resolve().unwrap(),
+            &mut crate::text::Fonts::new(&[]).unwrap(),
+        )
+        .unwrap();
+        let options = RenderOptions::default();
+        let mut dynamic = crate::dynamic::DynamicRuntime::new(store.data_dir());
+        let original = preview_png_with_runtime_observed(
+            &project,
+            &snapshot,
+            &options,
+            &mut dynamic,
+            None,
+            None,
+        )
+        .unwrap();
+        let mut retained = PreviewRenderer::default();
+        for _ in 0..2 {
+            let cached = retained
+                .render(&project, &snapshot, &options, &mut dynamic, None, None)
+                .unwrap();
+            assert_eq!(cached.pixels.png().unwrap(), original.png);
+            assert!(
+                retained
+                    .cache
+                    .as_ref()
+                    .unwrap()
+                    .pictures
+                    .borrow()
+                    .is_empty(),
+                "Decoded image storage above 32 MiB must not be retained"
+            );
+        }
+    }
+
+    #[test]
+    fn retained_dashboard_matches_uncached_pixels_at_fitted_zoom_and_pan() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let fixture =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/performance");
+        for file in ["dashboard.pen", "avatar.png"] {
+            std::fs::copy(fixture.join(file), directory.path().join(file)).unwrap();
+        }
+        let store = crate::store::Store::open(
+            directory.path().join("dashboard.pen"),
+            Some(directory.path().join("data")),
+        )
+        .unwrap();
+        let project = Project::load(&store).unwrap();
+        let snapshot = crate::layout::compute(
+            project.resolve().unwrap(),
+            &mut crate::text::Fonts::new(&[]).unwrap(),
+        )
+        .unwrap();
+        let fitted = (900.0 / snapshot.bounds.width).min(980.0 / snapshot.bounds.height) * 0.94;
+        let mut retained = PreviewRenderer::default();
+        let mut dynamic = crate::dynamic::DynamicRuntime::new(store.data_dir());
+        for (scale, pan, vertical) in [
+            (fitted, 0.0, 0.0),
+            (fitted * 1.25, 0.0, 0.0),
+            (fitted, 64.0, 0.0),
+            (fitted, 0.0, 64.0),
+            (fitted, 0.0, 0.0),
+        ] {
+            let width = 900.0 / scale;
+            let height = 980.0 / scale;
+            let options = RenderOptions {
+                scale,
+                region: Some(Rect::new(
+                    snapshot.bounds.x + snapshot.bounds.width / 2.0 - width / 2.0 + pan / scale,
+                    snapshot.bounds.y + snapshot.bounds.height / 2.0 - height / 2.0
+                        + vertical / scale,
+                    width,
+                    height,
+                )),
+                background: Color::from_rgb(248, 250, 252),
+                ..Default::default()
+            };
+            let cached = retained
+                .render(&project, &snapshot, &options, &mut dynamic, None, None)
+                .unwrap();
+            let original = preview_png_with_runtime_observed(
+                &project,
+                &snapshot,
+                &options,
+                &mut dynamic,
+                None,
+                None,
+            )
+            .unwrap();
+            let actual = cached.pixels.png().unwrap();
+            assert_eq!(
+                crate::document::hash(&actual),
+                crate::document::hash(&original.png),
+                "scale={scale}, pan={pan}, vertical={vertical}"
+            );
         }
     }
 }
