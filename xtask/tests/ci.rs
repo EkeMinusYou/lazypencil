@@ -198,9 +198,16 @@ fn encoded_clipboard_inputs_reproduce_in_the_rendering_attachment_consumer() {
 
 #[test]
 fn prose_filenames_never_expand_the_actual_source_consumers() {
-    let cases: Vec<Value> = serde_json::from_str(include_str!("fixtures/focus.json")).unwrap();
-    for case in cases {
-        let mut paths: Vec<String> = serde_json::from_value(case["paths"].clone()).unwrap();
+    for sources in [
+        vec![],
+        vec!["src/runtime.rs"],
+        vec!["src/clipboard.rs"],
+        vec!["src/render.rs"],
+        vec!["src/project/bindings.rs", "src/shader.rs"],
+        vec!["resources/guidance/browser.md"],
+        vec!["xtask/src/ci/native.rs"],
+    ] {
+        let mut paths = sources.into_iter().map(str::to_owned).collect::<Vec<_>>();
         let before = focus::select(&util::root(), &paths, "auto").unwrap();
         paths.extend(
             [
