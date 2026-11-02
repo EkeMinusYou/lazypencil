@@ -599,6 +599,39 @@ fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() 
 }
 
 #[test]
+fn release_caches_survive_later_test_failure_and_stay_scoped_to_the_pull_request() {
+    let root = util::root();
+    let workflow = fs::read_to_string(root.join(".github/workflows/native.yml")).unwrap();
+    let release = workflow
+        .split("id: release-save\n")
+        .nth(1)
+        .unwrap()
+        .split("      - name:")
+        .next()
+        .unwrap();
+    assert!(release.contains("!cancelled()"));
+    assert!(release.contains("steps.release-build.outcome == 'success'"));
+    assert!(release.contains("github.event_name == 'pull_request'"));
+    assert!(release.contains("application stage --release-only"));
+    assert!(workflow.contains("--release-verified '${{ steps.release-build.outcome == 'success'"));
+    let dependencies = workflow
+        .split("id: native-published\n")
+        .nth(1)
+        .unwrap()
+        .split("      - name:")
+        .next()
+        .unwrap();
+    assert!(dependencies.contains("github.event_name == 'pull_request'"));
+    assert!(dependencies.contains("inputs.lane == 'core' || inputs.lane == 'release'"));
+    let cleanup = fs::read_to_string(root.join(".github/workflows/pr-cache-cleanup.yml")).unwrap();
+    assert!(cleanup.contains("types: [closed]"));
+    assert!(cleanup.contains("CACHE_REF: refs/pull/${{ github.event.number }}/merge"));
+    assert!(cleanup.contains("--ref \"$CACHE_REF\""));
+    assert!(!cleanup.contains("actions/checkout"));
+    assert!(!cleanup.contains("pull_request_target"));
+}
+
+#[test]
 fn release_evidence_restores_only_mapped_release_outputs_before_cargo_verification() {
     let workflow =
         fs::read_to_string(util::root().join(".github/workflows/release-evidence.yml")).unwrap();
