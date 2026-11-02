@@ -645,10 +645,7 @@ impl App {
                     .map(|node| node.id.clone())
                     .or_else(|| self.pending_node_selection.clone());
                 let diagnostic = self.selected_diagnostic().cloned();
-                if self.status_kind == footer::StatusKind::PreviewError
-                    || self.status == "finishing requested frame"
-                        && preview.view.time == self.view.time
-                {
+                if self.status_kind == footer::StatusKind::PreviewError {
                     self.clear_status();
                 }
                 self.preview_error = None;
@@ -720,17 +717,9 @@ impl App {
     }
     fn pause_playback(&mut self) {
         self.playback.stop();
-        self.set_status(
-            if self
-                .preview
-                .as_ref()
-                .is_some_and(|preview| !preview.attachment && preview.view.time != self.view.time)
-            {
-                "finishing requested frame".into()
-            } else {
-                String::new()
-            },
-        );
+        // Keep the viewport geometry stable while the requested frame finishes.
+        // A new footer row would resize and cancel the retained page capture.
+        self.dirty = true;
     }
     fn playback_tick(&mut self, worker: &Worker, now: Instant) -> Result<()> {
         let Some(time) = self.playback.frame(now) else {
@@ -1780,6 +1769,8 @@ impl App {
         })?;
         let playing = if self.playback.fps().is_some() {
             " · playing"
+        } else if preview.view.time != self.view.time {
+            " · finishing requested frame"
         } else {
             ""
         };
