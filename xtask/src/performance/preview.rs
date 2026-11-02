@@ -37,6 +37,9 @@ pub struct Arguments {
     geometry: Geometry,
     #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(2..=200))]
     samples: u32,
+    /// Number of Tab presses needed to focus Preview in the measured UI version.
+    #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u8).range(1..=8))]
+    focus_tabs: u8,
     #[arg(long)]
     median_limit_ms: Option<f64>,
     #[arg(long)]
@@ -552,7 +555,7 @@ mod owned {
             report["first_preview_ms"] = json!(millis(first.synced.unwrap(), terminal.started));
             report["frame"] = json!({"width":first.width,"height":first.height,"compressed":terminal.decoder.compressed_frames > 0});
             report["initial_rgba_sha256"] = json!(first.hash);
-            terminal.key(b"\t\t")?;
+            terminal.key(&vec![b'\t'; usize::from(args.focus_tabs)])?;
             terminal.drain(Duration::from_millis(200))?;
             let mut profiler = if args.profile {
                 Some(Sampler(
