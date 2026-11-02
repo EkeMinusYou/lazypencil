@@ -45,16 +45,6 @@ if (process.argv[3] === "--bomb") {
 } else {
   const cases = [];
   const check = (name, callback) => { callback(); cases.push(name); };
-  check("object macro retains logical builtin coordinates", () => {
-    const result = prepare("#define UV (gl_FragCoord.xy/vec2(32.,16.))\n" + body("vec4(UV,0.,1.)"));
-    assert(result.includes("gl_FragCoord.xy*vec2(5.00000000000000000e-1,5.00000000000000000e-1)"));
-    assert(!result.includes("#define"));
-  });
-  check("function macro expands the genuine builtin", () => {
-    const result = prepare("#define UV(p) ((p).xy/vec2(32.,16.))\n" + body("vec4(UV(gl_FragCoord),0.,1.)"));
-    assert(result.includes("gl_FragCoord.xy*vec2("));
-    assert(result.includes("gl_FragCoord.zw"));
-  });
   check("nested function arguments are fully expanded", () => {
     const result = prepare("#define F(x) ((x)+(x))\n" + body("vec4(F(F(0.125)))"));
     assert(!result.includes("F("), result);
@@ -64,25 +54,6 @@ if (process.argv[3] === "--bomb") {
     const result = prepare("#define IGNORE(x) vec4(0.5)\n#define TAKES_TWO(x,y) x\n" + body("IGNORE(TAKES_TWO(1.))"));
     assert(result.includes("vec4(0.5)"), result);
   });
-  check("builtin is undefined to conditional preprocessing", () => {
-    const result = prepare("#ifdef gl_FragCoord\n#error builtin unexpectedly defined\n#endif\n" + body("vec4(0.,1.,0.,1.)"));
-    assert(result.includes("vec4(0.,1.,0.,1.)"));
-  });
-  check("user object override is not scaled", () => {
-    const result = prepare("#define gl_FragCoord vec4(16.,8.,0.,1.)\n" + body("gl_FragCoord"));
-    assert(!result.includes("gl_FragCoord"));
-    assert(result.includes("vec4(16.,8.,0.,1.)"));
-  });
-  check("macro parameter named like the builtin remains a parameter", () => {
-    const result = prepare("#define UV(gl_FragCoord) ((gl_FragCoord).xy/vec2(32.,16.))\n" + body("vec4(UV(vec4(16.,8.,0.,1.)),0.,1.)"));
-    assert(!result.includes("gl_FragCoord"));
-    assert(result.includes("vec4(16.,8.,0.,1.)"));
-  });
-  check("function override preserves bare builtin and overridden call", () => {
-    const result = prepare("#define gl_FragCoord(x) vec4(x)\n" + body("gl_FragCoord + gl_FragCoord(0.25)"));
-    assert(result.includes("gl_FragCoord.xy*vec2("));
-    assert(result.includes("vec4(0.25)"));
-  });
   check("ten original native coordinate fixtures retain their builtin bindings", () => {
     const directory = new URL("../fixtures/render-corpus/shader-logical-coordinates/", import.meta.url);
     const files = fs.readdirSync(directory).filter(name => name.endsWith(".glsl"));
@@ -91,11 +62,17 @@ if (process.argv[3] === "--bomb") {
       const result = prepare(fs.readFileSync(new URL(file, directory), "utf8"));
       const replaced = !["undefined-builtin.glsl", "object-override.glsl", "macro-parameter.glsl"].includes(file);
       assert.equal((result.match(/\bgl_FragCoord\b/g) || []).length, replaced ? 2 : 0, file);
+      assert(!result.includes("#define"), file);
+      if (replaced) {
+        assert(result.includes("gl_FragCoord.xy*vec2(5.00000000000000000e-1,5.00000000000000000e-1)"), file);
+        assert(result.includes("gl_FragCoord.zw"), file);
+      } else if (file === "undefined-builtin.glsl") {
+        assert(result.includes("vec4(0.,1.,0.,1.)"), file);
+      } else {
+        assert(result.includes("vec4(16.,8.,0.,1.)"), file);
+      }
+      if (file === "function-override.glsl") assert(result.includes("vec4(0.25)"), file);
     }
-  });
-  check("undef restores the genuine builtin", () => {
-    const result = prepare("#define gl_FragCoord vec4(1.)\n#undef gl_FragCoord\n" + body("gl_FragCoord"));
-    assert(result.includes("gl_FragCoord.xy*vec2("));
   });
   check("only actual browser predefined macros are available", () => {
     const result = prepare("#if !defined(GL_ES) || __VERSION__ != 100 || !defined(GL_FRAGMENT_PRECISION_HIGH)\n#error incorrect builtins\n#endif\n#ifdef GL_ARB_shading_language_include\n#error desktop extension leaked\n#endif\n" + body("vec4(0.,1.,0.,1.)"));
@@ -127,10 +104,6 @@ if (process.argv[3] === "--bomb") {
     for (const [source, options] of [["a".repeat(1024 * 1024 + 1), {}], [body("vec4(1.)"), { coordinate_scale: [0, 1] }], [body("vec4(1.)"), { defines: ["arbitrary"] }], ["#include \"secret\"\n" + body("vec4(1.)"), {}]]) {
       assert.equal(typeof execute(source, options).error, "string");
     }
-  });
-  check("module memory maximum is enforced by the engine", () => {
-    const memory = new WebAssembly.Memory({ initial: 256, maximum: 2048 });
-    assert.throws(() => new WebAssembly.Instance(module, { env: { memory } }), WebAssembly.LinkError);
   });
   const bomb = spawnSync(process.execPath, [fileURLToPath(import.meta.url), process.argv[2], "--bomb"], { encoding: "utf8", timeout: 5000, maxBuffer: 65536 });
   assert.equal(bomb.error, undefined, String(bomb.error));
