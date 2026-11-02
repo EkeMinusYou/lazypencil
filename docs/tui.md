@@ -90,7 +90,7 @@ Terminal stdin/stdout and at least 50 columns × 16 rows are required. `--json` 
 | Nodes / Diagnostics: `d` | Switch the left panel between Nodes and Diagnostics |
 | Diagnostics: `j`/`k` / arrows; `Ctrl+U`/`Ctrl+D` | Select a diagnostic; scroll its details |
 | Diagnostics: `Enter`, `f`, `Esc` | Reveal and fit its node in Nodes; fit while staying in Diagnostics; return to Nodes |
-| `Tab` / `Shift+Tab` | Cycle Prompt, Preview, Nodes |
+| `Tab` / `Shift+Tab` | Move right / left through Nodes, Preview, Prompt; wrap at either end. Agent history, attachments and references enter this cycle at Prompt |
 | Nodes: `a` | Add the selected node as a prompt reference and focus the input |
 | Right region: `Alt+Up` / `Alt+Down` | Switch between conversation history, pending images, node references, and Prompt; skip empty lists |
 | Agent history / Attachments / References: `Esc` | Return to Prompt |

@@ -450,6 +450,7 @@ impl Emulator {
                 && session(&root).is_ok_and(|session| session["draft"] == "")
         })?;
         self.key("Tab")?;
+        self.key("Tab")?;
         let (initial, width, height) = self.phase("initial", |_, frame| cursor(frame).is_none())?;
         self.key("plus")?;
         let (zoomed, _, _) = self.phase("zoomed", |r, _| {

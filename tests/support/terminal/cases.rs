@@ -379,7 +379,7 @@ fn node_references(h: &mut Harness, design: &Value) -> Result {
     let draft = "この要素について相談したいです";
     h.paste(draft)?;
     h.draft(draft)?;
-    h.key(b"\t\tja")?;
+    h.key(b"\tja")?;
     h.visible("References")?;
     h.draft(draft)?;
     no_agent(h);
@@ -387,10 +387,10 @@ fn node_references(h: &mut Harness, design: &Value) -> Result {
     h.key(b"\x1b[3~")?;
     h.hidden("References")?;
     h.draft(draft)?;
-    h.key(b"\t\ta")?;
+    h.key(b"\ta")?;
     h.visible("References")?;
     h.save_screen("references-prompt-screen.txt")?;
-    h.key(b"\t\tj\t")?;
+    h.key(b"\tj\t\t")?;
     h.paste("。余白を調整できますか？")?;
     h.key(b"\x13")?;
     h.wait("reference request completes", 15.0, |h| {
@@ -433,7 +433,7 @@ fn diagnostics(h: &mut Harness, design: &Value) -> Result {
     h.paste(draft)?;
     h.draft(draft)?;
     h.visible("2 diagnostics")?;
-    h.key(b"\t\td")?;
+    h.key(b"\td")?;
     h.visible("Diagnostics")?;
     h.visible("First target")?;
     h.key(b"j")?;
@@ -458,7 +458,7 @@ fn diagnostics(h: &mut Harness, design: &Value) -> Result {
     h.visible("No layout diagnostics")?;
     h.key(b"d")?;
     h.hidden("No layout diagnostics")?;
-    h.key(b"\t")?;
+    h.key(b"\t\t")?;
     h.draft(draft)?;
     assert_eq!(state(h)["draft"], draft);
     no_agent(h);
@@ -1010,7 +1010,7 @@ fn basic(h: &mut Harness) -> Result {
         );
         assert_eq!(starts.iter().filter(|v| &v["turn"] == turn).count(), 1);
     }
-    h.key(b"\tll+0")?;
+    h.key(b"\t\tll+0")?;
     for repetition in 0..8 {
         h.resize(145 + repetition % 2, 38)?;
         h.key(b"\x1bOP")?;
@@ -1100,7 +1100,7 @@ fn navigation(h: &mut Harness) -> Result<Value> {
     let text = "日本語の下書き\nx a d w s z v t は本文";
     h.paste(text)?;
     h.draft(text)?;
-    h.key(b"\x1b[17~h\x1b[19~")?;
+    h.key(b"\x1b[17~\x1b[17~h\x1b[19~")?;
     h.visible("/clear-images")?;
     assert!(h.screen.text().contains("a: Preview: pan left"));
     assert_eq!(h.frames.images.last(), Some(&before));
@@ -1148,11 +1148,11 @@ fn navigation(h: &mut Harness) -> Result<Value> {
     })?;
     h.key(b"\x1b")?;
     h.hidden("Restore checkpoint")?;
-    h.key(b"\x1b[18~")?;
+    h.key(b"\x1b[17~")?;
     h.paste(" 続き")?;
     h.draft(&format!("{text} 続き"))?;
     fs::write(config(h), "[tui.navigation]\nnext_panel=['F10']\n")?;
-    h.key(b"\x1b[17~\x1b[19~")?;
+    h.key(b"\x1b[17~\x1b[17~\x1b[19~")?;
     h.visible("/clear-images")?;
     h.key(b"\x1b")?;
     h.hidden("/clear-images")?;

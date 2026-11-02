@@ -552,7 +552,7 @@ mod owned {
             report["first_preview_ms"] = json!(millis(first.synced.unwrap(), terminal.started));
             report["frame"] = json!({"width":first.width,"height":first.height,"compressed":terminal.decoder.compressed_frames > 0});
             report["initial_rgba_sha256"] = json!(first.hash);
-            terminal.key(b"\t")?;
+            terminal.key(b"\t\t")?;
             terminal.drain(Duration::from_millis(200))?;
             let mut profiler = if args.profile {
                 Some(Sampler(

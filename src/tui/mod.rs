@@ -83,7 +83,7 @@ impl Focus {
         } else {
             self
         };
-        current.cycle(&[Self::Prompt, Self::Preview, Self::Nodes], backwards)
+        current.cycle(&[Self::Nodes, Self::Preview, Self::Prompt], backwards)
     }
     fn in_conversation(self) -> bool {
         matches!(
@@ -1181,7 +1181,7 @@ impl App {
     fn help_text(&self) -> String {
         let label = |action| self.navigation.label(action);
         let mut text = format!(
-            "{} / {}: switch Prompt, Preview, Nodes\n{}: command palette; /history: checkpoints\nPrompt: {} sends; Alt+Enter / Shift+Enter inserts a newline\n{}: paste image, copied image files, or text\n",
+            "{} / {}: switch Nodes, Preview, Prompt (right / left)\n{}: command palette; /history: checkpoints\nPrompt: {} sends; Alt+Enter / Shift+Enter inserts a newline\n{}: paste image, copied image files, or text\n",
             label(Nav::NextPanel),
             label(Nav::PreviousPanel),
             label(Nav::Commands),

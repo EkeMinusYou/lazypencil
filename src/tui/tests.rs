@@ -38,7 +38,7 @@ fn http_prompt_preparation_keeps_navigation_and_control_c_responsive() {
         assert!(!app.key(KeyEvent::new(KeyCode::Char('x'),KeyModifiers::NONE), &picker, &worker).await.unwrap());
         assert_eq!(app.editor.lines().join("\n"), "x");
         assert!(!app.key(KeyEvent::new(KeyCode::Tab,KeyModifiers::NONE), &picker, &worker).await.unwrap());
-        assert_eq!(app.focus, Focus::Preview);
+        assert_eq!(app.focus, Focus::Nodes);
         assert!(!app.key(KeyEvent::new(KeyCode::Char('c'),KeyModifiers::CONTROL), &picker, &worker).await.unwrap());
         let events = complete(&mut app).await;
         assert_eq!(events.last().unwrap()["error"]["code"], "CANCELLED");
@@ -162,11 +162,11 @@ fn conversation_region_defaults_to_prompt_and_keeps_history_and_attachments_acce
         app.insert_text(draft);
         app.save_draft().unwrap();
         for (key, expected) in [
-            (KeyCode::Tab, Focus::Preview),
             (KeyCode::Tab, Focus::Nodes),
+            (KeyCode::Tab, Focus::Preview),
             (KeyCode::Tab, Focus::Prompt),
-            (KeyCode::BackTab, Focus::Nodes),
             (KeyCode::BackTab, Focus::Preview),
+            (KeyCode::BackTab, Focus::Nodes),
             (KeyCode::BackTab, Focus::Prompt),
         ] {
             press(
@@ -256,7 +256,7 @@ fn conversation_region_defaults_to_prompt_and_keeps_history_and_attachments_acce
         press(&mut app, KeyCode::Up, KeyModifiers::ALT, &worker).await;
         assert_eq!(app.focus, Focus::Conversation);
         press(&mut app, KeyCode::Tab, KeyModifiers::NONE, &worker).await;
-        assert_eq!(app.focus, Focus::Preview);
+        assert_eq!(app.focus, Focus::Nodes);
         press(&mut app, KeyCode::BackTab, KeyModifiers::SHIFT, &worker).await;
         assert_eq!(app.focus, Focus::Prompt);
         assert_eq!(app.editor.lines().join("\n"), draft);
@@ -2698,6 +2698,8 @@ fn custom_navigation_preserves_typing_search_modals_and_moves_the_actual_preview
         assert_eq!(app.editor.lines().join("\n"), "xadtzvhjkl");
         assert!(!app.help && app.modal.is_none() && !app.conversation.active());
         press(&mut app, KeyCode::F(6), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.focus, Focus::Nodes);
+        press(&mut app, KeyCode::F(6), KeyModifiers::NONE, &worker).await;
         assert_eq!(app.focus, Focus::Preview);
         let center = app.view.center;
         let zoom = app.view.zoom.unwrap();
@@ -2766,7 +2768,7 @@ fn custom_navigation_preserves_typing_search_modals_and_moves_the_actual_preview
         press(&mut app, KeyCode::F(10), KeyModifiers::NONE, &worker).await;
         assert_eq!(app.scroll, 0);
         press(&mut app, KeyCode::F(7), KeyModifiers::NONE, &worker).await;
-        assert_eq!(app.focus, Focus::Nodes);
+        assert_eq!(app.focus, Focus::Preview);
         assert_eq!(std::fs::read(store.path()).unwrap(), saved);
         assert!(app.key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE), &picker, &worker).await.unwrap());
         app.conversation.close().await.unwrap();

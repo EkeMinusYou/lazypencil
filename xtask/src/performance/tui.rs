@@ -685,7 +685,7 @@ mod hosted {
             t.last_frame.is_some()
         })?;
         let initial = terminal.last_frame.as_ref().unwrap().1.clone();
-        terminal.key(b"\t")?;
+        terminal.key(b"\t\t")?;
         let (_, zoomed, _) = terminal.changed_frame(b"+", &initial)?;
         let (_, unzoomed, _) = terminal.changed_frame(b"-", &zoomed)?;
         ensure!(
@@ -827,7 +827,7 @@ mod hosted {
             )?;
             terminal.activity.as_mut().unwrap().observe_now()?;
             fs::write(root.join("bound-render-again"), b"observe")?;
-            terminal.key(b"\t")?;
+            terminal.key(b"\t\t")?;
             let (_, zoomed, _) = terminal.changed_frame(b"+", static_hash)?;
             terminal.capture(&root, "zoomed")?;
             let (_, restored, _) = terminal.changed_frame(b"-", &zoomed)?;
@@ -1205,7 +1205,7 @@ mod hosted {
                 .duration_since(terminal.started)
                 .as_secs_f64()
                 * 1000.0;
-            terminal.key(b"\t")?;
+            terminal.key(b"\t\t")?;
             let initial = terminal.last_frame.as_ref().unwrap().1.clone();
             terminal.capture(&root, "initial")?;
             let (zoom_ms, zoomed, zoom_observer) = terminal.changed_frame(b"+", &initial)?;

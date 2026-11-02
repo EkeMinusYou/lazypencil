@@ -62,7 +62,7 @@ pub fn page(h: &mut Harness) -> Result {
     let draft = "ページの再生中も残る下書き";
     h.paste(draft)?;
     h.draft(draft)?;
-    h.key(b"\t ")?;
+    h.key(b"\t\t ")?;
     h.wait("browser-only playback pause", 15.0, paused)?;
     frame_cap(h, first, started);
     let frames = h.frames.images.len();
@@ -102,12 +102,12 @@ pub fn idle(h: &mut Harness) -> Result {
     })?;
     let original = observed(h);
     let mut frames = h.frames.images.len();
-    h.key(b"\tr")?;
+    h.key(b"\t\tr")?;
     h.wait("explicit refresh preserves live page DOM", 15.0, |h| {
         h.frames.images.len() > frames && dynamic_pixels(h, MAGENTA, BLUE)
     })?;
     assert_eq!(observed(h), original);
-    h.key(b"\x1b[Z")?;
+    h.key(b"\t")?;
     frames = h.frames.images.len();
     h.paste("/time 1")?;
     h.key(b"\r")?;
@@ -145,7 +145,7 @@ pub fn idle(h: &mut Harness) -> Result {
     let draft = "待機と更新の後も残る下書き";
     h.paste(draft)?;
     h.draft(draft)?;
-    h.key(b"\t ")?;
+    h.key(b"\t\t ")?;
     h.wait("Space pauses and completes requested frame", 15.0, |h| {
         paused(h) && timeline(h) >= 1.0
     })?;
@@ -179,7 +179,7 @@ pub fn idle(h: &mut Harness) -> Result {
     assert!(dynamic_pixels(h, MAGENTA, YELLOW));
     assert_eq!(state(h)["draft"], draft);
     frames = h.frames.images.len();
-    h.key(b"\tr")?;
+    h.key(b"\t\tr")?;
     h.wait("refresh after cleanup at paused time", 15.0, |h| {
         observed(h).len() == 3 && h.frames.images.len() > frames && dynamic_pixels(h, RED, YELLOW)
     })?;
