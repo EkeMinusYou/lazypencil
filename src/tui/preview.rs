@@ -21,7 +21,7 @@ use tokio_util::sync::CancellationToken;
 
 mod revision;
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct View {
     // Accumulate camera movement in double precision; Skia regions remain f32.
     // At fractional zoom, opposite f32 pan steps can leave a visible ULP drift.

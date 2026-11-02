@@ -3332,3 +3332,136 @@ fn kitty_camera_defers_interim_work_without_starving_feedback_or_exporting_stale
         app.conversation.close().await.unwrap();
     });
 }
+
+#[test]
+fn progressive_navigation_refreshes_sources_without_rewinding_or_exporting_interim_views() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let path = app.conversation.store().path().to_path_buf();
+        let document = json!({"version":"2.21","children":[
+            {"type":"rectangle","id":"red","width":180,"height":90,"fill":"#FF0000"},
+            {"type":"rectangle","id":"blue","x":400,"width":180,"height":90,"fill":"#0000FF"}
+        ]})
+        .to_string();
+        std::fs::write(&path, &document).unwrap();
+        app.insert_text("日本語の下書き");
+        let (picker, _) = Backend::detect(ImageProtocol::Kitty).unwrap();
+        let worker = Worker::start(
+            app.conversation.store().clone(),
+            vec![],
+            picker.clone(),
+            210,
+        )
+        .unwrap();
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(140, 36)).unwrap();
+        app.presentation.rectangular(true);
+        app.focus = Focus::Preview;
+        let mut cells = app.cells;
+        terminal.draw(|frame| cells = app.draw(frame)).unwrap();
+        app.cells = cells;
+        app.view = View {
+            center: [90.0, 45.0],
+            zoom: Some(3.0),
+            time: 0.0,
+        };
+        app.request(&worker, false, false);
+        app.accept_preview(
+            tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap(),
+        );
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        assert!(app.presentation.source_size().is_some());
+        app.key(
+            KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE),
+            &picker,
+            &worker,
+        )
+        .await
+        .unwrap();
+        let epoch = app.generation;
+        let first = tokio::time::timeout(Duration::from_secs(15), worker.next())
+            .await
+            .unwrap();
+        let rendered_view = first.result.as_ref().unwrap().view;
+        assert!(!app.accept_interactive_preview(first, &worker, &picker));
+        for _ in 0..3 {
+            app.key(
+                KeyEvent::new_with_kind(
+                    KeyCode::Char('l'),
+                    KeyModifiers::NONE,
+                    KeyEventKind::Repeat,
+                ),
+                &picker,
+                &worker,
+            )
+            .await
+            .unwrap();
+            assert_eq!(app.generation, epoch);
+            assert!(
+                app.deferred_preview.is_some(),
+                "Input must retain completed source work"
+            );
+        }
+        let target = app.view;
+        assert_ne!(rendered_view, target);
+        app.refresh_camera_navigation(&worker, &picker);
+        assert_eq!(app.view, target);
+        assert_eq!(app.preview.as_ref().unwrap().view, rendered_view);
+        assert!(app.camera_navigation && app.camera.is_some());
+        assert!(app.preview_generation.is_none());
+        assert!(
+            app.open_preview()
+                .unwrap_err()
+                .message
+                .contains("complete image")
+        );
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        let commands = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(
+            commands.find("a=t,").unwrap() < commands.find("a=p,").unwrap(),
+            "Fresh pixels must be uploaded before projecting their source"
+        );
+        app.finish_camera_gesture(&worker, &picker);
+        app.accept_interactive_preview(
+            tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap(),
+            &worker,
+            &picker,
+        );
+        assert_eq!(app.view, target);
+        assert_eq!(app.preview.as_ref().unwrap().view, target);
+        assert!(!app.camera_navigation);
+        assert!(app.camera.is_none());
+        assert_eq!(app.preview_generation, Some(app.generation));
+        assert!(!app.accept_interactive_preview(
+            preview::Output {
+                generation: epoch,
+                result: Err(Error::new("RENDER_ERROR", "Late navigation source"))
+            },
+            &worker,
+            &picker
+        ));
+        assert_eq!(app.view, target);
+        assert_eq!(app.editor.lines(), &["日本語の下書き"]);
+        assert_eq!(std::fs::read_to_string(path).unwrap(), document);
+        app.conversation.close().await.unwrap();
+    });
+}

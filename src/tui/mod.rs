@@ -206,6 +206,9 @@ struct App {
     camera: Option<camera::Camera>,
     camera_deadline: Option<Instant>,
     camera_settle_deadline: Option<Instant>,
+    camera_refresh_deadline: Option<Instant>,
+    camera_navigation: bool,
+    camera_source_changed: bool,
     deferred_preview: Option<preview::Output>,
     camera_was_visible: bool,
     camera_id: u32,
@@ -272,6 +275,9 @@ impl App {
             camera: None,
             camera_deadline: None,
             camera_settle_deadline: None,
+            camera_refresh_deadline: None,
+            camera_navigation: false,
+            camera_source_changed: false,
             deferred_preview: None,
             camera_was_visible: false,
             camera_id: 0x8000_0001,
@@ -386,6 +392,7 @@ impl App {
             let playback_deadline = self.playback.deadline();
             let camera_deadline = self.camera_deadline;
             let camera_settle_deadline = self.camera_settle_deadline;
+            let camera_refresh_deadline = self.camera_refresh_deadline;
             let activity_deadline = (self.conversation.active() && !self.has_modal())
                 .then(|| Instant::now() + Duration::from_millis(200));
             tokio::select! {
@@ -426,6 +433,15 @@ impl App {
                 },
                 output = worker.next() => {
                     self.accept_interactive_preview(output, worker, &screen.picker);
+                },
+                _ = async {
+                    if let Some(deadline) = camera_refresh_deadline {
+                        tokio::time::sleep_until(deadline.into()).await;
+                    } else {
+                        std::future::pending::<()>().await;
+                    }
+                } => {
+                    self.refresh_camera_navigation(worker, &screen.picker);
                 },
                 _ = async {
                     if let Some(deadline) = camera_settle_deadline {
@@ -566,10 +582,13 @@ impl App {
         Ok(false)
     }
     fn request(&mut self, worker: &Worker, check_only: bool, refresh: bool) {
-        if self.cells.width == 0 || self.cells.height == 0 {
+        if (check_only && self.camera_navigation) || self.cells.width == 0 || self.cells.height == 0
+        {
             return;
         }
         if !check_only {
+            self.camera_navigation = false;
+            self.camera_refresh_deadline = None;
             self.camera_settle_deadline = None;
             self.deferred_preview = None;
             self.preview_error = None;
@@ -605,6 +624,8 @@ impl App {
             return false;
         }
         self.camera_deadline = None;
+        self.camera_navigation = false;
+        self.camera_refresh_deadline = None;
         self.camera_settle_deadline = None;
         self.deferred_preview = None;
         // Background polls still retry failed renders, but identical failures
@@ -650,6 +671,7 @@ impl App {
                 }
                 let document = !preview.attachment;
                 self.preview = Some(preview);
+                self.camera_source_changed = true;
                 if document {
                     self.pending_node_selection = None;
                     self.nodes_loading = false;
@@ -670,6 +692,7 @@ impl App {
                     self.pending_node_selection = Some(node.id.clone());
                 }
                 self.preview = None;
+                self.camera_source_changed = false;
                 self.node_tree.rebuild(&[], &self.filter);
                 self.nodes.select(None);
                 self.refresh_diagnostics(None);
@@ -1191,14 +1214,21 @@ impl App {
                 } else {
                     return Ok(false);
                 }
-                self.request(worker, false, false);
-                self.camera_feedback(picker)?;
-                if self
-                    .camera
-                    .as_ref()
-                    .is_some_and(|camera| matches!(camera.image, camera::Feedback::Placement(_)))
+                if [
+                    Nav::PanLeft,
+                    Nav::PanRight,
+                    Nav::PanUp,
+                    Nav::PanDown,
+                    Nav::ZoomIn,
+                    Nav::ZoomOut,
+                ]
+                .into_iter()
+                .any(|navigation| self.navigation.matches(navigation, key))
                 {
-                    self.camera_settle_deadline = Some(Instant::now() + Duration::from_millis(80));
+                    self.request_camera_navigation(worker, picker)?;
+                } else {
+                    self.request(worker, false, false);
+                    self.camera_feedback(picker)?;
                 }
             }
             Focus::Nodes => {
@@ -1799,6 +1829,19 @@ impl App {
         }
         let inner = block.inner(panes[1]);
         frame.render_widget(block, panes[1]);
+        // Upload a refreshed source before projecting it at the latest camera.
+        // The crop's dimensions are unchanged within one navigation generation.
+        if self.camera_source_changed
+            && self
+                .camera
+                .as_ref()
+                .is_some_and(|camera| matches!(camera.image, camera::Feedback::Placement(_)))
+            && let Some(preview) = &self.preview
+        {
+            frame.render_widget(graphics::Image(&preview.protocol), inner);
+            self.presentation.prepare(frame.buffer_mut(), inner, false);
+            self.camera_source_changed = false;
+        }
         if let Some(camera) = self
             .camera
             .as_ref()
@@ -1817,6 +1860,7 @@ impl App {
         } else if let Some(preview) = &self.preview {
             frame.render_widget(graphics::Image(&preview.protocol), inner);
             self.presentation.prepare(frame.buffer_mut(), inner, false);
+            self.camera_source_changed = false;
         } else {
             frame.render_widget(
                 Paragraph::new(match &self.preview_error {

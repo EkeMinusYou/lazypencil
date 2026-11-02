@@ -92,6 +92,12 @@ pub fn run(
         document = parent.join("design.pen");
     }
     let mut design = json!({"version":"2.21","children":[{"type":"rectangle","id":"red","name":"日本語の対象","x":-80,"y":-30,"width":180,"height":90,"fill":"#FF0000"}]});
+    if case == "kitty-progressive" {
+        design = json!({"version":"2.21","children":[
+            {"type":"rectangle","id":"red","name":"Red source","x":-80,"y":-30,"width":180,"height":90,"fill":"#FF0000"},
+            {"type":"rectangle","id":"blue","name":"New destination","x":240,"y":-30,"width":180,"height":90,"fill":"#0000FF"}
+        ]});
+    }
     let mut configuration = None;
     if case == "node-references" {
         design = json!({"version":"2.21","children":[
@@ -291,6 +297,10 @@ pub fn run(
         }
         "basic" => {
             basic(&mut h)?;
+            Value::Null
+        }
+        "kitty-progressive" => {
+            progressive_navigation(&mut h)?;
             Value::Null
         }
         "kitty-held" => {
@@ -787,17 +797,11 @@ fn held_navigation(h: &mut Harness) -> Result {
     let placements = h.frames.camera_placement_updates;
     for (index, kind) in [1, 2, 2].into_iter().enumerate() {
         h.key(format!("\x1b[104;1:{kind}u").as_bytes())?;
-        h.wait(
-            "rapid repeats update the camera without another image upload",
-            3.0,
-            |h| {
-                pan_inputs(h) == before + index + 1
-                    && h.frames.camera_placement_updates > placements
-            },
-        )?;
+        h.wait("rapid repeats keep updating the cached camera", 3.0, |h| {
+            pan_inputs(h) == before + index + 1 && h.frames.camera_placement_updates > placements
+        })?;
         h.pump_for(0.015)?;
     }
-    assert_eq!(h.frames.images.len(), frames);
     h.key(b"\x1b[104;1:3u")?;
     h.wait("release presents the completed detailed frame", 15.0, |h| {
         h.frames.images.len() > frames
@@ -864,6 +868,51 @@ fn held_navigation(h: &mut Harness) -> Result {
     })?;
     h.paste("hjklは本文です")?;
     h.draft("hjklは本文です")?;
+    assert_eq!(fs::read(&h.document)?, saved);
+    no_agent(h);
+    Ok(())
+}
+
+fn progressive_navigation(h: &mut Harness) -> Result {
+    let saved = fs::read(&h.document)?;
+    h.wait("initial complete scene", 15.0, |h| {
+        !h.frames.images.is_empty()
+    })?;
+    let initial = h.frames.images.last().unwrap().clone();
+    let frames = h.frames.images.len();
+    h.key(b"\tj\r")?;
+    h.wait(
+        "selected red source excludes the blue destination",
+        15.0,
+        |h| {
+            h.frames.images.len() > frames
+                && h.frames.images.last().is_some_and(|image| {
+                    image.has_color([255, 0, 0, 255]) && !image.has_color([0, 0, 255, 255])
+                })
+        },
+    )?;
+    h.key(b"\t")?;
+    let frames = h.frames.images.len();
+    for index in 0..20 {
+        h.key(format!("\x1b[108;1:{}u", if index == 0 { 1 } else { 2 }).as_bytes())?;
+        h.pump_for(0.025)?;
+    }
+    assert!(
+        h.frames.images.len() >= frames + 2,
+        "Held navigation must publish multiple fresh images before release"
+    );
+    assert!(
+        h.frames.images[frames..]
+            .iter()
+            .any(|image| image.has_color([0, 0, 255, 255])),
+        "Previously uncached blue destination must load before key release"
+    );
+    h.key(b"\x1b[108;1:3u")?;
+    h.pump_for(0.3)?;
+    h.key(b"0")?;
+    h.wait("fit restores the complete scene", 15.0, |h| {
+        h.frames.images.last() == Some(&initial)
+    })?;
     assert_eq!(fs::read(&h.document)?, saved);
     no_agent(h);
     Ok(())

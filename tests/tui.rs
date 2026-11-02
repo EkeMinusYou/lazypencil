@@ -54,6 +54,11 @@ fn real_pty_pan_handles_taps_and_repeats_without_replaying_after_release() {
 }
 
 #[test]
+fn real_pty_held_navigation_loads_uncached_destination_before_key_release() {
+    run_pty_case("kitty-progressive");
+}
+
+#[test]
 fn real_pty_kitty_uses_rectangular_images_without_application_markers() {
     run_pty_case("kitty-placements");
     run_pty_case("kitty-placements-no-color");

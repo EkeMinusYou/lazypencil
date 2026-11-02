@@ -2,6 +2,9 @@
 use super::preview::View;
 use image::{Rgba, RgbaImage};
 
+const NAVIGATION_REFRESH: std::time::Duration = std::time::Duration::from_millis(100);
+const NAVIGATION_IDLE: std::time::Duration = std::time::Duration::from_millis(80);
+
 const EXACT_FRAME_HEAD_START: std::time::Duration = std::time::Duration::from_millis(1);
 
 pub(super) struct InputProfile {
@@ -149,33 +152,126 @@ fn placement(
 }
 
 impl super::App {
+    pub(super) fn request_camera_navigation(
+        &mut self,
+        worker: &super::preview::Worker,
+        picker: &super::graphics::Backend,
+    ) -> crate::Result<()> {
+        let progressive = self.presentation.source_size().is_some()
+            && self.pending_preview.is_none()
+            && !self.playback.active()
+            && self.preview.as_ref().is_some_and(|preview| {
+                !preview.attachment
+                    && !preview.time_dependent
+                    && !preview.live_pages
+                    && preview.protocol.size() == self.cells
+            });
+        if !progressive {
+            self.request(worker, false, false);
+            return self.camera_feedback(picker);
+        }
+        if !self.camera_navigation {
+            self.request(worker, false, false);
+            self.camera_navigation = true;
+            self.camera_refresh_deadline = Some(std::time::Instant::now() + NAVIGATION_REFRESH);
+        }
+        // Keep the render generation stable throughout navigation. New keys
+        // update the target only; an in-flight source render must finish.
+        self.preview_generation = None;
+        self.camera_feedback(picker)?;
+        self.camera_settle_deadline = Some(std::time::Instant::now() + NAVIGATION_IDLE);
+        Ok(())
+    }
+
     pub(super) fn accept_interactive_preview(
         &mut self,
         output: super::preview::Output,
         worker: &super::preview::Worker,
         picker: &super::graphics::Backend,
     ) -> bool {
-        // Metadata-only motion stays responsive while detailed image transfers
-        // wait for idle/release. Refresh sooner before most cached content is lost.
-        let covered = self.camera.as_ref().is_some_and(|camera| {
-            let Feedback::Placement(projection) = &camera.image else {
-                return false;
-            };
-            u64::from(projection.area.width) * u64::from(projection.area.height) * 2
-                >= u64::from(self.cells.width) * u64::from(self.cells.height)
-        });
-        if output.generation == self.generation
-            && output.result.is_ok()
-            && self.pending_preview.is_none()
-            && covered
-            && self
-                .camera_settle_deadline
-                .is_some_and(|deadline| deadline > std::time::Instant::now())
-        {
-            self.deferred_preview = Some(output);
-            return false;
+        if !self.camera_navigation || output.generation != self.generation {
+            return self.accept_controlled_preview(output, worker, picker);
         }
-        self.accept_controlled_preview(output, worker, picker)
+        match &output.result {
+            Ok(preview)
+                if !preview.attachment
+                    && !preview.time_dependent
+                    && !preview.live_pages
+                    && preview.protocol.size() == self.cells
+                    && preview.view.time == self.view.time =>
+            {
+                self.deferred_preview = Some(output);
+                if self.camera_settle_deadline.is_none() {
+                    self.refresh_camera_navigation(worker, picker);
+                }
+                false
+            }
+            Ok(preview) if preview.view != self.view => {
+                // A changed scene may require dynamic rendering. Restart at the
+                // current target instead of displaying an obsolete viewport.
+                self.request(worker, false, false);
+                false
+            }
+            _ => self.accept_controlled_preview(output, worker, picker),
+        }
+    }
+
+    pub(super) fn refresh_camera_navigation(
+        &mut self,
+        worker: &super::preview::Worker,
+        picker: &super::graphics::Backend,
+    ) {
+        self.camera_refresh_deadline = None;
+        if !self.camera_navigation {
+            return;
+        }
+        let target = self.view;
+        let idle = self.camera_settle_deadline;
+        if let Some(output) = self.deferred_preview.take() {
+            if !self.accept_controlled_preview(output, worker, picker) {
+                return;
+            }
+            self.view = target;
+            self.camera_navigation = true;
+            self.camera_settle_deadline = idle;
+            if self
+                .preview
+                .as_ref()
+                .is_some_and(|preview| preview.view != target)
+            {
+                self.preview_generation = None;
+                if let Err(error) = self.camera_feedback(picker) {
+                    self.error(error);
+                }
+            }
+        }
+        let exact = self
+            .preview
+            .as_ref()
+            .is_some_and(|preview| preview.view == target);
+        if idle.is_none() && exact {
+            self.camera_navigation = false;
+            // Any in-flight render belongs to the finished navigation epoch.
+            // The retained source already exactly matches the final target.
+            self.generation += 1;
+            self.preview_generation = Some(self.generation);
+            self.camera = None;
+            return;
+        }
+        if !exact {
+            // Start the newest target only when the previous source render has
+            // completed. No queued history and no cancellation on each repeat.
+            worker.request_if_idle(super::preview::Request {
+                generation: self.generation,
+                cells: self.cells,
+                view: target,
+                refresh: false,
+                refresh_pages: false,
+                check_only: false,
+                attachment: None,
+            });
+        }
+        self.camera_refresh_deadline = Some(std::time::Instant::now() + NAVIGATION_REFRESH);
     }
 
     pub(super) fn finish_camera_gesture(
@@ -184,9 +280,7 @@ impl super::App {
         picker: &super::graphics::Backend,
     ) {
         self.camera_settle_deadline = None;
-        if let Some(output) = self.deferred_preview.take() {
-            self.accept_controlled_preview(output, worker, picker);
-        }
+        self.refresh_camera_navigation(worker, picker);
     }
 
     pub(super) fn camera_feedback(

@@ -134,6 +134,7 @@ impl Harness {
             "kitty-placements",
             "kitty-placements-no-color",
             "kitty-held",
+            "kitty-progressive",
             "auto-kitty-raw",
         ]
         .contains(&case)
@@ -156,7 +157,7 @@ impl Harness {
             ws_xpixel: 0,
             ws_ypixel: 0,
         };
-        if case == "kitty-held" {
+        if matches!(case, "kitty-held" | "kitty-progressive") {
             size.ws_xpixel = size.ws_col * 10;
             size.ws_ypixel = size.ws_row * 10;
         }
@@ -205,7 +206,7 @@ impl Harness {
                     "--adapter-arg=image-inspect"
                 });
         }
-        if case == "kitty-held" {
+        if matches!(case, "kitty-held" | "kitty-progressive") {
             command.env("LAZYPENCIL_PROFILE_INPUT", "owned-local-measurement");
         }
         command
