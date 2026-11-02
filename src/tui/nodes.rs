@@ -202,7 +202,9 @@ impl App {
     }
 
     pub(super) fn draw_nodes(&mut self, frame: &mut Frame, area: Rect) {
-        let title = if self.searching || !self.filter.is_empty() {
+        let title = if self.diagnostics.active {
+            "Diagnostics".into()
+        } else if self.searching || !self.filter.is_empty() {
             format!("Nodes /{}", self.filter)
         } else {
             "Nodes".into()
@@ -234,6 +236,10 @@ impl App {
         }
         let inner = block.inner(area);
         frame.render_widget(block, area);
+        if self.diagnostics.active {
+            self.draw_diagnostics(frame, inner);
+            return;
+        }
         self.node_tree.viewport_height = inner.height;
         let items = self
             .node_tree

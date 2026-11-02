@@ -74,6 +74,7 @@ bindings! {
     previous_item => PreviousItem(NODES | ATTACHMENTS, ["Up", "k"]),
     next_item => NextItem(NODES | ATTACHMENTS, ["Down", "j"]),
     search_nodes => SearchNodes(NODES, ["/"]),
+    toggle_diagnostics => ToggleDiagnostics(NODES, ["d"]),
     clear_selection => ClearSelection(NODES, ["Esc"]),
     activate_node => ActivateNode(NODES, ["Enter"]),
     expand_node => ExpandNode(NODES, ["Right", "l"]),

@@ -34,6 +34,11 @@ fn real_pty_handles_japanese_input_live_turns_resize_and_image_protocols() {
 }
 
 #[test]
+fn real_pty_browses_diagnostics_reveals_nodes_and_refreshes_resolved_warnings() {
+    run_pty_case("diagnostics");
+}
+
+#[test]
 fn real_pty_queues_follow_ups_and_restores_typing_after_completion() {
     run_pty_case("queued-followups");
 }

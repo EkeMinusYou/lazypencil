@@ -10,6 +10,8 @@ The header shows the current document's filename prominently beside the app name
 
 Node search reveals matching nodes with their ancestors, and matching branches include their descendants. While a filter is active, branches can still be closed with `h` and reopened with `l`; clearing the filter reveals the current selection and retains other fold states. Visible rows are rebuilt on tree, filter, or document changes rather than on each redraw.
 
+In the left panel, `d` switches between Nodes and Diagnostics without changing the node selection or search filter. Diagnostics lists all measured layout warnings and errors, including nodes hidden by folds or search. `j`/`k` or arrows select a diagnostic; the lower area shows its severity, code, node name and ID, message, and measured details. `Ctrl+U`/`Ctrl+D` scroll those details. Enter reveals the target in Nodes and fits its preview, clearing the node filter; `f` fits the target while keeping Diagnostics open. Esc returns to Nodes. Empty results say `No layout diagnostics`; unavailable previews are reported separately. Diagnostics refresh with the preview, retain the selected node/code when present, and remain available while browsing an attachment. The footer and Help show the configured switch key.
+
 While a request is working, the prompt remains editable and the same submit keys queue text follow-ups in order. Submission clears the input immediately. A queued request starts after the current request succeeds, without consuming any newer unsent draft or resending the current request's images. The input shows the queue count and next queued text. Image changes wait until the text queue is finished. Queued text and the next draft are saved locally; reopening restores them paused and never submits by itself. `/resume-queue` resumes, and `/clear-queue` removes queued prompts. Cancellation or failure pauses the queue. Completion returns focus to Prompt when browsing within Agent, while keeping Nodes/Preview focus intact.
 
 The prompt uses a subtle blue-gray input surface, a neutral `›` marker, and one row of padding above and below the text. It starts at one text row and expands to three as newlines are entered; longer drafts scroll within those rows. It has no separate caption or border, and empty-state guidance appears only inside the input. Request activity appears in the Agent badge and, while running, in a spinner with elapsed time immediately after the latest conversation output, sharing its scroll position. The spinner animates at five updates per second only while work is active; it disappears when the turn completes. The native cursor and IME anchor follow the padded text area.
@@ -79,6 +81,9 @@ Terminal stdin/stdout and at least 50 columns × 16 rows are required. `--json` 
 
 | Focus / key | Action |
 | --- | --- |
+| Nodes / Diagnostics: `d` | Switch the left panel between Nodes and Diagnostics |
+| Diagnostics: `j`/`k` / arrows; `Ctrl+U`/`Ctrl+D` | Select a diagnostic; scroll its details |
+| Diagnostics: `Enter`, `f`, `Esc` | Reveal and fit its node in Nodes; fit while staying in Diagnostics; return to Nodes |
 | `Tab` / `Shift+Tab` | Cycle Prompt, Preview, Nodes |
 | Right region: `Alt+Up` / `Alt+Down` | Switch between conversation history, pending attachments, and Prompt; skip attachments when empty |
 | Agent history / Attachments: `Esc` | Return to Prompt |
@@ -163,7 +168,7 @@ The schema and `config show --user` list all actions and effective defaults:
 | Preview | `pan_left`, `pan_right`, `pan_up`, `pan_down`, `zoom_in`, `zoom_out`, `fit_document`, `time_backward`, `time_forward`, `play_pause` |
 | Preview and Nodes | `fit_selected` |
 | Nodes and Attachments | `previous_item`, `next_item` |
-| Nodes | `search_nodes`, `clear_selection`, `activate_node`, `expand_node`, `collapse_node`, `toggle_node`, `node_page_up`, `node_page_down` |
+| Nodes (including Diagnostics) | `toggle_diagnostics`, `search_nodes`, `clear_selection`, `activate_node`, `expand_node`, `collapse_node`, `toggle_node`, `node_page_up`, `node_page_down` |
 | Attachments | `remove_attachment` |
 | Agent history | `scroll_up`, `scroll_down`, `follow_output` |
 

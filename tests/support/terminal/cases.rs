@@ -91,6 +91,15 @@ pub fn run(
     }
     let mut design = json!({"version":"2.21","children":[{"type":"rectangle","id":"red","name":"日本語の対象","x":-80,"y":-30,"width":180,"height":90,"fill":"#FF0000"}]});
     let mut configuration = None;
+    if case == "diagnostics" {
+        design = json!({"version":"2.21","children":[{
+            "type":"frame","id":"root","name":"Root","width":100,"height":100,"layout":"none",
+            "children":[
+                {"type":"rectangle","id":"child-a","name":"First target","x":95,"width":20,"height":10,"fill":"#00FF00"},
+                {"type":"rectangle","id":"child-b","name":"Second target","x":95,"y":20,"width":20,"height":10,"fill":"#0000FF"}
+            ]
+        }]});
+    }
     if matches!(case, "dynamic-idle" | "page-playback") {
         let sequence = if case == "dynamic-idle" {
             "++n<=2?'#f00':'#f0f'"
@@ -242,6 +251,10 @@ pub fn run(
             Value::Null
         }
         "ime-commit" => ime_commit(&mut h)?,
+        "diagnostics" => {
+            diagnostics(&mut h, &design)?;
+            Value::Null
+        }
         "user-navigation-config" => navigation(&mut h)?,
         "session-selection" => conversations::selection(&mut h)?,
         "session-deletion" | "session-deletion-small" => conversations::deletion(&mut h)?,
@@ -348,6 +361,43 @@ pub fn run(
         "{}",
         json!({"case":case,"terminal_bytes":h.output.len(),"exit_code":0})
     );
+    Ok(())
+}
+
+fn diagnostics(h: &mut Harness, design: &Value) -> Result {
+    let draft = "Keep the unsent draft";
+    h.paste(draft)?;
+    h.draft(draft)?;
+    h.visible("2 diagnostics")?;
+    h.key(b"\t\td")?;
+    h.visible("Diagnostics")?;
+    h.visible("First target")?;
+    h.key(b"j")?;
+    h.visible("Second target")?;
+    h.key(b"\r")?;
+    h.wait("diagnostic reveals its hidden target", 15.0, |h| {
+        let text = h.screen.text();
+        text.contains("First target") && text.contains("Second target") && !text.contains("Details")
+    })?;
+    assert_eq!(&read_json(&h.document).unwrap(), design);
+    h.key(b"d")?;
+    h.visible("Details")?;
+    h.resize(50, 16)?;
+    h.key(b"\x04")?;
+    h.visible("Details")?;
+    h.resize(130, 34)?;
+    let mut repaired = design.clone();
+    for child in repaired["children"][0]["children"].as_array_mut().unwrap() {
+        child["x"] = 0.into();
+    }
+    write_json(&h.document, &repaired)?;
+    h.visible("No layout diagnostics")?;
+    h.key(b"d")?;
+    h.hidden("No layout diagnostics")?;
+    h.key(b"\t")?;
+    h.draft(draft)?;
+    assert_eq!(state(h)["draft"], draft);
+    no_agent(h);
     Ok(())
 }
 

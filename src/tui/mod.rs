@@ -5,6 +5,7 @@ mod camera;
 mod checkpoints;
 mod composer;
 mod controls;
+mod diagnostics;
 mod graphics;
 mod images;
 mod markdown;
@@ -199,6 +200,7 @@ struct App {
     cells: Size,
     nodes: ListState,
     node_tree: nodes::Tree,
+    diagnostics: diagnostics::View,
     attachments: ListState,
     filter: String,
     searching: bool,
@@ -257,6 +259,7 @@ impl App {
             cells: Size::new(0, 0),
             nodes: ListState::default(),
             node_tree: nodes::Tree::default(),
+            diagnostics: diagnostics::View::default(),
             attachments: ListState::default(),
             filter: String::new(),
             searching: false,
@@ -521,6 +524,7 @@ impl App {
         match output.result {
             Ok(mut preview) => {
                 let selected = self.selected_node().map(|node| node.id.clone());
+                let diagnostic = self.selected_diagnostic().cloned();
                 self.preview_error = None;
                 if !preview.attachment {
                     self.view = preview.view;
@@ -544,6 +548,7 @@ impl App {
                 self.preview = Some(preview);
                 if document {
                     self.refresh_nodes(selected.as_deref());
+                    self.refresh_diagnostics(diagnostic.as_ref());
                 }
                 self.preview_generation = Some(output.generation);
             }
@@ -552,6 +557,7 @@ impl App {
                 self.preview = None;
                 self.node_tree.rebuild(&[], &self.filter);
                 self.nodes.select(None);
+                self.refresh_diagnostics(None);
                 self.preview_generation = None;
                 self.preview_error = Some(error.clone());
                 self.error(error);
@@ -1059,6 +1065,14 @@ impl App {
                 self.camera_feedback(picker)?;
             }
             Focus::Nodes => {
+                if action(Nav::ToggleDiagnostics) {
+                    self.diagnostics.active = !self.diagnostics.active;
+                    return Ok(false);
+                }
+                if self.diagnostics.active {
+                    self.diagnostic_key(key, picker, worker)?;
+                    return Ok(false);
+                }
                 let count = self.filtered_nodes().len();
                 if action(Nav::PreviousItem) {
                     self.nodes.select(
@@ -1176,6 +1190,7 @@ impl App {
             (Nav::PreviousItem, "Nodes/Attachments: previous item"),
             (Nav::NextItem, "Nodes/Attachments: next item"),
             (Nav::SearchNodes, "Nodes: search names and IDs"),
+            (Nav::ToggleDiagnostics, "Nodes: switch Nodes / Diagnostics"),
             (Nav::ClearSelection, "Nodes: clear the editing target"),
             (Nav::ActivateNode, "Nodes: select and fit the target"),
             (Nav::ExpandNode, "Nodes: expand or enter a branch"),
@@ -1197,6 +1212,7 @@ impl App {
             text.push_str(&format!("{}: {description}\n", label(action)));
         }
         text.push_str("\n/open-preview: open the complete PNG externally\n/time <seconds>: seek; /play [1-10 fps], /pause\n/logs: read current saved turns; /conversations: saved conversations\nSaved logs: arrows select/scroll; Enter opens; n/p pages\nu: select local session; N: new local conversation\nv: raw/formatted; Backspace returns; r refreshes; Esc closes\n/commands, /history, /help, /quit\nCtrl+C: cancel active work; exit when idle\nDialogs keep their displayed keys; Esc closes help\nHelp: PgUp/PgDn or arrows scroll; Home/End jump\n\nClipboard access happens only on explicit paste. SSH reads the remote host's clipboard. Image protocols do not provide clipboard access.");
+        text.push_str(&format!("\nDiagnostics: {} / {} select; {} reveals and fits the node\n{} / {} scroll details; {} returns to Nodes\n", label(Nav::PreviousItem), label(Nav::NextItem), label(Nav::ActivateNode), label(Nav::NodePageUp), label(Nav::NodePageDown), label(Nav::ClearSelection)));
         text
     }
 
@@ -1612,6 +1628,16 @@ impl App {
             Paragraph::new(Text::from(vec![
                 Line::from(self.status.clone()),
                 Line::from(vec![
+                    key(if self.focus == Focus::Nodes {
+                        self.navigation.label(Nav::ToggleDiagnostics)
+                    } else {
+                        String::new()
+                    }),
+                    description(if self.focus == Focus::Nodes {
+                        " Nodes/Diagnostics · "
+                    } else {
+                        ""
+                    }),
                     key(format!(
                         "{} / {}",
                         self.navigation.label(Nav::NextPanel),

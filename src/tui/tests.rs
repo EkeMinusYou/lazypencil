@@ -2338,6 +2338,151 @@ fn cached_camera_feedback_keeps_exact_exports_and_generation_ownership_separate(
 }
 
 #[test]
+fn diagnostics_switch_preserves_targets_and_reveals_hidden_nodes_after_refresh() {
+    async fn rendered(app: &mut App, worker: &Worker) {
+        loop {
+            let output = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap();
+            if output.generation == app.generation {
+                assert!(app.accept_preview(output));
+                assert!(app.preview_error.is_none());
+                break;
+            }
+        }
+    }
+    fn screen(app: &mut App, width: u16, height: u16) -> String {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                app.draw_nodes(frame, area);
+            })
+            .unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(usize::from(width))
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let path = app.conversation.store().path().to_path_buf();
+        let mut document = json!({"version":"2.21","children":[{
+            "type":"frame","id":"root","name":"Root","width":100,"height":100,"layout":"none",
+            "children":[
+                {"type":"rectangle","id":"child-a","name":"Same name","x":95,"width":20,"height":10,"fill":"#00FF00"},
+                {"type":"rectangle","id":"child-b","name":"Same name","x":95,"y":20,"width":20,"height":10,"fill":"#0000FF"}
+            ]
+        }]});
+        std::fs::write(&path, document.to_string()).unwrap();
+        let worker = Worker::start(app.conversation.store().clone(), vec![], Backend::halfblocks(), 187).unwrap();
+        app.cells = Size::new(20, 12);
+        app.request(&worker, false, false);
+        rendered(&mut app, &worker).await;
+        app.focus = Focus::Nodes;
+        app.filter = "root".into();
+        app.refresh_nodes(Some("root"));
+        assert_eq!(app.filtered_nodes().len(), 3);
+        press(&mut app, KeyCode::Char('h'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.filtered_nodes().len(), 1);
+        press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE, &worker).await;
+        assert!(app.diagnostics.active);
+        assert_eq!(app.selected_diagnostic().unwrap()["node_id"], "child-a");
+        assert_eq!(app.selected_node().unwrap().id, "root");
+        assert_eq!(app.filter, "root");
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selected_diagnostic().unwrap()["node_id"], "child-b");
+        let text = screen(&mut app, 40, 26);
+        for expected in ["Diagnostics", "warning: LAYOUT_OVERFLOW", "Same name", "child-b", "The child extends beyond its parent"] {
+            assert!(text.contains(expected), "Missing {expected}:\n{text}");
+        }
+        let top = screen(&mut app, 18, 16);
+        for _ in 0..8 {
+            press(&mut app, KeyCode::Char('d'), KeyModifiers::CONTROL, &worker).await;
+            screen(&mut app, 18, 16);
+        }
+        let bottom = screen(&mut app, 18, 16);
+        assert_ne!(top, bottom, "Narrow diagnostic details must scroll");
+        assert!(bottom.contains('}'), "Measured details remain reachable");
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
+        assert!(!app.diagnostics.active);
+        assert_eq!(app.filter, "root");
+        assert_eq!(app.selected_node().unwrap().id, "root");
+        press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+        assert!(!app.diagnostics.active);
+        assert!(app.filter.is_empty());
+        assert_eq!(app.selected_node().unwrap().id, "child-b");
+        assert_eq!(app.filtered_nodes().len(), 3);
+        assert_eq!(app.view.center, [105.0, 25.0]);
+        rendered(&mut app, &worker).await;
+
+        press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE, &worker).await;
+        document["children"][0]["children"].as_array_mut().unwrap().reverse();
+        std::fs::write(&path, document.to_string()).unwrap();
+        app.request(&worker, false, true);
+        rendered(&mut app, &worker).await;
+        assert_eq!(app.selected_diagnostic().unwrap()["node_id"], "child-b");
+        assert_eq!(app.selected_node().unwrap().id, "child-b");
+        app.accept_input(fake_clipboard(Path::new("unused"), None, &CancellationToken::new()));
+        app.focus = Focus::Attachments;
+        app.attachments.select(Some(0));
+        app.request(&worker, false, false);
+        rendered(&mut app, &worker).await;
+        assert!(app.preview.as_ref().unwrap().attachment);
+        assert_eq!(app.selected_diagnostic().unwrap()["node_id"], "child-b");
+        app.focus = Focus::Nodes;
+        press(&mut app, KeyCode::Char('f'), KeyModifiers::NONE, &worker).await;
+        assert!(app.diagnostics.active);
+        rendered(&mut app, &worker).await;
+        document["children"][0]["children"].as_array_mut().unwrap().remove(0);
+        std::fs::write(&path, document.to_string()).unwrap();
+        app.request(&worker, false, true);
+        rendered(&mut app, &worker).await;
+        assert_eq!(app.selected_diagnostic().unwrap()["node_id"], "child-a");
+        assert!(app.selected_node().is_none());
+        document["children"][0]["children"][0]["x"] = json!(0);
+        std::fs::write(&path, document.to_string()).unwrap();
+        app.request(&worker, false, true);
+        rendered(&mut app, &worker).await;
+        assert!(app.selected_diagnostic().is_none());
+        assert!(screen(&mut app, 40, 20).contains("No layout diagnostics"));
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+        assert!(app.diagnostics.active);
+
+        app.navigation.toggle_diagnostics = vec!["v".into()];
+        app.navigation.validate(&app.keys).unwrap();
+        press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE, &worker).await;
+        assert!(app.diagnostics.active);
+        press(&mut app, KeyCode::Char('v'), KeyModifiers::NONE, &worker).await;
+        assert!(!app.diagnostics.active);
+        app.searching = true;
+        press(&mut app, KeyCode::Char('v'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.filter, "v");
+        assert!(!app.diagnostics.active);
+        app.searching = false;
+        app.focus = Focus::Prompt;
+        press(&mut app, KeyCode::Char('v'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.editor.lines(), ["v"]);
+        app.diagnostics.active = true;
+        app.preview = None;
+        assert!(screen(&mut app, 40, 20).contains("Loading diagnostics"));
+        app.preview_error = Some(Error::new("RENDER_ERROR", "Fixture failure"));
+        let unavailable = screen(&mut app, 40, 20);
+        assert!(unavailable.contains("Diagnostics unavailable"));
+        assert!(!unavailable.contains("No layout diagnostics"));
+        assert!(!app.conversation.active());
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
 fn nodes_tree_keeps_duplicate_names_distinct_through_search_refresh_and_attachments() {
     async fn rendered(app: &mut App, worker: &Worker) {
         loop {
