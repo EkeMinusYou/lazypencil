@@ -138,8 +138,11 @@ pub fn require_success(value: &Value) -> Result<Value> {
         .as_object()
         .ok_or_else(|| anyhow::anyhow!("Expected verification results"))?;
     ensure!(
-        results.len() == 2 && results.contains_key("native") && results.contains_key("audit"),
-        "Expected exactly native and audit results"
+        results.len() == 3
+            && ["native", "audit", "shader-preprocessor"]
+                .iter()
+                .all(|name| results.contains_key(*name)),
+        "Expected exactly native, audit and shader-preprocessor results"
     );
     for name in ["native", "audit"] {
         ensure!(
@@ -147,7 +150,12 @@ pub fn require_success(value: &Value) -> Result<Value> {
             "Required {name} verification did not succeed"
         );
     }
-    Ok(serde_json::json!({"native":"success", "audit":"success"}))
+    let shader = &results["shader-preprocessor"]["result"];
+    ensure!(
+        shader == "success" || shader == "skipped",
+        "Required shader-preprocessor verification did not succeed"
+    );
+    Ok(serde_json::json!({"native":"success", "audit":"success", "shader-preprocessor":shader}))
 }
 
 pub fn normalize_source(source: &std::path::Path) -> Result<Value> {

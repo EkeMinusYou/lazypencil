@@ -162,8 +162,10 @@ jobs:
     permissions:
       contents: read
       actions: write
-    needs: [plan, shader-preprocessor]
-    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.shader-preprocessor.result == 'success' || needs.shader-preprocessor.result == 'skipped') }}
+    # Native jobs consume the checked-in component, not the Wasm job's artifact.
+    # Request scarce Mac runners while the independent rebuild is verified.
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -178,9 +180,9 @@ jobs:
       rebuild_application: ${{ inputs.rebuild_application == true }}
 
   source:
-    if: ${{ !cancelled() && needs.native.result == 'success' && needs.audit.result == 'success' && (inputs.os == 'all' || inputs.os == '' || inputs.os == 'macos-15') }}
+    if: ${{ !cancelled() && needs.native.result == 'success' && needs.audit.result == 'success' && (needs.shader-preprocessor.result == 'success' || needs.shader-preprocessor.result == 'skipped') && (inputs.os == 'all' || inputs.os == '' || inputs.os == 'macos-15') }}
     name: Verified source artifact
-    needs: [native, audit]
+    needs: [native, audit, shader-preprocessor]
     permissions:
       contents: read
       actions: write

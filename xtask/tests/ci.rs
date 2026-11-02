@@ -593,7 +593,16 @@ fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() 
     ));
     let ci = std::fs::read_to_string(util::root().join(".github/workflows/ci.yml")).unwrap();
     assert!(ci.contains("measure_tui: ${{ needs.plan.outputs.measure_tui == 'true' }}"));
-    assert!(ci.contains("needs: [plan, shader-preprocessor]"));
+    let native = ci
+        .split("\n  native:\n")
+        .nth(1)
+        .unwrap()
+        .split("\n  source:\n")
+        .next()
+        .unwrap();
+    assert!(native.contains("needs: plan\n"));
+    assert!(!native.contains("needs.shader-preprocessor"));
+    assert!(ci.contains("needs: [native, audit, shader-preprocessor]"));
     assert!(ci.contains("uses: ./.github/workflows/native-lanes.yml"));
     assert!(!ci.contains("  focus:\n"));
 }
@@ -1236,9 +1245,15 @@ fn terminal_protocol_and_observer_changes_reproduce_the_bsd_browser_consumer_fir
 
 #[test]
 fn release_gate_rejects_every_incomplete_or_malformed_result() {
-    let valid = json!({"native":{"result":"success"},"audit":{"result":"success"}});
+    let valid = json!({"native":{"result":"success"},"audit":{"result":"success"},"shader-preprocessor":{"result":"success"}});
     assert!(ci::require_success(&valid).is_ok());
-    for job in ["native", "audit"] {
+    let mut unchanged_shader = valid.clone();
+    unchanged_shader["shader-preprocessor"]["result"] = json!("skipped");
+    assert!(ci::require_success(&unchanged_shader).is_ok());
+    let mut extra = valid.clone();
+    extra["extra"] = json!({"result":"success"});
+    assert!(ci::require_success(&extra).is_err());
+    for job in ["native", "audit", "shader-preprocessor"] {
         for state in [
             json!("skipped"),
             json!("failure"),
@@ -1249,6 +1264,9 @@ fn release_gate_rejects_every_incomplete_or_malformed_result() {
             json!(true),
         ] {
             let mut value = valid.clone();
+            if job == "shader-preprocessor" && state == "skipped" {
+                continue;
+            }
             value[job]["result"] = state;
             assert!(ci::require_success(&value).is_err());
         }
@@ -1258,6 +1276,7 @@ fn release_gate_rejects_every_incomplete_or_malformed_result() {
         json!([]),
         json!({}),
         json!({"native":{"result":"success"}}),
+        json!({"native":{"result":"success"},"audit":{"result":"success"}}),
         json!({"native":{"result":"success"},"audit":{"result":"success"},"extra":{}}),
     ] {
         assert!(ci::require_success(&value).is_err());
@@ -1269,9 +1288,11 @@ fn release_gate_rejects_every_incomplete_or_malformed_result() {
         json!({}),
         json!({"outputs":{}}),
     ] {
-        let mut data = valid.clone();
-        data["native"] = value;
-        assert!(ci::require_success(&data).is_err());
+        for job in ["native", "audit", "shader-preprocessor"] {
+            let mut data = valid.clone();
+            data[job] = value.clone();
+            assert!(ci::require_success(&data).is_err());
+        }
     }
 }
 
