@@ -600,11 +600,7 @@ mod hosted {
             let raster = fixtures::oracles::Raster {
                 width: frame.width as u32,
                 height: frame.height as u32,
-                pixels: frame
-                    .rgba()
-                    .chunks_exact(4)
-                    .map(|pixel| pixel.try_into().unwrap())
-                    .collect(),
+                pixels: frame.rgba().as_chunks::<4>().0.to_vec(),
             };
             let png = crate::terminal::raster::png(&raster)?;
             util::publish(&root.join(format!("{name}.png")), &png, false)?;

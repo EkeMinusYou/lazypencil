@@ -33,7 +33,7 @@ impl PreviewPixels {
         ) {
             return Err(Error::new("RENDER_ERROR", "Cannot copy preview pixels"));
         }
-        let opaque = rgba.chunks_exact(4).all(|pixel| pixel[3] == 255);
+        let opaque = rgba.as_chunks::<4>().0.iter().all(|pixel| pixel[3] == 255);
         let bitmap = if opaque {
             // Straight and premultiplied pixels are identical for opaque images.
             image::RgbaImage::from_raw(width, height, rgba.clone())

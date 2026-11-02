@@ -392,7 +392,7 @@ where
             continue;
         }
         let offset = source_y as usize * source.width() as usize * 4;
-        for (pixel, x) in row.chunks_exact_mut(4).zip(&columns) {
+        for (pixel, x) in row.as_chunks_mut::<4>().0.iter_mut().zip(&columns) {
             if let Some(x) = x {
                 let offset = offset + x * 4;
                 pixel.copy_from_slice(&source.as_raw()[offset..offset + 4]);

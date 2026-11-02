@@ -820,7 +820,7 @@ fn held_navigation(h: &mut Harness) -> Result {
     h.wait("fit restores the viewport after rapid repeats", 15.0, |h| {
         h.frames.images.last() == Some(&initial)
     })?;
-    for letter in [b'h', b'j', b'k', b'l'] {
+    for letter in *b"hjkl" {
         let count = pan_inputs(h);
         for (index, kind) in [1, 2, 2].into_iter().enumerate() {
             let placements = h.frames.camera_placement_updates;

@@ -23,8 +23,10 @@ fn padded(mut bytes: Vec<u8>) -> Vec<u8> {
 }
 fn checksum(bytes: &[u8]) -> u32 {
     padded(bytes.to_vec())
-        .chunks_exact(4)
-        .map(|p| u32::from_be_bytes(p.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|p| u32::from_be_bytes(*p))
         .fold(0, u32::wrapping_add)
 }
 

@@ -164,13 +164,13 @@ fn original_color_font_has_independent_sfnt_checksums_and_palette_tables() {
 
 fn font_tables(bytes: &[u8]) -> std::collections::BTreeMap<&[u8], &[u8]> {
     assert_eq!(bytes.len() % 4, 0);
-    let checksum = bytes.chunks_exact(4).fold(0u32, |sum, word| {
-        sum.wrapping_add(u32::from_be_bytes(word.try_into().unwrap()))
+    let checksum = bytes.as_chunks::<4>().0.iter().fold(0u32, |sum, word| {
+        sum.wrapping_add(u32::from_be_bytes(*word))
     });
     assert_eq!(checksum, 0xb1b0afba);
     let count = u16::from_be_bytes(bytes[4..6].try_into().unwrap()) as usize;
     let mut tables = std::collections::BTreeMap::new();
-    for row in bytes[12..12 + count * 16].chunks_exact(16) {
+    for row in bytes[12..12 + count * 16].as_chunks::<16>().0 {
         let start = u32::from_be_bytes(row[8..12].try_into().unwrap()) as usize;
         let size = u32::from_be_bytes(row[12..16].try_into().unwrap()) as usize;
         assert_eq!(start % 4, 0);
@@ -203,8 +203,10 @@ fn original_sbix_font_has_valid_strike_offsets_duplicate_records_and_exact_rgba_
         let strike = &sbix[12..];
         assert_eq!(&strike[..4], &[0, 100, 0, 72]);
         let offsets = strike[4..48]
-            .chunks_exact(4)
-            .map(|b| u32::from_be_bytes(b.try_into().unwrap()) as usize)
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|b| u32::from_be_bytes(*b) as usize)
             .collect::<Vec<_>>();
         assert_eq!(offsets[0], 48);
         assert_eq!(offsets[10], strike.len());
@@ -252,9 +254,9 @@ fn original_sbix_font_has_valid_strike_offsets_duplicate_records_and_exact_rgba_
                     .read_to_end(&mut raw)
                     .unwrap();
                 assert_eq!(raw.len(), 70 * (64 * 4 + 1));
-                for (y, row) in raw.chunks_exact(64 * 4 + 1).enumerate() {
+                for (y, row) in raw.as_chunks::<{ 64 * 4 + 1 }>().0.iter().enumerate() {
                     assert_eq!(row[0], 0);
-                    for (x, pixel) in row[1..].chunks_exact(4).enumerate() {
+                    for (x, pixel) in row[1..].as_chunks::<4>().0.iter().enumerate() {
                         let mut expected = match (glyph, x < 32) {
                             (1, true) | (8, false) => [255, 0, 0, 255],
                             _ => [0, 255, 0, 255],
@@ -272,7 +274,7 @@ fn original_sbix_font_has_valid_strike_offsets_duplicate_records_and_exact_rgba_
                                 0
                             };
                         }
-                        assert_eq!(pixel, expected);
+                        assert_eq!(*pixel, expected);
                     }
                 }
             } else {
