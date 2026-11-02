@@ -49,10 +49,9 @@ fn command(h: &mut Harness, label: &str, index: usize) -> Result {
     h.key(b"\r")
 }
 fn edit(h: &Harness, color: &str, request: &str) -> Result<Value> {
-    let revision = h.cli(&["inspect".as_ref(), h.document.as_os_str()])?["revision"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let inspected = h.cli(&["inspect".as_ref(), h.document.as_os_str()])?;
+    let revision = inspected["revision"].as_str().unwrap();
+    let dependency_revision = inspected["dependency_revision"].as_str().unwrap();
     let operations = h.root.join("operations.json");
     write_json(
         &operations,
@@ -65,6 +64,8 @@ fn edit(h: &Harness, color: &str, request: &str) -> Result<Value> {
         operations.as_os_str(),
         "--expected-revision".as_ref(),
         revision.as_ref(),
+        "--expected-dependency-revision".as_ref(),
+        dependency_revision.as_ref(),
         "--request-id".as_ref(),
         request.as_ref(),
     ])
@@ -221,6 +222,8 @@ pub fn run(
                     operations.as_os_str(),
                     "--expected-revision".as_ref(),
                     result["revision"].as_str().unwrap().as_ref(),
+                    "--expected-dependency-revision".as_ref(),
+                    result["dependency_revision"].as_str().unwrap().as_ref(),
                     "--request-id".as_ref(),
                     request.as_ref(),
                 ],
@@ -669,10 +672,11 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
                         // checked separately from this visible prefix.
                         line.contains("か\u{3099}") && line.contains('👩')
                     })
-            }) && lines
-                .get(rows as usize - 1)
-                .is_some_and(|line| line.starts_with("Tab / Shift+Tab panels"))
-                && h.screen.cursor().1 != previous.1
+            }) && lines.get(rows as usize - 1).is_some_and(|line| {
+                // Panel toggles now precede navigation help. Both complete
+                // labels fit even at the narrowest tested terminal width.
+                line.starts_with("F2 / Alt+N hide Nodes") && line.contains("F3 / Alt+A hide Agent")
+            }) && h.screen.cursor().1 != previous.1
                 && h.session()
                     .is_some_and(|session| session["draft"] == expected)
         })?;
