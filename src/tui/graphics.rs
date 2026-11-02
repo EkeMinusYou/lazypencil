@@ -61,6 +61,65 @@ impl Widget for Image<'_> {
     }
 }
 
+/// Present new Kitty frames in an inactive slot before replacing their cells.
+#[derive(Default)]
+pub(super) struct Presentation {
+    slots: [Option<(u32, u32)>; 2],
+    visible: Option<u32>,
+}
+
+impl Presentation {
+    pub(super) fn prepare(&mut self, buffer: &mut Buffer, area: Rect, camera: bool) {
+        const PLACEHOLDER: char = '\u{10eeee}';
+        let family = usize::from(camera);
+        let transmission = area.positions().find_map(|position| {
+            let cell = buffer.cell(position)?;
+            let symbol = cell.symbol();
+            if !symbol.contains("a=T,U=1,") {
+                return None;
+            }
+            symbol
+                .split(',')
+                .find_map(|field| field.strip_prefix("i=")?.parse::<u32>().ok())
+        });
+        if let Some(source) = transmission {
+            let slot = self.visible.map_or(0, |id| (id & 1) ^ 1);
+            self.slots[family] = Some((source, (source & !1).max(2) | slot));
+        }
+        let Some((source, target)) = self.slots[family] else {
+            return;
+        };
+        let [_, sr, sg, sb] = source.to_be_bytes();
+        let [_, tr, tg, tb] = target.to_be_bytes();
+        let mut visible = false;
+        for position in area.positions() {
+            let Some(cell) = buffer.cell_mut(position) else {
+                continue;
+            };
+            if !cell.symbol().contains(PLACEHOLDER) {
+                continue;
+            }
+            visible = true;
+            if source != target {
+                // The slot changes only the low ID bit. The high-byte diacritic
+                // stays intact, including the temporary camera-frame marker.
+                let symbol = cell
+                    .symbol()
+                    .replacen(&format!("i={source},"), &format!("i={target},"), 1)
+                    .replace(
+                        &format!("\x1b[38;2;{sr};{sg};{sb}m"),
+                        &format!("\x1b[38;2;{tr};{tg};{tb}m"),
+                    );
+                cell.set_symbol(&symbol)
+                    .set_fg(ratatui::style::Color::Rgb(tr, tg, tb));
+            }
+        }
+        if visible {
+            self.visible = Some(target);
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Backend {
     font: FontSize,

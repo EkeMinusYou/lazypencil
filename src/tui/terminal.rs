@@ -11,7 +11,7 @@ use crossterm::{
         enable_raw_mode,
     },
 };
-use ratatui::{Terminal, backend::CrosstermBackend};
+use ratatui::{Terminal, backend::CrosstermBackend, buffer::CellDiffOption};
 use std::io::{Stdout, Write};
 
 pub struct Screen {
@@ -38,14 +38,18 @@ impl Screen {
         self.force_redraw = true;
     }
     pub fn draw(&mut self, draw: impl FnOnce(&mut ratatui::Frame)) -> Result<()> {
-        // Keep image-placement erasure and its replacement in one display update.
-        // Clearing before this transaction exposes a blank screen during zooms.
+        // Keep text and image-slot replacement in one display update. Never
+        // erase the physical screen merely to invalidate the drawing cache.
         std::io::stdout()
             .sync_update(|_| {
                 if self.force_redraw {
-                    // Avoid Terminal::clear's cursor query racing EventStream's reader.
-                    let area = self.terminal.size().map_err(io)?.into();
-                    self.terminal.resize(area).map_err(io)?;
+                    // Invalidate the previous buffer without emitting a clear or
+                    // querying the cursor while EventStream owns stdin.
+                    self.terminal.swap_buffers();
+                    for cell in &mut self.terminal.current_buffer_mut().content {
+                        cell.set_diff_option(CellDiffOption::AlwaysUpdate);
+                    }
+                    self.terminal.swap_buffers();
                     self.force_redraw = false;
                 }
                 self.terminal.draw(draw).map(|_| ()).map_err(io)
@@ -89,7 +93,7 @@ impl Drop for Screen {
 }
 fn restore(id: u32, tmux: bool) {
     let mut stdout = std::io::stdout();
-    let deletion = [id, id ^ 0x8000_0000]
+    let deletion = [id, id ^ 1, id ^ 0x8000_0000, id ^ 0x8000_0001]
         .map(|id| format!("\x1b_Ga=d,d=I,i={id},q=2\x1b\\"))
         .concat();
     if tmux {

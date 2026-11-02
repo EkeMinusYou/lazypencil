@@ -152,8 +152,9 @@ pub struct KittyFrames {
     exact_image_id: Option<u32>,
 }
 impl KittyFrames {
-    /// Lazypencil owns paired IDs. Keep temporary feedback separate so it can
-    /// never satisfy the existing exact-frame tests or latency measurements.
+    /// Lazypencil owns two slots each for exact and temporary frames. Keep
+    /// temporary feedback separate so it can never satisfy exact-frame tests
+    /// or latency measurements.
     pub fn for_lazypencil() -> Self {
         Self {
             split_camera_frames: true,
@@ -233,8 +234,8 @@ impl KittyFrames {
                         .filter(|id| *id != 0)
                         .ok_or("Missing owned image ID")?;
                     let exact = *self.exact_image_id.get_or_insert(id);
-                    if id != exact && id != (exact ^ 0x8000_0000) {
-                        return Err("Unexpected image ID outside the owned frame pair".into());
+                    if (id ^ exact) & !0x8000_0001 != 0 {
+                        return Err("Unexpected image ID outside the owned frame slots".into());
                     }
                 }
                 let width = fields
@@ -330,7 +331,12 @@ impl KittyFrames {
                             return Err("Incomplete Kitty pixel data".into());
                         }
                         let frame = Frame::new(width, height, pixels)?;
-                        if self.split_camera_frames && self.image_id != self.exact_image_id {
+                        if self.split_camera_frames
+                            && self
+                                .image_id
+                                .zip(self.exact_image_id)
+                                .is_some_and(|(id, exact)| (id ^ exact) & 0x8000_0000 != 0)
+                        {
                             self.camera_frames = self
                                 .camera_frames
                                 .checked_add(1)

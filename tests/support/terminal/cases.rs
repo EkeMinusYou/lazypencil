@@ -348,8 +348,12 @@ pub fn run(
             !synchronized,
             "Normal exit must finish synchronized updates"
         );
-        assert!(clears > 0, "The case must exercise image-placement redraws");
-        report["synchronized_full_redraws"] = clears.into();
+        assert_eq!(
+            clears, 0,
+            "Camera and modal updates must not erase the screen"
+        );
+        assert!(h.frames.transmitted_resources.len() >= 2);
+        report["fullscreen_clears"] = clears.into();
     }
     if !report.is_null() {
         report["exit_code"] = 0.into();

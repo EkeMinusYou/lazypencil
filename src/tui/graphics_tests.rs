@@ -122,3 +122,71 @@ fn compressed_and_raw_kitty_transfers_preserve_identical_rgba_without_changing_p
         "Compressed transport must reduce bytes"
     );
 }
+
+#[test]
+fn kitty_frames_switch_inactive_slots_and_keep_stable_redraws_without_retransmission() {
+    let area = Rect::new(0, 0, 3, 2);
+    let backend = Backend {
+        font: FontSize::new(1, 1),
+        protocol: ProtocolType::Kitty,
+        tmux: false,
+        kitty_compression: true,
+    };
+    let mut presentation = Presentation::default();
+    let mut observer = observer::KittyFrames::for_lazypencil();
+    let mut previous = Buffer::empty(area);
+    let mut last_id = None;
+    for camera in [false, false, true, true, false, false] {
+        let source = 42 | if camera { 0x8000_0000 } else { 0 };
+        let protocol = backend
+            .encode(
+                DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+                    3,
+                    2,
+                    image::Rgba([12, 34, 56, 255]),
+                )),
+                area.as_size(),
+                source,
+            )
+            .unwrap();
+        let mut next = Buffer::empty(area);
+        Image(&protocol).render(area, &mut next);
+        presentation.prepare(&mut next, area, camera);
+        let target = presentation.visible.unwrap();
+        assert_ne!(
+            Some(target),
+            last_id,
+            "Never retransmit into the displayed slot"
+        );
+        assert_eq!((target ^ source) & !1, 0);
+        let updates = previous.diff(&next);
+        assert_eq!(
+            updates.len(),
+            6,
+            "Replace every placeholder through ordinary diffing"
+        );
+        for (_, _, cell) in updates {
+            observer.feed(cell.symbol().as_bytes()).unwrap();
+            let [_, r, g, b] = target.to_be_bytes();
+            assert_eq!(cell.fg, ratatui::style::Color::Rgb(r, g, b));
+        }
+        let mut stable = Buffer::empty(area);
+        Image(&protocol).render(area, &mut stable);
+        presentation.prepare(&mut stable, area, camera);
+        assert!(!stable[(0, 0)].symbol().contains("_G"));
+        assert_eq!(presentation.visible, Some(target));
+        // Only the first cell loses the one-time transmission prefix.
+        assert!(next.diff(&stable).len() <= 1);
+        previous = stable;
+        last_id = Some(target);
+    }
+    assert_eq!(observer.images.len(), 4);
+    assert_eq!(observer.camera_frames, 2);
+    assert!(observer.transmitted_resources.len() <= 4);
+    assert!(
+        observer
+            .images
+            .iter()
+            .all(|frame| frame.rgba() == [12, 34, 56, 255].repeat(6))
+    );
+}

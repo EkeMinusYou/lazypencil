@@ -142,9 +142,9 @@ pub fn run(args: &TuiArgs, data: Option<PathBuf>, json_output: bool) -> Result<(
     for image in &args.prompt.images {
         conversation.attach_file(image)?;
     }
-    // Own a pair of image IDs: exact frames use the low half, temporary camera
-    // feedback uses the corresponding high bit. Both are released on exit.
-    let id = (uuid::Uuid::new_v4().as_u128() as u32 & 0x7fff_ffff).max(1);
+    // Reserve two slots each for exact and temporary camera frames. The low
+    // bit selects the slot; the high bit identifies temporary feedback.
+    let id = (uuid::Uuid::new_v4().as_u128() as u32 & 0x7fff_fffe).max(2);
     let mut screen = terminal::Screen::enter(args.image_protocol, id)?;
     let worker = Worker::start(
         conversation.store().clone(),
@@ -198,6 +198,7 @@ struct App {
     playback: playback::Playback,
     preview: Option<Preview>,
     preview_generation: Option<u64>,
+    presentation: graphics::Presentation,
     preview_error: Option<Error>,
     nodes_loading: bool,
     pending_preview: Option<controls::Pending>,
@@ -260,6 +261,7 @@ impl App {
             playback: playback::Playback::default(),
             preview: None,
             preview_generation: None,
+            presentation: Default::default(),
             preview_error: None,
             nodes_loading: true,
             pending_preview: None,
@@ -382,12 +384,11 @@ impl App {
                 event = events.next() => match event {
                     Some(Ok(Event::Key(key))) if key.kind != KeyEventKind::Release => {
                         let modal = self.has_modal();
-                        let camera = self.camera.as_ref().map(|camera| camera.generation);
                         match self.key(key, &screen.picker, worker).await {
                             Ok(true) => { self.save_draft()?; return Ok(()); },
                             Ok(false) => {}, Err(error) => self.error(error),
                         }
-                        if modal && !self.has_modal() || camera != self.camera.as_ref().map(|camera| camera.generation) { screen.redraw(); }
+                        if modal && !self.has_modal() { screen.redraw(); }
                         self.dirty = true;
                     },
                     Some(Ok(Event::Paste(text))) if self.focus == Focus::Prompt && !self.has_modal() => {
@@ -404,9 +405,7 @@ impl App {
                     self.dirty = true;
                 },
                 output = worker.next() => {
-                    // Replacing a Kitty image ID removes its placements. Resend
-                    // every placeholder instead of diffing unchanged image cells.
-                    if self.accept_controlled_preview(output, worker, &screen.picker) { screen.redraw(); }
+                    self.accept_controlled_preview(output, worker, &screen.picker);
                 },
                 _ = async {
                     if let Some(deadline) = camera_deadline {
@@ -420,13 +419,10 @@ impl App {
                     let accepted = worker.try_next().is_some_and(|output| {
                         self.accept_controlled_preview(output, worker, &screen.picker)
                     });
-                    if accepted {
-                        screen.redraw();
-                    } else {
+                    if !accepted {
                         if let Err(error) = self.render_camera_feedback(&screen.picker) {
                             self.error(error);
                         }
-                        if self.camera.is_some() { screen.redraw(); }
                         self.dirty = true;
                     }
                 },
@@ -1703,10 +1699,16 @@ impl App {
         }
         let inner = block.inner(panes[1]);
         frame.render_widget(block, panes[1]);
-        if let Some(camera) = &self.camera {
+        if let Some(camera) = self
+            .camera
+            .as_ref()
+            .filter(|camera| camera.generation == self.generation)
+        {
             frame.render_widget(graphics::Image(&camera.protocol), inner);
+            self.presentation.prepare(frame.buffer_mut(), inner, true);
         } else if let Some(preview) = &self.preview {
             frame.render_widget(graphics::Image(&preview.protocol), inner);
+            self.presentation.prepare(frame.buffer_mut(), inner, false);
         } else {
             frame.render_widget(
                 Paragraph::new(match &self.preview_error {
