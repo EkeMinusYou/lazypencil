@@ -787,6 +787,30 @@ fn held_navigation(h: &mut Harness) -> Result {
     h.wait("balanced batched input restores the viewport", 15.0, |h| {
         h.frames.images.last() == Some(&initial)
     })?;
+    let before = pan_inputs(h);
+    let frames = h.frames.images.len();
+    let placements = h.frames.camera_placement_updates;
+    for (index, kind) in [1, 2, 2].into_iter().enumerate() {
+        h.key(format!("\x1b[104;1:{kind}u").as_bytes())?;
+        h.wait(
+            "rapid repeats update the camera without another image upload",
+            3.0,
+            |h| {
+                pan_inputs(h) == before + index + 1
+                    && h.frames.camera_placement_updates > placements
+            },
+        )?;
+        h.pump_for(0.015)?;
+    }
+    assert_eq!(h.frames.images.len(), frames);
+    h.key(b"\x1b[104;1:3u")?;
+    h.wait("release presents the completed detailed frame", 15.0, |h| {
+        h.frames.images.len() > frames
+    })?;
+    h.key(b"0")?;
+    h.wait("fit restores the viewport after rapid repeats", 15.0, |h| {
+        h.frames.images.last() == Some(&initial)
+    })?;
     for letter in [b'h', b'j', b'k', b'l'] {
         let count = pan_inputs(h);
         for (index, kind) in [1, 2, 2].into_iter().enumerate() {

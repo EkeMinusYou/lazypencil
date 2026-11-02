@@ -149,6 +149,46 @@ fn placement(
 }
 
 impl super::App {
+    pub(super) fn accept_interactive_preview(
+        &mut self,
+        output: super::preview::Output,
+        worker: &super::preview::Worker,
+        picker: &super::graphics::Backend,
+    ) -> bool {
+        // Metadata-only motion stays responsive while detailed image transfers
+        // wait for idle/release. Refresh sooner before most cached content is lost.
+        let covered = self.camera.as_ref().is_some_and(|camera| {
+            let Feedback::Placement(projection) = &camera.image else {
+                return false;
+            };
+            u64::from(projection.area.width) * u64::from(projection.area.height) * 2
+                >= u64::from(self.cells.width) * u64::from(self.cells.height)
+        });
+        if output.generation == self.generation
+            && output.result.is_ok()
+            && self.pending_preview.is_none()
+            && covered
+            && self
+                .camera_settle_deadline
+                .is_some_and(|deadline| deadline > std::time::Instant::now())
+        {
+            self.deferred_preview = Some(output);
+            return false;
+        }
+        self.accept_controlled_preview(output, worker, picker)
+    }
+
+    pub(super) fn finish_camera_gesture(
+        &mut self,
+        worker: &super::preview::Worker,
+        picker: &super::graphics::Backend,
+    ) {
+        self.camera_settle_deadline = None;
+        if let Some(output) = self.deferred_preview.take() {
+            self.accept_controlled_preview(output, worker, picker);
+        }
+    }
+
     pub(super) fn camera_feedback(
         &mut self,
         picker: &super::graphics::Backend,

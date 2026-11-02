@@ -157,7 +157,7 @@ impl Harness {
             ws_ypixel: 0,
         };
         if case == "herdr-kitty-held" {
-            size.ws_xpixel = size.ws_col * 5;
+            size.ws_xpixel = size.ws_col * 10;
             size.ws_ypixel = size.ws_row * 10;
         }
         if unsafe {

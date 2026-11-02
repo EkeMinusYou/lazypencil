@@ -205,6 +205,8 @@ struct App {
     pending_preview: Option<controls::Pending>,
     camera: Option<camera::Camera>,
     camera_deadline: Option<Instant>,
+    camera_settle_deadline: Option<Instant>,
+    deferred_preview: Option<preview::Output>,
     camera_was_visible: bool,
     camera_id: u32,
     generation: u64,
@@ -269,6 +271,8 @@ impl App {
             pending_preview: None,
             camera: None,
             camera_deadline: None,
+            camera_settle_deadline: None,
+            deferred_preview: None,
             camera_was_visible: false,
             camera_id: 0x8000_0001,
             generation: 0,
@@ -382,6 +386,7 @@ impl App {
             }
             let playback_deadline = self.playback.deadline();
             let camera_deadline = self.camera_deadline;
+            let camera_settle_deadline = self.camera_settle_deadline;
             let activity_deadline = (self.conversation.active() && !self.has_modal())
                 .then(|| Instant::now() + Duration::from_millis(200));
             tokio::select! {
@@ -421,7 +426,16 @@ impl App {
                     self.dirty = true;
                 },
                 output = worker.next() => {
-                    self.accept_controlled_preview(output, worker, &screen.picker);
+                    self.accept_interactive_preview(output, worker, &screen.picker);
+                },
+                _ = async {
+                    if let Some(deadline) = camera_settle_deadline {
+                        tokio::time::sleep_until(deadline.into()).await;
+                    } else {
+                        std::future::pending::<()>().await;
+                    }
+                } => {
+                    self.finish_camera_gesture(worker, &screen.picker);
                 },
                 _ = async {
                     if let Some(deadline) = camera_deadline {
@@ -507,7 +521,22 @@ impl App {
         worker: &Worker,
     ) -> Result<bool> {
         match event {
-            Event::Key(key) if key.kind != KeyEventKind::Release => {
+            Event::Key(key) if key.kind == KeyEventKind::Release => {
+                if [
+                    Nav::PanLeft,
+                    Nav::PanRight,
+                    Nav::PanUp,
+                    Nav::PanDown,
+                    Nav::ZoomIn,
+                    Nav::ZoomOut,
+                ]
+                .into_iter()
+                .any(|action| self.navigation.matches(action, key))
+                {
+                    self.finish_camera_gesture(worker, &screen.picker);
+                }
+            }
+            Event::Key(key) => {
                 let modal = self.has_modal();
                 match self.key(key, &screen.picker, worker).await {
                     Ok(true) => return Ok(true),
@@ -517,6 +546,9 @@ impl App {
                 if modal && !self.has_modal() {
                     screen.redraw();
                 }
+                if self.focus != Focus::Preview || self.has_modal() {
+                    self.finish_camera_gesture(worker, &screen.picker);
+                }
                 screen.preview_keys(self.focus == Focus::Preview && !self.has_modal())?;
                 self.dirty = true;
             }
@@ -524,7 +556,9 @@ impl App {
                 self.insert_text(&text);
                 self.dirty = true;
             }
+            Event::FocusLost => self.finish_camera_gesture(worker, &screen.picker),
             Event::Resize(_, _) => {
+                self.finish_camera_gesture(worker, &screen.picker);
                 self.presentation.invalidate();
                 self.dirty = true;
             }
@@ -537,6 +571,8 @@ impl App {
             return;
         }
         if !check_only {
+            self.camera_settle_deadline = None;
+            self.deferred_preview = None;
             self.preview_error = None;
             self.camera_was_visible = self.camera.take().is_some();
             if self.camera_was_visible {
@@ -570,6 +606,8 @@ impl App {
             return false;
         }
         self.camera_deadline = None;
+        self.camera_settle_deadline = None;
+        self.deferred_preview = None;
         // Background polls still retry failed renders, but identical failures
         // must not flood the conversation, overwrite status, or repaint Kitty.
         if let Err(error) = &output.result
@@ -1156,6 +1194,13 @@ impl App {
                 }
                 self.request(worker, false, false);
                 self.camera_feedback(picker)?;
+                if self
+                    .camera
+                    .as_ref()
+                    .is_some_and(|camera| matches!(camera.image, camera::Feedback::Placement(_)))
+                {
+                    self.camera_settle_deadline = Some(Instant::now() + Duration::from_millis(80));
+                }
             }
             Focus::Nodes => {
                 if action(Nav::ToggleDiagnostics) {
