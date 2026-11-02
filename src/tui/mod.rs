@@ -13,6 +13,7 @@ mod nodes;
 mod outbox;
 mod playback;
 mod preview;
+mod references;
 mod saved;
 mod terminal;
 #[cfg(test)]
@@ -72,6 +73,7 @@ enum Focus {
     Preview,
     Nodes,
     Attachments,
+    References,
     Conversation,
 }
 impl Focus {
@@ -84,20 +86,26 @@ impl Focus {
         current.cycle(&[Self::Prompt, Self::Preview, Self::Nodes], backwards)
     }
     fn in_conversation(self) -> bool {
-        matches!(self, Self::Prompt | Self::Attachments | Self::Conversation)
+        matches!(
+            self,
+            Self::Prompt | Self::Attachments | Self::References | Self::Conversation
+        )
     }
-    fn next_section(self, backwards: bool, attachments: bool) -> Self {
-        let order: &[Self] = if attachments {
-            &[Self::Conversation, Self::Attachments, Self::Prompt]
-        } else {
-            &[Self::Conversation, Self::Prompt]
-        };
-        let current = if self == Self::Attachments && !attachments {
+    fn next_section(self, backwards: bool, attachments: bool, references: bool) -> Self {
+        let mut order = vec![Self::Conversation];
+        if attachments {
+            order.push(Self::Attachments);
+        }
+        if references {
+            order.push(Self::References);
+        }
+        order.push(Self::Prompt);
+        let current = if !order.contains(&self) {
             Self::Prompt
         } else {
             self
         };
-        current.cycle(order, backwards)
+        current.cycle(&order, backwards)
     }
     fn cycle(self, order: &[Self], backwards: bool) -> Self {
         let index = order.iter().position(|item| *item == self).unwrap();
@@ -202,6 +210,7 @@ struct App {
     node_tree: nodes::Tree,
     diagnostics: diagnostics::View,
     attachments: ListState,
+    reference_rows: ListState,
     filter: String,
     searching: bool,
     log: String,
@@ -261,6 +270,7 @@ impl App {
             node_tree: nodes::Tree::default(),
             diagnostics: diagnostics::View::default(),
             attachments: ListState::default(),
+            reference_rows: ListState::default(),
             filter: String::new(),
             searching: false,
             log: String::new(),
@@ -543,6 +553,9 @@ impl App {
                 {
                     preview.nodes = std::mem::take(&mut previous.nodes);
                     preview.summary["diagnostics"] = previous.summary["diagnostics"].clone();
+                    for key in ["revision", "dependency_revision"] {
+                        preview.summary[key] = previous.summary[key].clone();
+                    }
                 }
                 let document = !preview.attachment;
                 self.preview = Some(preview);
@@ -658,7 +671,9 @@ impl App {
             self.turn_started = None;
             let failed = self.conversation.result().is_some_and(Result::is_err);
             self.outbox.paused |= failed;
-            if failed && self.editor.lines().iter().all(String::is_empty) {
+            let reference_failure = failed && self.outbox.in_flight.is_some();
+            self.finish_reference_prompt(failed);
+            if failed && !reference_failure && self.editor.lines().iter().all(String::is_empty) {
                 self.editor = editor(self.conversation.draft());
             }
             if self.focus.in_conversation() {
@@ -937,8 +952,10 @@ impl App {
         }
         let section = self.focus.in_conversation()
             && (global(Nav::PreviousSection) || global(Nav::NextSection));
-        let return_to_prompt = matches!(self.focus, Focus::Attachments | Focus::Conversation)
-            && key.code == KeyCode::Esc;
+        let return_to_prompt = matches!(
+            self.focus,
+            Focus::Attachments | Focus::References | Focus::Conversation
+        ) && key.code == KeyCode::Esc;
         if section || return_to_prompt || global(Nav::NextPanel) || global(Nav::PreviousPanel) {
             let was_attachment = self.focus == Focus::Attachments;
             self.focus = if return_to_prompt {
@@ -947,6 +964,7 @@ impl App {
                 self.focus.next_section(
                     global(Nav::PreviousSection),
                     !self.conversation.active() && !self.conversation.images().is_empty(),
+                    !self.outbox.references.is_empty(),
                 )
             } else {
                 self.focus.next(global(Nav::PreviousPanel))
@@ -956,6 +974,9 @@ impl App {
                 && self.attachments.selected().is_none()
             {
                 self.attachments.select(Some(0));
+            }
+            if self.focus == Focus::References && self.reference_rows.selected().is_none() {
+                self.reference_rows.select(Some(0));
             }
             if was_attachment || self.focus == Focus::Attachments {
                 self.request(worker, false, false);
@@ -1073,6 +1094,10 @@ impl App {
                     self.diagnostic_key(key, picker, worker)?;
                     return Ok(false);
                 }
+                if action(Nav::ReferenceNode) {
+                    self.reference_selected_node()?;
+                    return Ok(false);
+                }
                 let count = self.filtered_nodes().len();
                 if action(Nav::PreviousItem) {
                     self.nodes.select(
@@ -1105,6 +1130,7 @@ impl App {
                     self.camera_feedback(picker)?;
                 }
             }
+            Focus::References => self.reference_key(key)?,
             Focus::Attachments => {
                 let count = self.conversation.images().len();
                 if action(Nav::PreviousItem) {
@@ -1187,9 +1213,16 @@ impl App {
                 "Preview: pause and step time forward by 0.1s",
             ),
             (Nav::PlayPause, "Preview: toggle bounded playback"),
-            (Nav::PreviousItem, "Nodes/Attachments: previous item"),
-            (Nav::NextItem, "Nodes/Attachments: next item"),
+            (
+                Nav::PreviousItem,
+                "Nodes/Attachments/References: previous item",
+            ),
+            (Nav::NextItem, "Nodes/Attachments/References: next item"),
             (Nav::SearchNodes, "Nodes: search names and IDs"),
+            (
+                Nav::ReferenceNode,
+                "Nodes: add a prompt reference and focus input",
+            ),
             (Nav::ToggleDiagnostics, "Nodes: switch Nodes / Diagnostics"),
             (Nav::ClearSelection, "Nodes: clear the editing target"),
             (Nav::ActivateNode, "Nodes: select and fit the target"),
@@ -1201,7 +1234,10 @@ impl App {
             (Nav::ToggleNode, "Nodes: toggle a branch"),
             (Nav::NodePageUp, "Nodes: move up half a page"),
             (Nav::NodePageDown, "Nodes: move down half a page"),
-            (Nav::RemoveAttachment, "Attachments: remove pending image"),
+            (
+                Nav::RemoveAttachment,
+                "Attachments/References: remove pending item",
+            ),
             (Nav::ScrollUp, "Agent history: scroll back"),
             (Nav::ScrollDown, "Agent history: scroll forward"),
             (Nav::FollowOutput, "Agent history: follow new output"),
@@ -1253,6 +1289,7 @@ impl App {
         self.turn_started = None;
         self.last_draft_save = Instant::now();
         self.attachments.select(None);
+        self.reference_rows.select(None);
         self.permissions.clear();
         self.authentication = "checking".into();
         self.account_pending = true;
@@ -1287,8 +1324,14 @@ impl App {
         if self.conversation.active() || !self.outbox.queued.is_empty() {
             let text = self.editor.lines().join("\n");
             if !text.trim().is_empty() {
-                let selection = self.selected_node().map(|node| node.target.clone());
-                self.outbox.push(outbox::Prompt { text, selection })?;
+                self.outbox.push(outbox::Prompt {
+                    text,
+                    selection: None,
+                    references: self.outbox.references.clone(),
+                    image_ids: Vec::new(),
+                })?;
+                self.outbox.references.clear();
+                self.reference_rows.select(None);
                 self.editor = editor("");
             } else if self.conversation.active() {
                 return Err(Error::new("INVALID_ARGUMENT", "Enter a follow-up prompt"));
@@ -1303,15 +1346,29 @@ impl App {
             return self.send_queued().await;
         }
         self.save_draft()?;
-        let target = self.selected_node().map(|node| node.target.clone());
+        let target = crate::conversation::references::selection(&self.outbox.references);
         let text = self.conversation.draft().to_string();
         self.conversation.start_send(target).await?;
+        let references = std::mem::take(&mut self.outbox.references);
+        self.reference_rows.select(None);
+        self.outbox.in_flight = (!references.is_empty()).then(|| outbox::Prompt {
+            text: text.clone(),
+            selection: None,
+            references: references.clone(),
+            image_ids: self
+                .conversation
+                .images()
+                .iter()
+                .map(|image| image.id.clone())
+                .collect(),
+        });
         self.outbox.paused = false;
         self.turn_pending = true;
         self.turn_sequence = self.turn_sequence.wrapping_add(1);
         self.turn_started = Some(Instant::now());
         self.append(&format!(
-            "\nYou: {text}\n[{} images]\n\n{:?}:\n",
+            "\nYou: {text}{}\n[{} images]\n\n{:?}:\n",
+            references::history(&references),
             self.conversation.images().len(),
             self.conversation.settings().agent,
         ));
@@ -1628,6 +1685,16 @@ impl App {
             Paragraph::new(Text::from(vec![
                 Line::from(self.status.clone()),
                 Line::from(vec![
+                    key(if self.focus == Focus::Nodes && !self.diagnostics.active {
+                        self.navigation.label(Nav::ReferenceNode)
+                    } else {
+                        String::new()
+                    }),
+                    description(if self.focus == Focus::Nodes && !self.diagnostics.active {
+                        " reference · "
+                    } else {
+                        ""
+                    }),
                     key(if self.focus == Focus::Nodes {
                         self.navigation.label(Nav::ToggleDiagnostics)
                     } else {

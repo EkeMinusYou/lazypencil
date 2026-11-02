@@ -267,6 +267,7 @@ fn field(path: &[Option<String>]) -> Option<&'static str> {
         ("kind", &["type"]),
         ("update", &["notification", "update", "sessionUpdate"]),
         ("prompt", &["text"]),
+        ("references", &["reference_labels"]),
         ("agent", &["notification", "update", "content", "text"]),
         ("error", &["error", "message"]),
         ("title", &["notification", "update", "title"]),
@@ -294,7 +295,10 @@ impl Strings for Metadata {
         self.current = field(path);
         if let Some(name) = self.current {
             self.present.insert(name);
-            if matches!(name, "kind" | "update" | "status" | "source" | "turn") {
+            if matches!(
+                name,
+                "kind" | "update" | "status" | "source" | "turn" | "references"
+            ) {
                 self.fields.insert(name, String::new());
             }
         }
@@ -303,7 +307,7 @@ impl Strings for Metadata {
         if let Some(name) = self.current
             && let Some(text) = self.fields.get_mut(name)
         {
-            if text.len() + value.len_utf8() <= 128 {
+            if text.len() + value.len_utf8() <= if name == "references" { 16384 } else { 128 } {
                 text.push(value);
             } else {
                 self.fields.remove(name);
@@ -462,7 +466,11 @@ fn formatted(
     if valid {
         match (get("kind"), get("update")) {
             ("user_prompt", _) if metadata.present.contains("prompt") => {
-                prefix = "\nYou:\n".into();
+                prefix = if get("references").is_empty() {
+                    "\nYou:\n".into()
+                } else {
+                    format!("\nYou:\nReferences: {}\n\n", get("references"))
+                };
                 suffix = "\n";
                 selected = Some("prompt");
             }

@@ -5,6 +5,9 @@ use clap::Parser;
 use serde_json::json;
 use tempfile::TempDir;
 
+#[path = "reference_tests.rs"]
+mod reference_tests;
+
 #[path = "../../tests/support/fixture.rs"]
 mod fixture_support;
 

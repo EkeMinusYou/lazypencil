@@ -15,16 +15,27 @@ impl Preparation {
         store: Store,
         style: Option<String>,
         worker: PathBuf,
+        font_files: Vec<PathBuf>,
         selection: Option<Value>,
     ) -> Result<Self> {
         let cancel = CancellationToken::new();
         let token = cancel.clone();
+        let references = selection.clone();
         let (sender, receiver) = oneshot::channel();
         let thread = std::thread::Builder::new()
             .name("lazypencil-prompt-context".into())
             .spawn(move || {
                 let result =
-                    prepare_design_start(&store, style.as_deref(), Some(&worker), Some(&token));
+                    prepare_design_start(&store, style.as_deref(), Some(&worker), Some(&token))
+                        .and_then(|mut context| {
+                            context.validate_references(
+                                references.as_ref(),
+                                &worker,
+                                &font_files,
+                                Some(&token),
+                            )?;
+                            Ok(context)
+                        });
                 let _ = sender.send(result);
             })
             .map_err(|error| Error::new("IO_ERROR", error.to_string()))?;

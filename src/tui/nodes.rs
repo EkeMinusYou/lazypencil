@@ -320,6 +320,8 @@ mod tests {
             children,
             bounds: crate::geometry::Rect::new(0.0, 0.0, 10.0, 10.0),
             target: json!({"id":id}),
+            kind: "rectangle".into(),
+            text_excerpt: String::new(),
         })
         .collect()
     }

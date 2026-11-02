@@ -6,13 +6,20 @@ use serde::{Deserialize, Serialize};
 pub(super) struct Prompt {
     pub text: String,
     pub selection: Option<Value>,
+    #[serde(default)]
+    pub references: Vec<crate::conversation::references::Reference>,
+    #[serde(default)]
+    pub image_ids: Vec<String>,
 }
 
 #[derive(Default, Serialize, Deserialize)]
+#[serde(default)]
 pub(super) struct Outbox {
     pub draft: Option<String>,
     pub queued: VecDeque<Prompt>,
     pub paused: bool,
+    pub references: Vec<crate::conversation::references::Reference>,
+    pub in_flight: Option<Prompt>,
 }
 
 impl Outbox {
@@ -46,9 +53,11 @@ impl Outbox {
             || self
                 .queued
                 .iter()
-                .map(|prompt| prompt.text.len())
+                .map(|prompt| {
+                    serde_json::to_vec(prompt).map_or(usize::MAX / 64, |bytes| bytes.len())
+                })
                 .sum::<usize>()
-                + prompt.text.len()
+                + serde_json::to_vec(&prompt).map_or(usize::MAX / 64, |bytes| bytes.len())
                 > 1024 * 1024
         {
             return Err(Error::new(
@@ -66,7 +75,9 @@ impl App {
         match Outbox::load(self.conversation.directory()) {
             Ok(outbox) => {
                 if let Some(draft) = &outbox.draft
-                    && (!draft.is_empty() || self.conversation.draft().is_empty())
+                    && (outbox.in_flight.is_some()
+                        || !draft.is_empty()
+                        || self.conversation.draft().is_empty())
                 {
                     self.editor = editor(draft);
                 }
@@ -74,6 +85,12 @@ impl App {
                     self.status = "Queued prompts restored; /resume-queue sends them".into();
                 }
                 self.outbox = outbox;
+                if self.outbox.in_flight.is_some() {
+                    self.finish_reference_prompt(true);
+                    self.status =
+                        "Interrupted reference prompt restored; sends only on submit".into();
+                    self.draft_changed = true;
+                }
             }
             Err(error) => self.error(error),
         }
@@ -91,29 +108,40 @@ impl App {
         let Some(prompt) = self.outbox.queued.front().cloned() else {
             return Ok(());
         };
-        // Follow-ups queued during an active request contain text only. Never
-        // accidentally resend the previous turn's retained attachments.
-        if !self.conversation.images().is_empty() {
+        // New follow-ups never inherit the active turn's images. An explicitly
+        // retried failed reference request may retain its exact pending images.
+        let image_ids = self
+            .conversation
+            .images()
+            .iter()
+            .map(|image| image.id.clone())
+            .collect::<Vec<_>>();
+        if prompt.image_ids != image_ids {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
-                "Remove or send pending attachments before resuming text-only queued prompts",
+                "Review pending images before retrying: they must match the queued request; text-only follow-ups require no images",
             ));
         }
+        let selection = crate::conversation::references::selection(&prompt.references)
+            .or(prompt.selection.clone());
         self.conversation.set_draft(prompt.text.clone())?;
-        if let Err(error) = self.conversation.start_send(prompt.selection).await {
+        if let Err(error) = self.conversation.start_send(selection).await {
             self.outbox.paused = true;
             self.outbox.save(self.conversation.directory())?;
             return Err(error);
         }
         self.outbox.queued.pop_front();
+        self.outbox.in_flight = (!prompt.references.is_empty()).then(|| prompt.clone());
         self.turn_pending = true;
         self.turn_sequence = self.turn_sequence.wrapping_add(1);
         self.turn_started = Some(Instant::now());
         self.outbox.draft = Some(self.editor.lines().join("\n"));
         self.outbox.save(self.conversation.directory())?;
         self.append(&format!(
-            "\nYou: {}\n[0 images]\n\n{:?}:\n",
+            "\nYou: {}{}\n[{} images]\n\n{:?}:\n",
             prompt.text,
+            references::history(&prompt.references),
+            prompt.image_ids.len(),
             self.conversation.settings().agent
         ));
         self.scroll = 0;

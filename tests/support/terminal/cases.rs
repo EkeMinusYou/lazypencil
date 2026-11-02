@@ -91,6 +91,12 @@ pub fn run(
     }
     let mut design = json!({"version":"2.21","children":[{"type":"rectangle","id":"red","name":"日本語の対象","x":-80,"y":-30,"width":180,"height":90,"fill":"#FF0000"}]});
     let mut configuration = None;
+    if case == "node-references" {
+        design = json!({"version":"2.21","children":[
+            {"type":"rectangle","id":"first","name":"First target","width":80,"height":40,"fill":"#00FF00"},
+            {"type":"rectangle","id":"second","name":"Second target","x":100,"width":80,"height":40,"fill":"#0000FF"}
+        ]});
+    }
     if case == "diagnostics" {
         design = json!({"version":"2.21","children":[{
             "type":"frame","id":"root","name":"Root","width":100,"height":100,"layout":"none",
@@ -251,6 +257,10 @@ pub fn run(
             Value::Null
         }
         "ime-commit" => ime_commit(&mut h)?,
+        "node-references" => {
+            node_references(&mut h, &design)?;
+            Value::Null
+        }
         "diagnostics" => {
             diagnostics(&mut h, &design)?;
             Value::Null
@@ -361,6 +371,60 @@ pub fn run(
         "{}",
         json!({"case":case,"terminal_bytes":h.output.len(),"exit_code":0})
     );
+    Ok(())
+}
+
+fn node_references(h: &mut Harness, design: &Value) -> Result {
+    h.visible("2 nodes")?;
+    let draft = "この要素について相談したいです";
+    h.paste(draft)?;
+    h.draft(draft)?;
+    h.key(b"\t\tja")?;
+    h.visible("References")?;
+    h.draft(draft)?;
+    no_agent(h);
+    h.key(b"\x1b[1;3A")?;
+    h.key(b"\x1b[3~")?;
+    h.hidden("References")?;
+    h.draft(draft)?;
+    h.key(b"\t\ta")?;
+    h.visible("References")?;
+    h.save_screen("references-prompt-screen.txt")?;
+    h.key(b"\t\tj\t")?;
+    h.paste("。余白を調整できますか？")?;
+    h.key(b"\x13")?;
+    h.wait("reference request completes", 15.0, |h| {
+        h.count("complete") == 1
+    })?;
+    let received = read_json(&h.root.join("received-turn-1.json")).unwrap();
+    let reference = received["text"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find_map(|text| {
+            let text = text.as_str()?;
+            let offset = text.find("{\"node_references\"")?;
+            serde_json::from_str::<Value>(&text[offset..]).ok()
+        })
+        .expect("Explicit reference context reaches the adapter");
+    assert_eq!(
+        reference["node_references"][0]["target"]["address"]["node_id"],
+        "first"
+    );
+    assert_eq!(reference["node_references"][0]["name"], "First target");
+    h.hidden("References ·")?;
+    h.paste("Continue the conversation")?;
+    h.key(b"\x13")?;
+    h.wait("next request completes", 15.0, |h| h.count("complete") == 2)?;
+    let next = read_json(&h.root.join("received-turn-2.json")).unwrap();
+    assert!(
+        next["text"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|text| !text.as_str().unwrap().contains("node_references"))
+    );
+    assert_eq!(&read_json(&h.document).unwrap(), design);
     Ok(())
 }
 

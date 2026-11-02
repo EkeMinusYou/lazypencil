@@ -11,9 +11,10 @@ const PREVIEW: u8 = 2;
 const NODES: u8 = 4;
 const ATTACHMENTS: u8 = 8;
 const CONVERSATION: u8 = 16;
-const ALL: u8 = PROMPT | PREVIEW | NODES | ATTACHMENTS | CONVERSATION;
+const REFERENCES: u8 = 32;
+const ALL: u8 = PROMPT | PREVIEW | NODES | ATTACHMENTS | CONVERSATION | REFERENCES;
 const VIEWING: u8 = ALL & !PROMPT;
-const CONVERSATION_REGION: u8 = PROMPT | ATTACHMENTS | CONVERSATION;
+const CONVERSATION_REGION: u8 = PROMPT | ATTACHMENTS | CONVERSATION | REFERENCES;
 
 macro_rules! bindings {
     ($( $field:ident => $action:ident ($scope:expr, [$($default:literal),*]) ),* $(,)?) => {
@@ -71,8 +72,9 @@ bindings! {
     time_backward => TimeBackward(PREVIEW, ["["]),
     time_forward => TimeForward(PREVIEW, ["]"]),
     play_pause => PlayPause(PREVIEW, ["Space"]),
-    previous_item => PreviousItem(NODES | ATTACHMENTS, ["Up", "k"]),
-    next_item => NextItem(NODES | ATTACHMENTS, ["Down", "j"]),
+    previous_item => PreviousItem(NODES | ATTACHMENTS | REFERENCES, ["Up", "k"]),
+    next_item => NextItem(NODES | ATTACHMENTS | REFERENCES, ["Down", "j"]),
+    reference_node => ReferenceNode(NODES, ["a"]),
     search_nodes => SearchNodes(NODES, ["/"]),
     toggle_diagnostics => ToggleDiagnostics(NODES, ["d"]),
     clear_selection => ClearSelection(NODES, ["Esc"]),
@@ -82,7 +84,7 @@ bindings! {
     toggle_node => ToggleNode(NODES, ["Space"]),
     node_page_up => NodePageUp(NODES, ["Ctrl+u"]),
     node_page_down => NodePageDown(NODES, ["Ctrl+d"]),
-    remove_attachment => RemoveAttachment(ATTACHMENTS, ["Delete", "Backspace", "d"]),
+    remove_attachment => RemoveAttachment(ATTACHMENTS | REFERENCES, ["Delete", "Backspace", "d"]),
     scroll_up => ScrollUp(CONVERSATION, ["PageUp", "Up", "k"]),
     scroll_down => ScrollDown(CONVERSATION, ["PageDown", "Down", "j"]),
     follow_output => FollowOutput(CONVERSATION, ["End", "Shift+g"]),
@@ -171,12 +173,12 @@ mod tests {
             .validate(&PromptKeys::default())
             .unwrap();
         let mut keys = NavigationKeys {
-            pan_left: vec!["a".into()],
-            previous_item: vec!["a".into()],
+            pan_left: vec!["b".into()],
+            previous_item: vec!["b".into()],
             ..Default::default()
         };
         keys.validate(&PromptKeys::default()).unwrap();
-        keys.pan_right = vec!["A".into()];
+        keys.pan_right = vec!["B".into()];
         assert!(keys.validate(&PromptKeys::default()).is_err());
     }
 

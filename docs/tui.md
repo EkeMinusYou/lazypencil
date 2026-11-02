@@ -10,6 +10,12 @@ The header shows the current document's filename prominently beside the app name
 
 Node search reveals matching nodes with their ancestors, and matching branches include their descendants. While a filter is active, branches can still be closed with `h` and reopened with `l`; clearing the filter reveals the current selection and retains other fold states. Visible rows are rebuilt on tree, filter, or document changes rather than on each redraw.
 
+With a node selected, `a` adds it to the prompt's References list and focuses the input without sending or changing the draft. References stay fixed when browsing another node. Adding the same exact target updates its captured summary; up to 16 references and 64 KiB of metadata can accompany one prompt. Names, types, short text excerpts, captured document/dependency revisions, and full instance/source addresses accompany the user's message. The agent inspects the current properties through MCP before editing. Merely selecting a tree row no longer adds an implicit target to a message. Enter and `f` retain their preview-fit behavior.
+
+`Alt+Up`/`Alt+Down` enter the References list above the prompt; arrows or `j`/`k` select and Delete/Backspace/`d` remove a reference. Esc returns to input. References coexist with image attachments and remain editable while a turn runs. The list marks targets absent from the displayed document as unavailable, or checking before a preview is available. Background send preparation verifies exact addresses and source identities against the captured current project; generated targets use the normal script/layout pipeline. Deleted targets and rebinding to a different source address fail before an agent request instead of selecting a similarly named node.
+
+Draft references survive reopening or switching local conversations. Submission freezes references together with the text, clears them from the next draft, and includes their names and IDs in live and saved history. Queued follow-ups keep their own references even when the next draft or tree selection changes. A failed or interrupted reference prompt restores its text and references when the next draft and queue are empty; otherwise it is retained at the front of the paused queue, preserving newer input. `/resume-queue` explicitly retries it; `/clear-queue` discards queued prompts. Retrying a failed reference request with images requires the same pending image IDs; ordinary follow-ups never inherit those images. Reopening never sends automatically. Legacy queued single-target records remain readable.
+
 In the left panel, `d` switches between Nodes and Diagnostics without changing the node selection or search filter. Diagnostics lists all measured layout warnings and errors, including nodes hidden by folds or search. `j`/`k` or arrows select a diagnostic; the lower area shows its severity, code, node name and ID, message, and measured details. `Ctrl+U`/`Ctrl+D` scroll those details. Enter reveals the target in Nodes and fits its preview, clearing the node filter; `f` fits the target while keeping Diagnostics open. Esc returns to Nodes. Empty results say `No layout diagnostics`; unavailable previews are reported separately. Diagnostics refresh with the preview, retain the selected node/code when present, and remain available while browsing an attachment. The footer and Help show the configured switch key.
 
 While a request is working, the prompt remains editable and the same submit keys queue text follow-ups in order. Submission clears the input immediately. A queued request starts after the current request succeeds, without consuming any newer unsent draft or resending the current request's images. The input shows the queue count and next queued text. Image changes wait until the text queue is finished. Queued text and the next draft are saved locally; reopening restores them paused and never submits by itself. `/resume-queue` resumes, and `/clear-queue` removes queued prompts. Cancellation or failure pauses the queue. Completion returns focus to Prompt when browsing within Agent, while keeping Nodes/Preview focus intact.
@@ -85,8 +91,10 @@ Terminal stdin/stdout and at least 50 columns × 16 rows are required. `--json` 
 | Diagnostics: `j`/`k` / arrows; `Ctrl+U`/`Ctrl+D` | Select a diagnostic; scroll its details |
 | Diagnostics: `Enter`, `f`, `Esc` | Reveal and fit its node in Nodes; fit while staying in Diagnostics; return to Nodes |
 | `Tab` / `Shift+Tab` | Cycle Prompt, Preview, Nodes |
-| Right region: `Alt+Up` / `Alt+Down` | Switch between conversation history, pending attachments, and Prompt; skip attachments when empty |
-| Agent history / Attachments: `Esc` | Return to Prompt |
+| Nodes: `a` | Add the selected node as a prompt reference and focus the input |
+| Right region: `Alt+Up` / `Alt+Down` | Switch between conversation history, pending images, node references, and Prompt; skip empty lists |
+| Agent history / Attachments / References: `Esc` | Return to Prompt |
+| References: arrows / `j`/`k`; Delete / Backspace / `d` | Select a reference; remove it |
 | Prompt: `Enter`, `Ctrl+Enter`, `Ctrl+S` | Submit text and pending images, or queue a text follow-up during an active turn |
 | Prompt: `Alt+Enter`, `Shift+Enter` | Insert a newline (Shift+Enter requires terminal support) |
 | Prompt: `Ctrl+V` / `Alt+V` | Explicitly read this host's image, copied image files, or text clipboard |
@@ -167,9 +175,9 @@ The schema and `config show --user` list all actions and effective defaults:
 | Outside Prompt | `quit`, `refresh`, `open_preview` |
 | Preview | `pan_left`, `pan_right`, `pan_up`, `pan_down`, `zoom_in`, `zoom_out`, `fit_document`, `time_backward`, `time_forward`, `play_pause` |
 | Preview and Nodes | `fit_selected` |
-| Nodes and Attachments | `previous_item`, `next_item` |
-| Nodes (including Diagnostics) | `toggle_diagnostics`, `search_nodes`, `clear_selection`, `activate_node`, `expand_node`, `collapse_node`, `toggle_node`, `node_page_up`, `node_page_down` |
-| Attachments | `remove_attachment` |
+| Nodes, Attachments and References | `previous_item`, `next_item` |
+| Nodes (including Diagnostics) | `reference_node` (tree only), `toggle_diagnostics`, `search_nodes`, `clear_selection`, `activate_node`, `expand_node`, `collapse_node`, `toggle_node`, `node_page_up`, `node_page_down` |
+| Attachments and References | `remove_attachment` |
 | Agent history | `scroll_up`, `scroll_down`, `follow_output` |
 
 Navigation supports ASCII letters and printable symbols, Enter, Space, Tab, Esc/Escape, arrows, Home/End, PageUp/PageDown, Delete/Backspace, and F1–F24. Ctrl, Alt and Shift can be combined; `Plus` names `+`. `BackTab` is the same binding as `Shift+Tab`. Already shifted symbols normalize their Shift bit across terminal protocols, so `+` and `Shift+Plus` are equivalent. Other modifiers match exactly. Keys may be shared between disjoint panels, such as Up for panning and list selection. Overlaps in the same panel, including global bindings that would intercept prompt submit/paste, fail before terminal entry.

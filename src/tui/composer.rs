@@ -70,9 +70,23 @@ impl App {
             Constraint::Length(if count == 0 {
                 0
             } else {
-                count.min(3) as u16 + 1
+                count.min(if self.outbox.references.is_empty() {
+                    3
+                } else {
+                    1
+                }) as u16
+                    + 1
             }),
             Constraint::Length(u16::from(!self.outbox.queued.is_empty())),
+            Constraint::Length(if self.outbox.references.is_empty() {
+                0
+            } else {
+                self.outbox
+                    .references
+                    .len()
+                    .min(if count == 0 { 3 } else { 1 }) as u16
+                    + 1
+            }),
             Constraint::Length(prompt_rows + 2),
         ])
         .split(inner);
@@ -184,7 +198,10 @@ impl App {
                 sections[2],
             );
         }
-        let prompt = sections[3];
+        if !self.outbox.references.is_empty() {
+            self.draw_references(frame, sections[3]);
+        }
+        let prompt = sections[4];
         let input_style = Style::default()
             .fg(if self.focus == Focus::Prompt {
                 Color::White

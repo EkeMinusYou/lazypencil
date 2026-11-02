@@ -109,6 +109,8 @@ pub struct Node {
     pub display_name: String,
     pub bounds: Rect,
     pub target: Value,
+    pub kind: String,
+    pub text_excerpt: String,
     pub parent: Option<usize>,
     pub children: Vec<usize>,
 }
@@ -377,6 +379,8 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             let nodes = navigation.get_or_insert_with(|| layout.items.iter().map(|item| Node {
                 id: item.record.id.clone(), name: item.node.properties.get("name").and_then(Value::as_str).unwrap_or(&item.record.id).into(), display_name: super::nodes::node_label(item.node.properties.get("name").and_then(Value::as_str).unwrap_or(&item.record.id)), bounds: item.record.visual_bounds,
                 target: json!({"id":item.record.id,"address":item.record.address,"source_id":item.record.source_id,"source_path":item.record.source_path,"generated_by":item.record.generated_by}),
+                kind: item.node.kind().into(),
+                text_excerpt: item.node.properties.get("content").and_then(Value::as_str).unwrap_or("").chars().take(512).collect(),
                 parent: item.parent, children: item.children.clone(),
             }).collect()).clone();
             let time_dependent = image.dynamic_artifacts.iter().any(|artifact| {

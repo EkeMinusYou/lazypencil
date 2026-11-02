@@ -90,10 +90,21 @@ fn read_turn(path: &Path, session: &str, document: &Path, turn: &str) -> Option<
         tail.get(tail.iter().position(|byte| *byte == b'\n')? + 1..)?
     };
     let final_record = records_from_tail(tail, session, turn);
-    Some(json!({"turn":turn,"request":request,
+    let references = start["selection"]["node_references"]
+        .as_array()
+        .map(|references| {
+            references
+                .iter()
+                .take(16)
+                .map(|reference| json!({"name":reference["name"],"target":reference["target"]}))
+                .collect::<Vec<_>>()
+        });
+    Some(
+        json!({"turn":turn,"request":request,"references":references,
         "status":final_record.as_ref().map(|record|record["type"].clone()).unwrap_or(json!("interrupted_or_incomplete")),
         "observed_revision":final_record.as_ref().and_then(|record|revision(&record["document"]["revision"])),
-        "before_revision":revision(&start["before_revision"])}))
+        "before_revision":revision(&start["before_revision"])}),
+    )
 }
 
 fn revision(value: &Value) -> Option<&str> {

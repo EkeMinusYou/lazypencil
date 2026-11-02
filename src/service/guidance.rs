@@ -62,6 +62,21 @@ pub(crate) struct PreparedDesignStart {
 }
 
 impl PreparedDesignStart {
+    pub(crate) fn validate_references(
+        &mut self,
+        selection: Option<&Value>,
+        worker: &std::path::Path,
+        font_files: &[std::path::PathBuf],
+        cancel: Option<&CancellationToken>,
+    ) -> Result<()> {
+        crate::conversation::references::validate(
+            &mut self.project,
+            selection,
+            worker,
+            font_files,
+            cancel,
+        )
+    }
     pub(crate) fn finish(self, store: &Store) -> Result<(Value, Option<Value>)> {
         self.project.verify_unchanged()?;
         store::require_revision(&store.read()?, &self.project.root_document().revision())?;
