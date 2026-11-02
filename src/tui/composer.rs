@@ -144,7 +144,7 @@ impl App {
         };
         let queue_rows = u16::from(!self.outbox.queued.is_empty());
         let activity = self.activity_line(Instant::now());
-        let activity_rows = u16::from(activity.is_some());
+        let activity_rows = u16::from(activity.is_some()) * 2;
         let prompt_space = inner
             .height
             .saturating_sub(attachment_rows + reference_rows + queue_rows + activity_rows + 1);

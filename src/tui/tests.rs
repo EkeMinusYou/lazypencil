@@ -1392,9 +1392,9 @@ fn activity_indicator_stays_above_the_prompt_when_history_scrolls() {
         let response = row(&terminal, "Checking the document now.").unwrap();
         let activity = row(&terminal, "Working…").unwrap();
         assert_eq!(
-            activity + 1,
+            activity + 2,
             row(&terminal, "Prompt").unwrap(),
-            "The indicator stays immediately above Prompt"
+            "The indicator stays above Prompt with one blank row between them"
         );
         assert_eq!(row(&terminal, "● Working"), Some(1));
         assert!(
@@ -1429,7 +1429,7 @@ fn activity_indicator_stays_above_the_prompt_when_history_scrolls() {
                 })
                 .unwrap();
             assert_eq!(
-                row(&terminal, "Working…").unwrap() + 1,
+                row(&terminal, "Working…").unwrap() + 2,
                 row(&terminal, "Prompt").unwrap()
             );
         }
