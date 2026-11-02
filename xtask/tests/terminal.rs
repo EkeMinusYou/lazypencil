@@ -315,6 +315,17 @@ fn screen_resize_and_wide_cell_overwrites_do_not_leave_orphan_halves() {
 }
 
 #[test]
+fn text_locations_preserve_wide_cell_coordinates() {
+    let mut screen = Screen::new(30, 4);
+    screen.feed("\x1b[3;5H日本語 ready".as_bytes());
+    assert_eq!(screen.find_text("日本語 ready"), Some((4, 2)));
+    assert_eq!(screen.find_text("ready"), Some((11, 2)));
+    assert_eq!(screen.find_text("missing"), None);
+    screen.resize(5, 1);
+    assert_eq!(screen.find_text("日本語 ready"), None);
+}
+
+#[test]
 fn pixel_color_matching_respects_rgba_boundaries_and_alpha() {
     let red = [255, 0, 0, 255].repeat(8);
     assert!(red.windows(4).any(|p| p == [0, 0, 255, 255]));

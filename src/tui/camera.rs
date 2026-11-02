@@ -2,6 +2,8 @@
 use super::preview::View;
 use image::{Rgba, RgbaImage};
 
+const EXACT_FRAME_HEAD_START: std::time::Duration = std::time::Duration::from_millis(40);
+
 pub(super) struct Camera {
     pub protocol: ratatui_image::protocol::Protocol,
     pub generation: u64,
@@ -9,6 +11,29 @@ pub(super) struct Camera {
 
 impl super::App {
     pub(super) fn camera_feedback(
+        &mut self,
+        picker: &super::graphics::Backend,
+    ) -> crate::Result<()> {
+        if picker.protocol_type() == ratatui_image::picker::ProtocolType::Kitty
+            && !self.camera_was_visible
+            && self
+                .preview
+                .as_ref()
+                .is_some_and(|preview| preview.frame_time <= EXACT_FRAME_HEAD_START)
+        {
+            // Let short exact renders finish without a competing projection,
+            // compression pass and image transfer on the input thread. Keep the
+            // first deadline across superseding gestures so feedback cannot starve.
+            self.camera_deadline
+                .get_or_insert_with(|| std::time::Instant::now() + EXACT_FRAME_HEAD_START);
+            self.status = "Rendering requested preview".into();
+            return Ok(());
+        }
+        self.camera_deadline = None;
+        self.render_camera_feedback(picker)
+    }
+
+    pub(super) fn render_camera_feedback(
         &mut self,
         picker: &super::graphics::Backend,
     ) -> crate::Result<()> {
@@ -31,28 +56,50 @@ impl super::App {
         {
             return Ok(());
         }
-        let super::preview::PreviewImage::Pixels(pixels) = &preview.image else {
-            return Ok(());
+        let decoded = if let super::preview::PreviewImage::Png(png) = &preview.image {
+            let (width, height) =
+                image::ImageReader::with_format(std::io::Cursor::new(png), image::ImageFormat::Png)
+                    .into_dimensions()
+                    .map_err(|error| crate::Error::new("RENDER_ERROR", error.to_string()))?;
+            if u64::from(width) * u64::from(height) > 4 * 1024 * 1024 {
+                return Ok(());
+            }
+            Some(
+                image::load_from_memory_with_format(png, image::ImageFormat::Png)
+                    .map_err(|error| crate::Error::new("RENDER_ERROR", error.to_string()))?
+                    .into_rgba8(),
+            )
+        } else {
+            None
         };
-        let Some(bitmap) = pixels.camera_pixels() else {
+        let bitmap = match &preview.image {
+            super::preview::PreviewImage::Pixels(pixels) => pixels.camera_pixels(),
+            super::preview::PreviewImage::Png(_) => decoded.as_ref().and_then(|bitmap| {
+                image::ImageBuffer::from_raw(
+                    bitmap.width(),
+                    bitmap.height(),
+                    bitmap.as_raw().as_slice(),
+                )
+            }),
+        };
+        let Some(bitmap) = bitmap else {
             return Ok(());
         };
         let [width, height] = super::preview::pixel_size(picker, self.cells)?;
         // Raster bounds round outward. Discard at most one trailing pixel for
         // temporary feedback; the final frame still uses the exact renderer.
-        let cropped = if [bitmap.width(), bitmap.height()] == [width, height] {
-            None
-        } else if (width..=width + 1).contains(&bitmap.width())
-            && (height..=height + 1).contains(&bitmap.height())
+        if [bitmap.width(), bitmap.height()] != [width, height]
+            && !((width..=width + 1).contains(&bitmap.width())
+                && (height..=height + 1).contains(&bitmap.height()))
         {
-            Some(image::imageops::crop_imm(bitmap, 0, 0, width, height).to_image())
-        } else {
+            return Ok(());
+        }
+        let Some(bitmap) = project_region(&bitmap, preview.view, self.view, [width, height]) else {
             return Ok(());
         };
-        let Some(bitmap) = project(cropped.as_ref().unwrap_or(bitmap), preview.view, self.view)
-        else {
-            return Ok(());
-        };
+        // The projection owns its pixels; release a decoded fallback before
+        // the terminal encoder allocates its own temporary transport buffers.
+        drop(decoded);
         let protocol = picker.encode(
             image::DynamicImage::ImageRgba8(bitmap),
             self.cells,
@@ -69,7 +116,27 @@ impl super::App {
 
 /// Reproject the original cached image for every gesture. Reprojecting a prior
 /// temporary frame would accumulate resampling loss and uncovered borders.
-pub(super) fn project(source: &RgbaImage, before: View, after: View) -> Option<RgbaImage> {
+#[cfg(test)]
+pub(super) fn project<C>(
+    source: &image::ImageBuffer<Rgba<u8>, C>,
+    before: View,
+    after: View,
+) -> Option<RgbaImage>
+where
+    C: std::ops::Deref<Target = [u8]>,
+{
+    project_region(source, before, after, [source.width(), source.height()])
+}
+
+fn project_region<C>(
+    source: &image::ImageBuffer<Rgba<u8>, C>,
+    before: View,
+    after: View,
+    size: [u32; 2],
+) -> Option<RgbaImage>
+where
+    C: std::ops::Deref<Target = [u8]>,
+{
     let [old_scale, new_scale] = [before.zoom?, after.zoom?];
     if [old_scale, new_scale]
         .iter()
@@ -84,8 +151,9 @@ pub(super) fn project(source: &RgbaImage, before: View, after: View) -> Option<R
     {
         return None;
     }
-    let size = [source.width(), source.height()];
-    if size.contains(&0)
+    if size[0] > source.width()
+        || size[1] > source.height()
+        || size.contains(&0)
         || size.iter().any(|size| *size > 8192)
         || u64::from(size[0]) * u64::from(size[1]) * 4 > 16 * 1024 * 1024
     {
@@ -111,7 +179,7 @@ pub(super) fn project(source: &RgbaImage, before: View, after: View) -> Option<R
         if source_y < 0.0 || source_y >= f64::from(size[1]) {
             continue;
         }
-        let offset = source_y as usize * size[0] as usize * 4;
+        let offset = source_y as usize * source.width() as usize * 4;
         for (pixel, x) in row.chunks_exact_mut(4).zip(&columns) {
             if let Some(x) = x {
                 let offset = offset + x * 4;
@@ -149,6 +217,28 @@ mod tests {
         assert_eq!(zoomed.get_pixel(119, 79), image.get_pixel(89, 59));
         // A round trip reads the original source again, not the enlarged frame.
         assert_eq!(project(&image, initial, initial).unwrap(), image);
+    }
+
+    #[test]
+    fn rounded_trailing_pixels_are_cropped_without_a_copy_or_rescale() {
+        let source = RgbaImage::from_fn(121, 81, |x, y| Rgba([x as u8, y as u8, 99, 255]));
+        let cropped = image::imageops::crop_imm(&source, 0, 0, 120, 80).to_image();
+        let borrowed = image::ImageBuffer::from_raw(121, 81, source.as_raw().as_slice()).unwrap();
+        let before = View {
+            zoom: Some(0.5),
+            ..Default::default()
+        };
+        for zoom in [0.5, 1.0] {
+            let after = View {
+                center: [16.0, -8.0],
+                zoom: Some(zoom),
+                ..before
+            };
+            assert_eq!(
+                project_region(&borrowed, before, after, [120, 80]),
+                project(&cropped, before, after)
+            );
+        }
     }
 
     #[test]

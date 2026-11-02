@@ -177,6 +177,17 @@ impl Store {
         Document::parse(read_text(&self.path)?)
     }
 
+    /// Verify the complete file contents without rebuilding the document tree.
+    #[cfg(any(feature = "tui", test))]
+    pub(crate) fn verify_revision(&self, expected: &str) -> Result<()> {
+        let actual = content::file_hash(&self.path, MAX_DOCUMENT_BYTES, None)?;
+        if actual == expected {
+            Ok(())
+        } else {
+            Err(conflict(expected, &actual))
+        }
+    }
+
     /// Check retries before expensive preparation outside the document lock.
     /// Transactions repeat this check after taking their own lock.
     pub fn replay_result_with_cancellation(
@@ -840,6 +851,34 @@ fn valid_checkpoint_id(id: &str) -> bool {
 
 #[cfg(test)]
 mod lock_error_tests {
+    #[test]
+    fn streaming_revision_checks_cover_same_length_edits_and_file_replacement() {
+        use super::*;
+        let directory = tempfile::TempDir::new().unwrap();
+        let path = directory.path().join("design.pen");
+        let original =
+            r##"{"version":"2.21","children":[{"id":"a","type":"rectangle","fill":"#FF0000"}]}"##;
+        fs::write(&path, original).unwrap();
+        let store = Store::open(&path, Some(directory.path().join("data"))).unwrap();
+        let expected = store.read().unwrap().revision();
+        store.verify_revision(&expected).unwrap();
+
+        let changed = original.replace("#FF0000", "#0000FF");
+        assert_eq!(changed.len(), original.len());
+        fs::write(&path, &changed).unwrap();
+        assert_eq!(
+            store.verify_revision(&expected).unwrap_err().code,
+            "REVISION_CONFLICT"
+        );
+        atomic_replace(&path, original.as_bytes()).unwrap();
+        store.verify_revision(&expected).unwrap();
+        fs::remove_file(&path).unwrap();
+        assert_eq!(
+            store.verify_revision(&expected).unwrap_err().code,
+            "IO_ERROR"
+        );
+    }
+
     #[test]
     fn fs2_contention_is_retryable_and_unrelated_io_errors_are_not() {
         use std::io::{Error, ErrorKind};

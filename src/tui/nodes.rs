@@ -262,7 +262,7 @@ impl App {
                         format!("{}{marker} ", "  ".repeat(indent)),
                         Style::default().fg(color),
                     ),
-                    Span::raw(node_label(&node.name)),
+                    Span::raw(node.display_name.as_str()),
                 ])))
             })
             .collect::<Vec<_>>();
@@ -287,7 +287,7 @@ impl App {
     }
 }
 
-fn node_label(value: &str) -> String {
+pub(super) fn node_label(value: &str) -> String {
     clean(value).replace(['\n', '\t'], " ")
 }
 
@@ -309,6 +309,7 @@ mod tests {
         .map(|(id, name, parent, children)| preview::Node {
             id: id.into(),
             name: name.into(),
+            display_name: node_label(name),
             parent,
             children,
             bounds: crate::geometry::Rect::new(0.0, 0.0, 10.0, 10.0),

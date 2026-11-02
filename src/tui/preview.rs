@@ -19,6 +19,8 @@ use std::{
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
+mod revision;
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct View {
     // Accumulate camera movement in double precision; Skia regions remain f32.
@@ -82,11 +84,12 @@ pub struct Preview {
     pub protocol: Protocol,
     pub(crate) image: PreviewImage,
     pub view: View,
-    pub nodes: Vec<Node>,
+    pub nodes: Arc<[Node]>,
     pub summary: Value,
     pub attachment: bool,
     pub time_dependent: bool,
     pub live_pages: bool,
+    pub frame_time: std::time::Duration,
 }
 pub(crate) enum PreviewImage {
     Png(Vec<u8>),
@@ -103,6 +106,7 @@ impl PreviewImage {
 pub struct Node {
     pub id: String,
     pub name: String,
+    pub display_name: String,
     pub bounds: Rect,
     pub target: Value,
     pub parent: Option<usize>,
@@ -204,6 +208,9 @@ impl Worker {
             }
         }
     }
+    pub fn try_next(&self) -> Option<Output> {
+        self.shared.output.lock().unwrap().take()
+    }
     pub fn cancel(&self) {
         let mut state = self.shared.request.lock().unwrap();
         state.1 = true;
@@ -225,10 +232,15 @@ impl Drop for Worker {
 fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, image_id: u32) {
     let mut cached: Option<(Project, crate::layout::LayoutSnapshot)> = None;
     let mut document_preview_time = None;
-    // Owned hosted measurements retain stderr separately from terminal output.
+    let mut renderer = crate::render::PreviewRenderer::default();
+    let mut navigation: Option<Arc<[Node]>> = None;
+    let mut revision = revision::RevisionGuard::default();
+    // Owned measurements retain stderr separately from terminal output.
     // Never log document contents, file paths, or settings; cap completed reports.
-    let profile = std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
-        && std::env::var("LAZYPENCIL_PROFILE_PREVIEW").as_deref() == Ok("owned-gha-measurement");
+    let profile_mode = std::env::var("LAZYPENCIL_PROFILE_PREVIEW");
+    let profile = profile_mode.as_deref() == Ok("owned-local-measurement")
+        || (std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
+            && profile_mode.as_deref() == Ok("owned-gha-measurement"));
     let mut profile_reports = 0;
     let mut script =
         crate::script::ScriptRuntime::new(std::env::current_exe().expect("current executable"));
@@ -284,18 +296,17 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                     protocol,
                     image: PreviewImage::Png(png),
                     view: request.view,
-                    nodes: vec![],
+                    nodes: Arc::default(),
                     summary: json!({"attachment":attachment}),
                     attachment: true,
                     time_dependent: false,
                     live_pages: false,
+                    frame_time: std::time::Duration::ZERO,
                 }));
             }
             let unchanged = !request.refresh
                 && cached.as_ref().is_some_and(|(project, snapshot)| {
-                    store
-                        .read()
-                        .is_ok_and(|document| document.revision() == snapshot.revision)
+                    revision.verify(store, &snapshot.revision).is_ok()
                         && project.verify_unchanged().is_ok()
                 });
             if request.check_only
@@ -317,6 +328,8 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                     None,
                     &mut script,
                 )?);
+                renderer.clear();
+                navigation = None;
             }
             let (project, layout) = cached.as_ref().unwrap();
             let pixels = pixel_size(picker, request.cells)?;
@@ -334,7 +347,8 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 ..Default::default()
             };
             timing.mark("snapshot_ms");
-            let image = crate::render::preview_with_runtime_observed(
+            let frame_started = Instant::now();
+            let image = renderer.render(
                 project,
                 layout,
                 &options,
@@ -342,19 +356,29 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 Some(cancel.clone()),
                 Some(&mut |phase| timing.mark(phase)),
             )?;
-            crate::store::require_revision(&store.read()?, &layout.revision)?;
+            revision.verify(store, &layout.revision)?;
             project.verify_unchanged()?;
             if cancel.is_cancelled() {
                 return Ok(None);
             }
             timing.mark("verification_ms");
+            // Native retained scenes keep direct pixels for low-latency camera
+            // updates. Other scenes retain a lossless PNG instead of a full
+            // framebuffer, and release its raw storage before terminal encoding.
+            let retained_image = if image.retain_raw_pixels {
+                PreviewImage::Pixels(image.pixels)
+            } else {
+                let png = image.pixels.png()?;
+                drop(image.pixels);
+                PreviewImage::Png(png)
+            };
             let protocol = encode(picker, image.bitmap, request.cells, image_id)?;
             timing.mark("terminal_encode_ms");
-            let nodes = layout.items.iter().map(|item| Node {
-                id: item.record.id.clone(), name: item.node.properties.get("name").and_then(Value::as_str).unwrap_or(&item.record.id).into(), bounds: item.record.visual_bounds,
+            let nodes = navigation.get_or_insert_with(|| layout.items.iter().map(|item| Node {
+                id: item.record.id.clone(), name: item.node.properties.get("name").and_then(Value::as_str).unwrap_or(&item.record.id).into(), display_name: super::nodes::node_label(item.node.properties.get("name").and_then(Value::as_str).unwrap_or(&item.record.id)), bounds: item.record.visual_bounds,
                 target: json!({"id":item.record.id,"address":item.record.address,"source_id":item.record.source_id,"source_path":item.record.source_path,"generated_by":item.record.generated_by}),
                 parent: item.parent, children: item.children.clone(),
-            }).collect();
+            }).collect()).clone();
             let time_dependent = image.dynamic_artifacts.iter().any(|artifact| {
                 artifact["acquisition"]["kind"] == "shader"
                     && artifact["acquisition"]["time_dependent"] == true
@@ -368,13 +392,14 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             timing.mark("metadata_ms");
             Ok(Some(Preview {
                 protocol,
-                image: PreviewImage::Pixels(image.pixels),
+                image: retained_image,
                 view,
                 nodes,
                 summary,
                 attachment: false,
                 time_dependent,
                 live_pages,
+                frame_time: frame_started.elapsed(),
             }))
         })();
         let cancelled = cancel.is_cancelled();

@@ -272,10 +272,29 @@ fn prompt_shortcuts_are_user_owned_and_visible_in_config_and_schema() {
 }
 
 #[test]
+fn enter_submission_is_user_owned_and_replaces_defaults() {
+    let f = Fixture::new();
+    for shortcut in ["Enter", "Shift+Enter"] {
+        f.settings(&format!("[tui.keys]\nsubmit=['{shortcut}']\n"));
+        let shown = f.data(&["config", "show", "--user"]);
+        assert_eq!(
+            shown["settings"]["tui"]["keys"]["submit"],
+            json!([shortcut])
+        );
+        assert_eq!(
+            f.snapshot().unwrap().summary()["user"]["settings"]["tui"]["keys"]["submit"],
+            json!([shortcut])
+        );
+    }
+}
+
+#[test]
 fn invalid_shortcuts_fail_without_silently_restoring_defaults() {
     let f = Fixture::new();
     for body in [
-        "[tui.keys]\nsubmit=['Enter']\n",
+        "[tui.keys]\nsubmit=['q']\n",
+        "[tui.keys]\nsubmit=['F5']\npaste=['Enter']\n",
+        "[tui.keys]\nsubmit=['F5']\npaste=['Shift+Enter']\n",
         "[tui.keys]\npaste=['Ctrl+c']\n",
         "[tui.keys]\nsubmit=['F5']\npaste=['f5']\n",
         "[tui.keys]\nsubmit=[]\n",

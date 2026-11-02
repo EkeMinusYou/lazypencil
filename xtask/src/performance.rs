@@ -12,7 +12,13 @@ use std::{
 };
 
 #[cfg(unix)]
+#[path = "test_support/terminal.rs"]
+#[allow(dead_code)]
+mod observer;
+
+#[cfg(unix)]
 pub mod allocations;
+pub mod preview;
 pub mod profile;
 #[cfg(unix)]
 pub mod resources;

@@ -1,5 +1,126 @@
 # Performance observations
 
+## Local preview responsiveness, 2026-11-01
+
+The installed local `0.1.0-local-nodes-focus-bd95906` executable, SHA-256 `e19f4dfadeca018b2fadbd3647f1c33795339e91b854afcf5d07ffab2926af76`, takes approximately **0.5–0.6 seconds to complete a pan/zoom image** of the user's 9,421-node, 9,888,546-byte document. Cached feedback arrives much earlier. This distinction explains why the existing cached-feedback target can pass while complete preview updates still feel slow. No application code, binary, settings or document was changed for this measurement.
+
+[Raw observations and independently checked statistics](measurements/preview-2026-11-01.json) retain 240 primary interactions, two continuous-input trials and a separate profiling run. The host was Apple M1 / 16 GiB / 8 logical CPUs / macOS 27.2 (26B123). Each of three scenarios used one startup followed by 20 repetitions of zoom in, zoom out, pan right and pan left, starting at document-fit zoom. All image changes and round trips were checked using decoded RGBA hashes. Application exits were normal, and document/executable hashes remained unchanged.
+
+The larger geometry matches the previous Herdr check's **224 columns × 57 rows**, with explicit PTY pixel dimensions of 2688 × 1140 and a 1272 × 1040 preview. These are owned-PTY receipt measurements using explicit Kitty/ZLIB, not measurements of Herdr's physical display or automatic capability negotiation. The following times end at receipt of the complete image; the following synchronized-update end adds approximately 6 ms, including observer parsing/backpressure.
+
+| Operation | Cached feedback median | Complete image median | Complete image p95 | Maximum |
+| --- | ---: | ---: | ---: | ---: |
+| Zoom in | 20.5 ms | 560.5 ms | 596.8 ms | 647.8 ms |
+| Zoom out | 18.6 ms | 556.5 ms | 584.6 ms | 616.3 ms |
+| Pan right | 19.1 ms | 520.1 ms | 568.8 ms | 602.5 ms |
+| Pan left | 19.6 ms | 560.2 ms | 585.7 ms | 596.3 ms |
+
+At 160 × 54 cells / 1920 × 1080 pixels, the same real document's complete-image medians were 451.5–547.4 ms, p95 values 594.7–679.6 ms and maximum 781.3 ms. The existing 1,000-node dashboard fixture under that same geometry and executable had medians 89.3–106.5 ms and p95 values 98.5–117.6 ms. That is roughly a 5–6× difference in median latency between these scenes; content, fit zoom and assets also differ, so this is not an isolated node-count scaling experiment. First-preview observations were 1.73 s for the real document, 1.49 s at the larger geometry and 188 ms for the fixture. These are individual startups with uncontrolled OS caches.
+
+For continuous input at the larger geometry, 40 pan keys and, separately, 40 alternating zoom keys were sent at 50 ms intervals. Actual median intervals were 50.03/49.96 ms. No exact image completed during either approximately two-second input burst. The final image's synchronized-update end arrived **569.5/570.6 ms after the last input**, with the original pixels restored. Pan/zoom produced 39/20 cached image transmissions and one exact image each, including that final image.
+
+A separate `/usr/bin/sample` observation requested five seconds at 1 ms intervals while repeating the same interactions. `Document::parse` appeared in **2,129 of 3,098 preview-thread stack observations (68.7%)**; `render::raster_impl` appeared in 583 (18.8%). The main thread was in runtime parking in 2,996 of 3,120 observations. These are inclusive stack observations, including wait states, not exact phase durations or exclusive CPU percentages. The source's `Store::read` parses the entire document, and the preview worker calls it before rendering to check the revision and again after rendering to verify it. Together these observations identify repeated full-document parsing as the leading optimization candidate. Profiler-affected interaction times are retained separately and excluded from the primary statistics.
+
+The ad hoc observer and full stack report remain under `/private/tmp/lazypencil-preview-measure-20261101/`; their paths and checksums are recorded in the JSON. The observer parses, decompresses and hashes Kitty frames on its read thread, contributing roughly 9–17 ms of total observer work per primary interaction. `/usr/bin/false` was used as the explicit adapter to exclude provider/account work and no prompts were sent. Font fallbacks matched the previous local check. Normal macOS font access was required; sandbox-only pilots failed because Inter was unavailable and are excluded. Machine load, CPU frequency and OS caches were uncontrolled. No optimization, Sixel measurement, physical-terminal timing or new CI acceptance is claimed.
+
+## Retained-preview checkpoint, 2026-11-01
+
+The retained drawing-command cache, persistent four-worker CPU raster pool, streaming revision checks with bounded macOS vnode memoization, and exact-frame priority reduce the same real document's complete-image medians to **44.6–46.4 ms**. [All 80 observations and two continuous-input trials](measurements/preview-checkpoint-50ms-2026-11-01.json) include the first uncached zoom, outliers, executable/document hashes and normal exit. This is a checkpoint toward the subsequent 30 ms median target, not its acceptance.
+
+| Operation | Complete image median | p95 |
+| --- | ---: | ---: |
+| Zoom in | 46.42 ms | 115.66 ms |
+| Zoom out | 44.58 ms | 67.13 ms |
+| Pan right | 45.45 ms | 68.97 ms |
+| Pan left | 44.65 ms | 68.56 ms |
+
+The preview remains 1272 × 1040 physical pixels at full resolution. This branch's older bottom-panel layout requires 224 × 65 cells / 2688 × 1300 PTY pixels to match the installed newer UI's original 224 × 57 cells / 2688 × 1140 geometry. The observer still measures key write to complete Kitty image receipt, with synchronized-update end reported separately. Continuous 40-key pan/zoom trials at 50 ms intervals completed 36/25 exact frames and restored the initial pixels; final synchronized images arrived 59.56/51.81 ms after the final key. No installed executable or sibling UI worktree was changed.
+
+Static eligible scenes retain at most two zoom levels and 32 MiB of drawing commands, with cached shape paths scoped to the captured layout. Dynamic assets and background-dependent compositing use the ordinary path. File events invalidate macOS revision memoization, whose lifetime is also bounded to 500 ms; other platforms use full streaming hashes. Exact images get a 40 ms head start before optional cached camera feedback. The real scene can differ from the original raster traversal by a few edge-channel rounding values when recorded commands replay; separate pixel checks found 1–52 affected pixels out of 1,322,880, with maximum channel difference 4. CLI rendering keeps the existing path, and no lower-resolution rendering is used.
+
+Validation: all 221 library tests and 12 rendering integration tests passed with isolated configuration. The 11 ordinary TUI cases passed, including the updated navigation case; two environment-specific cases remain ignored as before. Core-only compilation, formatting and diff checks passed. Clippy passed with only the existing deprecated-API and chunks-exact compatibility exclusions. This checkpoint has not been installed while independent UI work continues.
+
+## Native-resolution raster acceptance, 2026-11-01
+
+The same real document now meets the **30 ms median target for all four operations**, at 1272 × 1040 pixels without reducing resolution or interpolating cached pixels. The standard release executable, SHA-256 `8710b537b8e6b7a75184063772e7a40bd378f9202d79c613c0051def8fb3a43e`, used repository defaults (thin LTO, one codegen unit). [All 80 observations and two continuous-input trials](measurements/preview-30ms-2026-11-01.json) retain the first cold zoom and all outliers. [Source hashes, validation logs and separate pixel comparisons](measurements/preview-30ms-2026-11-01-verification.json) bind the evidence to implementation commit `3c784b2`.
+
+| Operation | Complete image median | p95 | Maximum | Synchronized end median |
+| --- | ---: | ---: | ---: | ---: |
+| Zoom in | 20.24 ms | 26.48 ms | 145.84 ms | 27.13 ms |
+| Zoom out | 18.51 ms | 24.62 ms | 24.64 ms | 24.57 ms |
+| Pan right | 18.58 ms | 24.47 ms | 66.30 ms | 24.56 ms |
+| Pan left | 18.47 ms | 24.47 ms | 27.56 ms | 24.47 ms |
+
+The geometry and owned-PTY receipt scope match the 50 ms checkpoint above. These timings measure complete images, not projected camera feedback or physical terminal presentation. Statistics were independently recomputed from all 20 observations per action. Even synchronized-update-end medians, which include the observer's final decode/backpressure, are below 30 ms. A single startup took 1.97 s; the first uncached zoom took 145.84 ms. The target concerns medians and does not establish a 30 ms bound for every frame, new zoom level or scene.
+
+The new cache retains full-scene raster images only for static eligible pictures on opaque backgrounds, with a 64 MiB / eight-entry LRU bound. Each image is limited to 4096 pixels per side and eight megapixels. Its key includes the exact recorded zoom picture, background and subpixel translation. Reuse copies native pixels at integer offsets; it never scales an old zoom image or quantizes the pixel phase. Cache creation preserves the current viewport's device origin where possible and extends to include the whole scene. Larger scenes, transparent backgrounds and ineligible dynamic/background-dependent content keep direct rendering. Snapshot invalidation clears geometry, analysis, drawing commands and rasters together. Raster-worker surfaces are released after a retained image is created. Snapshot-scoped backdrop analysis and per-scale padding are also reused.
+
+The isolated pixel capture compares the initial image and all four camera operations against the earlier baseline at identical dimensions. Differences remain in **18–150 of 1,322,880 pixels** (0.0014–0.0114%), with maximum channel difference 9–27 at raster edges; these images are not byte-identical. Worst-difference regions were inspected at 8× nearest-neighbor magnification. Single-pixel checkerboard tests verify exact detail across integer crops, fractional pixel phases, backgrounds and scene replacements. Existing clipped-path/text/shadow PNG-equality tests still pass on the transparent direct path. The retained raster path adds no blur, image resampling or lower-resolution render; original document effects remain. CLI rendering continues through its existing uncached path.
+
+For 40 keys at 50 ms intervals, pan completed 31 exact and nine cached frames; alternating zoom completed 39 exact and one cached frame. Final synchronized images arrived 71.08/25.90 ms after the last key, and both trials restored the initial pixels. Thus individual continuous-pan frames can still exceed 30 ms on a cache miss or final catch-up; the raw observations preserve that limitation rather than treating cached feedback as a complete image. No inputs were sent to an agent, exits were normal and the document and executable hashes remained unchanged.
+
+Validation passed after the final source changes: 223 library tests, 12 rendering integration tests and 11 ordinary TUI integration tests; the two existing native-clipboard/Chromium cases remain ignored. Core-only and rendering-only compilation, formatting and diff checks passed. Clippy passed with the same existing compatibility exclusions recorded at the checkpoint. This performance work did not modify the installed executable or sibling UI worktree; independent UI updates continued. As requested, integration is deferred until that UI work finishes.
+
+## Completed UI integration checkpoint, 2026-11-01
+
+Commit `a1d9774` combines the completed conversation-layout, input, theme and minimal-hint UI work with the native-resolution preview optimization. [All 80 integrated observations and continuous-input trials](measurements/preview-integrated-30ms-2026-11-01.json) meet the 30 ms median target. [Source hashes, UI snapshot, build command and validation](measurements/preview-integrated-30ms-2026-11-01-verification.json) identify the exact combined code. The release binary SHA-256 is `045ab94b51b2bf4b5b877ce4ff21cf56ce967c5db637be6c7bc398e6d81f5167`; this integration build uses 16 codegen units for the application package, with release optimization and thin LTO. The standalone default-profile result above remains separately recorded.
+
+| Operation | Complete image median | p95 | Maximum |
+| --- | ---: | ---: | ---: |
+| Zoom in | 20.40 ms | 27.60 ms | 147.16 ms |
+| Zoom out | 19.22 ms | 24.49 ms | 26.74 ms |
+| Pan right | 18.51 ms | 25.45 ms | 66.59 ms |
+| Pan left | 19.29 ms | 24.35 ms | 24.42 ms |
+
+The integrated UI uses the original 224 × 57 cells / 2688 × 1140 PTY geometry and delivers the same 1272 × 1040 native pixels. The initial image and every operation's RGBA hash match the standalone accepted renderer exactly, with no additional scaling, interpolation or blur. Synchronized-update-end medians are 24.68–26.67 ms. The first uncached zoom remains a 147.16 ms outlier and is included.
+
+At 50 ms input intervals, continuous pan/zoom produced 36/38 exact frames, restored their original pixels, and finished their last synchronized image 39.57/27.79 ms after the final key. This remains owned-PTY timing, not a physical-display bound or a guarantee for uncached zooms and larger/dynamic scenes.
+
+The combined code passed 227 library tests, 12 rendering integration tests and 11 TUI integration tests; two environment-specific TUI cases remain ignored. Clippy passed with the previously recorded compatibility exclusions. Additional tree-navigation and file-title work began in the independent UI task before deployment, so this completed checkpoint is committed but not installed. The user's instruction to wait for UI completion still governs local replacement.
+
+## Updated-main acceptance, 2026-11-02
+
+After merging `8cb85ba` (the completed UI work), implementation `302a767` preserves the node hierarchy, queue, input behavior and agent status while retaining the preview caches. [All 80 observations and continuous-input trials](measurements/preview-main-2026-11-02.json), with [source hashes and verification](measurements/preview-main-2026-11-02-verification.json), meet the 30 ms median target on the same read-only 9,421-node document. This is a default-profile release build, with thin LTO and one codegen unit; its SHA-256 is `7ceb6232f2b732102f82a5d5581700b998885a21226a43f4db8bf13c33155f93`.
+
+| Operation | Complete image median | p95 | Maximum |
+| --- | ---: | ---: | ---: |
+| Zoom in | 19.80 ms | 25.93 ms | 148.56 ms |
+| Zoom out | 18.25 ms | 24.19 ms | 24.80 ms |
+| Pan right | 18.17 ms | 24.32 ms | 64.96 ms |
+| Pan left | 18.20 ms | 23.68 ms | 24.10 ms |
+
+The owned PTY remains 224 × 57 cells / 2688 × 1140 pixels with a 1272 × 1040 Kitty/ZLIB image. These measurements end at full image receipt and do not claim physical-display timing. No resolution reduction or interpolation was added. The first uncached zoom took 148.56 ms and is included; the target is a median, not a maximum-latency promise. The single startup took 2.45 s. The pixel-rounding qualifications and cache bounds above still apply.
+
+At 50 ms input intervals, the pan/zoom bursts completed 38/39 exact frames, restored the initial image, and finished their final synchronized image 28.09/26.51 ms after the last key. The document and measured executable were unchanged and both processes exited normally. All 235 library tests, 12 rendering tests and 12 ordinary TUI tests passed; two environment-specific TUI cases remain ignored. Formatting, both feature checks and Clippy passed, with the existing compiler-compatibility exclusions documented above. The outbox guard has a separate behavior-preserving Clippy cleanup. Local installation is unchanged; this change is being prepared for pull-request review.
+
+## Reproducing local preview measurements
+
+The maintained observer is now `xtask measure-preview`, implemented in Rust and sharing the terminal image decoder used by the existing tests. It replaces the ad hoc Python helper; historical reports and their source checksums remain unchanged. Build the observer in release mode before measuring: a debug observer adds decoding and parsing backpressure to the application.
+
+```sh
+cargo build --locked --release --jobs 2 --manifest-path xtask/Cargo.toml --bin xtask
+xtask/target/release/xtask measure-preview \
+  --binary /path/to/release/lazypencil \
+  --document /path/to/document.pen \
+  --output /tmp/new-preview-measurement --label wide \
+  --geometry 57,224,2688,1140 --samples 20 --bursts \
+  --median-limit-ms 30
+```
+
+The output directory must be new. This Unix-only command owns its PTY and child session, uses explicit Kitty output and isolated settings, and selects `/usr/bin/false` as the adapter. It preserves every sample, separates complete image receipt from synchronized-update completion and cached feedback, requires changed images and restored round-trip pixels, and checks that the document and executable remain unchanged. `--reference-report` additionally requires the same document, terminal geometry, protocol, sample count, and decoded image hash for every operation. The 30 ms acceptance option covers complete-image medians only. Optional capture and profiling runs are kept separate and cannot use that acceptance option. OS caches, host load and physical display presentation remain outside this measurement.
+
+A release-mode parity run against the unchanged updated-main executable completed [all 80 observations and both bursts](measurements/preview-rust-observer-2026-11-02.json). Every decoded image matched the prior accepted report. Complete-image medians were 16.79/15.71/16.07/15.81 ms for zoom in/out and pan right/left; synchronized-update medians were 22.14/20.90/21.32/21.00 ms. The changed observer has lower overhead, so these times are a tooling validation, not evidence of a further renderer speedup. The first uncached zoom still took 141.43 ms. Both burst trials restored the original pixels, the child exited normally, and document/executable hashes were unchanged.
+
+## CI feedback and memory follow-up, 2026-11-02
+
+The first complete hosted run after UI integration exposed a stale input-panel readiness check. Once that was corrected, the unchanged 100 ms feedback p95 gate observed 123 ms, and the recorded bound application trace reached 208.83 MiB against the 200 MiB target. These were retained failures, not accepted results. The observer now recognizes the current empty composer and Agent status; key validation still rejects conflicting and reserved shortcuts.
+
+The viewer now uses the previous completed frame's preparation time to select feedback: frames within the existing 40 ms head start keep exact-image priority; slower frames provide camera feedback immediately. Opaque preview pixels share their camera source, exact-sized terminal images avoid a redundant resize copy, and trailing rounding pixels are cropped during projection without allocating another image. Static eligible scenes retain the native-resolution raster path. Other scenes retain a lossless PNG, dropping raw storage before terminal encoding and decoding it only for camera feedback. The 16 MiB camera limit is checked before PNG decoding. No resolution reduction, blur, or resampling policy was added; export and stale-generation guards remain.
+
+[All 80 final real-document observations and continuous-input trials](measurements/preview-ci-repair-2026-11-02.json), bound by [source, binary and verification hashes](measurements/preview-ci-repair-2026-11-02-verification.json), preserve every earlier exact RGBA hash. Complete-image medians are 16.13/15.21/15.08/15.18 ms for zoom in/out and pan right/left; synchronized-update medians remain 20.29–21.70 ms. Both 40-key bursts restore the original pixels. The first zoom still includes a 94.92 ms uncached observation; this is a median target, not a per-frame bound.
+
+A separate local before/after run of the same script dashboard used 20 samples per action and sampled the owned TUI/script process tree. TUI RSS fell from 97.94 to 86.48 MiB, and all 80 exact images matched. This local false-adapter run does not include the bound MCP and does not establish the hosted 200 MiB target. The full hosted feedback, memory, idle CPU, and Chromium limits remain unchanged. Local checks passed 237 library tests, 12 rendering tests and 12 ordinary TUI tests (two existing environment-specific cases ignored), plus the final camera/PNG-feedback tests and Clippy with the documented newer-compiler exclusions.
+
 ## Current interpretation, 2026-10-31
 
 The final 0.1.0 [distribution and performance run](https://github.com/EkeMinusYou/lazypencil/actions/runs/41201303069) passed in 6m12s. The packaged binary `14427324…28d504e6` is identical to the successful [complete run](https://github.com/EkeMinusYou/lazypencil/actions/runs/41200184501), with release artifact reuse confirmed. All 20 starts, 80 interactions and 100 worker profiles were retained on macOS 15.8.2 / image 20261028.0489.1 / 3 CPUs / 7 GiB. Maximum input/first-preview latency was 55.92/391.63ms; first-feedback p95 was 32.12ms and complete-output p95 218.53ms. Bound application maximum observed RSS was 191.73MiB and idle CPU upper bound 0.397% over 30.259s. Including Chromium, these were 1217.89MiB and 1.230% over 30.087s. Every original threshold and normal-exit/owned-process cleanup check passed. These are PTY/resource observations, not new physical-terminal measurements or kernel peak-RSS guarantees. Existing physical-terminal and subscription acceptance remains valid for the unchanged input, rendering and adapter code. The complete run took 14m45s with 367/411 artifacts fresh; only 44 application artifacts rebuilt for the version/release changes. Core restored the preceding focused outputs. This is distinct from the earlier 9m15s populated-cache run below; no duplicate warm full run was added just to obtain a faster number.

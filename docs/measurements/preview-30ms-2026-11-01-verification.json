@@ -1,0 +1,118 @@
+{
+  "format_version": 1,
+  "source_commit": "3c784b2a1f8d940ddc1e535fab905b78916d5c5b",
+  "production_and_test_source_sha256": {
+    "scripts/measure_preview.py": "1b5d9255db4ad9c10868ef10f3dea0a098688beec5926d3b3fb2b2617008c90f",
+    "src/render.rs": "58c55dc9b77469f03c6d3240816392aa957a8f46ed9c9d7dc14486e90ea15848",
+    "src/render/atlas.rs": "eb390481ea9ba49580567a34ff5856aaad9b1219f9644a368afcfe17f46757b5",
+    "src/render/backdrop.rs": "c366957d225b1a3f8d52f856efe56c233115a407bb3a339b87f0deb4251688b2",
+    "src/render/preview.rs": "1c5b1d6d54f29d25dcf514cfb576bdaf9ee685133fa8835ee93e0357ab21b5c6",
+    "src/render/raster_pool.rs": "ce6f5100c9316cfae00f9491ed323485b22c89ac8afeea35268b1def6589fb2c",
+    "src/store.rs": "de0e28636bc17d4531b953e85b8b46fbebb6dd5786553eec03ce8c3d677da783",
+    "src/tui/camera.rs": "a34207500ab57b3fba93959a6e182698a8d265c8e0866c8f07121a808d05304e",
+    "src/tui/mod.rs": "5626a222691d7f19f2aca0909745164a9b527f0b9cace8e9d010375079dbb872",
+    "src/tui/preview.rs": "7e37024982a35e399e1af041164727c23833a043f7bed78719686042044e55be",
+    "src/tui/preview/revision.rs": "c65ea9a1e6674b90d113cb55de3a9e9f561bfc01057c38f7e9d099765386eefa",
+    "src/tui/tests.rs": "3eb24f450362b16040cdd96c5d9ea6b8a0ae2ae9ae1c7463010564d4e800338e",
+    "tests/support/terminal/cases.rs": "c93fa30115e51249a11da9de0f94a6607e37f925d5b6773553536d6e31e4b538"
+  },
+  "release_build": {
+    "command": "cargo build --jobs 2 --release --locked --offline --bin lazypencil",
+    "profile": "Repository release defaults: thin LTO, codegen-units=1",
+    "binary_sha256": "8710b537b8e6b7a75184063772e7a40bd378f9202d79c613c0051def8fb3a43e"
+  },
+  "acceptance_report": {
+    "path": "docs/measurements/preview-30ms-2026-11-01.json",
+    "sha256": "aae224993582167b2cf37b3f7386b5803559323a3054ca3bc4e51bb7442587c8",
+    "median_limit_ms": 30,
+    "samples_per_action": 20,
+    "all_action_medians_pass": true,
+    "statistics_independently_recomputed": true
+  },
+  "pixel_comparison": {
+    "scope": "Separate capture run, excluded from timing acceptance. Full 1272x1040 RGBA. Baseline and candidate pixels are not byte-identical. Raster-edge coverage/rounding differences remain; no image scaling or interpolation is introduced by the retained raster path. Worst-difference crops were inspected at 8x nearest-neighbor magnification.",
+    "rows": [
+      {
+        "action": "initial",
+        "pixels": 1322880,
+        "changed_pixels": 18,
+        "max_channel_difference": 9,
+        "baseline": "/private/tmp/lazypencil-preview-reference-pixels/wide/frame-17-exact-1272x1040.rgba",
+        "candidate": "/private/tmp/lazypencil-preview-final30-pixels/wide/frame-1-exact-1272x1040.rgba"
+      },
+      {
+        "action": "zoom_in",
+        "pixels": 1322880,
+        "changed_pixels": 150,
+        "max_channel_difference": 27,
+        "baseline": "/private/tmp/lazypencil-preview-reference-pixels/wide/frame-3-exact-1272x1040.rgba",
+        "candidate": "/private/tmp/lazypencil-preview-final30-pixels/wide/frame-3-exact-1272x1040.rgba"
+      },
+      {
+        "action": "zoom_out",
+        "pixels": 1322880,
+        "changed_pixels": 18,
+        "max_channel_difference": 9,
+        "baseline": "/private/tmp/lazypencil-preview-reference-pixels/wide/frame-17-exact-1272x1040.rgba",
+        "candidate": "/private/tmp/lazypencil-preview-final30-pixels/wide/frame-1-exact-1272x1040.rgba"
+      },
+      {
+        "action": "pan_right",
+        "pixels": 1322880,
+        "changed_pixels": 18,
+        "max_channel_difference": 9,
+        "baseline": "/private/tmp/lazypencil-preview-reference-pixels/wide/frame-15-exact-1272x1040.rgba",
+        "candidate": "/private/tmp/lazypencil-preview-final30-pixels/wide/frame-10-exact-1272x1040.rgba"
+      },
+      {
+        "action": "pan_left",
+        "pixels": 1322880,
+        "changed_pixels": 18,
+        "max_channel_difference": 9,
+        "baseline": "/private/tmp/lazypencil-preview-reference-pixels/wide/frame-17-exact-1272x1040.rgba",
+        "candidate": "/private/tmp/lazypencil-preview-final30-pixels/wide/frame-1-exact-1272x1040.rgba"
+      }
+    ]
+  },
+  "validation": {
+    "library_tests_passed": 223,
+    "render_integration_tests_passed": 12,
+    "tui_integration_tests_passed": 11,
+    "tui_tests_ignored": 2,
+    "clippy": "Passed with existing deprecated and clippy::chunks_exact_to_as_chunks compatibility exclusions",
+    "core_only_check": "Passed",
+    "rendering_only_check": "Passed",
+    "format_and_diff_check": "Passed",
+    "logs": {
+      "build-final30-default.log": {
+        "path": "/private/tmp/lazypencil-preview-measure-20261101/build-final30-default.log",
+        "sha256": "db5b01a86df96b7bc685b066a32f06385f9cc9454f1243adc236946501dc8f8b"
+      },
+      "final30-all-lib-tests.log": {
+        "path": "/private/tmp/lazypencil-preview-measure-20261101/final30-all-lib-tests.log",
+        "sha256": "ffa3c8f1688549ac5ac5693cd58e5ba4d93deebf5fce7a5bc7efa3db32fea499"
+      },
+      "final30-render-tests.log": {
+        "path": "/private/tmp/lazypencil-preview-measure-20261101/final30-render-tests.log",
+        "sha256": "115a8022483e7c6cafd1f382476517ad05fad98398ede8994a4ea97032ca5d55"
+      },
+      "final30-tui-tests.log": {
+        "path": "/private/tmp/lazypencil-preview-measure-20261101/final30-tui-tests.log",
+        "sha256": "87ad72e6530b35561a32415fc2b1a779a76f62f92fc8abb2f326e17c8d9c9840"
+      },
+      "final30-clippy.log": {
+        "path": "/private/tmp/lazypencil-preview-measure-20261101/final30-clippy.log",
+        "sha256": "4f4f37341773c7da40f56674f74d4c7d14d6278c66956e5b6169162b105707ec"
+      },
+      "final30-core-check.log": {
+        "path": "/private/tmp/lazypencil-preview-measure-20261101/final30-core-check.log",
+        "sha256": "5604fc8f0c276397a55db4bd7008236712075c0ad37d3b3a0f1fe362b1b85a36"
+      },
+      "final30-rendering-only-check.log": {
+        "path": "/private/tmp/lazypencil-preview-measure-20261101/final30-rendering-only-check.log",
+        "sha256": "79b5331759d11608b15eccdca46c26aa8eda372360c48e6a1fa6fcb91057a039"
+      }
+    }
+  },
+  "deployment": "Not installed. The user requested integration after the independent UI task finishes; this performance work did not modify the sibling worktree or installed alias. Independent UI updates continued."
+}
