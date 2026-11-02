@@ -1,0 +1,3183 @@
+{
+  "format_version": 1,
+  "source_revision": "c015dd995e6b5f79ad7b2f905e86100458939ae3",
+  "binary_sha256": "b03ded6a887a86605058ad683af5922ca48824e7ef31e484bd2145afa5db3e20",
+  "scope": "Local macOS Apple Silicon, Herdr-compatible rectangular Kitty output. Key write through receipt of the first updated native preview placement; exact raster completion is retained separately. No physical terminal presentation or external Herdr compositor latency claim.",
+  "tests": {
+    "tui_unit_passed": 79,
+    "pty_passed": 16,
+    "pty_ignored": 2
+  },
+  "scenarios": [
+    {
+      "name": "input-placement-document-c015dd9",
+      "pty": {
+        "columns": 160,
+        "rows": 54,
+        "pixels": [
+          1920,
+          1080
+        ]
+      },
+      "samples": [
+        {
+          "key": "+",
+          "first_preview_output_ms": 0.8497919770888984,
+          "exact_preview_output_ms": 95.58645798824728,
+          "uploads": 1,
+          "wire_bytes": 467355
+        },
+        {
+          "key": "-",
+          "first_preview_output_ms": 0.8229999803006649,
+          "exact_preview_output_ms": 11.993666994385421,
+          "uploads": 1,
+          "wire_bytes": 669171
+        },
+        {
+          "key": "h",
+          "first_preview_output_ms": 0.8749999688006938,
+          "exact_preview_output_ms": 40.43908300809562,
+          "uploads": 1,
+          "wire_bytes": 870601
+        },
+        {
+          "key": "l",
+          "first_preview_output_ms": 0.938915996812284,
+          "exact_preview_output_ms": 12.114458018913865,
+          "uploads": 1,
+          "wire_bytes": 1072404
+        },
+        {
+          "key": "j",
+          "first_preview_output_ms": 0.9499169536866248,
+          "exact_preview_output_ms": 39.782999956514686,
+          "uploads": 1,
+          "wire_bytes": 1274159
+        },
+        {
+          "key": "k",
+          "first_preview_output_ms": 0.8599170250818133,
+          "exact_preview_output_ms": 11.889334011357278,
+          "uploads": 1,
+          "wire_bytes": 1475961
+        },
+        {
+          "key": "+",
+          "first_preview_output_ms": 0.7757910061627626,
+          "exact_preview_output_ms": 20.548124972265214,
+          "uploads": 1,
+          "wire_bytes": 1719450
+        },
+        {
+          "key": "-",
+          "first_preview_output_ms": 0.831040961202234,
+          "exact_preview_output_ms": 12.192833004519343,
+          "uploads": 1,
+          "wire_bytes": 1921266
+        },
+        {
+          "key": "h",
+          "first_preview_output_ms": 0.9041669545695186,
+          "exact_preview_output_ms": 13.55783297913149,
+          "uploads": 1,
+          "wire_bytes": 2122696
+        },
+        {
+          "key": "l",
+          "first_preview_output_ms": 0.8352909935638309,
+          "exact_preview_output_ms": 12.341708003077656,
+          "uploads": 1,
+          "wire_bytes": 2324499
+        },
+        {
+          "key": "j",
+          "first_preview_output_ms": 0.7565839914605021,
+          "exact_preview_output_ms": 14.027792029082775,
+          "uploads": 1,
+          "wire_bytes": 2526254
+        },
+        {
+          "key": "k",
+          "first_preview_output_ms": 0.7642499986104667,
+          "exact_preview_output_ms": 12.06791598815471,
+          "uploads": 1,
+          "wire_bytes": 2728056
+        },
+        {
+          "key": "+",
+          "first_preview_output_ms": 0.7813750416971743,
+          "exact_preview_output_ms": 16.154374985489994,
+          "uploads": 1,
+          "wire_bytes": 2971545
+        },
+        {
+          "key": "-",
+          "first_preview_output_ms": 0.8645410416647792,
+          "exact_preview_output_ms": 14.01658303802833,
+          "uploads": 1,
+          "wire_bytes": 3173361
+        },
+        {
+          "key": "h",
+          "first_preview_output_ms": 0.782917020842433,
+          "exact_preview_output_ms": 13.757834036368877,
+          "uploads": 1,
+          "wire_bytes": 3374791
+        },
+        {
+          "key": "l",
+          "first_preview_output_ms": 0.7792499964125454,
+          "exact_preview_output_ms": 12.88254198152572,
+          "uploads": 1,
+          "wire_bytes": 3576594
+        },
+        {
+          "key": "j",
+          "first_preview_output_ms": 0.757250003516674,
+          "exact_preview_output_ms": 13.536208018194884,
+          "uploads": 1,
+          "wire_bytes": 3778349
+        },
+        {
+          "key": "k",
+          "first_preview_output_ms": 0.7710829959250987,
+          "exact_preview_output_ms": 12.400583014823496,
+          "uploads": 1,
+          "wire_bytes": 3980151
+        },
+        {
+          "key": "+",
+          "first_preview_output_ms": 0.7856250158511102,
+          "exact_preview_output_ms": 21.483958000317216,
+          "uploads": 1,
+          "wire_bytes": 4223640
+        },
+        {
+          "key": "-",
+          "first_preview_output_ms": 1.3519159983843565,
+          "exact_preview_output_ms": 12.97220797277987,
+          "uploads": 1,
+          "wire_bytes": 4425456
+        },
+        {
+          "key": "h",
+          "first_preview_output_ms": 0.7797500002197921,
+          "exact_preview_output_ms": 13.091417029500008,
+          "uploads": 1,
+          "wire_bytes": 4626886
+        },
+        {
+          "key": "l",
+          "first_preview_output_ms": 0.7501670042984188,
+          "exact_preview_output_ms": 13.753667008131742,
+          "uploads": 1,
+          "wire_bytes": 4828689
+        },
+        {
+          "key": "j",
+          "first_preview_output_ms": 0.7701669819653034,
+          "exact_preview_output_ms": 13.580541999544948,
+          "uploads": 1,
+          "wire_bytes": 5030444
+        },
+        {
+          "key": "k",
+          "first_preview_output_ms": 0.9262500097975135,
+          "exact_preview_output_ms": 16.517333046067506,
+          "uploads": 1,
+          "wire_bytes": 5232246
+        },
+        {
+          "key": "+",
+          "first_preview_output_ms": 0.7850839756429195,
+          "exact_preview_output_ms": 14.823499950580299,
+          "uploads": 1,
+          "wire_bytes": 5475735
+        },
+        {
+          "key": "-",
+          "first_preview_output_ms": 1.0489170090295374,
+          "exact_preview_output_ms": 13.158500019926578,
+          "uploads": 1,
+          "wire_bytes": 5677551
+        },
+        {
+          "key": "h",
+          "first_preview_output_ms": 0.8956250385381281,
+          "exact_preview_output_ms": 14.825374993961304,
+          "uploads": 1,
+          "wire_bytes": 5878981
+        },
+        {
+          "key": "l",
+          "first_preview_output_ms": 1.8765829736366868,
+          "exact_preview_output_ms": 18.037875008303672,
+          "uploads": 1,
+          "wire_bytes": 6080784
+        },
+        {
+          "key": "j",
+          "first_preview_output_ms": 0.7555839838460088,
+          "exact_preview_output_ms": 13.72570899548009,
+          "uploads": 1,
+          "wire_bytes": 6282539
+        },
+        {
+          "key": "k",
+          "first_preview_output_ms": 0.8098329999484122,
+          "exact_preview_output_ms": 12.095624988432974,
+          "uploads": 1,
+          "wire_bytes": 6484341
+        },
+        {
+          "key": "+",
+          "first_preview_output_ms": 2.0781669882126153,
+          "exact_preview_output_ms": 24.546457978431135,
+          "uploads": 1,
+          "wire_bytes": 6727830
+        },
+        {
+          "key": "-",
+          "first_preview_output_ms": 1.3312920345924795,
+          "exact_preview_output_ms": 12.761375051923096,
+          "uploads": 1,
+          "wire_bytes": 6929646
+        },
+        {
+          "key": "h",
+          "first_preview_output_ms": 2.4877499672584236,
+          "exact_preview_output_ms": 21.131540997885168,
+          "uploads": 1,
+          "wire_bytes": 7131076
+        },
+        {
+          "key": "l",
+          "first_preview_output_ms": 0.8430409943684936,
+          "exact_preview_output_ms": 12.875957996584475,
+          "uploads": 1,
+          "wire_bytes": 7332879
+        },
+        {
+          "key": "j",
+          "first_preview_output_ms": 1.1103340075351298,
+          "exact_preview_output_ms": 15.034499985631555,
+          "uploads": 1,
+          "wire_bytes": 7534634
+        },
+        {
+          "key": "k",
+          "first_preview_output_ms": 0.7329170475713909,
+          "exact_preview_output_ms": 13.728459016419947,
+          "uploads": 1,
+          "wire_bytes": 7736436
+        }
+      ],
+      "burst": [
+        {
+          "input_id": 37,
+          "key": "h",
+          "repeat": false,
+          "sender_lateness_ms": 0.014375022146850824,
+          "first_preview_output_ms": 1.031624968163669,
+          "coalesced_to_input": 37,
+          "placement_serial": 74,
+          "cached": true,
+          "input_to_flush_ms": 0.951084
+        },
+        {
+          "input_id": 38,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.20695797866210341,
+          "first_preview_output_ms": 0.7495830068364739,
+          "coalesced_to_input": 38,
+          "placement_serial": 76,
+          "cached": true,
+          "input_to_flush_ms": 0.697583
+        },
+        {
+          "input_id": 39,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.18025003373622894,
+          "first_preview_output_ms": 0.8055829675868154,
+          "coalesced_to_input": 39,
+          "placement_serial": 78,
+          "cached": true,
+          "input_to_flush_ms": 0.7417090000000001
+        },
+        {
+          "input_id": 40,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.5172910168766975,
+          "first_preview_output_ms": 0.6909170188009739,
+          "coalesced_to_input": 40,
+          "placement_serial": 80,
+          "cached": true,
+          "input_to_flush_ms": 0.651958
+        },
+        {
+          "input_id": 41,
+          "key": "l",
+          "repeat": false,
+          "sender_lateness_ms": 0.2809580182656646,
+          "first_preview_output_ms": 4.8661669716238976,
+          "coalesced_to_input": 41,
+          "placement_serial": 82,
+          "cached": true,
+          "input_to_flush_ms": 0.6669170000000001
+        },
+        {
+          "input_id": 42,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.43829099740833044,
+          "first_preview_output_ms": 0.7527090492658317,
+          "coalesced_to_input": 42,
+          "placement_serial": 84,
+          "cached": true,
+          "input_to_flush_ms": 0.70525
+        },
+        {
+          "input_id": 43,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.03833300434052944,
+          "first_preview_output_ms": 2.1042920416221023,
+          "coalesced_to_input": 43,
+          "placement_serial": 86,
+          "cached": true,
+          "input_to_flush_ms": 2.060959
+        },
+        {
+          "input_id": 44,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.17029099399223924,
+          "first_preview_output_ms": 1.4212089590728283,
+          "coalesced_to_input": 44,
+          "placement_serial": 88,
+          "cached": true,
+          "input_to_flush_ms": 1.377208
+        },
+        {
+          "input_id": 45,
+          "key": "j",
+          "repeat": false,
+          "sender_lateness_ms": 0.3417499829083681,
+          "first_preview_output_ms": 0.6718329968862236,
+          "coalesced_to_input": 45,
+          "placement_serial": 90,
+          "cached": true,
+          "input_to_flush_ms": 0.63375
+        },
+        {
+          "input_id": 46,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.43700000969693065,
+          "first_preview_output_ms": 0.7812079857103527,
+          "coalesced_to_input": 46,
+          "placement_serial": 92,
+          "cached": true,
+          "input_to_flush_ms": 0.727
+        },
+        {
+          "input_id": 47,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.2032080083154142,
+          "first_preview_output_ms": 1.0137499775737524,
+          "coalesced_to_input": 47,
+          "placement_serial": 94,
+          "cached": true,
+          "input_to_flush_ms": 0.934791
+        },
+        {
+          "input_id": 48,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.0028329668566584587,
+          "first_preview_output_ms": 2.0799580379389226,
+          "coalesced_to_input": 48,
+          "placement_serial": 96,
+          "cached": true,
+          "input_to_flush_ms": 0.614334
+        },
+        {
+          "input_id": 49,
+          "key": "k",
+          "repeat": false,
+          "sender_lateness_ms": 0.4075830220244825,
+          "first_preview_output_ms": 3.9649169775657356,
+          "coalesced_to_input": 49,
+          "placement_serial": 98,
+          "cached": true,
+          "input_to_flush_ms": 0.7962079999999999
+        },
+        {
+          "input_id": 50,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.38833299186080694,
+          "first_preview_output_ms": 0.6746670114807785,
+          "coalesced_to_input": 50,
+          "placement_serial": 100,
+          "cached": true,
+          "input_to_flush_ms": 0.627375
+        },
+        {
+          "input_id": 51,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.047833018470555544,
+          "first_preview_output_ms": 0.775249965954572,
+          "coalesced_to_input": 51,
+          "placement_serial": 102,
+          "cached": true,
+          "input_to_flush_ms": 0.688458
+        },
+        {
+          "input_id": 52,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.048083020374178886,
+          "first_preview_output_ms": 0.6572919664904475,
+          "coalesced_to_input": 52,
+          "placement_serial": 104,
+          "cached": true,
+          "input_to_flush_ms": 0.6057499999999999
+        },
+        {
+          "input_id": 53,
+          "key": "+",
+          "repeat": false,
+          "sender_lateness_ms": 0.16241602133959532,
+          "first_preview_output_ms": 0.6949999951757491,
+          "coalesced_to_input": 53,
+          "placement_serial": 106,
+          "cached": true,
+          "input_to_flush_ms": 0.635375
+        },
+        {
+          "input_id": 54,
+          "key": "+",
+          "repeat": true,
+          "sender_lateness_ms": 0.21441600983962417,
+          "first_preview_output_ms": 0.7700839778408408,
+          "coalesced_to_input": 54,
+          "placement_serial": 108,
+          "cached": true,
+          "input_to_flush_ms": 0.695792
+        },
+        {
+          "input_id": 55,
+          "key": "-",
+          "repeat": false,
+          "sender_lateness_ms": 0.17166603356599808,
+          "first_preview_output_ms": 2.99933401402086,
+          "coalesced_to_input": 55,
+          "placement_serial": 109,
+          "cached": false,
+          "input_to_flush_ms": 2.946958
+        },
+        {
+          "input_id": 56,
+          "key": "-",
+          "repeat": true,
+          "sender_lateness_ms": 0.13437500456348062,
+          "first_preview_output_ms": 1.587625010870397,
+          "coalesced_to_input": 56,
+          "placement_serial": 110,
+          "cached": true,
+          "input_to_flush_ms": 1.4582499999999998
+        },
+        {
+          "input_id": 57,
+          "key": "h",
+          "repeat": false,
+          "sender_lateness_ms": 0.15741604147478938,
+          "first_preview_output_ms": 0.8444999693892896,
+          "coalesced_to_input": 57,
+          "placement_serial": 111,
+          "cached": true,
+          "input_to_flush_ms": 0.759791
+        },
+        {
+          "input_id": 58,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.16195798525586724,
+          "first_preview_output_ms": 0.7977919885888696,
+          "coalesced_to_input": 58,
+          "placement_serial": 112,
+          "cached": true,
+          "input_to_flush_ms": 0.707958
+        },
+        {
+          "input_id": 59,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.09587500244379044,
+          "first_preview_output_ms": 0.791915983427316,
+          "coalesced_to_input": 59,
+          "placement_serial": 113,
+          "cached": true,
+          "input_to_flush_ms": 0.7072499999999999
+        },
+        {
+          "input_id": 60,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.25287497555837035,
+          "first_preview_output_ms": 0.7753330282866955,
+          "coalesced_to_input": 60,
+          "placement_serial": 115,
+          "cached": true,
+          "input_to_flush_ms": 0.701708
+        },
+        {
+          "input_id": 61,
+          "key": "l",
+          "repeat": false,
+          "sender_lateness_ms": 0.3959579626098275,
+          "first_preview_output_ms": 1.3399580493569374,
+          "coalesced_to_input": 61,
+          "placement_serial": 116,
+          "cached": false,
+          "input_to_flush_ms": 1.247375
+        },
+        {
+          "input_id": 62,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.3887079656124115,
+          "first_preview_output_ms": 0.7707500481046736,
+          "coalesced_to_input": 62,
+          "placement_serial": 118,
+          "cached": true,
+          "input_to_flush_ms": 0.705625
+        },
+        {
+          "input_id": 63,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.3315000212751329,
+          "first_preview_output_ms": 0.7107079727575183,
+          "coalesced_to_input": 63,
+          "placement_serial": 120,
+          "cached": true,
+          "input_to_flush_ms": 0.663625
+        },
+        {
+          "input_id": 64,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.48695801524445415,
+          "first_preview_output_ms": 0.7105419645085931,
+          "coalesced_to_input": 64,
+          "placement_serial": 122,
+          "cached": true,
+          "input_to_flush_ms": 0.65025
+        },
+        {
+          "input_id": 65,
+          "key": "j",
+          "repeat": false,
+          "sender_lateness_ms": 0.2205410273745656,
+          "first_preview_output_ms": 0.7420839974656701,
+          "coalesced_to_input": 65,
+          "placement_serial": 123,
+          "cached": true,
+          "input_to_flush_ms": 0.6783330000000001
+        },
+        {
+          "input_id": 66,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.23195799440145493,
+          "first_preview_output_ms": 0.7530419970862567,
+          "coalesced_to_input": 66,
+          "placement_serial": 124,
+          "cached": true,
+          "input_to_flush_ms": 0.679458
+        },
+        {
+          "input_id": 67,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.1854160218499601,
+          "first_preview_output_ms": 0.7376249996013939,
+          "coalesced_to_input": 67,
+          "placement_serial": 126,
+          "cached": true,
+          "input_to_flush_ms": 0.672583
+        },
+        {
+          "input_id": 68,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.003166031092405319,
+          "first_preview_output_ms": 0.6844589952379465,
+          "coalesced_to_input": 68,
+          "placement_serial": 128,
+          "cached": true,
+          "input_to_flush_ms": 0.5650409999999999
+        },
+        {
+          "input_id": 69,
+          "key": "k",
+          "repeat": false,
+          "sender_lateness_ms": 0.24795799981802702,
+          "first_preview_output_ms": 0.642875034827739,
+          "coalesced_to_input": 69,
+          "placement_serial": 130,
+          "cached": true,
+          "input_to_flush_ms": 0.591792
+        },
+        {
+          "input_id": 70,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.11629104847088456,
+          "first_preview_output_ms": 0.7362919859588146,
+          "coalesced_to_input": 70,
+          "placement_serial": 132,
+          "cached": true,
+          "input_to_flush_ms": 0.679459
+        },
+        {
+          "input_id": 71,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.10679103434085846,
+          "first_preview_output_ms": 0.7538750069215894,
+          "coalesced_to_input": 71,
+          "placement_serial": 134,
+          "cached": true,
+          "input_to_flush_ms": 0.685916
+        },
+        {
+          "input_id": 72,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.08533295476809144,
+          "first_preview_output_ms": 0.7372500258497894,
+          "coalesced_to_input": 72,
+          "placement_serial": 136,
+          "cached": true,
+          "input_to_flush_ms": 0.6937920000000001
+        },
+        {
+          "input_id": 73,
+          "key": "+",
+          "repeat": false,
+          "sender_lateness_ms": 0.12995797442272305,
+          "first_preview_output_ms": 0.7632920169271529,
+          "coalesced_to_input": 73,
+          "placement_serial": 138,
+          "cached": true,
+          "input_to_flush_ms": 0.696542
+        },
+        {
+          "input_id": 74,
+          "key": "+",
+          "repeat": true,
+          "sender_lateness_ms": 0.16791600501164794,
+          "first_preview_output_ms": 0.751333951484412,
+          "coalesced_to_input": 74,
+          "placement_serial": 139,
+          "cached": true,
+          "input_to_flush_ms": 0.682958
+        },
+        {
+          "input_id": 75,
+          "key": "-",
+          "repeat": false,
+          "sender_lateness_ms": 0.18983299378305674,
+          "first_preview_output_ms": 0.8160829893313348,
+          "coalesced_to_input": 75,
+          "placement_serial": 140,
+          "cached": true,
+          "input_to_flush_ms": 0.732667
+        },
+        {
+          "input_id": 76,
+          "key": "-",
+          "repeat": true,
+          "sender_lateness_ms": 0.059125013649463654,
+          "first_preview_output_ms": 0.7569159497506917,
+          "coalesced_to_input": 76,
+          "placement_serial": 142,
+          "cached": true,
+          "input_to_flush_ms": 0.692541
+        },
+        {
+          "input_id": 77,
+          "key": "h",
+          "repeat": false,
+          "sender_lateness_ms": 0.26537501253187656,
+          "first_preview_output_ms": 0.795957981608808,
+          "coalesced_to_input": 77,
+          "placement_serial": 143,
+          "cached": true,
+          "input_to_flush_ms": 0.718042
+        },
+        {
+          "input_id": 78,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.12379098916426301,
+          "first_preview_output_ms": 1.2776670046150684,
+          "coalesced_to_input": 78,
+          "placement_serial": 144,
+          "cached": true,
+          "input_to_flush_ms": 1.145667
+        },
+        {
+          "input_id": 79,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.1420410117134452,
+          "first_preview_output_ms": 0.8144169696606696,
+          "coalesced_to_input": 79,
+          "placement_serial": 145,
+          "cached": true,
+          "input_to_flush_ms": 0.728125
+        },
+        {
+          "input_id": 80,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.0118750031106174,
+          "first_preview_output_ms": 1.0274160304106772,
+          "coalesced_to_input": 80,
+          "placement_serial": 147,
+          "cached": true,
+          "input_to_flush_ms": 0.916125
+        },
+        {
+          "input_id": 81,
+          "key": "l",
+          "repeat": false,
+          "sender_lateness_ms": 0.36737503251060843,
+          "first_preview_output_ms": 3.433957986999303,
+          "coalesced_to_input": 81,
+          "placement_serial": 149,
+          "cached": true,
+          "input_to_flush_ms": 0.614667
+        },
+        {
+          "input_id": 82,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.17300003673881292,
+          "first_preview_output_ms": 0.7712909718975425,
+          "coalesced_to_input": 82,
+          "placement_serial": 151,
+          "cached": true,
+          "input_to_flush_ms": 0.7104159999999999
+        },
+        {
+          "input_id": 83,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.26883301325142384,
+          "first_preview_output_ms": 0.7445000228472054,
+          "coalesced_to_input": 83,
+          "placement_serial": 153,
+          "cached": true,
+          "input_to_flush_ms": 0.6874589999999999
+        },
+        {
+          "input_id": 84,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.36800000816583633,
+          "first_preview_output_ms": 0.9058330324478447,
+          "coalesced_to_input": 84,
+          "placement_serial": 155,
+          "cached": true,
+          "input_to_flush_ms": 0.816125
+        },
+        {
+          "input_id": 85,
+          "key": "j",
+          "repeat": false,
+          "sender_lateness_ms": 0.17925002612173557,
+          "first_preview_output_ms": 4.973708011675626,
+          "coalesced_to_input": 85,
+          "placement_serial": 157,
+          "cached": true,
+          "input_to_flush_ms": 0.583792
+        },
+        {
+          "input_id": 86,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.3322909469716251,
+          "first_preview_output_ms": 0.7971250452101231,
+          "coalesced_to_input": 86,
+          "placement_serial": 158,
+          "cached": true,
+          "input_to_flush_ms": 0.7076250000000001
+        },
+        {
+          "input_id": 87,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.058790959883481264,
+          "first_preview_output_ms": 0.7903340156190097,
+          "coalesced_to_input": 87,
+          "placement_serial": 160,
+          "cached": true,
+          "input_to_flush_ms": 0.697791
+        },
+        {
+          "input_id": 88,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.0062909675762057304,
+          "first_preview_output_ms": 1.8897500121966004,
+          "coalesced_to_input": 88,
+          "placement_serial": 162,
+          "cached": true,
+          "input_to_flush_ms": 0.602708
+        },
+        {
+          "input_id": 89,
+          "key": "k",
+          "repeat": false,
+          "sender_lateness_ms": 0.02120796125382185,
+          "first_preview_output_ms": 2.128708001691848,
+          "coalesced_to_input": 89,
+          "placement_serial": 164,
+          "cached": true,
+          "input_to_flush_ms": 0.646416
+        },
+        {
+          "input_id": 90,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.193290994502604,
+          "first_preview_output_ms": 0.8014590130187571,
+          "coalesced_to_input": 90,
+          "placement_serial": 166,
+          "cached": true,
+          "input_to_flush_ms": 0.714083
+        },
+        {
+          "input_id": 91,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.02095801755785942,
+          "first_preview_output_ms": 0.7867499953135848,
+          "coalesced_to_input": 91,
+          "placement_serial": 168,
+          "cached": true,
+          "input_to_flush_ms": 0.7058340000000001
+        },
+        {
+          "input_id": 92,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.2335829776711762,
+          "first_preview_output_ms": 0.7552080205641687,
+          "coalesced_to_input": 92,
+          "placement_serial": 170,
+          "cached": true,
+          "input_to_flush_ms": 0.687042
+        },
+        {
+          "input_id": 93,
+          "key": "+",
+          "repeat": false,
+          "sender_lateness_ms": 0.1824999926611781,
+          "first_preview_output_ms": 0.7555410265922546,
+          "coalesced_to_input": 93,
+          "placement_serial": 172,
+          "cached": true,
+          "input_to_flush_ms": 0.693125
+        },
+        {
+          "input_id": 94,
+          "key": "+",
+          "repeat": true,
+          "sender_lateness_ms": 0.1985830022022128,
+          "first_preview_output_ms": 0.7754170219413936,
+          "coalesced_to_input": 94,
+          "placement_serial": 173,
+          "cached": true,
+          "input_to_flush_ms": 0.693083
+        },
+        {
+          "input_id": 95,
+          "key": "-",
+          "repeat": false,
+          "sender_lateness_ms": 0.13833300909027457,
+          "first_preview_output_ms": 0.8004999835975468,
+          "coalesced_to_input": 95,
+          "placement_serial": 174,
+          "cached": true,
+          "input_to_flush_ms": 0.724625
+        },
+        {
+          "input_id": 96,
+          "key": "-",
+          "repeat": true,
+          "sender_lateness_ms": 0.061125028878450394,
+          "first_preview_output_ms": 1.0602499824017286,
+          "coalesced_to_input": 96,
+          "placement_serial": 176,
+          "cached": true,
+          "input_to_flush_ms": 0.988166
+        },
+        {
+          "input_id": 97,
+          "key": "h",
+          "repeat": false,
+          "sender_lateness_ms": 0.11312501737847924,
+          "first_preview_output_ms": 0.9865409811027348,
+          "coalesced_to_input": 97,
+          "placement_serial": 177,
+          "cached": true,
+          "input_to_flush_ms": 0.93325
+        },
+        {
+          "input_id": 98,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.07025001104921103,
+          "first_preview_output_ms": 0.7923330413177609,
+          "coalesced_to_input": 98,
+          "placement_serial": 178,
+          "cached": true,
+          "input_to_flush_ms": 0.709292
+        },
+        {
+          "input_id": 99,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.11304102372378111,
+          "first_preview_output_ms": 0.761916977353394,
+          "coalesced_to_input": 99,
+          "placement_serial": 179,
+          "cached": true,
+          "input_to_flush_ms": 0.6857500000000001
+        },
+        {
+          "input_id": 100,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.0981249613687396,
+          "first_preview_output_ms": 0.7831660332158208,
+          "coalesced_to_input": 100,
+          "placement_serial": 181,
+          "cached": true,
+          "input_to_flush_ms": 0.710083
+        },
+        {
+          "input_id": 101,
+          "key": "l",
+          "repeat": false,
+          "sender_lateness_ms": 0.3006249899044633,
+          "first_preview_output_ms": 4.610790987499058,
+          "coalesced_to_input": 101,
+          "placement_serial": 183,
+          "cached": true,
+          "input_to_flush_ms": 0.67725
+        },
+        {
+          "input_id": 102,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.506000011228025,
+          "first_preview_output_ms": 1.270415959879756,
+          "coalesced_to_input": 102,
+          "placement_serial": 185,
+          "cached": true,
+          "input_to_flush_ms": 1.151042
+        },
+        {
+          "input_id": 103,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.42225001379847527,
+          "first_preview_output_ms": 1.2272079475224018,
+          "coalesced_to_input": 103,
+          "placement_serial": 187,
+          "cached": true,
+          "input_to_flush_ms": 1.1194169999999999
+        },
+        {
+          "input_id": 104,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.2637910074554384,
+          "first_preview_output_ms": 0.8168339845724404,
+          "coalesced_to_input": 104,
+          "placement_serial": 189,
+          "cached": true,
+          "input_to_flush_ms": 0.738958
+        },
+        {
+          "input_id": 105,
+          "key": "j",
+          "repeat": false,
+          "sender_lateness_ms": 0.18566602375358343,
+          "first_preview_output_ms": 0.9692499879747629,
+          "coalesced_to_input": 105,
+          "placement_serial": 190,
+          "cached": true,
+          "input_to_flush_ms": 0.872541
+        },
+        {
+          "input_id": 106,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.03524997737258673,
+          "first_preview_output_ms": 0.940416008234024,
+          "coalesced_to_input": 106,
+          "placement_serial": 191,
+          "cached": true,
+          "input_to_flush_ms": 0.8582919999999999
+        },
+        {
+          "input_id": 107,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.18166599329560995,
+          "first_preview_output_ms": 0.8999999845400453,
+          "coalesced_to_input": 107,
+          "placement_serial": 193,
+          "cached": true,
+          "input_to_flush_ms": 0.812083
+        },
+        {
+          "input_id": 108,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.2152909873984754,
+          "first_preview_output_ms": 0.8665000204928219,
+          "coalesced_to_input": 108,
+          "placement_serial": 194,
+          "cached": true,
+          "input_to_flush_ms": 0.771084
+        },
+        {
+          "input_id": 109,
+          "key": "k",
+          "repeat": false,
+          "sender_lateness_ms": 0.11041603283956647,
+          "first_preview_output_ms": 0.9980839677155018,
+          "coalesced_to_input": 109,
+          "placement_serial": 195,
+          "cached": true,
+          "input_to_flush_ms": 0.915
+        },
+        {
+          "input_id": 110,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.18800003454089165,
+          "first_preview_output_ms": 1.4012499595992267,
+          "coalesced_to_input": 110,
+          "placement_serial": 197,
+          "cached": true,
+          "input_to_flush_ms": 1.3198750000000001
+        },
+        {
+          "input_id": 111,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.29625004390254617,
+          "first_preview_output_ms": 1.677291002124548,
+          "coalesced_to_input": 111,
+          "placement_serial": 199,
+          "cached": true,
+          "input_to_flush_ms": 1.40425
+        },
+        {
+          "input_id": 112,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.4885000525973737,
+          "first_preview_output_ms": 1.464082975871861,
+          "coalesced_to_input": 112,
+          "placement_serial": 201,
+          "cached": true,
+          "input_to_flush_ms": 1.287209
+        },
+        {
+          "input_id": 113,
+          "key": "+",
+          "repeat": false,
+          "sender_lateness_ms": 0.09375001536682248,
+          "first_preview_output_ms": 0.8789160056039691,
+          "coalesced_to_input": 113,
+          "placement_serial": 203,
+          "cached": true,
+          "input_to_flush_ms": 0.780208
+        },
+        {
+          "input_id": 114,
+          "key": "+",
+          "repeat": true,
+          "sender_lateness_ms": 0.009124982170760632,
+          "first_preview_output_ms": 0.8875830098986626,
+          "coalesced_to_input": 114,
+          "placement_serial": 204,
+          "cached": true,
+          "input_to_flush_ms": 0.804167
+        },
+        {
+          "input_id": 115,
+          "key": "-",
+          "repeat": false,
+          "sender_lateness_ms": 0.4698749980889261,
+          "first_preview_output_ms": 5.310125008691102,
+          "coalesced_to_input": 115,
+          "placement_serial": 206,
+          "cached": true,
+          "input_to_flush_ms": 0.652834
+        },
+        {
+          "input_id": 116,
+          "key": "-",
+          "repeat": true,
+          "sender_lateness_ms": 0.06562500493600965,
+          "first_preview_output_ms": 1.5305829583667219,
+          "coalesced_to_input": 116,
+          "placement_serial": 207,
+          "cached": true,
+          "input_to_flush_ms": 1.446375
+        },
+        {
+          "input_id": 117,
+          "key": "h",
+          "repeat": false,
+          "sender_lateness_ms": 0.05887501174584031,
+          "first_preview_output_ms": 1.0657910024747252,
+          "coalesced_to_input": 117,
+          "placement_serial": 209,
+          "cached": true,
+          "input_to_flush_ms": 0.9771669999999999
+        },
+        {
+          "input_id": 118,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.11045800056308508,
+          "first_preview_output_ms": 0.8808749844320118,
+          "coalesced_to_input": 118,
+          "placement_serial": 211,
+          "cached": true,
+          "input_to_flush_ms": 0.7813749999999999
+        },
+        {
+          "input_id": 119,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.03483297768980265,
+          "first_preview_output_ms": 0.8305830415338278,
+          "coalesced_to_input": 119,
+          "placement_serial": 213,
+          "cached": true,
+          "input_to_flush_ms": 0.738583
+        },
+        {
+          "input_id": 120,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.1829580287449062,
+          "first_preview_output_ms": 0.783249968662858,
+          "coalesced_to_input": 120,
+          "placement_serial": 215,
+          "cached": true,
+          "input_to_flush_ms": 0.696042
+        },
+        {
+          "input_id": 121,
+          "key": "l",
+          "repeat": false,
+          "sender_lateness_ms": 0.05704100476577878,
+          "first_preview_output_ms": 0.7706250180490315,
+          "coalesced_to_input": 121,
+          "placement_serial": 217,
+          "cached": true,
+          "input_to_flush_ms": 0.7020839999999999
+        },
+        {
+          "input_id": 122,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.16187498113140464,
+          "first_preview_output_ms": 0.7715829997323453,
+          "coalesced_to_input": 122,
+          "placement_serial": 219,
+          "cached": true,
+          "input_to_flush_ms": 0.6995410000000001
+        },
+        {
+          "input_id": 123,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.06087502697482705,
+          "first_preview_output_ms": 0.7973749889060855,
+          "coalesced_to_input": 123,
+          "placement_serial": 221,
+          "cached": true,
+          "input_to_flush_ms": 0.7159589999999999
+        },
+        {
+          "input_id": 124,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.08750002598389983,
+          "first_preview_output_ms": 0.7582909893244505,
+          "coalesced_to_input": 124,
+          "placement_serial": 223,
+          "cached": true,
+          "input_to_flush_ms": 0.682834
+        },
+        {
+          "input_id": 125,
+          "key": "j",
+          "repeat": false,
+          "sender_lateness_ms": 0.27008302276954055,
+          "first_preview_output_ms": 0.7464999798685312,
+          "coalesced_to_input": 125,
+          "placement_serial": 225,
+          "cached": true,
+          "input_to_flush_ms": 0.686959
+        },
+        {
+          "input_id": 126,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.47250004718080163,
+          "first_preview_output_ms": 0.7539999787695706,
+          "coalesced_to_input": 126,
+          "placement_serial": 227,
+          "cached": true,
+          "input_to_flush_ms": 0.681625
+        },
+        {
+          "input_id": 127,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.44650002382695675,
+          "first_preview_output_ms": 0.761541014071554,
+          "coalesced_to_input": 127,
+          "placement_serial": 229,
+          "cached": true,
+          "input_to_flush_ms": 0.6784169999999999
+        },
+        {
+          "input_id": 128,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.3276659990660846,
+          "first_preview_output_ms": 0.7885419763624668,
+          "coalesced_to_input": 128,
+          "placement_serial": 231,
+          "cached": true,
+          "input_to_flush_ms": 0.706916
+        },
+        {
+          "input_id": 129,
+          "key": "k",
+          "repeat": false,
+          "sender_lateness_ms": 0.389833003282547,
+          "first_preview_output_ms": 0.8059579995460808,
+          "coalesced_to_input": 129,
+          "placement_serial": 233,
+          "cached": true,
+          "input_to_flush_ms": 0.722834
+        },
+        {
+          "input_id": 130,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.48970797797665,
+          "first_preview_output_ms": 0.8191249798983335,
+          "coalesced_to_input": 130,
+          "placement_serial": 235,
+          "cached": true,
+          "input_to_flush_ms": 0.7234999999999999
+        },
+        {
+          "input_id": 131,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.3147500101476908,
+          "first_preview_output_ms": 0.7836659788154066,
+          "coalesced_to_input": 131,
+          "placement_serial": 237,
+          "cached": true,
+          "input_to_flush_ms": 0.705417
+        },
+        {
+          "input_id": 132,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.047124980483204126,
+          "first_preview_output_ms": 0.8875000057742,
+          "coalesced_to_input": 132,
+          "placement_serial": 239,
+          "cached": true,
+          "input_to_flush_ms": 0.804333
+        },
+        {
+          "input_id": 133,
+          "key": "+",
+          "repeat": false,
+          "sender_lateness_ms": 0.4315410042181611,
+          "first_preview_output_ms": 0.7794590201228857,
+          "coalesced_to_input": 133,
+          "placement_serial": 241,
+          "cached": true,
+          "input_to_flush_ms": 0.736916
+        },
+        {
+          "input_id": 134,
+          "key": "+",
+          "repeat": true,
+          "sender_lateness_ms": 0.06320799002423882,
+          "first_preview_output_ms": 0.779333000537008,
+          "coalesced_to_input": 134,
+          "placement_serial": 242,
+          "cached": true,
+          "input_to_flush_ms": 0.717125
+        },
+        {
+          "input_id": 135,
+          "key": "-",
+          "repeat": false,
+          "sender_lateness_ms": 0.24004100123420358,
+          "first_preview_output_ms": 0.863625027704984,
+          "coalesced_to_input": 135,
+          "placement_serial": 243,
+          "cached": true,
+          "input_to_flush_ms": 0.792333
+        },
+        {
+          "input_id": 136,
+          "key": "-",
+          "repeat": true,
+          "sender_lateness_ms": 0.1397909945808351,
+          "first_preview_output_ms": 0.8467920124530792,
+          "coalesced_to_input": 136,
+          "placement_serial": 245,
+          "cached": true,
+          "input_to_flush_ms": 0.7689170000000001
+        }
+      ],
+      "burst_interval_ms": 33.0,
+      "first_preview_output_ms": {
+        "min": 0.7329170475713909,
+        "median": 0.8352909935638309,
+        "p95": 2.0781669882126153,
+        "max": 2.4877499672584236,
+        "all_within_10ms": true
+      },
+      "exact_preview_output_ms": {
+        "min": 11.889334011357278,
+        "median": 13.728459016419947,
+        "p95": 40.43908300809562,
+        "max": 95.58645798824728,
+        "all_within_10ms": false
+      },
+      "burst_preview_output_ms": {
+        "min": 0.642875034827739,
+        "median": 0.7977919885888696,
+        "p95": 3.433957986999303,
+        "max": 5.310125008691102,
+        "all_within_10ms": true
+      },
+      "document_sha256": "b1d29be21941deec53dba152d0d53b28983461e4a4fc16cb65af11734275489f",
+      "measurement_runner_sha256": "c4c632e9d2b1c8068f528a8ad53d65ca8cd2a7b6f5d34bfc26422199aa18de8f"
+    },
+    {
+      "name": "input-placement-large-c015dd9",
+      "pty": {
+        "columns": 320,
+        "rows": 100,
+        "pixels": [
+          3840,
+          2000
+        ]
+      },
+      "samples": [
+        {
+          "key": "+",
+          "first_preview_output_ms": 1.2500419979915023,
+          "exact_preview_output_ms": 128.84633400244638,
+          "uploads": 1,
+          "wire_bytes": 1338256
+        },
+        {
+          "key": "-",
+          "first_preview_output_ms": 1.1822499800473452,
+          "exact_preview_output_ms": 94.27279100054875,
+          "uploads": 1,
+          "wire_bytes": 1939491
+        },
+        {
+          "key": "h",
+          "first_preview_output_ms": 1.1541249696165323,
+          "exact_preview_output_ms": 142.16699998360127,
+          "uploads": 1,
+          "wire_bytes": 2539878
+        },
+        {
+          "key": "l",
+          "first_preview_output_ms": 1.1143750161863863,
+          "exact_preview_output_ms": 89.4320830120705,
+          "uploads": 1,
+          "wire_bytes": 3141099
+        },
+        {
+          "key": "j",
+          "first_preview_output_ms": 2.034667006228119,
+          "exact_preview_output_ms": 132.19883397687227,
+          "uploads": 1,
+          "wire_bytes": 3743228
+        },
+        {
+          "key": "k",
+          "first_preview_output_ms": 1.164457993581891,
+          "exact_preview_output_ms": 87.28220802731812,
+          "uploads": 1,
+          "wire_bytes": 4344448
+        },
+        {
+          "key": "+",
+          "first_preview_output_ms": 1.0806659702211618,
+          "exact_preview_output_ms": 39.86608301056549,
+          "uploads": 1,
+          "wire_bytes": 5025569
+        },
+        {
+          "key": "-",
+          "first_preview_output_ms": 1.2681249645538628,
+          "exact_preview_output_ms": 88.30783294979483,
+          "uploads": 1,
+          "wire_bytes": 5626804
+        },
+        {
+          "key": "h",
+          "first_preview_output_ms": 1.2185839586891234,
+          "exact_preview_output_ms": 94.0790000022389,
+          "uploads": 1,
+          "wire_bytes": 6227191
+        },
+        {
+          "key": "l",
+          "first_preview_output_ms": 1.236167037859559,
+          "exact_preview_output_ms": 85.00104205450043,
+          "uploads": 1,
+          "wire_bytes": 6828412
+        },
+        {
+          "key": "j",
+          "first_preview_output_ms": 1.1558749829418957,
+          "exact_preview_output_ms": 93.12124998541549,
+          "uploads": 1,
+          "wire_bytes": 7430541
+        },
+        {
+          "key": "k",
+          "first_preview_output_ms": 1.154207973740995,
+          "exact_preview_output_ms": 93.90383295249194,
+          "uploads": 1,
+          "wire_bytes": 8031761
+        },
+        {
+          "key": "+",
+          "first_preview_output_ms": 1.202374987769872,
+          "exact_preview_output_ms": 36.89124999800697,
+          "uploads": 1,
+          "wire_bytes": 8712882
+        },
+        {
+          "key": "-",
+          "first_preview_output_ms": 1.229999994393438,
+          "exact_preview_output_ms": 87.94400002807379,
+          "uploads": 1,
+          "wire_bytes": 9314117
+        },
+        {
+          "key": "h",
+          "first_preview_output_ms": 1.1555840028449893,
+          "exact_preview_output_ms": 92.35175000503659,
+          "uploads": 1,
+          "wire_bytes": 9914504
+        },
+        {
+          "key": "l",
+          "first_preview_output_ms": 1.1265829671174288,
+          "exact_preview_output_ms": 86.8622079724446,
+          "uploads": 1,
+          "wire_bytes": 10515725
+        },
+        {
+          "key": "j",
+          "first_preview_output_ms": 1.091665995772928,
+          "exact_preview_output_ms": 97.36633294960484,
+          "uploads": 1,
+          "wire_bytes": 11117854
+        },
+        {
+          "key": "k",
+          "first_preview_output_ms": 1.1812499724328518,
+          "exact_preview_output_ms": 86.47499996004626,
+          "uploads": 1,
+          "wire_bytes": 11719074
+        },
+        {
+          "key": "+",
+          "first_preview_output_ms": 7.797459024004638,
+          "exact_preview_output_ms": 56.76545901224017,
+          "uploads": 1,
+          "wire_bytes": 12400195
+        },
+        {
+          "key": "-",
+          "first_preview_output_ms": 1.1245409841649234,
+          "exact_preview_output_ms": 88.9422080363147,
+          "uploads": 1,
+          "wire_bytes": 13001430
+        },
+        {
+          "key": "h",
+          "first_preview_output_ms": 1.2865839526057243,
+          "exact_preview_output_ms": 95.24166694609448,
+          "uploads": 1,
+          "wire_bytes": 13601817
+        },
+        {
+          "key": "l",
+          "first_preview_output_ms": 1.2463749735616148,
+          "exact_preview_output_ms": 91.48720797384158,
+          "uploads": 1,
+          "wire_bytes": 14203038
+        },
+        {
+          "key": "j",
+          "first_preview_output_ms": 1.067041011992842,
+          "exact_preview_output_ms": 95.00383300473914,
+          "uploads": 1,
+          "wire_bytes": 14805167
+        },
+        {
+          "key": "k",
+          "first_preview_output_ms": 1.1622089659795165,
+          "exact_preview_output_ms": 86.70037501724437,
+          "uploads": 1,
+          "wire_bytes": 15406387
+        },
+        {
+          "key": "+",
+          "first_preview_output_ms": 1.1435409542173147,
+          "exact_preview_output_ms": 32.752999977674335,
+          "uploads": 1,
+          "wire_bytes": 16087508
+        },
+        {
+          "key": "-",
+          "first_preview_output_ms": 1.0944170062430203,
+          "exact_preview_output_ms": 87.73508400190622,
+          "uploads": 1,
+          "wire_bytes": 16688743
+        },
+        {
+          "key": "h",
+          "first_preview_output_ms": 1.1353329755365849,
+          "exact_preview_output_ms": 104.56516698468477,
+          "uploads": 1,
+          "wire_bytes": 17289130
+        },
+        {
+          "key": "l",
+          "first_preview_output_ms": 1.0894169681705534,
+          "exact_preview_output_ms": 86.78262500325218,
+          "uploads": 1,
+          "wire_bytes": 17890351
+        },
+        {
+          "key": "j",
+          "first_preview_output_ms": 1.7678749863989651,
+          "exact_preview_output_ms": 93.24245800962672,
+          "uploads": 1,
+          "wire_bytes": 18492480
+        },
+        {
+          "key": "k",
+          "first_preview_output_ms": 1.1138339759781957,
+          "exact_preview_output_ms": 89.34599999338388,
+          "uploads": 1,
+          "wire_bytes": 19093700
+        },
+        {
+          "key": "+",
+          "first_preview_output_ms": 1.1589169735088944,
+          "exact_preview_output_ms": 32.550041971262544,
+          "uploads": 1,
+          "wire_bytes": 19774821
+        },
+        {
+          "key": "-",
+          "first_preview_output_ms": 1.0954160243272781,
+          "exact_preview_output_ms": 86.82612504344434,
+          "uploads": 1,
+          "wire_bytes": 20376056
+        },
+        {
+          "key": "h",
+          "first_preview_output_ms": 1.088084012735635,
+          "exact_preview_output_ms": 94.77370901731774,
+          "uploads": 1,
+          "wire_bytes": 20976443
+        },
+        {
+          "key": "l",
+          "first_preview_output_ms": 1.1690420215018094,
+          "exact_preview_output_ms": 86.47366700461134,
+          "uploads": 1,
+          "wire_bytes": 21577664
+        },
+        {
+          "key": "j",
+          "first_preview_output_ms": 1.0771250235848129,
+          "exact_preview_output_ms": 91.8147920165211,
+          "uploads": 1,
+          "wire_bytes": 22179793
+        },
+        {
+          "key": "k",
+          "first_preview_output_ms": 1.1167500051669776,
+          "exact_preview_output_ms": 94.13450001738966,
+          "uploads": 1,
+          "wire_bytes": 22781013
+        },
+        {
+          "key": "+",
+          "first_preview_output_ms": 1.0700830025598407,
+          "exact_preview_output_ms": 33.14770798897371,
+          "uploads": 1,
+          "wire_bytes": 23462134
+        },
+        {
+          "key": "-",
+          "first_preview_output_ms": 1.092333986889571,
+          "exact_preview_output_ms": 85.86433401796967,
+          "uploads": 1,
+          "wire_bytes": 24063369
+        },
+        {
+          "key": "h",
+          "first_preview_output_ms": 1.1053330381400883,
+          "exact_preview_output_ms": 95.36583302542567,
+          "uploads": 1,
+          "wire_bytes": 24663756
+        },
+        {
+          "key": "l",
+          "first_preview_output_ms": 1.104417024180293,
+          "exact_preview_output_ms": 98.31612498965114,
+          "uploads": 1,
+          "wire_bytes": 25264977
+        },
+        {
+          "key": "j",
+          "first_preview_output_ms": 1.2570000253617764,
+          "exact_preview_output_ms": 93.29933300614357,
+          "uploads": 1,
+          "wire_bytes": 25867106
+        },
+        {
+          "key": "k",
+          "first_preview_output_ms": 1.212958013638854,
+          "exact_preview_output_ms": 84.82804201776162,
+          "uploads": 1,
+          "wire_bytes": 26468326
+        },
+        {
+          "key": "+",
+          "first_preview_output_ms": 1.097082975320518,
+          "exact_preview_output_ms": 32.88362501189113,
+          "uploads": 1,
+          "wire_bytes": 27149447
+        },
+        {
+          "key": "-",
+          "first_preview_output_ms": 1.223833009134978,
+          "exact_preview_output_ms": 88.33354199305177,
+          "uploads": 1,
+          "wire_bytes": 27750682
+        },
+        {
+          "key": "h",
+          "first_preview_output_ms": 1.2397500104270875,
+          "exact_preview_output_ms": 92.70787501009181,
+          "uploads": 1,
+          "wire_bytes": 28351069
+        },
+        {
+          "key": "l",
+          "first_preview_output_ms": 1.1066249571740627,
+          "exact_preview_output_ms": 96.77020797971636,
+          "uploads": 1,
+          "wire_bytes": 28952290
+        },
+        {
+          "key": "j",
+          "first_preview_output_ms": 2.2086669923737645,
+          "exact_preview_output_ms": 96.72029200010002,
+          "uploads": 1,
+          "wire_bytes": 29554419
+        },
+        {
+          "key": "k",
+          "first_preview_output_ms": 1.185750006698072,
+          "exact_preview_output_ms": 86.11520798876882,
+          "uploads": 1,
+          "wire_bytes": 30155639
+        },
+        {
+          "key": "+",
+          "first_preview_output_ms": 1.9601670210249722,
+          "exact_preview_output_ms": 66.832082986366,
+          "uploads": 1,
+          "wire_bytes": 30836760
+        },
+        {
+          "key": "-",
+          "first_preview_output_ms": 1.157500024419278,
+          "exact_preview_output_ms": 93.51999999489635,
+          "uploads": 1,
+          "wire_bytes": 31437995
+        },
+        {
+          "key": "h",
+          "first_preview_output_ms": 1.634665997698903,
+          "exact_preview_output_ms": 102.58291603531688,
+          "uploads": 1,
+          "wire_bytes": 32038382
+        },
+        {
+          "key": "l",
+          "first_preview_output_ms": 1.0914999875240028,
+          "exact_preview_output_ms": 86.06358297402039,
+          "uploads": 1,
+          "wire_bytes": 32639603
+        },
+        {
+          "key": "j",
+          "first_preview_output_ms": 1.2308749719522893,
+          "exact_preview_output_ms": 98.66204200079665,
+          "uploads": 1,
+          "wire_bytes": 33241732
+        },
+        {
+          "key": "k",
+          "first_preview_output_ms": 1.4134160010144114,
+          "exact_preview_output_ms": 106.82195797562599,
+          "uploads": 1,
+          "wire_bytes": 33842952
+        },
+        {
+          "key": "+",
+          "first_preview_output_ms": 1.4219169970601797,
+          "exact_preview_output_ms": 39.3402089830488,
+          "uploads": 1,
+          "wire_bytes": 34524073
+        },
+        {
+          "key": "-",
+          "first_preview_output_ms": 1.2866249890066683,
+          "exact_preview_output_ms": 87.34804199775681,
+          "uploads": 1,
+          "wire_bytes": 35125308
+        },
+        {
+          "key": "h",
+          "first_preview_output_ms": 1.2441659928299487,
+          "exact_preview_output_ms": 93.90987502411008,
+          "uploads": 1,
+          "wire_bytes": 35725695
+        },
+        {
+          "key": "l",
+          "first_preview_output_ms": 1.2851249775849283,
+          "exact_preview_output_ms": 86.02783299284056,
+          "uploads": 1,
+          "wire_bytes": 36326916
+        },
+        {
+          "key": "j",
+          "first_preview_output_ms": 1.0868750396184623,
+          "exact_preview_output_ms": 94.25745898624882,
+          "uploads": 1,
+          "wire_bytes": 36929045
+        },
+        {
+          "key": "k",
+          "first_preview_output_ms": 1.0881249909289181,
+          "exact_preview_output_ms": 93.03012501914054,
+          "uploads": 1,
+          "wire_bytes": 37530265
+        }
+      ],
+      "burst": [
+        {
+          "input_id": 61,
+          "key": "h",
+          "repeat": false,
+          "sender_lateness_ms": 0.006708025466650724,
+          "first_preview_output_ms": 1.1089170002378523,
+          "coalesced_to_input": 61,
+          "placement_serial": 122,
+          "cached": true,
+          "input_to_flush_ms": 1.040167
+        },
+        {
+          "input_id": 62,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.4456670139916241,
+          "first_preview_output_ms": 1.1573330266401172,
+          "coalesced_to_input": 62,
+          "placement_serial": 123,
+          "cached": true,
+          "input_to_flush_ms": 1.0347920000000002
+        },
+        {
+          "input_id": 63,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.1461249776184559,
+          "first_preview_output_ms": 2.2040000185370445,
+          "coalesced_to_input": 63,
+          "placement_serial": 124,
+          "cached": true,
+          "input_to_flush_ms": 2.078833
+        },
+        {
+          "input_id": 64,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.5424170522019267,
+          "first_preview_output_ms": 1.8211249844171107,
+          "coalesced_to_input": 64,
+          "placement_serial": 125,
+          "cached": true,
+          "input_to_flush_ms": 1.663625
+        },
+        {
+          "input_id": 65,
+          "key": "l",
+          "repeat": false,
+          "sender_lateness_ms": 0.5244999774731696,
+          "first_preview_output_ms": 1.18470803136006,
+          "coalesced_to_input": 65,
+          "placement_serial": 126,
+          "cached": true,
+          "input_to_flush_ms": 1.154334
+        },
+        {
+          "input_id": 66,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.12154201976954937,
+          "first_preview_output_ms": 1.033040985930711,
+          "coalesced_to_input": 66,
+          "placement_serial": 127,
+          "cached": true,
+          "input_to_flush_ms": 0.9900829999999999
+        },
+        {
+          "input_id": 67,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.4107080167159438,
+          "first_preview_output_ms": 1.2202499783597887,
+          "coalesced_to_input": 67,
+          "placement_serial": 128,
+          "cached": true,
+          "input_to_flush_ms": 1.150375
+        },
+        {
+          "input_id": 68,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.1532500027678907,
+          "first_preview_output_ms": 3.171792021021247,
+          "coalesced_to_input": 68,
+          "placement_serial": 129,
+          "cached": false,
+          "input_to_flush_ms": 3.084375
+        },
+        {
+          "input_id": 69,
+          "key": "j",
+          "repeat": false,
+          "sender_lateness_ms": 0.15712500317022204,
+          "first_preview_output_ms": 1.1278329766355455,
+          "coalesced_to_input": 69,
+          "placement_serial": 130,
+          "cached": true,
+          "input_to_flush_ms": 1.05825
+        },
+        {
+          "input_id": 70,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.33008301397785544,
+          "first_preview_output_ms": 1.3289999915286899,
+          "coalesced_to_input": 70,
+          "placement_serial": 131,
+          "cached": true,
+          "input_to_flush_ms": 1.1893340000000001
+        },
+        {
+          "input_id": 71,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.15008298214524984,
+          "first_preview_output_ms": 1.0867500095628202,
+          "coalesced_to_input": 71,
+          "placement_serial": 132,
+          "cached": true,
+          "input_to_flush_ms": 1.025833
+        },
+        {
+          "input_id": 72,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.36091700894758105,
+          "first_preview_output_ms": 1.1563749867491424,
+          "coalesced_to_input": 72,
+          "placement_serial": 133,
+          "cached": true,
+          "input_to_flush_ms": 1.076458
+        },
+        {
+          "input_id": 73,
+          "key": "k",
+          "repeat": false,
+          "sender_lateness_ms": 0.2704579965211451,
+          "first_preview_output_ms": 1.1522090062499046,
+          "coalesced_to_input": 73,
+          "placement_serial": 134,
+          "cached": true,
+          "input_to_flush_ms": 1.11175
+        },
+        {
+          "input_id": 74,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.298250000923872,
+          "first_preview_output_ms": 1.4708330272696912,
+          "coalesced_to_input": 74,
+          "placement_serial": 135,
+          "cached": true,
+          "input_to_flush_ms": 1.3439999999999999
+        },
+        {
+          "input_id": 75,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.0921249738894403,
+          "first_preview_output_ms": 1.1952919885516167,
+          "coalesced_to_input": 75,
+          "placement_serial": 136,
+          "cached": true,
+          "input_to_flush_ms": 1.1232080000000002
+        },
+        {
+          "input_id": 76,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.34429202787578106,
+          "first_preview_output_ms": 3.9412909536622465,
+          "coalesced_to_input": 76,
+          "placement_serial": 137,
+          "cached": false,
+          "input_to_flush_ms": 3.868084
+        },
+        {
+          "input_id": 77,
+          "key": "+",
+          "repeat": false,
+          "sender_lateness_ms": 0.3530419780872762,
+          "first_preview_output_ms": 1.124583010096103,
+          "coalesced_to_input": 77,
+          "placement_serial": 138,
+          "cached": true,
+          "input_to_flush_ms": 1.072833
+        },
+        {
+          "input_id": 78,
+          "key": "+",
+          "repeat": true,
+          "sender_lateness_ms": 0.18437497783452272,
+          "first_preview_output_ms": 1.1131670325994492,
+          "coalesced_to_input": 78,
+          "placement_serial": 139,
+          "cached": true,
+          "input_to_flush_ms": 1.0509169999999999
+        },
+        {
+          "input_id": 79,
+          "key": "-",
+          "repeat": false,
+          "sender_lateness_ms": 0.3431670484133065,
+          "first_preview_output_ms": 0.9784160065464675,
+          "coalesced_to_input": 79,
+          "placement_serial": 140,
+          "cached": true,
+          "input_to_flush_ms": 0.949375
+        },
+        {
+          "input_id": 80,
+          "key": "-",
+          "repeat": true,
+          "sender_lateness_ms": 0.3234579926356673,
+          "first_preview_output_ms": 3.784583997912705,
+          "coalesced_to_input": 80,
+          "placement_serial": 141,
+          "cached": false,
+          "input_to_flush_ms": 3.721459
+        },
+        {
+          "input_id": 81,
+          "key": "h",
+          "repeat": false,
+          "sender_lateness_ms": 0.17416704213246703,
+          "first_preview_output_ms": 2.0194160169921815,
+          "coalesced_to_input": 81,
+          "placement_serial": 142,
+          "cached": true,
+          "input_to_flush_ms": 1.8526250000000002
+        },
+        {
+          "input_id": 82,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.3494580159895122,
+          "first_preview_output_ms": 1.2853340012952685,
+          "coalesced_to_input": 82,
+          "placement_serial": 143,
+          "cached": true,
+          "input_to_flush_ms": 1.191708
+        },
+        {
+          "input_id": 83,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.13229204341769218,
+          "first_preview_output_ms": 1.1330829584039748,
+          "coalesced_to_input": 83,
+          "placement_serial": 144,
+          "cached": true,
+          "input_to_flush_ms": 1.0845
+        },
+        {
+          "input_id": 84,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.3519579768180847,
+          "first_preview_output_ms": 1.1774169979617,
+          "coalesced_to_input": 84,
+          "placement_serial": 145,
+          "cached": true,
+          "input_to_flush_ms": 1.125125
+        },
+        {
+          "input_id": 85,
+          "key": "l",
+          "repeat": false,
+          "sender_lateness_ms": 0.2324579982087016,
+          "first_preview_output_ms": 2.1316250204108655,
+          "coalesced_to_input": 85,
+          "placement_serial": 146,
+          "cached": true,
+          "input_to_flush_ms": 2.062125
+        },
+        {
+          "input_id": 86,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.43566699605435133,
+          "first_preview_output_ms": 1.1201659799553454,
+          "coalesced_to_input": 86,
+          "placement_serial": 147,
+          "cached": true,
+          "input_to_flush_ms": 1.067917
+        },
+        {
+          "input_id": 87,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.18575001740828156,
+          "first_preview_output_ms": 2.5930419797077775,
+          "coalesced_to_input": 87,
+          "placement_serial": 148,
+          "cached": true,
+          "input_to_flush_ms": 2.3465000000000003
+        },
+        {
+          "input_id": 88,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.31812500674277544,
+          "first_preview_output_ms": 3.3319999929517508,
+          "coalesced_to_input": 88,
+          "placement_serial": 149,
+          "cached": false,
+          "input_to_flush_ms": 3.2435
+        },
+        {
+          "input_id": 89,
+          "key": "j",
+          "repeat": false,
+          "sender_lateness_ms": 0.2839170047082007,
+          "first_preview_output_ms": 1.1634579859673977,
+          "coalesced_to_input": 89,
+          "placement_serial": 150,
+          "cached": true,
+          "input_to_flush_ms": 1.1165
+        },
+        {
+          "input_id": 90,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.384374987334013,
+          "first_preview_output_ms": 1.1512920027598739,
+          "coalesced_to_input": 90,
+          "placement_serial": 151,
+          "cached": true,
+          "input_to_flush_ms": 1.08625
+        },
+        {
+          "input_id": 91,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.20545802544802427,
+          "first_preview_output_ms": 1.0590419988147914,
+          "coalesced_to_input": 91,
+          "placement_serial": 152,
+          "cached": true,
+          "input_to_flush_ms": 1.0196669999999999
+        },
+        {
+          "input_id": 92,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.42875000508502126,
+          "first_preview_output_ms": 1.1280420003458858,
+          "coalesced_to_input": 92,
+          "placement_serial": 153,
+          "cached": true,
+          "input_to_flush_ms": 1.068333
+        },
+        {
+          "input_id": 93,
+          "key": "k",
+          "repeat": false,
+          "sender_lateness_ms": 0.2501250128261745,
+          "first_preview_output_ms": 2.2200419916771352,
+          "coalesced_to_input": 93,
+          "placement_serial": 154,
+          "cached": true,
+          "input_to_flush_ms": 2.179083
+        },
+        {
+          "input_id": 94,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.43958297464996576,
+          "first_preview_output_ms": 1.172834017779678,
+          "coalesced_to_input": 94,
+          "placement_serial": 155,
+          "cached": true,
+          "input_to_flush_ms": 1.105417
+        },
+        {
+          "input_id": 95,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.15216699102893472,
+          "first_preview_output_ms": 1.4089160249568522,
+          "coalesced_to_input": 95,
+          "placement_serial": 156,
+          "cached": true,
+          "input_to_flush_ms": 1.33525
+        },
+        {
+          "input_id": 96,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.18262496450915933,
+          "first_preview_output_ms": 3.1127920374274254,
+          "coalesced_to_input": 96,
+          "placement_serial": 157,
+          "cached": false,
+          "input_to_flush_ms": 3.022167
+        },
+        {
+          "input_id": 97,
+          "key": "+",
+          "repeat": false,
+          "sender_lateness_ms": 0.1722500310279429,
+          "first_preview_output_ms": 1.0979169746860862,
+          "coalesced_to_input": 97,
+          "placement_serial": 158,
+          "cached": true,
+          "input_to_flush_ms": 1.050833
+        },
+        {
+          "input_id": 98,
+          "key": "+",
+          "repeat": true,
+          "sender_lateness_ms": 0.32162503339350224,
+          "first_preview_output_ms": 1.019707997329533,
+          "coalesced_to_input": 98,
+          "placement_serial": 159,
+          "cached": true,
+          "input_to_flush_ms": 0.9820829999999999
+        },
+        {
+          "input_id": 99,
+          "key": "-",
+          "repeat": false,
+          "sender_lateness_ms": 0.3339580143801868,
+          "first_preview_output_ms": 1.0794589761644602,
+          "coalesced_to_input": 99,
+          "placement_serial": 160,
+          "cached": true,
+          "input_to_flush_ms": 1.03575
+        },
+        {
+          "input_id": 100,
+          "key": "-",
+          "repeat": true,
+          "sender_lateness_ms": 0.2727080136537552,
+          "first_preview_output_ms": 3.1822090386413038,
+          "coalesced_to_input": 100,
+          "placement_serial": 161,
+          "cached": false,
+          "input_to_flush_ms": 3.131791
+        },
+        {
+          "input_id": 101,
+          "key": "h",
+          "repeat": false,
+          "sender_lateness_ms": 0.11074997019022703,
+          "first_preview_output_ms": 1.4244170160964131,
+          "coalesced_to_input": 101,
+          "placement_serial": 162,
+          "cached": true,
+          "input_to_flush_ms": 1.359458
+        },
+        {
+          "input_id": 102,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.17200002912431955,
+          "first_preview_output_ms": 1.2725419946946204,
+          "coalesced_to_input": 102,
+          "placement_serial": 163,
+          "cached": true,
+          "input_to_flush_ms": 1.164208
+        },
+        {
+          "input_id": 103,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.24395796936005354,
+          "first_preview_output_ms": 1.1833340395241976,
+          "coalesced_to_input": 103,
+          "placement_serial": 164,
+          "cached": true,
+          "input_to_flush_ms": 1.072
+        },
+        {
+          "input_id": 104,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.2585830516181886,
+          "first_preview_output_ms": 1.1240419698879123,
+          "coalesced_to_input": 104,
+          "placement_serial": 165,
+          "cached": true,
+          "input_to_flush_ms": 1.08325
+        },
+        {
+          "input_id": 105,
+          "key": "l",
+          "repeat": false,
+          "sender_lateness_ms": 0.27358299121260643,
+          "first_preview_output_ms": 1.1010420275852084,
+          "coalesced_to_input": 105,
+          "placement_serial": 166,
+          "cached": true,
+          "input_to_flush_ms": 1.072083
+        },
+        {
+          "input_id": 106,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.2697920426726341,
+          "first_preview_output_ms": 1.208124973345548,
+          "coalesced_to_input": 106,
+          "placement_serial": 167,
+          "cached": true,
+          "input_to_flush_ms": 1.131625
+        },
+        {
+          "input_id": 107,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.24429196491837502,
+          "first_preview_output_ms": 1.721500011626631,
+          "coalesced_to_input": 107,
+          "placement_serial": 168,
+          "cached": true,
+          "input_to_flush_ms": 1.6545830000000001
+        },
+        {
+          "input_id": 108,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.08104200242087245,
+          "first_preview_output_ms": 3.624208038672805,
+          "coalesced_to_input": 108,
+          "placement_serial": 169,
+          "cached": false,
+          "input_to_flush_ms": 3.490875
+        },
+        {
+          "input_id": 109,
+          "key": "j",
+          "repeat": false,
+          "sender_lateness_ms": 0.30408299062401056,
+          "first_preview_output_ms": 1.1533339857123792,
+          "coalesced_to_input": 109,
+          "placement_serial": 170,
+          "cached": true,
+          "input_to_flush_ms": 1.0604580000000001
+        },
+        {
+          "input_id": 110,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.26120798429474235,
+          "first_preview_output_ms": 1.2614590232260525,
+          "coalesced_to_input": 110,
+          "placement_serial": 171,
+          "cached": true,
+          "input_to_flush_ms": 1.177167
+        },
+        {
+          "input_id": 111,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.3172499709762633,
+          "first_preview_output_ms": 1.1945419828407466,
+          "coalesced_to_input": 111,
+          "placement_serial": 172,
+          "cached": true,
+          "input_to_flush_ms": 1.103708
+        },
+        {
+          "input_id": 112,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.35604200093075633,
+          "first_preview_output_ms": 1.10541598405689,
+          "coalesced_to_input": 112,
+          "placement_serial": 173,
+          "cached": true,
+          "input_to_flush_ms": 1.047
+        },
+        {
+          "input_id": 113,
+          "key": "k",
+          "repeat": false,
+          "sender_lateness_ms": 0.2686249790713191,
+          "first_preview_output_ms": 1.0486249811947346,
+          "coalesced_to_input": 113,
+          "placement_serial": 174,
+          "cached": true,
+          "input_to_flush_ms": 1.0324589999999998
+        },
+        {
+          "input_id": 114,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.3095000283792615,
+          "first_preview_output_ms": 1.1272919946350157,
+          "coalesced_to_input": 114,
+          "placement_serial": 175,
+          "cached": true,
+          "input_to_flush_ms": 1.05275
+        },
+        {
+          "input_id": 115,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.2589170471765101,
+          "first_preview_output_ms": 1.0456249583512545,
+          "coalesced_to_input": 115,
+          "placement_serial": 176,
+          "cached": true,
+          "input_to_flush_ms": 0.9935
+        },
+        {
+          "input_id": 116,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.3409999771974981,
+          "first_preview_output_ms": 3.941958013456315,
+          "coalesced_to_input": 116,
+          "placement_serial": 177,
+          "cached": false,
+          "input_to_flush_ms": 3.746625
+        },
+        {
+          "input_id": 117,
+          "key": "+",
+          "repeat": false,
+          "sender_lateness_ms": 0.27650000993162394,
+          "first_preview_output_ms": 1.102208043448627,
+          "coalesced_to_input": 117,
+          "placement_serial": 178,
+          "cached": true,
+          "input_to_flush_ms": 1.077833
+        },
+        {
+          "input_id": 118,
+          "key": "+",
+          "repeat": true,
+          "sender_lateness_ms": 0.2666669897735119,
+          "first_preview_output_ms": 1.1975410161539912,
+          "coalesced_to_input": 118,
+          "placement_serial": 179,
+          "cached": true,
+          "input_to_flush_ms": 1.110792
+        },
+        {
+          "input_id": 119,
+          "key": "-",
+          "repeat": false,
+          "sender_lateness_ms": 0.25345804169774055,
+          "first_preview_output_ms": 1.0707919718697667,
+          "coalesced_to_input": 119,
+          "placement_serial": 180,
+          "cached": true,
+          "input_to_flush_ms": 1.0143330000000002
+        },
+        {
+          "input_id": 120,
+          "key": "-",
+          "repeat": true,
+          "sender_lateness_ms": 0.31958299223333597,
+          "first_preview_output_ms": 2.877167018596083,
+          "coalesced_to_input": 120,
+          "placement_serial": 181,
+          "cached": false,
+          "input_to_flush_ms": 2.842334
+        },
+        {
+          "input_id": 121,
+          "key": "h",
+          "repeat": false,
+          "sender_lateness_ms": 0.1539580407552421,
+          "first_preview_output_ms": 1.0281249997206032,
+          "coalesced_to_input": 121,
+          "placement_serial": 182,
+          "cached": true,
+          "input_to_flush_ms": 0.985542
+        },
+        {
+          "input_id": 122,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.39429200114682317,
+          "first_preview_output_ms": 1.2260829680599272,
+          "coalesced_to_input": 122,
+          "placement_serial": 183,
+          "cached": true,
+          "input_to_flush_ms": 1.120458
+        },
+        {
+          "input_id": 123,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.16350002260878682,
+          "first_preview_output_ms": 1.3674169895239174,
+          "coalesced_to_input": 123,
+          "placement_serial": 184,
+          "cached": true,
+          "input_to_flush_ms": 1.2519580000000001
+        },
+        {
+          "input_id": 124,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.2423750120215118,
+          "first_preview_output_ms": 2.236416970845312,
+          "coalesced_to_input": 124,
+          "placement_serial": 185,
+          "cached": true,
+          "input_to_flush_ms": 2.084
+        },
+        {
+          "input_id": 125,
+          "key": "l",
+          "repeat": false,
+          "sender_lateness_ms": 0.5518330144695938,
+          "first_preview_output_ms": 1.1645419872365892,
+          "coalesced_to_input": 125,
+          "placement_serial": 186,
+          "cached": true,
+          "input_to_flush_ms": 1.0837080000000001
+        },
+        {
+          "input_id": 126,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.12487499043345451,
+          "first_preview_output_ms": 1.5364999999292195,
+          "coalesced_to_input": 126,
+          "placement_serial": 187,
+          "cached": true,
+          "input_to_flush_ms": 1.434334
+        },
+        {
+          "input_id": 127,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.12962502660229802,
+          "first_preview_output_ms": 1.184666994959116,
+          "coalesced_to_input": 127,
+          "placement_serial": 188,
+          "cached": true,
+          "input_to_flush_ms": 1.117542
+        },
+        {
+          "input_id": 128,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.3079169546253979,
+          "first_preview_output_ms": 3.128791053313762,
+          "coalesced_to_input": 128,
+          "placement_serial": 189,
+          "cached": false,
+          "input_to_flush_ms": 3.099
+        },
+        {
+          "input_id": 129,
+          "key": "j",
+          "repeat": false,
+          "sender_lateness_ms": 0.02237502485513687,
+          "first_preview_output_ms": 1.001457974780351,
+          "coalesced_to_input": 129,
+          "placement_serial": 190,
+          "cached": true,
+          "input_to_flush_ms": 0.964875
+        },
+        {
+          "input_id": 130,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.46145799569785595,
+          "first_preview_output_ms": 1.1621249723248184,
+          "coalesced_to_input": 130,
+          "placement_serial": 191,
+          "cached": true,
+          "input_to_flush_ms": 1.11725
+        },
+        {
+          "input_id": 131,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.20520802354440093,
+          "first_preview_output_ms": 1.7599589773453772,
+          "coalesced_to_input": 131,
+          "placement_serial": 192,
+          "cached": true,
+          "input_to_flush_ms": 1.64375
+        },
+        {
+          "input_id": 132,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.08916697697713971,
+          "first_preview_output_ms": 1.1332500143907964,
+          "coalesced_to_input": 132,
+          "placement_serial": 193,
+          "cached": true,
+          "input_to_flush_ms": 1.072333
+        },
+        {
+          "input_id": 133,
+          "key": "k",
+          "repeat": false,
+          "sender_lateness_ms": 0.351125025190413,
+          "first_preview_output_ms": 1.1051250039599836,
+          "coalesced_to_input": 133,
+          "placement_serial": 194,
+          "cached": true,
+          "input_to_flush_ms": 1.060834
+        },
+        {
+          "input_id": 134,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.246542040258646,
+          "first_preview_output_ms": 1.1174579849466681,
+          "coalesced_to_input": 134,
+          "placement_serial": 195,
+          "cached": true,
+          "input_to_flush_ms": 1.076666
+        },
+        {
+          "input_id": 135,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.2905000001192093,
+          "first_preview_output_ms": 1.147042028605938,
+          "coalesced_to_input": 135,
+          "placement_serial": 196,
+          "cached": true,
+          "input_to_flush_ms": 1.072
+        },
+        {
+          "input_id": 136,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.27558300644159317,
+          "first_preview_output_ms": 3.040917043108493,
+          "coalesced_to_input": 136,
+          "placement_serial": 197,
+          "cached": false,
+          "input_to_flush_ms": 3.016708
+        },
+        {
+          "input_id": 137,
+          "key": "+",
+          "repeat": false,
+          "sender_lateness_ms": 0.08366699330508709,
+          "first_preview_output_ms": 1.1210829834453762,
+          "coalesced_to_input": 137,
+          "placement_serial": 198,
+          "cached": true,
+          "input_to_flush_ms": 1.089916
+        },
+        {
+          "input_id": 138,
+          "key": "+",
+          "repeat": true,
+          "sender_lateness_ms": 0.3914580447599292,
+          "first_preview_output_ms": 1.5457089757546782,
+          "coalesced_to_input": 138,
+          "placement_serial": 199,
+          "cached": true,
+          "input_to_flush_ms": 1.4047079999999998
+        },
+        {
+          "input_id": 139,
+          "key": "-",
+          "repeat": false,
+          "sender_lateness_ms": 0.08487497689202428,
+          "first_preview_output_ms": 1.1309580295346677,
+          "coalesced_to_input": 139,
+          "placement_serial": 200,
+          "cached": true,
+          "input_to_flush_ms": 1.07075
+        },
+        {
+          "input_id": 140,
+          "key": "-",
+          "repeat": true,
+          "sender_lateness_ms": 0.32516702776774764,
+          "first_preview_output_ms": 3.2117500086314976,
+          "coalesced_to_input": 140,
+          "placement_serial": 201,
+          "cached": false,
+          "input_to_flush_ms": 3.105417
+        },
+        {
+          "input_id": 141,
+          "key": "h",
+          "repeat": false,
+          "sender_lateness_ms": 0.1997079816646874,
+          "first_preview_output_ms": 1.1459169909358025,
+          "coalesced_to_input": 141,
+          "placement_serial": 202,
+          "cached": true,
+          "input_to_flush_ms": 1.0885
+        },
+        {
+          "input_id": 142,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.2946670283563435,
+          "first_preview_output_ms": 1.3650410110130906,
+          "coalesced_to_input": 142,
+          "placement_serial": 203,
+          "cached": true,
+          "input_to_flush_ms": 1.30575
+        },
+        {
+          "input_id": 143,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.32537500374019146,
+          "first_preview_output_ms": 1.131041964981705,
+          "coalesced_to_input": 143,
+          "placement_serial": 204,
+          "cached": true,
+          "input_to_flush_ms": 1.06
+        },
+        {
+          "input_id": 144,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.2495420048944652,
+          "first_preview_output_ms": 1.0734160314314067,
+          "coalesced_to_input": 144,
+          "placement_serial": 205,
+          "cached": true,
+          "input_to_flush_ms": 1.022375
+        },
+        {
+          "input_id": 145,
+          "key": "l",
+          "repeat": false,
+          "sender_lateness_ms": 0.39241695776581764,
+          "first_preview_output_ms": 2.6754160062409937,
+          "coalesced_to_input": 145,
+          "placement_serial": 206,
+          "cached": true,
+          "input_to_flush_ms": 2.53025
+        },
+        {
+          "input_id": 146,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.13862503692507744,
+          "first_preview_output_ms": 1.1049999739043415,
+          "coalesced_to_input": 146,
+          "placement_serial": 207,
+          "cached": true,
+          "input_to_flush_ms": 1.0598750000000001
+        },
+        {
+          "input_id": 147,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.3798749530687928,
+          "first_preview_output_ms": 2.6791670243255794,
+          "coalesced_to_input": 147,
+          "placement_serial": 208,
+          "cached": true,
+          "input_to_flush_ms": 2.5666249999999997
+        },
+        {
+          "input_id": 148,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.18304202239960432,
+          "first_preview_output_ms": 2.966333006042987,
+          "coalesced_to_input": 148,
+          "placement_serial": 209,
+          "cached": false,
+          "input_to_flush_ms": 2.9133750000000003
+        },
+        {
+          "input_id": 149,
+          "key": "j",
+          "repeat": false,
+          "sender_lateness_ms": 0.18408294999971986,
+          "first_preview_output_ms": 1.4277090085670352,
+          "coalesced_to_input": 149,
+          "placement_serial": 210,
+          "cached": true,
+          "input_to_flush_ms": 1.3654579999999998
+        },
+        {
+          "input_id": 150,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.16212498303502798,
+          "first_preview_output_ms": 1.1135420063510537,
+          "coalesced_to_input": 150,
+          "placement_serial": 211,
+          "cached": true,
+          "input_to_flush_ms": 1.079458
+        },
+        {
+          "input_id": 151,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.3487080102786422,
+          "first_preview_output_ms": 1.3895000447519124,
+          "coalesced_to_input": 151,
+          "placement_serial": 212,
+          "cached": true,
+          "input_to_flush_ms": 1.2680420000000001
+        },
+        {
+          "input_id": 152,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.09037501877173781,
+          "first_preview_output_ms": 1.9614999764598906,
+          "coalesced_to_input": 152,
+          "placement_serial": 213,
+          "cached": true,
+          "input_to_flush_ms": 1.780791
+        },
+        {
+          "input_id": 153,
+          "key": "k",
+          "repeat": false,
+          "sender_lateness_ms": 0.25583303067833185,
+          "first_preview_output_ms": 1.1572500225156546,
+          "coalesced_to_input": 153,
+          "placement_serial": 214,
+          "cached": true,
+          "input_to_flush_ms": 1.08425
+        },
+        {
+          "input_id": 154,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.25525002274662256,
+          "first_preview_output_ms": 1.1382079683244228,
+          "coalesced_to_input": 154,
+          "placement_serial": 215,
+          "cached": true,
+          "input_to_flush_ms": 1.1020839999999998
+        },
+        {
+          "input_id": 155,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.2691670088097453,
+          "first_preview_output_ms": 1.1262079933658242,
+          "coalesced_to_input": 155,
+          "placement_serial": 216,
+          "cached": true,
+          "input_to_flush_ms": 1.076042
+        },
+        {
+          "input_id": 156,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.43829198693856597,
+          "first_preview_output_ms": 3.0366249848157167,
+          "coalesced_to_input": 156,
+          "placement_serial": 217,
+          "cached": false,
+          "input_to_flush_ms": 2.987625
+        },
+        {
+          "input_id": 157,
+          "key": "+",
+          "repeat": false,
+          "sender_lateness_ms": 0.06920803571119905,
+          "first_preview_output_ms": 1.0154169867746532,
+          "coalesced_to_input": 157,
+          "placement_serial": 218,
+          "cached": true,
+          "input_to_flush_ms": 0.970042
+        },
+        {
+          "input_id": 158,
+          "key": "+",
+          "repeat": true,
+          "sender_lateness_ms": 0.471249979455024,
+          "first_preview_output_ms": 1.2123330379836261,
+          "coalesced_to_input": 158,
+          "placement_serial": 219,
+          "cached": true,
+          "input_to_flush_ms": 1.102083
+        },
+        {
+          "input_id": 159,
+          "key": "-",
+          "repeat": false,
+          "sender_lateness_ms": 0.15762500697746873,
+          "first_preview_output_ms": 1.1500830296427011,
+          "coalesced_to_input": 159,
+          "placement_serial": 220,
+          "cached": true,
+          "input_to_flush_ms": 1.113083
+        },
+        {
+          "input_id": 160,
+          "key": "-",
+          "repeat": true,
+          "sender_lateness_ms": 0.3374170046299696,
+          "first_preview_output_ms": 3.2999999821186066,
+          "coalesced_to_input": 160,
+          "placement_serial": 221,
+          "cached": false,
+          "input_to_flush_ms": 3.1914589999999996
+        },
+        {
+          "input_id": 161,
+          "key": "h",
+          "repeat": false,
+          "sender_lateness_ms": 0.03749999450519681,
+          "first_preview_output_ms": 1.2128750095143914,
+          "coalesced_to_input": 161,
+          "placement_serial": 222,
+          "cached": true,
+          "input_to_flush_ms": 1.083583
+        },
+        {
+          "input_id": 162,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.38479198701679707,
+          "first_preview_output_ms": 2.0561660057865083,
+          "coalesced_to_input": 162,
+          "placement_serial": 223,
+          "cached": true,
+          "input_to_flush_ms": 1.884625
+        },
+        {
+          "input_id": 163,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.37583301309496164,
+          "first_preview_output_ms": 1.1649170191958547,
+          "coalesced_to_input": 163,
+          "placement_serial": 224,
+          "cached": true,
+          "input_to_flush_ms": 1.0757500000000002
+        },
+        {
+          "input_id": 164,
+          "key": "h",
+          "repeat": true,
+          "sender_lateness_ms": 0.18045800970867276,
+          "first_preview_output_ms": 1.1709589743986726,
+          "coalesced_to_input": 164,
+          "placement_serial": 225,
+          "cached": true,
+          "input_to_flush_ms": 1.127291
+        },
+        {
+          "input_id": 165,
+          "key": "l",
+          "repeat": false,
+          "sender_lateness_ms": 0.3185420064255595,
+          "first_preview_output_ms": 1.028041006065905,
+          "coalesced_to_input": 165,
+          "placement_serial": 226,
+          "cached": true,
+          "input_to_flush_ms": 1.0125
+        },
+        {
+          "input_id": 166,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.2750830026343465,
+          "first_preview_output_ms": 1.0864589712582529,
+          "coalesced_to_input": 166,
+          "placement_serial": 227,
+          "cached": true,
+          "input_to_flush_ms": 1.023375
+        },
+        {
+          "input_id": 167,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.30200002947822213,
+          "first_preview_output_ms": 1.34712498402223,
+          "coalesced_to_input": 167,
+          "placement_serial": 228,
+          "cached": true,
+          "input_to_flush_ms": 1.26575
+        },
+        {
+          "input_id": 168,
+          "key": "l",
+          "repeat": true,
+          "sender_lateness_ms": 0.11291698319837451,
+          "first_preview_output_ms": 3.192708012647927,
+          "coalesced_to_input": 168,
+          "placement_serial": 229,
+          "cached": false,
+          "input_to_flush_ms": 3.105792
+        },
+        {
+          "input_id": 169,
+          "key": "j",
+          "repeat": false,
+          "sender_lateness_ms": 0.07445801747962832,
+          "first_preview_output_ms": 1.1578339617699385,
+          "coalesced_to_input": 169,
+          "placement_serial": 230,
+          "cached": true,
+          "input_to_flush_ms": 1.071292
+        },
+        {
+          "input_id": 170,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.31991704599931836,
+          "first_preview_output_ms": 1.0785830090753734,
+          "coalesced_to_input": 170,
+          "placement_serial": 231,
+          "cached": true,
+          "input_to_flush_ms": 1.0219999999999998
+        },
+        {
+          "input_id": 171,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.2733329893089831,
+          "first_preview_output_ms": 1.036750036291778,
+          "coalesced_to_input": 171,
+          "placement_serial": 232,
+          "cached": true,
+          "input_to_flush_ms": 0.985708
+        },
+        {
+          "input_id": 172,
+          "key": "j",
+          "repeat": true,
+          "sender_lateness_ms": 0.1699170097708702,
+          "first_preview_output_ms": 1.190915994811803,
+          "coalesced_to_input": 172,
+          "placement_serial": 233,
+          "cached": true,
+          "input_to_flush_ms": 1.124791
+        },
+        {
+          "input_id": 173,
+          "key": "k",
+          "repeat": false,
+          "sender_lateness_ms": 0.3225419786758721,
+          "first_preview_output_ms": 1.1067080195061862,
+          "coalesced_to_input": 173,
+          "placement_serial": 234,
+          "cached": true,
+          "input_to_flush_ms": 1.049709
+        },
+        {
+          "input_id": 174,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.2619580482132733,
+          "first_preview_output_ms": 1.1737499735318124,
+          "coalesced_to_input": 174,
+          "placement_serial": 235,
+          "cached": true,
+          "input_to_flush_ms": 1.095667
+        },
+        {
+          "input_id": 175,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.5405420088209212,
+          "first_preview_output_ms": 2.0926659926772118,
+          "coalesced_to_input": 175,
+          "placement_serial": 236,
+          "cached": true,
+          "input_to_flush_ms": 1.883208
+        },
+        {
+          "input_id": 176,
+          "key": "k",
+          "repeat": true,
+          "sender_lateness_ms": 0.4438750329427421,
+          "first_preview_output_ms": 3.2610420021228492,
+          "coalesced_to_input": 176,
+          "placement_serial": 237,
+          "cached": false,
+          "input_to_flush_ms": 3.174042
+        },
+        {
+          "input_id": 177,
+          "key": "+",
+          "repeat": false,
+          "sender_lateness_ms": 0.33829198218882084,
+          "first_preview_output_ms": 1.1839999933727086,
+          "coalesced_to_input": 177,
+          "placement_serial": 238,
+          "cached": true,
+          "input_to_flush_ms": 1.138333
+        },
+        {
+          "input_id": 178,
+          "key": "+",
+          "repeat": true,
+          "sender_lateness_ms": 0.17975002992898226,
+          "first_preview_output_ms": 1.0774169932119548,
+          "coalesced_to_input": 178,
+          "placement_serial": 239,
+          "cached": true,
+          "input_to_flush_ms": 1.030667
+        },
+        {
+          "input_id": 179,
+          "key": "-",
+          "repeat": false,
+          "sender_lateness_ms": 0.3631669678725302,
+          "first_preview_output_ms": 1.021833042614162,
+          "coalesced_to_input": 179,
+          "placement_serial": 240,
+          "cached": true,
+          "input_to_flush_ms": 0.9835410000000001
+        },
+        {
+          "input_id": 180,
+          "key": "-",
+          "repeat": true,
+          "sender_lateness_ms": 0.2767920377664268,
+          "first_preview_output_ms": 3.1442909967154264,
+          "coalesced_to_input": 180,
+          "placement_serial": 241,
+          "cached": false,
+          "input_to_flush_ms": 3.087459
+        }
+      ],
+      "burst_interval_ms": 8.0,
+      "first_preview_output_ms": {
+        "min": 1.067041011992842,
+        "median": 1.1622089659795165,
+        "p95": 1.9601670210249722,
+        "max": 7.797459024004638,
+        "all_within_10ms": true
+      },
+      "exact_preview_output_ms": {
+        "min": 32.550041971262544,
+        "median": 91.48720797384158,
+        "p95": 106.82195797562599,
+        "max": 142.16699998360127,
+        "all_within_10ms": false
+      },
+      "burst_preview_output_ms": {
+        "min": 0.9784160065464675,
+        "median": 1.1774169979617,
+        "p95": 3.2610420021228492,
+        "max": 3.941958013456315,
+        "all_within_10ms": true
+      },
+      "document_sha256": "b1d29be21941deec53dba152d0d53b28983461e4a4fc16cb65af11734275489f",
+      "measurement_runner_sha256": "c4c632e9d2b1c8068f528a8ad53d65ca8cd2a7b6f5d34bfc26422199aa18de8f"
+    }
+  ]
+}

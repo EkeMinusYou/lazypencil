@@ -618,3 +618,19 @@ Runner identities: Linux x64 `20261012.334.1` and arm64 `20261012.149.1` used fo
 These are static CLI observations at that exact source, before Windows agent job supervision and TUI time seeking. They do not measure interactive latency, authenticated agents, dynamic runtime descendants, idle CPU, physical terminals or final release acceptance. Platform differences are not isolated hardware regressions.
 
 </details>
+
+
+## Local preview input response, 2026-11-02
+
+The `c015dd9` release was measured on the local Apple Silicon host with an unchanged local document, using a real PTY and the deterministic ACP helper. The [retained per-input observations](benchmarks/preview-input-20261102.json) bind the executable SHA-256 and document SHA-256 to all trials. The gate requires every first-preview observation to remain at or below 10 ms; no samples or outliers are discarded. The earlier `aff692e` row-copy/1 ms delay candidate did not meet the target (maximum 15.97 ms across 24 ordinary-size operations), so these results use the subsequent texture-placement implementation.
+
+| PTY and input pattern | Inputs | First-preview median | p95 | Maximum |
+| --- | ---: | ---: | ---: | ---: |
+| 160×54, 1920×1080 pixels, separate repeat events | 36 | 0.84 ms | 2.08 ms | 2.49 ms |
+| Same geometry, 33 ms repeat interval | 100 | 0.80 ms | 3.43 ms | 5.31 ms |
+| 320×100, 3840×2000 pixels, separate repeat events | 60 | 1.16 ms | 1.96 ms | 7.80 ms |
+| Same large geometry, 8 ms repeat interval | 120 | 1.18 ms | 3.26 ms | 3.94 ms |
+
+All 316 first-preview observations passed. The runner correlates preview input ordinals with native placement serials through the explicitly enabled, bounded `LAZYPENCIL_PROFILE_INPUT=owned-local-measurement` trace. It retains key, repeat kind, coalescing, sender lateness, and application input-to-flush measurements. For bursts, the first displayed state that incorporates each input is charged to that input's original PTY write time. This does not substitute key parsing, a spinner, or the status label for image feedback. The raw report and exact runner snapshots remain in the owned local measurement directories named by the scenarios. The 79 TUI unit tests and 16 native PTY tests passed; two existing environment-dependent PTY cases remained ignored. Regressions cover repeated `hjkl`, release suppression, legacy repetition, image restoration, native crop geometry, and metadata-only camera updates without another pixel upload.
+
+This is an application-output response observation, including observer backpressure, rather than physical presentation or the external Herdr client's frame scheduling. Exact raster output remains independent: ordinary-size samples took 11.89–95.59 ms, and large samples took 32.55–142.17 ms. The complete-image hashes, export behavior, and existing full-raster measurements are not replaced by the fast camera response. Hardware load and terminal configuration can change these timings.
