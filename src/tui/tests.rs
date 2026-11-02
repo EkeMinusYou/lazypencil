@@ -2768,6 +2768,84 @@ fn nodes_tree_keeps_duplicate_names_distinct_through_search_refresh_and_attachme
 }
 
 #[test]
+fn held_hjkl_pan_accepts_repeat_events_and_stops_on_release_without_affecting_typing() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let picker = Backend::halfblocks();
+        let worker = Worker::start(
+            app.conversation.store().clone(),
+            vec![],
+            picker.clone(),
+            190,
+        )
+        .unwrap();
+        app.cells = Size::new(20, 8);
+        app.request(&worker, false, false);
+        app.accept_preview(
+            tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap(),
+        );
+        app.focus = Focus::Preview;
+        for (letter, delta) in [
+            ('h', [-64.0, 0.0]),
+            ('j', [0.0, 64.0]),
+            ('k', [0.0, -64.0]),
+            ('l', [64.0, 0.0]),
+        ] {
+            let mut expected = app.view;
+            for kind in std::iter::once(KeyEventKind::Press)
+                .chain(std::iter::repeat_n(KeyEventKind::Repeat, 8))
+            {
+                app.key(
+                    KeyEvent::new_with_kind(KeyCode::Char(letter), KeyModifiers::NONE, kind),
+                    &picker,
+                    &worker,
+                )
+                .await
+                .unwrap();
+                expected.pan(delta);
+                assert_eq!(app.view.center, expected.center);
+            }
+            app.key(
+                KeyEvent::new_with_kind(
+                    KeyCode::Char(letter),
+                    KeyModifiers::NONE,
+                    KeyEventKind::Release,
+                ),
+                &picker,
+                &worker,
+            )
+            .await
+            .unwrap();
+            assert_eq!(app.view.center, expected.center);
+            for _ in 0..8 {
+                app.key(
+                    KeyEvent::new(KeyCode::Char(letter), KeyModifiers::NONE),
+                    &picker,
+                    &worker,
+                )
+                .await
+                .unwrap();
+                expected.pan(delta);
+            }
+            assert_eq!(app.view.center, expected.center);
+        }
+        app.focus = Focus::Prompt;
+        app.key(
+            KeyEvent::new_with_kind(KeyCode::Char('h'), KeyModifiers::NONE, KeyEventKind::Repeat),
+            &picker,
+            &worker,
+        )
+        .await
+        .unwrap();
+        assert_eq!(app.editor.lines(), &["h"]);
+        assert!(!app.conversation.active());
+    });
+}
+
+#[test]
 fn custom_navigation_preserves_typing_search_modals_and_moves_the_actual_preview() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {

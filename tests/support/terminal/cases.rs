@@ -295,6 +295,10 @@ pub fn run(
             basic(&mut h)?;
             Value::Null
         }
+        "herdr-kitty-held" => {
+            held_navigation(&mut h)?;
+            Value::Null
+        }
         "herdr-kitty" | "herdr-kitty-no-color" => {
             rectangular(&mut h)?;
             Value::Null
@@ -730,6 +734,46 @@ fn encoded(h: &mut Harness) -> Result {
     no_agent(h);
     Ok(())
 }
+fn held_navigation(h: &mut Harness) -> Result {
+    let saved = fs::read(&h.document)?;
+    h.wait("initial held-key preview", 15.0, |h| {
+        !h.frames.images.is_empty()
+    })?;
+    let initial = h.frames.images.last().unwrap().clone();
+    h.key(b"\t\t")?;
+    for (letter, opposite) in [(b'h', b'l'), (b'j', b'k'), (b'k', b'j'), (b'l', b'h')] {
+        for repetition in 0..4 {
+            let exact = h.frames.images.last().cloned();
+            let camera = h.frames.last_camera.clone();
+            if repetition == 0 {
+                h.key(&[letter])?;
+            } else {
+                h.key(format!("\x1b[{};1:2u", letter).as_bytes())?;
+            }
+            h.wait(
+                "held key produces another visible camera update",
+                15.0,
+                |h| h.frames.images.last() != exact.as_ref() || h.frames.last_camera != camera,
+            )?;
+        }
+        h.key(format!("\x1b[{};1:3u", letter).as_bytes())?;
+        h.key(&[opposite; 4])?;
+        h.key(b"?")?;
+        h.visible("Help ·")?;
+        h.key(b"\x1b")?;
+        h.hidden("Help ·")?;
+        h.wait("legacy repeats restore the original viewport", 15.0, |h| {
+            h.frames.images.last() == Some(&initial)
+        })?;
+    }
+    h.key(b"\t")?;
+    h.paste("hjklは本文です")?;
+    h.draft("hjklは本文です")?;
+    assert_eq!(fs::read(&h.document)?, saved);
+    no_agent(h);
+    Ok(())
+}
+
 fn rectangular(h: &mut Harness) -> Result {
     h.wait("rectangular Kitty preview", 15.0, |h| {
         !h.frames.images.is_empty() && h.contains_bytes(b"_Ga=p,")

@@ -2,7 +2,7 @@
 use super::preview::View;
 use image::{Rgba, RgbaImage};
 
-const EXACT_FRAME_HEAD_START: std::time::Duration = std::time::Duration::from_millis(40);
+const EXACT_FRAME_HEAD_START: std::time::Duration = std::time::Duration::from_millis(1);
 
 pub(super) struct Camera {
     pub protocol: ratatui_image::protocol::Protocol,
@@ -167,6 +167,34 @@ where
     if !dx.is_finite() || !dy.is_finite() {
         return None;
     }
+    if ratio == 1.0 {
+        let (dx, dy) = ((dx + 0.5).floor(), (dy + 0.5).floor());
+        let mut result = RgbaImage::from_pixel(size[0], size[1], Rgba([248, 250, 252, 255]));
+        if dx <= -f64::from(size[0])
+            || dx >= f64::from(size[0])
+            || dy <= -f64::from(size[1])
+            || dy >= f64::from(size[1])
+        {
+            return Some(result);
+        }
+        let (dx, dy) = (dx as i64, dy as i64);
+        let left = (-dx).clamp(0, i64::from(size[0])) as usize;
+        let right = (i64::from(size[0]) - dx).clamp(0, i64::from(size[0])) as usize;
+        if right > left {
+            let length = (right - left) * 4;
+            for (y, row) in result.chunks_exact_mut(size[0] as usize * 4).enumerate() {
+                let source_y = y as i64 + dy;
+                if !(0..i64::from(size[1])).contains(&source_y) {
+                    continue;
+                }
+                let offset =
+                    (source_y as usize * source.width() as usize + (left as i64 + dx) as usize) * 4;
+                row[left * 4..left * 4 + length]
+                    .copy_from_slice(&source.as_raw()[offset..offset + length]);
+            }
+        }
+        return Some(result);
+    }
     let columns = (0..size[0])
         .map(|x| {
             let source_x = ((f64::from(x) + 0.5) * ratio + dx).floor();
@@ -238,6 +266,38 @@ mod tests {
                 project_region(&borrowed, before, after, [120, 80]),
                 project(&cropped, before, after)
             );
+        }
+    }
+
+    #[test]
+    fn row_copy_pan_matches_pixel_centers_and_clips_fractional_and_distant_views() {
+        let image = RgbaImage::from_fn(12, 8, |x, y| Rgba([x as u8, y as u8, 100, 255]));
+        let before = View {
+            zoom: Some(1.0),
+            ..Default::default()
+        };
+        for dx in [-160.0_f64, -3.25, -0.49, 0.49, 3.75, 160.0, 1.0e30] {
+            for dy in [-90.0_f64, -1.25, 0.0, 1.75, 90.0] {
+                let mut after = before;
+                after.pan([dx, dy]);
+                let actual = project(&image, before, after).unwrap();
+                for y in 0..8 {
+                    for x in 0..12 {
+                        let sx = (f64::from(x) + 0.5 + dx).floor();
+                        let sy = (f64::from(y) + 0.5 + dy).floor();
+                        let expected = if (0.0..12.0).contains(&sx) && (0.0..8.0).contains(&sy) {
+                            *image.get_pixel(sx as u32, sy as u32)
+                        } else {
+                            Rgba([248, 250, 252, 255])
+                        };
+                        assert_eq!(
+                            *actual.get_pixel(x, y),
+                            expected,
+                            "pan ({dx}, {dy}), pixel ({x}, {y})"
+                        );
+                    }
+                }
+            }
         }
     }
 

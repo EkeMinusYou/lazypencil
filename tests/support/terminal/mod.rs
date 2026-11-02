@@ -133,6 +133,7 @@ impl Harness {
             "kitty-no-color",
             "herdr-kitty",
             "herdr-kitty-no-color",
+            "herdr-kitty-held",
             "auto-kitty-raw",
         ]
         .contains(&case)
@@ -155,6 +156,10 @@ impl Harness {
             ws_xpixel: 0,
             ws_ypixel: 0,
         };
+        if case == "herdr-kitty-held" {
+            size.ws_xpixel = size.ws_col * 5;
+            size.ws_ypixel = size.ws_row * 10;
+        }
         if unsafe {
             libc::openpty(
                 &mut master,
