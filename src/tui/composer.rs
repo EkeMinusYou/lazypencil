@@ -125,30 +125,37 @@ impl App {
         } else {
             self.conversation.images().len()
         };
-        let prompt_rows = self.editor.lines().len().clamp(1, 3) as u16;
+        let attachment_rows = if count == 0 {
+            0
+        } else {
+            count.min(if self.outbox.references.is_empty() {
+                3
+            } else {
+                1
+            }) as u16
+                + 1
+        };
+        let reference_rows = if self.outbox.references.is_empty() {
+            0
+        } else {
+            self.outbox
+                .references
+                .len()
+                .min(if count == 0 { 3 } else { 1 }) as u16
+                + 1
+        };
+        let queue_rows = u16::from(!self.outbox.queued.is_empty());
+        let prompt_space = inner
+            .height
+            .saturating_sub(attachment_rows + reference_rows + queue_rows + 1);
+        let prompt_height =
+            (self.editor.lines().len().clamp(3, 6) as u16 + 2).min(prompt_space.max(3));
         let sections = Layout::vertical([
             Constraint::Min(1),
-            Constraint::Length(if count == 0 {
-                0
-            } else {
-                count.min(if self.outbox.references.is_empty() {
-                    3
-                } else {
-                    1
-                }) as u16
-                    + 1
-            }),
-            Constraint::Length(u16::from(!self.outbox.queued.is_empty())),
-            Constraint::Length(if self.outbox.references.is_empty() {
-                0
-            } else {
-                self.outbox
-                    .references
-                    .len()
-                    .min(if count == 0 { 3 } else { 1 }) as u16
-                    + 1
-            }),
-            Constraint::Length(prompt_rows + 2),
+            Constraint::Length(attachment_rows),
+            Constraint::Length(queue_rows),
+            Constraint::Length(reference_rows),
+            Constraint::Length(prompt_height),
         ])
         .split(inner);
         let logarea = sections[0].inner(Margin {
@@ -301,23 +308,11 @@ impl App {
                 top: 0,
                 bottom: 1,
             });
-        if self.focus == Focus::Prompt {
-            let submit = self.keys.submit_label();
-            let submit = submit.split(" / ").next().unwrap_or("");
+        if self.focus == Focus::Prompt && (count > 0 || !self.outbox.references.is_empty()) {
             let previous = self.navigation.label(Nav::PreviousSection);
             let previous = previous.split(" / ").next().unwrap_or("");
-            let send = if self.conversation.active() {
-                "queue"
-            } else {
-                "send"
-            };
-            let hint = if (count > 0 || !self.outbox.references.is_empty()) && !previous.is_empty()
-            {
-                format!(" {previous} context · {submit} {send} ")
-            } else {
-                format!(" {submit} {send} ")
-            };
-            if Span::raw(&hint).width() + 12 <= usize::from(prompt.width) {
+            let hint = format!(" {previous} context ");
+            if !previous.is_empty() && Span::raw(&hint).width() + 12 <= usize::from(prompt.width) {
                 input_block = input_block.title_top(
                     Line::styled(hint, Style::default().fg(theme::SECONDARY)).right_aligned(),
                 );

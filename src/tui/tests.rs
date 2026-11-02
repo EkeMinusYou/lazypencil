@@ -279,9 +279,9 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
                 app.draw(frame);
             })
             .unwrap();
-        assert_eq!(terminal.backend().cursor_position(), Position::new(74, 31));
-        assert_eq!(terminal.backend().buffer()[(74, 31)].symbol(), "D");
-        assert_eq!(terminal.backend().buffer()[(75, 31)].symbol(), "e");
+        assert_eq!(terminal.backend().cursor_position(), Position::new(74, 29));
+        assert_eq!(terminal.backend().buffer()[(74, 29)].symbol(), "D");
+        assert_eq!(terminal.backend().buffer()[(75, 29)].symbol(), "e");
         app.focus = Focus::Nodes;
         terminal
             .draw(|frame| {
@@ -289,16 +289,16 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
             })
             .unwrap();
         assert!(!terminal.backend().cursor_visible());
-        assert_eq!(terminal.backend().buffer()[(74, 31)].symbol(), "D");
+        assert_eq!(terminal.backend().buffer()[(74, 29)].symbol(), "D");
         app.focus = Focus::Prompt;
         for (text, expected) in [
-            ("ちょっと".to_owned(), Position::new(82, 31)),
-            ("か\u{3099} 😀".to_owned(), Position::new(79, 31)),
-            ("か\u{3099} 👩‍💻".to_owned(), Position::new(79, 31)),
-            ("🇯🇵".to_owned(), Position::new(76, 31)),
-            ("👨‍👩‍👧‍👦".to_owned(), Position::new(76, 31)),
-            ("日\tA".to_owned(), Position::new(79, 31)),
-            ("日".repeat(80), Position::new(97, 31)),
+            ("ちょっと".to_owned(), Position::new(82, 29)),
+            ("か\u{3099} 😀".to_owned(), Position::new(79, 29)),
+            ("か\u{3099} 👩‍💻".to_owned(), Position::new(79, 29)),
+            ("🇯🇵".to_owned(), Position::new(76, 29)),
+            ("👨‍👩‍👧‍👦".to_owned(), Position::new(76, 29)),
+            ("日\tA".to_owned(), Position::new(79, 29)),
+            ("日".repeat(80), Position::new(97, 29)),
             ("一\n二\n三\n四\n五".to_owned(), Position::new(76, 31)),
         ] {
             app.editor = editor(&text);
@@ -335,9 +335,9 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
                 app.draw(frame);
             })
             .unwrap();
-        assert_eq!(terminal.backend().cursor_position(), Position::new(76, 31));
-        assert_eq!(terminal.backend().buffer()[(74, 31)].bg, Color::LightBlue);
-        assert_eq!(terminal.backend().buffer()[(75, 31)].bg, Color::LightBlue);
+        assert_eq!(terminal.backend().cursor_position(), Position::new(76, 29));
+        assert_eq!(terminal.backend().buffer()[(74, 29)].bg, Color::LightBlue);
+        assert_eq!(terminal.backend().buffer()[(75, 29)].bg, Color::LightBlue);
         assert!(
             terminal
                 .backend()
@@ -360,7 +360,7 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
                 app.draw(frame);
             })
             .unwrap();
-        assert_eq!(terminal.backend().cursor_position(), Position::new(47, 11));
+        assert_eq!(terminal.backend().cursor_position(), Position::new(47, 9));
         let draft = app.editor.lines().join("\n");
         app.help = true;
         terminal
