@@ -31,6 +31,7 @@ mod generated_refs;
 #[cfg(feature = "rendering")]
 pub(crate) use failed_code::FailedCodeCapture;
 mod browser_context;
+mod copy;
 mod import;
 mod missing;
 mod override_context;

@@ -415,6 +415,15 @@ fn apply_impl(
                 let raw = edited.raw(&edited.location(&source)?.pointer)?;
                 let mut template = edited.node(&source)?.clone();
                 let mapping = allocate_ids(&mut template)?;
+                if Project::has_copied_script_inputs(&template) {
+                    let mut project = project_for(&edited, &context)?;
+                    project.remap_copied_script_inputs(
+                        edited.node(&source)?,
+                        &mut template,
+                        &mapping,
+                    )?;
+                    context.record_source(project)?;
+                }
                 remap_references(&mut template, &mapping);
                 let id = template["id"].as_str().expect("allocated ID").to_string();
                 let mut copy =
