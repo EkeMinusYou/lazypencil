@@ -144,6 +144,7 @@ pub struct KittyFrames {
     pub pending: Vec<u8>,
     pub payload: Vec<u8>,
     pub camera_frames: usize,
+    pub camera_placement_updates: usize,
     pub last_camera: Option<Frame>,
     dimensions: Option<(usize, usize)>,
     compressed: bool,
@@ -211,6 +212,16 @@ impl KittyFrames {
                         .ok_or("Missing deleted Kitty resource ID")?
                         .parse()?,
                 );
+            }
+            if action == Some("p") && fields.get("p") == Some(&"2") {
+                let id: u32 = fields
+                    .get("i")
+                    .ok_or("Missing camera placement image ID")?
+                    .parse()?;
+                if !self.transmitted_resources.contains(&id) {
+                    return Err("Camera placement references an untransmitted image".into());
+                }
+                self.camera_placement_updates += 1;
             }
             if matches!(action, Some("T" | "t")) {
                 if self.dimensions.is_some() {

@@ -61,6 +61,15 @@ impl Widget for Image<'_> {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct NativePlacement {
+    family: usize,
+    image_id: u32,
+    placement_id: u32,
+    area: Rect,
+    source: Option<[u32; 4]>,
+}
+
 /// Present new Kitty frames in an inactive slot before replacing their cells.
 #[derive(Default)]
 pub(super) struct Presentation {
@@ -68,14 +77,58 @@ pub(super) struct Presentation {
     visible: Option<u32>,
     rectangular: bool,
     pending: [Option<String>; 2],
-    desired: Option<(usize, u32, Rect)>,
-    shown: Option<(u32, Rect)>,
+    desired: Option<NativePlacement>,
+    shown: Option<NativePlacement>,
+    source_sizes: [Option<[u32; 2]>; 2],
     replay: bool,
+    serial: u64,
 }
 
 impl Presentation {
+    pub(super) fn serial(&self) -> u64 {
+        self.serial
+    }
+
     pub(super) fn rectangular(&mut self, enabled: bool) {
         self.rectangular = enabled;
+    }
+
+    pub(super) fn source_size(&self) -> Option<[u32; 2]> {
+        (self.rectangular && self.slots[0].is_some() && self.pending[0].is_none())
+            .then(|| self.source_sizes[0])
+            .flatten()
+    }
+
+    pub(super) fn project(
+        &mut self,
+        buffer: &mut Buffer,
+        area: Rect,
+        projection: super::camera::Projection,
+    ) {
+        for position in area.positions() {
+            if let Some(cell) = buffer.cell_mut(position) {
+                cell.reset();
+                cell.set_bg(ratatui::style::Color::Rgb(248, 250, 252));
+            }
+        }
+        let Some((_, image_id)) = self.slots[0] else {
+            return;
+        };
+        if !projection.area.is_empty() {
+            let target = projection.area;
+            self.desired = Some(NativePlacement {
+                family: 0,
+                image_id,
+                placement_id: 2,
+                area: Rect::new(
+                    area.x + target.x,
+                    area.y + target.y,
+                    target.width,
+                    target.height,
+                ),
+                source: Some(projection.source),
+            });
+        }
     }
 
     pub(super) fn begin(&mut self) {
@@ -140,6 +193,14 @@ impl Presentation {
                     if let Some((before, packet)) = upload.split_once("\x1b_G")
                         && let Some((control, payload)) = packet.split_once(';')
                     {
+                        let dimension = |name: &str| {
+                            control
+                                .split(',')
+                                .find_map(|field| field.strip_prefix(name)?.parse::<u32>().ok())
+                        };
+                        self.source_sizes[family] = dimension("s=")
+                            .zip(dimension("v="))
+                            .map(|(width, height)| [width, height]);
                         let control = control
                             .split(',')
                             .filter(|field| {
@@ -154,12 +215,19 @@ impl Presentation {
                     }
                 }
             }
-            self.desired = Some((family, target, area));
+            self.desired = Some(NativePlacement {
+                family,
+                image_id: target,
+                placement_id: 1,
+                area,
+                source: None,
+            });
             for position in area.positions() {
                 if let Some(cell) = buffer.cell_mut(position)
                     && cell.symbol().contains(PLACEHOLDER)
                 {
                     cell.reset();
+                    cell.set_bg(ratatui::style::Color::Rgb(248, 250, 252));
                 }
             }
         } else if visible {
@@ -174,33 +242,45 @@ impl Presentation {
         let desired = self.desired.filter(|_| !modal);
         let mut commands = String::new();
         let mut shown = None;
-        if let Some((family, id, area)) = desired {
-            let upload = self.pending[family].take();
-            let replace = self.replay || upload.is_some() || self.shown != Some((id, area));
+        if let Some(placement) = desired {
+            let upload = self.pending[placement.family].take();
+            let replace = self.replay || upload.is_some() || self.shown != Some(placement);
             if let Some(upload) = upload {
                 commands.push_str(&upload);
             }
             if replace {
+                self.serial = self.serial.wrapping_add(1);
                 use std::fmt::Write as _;
+                let area = placement.area;
                 let _ = write!(
                     commands,
-                    "\x1b[{};{}H\x1b_Ga=p,i={id},p=1,c={},r={},C=1,q=2;\x1b\\",
+                    "\x1b[{};{}H\x1b_Ga=p,i={},p={},c={},r={},C=1,q=2",
                     area.y + 1,
                     area.x + 1,
+                    placement.image_id,
+                    placement.placement_id,
                     area.width,
                     area.height
                 );
+                if let Some([x, y, width, height]) = placement.source {
+                    let _ = write!(commands, ",x={x},y={y},w={width},h={height}");
+                }
+                commands.push_str(";\x1b\\");
             }
-            shown = Some((id, area));
-            self.visible = Some(id);
+            shown = Some(placement);
+            self.visible = Some(placement.image_id);
         }
-        if let Some((id, _)) = self.shown
-            && shown.is_none_or(|(next, _)| next != id)
+        if let Some(previous) = self.shown
+            && shown.is_none_or(|next| {
+                (next.image_id, next.placement_id) != (previous.image_id, previous.placement_id)
+            })
         {
             use std::fmt::Write as _;
-            // Delete only the retired placement, keeping its pixels available
-            // for slot reuse and restoration after a modal closes.
-            let _ = write!(commands, "\x1b_Ga=d,d=i,i={id},p=1,q=2;\x1b\\");
+            let _ = write!(
+                commands,
+                "\x1b_Ga=d,d=i,i={},p={},q=2;\x1b\\",
+                previous.image_id, previous.placement_id
+            );
         }
         self.shown = shown;
         self.replay = false;

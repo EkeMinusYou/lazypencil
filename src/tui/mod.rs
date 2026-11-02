@@ -199,6 +199,7 @@ struct App {
     preview: Option<Preview>,
     preview_generation: Option<u64>,
     presentation: graphics::Presentation,
+    input_profile: camera::InputProfile,
     preview_error: Option<Error>,
     nodes_loading: bool,
     pending_preview: Option<controls::Pending>,
@@ -262,6 +263,7 @@ impl App {
             preview: None,
             preview_generation: None,
             presentation: Default::default(),
+            input_profile: Default::default(),
             preview_error: None,
             nodes_loading: true,
             pending_preview: None,
@@ -353,6 +355,8 @@ impl App {
                 screen.draw(|frame| {
                     cells = self.draw(frame);
                 })?;
+                self.input_profile
+                    .presented(self.presentation.serial(), self.camera.is_some());
                 self.dirty = false;
                 if cells != self.cells {
                     self.cells = cells;
@@ -1081,16 +1085,22 @@ impl App {
                 }
                 let zoom = self.view.zoom.unwrap_or(1.0);
                 if action(Nav::PanLeft) {
+                    self.input_profile.input("pan_left", key.kind);
                     self.view.pan([-64.0, 0.0]);
                 } else if action(Nav::PanRight) {
+                    self.input_profile.input("pan_right", key.kind);
                     self.view.pan([64.0, 0.0]);
                 } else if action(Nav::PanUp) {
+                    self.input_profile.input("pan_up", key.kind);
                     self.view.pan([0.0, -64.0]);
                 } else if action(Nav::PanDown) {
+                    self.input_profile.input("pan_down", key.kind);
                     self.view.pan([0.0, 64.0]);
                 } else if action(Nav::ZoomIn) {
+                    self.input_profile.input("zoom_in", key.kind);
                     self.view.zoom = Some((zoom * 1.25).min(16.0));
                 } else if action(Nav::ZoomOut) {
+                    self.input_profile.input("zoom_out", key.kind);
                     self.view.zoom = Some((zoom / 1.25).max(0.01));
                 } else if action(Nav::FitDocument) {
                     self.view.zoom = None;
@@ -1711,8 +1721,16 @@ impl App {
             .as_ref()
             .filter(|camera| camera.generation == self.generation)
         {
-            frame.render_widget(graphics::Image(&camera.protocol), inner);
-            self.presentation.prepare(frame.buffer_mut(), inner, true);
+            match &camera.image {
+                camera::Feedback::Pixels(protocol) => {
+                    frame.render_widget(graphics::Image(protocol), inner);
+                    self.presentation.prepare(frame.buffer_mut(), inner, true);
+                }
+                camera::Feedback::Placement(projection) => {
+                    self.presentation
+                        .project(frame.buffer_mut(), inner, *projection);
+                }
+            }
         } else if let Some(preview) = &self.preview {
             frame.render_widget(graphics::Image(&preview.protocol), inner);
             self.presentation.prepare(frame.buffer_mut(), inner, false);

@@ -745,6 +745,7 @@ fn held_navigation(h: &mut Harness) -> Result {
         for repetition in 0..4 {
             let exact = h.frames.images.last().cloned();
             let camera = h.frames.last_camera.clone();
+            let placements = h.frames.camera_placement_updates;
             if repetition == 0 {
                 h.key(&[letter])?;
             } else {

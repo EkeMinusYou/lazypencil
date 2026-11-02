@@ -4,9 +4,148 @@ use image::{Rgba, RgbaImage};
 
 const EXACT_FRAME_HEAD_START: std::time::Duration = std::time::Duration::from_millis(1);
 
+pub(super) struct InputProfile {
+    enabled: bool,
+    origin: std::time::Instant,
+    input_id: u64,
+    last_input: Option<std::time::Instant>,
+    last_serial: u64,
+}
+
+impl Default for InputProfile {
+    fn default() -> Self {
+        Self {
+            enabled: std::env::var("LAZYPENCIL_PROFILE_INPUT").as_deref()
+                == Ok("owned-local-measurement"),
+            origin: std::time::Instant::now(),
+            input_id: 0,
+            last_input: None,
+            last_serial: 0,
+        }
+    }
+}
+
+impl InputProfile {
+    pub(super) fn input(&mut self, action: &str, kind: crossterm::event::KeyEventKind) {
+        if !self.enabled || self.input_id >= 2048 {
+            return;
+        }
+        self.input_id += 1;
+        self.last_input = Some(std::time::Instant::now());
+        eprintln!(
+            "LAZYPENCIL_INPUT_PROFILE {}",
+            serde_json::json!({
+                "event":"input", "input_id":self.input_id, "action":action,
+                "repeat":kind == crossterm::event::KeyEventKind::Repeat,
+                "app_elapsed_ms":self.origin.elapsed().as_secs_f64()*1000.0,
+            })
+        );
+    }
+
+    pub(super) fn presented(&mut self, serial: u64, cached: bool) {
+        if !self.enabled || serial == self.last_serial || self.input_id >= 2048 {
+            return;
+        }
+        self.last_serial = serial;
+        eprintln!(
+            "LAZYPENCIL_INPUT_PROFILE {}",
+            serde_json::json!({
+                "event":"output", "input_id":self.last_input.map(|_| self.input_id),
+                "placement_serial":serial, "cached":cached,
+                "app_elapsed_ms":self.origin.elapsed().as_secs_f64()*1000.0,
+                "input_to_flush_ms":self.last_input.map(|at| at.elapsed().as_secs_f64()*1000.0),
+            })
+        );
+    }
+}
+
+pub(super) enum Feedback {
+    Pixels(ratatui_image::protocol::Protocol),
+    Placement(Projection),
+}
+
 pub(super) struct Camera {
-    pub protocol: ratatui_image::protocol::Protocol,
+    pub image: Feedback,
     pub generation: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Projection {
+    pub source: [u32; 4],
+    pub area: ratatui::layout::Rect,
+}
+
+fn placement(
+    before: View,
+    after: View,
+    pixels: [u32; 2],
+    source: [u32; 2],
+    cells: ratatui::layout::Size,
+) -> Option<Projection> {
+    if pixels.contains(&0)
+        || source.contains(&0)
+        || cells.width == 0
+        || cells.height == 0
+        || before.time != after.time
+        || !before.time.is_finite()
+        || before.time < 0.0
+        || [before.zoom?, after.zoom?]
+            .iter()
+            .any(|zoom| !zoom.is_finite() || !(0.01..=16.0).contains(zoom))
+    {
+        return None;
+    }
+    let old = before.region(pixels);
+    let new = after.region(pixels);
+    if [
+        old.x, old.y, old.width, old.height, new.x, new.y, new.width, new.height,
+    ]
+    .iter()
+    .any(|value| !value.is_finite())
+    {
+        return None;
+    }
+    let visible = old.intersection(new);
+    if visible.width <= 0.0 || visible.height <= 0.0 {
+        return Some(Projection {
+            source: [0; 4],
+            area: ratatui::layout::Rect::default(),
+        });
+    }
+    let span = |start: f32, end: f32, origin: f32, length: f32, extent: u32| {
+        let first = ((f64::from(start) - f64::from(origin)) / f64::from(length) * f64::from(extent))
+            .floor()
+            .clamp(0.0, f64::from(extent)) as u32;
+        let last = ((f64::from(end) - f64::from(origin)) / f64::from(length) * f64::from(extent))
+            .ceil()
+            .clamp(f64::from(first), f64::from(extent)) as u32;
+        (first, last)
+    };
+    let (sx, ex) = span(visible.x, visible.right(), old.x, old.width, source[0]);
+    let (sy, ey) = span(visible.y, visible.bottom(), old.y, old.height, source[1]);
+    let (left, right) = span(
+        visible.x,
+        visible.right(),
+        new.x,
+        new.width,
+        u32::from(cells.width),
+    );
+    let (top, bottom) = span(
+        visible.y,
+        visible.bottom(),
+        new.y,
+        new.height,
+        u32::from(cells.height),
+    );
+    Some(Projection {
+        source: [sx, sy, ex - sx, ey - sy],
+        area: ratatui::layout::Rect::new(
+            left as u16,
+            top as u16,
+            (right - left) as u16,
+            (bottom - top) as u16,
+        ),
+    })
 }
 
 impl super::App {
@@ -14,6 +153,10 @@ impl super::App {
         &mut self,
         picker: &super::graphics::Backend,
     ) -> crate::Result<()> {
+        if self.presentation.source_size().is_some() {
+            self.camera_deadline = None;
+            return self.render_camera_feedback(picker);
+        }
         if picker.protocol_type() == ratatui_image::picker::ProtocolType::Kitty
             && !self.camera_was_visible
             && self
@@ -54,6 +197,23 @@ impl super::App {
             || !matches!(self.focus, super::Focus::Preview | super::Focus::Nodes)
             || (preview.view.center == self.view.center && preview.view.zoom == self.view.zoom)
         {
+            return Ok(());
+        }
+        if let Some(source) = self.presentation.source_size()
+            && preview.protocol.size() == self.cells
+            && let Some(projection) = placement(
+                preview.view,
+                self.view,
+                super::preview::pixel_size(picker, self.cells)?,
+                source,
+                self.cells,
+            )
+        {
+            self.camera = Some(Camera {
+                image: Feedback::Placement(projection),
+                generation: self.generation,
+            });
+            self.status = "Cached preview · rendering full detail".into();
             return Ok(());
         }
         let decoded = if let super::preview::PreviewImage::Png(png) = &preview.image {
@@ -106,7 +266,7 @@ impl super::App {
             self.camera_id,
         )?;
         self.camera = Some(Camera {
-            protocol,
+            image: Feedback::Pixels(protocol),
             generation: self.generation,
         });
         self.status = "Cached preview · rendering full detail".into();
@@ -266,6 +426,68 @@ mod tests {
                 project_region(&borrowed, before, after, [120, 80]),
                 project(&cropped, before, after)
             );
+        }
+    }
+
+    #[test]
+    fn native_projection_crops_and_scales_the_existing_texture_inside_the_viewport() {
+        use ratatui::layout::{Rect, Size};
+        let before = View {
+            zoom: Some(1.0),
+            ..Default::default()
+        };
+        let cells = Size::new(80, 30);
+        let projected = |view| placement(before, view, [800, 600], [800, 600], cells).unwrap();
+        let mut view = before;
+        view.pan([64.0, 0.0]);
+        assert_eq!(
+            projected(view),
+            Projection {
+                source: [64, 0, 736, 600],
+                area: Rect::new(0, 0, 74, 30)
+            }
+        );
+        view = before;
+        view.pan([-64.0, 0.0]);
+        assert_eq!(
+            projected(view),
+            Projection {
+                source: [0, 0, 736, 600],
+                area: Rect::new(6, 0, 74, 30)
+            }
+        );
+        view = before;
+        view.zoom = Some(1.25);
+        assert_eq!(
+            projected(view),
+            Projection {
+                source: [80, 60, 640, 480],
+                area: Rect::new(0, 0, 80, 30)
+            }
+        );
+        view.zoom = Some(0.8);
+        assert_eq!(
+            projected(view),
+            Projection {
+                source: [0, 0, 800, 600],
+                area: Rect::new(8, 3, 64, 24)
+            }
+        );
+        view = before;
+        view.pan([8000.0, -6000.0]);
+        assert!(projected(view).area.is_empty());
+        for delta in [[64.0, 0.0], [-64.0, 0.0], [0.0, 64.0], [0.0, -64.0]] {
+            view = before;
+            for _ in 0..16 {
+                view.pan(delta);
+                let projection = projected(view);
+                assert!(
+                    projection.area.right() <= cells.width
+                        && projection.area.bottom() <= cells.height
+                );
+                assert!(projection.source[0] + projection.source[2] <= 800);
+                assert!(projection.source[1] + projection.source[3] <= 600);
+            }
         }
     }
 
