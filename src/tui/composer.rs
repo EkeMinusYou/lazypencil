@@ -295,7 +295,7 @@ impl App {
             .bg(theme::PROMPT_BACKGROUND);
         frame.render_widget(Block::default().style(input_style), prompt);
         self.editor.set_style(input_style);
-        let mut input_block = Block::default()
+        let input_block = Block::default()
             .borders(Borders::TOP)
             .border_style(Style::default().fg(if self.focus == Focus::Prompt {
                 theme::FOCUS
@@ -314,16 +314,6 @@ impl App {
                 top: 0,
                 bottom: 1,
             });
-        if self.focus == Focus::Prompt && (count > 0 || !self.outbox.references.is_empty()) {
-            let previous = self.navigation.label(Nav::PreviousSection);
-            let previous = previous.split(" / ").next().unwrap_or("");
-            let hint = format!(" {previous} context ");
-            if !previous.is_empty() && Span::raw(&hint).width() + 12 <= usize::from(prompt.width) {
-                input_block = input_block.title_top(
-                    Line::styled(hint, Style::default().fg(theme::SECONDARY)).right_aligned(),
-                );
-            }
-        }
         self.editor.set_block(input_block);
         let input = self.editor.block().unwrap().inner(prompt);
         let placeholder = if self.conversation.active() {
