@@ -58,6 +58,7 @@ pub struct Conversation {
     host: Option<AgentHost>,
     grant: Option<AttachmentGrant>,
     usage: Option<crate::guidance::usage::UsageGrant>,
+    preview_control: Option<crate::preview_control::Client>,
     ready: bool,
     transcript: Option<Transcript>,
     active: Option<ActiveTurn>,
@@ -124,6 +125,7 @@ impl Conversation {
             host: None,
             grant: None,
             usage: None,
+            preview_control: None,
             ready: false,
             transcript: None,
             active: None,
@@ -137,6 +139,10 @@ impl Conversation {
             conversation.set_draft(conversation.args.prompt.clone())?;
         }
         Ok(conversation)
+    }
+    #[cfg(feature = "tui")]
+    pub(crate) fn set_preview_control(&mut self, client: crate::preview_control::Client) {
+        self.preview_control = Some(client);
     }
     pub fn store(&self) -> &Store {
         &self.store
@@ -431,6 +437,11 @@ impl Conversation {
                 .map(|style| format!("\n\nSelected style:\n{style}"))
                 .unwrap_or_default()
         )))];
+        if self.preview_control.is_some() {
+            content.push(ContentBlock::Text(TextContent::new(
+                crate::preview_control::INSTRUCTIONS,
+            )));
+        }
         if !self.draft().is_empty() {
             content.push(ContentBlock::Text(TextContent::new(self.draft())));
         }
@@ -550,6 +561,12 @@ impl Conversation {
             "--guidance-audit-manifest".into(),
             utf8(self.usage.as_ref().expect("connection usage grant").path())?,
         ];
+        if let Some(client) = &self.preview_control {
+            args.extend([
+                "--preview-control".into(),
+                client.for_conversation(self.id()).encode()?,
+            ]);
+        }
         for font in &self.args.fonts {
             args.extend(["--font".into(), utf8(font)?]);
         }

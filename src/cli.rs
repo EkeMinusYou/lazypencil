@@ -72,6 +72,8 @@ pub enum Command {
         attachments_manifest: Option<PathBuf>,
         #[arg(long, hide = true)]
         guidance_audit_manifest: Option<PathBuf>,
+        #[arg(long, hide = true)]
+        preview_control: Option<String>,
     },
     /// Read a bundled or trusted project guide (defaults to the workflow guide).
     Guidance {
