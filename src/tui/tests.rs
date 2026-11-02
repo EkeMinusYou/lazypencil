@@ -1356,7 +1356,7 @@ fn tool_updates_keep_names_and_share_a_separate_block_from_prose() {
 }
 
 #[test]
-fn activity_indicator_follows_the_latest_output_and_scrolls_with_history() {
+fn activity_indicator_stays_at_the_bottom_when_history_scrolls() {
     fn row(
         terminal: &ratatui::Terminal<ratatui::backend::TestBackend>,
         needle: &str,
@@ -1392,13 +1392,12 @@ fn activity_indicator_follows_the_latest_output_and_scrolls_with_history() {
         let response = row(&terminal, "Checking the document now.").unwrap();
         let activity = row(&terminal, "Working…").unwrap();
         assert_eq!(
-            activity,
-            response + 2,
-            "The indicator follows the last response with one blank line"
+            activity, 33,
+            "The indicator stays on the Agent panel's bottom border"
         );
         assert!(
-            activity < 12,
-            "Short conversations must not pin the indicator to the input"
+            activity > response,
+            "Short conversations keep the indicator near the input"
         );
         for number in 0..45 {
             app.append(&format!("\nOutput line {number:02}\n"));
@@ -1408,10 +1407,7 @@ fn activity_indicator_follows_the_latest_output_and_scrolls_with_history() {
                 app.draw(frame);
             })
             .unwrap();
-        assert_eq!(
-            row(&terminal, "Working…").unwrap(),
-            row(&terminal, "Output line 44").unwrap() + 2
-        );
+        assert_eq!(row(&terminal, "Working…").unwrap(), activity);
         app.scroll = 5;
         terminal
             .draw(|frame| {
@@ -1419,17 +1415,19 @@ fn activity_indicator_follows_the_latest_output_and_scrolls_with_history() {
             })
             .unwrap();
         assert!(
-            row(&terminal, "Working…").is_none(),
-            "The indicator scrolls away with the latest output"
+            row(&terminal, "Working…") == Some(activity),
+            "Scrolling history must not hide the work indicator"
         );
         app.scroll = 0;
-        terminal.backend_mut().resize(100, 24);
-        terminal
-            .draw(|frame| {
-                app.draw(frame);
-            })
-            .unwrap();
-        assert!(row(&terminal, "Working…").is_some());
+        for (width, height, status_row) in [(100, 24, 21), (50, 16, 13)] {
+            terminal.backend_mut().resize(width, height);
+            terminal
+                .draw(|frame| {
+                    app.draw(frame);
+                })
+                .unwrap();
+            assert_eq!(row(&terminal, "Working…"), Some(status_row));
+        }
         complete(&mut app).await;
         app.sync_turn(&worker);
         terminal
@@ -1438,6 +1436,7 @@ fn activity_indicator_follows_the_latest_output_and_scrolls_with_history() {
             })
             .unwrap();
         assert!(row(&terminal, "Working…").is_none());
+        assert_eq!(row(&terminal, "Idle"), Some(13));
         app.conversation.close().await.unwrap();
     });
 }

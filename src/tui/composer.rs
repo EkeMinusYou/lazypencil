@@ -93,7 +93,7 @@ impl App {
                 theme::WORKING,
             )
         } else {
-            ("!", "Waiting for approval", theme::RUNNING)
+            ("!", "Blocked", theme::RUNNING)
         };
         Some(Line::from(vec![
             Span::styled(format!("{icon} {label}"), Style::default().fg(color)),
@@ -105,19 +105,17 @@ impl App {
     }
 
     pub(super) fn draw_conversation(&mut self, frame: &mut Frame, area: Rect) {
-        let activity = self.agent_activity();
+        let mut activity = self
+            .activity_line(Instant::now())
+            .unwrap_or_else(|| Line::from(self.agent_activity()));
+        activity.spans.insert(0, Span::raw(" "));
+        activity.spans.push(Span::raw(" "));
         let block = panel(
             theme::title("◉", "Agent", theme::AGENT, self.focus.in_conversation()),
             self.focus.in_conversation(),
         )
-        .border_set(border::ROUNDED);
-        let block = if area.width >= 32 {
-            block.title_top(
-                Line::from(vec![Span::raw(" "), activity, Span::raw(" ")]).right_aligned(),
-            )
-        } else {
-            block
-        };
+        .border_set(border::ROUNDED)
+        .title_bottom(activity.right_aligned());
         let inner = block.inner(area);
         frame.render_widget(block, area);
         let count = if self.conversation.active() {
@@ -178,14 +176,7 @@ impl App {
         let lines = paragraph.as_ref().map_or(0, |paragraph| {
             paragraph.line_count(text_area.width).min(u16::MAX as usize) as u16
         });
-        let activity = self.activity_line(Instant::now());
-        let activity_row = lines.saturating_add(u16::from(lines > 0));
-        let total = if activity.is_some() {
-            activity_row.saturating_add(1)
-        } else {
-            lines
-        };
-        let scroll = total
+        let scroll = lines
             .saturating_sub(logarea.height)
             .saturating_sub(self.scroll);
         if let Some(paragraph) = paragraph {
@@ -193,15 +184,6 @@ impl App {
             frame.render_widget(&paragraph, text_area);
             fill_user_backgrounds(frame.buffer_mut(), logarea);
             self.history = Some(paragraph);
-        }
-        if let Some(activity) = activity
-            && let Some(row) = activity_row.checked_sub(scroll)
-            && row < text_area.height
-        {
-            frame.render_widget(
-                Paragraph::new(activity),
-                Rect::new(text_area.x, text_area.y + row, text_area.width, 1),
-            );
         }
         if count > 0 {
             let attachments = self
