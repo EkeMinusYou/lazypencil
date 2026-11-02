@@ -146,15 +146,19 @@ impl App {
         let activity = self.activity_line(Instant::now());
         let activity_rows = u16::from(activity.is_some()) * 2;
         let context_rows = attachment_rows + reference_rows + queue_rows;
-        let context_gap =
-            u16::from(context_rows > 0 && inner.height > context_rows + activity_rows + 4);
+        let gap_space = inner
+            .height
+            .saturating_sub(context_rows + activity_rows + 4);
+        let history_gap = u16::from(!self.log.is_empty() && gap_space > 0);
+        let context_gap = u16::from(context_rows > 0 && gap_space > history_gap);
         let prompt_space = inner
             .height
-            .saturating_sub(context_rows + activity_rows + context_gap + 1);
+            .saturating_sub(context_rows + activity_rows + history_gap + context_gap + 1);
         let prompt_height =
             (self.editor.lines().len().clamp(3, 6) as u16 + 2).min(prompt_space.max(3));
         let sections = Layout::vertical([
             Constraint::Min(1),
+            Constraint::Length(history_gap),
             Constraint::Length(activity_rows),
             Constraint::Length(attachment_rows),
             Constraint::Length(queue_rows),
@@ -234,7 +238,7 @@ impl App {
                         "▧",
                         count,
                         self.focus == Focus::Attachments,
-                        sections[2].width,
+                        sections[3].width,
                     ))
                     .highlight_symbol(if self.focus == Focus::Attachments {
                         "› "
@@ -247,7 +251,7 @@ impl App {
                     } else {
                         Style::default()
                     }),
-                sections[2],
+                sections[3],
                 &mut self.attachments,
             );
         }
@@ -267,25 +271,25 @@ impl App {
                         Style::default().fg(theme::SECONDARY),
                     ),
                 ])),
-                sections[3].inner(Margin {
+                sections[4].inner(Margin {
                     horizontal: 2,
                     vertical: 0,
                 }),
             );
         }
         if !self.outbox.references.is_empty() {
-            self.draw_references(frame, sections[4]);
+            self.draw_references(frame, sections[5]);
         }
         if let Some(activity) = activity {
             frame.render_widget(
                 Paragraph::new(activity),
-                sections[1].inner(Margin {
+                sections[2].inner(Margin {
                     horizontal: 1,
                     vertical: 0,
                 }),
             );
         }
-        let prompt = sections[6];
+        let prompt = sections[7];
         let input_style = Style::default()
             .fg(if self.focus == Focus::Prompt {
                 Color::White
