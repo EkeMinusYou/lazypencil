@@ -7,6 +7,7 @@ mod composer;
 mod controls;
 mod diagnostics;
 mod events;
+mod footer;
 mod graphics;
 mod images;
 mod markdown;
@@ -237,6 +238,8 @@ struct App {
     history: Option<Paragraph<'static>>,
     scroll: u16,
     status: String,
+    status_deadline: Option<Instant>,
+    status_kind: footer::StatusKind,
     authentication: String,
     account_check: Option<account::Check>,
     account_pending: bool,
@@ -265,7 +268,6 @@ struct App {
 impl App {
     fn new(conversation: Conversation) -> Self {
         let editor = editor(conversation.draft());
-        let status = format!("Session {}", conversation.id());
         let mut app = Self {
             conversation,
             keys: Default::default(),
@@ -306,7 +308,9 @@ impl App {
             turn_sequence: 0,
             history: None,
             scroll: 0,
-            status,
+            status: String::new(),
+            status_deadline: None,
+            status_kind: footer::StatusKind::Info,
             authentication: "checking".into(),
             account_check: None,
             account_pending: true,
@@ -533,6 +537,7 @@ impl App {
                     self.dirty = true;
                 },
                 _ = timer.tick() => {
+                    self.expire_status(Instant::now());
                     if self.draft_changed && self.last_draft_save.elapsed() >= Duration::from_secs(1) { self.save_draft()?; }
                     self.request(worker, true, false);
                 },
@@ -654,6 +659,12 @@ impl App {
                     .map(|node| node.id.clone())
                     .or_else(|| self.pending_node_selection.clone());
                 let diagnostic = self.selected_diagnostic().cloned();
+                if self.status_kind == footer::StatusKind::PreviewError
+                    || self.status == "finishing requested frame"
+                        && preview.view.time == self.view.time
+                {
+                    self.clear_status();
+                }
                 self.preview_error = None;
                 if !preview.attachment {
                     self.view = preview.view;
@@ -661,11 +672,9 @@ impl App {
                         self.playback.stop();
                     }
                 }
-                self.status = if preview.attachment {
-                    "Attachment preview".into()
-                } else {
-                    String::new()
-                };
+                if preview.attachment && self.status.is_empty() {
+                    self.set_status("Attachment preview".into());
+                }
                 // Preserve the document node list while browsing an attachment.
                 if preview.attachment
                     && let Some(previous) = &mut self.preview
@@ -705,6 +714,7 @@ impl App {
                 self.preview_error = Some(error.clone());
                 self.nodes_loading = false;
                 self.error(error);
+                self.status_kind = footer::StatusKind::PreviewError;
             }
         }
         self.dirty = true;
@@ -720,20 +730,22 @@ impl App {
             ));
         }
         self.playback.start(self.view.time, fps, now)?;
-        self.status.clear();
+        self.clear_status();
         Ok(())
     }
     fn pause_playback(&mut self) {
         self.playback.stop();
-        self.status = if self
-            .preview
-            .as_ref()
-            .is_some_and(|preview| !preview.attachment && preview.view.time != self.view.time)
-        {
-            "finishing requested frame".into()
-        } else {
-            String::new()
-        };
+        self.set_status(
+            if self
+                .preview
+                .as_ref()
+                .is_some_and(|preview| !preview.attachment && preview.view.time != self.view.time)
+            {
+                "finishing requested frame".into()
+            } else {
+                String::new()
+            },
+        );
     }
     fn playback_tick(&mut self, worker: &Worker, now: Instant) -> Result<()> {
         let Some(time) = self.playback.frame(now) else {
@@ -818,21 +830,22 @@ impl App {
             self.request(worker, false, false);
         }
     }
-    fn insert_text(&mut self, text: &str) {
+    fn insert_text(&mut self, text: &str) -> bool {
         let text = clean(text);
         if self.editor.lines().iter().map(String::len).sum::<usize>()
             + self.editor.lines().len()
             + text.len()
             > 1024 * 1024
         {
-            self.status = "Prompt exceeds 1 MiB".into();
-            return;
+            self.set_error_status("Prompt exceeds 1 MiB".into());
+            return false;
         }
         self.editor.insert_str(text);
         self.draft_changed = true;
+        true
     }
     fn error(&mut self, error: Error) {
-        self.status = clean(&error.to_string());
+        self.set_error_status(clean(&error.to_string()));
         self.append(&format!("\n{}\n", error));
     }
     fn append(&mut self, text: &str) {
@@ -904,18 +917,20 @@ impl App {
                             .unwrap_or("not reported")
                             .into()
                     });
-                self.status = format!(
+                self.set_status(format!(
                     "Authentication: {}",
                     value["authentication"]["source"]
                         .as_str()
                         .unwrap_or("unknown")
-                );
+                ));
             }
             Some("ready") => {
                 if let Some(report) = self.conversation.authentication() {
                     self.authentication = report.display();
                 }
-                self.status.clear();
+                if self.status_kind == footer::StatusKind::Info {
+                    self.clear_status();
+                }
             }
             Some("session_restarted") => {
                 self.append("\nStarted a new native session with current document context and bounded local history. Previous model memory was not restored.\n");
@@ -930,7 +945,7 @@ impl App {
                         .as_str()
                         .unwrap_or("Unknown error")
                 ));
-                self.status = "Request failed; draft and attachments retained".into();
+                self.set_error_status("Request failed; draft and attachments retained".into());
             }
             Some("complete") => {
                 self.append("\nRequest complete\n");
@@ -959,17 +974,21 @@ impl App {
                 if self.conversation.active() {
                     self.conversation.cancel();
                     self.permissions.clear();
-                    self.status = "Cancelling saved-log read and active request…".into();
+                    self.set_attention_status(
+                        "Cancelling saved-log read and active request…".into(),
+                    );
                 } else {
-                    self.status = "Cancelling document operation…".into();
+                    self.set_attention_status("Cancelling document operation…".into());
                 }
             } else if let Some(input) = self.input.take() {
                 input.cancel.cancel();
-                self.status = "Image input cancelled".into();
+                self.set_status("Image input cancelled".into());
             } else if self.conversation.active() {
                 self.conversation.cancel();
                 self.permissions.clear();
-                self.status = "Cancelling request; committed edits are retained".into();
+                self.set_attention_status(
+                    "Cancelling request; committed edits are retained".into(),
+                );
             } else if self.playback.active() {
                 self.pause_playback();
             } else {
@@ -1489,7 +1508,7 @@ impl App {
         self.saved_return = None;
         self.restore_return = None;
         if !changed {
-            self.status = "This local conversation is already selected".into();
+            self.set_status("This local conversation is already selected".into());
             return Ok(());
         }
         self.editor = editor(self.conversation.draft());
@@ -1510,10 +1529,10 @@ impl App {
         self.log.clear();
         self.tool_calls.clear();
         self.scroll = 0;
-        self.status = format!(
+        self.set_status(format!(
             "Selected conversation {} · sends only on submit",
             self.conversation.id()
-        );
+        ));
         self.append("\nSelected saved local state. Open saved logs to read earlier turns. Native context resumes on the next submitted request.\n");
         self.request(worker, false, false);
         Ok(())
@@ -1553,7 +1572,7 @@ impl App {
             self.outbox.draft = Some(self.editor.lines().join("\n"));
             self.outbox.save(self.conversation.directory())?;
             self.draft_changed = false;
-            self.status.clear();
+            self.clear_status();
             return self.send_queued().await;
         }
         self.save_draft()?;
@@ -1584,7 +1603,7 @@ impl App {
             self.conversation.settings().agent,
         ));
         self.scroll = 0;
-        self.status.clear();
+        self.clear_status();
         self.editor = editor("");
         self.outbox.draft = Some(String::new());
         self.outbox.save(self.conversation.directory())?;
@@ -1598,7 +1617,7 @@ impl App {
             Some("/clear-queue") if words.len() == 1 => {
                 self.outbox.queued.clear();
                 self.outbox.paused = false;
-                self.status = "Prompt queue cleared".into();
+                self.set_status("Prompt queue cleared".into());
             }
             Some("/resume-queue") if words.len() == 1 => {
                 self.outbox.paused = false;
@@ -1740,7 +1759,7 @@ impl App {
         std::thread::spawn(move || {
             let _ = child.wait();
         });
-        self.status = format!("Opened {}", path.display());
+        self.set_status(format!("Opened {}", path.display()));
         Ok(())
     }
     fn agent_activity(&self) -> Span<'static> {
@@ -1783,6 +1802,7 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut Frame) -> Size {
+        self.expire_status(Instant::now());
         self.presentation.begin();
         let area = frame.area();
         if area.width < 50 || area.height < 16 {
@@ -1798,7 +1818,7 @@ impl App {
         let sections = Layout::vertical([
             Constraint::Length(1),
             Constraint::Min(4),
-            Constraint::Length(2),
+            Constraint::Length(self.footer_height()),
         ])
         .split(area);
         frame.render_widget(
@@ -1914,82 +1934,7 @@ impl App {
         if !self.agent_collapsed {
             self.draw_conversation(frame, panes[2]);
         }
-        let key = |label: String| {
-            Span::styled(
-                label,
-                Style::default().fg(theme::KEY).add_modifier(Modifier::BOLD),
-            )
-        };
-        let description = |label| Span::styled(label, Style::default().fg(theme::SECONDARY));
-        frame.render_widget(
-            Paragraph::new(Text::from(vec![
-                Line::from(self.status.clone()),
-                Line::from(vec![
-                    key(self.navigation.label(Nav::ToggleNodesPanel)),
-                    description(if self.nodes_collapsed {
-                        " show Nodes · "
-                    } else {
-                        " hide Nodes · "
-                    }),
-                    key(self.navigation.label(Nav::ToggleAgentPanel)),
-                    description(if self.agent_collapsed {
-                        " show Agent · "
-                    } else {
-                        " hide Agent · "
-                    }),
-                    key(if self.focus == Focus::Nodes && self.diagnostics.active {
-                        self.navigation.label(Nav::DiagnosticScope)
-                    } else {
-                        String::new()
-                    }),
-                    description(if self.focus == Focus::Nodes && self.diagnostics.active {
-                        if self.diagnostics.selected_only {
-                            " all nodes · "
-                        } else {
-                            " selected branch · "
-                        }
-                    } else {
-                        ""
-                    }),
-                    key(if self.focus == Focus::Nodes {
-                        self.navigation.label(Nav::ReferenceNode)
-                    } else {
-                        String::new()
-                    }),
-                    description(if self.focus == Focus::Nodes {
-                        " reference · "
-                    } else {
-                        ""
-                    }),
-                    key(if self.focus == Focus::Nodes {
-                        self.navigation.label(Nav::ToggleDiagnostics)
-                    } else {
-                        String::new()
-                    }),
-                    description(if self.focus == Focus::Nodes {
-                        " Nodes/Diagnostics · "
-                    } else {
-                        ""
-                    }),
-                    key(format!(
-                        "{} / {}",
-                        self.navigation.label(Nav::NextPanel),
-                        self.navigation.label(Nav::PreviousPanel)
-                    )),
-                    description(" panels · "),
-                    key(self.navigation.label(Nav::Commands)),
-                    description(" commands · "),
-                    key(self.navigation.label(Nav::Help)),
-                    description(" help · "),
-                    key(self.navigation.label(Nav::Quit)),
-                    description(" exits outside prompt · "),
-                    key("Ctrl+C".into()),
-                    description(" cancels/exits"),
-                ]),
-            ]))
-            .wrap(Wrap { trim: false }),
-            sections[2],
-        );
+        self.draw_footer(frame, sections[2]);
         if self.help {
             let popup = centered(area, 100, 26);
             frame.render_widget(Clear, popup);

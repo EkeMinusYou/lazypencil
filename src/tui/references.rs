@@ -70,10 +70,10 @@ impl App {
         self.focus = Focus::Prompt;
         self.draft_changed = true;
         self.save_draft()?;
-        self.status = format!(
+        self.set_status(format!(
             "{} reference added · write a message to send",
             if diagnostic { "Diagnostic" } else { "Node" }
-        );
+        ));
         Ok(())
     }
 

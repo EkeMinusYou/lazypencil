@@ -55,8 +55,10 @@ impl App {
             })
             .title(title);
         if focused {
-            let key = self.navigation.label(Nav::RemoveAttachment);
-            let key = key.split(" / ").next().unwrap_or("");
+            let key = self
+                .navigation
+                .preferred_label(Nav::RemoveAttachment, false)
+                .unwrap_or_default();
             let hint = format!(" {key} remove · Esc input ");
             if !key.is_empty() && Span::raw(&hint).width() <= available {
                 block = block.title_top(
@@ -106,16 +108,21 @@ impl App {
 
     pub(super) fn draw_conversation(&mut self, frame: &mut Frame, area: Rect) {
         let badge = self.agent_activity();
-        let block = panel(
-            theme::title("◉", "Agent", theme::AGENT, self.focus.in_conversation()),
-            self.focus.in_conversation(),
-        )
-        .border_set(border::ROUNDED);
-        let block = if area.width >= 32 {
-            block.title_top(Line::from(vec![Span::raw(" "), badge, Span::raw(" ")]).right_aligned())
-        } else {
-            block
-        };
+        let title = theme::title("◉", "Agent", theme::AGENT, self.focus.in_conversation());
+        let available = usize::from(area.width).saturating_sub(title.width() + 2);
+        let mut block = panel(title, self.focus.in_conversation()).border_set(border::ROUNDED);
+        let mut right = Line::default();
+        if area.width >= 32 {
+            right = Line::from(vec![Span::raw(" "), badge, Span::raw(" ")]);
+        }
+        if let Some(hint) = self.panel_toggle_title(Nav::ToggleAgentPanel)
+            && hint.width() + right.width() <= available
+        {
+            right.spans.extend(hint.spans);
+        }
+        if right.width() <= available {
+            block = block.title_top(right.right_aligned());
+        }
         let inner = block.inner(area);
         frame.render_widget(block, area);
         let count = if self.conversation.active() {

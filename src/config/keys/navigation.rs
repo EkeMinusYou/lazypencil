@@ -146,6 +146,15 @@ impl NavigationKeys {
     }
 
     #[cfg(feature = "tui")]
+    pub(crate) fn preferred_label(
+        &self,
+        action: NavigationAction,
+        while_typing: bool,
+    ) -> Option<String> {
+        super::preferred_label(self.values(action), while_typing)
+    }
+
+    #[cfg(feature = "tui")]
     pub fn matches(&self, action: NavigationAction, event: crossterm::event::KeyEvent) -> bool {
         self.values(action)
             .iter()

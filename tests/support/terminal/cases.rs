@@ -30,7 +30,12 @@ fn no_agent(h: &Harness) {
 }
 fn status(h: &Harness) -> String {
     let text = h.screen.text();
-    text.split('\n').rev().nth(1).unwrap_or_default().to_owned()
+    text.split('\n')
+        .rev()
+        .nth(1)
+        .unwrap_or_default()
+        .trim_start_matches("! ")
+        .to_owned()
 }
 fn snapshot(h: &Harness, name: &str, offsets: &mut serde_json::Map<String, Value>) -> Result {
     offsets.insert(name.into(), h.output.len().into());
@@ -1442,13 +1447,16 @@ fn collapsible_panels(h: &mut Harness) -> Result {
             .is_some_and(|image| image.has_color([255, 0, 0, 255]))
     })?;
     let initial = h.frames.images.last().unwrap().clone();
+    h.visible("Enter send")?;
+    h.visible("Alt+Enter newline")?;
+    h.visible("F1 help")?;
     let draft = "折りたたんでも保持する下書き";
     h.paste(draft)?;
     h.draft(draft)?;
     let mut previous_width = initial.width;
     for (key, hint) in [
-        (b"\x1bn", "F2 / Alt+N show Nodes"),
-        (b"\x1ba", "F3 / Alt+A show Agent"),
+        (b"\x1bn", "Alt+N show Nodes"),
+        (b"\x1ba", "Alt+A show Agent"),
     ] {
         h.key(key)?;
         h.visible(hint)?;
@@ -1474,13 +1482,10 @@ fn collapsible_panels(h: &mut Harness) -> Result {
             })
         },
     )?;
-    h.visible("F2 / Alt+N show Nodes")?;
-    h.visible("F3 / Alt+A show Agent")?;
+    h.visible("Alt+A show Agent")?;
+    h.visible("? help")?;
     h.resize(130, 34)?;
-    for (key, hint) in [
-        (b"\x1bOR", "F3 / Alt+A hide Agent"),
-        (b"\x1bOQ", "F2 / Alt+N hide Nodes"),
-    ] {
+    for (key, hint) in [(b"\x1bOR", "Alt+A hide"), (b"\x1bOQ", "Alt+N hide")] {
         h.key(key)?;
         h.visible(hint)?;
     }
@@ -1490,6 +1495,27 @@ fn collapsible_panels(h: &mut Harness) -> Result {
     h.key(b"\t\t")?;
     h.paste(" 続き")?;
     h.draft(&format!("{draft} 続き"))?;
+    no_agent(h);
+    h.key(b"\x15")?;
+    h.paste("/time invalid")?;
+    h.key(b"\r")?;
+    h.visible("Usage: /time <nonnegative seconds>")?;
+    h.key(b"\t\tr")?;
+    h.pump_for(4.2)?;
+    assert!(
+        h.screen
+            .text()
+            .contains("Usage: /time <nonnegative seconds>"),
+        "A preview refresh or notice timer cannot clear an unrelated error"
+    );
+    h.key(b"\t\x15")?;
+    h.paste("/clear-queue")?;
+    h.key(b"\r")?;
+    h.visible("Prompt queue cleared")?;
+    h.wait("notice expires and preview regains its row", 15.0, |h| {
+        !h.screen.text().contains("Prompt queue cleared")
+            && h.frames.images.last() == Some(&initial)
+    })?;
     no_agent(h);
     Ok(())
 }

@@ -181,28 +181,30 @@ impl super::App {
                 let deleted = page.deletion_completed;
                 self.saved_return = None;
                 self.modal = Some(Modal::Saved(page));
-                self.status = if deleted {
-                    "Local conversation deleted · project assets and provider history kept"
-                } else if self.conversation.active() {
-                    "Saved logs are read-only · active request continues · Ctrl+C cancels"
-                } else {
-                    "Saved logs are read-only; browsing sends no requests"
-                }
-                .into();
+                self.set_status(
+                    if deleted {
+                        "Local conversation deleted · project assets and provider history kept"
+                    } else if self.conversation.active() {
+                        "Saved logs are read-only · active request continues · Ctrl+C cancels"
+                    } else {
+                        "Saved logs are read-only; browsing sends no requests"
+                    }
+                    .into(),
+                );
             }
             Ok(Output::History(page)) => {
                 self.modal = Some(Modal::History(page));
-                self.status = "Select a checkpoint; Enter reviews the restoration".into();
+                self.set_status("Select a checkpoint; Enter reviews the restoration".into());
             }
             Ok(Output::Restored(value)) => {
                 self.modal = None;
                 self.restore_return = None;
                 self.nodes.select(None);
                 self.view.zoom = None;
-                self.status = format!(
+                self.set_status(format!(
                     "Restored checkpoint · revision {}",
                     value["revision"].as_str().unwrap_or("unknown")
-                );
+                ));
                 self.append(&format!("\nCheckpoint restored: {value}\n"));
                 self.request(worker, false, false);
             }
@@ -243,7 +245,7 @@ impl super::App {
             } else if matches!(self.modal, Some(Modal::Loading { .. })) {
                 self.modal = None;
             }
-            self.status = "History loading cancelled".into();
+            self.set_status("History loading cancelled".into());
         } else {
             self.document_result(output, worker);
         }
@@ -300,7 +302,7 @@ impl super::App {
                     if let Some(task) = &self.document_task {
                         task.cancel.cancel();
                     }
-                    self.status = "Cancelling document operation…".into();
+                    self.set_attention_status("Cancelling document operation…".into());
                     return Ok(false);
                 }
             }
@@ -360,7 +362,7 @@ impl super::App {
                     self.modal = Some(Modal::Loading {
                         message: "Restoring document… · Esc requests cancellation before save",
                     });
-                    self.status = "Restoring checkpoint…".into();
+                    self.set_status("Restoring checkpoint…".into());
                     return Ok(false);
                 }
                 _ => {}

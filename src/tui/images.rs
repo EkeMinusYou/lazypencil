@@ -150,7 +150,7 @@ impl App {
             directory,
             retained,
         });
-        self.status = status.into();
+        self.set_attention_status(status.into());
         Ok(())
     }
 
@@ -224,8 +224,9 @@ impl App {
         };
         let result = match &content {
             PreparedInput::Text(text) => {
-                self.insert_text(text);
-                self.status = "Pasted text".into();
+                if self.insert_text(text) {
+                    self.set_status("Pasted text".into());
+                }
                 return false;
             }
             PreparedInput::Images(_)
@@ -257,17 +258,19 @@ impl App {
             self.error(error);
             return false;
         }
-        self.status = match content {
+        self.set_status(match content {
             PreparedInput::Resized { image, .. } => format!(
                 "Send image: {}×{} · original retained",
                 image.width, image.height
             ),
-            _ => format!(
-                "{} images attached · {} to review or remove",
-                self.conversation.images().len(),
-                self.navigation.label(Nav::PreviousSection)
-            ),
-        };
+            _ => {
+                let message = format!("{} images attached", self.conversation.images().len());
+                match self.navigation.preferred_label(Nav::PreviousSection, true) {
+                    Some(key) => format!("{message} · {key} to review or remove"),
+                    None => message,
+                }
+            }
+        });
         true
     }
 

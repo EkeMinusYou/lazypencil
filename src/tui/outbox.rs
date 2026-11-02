@@ -82,13 +82,16 @@ impl App {
                     self.editor = editor(draft);
                 }
                 if !outbox.queued.is_empty() {
-                    self.status = "Queued prompts restored; /resume-queue sends them".into();
+                    self.set_attention_status(
+                        "Queued prompts restored; /resume-queue sends them".into(),
+                    );
                 }
                 self.outbox = outbox;
                 if self.outbox.in_flight.is_some() {
                     self.finish_reference_prompt(true);
-                    self.status =
-                        "Interrupted reference prompt restored; sends only on submit".into();
+                    self.set_attention_status(
+                        "Interrupted reference prompt restored; sends only on submit".into(),
+                    );
                     self.draft_changed = true;
                 }
             }
@@ -145,7 +148,7 @@ impl App {
             self.conversation.settings().agent
         ));
         self.scroll = 0;
-        self.status.clear();
+        self.clear_status();
         self.dirty = true;
         Ok(())
     }
