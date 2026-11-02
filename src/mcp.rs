@@ -159,7 +159,11 @@ pub fn serve_with_preview_context(
 impl ServerHandler for Server {
     fn get_info(&self) -> ServerConfig {
         let instructions = if self.preview_control {
-            format!("{INSTRUCTIONS}\n\n{}", crate::preview_control::INSTRUCTIONS)
+            format!(
+                "{INSTRUCTIONS}\n\n{}\n\n{}",
+                crate::preview_control::INSTRUCTIONS,
+                crate::preview_control::DIAGNOSTICS_INSTRUCTIONS
+            )
         } else {
             INSTRUCTIONS.into()
         };

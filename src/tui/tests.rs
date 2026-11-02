@@ -428,8 +428,8 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
         app.preview.as_mut().unwrap().summary["diagnostics"] = json!([{"severity":"warning"}]);
         app.view.zoom = Some(2.0);
         assert_eq!(
-            app.preview_title(),
-            "Preview · 100%",
+            app.preview_zoom_label().as_deref(),
+            Some("100%"),
             "Pending zoom must not describe the old image"
         );
         assert_eq!(app.preview_timeline(), None);
@@ -462,7 +462,14 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
         let nodes = region(Rect::new(0, 1, 35, 37));
         assert!(nodes.contains("1node") && nodes.contains("1diagnostic"));
         let preview = region(Rect::new(35, 1, 77, 37));
-        assert!(preview.contains("Preview·100%"));
+        assert!(preview.contains("Preview"));
+        let preview_heading = region(Rect::new(35, 1, 77, 1));
+        assert!(!preview_heading.contains('%'));
+        assert!(region(Rect::new(35, 37, 77, 1)).contains("100%"));
+        let zoom_cell = &terminal.backend().buffer()[(109, 37)];
+        assert_eq!(zoom_cell.symbol(), "%");
+        assert_eq!(zoom_cell.fg, theme::SECONDARY);
+        assert!(!zoom_cell.modifier.contains(Modifier::BOLD));
         assert!(!preview.contains("Playback"));
         let agent = region(Rect::new(112, 1, 48, 37));
         assert!(agent.contains("Agent") && agent.contains("Idle"));
@@ -475,6 +482,16 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
         let footer = region(Rect::new(0, 38, 160, 2));
         assert!(!footer.contains("node") && !footer.contains("100%") && !footer.contains("t="));
         assert!(footer.contains("Tab/Shift+Tab"));
+        app.preview.as_mut().unwrap().time_dependent = true;
+        terminal.backend_mut().resize(50, 16);
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        assert_eq!(terminal.backend().buffer()[(32, 13)].symbol(), "%");
+        assert_eq!(terminal.backend().buffer()[(32, 13)].fg, theme::SECONDARY);
+        app.preview.as_mut().unwrap().time_dependent = false;
         app.accept_input(fake_clipboard(
             Path::new("unused"),
             None,
@@ -496,7 +513,7 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
                 .len(),
             1
         );
-        assert_eq!(app.preview_title(), "Preview");
+        assert_eq!(app.preview_zoom_label(), None);
         assert_eq!(app.preview_timeline(), None);
         app.conversation.close().await.unwrap();
     });
@@ -2087,6 +2104,7 @@ fn initial_preview_loading_is_distinct_from_failure_and_explicit_retry() {
         let mut app = app(&temp, "echo");
         let initial = screen(&mut app);
         assert!(initial.contains("Loading preview…"));
+        assert!(initial.contains("Loading nodes…"));
         assert!(!initial.contains("Rendering errors"));
         assert!(!initial.contains("Preview unavailable"));
         app.accept_preview(preview::Output {
@@ -2095,6 +2113,8 @@ fn initial_preview_loading_is_distinct_from_failure_and_explicit_retry() {
         });
         let failed = screen(&mut app);
         assert!(failed.contains("Preview unavailable"));
+        assert!(failed.contains("Nodes unavailable"));
+        assert!(!failed.contains("Loading nodes…"));
         assert!(failed.contains("Owned preview failure"));
         assert!(!failed.contains("Loading preview…"));
         let worker = Worker::start(
@@ -2111,7 +2131,9 @@ fn initial_preview_loading_is_distinct_from_failure_and_explicit_retry() {
             generation: app.generation - 1,
             result: Err(Error::new("RENDER_ERROR", "Stale preview failure")),
         });
-        assert!(screen(&mut app).contains("Loading preview…"));
+        let retry = screen(&mut app);
+        assert!(retry.contains("Loading preview…"));
+        assert!(retry.contains("Loading nodes…"));
         app.accept_preview(
             tokio::time::timeout(Duration::from_secs(15), worker.next())
                 .await
@@ -2120,9 +2142,48 @@ fn initial_preview_loading_is_distinct_from_failure_and_explicit_retry() {
         assert!(app.preview.is_some());
         let loaded = screen(&mut app);
         assert!(!loaded.contains("Loading preview…"));
+        assert!(!loaded.contains("Loading nodes…"));
+        assert!(loaded.contains("No nodes"));
         assert!(!loaded.contains("Preview unavailable"));
         assert!(app.log.contains("Owned preview failure"));
         assert!(!app.log.contains("Stale preview failure"));
+        std::fs::write(app.conversation.store().path(), json!({"version":"2.21","children":[{
+            "type":"rectangle","id":"ready","name":"Ready node","width":20,"height":10,"fill":"#00FF00"
+        }]}).to_string()).unwrap();
+        app.request(&worker, false, true);
+        app.accept_preview(tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap());
+        app.refresh_nodes(Some("ready"));
+        app.request(&worker, false, true);
+        let refreshing = screen(&mut app);
+        assert!(refreshing.contains("Nodes · Loading…"));
+        assert!(refreshing.contains("Ready node"));
+        assert_eq!(app.selected_node().unwrap().id, "ready");
+        app.accept_preview(preview::Output {
+            generation: app.generation - 1,
+            result: Err(Error::new("RENDER_ERROR", "Stale refresh failure")),
+        });
+        assert!(app.nodes_loading);
+        app.accept_preview(tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap());
+        assert!(!app.nodes_loading);
+        app.request(&worker, true, false);
+        assert!(!screen(&mut app).contains("Loading…"));
+        app.accept_preview(preview::Output {
+            generation: app.generation,
+            result: Err(Error::new("REVISION_CONFLICT", "Concurrent document update")),
+        });
+        assert!(app.selected_node().is_none());
+        app.request(&worker, false, true);
+        app.accept_preview(tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap());
+        assert_eq!(app.selected_node().unwrap().id, "ready");
+        app.accept_preview(preview::Output {
+            generation: app.generation,
+            result: Err(Error::new("REVISION_CONFLICT", "Another document update")),
+        });
+        app.focus = Focus::Nodes;
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
+        app.request(&worker, false, true);
+        app.accept_preview(tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap());
+        assert!(app.selected_node().is_none());
         app.conversation.close().await.unwrap();
     });
 }
@@ -2396,6 +2457,10 @@ fn diagnostics_switch_preserves_targets_and_reveals_hidden_nodes_after_refresh()
         assert_eq!(app.filtered_nodes().len(), 1);
         press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE, &worker).await;
         assert!(app.diagnostics.active);
+        assert!(app.diagnostics.selected_only);
+        assert!(app.selected_diagnostic().is_none());
+        assert!(screen(&mut app, 40, 26).contains("No diagnostics for node"));
+        press(&mut app, KeyCode::Char('s'), KeyModifiers::NONE, &worker).await;
         assert_eq!(app.selected_diagnostic().unwrap()["node_id"], "child-a");
         assert_eq!(app.selected_node().unwrap().id, "root");
         assert_eq!(app.filter, "root");
@@ -2418,6 +2483,8 @@ fn diagnostics_switch_preserves_targets_and_reveals_hidden_nodes_after_refresh()
         assert_eq!(app.filter, "root");
         assert_eq!(app.selected_node().unwrap().id, "root");
         press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Char('s'), KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE, &worker).await;
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
         assert!(!app.diagnostics.active);
         assert!(app.filter.is_empty());
@@ -2427,6 +2494,10 @@ fn diagnostics_switch_preserves_targets_and_reveals_hidden_nodes_after_refresh()
         rendered(&mut app, &worker).await;
 
         press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE, &worker).await;
+        assert!(app.diagnostics.selected_only);
+        assert!(screen(&mut app, 40, 26).contains("Node: Same name"));
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selected_diagnostic().unwrap()["node_id"], "child-b");
         document["children"][0]["children"].as_array_mut().unwrap().reverse();
         std::fs::write(&path, document.to_string()).unwrap();
         app.request(&worker, false, true);
@@ -2448,8 +2519,10 @@ fn diagnostics_switch_preserves_targets_and_reveals_hidden_nodes_after_refresh()
         std::fs::write(&path, document.to_string()).unwrap();
         app.request(&worker, false, true);
         rendered(&mut app, &worker).await;
-        assert_eq!(app.selected_diagnostic().unwrap()["node_id"], "child-a");
         assert!(app.selected_node().is_none());
+        assert!(app.selected_diagnostic().is_none());
+        press(&mut app, KeyCode::Char('s'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selected_diagnostic().unwrap()["node_id"], "child-a");
         document["children"][0]["children"][0]["x"] = json!(0);
         std::fs::write(&path, document.to_string()).unwrap();
         app.request(&worker, false, true);

@@ -4,12 +4,18 @@ use super::*;
 #[derive(Default)]
 pub(super) struct View {
     pub active: bool,
+    pub selected_only: bool,
+    rows: Vec<usize>,
     selection: ListState,
     scroll: u16,
     detail_height: u16,
 }
 
 impl App {
+    pub(super) fn visible_diagnostic_count(&self) -> usize {
+        self.diagnostics.rows.len()
+    }
+
     fn layout_diagnostics(&self) -> &[Value] {
         self.preview
             .as_ref()
@@ -18,21 +24,37 @@ impl App {
     }
 
     pub(super) fn selected_diagnostic(&self) -> Option<&Value> {
-        self.layout_diagnostics()
-            .get(self.diagnostics.selection.selected()?)
+        self.layout_diagnostics().get(
+            *self
+                .diagnostics
+                .rows
+                .get(self.diagnostics.selection.selected()?)?,
+        )
     }
 
     pub(super) fn refresh_diagnostics(&mut self, selected: Option<&Value>) {
         let items = self.layout_diagnostics();
+        let node = self.selected_node().map(|node| node.id.as_str());
+        let rows = items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| {
+                !self.diagnostics.selected_only
+                    || node.is_some_and(|id| item["node_id"].as_str() == Some(id))
+            })
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
         let index = selected.and_then(|selected| {
-            items.iter().position(|item| {
+            rows.iter().position(|index| {
+                let item = &items[*index];
                 item["node_id"] == selected["node_id"] && item["code"] == selected["code"]
             })
         });
-        let index = index.or_else(|| (!items.is_empty()).then_some(0));
-        if selected != index.and_then(|index| items.get(index)) {
+        let index = index.or_else(|| (!rows.is_empty()).then_some(0));
+        if selected != index.and_then(|index| items.get(rows[index])) {
             self.diagnostics.scroll = 0;
         }
+        self.diagnostics.rows = rows;
         self.diagnostics.selection.select(index);
     }
 
@@ -43,10 +65,16 @@ impl App {
         worker: &Worker,
     ) -> Result<()> {
         let action = |action| self.navigation.matches(action, key);
-        if action(Nav::ClearSelection) {
+        if action(Nav::DiagnosticScope) {
+            let selected = self.selected_diagnostic().cloned();
+            self.diagnostics.selected_only = !self.diagnostics.selected_only;
+            self.refresh_diagnostics(selected.as_ref());
+        } else if action(Nav::ReferenceNode) {
+            self.reference_selected_diagnostic()?;
+        } else if action(Nav::ClearSelection) {
             self.diagnostics.active = false;
         } else if action(Nav::PreviousItem) || action(Nav::NextItem) {
-            let count = self.layout_diagnostics().len();
+            let count = self.diagnostics.rows.len();
             let current = self.diagnostics.selection.selected().unwrap_or(0);
             let index = if action(Nav::PreviousItem) {
                 current.saturating_sub(1)
@@ -93,11 +121,28 @@ impl App {
     }
 
     pub(super) fn draw_diagnostics(&mut self, frame: &mut Frame, area: Rect) {
-        if self.layout_diagnostics().is_empty() {
+        let sections = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).split(area);
+        let scope = if self.diagnostics.selected_only {
+            self.selected_node()
+                .map(|node| format!("Node: {}", nodes::node_label(&node.name)))
+                .unwrap_or_else(|| "Selected node".into())
+        } else {
+            "All nodes".into()
+        };
+        frame.render_widget(
+            Paragraph::new(scope).style(Style::default().fg(theme::SECONDARY)),
+            sections[0],
+        );
+        let area = sections[1];
+        if self.diagnostics.rows.is_empty() {
             let message = if self.preview_error.is_some() {
                 "Diagnostics unavailable: preview failed"
             } else if self.preview.is_none() {
                 "Loading diagnostics…"
+            } else if self.diagnostics.selected_only && self.selected_node().is_none() {
+                "Select a node in Nodes"
+            } else if self.diagnostics.selected_only {
+                "No diagnostics for node"
             } else {
                 "No layout diagnostics"
             };
@@ -115,8 +160,10 @@ impl App {
         ])
         .split(area);
         let items = self
-            .layout_diagnostics()
+            .diagnostics
+            .rows
             .iter()
+            .filter_map(|index| self.layout_diagnostics().get(*index))
             .map(|item| {
                 let severity = item["severity"].as_str().unwrap_or("warning");
                 let color = if severity == "error" {

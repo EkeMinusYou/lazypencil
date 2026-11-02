@@ -303,6 +303,91 @@ fn queued_references_are_frozen_and_missing_targets_preserve_the_next_draft() {
 }
 
 #[test]
+fn diagnostics_attach_the_selected_issue_without_changing_the_tree_target() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "image-inspect");
+        std::fs::write(
+            app.conversation.store().path(),
+            json!({"version":"2.21","children":[{
+                "type":"frame","id":"root","name":"Root","layout":"none","width":50,"height":30,
+                "children":[{"type":"text","id":"label","name":"Label","x":60,"width":80,"height":8,
+                    "fontSize":20,"content":"Overflow","textGrowth":"fixed-width-height"}]
+            }]})
+            .to_string(),
+        )
+        .unwrap();
+        let worker = Worker::start(
+            app.conversation.store().clone(),
+            vec![],
+            Backend::halfblocks(),
+            195,
+        )
+        .unwrap();
+        app.cells = Size::new(20, 12);
+        app.request(&worker, false, false);
+        rendered(&mut app, &worker).await;
+        select(&mut app, "root", &[]);
+        assert_eq!(app.filtered_nodes().len(), 1);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(18, 16)).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                app.draw_nodes(frame, area);
+            })
+            .unwrap();
+        assert_eq!(terminal.backend().buffer()[(13, 1)].symbol(), "!");
+        assert_eq!(terminal.backend().buffer()[(13, 1)].fg, theme::RUNNING);
+        assert_eq!(terminal.backend().buffer()[(16, 1)].symbol(), "]");
+        app.insert_text("この診断を直してください");
+        press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE, &worker).await;
+        assert!(app.selected_diagnostic().is_none());
+        press(&mut app, KeyCode::Char('s'), KeyModifiers::NONE, &worker).await;
+        let first = app.selected_diagnostic().unwrap().clone();
+        press(&mut app, KeyCode::Char('a'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.focus, Focus::Prompt);
+        assert_eq!(app.editor.lines(), ["この診断を直してください"]);
+        assert!(!app.conversation.active());
+        assert_eq!(app.selected_node().unwrap().id, "root");
+        assert_eq!(
+            app.outbox.references[0].target["address"]["node_id"],
+            "label"
+        );
+        assert_eq!(app.outbox.references[0].diagnostic.as_ref(), Some(&first));
+        app.focus = Focus::Nodes;
+        press(&mut app, KeyCode::Char('j'), KeyModifiers::NONE, &worker).await;
+        let second = app.selected_diagnostic().unwrap().clone();
+        assert_ne!(first["code"], second["code"]);
+        press(&mut app, KeyCode::Char('a'), KeyModifiers::NONE, &worker).await;
+        app.focus = Focus::Nodes;
+        press(&mut app, KeyCode::Char('a'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(
+            app.outbox.references.len(),
+            2,
+            "The same issue is not attached twice"
+        );
+        select(&mut app, "label", &[]);
+        app.diagnostics.active = false;
+        press(&mut app, KeyCode::Char('a'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(
+            app.outbox.references.len(),
+            3,
+            "Node and diagnostic references remain distinct"
+        );
+        let restored = outbox::Outbox::load(app.conversation.directory()).unwrap();
+        assert_eq!(restored.references[0].diagnostic.as_ref(), Some(&first));
+        app.submit().await.unwrap();
+        assert_eq!(complete(&mut app).await.last().unwrap()["type"], "complete");
+        let sent = references_received(&temp, 1);
+        assert_eq!(sent[0]["diagnostic"], first);
+        assert_eq!(sent[1]["diagnostic"], second);
+        assert!(sent[2].get("diagnostic").is_none());
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
 fn interrupted_reference_requests_restore_the_draft_without_resending() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {
@@ -369,6 +454,7 @@ fn generated_references_validate_with_the_normal_script_pipeline_and_recover_on_
         let (_, snapshot) = crate::service::layout_snapshot_with_runtime(app.conversation.store(), &[], None, None, &mut script_runtime).unwrap();
         let item = snapshot.items.iter().find(|item| item.record.generated_by.is_some()).unwrap();
         let reference = crate::conversation::references::Reference {
+            diagnostic: None,
             target: crate::conversation::references::target(&item.node),
             name: "Generated box".into(), kind: "rectangle".into(), text_excerpt: String::new(),
             revision: snapshot.revision.clone(), dependency_revision: snapshot.dependency_revision.clone(),

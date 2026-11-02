@@ -111,6 +111,8 @@ pub struct Node {
     pub target: Value,
     pub kind: String,
     pub text_excerpt: String,
+    pub diagnostic_count: usize,
+    pub has_error_diagnostic: bool,
     pub parent: Option<usize>,
     pub children: Vec<usize>,
 }
@@ -381,6 +383,8 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 target: json!({"id":item.record.id,"address":item.record.address,"source_id":item.record.source_id,"source_path":item.record.source_path,"generated_by":item.record.generated_by}),
                 kind: item.node.kind().into(),
                 text_excerpt: item.node.properties.get("content").and_then(Value::as_str).unwrap_or("").chars().take(512).collect(),
+                diagnostic_count: item.record.diagnostics.len(),
+                has_error_diagnostic: item.record.diagnostics.iter().any(|diagnostic| diagnostic.severity == "error"),
                 parent: item.parent, children: item.children.clone(),
             }).collect()).clone();
             let time_dependent = image.dynamic_artifacts.iter().any(|artifact| {

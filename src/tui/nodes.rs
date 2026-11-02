@@ -1,12 +1,14 @@
 //! Collapsible document hierarchy with stable editing targets and cached rows.
 use super::*;
-use std::collections::HashSet;
+use std::{borrow::Cow, collections::HashSet};
 
 pub(super) struct Row {
     pub index: usize,
     depth: usize,
     expanded: bool,
     matched: bool,
+    diagnostic_count: usize,
+    has_error_diagnostic: bool,
 }
 
 #[derive(Default)]
@@ -65,6 +67,22 @@ impl Tree {
                 }
             }
         }
+        let mut counts = nodes
+            .iter()
+            .map(|node| node.diagnostic_count)
+            .collect::<Vec<_>>();
+        let mut errors = nodes
+            .iter()
+            .map(|node| node.has_error_diagnostic)
+            .collect::<Vec<_>>();
+        for (index, node) in nodes.iter().enumerate().rev() {
+            if let Some(parent) = node.parent {
+                let count = counts[index];
+                let error = errors[index];
+                counts[parent] += count;
+                errors[parent] |= error;
+            }
+        }
         let mut depth = vec![0; nodes.len()];
         let mut visible = vec![false; nodes.len()];
         self.rows.clear();
@@ -93,6 +111,8 @@ impl Tree {
                                 && node.children.iter().any(|child| included[*child])
                         },
                     matched: matched[index],
+                    diagnostic_count: counts[index],
+                    has_error_diagnostic: errors[index],
                 });
             }
         }
@@ -209,12 +229,21 @@ impl App {
         } else {
             "Nodes".into()
         };
+        let title = if !self.diagnostics.active && self.nodes_loading && self.preview.is_some() {
+            format!("{title} · Loading…")
+        } else {
+            title
+        };
         let focused = self.focus == Focus::Nodes;
         let mut block = panel(theme::title("▤", title, theme::NODES, focused), focused);
         if let Some(preview) = &self.preview {
-            let diagnostics = preview.summary["diagnostics"]
-                .as_array()
-                .map_or(0, Vec::len);
+            let diagnostics = if self.diagnostics.active && self.diagnostics.selected_only {
+                self.visible_diagnostic_count()
+            } else {
+                preview.summary["diagnostics"]
+                    .as_array()
+                    .map_or(0, Vec::len)
+            };
             let count = preview.nodes.len();
             block = block.title_bottom(Line::from(vec![
                 Span::styled(
@@ -240,6 +269,23 @@ impl App {
             self.draw_diagnostics(frame, inner);
             return;
         }
+        if !self
+            .preview
+            .as_ref()
+            .is_some_and(|preview| !preview.attachment || preview.summary["revision"].is_string())
+        {
+            let message = match &self.preview_error {
+                Some(error) => format!("Nodes unavailable\n{}", clean(&error.to_string())),
+                None => "Loading nodes…".into(),
+            };
+            frame.render_widget(
+                Paragraph::new(message)
+                    .style(Style::default().fg(theme::SECONDARY))
+                    .wrap(Wrap { trim: false }),
+                inner,
+            );
+            return;
+        }
         self.node_tree.viewport_height = inner.height;
         let items = self
             .node_tree
@@ -258,17 +304,52 @@ impl App {
                 } else {
                     "▸"
                 };
-                let color = if focused && self.nodes.selected() == Some(row_index) {
+                let selected = self.nodes.selected() == Some(row_index);
+                let color = if selected {
                     theme::NODE_SELECTION
                 } else {
                     theme::NODES
+                };
+                let badge = if row.diagnostic_count == 0 {
+                    String::new()
+                } else {
+                    format!(
+                        " [{} {}]",
+                        if row.has_error_diagnostic { "✕" } else { "!" },
+                        row.diagnostic_count
+                    )
+                };
+                let badge_width = Span::raw(badge.as_str()).width();
+                let (name, padding) = if badge.is_empty() {
+                    (Cow::Borrowed(node.display_name.as_str()), 0)
+                } else {
+                    let available =
+                        usize::from(inner.width).saturating_sub(indent * 2 + 2 + badge_width);
+                    let (name, width) = fitted_label(&node.display_name, available);
+                    (name, available.saturating_sub(width))
                 };
                 Some(ListItem::new(Line::from(vec![
                     Span::styled(
                         format!("{}{marker} ", "  ".repeat(indent)),
                         Style::default().fg(color),
                     ),
-                    Span::raw(node.display_name.as_str()),
+                    Span::styled(
+                        name,
+                        if selected {
+                            Style::default().fg(theme::NODE_SELECTION)
+                        } else {
+                            Style::default()
+                        },
+                    ),
+                    Span::raw(" ".repeat(padding)),
+                    Span::styled(
+                        badge,
+                        Style::default().fg(if row.has_error_diagnostic {
+                            theme::ERROR
+                        } else {
+                            theme::RUNNING
+                        }),
+                    ),
                 ])))
             })
             .collect::<Vec<_>>();
@@ -279,14 +360,22 @@ impl App {
         {
             self.nodes.select(None);
         }
+        let mut highlight = theme::node_selected(focused);
+        // Keep the severity color when the selected row is highlighted.
+        highlight.fg = None;
         frame.render_stateful_widget(
-            List::new(items).highlight_style(theme::node_selected(focused)),
+            List::new(items).highlight_style(highlight),
             inner,
             &mut self.nodes,
         );
-        if self.node_tree.rows.is_empty() && !self.filter.is_empty() {
+        if self.node_tree.rows.is_empty() {
             frame.render_widget(
-                Paragraph::new("No matching nodes").style(Style::default().fg(theme::SECONDARY)),
+                Paragraph::new(if self.filter.is_empty() {
+                    "No nodes"
+                } else {
+                    "No matching nodes"
+                })
+                .style(Style::default().fg(theme::SECONDARY)),
                 inner,
             );
         }
@@ -295,6 +384,28 @@ impl App {
 
 pub(super) fn node_label(value: &str) -> String {
     clean(value).replace(['\n', '\t'], " ")
+}
+
+fn fitted_label(value: &str, width: usize) -> (Cow<'_, str>, usize) {
+    let span = Span::raw(value);
+    if span.width() <= width {
+        return (Cow::Borrowed(value), span.width());
+    }
+    if width == 0 {
+        return (Cow::Borrowed(""), 0);
+    }
+    let mut label = String::new();
+    let mut used = 0;
+    for grapheme in span.styled_graphemes(Style::default()) {
+        let cells = Span::raw(grapheme.symbol).width();
+        if used + cells > width - 1 {
+            break;
+        }
+        label.push_str(grapheme.symbol);
+        used += cells;
+    }
+    label.push('…');
+    (Cow::Owned(label), used + 1)
 }
 
 #[cfg(test)]
@@ -322,8 +433,38 @@ mod tests {
             target: json!({"id":id}),
             kind: "rectangle".into(),
             text_excerpt: String::new(),
+            diagnostic_count: 0,
+            has_error_diagnostic: false,
         })
         .collect()
+    }
+
+    #[test]
+    fn diagnostic_badges_include_hidden_descendants_and_keep_error_severity() {
+        let mut nodes = fixture();
+        nodes[2].diagnostic_count = 2;
+        nodes[4].diagnostic_count = 1;
+        nodes[4].has_error_diagnostic = true;
+        let mut tree = Tree::default();
+        tree.rebuild(&nodes, "");
+        assert_eq!(tree.rows[0].diagnostic_count, 3);
+        assert!(tree.rows[0].has_error_diagnostic);
+        assert_eq!(tree.rows[1].diagnostic_count, 0);
+        tree.expanded.insert("sidebar".into());
+        tree.rebuild(&nodes, "");
+        assert_eq!(tree.rows[1].diagnostic_count, 2);
+        assert!(!tree.rows[1].has_error_diagnostic);
+        assert_eq!(tree.rows[2].diagnostic_count, 1);
+        assert!(tree.rows[2].has_error_diagnostic);
+        tree.rebuild(&nodes, "instance-a");
+        assert_eq!(
+            tree.rows[0].diagnostic_count, 3,
+            "Searching must not hide other problems in a branch"
+        );
+        let (label, used) = fitted_label("👨‍👩‍👧‍👦日本語の長いノード名", 5);
+        assert!(label.starts_with("👨‍👩‍👧‍👦"));
+        assert!(label.ends_with('…'));
+        assert!(used <= 5);
     }
 
     #[test]

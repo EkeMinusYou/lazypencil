@@ -77,6 +77,7 @@ bindings! {
     reference_node => ReferenceNode(NODES, ["a"]),
     search_nodes => SearchNodes(NODES, ["/"]),
     toggle_diagnostics => ToggleDiagnostics(NODES, ["d"]),
+    diagnostic_scope => DiagnosticScope(NODES, ["s"]),
     clear_selection => ClearSelection(NODES, ["Esc"]),
     activate_node => ActivateNode(NODES, ["Enter"]),
     expand_node => ExpandNode(NODES, ["Right", "l"]),

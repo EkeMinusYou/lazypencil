@@ -18,6 +18,16 @@ pub(crate) struct Reference {
     pub text_excerpt: String,
     pub revision: String,
     pub dependency_revision: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostic: Option<Value>,
+}
+
+impl Reference {
+    pub(crate) fn diagnostic_code(&self) -> Option<&str> {
+        self.diagnostic
+            .as_ref()
+            .and_then(|diagnostic| diagnostic["code"].as_str())
+    }
 }
 
 pub(crate) fn target(node: &ResolvedNode) -> Value {
@@ -43,10 +53,14 @@ pub(crate) fn labels(references: &[Reference]) -> String {
         .iter()
         .map(|reference| {
             format!(
-                "{} ({}) [{}]",
-                clipped(&reference.name, 96),
+                "{} ({}{}) [{}]",
+                clipped(&reference.name, 80),
                 clipped(&reference.kind, 32),
-                clipped(reference.target["id"].as_str().unwrap_or(""), 96)
+                reference
+                    .diagnostic_code()
+                    .map(|code| format!(" · {}", clipped(code, 32)))
+                    .unwrap_or_default(),
+                clipped(reference.target["id"].as_str().unwrap_or(""), 80)
             )
         })
         .collect::<Vec<_>>()

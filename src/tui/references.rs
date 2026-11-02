@@ -15,8 +15,32 @@ impl App {
         let node = self
             .selected_node()
             .ok_or_else(|| Error::new("INVALID_ARGUMENT", "Select a node first"))?;
-        let preview = self.preview.as_ref().expect("selected preview node");
-        let reference = Reference {
+        let reference = self.captured_reference(node, None);
+        self.add_prompt_reference(reference)
+    }
+
+    pub(super) fn reference_selected_diagnostic(&mut self) -> Result<()> {
+        let diagnostic = self
+            .selected_diagnostic()
+            .cloned()
+            .ok_or_else(|| Error::new("INVALID_ARGUMENT", "Select a diagnostic first"))?;
+        let node = self
+            .preview
+            .as_ref()
+            .and_then(|preview| {
+                preview
+                    .nodes
+                    .iter()
+                    .find(|node| diagnostic["node_id"].as_str() == Some(node.id.as_str()))
+            })
+            .ok_or_else(|| Error::new("NODE_NOT_FOUND", "The diagnostic target is unavailable"))?;
+        let reference = self.captured_reference(node, Some(diagnostic));
+        self.add_prompt_reference(reference)
+    }
+
+    fn captured_reference(&self, node: &preview::Node, diagnostic: Option<Value>) -> Reference {
+        let preview = self.preview.as_ref().expect("captured preview node");
+        Reference {
             target: node.target.clone(),
             name: references::single_line(&node.name),
             kind: node.kind.clone(),
@@ -26,12 +50,16 @@ impl App {
                 .as_str()
                 .unwrap_or("")
                 .into(),
-        };
+            diagnostic,
+        }
+    }
+
+    fn add_prompt_reference(&mut self, reference: Reference) -> Result<()> {
+        let diagnostic = reference.diagnostic.is_some();
         let mut pending = self.outbox.references.clone();
-        if let Some(previous) = pending
-            .iter_mut()
-            .find(|item| item.target == reference.target)
-        {
+        if let Some(previous) = pending.iter_mut().find(|item| {
+            item.target == reference.target && item.diagnostic_code() == reference.diagnostic_code()
+        }) {
             *previous = reference;
         } else {
             pending.push(reference);
@@ -41,7 +69,10 @@ impl App {
         self.focus = Focus::Prompt;
         self.draft_changed = true;
         self.save_draft()?;
-        self.status = "Node reference added · write a message to send".into();
+        self.status = format!(
+            "{} reference added · write a message to send",
+            if diagnostic { "Diagnostic" } else { "Node" }
+        );
         Ok(())
     }
 
@@ -118,6 +149,13 @@ impl App {
                 };
                 ListItem::new(Line::from(vec![
                     Span::styled("↗ ", Style::default().fg(theme::NODES)),
+                    Span::styled(
+                        reference
+                            .diagnostic_code()
+                            .map(|code| format!("{} · ", nodes::node_label(code)))
+                            .unwrap_or_default(),
+                        Style::default().fg(theme::RUNNING),
+                    ),
                     Span::raw(nodes::node_label(&reference.name)),
                     Span::styled(
                         format!(

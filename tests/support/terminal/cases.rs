@@ -438,6 +438,11 @@ fn diagnostics(h: &mut Harness, design: &Value) -> Result {
     h.visible("First target")?;
     h.key(b"j")?;
     h.visible("Second target")?;
+    h.key(b"a")?;
+    h.visible("References")?;
+    h.draft(draft)?;
+    no_agent(h);
+    h.key(b"\t")?;
     h.key(b"\r")?;
     h.wait("diagnostic reveals its hidden target", 15.0, |h| {
         let text = h.screen.text();
@@ -455,13 +460,61 @@ fn diagnostics(h: &mut Harness, design: &Value) -> Result {
         child["x"] = 0.into();
     }
     write_json(&h.document, &repaired)?;
-    h.visible("No layout diagnostics")?;
+    h.visible("No diagnostics for node")?;
     h.key(b"d")?;
-    h.hidden("No layout diagnostics")?;
+    h.hidden("No diagnostics for node")?;
     h.key(b"\t\t")?;
     h.draft(draft)?;
     assert_eq!(state(h)["draft"], draft);
     no_agent(h);
+    h.key(b"\x13")?;
+    h.wait("diagnostic reference reaches the agent", 15.0, |h| {
+        h.count("complete") == 1
+    })?;
+    let received = read_json(&h.root.join("received-turn-1.json")).unwrap();
+    let reference = received["text"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find_map(|text| {
+            let text = text.as_str()?;
+            let offset = text.find("{\"node_references\"")?;
+            serde_json::from_str::<Value>(&text[offset..]).ok()
+        })
+        .expect("Diagnostic reference context");
+    assert_eq!(
+        reference["node_references"][0]["diagnostic"]["code"],
+        "LAYOUT_OVERFLOW"
+    );
+    assert_eq!(
+        reference["node_references"][0]["target"]["address"]["node_id"],
+        "child-b"
+    );
+    h.paste("Diagnosticsをすべて対応して")?;
+    h.key(b"\x13")?;
+    h.wait(
+        "document-wide diagnostic request reaches the agent",
+        15.0,
+        |h| h.count("complete") == 2,
+    )?;
+    let all = read_json(&h.root.join("received-turn-2.json")).unwrap();
+    assert!(
+        all["text"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|text| text
+                .as_str()
+                .is_some_and(|text| text.contains("validate_document")
+                    && text.contains("next_cursor as cursor")))
+    );
+    assert!(
+        all["text"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|text| !text.as_str().unwrap().contains("\"node_references\""))
+    );
     Ok(())
 }
 

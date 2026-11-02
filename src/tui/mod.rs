@@ -199,6 +199,7 @@ struct App {
     preview: Option<Preview>,
     preview_generation: Option<u64>,
     preview_error: Option<Error>,
+    nodes_loading: bool,
     pending_preview: Option<controls::Pending>,
     camera: Option<camera::Camera>,
     camera_deadline: Option<Instant>,
@@ -208,6 +209,7 @@ struct App {
     cells: Size,
     nodes: ListState,
     node_tree: nodes::Tree,
+    pending_node_selection: Option<String>,
     diagnostics: diagnostics::View,
     attachments: ListState,
     reference_rows: ListState,
@@ -259,6 +261,7 @@ impl App {
             preview: None,
             preview_generation: None,
             preview_error: None,
+            nodes_loading: true,
             pending_preview: None,
             camera: None,
             camera_deadline: None,
@@ -268,6 +271,7 @@ impl App {
             cells: Size::new(0, 0),
             nodes: ListState::default(),
             node_tree: nodes::Tree::default(),
+            pending_node_selection: None,
             diagnostics: diagnostics::View::default(),
             attachments: ListState::default(),
             reference_rows: ListState::default(),
@@ -504,6 +508,9 @@ impl App {
         } else {
             None
         };
+        if refresh && attachment.is_none() {
+            self.nodes_loading = true;
+        }
         worker.request(Request {
             generation: self.generation,
             cells: self.cells,
@@ -533,7 +540,10 @@ impl App {
         self.camera = None;
         match output.result {
             Ok(mut preview) => {
-                let selected = self.selected_node().map(|node| node.id.clone());
+                let selected = self
+                    .selected_node()
+                    .map(|node| node.id.clone())
+                    .or_else(|| self.pending_node_selection.clone());
                 let diagnostic = self.selected_diagnostic().cloned();
                 self.preview_error = None;
                 if !preview.attachment {
@@ -560,19 +570,31 @@ impl App {
                 let document = !preview.attachment;
                 self.preview = Some(preview);
                 if document {
+                    self.pending_node_selection = None;
+                    self.nodes_loading = false;
                     self.refresh_nodes(selected.as_deref());
                     self.refresh_diagnostics(diagnostic.as_ref());
+                } else if self
+                    .preview
+                    .as_ref()
+                    .is_some_and(|preview| preview.summary["revision"].is_string())
+                {
+                    self.nodes_loading = false;
                 }
                 self.preview_generation = Some(output.generation);
             }
             Err(error) => {
                 self.playback.stop();
+                if let Some(node) = self.selected_node() {
+                    self.pending_node_selection = Some(node.id.clone());
+                }
                 self.preview = None;
                 self.node_tree.rebuild(&[], &self.filter);
                 self.nodes.select(None);
                 self.refresh_diagnostics(None);
                 self.preview_generation = None;
                 self.preview_error = Some(error.clone());
+                self.nodes_loading = false;
                 self.error(error);
             }
         }
@@ -1087,6 +1109,11 @@ impl App {
             }
             Focus::Nodes => {
                 if action(Nav::ToggleDiagnostics) {
+                    let selected = self.selected_diagnostic().cloned();
+                    if !self.diagnostics.active {
+                        self.diagnostics.selected_only = self.selected_node().is_some();
+                        self.refresh_diagnostics(selected.as_ref());
+                    }
                     self.diagnostics.active = !self.diagnostics.active;
                     return Ok(false);
                 }
@@ -1124,6 +1151,7 @@ impl App {
                     self.page_nodes(action(Nav::NodePageUp));
                 } else if action(Nav::ClearSelection) {
                     self.nodes.select(None);
+                    self.pending_node_selection = None;
                 } else if action(Nav::ActivateNode) || action(Nav::FitSelected) {
                     self.fit_selected(picker)?;
                     self.request(worker, false, false);
@@ -1221,9 +1249,13 @@ impl App {
             (Nav::SearchNodes, "Nodes: search names and IDs"),
             (
                 Nav::ReferenceNode,
-                "Nodes: add a prompt reference and focus input",
+                "Nodes/Diagnostics: add a prompt reference and focus input",
             ),
             (Nav::ToggleDiagnostics, "Nodes: switch Nodes / Diagnostics"),
+            (
+                Nav::DiagnosticScope,
+                "Diagnostics: switch selected node / all nodes",
+            ),
             (Nav::ClearSelection, "Nodes: clear the editing target"),
             (Nav::ActivateNode, "Nodes: select and fit the target"),
             (Nav::ExpandNode, "Nodes: expand or enter a branch"),
@@ -1540,9 +1572,11 @@ impl App {
         Span::styled(label, Style::default().fg(color))
     }
 
-    fn preview_title(&self) -> String {
-        match self.preview.as_ref().filter(|preview| !preview.attachment) {
-            Some(preview) => {
+    fn preview_zoom_label(&self) -> Option<String> {
+        self.preview
+            .as_ref()
+            .filter(|preview| !preview.attachment)
+            .map(|preview| {
                 // Cached camera feedback displays the requested zoom; otherwise the
                 // terminal still shows the last completed frame while rendering.
                 let view = if self.camera.is_some() {
@@ -1550,10 +1584,8 @@ impl App {
                 } else {
                     preview.view
                 };
-                format!("Preview · {:.0}%", view.zoom.unwrap_or(1.0) * 100.0)
-            }
-            None => "Preview".into(),
-        }
+                format!("{:.0}%", view.zoom.unwrap_or(1.0) * 100.0)
+            })
     }
 
     fn preview_timeline(&self) -> Option<String> {
@@ -1641,7 +1673,7 @@ impl App {
         let mut block = panel(
             theme::title(
                 if self.camera.is_some() { "↻" } else { "▣" },
-                self.preview_title(),
+                "Preview",
                 if self.camera.is_some() {
                     theme::RUNNING
                 } else {
@@ -1651,11 +1683,23 @@ impl App {
             ),
             self.focus == Focus::Preview,
         );
+        let zoom = self.preview_zoom_label();
+        let zoom_width = zoom.as_ref().map_or(0, |zoom| zoom.len() + 3);
         if let Some(timeline) = self.preview_timeline() {
+            let width = usize::from(panes[1].width.saturating_sub(2)).saturating_sub(zoom_width);
             block = block.title_bottom(Line::styled(
-                format!(" {timeline} "),
+                format!(" {timeline} ")
+                    .chars()
+                    .take(width)
+                    .collect::<String>(),
                 Style::default().fg(theme::SECONDARY),
             ));
+        }
+        if let Some(zoom) = zoom {
+            block = block.title_bottom(
+                Line::styled(format!(" {zoom} "), Style::default().fg(theme::SECONDARY))
+                    .right_aligned(),
+            );
         }
         let inner = block.inner(panes[1]);
         frame.render_widget(block, panes[1]);
@@ -1685,12 +1729,26 @@ impl App {
             Paragraph::new(Text::from(vec![
                 Line::from(self.status.clone()),
                 Line::from(vec![
-                    key(if self.focus == Focus::Nodes && !self.diagnostics.active {
+                    key(if self.focus == Focus::Nodes && self.diagnostics.active {
+                        self.navigation.label(Nav::DiagnosticScope)
+                    } else {
+                        String::new()
+                    }),
+                    description(if self.focus == Focus::Nodes && self.diagnostics.active {
+                        if self.diagnostics.selected_only {
+                            " all nodes · "
+                        } else {
+                            " selected node · "
+                        }
+                    } else {
+                        ""
+                    }),
+                    key(if self.focus == Focus::Nodes {
                         self.navigation.label(Nav::ReferenceNode)
                     } else {
                         String::new()
                     }),
-                    description(if self.focus == Focus::Nodes && !self.diagnostics.active {
+                    description(if self.focus == Focus::Nodes {
                         " reference · "
                     } else {
                         ""
