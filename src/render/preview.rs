@@ -259,6 +259,17 @@ mod tests {
                 &mut crate::text::Fonts::new(&[]).unwrap(),
             )
             .unwrap();
+            let too_small_export = RenderOptions {
+                scale: 0.005,
+                ..Default::default()
+            };
+            let error = raster_impl(&project, &snapshot, &too_small_export, None)
+                .err()
+                .unwrap();
+            assert!(
+                error.message.contains("0.01..16"),
+                "Public export scale limits must stay unchanged"
+            );
             for scale in [0.375, 1.0, 1.25, 2.0] {
                 for x in [-48.5, 16.0, -48.5] {
                     let options = RenderOptions {

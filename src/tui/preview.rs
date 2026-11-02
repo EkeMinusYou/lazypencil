@@ -5,7 +5,6 @@ use crate::{
     Error, Result, attachments::Attachment, geometry::Rect, project::Project, store::Store,
 };
 use ratatui::layout::Size;
-use ratatui_image::Resize;
 use serde_json::{Value, json};
 use std::{
     path::PathBuf,
@@ -289,12 +288,6 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 let png = attachment.read(directory)?;
                 let image = image::load_from_memory_with_format(&png, image::ImageFormat::Png)
                     .map_err(|error| Error::new("RENDER_ERROR", error.to_string()))?;
-                let image = Resize::Fit(None).resize(
-                    &image,
-                    picker.font_size(),
-                    request.cells,
-                    Some(image::Rgba([248, 250, 252, 255])),
-                );
                 let protocol = encode(picker, image, request.cells, image_id)?;
                 return Ok(Some(Preview {
                     protocol,
@@ -336,14 +329,15 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 navigation = None;
             }
             let (project, layout) = cached.as_ref().unwrap();
-            let pixels = pixel_size(picker, request.cells)?;
+            let viewport = super::viewport::Viewport::new(picker.font_size(), request.cells)?;
+            let pixels = viewport.display;
             let mut view = request.view;
             if view.zoom.is_none() {
                 view.fit(layout.bounds, pixels);
             }
             let options = crate::render::RenderOptions {
                 region: Some(view.region(pixels)),
-                scale: view.zoom.unwrap(),
+                scale: view.zoom.unwrap() * viewport.scale,
                 background: skia_safe::Color::from_rgb(248, 250, 252),
                 refresh: request.refresh,
                 refresh_pages: request.refresh_pages,
@@ -469,21 +463,7 @@ impl PreviewTiming {
 }
 
 pub fn pixel_size(picker: &Backend, cells: Size) -> Result<[u32; 2]> {
-    let font = picker.font_size();
-    let size = [
-        u32::from(cells.width) * u32::from(font.width),
-        u32::from(cells.height) * u32::from(font.height),
-    ];
-    if size.contains(&0)
-        || size.iter().any(|n| *n > 8192)
-        || u64::from(size[0]) * u64::from(size[1]) > 16 * 1024 * 1024
-    {
-        return Err(Error::new(
-            "RENDER_ERROR",
-            "Preview size must be within 8192 pixels per side and 16 megapixels; reduce the terminal window size",
-        ));
-    }
-    Ok(size)
+    super::viewport::Viewport::new(picker.font_size(), cells).map(|viewport| viewport.display)
 }
 fn encode(picker: &Backend, image: image::DynamicImage, size: Size, id: u32) -> Result<Encoded> {
     picker.encode_preview(image, size, id)
@@ -494,6 +474,65 @@ mod tests {
     use super::*;
     use std::time::Duration;
     use tempfile::TempDir;
+
+    #[test]
+    fn oversized_previews_keep_the_camera_and_allow_minimum_zoom() {
+        let directory = TempDir::new().unwrap();
+        let store = Store::init(
+            directory.path().join("design.pen"),
+            Some(directory.path().join("data")),
+        )
+        .unwrap();
+        let document = json!({"version":"2.21","children":[{"type":"rectangle","id":"red","x":-100,"y":-100,"width":200,"height":200,"fill":"#FF0000"}]}).to_string();
+        std::fs::write(store.path(), &document).unwrap();
+        let picker = Backend::halfblocks();
+        let worker = Worker::start(store.clone(), vec![], picker.clone(), 199).unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let cells = Size::new(900, 4);
+            let pixels = pixel_size(&picker, cells).unwrap();
+            assert_eq!(pixels, [9000, 80]);
+            for (generation, zoom) in [(1, Some(1.0)), (2, Some(0.01)), (3, None)] {
+                let view = View {
+                    center: [0.0, 0.0],
+                    zoom,
+                    time: 0.0,
+                };
+                worker.request(Request {
+                    generation,
+                    cells,
+                    view,
+                    refresh: false,
+                    refresh_pages: false,
+                    check_only: false,
+                    attachment: None,
+                });
+                let output = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                    .await
+                    .unwrap();
+                let preview = output.result.unwrap();
+                assert_eq!(preview.protocol.size(), cells);
+                let mut expected = view;
+                if zoom.is_none() {
+                    expected.fit(Rect::new(-100.0, -100.0, 200.0, 200.0), pixels);
+                }
+                assert_eq!(preview.view, expected);
+                assert_eq!(preview.view.region(pixels), expected.region(pixels));
+                let png = preview.image.png().unwrap();
+                let image = image::load_from_memory(png.as_ref()).unwrap();
+                assert!(image.width() <= super::super::viewport::MAX_SIDE);
+                assert!(
+                    u64::from(image.width()) * u64::from(image.height())
+                        <= super::super::viewport::MAX_PIXELS
+                );
+                assert_eq!(preview.nodes[0].id, "red");
+            }
+        });
+        assert_eq!(std::fs::read_to_string(store.path()).unwrap(), document);
+    }
 
     #[test]
     fn preview_worker_profiling_is_opt_in_and_partitions_one_monotonic_interval() {

@@ -235,7 +235,15 @@ impl App {
             title
         };
         let focused = self.focus == Focus::Nodes;
-        let mut block = panel(theme::title("▤", title, theme::NODES, focused), focused);
+        let title = theme::title("▤", title, theme::NODES, focused);
+        let available = usize::from(area.width).saturating_sub(title.width() + 2);
+        let mut block = panel(title, focused);
+        if let Some(hint) = self
+            .panel_toggle_title(Nav::ToggleNodesPanel)
+            .filter(|hint| hint.width() <= available)
+        {
+            block = block.title_top(hint.right_aligned());
+        }
         if let Some(preview) = &self.preview {
             let diagnostics = if self.diagnostics.active && self.diagnostics.selected_only {
                 self.visible_diagnostic_count()

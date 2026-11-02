@@ -70,6 +70,11 @@ fn real_pty_no_color_preserves_kitty_image_identifiers() {
 }
 
 #[test]
+fn real_pty_large_viewports_stay_visible_and_keep_preview_errors_out_of_agent_history() {
+    run_pty_case("oversized-preview");
+}
+
+#[test]
 fn real_pty_collapses_panels_resizes_kitty_preview_and_preserves_the_draft() {
     run_pty_case("collapsible-panels");
 }

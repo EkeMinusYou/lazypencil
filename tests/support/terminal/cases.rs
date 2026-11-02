@@ -30,7 +30,12 @@ fn no_agent(h: &Harness) {
 }
 fn status(h: &Harness) -> String {
     let text = h.screen.text();
-    text.split('\n').rev().nth(1).unwrap_or_default().to_owned()
+    text.split('\n')
+        .rev()
+        .nth(1)
+        .unwrap_or_default()
+        .trim_start_matches("! ")
+        .to_owned()
 }
 fn snapshot(h: &Harness, name: &str, offsets: &mut serde_json::Map<String, Value>) -> Result {
     offsets.insert(name.into(), h.output.len().into());
@@ -281,6 +286,10 @@ pub fn run(
         "user-navigation-config" => navigation(&mut h)?,
         "collapsible-panels" => {
             collapsible_panels(&mut h)?;
+            Value::Null
+        }
+        "oversized-preview" => {
+            oversized_preview(&mut h, &design)?;
             Value::Null
         }
         "session-selection" => conversations::selection(&mut h)?,
@@ -673,9 +682,8 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
                         line.contains("か\u{3099}") && line.contains('👩')
                     })
             }) && lines.get(rows as usize - 1).is_some_and(|line| {
-                // Panel toggles now precede navigation help. Both complete
-                // labels fit even at the narrowest tested terminal width.
-                line.starts_with("F2 / Alt+N hide Nodes") && line.contains("F3 / Alt+A hide Agent")
+                // Require the complete current Prompt actions after layout.
+                line.starts_with("Ctrl+Enter send") && line.contains("F1 help")
             }) && h.screen.cursor().1 != previous.1
                 && h.session()
                     .is_some_and(|session| session["draft"] == expected)
@@ -1438,6 +1446,64 @@ fn restore(h: &mut Harness, checkpoint: &Value) -> Result {
     no_agent(h);
     Ok(())
 }
+fn oversized_preview(h: &mut Harness, design: &Value) -> Result {
+    h.wait("initial high-DPI preview", 15.0, |h| {
+        h.frames.images.last().is_some_and(|frame| {
+            (5900..=6200).contains(&frame.width) && frame.has_color([255, 0, 0, 255])
+        })
+    })?;
+    let draft = "大きな画面でも保持する下書き";
+    h.paste(draft)?;
+    h.draft(draft)?;
+    for key in [b"\x1bn", b"\x1ba"] {
+        h.frames.images.clear();
+        let frames = h.frames.images.len();
+        h.key(key)?;
+        h.wait("bounded full-width preview", 15.0, |h| {
+            h.frames.images.len() > frames
+                && h.frames
+                    .images
+                    .last()
+                    .is_some_and(|frame| frame.width <= 8192 && frame.has_color([255, 0, 0, 255]))
+        })?;
+        assert!(!h.screen.text().contains("Preview unavailable"));
+    }
+    let before = h.frames.images.last().unwrap().clone();
+    h.frames.images.clear();
+    h.key(b"l")?;
+    h.wait("large viewport pan changes pixels", 15.0, |h| {
+        h.frames.images.last().is_some_and(|frame| frame != &before)
+    })?;
+    h.key(b"h")?;
+    h.wait("large viewport reverse pan restores pixels", 15.0, |h| {
+        h.frames.images.last() == Some(&before)
+    })?;
+    h.frames.images.clear();
+    h.resize(80, 30)?;
+    h.wait("smaller viewport regains native resolution", 15.0, |h| {
+        h.frames
+            .images
+            .last()
+            .is_some_and(|frame| frame.width == 7800 && frame.has_color([255, 0, 0, 255]))
+    })?;
+    let mut broken = design.clone();
+    broken["version"] = "2.9".into();
+    write_json(&h.document, &broken)?;
+    h.visible("Preview unavailable")?;
+    h.frames.images.clear();
+    write_json(&h.document, design)?;
+    h.hidden("Preview unavailable")?;
+    h.key(b"\x1ba")?;
+    h.visible("Prompt")?;
+    h.draft(draft)?;
+    assert!(
+        !h.screen.text().contains("UNSUPPORTED_VERSION"),
+        "Preview failure leaked into Agent history"
+    );
+    no_agent(h);
+    Ok(())
+}
+
 fn collapsible_panels(h: &mut Harness) -> Result {
     h.wait("initial complete panel preview", 15.0, |h| {
         h.frames
@@ -1446,13 +1512,16 @@ fn collapsible_panels(h: &mut Harness) -> Result {
             .is_some_and(|image| image.has_color([255, 0, 0, 255]))
     })?;
     let initial = h.frames.images.last().unwrap().clone();
+    h.visible("Enter send")?;
+    h.visible("Alt+Enter newline")?;
+    h.visible("F1 help")?;
     let draft = "折りたたんでも保持する下書き";
     h.paste(draft)?;
     h.draft(draft)?;
     let mut previous_width = initial.width;
     for (key, hint) in [
-        (b"\x1bn", "F2 / Alt+N show Nodes"),
-        (b"\x1ba", "F3 / Alt+A show Agent"),
+        (b"\x1bn", "Alt+N show Nodes"),
+        (b"\x1ba", "Alt+A show Agent"),
     ] {
         h.key(key)?;
         h.visible(hint)?;
@@ -1478,13 +1547,10 @@ fn collapsible_panels(h: &mut Harness) -> Result {
             })
         },
     )?;
-    h.visible("F2 / Alt+N show Nodes")?;
-    h.visible("F3 / Alt+A show Agent")?;
+    h.visible("Alt+A show Agent")?;
+    h.visible("? help")?;
     h.resize(130, 34)?;
-    for (key, hint) in [
-        (b"\x1bOR", "F3 / Alt+A hide Agent"),
-        (b"\x1bOQ", "F2 / Alt+N hide Nodes"),
-    ] {
+    for (key, hint) in [(b"\x1bOR", "Alt+A hide"), (b"\x1bOQ", "Alt+N hide")] {
         h.key(key)?;
         h.visible(hint)?;
     }
@@ -1494,6 +1560,27 @@ fn collapsible_panels(h: &mut Harness) -> Result {
     h.key(b"\t\t")?;
     h.paste(" 続き")?;
     h.draft(&format!("{draft} 続き"))?;
+    no_agent(h);
+    h.key(b"\x15")?;
+    h.paste("/time invalid")?;
+    h.key(b"\r")?;
+    h.visible("Usage: /time <nonnegative seconds>")?;
+    h.key(b"\t\tr")?;
+    h.pump_for(4.2)?;
+    assert!(
+        h.screen
+            .text()
+            .contains("Usage: /time <nonnegative seconds>"),
+        "A preview refresh or notice timer cannot clear an unrelated error"
+    );
+    h.key(b"\t\x15")?;
+    h.paste("/clear-queue")?;
+    h.key(b"\r")?;
+    h.visible("Prompt queue cleared")?;
+    h.wait("notice expires and preview regains its row", 15.0, |h| {
+        !h.screen.text().contains("Prompt queue cleared")
+            && h.frames.images.last() == Some(&initial)
+    })?;
     no_agent(h);
     Ok(())
 }

@@ -1,6 +1,66 @@
 use super::*;
 use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
 
+#[test]
+fn oversized_images_are_bounded_without_shrinking_the_kitty_placement() {
+    let cells = Size::new(90, 2);
+    let area = Rect::new(0, 0, cells.width, cells.height);
+    for compressed in [false, true] {
+        let backend = Backend {
+            font: FontSize::new(100, 20),
+            protocol: ProtocolType::Kitty,
+            tmux: false,
+            kitty_compression: compressed,
+        };
+        let image = DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+            20,
+            20,
+            image::Rgba([255, 0, 0, 255]),
+        ));
+        let encoded = backend.encode_preview(image, cells, 77).unwrap();
+        assert_eq!(encoded.size(), cells);
+        match encoded {
+            Encoded::Native(image) => {
+                assert!(image.pixels[0] <= super::super::viewport::MAX_SIDE);
+                assert!(image.pixels[0] < 9000);
+                let mut presentation = Presentation::default();
+                presentation.rectangular(true);
+                let mut buffer = Buffer::empty(area);
+                presentation.begin();
+                presentation.render(&mut buffer, area, &Encoded::Native(image));
+                presentation.finish(&mut buffer, false);
+                let wire = buffer[(0, 0)].symbol();
+                assert!(wire.contains("c=90,r=2"));
+            }
+            Encoded::Protocol(protocol) => {
+                let mut buffer = Buffer::empty(area);
+                Image(&protocol).render(area, &mut buffer);
+                let wire = buffer[(0, 0)].symbol();
+                assert!(wire.contains("c=90,r=2"));
+                let mut decoder = observer::KittyFrames::default();
+                decoder.feed(wire.as_bytes()).unwrap();
+                assert_eq!(decoder.images.len(), 1);
+                assert!(decoder.images[0].width <= super::super::viewport::MAX_SIDE as usize);
+                assert!(buffer[(89, 1)].symbol().contains('\u{10EEEE}'));
+            }
+        }
+    }
+    let backend = Backend {
+        font: FontSize::new(100, 20),
+        protocol: ProtocolType::Sixel,
+        tmux: false,
+        kitty_compression: false,
+    };
+    let image = DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+        20,
+        20,
+        image::Rgba([255, 0, 0, 255]),
+    ));
+    let protocol = backend.encode(image, cells, 77).unwrap();
+    assert!(matches!(protocol, Protocol::Halfblocks(_)));
+    assert_eq!(protocol.size(), cells);
+}
+
 #[cfg(unix)]
 #[test]
 fn startup_graphics_replies_after_status_preserve_only_typed_text() {

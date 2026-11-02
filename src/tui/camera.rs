@@ -193,7 +193,6 @@ impl super::App {
         {
             self.camera = None;
             self.camera_deadline = None;
-            self.status.clear();
             return Ok(());
         }
         if picker.protocol_type() == ratatui_image::picker::ProtocolType::Kitty
@@ -293,7 +292,6 @@ impl super::App {
             image: protocol,
             generation: self.generation,
         });
-        self.status.clear();
         Ok(())
     }
 }

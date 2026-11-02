@@ -8,6 +8,9 @@ use tempfile::TempDir;
 #[path = "reference_tests.rs"]
 mod reference_tests;
 
+#[path = "footer_tests.rs"]
+mod footer_tests;
+
 #[path = "../../tests/support/fixture.rs"]
 mod fixture_support;
 
@@ -215,7 +218,7 @@ fn collapsed_panels_expand_preview_skip_focus_and_preserve_editor_and_tree_state
                     cells = app.draw(frame);
                 })
                 .unwrap();
-            assert_eq!(cells, Size::new(preview_width, 31));
+            assert_eq!(cells, Size::new(preview_width, 32));
             let buffer = terminal.backend().buffer();
             let heading = (0..100)
                 .map(|x| buffer[(x, 1)].symbol())
@@ -225,16 +228,14 @@ fn collapsed_panels_expand_preview_skip_focus_and_preserve_editor_and_tree_state
             let footer = (0..100)
                 .map(|x| buffer[(x, 35)].symbol())
                 .collect::<String>();
-            assert!(footer.contains(if nodes_collapsed {
-                "F2 / Alt+N show Nodes"
+            assert!(!footer.contains("F2") && !footer.contains("F3"));
+            if agent_collapsed {
+                assert!(footer.contains("Alt+A show Agent"));
+            } else if nodes_collapsed {
+                assert!(footer.contains("Alt+N show Nodes"));
             } else {
-                "F2 / Alt+N hide Nodes"
-            }));
-            assert!(footer.contains(if agent_collapsed {
-                "F3 / Alt+A show Agent"
-            } else {
-                "F3 / Alt+A hide Agent"
-            }));
+                assert!(footer.contains("Enter send") && footer.contains("Alt+Enter newline"));
+            }
             for (code, modifiers) in [
                 (KeyCode::Tab, KeyModifiers::NONE),
                 (KeyCode::BackTab, KeyModifiers::SHIFT),
@@ -339,12 +340,12 @@ fn panel_toggles_use_custom_bindings_and_palette_but_respect_dialogs() {
                 cells = app.draw(frame);
             })
             .unwrap();
-        assert_eq!(cells, Size::new(48, 11));
+        assert_eq!(cells, Size::new(48, 12));
         let buffer = terminal.backend().buffer();
         let footer = (0..50)
             .map(|x| buffer[(x, 15)].symbol())
             .collect::<String>();
-        assert!(footer.contains("Alt+N show Nodes") && footer.contains("Alt+A show Agent"));
+        assert!(footer.contains("Alt+A show Agent") && footer.contains("? help"));
         assert_eq!(app.editor.lines(), ["n"]);
     });
 }
@@ -482,9 +483,9 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
                 app.draw(frame);
             })
             .unwrap();
-        assert_eq!(terminal.backend().cursor_position(), Position::new(74, 29));
-        assert_eq!(terminal.backend().buffer()[(74, 29)].symbol(), "D");
-        assert_eq!(terminal.backend().buffer()[(75, 29)].symbol(), "e");
+        assert_eq!(terminal.backend().cursor_position(), Position::new(74, 30));
+        assert_eq!(terminal.backend().buffer()[(74, 30)].symbol(), "D");
+        assert_eq!(terminal.backend().buffer()[(75, 30)].symbol(), "e");
         app.focus = Focus::Nodes;
         terminal
             .draw(|frame| {
@@ -492,17 +493,17 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
             })
             .unwrap();
         assert!(!terminal.backend().cursor_visible());
-        assert_eq!(terminal.backend().buffer()[(74, 29)].symbol(), "D");
+        assert_eq!(terminal.backend().buffer()[(74, 30)].symbol(), "D");
         app.focus = Focus::Prompt;
         for (text, expected) in [
-            ("ちょっと".to_owned(), Position::new(82, 29)),
-            ("か\u{3099} 😀".to_owned(), Position::new(79, 29)),
-            ("か\u{3099} 👩‍💻".to_owned(), Position::new(79, 29)),
-            ("🇯🇵".to_owned(), Position::new(76, 29)),
-            ("👨‍👩‍👧‍👦".to_owned(), Position::new(76, 29)),
-            ("日\tA".to_owned(), Position::new(79, 29)),
-            ("日".repeat(80), Position::new(95, 29)),
-            ("一\n二\n三\n四\n五".to_owned(), Position::new(76, 31)),
+            ("ちょっと".to_owned(), Position::new(82, 30)),
+            ("か\u{3099} 😀".to_owned(), Position::new(79, 30)),
+            ("か\u{3099} 👩‍💻".to_owned(), Position::new(79, 30)),
+            ("🇯🇵".to_owned(), Position::new(76, 30)),
+            ("👨‍👩‍👧‍👦".to_owned(), Position::new(76, 30)),
+            ("日\tA".to_owned(), Position::new(79, 30)),
+            ("日".repeat(80), Position::new(95, 30)),
+            ("一\n二\n三\n四\n五".to_owned(), Position::new(76, 32)),
         ] {
             app.editor = editor(&text);
             terminal
@@ -538,9 +539,9 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
                 app.draw(frame);
             })
             .unwrap();
-        assert_eq!(terminal.backend().cursor_position(), Position::new(76, 29));
-        assert_eq!(terminal.backend().buffer()[(74, 29)].bg, Color::LightBlue);
-        assert_eq!(terminal.backend().buffer()[(75, 29)].bg, Color::LightBlue);
+        assert_eq!(terminal.backend().cursor_position(), Position::new(76, 30));
+        assert_eq!(terminal.backend().buffer()[(74, 30)].bg, Color::LightBlue);
+        assert_eq!(terminal.backend().buffer()[(75, 30)].bg, Color::LightBlue);
         assert!(
             terminal
                 .backend()
@@ -556,14 +557,14 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
                 app.draw(frame);
             })
             .unwrap();
-        assert_eq!(terminal.backend().cursor_position(), Position::new(41, 11));
+        assert_eq!(terminal.backend().cursor_position(), Position::new(41, 12));
         app.editor = editor(&"日".repeat(80));
         terminal
             .draw(|frame| {
                 app.draw(frame);
             })
             .unwrap();
-        assert_eq!(terminal.backend().cursor_position(), Position::new(45, 9));
+        assert_eq!(terminal.backend().cursor_position(), Position::new(45, 10));
         let draft = app.editor.lines().join("\n");
         app.help = true;
         terminal
@@ -662,19 +663,19 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
             );
         }
         assert!(!header.contains("Idle"));
-        let nodes = region(Rect::new(0, 1, 35, 37));
+        let nodes = region(Rect::new(0, 1, 35, 38));
         assert!(nodes.contains("1node") && nodes.contains("1diagnostic"));
-        let preview = region(Rect::new(35, 1, 77, 37));
+        let preview = region(Rect::new(35, 1, 77, 38));
         assert!(preview.contains("Preview"));
         let preview_heading = region(Rect::new(35, 1, 77, 1));
         assert!(!preview_heading.contains('%'));
-        assert!(region(Rect::new(35, 37, 77, 1)).contains("100%"));
-        let zoom_cell = &terminal.backend().buffer()[(109, 37)];
+        assert!(region(Rect::new(35, 38, 77, 1)).contains("100%"));
+        let zoom_cell = &terminal.backend().buffer()[(109, 38)];
         assert_eq!(zoom_cell.symbol(), "%");
         assert_eq!(zoom_cell.fg, theme::SECONDARY);
         assert!(!zoom_cell.modifier.contains(Modifier::BOLD));
         assert!(!preview.contains("Playback"));
-        let agent = region(Rect::new(112, 1, 48, 37));
+        let agent = region(Rect::new(112, 1, 48, 38));
         assert!(agent.contains("Agent") && agent.contains("Idle"));
         for value in ["Codex", "fixture@example.test", "subscription", "session:"] {
             assert!(
@@ -682,9 +683,9 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
                 "Metadata must not occupy the Agent history: {value}"
             );
         }
-        let footer = region(Rect::new(0, 38, 160, 2));
+        let footer = region(Rect::new(0, 39, 160, 1));
         assert!(!footer.contains("node") && !footer.contains("100%") && !footer.contains("t="));
-        assert!(footer.contains("Tab/Shift+Tab"));
+        assert!(footer.contains("Entersend") && footer.contains("F1help"));
         app.preview.as_mut().unwrap().time_dependent = true;
         terminal.backend_mut().resize(50, 16);
         terminal
@@ -692,8 +693,8 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
                 app.draw(frame);
             })
             .unwrap();
-        assert_eq!(terminal.backend().buffer()[(32, 13)].symbol(), "%");
-        assert_eq!(terminal.backend().buffer()[(32, 13)].fg, theme::SECONDARY);
+        assert_eq!(terminal.backend().buffer()[(32, 14)].symbol(), "%");
+        assert_eq!(terminal.backend().buffer()[(32, 14)].fg, theme::SECONDARY);
         app.preview.as_mut().unwrap().time_dependent = false;
         app.accept_input(fake_clipboard(
             Path::new("unused"),
@@ -953,11 +954,11 @@ fn periodic_preview_checks_retry_a_captured_layout_after_render_failure() {
         let worker = Worker::start(store.clone(), vec![], Backend::halfblocks(), 130).unwrap();
         let mut successful_png = None;
         for generation in [1, 2] {
-            // Layout capture succeeds before the unsupported viewport fails.
+            // Layout capture succeeds before the empty viewport fails.
             // Exercise both a first image and recovery after a previous image.
             worker.request(Request {
                 generation,
-                cells: Size::new(900, 1),
+                cells: Size::new(0, 1),
                 view: View::default(),
                 refresh: false,
                 refresh_pages: false,
@@ -968,10 +969,7 @@ fn periodic_preview_checks_retry_a_captured_layout_after_render_failure() {
                 .await
                 .unwrap();
             assert_eq!(output.generation, generation);
-            let error = output
-                .result
-                .err()
-                .expect("The viewport exceeds 8192 pixels");
+            let error = output.result.err().expect("The viewport has no width");
             assert_eq!(error.code, "RENDER_ERROR");
 
             let request = Request {
@@ -1442,6 +1440,9 @@ fn permission_modal_can_answer_and_cancel_without_blocking_the_event_loop() {
                     break;
                 }
             }
+            let footer = footer_tests::rows(&app, 80).pop().unwrap();
+            assert!(footer.contains("Enter respond") && footer.contains("Esc deny"));
+            assert!(!footer.contains("help") && !footer.contains("send"));
             press(&mut app, KeyCode::F(6), KeyModifiers::NONE, &worker).await;
             press(&mut app, KeyCode::F(5), KeyModifiers::NONE, &worker).await;
             for function in [7, 8, 9] {
@@ -1584,6 +1585,20 @@ fn activity_indicator_stays_above_the_prompt_when_history_scrolls() {
         .unwrap();
         app.insert_text("Inspect the design");
         app.submit().await.unwrap();
+        app.nodes_collapsed = true;
+        let footer = footer_tests::rows(&app, 80);
+        assert_eq!(footer.len(), 1);
+        assert!(footer[0].contains("Enter queue") && footer[0].contains("Ctrl+C cancel"));
+        assert!(!footer[0].contains("show Nodes"));
+        app.nodes_collapsed = false;
+        app.agent_collapsed = true;
+        app.focus = Focus::Preview;
+        let footer = footer_tests::rows(&app, 80);
+        assert_eq!(footer.len(), 2);
+        assert!(footer[0].contains("Working…"));
+        assert!(footer[1].contains("Ctrl+C cancel") && footer[1].contains("Alt+A show Agent"));
+        app.agent_collapsed = false;
+        app.focus = Focus::Prompt;
         app.append("Checking the document now.\n");
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 36)).unwrap();
@@ -2338,6 +2353,7 @@ fn initial_preview_loading_is_distinct_from_failure_and_explicit_retry() {
     runtime().block_on(async {
         let mut app = app(&temp, "echo");
         let initial = screen(&mut app);
+        let conversation_log = app.log.clone();
         assert!(initial.contains("Loading preview…"));
         assert!(initial.contains("Loading nodes…"));
         assert!(!initial.contains("Rendering errors"));
@@ -2380,7 +2396,7 @@ fn initial_preview_loading_is_distinct_from_failure_and_explicit_retry() {
         assert!(!loaded.contains("Loading nodes…"));
         assert!(loaded.contains("No nodes"));
         assert!(!loaded.contains("Preview unavailable"));
-        assert!(app.log.contains("Owned preview failure"));
+        assert_eq!(app.log, conversation_log, "Preview errors do not belong in Agent history");
         assert!(!app.log.contains("Stale preview failure"));
         std::fs::write(app.conversation.store().path(), json!({"version":"2.21","children":[{
             "type":"rectangle","id":"ready","name":"Ready node","width":20,"height":10,"fill":"#00FF00"
@@ -2455,7 +2471,7 @@ fn repeated_preview_errors_are_quiet_without_blocking_repair_or_explicit_retry()
                 .await
                 .expect("Failed previews must remain retryable");
             let log = app.log.clone();
-            app.status = "Unrelated user action".into();
+            app.set_status("Unrelated user action".into());
             app.dirty = false;
             assert_eq!(app.accept_preview(output), changed);
             assert_eq!(app.dirty, changed);
@@ -2472,14 +2488,20 @@ fn repeated_preview_errors_are_quiet_without_blocking_repair_or_explicit_retry()
                     app.preview_error.as_ref().unwrap().code,
                     "UNSUPPORTED_VERSION"
                 );
-                assert!(app.log.contains("supported versions are 2.19, 2.21"));
+                assert!(
+                    app.preview_error
+                        .as_ref()
+                        .unwrap()
+                        .message
+                        .contains("supported versions are 2.19, 2.21")
+                );
+                assert!(!app.log.contains("supported versions are 2.19, 2.21"));
             }
             assert_eq!(std::fs::read_to_string(store.path()).unwrap(), document);
             assert_eq!(app.editor.lines(), &["日本語の未送信プロンプト"]);
             assert!(!app.conversation.active());
         }
-        assert_eq!(app.log.matches("Cannot resolve version 2.9 at").count(), 3);
-        assert_eq!(app.log.matches("Cannot resolve version 2.8 at").count(), 1);
+        assert!(!app.log.contains("Cannot resolve version"));
         app.conversation.close().await.unwrap();
     });
 }

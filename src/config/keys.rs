@@ -272,6 +272,18 @@ fn labels(values: &[String]) -> String {
 }
 
 #[cfg(feature = "tui")]
+pub(crate) fn preferred_label(values: &[String], while_typing: bool) -> Option<String> {
+    values
+        .iter()
+        .filter_map(|value| {
+            let shortcut = parse_shortcut(value, true).ok()?;
+            (!while_typing || shortcut.prompt_safe()).then_some((value, shortcut))
+        })
+        .min_by_key(|(_, shortcut)| matches!(shortcut.key, Key::Function(_)))
+        .map(|(value, _)| labels(std::slice::from_ref(value)))
+}
+
+#[cfg(feature = "tui")]
 fn matches_event(value: &str, event: crossterm::event::KeyEvent) -> bool {
     parse(value).is_ok_and(|shortcut| shortcut.matches(event))
 }
