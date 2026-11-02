@@ -276,6 +276,10 @@ pub fn run(
             Value::Null
         }
         "user-navigation-config" => navigation(&mut h)?,
+        "collapsible-panels" => {
+            collapsible_panels(&mut h)?;
+            Value::Null
+        }
         "session-selection" => conversations::selection(&mut h)?,
         "session-deletion" | "session-deletion-small" => conversations::deletion(&mut h)?,
         "saved-history" => conversations::history(&mut h)?,
@@ -1430,6 +1434,60 @@ fn restore(h: &mut Harness, checkpoint: &Value) -> Result {
     no_agent(h);
     Ok(())
 }
+fn collapsible_panels(h: &mut Harness) -> Result {
+    h.wait("initial complete panel preview", 15.0, |h| {
+        h.frames
+            .images
+            .last()
+            .is_some_and(|image| image.has_color([255, 0, 0, 255]))
+    })?;
+    let initial = h.frames.images.last().unwrap().clone();
+    let draft = "折りたたんでも保持する下書き";
+    h.paste(draft)?;
+    h.draft(draft)?;
+    let mut previous_width = initial.width;
+    for (key, hint) in [(b"\x1bOQ", "F2 show Nodes"), (b"\x1bOR", "F3 show Agent")] {
+        h.key(key)?;
+        h.visible(hint)?;
+        h.wait("expanded complete panel preview", 15.0, |h| {
+            h.frames.images.last().is_some_and(|image| {
+                image.width > previous_width
+                    && image.height == initial.height
+                    && image.has_color([255, 0, 0, 255])
+            })
+        })?;
+        previous_width = h.frames.images.last().unwrap().width;
+    }
+    h.key(b"\t\x1b[Zx")?;
+    h.resize(50, 16)?;
+    h.wait(
+        "complete collapsed preview at minimum terminal size",
+        15.0,
+        |h| {
+            h.frames.images.last().is_some_and(|image| {
+                image.width < initial.width
+                    && image.height < initial.height
+                    && image.has_color([255, 0, 0, 255])
+            })
+        },
+    )?;
+    h.visible("F2 show Nodes")?;
+    h.visible("F3 show Agent")?;
+    h.resize(130, 34)?;
+    for (key, hint) in [(b"\x1bOR", "F3 hide Agent"), (b"\x1bOQ", "F2 hide Nodes")] {
+        h.key(key)?;
+        h.visible(hint)?;
+    }
+    h.wait("restored complete panel preview", 15.0, |h| {
+        h.frames.images.last() == Some(&initial)
+    })?;
+    h.key(b"\t\t")?;
+    h.paste(" 続き")?;
+    h.draft(&format!("{draft} 続き"))?;
+    no_agent(h);
+    Ok(())
+}
+
 fn navigation(h: &mut Harness) -> Result<Value> {
     h.wait("initial complete navigation preview", 15.0, |h| {
         !h.frames.images.is_empty()

@@ -144,6 +144,8 @@ pub const COMMANDS: &[&str] = &[
     "Browse current conversation logs…",
     "Browse saved conversations…",
     "New empty conversation (save current draft)…",
+    "Toggle Nodes panel",
+    "Toggle Agent panel",
 ];
 
 impl super::App {
@@ -284,6 +286,8 @@ impl super::App {
                             None,
                         )?,
                         7 => self.pending_session = Some(super::saved::SessionChange::New),
+                        8 => self.toggle_panel(super::Nav::ToggleNodesPanel, worker),
+                        9 => self.toggle_panel(super::Nav::ToggleAgentPanel, worker),
                         _ => unreachable!(),
                     }
                     return Ok(false);

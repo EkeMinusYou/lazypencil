@@ -147,6 +147,204 @@ fn emacs_prompt_keys_edit_unicode_lines_keep_yanks_bounded_and_preserve_undo() {
 }
 
 #[test]
+fn collapsed_panels_expand_preview_skip_focus_and_preserve_editor_and_tree_state() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        std::fs::write(
+            app.conversation.store().path(),
+            json!({"version":"2.21","children":[
+                {"id":"root","name":"Panel","type":"frame","width":80,"height":40,"children":[
+                    {"id":"child","type":"rectangle","width":10,"height":10}
+                ]}
+            ]})
+            .to_string(),
+        )
+        .unwrap();
+        let worker = Worker::start(
+            app.conversation.store().clone(),
+            vec![],
+            Backend::halfblocks(),
+            193,
+        )
+        .unwrap();
+        app.cells = Size::new(46, 31);
+        app.request(&worker, false, false);
+        loop {
+            let output = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap();
+            if output.generation == app.generation {
+                assert!(app.accept_preview(output));
+                assert!(app.preview_error.is_none());
+                break;
+            }
+        }
+        app.nodes.select(Some(0));
+        app.navigate_node_tree(Nav::ExpandNode);
+        assert_eq!(app.filtered_nodes().len(), 2);
+        app.insert_text("日本語の下書き\n編集中");
+        app.append("\nYou: Earlier prompt\n\nCodex:\nEarlier response\n");
+        app.scroll = 7;
+        let draft = app.editor.lines().to_vec();
+        let cursor = app.editor.cursor();
+        let log = app.log.clone();
+        let view = app.view;
+        for (key, nodes_collapsed, agent_collapsed, focus, preview_width) in [
+            (KeyCode::F(2), true, false, Focus::Prompt, 68),
+            (KeyCode::F(3), true, true, Focus::Preview, 98),
+            (KeyCode::F(2), false, true, Focus::Nodes, 76),
+            (KeyCode::F(3), false, false, Focus::Prompt, 46),
+        ] {
+            press(&mut app, key, KeyModifiers::NONE, &worker).await;
+            assert_eq!(
+                (app.nodes_collapsed, app.agent_collapsed),
+                (nodes_collapsed, agent_collapsed)
+            );
+            assert_eq!(app.focus, focus);
+            let mut terminal =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 36)).unwrap();
+            let mut cells = Size::default();
+            terminal
+                .draw(|frame| {
+                    cells = app.draw(frame);
+                })
+                .unwrap();
+            assert_eq!(cells, Size::new(preview_width, 31));
+            let buffer = terminal.backend().buffer();
+            let heading = (0..100)
+                .map(|x| buffer[(x, 1)].symbol())
+                .collect::<String>();
+            assert_eq!(heading.contains("Nodes"), !nodes_collapsed);
+            assert_eq!(heading.contains("Agent"), !agent_collapsed);
+            let footer = (0..100)
+                .map(|x| buffer[(x, 35)].symbol())
+                .collect::<String>();
+            assert!(footer.contains(if nodes_collapsed {
+                "F2 show Nodes"
+            } else {
+                "F2 hide Nodes"
+            }));
+            assert!(footer.contains(if agent_collapsed {
+                "F3 show Agent"
+            } else {
+                "F3 hide Agent"
+            }));
+            for (code, modifiers) in [
+                (KeyCode::Tab, KeyModifiers::NONE),
+                (KeyCode::BackTab, KeyModifiers::SHIFT),
+            ] {
+                press(&mut app, code, modifiers, &worker).await;
+                assert!(!nodes_collapsed || app.focus != Focus::Nodes);
+                assert!(!agent_collapsed || !app.focus.in_conversation());
+            }
+            assert_eq!(app.focus, focus);
+            assert_eq!(app.editor.lines(), draft);
+            assert_eq!(app.editor.cursor(), cursor);
+            assert_eq!(app.log, log);
+            assert_eq!(app.scroll, 7);
+            assert_eq!(app.selected_node().unwrap().id, "root");
+            assert_eq!(app.filtered_nodes().len(), 2);
+            assert_eq!(app.view.center, view.center);
+            assert_eq!(app.view.zoom, view.zoom);
+        }
+        app.focus = Focus::Nodes;
+        app.searching = true;
+        app.filter = "Panel".into();
+        app.search_nodes(Some("root"));
+        press(&mut app, KeyCode::F(2), KeyModifiers::NONE, &worker).await;
+        assert!(!app.searching);
+        assert_eq!(app.filter, "Panel");
+        assert_eq!(app.focus, Focus::Preview);
+        press(&mut app, KeyCode::F(2), KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::F(3), KeyModifiers::NONE, &worker).await;
+        app.searching = true;
+        press(&mut app, KeyCode::F(3), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.focus, Focus::Prompt);
+        assert!(!app.searching, "Expanding Agent must leave node search");
+        press(&mut app, KeyCode::F(3), KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::BackTab, KeyModifiers::SHIFT, &worker).await;
+        press(&mut app, KeyCode::Char('a'), KeyModifiers::NONE, &worker).await;
+        assert!(
+            !app.agent_collapsed,
+            "Adding a reference must reveal the input"
+        );
+        assert_eq!(app.focus, Focus::Prompt);
+        assert_eq!(app.outbox.references.len(), 1);
+        assert_eq!(app.editor.lines(), draft);
+        assert!(!temp.path().join("sent-turn.txt").exists());
+    });
+}
+
+#[test]
+fn panel_toggles_use_custom_bindings_and_palette_but_respect_dialogs() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let worker = Worker::start(
+            app.conversation.store().clone(),
+            vec![],
+            Backend::halfblocks(),
+            194,
+        )
+        .unwrap();
+        app.navigation.toggle_nodes_panel = vec!["Alt+n".into()];
+        app.navigation.toggle_agent_panel = vec!["Alt+a".into()];
+        app.navigation.validate(&app.keys).unwrap();
+        press(&mut app, KeyCode::F(2), KeyModifiers::NONE, &worker).await;
+        assert!(!app.nodes_collapsed);
+        press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.editor.lines(), ["n"]);
+        press(&mut app, KeyCode::Char('n'), KeyModifiers::ALT, &worker).await;
+        assert!(app.nodes_collapsed);
+        app.show_help();
+        press(&mut app, KeyCode::Char('a'), KeyModifiers::ALT, &worker).await;
+        assert!(!app.agent_collapsed);
+        assert!(
+            app.help_text()
+                .contains("Alt+N: collapse/expand Nodes; Alt+A: collapse/expand Agent")
+        );
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
+        for (label, nodes_collapsed, agent_collapsed) in [
+            ("Toggle Agent panel", true, true),
+            ("Toggle Nodes panel", false, true),
+        ] {
+            let previous = (app.nodes_collapsed, app.agent_collapsed);
+            app.modal = Some(checkpoints::Modal::Commands {
+                selected: checkpoints::COMMANDS
+                    .iter()
+                    .position(|item| *item == label)
+                    .unwrap(),
+            });
+            press(&mut app, KeyCode::Char('n'), KeyModifiers::ALT, &worker).await;
+            assert_eq!((app.nodes_collapsed, app.agent_collapsed), previous);
+            press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+            assert!(app.modal.is_none());
+            assert_eq!(
+                (app.nodes_collapsed, app.agent_collapsed),
+                (nodes_collapsed, agent_collapsed)
+            );
+        }
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(50, 16)).unwrap();
+        press(&mut app, KeyCode::Char('n'), KeyModifiers::ALT, &worker).await;
+        let mut cells = Size::default();
+        terminal
+            .draw(|frame| {
+                cells = app.draw(frame);
+            })
+            .unwrap();
+        assert_eq!(cells, Size::new(48, 11));
+        let buffer = terminal.backend().buffer();
+        let footer = (0..50)
+            .map(|x| buffer[(x, 15)].symbol())
+            .collect::<String>();
+        assert!(footer.contains("Alt+N show Nodes") && footer.contains("Alt+A show Agent"));
+        assert_eq!(app.editor.lines(), ["n"]);
+    });
+}
+
+#[test]
 fn conversation_region_defaults_to_prompt_and_keeps_history_and_attachments_accessible() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {

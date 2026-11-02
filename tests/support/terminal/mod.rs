@@ -129,6 +129,7 @@ impl Harness {
             "user-font-config",
             "script-config",
             "user-navigation-config",
+            "collapsible-panels",
             "ime-commit",
             "kitty-no-color",
             "kitty-placements",

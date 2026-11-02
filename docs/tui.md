@@ -109,8 +109,9 @@ Terminal stdin/stdout and at least 50 columns × 16 rows are required. `--json` 
 | Diagnostics: `s` | Switch between the selected node and all its descendants' diagnostics and the whole document |
 | Diagnostics: `j`/`k` / arrows; `Ctrl+U`/`Ctrl+D` | Select a diagnostic; scroll its details |
 | Diagnostics: `Enter`, `f`, `Esc` | Reveal and fit its node in Nodes; fit while staying in Diagnostics; return to Nodes |
-| `Tab` / `Shift+Tab` | Move right / left through Nodes, Preview, Prompt; wrap at either end. Agent history, attachments and references enter this cycle at Prompt |
-| Nodes / Diagnostics: `a` | Add the selected node or diagnostic as a prompt reference and focus the input |
+| `Tab` / `Shift+Tab` | Move right / left through visible Nodes, Preview, Prompt; wrap at either end and skip collapsed panels. Agent history, attachments and references enter this cycle at Prompt |
+| `F2` / `F3` | Collapse or expand Nodes / Agent. Preview fills the freed space; expanding focuses the panel. Drafts, history and node selection are retained. Also available in the command palette |
+| Nodes / Diagnostics: `a` | Add the selected node or diagnostic as a prompt reference and focus the input, expanding Agent if collapsed |
 | Right region: `Alt+Up` / `Alt+Down` | Switch between conversation history, pending images, node references, and Prompt; skip empty lists |
 | Agent history / Attachments / References: `Esc` | Return to Prompt |
 | References: arrows / `j`/`k`; Delete / Backspace / `d` | Select a reference; remove it |
@@ -192,7 +193,7 @@ The schema and `config show --user` list all actions and effective defaults:
 
 | Scope | Action fields |
 | --- | --- |
-| Normal panels | `next_panel`, `previous_panel`, `help`, `commands` |
+| Normal panels | `next_panel`, `previous_panel`, `toggle_nodes_panel`, `toggle_agent_panel`, `help`, `commands` |
 | Outside Prompt | `quit`, `refresh`, `open_preview` |
 | Preview | `pan_left`, `pan_right`, `pan_up`, `pan_down`, `zoom_in`, `zoom_out`, `fit_document`, `time_backward`, `time_forward`, `play_pause` |
 | Preview and Nodes | `fit_selected` |

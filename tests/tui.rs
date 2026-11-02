@@ -70,6 +70,11 @@ fn real_pty_no_color_preserves_kitty_image_identifiers() {
 }
 
 #[test]
+fn real_pty_collapses_panels_resizes_kitty_preview_and_preserves_the_draft() {
+    run_pty_case("collapsible-panels");
+}
+
+#[test]
 fn real_pty_custom_navigation_preserves_draft_and_changes_preview_pixels() {
     run_pty_case("user-navigation-config");
 }

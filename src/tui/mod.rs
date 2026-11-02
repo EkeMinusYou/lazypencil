@@ -77,13 +77,21 @@ enum Focus {
     Conversation,
 }
 impl Focus {
-    fn next(self, backwards: bool) -> Self {
+    fn next(self, backwards: bool, nodes_collapsed: bool, agent_collapsed: bool) -> Self {
         let current = if self.in_conversation() {
             Self::Prompt
         } else {
             self
         };
-        current.cycle(&[Self::Nodes, Self::Preview, Self::Prompt], backwards)
+        let mut order = Vec::with_capacity(3);
+        if !nodes_collapsed {
+            order.push(Self::Nodes);
+        }
+        order.push(Self::Preview);
+        if !agent_collapsed {
+            order.push(Self::Prompt);
+        }
+        current.cycle(&order, backwards)
     }
     fn in_conversation(self) -> bool {
         matches!(
@@ -194,6 +202,8 @@ struct App {
     navigation: crate::config::keys::NavigationKeys,
     editor: TextArea<'static>,
     focus: Focus,
+    nodes_collapsed: bool,
+    agent_collapsed: bool,
     view: View,
     playback: playback::Playback,
     preview: Option<Preview>,
@@ -262,6 +272,8 @@ impl App {
             navigation: Default::default(),
             editor,
             focus: Focus::Prompt,
+            nodes_collapsed: false,
+            agent_collapsed: false,
             view: View::default(),
             playback: playback::Playback::default(),
             preview: None,
@@ -1052,6 +1064,17 @@ impl App {
             }
             return Ok(false);
         }
+        if global(Nav::ToggleNodesPanel) || global(Nav::ToggleAgentPanel) {
+            self.toggle_panel(
+                if global(Nav::ToggleNodesPanel) {
+                    Nav::ToggleNodesPanel
+                } else {
+                    Nav::ToggleAgentPanel
+                },
+                worker,
+            );
+            return Ok(false);
+        }
         if self.searching {
             let selected = self.selected_node().map(|node| node.id.clone());
             match key.code {
@@ -1086,7 +1109,11 @@ impl App {
                     !self.outbox.references.is_empty(),
                 )
             } else {
-                self.focus.next(global(Nav::PreviousPanel))
+                self.focus.next(
+                    global(Nav::PreviousPanel),
+                    self.nodes_collapsed,
+                    self.agent_collapsed,
+                )
             };
             if self.focus == Focus::Attachments
                 && !self.conversation.images().is_empty()
@@ -1323,6 +1350,36 @@ impl App {
         }
         Ok(false)
     }
+    fn toggle_panel(&mut self, action: Nav, worker: &Worker) {
+        let was_attachment = self.focus == Focus::Attachments;
+        match action {
+            Nav::ToggleNodesPanel => {
+                self.nodes_collapsed = !self.nodes_collapsed;
+                if !self.nodes_collapsed {
+                    self.focus = Focus::Nodes;
+                } else if self.focus == Focus::Nodes {
+                    self.focus = Focus::Preview;
+                }
+            }
+            Nav::ToggleAgentPanel => {
+                self.agent_collapsed = !self.agent_collapsed;
+                if !self.agent_collapsed {
+                    self.focus = Focus::Prompt;
+                } else if self.focus.in_conversation() {
+                    self.focus = Focus::Preview;
+                }
+            }
+            _ => unreachable!(),
+        }
+        if self.focus != Focus::Nodes {
+            self.searching = false;
+        }
+        if was_attachment && self.focus != Focus::Attachments {
+            self.request(worker, false, false);
+        }
+        self.dirty = true;
+    }
+
     fn help_text(&self) -> String {
         let label = |action| self.navigation.label(action);
         let mut text = format!(
@@ -1333,6 +1390,11 @@ impl App {
             self.keys.submit_label(),
             self.keys.paste_label()
         );
+        text.push_str(&format!(
+            "{}: collapse/expand Nodes; {}: collapse/expand Agent\nTab skips collapsed panels; expanding focuses the panel\n",
+            label(Nav::ToggleNodesPanel),
+            label(Nav::ToggleAgentPanel)
+        ));
         text.push_str(&format!(
             "{} / {}: switch Agent sections; Esc returns to Prompt\n",
             label(Nav::PreviousSection),
@@ -1785,13 +1847,17 @@ impl App {
             ])),
             sections[0],
         );
+        let nodes_width = if self.nodes_collapsed { 0 } else { 22 };
+        let agent_width = if self.agent_collapsed { 0 } else { 30 };
         let panes = Layout::horizontal([
-            Constraint::Percentage(22),
-            Constraint::Percentage(48),
-            Constraint::Percentage(30),
+            Constraint::Percentage(nodes_width),
+            Constraint::Percentage(100 - nodes_width - agent_width),
+            Constraint::Percentage(agent_width),
         ])
         .split(sections[1]);
-        self.draw_nodes(frame, panes[0]);
+        if !self.nodes_collapsed {
+            self.draw_nodes(frame, panes[0]);
+        }
         let mut block = panel(
             theme::title(
                 if self.camera.is_some() { "↻" } else { "▣" },
@@ -1845,7 +1911,9 @@ impl App {
                 inner,
             );
         }
-        self.draw_conversation(frame, panes[2]);
+        if !self.agent_collapsed {
+            self.draw_conversation(frame, panes[2]);
+        }
         let key = |label: String| {
             Span::styled(
                 label,
@@ -1857,6 +1925,18 @@ impl App {
             Paragraph::new(Text::from(vec![
                 Line::from(self.status.clone()),
                 Line::from(vec![
+                    key(self.navigation.label(Nav::ToggleNodesPanel)),
+                    description(if self.nodes_collapsed {
+                        " show Nodes · "
+                    } else {
+                        " hide Nodes · "
+                    }),
+                    key(self.navigation.label(Nav::ToggleAgentPanel)),
+                    description(if self.agent_collapsed {
+                        " show Agent · "
+                    } else {
+                        " hide Agent · "
+                    }),
                     key(if self.focus == Focus::Nodes && self.diagnostics.active {
                         self.navigation.label(Nav::DiagnosticScope)
                     } else {

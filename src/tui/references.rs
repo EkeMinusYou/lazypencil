@@ -66,6 +66,7 @@ impl App {
         }
         references::decode(references::selection(&pending).as_ref())?;
         self.outbox.references = pending;
+        self.agent_collapsed = false;
         self.focus = Focus::Prompt;
         self.draft_changed = true;
         self.save_draft()?;
