@@ -319,6 +319,19 @@ fn direct_pixel_profiles_keep_legacy_reports_readable_and_require_the_new_phase_
             .as_slice(),
         std::slice::from_ref(&report)
     );
+    let mut next_request = report.clone();
+    next_request["phases_ms"]["render_raster_ms"] = json!(1.0);
+    let gesture = format!(
+        "{}{}{}",
+        encode(&report),
+        encode(&next_request),
+        encode(&report)
+    );
+    assert_eq!(
+        preview_profiles(gesture.as_bytes()).unwrap(),
+        [report.clone(), next_request, report.clone()],
+        "Every completed request in a retained gesture must survive profiling"
+    );
     for version in [1, 2, 4] {
         let mut invalid = report.clone();
         invalid["format_version"] = json!(version);
@@ -387,7 +400,7 @@ fn worker_profiles_require_complete_bounded_monotonic_intervals_without_extra_da
     let input = format!("unrelated stderr\n{}{}", encode(&report), encode(&next));
     assert_eq!(
         preview_profiles(input.as_bytes()).unwrap(),
-        [report.clone(), next]
+        [report.clone(), next.clone()]
     );
     for invalid in [
         json!({}),
@@ -430,9 +443,7 @@ fn worker_profiles_require_complete_bounded_monotonic_intervals_without_extra_da
             "{invalid}"
         );
     }
-    assert!(
-        preview_profiles(format!("{}{}", encode(&report), encode(&report)).as_bytes()).is_err()
-    );
+    assert!(preview_profiles(format!("{}{}", encode(&next), encode(&report)).as_bytes()).is_err());
     assert!(preview_profiles(b"unrelated stderr\n").is_err());
     assert!(preview_profiles(b"LAZYPENCIL_PREVIEW_TIMING {broken}\n").is_err());
     let oversized = vec![b'x'; 64 * 1024 + 1];
