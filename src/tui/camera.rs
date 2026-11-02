@@ -1,8 +1,8 @@
-//! Temporary camera feedback from the last exact frame; never an export source.
+//! Completed native camera frames and temporary bitmap feedback for fallback terminals.
 use super::preview::View;
 use image::{Rgba, RgbaImage};
 
-const NAVIGATION_REFRESH: std::time::Duration = std::time::Duration::from_millis(100);
+const NAVIGATION_REFRESH: std::time::Duration = std::time::Duration::from_millis(33);
 const NAVIGATION_IDLE: std::time::Duration = std::time::Duration::from_millis(80);
 
 const EXACT_FRAME_HEAD_START: std::time::Duration = std::time::Duration::from_millis(1);
@@ -62,93 +62,9 @@ impl InputProfile {
     }
 }
 
-pub(super) enum Feedback {
-    Pixels(ratatui_image::protocol::Protocol),
-    Placement(Projection),
-}
-
 pub(super) struct Camera {
-    pub image: Feedback,
+    pub image: ratatui_image::protocol::Protocol,
     pub generation: u64,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Projection {
-    pub source: [u32; 4],
-    pub area: ratatui::layout::Rect,
-}
-
-fn placement(
-    before: View,
-    after: View,
-    pixels: [u32; 2],
-    source: [u32; 2],
-    cells: ratatui::layout::Size,
-) -> Option<Projection> {
-    if pixels.contains(&0)
-        || source.contains(&0)
-        || cells.width == 0
-        || cells.height == 0
-        || before.time != after.time
-        || !before.time.is_finite()
-        || before.time < 0.0
-        || [before.zoom?, after.zoom?]
-            .iter()
-            .any(|zoom| !zoom.is_finite() || !(0.01..=16.0).contains(zoom))
-    {
-        return None;
-    }
-    let old = before.region(pixels);
-    let new = after.region(pixels);
-    if [
-        old.x, old.y, old.width, old.height, new.x, new.y, new.width, new.height,
-    ]
-    .iter()
-    .any(|value| !value.is_finite())
-    {
-        return None;
-    }
-    let visible = old.intersection(new);
-    if visible.width <= 0.0 || visible.height <= 0.0 {
-        return Some(Projection {
-            source: [0; 4],
-            area: ratatui::layout::Rect::default(),
-        });
-    }
-    let span = |start: f32, end: f32, origin: f32, length: f32, extent: u32| {
-        let first = ((f64::from(start) - f64::from(origin)) / f64::from(length) * f64::from(extent))
-            .floor()
-            .clamp(0.0, f64::from(extent)) as u32;
-        let last = ((f64::from(end) - f64::from(origin)) / f64::from(length) * f64::from(extent))
-            .ceil()
-            .clamp(f64::from(first), f64::from(extent)) as u32;
-        (first, last)
-    };
-    let (sx, ex) = span(visible.x, visible.right(), old.x, old.width, source[0]);
-    let (sy, ey) = span(visible.y, visible.bottom(), old.y, old.height, source[1]);
-    let (left, right) = span(
-        visible.x,
-        visible.right(),
-        new.x,
-        new.width,
-        u32::from(cells.width),
-    );
-    let (top, bottom) = span(
-        visible.y,
-        visible.bottom(),
-        new.y,
-        new.height,
-        u32::from(cells.height),
-    );
-    Some(Projection {
-        source: [sx, sy, ex - sx, ey - sy],
-        area: ratatui::layout::Rect::new(
-            left as u16,
-            top as u16,
-            (right - left) as u16,
-            (bottom - top) as u16,
-        ),
-    })
 }
 
 impl super::App {
@@ -178,7 +94,7 @@ impl super::App {
         // Keep the render generation stable throughout navigation. New keys
         // update the target only; an in-flight source render must finish.
         self.preview_generation = None;
-        self.camera_feedback(picker)?;
+        self.camera = None;
         self.camera_settle_deadline = Some(std::time::Instant::now() + NAVIGATION_IDLE);
         Ok(())
     }
@@ -240,9 +156,10 @@ impl super::App {
                 .is_some_and(|preview| preview.view != target)
             {
                 self.preview_generation = None;
-                if let Err(error) = self.camera_feedback(picker) {
-                    self.error(error);
-                }
+                // Display only the completed render at its own viewport. A
+                // cell-rounded cached projection would change scale/position
+                // again when the final exact frame arrives.
+                self.camera = None;
             }
         }
         let exact = self
@@ -287,9 +204,13 @@ impl super::App {
         &mut self,
         picker: &super::graphics::Backend,
     ) -> crate::Result<()> {
-        if self.presentation.source_size().is_some() {
+        if picker.protocol_type() == ratatui_image::picker::ProtocolType::Kitty
+            && !picker.tmux_detected()
+        {
+            self.camera = None;
             self.camera_deadline = None;
-            return self.render_camera_feedback(picker);
+            self.status.clear();
+            return Ok(());
         }
         if picker.protocol_type() == ratatui_image::picker::ProtocolType::Kitty
             && !self.camera_was_visible
@@ -303,7 +224,6 @@ impl super::App {
             // first deadline across superseding gestures so feedback cannot starve.
             self.camera_deadline
                 .get_or_insert_with(|| std::time::Instant::now() + EXACT_FRAME_HEAD_START);
-            self.status = "Rendering requested preview".into();
             return Ok(());
         }
         self.camera_deadline = None;
@@ -315,10 +235,13 @@ impl super::App {
         picker: &super::graphics::Backend,
     ) -> crate::Result<()> {
         self.camera = None;
-        // Sixel must quantize and transfer every interim frame. Keep that
-        // expensive work off the input thread and let the coalescing worker
-        // deliver only the exact frame, at the existing resolution/palette.
-        if picker.protocol_type() == ratatui_image::picker::ProtocolType::Sixel {
+        // Native Kitty must keep completed frame geometry unchanged. Sixel
+        // also leaves rendering/encoding on the coalescing worker because an
+        // interim bitmap would require another expensive palette/transfer.
+        if picker.protocol_type() == ratatui_image::picker::ProtocolType::Sixel
+            || (picker.protocol_type() == ratatui_image::picker::ProtocolType::Kitty
+                && !picker.tmux_detected())
+        {
             return Ok(());
         }
         let Some(preview) = &self.preview else {
@@ -331,23 +254,6 @@ impl super::App {
             || !matches!(self.focus, super::Focus::Preview | super::Focus::Nodes)
             || (preview.view.center == self.view.center && preview.view.zoom == self.view.zoom)
         {
-            return Ok(());
-        }
-        if let Some(source) = self.presentation.source_size()
-            && preview.protocol.size() == self.cells
-            && let Some(projection) = placement(
-                preview.view,
-                self.view,
-                super::preview::pixel_size(picker, self.cells)?,
-                source,
-                self.cells,
-            )
-        {
-            self.camera = Some(Camera {
-                image: Feedback::Placement(projection),
-                generation: self.generation,
-            });
-            self.status = "Cached preview · rendering full detail".into();
             return Ok(());
         }
         let decoded = if let super::preview::PreviewImage::Png(png) = &preview.image {
@@ -400,10 +306,10 @@ impl super::App {
             self.camera_id,
         )?;
         self.camera = Some(Camera {
-            image: Feedback::Pixels(protocol),
+            image: protocol,
             generation: self.generation,
         });
-        self.status = "Cached preview · rendering full detail".into();
+        self.status.clear();
         Ok(())
     }
 }
@@ -560,68 +466,6 @@ mod tests {
                 project_region(&borrowed, before, after, [120, 80]),
                 project(&cropped, before, after)
             );
-        }
-    }
-
-    #[test]
-    fn native_projection_crops_and_scales_the_existing_texture_inside_the_viewport() {
-        use ratatui::layout::{Rect, Size};
-        let before = View {
-            zoom: Some(1.0),
-            ..Default::default()
-        };
-        let cells = Size::new(80, 30);
-        let projected = |view| placement(before, view, [800, 600], [800, 600], cells).unwrap();
-        let mut view = before;
-        view.pan([64.0, 0.0]);
-        assert_eq!(
-            projected(view),
-            Projection {
-                source: [64, 0, 736, 600],
-                area: Rect::new(0, 0, 74, 30)
-            }
-        );
-        view = before;
-        view.pan([-64.0, 0.0]);
-        assert_eq!(
-            projected(view),
-            Projection {
-                source: [0, 0, 736, 600],
-                area: Rect::new(6, 0, 74, 30)
-            }
-        );
-        view = before;
-        view.zoom = Some(1.25);
-        assert_eq!(
-            projected(view),
-            Projection {
-                source: [80, 60, 640, 480],
-                area: Rect::new(0, 0, 80, 30)
-            }
-        );
-        view.zoom = Some(0.8);
-        assert_eq!(
-            projected(view),
-            Projection {
-                source: [0, 0, 800, 600],
-                area: Rect::new(8, 3, 64, 24)
-            }
-        );
-        view = before;
-        view.pan([8000.0, -6000.0]);
-        assert!(projected(view).area.is_empty());
-        for delta in [[64.0, 0.0], [-64.0, 0.0], [0.0, 64.0], [0.0, -64.0]] {
-            view = before;
-            for _ in 0..16 {
-                view.pan(delta);
-                let projection = projected(view);
-                assert!(
-                    projection.area.right() <= cells.width
-                        && projection.area.bottom() <= cells.height
-                );
-                assert!(projection.source[0] + projection.source[2] <= 800);
-                assert!(projection.source[1] + projection.source[3] <= 600);
-            }
         }
     }
 

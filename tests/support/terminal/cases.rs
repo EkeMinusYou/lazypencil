@@ -794,12 +794,14 @@ fn held_navigation(h: &mut Harness) -> Result {
     })?;
     let before = pan_inputs(h);
     let frames = h.frames.images.len();
-    let placements = h.frames.camera_placement_updates;
     for (index, kind) in [1, 2, 2].into_iter().enumerate() {
+        let previous = h.frames.images.len();
         h.key(format!("\x1b[104;1:{kind}u").as_bytes())?;
-        h.wait("rapid repeats keep updating the cached camera", 3.0, |h| {
-            pan_inputs(h) == before + index + 1 && h.frames.camera_placement_updates > placements
-        })?;
+        h.wait(
+            "rapid repeats publish complete frames before release",
+            3.0,
+            |h| pan_inputs(h) == before + index + 1 && h.frames.images.len() > previous,
+        )?;
         h.pump_for(0.015)?;
     }
     h.key(b"\x1b[104;1:3u")?;
@@ -866,6 +868,11 @@ fn held_navigation(h: &mut Harness) -> Result {
     h.wait("Prompt restores UTF-8 IME keyboard mode", 15.0, |h| {
         keyboard_flags(&h.output) == Some(5)
     })?;
+    assert_eq!(
+        h.frames.camera_placement_updates, 0,
+        "Navigation must never project a cell-rounded cached viewport"
+    );
+    assert!(!h.contains_bytes(b"Cached preview"));
     h.paste("hjklは本文です")?;
     h.draft("hjklは本文です")?;
     assert_eq!(fs::read(&h.document)?, saved);

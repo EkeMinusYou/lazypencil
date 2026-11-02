@@ -133,7 +133,6 @@ struct NativePlacement {
     image_id: u32,
     placement_id: u32,
     area: Rect,
-    source: Option<[u32; 4]>,
 }
 
 /// Present new Kitty frames in an inactive slot before replacing their cells.
@@ -163,38 +162,6 @@ impl Presentation {
         (self.rectangular && self.slots[0].is_some() && self.pending[0].is_none())
             .then(|| self.source_sizes[0])
             .flatten()
-    }
-
-    pub(super) fn project(
-        &mut self,
-        buffer: &mut Buffer,
-        area: Rect,
-        projection: super::camera::Projection,
-    ) {
-        for position in area.positions() {
-            if let Some(cell) = buffer.cell_mut(position) {
-                cell.reset();
-                cell.set_bg(ratatui::style::Color::Rgb(248, 250, 252));
-            }
-        }
-        let Some((_, image_id)) = self.slots[0] else {
-            return;
-        };
-        if !projection.area.is_empty() {
-            let target = projection.area;
-            self.desired = Some(NativePlacement {
-                family: 0,
-                image_id,
-                placement_id: 2,
-                area: Rect::new(
-                    area.x + target.x,
-                    area.y + target.y,
-                    target.width,
-                    target.height,
-                ),
-                source: Some(projection.source),
-            });
-        }
     }
 
     pub(super) fn begin(&mut self) {
@@ -237,7 +204,6 @@ impl Presentation {
                 image_id,
                 placement_id: 1,
                 area,
-                source: None,
             });
         }
         for position in area.positions() {
@@ -329,7 +295,6 @@ impl Presentation {
                 image_id: target,
                 placement_id: 1,
                 area,
-                source: None,
             });
             for position in area.positions() {
                 if let Some(cell) = buffer.cell_mut(position)
@@ -371,9 +336,6 @@ impl Presentation {
                     area.width,
                     area.height
                 );
-                if let Some([x, y, width, height]) = placement.source {
-                    let _ = write!(commands, ",x={x},y={y},w={width},h={height}");
-                }
                 commands.push_str(";\x1b\\");
             }
             shown = Some(placement);

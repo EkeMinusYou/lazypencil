@@ -2386,7 +2386,7 @@ fn cached_camera_feedback_keeps_exact_exports_and_generation_ownership_separate(
         app.focus = Focus::Preview;
         press(&mut app, KeyCode::Right, KeyModifiers::NONE, &worker).await;
         assert_eq!(app.camera.as_ref().unwrap().generation, app.generation);
-        assert!(app.status.contains("Cached preview"));
+        assert!(app.status.is_empty());
         assert_eq!(
             app.preview.as_ref().unwrap().image.png().unwrap().as_ref(),
             exact
@@ -3195,18 +3195,16 @@ fn checkpoint_history_pages_cover_the_boundary_without_duplicates_or_missing_ent
 }
 
 #[test]
-fn kitty_camera_defers_interim_work_without_starving_feedback_or_exporting_stale_pixels() {
+fn native_navigation_displays_only_exact_frames_without_a_settle_time_position_correction() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {
         let mut app = app(&temp, "echo");
-        std::fs::write(
-            app.conversation.store().path(),
-            json!({"version":"2.21","children":[{
-                "id":"shape","type":"rectangle","width":160,"height":100,"fill":"#2563EB"
-            }]})
-            .to_string(),
-        )
-        .unwrap();
+        let document = json!({"version":"2.21","children":[{
+            "id":"shape","type":"rectangle","width":160,"height":100,"fill":"#2563EB"
+        }]})
+        .to_string();
+        std::fs::write(app.conversation.store().path(), &document).unwrap();
+        app.insert_text("日本語の下書き");
         let (picker, _) = Backend::detect(ImageProtocol::Kitty).unwrap();
         let worker = Worker::start(
             app.conversation.store().clone(),
@@ -3215,120 +3213,137 @@ fn kitty_camera_defers_interim_work_without_starving_feedback_or_exporting_stale
             175,
         )
         .unwrap();
-        app.cells = Size::new(20, 8);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(140, 36)).unwrap();
+        app.presentation.rectangular(true);
+        app.focus = Focus::Preview;
+        terminal.draw(|frame| app.cells = app.draw(frame)).unwrap();
+        app.view = View {
+            center: [80.0, 50.0],
+            zoom: Some(0.73),
+            time: 0.0,
+        };
         app.request(&worker, false, false);
         app.accept_preview(
             tokio::time::timeout(Duration::from_secs(15), worker.next())
                 .await
                 .unwrap(),
         );
-        let original = app
-            .preview
-            .as_ref()
-            .unwrap()
-            .image
-            .png()
-            .unwrap()
-            .into_owned();
-        app.preview.as_mut().unwrap().frame_time = Duration::from_millis(1);
-        app.focus = Focus::Preview;
-        assert!(
-            !app.key(
-                KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
-                &picker,
-                &worker
-            )
-            .await
-            .unwrap()
-        );
-        let first_deadline = app
-            .camera_deadline
-            .expect("Kitty should defer interim encoding");
-        assert!(app.camera.is_none());
-        assert!(
-            app.open_preview()
-                .unwrap_err()
-                .message
-                .contains("complete image")
-        );
-        assert!(
-            !app.key(
-                KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
-                &picker,
-                &worker
-            )
-            .await
-            .unwrap()
-        );
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        for key in [
+            KeyCode::Right,
+            KeyCode::Left,
+            KeyCode::Down,
+            KeyCode::Up,
+            KeyCode::Char('+'),
+            KeyCode::Char('-'),
+        ] {
+            let previous_view = app.preview.as_ref().unwrap().view;
+            let previous_png = app
+                .preview
+                .as_ref()
+                .unwrap()
+                .image
+                .png()
+                .unwrap()
+                .into_owned();
+            app.key(KeyEvent::new(key, KeyModifiers::NONE), &picker, &worker)
+                .await
+                .unwrap();
+            let target = app.view;
+            assert_ne!(target, previous_view);
+            assert!(app.camera_navigation && app.camera.is_none() && app.camera_deadline.is_none());
+            assert!(app.status.is_empty());
+            assert!(app.open_preview().is_err());
+            terminal
+                .draw(|frame| {
+                    app.draw(frame);
+                })
+                .unwrap();
+            let commands = terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>();
+            assert!(
+                !commands.contains("_G"),
+                "Pending input must keep the previous completed image without moving or scaling it"
+            );
+            assert_eq!(app.preview.as_ref().unwrap().view, previous_view);
+            assert_eq!(
+                app.preview.as_ref().unwrap().image.png().unwrap().as_ref(),
+                previous_png
+            );
+
+            let output = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                .await
+                .unwrap();
+            assert_eq!(output.result.as_ref().unwrap().view, target);
+            let exact_png = output
+                .result
+                .as_ref()
+                .unwrap()
+                .image
+                .png()
+                .unwrap()
+                .into_owned();
+            app.accept_interactive_preview(output, &worker, &picker);
+            app.refresh_camera_navigation(&worker, &picker);
+            assert_eq!(app.preview.as_ref().unwrap().view, target);
+            assert!(app.camera.is_none());
+            terminal
+                .draw(|frame| {
+                    app.draw(frame);
+                })
+                .unwrap();
+            let commands = terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>();
+            assert!(commands.contains("p=1,c="));
+            assert!(!commands.contains("p=2") && !commands.contains(",x="));
+            assert_eq!(
+                app.preview.as_ref().unwrap().image.png().unwrap().as_ref(),
+                exact_png
+            );
+
+            // Settling an already displayed target must not replace its pixels
+            // or introduce a second placement with different geometry.
+            app.finish_camera_gesture(&worker, &picker);
+            terminal
+                .draw(|frame| {
+                    app.draw(frame);
+                })
+                .unwrap();
+            let commands = terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>();
+            assert!(!commands.contains("_G"));
+            assert!(!app.camera_navigation && app.camera.is_none());
+            assert_eq!(app.view, target);
+            assert_eq!(
+                app.preview.as_ref().unwrap().image.png().unwrap().as_ref(),
+                exact_png
+            );
+        }
+        assert_eq!(app.editor.lines(), &["日本語の下書き"]);
         assert_eq!(
-            app.camera_deadline,
-            Some(first_deadline),
-            "Repeated gestures must not postpone feedback indefinitely"
+            std::fs::read_to_string(app.conversation.store().path()).unwrap(),
+            document
         );
-        let generation = app.generation;
-        assert!(!app.accept_preview(preview::Output {
-            generation: generation - 1,
-            result: Err(Error::new("RENDER_ERROR", "Superseded preview")),
-        }));
-        assert_eq!(app.camera_deadline, Some(first_deadline));
-        app.camera_deadline = None;
-        app.render_camera_feedback(&picker).unwrap();
-        assert_eq!(app.camera.as_ref().unwrap().generation, generation);
-        assert_eq!(
-            app.preview.as_ref().unwrap().image.png().unwrap().as_ref(),
-            original
-        );
-        tokio::time::timeout(Duration::from_secs(15), async {
-            loop {
-                let output = worker.next().await;
-                if output.generation == generation {
-                    app.accept_preview(output);
-                    break;
-                }
-            }
-        })
-        .await
-        .unwrap();
-        assert!(app.camera.is_none());
-        assert!(app.camera_deadline.is_none());
-        assert_ne!(
-            app.preview.as_ref().unwrap().image.png().unwrap().as_ref(),
-            original
-        );
-        // Slow exact frames should not delay feedback, including PNG-backed frames.
-        let png = app
-            .preview
-            .as_ref()
-            .unwrap()
-            .image
-            .png()
-            .unwrap()
-            .into_owned();
-        app.preview.as_mut().unwrap().image = preview::PreviewImage::Png(png);
-        app.preview.as_mut().unwrap().frame_time = Duration::from_millis(100);
-        app.key(
-            KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
-            &picker,
-            &worker,
-        )
-        .await
-        .unwrap();
-        assert!(app.camera_deadline.is_none());
-        assert_eq!(app.camera.as_ref().unwrap().generation, app.generation);
-        assert!(app.open_preview().is_err());
-        let generation = app.generation;
-        tokio::time::timeout(Duration::from_secs(15), async {
-            loop {
-                let output = worker.next().await;
-                if output.generation == generation {
-                    app.accept_preview(output);
-                    break;
-                }
-            }
-        })
-        .await
-        .unwrap();
-        assert!(app.camera.is_none() && app.camera_deadline.is_none());
         app.conversation.close().await.unwrap();
     });
 }
@@ -3414,7 +3429,7 @@ fn progressive_navigation_refreshes_sources_without_rewinding_or_exporting_inter
         app.refresh_camera_navigation(&worker, &picker);
         assert_eq!(app.view, target);
         assert_eq!(app.preview.as_ref().unwrap().view, rendered_view);
-        assert!(app.camera_navigation && app.camera.is_some());
+        assert!(app.camera_navigation && app.camera.is_none());
         assert!(app.preview_generation.is_none());
         assert!(
             app.open_preview()
@@ -3436,7 +3451,7 @@ fn progressive_navigation_refreshes_sources_without_rewinding_or_exporting_inter
             .collect::<String>();
         assert!(
             commands.find("a=t,").unwrap() < commands.find("a=p,").unwrap(),
-            "Fresh pixels must be uploaded before projecting their source"
+            "Only a completed whole image may replace the previous viewport"
         );
         app.finish_camera_gesture(&worker, &picker);
         app.accept_interactive_preview(

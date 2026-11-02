@@ -208,7 +208,6 @@ struct App {
     camera_settle_deadline: Option<Instant>,
     camera_refresh_deadline: Option<Instant>,
     camera_navigation: bool,
-    camera_source_changed: bool,
     deferred_preview: Option<preview::Output>,
     camera_was_visible: bool,
     camera_id: u32,
@@ -277,7 +276,6 @@ impl App {
             camera_settle_deadline: None,
             camera_refresh_deadline: None,
             camera_navigation: false,
-            camera_source_changed: false,
             deferred_preview: None,
             camera_was_visible: false,
             camera_id: 0x8000_0001,
@@ -593,9 +591,6 @@ impl App {
             self.deferred_preview = None;
             self.preview_error = None;
             self.camera_was_visible = self.camera.take().is_some();
-            if self.camera_was_visible {
-                self.status = "Rendering requested preview".into();
-            }
             self.generation += 1;
         }
         let attachment = if self.focus == Focus::Attachments {
@@ -671,7 +666,6 @@ impl App {
                 }
                 let document = !preview.attachment;
                 self.preview = Some(preview);
-                self.camera_source_changed = true;
                 if document {
                     self.pending_node_selection = None;
                     self.nodes_loading = false;
@@ -692,7 +686,6 @@ impl App {
                     self.pending_node_selection = Some(node.id.clone());
                 }
                 self.preview = None;
-                self.camera_source_changed = false;
                 self.node_tree.rebuild(&[], &self.filter);
                 self.nodes.select(None);
                 self.refresh_diagnostics(None);
@@ -1653,7 +1646,10 @@ impl App {
         Ok(())
     }
     fn open_preview(&mut self) -> Result<()> {
-        if self.camera.is_some() || self.camera_deadline.is_some() {
+        if self.camera.is_some()
+            || self.camera_deadline.is_some()
+            || self.preview_generation != Some(self.generation)
+        {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
                 "The camera preview is updating; wait for the complete image before exporting",
@@ -1829,38 +1825,16 @@ impl App {
         }
         let inner = block.inner(panes[1]);
         frame.render_widget(block, panes[1]);
-        // Upload a refreshed source before projecting it at the latest camera.
-        // The crop's dimensions are unchanged within one navigation generation.
-        if self.camera_source_changed
-            && self
-                .camera
-                .as_ref()
-                .is_some_and(|camera| matches!(camera.image, camera::Feedback::Placement(_)))
-            && let Some(preview) = &self.preview
-        {
-            self.presentation
-                .render(frame.buffer_mut(), inner, &preview.protocol);
-            self.camera_source_changed = false;
-        }
         if let Some(camera) = self
             .camera
             .as_ref()
             .filter(|camera| camera.generation == self.generation)
         {
-            match &camera.image {
-                camera::Feedback::Pixels(protocol) => {
-                    frame.render_widget(graphics::Image(protocol), inner);
-                    self.presentation.prepare(frame.buffer_mut(), inner, true);
-                }
-                camera::Feedback::Placement(projection) => {
-                    self.presentation
-                        .project(frame.buffer_mut(), inner, *projection);
-                }
-            }
+            frame.render_widget(graphics::Image(&camera.image), inner);
+            self.presentation.prepare(frame.buffer_mut(), inner, true);
         } else if let Some(preview) = &self.preview {
             self.presentation
                 .render(frame.buffer_mut(), inner, &preview.protocol);
-            self.camera_source_changed = false;
         } else {
             frame.render_widget(
                 Paragraph::new(match &self.preview_error {

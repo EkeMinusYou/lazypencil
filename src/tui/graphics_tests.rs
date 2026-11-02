@@ -249,69 +249,6 @@ fn rectangular_kitty_uploads_once_places_the_whole_image_and_restores_after_moda
 }
 
 #[test]
-fn native_camera_repositions_uploaded_pixels_without_encoding_or_uploading_them_again() {
-    let area = Rect::new(2, 1, 80, 30);
-    let bounds = Rect::new(0, 0, 100, 40);
-    let backend = Backend {
-        font: FontSize::new(10, 20),
-        protocol: ProtocolType::Kitty,
-        tmux: false,
-        kitty_compression: true,
-    };
-    let pixels = image::RgbaImage::from_fn(800, 600, |x, y| {
-        image::Rgba([(x % 255) as u8, (y % 255) as u8, 100, 255])
-    });
-    let protocol = backend
-        .encode(DynamicImage::ImageRgba8(pixels.clone()), area.as_size(), 42)
-        .unwrap();
-    let mut presentation = Presentation::default();
-    presentation.rectangular(true);
-    presentation.begin();
-    let mut buffer = Buffer::empty(bounds);
-    Image(&protocol).render(area, &mut buffer);
-    presentation.prepare(&mut buffer, area, false);
-    presentation.finish(&mut buffer, false);
-    let mut observer = observer::KittyFrames::for_lazypencil();
-    observer.feed(buffer[(0, 0)].symbol().as_bytes()).unwrap();
-    assert_eq!(observer.images.len(), 1);
-    assert_eq!(observer.images[0].rgba(), pixels.as_raw());
-    assert_eq!(presentation.source_size(), Some([800, 600]));
-    for x in [64, 128, 192] {
-        presentation.begin();
-        let mut buffer = Buffer::empty(bounds);
-        presentation.project(
-            &mut buffer,
-            area,
-            super::super::camera::Projection {
-                source: [x, 0, 800 - x, 600],
-                area: Rect::new(0, 0, ((800 - x).div_ceil(10)) as u16, 30),
-            },
-        );
-        presentation.finish(&mut buffer, false);
-        let wire = buffer[(0, 0)].symbol();
-        assert!(wire.contains("a=p,i=42,p=2"));
-        assert!(wire.contains(&format!("x={x},y=0,w={},h=600", 800 - x)));
-        assert!(!wire.contains("a=t,") && !wire.contains("a=T,"));
-        assert!(
-            wire.len() < 256,
-            "A camera update must contain only placement metadata"
-        );
-        observer.feed(wire.as_bytes()).unwrap();
-        assert_eq!(observer.images.len(), 1);
-    }
-    assert_eq!(observer.camera_placement_updates, 3);
-    presentation.begin();
-    let mut buffer = Buffer::empty(bounds);
-    Image(&protocol).render(area, &mut buffer);
-    presentation.prepare(&mut buffer, area, false);
-    presentation.finish(&mut buffer, false);
-    let wire = buffer[(0, 0)].symbol();
-    assert!(wire.contains("a=p,i=42,p=1"));
-    assert!(wire.contains("a=d,d=i,i=42,p=2"));
-    assert!(wire.find("a=p,").unwrap() < wire.find("a=d,").unwrap());
-}
-
-#[test]
 fn unprobed_native_kitty_uses_compact_lossless_png_and_reuses_its_upload() {
     let backend = Backend {
         font: FontSize::new(10, 20),
