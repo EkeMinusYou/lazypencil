@@ -28,6 +28,11 @@ pub fn linux_dependencies() -> Result<()> {
     hosted_linux_packages(PACKAGES)
 }
 
+pub fn linux_core_dependencies() -> Result<()> {
+    // Core has no Skia/browser runtime, but executes real completion hooks.
+    hosted_linux_packages(&["fish", "zsh"])
+}
+
 pub fn linux_profile_dependencies() -> Result<()> {
     hosted_linux_packages(&["linux-tools-generic", "libfontconfig1", "libfreetype6"])
 }

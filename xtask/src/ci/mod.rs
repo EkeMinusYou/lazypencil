@@ -33,6 +33,7 @@ pub enum Command {
         target: Option<String>,
     },
     LinuxDependencies,
+    LinuxCoreDependencies,
     LinuxTerminalDependencies,
     MaterialFonts {
         #[arg(long)]
@@ -68,6 +69,7 @@ impl Command {
                 target.as_deref(),
             )?),
             Self::LinuxDependencies => setup::linux_dependencies(),
+            Self::LinuxCoreDependencies => setup::linux_core_dependencies(),
             Self::LinuxTerminalDependencies => setup::linux_terminal_dependencies(),
             Self::MaterialFonts { output } => util::print(&setup::material_fonts(
                 &util::root().join("resources/icons/catalogue.json"),

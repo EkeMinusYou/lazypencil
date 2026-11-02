@@ -608,6 +608,105 @@ fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() 
 }
 
 #[test]
+fn portable_core_moves_to_linux_while_mac_keeps_native_contracts_and_normal_builds() {
+    use ci::commands;
+    let root = util::root();
+    let lanes = fs::read_to_string(root.join(".github/workflows/native-lanes.yml")).unwrap();
+    let core = lanes
+        .split("\n  core:\n")
+        .nth(1)
+        .unwrap()
+        .split("\n  release:\n")
+        .next()
+        .unwrap();
+    assert!(core.contains("os: ubuntu-24.04\n"));
+    assert!(core.contains("phase: full\n"));
+    assert!(core.contains("lane: core\n"));
+    let workflow = fs::read_to_string(root.join(".github/workflows/native.yml")).unwrap();
+    assert!(workflow.contains("xtask/target/debug/xtask ci linux-core-dependencies"));
+    let position = |text| workflow.find(text).unwrap();
+    assert!(position("ci native core-platform\n") < position("id: default-build\n"));
+    assert!(position("ci native default-lint\n") < position("id: default-build\n"));
+    assert!(position("ci native default-development-build\n") < position("id: default-build\n"));
+    let commands = commands::core_platform_tests();
+    for command in &commands {
+        assert!(command.iter().any(|s| s == "--no-default-features"));
+        assert!(!command.iter().any(|s| s == "--features"));
+    }
+    assert!(
+        commands[0]
+            .iter()
+            .any(|s| s == commands::MANAGEMENT_REPRODUCTION)
+    );
+    assert!(commands[0].iter().any(|s| s == "--test-threads=1"));
+    assert!(commands[1].iter().any(|s| s == "--lib"));
+    for target in [
+        "agent",
+        "assets",
+        "completions",
+        "config",
+        "paths",
+        "project",
+        "runtime",
+        "user_agent_config",
+        "user_config",
+    ] {
+        assert!(
+            commands[1]
+                .windows(2)
+                .any(|args| args == ["--test", target]),
+            "{target}"
+        );
+    }
+    assert!(
+        commands[1]
+            .windows(2)
+            .any(|args| args == ["--skip", commands::MANAGEMENT_REPRODUCTION])
+    );
+    let build = commands::core_platform_build();
+    assert_eq!(
+        &build[..build.len() - 1],
+        commands[1].split(|s| s == "--").next().unwrap()
+    );
+    assert_eq!(build.last().unwrap(), "--no-run");
+    // The complete featureless suite is still enforced independently of Mac allocation.
+    assert!(commands::core_tests().iter().any(|s| s == "--no-fail-fast"));
+}
+
+#[test]
+fn release_caches_survive_later_test_failure_and_stay_scoped_to_the_pull_request() {
+    let root = util::root();
+    let workflow = fs::read_to_string(root.join(".github/workflows/native.yml")).unwrap();
+    let release = workflow
+        .split("id: release-save\n")
+        .nth(1)
+        .unwrap()
+        .split("      - name:")
+        .next()
+        .unwrap();
+    assert!(release.contains("!cancelled()"));
+    assert!(release.contains("steps.release-build.outcome == 'success'"));
+    assert!(release.contains("github.event_name == 'pull_request'"));
+    assert!(release.contains("application stage --release-only"));
+    assert!(workflow.contains("--release-verified '${{ steps.release-build.outcome == 'success'"));
+    let dependencies = workflow
+        .split("id: native-published\n")
+        .nth(1)
+        .unwrap()
+        .split("      - name:")
+        .next()
+        .unwrap();
+    assert!(dependencies.contains("github.event_name == 'pull_request'"));
+    assert!(dependencies.contains("inputs.lane == 'core' || inputs.lane == 'release'"));
+    let cleanup = fs::read_to_string(root.join(".github/workflows/pr-cache-cleanup.yml")).unwrap();
+    assert!(cleanup.contains("types: [closed]"));
+    assert!(cleanup.contains("CACHE_REF: refs/pull/${{ github.event.number }}/merge"));
+    assert!(cleanup.contains("--ref \"$CACHE_REF\""));
+    assert!(!cleanup.contains("actions/checkout"));
+    assert!(!cleanup.contains("pull_request_target"));
+}
+
+#[test]
 fn release_evidence_restores_only_mapped_release_outputs_before_cargo_verification() {
     let workflow =
         fs::read_to_string(util::root().join(".github/workflows/release-evidence.yml")).unwrap();
