@@ -10,6 +10,7 @@ use std::path::Path;
 use uuid::Uuid;
 
 mod import;
+mod variable_cycles;
 pub use import::{
     ComponentSource, ImportMode, ImportOptions, NameResolution, ScriptAsset, ScriptAssetKind,
 };
@@ -623,7 +624,7 @@ fn apply_impl(
         }
     }
     crate::cancel::check(cancel)?;
-    validate_local(&edited)?;
+    validate_local_with_cancellation(&edited, cancel)?;
     if project_path.is_some()
         || edited
             .value()
@@ -643,6 +644,15 @@ fn apply_impl(
 }
 
 pub fn validate_local(document: &Document) -> Result<()> {
+    validate_local_with_cancellation(document, None)
+}
+
+pub(crate) fn validate_local_with_cancellation(
+    document: &Document,
+    cancel: Option<&tokio_util::sync::CancellationToken>,
+) -> Result<()> {
+    let check = || crate::cancel::check(cancel);
+    check()?;
     let imports = document.value().get("imports").and_then(Value::as_object);
     let has_imports = imports.is_some_and(|v| !v.is_empty());
     let variables = document.value().get("variables").and_then(Value::as_object);
@@ -650,6 +660,7 @@ pub fn validate_local(document: &Document) -> Result<()> {
         return Err(invalid("variables must be an object"));
     }
     for (name, definition) in variables.into_iter().flatten() {
+        check()?;
         variable_name(name)?;
         validate_variable_definition(
             name,
@@ -657,9 +668,12 @@ pub fn validate_local(document: &Document) -> Result<()> {
             variables.expect("variable map"),
             has_imports,
         )?;
-        check_variable_cycle(name, variables.expect("variable map"), &mut HashSet::new())?;
+    }
+    if let Some(variables) = variables {
+        variable_cycles::check(variables, &check)?;
     }
     for (id, location) in document.locations() {
+        check()?;
         let node = document
             .value()
             .pointer(&location.pointer)
@@ -1308,28 +1322,6 @@ fn check_ref_cycle(document: &Document, id: &str, active: &mut HashSet<String>) 
         }
     }
     active.remove(id);
-    Ok(())
-}
-
-fn check_variable_cycle(
-    name: &str,
-    variables: &Map<String, Value>,
-    active: &mut HashSet<String>,
-) -> Result<()> {
-    if !active.insert(name.into()) {
-        return Err(Error::new(
-            "REFERENCE_CYCLE",
-            format!("Variable cycle at {name}"),
-        ));
-    }
-    if let Some(definition) = variables.get(name) {
-        for reference in variable_references(&definition["value"]) {
-            if variables.contains_key(&reference) {
-                check_variable_cycle(&reference, variables, active)?;
-            }
-        }
-    }
-    active.remove(name);
     Ok(())
 }
 

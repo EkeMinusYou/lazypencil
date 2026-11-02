@@ -17,6 +17,47 @@ fn operations(value: Value) -> Vec<Operation> {
     serde_json::from_value(value).unwrap()
 }
 
+#[path = "support/fixture.rs"]
+mod fixture_support;
+
+#[test]
+fn cli_validation_finishes_shared_alias_graphs_without_changing_the_document() {
+    let temporary = TempDir::new().unwrap();
+    fs::create_dir(temporary.path().join(".git")).unwrap();
+    let path = temporary.path().join("aliases.pen");
+    let mut variables = serde_json::Map::new();
+    for index in 0..40 {
+        variables.insert(
+            format!("v{index}"),
+            json!({"type":"number","value":[
+                {"value":format!("$v{}",index+1)}, {"value":format!("$v{}",index+1)}
+            ]}),
+        );
+    }
+    variables.insert("v40".into(), json!({"type":"number","value":1}));
+    let original = json!({"version":"2.21","variables":variables,"children":[]}).to_string();
+    fs::write(&path, &original).unwrap();
+    let output = fixture_support::output(
+        Command::new(env!("CARGO_BIN_EXE_lazypencil"))
+            .args(["--json", "validate"])
+            .arg(&path)
+            .env("LAZYPENCIL_CONFIG_DIR", temporary.path().join("config"))
+            .env("LAZYPENCIL_DATA_DIR", temporary.path().join("data"))
+            .env("LAZYPENCIL_LOCK_DIR", temporary.path().join("locks")),
+        std::time::Duration::from_secs(5),
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()["valid"],
+        true
+    );
+    assert_eq!(fs::read_to_string(path).unwrap(), original);
+}
+
 #[test]
 fn cli_argument_errors_respect_json_before_or_after_the_subcommand() {
     for (index, arguments) in [

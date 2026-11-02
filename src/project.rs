@@ -1728,7 +1728,7 @@ impl Project {
     fn resolve_bounded(&self, icons: bool, count: &mut Expansion) -> Result<ResolvedScene> {
         for document in self.documents.values() {
             self.check_cancelled()?;
-            crate::operations::validate_local(document)?;
+            crate::operations::validate_local_with_cancellation(document, self.cancel.as_ref())?;
         }
         let mut roots = Vec::new();
         for node in self.root_document().value()["children"]
