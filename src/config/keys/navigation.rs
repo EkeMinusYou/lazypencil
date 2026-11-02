@@ -54,8 +54,8 @@ macro_rules! bindings {
 bindings! {
     next_panel => NextPanel(ALL, ["Tab"]),
     previous_panel => PreviousPanel(ALL, ["Shift+Tab"]),
-    toggle_nodes_panel => ToggleNodesPanel(ALL, ["F2"]),
-    toggle_agent_panel => ToggleAgentPanel(ALL, ["F3"]),
+    toggle_nodes_panel => ToggleNodesPanel(ALL, ["F2", "Alt+n"]),
+    toggle_agent_panel => ToggleAgentPanel(ALL, ["F3", "Alt+a"]),
     previous_section => PreviousSection(CONVERSATION_REGION, ["Alt+Up"]),
     next_section => NextSection(CONVERSATION_REGION, ["Alt+Down"]),
     help => Help(ALL, ["F1", "?"]),

@@ -193,10 +193,15 @@ fn collapsed_panels_expand_preview_skip_focus_and_preserve_editor_and_tree_state
         for (key, nodes_collapsed, agent_collapsed, focus, preview_width) in [
             (KeyCode::F(2), true, false, Focus::Prompt, 68),
             (KeyCode::F(3), true, true, Focus::Preview, 98),
-            (KeyCode::F(2), false, true, Focus::Nodes, 76),
-            (KeyCode::F(3), false, false, Focus::Prompt, 46),
+            (KeyCode::Char('n'), false, true, Focus::Nodes, 76),
+            (KeyCode::Char('a'), false, false, Focus::Prompt, 46),
         ] {
-            press(&mut app, key, KeyModifiers::NONE, &worker).await;
+            let modifiers = if matches!(key, KeyCode::Char(_)) {
+                KeyModifiers::ALT
+            } else {
+                KeyModifiers::NONE
+            };
+            press(&mut app, key, modifiers, &worker).await;
             assert_eq!(
                 (app.nodes_collapsed, app.agent_collapsed),
                 (nodes_collapsed, agent_collapsed)
@@ -221,14 +226,14 @@ fn collapsed_panels_expand_preview_skip_focus_and_preserve_editor_and_tree_state
                 .map(|x| buffer[(x, 35)].symbol())
                 .collect::<String>();
             assert!(footer.contains(if nodes_collapsed {
-                "F2 show Nodes"
+                "F2 / Alt+N show Nodes"
             } else {
-                "F2 hide Nodes"
+                "F2 / Alt+N hide Nodes"
             }));
             assert!(footer.contains(if agent_collapsed {
-                "F3 show Agent"
+                "F3 / Alt+A show Agent"
             } else {
-                "F3 hide Agent"
+                "F3 / Alt+A hide Agent"
             }));
             for (code, modifiers) in [
                 (KeyCode::Tab, KeyModifiers::NONE),

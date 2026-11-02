@@ -1446,7 +1446,10 @@ fn collapsible_panels(h: &mut Harness) -> Result {
     h.paste(draft)?;
     h.draft(draft)?;
     let mut previous_width = initial.width;
-    for (key, hint) in [(b"\x1bOQ", "F2 show Nodes"), (b"\x1bOR", "F3 show Agent")] {
+    for (key, hint) in [
+        (b"\x1bn", "F2 / Alt+N show Nodes"),
+        (b"\x1ba", "F3 / Alt+A show Agent"),
+    ] {
         h.key(key)?;
         h.visible(hint)?;
         h.wait("expanded complete panel preview", 15.0, |h| {
@@ -1471,10 +1474,13 @@ fn collapsible_panels(h: &mut Harness) -> Result {
             })
         },
     )?;
-    h.visible("F2 show Nodes")?;
-    h.visible("F3 show Agent")?;
+    h.visible("F2 / Alt+N show Nodes")?;
+    h.visible("F3 / Alt+A show Agent")?;
     h.resize(130, 34)?;
-    for (key, hint) in [(b"\x1bOR", "F3 hide Agent"), (b"\x1bOQ", "F2 hide Nodes")] {
+    for (key, hint) in [
+        (b"\x1bOR", "F3 / Alt+A hide Agent"),
+        (b"\x1bOQ", "F2 / Alt+N hide Nodes"),
+    ] {
         h.key(key)?;
         h.visible(hint)?;
     }

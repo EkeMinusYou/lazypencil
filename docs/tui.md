@@ -110,7 +110,7 @@ Terminal stdin/stdout and at least 50 columns × 16 rows are required. `--json` 
 | Diagnostics: `j`/`k` / arrows; `Ctrl+U`/`Ctrl+D` | Select a diagnostic; scroll its details |
 | Diagnostics: `Enter`, `f`, `Esc` | Reveal and fit its node in Nodes; fit while staying in Diagnostics; return to Nodes |
 | `Tab` / `Shift+Tab` | Move right / left through visible Nodes, Preview, Prompt; wrap at either end and skip collapsed panels. Agent history, attachments and references enter this cycle at Prompt |
-| `F2` / `F3` | Collapse or expand Nodes / Agent. Preview fills the freed space; expanding focuses the panel. Drafts, history and node selection are retained. Also available in the command palette |
+| `F2` or `Alt+N` / `F3` or `Alt+A` | Collapse or expand Nodes / Agent, including while typing. Preview fills the freed space; expanding focuses the panel. Drafts, history and node selection are retained. Also available in the command palette |
 | Nodes / Diagnostics: `a` | Add the selected node or diagnostic as a prompt reference and focus the input, expanding Agent if collapsed |
 | Right region: `Alt+Up` / `Alt+Down` | Switch between conversation history, pending images, node references, and Prompt; skip empty lists |
 | Agent history / Attachments / References: `Esc` | Return to Prompt |
