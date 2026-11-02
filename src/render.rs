@@ -256,7 +256,14 @@ fn raster_impl_cached(
     if !options.time.is_finite() || options.time < 0.0 {
         return Err(invalid("Shader time must be a finite nonnegative number"));
     }
-    if !options.scale.is_finite() || !(0.01..=16.0).contains(&options.scale) {
+    // Cached TUI previews can downsample large viewports below the public
+    // export scale range. Their output still passes the raster size limits.
+    let minimum_scale = if cache.is_some() {
+        f32::MIN_POSITIVE
+    } else {
+        0.01
+    };
+    if !options.scale.is_finite() || !(minimum_scale..=16.0).contains(&options.scale) {
         return Err(Error::new(
             "INVALID_ARGUMENT",
             "Render scale must be within 0.01..16",

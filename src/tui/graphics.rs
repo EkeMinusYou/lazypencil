@@ -453,35 +453,39 @@ impl Backend {
     }
     pub fn encode_preview(&self, image: DynamicImage, size: Size, id: u32) -> Result<Encoded> {
         if self.protocol == ProtocolType::Kitty && !self.tmux && !self.kitty_compression {
-            let image = self.resize(image, size);
+            let image = self.resize(image, size)?;
             return NativeImage::new(image, size, id).map(Encoded::Native);
         }
         self.encode(image, size, id).map(Encoded::Protocol)
     }
 
-    fn resize(&self, mut image: DynamicImage, size: Size) -> DynamicImage {
-        let width = u32::from(size.width) * u32::from(self.font.width);
-        let height = u32::from(size.height) * u32::from(self.font.height);
+    fn resize(&self, mut image: DynamicImage, size: Size) -> Result<DynamicImage> {
+        let [width, height] = super::viewport::Viewport::new(self.font, size)?.raster;
         if image.width() != width || image.height() != height {
             let resized = Resize::Fit(None).resize(
                 &image,
-                self.font,
-                size,
+                FontSize::new(1, 1),
+                Size::new(width as u16, height as u16),
                 Some(image::Rgba([248, 250, 252, 255])),
             );
             drop(image);
             image = resized;
         }
-        image
+        Ok(image)
     }
 
     pub fn encode(&self, image: DynamicImage, size: Size, id: u32) -> Result<Protocol> {
-        let image = self.resize(image, size);
+        let viewport = super::viewport::Viewport::new(self.font, size)?;
+        let image = self.resize(image, size)?;
         let result = match self.protocol {
             ProtocolType::Kitty => {
                 Kitty::new(image, size, id, self.tmux, self.kitty_compression).map(Protocol::Kitty)
             }
-            ProtocolType::Sixel => Sixel::new(image, size, self.tmux).map(Protocol::Sixel),
+            // Sixel has no general display-scaling operation. Keep the full
+            // viewport with halfblocks rather than enlarging a bounded raster.
+            ProtocolType::Sixel if viewport.scale == 1.0 => {
+                Sixel::new(image, size, self.tmux).map(Protocol::Sixel)
+            }
             _ => Halfblocks::new(image, size).map(Protocol::Halfblocks),
         };
         result.map_err(|error| {

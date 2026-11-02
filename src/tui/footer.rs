@@ -58,6 +58,11 @@ impl App {
         self.status_deadline = None;
     }
 
+    pub(super) fn set_preview_error_status(&mut self, error: &Error) {
+        self.set_error_status(clean(&error.to_string()));
+        self.status_kind = StatusKind::PreviewError;
+    }
+
     pub(super) fn set_attention_status(&mut self, message: String) {
         self.set_status(message);
         self.status_kind = StatusKind::Attention;

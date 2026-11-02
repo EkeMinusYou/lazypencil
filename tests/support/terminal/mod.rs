@@ -130,6 +130,7 @@ impl Harness {
             "script-config",
             "user-navigation-config",
             "collapsible-panels",
+            "oversized-preview",
             "ime-commit",
             "kitty-no-color",
             "kitty-placements",
@@ -161,6 +162,10 @@ impl Harness {
         if matches!(case, "kitty-held" | "kitty-progressive") {
             size.ws_xpixel = size.ws_col * 10;
             size.ws_ypixel = size.ws_row * 10;
+        }
+        if case == "oversized-preview" {
+            size.ws_xpixel = size.ws_col * 100;
+            size.ws_ypixel = size.ws_row * 20;
         }
         if unsafe {
             libc::openpty(

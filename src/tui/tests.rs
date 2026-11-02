@@ -954,11 +954,11 @@ fn periodic_preview_checks_retry_a_captured_layout_after_render_failure() {
         let worker = Worker::start(store.clone(), vec![], Backend::halfblocks(), 130).unwrap();
         let mut successful_png = None;
         for generation in [1, 2] {
-            // Layout capture succeeds before the unsupported viewport fails.
+            // Layout capture succeeds before the empty viewport fails.
             // Exercise both a first image and recovery after a previous image.
             worker.request(Request {
                 generation,
-                cells: Size::new(900, 1),
+                cells: Size::new(0, 1),
                 view: View::default(),
                 refresh: false,
                 refresh_pages: false,
@@ -969,10 +969,7 @@ fn periodic_preview_checks_retry_a_captured_layout_after_render_failure() {
                 .await
                 .unwrap();
             assert_eq!(output.generation, generation);
-            let error = output
-                .result
-                .err()
-                .expect("The viewport exceeds 8192 pixels");
+            let error = output.result.err().expect("The viewport has no width");
             assert_eq!(error.code, "RENDER_ERROR");
 
             let request = Request {
@@ -2356,6 +2353,7 @@ fn initial_preview_loading_is_distinct_from_failure_and_explicit_retry() {
     runtime().block_on(async {
         let mut app = app(&temp, "echo");
         let initial = screen(&mut app);
+        let conversation_log = app.log.clone();
         assert!(initial.contains("Loading preview…"));
         assert!(initial.contains("Loading nodes…"));
         assert!(!initial.contains("Rendering errors"));
@@ -2398,7 +2396,7 @@ fn initial_preview_loading_is_distinct_from_failure_and_explicit_retry() {
         assert!(!loaded.contains("Loading nodes…"));
         assert!(loaded.contains("No nodes"));
         assert!(!loaded.contains("Preview unavailable"));
-        assert!(app.log.contains("Owned preview failure"));
+        assert_eq!(app.log, conversation_log, "Preview errors do not belong in Agent history");
         assert!(!app.log.contains("Stale preview failure"));
         std::fs::write(app.conversation.store().path(), json!({"version":"2.21","children":[{
             "type":"rectangle","id":"ready","name":"Ready node","width":20,"height":10,"fill":"#00FF00"
@@ -2490,14 +2488,20 @@ fn repeated_preview_errors_are_quiet_without_blocking_repair_or_explicit_retry()
                     app.preview_error.as_ref().unwrap().code,
                     "UNSUPPORTED_VERSION"
                 );
-                assert!(app.log.contains("supported versions are 2.19, 2.21"));
+                assert!(
+                    app.preview_error
+                        .as_ref()
+                        .unwrap()
+                        .message
+                        .contains("supported versions are 2.19, 2.21")
+                );
+                assert!(!app.log.contains("supported versions are 2.19, 2.21"));
             }
             assert_eq!(std::fs::read_to_string(store.path()).unwrap(), document);
             assert_eq!(app.editor.lines(), &["日本語の未送信プロンプト"]);
             assert!(!app.conversation.active());
         }
-        assert_eq!(app.log.matches("Cannot resolve version 2.9 at").count(), 3);
-        assert_eq!(app.log.matches("Cannot resolve version 2.8 at").count(), 1);
+        assert!(!app.log.contains("Cannot resolve version"));
         app.conversation.close().await.unwrap();
     });
 }

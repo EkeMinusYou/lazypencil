@@ -21,6 +21,7 @@ mod terminal;
 #[cfg(test)]
 mod tests;
 mod theme;
+mod viewport;
 
 use crate::config::keys::NavigationAction as Nav;
 use crate::{
@@ -480,7 +481,7 @@ impl App {
                     });
                     if !accepted {
                         if let Err(error) = self.render_camera_feedback(&screen.picker) {
-                            self.error(error);
+                            self.set_preview_error_status(&error);
                         }
                         self.dirty = true;
                     }
@@ -494,7 +495,7 @@ impl App {
                 } => {
                     if let Err(error) = self.playback_tick(worker, Instant::now()) {
                         self.playback.stop();
-                        self.error(error);
+                        self.set_preview_error_status(&error);
                         self.dirty = true;
                     }
                 },
@@ -571,6 +572,9 @@ impl App {
                 match self.key(key, &screen.picker, worker).await {
                     Ok(true) => return Ok(true),
                     Ok(false) => {}
+                    Err(error) if error.code == "RENDER_ERROR" => {
+                        self.set_preview_error_status(&error)
+                    }
                     Err(error) => self.error(error),
                 }
                 if modal && !self.has_modal() {
@@ -713,8 +717,7 @@ impl App {
                 self.preview_generation = None;
                 self.preview_error = Some(error.clone());
                 self.nodes_loading = false;
-                self.error(error);
-                self.status_kind = footer::StatusKind::PreviewError;
+                self.set_preview_error_status(&error);
             }
         }
         self.dirty = true;
