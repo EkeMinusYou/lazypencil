@@ -1,6 +1,6 @@
 //! Local, owned-PTY preview measurements for an explicitly supplied document.
 use anyhow::{Result, ensure};
-use clap::Args;
+use clap::{Args, ValueEnum};
 use std::path::PathBuf;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -23,6 +23,13 @@ fn geometry(value: &str) -> std::result::Result<Geometry, String> {
     Ok(Geometry(values))
 }
 
+#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+enum KittyTransfer {
+    #[default]
+    Zlib,
+    Png,
+}
+
 #[derive(Args)]
 pub struct Arguments {
     #[arg(long)]
@@ -40,6 +47,12 @@ pub struct Arguments {
     /// Number of Tab presses needed to focus Preview in the measured UI version.
     #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u8).range(1..=8))]
     focus_tabs: u8,
+    /// Include down/up round trips in addition to zoom and horizontal movement.
+    #[arg(long)]
+    all_directions: bool,
+    /// Simulate direct Kitty (ZLIB) or an unprobed compatible terminal (PNG).
+    #[arg(long, value_enum, default_value_t = KittyTransfer::Zlib)]
+    kitty_transfer: KittyTransfer,
     #[arg(long)]
     median_limit_ms: Option<f64>,
     #[arg(long)]
@@ -55,6 +68,22 @@ pub struct Arguments {
 }
 
 impl Arguments {
+    fn actions(&self) -> Vec<(&'static str, &'static [u8])> {
+        let mut actions = vec![
+            ("zoom_in", b"+".as_slice()),
+            ("zoom_out", b"-".as_slice()),
+            ("pan_right", b"\x1b[C".as_slice()),
+            ("pan_left", b"\x1b[D".as_slice()),
+        ];
+        if self.all_directions {
+            actions.extend([
+                ("pan_down", b"\x1b[B".as_slice()),
+                ("pan_up", b"\x1b[A".as_slice()),
+            ]);
+        }
+        actions
+    }
+
     fn validate(&self) -> Result<()> {
         ensure!(
             !self.label.is_empty()
@@ -287,7 +316,13 @@ mod owned {
             let mut command = Command::new(binary);
             command
                 .current_dir(document.parent().context("Document has no parent")?)
-                .env("TERM", "xterm-kitty")
+                .env(
+                    "TERM",
+                    match args.kitty_transfer {
+                        KittyTransfer::Zlib => "xterm-kitty",
+                        KittyTransfer::Png => "xterm-256color",
+                    },
+                )
                 .env("COLORTERM", "truecolor")
                 .env("LAZYPENCIL_CONFIG_DIR", &config)
                 .args(["--data-dir"])
@@ -522,6 +557,7 @@ mod owned {
         let [rows, columns, width, height] = args.geometry.0;
         let geometry =
             json!({"rows":rows,"columns":columns,"pixel_width":width,"pixel_height":height});
+        let actions = args.actions();
         let reference: Option<Value> = args
             .reference_report
             .as_ref()
@@ -537,7 +573,7 @@ mod owned {
             ensure!(
                 reference["samples"]
                     .as_array()
-                    .is_some_and(|s| s.len() == args.samples as usize * 4),
+                    .is_some_and(|s| s.len() == args.samples as usize * actions.len()),
                 "Reference sample count differs"
             );
         }
@@ -550,6 +586,16 @@ mod owned {
         fs::create_dir(&root)?;
         let mut terminal = Terminal::start(&args, &binary, &document, &root)?;
         let mut report = json!({"format_version":1,"observer":"Rust owned PTY / Kitty","binary":binary,"binary_sha256":binary_hash,"document_sha256":document_hash,"document_bytes":fs::metadata(&document)?.len(),"protocol":"kitty","geometry":geometry,"platform":format!("{}-{}",std::env::consts::OS,std::env::consts::ARCH),"scope":"Key write to full image receipt and synchronized update end in an owned PTY; no physical display timing. False adapter prevents agent/account work. OS caches and load uncontrolled.","samples":[]});
+        report["kitty_transfer"] = json!(match args.kitty_transfer {
+            KittyTransfer::Zlib => "zlib",
+            KittyTransfer::Png => "png",
+        });
+        report["actions"] = json!(
+            actions
+                .iter()
+                .map(|(action, _)| *action)
+                .collect::<Vec<_>>()
+        );
         let result = (|| -> Result<()> {
             let first = terminal.wait_exact(terminal.started, None)?;
             report["first_preview_ms"] = json!(millis(first.synced.unwrap(), terminal.started));
@@ -576,23 +622,22 @@ mod owned {
             };
             for round in 0..args.samples {
                 let mut trial = Vec::new();
-                for (action, key) in [
-                    ("zoom_in", b"+".as_slice()),
-                    ("zoom_out", b"-".as_slice()),
-                    ("pan_right", b"\x1b[C".as_slice()),
-                    ("pan_left", b"\x1b[D".as_slice()),
-                ] {
+                for (action, key) in &actions {
                     trial.push(terminal.interaction(action, key)?);
                 }
                 ensure!(
                     trial.iter().all(|s| s["changed"] == true)
-                        && trial[1]["hash"] == first.hash
-                        && trial[3]["hash"] == first.hash,
+                        && trial
+                            .as_chunks::<2>()
+                            .0
+                            .iter()
+                            .all(|pair| pair[1]["hash"] == first.hash),
                     "Camera round trip changed or failed to restore pixels"
                 );
                 if let Some(reference) = &reference {
                     for (offset, sample) in trial.iter().enumerate() {
-                        let expected = &reference["samples"][round as usize * 4 + offset];
+                        let expected =
+                            &reference["samples"][round as usize * actions.len() + offset];
                         ensure!(
                             sample["hash"] == expected["hash"]
                                 && sample["action"] == expected["action"],
@@ -607,7 +652,7 @@ mod owned {
                 report["samples"].as_array_mut().unwrap().extend(trial);
             }
             let mut statistics = json!({});
-            for action in ["zoom_in", "zoom_out", "pan_right", "pan_left"] {
+            for &(action, _) in &actions {
                 for field in [
                     "complete_ms",
                     "complete_sync_ms",
@@ -645,7 +690,12 @@ mod owned {
             report["reference_pixels_verified"] = json!(reference.is_some());
             if args.bursts {
                 let mut bursts = Vec::new();
-                for action in ["pan", "zoom"] {
+                let burst_actions = if args.all_directions {
+                    vec!["pan", "pan_vertical", "zoom"]
+                } else {
+                    vec!["pan", "zoom"]
+                };
+                for action in burst_actions {
                     terminal.drain(Duration::from_millis(200))?;
                     let before = terminal.frames.len();
                     let begin = Instant::now();
@@ -658,7 +708,13 @@ mod owned {
                                     .min(Duration::from_millis(5)),
                             )?;
                         }
-                        let key = if action == "pan" {
+                        let key = if action == "pan_vertical" {
+                            if i < 20 {
+                                b"\x1b[B".as_slice()
+                            } else {
+                                b"\x1b[A".as_slice()
+                            }
+                        } else if action == "pan" {
                             if i < 20 {
                                 b"\x1b[C".as_slice()
                             } else {
