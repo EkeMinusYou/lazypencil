@@ -3496,8 +3496,7 @@ fn native_navigation_displays_only_exact_frames_without_a_settle_time_position_c
                 .png()
                 .unwrap()
                 .into_owned();
-            app.accept_interactive_preview(output, &worker, &picker);
-            app.refresh_camera_navigation(&worker, &picker);
+            assert!(app.accept_interactive_preview(output, &worker, &picker));
             assert_eq!(app.preview.as_ref().unwrap().view, target);
             assert!(app.camera.is_none());
             terminal
@@ -3521,7 +3520,7 @@ fn native_navigation_displays_only_exact_frames_without_a_settle_time_position_c
 
             // Settling an already displayed target must not replace its pixels
             // or introduce a second placement with different geometry.
-            app.finish_camera_gesture(&worker, &picker);
+            app.finish_camera_gesture(&worker);
             terminal
                 .draw(|frame| {
                     app.draw(frame);
@@ -3608,7 +3607,6 @@ fn progressive_navigation_refreshes_sources_without_rewinding_or_exporting_inter
             .await
             .unwrap();
         let rendered_view = first.result.as_ref().unwrap().view;
-        assert!(!app.accept_interactive_preview(first, &worker, &picker));
         for _ in 0..3 {
             app.key(
                 KeyEvent::new_with_kind(
@@ -3622,14 +3620,11 @@ fn progressive_navigation_refreshes_sources_without_rewinding_or_exporting_inter
             .await
             .unwrap();
             assert_eq!(app.generation, epoch);
-            assert!(
-                app.deferred_preview.is_some(),
-                "Input must retain completed source work"
-            );
+            assert_ne!(app.preview.as_ref().unwrap().view, rendered_view);
         }
         let target = app.view;
         assert_ne!(rendered_view, target);
-        app.refresh_camera_navigation(&worker, &picker);
+        assert!(app.accept_interactive_preview(first, &worker, &picker));
         assert_eq!(app.view, target);
         assert_eq!(app.preview.as_ref().unwrap().view, rendered_view);
         assert!(app.camera_navigation && app.camera.is_none());
@@ -3656,17 +3651,20 @@ fn progressive_navigation_refreshes_sources_without_rewinding_or_exporting_inter
             commands.find("a=t,").unwrap() < commands.find("a=p,").unwrap(),
             "Only a completed whole image may replace the previous viewport"
         );
-        app.finish_camera_gesture(&worker, &picker);
-        app.accept_interactive_preview(
-            tokio::time::timeout(Duration::from_secs(15), worker.next())
-                .await
-                .unwrap(),
-            &worker,
-            &picker,
-        );
-        assert_eq!(app.view, target);
+        app.finish_camera_gesture(&worker);
+        while app.camera_navigation {
+            assert!(
+                app.accept_interactive_preview(
+                    tokio::time::timeout(Duration::from_secs(15), worker.next())
+                        .await
+                        .unwrap(),
+                    &worker,
+                    &picker,
+                )
+            );
+            assert_eq!(app.view, target);
+        }
         assert_eq!(app.preview.as_ref().unwrap().view, target);
-        assert!(!app.camera_navigation);
         assert!(app.camera.is_none());
         assert_eq!(app.preview_generation, Some(app.generation));
         assert!(!app.accept_interactive_preview(

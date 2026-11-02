@@ -2,7 +2,6 @@
 use super::preview::View;
 use image::{Rgba, RgbaImage};
 
-const NAVIGATION_REFRESH: std::time::Duration = std::time::Duration::from_millis(33);
 const NAVIGATION_IDLE: std::time::Duration = std::time::Duration::from_millis(80);
 
 const EXACT_FRAME_HEAD_START: std::time::Duration = std::time::Duration::from_millis(1);
@@ -89,13 +88,13 @@ impl super::App {
         if !self.camera_navigation {
             self.request(worker, false, false);
             self.camera_navigation = true;
-            self.camera_refresh_deadline = Some(std::time::Instant::now() + NAVIGATION_REFRESH);
         }
         // Keep the render generation stable throughout navigation. New keys
         // update the target only; an in-flight source render must finish.
         self.preview_generation = None;
         self.camera = None;
         self.camera_settle_deadline = Some(std::time::Instant::now() + NAVIGATION_IDLE);
+        self.refresh_camera_navigation(worker);
         Ok(())
     }
 
@@ -116,11 +115,25 @@ impl super::App {
                     && preview.protocol.size() == self.cells
                     && preview.view.time == self.view.time =>
             {
-                self.deferred_preview = Some(output);
-                if self.camera_settle_deadline.is_none() {
-                    self.refresh_camera_navigation(worker, picker);
+                let target = self.view;
+                let idle = self.camera_settle_deadline;
+                // Publish a completed whole viewport immediately, preserving
+                // newer input while the next target renders on the worker.
+                let accepted = self.accept_controlled_preview(output, worker, picker);
+                if accepted {
+                    self.view = target;
+                    self.camera_navigation = true;
+                    self.camera_settle_deadline = idle;
+                    if self
+                        .preview
+                        .as_ref()
+                        .is_some_and(|preview| preview.view != target)
+                    {
+                        self.preview_generation = None;
+                    }
+                    self.refresh_camera_navigation(worker);
                 }
-                false
+                accepted
             }
             Ok(preview) if preview.view != self.view => {
                 // A changed scene may require dynamic rendering. Restart at the
@@ -132,36 +145,12 @@ impl super::App {
         }
     }
 
-    pub(super) fn refresh_camera_navigation(
-        &mut self,
-        worker: &super::preview::Worker,
-        picker: &super::graphics::Backend,
-    ) {
-        self.camera_refresh_deadline = None;
+    fn refresh_camera_navigation(&mut self, worker: &super::preview::Worker) {
         if !self.camera_navigation {
             return;
         }
         let target = self.view;
         let idle = self.camera_settle_deadline;
-        if let Some(output) = self.deferred_preview.take() {
-            if !self.accept_controlled_preview(output, worker, picker) {
-                return;
-            }
-            self.view = target;
-            self.camera_navigation = true;
-            self.camera_settle_deadline = idle;
-            if self
-                .preview
-                .as_ref()
-                .is_some_and(|preview| preview.view != target)
-            {
-                self.preview_generation = None;
-                // Display only the completed render at its own viewport. A
-                // cell-rounded cached projection would change scale/position
-                // again when the final exact frame arrives.
-                self.camera = None;
-            }
-        }
         let exact = self
             .preview
             .as_ref()
@@ -188,16 +177,11 @@ impl super::App {
                 attachment: None,
             });
         }
-        self.camera_refresh_deadline = Some(std::time::Instant::now() + NAVIGATION_REFRESH);
     }
 
-    pub(super) fn finish_camera_gesture(
-        &mut self,
-        worker: &super::preview::Worker,
-        picker: &super::graphics::Backend,
-    ) {
+    pub(super) fn finish_camera_gesture(&mut self, worker: &super::preview::Worker) {
         self.camera_settle_deadline = None;
-        self.refresh_camera_navigation(worker, picker);
+        self.refresh_camera_navigation(worker);
     }
 
     pub(super) fn camera_feedback(

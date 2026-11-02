@@ -41,7 +41,7 @@ pub struct NativeImage {
 }
 
 impl NativeImage {
-    fn new(image: DynamicImage, size: Size, id: u32) -> Result<Self> {
+    fn new(image: DynamicImage, size: Size, id: u32, compressed: bool) -> Result<Self> {
         use base64::{Engine, engine::general_purpose::STANDARD};
         use image::{
             ImageEncoder,
@@ -50,24 +50,48 @@ impl NativeImage {
         use std::fmt::Write as _;
         let pixels = [image.width(), image.height()];
         let rgba = image.into_rgba8();
-        let mut png = Vec::new();
-        PngEncoder::new_with_quality(&mut png, CompressionType::Fast, FilterType::Sub)
-            .write_image(&rgba, pixels[0], pixels[1], image::ExtendedColorType::Rgba8)
-            .map_err(|error| {
-                Error::new(
-                    "RENDER_ERROR",
-                    format!("Cannot encode terminal PNG: {error}"),
-                )
-            })?;
-        // PNG is a required Kitty pixel format, including when compression was
-        // not probed. Encode on the renderer thread, never during UI drawing.
+        let payload = if compressed {
+            use std::io::Write as _;
+            let mut encoder =
+                flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+            encoder
+                .write_all(&rgba)
+                .and_then(|()| encoder.finish())
+                .map_err(|error| {
+                    Error::new(
+                        "RENDER_ERROR",
+                        format!("Cannot compress terminal pixels: {error}"),
+                    )
+                })?
+        } else {
+            let mut png = Vec::new();
+            PngEncoder::new_with_quality(&mut png, CompressionType::Fast, FilterType::Sub)
+                .write_image(&rgba, pixels[0], pixels[1], image::ExtendedColorType::Rgba8)
+                .map_err(|error| {
+                    Error::new(
+                        "RENDER_ERROR",
+                        format!("Cannot encode terminal PNG: {error}"),
+                    )
+                })?;
+            png
+        };
+        // Encode pixels and packet chunks on the worker. Native placements need
+        // no Unicode-placeholder grid, even when ZLIB was negotiated.
         let mut upload = String::new();
-        let chunks = png.chunks(3072);
+        let chunks = payload.chunks(3072);
         let count = chunks.len();
         for (index, chunk) in chunks.enumerate() {
             upload.push_str("\x1b_G");
             if index == 0 {
-                let _ = write!(upload, "a=t,f=100,i={id},s={},v={},", pixels[0], pixels[1]);
+                let format = if compressed { 32 } else { 100 };
+                let _ = write!(
+                    upload,
+                    "a=t,f={format},i={id},s={},v={},",
+                    pixels[0], pixels[1]
+                );
+                if compressed {
+                    upload.push_str("o=z,");
+                }
             }
             let _ = write!(upload, "q=2,m={};", usize::from(index + 1 < count));
             STANDARD.encode_string(chunk, &mut upload);
@@ -452,9 +476,9 @@ impl Backend {
         self.tmux
     }
     pub fn encode_preview(&self, image: DynamicImage, size: Size, id: u32) -> Result<Encoded> {
-        if self.protocol == ProtocolType::Kitty && !self.tmux && !self.kitty_compression {
+        if self.protocol == ProtocolType::Kitty && !self.tmux {
             let image = self.resize(image, size);
-            return NativeImage::new(image, size, id).map(Encoded::Native);
+            return NativeImage::new(image, size, id, self.kitty_compression).map(Encoded::Native);
         }
         self.encode(image, size, id).map(Encoded::Protocol)
     }
