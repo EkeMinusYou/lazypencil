@@ -49,7 +49,7 @@ impl App {
             .border_style(Style::default().fg(if focused { theme::FOCUS } else { theme::FRAME }))
             .padding(Padding {
                 left: 1,
-                right: 1,
+                right: 3,
                 top: 0,
                 bottom: 0,
             })
@@ -93,7 +93,7 @@ impl App {
                 theme::WORKING,
             )
         } else {
-            ("!", "Blocked", theme::RUNNING)
+            ("!", "Waiting for approval", theme::RUNNING)
         };
         Some(Line::from(vec![
             Span::styled(format!("{icon} {label}"), Style::default().fg(color)),
@@ -105,17 +105,17 @@ impl App {
     }
 
     pub(super) fn draw_conversation(&mut self, frame: &mut Frame, area: Rect) {
-        let mut activity = self
-            .activity_line(Instant::now())
-            .unwrap_or_else(|| Line::from(self.agent_activity()));
-        activity.spans.insert(0, Span::raw(" "));
-        activity.spans.push(Span::raw(" "));
+        let badge = self.agent_activity();
         let block = panel(
             theme::title("◉", "Agent", theme::AGENT, self.focus.in_conversation()),
             self.focus.in_conversation(),
         )
-        .border_set(border::ROUNDED)
-        .title_bottom(activity.right_aligned());
+        .border_set(border::ROUNDED);
+        let block = if area.width >= 32 {
+            block.title_top(Line::from(vec![Span::raw(" "), badge, Span::raw(" ")]).right_aligned())
+        } else {
+            block
+        };
         let inner = block.inner(area);
         frame.render_widget(block, area);
         let count = if self.conversation.active() {
@@ -143,9 +143,11 @@ impl App {
                 + 1
         };
         let queue_rows = u16::from(!self.outbox.queued.is_empty());
+        let activity = self.activity_line(Instant::now());
+        let activity_rows = u16::from(activity.is_some());
         let prompt_space = inner
             .height
-            .saturating_sub(attachment_rows + reference_rows + queue_rows + 1);
+            .saturating_sub(attachment_rows + reference_rows + queue_rows + activity_rows + 1);
         let prompt_height =
             (self.editor.lines().len().clamp(3, 6) as u16 + 2).min(prompt_space.max(3));
         let sections = Layout::vertical([
@@ -153,19 +155,18 @@ impl App {
             Constraint::Length(attachment_rows),
             Constraint::Length(queue_rows),
             Constraint::Length(reference_rows),
+            Constraint::Length(activity_rows),
             Constraint::Length(prompt_height),
         ])
         .split(inner);
         let logarea = sections[0].inner(Margin {
-            horizontal: 0,
+            horizontal: 1,
             vertical: 0,
         });
-        let text_area = Rect::new(
-            logarea.x + 2,
-            logarea.y,
-            logarea.width.saturating_sub(2),
-            logarea.height,
-        );
+        let text_area = logarea.inner(Margin {
+            horizontal: 2,
+            vertical: 0,
+        });
         let paragraph = if self.log.is_empty() {
             None
         } else {
@@ -255,13 +256,25 @@ impl App {
                         Style::default().fg(theme::SECONDARY),
                     ),
                 ])),
-                sections[2],
+                sections[2].inner(Margin {
+                    horizontal: 2,
+                    vertical: 0,
+                }),
             );
         }
         if !self.outbox.references.is_empty() {
             self.draw_references(frame, sections[3]);
         }
-        let prompt = sections[4];
+        if let Some(activity) = activity {
+            frame.render_widget(
+                Paragraph::new(activity),
+                sections[4].inner(Margin {
+                    horizontal: 1,
+                    vertical: 0,
+                }),
+            );
+        }
+        let prompt = sections[5];
         let input_style = Style::default()
             .fg(if self.focus == Focus::Prompt {
                 Color::White
@@ -286,7 +299,7 @@ impl App {
             ))
             .padding(Padding {
                 left: 3,
-                right: 1,
+                right: 3,
                 top: 0,
                 bottom: 1,
             });

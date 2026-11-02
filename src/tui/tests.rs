@@ -298,7 +298,7 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
             ("🇯🇵".to_owned(), Position::new(76, 29)),
             ("👨‍👩‍👧‍👦".to_owned(), Position::new(76, 29)),
             ("日\tA".to_owned(), Position::new(79, 29)),
-            ("日".repeat(80), Position::new(97, 29)),
+            ("日".repeat(80), Position::new(95, 29)),
             ("一\n二\n三\n四\n五".to_owned(), Position::new(76, 31)),
         ] {
             app.editor = editor(&text);
@@ -360,7 +360,7 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
                 app.draw(frame);
             })
             .unwrap();
-        assert_eq!(terminal.backend().cursor_position(), Position::new(47, 9));
+        assert_eq!(terminal.backend().cursor_position(), Position::new(45, 9));
         let draft = app.editor.lines().join("\n");
         app.help = true;
         terminal
@@ -1356,7 +1356,7 @@ fn tool_updates_keep_names_and_share_a_separate_block_from_prose() {
 }
 
 #[test]
-fn activity_indicator_stays_at_the_bottom_when_history_scrolls() {
+fn activity_indicator_stays_above_the_prompt_when_history_scrolls() {
     fn row(
         terminal: &ratatui::Terminal<ratatui::backend::TestBackend>,
         needle: &str,
@@ -1392,9 +1392,11 @@ fn activity_indicator_stays_at_the_bottom_when_history_scrolls() {
         let response = row(&terminal, "Checking the document now.").unwrap();
         let activity = row(&terminal, "Working…").unwrap();
         assert_eq!(
-            activity, 33,
-            "The indicator stays on the Agent panel's bottom border"
+            activity + 1,
+            row(&terminal, "Prompt").unwrap(),
+            "The indicator stays immediately above Prompt"
         );
+        assert_eq!(row(&terminal, "● Working"), Some(1));
         assert!(
             activity > response,
             "Short conversations keep the indicator near the input"
@@ -1419,14 +1421,17 @@ fn activity_indicator_stays_at_the_bottom_when_history_scrolls() {
             "Scrolling history must not hide the work indicator"
         );
         app.scroll = 0;
-        for (width, height, status_row) in [(100, 24, 21), (50, 16, 13)] {
+        for (width, height) in [(100, 24), (50, 16)] {
             terminal.backend_mut().resize(width, height);
             terminal
                 .draw(|frame| {
                     app.draw(frame);
                 })
                 .unwrap();
-            assert_eq!(row(&terminal, "Working…"), Some(status_row));
+            assert_eq!(
+                row(&terminal, "Working…").unwrap() + 1,
+                row(&terminal, "Prompt").unwrap()
+            );
         }
         complete(&mut app).await;
         app.sync_turn(&worker);
@@ -1436,7 +1441,13 @@ fn activity_indicator_stays_at_the_bottom_when_history_scrolls() {
             })
             .unwrap();
         assert!(row(&terminal, "Working…").is_none());
-        assert_eq!(row(&terminal, "Idle"), Some(13));
+        terminal.backend_mut().resize(120, 36);
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        assert_eq!(row(&terminal, "Idle"), Some(1));
         app.conversation.close().await.unwrap();
     });
 }
@@ -2467,8 +2478,9 @@ fn diagnostics_switch_preserves_targets_and_reveals_hidden_nodes_after_refresh()
         press(&mut app, KeyCode::Down, KeyModifiers::NONE, &worker).await;
         assert_eq!(app.selected_diagnostic().unwrap()["node_id"], "child-b");
         let text = screen(&mut app, 40, 26);
+        let contents = text.replace('│', " ").split_whitespace().collect::<Vec<_>>().join(" ");
         for expected in ["Diagnostics", "warning: LAYOUT_OVERFLOW", "Same name", "child-b", "The child extends beyond its parent"] {
-            assert!(text.contains(expected), "Missing {expected}:\n{text}");
+            assert!(contents.contains(expected), "Missing {expected}:\n{text}");
         }
         let top = screen(&mut app, 18, 16);
         for _ in 0..8 {

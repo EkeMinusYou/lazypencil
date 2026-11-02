@@ -133,6 +133,10 @@ impl App {
     }
 
     pub(super) fn draw_diagnostics(&mut self, frame: &mut Frame, area: Rect) {
+        let area = area.inner(ratatui::layout::Margin {
+            horizontal: u16::from(area.width >= 16),
+            vertical: 0,
+        });
         let sections = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).split(area);
         let scope = if self.diagnostics.selected_only {
             self.selected_node()
@@ -244,6 +248,9 @@ impl App {
         }
         let block = Block::default()
             .borders(Borders::TOP)
+            .padding(ratatui::widgets::Padding::horizontal(u16::from(
+                area.width >= 16,
+            )))
             .border_style(Style::default().fg(theme::FRAME));
         let inner = block.inner(sections[1]);
         let paragraph = Paragraph::new(text).wrap(Wrap { trim: false });
