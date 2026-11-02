@@ -1527,6 +1527,28 @@ fn follow_up_queue_keeps_typing_live_and_sends_in_order_without_erasing_the_next
             terminal.backend().cursor_visible(),
             "Typing stays available while the agent works"
         );
+        let buffer = terminal.backend().buffer();
+        let rows = (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>();
+        let working = rows
+            .iter()
+            .position(|line| line.contains("Working…"))
+            .unwrap();
+        let queued = rows
+            .iter()
+            .position(|line| line.contains("2 queued"))
+            .unwrap();
+        let prompt = rows
+            .iter()
+            .position(|line| line.contains("✎ Prompt"))
+            .unwrap();
+        assert_eq!(queued, working + 2);
+        assert_eq!(prompt, queued + 2);
         app.focus = Focus::Conversation;
         assert_eq!(complete(&mut app).await.last().unwrap()["type"], "complete");
         app.sync_turn(&worker);

@@ -601,11 +601,12 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
     );
     assert_eq!(negotiated & 2, 0, "Do not duplicate legacy key releases");
     assert_eq!(negotiated & 8, 0, "Keep native IME text on the UTF-8 path");
-    h.key(b"\x1b\r")?;
+    h.key(b"\x1b[13;2u")?;
     let second = "か\u{3099} 👩‍💻";
     h.key(&commit(negotiated, second))?;
     let mut expected = format!("{first}\n{second}");
     h.draft(&expected)?;
+    no_agent(h);
     h.wait(
         "IME anchor follows a rendered combining/ZWJ cluster",
         15.0,
@@ -948,6 +949,22 @@ fn queued_followups(h: &mut Harness) -> Result {
     )?;
     for (index, text) in ["Second request", "Third request"].into_iter().enumerate() {
         h.paste(text)?;
+        if index == 0 {
+            h.key(b"\x1b[13;2u")?;
+            h.paste("continued")?;
+            h.wait("Shift+Enter keeps the active follow-up unsent", 15.0, |h| {
+                files(&h.root.join("data"), |name| name == "prompt-outbox.json")
+                    .iter()
+                    .any(|path| {
+                        read_json(path).is_some_and(|state| {
+                            state["draft"] == "Second request\ncontinued"
+                                && state["queued"].as_array().is_some_and(Vec::is_empty)
+                        })
+                    })
+            })?;
+            assert!(!h.screen.text().contains("1 queued"));
+            assert_eq!(h.count("complete"), 0);
+        }
         h.key(b"\r")?;
         h.wait("follow-up queued while working", 15.0, |h| {
             h.screen.text().contains(&format!("{} queued", index + 1))
@@ -998,7 +1015,7 @@ fn queued_followups(h: &mut Harness) -> Result {
         .collect::<std::result::Result<Vec<_>, _>>()?;
     for (prompt, expected) in prompts.iter().zip([
         "First request",
-        "Second request",
+        "Second request\ncontinued",
         "Third request",
         "Unsent next draft appended",
     ]) {
