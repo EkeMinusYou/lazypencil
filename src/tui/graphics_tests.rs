@@ -190,3 +190,60 @@ fn kitty_frames_switch_inactive_slots_and_keep_stable_redraws_without_retransmis
             .all(|frame| frame.rgba() == [12, 34, 56, 255].repeat(6))
     );
 }
+
+#[test]
+fn rectangular_kitty_uploads_once_places_the_whole_image_and_restores_after_modals() {
+    let area = Rect::new(2, 1, 8, 4);
+    let bounds = Rect::new(0, 0, 16, 8);
+    let backend = Backend {
+        font: FontSize::new(10, 20),
+        protocol: ProtocolType::Kitty,
+        tmux: false,
+        kitty_compression: true,
+    };
+    let pixels = image::RgbaImage::from_pixel(80, 80, image::Rgba([248, 250, 252, 255]));
+    let protocol = backend
+        .encode(DynamicImage::ImageRgba8(pixels.clone()), area.as_size(), 42)
+        .unwrap();
+    let mut presentation = Presentation::default();
+    presentation.rectangular(true);
+    let render = |presentation: &mut Presentation, modal| {
+        presentation.begin();
+        let mut buffer = Buffer::empty(bounds);
+        Image(&protocol).render(area, &mut buffer);
+        presentation.prepare(&mut buffer, area, false);
+        presentation.finish(&mut buffer, modal);
+        assert!(
+            buffer
+                .content
+                .iter()
+                .all(|cell| !cell.symbol().contains('\u{10eeee}'))
+        );
+        buffer[(0, 0)].symbol().to_owned()
+    };
+    // An upload first encountered underneath a modal must survive until the
+    // image can be shown, even though the encoder's transmit-once flag is set.
+    assert_eq!(render(&mut presentation, true), " ");
+    let wire = render(&mut presentation, false);
+    assert!(!wire.contains("U=1"));
+    assert_eq!(wire.matches("a=p,").count(), 1);
+    assert!(wire.contains("c=8,r=4,C=1"));
+    assert!(wire.contains("\x1b[2;3H"));
+    assert!(wire.starts_with("\x1b7") && wire.ends_with("\x1b8 "));
+    let mut observer = observer::KittyFrames::for_lazypencil();
+    for bytes in wire.as_bytes().chunks(137) {
+        observer.feed(bytes).unwrap();
+    }
+    assert_eq!(observer.images.len(), 1);
+    assert_eq!(observer.images[0].rgba(), pixels.as_raw());
+    assert_eq!(render(&mut presentation, false), " ");
+    presentation.invalidate();
+    let resized = render(&mut presentation, false);
+    assert!(resized.contains("a=p,i=42,p=1"));
+    assert!(!resized.contains("a=t,"));
+    let hidden = render(&mut presentation, true);
+    assert!(hidden.contains("a=d,d=i,i=42,p=1"));
+    let restored = render(&mut presentation, false);
+    assert!(restored.contains("a=p,i=42,p=1"));
+    assert!(!restored.contains("a=t,"));
+}

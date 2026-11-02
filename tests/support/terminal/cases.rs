@@ -77,8 +77,12 @@ pub fn run(
     extra_environment: &[(OsString, OsString)],
 ) -> Result {
     let mut environment: BTreeMap<OsString, OsString> = std::env::vars_os().collect();
+    environment.remove(std::ffi::OsStr::new("HERDR_ENV"));
     environment.extend(extra_environment.iter().cloned());
-    if case == "kitty-no-color" {
+    if case.starts_with("herdr-kitty") {
+        environment.insert("HERDR_ENV".into(), "1".into());
+    }
+    if matches!(case, "kitty-no-color" | "herdr-kitty-no-color") {
         environment.insert("NO_COLOR".into(), "1".into());
     }
     let mut document = root.join("design.pen");
@@ -289,6 +293,10 @@ pub fn run(
         }
         "basic" => {
             basic(&mut h)?;
+            Value::Null
+        }
+        "herdr-kitty" | "herdr-kitty-no-color" => {
+            rectangular(&mut h)?;
             Value::Null
         }
         "queued-followups" => {
@@ -722,6 +730,64 @@ fn encoded(h: &mut Harness) -> Result {
     no_agent(h);
     Ok(())
 }
+fn rectangular(h: &mut Harness) -> Result {
+    h.wait("rectangular Kitty preview", 15.0, |h| {
+        !h.frames.images.is_empty() && h.contains_bytes(b"_Ga=p,")
+    })?;
+    assert!(h.last_color([255, 0, 0, 255]));
+    let draft = "改行を含む\n下書きを保持";
+    h.paste(draft)?;
+    h.draft(draft)?;
+    h.key(b"\t\t")?;
+    for key in [b"+".as_slice(), b"l", b"-"] {
+        let before = h.frames.images.last().unwrap().clone();
+        h.key(key)?;
+        h.wait("camera changes exact rectangular pixels", 15.0, |h| {
+            h.frames.images.last().is_some_and(|image| image != &before)
+        })?;
+    }
+    let before_help = h.output.len();
+    h.key(b"?")?;
+    h.visible("Help")?;
+    assert!(
+        h.output[before_help..]
+            .windows(10)
+            .any(|bytes| bytes == b"a=d,d=i,i=")
+    );
+    let before_close = h.output.len();
+    h.key(b"\x1b")?;
+    h.hidden("Help")?;
+    h.wait("image placement returns after the modal", 15.0, |h| {
+        h.output[before_close..]
+            .windows(5)
+            .any(|bytes| bytes == b"a=p,i")
+    })?;
+    assert!(!h.contains_bytes(b"\x1b[2J"));
+    for (width, height) in [(80, 24), (50, 16), (130, 34)] {
+        let count = h.frames.images.len();
+        h.resize(width, height)?;
+        h.wait("rectangular image after resize", 15.0, |h| {
+            h.frames.images.len() > count
+        })?;
+    }
+    h.key(b"\t")?;
+    h.paste("、続きを入力")?;
+    h.draft(&format!("{draft}、続きを入力"))?;
+    h.wait(
+        "IME cursor remains at the end of the rectangular preview draft",
+        15.0,
+        |h| {
+            h.screen
+                .find_text("、続きを入力")
+                .is_some_and(|(x, y)| h.screen.cursor() == (x + 12, y))
+        },
+    )?;
+    assert!(!h.contains_bytes("\u{10eeee}".as_bytes()));
+    assert!(!h.contains_bytes(b"U=1"));
+    no_agent(h);
+    Ok(())
+}
+
 fn sixel(bytes: &[u8]) -> Option<&[u8]> {
     let mut rest = bytes;
     let mut last = None;

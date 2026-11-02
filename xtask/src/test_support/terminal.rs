@@ -212,7 +212,7 @@ impl KittyFrames {
                         .parse()?,
                 );
             }
-            if action == Some("T") {
+            if matches!(action, Some("T" | "t")) {
                 if self.dimensions.is_some() {
                     return Err("A new Kitty frame interrupted an incomplete frame".into());
                 }
@@ -277,7 +277,7 @@ impl KittyFrames {
                 self.payload.clear();
             }
             if let Some((width, height)) = self.dimensions
-                && (action.is_none() || action == Some("T"))
+                && matches!(action, None | Some("T" | "t"))
             {
                 let expected = width * height * 4;
                 if action.is_none() && fields.contains_key("o") {

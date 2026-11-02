@@ -315,6 +315,11 @@ impl App {
         );
         let mut events = EventStream::new();
         self.camera_id = screen.camera_image_id();
+        self.presentation.rectangular(
+            screen.picker.protocol_type() == ratatui_image::picker::ProtocolType::Kitty
+                && !screen.picker.tmux_detected()
+                && std::env::var_os("HERDR_ENV").is_some(),
+        );
         let mut timer = tokio::time::interval(Duration::from_secs(1));
         timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut termination = Box::pin(termination());
@@ -394,7 +399,7 @@ impl App {
                     Some(Ok(Event::Paste(text))) if self.focus == Focus::Prompt && !self.has_modal() => {
                         self.insert_text(&text); self.dirty = true;
                     },
-                    Some(Ok(Event::Resize(_, _))) => { self.dirty = true; },
+                    Some(Ok(Event::Resize(_, _))) => { self.presentation.invalidate(); self.dirty = true; },
                     Some(Ok(_)) => {},
                     Some(Err(error)) => return Err(terminal::io(error)),
                     None => { self.save_draft()?; return Ok(()); },
@@ -1597,6 +1602,7 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut Frame) -> Size {
+        self.presentation.begin();
         let area = frame.area();
         if area.width < 50 || area.height < 16 {
             frame.render_widget(
@@ -1605,6 +1611,7 @@ impl App {
                 ),
                 area,
             );
+            self.presentation.finish(frame.buffer_mut(), true);
             return Size::new(0, 0);
         }
         let sections = Layout::vertical([
@@ -1857,6 +1864,8 @@ impl App {
                 sections[1],
             );
         }
+        self.presentation
+            .finish(frame.buffer_mut(), self.has_modal());
         Size::new(inner.width, inner.height)
     }
 }

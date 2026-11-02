@@ -131,6 +131,8 @@ impl Harness {
             "user-navigation-config",
             "ime-commit",
             "kitty-no-color",
+            "herdr-kitty",
+            "herdr-kitty-no-color",
             "auto-kitty-raw",
         ]
         .contains(&case)
@@ -176,6 +178,7 @@ impl Harness {
         let mut command = Command::new(binary);
         command
             .current_dir(root)
+            .env_remove("HERDR_ENV")
             .envs(&environment)
             .arg("--data-dir")
             .arg(root.join("data"))

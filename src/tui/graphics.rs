@@ -66,9 +66,26 @@ impl Widget for Image<'_> {
 pub(super) struct Presentation {
     slots: [Option<(u32, u32)>; 2],
     visible: Option<u32>,
+    rectangular: bool,
+    pending: [Option<String>; 2],
+    desired: Option<(usize, u32, Rect)>,
+    shown: Option<(u32, Rect)>,
+    replay: bool,
 }
 
 impl Presentation {
+    pub(super) fn rectangular(&mut self, enabled: bool) {
+        self.rectangular = enabled;
+    }
+
+    pub(super) fn begin(&mut self) {
+        self.desired = None;
+    }
+
+    pub(super) fn invalidate(&mut self) {
+        self.replay = true;
+    }
+
     pub(super) fn prepare(&mut self, buffer: &mut Buffer, area: Rect, camera: bool) {
         const PLACEHOLDER: char = '\u{10eeee}';
         let family = usize::from(camera);
@@ -114,8 +131,89 @@ impl Presentation {
                     .set_fg(ratatui::style::Color::Rgb(tr, tg, tb));
             }
         }
-        if visible {
+        if visible && self.rectangular {
+            if transmission.is_some() {
+                let symbol = buffer[(area.x, area.y)].symbol();
+                if let Some((upload, _)) = symbol.split_once(PLACEHOLDER) {
+                    // Regular Kitty uploads have no virtual placement controls.
+                    // Keep the packet chunks, compression, dimensions and ID.
+                    if let Some((before, packet)) = upload.split_once("\x1b_G")
+                        && let Some((control, payload)) = packet.split_once(';')
+                    {
+                        let control = control
+                            .split(',')
+                            .filter(|field| {
+                                !field.starts_with("U=")
+                                    && !field.starts_with("c=")
+                                    && !field.starts_with("r=")
+                            })
+                            .map(|field| if field == "a=T" { "a=t" } else { field })
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        self.pending[family] = Some(format!("{before}\x1b_G{control};{payload}"));
+                    }
+                }
+            }
+            self.desired = Some((family, target, area));
+            for position in area.positions() {
+                if let Some(cell) = buffer.cell_mut(position)
+                    && cell.symbol().contains(PLACEHOLDER)
+                {
+                    cell.reset();
+                }
+            }
+        } else if visible {
             self.visible = Some(target);
+        }
+    }
+
+    pub(super) fn finish(&mut self, buffer: &mut Buffer, modal: bool) {
+        if !self.rectangular {
+            return;
+        }
+        let desired = self.desired.filter(|_| !modal);
+        let mut commands = String::new();
+        let mut shown = None;
+        if let Some((family, id, area)) = desired {
+            let upload = self.pending[family].take();
+            let replace = self.replay || upload.is_some() || self.shown != Some((id, area));
+            if let Some(upload) = upload {
+                commands.push_str(&upload);
+            }
+            if replace {
+                use std::fmt::Write as _;
+                let _ = write!(
+                    commands,
+                    "\x1b[{};{}H\x1b_Ga=p,i={id},p=1,c={},r={},C=1,q=2;\x1b\\",
+                    area.y + 1,
+                    area.x + 1,
+                    area.width,
+                    area.height
+                );
+            }
+            shown = Some((id, area));
+            self.visible = Some(id);
+        }
+        if let Some((id, _)) = self.shown
+            && shown.is_none_or(|(next, _)| next != id)
+        {
+            use std::fmt::Write as _;
+            // Delete only the retired placement, keeping its pixels available
+            // for slot reuse and restoration after a modal closes.
+            let _ = write!(commands, "\x1b_Ga=d,d=i,i={id},p=1,q=2;\x1b\\");
+        }
+        self.shown = shown;
+        self.replay = false;
+        if !commands.is_empty() {
+            let origin = buffer.area.as_position();
+            if let Some(cell) = buffer.cell_mut(origin) {
+                // Emit after modal composition, independently of image-cell
+                // diffs. Save the backend's cursor and SGR state around I/O.
+                cell.set_symbol(&format!("\x1b7{commands}\x1b8{}", cell.symbol()));
+                cell.set_diff_option(ratatui::buffer::CellDiffOption::ForcedWidth(
+                    std::num::NonZeroU16::MIN,
+                ));
+            }
         }
     }
 }

@@ -49,6 +49,12 @@ fn real_pty_queues_follow_ups_and_restores_typing_after_completion() {
 }
 
 #[test]
+fn real_pty_herdr_uses_rectangular_images_without_placeholder_row_seams() {
+    run_pty_case("herdr-kitty");
+    run_pty_case("herdr-kitty-no-color");
+}
+
+#[test]
 fn real_pty_no_color_preserves_kitty_image_identifiers() {
     run_pty_case("kitty-no-color");
 }
