@@ -2337,7 +2337,7 @@ fn sixel_camera_gestures_use_the_coalescing_worker_without_interim_encodes() {
         let final_frame = app.preview.as_ref().unwrap();
         assert!(matches!(
             final_frame.protocol,
-            ratatui_image::protocol::Protocol::Sixel(_)
+            graphics::Encoded::Protocol(ratatui_image::protocol::Protocol::Sixel(_))
         ));
         assert_eq!(final_frame.view.center, requested.center);
         assert_eq!(final_frame.view.zoom, requested.zoom);

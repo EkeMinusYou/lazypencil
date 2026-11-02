@@ -17,6 +17,72 @@ use ratatui_image::{
 #[cfg(unix)]
 use std::io::Write;
 
+/// A compact native upload, or the library encoder for negotiated/fallback paths.
+pub enum Encoded {
+    Native(NativeImage),
+    Protocol(Protocol),
+}
+
+impl Encoded {
+    pub fn size(&self) -> Size {
+        match self {
+            Self::Native(image) => image.size,
+            Self::Protocol(protocol) => protocol.size(),
+        }
+    }
+}
+
+pub struct NativeImage {
+    id: u32,
+    size: Size,
+    pixels: [u32; 2],
+    upload: String,
+    transmitted: std::sync::atomic::AtomicBool,
+}
+
+impl NativeImage {
+    fn new(image: DynamicImage, size: Size, id: u32) -> Result<Self> {
+        use base64::{Engine, engine::general_purpose::STANDARD};
+        use image::{
+            ImageEncoder,
+            codecs::png::{CompressionType, FilterType, PngEncoder},
+        };
+        use std::fmt::Write as _;
+        let pixels = [image.width(), image.height()];
+        let rgba = image.into_rgba8();
+        let mut png = Vec::new();
+        PngEncoder::new_with_quality(&mut png, CompressionType::Fast, FilterType::Sub)
+            .write_image(&rgba, pixels[0], pixels[1], image::ExtendedColorType::Rgba8)
+            .map_err(|error| {
+                Error::new(
+                    "RENDER_ERROR",
+                    format!("Cannot encode terminal PNG: {error}"),
+                )
+            })?;
+        // PNG is a required Kitty pixel format, including when compression was
+        // not probed. Encode on the renderer thread, never during UI drawing.
+        let mut upload = String::new();
+        let chunks = png.chunks(3072);
+        let count = chunks.len();
+        for (index, chunk) in chunks.enumerate() {
+            upload.push_str("\x1b_G");
+            if index == 0 {
+                let _ = write!(upload, "a=t,f=100,i={id},s={},v={},", pixels[0], pixels[1]);
+            }
+            let _ = write!(upload, "q=2,m={};", usize::from(index + 1 < count));
+            STANDARD.encode_string(chunk, &mut upload);
+            upload.push_str("\x1b\\");
+        }
+        Ok(Self {
+            id,
+            size,
+            pixels,
+            upload,
+            transmitted: false.into(),
+        })
+    }
+}
+
 /// Bind a Kitty virtual placement to the same cell grid as its placeholders.
 pub struct Image<'a>(pub &'a Protocol);
 
@@ -137,6 +203,49 @@ impl Presentation {
 
     pub(super) fn invalidate(&mut self) {
         self.replay = true;
+    }
+
+    pub(super) fn render(&mut self, buffer: &mut Buffer, area: Rect, image: &Encoded) {
+        let image = match image {
+            Encoded::Native(image) => image,
+            Encoded::Protocol(protocol) => {
+                Image(protocol).render(area, buffer);
+                self.prepare(buffer, area, false);
+                return;
+            }
+        };
+        if area.is_empty() {
+            return;
+        }
+        if !image
+            .transmitted
+            .swap(true, std::sync::atomic::Ordering::Relaxed)
+        {
+            let slot = self.visible.map_or(0, |id| (id & 1) ^ 1);
+            let target = (image.id & !1).max(2) | slot;
+            self.slots[0] = Some((image.id, target));
+            self.source_sizes[0] = Some(image.pixels);
+            self.pending[0] = Some(image.upload.replacen(
+                &format!("i={},", image.id),
+                &format!("i={target},"),
+                1,
+            ));
+        }
+        if let Some((_, image_id)) = self.slots[0] {
+            self.desired = Some(NativePlacement {
+                family: 0,
+                image_id,
+                placement_id: 1,
+                area,
+                source: None,
+            });
+        }
+        for position in area.positions() {
+            if let Some(cell) = buffer.cell_mut(position) {
+                cell.reset();
+                cell.set_bg(ratatui::style::Color::Rgb(248, 250, 252));
+            }
+        }
     }
 
     pub(super) fn prepare(&mut self, buffer: &mut Buffer, area: Rect, camera: bool) {
@@ -380,7 +489,15 @@ impl Backend {
     pub fn tmux_detected(&self) -> bool {
         self.tmux
     }
-    pub fn encode(&self, mut image: DynamicImage, size: Size, id: u32) -> Result<Protocol> {
+    pub fn encode_preview(&self, image: DynamicImage, size: Size, id: u32) -> Result<Encoded> {
+        if self.protocol == ProtocolType::Kitty && !self.tmux && !self.kitty_compression {
+            let image = self.resize(image, size);
+            return NativeImage::new(image, size, id).map(Encoded::Native);
+        }
+        self.encode(image, size, id).map(Encoded::Protocol)
+    }
+
+    fn resize(&self, mut image: DynamicImage, size: Size) -> DynamicImage {
         let width = u32::from(size.width) * u32::from(self.font.width);
         let height = u32::from(size.height) * u32::from(self.font.height);
         if image.width() != width || image.height() != height {
@@ -393,6 +510,11 @@ impl Backend {
             drop(image);
             image = resized;
         }
+        image
+    }
+
+    pub fn encode(&self, image: DynamicImage, size: Size, id: u32) -> Result<Protocol> {
+        let image = self.resize(image, size);
         let result = match self.protocol {
             ProtocolType::Kitty => {
                 Kitty::new(image, size, id, self.tmux, self.kitty_compression).map(Protocol::Kitty)

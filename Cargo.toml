@@ -55,6 +55,7 @@ ctrlc = "3.5.2"
 pulldown-cmark = { version = "0.13.6", default-features = false, features = ["simd"], optional = true }
 
 [dev-dependencies]
+png = "=0.18.1"
 vt100 = "=0.18.1"
 
 [target.'cfg(unix)'.dependencies]

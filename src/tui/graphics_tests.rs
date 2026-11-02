@@ -310,3 +310,59 @@ fn native_camera_repositions_uploaded_pixels_without_encoding_or_uploading_them_
     assert!(wire.contains("a=d,d=i,i=42,p=2"));
     assert!(wire.find("a=p,").unwrap() < wire.find("a=d,").unwrap());
 }
+
+#[test]
+fn unprobed_native_kitty_uses_compact_lossless_png_and_reuses_its_upload() {
+    let backend = Backend {
+        font: FontSize::new(10, 20),
+        protocol: ProtocolType::Kitty,
+        tmux: false,
+        kitty_compression: false,
+    };
+    let size = Size::new(80, 24);
+    let pixels = image::RgbaImage::from_fn(800, 480, |x, y| {
+        if x < 400 && y < 240 {
+            image::Rgba([255, 0, 0, 128])
+        } else {
+            image::Rgba([248, 250, 252, 255])
+        }
+    });
+    let encoded = backend
+        .encode_preview(DynamicImage::ImageRgba8(pixels.clone()), size, 77)
+        .unwrap();
+    assert_eq!(encoded.size(), size);
+    let area = Rect::new(2, 1, size.width, size.height);
+    let bounds = Rect::new(0, 0, 90, 30);
+    let mut presentation = Presentation::default();
+    presentation.rectangular(true);
+    let mut decoder = observer::KittyFrames::default();
+    for draw in 0..2 {
+        let mut buffer = Buffer::empty(bounds);
+        presentation.begin();
+        presentation.render(&mut buffer, area, &encoded);
+        presentation.finish(&mut buffer, false);
+        let wire = buffer
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        if draw == 0 {
+            assert!(wire.contains("a=t,f=100,"));
+            assert!(!wire.contains("o=z"));
+            assert!(
+                wire.len() < pixels.len() / 10,
+                "Flat design uploads should be far smaller than raw RGBA"
+            );
+            assert!(wire.find("a=t").unwrap() < wire.find("a=p").unwrap());
+        } else {
+            assert!(
+                !wire.contains("_G"),
+                "Stable draws must not retransmit or reposition the image"
+            );
+        }
+        decoder.feed(wire.as_bytes()).unwrap();
+    }
+    assert_eq!(decoder.images.len(), 1);
+    assert_eq!(decoder.images[0].rgba(), pixels.as_raw());
+    assert_eq!(presentation.source_size(), Some([800, 480]));
+}

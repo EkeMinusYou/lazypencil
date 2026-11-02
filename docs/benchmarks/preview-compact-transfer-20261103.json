@@ -1,0 +1,32 @@
+{
+  "date": "2026-11-03",
+  "scope": "Synchronized frame bytes forwarded through a bounded duplex PTY proxy into an owned Herdr desktop terminal; excludes raster preparation before the frame and does not measure physical display latency",
+  "app": "Herdr desktop 0.1.12 with hc 0.1.17",
+  "protocol": "explicit Kitty without compression negotiation",
+  "fixture": "Red root rectangle x=0,width=180 and blue root rectangle x=400,width=3600; both height=90",
+  "input": "90 presses, alternating ten l and ten h, 25 ms after each hc keys invocation; same visible terminal size and fit-red start",
+  "baseline": {
+    "frames": 46,
+    "median_ms": 136.63004100089893,
+    "p95_ms": 165.58799997437745,
+    "max_ms": 200.26050001615658,
+    "max_frame_bytes": 6521643
+  },
+  "candidate": {
+    "frames": 90,
+    "median_ms": 4.441916011273861,
+    "p95_ms": 10.202165984082967,
+    "max_ms": 11.341499979607761,
+    "max_frame_bytes": 51495
+  },
+  "release_sha256": "fed46cccabaa8dee9fe51bbfb18fef6d45ccf4ea5b56851085894c10c0374a22",
+  "graphics_source_sha256": "6ea288225cd772f9d8a8cdfb89efadc93b6f0e8b7f1b72e34a1b3623acbc44a6",
+  "validation": {
+    "tui_unit_passed": 81,
+    "native_pty_passed": 17,
+    "native_pty_ignored": 2,
+    "desktop_png_visible": true,
+    "desktop_uncached_destination_visible_during_input": true
+  },
+  "artifacts": "Owned local cache progressive-desktop-check: frame-proxy.py, smooth-{baseline,candidate}-{inner,proxy}.sh, smooth-{baseline,candidate}-frames.jsonl, smooth-release-visual-check.json"
+}

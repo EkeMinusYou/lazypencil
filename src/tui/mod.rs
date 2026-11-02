@@ -1838,8 +1838,8 @@ impl App {
                 .is_some_and(|camera| matches!(camera.image, camera::Feedback::Placement(_)))
             && let Some(preview) = &self.preview
         {
-            frame.render_widget(graphics::Image(&preview.protocol), inner);
-            self.presentation.prepare(frame.buffer_mut(), inner, false);
+            self.presentation
+                .render(frame.buffer_mut(), inner, &preview.protocol);
             self.camera_source_changed = false;
         }
         if let Some(camera) = self
@@ -1858,8 +1858,8 @@ impl App {
                 }
             }
         } else if let Some(preview) = &self.preview {
-            frame.render_widget(graphics::Image(&preview.protocol), inner);
-            self.presentation.prepare(frame.buffer_mut(), inner, false);
+            self.presentation
+                .render(frame.buffer_mut(), inner, &preview.protocol);
             self.camera_source_changed = false;
         } else {
             frame.render_widget(

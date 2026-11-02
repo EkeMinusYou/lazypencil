@@ -1448,6 +1448,7 @@ dependencies = [
  "image",
  "jsonc-parser",
  "libc",
+ "png",
  "pulldown-cmark",
  "ratatui",
  "ratatui-image",

@@ -148,6 +148,7 @@ pub struct KittyFrames {
     pub last_camera: Option<Frame>,
     dimensions: Option<(usize, usize)>,
     compressed: bool,
+    png: bool,
     image_id: Option<u32>,
     split_camera_frames: bool,
     exact_image_id: Option<u32>,
@@ -227,8 +228,9 @@ impl KittyFrames {
                 if self.dimensions.is_some() {
                     return Err("A new Kitty frame interrupted an incomplete frame".into());
                 }
-                if fields.get("f") != Some(&"32") {
-                    return Err("Expected RGBA Kitty pixels".into());
+                self.png = fields.get("f") == Some(&"100");
+                if !self.png && fields.get("f") != Some(&"32") {
+                    return Err("Expected RGBA or PNG Kitty pixels".into());
                 }
                 self.compressed = match fields.get("o").copied() {
                     None => false,
@@ -304,7 +306,7 @@ impl KittyFrames {
                 let decoded = STANDARD.decode(&packet[separator + 1..])?;
                 // Incompressible ZLIB has a small encoding overhead. Bound both
                 // the wire payload and the independently declared decoded size.
-                let limit = if self.compressed {
+                let limit = if self.compressed || self.png {
                     expected + expected / 8 + 64
                 } else {
                     expected
@@ -317,7 +319,34 @@ impl KittyFrames {
                     "1" => {}
                     "0" => {
                         let payload = std::mem::take(&mut self.payload);
-                        let pixels = if self.compressed {
+                        let pixels = if self.png {
+                            if self.compressed {
+                                return Err("Unexpected additional compression for PNG".into());
+                            }
+                            let mut reader = png::Decoder::new_with_limits(
+                                std::io::Cursor::new(&payload),
+                                png::Limits {
+                                    bytes: expected + 1024 * 1024,
+                                },
+                            )
+                            .read_info()?;
+                            let header = reader.info();
+                            if header.width as usize != width
+                                || header.height as usize != height
+                                || header.color_type != png::ColorType::Rgba
+                                || header.bit_depth != png::BitDepth::Eight
+                                || header.animation_control.is_some()
+                            {
+                                return Err("Unexpected Kitty PNG geometry or format".into());
+                            }
+                            let mut pixels = vec![0; expected];
+                            let info = reader.next_frame(&mut pixels)?;
+                            if info.buffer_size() != expected {
+                                return Err("Incomplete Kitty PNG pixels".into());
+                            }
+                            reader.finish()?;
+                            pixels
+                        } else if self.compressed {
                             // Require one complete stream, its checksum, exact
                             // dimensions, and no trailing or concatenated data.
                             let mut decoder = flate2::Decompress::new(true);
@@ -359,6 +388,7 @@ impl KittyFrames {
                         self.compressed_frames += usize::from(self.compressed);
                         self.dimensions = None;
                         self.compressed = false;
+                        self.png = false;
                         self.image_id = None;
                     }
                     _ => return Err("Invalid Kitty continuation marker".into()),

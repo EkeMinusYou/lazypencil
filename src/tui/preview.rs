@@ -1,11 +1,11 @@
 //! Coalesced previews; Skia and dynamic runtimes stay on their owning thread.
 
-use super::graphics::Backend;
+use super::graphics::{Backend, Encoded};
 use crate::{
     Error, Result, attachments::Attachment, geometry::Rect, project::Project, store::Store,
 };
 use ratatui::layout::Size;
-use ratatui_image::{Resize, protocol::Protocol};
+use ratatui_image::Resize;
 use serde_json::{Value, json};
 use std::{
     path::PathBuf,
@@ -81,7 +81,7 @@ pub struct Request {
     pub attachment: Option<(Attachment, PathBuf)>,
 }
 pub struct Preview {
-    pub protocol: Protocol,
+    pub protocol: Encoded,
     pub(crate) image: PreviewImage,
     pub view: View,
     pub nodes: Arc<[Node]>,
@@ -485,8 +485,8 @@ pub fn pixel_size(picker: &Backend, cells: Size) -> Result<[u32; 2]> {
     }
     Ok(size)
 }
-fn encode(picker: &Backend, image: image::DynamicImage, size: Size, id: u32) -> Result<Protocol> {
-    picker.encode(image, size, id)
+fn encode(picker: &Backend, image: image::DynamicImage, size: Size, id: u32) -> Result<Encoded> {
+    picker.encode_preview(image, size, id)
 }
 
 #[cfg(test)]
