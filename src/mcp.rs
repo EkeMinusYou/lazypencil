@@ -24,6 +24,7 @@ const INSTRUCTIONS: &str = "This server edits one bound .pen document. Start wit
 #[derive(Clone)]
 struct Server {
     sender: mpsc::Sender<Job>,
+    preview_control: bool,
 }
 struct Job {
     name: String,
@@ -50,6 +51,20 @@ pub fn serve_with_context(
     attachments: Option<crate::attachments::AttachmentAccess>,
     usage: Option<crate::guidance::usage::UsageAccess>,
 ) -> Result<()> {
+    serve_with_preview_context(store, fonts, attachments, usage, None)
+}
+
+pub fn serve_with_preview_context(
+    store: Store,
+    fonts: Vec<PathBuf>,
+    attachments: Option<crate::attachments::AttachmentAccess>,
+    usage: Option<crate::guidance::usage::UsageAccess>,
+    preview_control: Option<&str>,
+) -> Result<()> {
+    let preview_control = preview_control
+        .map(|value| crate::preview_control::Client::parse(value, store.path()))
+        .transpose()?;
+    let has_preview = preview_control.is_some();
     let (sender, mut receiver) = mpsc::channel::<Job>(16);
     let worker = std::thread::Builder::new()
         .name("lazypencil-document".into())
@@ -66,6 +81,7 @@ pub fn serve_with_context(
                 fonts,
                 attachments,
                 usage,
+                preview_control,
                 #[cfg(feature = "rendering")]
                 snapshots: VecDeque::new(),
                 #[cfg(feature = "rendering")]
@@ -121,7 +137,7 @@ pub fn serve_with_context(
         .build()
         .map_err(|e| Error::new("IO_ERROR", format!("Cannot start MCP runtime: {e}")))?;
     let result=runtime.block_on(async move {
-        let running=Server { sender }.serve(rmcp::transport::stdio_pipes()).await
+        let running=Server { sender, preview_control: has_preview }.serve(rmcp::transport::stdio_pipes()).await
             .map_err(|e| Error::new("IO_ERROR",format!("MCP connection failed: {e}")))?;
         let cancel=running.cancellation_token();
         tokio::select! {
@@ -142,16 +158,23 @@ pub fn serve_with_context(
 
 impl ServerHandler for Server {
     fn get_info(&self) -> ServerConfig {
+        let instructions = if self.preview_control {
+            format!("{INSTRUCTIONS}\n\n{}", crate::preview_control::INSTRUCTIONS)
+        } else {
+            INSTRUCTIONS.into()
+        };
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("lazypencil", env!("CARGO_PKG_VERSION")))
             .with_protocol_version(ProtocolVersion::V_2025_11_25)
-            .with_instructions(INSTRUCTIONS)
+            .with_instructions(instructions)
     }
     fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
         Cow::Owned(vec![ProtocolVersion::V_2025_11_25])
     }
     fn get_tool(&self, name: &str) -> Option<Tool> {
-        tools().into_iter().find(|tool| tool.name == name)
+        tools_for(self.preview_control)
+            .into_iter()
+            .find(|tool| tool.name == name)
     }
     async fn list_tools(
         &self,
@@ -164,7 +187,9 @@ impl ServerHandler for Server {
                 None,
             ));
         }
-        Ok(ListToolsResult::with_all_items(tools()))
+        Ok(ListToolsResult::with_all_items(tools_for(
+            self.preview_control,
+        )))
     }
     async fn call_tool(
         &self,
@@ -316,8 +341,33 @@ fn tools() -> Vec<Tool> {
     tools
 }
 
+fn tools_for(preview: bool) -> Vec<Tool> {
+    let mut tools = tools();
+    if preview {
+        tools.push(tool::<Empty>(
+            "get_preview_state",
+            "Read the connected TUI preview's requested camera, displayed frame identity and document bounds, viewport dimensions, loading/error and playback state, and selected node for contextual references. Use before relative or contextual preview requests. Does not read prompt text or modify the document, selection or camera.",
+            true,
+        ));
+        let mut set = tool::<crate::preview_control::SetPreviewRequest>(
+            "set_preview",
+            "Operate the connected TUI camera without editing the document or selection. Search named/described targets first with read_nodes (calculated:true, depth:0, name/type filters) and use its exact IDs. target can fit the document, one/multiple nodes or a region, or center a point. fit:false preserves current scale; zoom overrides fitting; zoom_factor multiplies the fitted/current scale; pan moves the camera in document units, positive right/down. Inspect get_preview_state for relative requests. Returns only after a complete frame; a newer manual view cancels the request. Do not rearrange nodes to satisfy display requests.",
+            false,
+        );
+        set.annotations = Some(
+            ToolAnnotations::new()
+                .read_only(false)
+                .destructive(false)
+                .idempotent(false)
+                .open_world(false),
+        );
+        tools.push(set);
+    }
+    tools
+}
+
 pub(crate) fn tool_names() -> Vec<String> {
-    tools()
+    tools_for(true)
         .into_iter()
         .map(|tool| tool.name.into_owned())
         .collect()
@@ -421,6 +471,7 @@ struct DocumentWorker {
     store: Store,
     attachments: Option<crate::attachments::AttachmentAccess>,
     usage: Option<crate::guidance::usage::UsageAccess>,
+    preview_control: Option<crate::preview_control::Client>,
     fonts: Vec<PathBuf>,
     #[cfg(feature = "rendering")]
     snapshots: VecDeque<CachedSnapshot>,
@@ -515,6 +566,20 @@ impl DocumentWorker {
             None
         };
         let value = match name {
+            "get_preview_state" => {
+                let _: Empty = parse(arguments)?;
+                self.preview_control
+                    .as_ref()
+                    .ok_or_else(|| {
+                        Error::new("PREVIEW_UNAVAILABLE", "No TUI preview is connected")
+                    })?
+                    .state(cancel)?
+            }
+            "set_preview" => self
+                .preview_control
+                .as_ref()
+                .ok_or_else(|| Error::new("PREVIEW_UNAVAILABLE", "No TUI preview is connected"))?
+                .set(parse(arguments)?, cancel)?,
             "list_icons" => crate::icons::list(self.store.data_dir(), &parse(arguments)?)?,
             "get_guidance" => {
                 let args: GuideArgs = parse(arguments)?;
@@ -744,8 +809,10 @@ impl DocumentWorker {
             }
             _ => return Err(Error::new("INVALID_ARGUMENT", "Unknown tool")),
         };
-        if !matches!(name, "apply_operations" | "restore_checkpoint")
-            && let Some(revision) = value.get("revision").and_then(Value::as_str)
+        if !matches!(
+            name,
+            "apply_operations" | "restore_checkpoint" | "set_preview" | "get_preview_state"
+        ) && let Some(revision) = value.get("revision").and_then(Value::as_str)
         {
             crate::store::require_revision(&self.store.read()?, revision)?;
         }
@@ -1124,6 +1191,7 @@ mod tests {
             store,
             attachments: None,
             usage: None,
+            preview_control: None,
             fonts: vec![],
             snapshots: VecDeque::new(),
             failed_code: VecDeque::from([CachedFailure { source, created }]),
@@ -1184,6 +1252,7 @@ mod tests {
             store,
             attachments: None,
             usage: None,
+            preview_control: None,
             fonts: vec![],
             snapshots: VecDeque::new(),
             failed_code: VecDeque::new(),

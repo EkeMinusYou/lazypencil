@@ -117,6 +117,10 @@ Terminal stdin/stdout and at least 50 columns × 16 rows are required. `--json` 
 | `Ctrl+C` | Cancel active input/agent work; exit when idle |
 | Outside Prompt: `q`, or `/quit` | Stop the conversation and exit |
 
+During a conversation, requests such as “show the login button”, “show both screens”, “zoom out a little” or “center the heading at this scale” can operate Preview. The agent searches names/types through the existing `read_nodes` tool, uses `get_preview_state` for the selected node and current camera, and calls the TUI-only `set_preview` tool. It can target one or multiple nodes, the entire document, a region or a point, and adjust absolute/relative zoom or pan. “Show both” fits their combined bounds without moving design elements. State queries distinguish the requested view from the last complete frame and its revision. They do not expose draft text.
+
+The agent also receives instructions to search for and display a specific existing target before modifying it, including requests such as “fix the login button”, and to refocus after edits that change its geometry. This is agent-directed behavior, not a deterministic natural-language parser. `set_preview` returns success after a complete frame at the requested view is available. It pauses playback while preserving time, the prompt draft, keyboard focus and selected editing target. Camera state is not saved in the document. Ambiguous matches require resolution; dialogs, attachment viewing, manual camera changes and cancellation may refuse or interrupt an operation. A failed preview operation does not prohibit an otherwise authorized edit, and the agent must report the display limitation.
+
 Commands occupy one prompt line and are parsed without shell execution, expansion, or substitution. Paths are relative to the launch directory. Bracketed text paste stays text. `Cmd+V` is controlled by the terminal and is not assumed to carry bitmap pixels. `Ctrl+Enter` and `Shift+Enter` depend on terminal keyboard support; plain Enter submits and Alt+Enter provides a portable newline.
 
 The user's `config.toml` can replace prompt shortcuts, for example:

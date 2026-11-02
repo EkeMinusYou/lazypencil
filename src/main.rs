@@ -140,6 +140,7 @@ fn main() -> ExitCode {
         fonts,
         attachments_manifest,
         guidance_audit_manifest,
+        preview_control,
     } = &arguments.command
     {
         return match lazypencil::store::Store::open(file, arguments.data_dir.clone()).and_then(
@@ -152,7 +153,13 @@ fn main() -> ExitCode {
                     .as_ref()
                     .map(|path| lazypencil::guidance::usage::UsageAccess::open(&store, path))
                     .transpose()?;
-                lazypencil::mcp::serve_with_context(store, fonts.clone(), access, usage)
+                lazypencil::mcp::serve_with_preview_context(
+                    store,
+                    fonts.clone(),
+                    access,
+                    usage,
+                    preview_control.as_deref(),
+                )
             },
         ) {
             Ok(()) => ExitCode::SUCCESS,

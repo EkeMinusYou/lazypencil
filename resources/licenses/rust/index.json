@@ -6803,7 +6803,7 @@
         }
       ],
       "license": "MIT",
-      "manifest_sha256": "7b0a2322b9eebceb54341edb0600e3f8f2b3df954765cc3ed589c65f63385f1f",
+      "manifest_sha256": "1f422e8615ac0cc614569c88e01aa41c994923bfbd73800b6d3fae726767f4eb",
       "name": "lazypencil",
       "source": "workspace",
       "version": "0.1.0",

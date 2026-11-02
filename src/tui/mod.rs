@@ -4,6 +4,7 @@ mod account;
 mod camera;
 mod checkpoints;
 mod composer;
+mod controls;
 mod graphics;
 mod images;
 mod markdown;
@@ -187,7 +188,9 @@ struct App {
     view: View,
     playback: playback::Playback,
     preview: Option<Preview>,
+    preview_generation: Option<u64>,
     preview_error: Option<Error>,
+    pending_preview: Option<controls::Pending>,
     camera: Option<camera::Camera>,
     camera_deadline: Option<Instant>,
     camera_was_visible: bool,
@@ -243,7 +246,9 @@ impl App {
             view: View::default(),
             playback: playback::Playback::default(),
             preview: None,
+            preview_generation: None,
             preview_error: None,
+            pending_preview: None,
             camera: None,
             camera_deadline: None,
             camera_was_visible: false,
@@ -285,6 +290,10 @@ impl App {
         app
     }
     async fn event_loop(&mut self, screen: &mut terminal::Screen, worker: &Worker) -> Result<()> {
+        let mut preview_control = crate::preview_control::Host::start()?;
+        self.conversation.set_preview_control(
+            preview_control.client(self.conversation.store().path(), self.conversation.id()),
+        );
         let mut events = EventStream::new();
         self.camera_id = screen.camera_image_id();
         let mut timer = tokio::time::interval(Duration::from_secs(1));
@@ -297,6 +306,7 @@ impl App {
                 self.error(error);
                 self.dirty = true;
             }
+            self.expire_preview_control();
             if self.conversation.active() {
                 self.account_pending = false;
                 if let Some(check) = &self.account_check {
@@ -371,10 +381,15 @@ impl App {
                     Some(Err(error)) => return Err(terminal::io(error)),
                     None => { self.save_draft()?; return Ok(()); },
                 },
+                incoming = preview_control.next() => {
+                    let incoming = incoming.ok_or_else(|| Error::new("PREVIEW_UNAVAILABLE", "Preview control listener stopped"))?;
+                    self.receive_preview_control(incoming, worker, &screen.picker);
+                    self.dirty = true;
+                },
                 output = worker.next() => {
                     // Replacing a Kitty image ID removes its placements. Resend
                     // every placeholder instead of diffing unchanged image cells.
-                    if self.accept_preview(output) { screen.redraw(); }
+                    if self.accept_controlled_preview(output, worker, &screen.picker) { screen.redraw(); }
                 },
                 _ = async {
                     if let Some(deadline) = camera_deadline {
@@ -385,7 +400,10 @@ impl App {
                 } => {
                     self.camera_deadline = None;
                     // An already completed exact frame always wins over interim work.
-                    if worker.try_next().is_some_and(|output| self.accept_preview(output)) {
+                    let accepted = worker.try_next().is_some_and(|output| {
+                        self.accept_controlled_preview(output, worker, &screen.picker)
+                    });
+                    if accepted {
                         screen.redraw();
                     } else {
                         if let Err(error) = self.render_camera_feedback(&screen.picker) {
@@ -527,12 +545,14 @@ impl App {
                 if document {
                     self.refresh_nodes(selected.as_deref());
                 }
+                self.preview_generation = Some(output.generation);
             }
             Err(error) => {
                 self.playback.stop();
                 self.preview = None;
                 self.node_tree.rebuild(&[], &self.filter);
                 self.nodes.select(None);
+                self.preview_generation = None;
                 self.preview_error = Some(error.clone());
                 self.error(error);
             }

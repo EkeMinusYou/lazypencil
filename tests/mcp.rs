@@ -147,6 +147,9 @@ impl Client {
         if let Some(path) = attachments {
             command.arg("--attachments-manifest").arg(path);
         }
+        Self::from_command(command)
+    }
+    fn from_command(mut command: Command) -> Self {
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -3152,4 +3155,215 @@ fn idle_mcp_reaps_script_page_and_shader_processes_without_another_request() {
     assert_ne!(refreshed["dynamic_artifacts"], first["dynamic_artifacts"]);
     assert_eq!(fs::read(&file).unwrap(), saved);
     client.finish();
+}
+
+#[test]
+fn set_preview_is_only_advertised_to_bound_tui_clients_and_waits_for_ack() {
+    let temp = TempDir::new().unwrap();
+    let file = temp.path().join("design.pen");
+    let data = temp.path().join("data");
+    let store = lazypencil::store::Store::init(&file, Some(data.clone())).unwrap();
+    let mut external = Client::start(&file, &data);
+    let tools = external.request("tools/list", json!({}));
+    assert!(
+        !tools["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|tool| matches!(
+                tool["name"].as_str(),
+                Some("get_preview_state" | "set_preview")
+            ))
+    );
+    external.finish();
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let token = "test-preview-token";
+    let document = store.path().to_path_buf();
+    let expected_document = document.clone();
+    let server = std::thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut socket = loop {
+            match listener.accept() {
+                Ok((socket, _)) => break socket,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(Instant::now() < deadline, "No set_preview connection");
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(error) => panic!("{error}"),
+            }
+        };
+        socket
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let mut line = String::new();
+        BufReader::new(socket.try_clone().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        let wire: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(wire["token"], token);
+        assert_eq!(wire["document"], json!(expected_document));
+        assert_eq!(wire["conversation"], "test-conversation");
+        assert_eq!(wire["request"]["action"], "set");
+        assert_eq!(
+            wire["request"]["view"]["target"]["node_ids"],
+            json!(["button"])
+        );
+        writeln!(
+            socket,
+            "{}",
+            json!({"status":"updated","node_ids":["button"],"center":[120.0,40.0],"zoom":1.5})
+        )
+        .unwrap();
+    });
+    let endpoint = json!({"endpoint":{"address":address,"token":token},"document":document,"conversation":"test-conversation"});
+    let mut command = Command::new(env!("CARGO_BIN_EXE_lazypencil"));
+    command
+        .arg("--data-dir")
+        .arg(&data)
+        .args(["mcp", "--file"])
+        .arg(&file)
+        .arg("--preview-control")
+        .arg(endpoint.to_string());
+    let mut client = Client::from_command(command);
+    let tools = client.request("tools/list", json!({}));
+    assert!(
+        tools["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|tool| !matches!(
+                tool["name"].as_str(),
+                Some("focus_preview" | "get_editor_state")
+            ))
+    );
+    let set = tools["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tool| tool["name"] == "set_preview")
+        .unwrap();
+    assert_eq!(set["inputSchema"]["additionalProperties"], false);
+    assert_eq!(set["annotations"]["destructiveHint"], false);
+    assert_eq!(set["annotations"]["readOnlyHint"], false);
+    assert_eq!(
+        client.data(
+            "set_preview",
+            json!({"target":{"kind":"nodes","node_ids":["button"]}})
+        )["status"],
+        "updated"
+    );
+    server.join().unwrap();
+    client.finish();
+}
+
+#[test]
+fn node_search_combines_with_preview_state_and_generic_preview_tools() {
+    let temp = TempDir::new().unwrap();
+    let file = temp.path().join("design.pen");
+    let data = temp.path().join("data");
+    let store = lazypencil::store::Store::init(&file, Some(data.clone())).unwrap();
+    let document = json!({"version":"2.21","children":[
+        {"type":"rectangle","id":"login","name":"Login button","x":10,"y":20,"width":80,"height":40,"fill":"#f00"},
+        {"type":"rectangle","id":"login2","name":"Login alternative","x":400,"y":20,"width":80,"height":40,"fill":"#0f0"},
+        {"type":"rectangle","id":"cancel","name":"Cancel button","x":10,"y":100,"width":80,"height":40,"fill":"#00f"}
+    ]}).to_string();
+    fs::write(&file, &document).unwrap();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let revision = store.read().unwrap().revision();
+    let server_revision = revision.clone();
+    let server = std::thread::spawn(move || {
+        for action in ["get_state", "set"] {
+            let deadline = Instant::now() + Duration::from_secs(15);
+            let mut socket = loop {
+                match listener.accept() {
+                    Ok((socket, _)) => break socket,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(Instant::now() < deadline, "No {action} connection");
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("{error}"),
+                }
+            };
+            socket
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut line = String::new();
+            BufReader::new(socket.try_clone().unwrap())
+                .read_line(&mut line)
+                .unwrap();
+            let wire: Value = serde_json::from_str(&line).unwrap();
+            assert_eq!(wire["request"]["action"], action);
+            assert_eq!(wire["token"], "generic-preview-token");
+            let response = if action == "get_state" {
+                json!({"selected_node":{"node_id":"cancel"},"preview":{"requested_view":{"center":[50,40],"zoom":1.0}}})
+            } else {
+                assert_eq!(
+                    wire["request"]["view"]["target"]["node_ids"],
+                    json!(["login", "login2"])
+                );
+                assert_eq!(wire["request"]["view"]["fit"], false);
+                assert_eq!(
+                    wire["request"]["view"]["expected_revision"],
+                    server_revision
+                );
+                json!({"status":"updated","node_ids":["login","login2"],"center":[245.0,40.0],"zoom":1.0,"revision":server_revision})
+            };
+            writeln!(socket, "{response}").unwrap();
+        }
+    });
+    let endpoint = json!({"endpoint":{"address":address,"token":"generic-preview-token"},"document":store.path(),"conversation":"generic-preview"});
+    let mut command = Command::new(env!("CARGO_BIN_EXE_lazypencil"));
+    command
+        .arg("--data-dir")
+        .arg(&data)
+        .args(["mcp", "--file"])
+        .arg(&file)
+        .arg("--preview-control")
+        .arg(endpoint.to_string());
+    let mut client = Client::from_command(command);
+    let tools = client.request("tools/list", json!({}));
+    for (name, read_only, idempotent) in [
+        ("get_preview_state", true, true),
+        ("set_preview", false, false),
+    ] {
+        let tool = tools["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == name)
+            .unwrap();
+        assert_eq!(tool["annotations"]["readOnlyHint"], read_only);
+        assert_eq!(tool["annotations"]["destructiveHint"], false);
+        assert_eq!(tool["annotations"]["idempotentHint"], idempotent);
+        assert_eq!(tool["inputSchema"]["additionalProperties"], false);
+    }
+    let mut query = json!({"name":"login","type":"rectangle","depth":0});
+    #[cfg(feature = "rendering")]
+    {
+        query["calculated"] = json!(true);
+    }
+    let matches = client.data("read_nodes", query.take());
+    let ids: Vec<_> = matches["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|node| node["id"].clone())
+        .collect();
+    assert_eq!(ids, vec![json!("login"), json!("login2")]);
+    let state = client.data("get_preview_state", json!({}));
+    assert_eq!(state["selected_node"]["node_id"], "cancel");
+    let updated = client.data(
+        "set_preview",
+        json!({"target":{"kind":"nodes","node_ids":ids},"fit":false,"expected_revision":revision}),
+    );
+    assert_eq!(updated["status"], "updated");
+    assert_eq!(updated["zoom"], state["preview"]["requested_view"]["zoom"]);
+    server.join().unwrap();
+    client.finish();
+    assert_eq!(fs::read_to_string(&file).unwrap(), document);
 }

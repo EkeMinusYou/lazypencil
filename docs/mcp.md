@@ -34,11 +34,43 @@ When the CLI/TUI conversation host owns the server, it also binds design-resourc
 | `put_asset` | Immutable managed PNG, JS, or GLSL files; images are checked and normalized before storage |
 | `get_layout` | Calculated positions, transforms, text metrics, overflow, and a retained snapshot ID |
 | `render` | PNG image content and matching snapshot metadata |
+| `get_preview_state` (TUI only) | Requested camera, completed preview state and selected node |
+| `set_preview` (TUI only) | Fit nodes, a region or the document; center, pan and zoom without editing nodes |
 | `list_fonts` | Each bundled/configured face, collection index, source/face hashes, styles, axes, and default fallback chain |
 
 `list_fonts`, `get_layout`, `render`, and calculated node reads require the rendering feature. The public input schemas are generated from the same Rust types used to parse tool arguments; unknown fields are rejected. Domain errors appear as `isError: true` with a structured error code and readable text.
 
 The [catalogue](icons.md) supports bundled Lucide plus optional Feather, Phosphor and all three Material Symbols packs. Variable/layout queries, image grants and dynamic preview controls are implemented. The prompt host registers document/conversation-bound retained attachments for `get_document` and `put_asset`; external MCP clients have no such grant and upload typed image data. Earlier three-target gates cover their documented deterministic CLI/MCP/TUI paths; the initial release now targets Mac Apple Silicon. See [current gaps](implementation-status.md#remaining-work) for remaining sampler-copy/resource limits and release conditions. Shared authentication and the recorded script-copy contexts have passed their named Mac gates.
+
+## TUI preview control
+
+A server launched by a live TUI additionally advertises `get_preview_state` and `set_preview`. Standalone MCP clients and CLI conversations do not advertise these tools. The TUI supplies a private loopback endpoint bound to its document and conversation. The endpoint is valid only for that TUI invocation. Single-node focus is part of `set_preview`; there is no separate `focus_preview` tool.
+
+`get_preview_state` takes `{}` and returns the selected node and `preview` state. Keyboard focus, dialogs and agent activity are not part of this response. `preview.requested_view` includes the requested center, zoom, time and document-space region. `preview.displayed` describes the last complete document frame, including its view, revision, dependency revision, snapshot ID and document bounds; it is null before a complete frame or while showing an attachment. The state also includes viewport cells/pixels, pending camera changes, playback and preview errors. A displayed revision may lag behind an edit: it identifies the actual completed frame. The query does not expose the prompt draft or change selection, playback or the camera.
+
+For named or described targets, first use the existing `read_nodes` search with `calculated: true`, `depth: 0`, and optional `name`/`type` filters. Inspect the matching IDs, addresses and layout. Resolve ambiguity instead of guessing an ID or silently selecting one match. Use `get_preview_state` when interpreting relative requests or references to the current selection/view. Then call `set_preview`, for example:
+
+```json
+{"target":{"kind":"nodes","node_ids":["login","register"]}}
+```
+
+| Argument | Behavior |
+| --- | --- |
+| `target: {"kind":"document"}` | Center and fit the entire document |
+| `target: {"kind":"nodes","node_ids":[...]}` | Center and fit the union of 1..64 distinct exact calculated node IDs |
+| `target: {"kind":"region","region":{"x":0,"y":0,"width":400,"height":300}}` | Center and fit a finite, positive document-space rectangle |
+| `target: {"kind":"point","center":[100,200]}` | Center at document coordinates while retaining the current scale |
+| `fit: false` | Center a node/region/document target at the current scale instead of fitting it |
+| `zoom` | Set an absolute scale from 0.01 through 16; overrides fitting |
+| `zoom_factor` | Multiply the current or fitted scale; the result is clamped to 0.01..16 |
+| `pan: [dx,dy]` | Shift the camera in document units, positive right/down; applied last |
+| `expected_revision`, `expected_dependency_revision` | Reject stale target geometry |
+
+Omit `target` to adjust the current view. `zoom` and `zoom_factor` cannot be combined. Coordinates and factors must be finite, and factors positive. Fitting defaults to true for node, region and document targets. Thus `{"zoom_factor":0.8}` zooms out in place; `{"target":{"kind":"nodes","node_ids":["heading"]},"fit":false}` centers the heading without changing scale. Inherited and generated nodes use their calculated IDs, not source-definition IDs. Finding multiple nodes and fitting their union changes only the camera; it does not rearrange the design.
+
+The host refreshes the layout before resolving the target and acknowledges a complete rendered frame with `status: "updated"`, `node_ids`, target `bounds` (or null), revisions, `center`, `zoom` and `view`. The operation pauses dynamic playback but preserves time, keyboard focus and editing selection, and does not modify the document. It is a non-destructive display-side effect; relative operations mean the tool is not advertised as read-only or idempotent.
+
+The connected conversation instructs the agent to search for and display an identified target before a targeted edit, then refocus after a geometry change. This depends on the agent following those instructions. These tools do not replace `render` for visual inspection. Unknown or empty-bounds nodes return `INVALID_ARGUMENT`; stale revisions return `REVISION_CONFLICT`; dialogs or attachment viewing return `BUSY`. Cancellation, a newer manual view, disconnection, and the 30-second deadline terminate pending mutations without claiming display success. Camera actions are not replayed when reopening saved conversations.
 
 ## Editing and inspecting
 

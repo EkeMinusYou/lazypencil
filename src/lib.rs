@@ -31,6 +31,7 @@ mod managed;
 pub mod mcp;
 pub mod operations;
 pub mod paths;
+pub(crate) mod preview_control;
 #[cfg(unix)]
 mod process_owner;
 pub mod project;
