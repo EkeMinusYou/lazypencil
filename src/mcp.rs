@@ -210,20 +210,28 @@ impl ServerHandler for Server {
             return Ok(CallToolResult::structured_error(json!({"error":Error::new("CANCELLED","The request was cancelled before execution")})).into());
         }
         let (reply, receiver) = oneshot::channel();
-        if let Err(error) = self.sender.try_send(Job {
+        let job = Job {
             name: request.name.into_owned(),
             arguments,
             reply,
-            cancel: context.ct,
-        }) {
-            return match error {
-                mpsc::error::TrySendError::Full(_)=>Ok(CallToolResult::structured_error(json!({"error":Error::new("BUSY","The document request queue is full; retry later")})).into()),
-                mpsc::error::TrySendError::Closed(_)=>Err(ErrorData::internal_error("Document worker stopped",None)),
-            };
+            cancel: context.ct.clone(),
+        };
+        tokio::select! {
+            biased;
+            _ = context.ct.cancelled() => {
+                return Ok(CallToolResult::structured_error(json!({"error":Error::new("CANCELLED","The request was cancelled before execution")})).into());
+            }
+            result = self.sender.send(job) => {
+                result.map_err(|_| ErrorData::internal_error("Document worker stopped", None))?;
+            }
         }
-        let result = receiver
-            .await
-            .map_err(|_| ErrorData::internal_error("Document worker stopped", None))?;
+        let result = tokio::select! {
+            biased;
+            _ = context.ct.cancelled() => {
+                return Ok(CallToolResult::structured_error(json!({"error":Error::new("CANCELLED","The request was cancelled")})).into());
+            }
+            result = receiver => result.map_err(|_| ErrorData::internal_error("Document worker stopped", None))?,
+        };
         Ok(result.into())
     }
 }
@@ -332,7 +340,7 @@ fn tools() -> Vec<Tool> {
     let tools = {
         let mut tools = tools;
         tools.extend([
-        tool::<LayoutArgs>("get_layout","Compute actual positions, transforms, shaped text metrics and overflow warnings. Inspect all pages as needed. Pass snapshot_id to reuse the exact retained calculation.",true),
+        tool::<LayoutArgs>("get_layout","Compute actual positions, transforms, shaped text metrics and overflow warnings. Inspect all pages as needed. Reuse snapshot_id from a calculation retained on this MCP connection. TUI preview IDs and IDs from earlier connections are not reusable here. On SNAPSHOT_UNAVAILABLE, omit snapshot_id and cursor to acquire one fresh calculation, then share its returned ID for subsequent reads.",true),
         tool::<RenderArgs>("render","Return a PNG image content block for the whole design or a document-space crop. node_id selects its visual bounds while preserving document compositing context. Inspect the image, then correct problems using apply_operations. Layout and render share the same snapshot. Supply expected revisions.",true),
         tool::<Empty>("list_fonts","List each face in bundled and explicitly configured fonts, including collection index, source/face hashes, weight, slant, PostScript name, variation axes and the default fallback chain. Layout text metrics report the actual shaped faces. Unavailable requested families fail instead of silent substitution.",true),
         ]);
@@ -346,7 +354,7 @@ fn tools_for(preview: bool) -> Vec<Tool> {
     if preview {
         tools.push(tool::<Empty>(
             "get_preview_state",
-            "Read the connected TUI preview's requested camera, displayed frame identity and document bounds, viewport dimensions, loading/error and playback state, and selected node for contextual references. Use before relative or contextual preview requests. Does not read prompt text or modify the document, selection or camera.",
+            "Read the connected TUI preview's requested camera, displayed frame identity and document bounds, viewport dimensions, loading/error and playback state, and selected node for contextual references. Use before relative or contextual preview requests. preview_snapshot_id identifies the displayed frame; it is not a retained MCP snapshot_id. Obtain a reusable calculation from get_layout, validate_document scope layout, render or a calculated read on this connection. Does not read prompt text or modify the document, selection or camera.",
             true,
         ));
         let mut set = tool::<crate::preview_control::SetPreviewRequest>(
@@ -930,7 +938,7 @@ impl DocumentWorker {
                 .ok_or_else(|| {
                     Error::new(
                         "SNAPSHOT_UNAVAILABLE",
-                        "This calculation snapshot is no longer retained",
+                        "This calculation snapshot is not retained on this MCP connection. Request a fresh calculation without snapshot_id or cursor, then use its returned snapshot_id for subsequent reads",
                     )
                 })?;
             let cached = &self.snapshots[index];

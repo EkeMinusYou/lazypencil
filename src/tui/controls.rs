@@ -65,7 +65,7 @@ impl App {
         let rendered = self.preview.as_ref().filter(|preview| !preview.attachment);
         let displayed = rendered.map(|preview| json!({
             "view": view_state(preview.view, pixels), "revision": preview.summary["revision"],
-            "dependency_revision": preview.summary["dependency_revision"], "snapshot_id": preview.summary["snapshot_id"],
+            "dependency_revision": preview.summary["dependency_revision"], "preview_snapshot_id": preview.summary["snapshot_id"],
             "document_bounds": preview.summary["bounds"],
         }));
         json!({
@@ -552,6 +552,8 @@ mod tests {
             assert_eq!(state["selected_node"]["node_id"], "left");
             assert_eq!(state["preview"]["requested_view"], state["preview"]["displayed"]["view"]);
             assert_eq!(state["preview"]["displayed"]["revision"], store.read().unwrap().revision());
+            assert_eq!(state["preview"]["displayed"]["preview_snapshot_id"], app.preview.as_ref().unwrap().summary["snapshot_id"]);
+            assert!(state["preview"]["displayed"].get("snapshot_id").is_none());
             assert_eq!(state["preview"]["viewport_cells"], json!([50,20]));
             assert_eq!(app.editor.lines().join("\n"), "この倍率を保って");
             assert_eq!(std::fs::read_to_string(store.path()).unwrap(), document);

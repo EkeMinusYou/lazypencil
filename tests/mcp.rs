@@ -17,6 +17,80 @@ mod http_image_reference;
 
 #[cfg(unix)]
 #[test]
+fn document_queue_waits_for_capacity_and_cancels_waiting_edits() {
+    let temp = TempDir::new().unwrap();
+    let server = http_image_reference::Server::new();
+    let file = temp.path().join("image.pen");
+    let original = json!({"version":"2.21","children":[{"id":"image","type":"rectangle","width":16,"height":16,"fill":{"type":"image","url":format!("http://{}/network/http-image/blocked.png",server.address)}}]}).to_string();
+    let repaired = json!({"version":"2.21","children":[{"id":"image","type":"rectangle","width":16,"height":16,"fill":"#00ff00"}]}).to_string();
+    fs::write(&file, original).unwrap();
+    let mut client = Client::start(&file, &temp.path().join("data"));
+    let blocked = client.start_request("tools/call", json!({"name":"get_document","arguments":{}}));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while server.network_counts().0 == 0 {
+        assert!(
+            Instant::now() < deadline,
+            "The first document request did not block on the owned HTTP fixture"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let mut pending = std::collections::HashSet::new();
+    for _ in 0..32 {
+        pending.insert(
+            client.start_request("tools/call", json!({"name":"get_history","arguments":{}})),
+        );
+    }
+    assert!(
+        matches!(
+            client.messages.recv_timeout(Duration::from_millis(200)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ),
+        "Requests beyond queue capacity must wait instead of failing with BUSY"
+    );
+    let edit = client.start_request("tools/call", json!({"name":"apply_operations","arguments":{
+        "request_id":"cancel-before-admission","expected_revision":lazypencil::document::hash(repaired.as_bytes()),
+        "operations":[{"op":"update","target":"image","set":{"width":99}}]
+    }}));
+    client.send(json!({"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":edit,"reason":"cancel while waiting for capacity"}}));
+    fs::write(&file, &repaired).unwrap();
+    client.send(json!({"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":blocked,"reason":"release the document worker"}}));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !pending.is_empty() {
+        let response = client
+            .messages
+            .recv_timeout(
+                deadline
+                    .checked_duration_since(Instant::now())
+                    .expect("Queued requests did not drain"),
+            )
+            .unwrap();
+        let Some(id) = response["id"].as_u64() else {
+            continue;
+        };
+        if id == blocked || id == edit {
+            continue;
+        }
+        assert!(pending.remove(&id), "Unexpected response: {response}");
+        assert!(response.get("error").is_none(), "{response}");
+        assert_ne!(response["result"]["isError"], true, "{response}");
+    }
+    client.data("get_document", json!({}));
+    assert_eq!(
+        fs::read_to_string(&file).unwrap(),
+        repaired,
+        "A cancelled waiting edit must not execute after capacity becomes available"
+    );
+    assert!(
+        client.data("get_history", json!({}))["entries"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    client.finish();
+}
+
+#[cfg(unix)]
+#[test]
 fn http_image_metadata_cancellation_reaps_worker_and_unblocks_document_access() {
     for (tool, arguments) in [
         ("get_document", json!({})),
@@ -1057,6 +1131,16 @@ fn mcp_layout_validation_retains_one_calculation_for_diagnostics_geometry_and_pn
         "SNAPSHOT_UNAVAILABLE"
     );
     client.finish();
+    let mut reconnected = Client::start(&file, &data);
+    let foreign = reconnected.call("get_layout", arguments);
+    assert_eq!(
+        foreign["structuredContent"]["error"]["code"],
+        "SNAPSHOT_UNAVAILABLE"
+    );
+    let fresh = reconnected.data("validate_document", json!({"scope":"layout"}));
+    let recovered = reconnected.data("get_layout", json!({"expected_revision":fresh["revision"],"expected_dependency_revision":fresh["dependency_revision"],"snapshot_id":fresh["snapshot_id"]}));
+    assert_eq!(recovered["snapshot_id"], fresh["snapshot_id"]);
+    reconnected.finish();
 }
 
 #[cfg(feature = "rendering")]
