@@ -438,12 +438,15 @@ fn history_text(
         {
             flush_body(&mut body, &mut lines, !activity, user);
             if !activity {
-                lines.push(Line::styled(
-                    "┌ Tools",
-                    Style::default()
-                        .fg(theme::SECONDARY)
-                        .add_modifier(Modifier::BOLD),
-                ));
+                lines.push(Line::from(vec![
+                    Span::styled("┌ ", Style::default().fg(theme::MUTED)),
+                    Span::styled(
+                        "Tools",
+                        Style::default()
+                            .fg(theme::SECONDARY)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ]));
             }
             let title = if let Some(name) = title.strip_prefix("mcp.lazypencil.") {
                 name.replace('_', " ")
