@@ -1,0 +1,89 @@
+{
+  "source_commit": "a8cc701d8436dd7a9083edcf087ff1a939ccbf87",
+  "source_sha256": {
+    "Cargo.toml": "9ca7c97d270f1f21f6eeeee08696c293ced81394a6e78136151c853db661b5d6",
+    "Cargo.lock": "5c8a5887b191ddb467f411ae61d4456805b24dee74602fe9002ca7b8e1174c39",
+    "src/tui/camera.rs": "9e50f9a2d632e902f627a499000d048d47c05251f1078d455d833c9ba87110d3",
+    "src/tui/graphics.rs": "d1f592253a965dc9366d8fdb2ab1323151b5da43143540c2e3063844b5e8845e",
+    "src/tui/preview.rs": "f75cdc04d5e8fa4e374860ad516512e5677cc793441f3ff78874c041d7d7cd75",
+    "src/tui/mod.rs": "162208f1858bd4e1b2584ffc005f1fcca32f673024ec902db6285fb129ddefaa",
+    "src/render/preview.rs": "02802db8ad981637dfff8efdf2ffee6f7789eeed3da21cdd8e1dc8e973a18e66",
+    "xtask/src/performance/preview.rs": "2cbaee07b63905ed36a8cf1f83bc641e71c812383611805c334fd3ed6c0d26de",
+    "xtask/src/test_support/terminal.rs": "5dc30d2cc4bbd560752a4b79e2322541965f3c493e8a83c609fc7d27a5bcdfee"
+  },
+  "host": "macOS-27.2-arm64-arm-64bit-Mach-O",
+  "application_build_command": "cargo build --locked --offline --release --jobs 2 --bin lazypencil",
+  "scope": "Owned PTY measurement; no installed executable or user settings changed. Current real document differs from the 2026-11-02 reference.",
+  "binary_sha256": "0b13f748d68082eec6784aa55dfcf52d83a9a37b5077d6400bd052ce017ac6c6",
+  "application_build_log_sha256": "8a89b48337003ac34bf955639f3ff974748c6bd913d0fc152c0f512bc87ad075",
+  "host_model": "Macmini9,1",
+  "host_memory_bytes": 17179869184,
+  "host_logical_cpus": 8,
+  "primary_observer_sha256": "09f91d0e83d5cbefbce7562d6e1107cd1344923b61c320e11a11daea8d7df03e",
+  "observer_build_log_sha256": "da79832524f573c3fe49b6ea375e2a7fea6fbff7d702309355f61326367eff25",
+  "primary_statistics_independently_verified": true,
+  "final_observer_sha256": "c5c59ce82a19cd60819f2531f95b7de45adde9c256b1bc2c34c55ac023c75e3e",
+  "final_observer_source_sha256": "7aaa26acda6f4f243697f803a0dc1a57fdfc4f9de74304e76567a691a10c71b5",
+  "reports": {
+    "preview-current-2026-11-03.json": "8d0018842ddc2b462a2116962cd930cef57b39c95e77a8fc4626691433047f84",
+    "preview-comparison-2026-11-03.json": "f9808ff1ddf0b62745f38dee0efe7a1ad51d6fc865c500db238c850794d957cd",
+    "preview-worker-profile-2026-11-03.json": "9ffa26a5de4c1d982d2c6e22f3914507b900c65ade6e1b0d862659ac4e735ec2"
+  },
+  "current_vs_previous": {
+    "same_document_geometry_and_protocol": true,
+    "initial_pixels_match": true,
+    "all_80_operation_pixels_match": true,
+    "statistics_independently_recomputed": true,
+    "both_bursts_restore_pixels": true,
+    "previous_binary_sha256": "b4edf6c82fb115382fb2d1bab07f91a1c091ca209667459dc64a22934ceede4d",
+    "focus_tabs": {
+      "current": 2,
+      "previous": 1
+    }
+  },
+  "excluded_attempt": {
+    "path": "/private/tmp/lazypencil-remeasure-20261103/previous-binary-current-document/wide.json",
+    "reason": "The old UI needs one Tab to focus Preview, but this first attempt used two. Startup succeeded; no interaction samples were collected. Corrected by --focus-tabs 1.",
+    "report_sha256": "0b13354aa74075fc713634d80b7377f82a5488a6b129f3c38d3a44ef435b6ba5"
+  },
+  "profiling": {
+    "separate_from_primary_statistics": true,
+    "interaction_worker_count": 20,
+    "interaction_worker_median_ms": 10.18725
+  },
+  "validation": {
+    "formatting": "passed",
+    "out_of_range_focus_tabs_0_and_9": "rejected with CLI exit 2",
+    "focus_tabs_1": "80 comparison samples and both bursts passed",
+    "default_focus_tabs_2": "20 separate profiled samples passed",
+    "preview_observer_unit_tests": "3 passed, 0 failed; release profile",
+    "observer_tests_log_sha256": "f5fcba46035f8f727055e3e7f048eeff2a818f439a3ce684c191dc8e0ba7fc30",
+    "observer_build_log_sha256": "31521414cf9218b8161dc9fee774250de518c8d7f8ca51a031f36fe377c92436"
+  },
+  "observer_source_commit": "28ada803b19024f073d5941734babedc689a386d",
+  "reproduction": {
+    "geometry": "57,224,2688,1140",
+    "primary": {
+      "samples": 20,
+      "bursts": true,
+      "focus_tabs": 2,
+      "worker_profile": false
+    },
+    "comparison": {
+      "samples": 20,
+      "bursts": true,
+      "focus_tabs": 1,
+      "worker_profile": false
+    },
+    "profile": {
+      "samples": 5,
+      "bursts": false,
+      "focus_tabs": 2,
+      "worker_profile": true
+    },
+    "adapter": "/usr/bin/false",
+    "protocol": "Kitty/ZLIB via TERM=xterm-kitty",
+    "current_document_bytes": 9822508,
+    "current_document_stored_nodes": 9421
+  }
+}
