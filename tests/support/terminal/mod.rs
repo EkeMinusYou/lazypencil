@@ -204,6 +204,9 @@ impl Harness {
                     "--adapter-arg=image-inspect"
                 });
         }
+        if case == "herdr-kitty-held" {
+            command.env("LAZYPENCIL_PROFILE_INPUT", "owned-local-measurement");
+        }
         command
             .args(["--image-protocol", protocol])
             .stdin(Stdio::from(slave.try_clone()?))
@@ -253,13 +256,6 @@ impl Harness {
             self.output.extend_from_slice(bytes);
             self.frames.feed(bytes)?;
             self.screen.feed(bytes);
-            if self.case == "herdr-kitty-held"
-                && !self.probe_answered
-                && self.contains_bytes(b"\x1b[?u")
-            {
-                self.key(b"\x1b[?5u\x1b[?1;2c")?;
-                self.probe_answered = true;
-            }
             if ["auto-kitty", "auto-kitty-raw", "auto-sixel"].contains(&self.case.as_str())
                 && !self.probe_answered
                 && self.contains_bytes(b"\x1b[5n")

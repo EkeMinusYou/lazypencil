@@ -6,8 +6,8 @@ mod checkpoints;
 mod composer;
 mod controls;
 mod diagnostics;
+mod events;
 mod graphics;
-mod held;
 mod images;
 mod markdown;
 mod nodes;
@@ -30,8 +30,7 @@ use crate::{
 };
 use agent_client_protocol::schema::v1::RequestPermissionRequest;
 use clap::{Args, ValueEnum};
-use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use futures::StreamExt;
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use images::InputJob;
 use preview::{Preview, Request, View, Worker};
 use ratatui::{
@@ -316,9 +315,7 @@ impl App {
         self.conversation.set_preview_control(
             preview_control.client(self.conversation.store().path(), self.conversation.id()),
         );
-        let mut events = EventStream::new();
-        let mut held = held::Held::default();
-        let mut terminal_focused = true;
+        let mut events = events::Events::new()?;
         self.camera_id = screen.camera_image_id();
         self.presentation.rectangular(
             screen.picker.protocol_type() == ratatui_image::picker::ProtocolType::Kitty
@@ -353,10 +350,22 @@ impl App {
                 }
                 self.dirty = true;
             }
-            let navigating = self.focus == Focus::Preview && !self.has_modal();
-            if !navigating || !terminal_focused {
-                held.clear();
+            // Consume queued presses and releases before drawing. A slow image
+            // transfer must not turn an input burst into one redraw per old key,
+            // or let old key events repaint after an already queued release.
+            for _ in 0..64 {
+                let Some(event) = events.try_next() else {
+                    break;
+                };
+                if self
+                    .terminal_event(event.map_err(terminal::io)?, screen, worker)
+                    .await?
+                {
+                    self.save_draft()?;
+                    return Ok(());
+                }
             }
+            let navigating = self.focus == Focus::Preview && !self.has_modal();
             screen.preview_keys(navigating)?;
             if self.dirty {
                 let mut cells = self.cells;
@@ -371,12 +380,12 @@ impl App {
                     self.request(worker, false, false);
                 }
             }
-            let held_deadline = held.deadline();
             let playback_deadline = self.playback.deadline();
             let camera_deadline = self.camera_deadline;
             let activity_deadline = (self.conversation.active() && !self.has_modal())
                 .then(|| Instant::now() + Duration::from_millis(200));
             tokio::select! {
+                biased;
                 _ = async {
                     if let Some(deadline) = activity_deadline {
                         tokio::time::sleep_until(deadline.into()).await;
@@ -399,44 +408,11 @@ impl App {
                     else { self.save_draft()?; return Ok(()); }
                 },
                 signal = &mut termination => { signal.map_err(terminal::io)?; self.save_draft()?; return Ok(()); },
-                event = events.next() => match event {
-                    Some(Ok(Event::Key(key))) => {
-                        let pan = [Nav::PanLeft, Nav::PanRight, Nav::PanUp, Nav::PanDown]
-                            .into_iter().any(|action| self.navigation.matches(action, key));
-                        if !held.input(key, navigating && terminal_focused && pan
-                            && screen.picker.keyboard_events(), Instant::now()) {
-                            continue;
-                        }
-                        let modal = self.has_modal();
-                        match self.key(key, &screen.picker, worker).await {
-                            Ok(true) => { self.save_draft()?; return Ok(()); },
-                            Ok(false) => {}, Err(error) => self.error(error),
-                        }
-                        if modal && !self.has_modal() { screen.redraw(); }
-                        self.dirty = true;
-                    },
-                    Some(Ok(Event::Paste(text))) if self.focus == Focus::Prompt && !self.has_modal() => {
-                        self.insert_text(&text); self.dirty = true;
-                    },
-                    Some(Ok(Event::FocusLost)) => { terminal_focused = false; held.clear(); },
-                    Some(Ok(Event::FocusGained)) => { terminal_focused = true; },
-                    Some(Ok(Event::Resize(_, _))) => { self.presentation.invalidate(); self.dirty = true; },
-                    Some(Ok(_)) => {},
-                    Some(Err(error)) => return Err(terminal::io(error)),
-                    None => { self.save_draft()?; return Ok(()); },
-                },
-                _ = async {
-                    if let Some(deadline) = held_deadline {
-                        tokio::time::sleep_until(deadline.into()).await;
-                    } else {
-                        std::future::pending::<()>().await;
-                    }
-                } => {
-                    if let Some(key) = held.tick(Instant::now()) {
-                        if let Err(error) = self.key(key, &screen.picker, worker).await {
-                            self.error(error);
-                        }
-                        self.dirty = true;
+                event = events.next() => {
+                    let Some(event) = event else { self.save_draft()?; return Ok(()); };
+                    if self.terminal_event(event.map_err(terminal::io)?, screen, worker).await? {
+                        self.save_draft()?;
+                        return Ok(());
                     }
                 },
                 incoming = preview_control.next() => {
@@ -523,6 +499,38 @@ impl App {
                 },
             }
         }
+    }
+    async fn terminal_event(
+        &mut self,
+        event: Event,
+        screen: &mut terminal::Screen,
+        worker: &Worker,
+    ) -> Result<bool> {
+        match event {
+            Event::Key(key) if key.kind != KeyEventKind::Release => {
+                let modal = self.has_modal();
+                match self.key(key, &screen.picker, worker).await {
+                    Ok(true) => return Ok(true),
+                    Ok(false) => {}
+                    Err(error) => self.error(error),
+                }
+                if modal && !self.has_modal() {
+                    screen.redraw();
+                }
+                screen.preview_keys(self.focus == Focus::Preview && !self.has_modal())?;
+                self.dirty = true;
+            }
+            Event::Paste(text) if self.focus == Focus::Prompt && !self.has_modal() => {
+                self.insert_text(&text);
+                self.dirty = true;
+            }
+            Event::Resize(_, _) => {
+                self.presentation.invalidate();
+                self.dirty = true;
+            }
+            _ => {}
+        }
+        Ok(false)
     }
     fn request(&mut self, worker: &Worker, check_only: bool, refresh: bool) {
         if self.cells.width == 0 || self.cells.height == 0 {

@@ -4,8 +4,8 @@ use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
 #[cfg(unix)]
 #[test]
 fn startup_graphics_replies_after_status_preserve_only_typed_text() {
-    let bytes = "\x1b[6;20;10t\x1b[0n\x1b[?5u日本語\x1b_Gi=31;OK\x1b\\\x1b_Gi=32;OK\x1b\\の下書き"
-        .as_bytes();
+    let bytes =
+        "\x1b[6;20;10t\x1b[0n日本語\x1b_Gi=31;OK\x1b\\\x1b_Gi=32;OK\x1b\\の下書き".as_bytes();
     let mut parser = Parser::new();
     let responses = bytes
         .iter()
@@ -15,8 +15,6 @@ fn startup_graphics_replies_after_status_preserve_only_typed_text() {
     assert!(responses.contains(&Response::KittyCompression));
     assert!(responses.contains(&Response::Status));
     assert_eq!(startup_text(bytes), "日本語の下書き");
-    assert!(keyboard_reply(bytes));
-    assert!(!keyboard_reply(b"\x1b[?1;2c\x1b[104;1:1u"));
 }
 
 #[test]
@@ -32,7 +30,6 @@ fn kitty_virtual_placements_match_placeholder_cells_with_changed_pixel_metrics()
                     protocol: ProtocolType::Kitty,
                     tmux,
                     kitty_compression: compressed,
-                    keyboard_events: false,
                 };
                 let pixels = DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
                     u32::from(width) * u32::from(size.width),
@@ -93,7 +90,6 @@ fn compressed_and_raw_kitty_transfers_preserve_identical_rgba_without_changing_p
             protocol: ProtocolType::Kitty,
             tmux: false,
             kitty_compression: compressed,
-            keyboard_events: false,
         };
         let protocol = backend
             .encode(DynamicImage::ImageRgba8(source.clone()), size, 77)
@@ -135,7 +131,6 @@ fn kitty_frames_switch_inactive_slots_and_keep_stable_redraws_without_retransmis
         protocol: ProtocolType::Kitty,
         tmux: false,
         kitty_compression: true,
-        keyboard_events: false,
     };
     let mut presentation = Presentation::default();
     let mut observer = observer::KittyFrames::for_lazypencil();
@@ -205,7 +200,6 @@ fn rectangular_kitty_uploads_once_places_the_whole_image_and_restores_after_moda
         protocol: ProtocolType::Kitty,
         tmux: false,
         kitty_compression: true,
-        keyboard_events: false,
     };
     let pixels = image::RgbaImage::from_pixel(80, 80, image::Rgba([248, 250, 252, 255]));
     let protocol = backend
@@ -263,7 +257,6 @@ fn native_camera_repositions_uploaded_pixels_without_encoding_or_uploading_them_
         protocol: ProtocolType::Kitty,
         tmux: false,
         kitty_compression: true,
-        keyboard_events: false,
     };
     let pixels = image::RgbaImage::from_fn(800, 600, |x, y| {
         image::Rgba([(x % 255) as u8, (y % 255) as u8, 100, 255])

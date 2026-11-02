@@ -551,7 +551,7 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
             .windows(3)
             .enumerate()
             .filter_map(|(start, prefix)| {
-                if prefix != b"\x1b[>" {
+                if prefix != b"\x1b[>" && prefix != b"\x1b[=" {
                     return None;
                 }
                 let rest = &bytes[start + 3..];
@@ -739,7 +739,7 @@ fn keyboard_flags(bytes: &[u8]) -> Option<u16> {
         .windows(3)
         .enumerate()
         .filter_map(|(start, prefix)| {
-            if prefix != b"\x1b[>" {
+            if prefix != b"\x1b[>" && prefix != b"\x1b[=" {
                 return None;
             }
             let rest = &bytes[start + 3..];
@@ -765,13 +765,47 @@ fn held_navigation(h: &mut Harness) -> Result {
         15.0,
         |h| keyboard_flags(&h.output) == Some(15),
     )?;
+    let pan_inputs = |h: &Harness| {
+        fs::read_to_string(h.root.join("terminal-errors.log"))
+            .unwrap_or_default()
+            .lines()
+            .filter_map(|line| {
+                serde_json::from_str::<Value>(line.strip_prefix("LAZYPENCIL_INPUT_PROFILE ")?).ok()
+            })
+            .filter(|event| event["event"] == "input")
+            .count()
+    };
+    let before = pan_inputs(h);
+    // Multiplexers can still deliver legacy presses while mode changes are in
+    // flight. Every press must survive, including two presses of the same key.
+    h.key(b"hh\x1b[104;1:3ull\x1b[108;1:3ujj\x1b[106;1:3ukk\x1b[107;1:3u")?;
+    h.wait("all eight batched presses are handled", 3.0, |h| {
+        pan_inputs(h) >= before + 8
+    })?;
+    h.pump_for(0.2)?;
+    assert_eq!(pan_inputs(h), before + 8);
+    h.wait("balanced batched input restores the viewport", 15.0, |h| {
+        h.frames.images.last() == Some(&initial)
+    })?;
     for letter in [b'h', b'j', b'k', b'l'] {
-        let placements = h.frames.camera_placement_updates;
-        h.key(format!("\x1b[{};1:1u", letter).as_bytes())?;
-        // A single press must move multiple times before any repeat or release.
-        h.wait("held press moves without OS repeat events", 3.0, |h| {
-            h.frames.camera_placement_updates >= placements + 3
-        })?;
+        let count = pan_inputs(h);
+        for (index, kind) in [1, 2, 2].into_iter().enumerate() {
+            let placements = h.frames.camera_placement_updates;
+            let frames = h.frames.images.len();
+            h.key(format!("\x1b[{};1:{}u", letter, kind).as_bytes())?;
+            h.wait(
+                "press and repeat each update the preview before release",
+                3.0,
+                |h| {
+                    pan_inputs(h) == count + index + 1
+                        && (h.frames.camera_placement_updates > placements
+                            || h.frames.images.len() > frames)
+                },
+            )?;
+            // Delayed text repetition must not invent additional movement.
+            h.pump_for(0.12)?;
+            assert_eq!(pan_inputs(h), count + index + 1);
+        }
         h.key(format!("\x1b[{};1:3u", letter).as_bytes())?;
         h.pump_for(0.3)?;
         let stopped = h.frames.camera_placement_updates;
@@ -1332,8 +1366,14 @@ fn navigation(h: &mut Harness) -> Result<Value> {
     h.paste(text)?;
     h.draft(text)?;
     h.key(b"\x1b[17~\x1b[17~h\x1b[19~")?;
-    h.visible("/clear-images")?;
-    assert!(h.screen.text().contains("a: Preview: pan left"));
+    h.wait(
+        "complete help content with the configured pan key",
+        15.0,
+        |h| {
+            h.screen.text().contains("/clear-images")
+                && h.screen.text().contains("a: Preview: pan left")
+        },
+    )?;
     assert_eq!(h.frames.images.last(), Some(&before));
     h.key(b"\x1b[F")?;
     h.wait("help final wrapped lines", 15.0, |h| {

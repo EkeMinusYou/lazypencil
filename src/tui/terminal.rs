@@ -2,8 +2,8 @@ use crate::{Error, Result};
 use crossterm::{
     SynchronizedUpdate, cursor,
     event::{
-        DisableBracketedPaste, DisableFocusChange, EnableBracketedPaste, EnableFocusChange,
-        KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+        DisableBracketedPaste, EnableBracketedPaste, KeyboardEnhancementFlags,
+        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
     terminal::{
@@ -43,12 +43,11 @@ impl Screen {
             // Text-producing keys need both flags to report press/repeat/release
             // directly. Keep that mode scoped to navigation so IME commits in
             // Prompt and node search retain their UTF-8 representation.
-            execute!(
-                std::io::stdout(),
-                PopKeyboardEnhancementFlags,
-                PushKeyboardEnhancementFlags(keyboard_flags(enabled))
-            )
-            .map_err(io)?;
+            // Update our existing stack entry atomically. Popping first exposes
+            // legacy mode to multiplexers between the two commands.
+            let mut stdout = std::io::stdout();
+            write!(stdout, "\x1b[={}u", keyboard_flags(enabled).bits()).map_err(io)?;
+            stdout.flush().map_err(io)?;
             self.preview_keys = enabled;
         }
         Ok(())
@@ -60,7 +59,7 @@ impl Screen {
             .sync_update(|_| {
                 if self.force_redraw {
                     // Invalidate the previous buffer without emitting a clear or
-                    // querying the cursor while EventStream owns stdin.
+                    // querying the cursor while the input reader owns stdin.
                     self.terminal.swap_buffers();
                     for cell in &mut self.terminal.current_buffer_mut().content {
                         cell.set_diff_option(CellDiffOption::AlwaysUpdate);
@@ -79,7 +78,6 @@ impl Screen {
             std::io::stdout(),
             EnterAlternateScreen,
             EnableBracketedPaste,
-            EnableFocusChange,
             PushKeyboardEnhancementFlags(keyboard_flags(false))
         )
         .map_err(io)?;
@@ -132,7 +130,6 @@ fn restore(id: u32, tmux: bool) {
         EndSynchronizedUpdate,
         PopKeyboardEnhancementFlags,
         DisableBracketedPaste,
-        DisableFocusChange,
         LeaveAlternateScreen,
         cursor::Show
     );
