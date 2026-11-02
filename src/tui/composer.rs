@@ -163,6 +163,13 @@ impl App {
             horizontal: 1,
             vertical: 0,
         });
+        let top_gap = u16::from(logarea.height > 1);
+        let logarea = Rect::new(
+            logarea.x,
+            logarea.y + top_gap,
+            logarea.width,
+            logarea.height - top_gap,
+        );
         let text_area = logarea.inner(Margin {
             horizontal: 2,
             vertical: 0,
