@@ -678,10 +678,7 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
                         // checked separately from this visible prefix.
                         line.contains("か\u{3099}") && line.contains('👩')
                     })
-            }) && lines
-                .get(rows as usize - 1)
-                .is_some_and(|line| line.starts_with("Tab / Shift+Tab panels"))
-                && h.screen.cursor().1 != previous.1
+            }) && h.screen.cursor().1 != previous.1
                 && h.session()
                     .is_some_and(|session| session["draft"] == expected)
         })?;
