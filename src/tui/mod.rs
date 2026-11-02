@@ -1254,7 +1254,7 @@ impl App {
             (Nav::ToggleDiagnostics, "Nodes: switch Nodes / Diagnostics"),
             (
                 Nav::DiagnosticScope,
-                "Diagnostics: switch selected node / all nodes",
+                "Diagnostics: switch selected node and descendants / all nodes",
             ),
             (Nav::ClearSelection, "Nodes: clear the editing target"),
             (Nav::ActivateNode, "Nodes: select and fit the target"),
@@ -1738,7 +1738,7 @@ impl App {
                         if self.diagnostics.selected_only {
                             " all nodes · "
                         } else {
-                            " selected node · "
+                            " selected branch · "
                         }
                     } else {
                         ""

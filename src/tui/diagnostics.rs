@@ -1,5 +1,6 @@
 //! Browse measured diagnostics without changing the editing target until activation.
 use super::*;
+use std::collections::HashSet;
 
 #[derive(Default)]
 pub(super) struct View {
@@ -34,13 +35,24 @@ impl App {
 
     pub(super) fn refresh_diagnostics(&mut self, selected: Option<&Value>) {
         let items = self.layout_diagnostics();
-        let node = self.selected_node().map(|node| node.id.as_str());
+        let mut subtree = HashSet::new();
+        if self.diagnostics.selected_only
+            && let (Some(preview), Some(node)) = (&self.preview, self.selected_node())
+        {
+            let mut pending = vec![node];
+            while let Some(node) = pending.pop() {
+                subtree.insert(node.id.as_str());
+                pending.extend(node.children.iter().map(|index| &preview.nodes[*index]));
+            }
+        }
         let rows = items
             .iter()
             .enumerate()
             .filter(|(_, item)| {
                 !self.diagnostics.selected_only
-                    || node.is_some_and(|id| item["node_id"].as_str() == Some(id))
+                    || item["node_id"]
+                        .as_str()
+                        .is_some_and(|id| subtree.contains(id))
             })
             .map(|(index, _)| index)
             .collect::<Vec<_>>();
@@ -124,7 +136,17 @@ impl App {
         let sections = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).split(area);
         let scope = if self.diagnostics.selected_only {
             self.selected_node()
-                .map(|node| format!("Node: {}", nodes::node_label(&node.name)))
+                .map(|node| {
+                    format!(
+                        "{}: {}",
+                        if node.children.is_empty() {
+                            "Node"
+                        } else {
+                            "Subtree"
+                        },
+                        nodes::node_label(&node.name)
+                    )
+                })
                 .unwrap_or_else(|| "Selected node".into())
         } else {
             "All nodes".into()
@@ -142,7 +164,14 @@ impl App {
             } else if self.diagnostics.selected_only && self.selected_node().is_none() {
                 "Select a node in Nodes"
             } else if self.diagnostics.selected_only {
-                "No diagnostics for node"
+                if self
+                    .selected_node()
+                    .is_some_and(|node| !node.children.is_empty())
+                {
+                    "No diagnostics in subtree"
+                } else {
+                    "No diagnostics for node"
+                }
             } else {
                 "No layout diagnostics"
             };

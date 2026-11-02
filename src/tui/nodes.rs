@@ -315,7 +315,11 @@ impl App {
                 } else {
                     format!(
                         " [{} {}]",
-                        if row.has_error_diagnostic { "✕" } else { "!" },
+                        if row.has_error_diagnostic {
+                            "✕"
+                        } else {
+                            "⚠"
+                        },
                         row.diagnostic_count
                     )
                 };

@@ -148,7 +148,6 @@ impl App {
                     None => " · checking",
                 };
                 ListItem::new(Line::from(vec![
-                    Span::styled("↗ ", Style::default().fg(theme::NODES)),
                     Span::styled(
                         reference
                             .diagnostic_code()
@@ -174,14 +173,20 @@ impl App {
             .collect::<Vec<_>>();
         frame.render_stateful_widget(
             List::new(items)
-                .block(Block::default().title(theme::title(
+                .block(self.context_block(
+                    "References",
                     "↗",
-                    format!("References · {}", self.outbox.references.len()),
-                    theme::NODES,
+                    self.outbox.references.len(),
                     focused,
-                )))
-                .highlight_symbol("› ")
-                .highlight_style(theme::selected(focused)),
+                    area.width,
+                ))
+                .highlight_symbol(if focused { "› " } else { "  " })
+                .highlight_spacing(ratatui::widgets::HighlightSpacing::Always)
+                .highlight_style(if focused {
+                    theme::node_selected(true)
+                } else {
+                    Style::default()
+                }),
             area,
             &mut self.reference_rows,
         );

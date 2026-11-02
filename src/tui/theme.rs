@@ -40,19 +40,6 @@ pub(super) fn title(
     ])
 }
 
-pub(super) fn selected(focused: bool) -> Style {
-    if focused {
-        Style::default()
-            .bg(Color::Blue)
-            .fg(Color::White)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default()
-            .fg(Color::Cyan)
-            .add_modifier(Modifier::BOLD)
-    }
-}
-
 pub(super) fn node_selected(focused: bool) -> Style {
     Style::default()
         .bg(if focused {

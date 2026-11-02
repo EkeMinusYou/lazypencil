@@ -2458,8 +2458,9 @@ fn diagnostics_switch_preserves_targets_and_reveals_hidden_nodes_after_refresh()
         press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE, &worker).await;
         assert!(app.diagnostics.active);
         assert!(app.diagnostics.selected_only);
-        assert!(app.selected_diagnostic().is_none());
-        assert!(screen(&mut app, 40, 26).contains("No diagnostics for node"));
+        assert_eq!(app.visible_diagnostic_count(), 2);
+        assert_eq!(app.selected_diagnostic().unwrap()["node_id"], "child-a");
+        assert!(screen(&mut app, 40, 26).contains("Subtree: Root"));
         press(&mut app, KeyCode::Char('s'), KeyModifiers::NONE, &worker).await;
         assert_eq!(app.selected_diagnostic().unwrap()["node_id"], "child-a");
         assert_eq!(app.selected_node().unwrap().id, "root");
@@ -2483,7 +2484,6 @@ fn diagnostics_switch_preserves_targets_and_reveals_hidden_nodes_after_refresh()
         assert_eq!(app.filter, "root");
         assert_eq!(app.selected_node().unwrap().id, "root");
         press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE, &worker).await;
-        press(&mut app, KeyCode::Char('s'), KeyModifiers::NONE, &worker).await;
         press(&mut app, KeyCode::Down, KeyModifiers::NONE, &worker).await;
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
         assert!(!app.diagnostics.active);

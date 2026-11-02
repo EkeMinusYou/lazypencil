@@ -94,6 +94,7 @@ fn run_pty_case(case: &str) {
             || matches!(
                 case,
                 "ime-commit"
+                    | "node-references"
                     | "user-navigation-config"
                     | "saved-history"
                     | "session-selection"
@@ -112,6 +113,8 @@ fn run_pty_case(case: &str) {
             "ime-commit-50x16-screen.txt",
             "ime-commit-145x38-screen.txt",
             "ime-commit-resumed-screen.txt",
+            "references-prompt-screen.txt",
+            "references-focused-screen.txt",
             "navigation-report.json",
             "saved-history-report.json",
             "saved-history-source.jsonl",

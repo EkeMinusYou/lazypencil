@@ -1,6 +1,11 @@
 //! Conversation history and its attached prompt share one visual surface.
 use super::*;
-use ratatui::{layout::Margin, symbols::border, text::Span, widgets::Padding};
+use ratatui::{
+    layout::Margin,
+    symbols::border,
+    text::Span,
+    widgets::{HighlightSpacing, Padding},
+};
 
 pub(super) struct ToolDisplay {
     pub title: String,
@@ -17,6 +22,62 @@ impl Default for ToolDisplay {
 }
 
 impl App {
+    pub(super) fn context_block(
+        &self,
+        label: &str,
+        icon: &str,
+        count: usize,
+        focused: bool,
+        width: u16,
+    ) -> Block<'static> {
+        let title = Line::from(vec![
+            Span::styled(format!(" {icon} "), Style::default().fg(theme::NODES)),
+            Span::styled(
+                label.to_owned(),
+                Style::default()
+                    .fg(if focused { theme::FOCUS } else { Color::Reset })
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(" · {count} "),
+                Style::default().fg(theme::SECONDARY),
+            ),
+        ]);
+        let available = usize::from(width).saturating_sub(title.width() + 2);
+        let mut block = Block::default()
+            .borders(Borders::TOP)
+            .border_style(Style::default().fg(if focused { theme::FOCUS } else { theme::FRAME }))
+            .padding(Padding {
+                left: 1,
+                right: 1,
+                top: 0,
+                bottom: 0,
+            })
+            .title(title);
+        if focused {
+            let key = self.navigation.label(Nav::RemoveAttachment);
+            let key = key.split(" / ").next().unwrap_or("");
+            let hint = format!(" {key} remove · Esc input ");
+            if !key.is_empty() && Span::raw(&hint).width() <= available {
+                block = block.title_top(
+                    Line::styled(hint, Style::default().fg(theme::SECONDARY)).right_aligned(),
+                );
+            } else {
+                let hint = if key.is_empty() {
+                    " Esc input ".into()
+                } else {
+                    format!(" {key} remove ")
+                };
+                if Span::raw(&hint).width() <= available {
+                    block = block.title_top(
+                        Line::styled(hint, Style::default().fg(theme::SECONDARY)).right_aligned(),
+                    );
+                }
+            }
+        }
+        block
+    }
+
     pub(super) fn activity_line(&self, now: Instant) -> Option<Line<'static>> {
         if !self.conversation.active() {
             return None;
@@ -146,8 +207,12 @@ impl App {
                         && self.attachments.selected() == Some(index);
                     ListItem::new(Line::from(vec![
                         Span::styled(
-                            format!("▧ {} ", index + 1),
-                            Style::default().fg(if selected { Color::White } else { theme::NODES }),
+                            format!("{} ", index + 1),
+                            Style::default().fg(if selected {
+                                theme::NODE_SELECTION
+                            } else {
+                                theme::SECONDARY
+                            }),
                         ),
                         Span::raw(clean(&image.display_name)),
                         Span::styled(
@@ -163,18 +228,24 @@ impl App {
                 .collect::<Vec<_>>();
             frame.render_stateful_widget(
                 List::new(attachments)
-                    .block(
-                        Block::default()
-                            .title(theme::title(
-                                "▧",
-                                format!("Attachments · {count}"),
-                                theme::NODES,
-                                self.focus == Focus::Attachments,
-                            ))
-                            .padding(Padding::horizontal(1)),
-                    )
-                    .highlight_symbol("› ")
-                    .highlight_style(theme::selected(self.focus == Focus::Attachments)),
+                    .block(self.context_block(
+                        "Attachments",
+                        "▧",
+                        count,
+                        self.focus == Focus::Attachments,
+                        sections[1].width,
+                    ))
+                    .highlight_symbol(if self.focus == Focus::Attachments {
+                        "› "
+                    } else {
+                        "  "
+                    })
+                    .highlight_spacing(HighlightSpacing::Always)
+                    .highlight_style(if self.focus == Focus::Attachments {
+                        theme::node_selected(true)
+                    } else {
+                        Style::default()
+                    }),
                 sections[1],
                 &mut self.attachments,
             );
@@ -211,12 +282,48 @@ impl App {
             .bg(theme::PROMPT_BACKGROUND);
         frame.render_widget(Block::default().style(input_style), prompt);
         self.editor.set_style(input_style);
-        self.editor.set_block(Block::default().padding(Padding {
-            left: 3,
-            right: 1,
-            top: 1,
-            bottom: 1,
-        }));
+        let mut input_block = Block::default()
+            .borders(Borders::TOP)
+            .border_style(Style::default().fg(if self.focus == Focus::Prompt {
+                theme::FOCUS
+            } else {
+                theme::FRAME
+            }))
+            .title(theme::title(
+                "✎",
+                "Prompt",
+                theme::AGENT,
+                self.focus == Focus::Prompt,
+            ))
+            .padding(Padding {
+                left: 3,
+                right: 1,
+                top: 0,
+                bottom: 1,
+            });
+        if self.focus == Focus::Prompt {
+            let submit = self.keys.submit_label();
+            let submit = submit.split(" / ").next().unwrap_or("");
+            let previous = self.navigation.label(Nav::PreviousSection);
+            let previous = previous.split(" / ").next().unwrap_or("");
+            let send = if self.conversation.active() {
+                "queue"
+            } else {
+                "send"
+            };
+            let hint = if (count > 0 || !self.outbox.references.is_empty()) && !previous.is_empty()
+            {
+                format!(" {previous} context · {submit} {send} ")
+            } else {
+                format!(" {submit} {send} ")
+            };
+            if Span::raw(&hint).width() + 12 <= usize::from(prompt.width) {
+                input_block = input_block.title_top(
+                    Line::styled(hint, Style::default().fg(theme::SECONDARY)).right_aligned(),
+                );
+            }
+        }
+        self.editor.set_block(input_block);
         let input = self.editor.block().unwrap().inner(prompt);
         let placeholder = if self.conversation.active() {
             "Add a follow-up…"

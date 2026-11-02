@@ -140,8 +140,9 @@ pub fn run(
             | "project-agent-config"
             | "user-key-config"
             | "user-navigation-config"
+            | "node-references"
     ) {
-        let path = if case.starts_with("user-") {
+        let path = if case.starts_with("user-") || case == "node-references" {
             let directory = root.join("user-settings");
             fs::create_dir(&directory)?;
             environment.insert(
@@ -153,6 +154,7 @@ pub fn run(
             root.join("lazypencil.toml")
         };
         let text = match case {
+            "node-references" => "[tui.navigation]\nprevious_section=['F6','Alt+Up']\nnext_section=['F7','Alt+Down']\n".to_owned(),
             "font-config" | "user-font-config" => {
                 design = json!({"version":"2.21","children":[{"type":"text","id":"label","content":"A","fontSize":80,"fill":"#FF0000"}]});
                 let fonts = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fonts");
@@ -383,7 +385,12 @@ fn node_references(h: &mut Harness, design: &Value) -> Result {
     h.visible("References")?;
     h.draft(draft)?;
     no_agent(h);
-    h.key(b"\x1b[1;3A")?;
+    h.key(b"\x1b[17~")?;
+    h.visible("Delete remove")?;
+    h.save_screen("references-focused-screen.txt")?;
+    h.key(b"\x1b[18~")?;
+    h.draft(draft)?;
+    h.key(b"\x1b[17~")?;
     h.key(b"\x1b[3~")?;
     h.hidden("References")?;
     h.draft(draft)?;
@@ -433,8 +440,9 @@ fn diagnostics(h: &mut Harness, design: &Value) -> Result {
     h.paste(draft)?;
     h.draft(draft)?;
     h.visible("2 diagnostics")?;
-    h.key(b"\td")?;
+    h.key(b"\tjd")?;
     h.visible("Diagnostics")?;
+    h.visible("Subtree: Root")?;
     h.visible("First target")?;
     h.key(b"j")?;
     h.visible("Second target")?;

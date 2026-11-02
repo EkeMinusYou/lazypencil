@@ -311,8 +311,12 @@ fn diagnostics_attach_the_selected_issue_without_changing_the_tree_target() {
             app.conversation.store().path(),
             json!({"version":"2.21","children":[{
                 "type":"frame","id":"root","name":"Root","layout":"none","width":50,"height":30,
-                "children":[{"type":"text","id":"label","name":"Label","x":60,"width":80,"height":8,
-                    "fontSize":20,"content":"Overflow","textGrowth":"fixed-width-height"}]
+                "children":[{"type":"frame","id":"branch","name":"Branch","layout":"none","width":50,"height":30,
+                    "children":[{"type":"text","id":"label","name":"Label","x":60,"width":80,"height":8,
+                        "fontSize":20,"content":"Overflow","textGrowth":"fixed-width-height"}]}]
+            },{
+                "type":"frame","id":"unrelated","name":"Elsewhere","layout":"none","width":50,"height":30,
+                "children":[{"type":"rectangle","id":"label-other","name":"Label","x":60,"width":20,"height":8}]
             }]})
             .to_string(),
         )
@@ -327,8 +331,11 @@ fn diagnostics_attach_the_selected_issue_without_changing_the_tree_target() {
         app.cells = Size::new(20, 12);
         app.request(&worker, false, false);
         rendered(&mut app, &worker).await;
+        app.filter = "root".into();
         select(&mut app, "root", &[]);
+        press(&mut app, KeyCode::Char('h'), KeyModifiers::NONE, &worker).await;
         assert_eq!(app.filtered_nodes().len(), 1);
+        assert_eq!(app.preview.as_ref().unwrap().summary["diagnostics"].as_array().unwrap().len(), 3);
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(18, 16)).unwrap();
         terminal
@@ -337,13 +344,13 @@ fn diagnostics_attach_the_selected_issue_without_changing_the_tree_target() {
                 app.draw_nodes(frame, area);
             })
             .unwrap();
-        assert_eq!(terminal.backend().buffer()[(13, 1)].symbol(), "!");
+        assert_eq!(terminal.backend().buffer()[(13, 1)].symbol(), "⚠");
         assert_eq!(terminal.backend().buffer()[(13, 1)].fg, theme::RUNNING);
         assert_eq!(terminal.backend().buffer()[(16, 1)].symbol(), "]");
         app.insert_text("この診断を直してください");
         press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE, &worker).await;
-        assert!(app.selected_diagnostic().is_none());
-        press(&mut app, KeyCode::Char('s'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.visible_diagnostic_count(), 2);
+        assert_eq!(app.selected_node().unwrap().id, "root");
         let first = app.selected_diagnostic().unwrap().clone();
         press(&mut app, KeyCode::Char('a'), KeyModifiers::NONE, &worker).await;
         assert_eq!(app.focus, Focus::Prompt);
@@ -383,6 +390,28 @@ fn diagnostics_attach_the_selected_issue_without_changing_the_tree_target() {
         assert_eq!(sent[0]["diagnostic"], first);
         assert_eq!(sent[1]["diagnostic"], second);
         assert!(sent[2].get("diagnostic").is_none());
+        let mut design: Value = serde_json::from_slice(&std::fs::read(app.conversation.store().path()).unwrap()).unwrap();
+        design["children"][0]["reusable"] = json!(true);
+        for (id, x) in [("instance-a", 100), ("instance-b", 200)] {
+            design["children"].as_array_mut().unwrap().push(json!({"type":"ref","id":id,"ref":"root","x":x}));
+        }
+        std::fs::write(app.conversation.store().path(), design.to_string()).unwrap();
+        app.filter.clear();
+        app.request(&worker, false, true);
+        rendered(&mut app, &worker).await;
+        for id in ["instance-a", "instance-b"] {
+            select(&mut app, id, &[]);
+            press(&mut app, KeyCode::Char('h'), KeyModifiers::NONE, &worker).await;
+            press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE, &worker).await;
+            assert_eq!(app.visible_diagnostic_count(), 2);
+            for _ in 0..2 {
+                let diagnostic = app.selected_diagnostic().unwrap();
+                let node = app.preview.as_ref().unwrap().nodes.iter().find(|node| diagnostic["node_id"] == node.id).unwrap();
+                assert_eq!(node.target["address"]["node_id"], id, "A subtree must not include diagnostics from another instance of the same component");
+                press(&mut app, KeyCode::Down, KeyModifiers::NONE, &worker).await;
+            }
+            press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
+        }
         app.conversation.close().await.unwrap();
     });
 }
