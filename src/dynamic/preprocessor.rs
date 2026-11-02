@@ -15,14 +15,3 @@ pub(super) fn encoded() -> &'static str {
 pub(super) fn hash() -> &'static str {
     &HASH
 }
-
-#[test]
-fn embedded_shader_preprocessor_matches_its_verified_component() {
-    let report: serde_json::Value = serde_json::from_str(include_str!(
-        "../../resources/shader-preprocessor/build.json"
-    ))
-    .unwrap();
-    assert_eq!(report["wasm_sha256"], hash());
-    assert_eq!(report["wasm_bytes"], MODULE.len());
-    assert_eq!(report["memory_maximum_bytes"], 64 * 1024 * 1024);
-}

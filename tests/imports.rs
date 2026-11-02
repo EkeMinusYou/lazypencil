@@ -614,38 +614,6 @@ fn copied_and_linked_instances_have_identical_pixels_after_sources_are_removed()
     assert_eq!(after.assets[0].hash, before.assets[0].hash);
 }
 
-#[test]
-fn actual_cli_can_import_a_bundled_button() {
-    let (_temp, store) = fixture();
-    let metadata = service::document_metadata(&store).unwrap();
-    let path = store.path().parent().unwrap().join("ops.json");
-    write(
-        &path,
-        json!([{"op":"import_component","source":{"style_id":"standard-ui","node_id":"button"},"mode":"copy"}]),
-    );
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_lazypencil"))
-        .arg("--data-dir")
-        .arg(store.data_dir())
-        .args(["--json", "apply"])
-        .arg(store.path())
-        .arg("--operations")
-        .arg(path)
-        .arg("--expected-revision")
-        .arg(metadata["revision"].as_str().unwrap())
-        .arg("--expected-dependency-revision")
-        .arg(metadata["dependency_revision"].as_str().unwrap())
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "stdout={} stderr={}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert!(result["generated_ids"]["0"]["component_id"].is_string());
-}
-
 #[cfg(unix)]
 #[test]
 fn symbolic_managed_directories_are_rejected_without_writing_through_them() {

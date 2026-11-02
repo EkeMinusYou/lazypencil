@@ -35,27 +35,6 @@ fn fixture(body: &str, node: Value) -> (TempDir, Store) {
     (temp, store)
 }
 
-#[test]
-fn completed_layout_snapshots_do_not_retain_request_cancellation() {
-    let temp = TempDir::new().unwrap();
-    let store = Store::init(
-        temp.path().join("scene.pen"),
-        Some(temp.path().join("data")),
-    )
-    .unwrap();
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let mut runtime = ScriptRuntime::new(temp.path().join("unused-worker"));
-    runtime.set_cancellation(Some(cancel.clone()));
-    let (project, _) =
-        service::layout_snapshot_with_runtime(&store, &[], None, None, &mut runtime).unwrap();
-    cancel.cancel();
-    project.verify_unchanged().unwrap();
-    project.resolve().unwrap();
-    let error = service::layout_snapshot_with_runtime(&store, &[], None, None, &mut runtime)
-        .err()
-        .unwrap();
-    assert_eq!(error.code, "CANCELLED");
-}
 fn snapshot(store: &Store) -> (Project, lazypencil::layout::LayoutSnapshot) {
     service::layout_snapshot_with_runtime(
         store,

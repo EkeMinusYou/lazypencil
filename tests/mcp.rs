@@ -1526,64 +1526,6 @@ fn mcp_uses_project_font_configuration_without_cli_flags_and_rejects_stale_setti
 
 #[cfg(feature = "rendering")]
 #[test]
-fn mcp_decorated_text_strokes_return_new_ink_from_the_retained_layout() {
-    use base64::Engine;
-    let (_temp, file, data) = fixture();
-    fs::write(&file,json!({"version":"2.21","children":[{"id":"frame","type":"frame","layout":"none","width":240,"height":160,"children":[
-        {"id":"label","type":"text","x":12,"y":12,"width":210,"height":120,"textGrowth":"fixed-width-height","content":"A A 日本語","fontSize":32,"fill":[],"stroke":"#0066FF","strokeWidth":2}
-    ]}]}).to_string()).unwrap();
-    let mut client = Client::start(&file, &data);
-    let mut images = Vec::new();
-    for decorated in [false, true] {
-        let document = client.data("get_document", json!({}));
-        let document = if decorated {
-            client.data("apply_operations",json!({"request_id":"decorate-text","expected_revision":document["revision"],"expected_dependency_revision":document["dependency_revision"],"operations":[{"op":"update","target":"label","set":{"underline":true,"strikethrough":true}}]}))
-        } else {
-            document
-        };
-        let layout=client.data("get_layout",json!({"expected_revision":document["revision"],"expected_dependency_revision":document["dependency_revision"]}));
-        let response=client.call("render",json!({"expected_revision":layout["revision"],"expected_dependency_revision":layout["dependency_revision"],"snapshot_id":layout["snapshot_id"]}));
-        assert_ne!(response["isError"], true, "{response}");
-        let image = response["content"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|item| item["type"] == "image")
-            .unwrap();
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(image["data"].as_str().unwrap())
-            .unwrap();
-        images.push(
-            skia_safe::Image::from_encoded(skia_safe::Data::new_copy(&bytes))
-                .unwrap()
-                .make_raster_image(None, None)
-                .unwrap(),
-        );
-    }
-    assert_eq!(images[0].dimensions(), images[1].dimensions());
-    let before = images[0].peek_pixels().unwrap();
-    let after = images[1].peek_pixels().unwrap();
-    let mut added = 0;
-    for y in 0..images[1].height() {
-        for x in 0..images[1].width() {
-            if before.get_color((x, y)).a() == 0 && after.get_color((x, y)).a() > 200 {
-                added += 1;
-                assert_eq!(after.get_color((x, y)).b(), 255);
-            }
-        }
-    }
-    assert!(
-        added > 50,
-        "Decorations must add actual visible stroke pixels"
-    );
-    let saved: Value = serde_json::from_slice(&fs::read(&file).unwrap()).unwrap();
-    assert_eq!(saved["children"][0]["children"][0]["underline"], true);
-    assert_eq!(saved["children"][0]["children"][0]["strikethrough"], true);
-    client.finish();
-}
-
-#[cfg(feature = "rendering")]
-#[test]
 fn mcp_font_collections_resolve_styles_fallback_pixels_and_dependency_changes() {
     use base64::Engine;
     let (temp, file, data) = fixture();

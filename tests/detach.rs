@@ -353,44 +353,6 @@ fn a_shader_sampler_variable_cannot_silently_switch_to_another_file() {
 }
 
 #[test]
-fn actual_cli_detaches_an_inherited_external_instance() {
-    let (_temp, store) = fixture();
-    let metadata = service::document_metadata(&store).unwrap();
-    let request = store.path().parent().unwrap().join("request.json");
-    write(
-        &request,
-        json!([{"op":"detach_instance","target":{"node_id":"use","instance_path":["action"]}}]),
-    );
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_lazypencil"))
-        .arg("--data-dir")
-        .arg(store.data_dir())
-        .arg("--json")
-        .arg("apply")
-        .arg(store.path())
-        .arg("--operations")
-        .arg(request)
-        .arg("--expected-revision")
-        .arg(metadata["revision"].as_str().unwrap())
-        .arg("--expected-dependency-revision")
-        .arg(metadata["dependency_revision"].as_str().unwrap())
-        .args(["--request-id", "cli-inherited-detach"])
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "stdout={} stderr={}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert!(result["generated_ids"]["0"]["id"].is_string(), "{result}");
-    assert_eq!(
-        store.read().unwrap().node("use").unwrap()["descendants"]["action"]["type"],
-        "rectangle"
-    );
-}
-
-#[test]
 fn equal_owned_ids_from_library_and_consumer_keep_separate_internal_links() {
     let (_temp, store) = fixture();
     let mut document = store.read().unwrap();

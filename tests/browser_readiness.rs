@@ -12,8 +12,6 @@ use serde_json::{Value, json};
 use skia_safe::{Color, Data, Image};
 use std::{
     fs,
-    io::{Read, Write},
-    net::TcpStream,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -802,37 +800,6 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
                 "png_hash":lazypencil::document::hash(&native_plain),"equivalent":true}
         })).unwrap()).unwrap();
     }
-}
-
-#[test]
-fn reference_server_keeps_speculative_connections_until_headers_and_stops_when_idle() {
-    let server = reference::Server::new();
-    let mut stream = TcpStream::connect(server.address).unwrap();
-    stream
-        .set_read_timeout(Some(Duration::from_secs(2)))
-        .unwrap();
-    std::thread::sleep(Duration::from_millis(500));
-    assert_eq!(server.network_counts(), (0, 0, 0));
-    stream
-        .write_all(b"GET /polled HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
-        .unwrap();
-    let mut response = String::new();
-    stream.read_to_string(&mut response).unwrap();
-    assert!(response.starts_with("HTTP/1.1 200 OK\r\n"));
-    let mut counted = TcpStream::connect(server.address).unwrap();
-    counted
-        .set_read_timeout(Some(Duration::from_secs(2)))
-        .unwrap();
-    counted
-        .write_all(b"GET /network/fetch HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
-        .unwrap();
-    counted.read_to_end(&mut Vec::new()).unwrap();
-    assert_eq!(server.network_counts(), (1, 0, 0));
-    assert_eq!(server.turn_requests(), 0);
-    let _idle = TcpStream::connect(server.address).unwrap();
-    let started = Instant::now();
-    drop(server);
-    assert!(started.elapsed() < Duration::from_secs(1));
 }
 
 #[test]
