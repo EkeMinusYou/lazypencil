@@ -208,6 +208,8 @@ impl Harness {
                     "--adapter-arg=queued-followups"
                 } else if case == "account-startup" {
                     "--adapter-arg=auth-inspect-account"
+                } else if case == "agent-header-hang" {
+                    "--adapter-arg=setup-hang"
                 } else if case.starts_with("agent-header-") {
                     "--adapter-arg=settings-fast-inherited"
                 } else {
@@ -215,7 +217,6 @@ impl Harness {
                 });
         }
         if case.starts_with("agent-header-") {
-            command.args(["--model", "fixture-model-2"]);
             command.arg(if case == "agent-header-fast" {
                 "--fast"
             } else {

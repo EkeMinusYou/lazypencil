@@ -249,7 +249,9 @@ pub fn run(
             let correct_header = |h: &Harness| {
                 let text = h.screen.text();
                 let header = text.lines().next().unwrap_or_default();
-                header.contains("model: fixture-model-2") && header.contains("Fast") == fast
+                header.contains("model: fixture-model")
+                    && header.contains("effort: medium")
+                    && header.contains("Fast") == fast
             };
             h.wait(
                 "configured model and speed in the top row",
@@ -265,6 +267,12 @@ pub fn run(
                 15.0,
                 correct_header,
             )?;
+            let sessions = fs::read_to_string(root.join("received-settings-sessions.jsonl"))?;
+            assert_eq!(
+                sessions.lines().count(),
+                1,
+                "The startup connection must be reused"
+            );
             h.resize(80, 24)?;
             h.wait(
                 "model and speed remain visible after resizing",
@@ -273,7 +281,19 @@ pub fn run(
             )?;
             Value::Null
         }
+        "agent-header-hang" => {
+            h.visible("model: connecting")?;
+            h.paste("Keep this draft while connecting")?;
+            h.draft("Keep this draft while connecting")?;
+            no_agent(&h);
+            Value::Null
+        }
         "account-startup" => {
+            h.wait("startup session prepared without a prompt", 15.0, |h| {
+                fs::read_to_string(h.root.join("received-account-methods.jsonl"))
+                    .unwrap_or_default()
+                    .contains("session/new")
+            })?;
             h.visible("must-not-log@example.test")?;
             no_agent(&h);
             let methods = fs::read_to_string(root.join("received-account-methods.jsonl"))?;
@@ -282,7 +302,10 @@ pub fn run(
                     .lines()
                     .map(|line| serde_json::from_str::<Value>(line).unwrap())
                     .collect::<Vec<_>>(),
-                [json!({"method":"initialize"})]
+                [
+                    json!({"method":"initialize"}),
+                    json!({"method":"session/new"})
+                ]
             );
             fs::write(root.join("account-changed"), "changed")?;
             h.paste("Check the selected account")?;

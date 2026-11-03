@@ -1,6 +1,5 @@
 //! Terminal viewing and prompting, sharing the same document and ACP services as CLI.
 
-mod account;
 mod agent_status;
 mod camera;
 mod checkpoints;
@@ -184,9 +183,6 @@ pub fn run(args: &TuiArgs, data: Option<PathBuf>, json_output: bool) -> Result<(
             input.cancel.cancel();
         }
         worker.cancel();
-        if let Some(check) = app.account_check.take() {
-            check.close().await;
-        }
         let session_id = app.conversation.id().to_string();
         let closed = app.conversation.close().await;
         drop(app.document_task.take());
@@ -245,8 +241,9 @@ struct App {
     authentication: String,
     agent_model: Option<String>,
     agent_fast: bool,
-    account_check: Option<account::Check>,
-    account_pending: bool,
+    connect_pending: bool,
+    agent_effort: Option<String>,
+    agent_configuration_received: bool,
     permissions: VecDeque<Permission>,
     input: Option<InputJob>,
     document_task: Option<checkpoints::Task>,
@@ -272,7 +269,7 @@ struct App {
 impl App {
     fn new(conversation: Conversation) -> Self {
         let editor = editor(conversation.draft());
-        let agent_model = conversation.settings().model.clone();
+        let agent_model = None;
         let agent_fast = conversation.settings().fast == Some(true);
         let mut app = Self {
             conversation,
@@ -319,8 +316,9 @@ impl App {
             authentication: "checking".into(),
             agent_model,
             agent_fast,
-            account_check: None,
-            account_pending: true,
+            connect_pending: true,
+            agent_effort: None,
+            agent_configuration_received: false,
             permissions: VecDeque::new(),
             input: None,
             document_task: None,
@@ -363,20 +361,15 @@ impl App {
                 self.dirty = true;
             }
             self.expire_preview_control();
-            if self.conversation.active() {
-                self.account_pending = false;
-                if let Some(check) = &self.account_check {
-                    check.cancel.cancel();
-                }
-            }
-            if self.account_pending && self.account_check.is_none() {
-                self.account_pending = false;
-                match account::Check::start(&self.conversation) {
-                    Ok(check) => self.account_check = Some(check),
-                    Err(error) => {
-                        self.authentication = "unavailable".into();
-                        self.error(error);
-                    }
+            if self.connect_pending {
+                self.connect_pending = false;
+                if !self.conversation.active()
+                    && let Err(error) = self.conversation.connect()
+                {
+                    self.authentication = "unavailable".into();
+                    self.agent_configuration_received = true;
+                    self.agent_fast = false;
+                    self.error(error);
                 }
                 self.dirty = true;
             }
@@ -507,20 +500,6 @@ impl App {
                     }
                     self.sync_turn(worker);
                     self.dirty = true;
-                },
-                result = async { self.account_check.as_mut().unwrap().result().await }, if self.account_check.is_some() => {
-                    let check = self.account_check.take().expect("account check");
-                    if !check.cancel.is_cancelled() && !self.account_pending && !self.conversation.active() {
-                        match result {
-                            Ok(Some(report)) => self.authentication = report.display(),
-                            Ok(None) => self.authentication = "not reported".into(),
-                            Err(error) => {
-                                self.authentication = "unavailable".into();
-                                self.error(error);
-                            }
-                        }
-                        self.dirty = true;
-                    }
                 },
                 content = async { (&mut self.input.as_mut().unwrap().receiver).await.unwrap_or_else(|error| Err(Error::new("CLIPBOARD_UNAVAILABLE", error.to_string()))) }, if self.input.is_some() => {
                     self.input.take();
@@ -852,6 +831,11 @@ impl App {
     }
     fn message(&mut self, value: &Value) {
         match value["type"].as_str() {
+            Some("initialized") => {
+                self.agent_model = None;
+                self.agent_effort = None;
+                self.agent_configuration_received = false;
+            }
             Some("update") => {
                 let update = &value["notification"]["update"];
                 match update["sessionUpdate"].as_str() {
@@ -925,6 +909,18 @@ impl App {
             }
             Some("local_context") => {
                 self.append("\nAdded current document context and bounded local history after an interrupted restart.\n");
+            }
+            Some("connection_error") => {
+                self.agent_model = None;
+                self.agent_effort = None;
+                self.agent_configuration_received = true;
+                self.agent_fast = false;
+                self.error(Error::new(
+                    "AGENT_ERROR",
+                    value["error"]["message"]
+                        .as_str()
+                        .unwrap_or("Agent connection failed"),
+                ));
             }
             Some("failed") => {
                 self.append(&format!(
@@ -1510,12 +1506,11 @@ impl App {
         self.reference_rows.select(None);
         self.permissions.clear();
         self.authentication = "checking".into();
-        self.agent_model = self.conversation.settings().model.clone();
+        self.agent_model = None;
+        self.agent_effort = None;
+        self.agent_configuration_received = false;
         self.agent_fast = self.conversation.settings().fast == Some(true);
-        self.account_pending = true;
-        if let Some(check) = &self.account_check {
-            check.cancel.cancel();
-        }
+        self.connect_pending = true;
         self.log.clear();
         self.tool_calls.clear();
         self.scroll = 0;
@@ -1523,7 +1518,7 @@ impl App {
             "Selected conversation {} · sends only on submit",
             self.conversation.id()
         ));
-        self.append("\nSelected saved local state. Open saved logs to read earlier turns. Native context resumes on the next submitted request.\n");
+        self.append("\nSelected saved local state. Open saved logs to read earlier turns. The session connects automatically; your draft is sent only on submit.\n");
         self.request(worker, false, false);
         Ok(())
     }

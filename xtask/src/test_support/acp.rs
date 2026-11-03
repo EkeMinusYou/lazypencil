@@ -165,6 +165,9 @@ impl<'a> Peer<'a> {
     }
     fn config(&self) -> Value {
         let mut options = json!([{"id":"model","name":"Model","category":"model","type":"select","currentValue":self.model,"options":[{"group":"fixture","name":"Fixture","options":[{"value":"fixture-model","name":"Fixture"},{"value":"fixture-model-2","name":"Fixture 2"}]}]}]);
+        if self.mode.starts_with("settings-fast") {
+            options.as_array_mut().unwrap().push(json!({"id":"reasoning_effort","category":"thought_level","name":"Reasoning effort","type":"select","currentValue":if self.model == "fixture-model-2" {"high"} else {"medium"},"options":[{"value":"medium","name":"Medium"},{"value":"high","name":"High"}]}));
+        }
         if self.mode.starts_with("settings-fast")
             && !(self.mode == "settings-fast-model-only" && self.model != "fixture-model-2")
             && !(self.mode == "settings-fast-model-removes" && self.model == "fixture-model-2")
@@ -232,6 +235,11 @@ impl<'a> Peer<'a> {
         }
         match message["method"].as_str().unwrap_or_default() {
             "initialize" => {
+                #[cfg(unix)]
+                fs::write(
+                    "fixture-agent-guardian.pid",
+                    unsafe { libc::getppid() }.to_string(),
+                )?;
                 if mode == "setup-hang" {
                     return Ok(());
                 }
@@ -258,6 +266,12 @@ impl<'a> Peer<'a> {
             }
             "session/new" | "session/load" => {
                 let method = message["method"].as_str().unwrap();
+                if mode.starts_with("settings-fast") {
+                    append_json(
+                        "received-settings-sessions.jsonl",
+                        &json!({"method":method}),
+                    )?;
+                }
                 if mode.starts_with("resume-") || mode == "selection" {
                     append_json(
                         "received-session-methods.jsonl",
@@ -455,6 +469,9 @@ impl<'a> Peer<'a> {
         Ok(())
     }
     fn prompt(&mut self, params: &Value) -> Result {
+        if self.mode == "auth-inspect-account" {
+            self.auth("account")?;
+        }
         let mode = self.mode;
         if mode == "queued-followups" {
             append_json("received-prompts.jsonl", params)?;

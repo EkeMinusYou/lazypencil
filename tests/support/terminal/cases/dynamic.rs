@@ -24,6 +24,16 @@ pub(super) fn children(h: &Harness) -> Vec<i32> {
         })
         .collect()
 }
+fn runtime_children(h: &Harness) -> Vec<i32> {
+    // Session preparation keeps the known ACP guardian alive while render workers expire.
+    let adapter = fs::read_to_string(h.root.join("fixture-agent-guardian.pid"))
+        .ok()
+        .and_then(|pid| pid.parse::<i32>().ok());
+    children(h)
+        .into_iter()
+        .filter(|pid| Some(*pid) != adapter)
+        .collect()
+}
 fn timeline(h: &Harness) -> f64 {
     let text = h.screen.text();
     text.split("Playback ")
@@ -99,7 +109,7 @@ pub fn idle(h: &mut Harness) -> Result {
     let mut pids = Vec::new();
     let mut observed = |h: &Harness| {
         if sampled.elapsed() >= Duration::from_millis(200) {
-            pids = children(h);
+            pids = runtime_children(h);
             sampled = Instant::now();
         }
         pids.clone()
@@ -237,7 +247,9 @@ pub fn script(h: &mut Harness) -> Result {
         h.frames.images.len() > frames && green(h)
     })?;
     assert_eq!(fs::read(source)?, source_bytes);
-    h.wait("zero-idle script cleanup", 15.0, |h| children(h).is_empty())?;
+    h.wait("zero-idle script cleanup", 15.0, |h| {
+        runtime_children(h).is_empty()
+    })?;
     let layout = h.cli(&["layout".as_ref(), h.document.as_os_str()])?;
     let limits = &layout["script_executions"][0]["limits"];
     assert_eq!(limits["heap_mib"], 12);

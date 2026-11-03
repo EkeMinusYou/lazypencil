@@ -3,6 +3,7 @@ use super::*;
 
 impl App {
     pub(super) fn update_agent_configuration(&mut self, options: &Value) {
+        self.agent_configuration_received = true;
         let options = options.as_array().map(Vec::as_slice).unwrap_or_default();
         let models: Vec<_> = options
             .iter()
@@ -10,6 +11,17 @@ impl App {
             .collect();
         self.agent_model = if models.len() == 1 {
             models[0]["currentValue"].as_str().map(str::to_owned)
+        } else {
+            None
+        };
+        let efforts: Vec<_> = options
+            .iter()
+            .filter(|option| {
+                option["id"] == "reasoning_effort" || option["category"] == "thought_level"
+            })
+            .collect();
+        self.agent_effort = if efforts.len() == 1 {
+            efforts[0]["currentValue"].as_str().map(str::to_owned)
         } else {
             None
         };
@@ -43,12 +55,31 @@ impl App {
             Span::styled(
                 format!(
                     "model: {}",
-                    clean(self.agent_model.as_deref().unwrap_or("default"))
-                        .replace(['\n', '\t'], " ")
+                    clean(self.agent_model.as_deref().unwrap_or(
+                        if self.agent_configuration_received {
+                            "not reported"
+                        } else {
+                            "connecting"
+                        }
+                    ))
+                    .replace(['\n', '\t'], " ")
                 ),
                 Style::default().fg(theme::SECONDARY),
             ),
         ];
+        if self.agent_configuration_received {
+            spans.extend([
+                separator(),
+                Span::styled(
+                    format!(
+                        "effort: {}",
+                        clean(self.agent_effort.as_deref().unwrap_or("not reported"))
+                            .replace(['\n', '\t'], " ")
+                    ),
+                    Style::default().fg(theme::SECONDARY),
+                ),
+            ]);
+        }
         if self.agent_fast {
             spans.extend([
                 separator(),

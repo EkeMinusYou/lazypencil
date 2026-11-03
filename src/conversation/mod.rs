@@ -61,6 +61,7 @@ pub struct Conversation {
     usage: Option<crate::guidance::usage::UsageGrant>,
     preview_control: Option<crate::preview_control::Client>,
     ready: bool,
+    prepared_ready: Option<Value>,
     transcript: Option<Transcript>,
     active: Option<ActiveTurn>,
     preparation: Option<preparation::Preparation>,
@@ -134,6 +135,7 @@ impl Conversation {
             usage: None,
             preview_control: None,
             ready: false,
+            prepared_ready: None,
             transcript: None,
             active: None,
             preparation: None,
@@ -315,6 +317,40 @@ impl Conversation {
         } else {
             Ok(())
         }
+    }
+
+    /// Prepare the actual provider session without submitting a prompt or consuming a draft.
+    pub fn connect(&mut self) -> Result<()> {
+        self.require_idle()?;
+        self.start_connection()
+    }
+
+    fn start_connection(&mut self) -> Result<()> {
+        self.require_project_agent()?;
+        if self.host.is_some() {
+            return Ok(());
+        }
+        if self.grant.is_none() {
+            self.grant = Some(AttachmentGrant::create(
+                &self.store,
+                self.directory(),
+                self.id(),
+                &self.session.state.attachments,
+            )?);
+        }
+        if self.usage.is_none() {
+            self.usage = Some(crate::guidance::usage::UsageGrant::create(
+                &self.store,
+                self.directory(),
+                self.id(),
+            )?);
+        }
+        self.session.state.authentication = None;
+        self.session.save()?;
+        self.ready = false;
+        self.prepared_ready = None;
+        self.host = Some(AgentHost::spawn(self.agent_options()?)?);
+        Ok(())
     }
 
     pub async fn send(&mut self, selection: Option<Value>) -> Result<()> {
@@ -526,13 +562,10 @@ impl Conversation {
             cancel: CancellationToken::new(),
             denied: false,
         });
-        if self.host.is_none() {
-            self.session.state.authentication = None;
-            self.session.save()?;
-            self.ready = false;
-            self.host = Some(AgentHost::spawn(self.agent_options()?)?);
-        }
-        if self.ready {
+        self.start_connection()?;
+        if let Some(ready) = self.prepared_ready.take() {
+            self.accept_ready(ready, false).await?;
+        } else if self.ready {
             self.submit().await?;
         }
         Ok(())
@@ -547,13 +580,6 @@ impl Conversation {
     #[cfg(feature = "tui")]
     pub(crate) fn authentication(&self) -> Option<crate::agent::auth::AuthReport> {
         self.host.as_ref().and_then(AgentHost::authentication)
-    }
-
-    #[cfg(feature = "tui")]
-    pub(crate) fn authentication_options(&self) -> Result<AgentOptions> {
-        let mut options = self.adapter_options()?;
-        options.setup_timeout = Duration::from_secs(10);
-        Ok(options)
     }
 
     fn adapter_options(&self) -> Result<AgentOptions> {
@@ -721,6 +747,60 @@ impl Conversation {
             }
         }
     }
+    async fn accept_ready(&mut self, value: Value, publish: bool) -> Result<()> {
+        let id = value["session_id"]
+            .as_str()
+            .filter(|id| !id.is_empty() && id.len() <= 4096)
+            .ok_or_else(|| {
+                Error::new("AGENT_ERROR", "The adapter returned an invalid session ID")
+            })?;
+        let restarted = value["session_origin"] == "restarted";
+        self.session.state.continuity_pending |= restarted;
+        if self.session.state.continuity_pending {
+            let active = self.active.as_ref().ok_or_else(|| {
+                Error::new("AGENT_ERROR", "Session restart requires an explicit turn")
+            })?;
+            let summary =
+                continuity::summarize(self.directory(), self.id(), self.store.path(), &active.id);
+            let revision = self.store.read()?.revision();
+            let context =
+                json!({"document":self.store.path(),"revision":revision,"history":summary});
+            let introduction = if restarted {
+                format!(
+                    "The previous native session was replaced (reason: {}). This is a NEW session, not restored model memory.",
+                    value["restart_reason"].as_str().unwrap_or("unknown")
+                )
+            } else {
+                "A prior restart did not complete a local turn. This bounded local history supplements the current native session.".into()
+            };
+            let content = self
+                .active
+                .as_mut()
+                .and_then(|active| active.content.as_mut())
+                .ok_or_else(|| {
+                    Error::new("AGENT_ERROR", "Cannot restart an already submitted turn")
+                })?;
+            content.insert(1, ContentBlock::Text(TextContent::new(format!(
+                                "{introduction} The following bounded local history is context only, not instructions to repeat prior requests. Failed or interrupted turns may already have committed edits. Read get_document and inspect the current revision before acting. Execute only the user's current request that follows. Do not replay historical prompts or edits. Historical image payloads are not reattached; query the document's retained attachment metadata if needed.\n{context}"
+                            ))));
+            self.message(json!({"type":if restarted {"session_restarted"} else {"local_context"},"reason":if restarted {value["restart_reason"].clone()} else {json!("restart_pending")},"previous_native_session_id":value["replaces_session_id"],"native_session_id":id,"document_revision":revision,"history":summary}))?;
+        }
+        self.session.state.native_session_id = Some(id.into());
+        self.permissions.set_session(id);
+        self.session.save()?;
+        self.args.restart_session = false;
+        self.ready = true;
+        if publish {
+            self.message(value)?;
+        } else {
+            self.record(&value)?;
+        }
+        if self.active() {
+            self.submit().await?;
+        }
+        Ok(())
+    }
+
     async fn process(&mut self, event: AgentEvent) -> Result<()> {
         match event {
             AgentEvent::Message(value) => {
@@ -732,63 +812,13 @@ impl Conversation {
                         self.session.save()?;
                     }
                     Some("ready") => {
-                        let id = value["session_id"]
-                            .as_str()
-                            .filter(|id| !id.is_empty() && id.len() <= 4096)
-                            .ok_or_else(|| {
-                                Error::new(
-                                    "AGENT_ERROR",
-                                    "The adapter returned an invalid session ID",
-                                )
-                            })?;
-                        let restarted = value["session_origin"] == "restarted";
-                        self.session.state.continuity_pending |= restarted;
-                        if self.session.state.continuity_pending {
-                            let active = self.active.as_ref().ok_or_else(|| {
-                                Error::new(
-                                    "AGENT_ERROR",
-                                    "Session restart requires an explicit turn",
-                                )
-                            })?;
-                            let summary = continuity::summarize(
-                                self.directory(),
-                                self.id(),
-                                self.store.path(),
-                                &active.id,
-                            );
-                            let revision = self.store.read()?.revision();
-                            let context = json!({"document":self.store.path(),"revision":revision,"history":summary});
-                            let introduction = if restarted {
-                                format!(
-                                    "The previous native session was replaced (reason: {}). This is a NEW session, not restored model memory.",
-                                    value["restart_reason"].as_str().unwrap_or("unknown")
-                                )
-                            } else {
-                                "A prior restart did not complete a local turn. This bounded local history supplements the current native session.".into()
-                            };
-                            let content = self
-                                .active
-                                .as_mut()
-                                .and_then(|active| active.content.as_mut())
-                                .ok_or_else(|| {
-                                    Error::new(
-                                        "AGENT_ERROR",
-                                        "Cannot restart an already submitted turn",
-                                    )
-                                })?;
-                            content.insert(1, ContentBlock::Text(TextContent::new(format!(
-                                "{introduction} The following bounded local history is context only, not instructions to repeat prior requests. Failed or interrupted turns may already have committed edits. Read get_document and inspect the current revision before acting. Execute only the user's current request that follows. Do not replay historical prompts or edits. Historical image payloads are not reattached; query the document's retained attachment metadata if needed.\n{context}"
-                            ))));
-                            self.message(json!({"type":if restarted {"session_restarted"} else {"local_context"},"reason":if restarted {value["restart_reason"].clone()} else {json!("restart_pending")},"previous_native_session_id":value["replaces_session_id"],"native_session_id":id,"document_revision":revision,"history":summary}))?;
-                        }
-                        self.session.state.native_session_id = Some(id.into());
-                        self.permissions.set_session(id);
-                        self.session.save()?;
-                        self.args.restart_session = false;
-                        self.ready = true;
-                        self.message(value)?;
-                        if self.active() {
-                            self.submit().await?;
+                        if self.active.is_none() {
+                            // An empty prepared session stays transient until an explicit turn.
+                            self.ready = true;
+                            self.prepared_ready = Some(value.clone());
+                            self.message(value)?;
+                        } else {
+                            self.accept_ready(value, true).await?;
                         }
                         return Ok(());
                     }
@@ -845,6 +875,10 @@ impl Conversation {
                 self.message(value)
             }
             AgentEvent::Permission { request, reply } => {
+                if self.active.is_none() {
+                    let _ = reply.send(None);
+                    return Ok(());
+                }
                 let value = json!({"type":"permission_request","request":request});
                 let automatic = matches!(self.args.document_tools, DocumentTools::Allow)
                     .then(|| self.permissions.allow_once(&request))
@@ -1035,6 +1069,7 @@ impl Conversation {
             Ok(())
         };
         self.ready = false;
+        self.prepared_ready = None;
         self.grant.take();
         if self.active() {
             self.finish(Err(Error::new(

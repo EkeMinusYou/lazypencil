@@ -37,6 +37,7 @@ fn real_pty_handles_japanese_input_live_turns_resize_and_image_protocols() {
 fn real_pty_header_shows_model_and_only_enabled_fast_mode() {
     run_pty_case("agent-header-fast");
     run_pty_case("agent-header-standard");
+    run_pty_case("agent-header-hang");
 }
 
 #[test]

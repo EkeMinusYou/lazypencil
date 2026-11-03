@@ -114,6 +114,69 @@ fn embedded_conversation_uses_the_real_helper_for_supervision_and_bound_mcp_edit
 }
 
 #[test]
+fn startup_connection_reports_actual_settings_without_prompting_and_reuses_the_session() {
+    use clap::Parser;
+    use lazypencil::conversation::{Conversation, ConversationEvent};
+    let directory = TempDir::new().unwrap();
+    let parsed = lazypencil::cli::Arguments::try_parse_from([
+        "lazypencil".into(),
+        "prompt".into(),
+        directory.path().join("design.pen").into_os_string(),
+        "--create".into(),
+        "--adapter".into(),
+        helper().into_os_string(),
+        "--adapter-arg=acp".into(),
+        "--adapter-arg=settings-fast".into(),
+        "--fast".into(),
+        "Keep this draft until submitted".into(),
+    ])
+    .unwrap();
+    let lazypencil::cli::Command::Prompt(args) = parsed.command else {
+        unreachable!()
+    };
+    let mut conversation = Conversation::open_with_executable(
+        args,
+        Some(directory.path().join("data")),
+        env!("CARGO_BIN_EXE_lazypencil").into(),
+    )
+    .unwrap();
+    runtime().block_on(async {
+        conversation.connect().unwrap();
+        conversation.connect().unwrap();
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if let ConversationEvent::Message(event) = conversation.next_event().await.unwrap() {
+                    assert_ne!(event["type"], "connection_error", "{event}");
+                    if event["type"] == "ready" {
+                        let options = event["response"]["configOptions"].as_array().unwrap();
+                        assert!(options.iter().any(|o| o["id"] == "model" && o["currentValue"] == "fixture-model"));
+                        assert!(options.iter().any(|o| o["id"] == "reasoning_effort" && o["currentValue"] == "medium"));
+                        break;
+                    }
+                }
+            }
+        }).await.unwrap();
+        assert!(!conversation.active());
+        assert_eq!(conversation.draft(), "Keep this draft until submitted");
+        assert!(!directory.path().join("sent-turn.txt").exists());
+        let state: Value = serde_json::from_slice(&std::fs::read(conversation.directory().join("session.json")).unwrap()).unwrap();
+        assert!(state["native_session_id"].is_null());
+        conversation.send(None).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if let ConversationEvent::Message(event) = conversation.next_event().await.unwrap() {
+                    assert_ne!(event["type"], "ready", "The prepared session must not reconnect");
+                    if event["type"] == "complete" { break; }
+                    assert_ne!(event["type"], "failed", "{event}");
+                }
+            }
+        }).await.unwrap();
+        conversation.close().await.unwrap();
+        assert_eq!(std::fs::read_to_string(directory.path().join("received-settings-sessions.jsonl")).unwrap().lines().count(),1);
+    });
+}
+
+#[test]
 fn account_inspection_never_creates_or_prompts_a_provider_session() {
     for (mode, source) in [
         ("auth-inspect-account", Some("subscription")),
