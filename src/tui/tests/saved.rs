@@ -194,12 +194,14 @@ fn saved_log_browser_pages_formats_refreshes_and_preserves_drafts_images_and_doc
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
         document_result(&mut app, &worker).await;
         assert_eq!(saved_page(&app).data["entries"].as_array().unwrap().len(), 50);
+        crate::tui::test_artifacts::snapshot(&mut app, "saved-turns");
         press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE, &worker).await; document_result(&mut app, &worker).await;
         assert_eq!(saved_page(&app).data["entries"].as_array().unwrap().len(), 5);
         press(&mut app, KeyCode::Char('p'), KeyModifiers::NONE, &worker).await; document_result(&mut app, &worker).await;
         assert_eq!(saved_page(&app).data["entries"].as_array().unwrap().len(), 50);
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await; document_result(&mut app, &worker).await;
         let first = saved_page(&app).data["text"].as_str().unwrap().to_string();
+        crate::tui::test_artifacts::snapshot(&mut app, "saved-log");
         assert!(first.contains("BEGIN 日本語")); assert!(!first.contains("sessionUpdate"));
         press(&mut app, KeyCode::Char('v'), KeyModifiers::CONTROL, &worker).await;
         assert!(matches!(saved_page(&app).location, saved::Location::Text { raw: false, .. }));
@@ -339,8 +341,13 @@ fn checkpoint_palette_reviews_before_restoring_and_keeps_draft_and_images() {
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
         document_result(&mut app, &worker).await;
         press(&mut app, KeyCode::Down, KeyModifiers::NONE, &worker).await;
+        let buffer = crate::tui::test_artifacts::snapshot(&mut app, "checkpoints");
+        assert!(buffer.content.iter().any(|cell| {
+            cell.symbol() == "›" && cell.fg == theme::CANVAS && cell.bg == theme::PREVIEW
+        }));
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
         assert!(matches!(app.modal, Some(checkpoints::Modal::Confirm(_))));
+        crate::tui::test_artifacts::snapshot(&mut app, "restore-review");
         assert_eq!(
             app.conversation
                 .store()

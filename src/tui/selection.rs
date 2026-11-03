@@ -1,5 +1,5 @@
 //! Canvas selection is view state; exported pixels and document bytes stay untouched.
-use super::{App, Focus, graphics, preview};
+use super::{App, Focus, graphics, preview, theme};
 use crate::{
     Result,
     geometry::{Affine, Rect},
@@ -377,8 +377,10 @@ fn outline_pixels_checked(
             }
             for x in left.max(0)..right.saturating_add(1).min(width) {
                 let pixel = image.get_pixel_mut(x as u32, y as u32);
-                for (channel, color) in pixel.0[..3].iter_mut().zip([59u16, 130, 246]) {
-                    *channel = ((u16::from(*channel) * 7 + color) / 8) as u8;
+                let alpha = theme::SELECTION_TINT_ALPHA;
+                for (channel, color) in pixel.0[..3].iter_mut().zip(theme::BLUE_RGB) {
+                    *channel = ((u16::from(*channel) * (255 - alpha) + u16::from(color) * alpha)
+                        / 255) as u8;
                 }
             }
         }
@@ -404,7 +406,8 @@ fn outline_pixels_checked(
                 return false;
             }
             for x in x0.max(0)..x1.min(width) {
-                *image.get_pixel_mut(x as u32, y as u32) = image::Rgba([59, 130, 246, 255]);
+                let [r, g, b] = theme::BLUE_RGB;
+                *image.get_pixel_mut(x as u32, y as u32) = image::Rgba([r, g, b, 255]);
             }
         }
     }
@@ -496,6 +499,6 @@ mod tests {
         let mut image = image::RgbaImage::from_pixel(40, 40, image::Rgba([255, 255, 255, 255]));
         outline_pixels(&mut image, [-100, -100, 20, 20], false);
         assert_eq!(*image.get_pixel(0, 0), image::Rgba([255, 255, 255, 255]));
-        assert_eq!(*image.get_pixel(20, 10), image::Rgba([59, 130, 246, 255]));
+        assert_eq!(*image.get_pixel(20, 10), image::Rgba([137, 180, 250, 255]));
     }
 }

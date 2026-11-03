@@ -79,6 +79,11 @@ a previous complete image while an exact frame renders; cached feedback is label
 Only completed document frames can be exported. Slow rendering replaces pending work
 with the latest view rather than replaying every queued camera position.
 
+The workspace chrome uses the semantic palette in `design.pen`: a dark canvas,
+light text, blue node selections, cyan Preview, purple Agent and green focus borders.
+The file picker and dialogs share the same surfaces; user messages and the prompt
+use distinct backgrounds. Panel widths and keyboard bindings remain configurable.
+
 The canvas underneath the design follows the terminal background. Kitty keeps this
 canvas transparent, allowing the terminal's background color, image and window opacity
 to show through. Sixel and halfblocks use the background color queried at startup;

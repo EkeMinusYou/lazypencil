@@ -52,7 +52,7 @@ impl App {
             Span::styled(
                 label.to_owned(),
                 Style::default()
-                    .fg(if focused { theme::FOCUS } else { Color::Reset })
+                    .fg(if focused { theme::FOCUS } else { theme::NODES })
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
@@ -125,7 +125,7 @@ impl App {
 
     pub(super) fn draw_conversation(&mut self, frame: &mut Frame, area: Rect) {
         let badge = self.agent_activity();
-        let title = theme::title("◉", "Agent", theme::AGENT, self.focus.in_conversation());
+        let title = theme::title("◉", "Agent", theme::AGENT, false);
         let available = usize::from(area.width).saturating_sub(title.width() + 2);
         let mut block = panel(title, self.focus.in_conversation()).border_set(border::ROUNDED);
         let mut right = Line::default();
@@ -204,6 +204,16 @@ impl App {
             vertical: 0,
         });
         let top_gap = u16::from(logarea.height > 1);
+        if top_gap > 0 {
+            frame.render_widget(
+                Paragraph::new(format!("{:?}", self.conversation.settings().agent)).style(
+                    Style::default()
+                        .fg(theme::PREVIEW)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Rect::new(logarea.x, logarea.y, logarea.width, top_gap),
+            );
+        }
         let logarea = Rect::new(
             logarea.x,
             logarea.y + top_gap,
@@ -262,7 +272,7 @@ impl App {
                         Span::styled(
                             format!("  {}", images::dimensions(image)),
                             Style::default().fg(if selected {
-                                Color::White
+                                theme::TEXT
                             } else {
                                 theme::SECONDARY
                             }),
@@ -346,9 +356,9 @@ impl App {
             .add(prompt, mouse::Target::Focus(Focus::Prompt));
         let input_style = Style::default()
             .fg(if self.focus == Focus::Prompt {
-                Color::White
+                theme::TEXT
             } else {
-                Color::Gray
+                theme::SECONDARY
             })
             .bg(theme::PROMPT_BACKGROUND);
         frame.render_widget(Block::default().style(input_style), prompt);
@@ -414,7 +424,7 @@ impl App {
         }
         if self.editor.is_empty() {
             frame.render_widget(
-                Paragraph::new(placeholder).style(input_style.fg(Color::Gray)),
+                Paragraph::new(placeholder).style(input_style.fg(theme::SECONDARY)),
                 input,
             );
         }
@@ -473,7 +483,7 @@ fn history_text(
                     .and_then(|line| line.split_once("] "))
             })
             && let Some((icon, color)) = match status {
-                "running" | "in_progress" => Some(("●", theme::RUNNING)),
+                "running" | "in_progress" => Some(("●", theme::WORKING)),
                 "pending" => Some(("○", theme::KEY)),
                 "completed" => Some(("✓", theme::SUCCESS)),
                 "failed" => Some(("✕", theme::ERROR)),
@@ -690,6 +700,6 @@ mod tests {
         }
         assert_eq!(buffer[(0, 0)].symbol(), "›");
         assert_eq!(buffer[(2, 3)].symbol(), "A");
-        assert_eq!(buffer[(13, 3)].bg, Color::Reset);
+        assert_eq!(buffer[(13, 3)].bg, ratatui::style::Color::Reset);
     }
 }

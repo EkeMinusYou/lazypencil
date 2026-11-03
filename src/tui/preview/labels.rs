@@ -61,10 +61,13 @@ impl Labels {
                     &TextSpec {
                         content: key.0.clone(),
                         size: 13.0,
-                        color: if key.1 {
-                            skia_safe::Color::from_rgb(59, 130, 246)
-                        } else {
-                            skia_safe::Color::from_rgb(100, 116, 139)
+                        color: {
+                            let [r, g, b] = if key.1 {
+                                super::super::theme::BLUE_RGB
+                            } else {
+                                super::super::theme::SECONDARY_RGB
+                            };
+                            skia_safe::Color::from_rgb(r, g, b)
                         },
                         ..Default::default()
                     },

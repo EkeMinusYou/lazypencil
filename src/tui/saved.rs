@@ -530,11 +530,11 @@ pub fn draw(
 ) {
     use ratatui::{
         layout::{Constraint, Layout},
-        style::{Color, Style},
+        style::Style,
         widgets::{List, ListItem, Paragraph, Wrap},
     };
     if let Some(review) = &page.deletion_review {
-        let block = super::panel("Delete local conversation?", true);
+        let block = super::dialog("Delete local conversation?");
         let inner = block.inner(area);
         frame.render_widget(block, area);
         let regions = Layout::vertical([
@@ -544,7 +544,8 @@ pub fn draw(
         ])
         .split(inner);
         frame.render_widget(
-            Paragraph::new(review["session"].as_str().unwrap_or("")),
+            Paragraph::new(review["session"].as_str().unwrap_or(""))
+                .style(Style::default().fg(super::theme::SECONDARY)),
             regions[0],
         );
         let mut text = format!(
@@ -568,7 +569,8 @@ pub fn draw(
         frame.render_widget(paragraph.scroll((page.review_scroll, 0)), regions[1]);
         pointer.add(regions[1], super::mouse::Target::SavedText);
         frame.render_widget(
-            Paragraph::new("y confirms · n/Esc returns\n↑/↓ PgUp/PgDn · Home/End scroll"),
+            Paragraph::new("y confirms · n/Esc returns\n↑/↓ PgUp/PgDn · Home/End scroll")
+                .style(Style::default().fg(super::theme::SECONDARY)),
             regions[2],
         );
         return;
@@ -598,7 +600,7 @@ pub fn draw(
             ),
         ),
     };
-    let block = super::panel(title, true);
+    let block = super::dialog(title);
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let raw_records = page.data["raw_records"].as_u64().unwrap_or(0);
@@ -612,7 +614,9 @@ pub fn draw(
     if let Some(message) = &page.notice {
         notice.push_str(&format!("\n{} · r refreshes", super::clean(message)));
     }
-    let notice = Paragraph::new(notice).wrap(Wrap { trim: false });
+    let notice = Paragraph::new(notice)
+        .style(Style::default().fg(super::theme::SECONDARY))
+        .wrap(Wrap { trim: false });
     let height = notice
         .line_count(inner.width)
         .min(inner.height.saturating_sub(5) as usize) as u16;
@@ -655,7 +659,7 @@ pub fn draw(
         page.scroll = page.scroll.min(page.maximum_scroll);
         frame.render_widget(paragraph.scroll((page.scroll, 0)), regions[1]);
         pointer.add(regions[1], super::mouse::Target::SavedText);
-        frame.render_widget(Paragraph::new("↑/↓ PgUp/PgDn scroll · Home/End edges\nn/p pages · v raw/formatted · u use · N new · d delete…\nBackspace parent · s sessions · r refresh · Esc closes").wrap(Wrap { trim: false }), regions[2]);
+        frame.render_widget(Paragraph::new("↑/↓ PgUp/PgDn scroll · Home/End edges\nn/p pages · v raw/formatted · u use · N new · d delete…\nBackspace parent · s sessions · r refresh · Esc closes").style(Style::default().fg(super::theme::SECONDARY)).wrap(Wrap { trim: false }), regions[2]);
     } else {
         let entries = page.entries();
         let items = entries
@@ -678,7 +682,8 @@ pub fn draw(
             .collect::<Vec<_>>();
         if items.is_empty() {
             frame.render_widget(
-                Paragraph::new("No saved entries in this page · Home refreshes"),
+                Paragraph::new("No saved entries in this page · Home refreshes")
+                    .style(Style::default().fg(super::theme::SECONDARY)),
                 regions[1],
             );
         } else {
@@ -686,14 +691,14 @@ pub fn draw(
             pointer.modal_list(
                 frame,
                 List::new(items)
-                    .highlight_style(Style::default().fg(Color::Black).bg(Color::Cyan))
+                    .highlight_style(super::theme::modal_selected())
                     .highlight_symbol("› "),
                 regions[1],
                 page.selected,
                 super::mouse::ListTarget::Saved,
             );
         }
-        frame.render_widget(Paragraph::new("↑/↓ select · Enter opens · u use · N new · d delete…\nn/p pages · Home first · c current · r refresh\nBackspace parent · Esc/q closes · s sessions").wrap(Wrap { trim: false }), regions[2]);
+        frame.render_widget(Paragraph::new("↑/↓ select · Enter opens · u use · N new · d delete…\nn/p pages · Home first · c current · r refresh\nBackspace parent · Esc/q closes · s sessions").style(Style::default().fg(super::theme::SECONDARY)).wrap(Wrap { trim: false }), regions[2]);
         pointer.button(
             frame,
             ratatui::layout::Rect::new(

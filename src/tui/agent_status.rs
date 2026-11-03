@@ -164,18 +164,18 @@ impl App {
                 Style::default().add_modifier(Modifier::BOLD),
             ),
             separator(),
-            Span::styled("account: ", Style::default().fg(theme::MUTED)),
+            Span::styled("account: ", Style::default().fg(theme::SECONDARY)),
             Span::styled(
                 clean(&self.agent.authentication),
-                Style::default().fg(theme::MUTED),
+                Style::default().fg(theme::SECONDARY),
             ),
             Span::styled(
                 format!(" · session: {} · ", &self.conversation.id()[..8]),
-                Style::default().fg(theme::MUTED),
+                Style::default().fg(theme::SECONDARY),
             ),
             Span::styled(
                 clean(&self.conversation.store().path().display().to_string()),
-                Style::default().fg(theme::MUTED),
+                Style::default().fg(theme::SECONDARY),
             ),
         ]);
         Line::from(spans)

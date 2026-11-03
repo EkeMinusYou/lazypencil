@@ -384,12 +384,30 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
         assert!(!preview.contains("Playback"));
         let agent = region(Rect::new(112, 1, 48, 38));
         assert!(agent.contains("Agent") && agent.contains("Idle"));
-        for value in ["Codex", "fixture@example.test", "subscription", "session:"] {
+        assert_eq!(agent.matches("Codex").count(), 1);
+        for value in ["fixture@example.test", "subscription", "session:"] {
             assert!(
                 !agent.contains(value),
                 "Metadata must not occupy the Agent history: {value}"
             );
         }
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(0, 0)].bg, theme::CANVAS);
+        assert_eq!(buffer[(3, 2)].fg, theme::TEXT);
+        assert_eq!(buffer[(3, 2)].bg, theme::CANVAS);
+        assert_eq!(buffer[(114, 2)].symbol(), "C");
+        assert_eq!(buffer[(114, 2)].fg, theme::PREVIEW);
+        for (x, label, color) in [
+            (2, "Nodes", theme::NODES),
+            (34, "Preview", theme::PREVIEW),
+            (114, "Agent", theme::AGENT),
+        ] {
+            let start = (x..160)
+                .find(|x| buffer[(*x, 1)].symbol() == label.get(..1).unwrap())
+                .unwrap();
+            assert_eq!(buffer[(start, 1)].fg, color);
+        }
+        crate::tui::test_artifacts::artifact(buffer, "workspace");
         let footer = region(Rect::new(0, 39, 160, 1));
         assert!(!footer.contains("node") && !footer.contains("100%") && !footer.contains("t="));
         assert!(footer.contains("Entersend") && footer.contains("F1help"));
@@ -759,6 +777,7 @@ fn initial_preview_loading_is_distinct_from_failure_and_explicit_retry() {
         assert!(initial.contains("Loading nodes…"));
         assert!(!initial.contains("Rendering errors"));
         assert!(!initial.contains("Preview unavailable"));
+        crate::tui::test_artifacts::snapshot(&mut app, "preview-loading");
         app.accept_preview(preview::Output {
             generation: app.generation,
             result: Err(Error::new("RENDER_ERROR", "Owned preview failure")),
@@ -769,6 +788,12 @@ fn initial_preview_loading_is_distinct_from_failure_and_explicit_retry() {
         assert!(!failed.contains("Loading nodes…"));
         assert!(failed.contains("Owned preview failure"));
         assert!(!failed.contains("Loading preview…"));
+        let buffer = crate::tui::test_artifacts::snapshot(&mut app, "preview-error");
+        let heading = "Preview unavailable".chars().map(|c| c.to_string()).collect::<Vec<_>>();
+        let cells = buffer.content.windows(heading.len()).find(|cells| {
+            cells.iter().zip(&heading).all(|(cell, symbol)| cell.symbol() == symbol)
+        }).unwrap();
+        assert!(cells.iter().all(|cell| cell.fg == theme::ERROR && cell.bg == theme::CANVAS));
         let worker = Worker::start(
             app.conversation.store().clone(),
             vec![],

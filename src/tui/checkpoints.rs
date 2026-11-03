@@ -405,7 +405,7 @@ impl super::App {
     pub(super) fn draw_checkpoint_modal(&mut self, frame: &mut ratatui::Frame) {
         use ratatui::{
             layout::{Constraint, Layout},
-            style::{Color, Style},
+            style::Style,
             text::Line,
             widgets::{Clear, List, ListItem, Paragraph, Wrap},
         };
@@ -415,54 +415,79 @@ impl super::App {
         self.pointer.overlay();
         let popup = super::centered(frame.area(), 100, 26);
         frame.render_widget(Clear, popup);
-        let highlight = Style::default().fg(Color::Black).bg(Color::Cyan);
+        let highlight = super::theme::modal_selected();
         match modal {
             Modal::Saved(page) => super::saved::draw(page, frame, popup, &mut self.pointer),
             Modal::Commands { selected } => {
                 let items = COMMANDS.iter().map(|text| ListItem::new(*text));
-                let block = super::panel("Commands · Up/Down · Enter · Esc closes", true);
+                let block = super::dialog("Commands");
                 let inner = block.inner(popup);
+                let sections =
+                    Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).split(inner);
                 frame.render_widget(block, popup);
                 self.pointer.modal_list(
                     frame,
                     List::new(items)
                         .highlight_style(highlight)
                         .highlight_symbol("› "),
-                    inner,
+                    sections[0],
                     *selected,
                     super::mouse::ListTarget::Commands,
+                );
+                frame.render_widget(
+                    Paragraph::new("↑/↓ select · Enter run · Esc closes")
+                        .style(Style::default().fg(super::theme::SECONDARY)),
+                    sections[1],
                 );
             }
             Modal::Loading { message } => frame.render_widget(
                 Paragraph::new(*message)
-                    .block(super::panel("Document operation", true))
+                    .style(Style::default().fg(super::theme::SECONDARY))
+                    .block(super::dialog("Document operation"))
                     .wrap(Wrap { trim: false }),
                 popup,
             ),
             Modal::History(page) => {
-                let block =
-                    super::panel("Checkpoints · Enter reviews · r reloads · Esc closes", true);
+                let block = super::dialog("Checkpoints");
                 let inner = block.inner(popup);
                 frame.render_widget(block, popup);
+                let header_height = if page.notice.is_some() { 5 } else { 2 };
+                let footer = Paragraph::new(format!(
+                    "Page {} · older checkpoints {}\nEnter review · r reload · PgDn/n older · PgUp/p newer · Home latest\nRestoration creates a new history entry and preserves the draft.",
+                    page.cursors.len(),
+                    if page.next_before.is_some() { "available" } else { "unavailable" },
+                ))
+                .style(Style::default().fg(super::theme::SECONDARY))
+                .wrap(Wrap { trim: false });
+                let footer_height = footer
+                    .line_count(inner.width)
+                    .min(usize::from(inner.height.saturating_sub(header_height + 1)))
+                    as u16;
                 let sections = Layout::vertical([
-                    Constraint::Length(if page.notice.is_some() { 5 } else { 2 }),
+                    Constraint::Length(header_height),
                     Constraint::Min(1),
-                    Constraint::Length(2),
+                    Constraint::Length(footer_height),
                 ])
                 .split(inner);
-                let mut lines = vec![Line::from(format!(
-                    "Current document: {} · dependencies: {}",
-                    short(&page.revision),
-                    short(&page.dependency_revision)
-                ))];
+                let mut lines = vec![Line::styled(
+                    format!(
+                        "Current document: {} · dependencies: {}",
+                        short(&page.revision),
+                        short(&page.dependency_revision)
+                    ),
+                    Style::default().fg(super::theme::SECONDARY),
+                )];
                 if let Some(notice) = &page.notice {
                     lines.push(Line::styled(
                         notice.clone(),
-                        Style::default().fg(Color::Yellow),
+                        Style::default().fg(super::theme::RUNNING),
                     ));
                 }
                 if page.entries.is_empty() {
-                    lines.push(Line::from("No committed checkpoints yet"));
+                    lines.push(Line::styled(
+                        "No committed checkpoints yet",
+                        Style::default().fg(super::theme::SECONDARY),
+                    ));
                 }
                 frame.render_widget(
                     Paragraph::new(lines).wrap(Wrap { trim: false }),
@@ -486,7 +511,7 @@ impl super::App {
                     page.selected,
                     super::mouse::ListTarget::Checkpoints,
                 );
-                frame.render_widget(Paragraph::new(format!("Page {} · PgDn/n older{} · PgUp/p newer · Home latest\nRestoration creates a new history entry and preserves the draft.", page.cursors.len(), if page.next_before.is_some() { " available" } else { ": none" })).wrap(Wrap { trim: false }), sections[2]);
+                frame.render_widget(footer, sections[2]);
             }
             Modal::Confirm(page) => {
                 let entry = &page.entries[page.selected];
@@ -501,7 +526,7 @@ impl super::App {
                 ));
                 frame.render_widget(
                     Paragraph::new(text)
-                        .block(super::panel("Review restoration", true))
+                        .block(super::dialog("Review restoration"))
                         .wrap(Wrap { trim: false }),
                     popup,
                 );

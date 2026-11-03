@@ -25,6 +25,8 @@ mod saved;
 mod selection;
 mod terminal;
 #[cfg(test)]
+mod test_artifacts;
+#[cfg(test)]
 mod tests;
 mod theme;
 mod viewport;
@@ -1096,7 +1098,7 @@ impl App {
         if self.mouse.enabled {
             text.push_str("Mouse/trackpad: click panels or rows to focus/select; scroll under the pointer without moving keyboard focus\nPreview: Space+left drag, middle drag or right drag pans; two-finger scrolling pans in both directions\n");
             text.push_str(if self.mouse.wheel_zoom { "Preview: wheel zooms; Ctrl+wheel pans; Shift+wheel pans horizontally\n" } else { "Preview: wheel pans; Ctrl+wheel zooms around pointer; Shift+wheel pans horizontally\n" });
-            text.push_str("Menu: [N]/[A] collapse or restore panels; [Menu]/[...] exposes view actions\nNodes: triangle expands/collapses; Show fits; +Ref explicitly attaches a reference\nPrompt clicks focus input. Canvas element/range selection and native pinch zoom are not available yet.\n\n");
+            text.push_str("Menu: [N]/[A] collapse or restore panels; [Menu]/[...] exposes view actions\nNodes: triangle expands/collapses; Show fits; +Ref explicitly attaches a reference\nPrompt clicks focus input. Preview clicks select shapes; left drag selects a range; Shift adds/toggles.\n\n");
         }
         text.push_str("While working, submit text to steer a supported agent; unsupported adapters and node references queue for the next turn.\n/queue <text>: explicitly queue a follow-up instead of steering\n/attach <quoted path> [WIDTHxHEIGHT|original]: attach PNG, JPEG or WebP\n/paste-image [WIDTHxHEIGHT|original]: read this host's clipboard\n/resize-image <number> <WIDTHxHEIGHT|original>: choose send size\n/clear-images: remove pending images\n/resume-queue: resume saved or paused follow-ups; /clear-queue: discard queued prompts\n");
         for (action, description) in [
@@ -1537,6 +1539,7 @@ impl App {
         self.expire_status(Instant::now());
         self.presentation.begin();
         let area = frame.area();
+        frame.render_widget(Block::default().style(theme::base()), area);
         if area.width < 50 || area.height < 16 {
             self.pointer.clear();
             frame.render_widget(
@@ -1582,7 +1585,7 @@ impl App {
                 } else {
                     theme::PREVIEW
                 },
-                self.focus == Focus::Preview,
+                false,
             ),
             self.focus == Focus::Preview,
         );
@@ -1643,14 +1646,22 @@ impl App {
                     .unwrap_or(&preview.protocol),
             );
         } else {
-            frame.render_widget(
-                Paragraph::new(match &self.preview_error {
-                    Some(error) => format!("Preview unavailable\n{}", clean(&error.to_string())),
-                    None => "Loading preview…".into(),
-                })
-                .wrap(Wrap { trim: false }),
-                inner,
-            );
+            let message = match &self.preview_error {
+                Some(error) => Text::from(vec![
+                    Line::styled(
+                        "Preview unavailable",
+                        Style::default()
+                            .fg(theme::ERROR)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Line::styled(
+                        clean(&error.to_string()),
+                        Style::default().fg(theme::SECONDARY),
+                    ),
+                ]),
+                None => Text::styled("Loading preview…", Style::default().fg(theme::SECONDARY)),
+            };
+            frame.render_widget(Paragraph::new(message).wrap(Wrap { trim: false }), inner);
         }
         if !self.agent_collapsed {
             self.draw_conversation(frame, panes[2]);
@@ -1664,15 +1675,23 @@ impl App {
             let popup = centered(area, 100, 26);
             frame.render_widget(Clear, popup);
             let paragraph = Paragraph::new(self.help_text()).wrap(Wrap { trim: false });
-            let block = panel("Help · PgUp/PgDn scroll · Esc closes", true);
+            let block = dialog("Help");
             let inner = block.inner(popup);
-            self.pointer.add(inner, mouse::Target::Help);
+            let sections =
+                Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).split(inner);
+            self.pointer.add(sections[0], mouse::Target::Help);
             let maximum = paragraph
-                .line_count(inner.width)
-                .saturating_sub(inner.height as usize)
+                .line_count(sections[0].width)
+                .saturating_sub(sections[0].height as usize)
                 .min(u16::MAX as usize) as u16;
             self.help_scroll = self.help_scroll.min(maximum);
-            frame.render_widget(paragraph.scroll((self.help_scroll, 0)).block(block), popup);
+            frame.render_widget(block, popup);
+            frame.render_widget(paragraph.scroll((self.help_scroll, 0)), sections[0]);
+            frame.render_widget(
+                Paragraph::new("PgUp/PgDn scroll · Esc closes")
+                    .style(Style::default().fg(theme::SECONDARY)),
+                sections[1],
+            );
             self.pointer.button(
                 frame,
                 Rect::new(popup.right().saturating_sub(9), popup.y, 8, 1),
@@ -1685,20 +1704,52 @@ impl App {
             self.pointer.overlay();
             let popup = centered(area, 92, 26);
             frame.render_widget(Clear, popup);
-            let block = panel("Permission · PgUp/PgDn details · Esc denies", true);
+            let block = dialog("Permission");
             let inner = block.inner(popup);
             frame.render_widget(block, popup);
+            let details = serde_json::to_value(&permission.request.tool_call).unwrap_or_default();
+            let details = crate::conversation::sanitize_event(&details);
+            let details = clean(&serde_json::to_string_pretty(&details).unwrap_or_default());
+            let paragraph = Paragraph::new(details)
+                .style(Style::default().fg(theme::SECONDARY))
+                .wrap(Wrap { trim: false });
+            let title = clean(
+                permission
+                    .request
+                    .tool_call
+                    .fields
+                    .title
+                    .as_deref()
+                    .unwrap_or("Agent requests permission"),
+            );
+            let title_rows = Paragraph::new(title.as_str())
+                .wrap(Wrap { trim: false })
+                .line_count(inner.width);
+            let option_rows = permission
+                .request
+                .options
+                .iter()
+                .fold(title_rows, |rows, option| {
+                    rows.saturating_add(
+                        Paragraph::new(format!("  {}", clean(&option.name)))
+                            .wrap(Wrap { trim: false })
+                            .line_count(inner.width),
+                    )
+                })
+                .min(u16::MAX as usize) as u16;
+            let detail_rows = paragraph.line_count(inner.width).min(usize::from(
+                inner.height.saturating_sub(option_rows.saturating_add(2)),
+            )) as u16;
             let sections = Layout::vertical([
-                Constraint::Min(2),
-                Constraint::Length(permission.request.options.len() as u16 + 3),
+                Constraint::Length(detail_rows),
+                Constraint::Length(1),
+                Constraint::Length(option_rows),
+                Constraint::Min(0),
+                Constraint::Length(1),
             ])
             .split(inner);
             self.pointer
                 .add(sections[0], mouse::Target::PermissionDetails);
-            let details = serde_json::to_value(&permission.request.tool_call).unwrap_or_default();
-            let details = crate::conversation::sanitize_event(&details);
-            let details = clean(&serde_json::to_string_pretty(&details).unwrap_or_default());
-            let paragraph = Paragraph::new(details).wrap(Wrap { trim: false });
             let max_scroll = paragraph
                 .line_count(sections[0].width)
                 .saturating_sub(usize::from(sections[0].height))
@@ -1707,21 +1758,16 @@ impl App {
                 paragraph.scroll((permission.scroll.min(max_scroll), 0)),
                 sections[0],
             );
-            let mut lines = vec![
-                Line::from(clean(
-                    permission
-                        .request
-                        .tool_call
-                        .fields
-                        .title
-                        .as_deref()
-                        .unwrap_or("Agent requests permission"),
-                )),
-                Line::from("Up/Down chooses · Enter responds · Esc denies"),
-            ];
+            let mut y = sections[2]
+                .y
+                .saturating_add(title_rows.min(u16::MAX as usize) as u16);
+            let mut lines = vec![Line::styled(
+                title,
+                Style::default().add_modifier(Modifier::BOLD),
+            )];
             for (index, option) in permission.request.options.iter().enumerate() {
                 let style = if index == permission.selected {
-                    Style::default().fg(Color::Black).bg(Color::Yellow)
+                    Style::default().fg(theme::CANVAS).bg(theme::RUNNING)
                 } else {
                     Style::default()
                 };
@@ -1740,39 +1786,36 @@ impl App {
             }
             frame.render_widget(
                 Paragraph::new(lines).wrap(Wrap { trim: false }),
-                sections[1],
+                sections[2],
+            );
+            frame.render_widget(
+                Paragraph::new("↑/↓ choose · Enter respond · Esc denies · PgUp/PgDn details")
+                    .style(Style::default().fg(theme::SECONDARY)),
+                sections[4],
             );
             // Match wrapped option labels rather than assuming one row each.
-            let mut y = sections[1].y;
-            for line in [
-                clean(
-                    permission
-                        .request
-                        .tool_call
-                        .fields
-                        .title
-                        .as_deref()
-                        .unwrap_or("Agent requests permission"),
-                ),
-                "Up/Down chooses · Enter responds · Esc denies".into(),
-            ] {
-                y = y.saturating_add(
-                    Paragraph::new(line)
-                        .wrap(Wrap { trim: false })
-                        .line_count(sections[1].width) as u16,
-                );
-            }
             for (index, option) in permission.request.options.iter().enumerate() {
                 let height = Paragraph::new(format!("  {}", clean(&option.name)))
                     .wrap(Wrap { trim: false })
-                    .line_count(sections[1].width) as u16;
-                let height = height.min(sections[1].bottom().saturating_sub(y));
-                self.pointer.add(
-                    Rect::new(sections[1].x, y, sections[1].width, height),
-                    mouse::Target::PermissionChoice(index),
-                );
+                    .line_count(sections[2].width) as u16;
+                let height = height.min(sections[2].bottom().saturating_sub(y));
+                let option_area = Rect::new(sections[2].x, y, sections[2].width, height);
+                if index == permission.selected {
+                    frame.buffer_mut().set_style(
+                        option_area,
+                        Style::default().fg(theme::CANVAS).bg(theme::RUNNING),
+                    );
+                }
+                self.pointer
+                    .add(option_area, mouse::Target::PermissionChoice(index));
                 y = y.saturating_add(height);
             }
+            self.pointer.button(
+                frame,
+                Rect::new(popup.right().saturating_sub(9), popup.y, 8, 1),
+                "[Close]",
+                mouse::Action::Close,
+            );
             self.pointer.button(
                 frame,
                 Rect::new(
@@ -1814,10 +1857,14 @@ fn panel(title: impl Into<Line<'static>>, focused: bool) -> Block<'static> {
         .add_modifier(Modifier::BOLD)
         .patch(title.style);
     Block::default()
+        .style(theme::base())
         .borders(Borders::ALL)
         .border_set(ratatui::symbols::border::ROUNDED)
         .title(title.style(style))
         .border_style(Style::default().fg(if focused { theme::FOCUS } else { theme::FRAME }))
+}
+fn dialog(title: impl Into<Line<'static>>) -> Block<'static> {
+    panel(title, true).padding(ratatui::widgets::Padding::horizontal(1))
 }
 fn centered(area: Rect, width: u16, height: u16) -> Rect {
     let width = width.min(area.width);

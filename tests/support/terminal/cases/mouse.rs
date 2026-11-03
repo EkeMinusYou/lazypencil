@@ -147,9 +147,9 @@ pub fn workspace(h: &mut Harness) -> Result {
     button(h, "[Menu]")?;
     h.visible("View controls")?;
     button(h, "[Help]")?;
-    h.visible("Help ·")?;
+    h.visible("Help")?;
     button(h, "[Close]")?;
-    h.hidden("Help ·")?;
+    h.hidden("Help")?;
     h.resize(50, 16)?;
     h.visible("[...]")?;
     button(h, "[Menu]")?;
@@ -205,7 +205,7 @@ pub fn canvas_selection(h: &mut Harness) -> Result {
                 && h.frames
                     .last_camera
                     .as_ref()
-                    .is_some_and(|f| f.has_color([59, 130, 246, 255]))
+                    .is_some_and(|f| f.has_color([137, 180, 250, 255]))
         })?;
     }
     h.key(b"0")?;
@@ -227,7 +227,7 @@ pub fn canvas_selection(h: &mut Harness) -> Result {
                 && h.frames
                     .last_camera
                     .as_ref()
-                    .is_some_and(|f| f.has_color([59, 130, 246, 255]))
+                    .is_some_and(|f| f.has_color([137, 180, 250, 255]))
         })?;
         let first = h.frames.last_camera.as_ref().unwrap().rgba().to_vec();
         let corner = (corner.0 + 5, corner.1 + 2);
@@ -239,7 +239,7 @@ pub fn canvas_selection(h: &mut Harness) -> Result {
                 h.frames
                     .last_camera
                     .as_ref()
-                    .is_some_and(|f| f.has_color([59, 130, 246, 255]) && f.rgba() != first)
+                    .is_some_and(|f| f.has_color([137, 180, 250, 255]) && f.rgba() != first)
             },
         )?;
         event(h, 0, corner, true)?;
@@ -247,7 +247,7 @@ pub fn canvas_selection(h: &mut Harness) -> Result {
             h.frames
                 .images
                 .last()
-                .is_some_and(|f| !f.has_color([59, 130, 246, 255]))
+                .is_some_and(|f| !f.has_color([137, 180, 250, 255]))
         })?;
     }
     for (from, to) in [(start, end), (end, start)] {
@@ -290,7 +290,7 @@ pub fn canvas_selection(h: &mut Harness) -> Result {
         h.wait(
             "large drag bursts keep command input responsive",
             3.0,
-            |h| h.screen.text().contains("Help ·"),
+            |h| h.screen.text().contains("Help"),
         )?;
         h.key(b"\x1b")?;
     }

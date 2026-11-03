@@ -1256,12 +1256,12 @@ fn held_navigation(h: &mut Harness) -> Result {
         assert_eq!(h.frames.camera_placement_updates, stopped);
         assert_eq!(h.frames.images.last(), exact.as_ref());
         h.key(b"?")?;
-        h.visible("Help ·")?;
+        h.visible("Help")?;
         h.wait("Help restores text-safe keyboard mode", 15.0, |h| {
             keyboard_flags(&h.output) == Some(5)
         })?;
         h.key(b"\x1b")?;
-        h.hidden("Help ·")?;
+        h.hidden("Help")?;
         h.wait("closing Help restores direct navigation keys", 15.0, |h| {
             keyboard_flags(&h.output) == Some(15)
         })?;
@@ -1777,9 +1777,9 @@ fn basic(h: &mut Harness) -> Result {
     for repetition in 0..8 {
         h.resize(145 + repetition % 2, 38)?;
         h.key(b"\x1bOP")?;
-        h.visible("/clear-images")?;
+        h.visible("Help")?;
         h.key(b"\x1bOP")?;
-        h.hidden("/clear-images")?;
+        h.hidden("Help")?;
     }
     Ok(())
 }
@@ -2015,9 +2015,16 @@ fn navigation(h: &mut Harness) -> Result<Value> {
     h.paste(text)?;
     h.draft(text)?;
     h.key(b"\x1b[17~\x1b[17~h\x1b[19~")?;
-    h.visible("/clear-images")?;
-    h.key(b"\x1b[6~")?;
-    h.visible("a: Preview: pan left")?;
+    h.visible("Help")?;
+    h.key(b"\x1b[6~\x1b[6~")?;
+    h.wait(
+        "complete help content with the configured pan key",
+        15.0,
+        |h| {
+            h.screen.text().contains("/clear-images")
+                && h.screen.text().contains("a: Preview: pan left")
+        },
+    )?;
     assert_eq!(h.frames.images.last(), Some(&before));
     h.key(b"\x1b[F")?;
     h.wait("help final wrapped lines", 15.0, |h| {
@@ -2029,9 +2036,9 @@ fn navigation(h: &mut Harness) -> Result<Value> {
                 .contains("protocols do not provide clipboard access.")
     })?;
     h.key(b"\x1b[H")?;
-    h.visible("/clear-images")?;
+    h.visible("switch Nodes, Preview, Prompt")?;
     h.key(b"\x1b")?;
-    h.hidden("/clear-images")?;
+    h.hidden("Help")?;
     let cameras = h.frames.camera_frames;
     let pan_started = Instant::now();
     h.key(b"a")?;
@@ -2068,9 +2075,9 @@ fn navigation(h: &mut Harness) -> Result<Value> {
     h.draft(&format!("{text} 続き"))?;
     fs::write(config(h), "[tui.navigation]\nnext_panel=['F10']\n")?;
     h.key(b"\x1b[17~\x1b[17~\x1b[19~")?;
-    h.visible("/clear-images")?;
+    h.visible("Help")?;
     h.key(b"\x1b")?;
-    h.hidden("/clear-images")?;
+    h.hidden("Help")?;
     assert!(h.turns().is_empty());
     no_agent(h);
     assert_eq!(state(h)["draft"], format!("{text} 続き"));

@@ -269,7 +269,7 @@ impl App {
             title
         };
         let focused = self.focus == Focus::Nodes;
-        let title = theme::title("▤", title, theme::NODES, focused);
+        let title = theme::title("▤", title, theme::NODES, false);
         let title_width = title.width();
         let mut block = panel(title, focused);
         if let Some(preview) = &self.preview {

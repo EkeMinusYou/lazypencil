@@ -229,6 +229,10 @@ fn workspace_frame(
     agent: Option<&str>,
     opening: Option<&Path>,
 ) {
+    frame.render_widget(
+        ratatui::widgets::Block::default().style(theme::base()),
+        frame.area(),
+    );
     let areas = workspace::areas(frame.area(), layout, false, false, 1);
     frame.render_widget(
         Paragraph::new(Line::from(vec![
@@ -370,7 +374,7 @@ fn fit_end(text: &str, width: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, style::Color};
+    use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
 
     fn listing() -> Listing {
         Listing {
@@ -426,7 +430,7 @@ mod tests {
             })
             .unwrap();
         let buffer = terminal.backend().buffer().clone();
-        artifact(&buffer, name);
+        crate::tui::test_artifacts::artifact(&buffer, name);
         (buffer, terminal.get_cursor_position().unwrap())
     }
 
@@ -455,9 +459,11 @@ mod tests {
         let selected = buffer
             .content
             .iter()
-            .find(|cell| cell.bg == Color::Rgb(43, 45, 61) && cell.symbol() == "s")
+            .find(|cell| cell.bg == theme::SELECTION_BACKGROUND && cell.symbol() == "s")
             .expect("Workspace selection palette");
         assert_eq!(selected.fg, theme::NODE_SELECTION);
+        assert_eq!(buffer[(popup.x + 1, popup.bottom() - 2)].bg, theme::CANVAS);
+        assert_eq!(buffer[(0, 0)].bg, theme::CANVAS);
         assert!(popup.contains(cursor));
         assert_eq!(buffer[(cursor.x, cursor.y)].bg, theme::PROMPT_BACKGROUND);
         assert!(popup.x > 0 && popup.y > 1 && popup.bottom() < buffer.area.bottom() - 1);
@@ -517,7 +523,7 @@ mod tests {
             terminal.backend().buffer()[(cursor.x, cursor.y)].bg,
             theme::PROMPT_BACKGROUND
         );
-        artifact(terminal.backend().buffer(), "document-picker-error");
+        crate::tui::test_artifacts::artifact(terminal.backend().buffer(), "document-picker-error");
         view.done = false;
         view.path = None;
         view.notice = "";
@@ -657,63 +663,5 @@ mod tests {
                     && !screen.contains("Filter ›")
             );
         }
-    }
-
-    fn artifact(buffer: &Buffer, name: &str) {
-        let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_PICKER_ARTIFACTS") else {
-            return;
-        };
-        let directory = PathBuf::from(directory);
-        std::fs::create_dir_all(&directory).unwrap();
-        std::fs::write(directory.join(format!("{name}.txt")), text(buffer)).unwrap();
-        fn color(color: Color, foreground: bool) -> String {
-            match color {
-                Color::Rgb(r, g, b) => format!("#{r:02x}{g:02x}{b:02x}"),
-                Color::Green => "#98c379".into(),
-                Color::Blue => "#61afef".into(),
-                Color::Magenta => "#c678dd".into(),
-                Color::Cyan => "#56b6c2".into(),
-                Color::Yellow => "#e5c07b".into(),
-                Color::Red => "#e06c75".into(),
-                Color::DarkGray => "#5c6370".into(),
-                Color::Gray => "#abb2bf".into(),
-                Color::Reset if !foreground => "#171923".into(),
-                _ => "#e5e5e5".into(),
-            }
-        }
-        let mut svg = format!(
-            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\"><rect width=\"100%\" height=\"100%\" fill=\"#171923\"/>",
-            buffer.area.width * 10,
-            buffer.area.height * 20,
-            buffer.area.width * 10,
-            buffer.area.height * 20
-        );
-        for y in 0..buffer.area.height {
-            for x in 0..buffer.area.width {
-                let cell = &buffer[(x, y)];
-                svg.push_str(&format!(
-                    "<rect x=\"{}\" y=\"{}\" width=\"10\" height=\"20\" fill=\"{}\"/>",
-                    x * 10,
-                    y * 20,
-                    color(cell.bg, false)
-                ));
-            }
-        }
-        for y in 0..buffer.area.height {
-            for x in 0..buffer.area.width {
-                let cell = &buffer[(x, y)];
-                if cell.symbol().trim().is_empty() {
-                    continue;
-                }
-                let symbol = cell
-                    .symbol()
-                    .replace('&', "&amp;")
-                    .replace('<', "&lt;")
-                    .replace('>', "&gt;");
-                svg.push_str(&format!("<text x=\"{}\" y=\"{}\" fill=\"{}\" font-family=\"Menlo,Hiragino Sans,monospace\" font-size=\"16\" font-weight=\"{}\">{symbol}</text>",x*10,y*20+16,color(cell.fg,true),if cell.modifier.contains(Modifier::BOLD) {"bold"} else {"normal"}));
-            }
-        }
-        svg.push_str("</svg>");
-        std::fs::write(directory.join(format!("{name}.svg")), svg).unwrap();
     }
 }
