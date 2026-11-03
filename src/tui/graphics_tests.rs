@@ -309,57 +309,64 @@ fn rectangular_kitty_uploads_once_places_the_whole_image_and_restores_after_moda
 }
 
 #[test]
-fn unprobed_native_kitty_uses_compact_lossless_png_and_reuses_its_upload() {
-    let backend = Backend {
-        font: FontSize::new(10, 20),
-        protocol: ProtocolType::Kitty,
-        tmux: false,
-        kitty_compression: false,
-    };
-    let size = Size::new(80, 24);
-    let pixels = image::RgbaImage::from_fn(800, 480, |x, y| {
-        if x < 400 && y < 240 {
-            image::Rgba([255, 0, 0, 128])
-        } else {
-            image::Rgba([248, 250, 252, 255])
+fn native_kitty_uploads_preserve_pixels_compression_and_stable_redraws() {
+    for compressed in [false, true] {
+        let backend = Backend {
+            font: FontSize::new(10, 20),
+            protocol: ProtocolType::Kitty,
+            tmux: false,
+            kitty_compression: compressed,
+        };
+        let size = Size::new(80, 24);
+        let pixels = image::RgbaImage::from_fn(800, 480, |x, y| {
+            if x < 400 && y < 240 {
+                image::Rgba([255, 0, 0, 128])
+            } else {
+                image::Rgba([248, 250, 252, 255])
+            }
+        });
+        let encoded = backend
+            .encode_preview(DynamicImage::ImageRgba8(pixels.clone()), size, 77)
+            .unwrap();
+        assert_eq!(encoded.size(), size);
+        let area = Rect::new(2, 1, size.width, size.height);
+        let bounds = Rect::new(0, 0, 90, 30);
+        let mut presentation = Presentation::default();
+        presentation.rectangular(true);
+        let mut decoder = observer::KittyFrames::default();
+        for draw in 0..2 {
+            let mut buffer = Buffer::empty(bounds);
+            presentation.begin();
+            presentation.render(&mut buffer, area, &encoded);
+            presentation.finish(&mut buffer, false);
+            let wire = buffer
+                .content
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>();
+            if draw == 0 {
+                assert!(wire.contains(if compressed {
+                    "a=t,f=32,"
+                } else {
+                    "a=t,f=100,"
+                }));
+                assert_eq!(wire.contains("o=z"), compressed);
+                assert!(
+                    wire.len() < pixels.len() / 10,
+                    "Flat design uploads should be far smaller than raw RGBA"
+                );
+                assert!(wire.find("a=t").unwrap() < wire.find("a=p").unwrap());
+            } else {
+                assert!(
+                    !wire.contains("_G"),
+                    "Stable draws must not retransmit or reposition the image"
+                );
+            }
+            decoder.feed(wire.as_bytes()).unwrap();
         }
-    });
-    let encoded = backend
-        .encode_preview(DynamicImage::ImageRgba8(pixels.clone()), size, 77)
-        .unwrap();
-    assert_eq!(encoded.size(), size);
-    let area = Rect::new(2, 1, size.width, size.height);
-    let bounds = Rect::new(0, 0, 90, 30);
-    let mut presentation = Presentation::default();
-    presentation.rectangular(true);
-    let mut decoder = observer::KittyFrames::default();
-    for draw in 0..2 {
-        let mut buffer = Buffer::empty(bounds);
-        presentation.begin();
-        presentation.render(&mut buffer, area, &encoded);
-        presentation.finish(&mut buffer, false);
-        let wire = buffer
-            .content
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect::<String>();
-        if draw == 0 {
-            assert!(wire.contains("a=t,f=100,"));
-            assert!(!wire.contains("o=z"));
-            assert!(
-                wire.len() < pixels.len() / 10,
-                "Flat design uploads should be far smaller than raw RGBA"
-            );
-            assert!(wire.find("a=t").unwrap() < wire.find("a=p").unwrap());
-        } else {
-            assert!(
-                !wire.contains("_G"),
-                "Stable draws must not retransmit or reposition the image"
-            );
-        }
-        decoder.feed(wire.as_bytes()).unwrap();
+        assert_eq!(decoder.compressed_frames, usize::from(compressed));
+        assert_eq!(decoder.images.len(), 1);
+        assert_eq!(decoder.images[0].rgba(), pixels.as_raw());
+        assert_eq!(presentation.source_size(), Some([800, 480]));
     }
-    assert_eq!(decoder.images.len(), 1);
-    assert_eq!(decoder.images[0].rgba(), pixels.as_raw());
-    assert_eq!(presentation.source_size(), Some([800, 480]));
 }

@@ -1,0 +1,387 @@
+{
+  "format_version": 1,
+  "source_commit": "4280ecc63891205566480f38efb759ee04943211",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13) (Homebrew)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: aarch64-apple-darwin\nrelease: 1.99.1\nLLVM version: 23.1.3\n",
+  "host": "macOS-27.2-arm64-arm-64bit-Mach-O",
+  "host_model": "Apple M1 / 16 GiB / 8 logical CPUs",
+  "binary_sha256": "554b12e9c46abc000dff34471cf92c6dddc1fdc4f4471c087e25f8333a366140",
+  "source_sha256": {
+    "src/render/preview.rs": "e6b5b7349956c2526d35df12bcec03f7fa1c5751c6227c918e83a1c24e7a28e8",
+    "src/runtime/profiles/pages/worker.rs": "e883088a8eccc644fdd8d3b198dab87b897b235894a703510e0fc5c91a5aaa48",
+    "src/text/font_index.rs": "7a85e81ef4043d6781d1e53a3df1abe4e9dffc3e192bf604243fd7a70d0f6b9a",
+    "src/tui/camera.rs": "21f20fcaa9d7d198fb9636d640e743269a75cdc1178836e41fccefdb9f518ea4",
+    "src/tui/graphics.rs": "6393a9f8f34242a6da169f26dc6bd20043ca55b28b82f4a77e86bbd6bc10f2c4",
+    "src/tui/graphics_tests.rs": "151ca27f767522ce654e4e39382e9a7dd58002e67930fe4b52da69881f406d66",
+    "src/tui/mod.rs": "36de97be1b64a4d464a2078951ba65427e43aa8be47d9bdc2016392945a5c215",
+    "src/tui/tests.rs": "d97175f672badc7a5265837201cab45e2859b9ef49458b834787f629050549aa",
+    "tests/support/terminal/cases.rs": "7d373cb0c44c92dcf0f367e34c8e4312cddd63f24f8bba0944c2f74a67717036",
+    "xtask/src/fixtures/fonts.rs": "9dba12434a68c9433af25ddaa68452cbec9229bc953124a0b6b428bd2108be05",
+    "xtask/src/icons.rs": "67d20919da18c886aa1b7e42ce80515345c69ff480e8d9400fbbba1ebec26954",
+    "xtask/src/performance/preview.rs": "7d0e2cc230bebd6ee72b4ef28ad9c52571fd3aaee62da87e144d77286a0cdfc4",
+    "xtask/src/performance/tui.rs": "55462a523fe8189965ec03f83dc497c6fdfc81a93d371f31bf5d385774990632",
+    "xtask/src/test_support/terminal.rs": "946b25a4a2a5651f3aa927680cf3db3791e69db45c9d3fdc5492518ae78115ee",
+    "xtask/tests/fixtures.rs": "32db7514c256a7b3372c77bd8c4a0521166e6890a9f2b304a72474e78b1aa739",
+    "xtask/tests/terminal_raster.rs": "ff67dca78343a6656fd2830d89f3bca0509d86cd5e882d7f2e96cf39ba6e6393",
+    "Cargo.toml": "9ca7c97d270f1f21f6eeeee08696c293ced81394a6e78136151c853db661b5d6",
+    "Cargo.lock": "5c8a5887b191ddb467f411ae61d4456805b24dee74602fe9002ca7b8e1174c39",
+    "xtask/Cargo.toml": "33500ad2d540adabdea6562155aa2513c0ad70b8b7ee51c5dcc50cbe59d23dfc",
+    "xtask/Cargo.lock": "49593daa18d27d4e8eac25945f01b90c0401f50b47812e31f935e0e02d3cb8c1"
+  },
+  "observer_sha256": "256421d4b885920f7fcac7e18591d69d22f96b03d6a5ecaf8ddc087584b50473",
+  "release_profile": {
+    "lto": "thin",
+    "codegen_units": 1,
+    "jobs": 2
+  },
+  "application_build_command": "cargo build --locked --offline --release --jobs 2 --bin lazypencil",
+  "acceptance": {
+    "scope": "All six camera operations in the 9421-node current real document at 1272x1040 native pixels, both Kitty/ZLIB and Kitty/PNG; owned PTY key write to complete image receipt and synchronized update end, not physical display presentation",
+    "samples_per_operation_per_mode": 20,
+    "median_limit_ms": 20,
+    "complete_and_sync_medians_all_within_limit": true,
+    "all_240_corresponding_images_match_reference": true,
+    "initial_pixels_match_reference": true,
+    "all_round_trips_and_six_bursts_restore_pixels": true,
+    "independently_recomputed_statistics": true,
+    "resolution_reduction_or_resampling_added": false,
+    "host_build_activity_monitored": true,
+    "os_caches_and_other_load": "uncontrolled"
+  },
+  "measurement_runs": [
+    {
+      "label": "accepted-zlib",
+      "attempt": 1,
+      "command": [
+        "/Users/mineo/Library/Caches/lazypencil/preview-target-20261101/release/xtask",
+        "measure-preview",
+        "--binary",
+        "/private/tmp/lazypencil-warning-final-20261103/lazypencil",
+        "--document",
+        "/Users/mineo/worktrees/groove-x/gx-whiteboard/mineo/design.pen",
+        "--output",
+        "/private/tmp/lazypencil-warning-final-20261103/accepted-zlib-1",
+        "--label",
+        "wide",
+        "--geometry",
+        "57,224,2688,1140",
+        "--samples",
+        "20",
+        "--all-directions",
+        "--kitty-transfer",
+        "zlib",
+        "--reference-report",
+        "/private/tmp/lazypencil-20ms-20261103/reference-1/wide.json",
+        "--bursts",
+        "--median-limit-ms",
+        "20"
+      ],
+      "observer_sha256": "256421d4b885920f7fcac7e18591d69d22f96b03d6a5ecaf8ddc087584b50473",
+      "started_at_unix": 1793650895.6795268,
+      "finished_at_unix": 1793650911.8167071,
+      "command_exit_code": 0,
+      "report": "/private/tmp/lazypencil-warning-final-20261103/accepted-zlib-1/wide.json",
+      "host_samples": [
+        {
+          "at": 1793650895.682327,
+          "builds": []
+        },
+        {
+          "at": 1793650896.221956,
+          "builds": []
+        },
+        {
+          "at": 1793650896.77133,
+          "builds": []
+        },
+        {
+          "at": 1793650897.328324,
+          "builds": []
+        },
+        {
+          "at": 1793650897.865557,
+          "builds": []
+        },
+        {
+          "at": 1793650898.401236,
+          "builds": []
+        },
+        {
+          "at": 1793650898.942546,
+          "builds": []
+        },
+        {
+          "at": 1793650899.4788659,
+          "builds": []
+        },
+        {
+          "at": 1793650900.011182,
+          "builds": []
+        },
+        {
+          "at": 1793650900.5456069,
+          "builds": []
+        },
+        {
+          "at": 1793650901.0742111,
+          "builds": []
+        },
+        {
+          "at": 1793650901.60921,
+          "builds": []
+        },
+        {
+          "at": 1793650902.145171,
+          "builds": []
+        },
+        {
+          "at": 1793650902.676904,
+          "builds": []
+        },
+        {
+          "at": 1793650903.210617,
+          "builds": []
+        },
+        {
+          "at": 1793650903.74418,
+          "builds": []
+        },
+        {
+          "at": 1793650904.27338,
+          "builds": []
+        },
+        {
+          "at": 1793650904.809938,
+          "builds": []
+        },
+        {
+          "at": 1793650905.345899,
+          "builds": []
+        },
+        {
+          "at": 1793650905.881557,
+          "builds": []
+        },
+        {
+          "at": 1793650906.4165702,
+          "builds": []
+        },
+        {
+          "at": 1793650906.950443,
+          "builds": []
+        },
+        {
+          "at": 1793650907.495162,
+          "builds": []
+        },
+        {
+          "at": 1793650908.023106,
+          "builds": []
+        },
+        {
+          "at": 1793650908.553552,
+          "builds": []
+        },
+        {
+          "at": 1793650909.089397,
+          "builds": []
+        },
+        {
+          "at": 1793650909.656061,
+          "builds": []
+        },
+        {
+          "at": 1793650910.18551,
+          "builds": []
+        },
+        {
+          "at": 1793650910.721659,
+          "builds": []
+        },
+        {
+          "at": 1793650911.256855,
+          "builds": []
+        }
+      ],
+      "performance_excluded": false
+    },
+    {
+      "label": "accepted-png",
+      "attempt": 1,
+      "command": [
+        "/Users/mineo/Library/Caches/lazypencil/preview-target-20261101/release/xtask",
+        "measure-preview",
+        "--binary",
+        "/private/tmp/lazypencil-warning-final-20261103/lazypencil",
+        "--document",
+        "/Users/mineo/worktrees/groove-x/gx-whiteboard/mineo/design.pen",
+        "--output",
+        "/private/tmp/lazypencil-warning-final-20261103/accepted-png-1",
+        "--label",
+        "wide",
+        "--geometry",
+        "57,224,2688,1140",
+        "--samples",
+        "20",
+        "--all-directions",
+        "--kitty-transfer",
+        "png",
+        "--reference-report",
+        "/private/tmp/lazypencil-20ms-20261103/reference-1/wide.json",
+        "--bursts",
+        "--median-limit-ms",
+        "20"
+      ],
+      "observer_sha256": "256421d4b885920f7fcac7e18591d69d22f96b03d6a5ecaf8ddc087584b50473",
+      "started_at_unix": 1793650912.944768,
+      "finished_at_unix": 1793650927.957068,
+      "command_exit_code": 0,
+      "report": "/private/tmp/lazypencil-warning-final-20261103/accepted-png-1/wide.json",
+      "host_samples": [
+        {
+          "at": 1793650912.947158,
+          "builds": []
+        },
+        {
+          "at": 1793650913.482527,
+          "builds": []
+        },
+        {
+          "at": 1793650914.018639,
+          "builds": []
+        },
+        {
+          "at": 1793650914.556161,
+          "builds": []
+        },
+        {
+          "at": 1793650915.092268,
+          "builds": []
+        },
+        {
+          "at": 1793650915.629411,
+          "builds": []
+        },
+        {
+          "at": 1793650916.164024,
+          "builds": []
+        },
+        {
+          "at": 1793650916.692694,
+          "builds": []
+        },
+        {
+          "at": 1793650917.219999,
+          "builds": []
+        },
+        {
+          "at": 1793650917.754427,
+          "builds": []
+        },
+        {
+          "at": 1793650918.289782,
+          "builds": []
+        },
+        {
+          "at": 1793650918.8273,
+          "builds": []
+        },
+        {
+          "at": 1793650919.3597739,
+          "builds": []
+        },
+        {
+          "at": 1793650919.885299,
+          "builds": []
+        },
+        {
+          "at": 1793650920.420685,
+          "builds": []
+        },
+        {
+          "at": 1793650920.9564989,
+          "builds": []
+        },
+        {
+          "at": 1793650921.487714,
+          "builds": []
+        },
+        {
+          "at": 1793650922.024457,
+          "builds": []
+        },
+        {
+          "at": 1793650922.556818,
+          "builds": []
+        },
+        {
+          "at": 1793650923.089098,
+          "builds": []
+        },
+        {
+          "at": 1793650923.626128,
+          "builds": []
+        },
+        {
+          "at": 1793650924.153087,
+          "builds": []
+        },
+        {
+          "at": 1793650924.686275,
+          "builds": []
+        },
+        {
+          "at": 1793650925.223095,
+          "builds": []
+        },
+        {
+          "at": 1793650925.7962902,
+          "builds": []
+        },
+        {
+          "at": 1793650926.3265889,
+          "builds": []
+        },
+        {
+          "at": 1793650926.8561978,
+          "builds": []
+        },
+        {
+          "at": 1793650927.386576,
+          "builds": []
+        }
+      ],
+      "performance_excluded": false
+    }
+  ],
+  "reports_sha256": {
+    "preview-20ms-reference-2026-11-03.json": "6a48ea0d49fe0329dfee92716ad5920f6d66ea5ef7884eeca4662d6873121d44",
+    "preview-20ms-zlib-2026-11-03.json": "02c2faa640fa9450f93ca734a940e4b17611bbc38c665648613452a84abf5ef6",
+    "preview-20ms-png-2026-11-03.json": "1889a64167198fc80f1026abcda4900e126a492672990a7a3643c703caf8cf4d"
+  },
+  "validation": {
+    "compiler": "Rust/Clippy 1.99.1",
+    "warning_exclusions": [],
+    "app_clippy": "cargo clippy --locked --offline --jobs 2 --all-targets --keep-going -- -D warnings",
+    "tool_clippy": "cargo clippy --locked --offline --jobs 2 --manifest-path xtask/Cargo.toml --all-targets --keep-going -- -D warnings",
+    "application_library_tests": 262,
+    "tool_library_tests": 27,
+    "font_image_icon_fixture_tests": 19,
+    "ordinary_pty_tests": 18,
+    "existing_environment_dependent_pty_cases_ignored": 2,
+    "reservation_limit_overflow_concurrency_and_release_test": "passed"
+  },
+  "superseded_measurement_journal": {
+    "path": "/private/tmp/lazypencil-20ms-20261103/measurement-runs.json",
+    "sha256": "5d1f4ffc75bf2d8173e00a89f45b7644160193d5fb3da501b9a72409aceec81c",
+    "reason": "The warning cleanup changed source and binary identity, so its fresh measurements above supersede the earlier acceptance runs. The earlier journal retains one build-overlapped run separately."
+  },
+  "log_sha256": {
+    "/private/tmp/lazypencil-warning-final-20261103/app-build.log": "18362ac8ca267aea02f97155407bb257de706d1eb54a625ec77e0eda1b1b458f",
+    "/private/tmp/lazypencil-warning-final-20261103/observer-build.log": "c3f8db8bd7ab226d0f76a39e24ee18ede20f06d21940929bbf9a796dc7f98da7",
+    "/private/tmp/lazypencil-warnings-20261103/app-clippy.log": "183a6741ebc2f335978102d4ac50666bb890f535ebde37c0e57b78c410aabfb7",
+    "/private/tmp/lazypencil-warnings-20261103/tool-clippy.log": "80d4e04f74409e91be8024e0b6740683c36cd1de7c8e6bc179a5085a03a50cfb",
+    "/private/tmp/lazypencil-warnings-20261103/app-unit.log": "ff555415a00b0a1b972e534d7696825ba06f626842934d4ca77df2406e77dec0",
+    "/private/tmp/lazypencil-warnings-20261103/tool-unit.log": "b4b37cf035d78a1d1ea42b3e5afdfbff96883f1e96b73df599bcc2b07567e357",
+    "/private/tmp/lazypencil-warnings-20261103/tui-pty.log": "ea2ea624395497b2b5fb4a3d0483c80eb0bc024e39288862e890354ff80cdb58"
+  }
+}

@@ -1,0 +1,21 @@
+name: Remove closed pull request caches
+on:
+  pull_request:
+    types: [closed]
+permissions:
+  contents: read
+jobs:
+  cleanup:
+    # Fork tokens may lack actions:write. Never elevate an untrusted checkout.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Delete only the closed pull request's cache scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CACHE_REF: refs/pull/${{ github.event.number }}/merge
+        run: gh cache delete --all --succeed-on-no-caches --ref "$CACHE_REF"

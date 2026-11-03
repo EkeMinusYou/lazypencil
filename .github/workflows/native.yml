@@ -550,7 +550,7 @@ jobs:
         id: tui-measurement
         if: (inputs.phase == 'focus' || inputs.lane == 'release') && inputs.measure_tui
         timeout-minutes: 15
-        run: xtask/target/debug/xtask measure-tui --candidate "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/tui-measurement" --chromium-resources ${{ inputs.os == 'macos-15' && '--enforce-targets' || '--enforce-memory-target' }}
+        run: xtask/target/debug/xtask measure-tui --candidate "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/tui-measurement" --chromium-resources ${{ inputs.os == 'macos-15' && '--enforce-targets --allocation-diagnostics=true' || '--enforce-memory-target' }}
       - name: Retain focused TUI measurements and diagnostic logs
         if: ${{ always() && (steps.tui-measurement.outcome == 'success' || steps.tui-measurement.outcome == 'failure') }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -630,9 +630,11 @@ jobs:
           # suppresses the compatible full build used to fill unchanged units.
           key: ${{ steps.application-key.outputs.focused_checkpoint }}
           path: ${{ runner.temp }}/lazypencil-compatible-cache
+      # Compiler outputs are not successful test receipts. PR caches remain
+      # isolated in their merge-ref scope and keep every restore validation.
       - name: Stage mapped release outputs independently of tests
         id: release-save
-        if: ${{ (inputs.lane == 'all' || inputs.lane == 'release') && (!cancelled() && steps.release-key.outcome == 'success' && steps.release-cache.outputs.cache-hit != 'true' && (steps.release-smoke.outcome == 'success' || steps.focus-release.outcome == 'success' || steps.default-release.outcome == 'success') && github.ref == 'refs/heads/main') }}
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'release') && (!cancelled() && steps.release-key.outcome == 'success' && steps.release-cache.outputs.cache-hit != 'true' && (steps.release-build.outcome == 'success' || steps.release-smoke.outcome == 'success' || steps.focus-release.outcome == 'success' || steps.default-release.outcome == 'success') && (github.ref == 'refs/heads/main' || github.event_name == 'pull_request')) }}
         continue-on-error: true
         timeout-minutes: 3
         run: xtask/target/debug/xtask ci cache application stage --release-only --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-release-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
@@ -670,10 +672,10 @@ jobs:
         id: cache-prune
         if: ${{ always() && steps.native-cache.outcome == 'success' && ((inputs.lane == 'core' && steps.core-build.outcome == 'success') || steps.focus-build.outcome == 'success' || steps.default-build.outcome == 'success' || steps.default-build.outputs.compiled_catalog == github.sha || steps.release-build.outcome == 'success') }}
         continue-on-error: true
-        run: xtask/target/debug/xtask ci cache native-checkpoint --primary '${{ steps.cache-key.outputs.primary }}' --checkpoint '${{ steps.cache-key.outputs.checkpoint }}' --matched-key '${{ steps.native-cache.outputs.cache-matched-key }}' --core-only "$CORE_ONLY_CACHE" --complete-catalog '${{ steps.default-build.outputs.compiled_catalog }}' --release-verified '${{ inputs.phase == 'full' && steps.release-smoke.outcome == 'success' }}' --source "$RUNNER_TEMP/lazypencil-source"
+        run: xtask/target/debug/xtask ci cache native-checkpoint --primary '${{ steps.cache-key.outputs.primary }}' --checkpoint '${{ steps.cache-key.outputs.checkpoint }}' --matched-key '${{ steps.native-cache.outputs.cache-matched-key }}' --core-only "$CORE_ONLY_CACHE" --complete-catalog '${{ steps.default-build.outputs.compiled_catalog }}' --release-verified '${{ steps.release-build.outcome == 'success' || steps.focus-release.outcome == 'success' || inputs.phase == 'full' && steps.release-smoke.outcome == 'success' }}' --source "$RUNNER_TEMP/lazypencil-source"
       - name: Save compatible hosted dependency build artifacts
         id: native-published
-        if: ${{ always() && steps.cache-prune.outcome == 'success' && steps.cache-prune.outputs.save_key != '' && github.ref == 'refs/heads/main' }}
+        if: ${{ always() && steps.cache-prune.outcome == 'success' && steps.cache-prune.outputs.save_key != '' && (github.ref == 'refs/heads/main' || github.event_name == 'pull_request' && (inputs.lane == 'core' || inputs.lane == 'release')) }}
         continue-on-error: true
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:

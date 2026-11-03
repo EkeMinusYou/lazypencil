@@ -184,9 +184,10 @@ pub fn preview_profiles(bytes: &[u8]) -> Result<Vec<serde_json::Value>> {
         let fields = report["phases_ms"]
             .as_object()
             .context("Missing preview phases")?;
+        // A retained gesture can complete several requests in one generation.
         ensure!(
             report.as_object().is_some_and(|fields| fields.len() == 4)
-                && previous.is_none_or(|previous| generation > previous)
+                && previous.is_none_or(|previous| generation >= previous)
                 && fields.len() == phases.len(),
             "Invalid preview profile version, order or phase membership"
         );
@@ -600,11 +601,7 @@ mod hosted {
             let raster = fixtures::oracles::Raster {
                 width: frame.width as u32,
                 height: frame.height as u32,
-                pixels: frame
-                    .rgba()
-                    .chunks_exact(4)
-                    .map(|pixel| pixel.try_into().unwrap())
-                    .collect(),
+                pixels: frame.rgba().as_chunks::<4>().0.to_vec(),
             };
             let png = crate::terminal::raster::png(&raster)?;
             util::publish(&root.join(format!("{name}.png")), &png, false)?;
