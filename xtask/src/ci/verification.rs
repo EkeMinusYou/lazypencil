@@ -17,6 +17,17 @@ fn presentation(path: &str) -> bool {
         "src/tui/footer.rs",
         "src/tui/footer_tests.rs",
         "src/tui/theme.rs",
+        "src/tui/agent_status.rs",
+        "src/tui/markdown.rs",
+        "src/tui/controls.rs",
+        "src/tui/input.rs",
+        "src/tui/events.rs",
+        "src/tui/outbox.rs",
+        "src/tui/references.rs",
+        "src/tui/documents.rs",
+        "src/tui/documents/view.rs",
+        "src/tui/saved.rs",
+        "src/tui/checkpoints.rs",
         "src/tui/tests.rs",
         "tests/tui.rs",
         "tests/user_config.rs",
@@ -25,6 +36,7 @@ fn presentation(path: &str) -> bool {
     ]
     .contains(&path)
         || path.starts_with("src/config/keys/")
+        || path.starts_with("src/tui/tests/")
 }
 
 pub fn select(event: &str, paths: &[String]) -> (&'static str, &'static str) {
@@ -61,6 +73,18 @@ pub fn select(event: &str, paths: &[String]) -> (&'static str, &'static str) {
         return (
             "focused",
             "Presentation and key changes use library, TUI, agent and configuration regressions",
+        );
+    }
+    if super::focus::agent_only(paths) {
+        return (
+            "focused",
+            "ACP and adapter settings use core agent, history, MCP and configuration regressions",
+        );
+    }
+    if super::focus::runtime_only(paths) {
+        return (
+            "focused",
+            "Runtime installation uses its existing core consumer tests",
         );
     }
     if inputs.iter().all(|p| {

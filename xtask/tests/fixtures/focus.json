@@ -325,7 +325,11 @@
       "platform": "macos-26",
       "suite": "conversation",
       "targets": [
-        "agent"
+        "agent",
+        "config",
+        "conversation_history",
+        "mcp",
+        "user_agent_config"
       ],
       "preprocessor": false
     }
@@ -605,9 +609,13 @@
     ],
     "expected": {
       "platform": "macos-26",
-      "suite": "core",
+      "suite": "conversation",
       "targets": [
-        "config"
+        "agent",
+        "config",
+        "conversation_history",
+        "mcp",
+        "user_agent_config"
       ],
       "preprocessor": false
     }
@@ -886,7 +894,11 @@
       "platform": "macos-26",
       "suite": "conversation",
       "targets": [
-        "agent"
+        "agent",
+        "config",
+        "conversation_history",
+        "mcp",
+        "user_agent_config"
       ],
       "preprocessor": false
     }
@@ -899,7 +911,11 @@
       "platform": "macos-26",
       "suite": "conversation",
       "targets": [
-        "agent"
+        "agent",
+        "config",
+        "conversation_history",
+        "mcp",
+        "user_agent_config"
       ],
       "preprocessor": false
     }
@@ -912,7 +928,11 @@
       "platform": "macos-26",
       "suite": "conversation",
       "targets": [
-        "agent"
+        "agent",
+        "config",
+        "conversation_history",
+        "mcp",
+        "user_agent_config"
       ],
       "preprocessor": false
     }
@@ -925,7 +945,11 @@
       "platform": "macos-26",
       "suite": "conversation",
       "targets": [
-        "agent"
+        "agent",
+        "config",
+        "conversation_history",
+        "mcp",
+        "user_agent_config"
       ],
       "preprocessor": false
     }
@@ -1519,7 +1543,11 @@
       "platform": "macos-26",
       "suite": "conversation",
       "targets": [
-        "agent"
+        "agent",
+        "config",
+        "conversation_history",
+        "mcp",
+        "user_agent_config"
       ],
       "preprocessor": false
     }
@@ -1747,8 +1775,12 @@
     ],
     "expected": {
       "platform": "macos-26",
-      "suite": "core",
+      "suite": "conversation",
       "targets": [
+        "agent",
+        "config",
+        "conversation_history",
+        "mcp",
         "user_agent_config"
       ],
       "preprocessor": false
@@ -2022,7 +2054,11 @@
       "platform": "macos-26",
       "suite": "conversation",
       "targets": [
-        "agent"
+        "agent",
+        "config",
+        "conversation_history",
+        "mcp",
+        "user_agent_config"
       ],
       "preprocessor": false
     }

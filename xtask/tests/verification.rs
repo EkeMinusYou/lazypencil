@@ -27,12 +27,41 @@ fn pr_contracts_distinguish_prose_tools_behavior_and_shared_compiler_inputs() {
             "focused",
         ),
         (vec!["resources/guidance/default.md"], "focused"),
+        (
+            vec!["src/agent.rs", "src/agent/steering.rs", "tests/agent.rs"],
+            "focused",
+        ),
+        (
+            vec!["src/config/agents.rs", "tests/user_agent_config.rs"],
+            "focused",
+        ),
+        (
+            vec!["src/runtime/download.rs", "tests/runtime.rs", "README.md"],
+            "focused",
+        ),
+        (
+            vec!["src/tui/input.rs", "src/tui/tests/navigation.rs"],
+            "focused",
+        ),
+        (
+            vec!["src/tui/saved.rs", "src/tui/documents/view.rs"],
+            "focused",
+        ),
+        (vec!["src/agent/process/windows.rs"], "full"),
+        (vec!["src/agent.rs", "src/runtime.rs"], "full"),
+        (vec!["src/agent.rs", "src/process_owner.rs"], "full"),
+        (vec!["src/runtime/profiles.rs"], "full"),
+        (vec!["src/runtime/diagnostics.rs"], "full"),
+        (vec!["src/tui/input.rs", "src/tui/preview.rs"], "full"),
         (vec!["src/tui/footer.rs", "src/render.rs"], "full"),
         (vec!["src/tui/camera.rs"], "full"),
         (vec!["xtask/src/ci/verification.rs"], "full"),
         (vec!["xtask/src/test_support/terminal.rs"], "full"),
         (vec![".github/workflows/ci.yml"], "full"),
         (vec!["Cargo.toml"], "full"),
+        (vec!["src/agent.rs", "Cargo.lock"], "full"),
+        (vec!["src/runtime.rs", "build.rs"], "full"),
+        (vec!["src/tui/input.rs", ".cargo/config.toml"], "full"),
         (vec!["xtask/Cargo.toml"], "full"),
         (vec!["xtask/src/process.rs"], "full"),
         (vec!["xtask/src/util.rs"], "full"),
@@ -176,4 +205,62 @@ fn pr_planner_uses_the_actual_base_diff_and_rejects_bad_documentation() {
     );
     let output: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
     assert_eq!(output["verification"], "full");
+
+    for (path, suite, targets) in [
+        (
+            "src/agent/steering.rs",
+            "conversation",
+            vec![
+                "agent",
+                "config",
+                "conversation_history",
+                "mcp",
+                "user_agent_config",
+            ],
+        ),
+        ("src/runtime/download.rs", "core", vec!["runtime"]),
+        (
+            "src/tui/input.rs",
+            "graphics",
+            vec!["tui", "agent", "user_config", "conversation_history"],
+        ),
+        (
+            "src/tui/documents/view.rs",
+            "graphics",
+            vec![
+                "tui",
+                "agent",
+                "user_config",
+                "conversation_history",
+                "document_launch",
+            ],
+        ),
+    ] {
+        let base = git(&["rev-parse", "HEAD"]).trim().to_owned();
+        fs::write(
+            &event,
+            serde_json::to_vec(&json!({"pull_request":{"base":{"sha":base}}})).unwrap(),
+        )
+        .unwrap();
+        fs::create_dir_all(root.join(path).parent().unwrap()).unwrap();
+        fs::write(root.join(path), "// Changed application input.\n").unwrap();
+        git(&["add", path]);
+        git(&["commit", "--quiet", "-m", "Scoped application change"]);
+        let result = plan();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let output: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+        assert_eq!(output["verification"], "focused", "{path}");
+        assert_eq!(output["suite"], suite);
+        let selected: Vec<String> =
+            serde_json::from_str(output["targets"].as_str().unwrap()).unwrap();
+        assert_eq!(selected, targets);
+        // Every selected contract must produce executable checks with the
+        // existing planner, including its ownership and ignored reproductions.
+        let commands = ci::commands::plan(&repository, suite, &selected).unwrap();
+        assert!(!commands.build.is_empty() && !commands.checks.is_empty());
+    }
 }

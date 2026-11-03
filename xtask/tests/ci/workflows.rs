@@ -1,6 +1,43 @@
 use super::*;
 
 #[test]
+fn focused_prs_run_regressions_before_lint_and_keep_isolated_compiler_checkpoints() {
+    let root = util::root();
+    let native = fs::read_to_string(root.join(".github/workflows/native.yml")).unwrap();
+    let stages: Vec<_> = ["focus-build", "focus-reproduce", "focus-test", "focus-lint"]
+        .map(|stage| native.find(&format!("ci native {stage} --suite")).unwrap())
+        .into();
+    assert!(stages.windows(2).all(|pair| pair[0] < pair[1]));
+    // A standalone focus has no separate core consumer. It must retain the
+    // optional-feature checks and CLI build owned by the existing planner.
+    assert!(native.contains(
+        "LAZYPENCIL_CI_SEPARATE_CORE: ${{ inputs.lane == 'build' && inputs.phase != 'focus' }}"
+    ));
+    assert!(native.contains(
+        "(inputs.phase == 'focus' || inputs.phase == 'verify' && inputs.lane != 'build')"
+    ));
+    let save = native
+        .split("id: application-save")
+        .nth(1)
+        .unwrap()
+        .split("run:")
+        .next()
+        .unwrap();
+    assert!(save.contains("github.event_name == 'pull_request'"));
+    assert!(native.contains("focused-matched-key"));
+    let ci = fs::read_to_string(root.join(".github/workflows/ci.yml")).unwrap();
+    let targeted = ci
+        .split("  targeted:")
+        .nth(1)
+        .unwrap()
+        .split("  checks:")
+        .next()
+        .unwrap();
+    assert!(targeted.contains("cache_focused_outputs: true"));
+    assert!(targeted.contains("verification == 'focused'"));
+}
+
+#[test]
 fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() {
     for path in [
         "xtask/src/performance.rs",
