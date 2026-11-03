@@ -940,12 +940,6 @@ impl App {
                             .unwrap_or("not reported")
                             .into()
                     });
-                self.set_status(format!(
-                    "Authentication: {}",
-                    value["authentication"]["source"]
-                        .as_str()
-                        .unwrap_or("unknown")
-                ));
             }
             Some("ready") => {
                 self.update_agent_configuration(&value["response"]["configOptions"]);
