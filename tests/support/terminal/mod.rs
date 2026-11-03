@@ -14,7 +14,7 @@ use std::{
     collections::BTreeMap,
     ffi::OsString,
     fs,
-    io::{Read, Write},
+    io::{ErrorKind, Read, Write},
     os::{
         fd::{AsRawFd, FromRawFd},
         unix::process::CommandExt,
@@ -191,6 +191,13 @@ impl Harness {
         }
         let master = unsafe { fs::File::from_raw_fd(master) };
         let slave = unsafe { fs::File::from_raw_fd(slave) };
+        let flags = unsafe { libc::fcntl(master.as_raw_fd(), libc::F_GETFL) };
+        if flags < 0
+            || unsafe { libc::fcntl(master.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) }
+                < 0
+        {
+            return Err(std::io::Error::last_os_error().into());
+        }
         let mut original = std::mem::MaybeUninit::<libc::termios>::zeroed();
         if unsafe { libc::tcgetattr(slave.as_raw_fd(), original.as_mut_ptr()) } != 0 {
             return Err(std::io::Error::last_os_error().into());
@@ -288,7 +295,12 @@ impl Harness {
             let mut bytes = [0; 65536];
             let count = match self.master.read(&mut bytes[..limit]) {
                 Ok(n) => n,
-                Err(e) if e.raw_os_error() == Some(libc::EIO) => 0,
+                Err(e)
+                    if e.raw_os_error() == Some(libc::EIO)
+                        || matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::Interrupted) =>
+                {
+                    0
+                }
                 Err(e) => return Err(e.into()),
             };
             let bytes = &bytes[..count];
@@ -340,7 +352,22 @@ impl Harness {
         Ok(())
     }
     pub fn key(&mut self, bytes: &[u8]) -> Result {
-        self.master.write_all(bytes)?;
+        // A real terminal drains output while delivering input. Large pointer
+        // bursts can otherwise fill both PTY directions and deadlock the test.
+        let end = Instant::now() + Duration::from_secs(10);
+        let mut pending = bytes;
+        while !pending.is_empty() {
+            if Instant::now() >= end {
+                return Err("Timed out delivering terminal input".into());
+            }
+            match self.master.write(pending) {
+                Ok(0) => return Err("Terminal input closed".into()),
+                Ok(count) => pending = &pending[count..],
+                Err(error) if error.kind() == ErrorKind::Interrupted => {}
+                Err(error) if error.kind() == ErrorKind::WouldBlock => self.pump()?,
+                Err(error) => return Err(error.into()),
+            }
+        }
         Ok(())
     }
     pub fn paste(&mut self, text: &str) -> Result {
