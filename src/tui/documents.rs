@@ -73,6 +73,29 @@ impl Drop for Search {
     }
 }
 
+fn refresh_selection(
+    previous: &[PathBuf],
+    found: &mut [PathBuf],
+    filter: &str,
+    selected: usize,
+    navigated: bool,
+) -> usize {
+    found.sort();
+    if !navigated {
+        return 0;
+    }
+    let needle = filter.to_lowercase();
+    let matches = |path: &&PathBuf| path.to_string_lossy().to_lowercase().contains(&needle);
+    let Some(previous) = previous.iter().filter(matches).nth(selected) else {
+        return 0;
+    };
+    found
+        .iter()
+        .filter(matches)
+        .position(|path| path == previous)
+        .unwrap_or(0)
+}
+
 pub struct Selection {
     pub file: PathBuf,
     pub agent: Option<crate::agent::AgentHost>,
@@ -127,6 +150,7 @@ pub fn select(
     let mut filtering = false;
     let mut path_input: Option<String> = None;
     let mut selected = 0usize;
+    let mut navigated = false;
     let mut notice = String::new();
     let mut done = false;
     let mut dirty = true;
@@ -163,23 +187,13 @@ pub fn select(
             dirty = true;
             match result {
                 Ok(mut found) => {
-                    let needle = filter.to_lowercase();
-                    let previous = listing
-                        .documents
-                        .iter()
-                        .filter(|path| path.to_string_lossy().to_lowercase().contains(&needle))
-                        .nth(selected)
-                        .cloned();
-                    found.documents.sort();
-                    if let Some(previous) = previous
-                        && let Some(index) = found
-                            .documents
-                            .iter()
-                            .filter(|path| path.to_string_lossy().to_lowercase().contains(&needle))
-                            .position(|path| *path == previous)
-                    {
-                        selected = index;
-                    }
+                    selected = refresh_selection(
+                        &listing.documents,
+                        &mut found.documents,
+                        &filter,
+                        selected,
+                        navigated,
+                    );
                     listing = found;
                     done = listing.complete || listing.stop_reason.is_some();
                 }
@@ -242,6 +256,8 @@ pub fn select(
                         path.clear();
                     } else {
                         filter.clear();
+                        selected = 0;
+                        navigated = false;
                     }
                 }
                 _ => {}
@@ -254,14 +270,24 @@ pub fn select(
                 filter.clear();
                 filtering = false;
                 notice.clear();
+                selected = 0;
+                navigated = false;
             }
-            KeyCode::Up => selected = selected.saturating_sub(1),
-            KeyCode::Down => selected = (selected + 1).min(visible.len().saturating_sub(1)),
+            KeyCode::Up => {
+                selected = selected.saturating_sub(1);
+                navigated |= !visible.is_empty();
+            }
+            KeyCode::Down => {
+                selected = (selected + 1).min(visible.len().saturating_sub(1));
+                navigated |= !visible.is_empty();
+            }
             KeyCode::Char('j') if path_input.is_none() && !filtering => {
-                selected = (selected + 1).min(visible.len().saturating_sub(1))
+                selected = (selected + 1).min(visible.len().saturating_sub(1));
+                navigated |= !visible.is_empty();
             }
             KeyCode::Char('k') if path_input.is_none() && !filtering => {
-                selected = selected.saturating_sub(1)
+                selected = selected.saturating_sub(1);
+                navigated |= !visible.is_empty();
             }
             KeyCode::Backspace => {
                 if let Some(path) = &mut path_input {
@@ -270,6 +296,7 @@ pub fn select(
                     filter.pop();
                 }
                 selected = 0;
+                navigated = false;
             }
             KeyCode::Char('/') if path_input.is_none() && !filtering => {
                 filtering = true;
@@ -286,6 +313,7 @@ pub fn select(
                     filter.push(c);
                 }
                 selected = 0;
+                navigated = false;
             }
             KeyCode::Enter => {
                 let path = if let Some(input) = &path_input {
@@ -316,6 +344,7 @@ pub fn select(
                     notice.clear();
                     done = false;
                     selected = 0;
+                    navigated = false;
                     continue;
                 }
                 match crate::documents::require_pen(&path)
@@ -328,5 +357,44 @@ pub fn select(
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn paths(names: &[&str]) -> Vec<PathBuf> {
+        names.iter().map(PathBuf::from).collect()
+    }
+
+    #[test]
+    fn incremental_discovery_keeps_the_initial_selection_at_the_top() {
+        let mut first = paths(&["b.pen"]);
+        let selected = refresh_selection(&[], &mut first, "", 0, false);
+        let mut complete = paths(&["b.pen", "a.pen"]);
+        let selected = refresh_selection(&first, &mut complete, "", selected, false);
+        assert_eq!(complete[selected], PathBuf::from("a.pen"));
+
+        let mut later = paths(&["c.pen", "a.pen", "b.pen", "0.pen"]);
+        let selected = refresh_selection(&complete, &mut later, "", selected, false);
+        assert_eq!(later[selected], PathBuf::from("0.pen"));
+    }
+
+    #[test]
+    fn incremental_discovery_preserves_an_explicit_selection_in_filtered_results() {
+        let previous = paths(&["B.pen", "other.pen", "z/b.pen"]);
+        let mut found = paths(&["z/b.pen", "a.pen", "a/B.pen", "B.pen", "other.pen"]);
+        let selected = refresh_selection(&previous, &mut found, "B", 1, true);
+        let filtered: Vec<_> = found
+            .iter()
+            .filter(|path| path.to_string_lossy().to_lowercase().contains('b'))
+            .collect();
+        assert_eq!(filtered[selected], &PathBuf::from("z/b.pen"));
+        assert_eq!(refresh_selection(&previous, &mut found, "B", 1, false), 0);
+        assert_eq!(
+            refresh_selection(&previous, &mut found, "missing", 0, true),
+            0
+        );
     }
 }
