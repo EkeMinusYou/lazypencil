@@ -611,7 +611,7 @@ fn renderer_focus_runs_native_cases_and_exact_dynamic_pixels_before_the_full_sco
     assert!(mixed.targets.iter().any(|target| target == "script_scope"));
     assert_eq!(
         focus::PLATFORMS,
-        ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-15"]
+        ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-26"]
     );
 }
 
@@ -1162,7 +1162,7 @@ fn dependency_checkpoint_and_application_retention_require_matching_main_layouts
         entry(
             2,
             format!(
-                "application-v2-macos-15-{}-{}-full",
+                "application-v2-macos-26-{}-{}-full",
                 "b".repeat(64),
                 "2".repeat(64)
             ),
@@ -1208,7 +1208,7 @@ fn dependency_checkpoint_and_application_retention_require_matching_main_layouts
     );
     let mut entries = Vec::new();
     let mut id = 0;
-    for platform in ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-15"] {
+    for platform in ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-26"] {
         for index in 1..=3 {
             for phase in ["full", "focus"] {
                 id += 1;

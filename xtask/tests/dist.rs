@@ -94,6 +94,60 @@ fn complete_source_is_deterministic_keeps_local_patches_and_excludes_build_cache
 }
 
 #[test]
+fn source_round_trip_preserves_the_root_build_script_and_its_native_inputs() {
+    let (temp, root, archive) = fixture();
+    for (name, bytes) in [
+        (
+            "build.rs",
+            "fn main() { println!(\"cargo:rerun-if-changed=src/native.m\"); }\n",
+        ),
+        (
+            "src/native.m",
+            "int owned_native_input(void) { return 1; }\n",
+        ),
+    ] {
+        fs::write(root.join(name), bytes).unwrap();
+    }
+    dist::source(&root, &archive, 0, true).unwrap();
+    let output = temp.path().join("extracted");
+    dist::verify(&archive, Some(&output)).unwrap();
+    for name in ["build.rs", "src/native.m"] {
+        assert_eq!(
+            fs::read(output.join(name)).unwrap(),
+            fs::read(root.join(name)).unwrap()
+        );
+    }
+    let metadata = Command::new("cargo")
+        .args([
+            "metadata",
+            "--offline",
+            "--no-deps",
+            "--format-version=1",
+            "--manifest-path",
+        ])
+        .arg(output.join("Cargo.toml"))
+        .output()
+        .unwrap();
+    assert!(
+        metadata.status.success(),
+        "{}",
+        String::from_utf8_lossy(&metadata.stderr)
+    );
+    let metadata: Value = serde_json::from_slice(&metadata.stdout).unwrap();
+    assert!(
+        metadata["packages"][0]["targets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|target| {
+                target["kind"] == serde_json::json!(["custom-build"])
+                    && fs::canonicalize(target["src_path"].as_str().unwrap()).unwrap()
+                        == fs::canonicalize(output.join("build.rs")).unwrap()
+            })
+    );
+}
+
+#[test]
 fn missing_patches_corrupt_content_and_unlisted_files_are_rejected_before_publication() {
     let (_temp, root, archive) = fixture();
     fs::remove_file(root.join("vendor/skia-bindings/Cargo.toml")).unwrap();

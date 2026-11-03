@@ -249,7 +249,7 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
                     || path == "xtask/src/fixtures/kitty_ui.rs"
             }))
     {
-        let targets = if platform == "macos-15" && terminal_harness_changed(paths) {
+        let targets = if platform == "macos-26" && terminal_harness_changed(paths) {
             vec!["render".into(), "tui".into()]
         } else {
             vec!["render".into()]

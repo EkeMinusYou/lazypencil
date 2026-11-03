@@ -15,6 +15,7 @@ use unicode_casefold::UnicodeCaseFold;
 use unicode_normalization::UnicodeNormalization;
 
 pub mod binary;
+pub mod homebrew;
 pub mod release;
 
 pub const MAX_FILES: usize = 10_000;
@@ -25,6 +26,12 @@ pub const MANIFEST: &str = "SOURCE-MANIFEST.json";
 #[derive(Subcommand)]
 pub enum Command {
     Binary(binary::Arguments),
+    /// Generate a Cask from an independently verified, stable binary package.
+    Homebrew {
+        archive: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+    },
     VerifyBinary {
         archive: PathBuf,
         #[arg(long)]
@@ -51,6 +58,9 @@ impl Command {
     pub fn run(self) -> Result<()> {
         match self {
             Self::Binary(arguments) => util::print(&binary::create(&arguments)?),
+            Self::Homebrew { archive, output } => {
+                util::print(&homebrew::generate(&archive, &output)?)
+            }
             Self::VerifyBinary { archive, extract } => {
                 util::print(&binary::verify(&archive, extract.as_deref())?)
             }
@@ -244,6 +254,7 @@ pub fn source_files(root: &Path, selected: Option<&BTreeSet<String>>) -> Result<
     for name in [
         "Cargo.toml",
         "Cargo.lock",
+        "build.rs",
         "LICENSE",
         "README.md",
         ".gitignore",

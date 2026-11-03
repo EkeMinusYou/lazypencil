@@ -37,7 +37,7 @@ fn native_identity_binds_compiler_image_flags_and_dependency_tree_but_not_schedu
     let compiler = COMPILER.replace("x86_64-unknown-linux-gnu", "aarch64-apple-darwin");
     let font_tree = "11d1597cbd47f826b985b5e514b42c0ff8aa9d4a3d378264e88ac38781b0e160";
     let baseline = cache::native_identity(
-        "macos-15",
+        "macos-26",
         "20260907.0337.1",
         "80b3b3fc770be2245a731ad66682615c3b4979af5c410c5bf196d10c61aba68b",
         &compiler,
@@ -45,7 +45,7 @@ fn native_identity_binds_compiler_image_flags_and_dependency_tree_but_not_schedu
     )
     .unwrap();
     let migrated = cache::native_identity(
-        "macos-15",
+        "macos-26",
         "20260907.0337.1",
         font_tree,
         &compiler,
@@ -56,7 +56,7 @@ fn native_identity_binds_compiler_image_flags_and_dependency_tree_but_not_schedu
     assert_ne!(migrated["primary"], baseline["primary"]);
     let release_tree = "9d9ec938606c1c29c9ac36d0868af4b0bf3d61be85d66449287258edbb680e1b";
     let release_baseline = cache::native_identity(
-        "macos-15",
+        "macos-26",
         "20261028.0489.1",
         "4cd30528eaee7f6025192ea093fe203e7c59be06b95b84c8cf0c00f66790f6fa",
         &compiler,
@@ -64,7 +64,7 @@ fn native_identity_binds_compiler_image_flags_and_dependency_tree_but_not_schedu
     )
     .unwrap();
     let release_identity = cache::native_identity(
-        "macos-15",
+        "macos-26",
         "20261028.0489.1",
         release_tree,
         &compiler,
@@ -80,19 +80,19 @@ fn native_identity_binds_compiler_image_flags_and_dependency_tree_but_not_schedu
         let mut env = flags();
         env.insert(name.into(), value.into());
         assert_eq!(
-            cache::native_identity("macos-15", "20261028.0489.1", release_tree, &compiler, &env)
+            cache::native_identity("macos-26", "20261028.0489.1", release_tree, &compiler, &env)
                 .unwrap()["legacy"],
             ""
         );
         assert_eq!(
-            cache::native_identity("macos-15", "20260907.0337.1", font_tree, &compiler, &env)
+            cache::native_identity("macos-26", "20260907.0337.1", font_tree, &compiler, &env)
                 .unwrap()["legacy"],
             ""
         );
     }
     assert_eq!(
         cache::native_identity(
-            "macos-15",
+            "macos-26",
             "20260907.0337.1",
             font_tree,
             &compiler.replace("1.94.0", "1.95.0"),

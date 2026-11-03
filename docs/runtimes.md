@@ -2,7 +2,7 @@
 
 Static Skia rendering and script-generated geometry require no Chromium. Browser
 nodes and GLSL fills/effects need a separate browser. The supported release platform
-is macOS 15.7.9 or later on Apple Silicon; retained Linux/Windows/Intel catalogue
+is macOS Tahoe 26 or later on Apple Silicon; retained Linux/Windows/Intel catalogue
 entries do not expand that support.
 
 ## Managed installation

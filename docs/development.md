@@ -195,6 +195,91 @@ archive's actual source/ref and review them independently; an arbitrary successf
 workflow or a matching filename is insufficient. Keep verification/install/publish
 completion separate. CI artifact retention is finite.
 
+### Signed releases and the dedicated Homebrew tap
+
+The `release-evidence.yml` workflow normally only verifies a candidate. Its optional
+`publish_release` input signs and notarizes a tagged macOS Apple Silicon release,
+publishes its archive, and updates
+[`EkeMinusYou/homebrew-lazypencil`](https://github.com/EkeMinusYou/homebrew-lazypencil).
+The tap is independent of other applications. It retains the complete archive in
+Homebrew's Caskroom, including corresponding sources, notices, and build evidence.
+
+Configure these **repository Actions secrets** in `EkeMinusYou/lazypencil`:
+
+| Secret | Value |
+| --- | --- |
+| `DEVELOPER_ID_P12_BASE64` | Base64 of the Developer ID Application certificate **and its private key**, exported together as a password-protected `.p12` |
+| `DEVELOPER_ID_P12_PASSWORD` | Password protecting that `.p12` |
+| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password generated for notarization in the signing account's Apple Account; never the primary account password |
+| `RELEASER_PRIVATE_KEY` | PEM private key for the shared Homebrew release GitHub App |
+
+Configure these **repository Actions variables**:
+
+| Variable | Value |
+| --- | --- |
+| `APPLE_TEAM_ID` | Team ID associated with the Developer ID certificate |
+| `APPLE_ID` | Apple Account email associated with the signing team |
+| `RELEASER_APP_ID` | ID of the shared Homebrew release GitHub App |
+
+In Keychain Access, select **My Certificates**, find the Developer ID Application
+certificate, and export it with its associated private key in `.p12` format. Exporting
+the downloaded `.cer` alone does not include the private key. Store the exported file
+and its password outside the repository. For example, upload files directly to secrets
+without printing their contents:
+
+```sh
+base64 -i /private/path/developer-id.p12 | gh secret set DEVELOPER_ID_P12_BASE64 --repo EkeMinusYou/lazypencil
+gh secret set DEVELOPER_ID_P12_PASSWORD --repo EkeMinusYou/lazypencil
+gh secret set APPLE_APP_SPECIFIC_PASSWORD --repo EkeMinusYou/lazypencil
+gh secret set RELEASER_PRIVATE_KEY --repo EkeMinusYou/lazypencil < /private/path/releaser.private-key.pem
+```
+
+See [GitHub's certificate import guide](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications)
+and [Apple's notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
+Generate the app-specific password under **Sign-In and Security → App-Specific
+Passwords** at [account.apple.com](https://account.apple.com/). App Store Connect
+API keys are not used. Notarization credentials are validated and stored in a temporary
+runner keychain for that step, then removed on exit, including failure paths.
+The build job imports the certificate into a temporary keychain and removes the keychain
+and credential files after signing. The public CLI does not require an App Store
+provisioning profile. GitHub publication and tap updates run in separate jobs with
+separate credentials.
+
+To publish a **new** version:
+
+1. Update `Cargo.toml`, the application entry in `Cargo.lock`, `resources/release.json`,
+   and release notes together. Merge the reviewed commit to `main` and wait for its
+   existing push CI run to succeed. The release workflow reuses that result; it does
+   not dispatch another full CI run.
+2. Create and push an immutable `vVERSION` tag at that exact commit. The version must
+   match `resources/release.json`. Do not reuse an existing published tag.
+3. Run **Release build evidence** on that tag with `os=macos-26` and
+   `publish_release=true`. Enable any additional terminal/performance acceptance
+   required for that release. Leave `publish_release=false` for ordinary verification.
+4. The workflow signs the executable with hardened runtime and a secure timestamp,
+   collects hashes/evidence from those signed bytes, verifies the complete package,
+   waits for notarization to report `Accepted`, and attests the final archive. It then
+   uploads the archive, notarization receipt, provenance bundle, and checksums to a
+   draft Release before publishing it and updating `Casks/lazypencil.rb` in the tap.
+
+Raw CLI executables and `.tar.gz` archives cannot have notarization tickets stapled to
+them. Gatekeeper obtains their tickets online. The separate notarization receipt
+includes the exact signed executable's SHA-256, which is checked against the packaged
+binary before publication; it is not a substitute for Apple/GitHub verification.
+
+The workflow never replaces an existing release or downgrades the tap. If upload fails,
+inspect and explicitly remove the incomplete draft before retrying publication. If
+publication succeeds but the tap update fails, fix the tap token and re-run only the
+failed job so that the published binaries remain unchanged. Rotate the certificate and
+API credentials before expiration; renewals retain the same secret/variable names.
+
+Once the first signed release has populated the tap:
+
+```sh
+brew install --cask ekeminusyou/lazypencil/lazypencil
+brew upgrade --cask lazypencil
+```
+
 ## Licenses and third-party inputs
 
 Application code and original project documentation use [MIT](../LICENSE). Bundled

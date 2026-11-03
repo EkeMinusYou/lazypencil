@@ -9,13 +9,13 @@ pub(super) struct Execution {
     host: Value,
 }
 
-fn macos_15(version: &Value) -> bool {
+fn macos_26(version: &Value) -> bool {
     let Some(version) = version.as_str() else {
         return false;
     };
     let parts = version.split('.').collect::<Vec<_>>();
     (2..=3).contains(&parts.len())
-        && parts[0] == "15"
+        && parts[0] == "26"
         && parts
             .iter()
             .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
@@ -26,7 +26,7 @@ fn compatible(build: &Value, host: &Value) -> Result<()> {
         return Ok(());
     }
     // Compiler caches remain image-bound. These consumers execute immutable
-    // binaries and cannot invoke Cargo. Permit only hosted macOS 15 arm64 OS
+    // binaries and cannot invoke Cargo. Permit only hosted macOS 26 arm64 OS
     // updates; retain exact compiler, flags, profiles, paths, source and run.
     ensure!(
         build["schema"] == 2
@@ -35,8 +35,8 @@ fn compatible(build: &Value, host: &Value) -> Result<()> {
             && host["os"] == "macos"
             && build["arch"] == "aarch64"
             && host["arch"] == "aarch64"
-            && macos_15(&build["os_version"])
-            && macos_15(&host["os_version"]),
+            && macos_26(&build["os_version"])
+            && macos_26(&host["os_version"]),
         "Compiled catalog source or compiler conditions differ"
     );
     for image in [&build["image"], &host["image"]] {
@@ -87,12 +87,12 @@ mod tests {
     #[test]
     fn execution_updates_record_both_hosts_without_changing_compiler_or_binary_identity() {
         let build = json!({"schema":2,"os":"macos","arch":"aarch64",
-            "os_version":"15.7.9","image":"20260907.0337.1",
+            "os_version":"26.6.1","image":"20260907.0337.1",
             "commit":"source","run":"run","compiler":"pinned compiler",
             "source_root":"/source","target_root":"/target","optimized_tests":true,
             "test_profile":["original"],"flags":{"RUSTFLAGS":"original"}});
         let mut host = build.clone();
-        host["os_version"] = json!("15.8.2");
+        host["os_version"] = json!("26.7.2");
         host["image"] = json!("20261028.0489.1");
         let receipt = "a".repeat(64);
         let execution = Execution::new(&build, &host, &receipt).unwrap();
@@ -104,8 +104,9 @@ mod tests {
             ("schema", json!(1)),
             ("os", json!("linux")),
             ("arch", json!("x86_64")),
-            ("os_version", json!("16.0")),
-            ("os_version", json!("15.bad")),
+            ("os_version", json!("15.7.9")),
+            ("os_version", json!("27.0")),
+            ("os_version", json!("26.bad")),
             ("os_version", Value::Null),
             ("image", json!("")),
             ("image", json!("unknown\nimage")),

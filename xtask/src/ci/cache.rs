@@ -140,7 +140,7 @@ pub enum Command {
         before_tools_replacement: Option<String>,
         #[arg(long, requires = "before_tools_replacement")]
         tools_matched_key: Option<String>,
-        #[arg(long, value_parser = ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-15"])]
+        #[arg(long, value_parser = ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-26"])]
         platform: Option<String>,
         #[arg(long, env = "GITHUB_REPOSITORY")]
         repository: String,
@@ -677,8 +677,7 @@ pub fn native_identity(
         [
             "ubuntu-24.04",
             "ubuntu-24.04-arm",
-            "macos-15",
-            "macos-15-intel",
+            "macos-26",
             "windows-2025"
         ]
         .contains(&platform)
@@ -715,7 +714,7 @@ fn valid_generation_id(value: &str) -> bool {
 /// Keep rebuilt outputs distinct from an older immutable cache.
 pub fn application_checkpoint(base: &str, run: &str, attempt: &str) -> Result<String> {
     ensure!(
-        Regex::new(r"^(?:(?:application-v2|release-v1)-(?:ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-[0-9a-f]{64}-[0-9a-f]{64}-focus|tests(?:-core)?-v1-(?:ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-[0-9a-f]{64}-(?:focus|full)-[0-9a-f]{64})$")?.is_match(base)
+        Regex::new(r"^(?:(?:application-v2|release-v1)-(?:ubuntu-24\.04-arm|ubuntu-24\.04|macos-26)-[0-9a-f]{64}-[0-9a-f]{64}-focus|tests(?:-core)?-v1-(?:ubuntu-24\.04-arm|ubuntu-24\.04|macos-26)-[0-9a-f]{64}-(?:focus|full)-[0-9a-f]{64})$")?.is_match(base)
             && [run, attempt].into_iter().all(valid_generation_id),
         "Invalid application checkpoint identity"
     );
@@ -894,7 +893,7 @@ impl ApplicationIdentity {
                     .is_none_or(|v| v.as_bool() == Some(false)),
             "Custom build scripts disable application reuse"
         );
-        let re = Regex::new(r"^native-v2-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-")?;
+        let re = Regex::new(r"^native-v2-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-26)-")?;
         let platform = re
             .captures(native_key)
             .context("Unknown native build identity")?[1]
@@ -1558,13 +1557,13 @@ fn obsolete_with_sources(
         })
         .collect::<BTreeSet<_>>();
     let re = Regex::new(
-        r"^application-v([12])-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-([0-9a-f]{64})(?:-([0-9a-f]{64}))?-(full|focus)(?:-[1-9][0-9]*-[1-9][0-9]*)?$",
+        r"^application-v([12])-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-26)-([0-9a-f]{64})(?:-([0-9a-f]{64}))?-(full|focus)(?:-[1-9][0-9]*-[1-9][0-9]*)?$",
     )?;
     let releases = Regex::new(
-        r"^release-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-([0-9a-f]{64})-(?P<context>[0-9a-f]{64})-(?P<phase>full|focus)(?:-[1-9][0-9]*-[1-9][0-9]*)?$",
+        r"^release-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-26)-([0-9a-f]{64})-(?P<context>[0-9a-f]{64})-(?P<phase>full|focus)(?:-[1-9][0-9]*-[1-9][0-9]*)?$",
     )?;
     let tests = Regex::new(
-        r"^(tests(?:-core)?)-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-([0-9a-f]{64})-(full|focus)-([0-9a-f]{64})(?:-[1-9][0-9]*-[1-9][0-9]*)?$",
+        r"^(tests(?:-core)?)-v1-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-26)-([0-9a-f]{64})-(full|focus)-([0-9a-f]{64})(?:-[1-9][0-9]*-[1-9][0-9]*)?$",
     )?;
     let mut selected = BTreeMap::new();
     let mut groups = BTreeMap::<(String, String), Vec<&Value>>::new();

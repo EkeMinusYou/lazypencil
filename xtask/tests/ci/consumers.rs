@@ -42,7 +42,7 @@ fn browser_scheduler_changes_execute_the_actual_two_lanes_before_the_full_matrix
     ]
     .map(str::to_owned);
     let plan = focus::select(&util::root(), &paths, "auto").unwrap();
-    assert_eq!(plan.platform, "macos-15");
+    assert_eq!(plan.platform, "macos-26");
     assert_eq!(plan.suite, "browser-ci");
     assert_eq!(plan.targets, focus::BROWSER_CI_TARGETS);
     let actual: std::collections::BTreeSet<_> = ci::native::browser::TEST_LANES
@@ -72,7 +72,7 @@ fn normal_scheduler_changes_reproduce_the_complete_catalog_before_the_matrix() {
     ]
     .map(str::to_owned);
     let plan = focus::select(&util::root(), &paths, "auto").unwrap();
-    assert_eq!(plan.platform, "macos-15");
+    assert_eq!(plan.platform, "macos-26");
     assert_eq!(plan.suite, "normal-ci");
     assert!(
         plan.targets.is_empty(),
@@ -116,7 +116,7 @@ fn macos_terminal_changes_select_native_pty_without_requiring_deferred_linux_pix
         ]
         .map(str::to_owned);
         let plan = focus::select(&util::root(), &paths, "auto").unwrap();
-        assert_eq!(plan.platform, "macos-15");
+        assert_eq!(plan.platform, "macos-26");
         assert_eq!(plan.suite, "candidate");
         assert!(plan.targets.iter().any(|target| target == "tui"));
         assert!(ci::commands::terminal_reproduction(&plan.suite, &plan.targets).is_some());
@@ -139,7 +139,7 @@ fn terminal_harness_changes_keep_their_reproduction_in_mixed_application_changes
     );
     for (platform, suite, expected) in [
         ("ubuntu-24.04", "dynamic", (true, false)),
-        ("macos-15", "dynamic", (false, false)),
+        ("macos-26", "dynamic", (false, false)),
         ("ubuntu-24.04", "core", (false, false)),
         ("ubuntu-24.04", "ci", (false, false)),
         ("ubuntu-24.04-arm", "conversation", (false, false)),
@@ -178,7 +178,7 @@ fn font_sources_generators_and_pins_select_native_color_reproductions_before_the
     ] {
         assert_eq!(focus::ci_only(path), path.starts_with("xtask/"), "{path}");
         let plan = focus::select(&util::root(), &[path.into()], "auto").unwrap();
-        assert_eq!(plan.platform, "macos-15");
+        assert_eq!(plan.platform, "macos-26");
         assert_eq!(plan.suite, "graphics", "{path}");
         assert_eq!(plan.targets, ["font_sources"], "{path}");
         assert!(ci::commands::color_font_reproduction(&plan.suite, &plan.targets).is_some());
@@ -227,7 +227,7 @@ fn font_sources_generators_and_pins_select_native_color_reproductions_before_the
 fn path_identity_changes_reproduce_macos_alias_and_hardlink_behavior_first() {
     for path in ["src/paths.rs", "tests/paths.rs"] {
         let plan = focus::select(&util::root(), &[path.into()], "auto").unwrap();
-        assert_eq!(plan.platform, "macos-15");
+        assert_eq!(plan.platform, "macos-26");
         assert_eq!(plan.suite, "core");
         assert_eq!(plan.targets, vec!["paths"]);
     }
@@ -251,7 +251,7 @@ fn rust_pty_bridge_changes_select_the_stricter_supported_host_and_all_frontend_r
         ]
         .map(str::to_owned);
         let plan = focus::select(&util::root(), &paths, "auto").unwrap();
-        assert_eq!(plan.platform, "macos-15");
+        assert_eq!(plan.platform, "macos-26");
         assert_eq!(plan.suite, "graphics");
         let early = ci::commands::terminal_reproduction(&plan.suite, &plan.targets).unwrap();
         assert!(early.iter().any(|arg| arg == focus::TERMINAL_MODES));
@@ -321,7 +321,7 @@ fn generated_reference_changes_reproduce_the_real_script_binding_cases_first() {
         "tests/support/script_generated_overrides.rs",
     ] {
         let plan = focus::select(&util::root(), &[path.into()], "auto").unwrap();
-        assert_eq!(plan.platform, "macos-15");
+        assert_eq!(plan.platform, "macos-26");
         assert_eq!(plan.suite, "graphics");
         assert!(plan.targets.iter().any(|target| target == "script_scope"));
         assert!(!plan.preprocessor);
@@ -365,8 +365,8 @@ fn generated_browser_copy_changes_run_namespace_and_real_pixel_reproductions_fir
         "README.md",
     ]
     .map(str::to_owned);
-    let plan = focus::select(&util::root(), &paths, "macos-15").unwrap();
-    assert_eq!(plan.platform, "macos-15");
+    let plan = focus::select(&util::root(), &paths, "macos-26").unwrap();
+    assert_eq!(plan.platform, "macos-26");
     assert_eq!(plan.suite, "browser");
     assert_eq!(
         plan.targets,
@@ -477,7 +477,7 @@ fn release_recipe_helpers_compile_on_one_platform_before_the_full_matrix() {
             "auto",
         )
         .unwrap();
-        assert_eq!(plan.platform, "macos-15");
+        assert_eq!(plan.platform, "macos-26");
         assert_eq!(plan.suite, "release");
         assert_eq!(plan.targets, ["render"]);
         let commands = ci::commands::plan(&util::root(), &plan.suite, &plan.targets).unwrap();
@@ -522,7 +522,7 @@ fn candidate_packaging_changes_run_a_real_candidate_gate_before_the_matrix() {
             "auto",
         )
         .unwrap();
-        assert_eq!(plan.platform, "macos-15");
+        assert_eq!(plan.platform, "macos-26");
         assert_eq!(plan.suite, "candidate");
         let expected = if path.starts_with("xtask/src/terminal/") {
             vec!["render", "tui"]
@@ -553,7 +553,7 @@ fn terminal_protocol_and_observer_changes_reproduce_the_bsd_browser_consumer_fir
             "auto",
         )
         .unwrap();
-        assert_eq!(plan.platform, "macos-15");
+        assert_eq!(plan.platform, "macos-26");
         assert_eq!(plan.suite, "candidate");
         assert_eq!(plan.targets, ["render", "tui", "dynamic_render"]);
         let commands = ci::commands::plan(&util::root(), &plan.suite, &plan.targets).unwrap();

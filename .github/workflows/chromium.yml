@@ -6,11 +6,11 @@ on:
       os:
         description: Mac release validation; Linux choices are deferred-platform diagnostics
         type: choice
-        default: macos-15
+        default: macos-26
         options:
           - ubuntu-24.04
           - ubuntu-24.04-arm
-          - macos-15
+          - macos-26
 
 permissions:
   contents: read
