@@ -1867,13 +1867,19 @@ fn oversized_preview(h: &mut Harness, design: &Value) -> Result {
             .last()
             .is_some_and(|frame| frame.width == 7800 && frame.has_color([255, 0, 0, 255]))
     })?;
+    let retained = h.frames.images.last().unwrap().clone();
     let mut broken = design.clone();
     broken["version"] = "2.9".into();
     write_json(&h.document, &broken)?;
-    h.visible("Preview unavailable")?;
+    h.visible("Showing previous preview")?;
+    h.visible("UNSUPPORTED_VERSION")?;
+    assert_eq!(h.frames.images.last(), Some(&retained));
     h.frames.images.clear();
     write_json(&h.document, design)?;
-    h.hidden("Preview unavailable")?;
+    h.wait("repaired preview replaces the stale state", 15.0, |h| {
+        !h.screen.text().contains("Showing previous preview")
+            && h.frames.images.last() == Some(&retained)
+    })?;
     h.key(b"\x1ba")?;
     h.visible("Prompt")?;
     h.draft(draft)?;
@@ -1983,14 +1989,9 @@ fn navigation(h: &mut Harness) -> Result<Value> {
     h.paste(text)?;
     h.draft(text)?;
     h.key(b"\x1b[17~\x1b[17~h\x1b[19~")?;
-    h.wait(
-        "complete help content with the configured pan key",
-        15.0,
-        |h| {
-            h.screen.text().contains("/clear-images")
-                && h.screen.text().contains("a: Preview: pan left")
-        },
-    )?;
+    h.visible("/clear-images")?;
+    h.key(b"\x1b[6~")?;
+    h.visible("a: Preview: pan left")?;
     assert_eq!(h.frames.images.last(), Some(&before));
     h.key(b"\x1b[F")?;
     h.wait("help final wrapped lines", 15.0, |h| {
