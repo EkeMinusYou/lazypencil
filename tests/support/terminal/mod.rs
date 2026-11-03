@@ -254,6 +254,9 @@ impl Harness {
         if case != "picker-default" {
             command.args(["--image-protocol", protocol]);
         }
+        if case == "startup-new" {
+            command.arg("--create");
+        }
         command
             .stdin(Stdio::from(slave.try_clone()?))
             .stdout(Stdio::from(slave.try_clone()?))

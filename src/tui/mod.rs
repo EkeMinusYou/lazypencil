@@ -302,6 +302,11 @@ impl App {
     fn new(conversation: Conversation) -> Self {
         let editor = editor(conversation.draft());
         let agent = agent_status::Status::new(conversation.settings().fast == Some(true));
+        let focus = if conversation.settings().create {
+            Focus::Prompt
+        } else {
+            Focus::Preview
+        };
         let mut app = Self {
             conversation,
             keys: Default::default(),
@@ -312,7 +317,7 @@ impl App {
             selection: Default::default(),
             native_pinch: Default::default(),
             editor,
-            focus: Focus::Prompt,
+            focus,
             nodes_collapsed: false,
             agent_collapsed: false,
             view: View::default(),

@@ -30,6 +30,7 @@ Drafts and preloaded images remain unsent until submission.
 
 Nodes and Preview occupy the left/center panels. Agent contains history, image
 attachments, explicit node references, queued follow-ups, and the multiline prompt.
+Existing documents open with Preview focused; new documents (`--create`) start at Prompt.
 Tab enters Agent at Prompt; Alt+Up/Down visits its nonempty sections. Collapsing Nodes
 or Agent gives its space to Preview without losing state.
 

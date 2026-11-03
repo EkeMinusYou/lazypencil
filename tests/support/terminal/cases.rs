@@ -246,7 +246,9 @@ pub fn run(
         fs::write(&path, text)?;
         configuration = Some(path);
     }
-    write_json(&document, &design)?;
+    if case != "startup-new" {
+        write_json(&document, &design)?;
+    }
     if case.starts_with("picker-") {
         fs::create_dir_all(root.join("nested/deep"))?;
         write_json(&root.join("nested/deep/selected.pen"), &design)?;
@@ -420,7 +422,31 @@ pub fn run(
     h.wait("initial UI", 15.0, |h| {
         h.screen.find_text("›").is_some() && h.screen.text().contains("Agent")
     })?;
+    if case != "startup-new" {
+        h.visible(" pan")?;
+        // The remaining interactions in these cases begin in the prompt.
+        h.key(if case == "user-navigation-config" {
+            b"\x1b[17~"
+        } else {
+            b"\t"
+        })?;
+    }
     let mut report = match case {
+        "startup-existing" | "startup-new" => {
+            h.visible(" send")?;
+            h.key("起動後の入力".as_bytes())?;
+            h.draft("起動後の入力")?;
+            no_agent(&h);
+            assert_eq!(
+                read_json(&h.document).unwrap(),
+                if case == "startup-new" {
+                    json!({"version":"2.21","children":[]})
+                } else {
+                    design.clone()
+                }
+            );
+            Value::Null
+        }
         "background-kitty"
         | "background-sixel"
         | "background-halfblocks"

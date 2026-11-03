@@ -9,6 +9,12 @@ mod fixture_support;
 mod terminal;
 
 #[test]
+fn real_pty_startup_focus_opens_existing_documents_at_preview_and_new_documents_at_prompt() {
+    run_pty_case("startup-existing");
+    run_pty_case("startup-new");
+}
+
+#[test]
 fn real_pty_background_query_keeps_automatic_image_protocol_detection() {
     for case in ["auto-kitty", "auto-kitty-raw", "auto-sixel"] {
         run_pty_case(case);
