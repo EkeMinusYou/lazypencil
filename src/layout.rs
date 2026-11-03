@@ -658,6 +658,20 @@ impl Solver<'_> {
             locale: self.fonts.locale().into(),
         };
         let block = self.fonts.layout_checked(&spec, width, self.check)?;
+        self.items[index]
+            .record
+            .diagnostics
+            .retain(|diagnostic| diagnostic.code != "PREVIEW_MISSING_GLYPHS");
+        if let Some(warning) = &block.preview_warning {
+            let node_id = self.items[index].record.id.clone();
+            self.items[index].record.diagnostics.push(LayoutDiagnostic {
+                code: "PREVIEW_MISSING_GLYPHS",
+                severity: "warning",
+                node_id,
+                message: "Missing characters are shown as squares in this preview; text layout is provisional".into(),
+                details: warning.details.clone().unwrap_or_default(),
+            });
+        }
         self.items[index].record.text = Some(block.metrics.clone());
         self.blocks.insert(index, block);
         Ok(())

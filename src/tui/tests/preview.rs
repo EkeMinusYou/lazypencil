@@ -1,6 +1,66 @@
 // Included in tui::tests to preserve the existing test identities.
 
 #[test]
+fn preview_missing_glyphs_display_initial_design_warn_and_recover_without_changing_copy() {
+    use ratatui::{Terminal, backend::TestBackend};
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let document = json!({"version":"2.21","children":[{
+            "id":"page","type":"frame","width":180,"height":100,"fill":"#FFFFFF","children":[
+                {"id":"shape","type":"rectangle","x":120,"y":20,"width":20,"height":20,"fill":"#00FF00"},
+                {"id":"label","type":"text","x":10,"y":10,"content":"日本語 \u{10ffff} English","fontSize":16,"width":100,"textGrowth":"fixed-width","stroke":"#000000","strokeWidth":0.5}
+            ]}]}).to_string();
+        let store = app.conversation.store().clone();
+        std::fs::write(store.path(), &document).unwrap();
+        let worker = Worker::start(store.clone(), vec![], Backend::halfblocks(), 194).unwrap();
+        app.cells = Size::new(70, 25);
+        app.request(&worker, false, false);
+        let output = tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap();
+        assert!(app.accept_preview(output));
+        assert!(app.preview_error.is_none());
+        let preview = app.preview.as_ref().unwrap();
+        assert_eq!(preview.summary["provisional"], true);
+        let diagnostics = preview.summary["diagnostics"].as_array().unwrap();
+        let warnings = diagnostics.iter().filter(|item| item["code"] == "PREVIEW_MISSING_GLYPHS").collect::<Vec<_>>();
+        assert_eq!(warnings.len(), 1, "Repeated text measurement must not duplicate warnings");
+        assert_eq!(warnings[0]["node_id"], "label");
+        assert_eq!(warnings[0]["severity"], "warning");
+        assert_eq!(warnings[0]["details"]["missing_characters"], json!(["\u{10ffff}"]));
+        let label = preview.nodes.iter().find(|node| node.id == "label").unwrap();
+        assert!(label.text_excerpt.contains('\u{10ffff}'));
+        assert!(label.diagnostic_count > 0);
+        let pixels = image::load_from_memory(&preview.image.png().unwrap()).unwrap().into_rgba8();
+        assert!(pixels.pixels().any(|pixel| pixel.0 == [0, 255, 0, 255]), "Unaffected shapes remain visible");
+        let placeholder_png = preview.image.png().unwrap().into_owned();
+        let mut terminal = Terminal::new(TestBackend::new(140, 40)).unwrap();
+        terminal.draw(|frame| { app.draw(frame); }).unwrap();
+        let screen = terminal.backend().buffer().content.iter().map(|cell| cell.symbol()).collect::<String>();
+        assert!(screen.contains("Missing glyphs · provisional layout"));
+        assert!(!screen.contains("Preview unavailable"));
+        assert_eq!(app.open_preview().unwrap_err().code, "ASSET_NOT_FOUND");
+        assert!(!app.conversation.directory().join("previews").exists());
+        assert_eq!(std::fs::read_to_string(store.path()).unwrap(), document);
+        assert_eq!(crate::service::layout_snapshot(&store, &[], None, None).err().unwrap().code, "ASSET_NOT_FOUND");
+
+        // The corrected document must paint exactly like the temporary squares.
+        std::fs::write(store.path(), document.replace('\u{10ffff}', "□")).unwrap();
+        app.request(&worker, false, false);
+        let output = tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap();
+        assert!(app.accept_preview(output));
+        let preview = app.preview.as_ref().unwrap();
+        assert_eq!(preview.summary["provisional"], false);
+        assert!(preview.summary["diagnostics"].as_array().unwrap().iter().all(|item| item["code"] != "PREVIEW_MISSING_GLYPHS"));
+        assert_eq!(preview.image.png().unwrap().as_ref(), placeholder_png);
+        terminal.draw(|frame| { app.draw(frame); }).unwrap();
+        let screen = terminal.backend().buffer().content.iter().map(|cell| cell.symbol()).collect::<String>();
+        assert!(!screen.contains("provisional layout"));
+        assert!(crate::service::layout_snapshot(&store, &[], None, None).is_ok());
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
 fn collapsed_panels_expand_preview_skip_focus_and_preserve_editor_and_tree_state() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {

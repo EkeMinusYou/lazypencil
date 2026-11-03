@@ -395,11 +395,9 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             // even when that captured layout is still current.
             document_preview_time = None;
             if !unchanged {
-                cached = Some(crate::service::layout_snapshot_with_runtime(
+                cached = Some(crate::service::preview_layout_snapshot(
                     store,
                     fonts,
-                    None,
-                    None,
                     &mut script,
                 )?);
                 renderer.clear();
@@ -481,6 +479,12 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 .iter()
                 .any(|artifact| artifact["acquisition"]["kind"] == "browser");
             let mut summary = layout.summary();
+            summary["provisional"] = json!(
+                layout
+                    .text_blocks
+                    .values()
+                    .any(|block| block.preview_warning.is_some())
+            );
             summary["dynamic_artifacts"] = Value::Array(image.dynamic_artifacts);
             timing.mark("metadata_ms");
             Ok(Some(Preview {

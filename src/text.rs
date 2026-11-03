@@ -37,6 +37,10 @@ mod fonts;
 pub use fonts::{FontAxis, FontInfo, Fonts};
 
 impl Fonts {
+    pub(crate) fn enable_preview_placeholders(&mut self) {
+        self.preview_placeholders = true;
+    }
+
     pub fn layout(&mut self, spec: &TextSpec, width: Option<f32>) -> Result<TextBlock> {
         self.layout_checked(spec, width, &|| Ok(()))
     }
@@ -127,7 +131,7 @@ impl Fonts {
         });
         style.set_font_arguments(&arguments);
         let ready = self.ready_fallback_count(&spec.family, style.font_style())?;
-        let (mut paragraph, resolved) = (ready..=self.fallback_families().len())
+        let (mut paragraph, mut resolved) = (ready..=self.fallback_families().len())
             .find_map(|fallback_count| {
                 let attempt = (|| -> Result<_> {
                     let resolved = self.resolve(
@@ -157,9 +161,14 @@ impl Fonts {
                 })();
                 match attempt {
                     Ok((mut paragraph, resolved)) => {
-                        if paragraph.unresolved_glyphs().is_some_and(|count| count > 0)
-                            && fallback_count < self.fallback_families().len()
-                        {
+                        let missing = paragraph.unresolved_glyphs().is_some_and(|count| count > 0);
+                        if missing {
+                            // SkParagraph's cache restores glyph runs without
+                            // unresolved-glyph diagnostics. Never reuse a failed
+                            // shaping result as an apparently complete one.
+                            self.collection.paragraph_cache_mut().reset();
+                        }
+                        if missing && fallback_count < self.fallback_families().len() {
                             None
                         } else {
                             Some(Ok((paragraph, resolved)))
@@ -172,9 +181,65 @@ impl Fonts {
         let mut missing = paragraph.unresolved_codepoints();
         missing.sort_unstable();
         missing.dedup();
+        let mut preview_warning = None;
         if paragraph.unresolved_glyphs().is_some_and(|count| count > 0) {
-            return Err(Error::new("ASSET_NOT_FOUND", "The selected fonts do not cover all shaped text")
-                .details(serde_json::json!({"font_family":spec.family,"fallback_families":self.fallback_families(),"missing_characters":missing.iter().take(64).filter_map(|value| char::from_u32(*value as u32).map(|character|character.to_string())).collect::<Vec<_>>(),"missing_character_count":missing.len(),"missing_characters_truncated":missing.len()>64})));
+            let error = Error::new("ASSET_NOT_FOUND", "The selected fonts do not cover all shaped text")
+                .details(serde_json::json!({"font_family":spec.family,"fallback_families":self.fallback_families(),"missing_characters":missing.iter().take(64).filter_map(|value| char::from_u32(*value as u32).map(|character|character.to_string())).collect::<Vec<_>>(),"missing_character_count":missing.len(),"missing_characters_truncated":missing.len()>64}));
+            if !self.preview_placeholders || missing.is_empty() {
+                return Err(error);
+            }
+            // Only the missing characters use a placeholder face. Keep the
+            // original copy and the selected fonts for every supported span.
+            let placeholders = self.resolve(
+                DEFAULT_FONT_FAMILY,
+                style.font_style(),
+                style.font_arguments().expect("font arguments were set"),
+                0,
+            )?;
+            resolved.information.extend(placeholders.information);
+            let mut marker_style = style.clone();
+            marker_style.set_font_families(&placeholders.families);
+            let mut paragraph_style = ParagraphStyle::new();
+            paragraph_style.set_text_style(&style);
+            paragraph_style.set_text_align(spec.align);
+            let mut builder = ParagraphBuilder::new(&paragraph_style, self.collection.clone());
+            let mut start = 0;
+            let mut markers = String::new();
+            for (index, (offset, character)) in spec.content.char_indices().enumerate() {
+                if index.is_multiple_of(64) {
+                    check()?;
+                }
+                if missing.binary_search(&(character as i32)).is_ok() {
+                    if markers.is_empty() {
+                        builder.add_text(&spec.content[start..offset]);
+                        builder.push_style(&marker_style);
+                    }
+                    markers.push('□');
+                    start = offset + character.len_utf8();
+                } else if !markers.is_empty() {
+                    builder.add_text(&markers);
+                    builder.pop();
+                    markers.clear();
+                }
+            }
+            if !markers.is_empty() {
+                builder.add_text(&markers);
+                builder.pop();
+            }
+            builder.add_text(&spec.content[start..]);
+            paragraph = builder.build();
+            check()?;
+            paragraph.layout(width.unwrap_or(1_000_000.0));
+            check()?;
+            if width.is_none() {
+                paragraph.layout(paragraph.max_intrinsic_width().ceil().max(0.0));
+                check()?;
+            }
+            if paragraph.unresolved_glyphs().is_some_and(|count| count > 0) {
+                self.collection.paragraph_cache_mut().reset();
+                return Err(error);
+            }
+            preview_warning = Some(error);
         }
         let mut used = Vec::new();
         let mut used_ids = std::collections::BTreeSet::new();
@@ -381,6 +446,7 @@ impl Fonts {
             };
         check()?;
         Ok(TextBlock {
+            preview_warning,
             paragraph,
             metrics,
             outline,
@@ -444,6 +510,7 @@ pub struct TextMetrics {
 }
 
 pub struct TextBlock {
+    pub(crate) preview_warning: Option<Error>,
     pub paragraph: Paragraph,
     pub metrics: TextMetrics,
     pub outline: Option<Path>,
@@ -548,6 +615,100 @@ mod cancellation_tests {
             .unwrap()
             .as_bytes()
             .to_vec()
+    }
+
+    #[test]
+    fn preview_missing_glyphs_replace_only_unsupported_characters_and_keep_bounded_warnings() {
+        let mut fonts = Fonts::new(&[]).unwrap();
+        fonts.set_fallback_families(&[]).unwrap();
+        let missing = (0xF0000..0xF0050)
+            .map(|value| char::from_u32(value).unwrap())
+            .collect::<String>();
+        let spec = TextSpec {
+            content: format!("日本語 {missing} English"),
+            outline_required: true,
+            underline: true,
+            ..Default::default()
+        };
+        for _ in 0..2 {
+            assert_eq!(
+                fonts.layout(&spec, Some(300.)).err().unwrap().code,
+                "ASSET_NOT_FOUND"
+            );
+        }
+        fonts.enable_preview_placeholders();
+        let block = fonts.layout(&spec, Some(300.)).unwrap();
+        let details = block
+            .preview_warning
+            .as_ref()
+            .unwrap()
+            .details
+            .as_ref()
+            .unwrap();
+        assert_eq!(details["missing_character_count"], 80);
+        assert_eq!(details["missing_characters"].as_array().unwrap().len(), 64);
+        assert_eq!(details["missing_characters_truncated"], true);
+        let reference = fonts
+            .layout(
+                &TextSpec {
+                    content: format!("日本語 {} English", "□".repeat(80)),
+                    ..spec.clone()
+                },
+                Some(300.),
+            )
+            .unwrap();
+        assert!(reference.preview_warning.is_none());
+        assert_eq!(
+            serde_json::to_value(&block.metrics).unwrap(),
+            serde_json::to_value(&reference.metrics).unwrap()
+        );
+        assert_eq!(outline_png(&block), outline_png(&reference));
+        assert!(spec.content.contains(&missing));
+        let mut unavailable = spec;
+        unavailable.family = "Lazypencil Missing Font".into();
+        assert_eq!(
+            fonts.layout(&unavailable, None).err().unwrap().code,
+            "ASSET_NOT_FOUND"
+        );
+    }
+
+    #[test]
+    fn preview_missing_glyphs_preserve_supplied_fonts_with_no_configured_fallbacks() {
+        let mut fonts = Fonts::new(&[std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/fonts/regular.ttf")])
+        .unwrap();
+        fonts.set_fallback_families(&[]).unwrap();
+        fonts.enable_preview_placeholders();
+        let block = fonts
+            .layout(
+                &TextSpec {
+                    content: "A\u{10ffff}A".into(),
+                    family: "LP Test Sans".into(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+        assert_eq!(block.metrics.requested_family, "LP Test Sans");
+        assert_eq!(block.metrics.fonts.len(), 2);
+        assert!(
+            block
+                .metrics
+                .fonts
+                .iter()
+                .any(|font| font.family == "LP Test Sans")
+        );
+        assert!(
+            block
+                .metrics
+                .fonts
+                .iter()
+                .any(|font| font.family == DEFAULT_FONT_FAMILY)
+        );
+        assert_eq!(
+            block.preview_warning.unwrap().details.unwrap()["missing_character_count"],
+            1
+        );
     }
 
     #[test]

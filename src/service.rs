@@ -736,6 +736,36 @@ pub(crate) fn layout_snapshot_observing_failure(
     runtime: &mut crate::script::ScriptRuntime,
     failed: impl FnOnce(&Project, &[crate::project::Dependency], &Error),
 ) -> Result<(Project, crate::layout::LayoutSnapshot)> {
+    layout_snapshot_with_text_policy(
+        store,
+        font_files,
+        expected_revision,
+        expected_dependency_revision,
+        runtime,
+        false,
+        failed,
+    )
+}
+
+#[cfg(feature = "tui")]
+pub(crate) fn preview_layout_snapshot(
+    store: &Store,
+    font_files: &[std::path::PathBuf],
+    runtime: &mut crate::script::ScriptRuntime,
+) -> Result<(Project, crate::layout::LayoutSnapshot)> {
+    layout_snapshot_with_text_policy(store, font_files, None, None, runtime, true, |_, _, _| {})
+}
+
+#[cfg(feature = "rendering")]
+fn layout_snapshot_with_text_policy(
+    store: &Store,
+    font_files: &[std::path::PathBuf],
+    expected_revision: Option<&str>,
+    expected_dependency_revision: Option<&str>,
+    runtime: &mut crate::script::ScriptRuntime,
+    preview_placeholders: bool,
+    failed: impl FnOnce(&Project, &[crate::project::Dependency], &Error),
+) -> Result<(Project, crate::layout::LayoutSnapshot)> {
     let cancel = runtime.cancellation();
     let mut project = project_with_overlay_and_cancellation(
         store,
@@ -752,6 +782,9 @@ pub(crate) fn layout_snapshot_observing_failure(
     }
     crate::cancel::check(cancel.as_ref())?;
     let mut fonts = project.load_fonts()?;
+    if preview_placeholders {
+        fonts.enable_preview_placeholders();
+    }
     crate::cancel::check(cancel.as_ref())?;
     let declared = project.dependencies();
     let snapshot = match crate::script::compute(&mut project, &mut fonts, runtime) {

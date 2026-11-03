@@ -1430,6 +1430,12 @@ impl App {
             .preview
             .as_ref()
             .ok_or_else(|| Error::new("INVALID_ARGUMENT", "No complete preview is available"))?;
+        if preview.summary["provisional"] == true {
+            return Err(Error::new(
+                "ASSET_NOT_FOUND",
+                "Resolve missing characters before exporting this provisional preview",
+            ));
+        }
         let directory = self.conversation.directory().join("previews");
         crate::store::create_private_directory(&directory)?;
         let path = directory.join(format!("{}.png", uuid::Uuid::new_v4()));
@@ -1558,6 +1564,19 @@ impl App {
             self.focus == Focus::Preview,
         );
         let zoom = self.preview_zoom_label();
+        if self
+            .preview
+            .as_ref()
+            .is_some_and(|preview| preview.summary["provisional"] == true)
+        {
+            block = block.title_top(
+                Line::styled(
+                    " Missing glyphs · provisional layout ",
+                    Style::default().fg(theme::RUNNING),
+                )
+                .right_aligned(),
+            );
+        }
         let zoom_width = zoom.as_ref().map_or(0, |zoom| zoom.len() + 3);
         if let Some(timeline) = self.preview_timeline() {
             let width = usize::from(panes[1].width.saturating_sub(2)).saturating_sub(zoom_width);

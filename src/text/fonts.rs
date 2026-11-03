@@ -99,6 +99,7 @@ impl FontInfo {
 }
 
 pub struct Fonts {
+    pub(super) preview_placeholders: bool,
     provider: TypefaceFontProvider,
     pub(super) collection: FontCollection,
     system: Option<FontMgr>,
@@ -169,6 +170,7 @@ impl Fonts {
             return Err(invalid("Font inputs exceed 128 MiB or 256 files"));
         }
         let mut fonts = Self {
+            preview_placeholders: false,
             provider: TypefaceFontProvider::new(),
             collection: FontCollection::new(),
             system: None,
