@@ -130,6 +130,8 @@ fn completion_generation_is_clean_and_queries_cover_nested_commands_values_and_c
             );
         }
         let hidden = candidates(&temp, shell, &["lazypencil", "mcp", "--"]);
+        assert!(hidden.contains(&"--root".to_owned()));
+        assert!(!hidden.contains(&"--file".to_owned()));
         assert!(
             !hidden
                 .iter()

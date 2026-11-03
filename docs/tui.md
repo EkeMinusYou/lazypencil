@@ -2,6 +2,27 @@
 
 The initial release targets macOS Apple Silicon only. Linux x64/arm64 and Windows are deferred, with their existing code and explicit diagnostics retained. Intel Mac is unsupported. Earlier cross-platform results below are historical evidence, not initial-release requirements.
 
+## Opening a document
+
+`lazypencil` and `lazypencil tui` open a startup picker. `lazypencil tui FILE`
+continues to open a file directly; a bare file argument is not supported.
+The picker recursively discovers `.pen` files below the launch directory, showing
+relative paths. It does not start an agent, restore a conversation, parse documents,
+or render previews before selection. Type to filter; `/` starts filtering even when
+its first character is `j` or `k`. Arrows or navigation-mode `j`/`k` select, Enter opens,
+Ctrl+L enters a file path or new search directory, Esc clears input, and Ctrl+C exits.
+Relative paths use the displayed directory. Opening invalid input shows an error
+without leaving the picker. `--create` and `--session` require an explicit file.
+
+Discovery runs in a cancellable background worker and publishes partial results.
+It stops after 10,000 documents, 100,000 inspected entries, or five seconds. The
+footer distinguishes searching, complete discovery, and a stopped partial listing.
+Unreadable entries also mark discovery incomplete. Filter text applies only to
+collected paths. Change the root or enter the target path directly after a partial
+scan. Directory symlinks are not followed and `.gitignore` does not hide designs.
+Selection or exit cancels discovery. Picker keys are fixed; document-view navigation
+settings apply after opening a file. No terminal is opened in noninteractive use.
+
 The default build includes `lazypencil tui`, using the same document, renderer, attachment service, permissions, and live ACP conversations as the CLI. It provides viewing and prompting, without manual drawing or property editing.
 
 Nodes and Preview use the full content height. Conversation history, Attachments, References, and Prompt share one bordered Agent region in the right column. Panel navigation enters that region at Prompt. Empty context lists take no space; pending images and references appear above the prompt. During a turn, the animated Working indicator appears above attachments, queued follow-ups, and references, with a blank row separating activity from that context. Context also has a blank row before Prompt when space allows. Each context section has a ruled heading with a secondary count, aligned item indentation, and a highlight only while focused. Its active heading shows the configured removal key when space allows. Prompt has its own heading and normally reserves at least three input rows, growing to six for multiline drafts. Small terminals reduce that height to keep history and context lists accessible. The Prompt heading has no keyboard shortcut hints. A blank row separates the conversation tail from Working or, while idle, from Prompt and its context when space allows.

@@ -12,13 +12,14 @@ use std::{
 };
 
 struct Mcp {
+    document_id: Option<String>,
     child: Child,
     input: Option<ChildStdin>,
     output: BufReader<ChildStdout>,
     next_id: u64,
 }
 impl Mcp {
-    fn connect(config: &Value) -> Result<Self> {
+    fn connect(config: &Value, cwd: &Path) -> Result<Self> {
         let command = config["command"].as_str().ok_or("Missing MCP command")?;
         assert!(Path::new(command).is_absolute());
         let mut process = Command::new(command);
@@ -43,6 +44,7 @@ impl Mcp {
         let input = child.stdin.take();
         let output = BufReader::new(child.stdout.take().ok_or("Missing MCP output")?);
         let mut result = Self {
+            document_id: None,
             child,
             input,
             output,
@@ -51,6 +53,28 @@ impl Mcp {
         result.send(&json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"acp-fixture","version":"1"}}}))?;
         assert_eq!(result.read()?["result"]["protocolVersion"], "2025-11-25");
         result.send(&json!({"jsonrpc":"2.0","method":"notifications/initialized"}))?;
+        let args = config["args"].as_array().ok_or("Missing MCP args")?;
+        let grant = args.windows(2).find(|pair| {
+            pair[0] == "--attachments-manifest" || pair[0] == "--guidance-audit-manifest"
+        });
+        let path = if let Some(pair) = grant {
+            let manifest: Value =
+                serde_json::from_slice(&fs::read(pair[1].as_str().ok_or("Missing grant path")?)?)?;
+            PathBuf::from(
+                manifest["document"]
+                    .as_str()
+                    .ok_or("Missing grant document")?,
+            )
+        } else {
+            cwd.join("design.pen")
+        };
+        let opened = result.call("open_document", json!({"path":path}))?;
+        result.document_id = Some(
+            opened["structuredContent"]["document_id"]
+                .as_str()
+                .ok_or("Missing document_id")?
+                .to_owned(),
+        );
         Ok(result)
     }
     fn send(&mut self, value: &Value) -> Result {
@@ -73,7 +97,14 @@ impl Mcp {
     fn call(&mut self, name: &str, args: Value) -> Result<Value> {
         Ok(serde_json::from_str(self.call_raw(name, args)?.get())?)
     }
-    fn call_raw(&mut self, name: &str, args: Value) -> Result<Box<RawValue>> {
+    fn call_raw(&mut self, name: &str, mut args: Value) -> Result<Box<RawValue>> {
+        if !matches!(
+            name,
+            "open_document" | "create_document" | "list_documents" | "list_icons"
+        ) && let Some(id) = &self.document_id
+        {
+            args["document_id"] = json!(id);
+        }
         let id = self.next_id;
         self.next_id += 1;
         self.send(&json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":name,"arguments":args}}))?;
@@ -341,7 +372,10 @@ impl<'a> Peer<'a> {
                         self.usage_manifest =
                             Some(PathBuf::from(args[index + 1].as_str().unwrap()));
                     }
-                    self.mcp = Some(Mcp::connect(config)?);
+                    self.mcp = Some(Mcp::connect(
+                        config,
+                        Path::new(params["cwd"].as_str().ok_or("Missing session cwd")?),
+                    )?);
                 }
                 if mode.starts_with("auth-") && mode != "auth-absent" {
                     self.auth(match mode {

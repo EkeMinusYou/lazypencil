@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Open a recursive, bounded document picker with `lazypencil` or `lazypencil tui`; retain direct opening through `tui FILE`.
+- Register MCP once per client and select multiple documents with `list_documents`, `open_document`, and `create_document`. Document tools now require `document_id`; `mcp --file` has been removed. Calculation and pagination handles remain isolated by document and connection.
+
 - Accept legacy vertical text alignment `center` as an alias of `middle` in layout and native/backdrop rendering, preserving the stored value.
 - Load large macOS system emoji fonts within a separate bounded capture budget, defer system fallbacks until needed, and reuse captures when requested styles select the same installed face.
 - Accept `normal` and `bold` text font weights, including string variables, without rewriting document values.

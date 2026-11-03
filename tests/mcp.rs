@@ -148,6 +148,7 @@ mod local_pages;
 mod shared_profiles;
 
 struct Client {
+    document_id: Option<String>,
     child: Child,
     input: Option<ChildStdin>,
     messages: Receiver<Value>,
@@ -178,10 +179,11 @@ fn tool_timing_records_success_and_argument_errors_without_payloads() {
     assert_eq!(failure["isError"], true);
     client.finish();
     let records = grant.finish_turn().unwrap();
-    assert_eq!(records.len(), 2);
+    assert_eq!(records.len(), 3);
+    assert_eq!(records[0]["tool"], "open_document");
     for (record, result, tool, is_error) in [
-        (&records[0], &success, "get_history", false),
-        (&records[1], &failure, "apply_operations", true),
+        (&records[1], &success, "get_history", false),
+        (&records[2], &failure, "apply_operations", true),
     ] {
         assert_eq!(record["type"], "tool_timing");
         assert_eq!(record["tool"], tool);
@@ -267,7 +269,7 @@ fn tool_timing_separates_queue_waits_and_records_cancelled_execution() {
     }
     client.finish();
     let records = grant.finish_turn().unwrap();
-    assert_eq!(records.len(), 2);
+    assert_eq!(records.len(), 3);
     let blocked = records
         .iter()
         .find(|record| record["tool"] == "get_document")
@@ -336,11 +338,7 @@ impl Client {
         if let Some(path) = chromium {
             command.env("LAZYPENCIL_CHROMIUM", path);
         }
-        command
-            .arg("--data-dir")
-            .arg(data)
-            .args(["mcp", "--file"])
-            .arg(file);
+        command.arg("--data-dir").arg(data).arg("mcp");
         for path in fonts {
             command.arg("--font").arg(path);
         }
@@ -350,7 +348,13 @@ impl Client {
         if let Some(path) = attachments {
             command.arg("--attachments-manifest").arg(path);
         }
-        Self::from_command(command)
+        let mut client = Self::from_command(command);
+        client.open(file);
+        client
+    }
+    fn open(&mut self, file: &std::path::Path) {
+        let opened = self.data("open_document", json!({"path":file}));
+        self.document_id = Some(opened["document_id"].as_str().unwrap().to_owned());
     }
     fn from_command(mut command: Command) -> Self {
         let mut child = command
@@ -373,6 +377,7 @@ impl Client {
             }
         });
         let mut client = Self {
+            document_id: None,
             child,
             input,
             messages,
@@ -397,7 +402,20 @@ impl Client {
         writeln!(input, "{value}").unwrap();
         input.flush().unwrap();
     }
-    fn start_request(&mut self, method: &str, params: Value) -> u64 {
+    fn start_request(&mut self, method: &str, mut params: Value) -> u64 {
+        if method == "tools/call"
+            && !matches!(
+                params["name"].as_str(),
+                Some("open_document" | "create_document" | "list_documents" | "list_icons")
+            )
+            && let Some(id) = &self.document_id
+        {
+            params["arguments"]
+                .as_object_mut()
+                .unwrap()
+                .entry("document_id")
+                .or_insert_with(|| json!(id));
+        }
         let id = self.next_id;
         self.next_id += 1;
         self.send(json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}));
@@ -438,7 +456,13 @@ impl Client {
     fn data(&mut self, name: &str, arguments: Value) -> Value {
         let result = self.call(name, arguments);
         assert_ne!(result["isError"], true, "{result}");
-        result["structuredContent"].clone()
+        let mut value = result["structuredContent"].clone();
+        if !matches!(name, "open_document" | "create_document")
+            && let Some(object) = value.as_object_mut()
+        {
+            object.remove("document_id");
+        }
+        value
     }
     fn finish(&mut self) {
         self.input.take();
@@ -720,7 +744,7 @@ fn owned_mcp_records_exact_design_resource_metadata_and_rotates_active_turns() {
     let mut client = Client::start_with_context(&file, &data, None, &[], Some(grant.path()));
     let guide = client.data("get_guidance", json!({"id":"typography"}));
     let style = client.data("get_style", json!({"id":"standard-ui"}));
-    let catalog = client.data("list_styles", json!({"limit":1}));
+    let catalog = client.call("list_styles", json!({"limit":1}))["structuredContent"].clone();
     assert_eq!(
         client.call("get_guidance", json!({"id":"unknown-guide"}))["isError"],
         true
@@ -731,7 +755,7 @@ fn owned_mcp_records_exact_design_resource_metadata_and_rotates_active_turns() {
             .iter()
             .filter(|record| record["type"] == "tool_timing")
             .count(),
-        4
+        5
     );
     let records = all_records
         .into_iter()
@@ -3389,11 +3413,11 @@ fn set_preview_is_only_advertised_to_bound_tui_clients_and_waits_for_ack() {
     command
         .arg("--data-dir")
         .arg(&data)
-        .args(["mcp", "--file"])
-        .arg(&file)
+        .arg("mcp")
         .arg("--preview-control")
         .arg(endpoint.to_string());
     let mut client = Client::from_command(command);
+    client.open(&file);
     let tools = client.request("tools/list", json!({}));
     assert!(
         tools["result"]["tools"]
@@ -3487,11 +3511,11 @@ fn node_search_combines_with_preview_state_and_generic_preview_tools() {
     command
         .arg("--data-dir")
         .arg(&data)
-        .args(["mcp", "--file"])
-        .arg(&file)
+        .arg("mcp")
         .arg("--preview-control")
         .arg(endpoint.to_string());
     let mut client = Client::from_command(command);
+    client.open(&file);
     let tools = client.request("tools/list", json!({}));
     for (name, read_only, idempotent) in [
         ("get_preview_state", true, true),
@@ -3532,4 +3556,270 @@ fn node_search_combines_with_preview_state_and_generic_preview_tools() {
     server.join().unwrap();
     client.finish();
     assert_eq!(fs::read_to_string(&file).unwrap(), document);
+}
+
+#[test]
+fn multidocument_connection_discovers_creates_edits_and_keeps_history_separate() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+    fs::create_dir(root.join("nested")).unwrap();
+    let first = root.join("first.pen");
+    let second = root.join("nested/second.pen");
+    let original = json!({"version":"2.21","children":[{"id":"box","type":"rectangle","width":20,"height":10,"fill":"#ff0000"}]}).to_string();
+    fs::write(&first, &original).unwrap();
+    fs::write(&second, &original).unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_lazypencil"));
+    command
+        .arg("--data-dir")
+        .arg(root.join("data"))
+        .arg("mcp")
+        .current_dir(root);
+    let mut client = Client::from_command(command);
+    let tools = client.request("tools/list", json!({}));
+    for name in [
+        "get_document",
+        "read_nodes",
+        "apply_operations",
+        "get_history",
+    ] {
+        let tool = tools["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == name)
+            .unwrap();
+        assert!(
+            tool["inputSchema"]["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("document_id"))
+        );
+    }
+    assert_eq!(
+        client.call("get_document", json!({}))["structuredContent"]["error"]["code"],
+        "INVALID_ARGUMENT"
+    );
+    assert!(client.data("get_guidance", json!({}))["body"].is_string());
+    let listing = client.data("list_documents", json!({"directory":root,"limit":1}));
+    assert_eq!(listing["complete"], true);
+    assert_eq!(listing["total_matches"], 2);
+    let page = client.data(
+        "list_documents",
+        json!({"directory":root,"limit":1,"cursor":listing["next_cursor"]}),
+    );
+    assert_eq!(page["documents"], json!(["nested/second.pen"]));
+    assert!(page["next_cursor"].is_null());
+    assert_eq!(
+        client.call("create_document", json!({"path":first}))["structuredContent"]["error"]["code"],
+        "INVALID_ARGUMENT"
+    );
+    assert_eq!(fs::read_to_string(&first).unwrap(), original);
+    let a = client.data("open_document", json!({"path":first}));
+    let b = client.data("open_document", json!({"path":second}));
+    assert_ne!(a["document_id"], b["document_id"]);
+    assert_eq!(
+        client.data("open_document", json!({"path":"first.pen"}))["document_id"],
+        a["document_id"]
+    );
+    assert_eq!(
+        client.call("list_icons", json!({"document_id":a["document_id"]}))["structuredContent"]["error"]
+            ["code"],
+        "INVALID_ARGUMENT"
+    );
+    for (doc, width) in [(&a, 30), (&b, 40)] {
+        let applied = client.data("apply_operations", json!({"document_id":doc["document_id"],"request_id":"same-id-different-document","expected_revision":doc["revision"],"operations":[{"op":"update","target":"box","set":{"width":width}}]}));
+        let history = client.data("get_history", json!({"document_id":doc["document_id"]}));
+        assert_eq!(history["entries"].as_array().unwrap().len(), 1);
+        assert_ne!(applied["revision"], doc["revision"]);
+    }
+    assert_eq!(
+        Store::open(&first, Some(root.join("data")))
+            .unwrap()
+            .read()
+            .unwrap()
+            .value()["children"][0]["width"],
+        30
+    );
+    assert_eq!(
+        Store::open(&second, Some(root.join("data")))
+            .unwrap()
+            .read()
+            .unwrap()
+            .value()["children"][0]["width"],
+        40
+    );
+    let created = client.data("create_document", json!({"path":root.join("new.pen")}));
+    assert!(created["document_id"].is_string());
+    assert_eq!(
+        client.call("create_document", json!({"path":first}))["structuredContent"]["error"]["code"],
+        "INVALID_ARGUMENT"
+    );
+    assert_eq!(
+        client.call("open_document", json!({"path":root.join("not-pen.txt")}))["structuredContent"]
+            ["error"]["code"],
+        "INVALID_ARGUMENT"
+    );
+    assert_eq!(
+        client.call("get_document", json!({"document_id":"not-open"}))["structuredContent"]["error"]
+            ["code"],
+        "INVALID_ARGUMENT"
+    );
+    #[cfg(feature = "rendering")]
+    {
+        let current = client.data("get_document", json!({"document_id":a["document_id"]}));
+        let layout = client.data(
+            "get_layout",
+            json!({"document_id":a["document_id"],"expected_revision":current["revision"]}),
+        );
+        let rendered = client.call("render", json!({"document_id":a["document_id"],"expected_revision":current["revision"],"snapshot_id":layout["snapshot_id"]}));
+        assert_ne!(rendered["isError"], true, "{rendered}");
+        assert!(
+            rendered["content"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| item["type"] == "image")
+        );
+        assert_eq!(client.call("get_layout", json!({"document_id":b["document_id"],"expected_revision":current["revision"],"snapshot_id":layout["snapshot_id"]}))["structuredContent"]["error"]["code"], "SNAPSHOT_UNAVAILABLE");
+    }
+    client.finish();
+}
+
+#[cfg(unix)]
+#[test]
+fn multidocument_roots_reject_symlink_escapes_and_file_flag_is_removed() {
+    let temp = TempDir::new().unwrap();
+    let allowed = temp.path().join("allowed");
+    fs::create_dir(&allowed).unwrap();
+    let outside = temp.path().join("outside.pen");
+    Store::init(&outside, Some(temp.path().join("data"))).unwrap();
+    std::os::unix::fs::symlink(&outside, allowed.join("link.pen")).unwrap();
+    std::os::unix::fs::symlink(temp.path(), allowed.join("directory-link")).unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_lazypencil"));
+    command
+        .arg("--data-dir")
+        .arg(temp.path().join("data"))
+        .arg("mcp")
+        .arg("--root")
+        .arg(&allowed);
+    let mut client = Client::from_command(command);
+    for path in [&outside, &allowed.join("link.pen")] {
+        assert_eq!(
+            client.call("open_document", json!({"path":path}))["structuredContent"]["error"]["code"],
+            "INVALID_ARGUMENT"
+        );
+    }
+    assert_eq!(
+        client.call(
+            "create_document",
+            json!({"path":allowed.join("directory-link/new.pen")})
+        )["structuredContent"]["error"]["code"],
+        "INVALID_ARGUMENT"
+    );
+    assert!(!temp.path().join("new.pen").exists());
+    let listing = client.data("list_documents", json!({"directory":allowed}));
+    assert_eq!(listing["complete"], true);
+    assert_eq!(listing["documents"], json!([]));
+    client.finish();
+    let output = Command::new(env!("CARGO_BIN_EXE_lazypencil"))
+        .args(["--json", "mcp", "--file"])
+        .arg(&outside)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()["error"]["code"],
+        "INVALID_ARGUMENT"
+    );
+}
+
+#[cfg(feature = "rendering")]
+#[test]
+fn multidocument_identical_contents_cannot_share_calculation_or_page_handles() {
+    let temp = TempDir::new().unwrap();
+    let file = temp.path().join("first.pen");
+    let other = temp.path().join("other.pen");
+    let contents = json!({"version":"2.21","children":[{"id":"a","type":"rectangle","width":20,"height":10},{"id":"b","type":"rectangle","x":30,"width":20,"height":10}]}).to_string();
+    fs::write(&file, &contents).unwrap();
+    fs::write(&other, &contents).unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_lazypencil"));
+    command
+        .arg("--data-dir")
+        .arg(temp.path().join("data"))
+        .arg("mcp");
+    let mut client = Client::from_command(command);
+    let first = client.data("open_document", json!({"path":file}));
+    let second = client.data("open_document", json!({"path":other}));
+    let layout = client.data(
+        "get_layout",
+        json!({"document_id":first["document_id"],"expected_revision":first["revision"],"limit":1}),
+    );
+    let second_layout = client.data(
+        "get_layout",
+        json!({"document_id":second["document_id"],"expected_revision":second["revision"]}),
+    );
+    assert_ne!(layout["snapshot_id"], second_layout["snapshot_id"]);
+    let foreign = client.call("get_layout", json!({"document_id":second["document_id"],"expected_revision":second["revision"],"snapshot_id":layout["snapshot_id"]}));
+    assert_eq!(
+        foreign["structuredContent"]["error"]["code"],
+        "SNAPSHOT_UNAVAILABLE"
+    );
+    let foreign_page = client.call("get_layout", json!({"document_id":second["document_id"],"expected_revision":second["revision"],"snapshot_id":second_layout["snapshot_id"],"cursor":layout["next_cursor"]}));
+    assert_eq!(
+        foreign_page["structuredContent"]["error"]["code"],
+        "INVALID_ARGUMENT"
+    );
+    let page = client.data("get_layout", json!({"document_id":first["document_id"],"expected_revision":first["revision"],"snapshot_id":layout["snapshot_id"],"cursor":layout["next_cursor"],"limit":1}));
+    assert_eq!(page["nodes"][0]["id"], "b");
+    client.finish();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_lazypencil"));
+    command
+        .arg("--data-dir")
+        .arg(temp.path().join("data"))
+        .arg("mcp");
+    let mut reconnected = Client::from_command(command);
+    assert_eq!(
+        reconnected.call("get_document", json!({"document_id":first["document_id"]}))["structuredContent"]
+            ["error"]["code"],
+        "INVALID_ARGUMENT"
+    );
+    let reopened = reconnected.data("open_document", json!({"path":file}));
+    assert_ne!(reopened["document_id"], first["document_id"]);
+    assert_eq!(reconnected.call("get_layout", json!({"document_id":reopened["document_id"],"expected_revision":reopened["revision"],"snapshot_id":layout["snapshot_id"]}))["structuredContent"]["error"]["code"], "SNAPSHOT_UNAVAILABLE");
+    reconnected.finish();
+}
+
+#[test]
+fn multidocument_connection_resolves_project_settings_independently() {
+    let temp = TempDir::new().unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_lazypencil"));
+    command
+        .arg("--data-dir")
+        .arg(temp.path().join("data"))
+        .arg("mcp");
+    let mut client = Client::from_command(command);
+    let mut opened = vec![];
+    for (project, locale) in [("first-project", "en-US"), ("second-project", "ja")] {
+        let root = temp.path().join(project);
+        fs::create_dir_all(root.join(".git")).unwrap();
+        fs::write(
+            root.join("lazypencil.toml"),
+            format!("version=1\n[fonts]\nlocale='{locale}'\n"),
+        )
+        .unwrap();
+        let document = client.data("create_document", json!({"path":root.join("design.pen")}));
+        opened.push((document["document_id"].clone(), locale));
+    }
+    for (id, locale) in opened.iter().chain(opened.iter().rev()) {
+        let document = client.data("get_document", json!({"document_id":id}));
+        assert_eq!(
+            document["configuration"]["settings"]["fonts"]["locale"],
+            *locale
+        );
+        assert_eq!(
+            document["configuration"]["font_origins"]["locale"],
+            "project"
+        );
+    }
+    client.finish();
 }

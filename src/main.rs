@@ -76,8 +76,15 @@ fn main() -> ExitCode {
         };
     }
     lazypencil::remote_images::initialize_worker();
+    let input: Vec<_> = std::env::args_os().collect();
+    #[cfg(feature = "tui")]
+    let input = if input.len() == 1 {
+        vec![input[0].clone(), "tui".into()]
+    } else {
+        input
+    };
     let parsed = lazypencil::cli::Arguments::command()
-        .try_get_matches()
+        .try_get_matches_from(input)
         .and_then(|matches| {
             lazypencil::cli::Arguments::from_arg_matches(&matches)
                 .map(|arguments| (arguments, matches))
@@ -103,6 +110,27 @@ fn main() -> ExitCode {
             return ExitCode::from(error.exit_code() as u8);
         }
     };
+    #[cfg(feature = "tui")]
+    if let lazypencil::cli::Command::Tui(options) = &mut arguments.command
+        && matches.subcommand_matches("tui").is_some_and(|matches| {
+            matches.value_source("file") == Some(clap::parser::ValueSource::DefaultValue)
+        })
+    {
+        if arguments.json || options.prompt.create || options.prompt.session.is_some() {
+            return failure(
+                lazypencil::Error::new(
+                    "INVALID_ARGUMENT",
+                    "File selection requires a terminal and cannot use --json, --create or --session",
+                ),
+                Some(&arguments),
+            );
+        }
+        match lazypencil::tui::documents::select(arguments.data_dir.clone()) {
+            Ok(Some(file)) => options.prompt.file = file,
+            Ok(None) => return ExitCode::SUCCESS,
+            Err(error) => return failure(error, Some(&arguments)),
+        }
+    }
     // Keep uploaded-but-not-yet-referenced assets live until the CLI result
     // has been written, including long-lived TUI, prompt and MCP frontends.
     let uses_assets = !matches!(
@@ -136,32 +164,21 @@ fn main() -> ExitCode {
         };
     }
     if let lazypencil::cli::Command::Mcp {
-        file,
+        roots,
         fonts,
         attachments_manifest,
         guidance_audit_manifest,
         preview_control,
     } = &arguments.command
     {
-        return match lazypencil::store::Store::open(file, arguments.data_dir.clone()).and_then(
-            |store| {
-                let access = attachments_manifest
-                    .as_ref()
-                    .map(|path| lazypencil::attachments::AttachmentAccess::open(&store, path))
-                    .transpose()?;
-                let usage = guidance_audit_manifest
-                    .as_ref()
-                    .map(|path| lazypencil::guidance::usage::UsageAccess::open(&store, path))
-                    .transpose()?;
-                lazypencil::mcp::serve_with_preview_context(
-                    store,
-                    fonts.clone(),
-                    access,
-                    usage,
-                    preview_control.as_deref(),
-                )
-            },
-        ) {
+        return match lazypencil::mcp::serve(lazypencil::mcp::Options {
+            data_dir: arguments.data_dir.clone(),
+            fonts: fonts.clone(),
+            roots: roots.clone(),
+            attachments_manifest: attachments_manifest.clone(),
+            guidance_audit_manifest: guidance_audit_manifest.clone(),
+            preview_control: preview_control.clone(),
+        }) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => failure(error, None),
         };

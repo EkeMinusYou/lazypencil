@@ -21,6 +21,12 @@ pub const COMPLETE_ENV: &str = "LAZYPENCIL_COMPLETE";
     version,
     about = "Edit and inspect .pen design documents from the terminal"
 )]
+#[cfg_attr(
+    feature = "tui",
+    command(
+        after_help = "Run without arguments, or use 'lazypencil tui', to choose a .pen document."
+    )
+)]
 pub struct Arguments {
     #[arg(long, global = true, help = "Return structured JSON, including errors")]
     pub json: bool,
@@ -59,13 +65,14 @@ pub enum Command {
     Render(Render),
     /// Ask an ACP agent to create or edit a design.
     Prompt(crate::prompt::PromptArgs),
-    /// View a design, paste reference images, and converse with an ACP agent.
+    /// Choose or view a design, paste reference images, and converse with an ACP agent.
     #[cfg(feature = "tui")]
     Tui(crate::tui::TuiArgs),
-    /// Serve one bound document over MCP stdio.
+    /// Serve document discovery, editing and rendering over MCP stdio.
     Mcp {
-        #[arg(long)]
-        file: PathBuf,
+        /// Restrict document selection to these directories (repeatable).
+        #[arg(long = "root", value_hint = clap::ValueHint::DirPath)]
+        roots: Vec<PathBuf>,
         #[arg(long = "font")]
         fonts: Vec<PathBuf>,
         #[arg(long, hide = true)]

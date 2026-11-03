@@ -193,11 +193,16 @@ impl Harness {
             .env_remove("HERDR_ENV")
             .env_remove("HC_TERMINAL_ID")
             .envs(&environment)
-            .arg("--data-dir")
-            .arg(root.join("data"))
-            .arg("tui")
-            .arg(document);
-        if !["user-agent-config", "project-agent-config"].contains(&case) {
+            .env("LAZYPENCIL_DATA_DIR", root.join("data"));
+        if case != "picker-default" {
+            command.arg("--data-dir").arg(root.join("data")).arg("tui");
+            if !case.starts_with("picker-") {
+                command.arg(document);
+            }
+        }
+        if case != "picker-default"
+            && !["user-agent-config", "project-agent-config"].contains(&case)
+        {
             command
                 .arg("--adapter")
                 .arg(crate::fixture_support::helper())
@@ -226,8 +231,10 @@ impl Harness {
         if matches!(case, "kitty-held" | "kitty-progressive") {
             command.env("LAZYPENCIL_PROFILE_INPUT", "owned-local-measurement");
         }
+        if case != "picker-default" {
+            command.args(["--image-protocol", protocol]);
+        }
         command
-            .args(["--image-protocol", protocol])
             .stdin(Stdio::from(slave.try_clone()?))
             .stdout(Stdio::from(slave.try_clone()?))
             .stderr(Stdio::from(errors));

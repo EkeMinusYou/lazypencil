@@ -313,6 +313,12 @@ pub struct UsageAccess {
 }
 
 impl UsageAccess {
+    pub(crate) fn document_path(path: &Path) -> Result<PathBuf> {
+        let manifest: Manifest = serde_json::from_slice(&read_bounded(path, 16 * 1024)?)
+            .map_err(|_| invalid("Invalid design usage grant"))?;
+        Ok(manifest.document)
+    }
+
     #[cfg(unix)]
     pub(crate) fn check_connection(&self) -> Result<()> {
         self.manifest().map(|_| ())

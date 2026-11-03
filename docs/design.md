@@ -2,9 +2,9 @@
 
 作成日: 2026-10-23
 
-更新日: 2026-10-30
+更新日: 2026-11-03
 
-設計版: 0.14
+設計版: 0.15
 
 状態: 基本設計と初回対応範囲は確定。Rust、Skia CPU／SkParagraph、MIT、固定 Noto Sans JP、Kitty／Sixel、JavaScript／Web ページ／GLSL を採用し、対応文書版は2.19／2.21、新規作成は2.21である。初回リリースはmacOS Apple Siliconのみに変更した。過去の3環境の検証は履歴として保持し、機能実装とMacの公開受け入れは未完了。[現在の実装・検証・残件](implementation-status.md#current-status) を正本とし、下記の受け入れ条件は維持する。
 
@@ -207,11 +207,13 @@ TUI は承認要求をダイアログで受け付ける。CLI は対話端末が
 
 `lazypencil completions SHELL`で、インストールしたCLIの定義から補完hookを生成する。初回Mac版はBash・Zsh・Fishを対象とし、深いサブコマンド、公開option、固定の選択肢、同梱guide／style／icon pack／node type、ファイル・ディレクトリのpathを補完する。文書内node IDやagent側のmodel IDは自由入力とする。補完要求は文書・ユーザー設定・agent・Chromium・文書lockの準備前に完了し、project固有の候補のためにこれらへ接続しない。導入手順と詳細は[シェル補完](completions.md)に定める。
 
-### 文書への束縛
+### 文書の選択と接続
 
-MCP サーバーは `lazypencil mcp --file <path>` で起動し、一つの文書に束縛する。起動時にパスを正規化し、ツール呼び出しで別の任意ファイルへ切り替えられる設計にはしない。依存ライブラリと許可済みの作例・添付は読み取り可能にするが、依存文書への書き込みは行わない。複数文書を編集する外部クライアントは、文書ごとにサーバーを登録する。
+MCP は `lazypencil mcp` でファイル未選択の状態から起動する。外部クライアントには一度登録し、文書やプロジェクトが変わっても登録内容を変更しない。`--file` は廃止する。`list_documents` で探索し、`open_document` または上書きしない `create_document` で文書 ID を取得する。文書を扱う要求にはその ID を毎回指定し、サーバー共通の現在文書を持たない。ID は接続内で有効とし、再接続後はパスから開き直す。
 
-アプリ内 ACP 接続では、対象文書に束縛した MCP 設定を会話へ渡す。ユーザーのグローバルな MCP 設定を書き換えずに接続する。外部 AI から利用する場合も、同じ起動コマンドを使う。
+絶対パスを基本とし、相対パスの基準は初期指示に記載したサーバーの作業ディレクトリとする。任意指定の `--root` は正規化後の文書・探索対象を制限する。選択された文書ごとに設定、ロック、履歴、依存、計算キャッシュを管理し、計算 ID やページ取得カーソルの文書間流用を拒否する。複数文書の更新は文書単位で確定する。[MCP の選択・探索 API](mcp.md)
+
+アプリ内 ACP 接続も `open_document` を使う。私有の添付・利用記録・既存プレビューの接続はホストの選択文書に束縛したままとし、文書選択によって権限を広げない。外部 MCP からの TUI 探索・操作や自動起動は今回の範囲外とする。ユーザーのグローバル MCP 設定は自動で書き換えない。
 
 ### 初期ツール
 
@@ -219,6 +221,8 @@ MCP サーバーは `lazypencil mcp --file <path>` で起動し、一つの文�
 
 | ツール | 主な入力 | 結果 |
 | --- | --- | --- |
+| `list_documents` | ディレクトリ、再帰、絞り込み、ページ条件 | 相対パス、探索完了・停止理由、次ページ |
+| `open_document`・`create_document` | 文書パス | 接続内文書 ID、正規パス、リビジョン、形式の版 |
 | `get_document` | 取得する情報の範囲 | パス、形式の版、文書・依存リビジョン、ルート、対応状況、ガイドの入口、許可された添付のメタデータ |
 | `get_guidance` | ガイド ID。省略時は入口 | 本文、版、対応条件、参照先、内容ハッシュ |
 | `list_styles`・`get_style` | 用途・ページ条件、またはスタイル ID | スタイル一覧、またはトークン・指針・部品・作例と内容ハッシュ |
@@ -411,6 +415,12 @@ TUI では、表示範囲とズームに応じた解像度で描画する。パ�
 
 ## TUI
 
+### 起動時の文書選択
+
+`lazypencil` 単体と `lazypencil tui` は同じ選択画面を開く。`tui FILE` と `tui FILE --create` は維持する。`lazypencil FILE` の省略形は追加しない。起動ディレクトリ配下を再帰探索し、相対パスを表示・絞り込み・選択する。検索ルート変更とパスの直接指定を提供する。選択前には文書描画・会話・AI 接続を開始しない。読み込み失敗は画面内に表示し、選び直せるようにする。
+
+探索はバックグラウンドで行い、順次結果を表示する。10,000 文書・100,000 エントリ・5 秒のいずれかに達したら止め、取得済み一覧と停止理由を表示する。未探索部分があれば全件取得済みや不在とは表示しない。ディレクトリのシンボリックリンクはたどらず、gitignore による暗黙の除外はしない。ファイル選択・終了・検索ルート変更で古い探索をキャンセルする。非端末ではエラーにし、help と version は通常の CLI 応答を維持する。最近使ったファイル、選択画面での新規作成、編集中の文書切り替えは後続の拡張とする。[選択画面の操作](tui.md#opening-a-document)
+
 ### 画面と操作
 
 プレビューを中心に、対象ノードの一覧、プロンプト入力、会話・ツールの実行状況を配置する。ノード選択は、表示位置の移動と AI への編集対象の指定に使う。座標や色などを直接編集するフォームは作らない。
@@ -472,7 +482,7 @@ lazypencil conversations turns design.pen <local-session-id> --json
 lazypencil conversations read design.pen <local-session-id> <turn-id> --json
 lazypencil conversations view design.pen <local-session-id> <turn-id>
 lazypencil restore design.pen --checkpoint <checkpoint-id> --expected-revision <revision>
-lazypencil mcp --file /absolute/path/design.pen
+lazypencil mcp
 lazypencil doctor
 lazypencil runtime setup chromium
 ```

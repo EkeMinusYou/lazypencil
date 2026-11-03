@@ -13,6 +13,7 @@ pub mod color;
 pub mod config;
 pub mod conversation;
 pub mod document;
+pub mod documents;
 #[cfg(feature = "rendering")]
 pub mod dynamic;
 pub mod error;

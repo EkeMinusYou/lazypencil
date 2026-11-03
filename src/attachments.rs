@@ -467,6 +467,12 @@ pub struct AttachmentAccess {
     owner: Option<String>,
 }
 impl AttachmentAccess {
+    pub(crate) fn document_path(path: &Path) -> Result<PathBuf> {
+        let manifest: Manifest = serde_json::from_slice(&read_bounded(path, MAX_GRANT_BYTES)?)
+            .map_err(|_| invalid("Invalid attachment grant"))?;
+        Ok(manifest.document)
+    }
+
     #[cfg(unix)]
     pub(crate) fn check_connection(&self, store: &Store) -> Result<()> {
         self.manifest(store).map(|_| ())

@@ -9,6 +9,14 @@ mod fixture_support;
 mod terminal;
 
 #[test]
+fn real_pty_document_picker_recurses_filters_reports_errors_and_opens_without_agent_work() {
+    run_pty_case("picker-default");
+    run_pty_case("picker-explicit");
+    run_pty_case("picker-unicode");
+    run_pty_case("picker-direct");
+}
+
+#[test]
 fn real_pty_handles_japanese_input_live_turns_resize_and_image_protocols() {
     for case in [
         "account-startup",

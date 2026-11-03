@@ -2,15 +2,74 @@
 
 An optional project [font lockfile](fonts.md#reproducibility-lockfile) is enforced by the common font loader, including newly selected deferred faces. `get_document.configuration.font_lock` reports its presence and hash; its captured bytes or absence participate in dependency revisions. `list_fonts`, layout and rendering report `FONT_LOCK_INVALID` or `FONT_LOCK_MISMATCH` instead of silently updating a baseline. Structural edits remain available. Baseline publication is an explicit `fonts lock FILE` CLI operation, with revision-checked updates.
 
-The current server binds to one existing document for its lifetime:
+Start one file-independent stdio server per client connection:
 
 ```sh
-lazypencil mcp --file /absolute/path/design.pen
+lazypencil mcp
 ```
 
-Use the same command and arguments in an MCP client's local stdio server configuration. Optional repeated `--font /path/to/font.ttf` arguments select additional fonts for that server. `--data-dir` or `LAZYPENCIL_DATA_DIR` selects its history and data directory. Locks use a stable per-user cache directory independent of that choice, so changing history directories does not bypass writer coordination. If `LAZYPENCIL_LOCK_DIR` is explicitly overridden, all cooperating processes must use the same absolute directory. Tool arguments cannot switch the bound document or supply an arbitrary file to read.
+Register this command once in Codex or Claude Code's user configuration; it does
+not need a separate entry for each file or project. See the [README](../README.md#mcp-and-design-guidance)
+for registration commands. `--file` is no longer accepted.
 
-The bound document also selects its nearest project `lazypencil.toml`. Supported font settings, source bytes, and discovered files are captured as dependencies. `get_document.configuration` exposes the selected data, and `list_fonts` adds effective default family, locale, and fallback policy. A configuration edit or changed search membership invalidates a retained snapshot. A new request can load the new settings; it does not change the document binding. See [project configuration](configuration.md).
+Call `list_documents` with a `directory`, or open a known absolute path directly:
+
+```json
+{"path":"/absolute/path/design.pen"}
+```
+
+`open_document` returns `document_id`, canonical `path`, `revision`, and `version`
+without running scripts, loading fonts, or rendering. `create_document` accepts the
+same input and creates an empty 2.21 document in an existing parent directory;
+it never overwrites a file. Reopening the same canonical path returns the same ID.
+Up to 64 documents can remain open on one connection. IDs are not persisted: reopen
+paths after reconnecting. There is no implicit active document.
+
+Every document-specific tool requires `document_id`, including project guidance,
+styles, font inventory, assets, history, validation and rendering. For example:
+
+```json
+{"document_id":"ID_FROM_OPEN_DOCUMENT","depth":1}
+```
+
+Use this input with `read_nodes`. The examples later in this guide abbreviate the
+common `document_id` field; always add it for the document being operated on.
+`get_guidance`, `list_styles`, and `get_style` accept omission only for built-in
+resources. `list_icons` is document-independent. Document results include their ID.
+Snapshots and pagination cursors are opaque, scoped to both document and connection;
+using one with another document is rejected even when their contents are identical.
+
+`list_documents` defaults to recursive discovery under the server working directory.
+Use `directory`, optional `recursive`, `query`, `limit` (1..500), and `cursor`.
+Paths in `documents` are relative to the returned `directory`. Discovery does not
+follow symlinks or obey `.gitignore`; it stops after 10,000 documents, 100,000 entries,
+or five seconds. `complete`, `stop_reason`, `entries_scanned`, and
+`unreadable_directories` distinguish a full scan from partial discovery. Query text
+filters collected paths, so an empty partial result does not prove absence. Results
+are sorted and pages reuse the same retained listing; repeat directory, recursive,
+and query with the returned cursor. Four listings are retained for five minutes.
+Restart without a cursor after `SNAPSHOT_UNAVAILABLE`.
+
+Absolute input paths are preferred. Relative paths resolve against the server's
+working directory, which is included in its initialization instructions. They are
+not implicitly relative to whichever client project happens to be active.
+Optional repeated `--root DIRECTORY` arguments restrict discovery and document
+selection to canonical paths within those directories, including symlink checks.
+Without roots, explicitly selected `.pen` paths can belong to different projects.
+The server does not expose arbitrary non-document file reads.
+
+Optional repeated `--font /path/to/font.ttf` arguments select additional fonts.
+`--data-dir` or `LAZYPENCIL_DATA_DIR` selects history and data storage. Locks use a
+stable per-user cache independent of this choice. All cooperating processes must
+use the same absolute `LAZYPENCIL_LOCK_DIR` if it is explicitly overridden.
+
+Each opened document independently selects its nearest `lazypencil.toml`. Font
+settings, captured source bytes, and discovered files remain dependencies.
+`get_document.configuration` exposes them. Project design and executable trust
+remain explicit local user actions; opening a document does not grant trust.
+Owned CLI/TUI conversations use the same open-document API; private attachment and
+usage grants continue to restrict their connection to the host's selected document.
+External MCP connections cannot discover or operate a running TUI.
 
 The implementation uses the [official Rust SDK](https://github.com/modelcontextprotocol/rust-sdk) at version 3.6.0. The currently advertised protocol is `2025-11-25`; other protocol revisions and broader real-agent workflows still require interoperability testing. Codex and Claude subscription workflows have been checked separately; see [agent integration](agents.md). MCP messages use stdout; startup errors use stderr. Closing stdin ends the server.
 
@@ -22,6 +81,8 @@ When the CLI/TUI conversation host owns the server, it also binds design-resourc
 
 | Tool | Behavior |
 | --- | --- |
+| `list_documents` | Bounded, paged recursive discovery with explicit completion status |
+| `open_document`, `create_document` | Select or create a document and return its connection-local ID |
 | `get_document` | Document metadata, revisions, dependencies, diagnostics, capabilities, and the guidance entry point |
 | `get_guidance` | Built-in English guides, trusted project guides, automatic project rules, versions, hashes, and an index |
 | `list_icons` | Pinned vector icon names, aliases, tags, versions, hashes, licenses, and pack availability |
@@ -111,9 +172,9 @@ Font collection files are captured dependencies. `list_fonts` enumerates every s
 
 `get_variables` returns raw `variables` and `themes` separately from `resolved_values`, `sources`, and `effective_theme`. An alias remains an alias in its raw definition. Each successful value reports its definition document and terminal value document; string-valued image paths remain strings and are not opened or rewritten by this query. A resolution failure omits that value and adds a named error to `diagnostics`, while retaining the raw definition. `resolution_complete` describes only the returned page. A project-wide `resolution_error` or incomplete asset status remains visible and is not repaired by a successful value query.
 
-With no selector, list variables defined in the bound document. `library_alias` selects a declared library, including nested aliases such as `ui:base`; it is not a file path. `name` selects one exact unprefixed name or qualified reference such as `ui:spacing`. Resolution uses the same alias, type, conditional-value order, and namespace rules as rendering. Listing one scope does not flatten all imported definitions into the consumer's namespace.
+With no selector, list variables defined in the selected document. `library_alias` selects a declared library, including nested aliases such as `ui:base`; it is not a file path. `name` selects one exact unprefixed name or qualified reference such as `ui:spacing`. Resolution uses the same alias, type, conditional-value order, and namespace rules as rendering. Listing one scope does not flatten all imported definitions into the consumer's namespace.
 
-`node_id` and optional `instance_path` select a stored or inherited node in that library or the bound document. Its effective theme includes actual ancestors and instance overrides. The default variable scope then becomes that node's source document. Add `property` to use the source namespace of one existing top-level property, such as `fill` or `content`; this distinguishes an instance's consumer override from the original library definition. The response's `scope_document` identifies the chosen namespace. These addresses are stored/inherited addresses, not runtime-generated script IDs.
+`node_id` and optional `instance_path` select a stored or inherited node in that library or the selected document. Its effective theme includes actual ancestors and instance overrides. The default variable scope then becomes that node's source document. Add `property` to use the source namespace of one existing top-level property, such as `fill` or `content`; this distinguishes an instance's consumer override from the original library definition. The response's `scope_document` identifies the chosen namespace. These addresses are stored/inherited addresses, not runtime-generated script IDs.
 
 For example, `{"node_id":"instance","instance_path":["label"],"property":"fill","name":"ink"}` queries the ink value as used by that property. `theme: {"mode":"dark"}` applies a hypothetical override after deriving that context. Each explicit axis/value must be declared in a loaded project document. The query never changes the saved theme, variable definitions, or a retained render calculation.
 
@@ -157,7 +218,7 @@ Use `read_nodes` with `{"calculated":true,"node_id":"chart","depth":2}` to expli
 
 The result has `view: "calculated"`, `variables_resolved: true`, calculation metadata, `total_matches`, and `next_cursor`. Each node includes its public `id`, `address`, resolved `properties`, `property_sources`, effective `theme`, `source_path`, `source_id`, `generated_by`, and the matching `layout` record. Generated properties come from the captured execution, including nested scripts and library-scoped variables. A depth of zero returns `children_count`; larger depths include nested `children`. Resolved properties still describe the node's declarative sizing rules; measured positions and sizes are in `layout`.
 
-An inherited node can still be selected by `node_id` plus `instance_path`. A generated node can be selected by its opaque top-level `id`, as returned by this read or a layout record. Do not construct an ID from `properties.id` or save generated IDs as document edits. Generated nodes remain derived and read-only; follow `generated_by` to edit their owning script's inputs or source. A calculation covers the bound document's effective tree, including used library instances; `library_alias` is rejected. Use a stored/expanded query to inspect unused library definitions. `expand_instances` adds nothing to an already calculated tree.
+An inherited node can still be selected by `node_id` plus `instance_path`. A generated node can be selected by its opaque top-level `id`, as returned by this read or a layout record. Do not construct an ID from `properties.id` or save generated IDs as document edits. Generated nodes remain derived and read-only; follow `generated_by` to edit their owning script's inputs or source. A calculation covers the selected document's effective tree, including used library instances; `library_alias` is rejected. Use a stored/expanded query to inspect unused library definitions. `expand_instances` adds nothing to an already calculated tree.
 
 Name/type filters and depth 0..16 apply to calculated reads. Limits are 1..500, default 100; matches are visited in layout order, and children included by depth can overlap other matches. Reuse both `snapshot_id` and `next_cursor` for later pages, keeping the other query fields unchanged. A different page size is allowed. Response construction is bounded to 4 MiB; reduce depth, page size, or selection after an oversized response. Cancellation reaches script execution and serialization; cancelling a read does not invalidate an otherwise current retained calculation.
 
@@ -173,7 +234,7 @@ An inherited `update` or `set_override` writes only that instance's override. `r
 
 `detach_instance` handles stored roots and inherited instance targets, including declared external libraries. A stored root keeps its ID. An inherited target becomes a replacement in the owning instance's `descendants` map with a new stored ID. Its result includes `generated_ids[OPERATION_INDEX].address`; `client_ref` binds the new stored ID so a later operation can update it directly. Ordinary inherited descendants require the owning root address until they become stored replacements.
 
-Detachment materializes one instance boundary, applies definition chains and ancestor overrides, removes folded deeper outer overrides, and keeps other nested references and variable references. Different source documents may use the same ID: temporary source-scoped identities prevent collisions before allocating stored IDs. References to definitions owned by the detached subtree follow the newly allocated definitions; other library references remain qualified and linked. Moved image/shader paths are relative to the bound document and retain their original file targets. Library variable references retain their namespace. Additional source-default theme axes become explicit only where needed to preserve the current resolved theme. Source libraries, assets, sibling instances, and variables are not rewritten or copied.
+Detachment materializes one instance boundary, applies definition chains and ancestor overrides, removes folded deeper outer overrides, and keeps other nested references and variable references. Different source documents may use the same ID: temporary source-scoped identities prevent collisions before allocating stored IDs. References to definitions owned by the detached subtree follow the newly allocated definitions; other library references remain qualified and linked. Moved image/shader paths are relative to the selected document and retain their original file targets. Library variable references retain their namespace. Additional source-default theme axes become explicit only where needed to preserve the current resolved theme. Source libraries, assets, sibling instances, and variables are not rewritten or copied.
 
 Before accepting each detach operation, the service resolves both trees and compares properties, effective themes, child structure, nested instance boundaries, canonical asset targets, and script execution/input origins. A scope-preservation mismatch fails the whole batch with `UNSUPPORTED_FEATURE`. This is structural verification without executing script, browser, or shader code. Shader image uniforms that use variables retain the document defining the selected terminal value, including aliases and theme conditions. The value is anchored to that document; active asset capture and rendering canonicalize the path and check project roots and dependencies. Inactive images are not opened. Stored variables and their text uses retain their original values and remain linked after detachment. No additional metadata is needed for that shader binding. This is the current lazypencil resolution policy; Pencil parity for imported variable-valued image samplers remains unverified. Independent copying of relative local image values preserves the same text/alias/theme graph using ordinary imported variable libraries, as described below; absolute local paths and conflicting projected paths use the managed sampler image bindings described below.
 
@@ -195,7 +256,7 @@ Choose one source shape:
 {"style_id":"standard-ui","node_id":"button"}
 ```
 
-Omit `library_alias` for a local reusable definition. File URIs resolve beside the bound document and must select a `.pen` inside allowed project roots. They cannot read arbitrary non-document files or remote URLs. A bundled style ID is selected from the built-in catalog; its example hash is the source document revision. Application-owned examples are encoded for the consuming document version; the returned `source_revision` and `expected_source_revision` still identify the original catalog example. User-owned libraries retain their declared version. Optional `expected_source_revision` rejects a changed source in addition to the ordinary request preconditions.
+Omit `library_alias` for a local reusable definition. File URIs resolve beside the selected document and must select a `.pen` inside allowed project roots. They cannot read arbitrary non-document files or remote URLs. A bundled style ID is selected from the built-in catalog; its example hash is the source document revision. Application-owned examples are encoded for the consuming document version; the returned `source_revision` and `expected_source_revision` still identify the original catalog example. User-owned libraries retain their declared version. Optional `expected_source_revision` rejects a changed source in addition to the ordinary request preconditions.
 
 `link` retains the original definition, variables, and asset scopes. A file source registers its explicit alias; a style source publishes the complete pinned example as a managed `.lib.pen` and registers `style-STYLE_ID` by default. A style source can supply `import_alias` to choose another alias. Alias collisions are rejected. Linking cannot introduce a saved import cycle. A local link simply places another instance.
 
@@ -236,7 +297,7 @@ A copy may read a library that already imports the consumer without adding a rev
 
 Create code with `{"kind":"script","source":{"text":"return [];"}}`. Images use `{"kind":"image","source":{"mime_type":"image/png","data":"BASE64_DATA"}}`; static PNG, JPEG, and WebP input is normalized to PNG, including orientation. Animated input, false MIME types, and oversized images are rejected. Code is limited to 1 MiB, source and normalized images to 20 MiB each, and decoded images to 16 megapixels. MCP's 4 MiB argument limit also applies to encoded data.
 
-`put_asset` returns a relative URI and SHA-256 hash. Files live under `assets/lazypencil` beside the bound document. Identical content is reused, conflicting files are never overwritten, and asset creation does not itself edit the document or add a history entry. Link the returned URI with `apply_operations`. `read_asset` only reads captured script or shader dependencies after they have been referenced; it is not an arbitrary file reader. CLI users can use `assets put design.pen --kind image --input reference.jpg` and `assets read design.pen --hash HASH`.
+`put_asset` returns a relative URI and SHA-256 hash. Files live under `assets/lazypencil` beside the selected document. Identical content is reused, conflicting files are never overwritten, and asset creation does not itself edit the document or add a history entry. Link the returned URI with `apply_operations`. `read_asset` only reads captured script or shader dependencies after they have been referenced; it is not an arbitrary file reader. CLI users can use `assets put design.pen --kind image --input reference.jpg` and `assets read design.pen --hash HASH`.
 
 Uploads and component-import publication acquire the destination's exclusive path lock in the same namespace as shared dependency locks. This includes a currently absent destination, so a cooperating publisher cannot make it appear between a saving document's final dependency check and commit. Different document/history data directories do not bypass this coordination. Publication rechecks directories and any existing bytes after obtaining the lock, including when it will reuse identical content. Lock waits retain the common five-second limit and return `LOCK_UNAVAILABLE` when it cannot be acquired. Asset publication takes no additional document lock; importing a component may already hold that document's writer lock.
 

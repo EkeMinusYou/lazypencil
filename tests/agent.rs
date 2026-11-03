@@ -1925,8 +1925,6 @@ fn installed_adapter(variable: &str, default: &str) {
                 "--data-dir".into(),
                 store.data_dir().to_str().unwrap().into(),
                 "mcp".into(),
-                "--file".into(),
-                file.to_str().unwrap().into(),
             ]),
         )];
         let mut host = AgentHost::spawn(opts).unwrap();
@@ -1987,8 +1985,6 @@ fn supervised_agent_mcp_renders_script_browser_and_shader_pixels() {
                     "--data-dir".into(),
                     store.data_dir().to_str().unwrap().into(),
                     "mcp".into(),
-                    "--file".into(),
-                    file.to_str().unwrap().into(),
                 ])
                 .env(vec![EnvVariable::new("LAZYPENCIL_CHROMIUM", chromium)]),
         )];

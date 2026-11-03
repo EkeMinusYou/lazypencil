@@ -199,6 +199,12 @@ pub fn run(
         configuration = Some(path);
     }
     write_json(&document, &design)?;
+    if case.starts_with("picker-") {
+        fs::create_dir_all(root.join("nested/deep"))?;
+        write_json(&root.join("nested/deep/selected.pen"), &design)?;
+        write_json(&root.join("nested/deep/設定.pen"), &design)?;
+        fs::write(root.join("broken.pen"), "not a document")?;
+    }
     // Checkpoints are created before opening the TUI so its initial revision is current.
     let mut first_checkpoint = Value::Null;
     if matches!(case, "restore" | "restore-conflict") {
@@ -240,10 +246,49 @@ pub fn run(
         }
     }
     let mut h = Harness::start(binary, root, &document, environment, case, configuration)?;
+    if case.starts_with("picker-") {
+        h.visible("Open a .pen file")?;
+        h.visible("nested/deep/selected.pen")?;
+        assert!(files(root, |name| name == "session.json").is_empty());
+        assert!(!root.join("sent-turn.txt").exists());
+        if case == "picker-default" {
+            return h.finish();
+        }
+        if case == "picker-direct" {
+            h.key(b"\x0c")?;
+            h.key(b"nested/deep/selected.pen")?;
+            h.key(b"\r")?;
+        } else {
+            h.key(b"/broken")?;
+            h.key(b"\r")?;
+            h.visible("Open a .pen file")?;
+            h.visible("INVALID_DOCUMENT")?;
+            h.key(b"\x1b")?;
+            h.key(b"\x0c")?;
+            h.key(b"nested")?;
+            h.key(b"\r")?;
+            h.visible("deep/selected.pen")?;
+            h.key(if case == "picker-unicode" {
+                "/設定".as_bytes()
+            } else {
+                b"/selected"
+            })?;
+            h.key(b"\r")?;
+        }
+    }
     h.wait("initial UI", 15.0, |h| {
         h.screen.find_text("›").is_some() && h.screen.text().contains("Agent")
     })?;
     let mut report = match case {
+        "picker-explicit" | "picker-unicode" | "picker-direct" => {
+            h.visible(if case == "picker-unicode" {
+                "設定.pen"
+            } else {
+                "selected.pen"
+            })?;
+            no_agent(&h);
+            Value::Null
+        }
         "agent-header-fast" | "agent-header-standard" => {
             let fast = case == "agent-header-fast";
             let correct_header = |h: &Harness| {

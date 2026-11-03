@@ -145,12 +145,28 @@ Local file pages require explicit resource roots within the existing project rea
 ## MCP and design guidance
 
 ```sh
-lazypencil mcp --file /absolute/path/design.pen
+lazypencil mcp
 lazypencil guidance
 lazypencil guidance operations
 lazypencil styles
 lazypencil style standard-ui --json
 ```
+
+Register the file-independent command once with your coding agent:
+
+```sh
+codex mcp add lazypencil -- lazypencil mcp
+claude mcp add --scope user --transport stdio lazypencil -- lazypencil mcp
+```
+
+Use an absolute executable path when the client cannot resolve your shell's `PATH`.
+Ask the agent to open or create a `.pen` using its absolute path. The server exposes
+`list_documents`, `open_document`, and `create_document`; subsequent document tools
+require the returned `document_id`. One connection can work with multiple documents
+and projects. `mcp --file` has been removed. Optional repeated `--root DIRECTORY`
+arguments restrict document selection without changing the default registration.
+The external client supplies the AI; an ACP adapter is only needed for lazypencil's
+own prompt/TUI conversations.
 
 The stdio MCP server uses the same editing and rendering services as the CLI. It returns PNG image content and can reuse a calculation snapshot between layout inspection and rendering. See the [MCP guide](docs/mcp.md) for supported tools, protocol version, limits, and current gaps.
 
@@ -191,10 +207,23 @@ Lists, formatted messages and complete raw transcripts are paged, with bounded r
 At startup, the TUI prepares the selected adapter's session without sending a prompt, then reuses that connection on submission. The header shows the runtime's actual model and reasoning effort, enabled Fast mode, and reported account email/name, authentication route and plan. Connecting or missing reports are labeled explicitly. Account identity stays in memory and is not saved to conversation logs. The check uses the same launch directory and inherited runtime environment (including `CODEX_HOME`) as prompting.
 
 ```sh
+lazypencil
+lazypencil tui
 lazypencil tui design.pen
 lazypencil tui new.pen --create --agent claude --image reference.png
 lazypencil tui design.pen --image-protocol sixel
 ```
+
+With no arguments, `lazypencil` opens the same document picker as `lazypencil tui`.
+It recursively lists `.pen` files below the launch directory without parsing them
+or starting an agent. Type to filter relative paths (`/` explicitly enters filtering),
+use arrows or `j`/`k` to select, and press Enter to open. Ctrl+L accepts a directory
+or file path; relative paths resolve against the displayed search root. Esc clears
+input and Ctrl+C exits. Discovery runs in the background and stops after 10,000
+matches, 100,000 inspected entries, or five seconds, retaining partial results and
+the stop reason. Narrow the search root or enter a file path if the target was not
+reached. Directory symlinks are not followed. Use `--help` for command help; a bare
+file argument such as `lazypencil design.pen` is not supported.
 
 The default build includes a terminal viewer with pan/zoom, node selection, Japanese multiline input, attachment review/removal, checkpoint restoration, and a persistent ACP conversation. Use Tab to change panels, Alt+Enter or Ctrl+S to send, Ctrl+V or `/paste-image` to paste, and `/attach <quoted path>` for files. Emacs-style prompt keys include Ctrl+U/K to kill to line start/end and Ctrl+Y to yank. Ctrl+P/N move between prompt lines; Alt+P opens the command palette; `/history` opens a paged checkpoint list with review and guarded restoration. Kitty and Sixel have protocol-level PTY tests; halfblocks and external PNG viewing provide fallbacks. Prompt and viewing/global keys can be configured in user settings. Native clipboard→Ctrl+V→image-worker→deterministic ACP checks passed on all three targets. The October 30 Mac user checks accepted Kitty operation. After the Sixel changes passed complete Mac CI, the user also accepted much faster operation and satisfactory initial display in WezTerm. Sixel leaves exact-frame encoding to its coalescing background worker, and initial loading is distinct from actual failure. Final environment/release acceptance remains separate. See [terminal behavior and verification](docs/tui.md).
 

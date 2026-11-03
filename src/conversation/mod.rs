@@ -479,7 +479,8 @@ impl Conversation {
             ));
         }
         let mut content = vec![ContentBlock::Text(TextContent::new(format!(
-            "You are editing the document bound to the lazypencil MCP server. Use its tools for document edits, assets, layout and previews. Start with get_document and follow this workflow. Keep the user's language. Do not claim visual verification without inspecting a rendered image.\n\n{}{}{}",
+            "You are editing the .pen document identified below. First call open_document with its absolute path, then pass the returned document_id to every document-specific MCP tool, including get_document, project guidance, styles, assets, layout and previews. Do not edit another document. Reopen this path after reconnecting; document IDs belong to one connection. Follow this workflow. Keep the user's language. Do not claim visual verification without inspecting a rendered image.\n\nDocument path: {}\n\n{}{}{}",
+            self.store.path().display(),
             guidance["body"].as_str().unwrap_or_default(),
             guidance
                 .get("project_guides")
@@ -607,8 +608,6 @@ impl Conversation {
             "--data-dir".into(),
             utf8(self.store.data_dir())?,
             "mcp".into(),
-            "--file".into(),
-            utf8(self.store.path())?,
             "--attachments-manifest".into(),
             utf8(self.grant.as_ref().expect("connection grant").path())?,
             "--guidance-audit-manifest".into(),

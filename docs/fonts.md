@@ -14,7 +14,7 @@ lazypencil fonts list --font /path/to/family.ttc --font /path/to/other.otf
 lazypencil fonts list --file design.pen
 lazypencil fonts license
 lazypencil render design.pen --font /path/to/family.ttc --output preview.png
-lazypencil mcp --file /absolute/path/design.pen --font /path/to/family.ttc
+lazypencil mcp --font /path/to/family.ttc
 lazypencil tui design.pen --font /path/to/family.ttc
 ```
 

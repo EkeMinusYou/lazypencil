@@ -6,6 +6,7 @@ mod checkpoints;
 mod composer;
 mod controls;
 mod diagnostics;
+pub mod documents;
 mod events;
 mod footer;
 mod graphics;
@@ -61,6 +62,10 @@ pub enum ImageProtocol {
 }
 
 #[derive(Debug, Args)]
+#[command(
+    mut_arg("file", |arg| arg.index(1).required(false).default_value(".").hide_default_value(true)),
+    mut_arg("prompt", |arg| arg.index(2))
+)]
 pub struct TuiArgs {
     #[command(flatten)]
     pub prompt: PromptArgs,

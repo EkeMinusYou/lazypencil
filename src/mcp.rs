@@ -21,11 +21,12 @@ use std::{
 use tokio::sync::{mpsc, oneshot};
 
 pub(crate) mod timing;
+mod workspace;
 
 const MAX_TOOL_BYTES: usize = 4 * 1024 * 1024;
 #[cfg(feature = "rendering")]
 const SNAPSHOT_TTL: Duration = Duration::from_secs(300);
-const INSTRUCTIONS: &str = "This server edits one bound .pen document. Start with get_document and get_guidance, inspect existing nodes, components and variables, then apply small atomic batches using current document and dependency revisions. Choose a suitable available style for a new design; preserve existing conventions for edits. Read configured project_guides after the user has explicitly granted local trust. Agents must not grant project trust themselves. Follow the user request, trusted project rules, selected style, then standard guidance. Use get_layout and render to inspect the result and correct layout or visual problems. Render returns real PNG image content. Do not claim a visual check unless you received and inspected the image. Preserve the user's language. English guides do not require English design content. Use only advertised tools and supported capabilities.";
+const INSTRUCTIONS: &str = "This server edits multiple .pen documents. Start with list_documents, open_document or create_document. Pass the returned document_id explicitly to every document-specific tool, even when only one document is open. IDs belong to this connection; reopen paths after reconnecting. Absolute paths are preferred; relative paths resolve against the server working directory shown below. Catalogue tools can run without a document_id for built-in resources only. Then use get_document and get_guidance, inspect existing nodes, components and variables, then apply small atomic batches using current document and dependency revisions. Choose a suitable available style for a new design; preserve existing conventions for edits. Read configured project_guides after the user has explicitly granted local trust. Agents must not grant project trust themselves. Follow the user request, trusted project rules, selected style, then standard guidance. Use get_layout and render to inspect the result and correct layout or visual problems. Render returns real PNG image content. Do not claim a visual check unless you received and inspected the image. Preserve the user's language. English guides do not require English design content. Use only advertised tools and supported capabilities.";
 
 #[derive(Clone)]
 struct Server {
@@ -42,43 +43,26 @@ struct Job {
     usage: Result<Option<crate::guidance::usage::UsageRequest>>,
 }
 
-pub fn serve(store: Store, fonts: Vec<PathBuf>) -> Result<()> {
-    serve_with_attachments(store, fonts, None)
+#[derive(Default)]
+pub struct Options {
+    pub data_dir: Option<PathBuf>,
+    pub fonts: Vec<PathBuf>,
+    pub roots: Vec<PathBuf>,
+    pub attachments_manifest: Option<PathBuf>,
+    pub guidance_audit_manifest: Option<PathBuf>,
+    pub preview_control: Option<String>,
 }
 
-pub fn serve_with_attachments(
-    store: Store,
-    fonts: Vec<PathBuf>,
-    attachments: Option<crate::attachments::AttachmentAccess>,
-) -> Result<()> {
-    serve_with_context(store, fonts, attachments, None)
-}
-
-pub fn serve_with_context(
-    store: Store,
-    fonts: Vec<PathBuf>,
-    attachments: Option<crate::attachments::AttachmentAccess>,
-    usage: Option<crate::guidance::usage::UsageAccess>,
-) -> Result<()> {
-    serve_with_preview_context(store, fonts, attachments, usage, None)
-}
-
-pub fn serve_with_preview_context(
-    store: Store,
-    fonts: Vec<PathBuf>,
-    attachments: Option<crate::attachments::AttachmentAccess>,
-    usage: Option<crate::guidance::usage::UsageAccess>,
-    preview_control: Option<&str>,
-) -> Result<()> {
-    let preview_control = preview_control
-        .map(|value| crate::preview_control::Client::parse(value, store.path()))
-        .transpose()?;
-    let has_preview = preview_control.is_some();
+pub fn serve(options: Options) -> Result<()> {
+    let prepared = workspace::Workspace::new(options)?;
+    let has_preview = prepared.has_preview();
+    let server_usage = prepared.usage();
+    let options = prepared.into_options();
     let (sender, mut receiver) = mpsc::channel::<Job>(16);
-    let server_usage = usage.clone();
     let worker = std::thread::Builder::new()
         .name("lazypencil-document".into())
         .spawn(move || -> Result<()> {
+            let mut documents = workspace::Workspace::new(options)?;
             #[cfg(feature = "rendering")]
             let wait_runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_time()
@@ -86,26 +70,11 @@ pub fn serve_with_preview_context(
                 .map_err(|error| {
                     Error::new("IO_ERROR", format!("Cannot start document timer: {error}"))
                 })?;
-            let mut document = DocumentWorker {
-                store,
-                fonts,
-                attachments,
-                usage,
-                preview_control,
-                #[cfg(feature = "rendering")]
-                snapshots: VecDeque::new(),
-                #[cfg(feature = "rendering")]
-                failed_code: VecDeque::new(),
-                #[cfg(feature = "rendering")]
-                scripts: None,
-                #[cfg(feature = "rendering")]
-                dynamic: None,
-            };
             loop {
                 #[cfg(feature = "rendering")]
                 let received = {
-                    document.expire_idle(Instant::now());
-                    let deadline = document.maintenance_deadline();
+                    documents.expire_idle(Instant::now());
+                    let deadline = documents.maintenance_deadline();
                     wait_runtime.block_on(async {
                         if let Some(deadline) = deadline {
                             tokio::time::timeout_at(deadline.into(), receiver.recv()).await
@@ -130,7 +99,7 @@ pub fn serve_with_preview_context(
                         "The request was cancelled before execution",
                     ))
                 } else {
-                    document.call(&job.name, job.arguments, &job.cancel)
+                    documents.call(&job.name, job.arguments, &job.cancel)
                 };
                 let result = match called {
                     Ok(result) => result,
@@ -175,6 +144,12 @@ impl ServerHandler for Server {
         } else {
             INSTRUCTIONS.into()
         };
+        let instructions = format!(
+            "{instructions}\nServer working directory: {}",
+            std::env::current_dir()
+                .map(|path| path.display().to_string())
+                .unwrap_or_default()
+        );
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("lazypencil", env!("CARGO_PKG_VERSION")))
             .with_protocol_version(ProtocolVersion::V_2025_11_25)
@@ -397,6 +372,27 @@ fn tools_for(preview: bool) -> Vec<Tool> {
         );
         tools.push(set);
     }
+    for definition in &mut tools {
+        if definition.name == "list_icons" {
+            continue;
+        }
+        let mut schema = (*definition.input_schema).clone();
+        let properties = schema.entry("properties").or_insert_with(|| json!({}));
+        properties["document_id"] = json!({"type":"string","description":"Document ID returned by open_document or create_document on this connection."});
+        if !matches!(
+            definition.name.as_ref(),
+            "get_guidance" | "get_style" | "list_styles"
+        ) {
+            schema
+                .entry("required")
+                .or_insert_with(|| json!([]))
+                .as_array_mut()
+                .expect("required array")
+                .push(json!("document_id"));
+        }
+        definition.input_schema = std::sync::Arc::new(schema);
+    }
+    tools.extend(workspace::tools());
     tools
 }
 
@@ -591,14 +587,6 @@ impl DocumentWorker {
                 access.check_connection().map_err(|_| expired())?;
             }
         }
-        let usage = if matches!(name, "get_guidance" | "get_style" | "list_styles") {
-            self.usage
-                .as_ref()
-                .map(|usage| usage.request(cancel))
-                .transpose()?
-        } else {
-            None
-        };
         let value = match name {
             "get_preview_state" => {
                 let _: Empty = parse(arguments)?;
@@ -850,18 +838,7 @@ impl DocumentWorker {
         {
             crate::store::require_revision(&self.store.read()?, revision)?;
         }
-        let result = structured(value)?;
-        if let Some(usage) = usage {
-            usage.record(
-                name,
-                result
-                    .structured_content
-                    .as_ref()
-                    .expect("structured design resource"),
-                cancel,
-            )?;
-        }
-        Ok(result)
+        structured(value)
     }
 
     fn project(&self, cancel: Option<&tokio_util::sync::CancellationToken>) -> Result<Project> {
