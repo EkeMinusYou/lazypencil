@@ -254,6 +254,7 @@ pub fn source_files(root: &Path, selected: Option<&BTreeSet<String>>) -> Result<
     for name in [
         "Cargo.toml",
         "Cargo.lock",
+        "build.rs",
         "LICENSE",
         "README.md",
         ".gitignore",
