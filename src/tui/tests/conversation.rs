@@ -403,7 +403,9 @@ fn follow_up_queue_keeps_typing_live_and_sends_in_order_without_erasing_the_next
             .position(|line| line.contains("✎ Prompt"))
             .unwrap();
         assert_eq!(queued, working + 2);
-        assert_eq!(prompt, queued + 2);
+        assert!(rows[queued + 1].contains("1. Second request"));
+        assert!(rows[queued + 2].contains("2. Third request"));
+        assert_eq!(prompt, queued + 4);
         app.focus = Focus::Conversation;
         assert_eq!(complete(&mut app).await.last().unwrap()["type"], "complete");
         app.sync_turn(&worker);

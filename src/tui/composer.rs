@@ -161,7 +161,11 @@ impl App {
                 .min(if count == 0 { 3 } else { 1 }) as u16
                 + 1
         };
-        let queue_rows = u16::from(!self.outbox.queued.is_empty());
+        let queue_rows = if self.outbox.queued.is_empty() {
+            0
+        } else {
+            self.outbox.queued.len() as u16 + 1
+        };
         let activity = self.activity_line(Instant::now());
         let activity_rows = u16::from(activity.is_some()) * 2;
         let context_rows = attachment_rows + reference_rows + queue_rows;
@@ -294,22 +298,31 @@ impl App {
             );
             frame.render_widget(block, sections[3]);
         }
-        if let Some(next) = self.outbox.queued.front() {
+        if !self.outbox.queued.is_empty() {
+            let mut lines = vec![Line::from(vec![
+                Span::styled(
+                    format!("{} queued", self.outbox.queued.len()),
+                    Style::default().fg(theme::WORKING),
+                ),
+                Span::styled(
+                    if self.outbox.paused { " (paused)" } else { "" },
+                    Style::default().fg(theme::RUNNING),
+                ),
+            ])];
+            lines.extend(
+                self.outbox
+                    .queued
+                    .iter()
+                    .enumerate()
+                    .map(|(index, prompt)| {
+                        Line::styled(
+                            format!("{}. {}", index + 1, prompt.text.replace('\n', " ")),
+                            Style::default().fg(theme::SECONDARY),
+                        )
+                    }),
+            );
             frame.render_widget(
-                Paragraph::new(Line::from(vec![
-                    Span::styled(
-                        format!("{} queued", self.outbox.queued.len()),
-                        Style::default().fg(theme::WORKING),
-                    ),
-                    Span::styled(
-                        if self.outbox.paused { " (paused)" } else { "" },
-                        Style::default().fg(theme::RUNNING),
-                    ),
-                    Span::styled(
-                        format!(" · {}", next.text.replace('\n', " ")),
-                        Style::default().fg(theme::SECONDARY),
-                    ),
-                ])),
+                Paragraph::new(lines),
                 sections[4].inner(Margin {
                     horizontal: 2,
                     vertical: 0,

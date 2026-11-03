@@ -1608,6 +1608,12 @@ fn queued_followups(h: &mut Harness) -> Result {
             h.screen.text().contains(&format!("{} queued", index + 1))
         })?;
     }
+    h.wait("all queued follow-ups are visible in order", 15.0, |h| {
+        let text = h.screen.text();
+        text.find("1. Second request continue")
+            .zip(text.find("2. Third request"))
+            .is_some_and(|(first, second)| first < second)
+    })?;
     h.paste("Unsent next draft")?;
     h.wait("next draft is saved separately", 15.0, |h| {
         files(&h.root.join("data"), |name| name == "prompt-outbox.json")
