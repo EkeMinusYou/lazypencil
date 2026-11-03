@@ -173,7 +173,17 @@ impl App {
         let prompt_space = inner
             .height
             .saturating_sub(context_rows + activity_rows + history_gap + context_gap + 1);
-        let prompt_height = prompt_height(self.editor.lines().len(), prompt_space);
+        let input_width = prompt_block(false).inner(inner).width;
+        let lines = Paragraph::new(Text::from(
+            self.editor
+                .lines()
+                .iter()
+                .map(|line| Line::from(line.as_str()))
+                .collect::<Vec<_>>(),
+        ))
+        .wrap(Wrap { trim: false })
+        .line_count(input_width);
+        let prompt_height = prompt_height(lines, prompt_space);
         let sections = Layout::vertical([
             Constraint::Min(1),
             Constraint::Length(history_gap),
@@ -376,7 +386,11 @@ impl App {
                     logical.row.checked_sub(usize::from(top)),
                     logical.col.checked_sub(usize::from(left)),
                 ) && row < usize::from(input.height)
-                    && col < usize::from(input.width)
+                    // A full wrapped row leaves the caret just beyond its text.
+                    // The prompt's right padding provides that extra cursor cell.
+                    && col <= usize::from(input.width)
+                    && input.width > 0
+                    && input.right() < prompt.right()
                 {
                     cursor = Some((input.x + col as u16, input.y + row as u16));
                 }

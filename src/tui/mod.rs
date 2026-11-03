@@ -1754,6 +1754,7 @@ impl App {
 
 fn editor(text: &str) -> TextArea<'static> {
     let mut editor = TextArea::new(text.split('\n').map(str::to_string).collect());
+    editor.set_wrap_mode(ratatui_textarea::WrapMode::WordOrGlyph);
     editor.set_max_histories(100);
     editor.set_cursor_style(Style::default());
     editor.set_cursor_line_style(Style::default());

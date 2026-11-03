@@ -1,6 +1,82 @@
 // Included in tui::tests to preserve the existing test identities.
 
 #[test]
+fn prompt_soft_wraps_typing_and_grows_without_changing_the_draft() {
+    use ratatui::{Terminal, backend::TestBackend, layout::Position};
+
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let mut terminal = Terminal::new(TestBackend::new(28, 20)).unwrap();
+        let draw = |app: &mut App, terminal: &mut Terminal<TestBackend>| {
+            app.pointer.begin();
+            terminal
+                .draw(|frame| app.draw_conversation(frame, frame.area()))
+                .unwrap();
+            let prompt = app
+                .pointer
+                .area(mouse::Target::Focus(Focus::Prompt))
+                .unwrap();
+            composer::prompt_block(true).inner(prompt)
+        };
+        let input = draw(&mut app, &mut terminal);
+        assert_eq!(input.width, 20);
+        let first_row = "abcdefghijABCDEFGHIJ";
+        for ch in first_row.chars().chain(['K']) {
+            app.editor
+                .input(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
+            draw(&mut app, &mut terminal);
+        }
+        assert_eq!(
+            terminal.backend().buffer()[(input.x, input.y)].symbol(),
+            "a"
+        );
+        assert_eq!(
+            terminal.backend().buffer()[(input.x, input.y + 1)].symbol(),
+            "K"
+        );
+        assert_eq!(
+            terminal.backend().cursor_position(),
+            Position::new(input.x + 1, input.y + 1)
+        );
+        app.editor
+            .input(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+        draw(&mut app, &mut terminal);
+        assert_eq!(app.editor.cursor(), (0, 1));
+        app.editor
+            .input(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        app.editor
+            .input(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        draw(&mut app, &mut terminal);
+        assert!(
+            terminal.backend().cursor_visible(),
+            "A full row retains its caret"
+        );
+        assert_eq!(app.editor.lines(), [first_row]);
+
+        let text = format!("{}終", "日".repeat(39));
+        app.editor = editor("");
+        app.insert_text(&text);
+        let input = draw(&mut app, &mut terminal);
+        assert_eq!(input.height, 4);
+        assert_eq!(
+            terminal.backend().buffer()[(input.x + 18, input.y + 3)].symbol(),
+            "終"
+        );
+        assert_eq!(app.editor.scroll_offset(), (0, 0));
+        app.save_draft().unwrap();
+        assert_eq!(app.conversation.draft(), text);
+
+        terminal.backend_mut().resize(48, 20);
+        let input = draw(&mut app, &mut terminal);
+        assert_eq!(input.height, 3);
+        assert_eq!(app.editor.scroll_offset(), (0, 0));
+        assert_eq!(app.editor.lines(), [text]);
+        assert!(!app.conversation.active());
+    });
+}
+
+#[test]
 fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes() {
     use ratatui::{Terminal, backend::TestBackend, layout::Position};
 
@@ -38,7 +114,7 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
             ("🇯🇵".to_owned(), Position::new(76, 30)),
             ("👨‍👩‍👧‍👦".to_owned(), Position::new(76, 30)),
             ("日\tA".to_owned(), Position::new(79, 30)),
-            ("日".repeat(80), Position::new(95, 30)),
+            ("日".repeat(80), Position::new(80, 32)),
             ("一\n二\n三\n四\n五".to_owned(), Position::new(76, 32)),
         ] {
             app.editor = editor(&text);
@@ -100,7 +176,7 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
                 app.draw(frame);
             })
             .unwrap();
-        assert_eq!(terminal.backend().cursor_position(), Position::new(45, 10));
+        assert_eq!(terminal.backend().cursor_position(), Position::new(43, 12));
         let draft = app.editor.lines().join("\n");
         app.help = true;
         terminal
