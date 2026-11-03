@@ -171,7 +171,7 @@ fn collapsed_panels_expand_preview_skip_focus_and_preserve_editor_and_tree_state
             193,
         )
         .unwrap();
-        app.cells = Size::new(46, 31);
+        app.cells = Size::new(51, 31);
         app.request(&worker, false, false);
         loop {
             let output = tokio::time::timeout(Duration::from_secs(15), worker.next())
@@ -194,10 +194,10 @@ fn collapsed_panels_expand_preview_skip_focus_and_preserve_editor_and_tree_state
         let log = app.log.clone();
         let view = app.view;
         for (key, nodes_collapsed, agent_collapsed, focus, preview_width) in [
-            (KeyCode::F(2), true, false, Focus::Prompt, 68),
+            (KeyCode::F(2), true, false, Focus::Prompt, 73),
             (KeyCode::F(3), true, true, Focus::Preview, 98),
             (KeyCode::Char('n'), false, true, Focus::Nodes, 76),
-            (KeyCode::Char('a'), false, false, Focus::Prompt, 46),
+            (KeyCode::Char('a'), false, false, Focus::Prompt, 51),
         ] {
             let modifiers = if matches!(key, KeyCode::Char(_)) {
                 KeyModifiers::ALT

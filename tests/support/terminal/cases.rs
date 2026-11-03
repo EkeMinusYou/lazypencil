@@ -1449,7 +1449,7 @@ fn restore(h: &mut Harness, checkpoint: &Value) -> Result {
 fn oversized_preview(h: &mut Harness, design: &Value) -> Result {
     h.wait("initial high-DPI preview", 15.0, |h| {
         h.frames.images.last().is_some_and(|frame| {
-            (5900..=6200).contains(&frame.width) && frame.has_color([255, 0, 0, 255])
+            (6500..=6900).contains(&frame.width) && frame.has_color([255, 0, 0, 255])
         })
     })?;
     let draft = "大きな画面でも保持する下書き";

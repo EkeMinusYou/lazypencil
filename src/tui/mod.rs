@@ -1844,7 +1844,7 @@ impl App {
             sections[0],
         );
         let nodes_width = if self.nodes_collapsed { 0 } else { 22 };
-        let agent_width = if self.agent_collapsed { 0 } else { 30 };
+        let agent_width = if self.agent_collapsed { 0 } else { 25 };
         let panes = Layout::horizontal([
             Constraint::Percentage(nodes_width),
             Constraint::Percentage(100 - nodes_width - agent_width),
