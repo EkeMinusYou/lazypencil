@@ -170,6 +170,7 @@ pub fn run(args: &TuiArgs, data: Option<PathBuf>, json_output: bool) -> Result<(
         let mut app = App::new(conversation);
         app.keys = settings.keys;
         app.navigation = settings.navigation;
+        app.panel_layout = settings.layout;
         if !screen.startup_text.is_empty() {
             app.insert_text(&screen.startup_text);
         }
@@ -202,6 +203,7 @@ struct App {
     conversation: Conversation,
     keys: crate::config::keys::PromptKeys,
     navigation: crate::config::keys::NavigationKeys,
+    panel_layout: crate::config::keys::PanelLayout,
     editor: TextArea<'static>,
     focus: Focus,
     nodes_collapsed: bool,
@@ -271,6 +273,7 @@ impl App {
             conversation,
             keys: Default::default(),
             navigation: Default::default(),
+            panel_layout: Default::default(),
             editor,
             focus: Focus::Prompt,
             nodes_collapsed: false,
@@ -1843,12 +1846,23 @@ impl App {
             ])),
             sections[0],
         );
-        let nodes_width = if self.nodes_collapsed { 0 } else { 22 };
-        let agent_width = if self.agent_collapsed { 0 } else { 25 };
+        let total = u32::from(self.panel_layout.nodes)
+            + u32::from(self.panel_layout.preview)
+            + u32::from(self.panel_layout.agent);
+        let nodes_width = if self.nodes_collapsed {
+            0
+        } else {
+            u32::from(self.panel_layout.nodes)
+        };
+        let agent_width = if self.agent_collapsed {
+            0
+        } else {
+            u32::from(self.panel_layout.agent)
+        };
         let panes = Layout::horizontal([
-            Constraint::Percentage(nodes_width),
-            Constraint::Percentage(100 - nodes_width - agent_width),
-            Constraint::Percentage(agent_width),
+            Constraint::Ratio(nodes_width, total),
+            Constraint::Ratio(total - nodes_width - agent_width, total),
+            Constraint::Ratio(agent_width, total),
         ])
         .split(sections[1]);
         if !self.nodes_collapsed {

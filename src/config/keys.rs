@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-pub const TEMPLATE: &str = "\n[tui.keys]\n# Each explicit list replaces that action's defaults.\n# submit = [\"Enter\", \"Ctrl+Enter\", \"Ctrl+s\"]\n# paste = [\"Ctrl+v\", \"Alt+v\"]\n\n[tui.navigation]\n# next_panel = [\"Tab\"]\n# previous_panel = [\"Shift+Tab\"]\n# help = [\"F1\", \"?\"]\n# commands = [\"Alt+p\"]\n# pan_left = [\"Left\", \"h\"]\n# pan_right = [\"Right\", \"l\"]\n# zoom_in = [\"+\", \"=\"]\n# zoom_out = [\"-\"]\n";
+pub const TEMPLATE: &str = "\n[tui.layout]\n# Positive relative widths; they do not need to sum to 100.\n# nodes = 22\n# preview = 53\n# agent = 25\n\n[tui.keys]\n# Each explicit list replaces that action's defaults.\n# submit = [\"Enter\", \"Ctrl+Enter\", \"Ctrl+s\"]\n# paste = [\"Ctrl+v\", \"Alt+v\"]\n\n[tui.navigation]\n# next_panel = [\"Tab\"]\n# previous_panel = [\"Shift+Tab\"]\n# help = [\"F1\", \"?\"]\n# commands = [\"Alt+p\"]\n# pan_left = [\"Left\", \"h\"]\n# pan_right = [\"Right\", \"l\"]\n# zoom_in = [\"+\", \"=\"]\n# zoom_out = [\"-\"]\n";
 
 mod navigation;
 pub use navigation::{NavigationAction, NavigationKeys};
@@ -14,14 +14,50 @@ pub use navigation::{NavigationAction, NavigationKeys};
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct TuiSettings {
+    pub layout: PanelLayout,
     pub keys: PromptKeys,
     pub navigation: NavigationKeys,
 }
 
 impl TuiSettings {
     pub fn validate(&self) -> Result<()> {
+        self.layout.validate()?;
         self.keys.validate()?;
         self.navigation.validate(&self.keys)
+    }
+}
+
+/// Relative panel widths. Collapsed side panels give their space to Preview.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct PanelLayout {
+    #[schemars(range(min = 1, max = 10000))]
+    pub nodes: u16,
+    #[schemars(range(min = 1, max = 10000))]
+    pub preview: u16,
+    #[schemars(range(min = 1, max = 10000))]
+    pub agent: u16,
+}
+impl Default for PanelLayout {
+    fn default() -> Self {
+        Self {
+            nodes: 22,
+            preview: 53,
+            agent: 25,
+        }
+    }
+}
+impl PanelLayout {
+    pub fn validate(&self) -> Result<()> {
+        if [self.nodes, self.preview, self.agent]
+            .into_iter()
+            .any(|n| !(1..=10000).contains(&n))
+        {
+            return Err(invalid(
+                "tui.layout panel widths must be integers in 1..=10000",
+            ));
+        }
+        Ok(())
     }
 }
 

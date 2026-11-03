@@ -229,15 +229,6 @@ impl App {
         hints
     }
 
-    pub(super) fn panel_toggle_title(&self, action: Nav) -> Option<Line<'static>> {
-        self.hint(action, "hide").map(|hint| {
-            let mut spans = vec![Span::raw(" ")];
-            spans.extend(hint.line().spans);
-            spans.push(Span::raw(" "));
-            Line::from(spans)
-        })
-    }
-
     pub(super) fn draw_footer(&self, frame: &mut Frame, area: Rect) {
         if area.height > 1 {
             let (text, color) = if !self.status.is_empty() {

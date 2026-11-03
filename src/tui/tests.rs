@@ -225,6 +225,7 @@ fn collapsed_panels_expand_preview_skip_focus_and_preserve_editor_and_tree_state
                 .collect::<String>();
             assert_eq!(heading.contains("Nodes"), !nodes_collapsed);
             assert_eq!(heading.contains("Agent"), !agent_collapsed);
+            assert!(!heading.contains("hide"));
             let footer = (0..100)
                 .map(|x| buffer[(x, 35)].symbol())
                 .collect::<String>();
@@ -628,6 +629,11 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
                 .await
                 .unwrap(),
         );
+        app.panel_layout = crate::config::keys::PanelLayout {
+            nodes: 2,
+            preview: 5,
+            agent: 3,
+        };
         app.authentication = "fixture@example.test · subscription · team".into();
         app.preview.as_mut().unwrap().summary["diagnostics"] = json!([{"severity":"warning"}]);
         app.view.zoom = Some(2.0);
@@ -663,13 +669,13 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
             );
         }
         assert!(!header.contains("Idle"));
-        let nodes = region(Rect::new(0, 1, 35, 38));
+        let nodes = region(Rect::new(0, 1, 32, 38));
         assert!(nodes.contains("1node") && nodes.contains("1diagnostic"));
-        let preview = region(Rect::new(35, 1, 77, 38));
+        let preview = region(Rect::new(32, 1, 80, 38));
         assert!(preview.contains("Preview"));
-        let preview_heading = region(Rect::new(35, 1, 77, 1));
+        let preview_heading = region(Rect::new(32, 1, 80, 1));
         assert!(!preview_heading.contains('%'));
-        assert!(region(Rect::new(35, 38, 77, 1)).contains("100%"));
+        assert!(region(Rect::new(32, 38, 80, 1)).contains("100%"));
         let zoom_cell = &terminal.backend().buffer()[(109, 38)];
         assert_eq!(zoom_cell.symbol(), "%");
         assert_eq!(zoom_cell.fg, theme::SECONDARY);
@@ -686,6 +692,15 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
         let footer = region(Rect::new(0, 39, 160, 1));
         assert!(!footer.contains("node") && !footer.contains("100%") && !footer.contains("t="));
         assert!(footer.contains("Entersend") && footer.contains("F1help"));
+        for (nodes, agent, width) in [(true, false, 110), (false, true, 126), (true, true, 158)] {
+            app.nodes_collapsed = nodes;
+            app.agent_collapsed = agent;
+            let mut cells = Size::default();
+            terminal.draw(|frame| cells = app.draw(frame)).unwrap();
+            assert_eq!(cells.width, width);
+        }
+        app.nodes_collapsed = false;
+        app.agent_collapsed = false;
         app.preview.as_mut().unwrap().time_dependent = true;
         terminal.backend_mut().resize(50, 16);
         terminal

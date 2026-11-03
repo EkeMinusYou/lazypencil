@@ -115,11 +115,6 @@ impl App {
         if area.width >= 32 {
             right = Line::from(vec![Span::raw(" "), badge, Span::raw(" ")]);
         }
-        if let Some(hint) = self.panel_toggle_title(Nav::ToggleAgentPanel)
-            && hint.width() + right.width() <= available
-        {
-            right.spans.extend(hint.spans);
-        }
         if right.width() <= available {
             block = block.title_top(right.right_aligned());
         }

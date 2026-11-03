@@ -189,6 +189,7 @@ pub fn run(
             _ => {
                 let mut text = "[tui.keys]\nsubmit=['F5']\npaste=[]\n".to_owned();
                 if case == "user-navigation-config" {
+                    text.push_str("[tui.layout]\nnodes=1\npreview=2\nagent=1\n");
                     text.push_str("[tui.navigation]\nnext_panel=['F6']\nprevious_panel=['F7']\nhelp=['F8','t']\ncommands=['F9']\nquit=['x']\npan_left=['a']\npan_right=['d']\npan_up=['w']\npan_down=['s']\nzoom_in=['z']\nzoom_out=['v']\n");
                 }
                 text
@@ -1550,10 +1551,12 @@ fn collapsible_panels(h: &mut Harness) -> Result {
     h.visible("Alt+A show Agent")?;
     h.visible("? help")?;
     h.resize(130, 34)?;
-    for (key, hint) in [(b"\x1bOR", "Alt+A hide"), (b"\x1bOQ", "Alt+N hide")] {
+    for key in [b"\x1bOR", b"\x1bOQ"] {
         h.key(key)?;
-        h.visible(hint)?;
     }
+    h.visible("Agent")?;
+    h.visible("Nodes")?;
+    assert!(!h.screen.text().contains("hide"));
     h.wait("restored complete panel preview", 15.0, |h| {
         h.frames.images.last() == Some(&initial)
     })?;
@@ -1589,6 +1592,10 @@ fn navigation(h: &mut Harness) -> Result<Value> {
     h.wait("initial complete navigation preview", 15.0, |h| {
         !h.frames.images.is_empty()
     })?;
+    let heading = h.screen.text().lines().nth(1).unwrap().to_owned();
+    assert!(matches!(h.screen.find_text("Preview"), Some((36..=37, 1))));
+    assert!(matches!(h.screen.find_text("Agent"), Some((101..=102, 1))));
+    assert!(!heading.contains("hide"));
     let before_index = h.frames.images.len() - 1;
     let before = h.frames.images[before_index].clone();
     assert!(before.has_color([255, 0, 0, 255]));

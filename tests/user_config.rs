@@ -248,6 +248,49 @@ fn font(path: &Path, name: &str) -> PathBuf {
 }
 
 #[test]
+fn panel_layout_is_user_owned_defaults_individually_and_rejects_invalid_weights() {
+    let f = Fixture::new();
+    f.settings("[tui.layout]\nnodes=2\npreview=5\nagent=3\n");
+    let shown = f.data(&["config", "show", "--user"]);
+    assert_eq!(
+        shown["settings"]["tui"]["layout"],
+        json!({"nodes":2,"preview":5,"agent":3})
+    );
+    assert_eq!(
+        f.snapshot().unwrap().summary()["user"]["settings"]["tui"]["layout"],
+        shown["settings"]["tui"]["layout"]
+    );
+    let schema = f.data(&["config", "schema", "--user"]);
+    let nodes = &schema["$defs"]["PanelLayout"]["properties"]["nodes"];
+    assert_eq!(nodes["minimum"], 1);
+    assert_eq!(nodes["maximum"], 10000);
+    f.settings("[tui.layout]\nagent=15\n");
+    assert_eq!(
+        f.data(&["config", "show", "--user"])["settings"]["tui"]["layout"],
+        json!({"nodes":22,"preview":53,"agent":15})
+    );
+    for field in ["nodes", "preview", "agent"] {
+        for value in ["0", "10001", "-1", "1.5", "'2'"] {
+            f.settings(&format!("[tui.layout]\n{field}={value}\n"));
+            assert!(
+                !f.cli(&["config", "show", "--user"]).status.success(),
+                "{field}={value}"
+            );
+        }
+    }
+    f.settings("");
+    fs::write(
+        f.project.join("lazypencil.toml"),
+        "[tui.layout]\nagent=15\n",
+    )
+    .unwrap();
+    assert!(
+        f.snapshot().is_err(),
+        "Projects cannot override the user's panel layout"
+    );
+}
+
+#[test]
 fn prompt_shortcuts_are_user_owned_and_visible_in_config_and_schema() {
     let f = Fixture::new();
     f.settings("[tui.keys]\nsubmit=['F5', 'Ctrl+Alt+s']\npaste=[]\n");
