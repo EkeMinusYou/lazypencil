@@ -48,6 +48,8 @@ fn pr_contracts_distinguish_prose_tools_behavior_and_shared_compiler_inputs() {
             "focused",
         ),
         (vec!["src/agent/process/windows.rs"], "full"),
+        (vec!["src/agent/process/unix.rs"], "full"),
+        (vec!["src/agent/process.rs"], "full"),
         (vec!["src/agent.rs", "src/runtime.rs"], "full"),
         (vec!["src/agent.rs", "src/process_owner.rs"], "full"),
         (vec!["src/runtime/profiles.rs"], "full"),

@@ -72,22 +72,24 @@ the complete graph and the existing verified-baseline behavior.
 | docs | Repository Markdown prose and fixture README files | Plan and whitespace validation |
 | tools | Independent developer-tool inputs | Tool tests, lint and dependency policy on Linux |
 | focused | Known presentation/key paths, including input, saved conversations and document UI | Library/TUI/agent/configuration/history checks on Mac |
-| focused | ACP client and adapter settings | Core library, agent, history, MCP and adapter configuration checks on Mac |
-| focused | Runtime installation and downloads | Core library and runtime consumer checks on Mac |
-| focused | Embedded design guidance | Its existing core consumer checks |
+| focused | Portable ACP client and adapter settings | Core library, agent, history, MCP and adapter configuration checks on Linux |
+| focused | Runtime installation and downloads | Core library and runtime consumer checks on Linux |
+| focused | Embedded design guidance | Its existing core consumer checks on Linux |
 | full | Rendering, dependencies, build/CI/distribution inputs, unknown or mixed changes | Original complete verification |
 
 Embedded resources are compiler inputs, even when their file extension is Markdown.
 The planner emits `verification` and `verification_reason`. These bounded source routes use
 the existing focused native workflow without adding a release build or full consumers.
 Changes spanning these domains, shared rendering, browser profiles, manifests, native
-code and CI still require the complete graph. Source selection remains conservative;
+code (including agent process supervision) and CI still require the complete graph. Source selection remains conservative;
 new paths require an explicit consumer mapping before using a focused contract.
 Focused jobs build and run affected regressions before Clippy checks their library and
 selected test targets. Compiler checkpoints can be retained within the PR merge-ref
 scope for subsequent edits. Restores still validate source, build scripts, SDK and
 compiler inputs, and tests always run again. Main retains all-target Clippy, all test
 consumers and the release lane; publishing still requires fully verified main source.
+Portable focused contracts reuse the full workflow's existing Linux core lane, avoiding
+scarce Mac runners. Terminal UI changes still use the native Mac workflow.
 Do not interpret focused success as a full product verification result.
 
 The stable `Verification` check requires precisely the jobs selected by the contract.
