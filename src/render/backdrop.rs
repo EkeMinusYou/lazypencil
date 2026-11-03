@@ -144,6 +144,7 @@ impl Renderer<'_> {
             rasters: self.rasters.clone(),
             shapes: self.shapes,
             recording: self.recording,
+            band: self.band,
         };
         painter.node(index)?;
         self.images.append(&mut painter.images);
@@ -243,6 +244,7 @@ impl Renderer<'_> {
                 rasters: self.rasters.clone(),
                 shapes: self.shapes,
                 recording: self.recording,
+                band: self.band,
             };
             let layer = source.backdrop_layer(child)?;
             self.images.append(&mut source.images);
@@ -290,6 +292,7 @@ impl Renderer<'_> {
                 rasters: self.rasters.clone(),
                 shapes: self.shapes,
                 recording: self.recording,
+                band: self.band,
             };
             let mapping = Matrix::translate((padding as f32, padding as f32));
             let stroke_background =

@@ -125,12 +125,7 @@ impl Frame {
         // scanning every pixel after each small BSD read can starve the drain.
         // Pixels are immutable, so this index remains valid for the frame.
         self.palette
-            .get_or_init(|| {
-                self.rgba
-                    .chunks_exact(4)
-                    .map(|pixel| pixel.try_into().unwrap())
-                    .collect()
-            })
+            .get_or_init(|| self.rgba.as_chunks::<4>().0.iter().copied().collect())
             .contains(&color)
     }
 }

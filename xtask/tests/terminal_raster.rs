@@ -103,7 +103,7 @@ fn xwd(order: u32, bpp: u32) -> Vec<u8> {
         .collect::<Vec<_>>();
     bytes.extend(b"owned\0");
     bytes.extend([0x91; 12]); // One color-map entry is separate from the image.
-    for row in COLORS.chunks_exact(3) {
+    for row in COLORS.as_chunks::<3>().0 {
         let start = bytes.len();
         for color in row {
             let pixel = u32::from_be_bytes([0, color[0], color[1], color[2]]);
@@ -240,7 +240,9 @@ fn screenshot_png_retains_every_pixel_and_valid_chunk_boundaries() {
         .read_to_end(&mut raw)
         .unwrap();
     let expected = COLORS
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .flat_map(|row| std::iter::once(0).chain(row.iter().flatten().copied()))
         .collect::<Vec<_>>();
     assert_eq!(raw, expected);

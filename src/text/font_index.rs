@@ -51,7 +51,7 @@ pub(super) fn families(source: &FontFile) -> Result<Vec<Option<Vec<String>>>> {
         let entries = source.read_range(&mut *reader, offset + 12, count * 16)?;
         let mut seen = BTreeSet::new();
         let mut name = None;
-        for entry in entries.chunks_exact(16) {
+        for entry in entries.as_chunks::<16>().0 {
             let tag = word(entry, 0);
             let start = word(entry, 8) as usize;
             let length = word(entry, 12) as usize;
