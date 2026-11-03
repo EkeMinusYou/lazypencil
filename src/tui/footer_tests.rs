@@ -124,6 +124,44 @@ fn footer_drops_whole_hints_preserves_help_and_recovers_collapsed_panels() {
 }
 
 #[test]
+fn fit_without_selection_reports_only_in_footer_and_preserves_conversation_and_draft() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let picker = Backend::halfblocks();
+        let worker = Worker::start(
+            app.conversation.store().clone(),
+            vec![],
+            picker.clone(),
+            198,
+        )
+        .unwrap();
+        app.focus = Focus::Preview;
+        app.append("\nYou: Keep this conversation\n\nCodex:\nExisting response\n");
+        let conversation_log = app.log.clone();
+        app.editor = editor("Keep this draft");
+        let error = app
+            .key(
+                KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE),
+                &picker,
+                &worker,
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "INVALID_ARGUMENT");
+        assert_eq!(error.message, "Select a node first");
+        app.error(error);
+        assert!(rows(&app, 100)[0].contains("! INVALID_ARGUMENT: Select a node first"));
+        assert!(app.status_kind.is_error());
+        assert!(app.status_deadline.is_none());
+        assert_eq!(app.log, conversation_log);
+        assert_eq!(app.editor.lines(), ["Keep this draft"]);
+        assert!(!app.conversation.active());
+        worker.cancel();
+    });
+}
+
+#[test]
 fn footer_notifications_expire_but_errors_survive_background_frames_until_recovery() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {
@@ -145,7 +183,7 @@ fn footer_notifications_expire_but_errors_survive_background_frames_until_recove
         assert_eq!(app.footer_height(), 1);
         app.error(Error::new(
             "CLIPBOARD_UNAVAILABLE",
-            "日本語の長いエラー詳細と復旧に必要な説明を履歴に保持します",
+            "日本語の長いエラー詳細と復旧に必要な説明を下部に表示します",
         ));
         let error = app.status.clone();
         app.expire_status(Instant::now() + Duration::from_secs(60));
@@ -155,7 +193,10 @@ fn footer_notifications_expire_but_errors_survive_background_frames_until_recove
         assert!(rendered[0].starts_with("! CLIPBOARD_UNAVAILABLE"));
         assert!(rendered[0].ends_with('…'));
         assert!(rendered[1].ends_with("F1 help"));
-        assert!(app.log.contains(&error));
+        assert!(
+            app.log.is_empty(),
+            "Operation errors do not belong in Agent history"
+        );
         app.request(&worker, false, false);
         loop {
             let output = tokio::time::timeout(Duration::from_secs(15), worker.next())

@@ -825,7 +825,6 @@ impl App {
     }
     fn error(&mut self, error: Error) {
         self.set_error_status(clean(&error.to_string()));
-        self.append(&format!("\n{}\n", error));
     }
     fn append(&mut self, text: &str) {
         self.history = None;
