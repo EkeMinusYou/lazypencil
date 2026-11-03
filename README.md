@@ -2,14 +2,29 @@
 
 **Design interfaces with AI, from your terminal.**
 
+## Demo
+
+[![Recorded TUI session showing node selection and fitting, preview panning and zooming, and a successful agent edit reflected in the preview.](docs/images/lazypencil-demo.gif)](docs/media/lazypencil-demo.mp4)
+
+[Watch or download the MP4](docs/media/lazypencil-demo.mp4).
+
+Select a node to fit it in Preview, pan and zoom, then ask Codex to recolor the
+visible project cards and watch the changes appear. Recorded in Herdr; agent
+waiting time is shortened.
+
 lazypencil is an open-source editor for `.pen` files, the design document format
 used by Pencil. Describe a screen or a change to Codex or Claude, then review the
 result in a terminal preview. Your design stays in a local, editable file.
+
+<details>
+<summary>Screenshot and editable example</summary>
 
 ![lazypencil running in Herdr, with the node tree, a project dashboard preview, and an AI conversation side by side.](docs/images/lazypencil-tui.png)
 
 The terminal workspace in use, showing the editable
 [project dashboard example](examples/project-dashboard.pen).
+
+</details>
 
 - **Create and refine designs:** start from a prompt, edit an existing document,
   or attach a reference image.
@@ -91,16 +106,6 @@ lazypencil tui new.pen --agent codex
 Attach a reference with `--image reference.png` at launch, or use `/attach` inside
 the TUI. `/history` opens checkpoints and `/logs` opens saved conversations.
 See [TUI controls](docs/tui.md) and [image attachments](docs/image-attachments.md).
-
-## Demo
-
-A real TUI session in Herdr: ask Codex to recolor the project cards, watch the
-preview update, then zoom, pan, and expand the workspace. Agent waiting time
-is shortened.
-
-[![Recorded TUI session showing a prompt to Codex, project card colors changing in the live preview, and preview navigation.](docs/images/lazypencil-demo.gif)](docs/media/lazypencil-demo.mp4)
-
-[Watch or download the MP4](docs/media/lazypencil-demo.mp4).
 
 ## MCP and AI prompts
 
