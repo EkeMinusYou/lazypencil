@@ -354,6 +354,7 @@ pub(super) struct Transcript {
     pub(super) file: File,
     pub(super) path: PathBuf,
     pub(super) bytes: usize,
+    started: std::time::Instant,
 }
 impl Transcript {
     pub(super) fn create(directory: &Path) -> Result<Self> {
@@ -368,13 +369,17 @@ impl Transcript {
             file,
             path,
             bytes: 0,
+            started: std::time::Instant::now(),
         })
     }
-    pub(super) fn record(&mut self, value: &Value) -> Result<()> {
+    pub(super) fn record(&mut self, value: &Value) -> Result<Value> {
         let mut value = value.clone();
-        omit_binary(&mut value);
+        value["recorded_at_unix_ms"] = json!(crate::mcp::timing::unix_ms());
+        value["elapsed_us"] = json!(self.started.elapsed().as_micros() as u64);
+        let mut stored = value.clone();
+        omit_binary(&mut stored);
         let mut bytes =
-            serde_json::to_vec(&value).map_err(|e| Error::new("IO_ERROR", e.to_string()))?;
+            serde_json::to_vec(&stored).map_err(|e| Error::new("IO_ERROR", e.to_string()))?;
         bytes.push(b'\n');
         self.bytes = self.bytes.saturating_add(bytes.len());
         if self.bytes > 64 * 1024 * 1024 {
@@ -386,7 +391,8 @@ impl Transcript {
         self.file
             .write_all(&bytes)
             .and_then(|()| self.file.sync_data())
-            .map_err(|e| Error::io(&self.path, e))
+            .map_err(|e| Error::io(&self.path, e))?;
+        Ok(value)
     }
 }
 
@@ -434,6 +440,33 @@ pub fn sanitize_event(value: &Value) -> Value {
 mod tests {
     use super::*;
     use clap::Parser;
+
+    #[test]
+    fn transcript_timing_covers_events_and_preserves_binary_redaction() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let mut transcript = Transcript::create(temp.path()).unwrap();
+        transcript.started -= std::time::Duration::from_secs(2);
+        let mut last_elapsed = 0;
+        for value in [
+            json!({"type":"start"}),
+            json!({"type":"permission_request","request":{"toolCall":{"toolCallId":"call"}}}),
+            json!({"type":"permission_response","tool_call_id":"call"}),
+            json!({"type":"update","notification":{"update":{"sessionUpdate":"tool_call_update","content":{"type":"image","data":"PRIVATE_IMAGE"}}}}),
+            json!({"type":"complete"}),
+        ] {
+            let recorded = transcript.record(&value).unwrap();
+            assert!(recorded["recorded_at_unix_ms"].as_u64().unwrap() > 0);
+            let elapsed = recorded["elapsed_us"].as_u64().unwrap();
+            assert!(elapsed >= 2_000_000 && elapsed >= last_elapsed);
+            last_elapsed = elapsed;
+            let mut redacted = recorded.clone();
+            omit_binary(&mut redacted);
+            let text = std::fs::read_to_string(&transcript.path).unwrap();
+            let stored: Value = serde_json::from_str(text.lines().last().unwrap()).unwrap();
+            assert_eq!(stored, redacted);
+            assert!(!text.contains("PRIVATE_IMAGE"));
+        }
+    }
 
     #[test]
     fn legacy_sessions_upgrade_without_losing_drafts_and_pending_context_survives_reopen() {

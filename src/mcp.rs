@@ -11,10 +11,16 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Value, json};
-use std::{borrow::Cow, path::PathBuf, time::Duration};
 #[cfg(feature = "rendering")]
-use std::{collections::VecDeque, time::Instant};
+use std::collections::VecDeque;
+use std::{
+    borrow::Cow,
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 use tokio::sync::{mpsc, oneshot};
+
+pub(crate) mod timing;
 
 const MAX_TOOL_BYTES: usize = 4 * 1024 * 1024;
 #[cfg(feature = "rendering")]
@@ -25,12 +31,15 @@ const INSTRUCTIONS: &str = "This server edits one bound .pen document. Start wit
 struct Server {
     sender: mpsc::Sender<Job>,
     preview_control: bool,
+    usage: Option<crate::guidance::usage::UsageAccess>,
 }
 struct Job {
     name: String,
     arguments: Value,
     reply: oneshot::Sender<CallToolResult>,
     cancel: tokio_util::sync::CancellationToken,
+    timing: timing::Timer,
+    usage: Result<Option<crate::guidance::usage::UsageRequest>>,
 }
 
 pub fn serve(store: Store, fonts: Vec<PathBuf>) -> Result<()> {
@@ -66,6 +75,7 @@ pub fn serve_with_preview_context(
         .transpose()?;
     let has_preview = preview_control.is_some();
     let (sender, mut receiver) = mpsc::channel::<Job>(16);
+    let server_usage = usage.clone();
     let worker = std::thread::Builder::new()
         .name("lazypencil-document".into())
         .spawn(move || -> Result<()> {
@@ -112,10 +122,9 @@ pub fn serve_with_preview_context(
                 #[cfg(not(feature = "rendering"))]
                 let job = receiver.blocking_recv();
                 let Some(job) = job else { break };
-                if job.reply.is_closed() {
-                    continue;
-                }
-                let called = if job.cancel.is_cancelled() {
+                let started = Instant::now();
+                let skipped = job.reply.is_closed() || job.cancel.is_cancelled();
+                let called = if skipped {
                     Err(Error::new(
                         "CANCELLED",
                         "The request was cancelled before execution",
@@ -127,6 +136,9 @@ pub fn serve_with_preview_context(
                     Ok(result) => result,
                     Err(error) => CallToolResult::structured_error(json!({"error":error})),
                 };
+                let result =
+                    job.timing
+                        .finish(&job.name, (!skipped).then_some(started), result, job.usage);
                 let _ = job.reply.send(result);
             }
             Ok(())
@@ -137,7 +149,7 @@ pub fn serve_with_preview_context(
         .build()
         .map_err(|e| Error::new("IO_ERROR", format!("Cannot start MCP runtime: {e}")))?;
     let result=runtime.block_on(async move {
-        let running=Server { sender, preview_control: has_preview }.serve(rmcp::transport::stdio_pipes()).await
+        let running=Server { sender, preview_control: has_preview, usage: server_usage }.serve(rmcp::transport::stdio_pipes()).await
             .map_err(|e| Error::new("IO_ERROR",format!("MCP connection failed: {e}")))?;
         let cancel=running.cancellation_token();
         tokio::select! {
@@ -196,6 +208,7 @@ impl ServerHandler for Server {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> std::result::Result<CallToolResponse, ErrorData> {
+        let timing = timing::Timer::new();
         if self.get_tool(&request.name).is_none() {
             return Err(ErrorData::invalid_params("Unknown tool", None));
         }
@@ -210,11 +223,24 @@ impl ServerHandler for Server {
             return Ok(CallToolResult::structured_error(json!({"error":Error::new("CANCELLED","The request was cancelled before execution")})).into());
         }
         let (reply, receiver) = oneshot::channel();
+        // Capture the active turn before queueing, so cancelled requests cannot
+        // append timing data to a later turn on the same connection.
+        let usage = if let Some(access) = self.usage.clone() {
+            let cancel = context.ct.clone();
+            tokio::task::spawn_blocking(move || access.request(&cancel))
+                .await
+                .map_err(|_| crate::Error::new("INTERNAL_ERROR", "Timing grant worker stopped"))
+                .and_then(|request| request.map(Some))
+        } else {
+            Ok(None)
+        };
         let job = Job {
             name: request.name.into_owned(),
             arguments,
             reply,
             cancel: context.ct.clone(),
+            timing,
+            usage,
         };
         tokio::select! {
             biased;

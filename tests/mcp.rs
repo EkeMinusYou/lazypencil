@@ -1,3 +1,4 @@
+use lazypencil::store::Store;
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -151,6 +152,134 @@ struct Client {
     input: Option<ChildStdin>,
     messages: Receiver<Value>,
     next_id: u64,
+}
+
+#[test]
+fn tool_timing_records_success_and_argument_errors_without_payloads() {
+    let (_temp, file, data) = fixture();
+    let store = Store::open(&file, Some(data.clone())).unwrap();
+    let conversation = uuid::Uuid::new_v4().to_string();
+    let directory = store
+        .document_data_dir()
+        .join("conversations")
+        .join(&conversation);
+    fs::create_dir_all(&directory).unwrap();
+    let mut grant =
+        lazypencil::guidance::usage::UsageGrant::create(&store, &directory, &conversation).unwrap();
+    let turn = uuid::Uuid::new_v4().to_string();
+    grant.begin_turn(&turn).unwrap();
+    let mut client = Client::start_with_context(&file, &data, None, &[], Some(grant.path()));
+    let success = client.call("get_history", json!({}));
+    let failure = client.call(
+        "apply_operations",
+        json!({"PRIVATE_ARGUMENT":"MUST_NOT_LOG"}),
+    );
+    assert_ne!(success["isError"], true);
+    assert_eq!(failure["isError"], true);
+    client.finish();
+    let records = grant.finish_turn().unwrap();
+    assert_eq!(records.len(), 2);
+    for (record, result, tool, is_error) in [
+        (&records[0], &success, "get_history", false),
+        (&records[1], &failure, "apply_operations", true),
+    ] {
+        assert_eq!(record["type"], "tool_timing");
+        assert_eq!(record["tool"], tool);
+        assert_eq!(record["turn"], turn);
+        assert_eq!(record["timing"], result["_meta"]["lazypencil/timing"]);
+        assert_eq!(record["timing"]["is_error"], is_error);
+        let timing = &record["timing"];
+        assert_eq!(
+            timing["queue_us"].as_u64().unwrap() + timing["execution_us"].as_u64().unwrap(),
+            timing["server_us"].as_u64().unwrap()
+        );
+        assert!(timing["received_at_unix_ms"].as_u64().unwrap() > 0);
+        assert!(result["_meta"].get("lazypencil/timing_log_error").is_none());
+    }
+    assert_ne!(
+        records[0]["timing"]["call_id"],
+        records[1]["timing"]["call_id"]
+    );
+    assert!(
+        !serde_json::to_string(&records)
+            .unwrap()
+            .contains("MUST_NOT_LOG")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn tool_timing_separates_queue_waits_and_records_cancelled_execution() {
+    let temp = TempDir::new().unwrap();
+    let server = http_image_reference::Server::new();
+    let file = temp.path().join("design.pen");
+    let data = temp.path().join("data");
+    fs::write(&file, json!({"version":"2.21","children":[{"id":"image","type":"rectangle","width":16,"height":16,"fill":{"type":"image","url":format!("http://{}/network/http-image/blocked.png",server.address)}}]}).to_string()).unwrap();
+    let store = Store::open(&file, Some(data.clone())).unwrap();
+    let conversation = uuid::Uuid::new_v4().to_string();
+    let directory = store
+        .document_data_dir()
+        .join("conversations")
+        .join(&conversation);
+    fs::create_dir_all(&directory).unwrap();
+    let mut grant =
+        lazypencil::guidance::usage::UsageGrant::create(&store, &directory, &conversation).unwrap();
+    grant.begin_turn(&uuid::Uuid::new_v4().to_string()).unwrap();
+    let mut client = Client::start_with_context(&file, &data, None, &[], Some(grant.path()));
+    let blocked = client.start_request("tools/call", json!({"name":"get_document","arguments":{}}));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while server.network_counts().0 == 0 {
+        assert!(
+            Instant::now() < deadline,
+            "The document call did not reach the blocking fixture"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let queued = client.start_request("tools/call", json!({"name":"get_history","arguments":{}}));
+    assert!(matches!(
+        client.messages.recv_timeout(Duration::from_millis(100)),
+        Err(mpsc::RecvTimeoutError::Timeout)
+    ));
+    client.send(
+        json!({"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":blocked}}),
+    );
+    loop {
+        let response = client
+            .messages
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap();
+        if let Some(id) = response["id"].as_u64() {
+            assert!(
+                id == blocked || id == queued,
+                "Unexpected response: {response}"
+            );
+            if id == queued {
+                assert_ne!(response["result"]["isError"], true, "{response}");
+                assert!(
+                    response["result"]["_meta"]["lazypencil/timing"]["queue_us"]
+                        .as_u64()
+                        .unwrap()
+                        >= 50_000
+                );
+                break;
+            }
+        }
+    }
+    client.finish();
+    let records = grant.finish_turn().unwrap();
+    assert_eq!(records.len(), 2);
+    let blocked = records
+        .iter()
+        .find(|record| record["tool"] == "get_document")
+        .unwrap();
+    assert_eq!(blocked["timing"]["is_error"], true);
+    assert!(blocked["timing"]["execution_us"].as_u64().unwrap() >= 100_000);
+    let queued = records
+        .iter()
+        .find(|record| record["tool"] == "get_history")
+        .unwrap();
+    assert_eq!(queued["timing"]["is_error"], false);
+    assert!(queued["timing"]["queue_us"].as_u64().unwrap() >= 50_000);
 }
 
 impl Client {
@@ -596,7 +725,18 @@ fn owned_mcp_records_exact_design_resource_metadata_and_rotates_active_turns() {
         client.call("get_guidance", json!({"id":"unknown-guide"}))["isError"],
         true
     );
-    let records = grant.finish_turn().unwrap();
+    let all_records = grant.finish_turn().unwrap();
+    assert_eq!(
+        all_records
+            .iter()
+            .filter(|record| record["type"] == "tool_timing")
+            .count(),
+        4
+    );
+    let records = all_records
+        .into_iter()
+        .filter(|record| record["type"] == "design_resource")
+        .collect::<Vec<_>>();
     assert_eq!(records.len(), 3);
     assert_eq!(records[0]["resources"][0]["hash"], guide["hash"]);
     assert_eq!(records[0]["resources"][0]["id"], "typography");
@@ -618,7 +758,7 @@ fn owned_mcp_records_exact_design_resource_metadata_and_rotates_active_turns() {
     grant.begin_turn(&next).unwrap();
     client.data("get_guidance", json!({"id":"color"}));
     let records = grant.finish_turn().unwrap();
-    assert_eq!(records.len(), 1);
+    assert_eq!(records.len(), 2);
     assert_eq!(records[0]["turn"], next);
     assert_eq!(records[0]["resources"][0]["id"], "color");
     drop(grant);

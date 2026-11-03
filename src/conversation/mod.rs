@@ -842,7 +842,7 @@ impl Conversation {
                 let automatic = matches!(self.args.document_tools, DocumentTools::Allow)
                     .then(|| self.permissions.allow_once(&request))
                     .flatten();
-                self.record(&value)?;
+                let value = self.record(&value)?;
                 if let Some(option) = automatic {
                     self.events.push_back(ConversationEvent::Message(value));
                     self.permission_response(&request, Some(option.clone()), false, true)?;
@@ -909,14 +909,14 @@ impl Conversation {
     ) -> Result<()> {
         self.message(json!({"type":"permission_response","tool_call_id":request.tool_call.tool_call_id,"option_id":selection,"interactive":interactive,"document_tool_preauthorized":preauthorized}))
     }
-    fn record(&mut self, value: &Value) -> Result<()> {
+    fn record(&mut self, value: &Value) -> Result<Value> {
         if let Some(transcript) = &mut self.transcript {
-            transcript.record(value)?;
+            return transcript.record(value);
         }
-        Ok(())
+        Ok(value.clone())
     }
     fn message(&mut self, value: Value) -> Result<()> {
-        self.record(&value)?;
+        let value = self.record(&value)?;
         self.events.push_back(ConversationEvent::Message(value));
         Ok(())
     }
@@ -983,7 +983,11 @@ impl Conversation {
             }
         };
         // Still expose the real document result if transcript storage itself fails.
-        if let Err(error) = self.record(&value) {
+        let recorded = self.record(&value);
+        if let Ok(recorded) = &recorded {
+            value = recorded.clone();
+        }
+        if let Err(error) = recorded {
             let error = Error::new("AGENT_ERROR", "The turn transcript could not be completed")
                 .details(json!({"transcript_error":error,"turn_error":result.err()}));
             value["type"] = json!("failed");

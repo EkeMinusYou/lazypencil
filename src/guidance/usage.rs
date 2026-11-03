@@ -1,4 +1,4 @@
-//! Bound, per-turn metadata for design resources returned by an owned MCP process.
+//! Bound, per-turn design-resource metadata and timings from an owned MCP process.
 
 use crate::{
     Error, Result,
@@ -47,6 +47,18 @@ struct UsageRecord {
     dependency_revision: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     project_design: Option<ProjectIdentity>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct TimingRecord {
+    #[serde(rename = "type")]
+    kind: String,
+    source: String,
+    turn: String,
+    connection: String,
+    tool: String,
+    timing: crate::mcp::timing::Measurements,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -192,6 +204,20 @@ impl UsageGrant {
             if line.len() > MAX_RECORD_BYTES {
                 return Err(invalid("A design usage record exceeds its limit"));
             }
+            if let Ok(value) = serde_json::from_slice::<TimingRecord>(line) {
+                if value.kind != "tool_timing"
+                    || value.source != "mcp"
+                    || value.turn != turn
+                    || value.connection != self.access.connection
+                    || !timing_tools().contains(&value.tool)
+                    || !value.timing.valid()
+                {
+                    return Err(invalid("Invalid tool timing metadata"));
+                }
+                records
+                    .push(serde_json::to_value(value).map_err(|error| invalid(error.to_string()))?);
+                continue;
+            }
             let value: UsageRecord = serde_json::from_slice(line)
                 .map_err(|_| invalid("The design usage journal is invalid"))?;
             if value.kind != "design_resource"
@@ -262,6 +288,11 @@ impl UsageGrant {
         }
         Ok(records)
     }
+}
+
+fn timing_tools() -> &'static Vec<String> {
+    static TOOLS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    TOOLS.get_or_init(crate::mcp::tool_names)
 }
 
 impl Drop for UsageGrant {
@@ -450,7 +481,23 @@ impl UsageRequest {
         if let Some(design) = value.get("project_design") {
             record["project_design"] = json!({"fingerprint":design["fingerprint"],"trust_fingerprint":design["trust_fingerprint"]});
         }
-        let mut bytes = serde_json::to_vec(&record).map_err(|error| invalid(error.to_string()))?;
+        self.append(&record, cancel)
+    }
+
+    pub(crate) fn record_timing(
+        &self,
+        tool: &str,
+        timing: &crate::mcp::timing::Measurements,
+    ) -> Result<()> {
+        self.append(
+            &json!({"type":"tool_timing","source":"mcp","turn":self.turn,
+                "connection":self.access.connection,"tool":tool,"timing":timing}),
+            &CancellationToken::new(),
+        )
+    }
+
+    fn append(&self, record: &Value, cancel: &CancellationToken) -> Result<()> {
+        let mut bytes = serde_json::to_vec(record).map_err(|error| invalid(error.to_string()))?;
         bytes.push(b'\n');
         if bytes.len() > MAX_RECORD_BYTES {
             return Err(invalid("Design usage metadata exceeds 64 KiB"));
@@ -458,7 +505,7 @@ impl UsageRequest {
         let _lock = self.access.lock(Some(cancel))?;
         if self.access.manifest()?.turn.as_deref() != Some(&self.turn) {
             return Err(invalid(
-                "The design usage turn ended before the resource was returned",
+                "The design usage turn ended before metadata was recorded",
             ));
         }
         let path = self.access.journal(&self.turn);
@@ -623,6 +670,32 @@ mod tests {
             assert_eq!(record["turn"], turn);
             assert!(!record.to_string().contains("example_operations"));
             assert!(!record.to_string().contains("body"));
+        }
+    }
+
+    #[test]
+    fn tool_timing_journals_reject_foreign_invalid_or_payload_bearing_records() {
+        let (_temp, store, mut grant) = grant();
+        let access = UsageAccess::open(&store, grant.path()).unwrap();
+        for invalid_field in ["turn", "connection", "tool", "duration", "body"] {
+            let turn = uuid::Uuid::new_v4().to_string();
+            grant.begin_turn(&turn).unwrap();
+            let mut record = json!({"type":"tool_timing","source":"mcp","turn":turn,
+                "connection":access.connection,"tool":"get_history","timing":{
+                    "call_id":uuid::Uuid::new_v4().to_string(),"received_at_unix_ms":1,
+                    "finished_at_unix_ms":2,"queue_us":100,"execution_us":200,
+                    "server_us":300,"is_error":false}});
+            match invalid_field {
+                "turn" | "connection" => {
+                    record[invalid_field] = json!(uuid::Uuid::new_v4().to_string())
+                }
+                "tool" => record["tool"] = json!("unknown"),
+                "duration" => record["timing"]["server_us"] = json!(0),
+                "body" => record["body"] = json!("MUST_NOT_LOG"),
+                _ => unreachable!(),
+            }
+            fs::write(access.journal(&turn), format!("{record}\n")).unwrap();
+            assert!(grant.finish_turn().is_err(), "Accepted {invalid_field}");
         }
     }
 
