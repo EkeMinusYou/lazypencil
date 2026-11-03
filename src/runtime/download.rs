@@ -232,3 +232,5 @@ fn run_worker<T: Send + 'static>(
         std::thread::sleep(Duration::from_millis(15));
     }
 }
+
+// CI benchmark: retain identical runtime inputs across verification contracts.
