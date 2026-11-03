@@ -1,0 +1,700 @@
+{
+  "format_version": 1,
+  "baseline": "0ad3c6f",
+  "scope": "All 49 findings from the 2026-11-03 source audit",
+  "completion": "complete",
+  "items": [
+    {
+      "id": 1,
+      "subject": "Crossterm event-stream",
+      "decision": "changed",
+      "resolution": "Remove unused async event-stream feature; Events uses poll/read on its owned thread.",
+      "sources": [
+        "Cargo.toml",
+        "Cargo.lock",
+        "src/tui/events.rs"
+      ]
+    },
+    {
+      "id": 2,
+      "subject": "Unused failed-platform selection",
+      "decision": "changed",
+      "resolution": "Remove failed_platform and its obsolete dedicated test; retry selection uses explicit platform or the release default.",
+      "sources": [
+        "xtask/src/ci/focus.rs",
+        "xtask/tests/ci/selection.rs"
+      ]
+    },
+    {
+      "id": 3,
+      "subject": "Unused retry root argument",
+      "decision": "changed",
+      "resolution": "Remove the unused repository-root parameter.",
+      "sources": [
+        "xtask/src/ci/focus.rs",
+        "xtask/src/ci/mod.rs"
+      ]
+    },
+    {
+      "id": 4,
+      "subject": "Legacy build_jobs wrapper",
+      "decision": "changed",
+      "resolution": "Use build_jobs_for in both production and scheduling tests.",
+      "sources": [
+        "xtask/src/ci/commands.rs",
+        "xtask/tests/ci/commands.rs"
+      ]
+    },
+    {
+      "id": 5,
+      "subject": "Application identity entry points",
+      "decision": "changed",
+      "resolution": "Use ApplicationIdentity::capture with an explicit ApplicationScope in production and tests.",
+      "sources": [
+        "xtask/src/ci/cache.rs",
+        "xtask/tests/compatible_cache.rs"
+      ]
+    },
+    {
+      "id": 6,
+      "subject": "Linux installer test wrapper",
+      "decision": "changed",
+      "resolution": "Production and tests use the same parameterized package installer.",
+      "sources": [
+        "xtask/src/ci/setup.rs",
+        "xtask/tests/process.rs"
+      ]
+    },
+    {
+      "id": 7,
+      "subject": "Service convenience APIs",
+      "decision": "retained",
+      "resolution": "Public convenience APIs delegate to the cancellable implementation; repository-only references do not establish absence of external users.",
+      "sources": [
+        "src/service.rs",
+        "src/lib.rs"
+      ]
+    },
+    {
+      "id": 8,
+      "subject": "Operations convenience APIs",
+      "decision": "retained",
+      "resolution": "Public in-memory editing and explicit local validation are distinct from Store persistence.",
+      "sources": [
+        "src/operations.rs",
+        "tests/detach.rs"
+      ]
+    },
+    {
+      "id": 9,
+      "subject": "Image convenience APIs",
+      "decision": "retained",
+      "resolution": "Public wrappers deliberately provide default limits and bounds; preserve their external contract.",
+      "sources": [
+        "src/attachments.rs",
+        "src/image_input.rs",
+        "tests/attachments.rs"
+      ]
+    },
+    {
+      "id": 10,
+      "subject": "Explicit configuration and trust APIs",
+      "decision": "retained",
+      "resolution": "Explicit settings avoid process-global environment mutation; design-only trust revocation differs from revoking all project grants.",
+      "sources": [
+        "src/config.rs",
+        "tests/user_config.rs",
+        "tests/project_guidance.rs"
+      ]
+    },
+    {
+      "id": 11,
+      "subject": "Store lock APIs",
+      "decision": "retained",
+      "resolution": "Expose the shared lock protocol to integration users; cancellation-free wrappers share the same implementation.",
+      "sources": [
+        "src/store.rs",
+        "tests/document_store.rs"
+      ]
+    },
+    {
+      "id": 12,
+      "subject": "Runtime injection and diagnostic APIs",
+      "decision": "retained",
+      "resolution": "Custom executables, embedded-host supervisors and owned-process diagnostics have documented independent purposes.",
+      "sources": [
+        "src/dynamic.rs",
+        "tests/dynamic_render.rs"
+      ]
+    },
+    {
+      "id": 13,
+      "subject": "Authentication-only API",
+      "decision": "retained",
+      "resolution": "Public account inspection intentionally avoids sessions, tools, login and prompts; its branch is reachable through this API.",
+      "sources": [
+        "src/agent.rs",
+        "tests/agent.rs"
+      ]
+    },
+    {
+      "id": 14,
+      "subject": "Document 2.19 codec",
+      "decision": "retained",
+      "resolution": "Both document versions are supported; preserving source and imported-library versions is an explicit contract.",
+      "sources": [
+        "src/document/codec.rs",
+        "docs/pen-semantics.md",
+        "tests/document_store.rs"
+      ]
+    },
+    {
+      "id": 15,
+      "subject": "Script 2.11 headers",
+      "decision": "retained",
+      "resolution": "Published scripts remain supported; the header compatibility set is independent of document versions.",
+      "sources": [
+        "src/script/header.rs",
+        "README.md",
+        "tests/scripts.rs",
+        "tests/script_render.rs"
+      ]
+    },
+    {
+      "id": 16,
+      "subject": "Conversation v1/v2 records",
+      "decision": "retained",
+      "resolution": "Session::open already upgrades to v3 at the read boundary while preserving drafts and native session continuity.",
+      "sources": [
+        "src/conversation/storage.rs"
+      ]
+    },
+    {
+      "id": 17,
+      "subject": "Original-less attachment records",
+      "decision": "retained",
+      "resolution": "Old records retain only the normalized PNG; inventing original metadata would misrepresent retained data.",
+      "sources": [
+        "src/attachments.rs",
+        "tests/attachments.rs"
+      ]
+    },
+    {
+      "id": 18,
+      "subject": "Owner-less checkpoint records",
+      "decision": "retained",
+      "resolution": "Document paths cannot be reconstructed from namespace hashes; conservative retention protects unknown historical assets.",
+      "sources": [
+        "src/store.rs",
+        "src/assets/prune/scan.rs",
+        "tests/support/asset_prune.rs"
+      ]
+    },
+    {
+      "id": 19,
+      "subject": "Browser scope v1",
+      "decision": "retained",
+      "resolution": "Missing URL ownership is semantically meaningful; promotion to v2 requires explicit captured authority.",
+      "sources": [
+        "src/project/browser_context.rs"
+      ]
+    },
+    {
+      "id": 20,
+      "subject": "Native dependency hash migrations",
+      "decision": "changed",
+      "resolution": "Localize reviewed legacy hash bridges in migrations.rs; preserve exact compiler and flag checks because expiry is unproven.",
+      "sources": [
+        "xtask/src/ci/cache/migrations.rs"
+      ]
+    },
+    {
+      "id": 21,
+      "subject": "Legacy cache keys",
+      "decision": "retained",
+      "resolution": "Legacy lookup still verifies source, recipe and dep-info; retention must not discard a distinct compiler context without replacement evidence.",
+      "sources": [
+        "xtask/src/ci/cache.rs",
+        "xtask/src/ci/cache/compatible.rs",
+        "xtask/tests/checkpoints.rs"
+      ]
+    },
+    {
+      "id": 22,
+      "subject": "Previous release recipe",
+      "decision": "changed",
+      "resolution": "Move the single reviewed transition into migrations.rs while retaining debug-only reuse and old-release exclusion.",
+      "sources": [
+        "xtask/src/ci/cache/migrations.rs",
+        "xtask/tests/compatible_cache.rs"
+      ]
+    },
+    {
+      "id": 23,
+      "subject": "Preview timing v1/v2",
+      "decision": "retained",
+      "resolution": "The measurement tool accepts arbitrary candidate binaries, so old format readers remain a live feature.",
+      "sources": [
+        "xtask/src/performance/tui.rs",
+        "xtask/tests/tui_measurement.rs"
+      ]
+    },
+    {
+      "id": 24,
+      "subject": "Pagination duplication",
+      "decision": "changed",
+      "resolution": "MCP list_components now uses query::page_offset; keep existing stored/project cursor wire formats. Windows cross-target compilation also verifies the shared Job implementation; the browser worker result is explicitly typed.",
+      "sources": [
+        "src/query.rs",
+        "src/mcp.rs",
+        "src/service.rs"
+      ]
+    },
+    {
+      "id": 25,
+      "subject": "Node-query validation and filtering",
+      "decision": "changed",
+      "resolution": "Share page/address validation and NodeFilter, with one lowercase query per request.",
+      "sources": [
+        "src/service.rs",
+        "src/service/calculated_nodes.rs"
+      ]
+    },
+    {
+      "id": 26,
+      "subject": "Canonical JSON hashing",
+      "decision": "changed",
+      "resolution": "Share document::canonical_hash across operations, bindings and script contexts; preserve the distinct CI cache wire encoder.",
+      "sources": [
+        "src/document.rs",
+        "src/operations.rs",
+        "src/project/scope.rs",
+        "src/project/bindings.rs"
+      ]
+    },
+    {
+      "id": 27,
+      "subject": "Digest hex encoding",
+      "decision": "changed",
+      "resolution": "Share document::digest_hex across in-memory and streaming hashes without altering input bytes. Transcript, deletion-inventory and layout identities also use the shared byte-to-hex helper.",
+      "sources": [
+        "src/document.rs",
+        "src/store/content.rs",
+        "src/runtime.rs",
+        "src/runtime/profiles/pages/channel.rs"
+      ]
+    },
+    {
+      "id": 28,
+      "subject": "Bounded file reads",
+      "decision": "changed",
+      "resolution": "Use one cancellable chunk reader; preserve each caller's size limit, symlink policy and error category.",
+      "sources": [
+        "src/store/content.rs",
+        "src/store.rs",
+        "src/attachments.rs",
+        "src/config.rs",
+        "src/project/capture.rs"
+      ]
+    },
+    {
+      "id": 29,
+      "subject": "Lock retry loops",
+      "decision": "retained",
+      "resolution": "Registry leases and Store locks differ in cancellation, errors and waiting notifications; a shared loop would need policy switches without reducing ownership complexity.",
+      "sources": [
+        "src/store.rs",
+        "src/conversation/storage.rs"
+      ]
+    },
+    {
+      "id": 30,
+      "subject": "Windows job ownership",
+      "decision": "changed",
+      "resolution": "Share job creation, limits and worker join; preserve prefixes, non-inheritable ownership and limited join rights.",
+      "sources": [
+        "src/process_job.rs",
+        "src/agent/process/windows.rs",
+        "src/cdp/process/windows.rs"
+      ]
+    },
+    {
+      "id": 31,
+      "subject": "ACP startup framing and stderr",
+      "decision": "changed",
+      "resolution": "Share the private 13-byte protocol and gated relay, preserving OS-specific magic and phase mapping.",
+      "sources": [
+        "src/agent/process/startup.rs",
+        "src/agent/process/unix.rs",
+        "src/agent/process/windows.rs"
+      ]
+    },
+    {
+      "id": 32,
+      "subject": "Unix owner watchdog",
+      "decision": "changed",
+      "resolution": "Use OwnerWatch for the same EOF observation and race-safe process-group binding.",
+      "sources": [
+        "src/process_owner.rs",
+        "src/agent/process/unix.rs",
+        "src/cdp/process/unix.rs"
+      ]
+    },
+    {
+      "id": 33,
+      "subject": "Component and variable lookup",
+      "decision": "changed",
+      "resolution": "Share namespace traversal and ambiguity handling; preserve runtime-reference and local-name precedence.",
+      "sources": [
+        "src/project/lookup.rs"
+      ]
+    },
+    {
+      "id": 34,
+      "subject": "Literal property classification",
+      "decision": "changed",
+      "resolution": "Share the base literal-property set while retaining resolution-only exceptions.",
+      "sources": [
+        "src/project/properties.rs",
+        "src/operations.rs",
+        "src/project/resolution.rs"
+      ]
+    },
+    {
+      "id": 35,
+      "subject": "Serialization budgets",
+      "decision": "changed",
+      "resolution": "Share allocation-free byte counting and early-abort serialization while retaining distinct caller budgets and errors. Node-reference and CLI layout limits use the same allocation-free size counter; CST source-span lengths remain unchanged.",
+      "sources": [
+        "src/query.rs",
+        "src/mcp.rs",
+        "src/service.rs",
+        "src/project/bindings/custom.rs"
+      ]
+    },
+    {
+      "id": 36,
+      "subject": "Project responsibilities",
+      "decision": "changed",
+      "resolution": "Separate capture, configuration/font handling and resolution without changing public methods or snapshot ownership.",
+      "sources": [
+        "src/project.rs",
+        "src/project/capture.rs",
+        "src/project/configuration.rs",
+        "src/project/resolution.rs"
+      ],
+      "retained_alternative": "Keep Project as the owner of shared snapshots and budgets; modules isolate phases without duplicating that ownership."
+    },
+    {
+      "id": 37,
+      "subject": "Copier state and namespace mapping",
+      "decision": "changed",
+      "resolution": "Group reuse indexes and budgets in reuse::State; share authored-key-first alias entries across compositions.",
+      "sources": [
+        "src/project/import.rs",
+        "src/project/import/reuse.rs",
+        "src/project/bindings.rs"
+      ],
+      "retained_alternative": "Keep one Copier lifetime and shared allocation budget so recursive imports preserve ID and path reuse."
+    },
+    {
+      "id": 38,
+      "subject": "Operation batch state",
+      "decision": "changed",
+      "resolution": "Batch owns one transaction state and final validation; import::Request groups operation arguments.",
+      "sources": [
+        "src/operations/batch.rs",
+        "src/operations/import.rs"
+      ]
+    },
+    {
+      "id": 39,
+      "subject": "Raster planning",
+      "decision": "changed",
+      "resolution": "RasterPlan owns input validation and dimensions before drawing allocation; retain the proven recording and compositing pipeline.",
+      "sources": [
+        "src/render/plan.rs",
+        "src/render.rs"
+      ],
+      "retained_alternative": "Keep the proven pixel recording and compositing order; the plan isolates validation and allocation without changing rendering semantics."
+    },
+    {
+      "id": 40,
+      "subject": "TUI agent state",
+      "decision": "changed",
+      "resolution": "Group negotiated agent settings in Status and use Pending/Reported to represent configuration receipt.",
+      "sources": [
+        "src/tui/agent_status.rs",
+        "src/tui/mod.rs"
+      ],
+      "retained_alternative": "Preview, camera and modal states have independent asynchronous lifecycles; a single App-wide enum would obscure valid concurrent states."
+    },
+    {
+      "id": 41,
+      "subject": "TUI key routing",
+      "decision": "changed",
+      "resolution": "Separate priority routing from cancellation, permission, help, search, prompt and panel handlers.",
+      "sources": [
+        "src/tui/input.rs",
+        "src/tui/mod.rs"
+      ]
+    },
+    {
+      "id": 42,
+      "subject": "Argument-heavy contexts",
+      "decision": "changed",
+      "resolution": "Use shader::Request, ExpansionPass, ConversationChannels and import::Request while preserving public wrappers.",
+      "sources": [
+        "src/shader.rs",
+        "src/script/layout.rs",
+        "src/agent.rs",
+        "src/operations/import.rs"
+      ]
+    },
+    {
+      "id": 43,
+      "subject": "Configuration font state",
+      "decision": "changed",
+      "resolution": "Share FontSources verification across user and project snapshots; retain public fields.",
+      "sources": [
+        "src/config.rs"
+      ]
+    },
+    {
+      "id": 44,
+      "subject": "Document reparsing and revisions",
+      "decision": "changed",
+      "resolution": "Cache revision at parse time; retain sequential parsing because later operations observe changed IDs and JSONC positions.",
+      "sources": [
+        "src/document.rs",
+        "src/operations/batch.rs"
+      ],
+      "retained_alternative": "Keep sequential parsing because subsequent operations use updated IDs, indexes and JSONC spans; cache repeated revision hashing instead."
+    },
+    {
+      "id": 45,
+      "subject": "MCP catalogue and capabilities",
+      "decision": "changed",
+      "resolution": "Centralize names, scopes, effects and dispatch types; cache immutable schemas; advertise actual supported script headers.",
+      "sources": [
+        "src/mcp/catalog.rs",
+        "src/mcp.rs",
+        "src/mcp/workspace.rs",
+        "src/service.rs"
+      ]
+    },
+    {
+      "id": 46,
+      "subject": "CI selection and stages",
+      "decision": "changed",
+      "resolution": "Separate selection rules and stage execution; map extracted modules to their previous consumer and runtime gates.",
+      "sources": [
+        "xtask/src/ci/focus/selection.rs",
+        "xtask/src/ci/native/stages.rs",
+        "xtask/src/ci/focus.rs"
+      ]
+    },
+    {
+      "id": 47,
+      "subject": "Dynamic cache ownership",
+      "decision": "changed",
+      "resolution": "Keep entries, LRU order and invalidation under one Cache, with shared page shutdown and executable resolution.",
+      "sources": [
+        "src/dynamic/cache.rs",
+        "src/dynamic.rs"
+      ]
+    },
+    {
+      "id": 48,
+      "subject": "Internal worker dispatch",
+      "decision": "changed",
+      "resolution": "Read the worker argument once and share exit handling; preserve pre-initialization dispatch and private image errors.",
+      "sources": [
+        "src/main.rs"
+      ]
+    },
+    {
+      "id": 49,
+      "subject": "Large test modules",
+      "decision": "changed",
+      "resolution": "Split TUI and CI tests by feature, retaining test coverage and the TUI fully qualified test names used by CI. Fixed existing geometry-sensitive TUI fixtures by explicitly selecting their intended panel ratios; native image placement checks verify a full-image crop.",
+      "sources": [
+        "src/tui/tests.rs",
+        "src/tui/tests",
+        "xtask/tests/ci.rs",
+        "xtask/tests/ci"
+      ]
+    }
+  ],
+  "verification": [
+    {
+      "scope": "core library",
+      "command": "cargo xtask test --core --lib",
+      "result": "passed",
+      "passed": 142
+    },
+    {
+      "scope": "default configuration",
+      "command": "cargo check --locked --all-targets -j 2",
+      "result": "passed"
+    },
+    {
+      "scope": "xtask targeted integration tests",
+      "targets": [
+        "checkpoints",
+        "ci",
+        "compatible_cache",
+        "native_snapshots",
+        "parallel",
+        "process",
+        "tui_measurement"
+      ],
+      "result": "passed across targeted runs",
+      "passed": 132,
+      "notes": "Cache fixtures now declare their intended debug/incremental settings. The GNU tar case was rerun with GNU tar 1.35; process-accounting tests require OS process inspection."
+    },
+    {
+      "scope": "xtask library",
+      "command": "cargo test --locked --manifest-path xtask/Cargo.toml --lib -- --test-threads=1",
+      "result": "passed",
+      "passed": 26
+    },
+    {
+      "scope": "formatting",
+      "command": "cargo fmt --all -- --check; cargo fmt --manifest-path xtask/Cargo.toml --all -- --check",
+      "result": "passed"
+    },
+    {
+      "scope": "full core sweep before final follow-ups",
+      "command": "cargo xtask test (core stage)",
+      "result": "577 passed; shell completion failed until the missing fish runtime was prepared",
+      "passed": 577,
+      "failed": 1,
+      "ignored": 4
+    },
+    {
+      "scope": "full default sweep before final follow-ups",
+      "command": "cargo xtask test (default stage)",
+      "result": "999 passed; all failed targets were investigated and rechecked as described below",
+      "passed": 999,
+      "failed": 8,
+      "ignored": 79
+    },
+    {
+      "scope": "baseline comparison",
+      "baseline_commit": "4ce26f4",
+      "result": "All five TUI failures and the graphics RGBA mismatch reproduce identically before the refactor. Fixed stale TUI fixture assumptions; retained the graphics oracle unchanged."
+    },
+    {
+      "scope": "final core library and completion",
+      "command": "cargo xtask test --core --lib; cargo xtask test --core --test completions",
+      "result": "passed",
+      "passed": 145
+    },
+    {
+      "scope": "final default focused checks",
+      "command": "cargo xtask test --lib --test completions --test conversation_history --test layout --test tui --lint",
+      "result": "passed",
+      "passed": 329,
+      "ignored": 2
+    },
+    {
+      "scope": "real browser runtime and shader tests",
+      "command": "cargo test --locked --test dynamic_render -- --ignored --test-threads=1",
+      "result": "passed",
+      "passed": 19,
+      "notes": "Local Chromium 156; isolated settings. Includes cancellation, retained page contexts, cache expiry, independent process expiry and software WebGL."
+    },
+    {
+      "scope": "Windows supervisor source compilation",
+      "command": "cargo check --offline --target x86_64-pc-windows-gnu --all-targets -j2 (isolated supervisor harness)",
+      "result": "passed",
+      "notes": "Official Rust 1.99.1. Compiles byte-identical agent/CDP supervisor source files and shared process_job code with their dependencies; not a full application build or Windows execution. Added explicit Result<bool> to the browser worker closure after this check exposed missing type inference."
+    },
+    {
+      "scope": "integrated workspace tests",
+      "command": "cargo xtask test --lib --test agent --test tui",
+      "result": "passed",
+      "passed": 371,
+      "ignored": 6,
+      "breakdown": {
+        "library": 295,
+        "agent": 55,
+        "tui": 21
+      },
+      "notes": "Includes the independently committed document-picker overlay and background agent preparation."
+    },
+    {
+      "scope": "integrated workspace lint and formatting",
+      "commands": [
+        "cargo clippy --locked --all-targets -- -D warnings",
+        "cargo clippy --locked --no-default-features --all-targets -- -D warnings",
+        "cargo fmt --all -- --check",
+        "cargo fmt --manifest-path xtask/Cargo.toml --all -- --check"
+      ],
+      "result": "passed",
+      "notes": "The nonblocking event accessor added by concurrent TUI work is now compiled only with the tui feature; its only caller belongs to that feature."
+    }
+  ],
+  "environment": {
+    "host": "aarch64-apple-darwin",
+    "rustc": "1.99.1",
+    "cargo_jobs": 2,
+    "target_directory": "~/Library/Caches/lazypencil/target",
+    "notes": [
+      "No local installed executable is replaced.",
+      "Concurrent document-picker UI and development-profile changes belong to separate work.",
+      "Prepared local fish and GNU tar binaries for shell completion and archive tests without altering installed applications."
+    ]
+  },
+  "review": {
+    "method": "Independent source and caller reviews of each scope, plus source-body comparisons for moved code.",
+    "confirmed_contracts": [
+      "All 22 MCP tool names, schema input types and descriptions match the baseline.",
+      "MCP document scopes, mutation annotations and revision-exclusion rules match the baseline.",
+      "All 43 TUI tests retain their names and coverage.",
+      "The obsolete CI failed-platform test was replaced by coverage for extracted-module consumer selection.",
+      "Project method moves preserve bodies; component/variable lookup preserves priority.",
+      "Unix and Windows owner cleanup ordering and startup framing preserve their platform-specific contracts.",
+      "Exact supervisor source copies compile for x86_64-pc-windows-gnu with official Rust 1.99.1; no Windows runtime execution is claimed."
+    ],
+    "limitations": [
+      "The macOS host cannot execute Windows binaries. Windows supervisor modules are separately checked for target compilation where available."
+    ]
+  },
+  "known_limitations": [
+    {
+      "test": "graphics::text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations",
+      "status": "pre-existing failure retained",
+      "expected_rgba_sha256": "bae66e1b870d9953e08fc5600054b34aabadbb6b383671f53256f18911313c4e",
+      "actual_rgba_sha256": "88880fe311a9df38362f22c5eff42fc0cf53da2cb2a39dc817a8439c8e17d2d1",
+      "notes": "The baseline and refactored application produce the same actual hash in this local Skia environment. No golden value was changed. The complete suite is not claimed to pass."
+    },
+    {
+      "scope": "Windows",
+      "status": "cross-target supervisor compilation only; native Windows execution not performed"
+    }
+  ],
+  "integration": {
+    "preserved_commit": "36d31a6",
+    "notes": "Preserve the independently committed document-picker overlay and background agent preparation. The only merge conflict combines deferred setup with ConversationChannels; agent/main/TUI merged contents were checked against the prior combined worktree."
+  },
+  "implementation_commits": [
+    {
+      "sha": "4ce26f44f3b2e96a43c2bfa9863f9c08963d4a79",
+      "scope": "CI selection and cache compatibility"
+    },
+    {
+      "sha": "7443feecced4d7c8be9aabc1309e4927239a5280",
+      "scope": "Document, query, project and MCP boundaries"
+    },
+    {
+      "sha": "fdf479a1f667d29b522e1de208f76c36ee4518a2",
+      "scope": "Runtime ownership, render planning and TUI input/tests"
+    },
+    {
+      "sha": "5833f80de70eb54e6f2a577bd10e4c37d9be6809",
+      "scope": "Integration preserving concurrent work, Windows result annotation and TUI feature boundary"
+    }
+  ]
+}
