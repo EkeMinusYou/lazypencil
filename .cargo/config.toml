@@ -1,5 +1,6 @@
 [build]
 jobs = 2
+target-dir = "/Users/mineo/Library/Caches/lazypencil/target"
 
 [alias]
-xtask = "run --quiet --manifest-path xtask/Cargo.toml --target-dir xtask/target --bin xtask --"
+xtask = "run --quiet --manifest-path xtask/Cargo.toml --bin xtask --"

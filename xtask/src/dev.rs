@@ -1,6 +1,6 @@
 //! Developer checks with isolated settings and the same native fixture as CI.
 use crate::{process, util};
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use clap::Args;
 use std::{io::Write, path::Path, process::Command, time::Duration};
 
@@ -52,7 +52,7 @@ impl Arguments {
             ensure!(path.is_file(), "Configured test helper is missing");
             path.canonicalize()?
         } else {
-            process::checked(
+            let output = process::checked(
                 Command::new("cargo").current_dir(root).args([
                     "build",
                     "--locked",
@@ -60,17 +60,26 @@ impl Arguments {
                     "2",
                     "--manifest-path",
                     "xtask/Cargo.toml",
-                    "--target-dir",
-                    "xtask/target",
                     "--bin",
                     "lazypencil-test-helper",
+                    "--message-format=json",
                 ]),
                 Duration::from_secs(600),
             )?;
-            root.join("xtask/target/debug").join(format!(
-                "lazypencil-test-helper{}",
-                std::env::consts::EXE_SUFFIX
-            ))
+            String::from_utf8(output)?
+                .lines()
+                .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+                .find_map(|artifact| {
+                    (artifact["reason"] == "compiler-artifact"
+                        && artifact["target"]["name"] == "lazypencil-test-helper")
+                        .then(|| {
+                            artifact["executable"]
+                                .as_str()
+                                .map(std::path::PathBuf::from)
+                        })
+                        .flatten()
+                })
+                .context("Cargo did not report the native test helper executable")?
         };
         let mut checks: Vec<Vec<String>> = Vec::new();
         let words = |args: &[&str]| args.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
