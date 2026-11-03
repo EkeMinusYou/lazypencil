@@ -14,6 +14,7 @@ pub(super) async fn apply(
     response: &mut Value,
     mode: Option<&str>,
     model: Option<&str>,
+    fast: Option<bool>,
 ) -> Result<()> {
     if let Some(mode) = mode {
         let available = response["modes"]["availableModes"].as_array();
@@ -78,6 +79,48 @@ pub(super) async fn apply(
         }) {
             return Err(agent_error(
                 "The adapter did not confirm the selected model",
+            ));
+        }
+        response["configOptions"] = configs;
+    }
+    // Model changes can replace the available speed controls, so select speed last.
+    if let Some(fast) = fast {
+        let value = if fast { "on" } else { "off" };
+        let options: Vec<_> = response["configOptions"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|option| option["id"] == "fast-mode")
+            .collect();
+        if options.len() != 1
+            || options[0]["type"] != "select"
+            || !contains_value(&options[0]["options"], value)
+        {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "The adapter does not advertise the requested Fast mode setting for this model",
+            ));
+        }
+        let changed = connection
+            .send_request(SetSessionConfigOptionRequest::new(
+                session.clone(),
+                "fast-mode".to_owned(),
+                SessionConfigValueId::new(value.to_owned()),
+            ))
+            .block_task()
+            .await
+            .map_err(|error| protocol_error("session/set_config_option", error))?;
+        let configs = serde_json::to_value(changed.config_options)
+            .map_err(|error| agent_error(error.to_string()))?;
+        let confirmed: Vec<_> = configs
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|option| option["id"] == "fast-mode")
+            .collect();
+        if confirmed.len() != 1 || confirmed[0]["currentValue"] != value {
+            return Err(agent_error(
+                "The adapter did not confirm the selected Fast mode",
             ));
         }
         response["configOptions"] = configs;

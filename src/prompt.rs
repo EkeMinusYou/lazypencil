@@ -93,6 +93,10 @@ pub struct PromptArgs {
     /// Select an adapter-advertised model through ACP.
     #[arg(long)]
     pub model: Option<String>,
+    /// Override Codex Fast mode; omit to keep the runtime's speed setting.
+    #[arg(long, action = clap::ArgAction::Set, num_args = 0..=1,
+        require_equals = true, default_missing_value = "true")]
+    pub fast: Option<bool>,
     /// Select an adapter-advertised permission mode through ACP.
     #[arg(long)]
     pub mode: Option<String>,

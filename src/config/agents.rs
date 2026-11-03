@@ -10,8 +10,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-pub(super) const TEMPLATE: &str = "\n# User-owned agent preferences; CLI options take precedence.\n# [agents]\n# default = \"codex\"\n# [agents.codex]\n# adapter = \"codex-acp\"\n# adapter_args = []\n# auth = \"subscription\"\n# require_auth_status = true\n# model = \"an-adapter-advertised-model\"\n# timeout = 600\n# [agents.claude]\n# adapter = \"claude-agent-acp\"\n# auth = \"subscription\"\n";
-pub(super) const PROJECT_TEMPLATE: &str = "\n# Project agent settings override user preferences only after a separate local grant.\n# Review: lazypencil config show FILE --executables\n# Authorize: lazypencil config trust FILE --executables\n# [agents]\n# default = \"codex\"\n# [agents.codex]\n# adapter = \"codex-acp\"\n# adapter_args = []\n";
+pub(super) const TEMPLATE: &str = "\n# User-owned agent preferences; CLI options take precedence.\n# [agents]\n# default = \"codex\"\n# [agents.codex]\n# adapter = \"codex-acp\"\n# adapter_args = []\n# auth = \"subscription\"\n# require_auth_status = true\n# model = \"an-adapter-advertised-model\"\n# fast = true # Omit to inherit Codex speed; false disables Fast mode.\n# timeout = 600\n# [agents.claude]\n# adapter = \"claude-agent-acp\"\n# auth = \"subscription\"\n";
+pub(super) const PROJECT_TEMPLATE: &str = "\n# Project agent settings override user preferences only after a separate local grant.\n# Review: lazypencil config show FILE --executables\n# Authorize: lazypencil config trust FILE --executables\n# [agents]\n# default = \"codex\"\n# [agents.codex]\n# adapter = \"codex-acp\"\n# adapter_args = []\n# fast = true # Omit to inherit Codex speed.\n";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
@@ -34,6 +34,9 @@ pub struct AgentProfile {
     pub require_auth_status: Option<bool>,
     #[schemars(length(min = 1, max = 512))]
     pub model: Option<String>,
+    /// Codex Fast mode override; omission preserves the runtime setting.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fast: Option<bool>,
     #[schemars(length(min = 1, max = 256))]
     pub mode: Option<String>,
     pub document_tools: Option<DocumentTools>,
@@ -47,6 +50,9 @@ impl AgentSettings {
     }
 
     pub(super) fn validate(&self) -> Result<()> {
+        if self.claude.fast.is_some() {
+            return Err(invalid("Fast mode is only supported in agents.codex"));
+        }
         for profile in [&self.codex, &self.claude] {
             if let Some(adapter) = &profile.adapter {
                 let text = adapter
@@ -184,6 +190,9 @@ impl AgentSettings {
         {
             args.mode = Some(value.clone());
         }
+        if inherited("fast") {
+            args.fast = profile.fast;
+        }
         if inherited("document_tools")
             && let Some(value) = profile.document_tools
         {
@@ -213,6 +222,7 @@ impl AgentProfile {
                 .or_else(|| self.auth_method.clone()),
             require_auth_status: higher.require_auth_status.or(self.require_auth_status),
             model: higher.model.clone().or_else(|| self.model.clone()),
+            fast: higher.fast.or(self.fast),
             mode: higher.mode.clone().or_else(|| self.mode.clone()),
             document_tools: higher.document_tools.or(self.document_tools),
             timeout: higher.timeout.or(self.timeout),
@@ -228,6 +238,7 @@ fn same_preferences(a: &PromptArgs, b: &PromptArgs) -> bool {
         && a.auth_method == b.auth_method
         && a.require_auth_status == b.require_auth_status
         && a.model == b.model
+        && a.fast == b.fast
         && a.mode == b.mode
         && a.document_tools == b.document_tools
         && a.timeout == b.timeout
@@ -302,6 +313,59 @@ mod tests {
             },
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn fast_preferences_preserve_omission_false_overrides_and_cli_provenance() {
+        let user = AgentSettings {
+            codex: AgentProfile {
+                fast: Some(true),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let project = AgentSettings {
+            codex: AgentProfile {
+                fast: Some(false),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        #[cfg(not(feature = "tui"))]
+        let commands = ["prompt"];
+        #[cfg(feature = "tui")]
+        let commands = ["prompt", "tui"];
+        for command in commands {
+            for (settings, flags, expected) in [
+                (AgentSettings::default(), vec![], None),
+                (user.clone(), vec![], Some(true)),
+                (user.overlay(&project), vec![], Some(false)),
+                (user.clone(), vec!["--fast=false"], Some(false)),
+                (user.overlay(&project), vec!["--fast"], Some(true)),
+                (user.clone(), vec!["--agent", "claude"], None),
+            ] {
+                let (mut arguments, matches) = parsed(command, &flags);
+                let args = match &mut arguments.command {
+                    crate::cli::Command::Prompt(args) => args,
+                    #[cfg(feature = "tui")]
+                    crate::cli::Command::Tui(args) => &mut args.prompt,
+                    _ => unreachable!(),
+                };
+                settings.apply(args, matches.subcommand().unwrap().1, None);
+                assert_eq!(args.fast, expected);
+            }
+        }
+        // Omission must preserve existing project execution fingerprints.
+        assert!(
+            serde_json::to_value(AgentProfile::default())
+                .unwrap()
+                .get("fast")
+                .is_none()
+        );
+        assert_eq!(serde_json::to_value(&project.codex).unwrap()["fast"], false);
+        let mut invalid = AgentSettings::default();
+        invalid.claude.fast = Some(false);
+        assert!(invalid.validate().is_err());
     }
 
     #[test]

@@ -387,6 +387,134 @@ fn cli_records_only_nonsensitive_authentication_metadata() {
 }
 
 #[test]
+fn fast_mode_overrides_and_inheritance_also_apply_to_loaded_native_sessions() {
+    runtime().block_on(async {
+        for (selected, expected) in [(None, "on"), (Some(true), "on"), (Some(false), "off")] {
+            let directory = TempDir::new().unwrap();
+            let mut opts = options("settings-fast-inherited", directory.path());
+            opts.session_id = Some("fixture-native".into());
+            opts.fast = selected;
+            let mut host = AgentHost::spawn(opts).unwrap();
+            loop {
+                let event = message(&mut host).await;
+                if event["type"] == "ready" {
+                    assert_eq!(event["session_origin"], "loaded");
+                    let fast = event["response"]["configOptions"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .find(|option| option["id"] == "fast-mode")
+                        .unwrap();
+                    assert_eq!(fast["currentValue"], expected);
+                    break;
+                }
+                assert_ne!(event["type"], "connection_error", "{event}");
+            }
+            host.close().await.unwrap();
+            assert_eq!(
+                directory.path().join("received-settings.jsonl").exists(),
+                selected.is_some()
+            );
+            assert!(!directory.path().join("sent-turn.txt").exists());
+        }
+    });
+}
+
+#[test]
+fn fast_mode_preserves_defaults_and_confirms_explicit_overrides_after_model_selection() {
+    for (mode, args, expected) in [
+        ("settings-fast-inherited", vec![], "on"),
+        ("settings-fast", vec![], "off"),
+        ("settings-fast", vec!["--fast"], "on"),
+        ("settings-fast-inherited", vec!["--fast=false"], "off"),
+        (
+            "settings-fast-model-only",
+            vec!["--model", "fixture-model-2", "--fast=true"],
+            "on",
+        ),
+    ] {
+        let directory = TempDir::new().unwrap();
+        let mut arguments = vec!["--create"];
+        arguments.extend(args.clone());
+        let output = cli(&directory, mode, &arguments);
+        assert!(
+            output.status.success(),
+            "{mode}: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        let values = events(&output);
+        let ready = values
+            .iter()
+            .find(|event| event["type"] == "ready")
+            .unwrap();
+        let fast = ready["response"]["configOptions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|option| option["id"] == "fast-mode")
+            .unwrap();
+        assert_eq!(fast["currentValue"], expected);
+        let settings = directory.path().join("received-settings.jsonl");
+        if args.is_empty() {
+            assert!(
+                !settings.exists(),
+                "Inheritance must not change adapter settings"
+            );
+        } else {
+            let requests: Vec<Value> = std::fs::read_to_string(settings)
+                .unwrap()
+                .lines()
+                .map(|line| serde_json::from_str(line).unwrap())
+                .collect();
+            assert_eq!(requests.last().unwrap()["configId"], "fast-mode");
+            assert_eq!(requests.last().unwrap()["value"], expected);
+            if mode == "settings-fast-model-only" {
+                assert_eq!(requests.len(), 2);
+                assert_eq!(requests[0]["configId"], "model");
+            }
+        }
+    }
+}
+
+#[test]
+fn fast_mode_rejects_unsupported_ambiguous_and_unconfirmed_settings_before_prompting() {
+    for (mode, arguments, code) in [
+        ("normal", vec!["--fast"], "INVALID_ARGUMENT"),
+        ("normal", vec!["--fast=false"], "INVALID_ARGUMENT"),
+        (
+            "settings-fast-duplicate",
+            vec!["--fast"],
+            "INVALID_ARGUMENT",
+        ),
+        ("settings-fast-unconfirmed", vec!["--fast"], "AGENT_ERROR"),
+        (
+            "settings-fast-model-removes",
+            vec!["--model", "fixture-model-2", "--fast"],
+            "INVALID_ARGUMENT",
+        ),
+        (
+            "normal",
+            vec!["--agent", "claude", "--fast"],
+            "INVALID_ARGUMENT",
+        ),
+    ] {
+        let directory = TempDir::new().unwrap();
+        let mut args = vec!["--create"];
+        args.extend(arguments);
+        let output = cli(&directory, mode, &args);
+        assert!(!output.status.success(), "{mode}");
+        assert!(
+            events(&output)
+                .iter()
+                .any(|event| event["error"]["code"] == code),
+            "{mode}: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        assert!(!directory.path().join("sent-turn.txt").exists());
+    }
+}
+
+#[test]
 fn model_and_mode_selection_are_validated_and_confirmed() {
     let directory = TempDir::new().unwrap();
     let output = cli(

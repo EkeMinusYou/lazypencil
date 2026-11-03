@@ -51,6 +51,8 @@ pub struct AgentOptions {
     pub auth_status_timeout: Duration,
     pub session_mode: Option<String>,
     pub model: Option<String>,
+    /// Override the advertised Fast mode selector; None preserves adapter defaults.
+    pub fast: Option<bool>,
     pub setup_timeout: Duration,
     pub turn_timeout: Duration,
     pub cancel_grace: Duration,
@@ -73,6 +75,7 @@ impl AgentOptions {
             auth_status_timeout: Duration::from_secs(5),
             session_mode: None,
             model: None,
+            fast: None,
             setup_timeout: Duration::from_secs(60),
             turn_timeout: Duration::from_secs(600),
             cancel_grace: Duration::from_secs(5),
@@ -464,6 +467,7 @@ async fn conversation(
             &mut response,
             options.session_mode.as_deref(),
             options.model.as_deref(),
+            options.fast,
         )
         .await?;
         if (auth_supported || options.require_auth_status) && authentication.borrow().is_none() {
