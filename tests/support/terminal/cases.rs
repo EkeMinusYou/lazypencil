@@ -972,14 +972,21 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
         h.wait("IME anchor follows the resized prompt", 15.0, |h| {
             let text = h.screen.text();
             let lines = text.lines().collect::<Vec<_>>();
+            let Some((second_x, second_row)) = h.screen.find_text("か\u{3099}") else {
+                return false;
+            };
             // Resizing the observer can move its old cursor before the redraw
             // arrives. Require the new layout before accepting the IME anchor.
+            // The first logical line can soft-wrap on a narrow Prompt: locate
+            // the rendered second line instead of assuming it is one row down.
             prompt_origin(h).is_some_and(|(x, top)| {
-                h.screen.cursor() == (x + 5, top + 1)
+                second_x == x
+                    && second_row > top
+                    && h.screen.cursor() == (x + 5, second_row)
                     && lines
                         .get(top as usize)
                         .is_some_and(|line| line.contains("日本語"))
-                    && lines.get(top as usize + 1).is_some_and(|line| {
+                    && lines.get(second_row as usize).is_some_and(|line| {
                         // vt100 counts ZWJ components separately, so padded
                         // cells can overwrite one component in its model.
                         // Exact draft text and emitted emoji bytes are
