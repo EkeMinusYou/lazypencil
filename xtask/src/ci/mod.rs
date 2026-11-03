@@ -106,9 +106,12 @@ impl Command {
                 }
                 if verification == "focused" && verification::presentation_only(&paths) {
                     plan.suite = "graphics".into();
-                    plan.targets = ["tui", "agent", "user_config", "conversation_history"]
-                        .map(str::to_owned)
-                        .to_vec();
+                    plan.targets = ["tui", "agent", "user_config"].map(str::to_owned).to_vec();
+                    if paths.iter().any(|path| {
+                        ["src/tui/saved.rs", "src/tui/checkpoints.rs"].contains(&path.as_str())
+                    }) {
+                        plan.targets.push("conversation_history".into());
+                    }
                     if paths
                         .iter()
                         .any(|path| path.starts_with("src/tui/documents"))

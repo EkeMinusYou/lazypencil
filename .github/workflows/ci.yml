@@ -274,7 +274,6 @@ jobs:
       suite: ${{ needs.plan.outputs.suite }}
       targets: ${{ needs.plan.outputs.targets }}
       native_clipboard: ${{ needs.plan.outputs.native_clipboard == 'true' }}
-      cache_focused_outputs: true
 
   checks:
     name: Verification

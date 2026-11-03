@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn focused_prs_run_regressions_before_lint_and_keep_isolated_compiler_checkpoints() {
+fn focused_prs_run_regressions_before_lint_and_keep_their_core_checks() {
     let root = util::root();
     let native = fs::read_to_string(root.join(".github/workflows/native.yml")).unwrap();
     let stages: Vec<_> = ["focus-build", "focus-reproduce", "focus-test", "focus-lint"]
@@ -16,15 +16,6 @@ fn focused_prs_run_regressions_before_lint_and_keep_isolated_compiler_checkpoint
     assert!(native.contains(
         "(inputs.phase == 'focus' || inputs.phase == 'verify' && inputs.lane != 'build')"
     ));
-    let save = native
-        .split("id: application-save")
-        .nth(1)
-        .unwrap()
-        .split("run:")
-        .next()
-        .unwrap();
-    assert!(save.contains("github.event_name == 'pull_request'"));
-    assert!(native.contains("focused-matched-key"));
     let ci = fs::read_to_string(root.join(".github/workflows/ci.yml")).unwrap();
     let targeted = ci
         .split("  targeted:")
@@ -33,7 +24,6 @@ fn focused_prs_run_regressions_before_lint_and_keep_isolated_compiler_checkpoint
         .split("  checks:")
         .next()
         .unwrap();
-    assert!(targeted.contains("cache_focused_outputs: true"));
     assert!(targeted.contains("verification == 'focused'"));
     assert!(targeted.contains("&& 'ubuntu-24.04' || 'macos-26'"));
 }

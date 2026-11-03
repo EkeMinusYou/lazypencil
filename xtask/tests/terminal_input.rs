@@ -110,7 +110,7 @@ fn terminal_inputs_are_exclusive_and_never_launch_outside_hosted_linux() {
     }
     let workflow = fs::read_to_string(util::root().join(".github/workflows/native.yml")).unwrap();
     let position = |text| workflow.find(text).unwrap();
-    assert!(position("native focus-prepare") < position("terminal --development-build"));
+    assert!(position("native focus-build") < position("terminal --development-build"));
     assert!(position("terminal --development-build") < position("native focus-release"));
     assert!(position("native candidate\n") < position("terminal --candidate"));
     assert_eq!(

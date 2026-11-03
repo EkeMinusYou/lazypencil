@@ -84,12 +84,14 @@ Changes spanning these domains, shared rendering, browser profiles, manifests, n
 code (including agent process supervision) and CI still require the complete graph. Source selection remains conservative;
 new paths require an explicit consumer mapping before using a focused contract.
 Focused jobs build and run affected regressions before Clippy checks their library and
-selected test targets. Compiler checkpoints can be retained within the PR merge-ref
-scope for subsequent edits. Restores still validate source, build scripts, SDK and
-compiler inputs, and tests always run again. Main retains all-target Clippy, all test
-consumers and the release lane; publishing still requires fully verified main source.
+selected test targets. Main retains all-target Clippy, all test consumers and the release
+lane; publishing still requires fully verified main source.
 Portable focused contracts reuse the full workflow's existing Linux core lane, avoiding
 scarce Mac runners. Terminal UI changes still use the native Mac workflow.
+Application checkpoint reuse is currently disabled by the custom application `build.rs`.
+Dependency caches remain available. Keep that guard until build-script inputs and native
+outputs can be validated and restored together; a cache download alone does not prove
+that application compiler outputs were reused.
 Do not interpret focused success as a full product verification result.
 
 The stable `Verification` check requires precisely the jobs selected by the contract.

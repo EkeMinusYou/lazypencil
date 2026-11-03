@@ -224,18 +224,17 @@ fn pr_planner_uses_the_actual_base_diff_and_rejects_bad_documentation() {
         (
             "src/tui/input.rs",
             "graphics",
+            vec!["tui", "agent", "user_config"],
+        ),
+        (
+            "src/tui/saved.rs",
+            "graphics",
             vec!["tui", "agent", "user_config", "conversation_history"],
         ),
         (
             "src/tui/documents/view.rs",
             "graphics",
-            vec![
-                "tui",
-                "agent",
-                "user_config",
-                "conversation_history",
-                "document_launch",
-            ],
+            vec!["tui", "agent", "user_config", "document_launch"],
         ),
     ] {
         let base = git(&["rev-parse", "HEAD"]).trim().to_owned();
