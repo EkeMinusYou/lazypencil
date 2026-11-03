@@ -1,0 +1,2263 @@
+{
+  "version": "2.21",
+  "children": [
+    {
+      "id": "n315cf33f24ad4113b7fb147de3aafaa7",
+      "type": "frame",
+      "name": "Forma · Project overview",
+      "width": 1080,
+      "height": 800,
+      "layout": "horizontal",
+      "children": [
+        {
+          "id": "ncd5d5a25fc8141748c8789e77558078a",
+          "type": "frame",
+          "name": "Workspace sidebar",
+          "width": 196,
+          "height": "fill_container",
+          "layout": "vertical",
+          "children": [
+            {
+              "id": "nc9cc3c874d264bce97ceedbd53c3aa5a",
+              "type": "frame",
+              "name": "Forma brand",
+              "width": "fill_container",
+              "height": "fit_content",
+              "layout": "horizontal",
+              "children": [
+                {
+                  "id": "n48afee3ac9bd4913b910844c4186382a",
+                  "type": "icon",
+                  "name": "component",
+                  "library": "lucide",
+                  "icon": "component",
+                  "width": 28,
+                  "height": 28,
+                  "fill": "#D5E8A4"
+                },
+                {
+                  "id": "nfdc6e6deabff4c08846d7cb7fae784df",
+                  "type": "text",
+                  "name": "forma",
+                  "content": "forma",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 26,
+                  "fontWeight": "700",
+                  "lineHeight": 1.35,
+                  "fill": "#FFFFFF"
+                }
+              ],
+              "gap": 10,
+              "alignItems": "center"
+            },
+            {
+              "id": "n286a108e12b9453382606a1a39ef3abc",
+              "type": "frame",
+              "name": "Space",
+              "width": "fill_container",
+              "height": 24,
+              "layout": "vertical",
+              "children": []
+            },
+            {
+              "id": "n706879b65f7f4cc5b453e58bd4dd7188",
+              "type": "text",
+              "name": "WORKSPACE",
+              "content": "WORKSPACE",
+              "fontFamily": "Noto Sans JP",
+              "fontSize": 10,
+              "fontWeight": "700",
+              "lineHeight": 1.35,
+              "fill": "#8DA798",
+              "letterSpacing": 1.5
+            },
+            {
+              "id": "n8465ad31f1894cd5b5fae99224d35245",
+              "type": "frame",
+              "name": "Main navigation",
+              "width": "fill_container",
+              "height": "fit_content",
+              "layout": "vertical",
+              "children": [
+                {
+                  "id": "n639339eb386348f3879efbe89759ea6f",
+                  "type": "frame",
+                  "name": "Overview",
+                  "width": "fill_container",
+                  "height": 42,
+                  "layout": "horizontal",
+                  "children": [
+                    {
+                      "id": "n83b481be305149a192f2fc5e458c7da7",
+                      "type": "icon",
+                      "name": "layout-dashboard",
+                      "library": "lucide",
+                      "icon": "layout-dashboard",
+                      "width": 18,
+                      "height": 18,
+                      "fill": "#F5FAF7"
+                    },
+                    {
+                      "id": "na9754b3c2c92448ba564705c5f1213b8",
+                      "type": "text",
+                      "name": "Overview",
+                      "content": "Overview",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 14,
+                      "fontWeight": "500",
+                      "lineHeight": 1.35,
+                      "fill": "#F5FAF7"
+                    }
+                  ],
+                  "padding": [
+                    0,
+                    12
+                  ],
+                  "gap": 12,
+                  "alignItems": "center",
+                  "cornerRadius": 8,
+                  "fill": "#355B49"
+                },
+                {
+                  "id": "n1f49594c68a94f7a8f13ea876e87b952",
+                  "type": "frame",
+                  "name": "Projects",
+                  "width": "fill_container",
+                  "height": 42,
+                  "layout": "horizontal",
+                  "children": [
+                    {
+                      "id": "nf87178d442614599b59d7d96f5159e95",
+                      "type": "icon",
+                      "name": "layers",
+                      "library": "lucide",
+                      "icon": "layers",
+                      "width": 18,
+                      "height": 18,
+                      "fill": "#AABCB2"
+                    },
+                    {
+                      "id": "n952b18979ae544f48e341772004b39a9",
+                      "type": "text",
+                      "name": "Projects",
+                      "content": "Projects",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 14,
+                      "fontWeight": "500",
+                      "lineHeight": 1.35,
+                      "fill": "#AABCB2"
+                    }
+                  ],
+                  "padding": [
+                    0,
+                    12
+                  ],
+                  "gap": 12,
+                  "alignItems": "center",
+                  "cornerRadius": 8
+                },
+                {
+                  "id": "n1d79de4f52664f11add792e51ea490c6",
+                  "type": "frame",
+                  "name": "My tasks",
+                  "width": "fill_container",
+                  "height": 42,
+                  "layout": "horizontal",
+                  "children": [
+                    {
+                      "id": "n0598f94e5e7b4236b4a8a68bcd7dbdb6",
+                      "type": "icon",
+                      "name": "check-check",
+                      "library": "lucide",
+                      "icon": "check-check",
+                      "width": 18,
+                      "height": 18,
+                      "fill": "#AABCB2"
+                    },
+                    {
+                      "id": "nb8a9a7b74a6748ee8688bc7329261de6",
+                      "type": "text",
+                      "name": "My tasks",
+                      "content": "My tasks",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 14,
+                      "fontWeight": "500",
+                      "lineHeight": 1.35,
+                      "fill": "#AABCB2"
+                    }
+                  ],
+                  "padding": [
+                    0,
+                    12
+                  ],
+                  "gap": 12,
+                  "alignItems": "center",
+                  "cornerRadius": 8
+                },
+                {
+                  "id": "n0b21dbead23a407aa9cd22b6af71a0ac",
+                  "type": "frame",
+                  "name": "Calendar",
+                  "width": "fill_container",
+                  "height": 42,
+                  "layout": "horizontal",
+                  "children": [
+                    {
+                      "id": "n2173771330244012b3dab9f5f7d715c6",
+                      "type": "icon",
+                      "name": "calendar-days",
+                      "library": "lucide",
+                      "icon": "calendar-days",
+                      "width": 18,
+                      "height": 18,
+                      "fill": "#AABCB2"
+                    },
+                    {
+                      "id": "n5ac607f56a3345339d6cc61d517543cc",
+                      "type": "text",
+                      "name": "Calendar",
+                      "content": "Calendar",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 14,
+                      "fontWeight": "500",
+                      "lineHeight": 1.35,
+                      "fill": "#AABCB2"
+                    }
+                  ],
+                  "padding": [
+                    0,
+                    12
+                  ],
+                  "gap": 12,
+                  "alignItems": "center",
+                  "cornerRadius": 8
+                }
+              ],
+              "gap": 6
+            },
+            {
+              "id": "nc49d70d61a8f45b8a4fec910e2df0663",
+              "type": "frame",
+              "name": "Space",
+              "width": "fill_container",
+              "height": 18,
+              "layout": "vertical",
+              "children": []
+            },
+            {
+              "id": "n5896b8e6f1c545d4932c0f1b6e1ba83a",
+              "type": "text",
+              "name": "YOUR TEAMS",
+              "content": "YOUR TEAMS",
+              "fontFamily": "Noto Sans JP",
+              "fontSize": 10,
+              "fontWeight": "700",
+              "lineHeight": 1.35,
+              "fill": "#8DA798",
+              "letterSpacing": 1.5
+            },
+            {
+              "id": "n1c86300320db4c7aa1be0b08393c37e0",
+              "type": "frame",
+              "name": "Design team",
+              "width": "fill_container",
+              "height": 32,
+              "layout": "horizontal",
+              "children": [
+                {
+                  "id": "na1e142700bc14503a79a59627c6c085c",
+                  "type": "rectangle",
+                  "width": 8,
+                  "height": 8,
+                  "fill": "#D5E8A4",
+                  "cornerRadius": 3
+                },
+                {
+                  "id": "nfaeb0f36870446be826df80c5190fe83",
+                  "type": "text",
+                  "name": "Design studio",
+                  "content": "Design studio",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 13,
+                  "fontWeight": "400",
+                  "lineHeight": 1.35,
+                  "fill": "#AABCB2"
+                }
+              ],
+              "gap": 12,
+              "alignItems": "center",
+              "padding": [
+                0,
+                12
+              ]
+            },
+            {
+              "id": "n042ef9febc644ce185c9c5f56c52d68d",
+              "type": "frame",
+              "name": "Product team",
+              "width": "fill_container",
+              "height": 32,
+              "layout": "horizontal",
+              "children": [
+                {
+                  "id": "n40efb442c5cf409688cc320d1af6212c",
+                  "type": "rectangle",
+                  "width": 8,
+                  "height": 8,
+                  "fill": "#BCB5E7",
+                  "cornerRadius": 3
+                },
+                {
+                  "id": "nd97fbeb7e96e48bea7db38bf29bb77bb",
+                  "type": "text",
+                  "name": "Product team",
+                  "content": "Product team",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 13,
+                  "fontWeight": "400",
+                  "lineHeight": 1.35,
+                  "fill": "#AABCB2"
+                }
+              ],
+              "gap": 12,
+              "alignItems": "center",
+              "padding": [
+                0,
+                12
+              ]
+            },
+            {
+              "id": "n7397829dcd954f86bd6bc701d91ffd63",
+              "type": "frame",
+              "name": "Space",
+              "width": "fill_container",
+              "height": "fill_container",
+              "layout": "vertical",
+              "children": []
+            },
+            {
+              "id": "n0bcebcefd9b2453da7a34347aa6c92f0",
+              "type": "frame",
+              "name": "Team plan card",
+              "width": "fill_container",
+              "height": "fit_content",
+              "layout": "vertical",
+              "children": [
+                {
+                  "id": "n212c741944b94f8b99d641c6442341bf",
+                  "type": "icon",
+                  "name": "sparkles",
+                  "library": "lucide",
+                  "icon": "sparkles",
+                  "width": 20,
+                  "height": 20,
+                  "fill": "#D5E8A4"
+                },
+                {
+                  "id": "n591fc4eb6c59402eb80043af35338ebb",
+                  "type": "text",
+                  "name": "Room to grow.",
+                  "content": "Room to grow.",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 15,
+                  "fontWeight": "500",
+                  "lineHeight": 1.35,
+                  "fill": "#FFFFFF"
+                },
+                {
+                  "id": "nf818a11a6e0c486284266617e4bb83b9",
+                  "type": "text",
+                  "name": "One space for every idea.",
+                  "content": "One space for every idea.",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 10,
+                  "fontWeight": "400",
+                  "lineHeight": 1.35,
+                  "fill": "#AABCB2"
+                },
+                {
+                  "id": "n3cee67fd6d7445d382056cf27fbb9575",
+                  "type": "text",
+                  "name": "Explore team plans  →",
+                  "content": "Explore team plans  →",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 11,
+                  "fontWeight": "500",
+                  "lineHeight": 1.35,
+                  "fill": "#D5E8A4"
+                }
+              ],
+              "padding": 16,
+              "gap": 9,
+              "cornerRadius": 10,
+              "fill": "#2B4D3D"
+            },
+            {
+              "id": "n162d425dde484ceb931dc2b9617aa7b1",
+              "type": "frame",
+              "name": "Space",
+              "width": "fill_container",
+              "height": 8,
+              "layout": "vertical",
+              "children": []
+            },
+            {
+              "id": "nc7ff3cba43ec4906abc1a1b9ca703e44",
+              "type": "frame",
+              "name": "Sample profile",
+              "width": "fill_container",
+              "height": "fit_content",
+              "layout": "horizontal",
+              "children": [
+                {
+                  "id": "n13e1586e81254eef90eec99c649358ff",
+                  "type": "frame",
+                  "name": "Avatar",
+                  "width": 32,
+                  "height": 32,
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "id": "n38119c8f93ff4ecca65534c376395a24",
+                      "type": "text",
+                      "name": "JD",
+                      "content": "JD",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 11,
+                      "fontWeight": "700",
+                      "lineHeight": 1.35,
+                      "fill": "#264333"
+                    }
+                  ],
+                  "fill": "#D5E8A4",
+                  "cornerRadius": 16,
+                  "alignItems": "center",
+                  "justifyContent": "center"
+                },
+                {
+                  "id": "n4d17f1b3bdcb425a8594bd6b9b3134e1",
+                  "type": "frame",
+                  "name": "Profile details",
+                  "width": "fill_container",
+                  "height": "fit_content",
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "id": "nc02918b71eff41e3961e181323c7aa9f",
+                      "type": "text",
+                      "name": "Jamie Davis",
+                      "content": "Jamie Davis",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 12,
+                      "fontWeight": "500",
+                      "lineHeight": 1.35,
+                      "fill": "#FFFFFF"
+                    },
+                    {
+                      "id": "na1ce56862eeb45bfb1ed8fdb789b0572",
+                      "type": "text",
+                      "name": "Personal workspace",
+                      "content": "Personal workspace",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 9,
+                      "fontWeight": "400",
+                      "lineHeight": 1.35,
+                      "fill": "#8DA798"
+                    }
+                  ],
+                  "gap": 3
+                }
+              ],
+              "gap": 10,
+              "alignItems": "center"
+            }
+          ],
+          "padding": [
+            28,
+            18
+          ],
+          "gap": 8,
+          "fill": "#203F31"
+        },
+        {
+          "id": "na10e490ea3ef49d3931e94dca80d0985",
+          "type": "frame",
+          "name": "Overview content",
+          "width": "fill_container",
+          "height": "fill_container",
+          "layout": "vertical",
+          "children": [
+            {
+              "id": "n75c0f55b25c2437aacf0a8bd8fe9eff1",
+              "type": "frame",
+              "name": "Workspace toolbar",
+              "width": "fill_container",
+              "height": 24,
+              "layout": "horizontal",
+              "children": [
+                {
+                  "id": "n19360e5bdb6f4d43ad17cfb422e981ff",
+                  "type": "text",
+                  "name": "Workspace  /  Overview",
+                  "content": "Workspace  /  Overview",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 11,
+                  "fontWeight": "400",
+                  "lineHeight": 1.35,
+                  "fill": "#7B8780"
+                },
+                {
+                  "id": "nb2164458b484495b871451f9b5a5c71c",
+                  "type": "frame",
+                  "name": "Space",
+                  "width": "fill_container",
+                  "height": 0,
+                  "layout": "vertical",
+                  "children": []
+                },
+                {
+                  "id": "n694a1ac42cbd4976b096fd83fc48365d",
+                  "type": "icon",
+                  "name": "search",
+                  "library": "lucide",
+                  "icon": "search",
+                  "width": 16,
+                  "height": 16,
+                  "fill": "#7B8780"
+                },
+                {
+                  "id": "nc6d4bfbf7d414c8b99f63d07411feca7",
+                  "type": "icon",
+                  "name": "bell",
+                  "library": "lucide",
+                  "icon": "bell",
+                  "width": 16,
+                  "height": 16,
+                  "fill": "#7B8780"
+                }
+              ],
+              "gap": 18,
+              "alignItems": "center"
+            },
+            {
+              "id": "nf02872afef1a4d628e482341d7894209",
+              "type": "frame",
+              "name": "Page header",
+              "width": "fill_container",
+              "height": 74,
+              "layout": "horizontal",
+              "children": [
+                {
+                  "id": "n28539f2888b54e2f807240f9506a3b7f",
+                  "type": "frame",
+                  "name": "Greeting",
+                  "width": "fill_container",
+                  "height": "fit_content",
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "id": "n5a83d080eaa247119262293ce3dae662",
+                      "type": "text",
+                      "name": "Make space for good work.",
+                      "content": "Good work starts here.",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 28,
+                      "fontWeight": "500",
+                      "lineHeight": 1.35,
+                      "fill": "#243B36"
+                    },
+                    {
+                      "id": "n7672b71a62f947e2a97068f21a6fa34b",
+                      "type": "text",
+                      "name": "A fresh perspective on everything you’re creating.",
+                      "content": "Your projects, people, and progress. All in one place.",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 12,
+                      "fontWeight": "400",
+                      "lineHeight": 1.35,
+                      "fill": "#7B8780"
+                    }
+                  ],
+                  "gap": 8
+                },
+                {
+                  "id": "ne9666cbb1e21421bad8741c5db3d38b4",
+                  "type": "frame",
+                  "name": "Space",
+                  "width": "fill_container",
+                  "height": 0,
+                  "layout": "vertical",
+                  "children": []
+                },
+                {
+                  "id": "nbfa3f426edda443bb56310013a45f5de",
+                  "type": "frame",
+                  "name": "New project button",
+                  "width": "fit_content",
+                  "height": 38,
+                  "layout": "horizontal",
+                  "children": [
+                    {
+                      "id": "n1848f83699c448369bdc41dd9eb0e6d4",
+                      "type": "icon",
+                      "name": "plus",
+                      "library": "lucide",
+                      "icon": "plus",
+                      "width": 16,
+                      "height": 16,
+                      "fill": "#FFFFFF"
+                    },
+                    {
+                      "id": "neeffd0c9e6e949cab4280b06da80e42f",
+                      "type": "text",
+                      "name": "New project",
+                      "content": "New project",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 12,
+                      "fontWeight": "500",
+                      "lineHeight": 1.35,
+                      "fill": "#FFFFFF"
+                    }
+                  ],
+                  "gap": 7,
+                  "padding": [
+                    0,
+                    14
+                  ],
+                  "fill": "#346D58",
+                  "cornerRadius": 8,
+                  "alignItems": "center"
+                }
+              ],
+              "alignItems": "center"
+            },
+            {
+              "id": "n1a9c384e69d5407db18ff92edf46d617",
+              "type": "frame",
+              "name": "Workspace metrics",
+              "width": "fill_container",
+              "height": 108,
+              "layout": "horizontal",
+              "children": [
+                {
+                  "id": "ne811152e3bc84c5ca556bc50cc1d3d45",
+                  "type": "frame",
+                  "name": "Active projects",
+                  "width": "fill_container",
+                  "height": 108,
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "id": "n49e5a869bd71496fb7ed1789b02f97e6",
+                      "type": "frame",
+                      "name": "Active projects",
+                      "width": "fill_container",
+                      "height": "fit_content",
+                      "layout": "horizontal",
+                      "children": [
+                        {
+                          "id": "n1ec25110a6f64f7881034882134df3c9",
+                          "type": "text",
+                          "name": "Active projects",
+                          "content": "Active projects",
+                          "fontFamily": "Noto Sans JP",
+                          "fontSize": 11,
+                          "fontWeight": "400",
+                          "lineHeight": 1.35,
+                          "fill": "#7B8780"
+                        },
+                        {
+                          "id": "nc43758dedf04453989a82a2d5fc96101",
+                          "type": "frame",
+                          "name": "Space",
+                          "width": "fill_container",
+                          "height": 0,
+                          "layout": "vertical",
+                          "children": []
+                        },
+                        {
+                          "id": "nbf322fe091ab495bb6493fe9f884b29a",
+                          "type": "icon",
+                          "name": "layers",
+                          "library": "lucide",
+                          "icon": "layers",
+                          "width": 16,
+                          "height": 16,
+                          "fill": "#346D58"
+                        }
+                      ],
+                      "alignItems": "center"
+                    },
+                    {
+                      "id": "n0ed4b12b357749edba7c8edb35d8b149",
+                      "type": "frame",
+                      "name": "Value and trend",
+                      "width": "fill_container",
+                      "height": "fit_content",
+                      "layout": "horizontal",
+                      "children": [
+                        {
+                          "id": "ne42eb538b6b54e14a4832e03f3f3df8c",
+                          "type": "text",
+                          "name": "12",
+                          "content": "12",
+                          "fontFamily": "Noto Sans JP",
+                          "fontSize": 30,
+                          "fontWeight": "500",
+                          "lineHeight": 1.35,
+                          "fill": "#243B36"
+                        },
+                        {
+                          "id": "nce6f4e9a90434a30bdb1270719a2cf40",
+                          "type": "frame",
+                          "name": "Space",
+                          "width": "fill_container",
+                          "height": 0,
+                          "layout": "vertical",
+                          "children": []
+                        },
+                        {
+                          "id": "nbddd05e1b4404ee1a9ef4ed8de7d161e",
+                          "type": "frame",
+                          "name": "Trend",
+                          "width": "fill_container",
+                          "height": "fit_content",
+                          "layout": "vertical",
+                          "children": [
+                            {
+                              "id": "n903e9e874ca844ecabb0e65a9fb304fe",
+                              "type": "text",
+                              "name": "↗ +2",
+                              "content": "↗ +2",
+                              "fontFamily": "Noto Sans JP",
+                              "fontSize": 11,
+                              "fontWeight": "500",
+                              "lineHeight": 1.35,
+                              "fill": "#346D58"
+                            },
+                            {
+                              "id": "n4d819b87b03f444bb425dae6e4d62180",
+                              "type": "text",
+                              "name": "this month",
+                              "content": "this month",
+                              "fontFamily": "Noto Sans JP",
+                              "fontSize": 9,
+                              "fontWeight": "400",
+                              "lineHeight": 1.35,
+                              "fill": "#7B8780"
+                            }
+                          ],
+                          "gap": 3
+                        }
+                      ],
+                      "alignItems": "end"
+                    }
+                  ],
+                  "padding": 18,
+                  "gap": 10,
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 12
+                },
+                {
+                  "id": "nd4214632f1434d4a8e668c75ee409065",
+                  "type": "frame",
+                  "name": "Tasks completed",
+                  "width": "fill_container",
+                  "height": 108,
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "id": "nc21cf35506574197b9ae5f764ca9b515",
+                      "type": "frame",
+                      "name": "Tasks completed",
+                      "width": "fill_container",
+                      "height": "fit_content",
+                      "layout": "horizontal",
+                      "children": [
+                        {
+                          "id": "n7db8391dbc3b4885a85870b62506cc26",
+                          "type": "text",
+                          "name": "Tasks completed",
+                          "content": "Tasks completed",
+                          "fontFamily": "Noto Sans JP",
+                          "fontSize": 11,
+                          "fontWeight": "400",
+                          "lineHeight": 1.35,
+                          "fill": "#7B8780"
+                        },
+                        {
+                          "id": "n36088af2625e48cc979d55eabec35f28",
+                          "type": "frame",
+                          "name": "Space",
+                          "width": "fill_container",
+                          "height": 0,
+                          "layout": "vertical",
+                          "children": []
+                        },
+                        {
+                          "id": "nafcf23b80bfe4be9bf0935f3325e7573",
+                          "type": "icon",
+                          "name": "circle-check",
+                          "library": "lucide",
+                          "icon": "circle-check",
+                          "width": 16,
+                          "height": 16,
+                          "fill": "#346D58"
+                        }
+                      ],
+                      "alignItems": "center"
+                    },
+                    {
+                      "id": "n5da580ab9fea4124bc73f3495f031e6f",
+                      "type": "frame",
+                      "name": "Value and trend",
+                      "width": "fill_container",
+                      "height": "fit_content",
+                      "layout": "horizontal",
+                      "children": [
+                        {
+                          "id": "nbb36c49589e34f7bb8918da4307326f6",
+                          "type": "text",
+                          "name": "48",
+                          "content": "48",
+                          "fontFamily": "Noto Sans JP",
+                          "fontSize": 30,
+                          "fontWeight": "500",
+                          "lineHeight": 1.35,
+                          "fill": "#243B36"
+                        },
+                        {
+                          "id": "n9f9c0292e4a54aa3a62d46c092114f58",
+                          "type": "frame",
+                          "name": "Space",
+                          "width": "fill_container",
+                          "height": 0,
+                          "layout": "vertical",
+                          "children": []
+                        },
+                        {
+                          "id": "nfa6e057e47d846c39725af689999475c",
+                          "type": "frame",
+                          "name": "Trend",
+                          "width": "fill_container",
+                          "height": "fit_content",
+                          "layout": "vertical",
+                          "children": [
+                            {
+                              "id": "n65f05d5613c247a2a744842a06729e59",
+                              "type": "text",
+                              "name": "↗ +12%",
+                              "content": "↗ +12%",
+                              "fontFamily": "Noto Sans JP",
+                              "fontSize": 11,
+                              "fontWeight": "500",
+                              "lineHeight": 1.35,
+                              "fill": "#346D58"
+                            },
+                            {
+                              "id": "na17e24b6c41d4e0eb2dfbefe67729ada",
+                              "type": "text",
+                              "name": "vs. last week",
+                              "content": "vs. last week",
+                              "fontFamily": "Noto Sans JP",
+                              "fontSize": 9,
+                              "fontWeight": "400",
+                              "lineHeight": 1.35,
+                              "fill": "#7B8780"
+                            }
+                          ],
+                          "gap": 3
+                        }
+                      ],
+                      "alignItems": "end"
+                    }
+                  ],
+                  "padding": 18,
+                  "gap": 10,
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 12
+                },
+                {
+                  "id": "ncd72237bbbd54459ab167b431631e73d",
+                  "type": "frame",
+                  "name": "Focus time",
+                  "width": "fill_container",
+                  "height": 108,
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "id": "n56e1150127644360826400bf94542ddd",
+                      "type": "frame",
+                      "name": "Focus time",
+                      "width": "fill_container",
+                      "height": "fit_content",
+                      "layout": "horizontal",
+                      "children": [
+                        {
+                          "id": "nc2083eba4df24640aeca9d9293e44300",
+                          "type": "text",
+                          "name": "Focus time",
+                          "content": "Focus time",
+                          "fontFamily": "Noto Sans JP",
+                          "fontSize": 11,
+                          "fontWeight": "400",
+                          "lineHeight": 1.35,
+                          "fill": "#7B8780"
+                        },
+                        {
+                          "id": "n29dc2d2ea78247fca15d9dba4a1c9383",
+                          "type": "frame",
+                          "name": "Space",
+                          "width": "fill_container",
+                          "height": 0,
+                          "layout": "vertical",
+                          "children": []
+                        },
+                        {
+                          "id": "ne3ff77d5f8d94034853515f710564419",
+                          "type": "icon",
+                          "name": "timer",
+                          "library": "lucide",
+                          "icon": "timer",
+                          "width": 16,
+                          "height": 16,
+                          "fill": "#346D58"
+                        }
+                      ],
+                      "alignItems": "center"
+                    },
+                    {
+                      "id": "na471ab0302e9418eac17528548b4f865",
+                      "type": "frame",
+                      "name": "Value and trend",
+                      "width": "fill_container",
+                      "height": "fit_content",
+                      "layout": "horizontal",
+                      "children": [
+                        {
+                          "id": "nedfb54153e5a4857a19051cdce0039d3",
+                          "type": "text",
+                          "name": "32.5h",
+                          "content": "32.5h",
+                          "fontFamily": "Noto Sans JP",
+                          "fontSize": 30,
+                          "fontWeight": "500",
+                          "lineHeight": 1.35,
+                          "fill": "#243B36"
+                        },
+                        {
+                          "id": "na6770870e8ae47ffac9955c9822cafde",
+                          "type": "frame",
+                          "name": "Space",
+                          "width": "fill_container",
+                          "height": 0,
+                          "layout": "vertical",
+                          "children": []
+                        },
+                        {
+                          "id": "n30058e70239640dcb493f55626e82ca3",
+                          "type": "frame",
+                          "name": "Trend",
+                          "width": "fill_container",
+                          "height": "fit_content",
+                          "layout": "vertical",
+                          "children": [
+                            {
+                              "id": "nf30246e075cf47898c51879cbce8b67f",
+                              "type": "text",
+                              "name": "↗ +8%",
+                              "content": "↗ +8%",
+                              "fontFamily": "Noto Sans JP",
+                              "fontSize": 11,
+                              "fontWeight": "500",
+                              "lineHeight": 1.35,
+                              "fill": "#346D58"
+                            },
+                            {
+                              "id": "nccb60c84f1e94a08895553bcc59136e5",
+                              "type": "text",
+                              "name": "vs. last week",
+                              "content": "vs. last week",
+                              "fontFamily": "Noto Sans JP",
+                              "fontSize": 9,
+                              "fontWeight": "400",
+                              "lineHeight": 1.35,
+                              "fill": "#7B8780"
+                            }
+                          ],
+                          "gap": 3
+                        }
+                      ],
+                      "alignItems": "end"
+                    }
+                  ],
+                  "padding": 18,
+                  "gap": 10,
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 12
+                }
+              ],
+              "gap": 14
+            },
+            {
+              "id": "n915864ca18d5460dbeb184e745b0b098",
+              "type": "frame",
+              "name": "Activity and milestones",
+              "width": "fill_container",
+              "height": 238,
+              "layout": "horizontal",
+              "children": [
+                {
+                  "id": "nbc45d1ee48c4438faaabf8bb144f2541",
+                  "type": "frame",
+                  "name": "Weekly activity",
+                  "width": "fill_container",
+                  "height": 238,
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "id": "neebbc302df0e40bfbd3e747a5ffbd639",
+                      "type": "frame",
+                      "name": "Activity heading",
+                      "width": "fill_container",
+                      "height": "fit_content",
+                      "layout": "horizontal",
+                      "children": [
+                        {
+                          "id": "n10a1311310a340e39fdfc6faa2269189",
+                          "type": "frame",
+                          "name": "Title",
+                          "width": "fill_container",
+                          "height": "fit_content",
+                          "layout": "vertical",
+                          "children": [
+                            {
+                              "id": "nb9e22703e9814d4f990cb414fa25243e",
+                              "type": "text",
+                              "name": "A little progress, every day.",
+                              "content": "A little progress, every day.",
+                              "fontFamily": "Noto Sans JP",
+                              "fontSize": 16,
+                              "fontWeight": "500",
+                              "lineHeight": 1.35,
+                              "fill": "#243B36"
+                            },
+                            {
+                              "id": "nfd58b35c54434df18b23626e36afbb65",
+                              "type": "text",
+                              "name": "Your team completed 48 tasks this week.",
+                              "content": "Your team completed 48 tasks this week.",
+                              "fontFamily": "Noto Sans JP",
+                              "fontSize": 10,
+                              "fontWeight": "400",
+                              "lineHeight": 1.35,
+                              "fill": "#7B8780"
+                            }
+                          ],
+                          "gap": 5
+                        },
+                        {
+                          "id": "n61f03533fcd14a88a093b0b6c4981430",
+                          "type": "frame",
+                          "name": "Space",
+                          "width": "fill_container",
+                          "height": 0,
+                          "layout": "vertical",
+                          "children": []
+                        },
+                        {
+                          "id": "n174e102551854235825a8f8772276ced",
+                          "type": "frame",
+                          "name": "This week  ⌄",
+                          "width": "fit_content",
+                          "height": "fit_content",
+                          "layout": "vertical",
+                          "children": [
+                            {
+                              "id": "n8976de6df28d42e6868e23e4d2884086",
+                              "type": "text",
+                              "name": "This week  ⌄",
+                              "content": "This week  ↓",
+                              "fontFamily": "Noto Sans JP",
+                              "fontSize": 11,
+                              "fontWeight": "500",
+                              "lineHeight": 1.35,
+                              "fill": "#7B8780"
+                            }
+                          ],
+                          "padding": [
+                            5,
+                            9
+                          ],
+                          "fill": "#F2F4EF",
+                          "cornerRadius": 6
+                        }
+                      ],
+                      "alignItems": "center"
+                    },
+                    {
+                      "id": "nad0cb97297684f15884468527954eeef",
+                      "type": "frame",
+                      "name": "Weekly activity chart",
+                      "width": "fill_container",
+                      "height": "fit_content",
+                      "layout": "horizontal",
+                      "children": [
+                        {
+                          "id": "n8bc04a5cddfe4a4d94fe583e63ce1603",
+                          "type": "frame",
+                          "name": "Day 1",
+                          "width": "fill_container",
+                          "height": 136,
+                          "layout": "vertical",
+                          "children": [
+                            {
+                              "id": "nad300acbff434293ba699e576a9fb48a",
+                              "type": "frame",
+                              "name": "Activity bar",
+                              "width": "fill_container",
+                              "height": 114,
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "id": "nc6a3ab021614439591931bc5db486e01",
+                                  "type": "frame",
+                                  "name": "Space",
+                                  "width": "fill_container",
+                                  "height": "fill_container",
+                                  "layout": "vertical",
+                                  "children": []
+                                },
+                                {
+                                  "id": "n462213c24bae415fa32835f3db913e16",
+                                  "type": "rectangle",
+                                  "width": "fill_container",
+                                  "height": 56,
+                                  "fill": "#8BAE96",
+                                  "cornerRadius": [
+                                    5,
+                                    5,
+                                    0,
+                                    0
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "id": "nbececc16add14234a3efa099ecdf8764",
+                              "type": "text",
+                              "name": "M",
+                              "content": "M",
+                              "fontFamily": "Noto Sans JP",
+                              "fontSize": 10,
+                              "fontWeight": "400",
+                              "lineHeight": 1.35,
+                              "fill": "#7B8780"
+                            }
+                          ],
+                          "gap": 8,
+                          "alignItems": "center"
+                        },
+                        {
+                          "id": "n3eee3f6a02f24a679a1a9da8e217f7cf",
+                          "type": "frame",
+                          "name": "Day 2",
+                          "width": "fill_container",
+                          "height": 136,
+                          "layout": "vertical",
+                          "children": [
+                            {
+                              "id": "n3d5509a0515447da9a76f4a26f9018de",
+                              "type": "frame",
+                              "name": "Activity bar",
+                              "width": "fill_container",
+                              "height": 114,
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "id": "nf29ddd212b414e2199038cc6a195c678",
+                                  "type": "frame",
+                                  "name": "Space",
+                                  "width": "fill_container",
+                                  "height": "fill_container",
+                                  "layout": "vertical",
+                                  "children": []
+                                },
+                                {
+                                  "id": "n40d610fed70046d988a84c0df075e214",
+                                  "type": "rectangle",
+                                  "width": "fill_container",
+                                  "height": 88,
+                                  "fill": "#8BAE96",
+                                  "cornerRadius": [
+                                    5,
+                                    5,
+                                    0,
+                                    0
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "id": "n9b0d0bab83134750a73c9745aafef251",
+                              "type": "text",
+                              "name": "T",
+                              "content": "T",
+                              "fontFamily": "Noto Sans JP",
+                              "fontSize": 10,
+                              "fontWeight": "400",
+                              "lineHeight": 1.35,
+                              "fill": "#7B8780"
+                            }
+                          ],
+                          "gap": 8,
+                          "alignItems": "center"
+                        },
+                        {
+                          "id": "n35b3fc37917849a5bbf68afe077dc2b5",
+                          "type": "frame",
+                          "name": "Day 3",
+                          "width": "fill_container",
+                          "height": 136,
+                          "layout": "vertical",
+                          "children": [
+                            {
+                              "id": "ndc9fbfa687a549debb71b72fbdc7d331",
+                              "type": "frame",
+                              "name": "Activity bar",
+                              "width": "fill_container",
+                              "height": 114,
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "id": "n8f402ab1ccee495da8aa293a6b544b94",
+                                  "type": "frame",
+                                  "name": "Space",
+                                  "width": "fill_container",
+                                  "height": "fill_container",
+                                  "layout": "vertical",
+                                  "children": []
+                                },
+                                {
+                                  "id": "na33751eada0d43eab05eda4e8a419d2f",
+                                  "type": "rectangle",
+                                  "width": "fill_container",
+                                  "height": 68,
+                                  "fill": "#8BAE96",
+                                  "cornerRadius": [
+                                    5,
+                                    5,
+                                    0,
+                                    0
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "id": "n1191c2e87fc94c70b39b976645e6b632",
+                              "type": "text",
+                              "name": "W",
+                              "content": "W",
+                              "fontFamily": "Noto Sans JP",
+                              "fontSize": 10,
+                              "fontWeight": "400",
+                              "lineHeight": 1.35,
+                              "fill": "#7B8780"
+                            }
+                          ],
+                          "gap": 8,
+                          "alignItems": "center"
+                        },
+                        {
+                          "id": "n24453198a6ce4fd88287decdf5be23c5",
+                          "type": "frame",
+                          "name": "Day 4",
+                          "width": "fill_container",
+                          "height": 136,
+                          "layout": "vertical",
+                          "children": [
+                            {
+                              "id": "n355db859d7bb43cba231179febcf4b59",
+                              "type": "frame",
+                              "name": "Activity bar",
+                              "width": "fill_container",
+                              "height": 114,
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "id": "n2c22a1d0fbd547678c1ac42396df49b3",
+                                  "type": "frame",
+                                  "name": "Space",
+                                  "width": "fill_container",
+                                  "height": "fill_container",
+                                  "layout": "vertical",
+                                  "children": []
+                                },
+                                {
+                                  "id": "n93173dfb138b476c87ae0d934a848e8d",
+                                  "type": "rectangle",
+                                  "width": "fill_container",
+                                  "height": 110,
+                                  "fill": "#346D58",
+                                  "cornerRadius": [
+                                    5,
+                                    5,
+                                    0,
+                                    0
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "id": "n3a7d83e3f4424807bd6d3a8eec961c0f",
+                              "type": "text",
+                              "name": "T",
+                              "content": "T",
+                              "fontFamily": "Noto Sans JP",
+                              "fontSize": 10,
+                              "fontWeight": "400",
+                              "lineHeight": 1.35,
+                              "fill": "#7B8780"
+                            }
+                          ],
+                          "gap": 8,
+                          "alignItems": "center"
+                        },
+                        {
+                          "id": "nd009c27858a9445e90fcc64679b772d3",
+                          "type": "frame",
+                          "name": "Day 5",
+                          "width": "fill_container",
+                          "height": 136,
+                          "layout": "vertical",
+                          "children": [
+                            {
+                              "id": "ndba7183ae5c14efe8abc12fc29d578c4",
+                              "type": "frame",
+                              "name": "Activity bar",
+                              "width": "fill_container",
+                              "height": 114,
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "id": "nb2ca7a456ad64a5ba427716bd4a2108e",
+                                  "type": "frame",
+                                  "name": "Space",
+                                  "width": "fill_container",
+                                  "height": "fill_container",
+                                  "layout": "vertical",
+                                  "children": []
+                                },
+                                {
+                                  "id": "n8efc82e3f05048f4bd3e48bfc441cd86",
+                                  "type": "rectangle",
+                                  "width": "fill_container",
+                                  "height": 82,
+                                  "fill": "#8BAE96",
+                                  "cornerRadius": [
+                                    5,
+                                    5,
+                                    0,
+                                    0
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "id": "nafd1eb2254b14494be5b68acb6d2a648",
+                              "type": "text",
+                              "name": "F",
+                              "content": "F",
+                              "fontFamily": "Noto Sans JP",
+                              "fontSize": 10,
+                              "fontWeight": "400",
+                              "lineHeight": 1.35,
+                              "fill": "#7B8780"
+                            }
+                          ],
+                          "gap": 8,
+                          "alignItems": "center"
+                        },
+                        {
+                          "id": "nb87a4fa090454d18bc9f2ff370ea7574",
+                          "type": "frame",
+                          "name": "Day 6",
+                          "width": "fill_container",
+                          "height": 136,
+                          "layout": "vertical",
+                          "children": [
+                            {
+                              "id": "n4201456a6d7d403fa5661107aefb5028",
+                              "type": "frame",
+                              "name": "Activity bar",
+                              "width": "fill_container",
+                              "height": 114,
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "id": "na3769c48f2b341d39815cee9af307a16",
+                                  "type": "frame",
+                                  "name": "Space",
+                                  "width": "fill_container",
+                                  "height": "fill_container",
+                                  "layout": "vertical",
+                                  "children": []
+                                },
+                                {
+                                  "id": "n75761ce63f2e4234bb14241aaeb5ab59",
+                                  "type": "rectangle",
+                                  "width": "fill_container",
+                                  "height": 46,
+                                  "fill": "#8BAE96",
+                                  "cornerRadius": [
+                                    5,
+                                    5,
+                                    0,
+                                    0
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "id": "nf30bd6068560447ca68d6a53ba8ecb4f",
+                              "type": "text",
+                              "name": "S",
+                              "content": "S",
+                              "fontFamily": "Noto Sans JP",
+                              "fontSize": 10,
+                              "fontWeight": "400",
+                              "lineHeight": 1.35,
+                              "fill": "#7B8780"
+                            }
+                          ],
+                          "gap": 8,
+                          "alignItems": "center"
+                        },
+                        {
+                          "id": "n2e97761540f64708a2083253bc2b2eec",
+                          "type": "frame",
+                          "name": "Day 7",
+                          "width": "fill_container",
+                          "height": 136,
+                          "layout": "vertical",
+                          "children": [
+                            {
+                              "id": "nc5c091485b1a412bbceda03b07d28564",
+                              "type": "frame",
+                              "name": "Activity bar",
+                              "width": "fill_container",
+                              "height": 114,
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "id": "n27c524cc4c964e6faa128aefb9ca9333",
+                                  "type": "frame",
+                                  "name": "Space",
+                                  "width": "fill_container",
+                                  "height": "fill_container",
+                                  "layout": "vertical",
+                                  "children": []
+                                },
+                                {
+                                  "id": "nda3b4d985d7543c08571522121ade963",
+                                  "type": "rectangle",
+                                  "width": "fill_container",
+                                  "height": 34,
+                                  "fill": "#8BAE96",
+                                  "cornerRadius": [
+                                    5,
+                                    5,
+                                    0,
+                                    0
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "id": "neefbb7f362494699bbf5162efb62a444",
+                              "type": "text",
+                              "name": "S",
+                              "content": "S",
+                              "fontFamily": "Noto Sans JP",
+                              "fontSize": 10,
+                              "fontWeight": "400",
+                              "lineHeight": 1.35,
+                              "fill": "#7B8780"
+                            }
+                          ],
+                          "gap": 8,
+                          "alignItems": "center"
+                        }
+                      ],
+                      "gap": 18,
+                      "padding": [
+                        0,
+                        12
+                      ]
+                    }
+                  ],
+                  "padding": 20,
+                  "gap": 18,
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 12
+                },
+                {
+                  "id": "n8536af6c3ce44760ac0821d35e5fd694",
+                  "type": "frame",
+                  "name": "Upcoming milestones",
+                  "width": 270,
+                  "height": 238,
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "id": "n40dba59b30fd4c8095ab1d39f801073e",
+                      "type": "frame",
+                      "name": "Milestone heading",
+                      "width": "fill_container",
+                      "height": "fit_content",
+                      "layout": "horizontal",
+                      "children": [
+                        {
+                          "id": "n0c33611e79a245209e023e2f5fea2fdf",
+                          "type": "text",
+                          "name": "Up next",
+                          "content": "Up next",
+                          "fontFamily": "Noto Sans JP",
+                          "fontSize": 16,
+                          "fontWeight": "500",
+                          "lineHeight": 1.35,
+                          "fill": "#243B36"
+                        },
+                        {
+                          "id": "n6fc59c7dcf0348f9b08b067d7017545f",
+                          "type": "frame",
+                          "name": "Space",
+                          "width": "fill_container",
+                          "height": 0,
+                          "layout": "vertical",
+                          "children": []
+                        },
+                        {
+                          "id": "ne315c5eece98474b9eb868521059e062",
+                          "type": "icon",
+                          "name": "ellipsis",
+                          "library": "lucide",
+                          "icon": "ellipsis",
+                          "width": 16,
+                          "height": 16,
+                          "fill": "#7B8780"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "nd7b19122911e4bed8063e1fc467f437e",
+                      "type": "frame",
+                      "name": "Brand exploration",
+                      "width": "fill_container",
+                      "height": "fit_content",
+                      "layout": "horizontal",
+                      "children": [
+                        {
+                          "id": "nc7e297469e2e4fc1b7397200103e1043",
+                          "type": "frame",
+                          "name": "Milestone status",
+                          "width": 28,
+                          "height": 28,
+                          "layout": "vertical",
+                          "children": [
+                            {
+                              "id": "na7d0731a823f4a9ca2aab4f228915fc7",
+                              "type": "icon",
+                              "name": "check",
+                              "library": "lucide",
+                              "icon": "check",
+                              "width": 14,
+                              "height": 14,
+                              "fill": "#346D58"
+                            }
+                          ],
+                          "fill": "#F3F5EF",
+                          "cornerRadius": 14,
+                          "alignItems": "center",
+                          "justifyContent": "center"
+                        },
+                        {
+                          "id": "nf93ddc5909d84d5fbb08166fbda81dae",
+                          "type": "frame",
+                          "name": "Brand exploration",
+                          "width": "fill_container",
+                          "height": "fit_content",
+                          "layout": "vertical",
+                          "children": [
+                            {
+                              "id": "na3c67d2c5dfc4729b89a2563c2389c0b",
+                              "type": "text",
+                              "name": "Brand exploration",
+                              "content": "Brand exploration",
+                              "fontFamily": "Noto Sans JP",
+                              "fontSize": 11,
+                              "fontWeight": "500",
+                              "lineHeight": 1.35,
+                              "fill": "#243B36"
+                            },
+                            {
+                              "id": "n8be0d7019d894ca0be2c914d861b5974",
+                              "type": "text",
+                              "name": "Completed · Today",
+                              "content": "Completed · Today",
+                              "fontFamily": "Noto Sans JP",
+                              "fontSize": 9,
+                              "fontWeight": "400",
+                              "lineHeight": 1.35,
+                              "fill": "#7B8780"
+                            }
+                          ],
+                          "gap": 4
+                        }
+                      ],
+                      "gap": 10,
+                      "alignItems": "center"
+                    },
+                    {
+                      "id": "na07ceeb779e34ede8f15253f662d6843",
+                      "type": "frame",
+                      "name": "Website wireframes",
+                      "width": "fill_container",
+                      "height": "fit_content",
+                      "layout": "horizontal",
+                      "children": [
+                        {
+                          "id": "n40cca43dc5204efc88a84f982d51c850",
+                          "type": "frame",
+                          "name": "Milestone status",
+                          "width": 28,
+                          "height": 28,
+                          "layout": "vertical",
+                          "children": [
+                            {
+                              "id": "n9225e6bba7194173b1e121296761da78",
+                              "type": "icon",
+                              "name": "clock-3",
+                              "library": "lucide",
+                              "icon": "clock-3",
+                              "width": 14,
+                              "height": 14,
+                              "fill": "#B09E68"
+                            }
+                          ],
+                          "fill": "#F3F5EF",
+                          "cornerRadius": 14,
+                          "alignItems": "center",
+                          "justifyContent": "center"
+                        },
+                        {
+                          "id": "nd05985677cf34c8abea37306bbeab1cb",
+                          "type": "frame",
+                          "name": "Website wireframes",
+                          "width": "fill_container",
+                          "height": "fit_content",
+                          "layout": "vertical",
+                          "children": [
+                            {
+                              "id": "n16b229c58f144dfeae3067ed5b257b16",
+                              "type": "text",
+                              "name": "Website wireframes",
+                              "content": "Website wireframes",
+                              "fontFamily": "Noto Sans JP",
+                              "fontSize": 11,
+                              "fontWeight": "500",
+                              "lineHeight": 1.35,
+                              "fill": "#243B36"
+                            },
+                            {
+                              "id": "n2212a7d9a06049fba4fa5af07913f888",
+                              "type": "text",
+                              "name": "In review · Tomorrow",
+                              "content": "In review · Tomorrow",
+                              "fontFamily": "Noto Sans JP",
+                              "fontSize": 9,
+                              "fontWeight": "400",
+                              "lineHeight": 1.35,
+                              "fill": "#7B8780"
+                            }
+                          ],
+                          "gap": 4
+                        }
+                      ],
+                      "gap": 10,
+                      "alignItems": "center"
+                    },
+                    {
+                      "id": "nc98766ff188c4c02abb8e997b2eb0640",
+                      "type": "frame",
+                      "name": "Design handoff",
+                      "width": "fill_container",
+                      "height": "fit_content",
+                      "layout": "horizontal",
+                      "children": [
+                        {
+                          "id": "n0594da3b7af949f48fa86ce0b3663d37",
+                          "type": "frame",
+                          "name": "Milestone status",
+                          "width": 28,
+                          "height": 28,
+                          "layout": "vertical",
+                          "children": [
+                            {
+                              "id": "nd7ea0cba1f804409b1dd86a4c14396ed",
+                              "type": "icon",
+                              "name": "clock-3",
+                              "library": "lucide",
+                              "icon": "clock-3",
+                              "width": 14,
+                              "height": 14,
+                              "fill": "#AD9DC6"
+                            }
+                          ],
+                          "fill": "#F3F5EF",
+                          "cornerRadius": 14,
+                          "alignItems": "center",
+                          "justifyContent": "center"
+                        },
+                        {
+                          "id": "n1b4b999632b8476a83f9c8f6480fb278",
+                          "type": "frame",
+                          "name": "Design handoff",
+                          "width": "fill_container",
+                          "height": "fit_content",
+                          "layout": "vertical",
+                          "children": [
+                            {
+                              "id": "ndfe76982734b419e8289e8d941e2c93c",
+                              "type": "text",
+                              "name": "Design handoff",
+                              "content": "Design handoff",
+                              "fontFamily": "Noto Sans JP",
+                              "fontSize": 11,
+                              "fontWeight": "500",
+                              "lineHeight": 1.35,
+                              "fill": "#243B36"
+                            },
+                            {
+                              "id": "na52df727525544cf80fe3720ed7aff25",
+                              "type": "text",
+                              "name": "Upcoming · Friday",
+                              "content": "Upcoming · Friday",
+                              "fontFamily": "Noto Sans JP",
+                              "fontSize": 9,
+                              "fontWeight": "400",
+                              "lineHeight": 1.35,
+                              "fill": "#7B8780"
+                            }
+                          ],
+                          "gap": 4
+                        }
+                      ],
+                      "gap": 10,
+                      "alignItems": "center"
+                    }
+                  ],
+                  "padding": 20,
+                  "gap": 18,
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 12
+                }
+              ],
+              "gap": 16
+            },
+            {
+              "id": "n5b0d86ac5db1401b9046fd11a8ea9d14",
+              "type": "frame",
+              "name": "Projects heading",
+              "width": "fill_container",
+              "height": 28,
+              "layout": "horizontal",
+              "children": [
+                {
+                  "id": "nf4bd91d33c234877a99ad05244e3d8ae",
+                  "type": "text",
+                  "name": "Your projects",
+                  "content": "Your projects",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 19,
+                  "fontWeight": "500",
+                  "lineHeight": 1.35,
+                  "fill": "#243B36"
+                },
+                {
+                  "id": "n6aa53cbd10484c5ca294fe334e7195de",
+                  "type": "frame",
+                  "name": "Space",
+                  "width": "fill_container",
+                  "height": 0,
+                  "layout": "vertical",
+                  "children": []
+                },
+                {
+                  "id": "n05e18e642cbf4bcb94f30db11bedf31e",
+                  "type": "text",
+                  "name": "View all projects  →",
+                  "content": "View all projects  →",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 11,
+                  "fontWeight": "500",
+                  "lineHeight": 1.35,
+                  "fill": "#346D58"
+                }
+              ],
+              "alignItems": "center"
+            },
+            {
+              "id": "n280f598fb260439db1b12cc3ba7e76d3",
+              "type": "frame",
+              "name": "Project cards",
+              "width": "fill_container",
+              "height": 144,
+              "layout": "horizontal",
+              "children": [
+                {
+                  "id": "n4f60dbaf8efb48dc8cafbaccafa598b7",
+                  "type": "frame",
+                  "name": "Studio website",
+                  "width": "fill_container",
+                  "height": 144,
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "id": "n276213e6080544bf8c5ed392bc0c763e",
+                      "type": "frame",
+                      "name": "Project category",
+                      "width": "fill_container",
+                      "height": "fit_content",
+                      "layout": "horizontal",
+                      "children": [
+                        {
+                          "id": "nf9dcd71e0903484186285d97640390d5",
+                          "type": "text",
+                          "name": "WEBSITE DESIGN",
+                          "content": "WEBSITE DESIGN",
+                          "fontFamily": "Noto Sans JP",
+                          "fontSize": 9,
+                          "fontWeight": "700",
+                          "lineHeight": 1.35,
+                          "fill": "#8573AA",
+                          "letterSpacing": 0.6
+                        },
+                        {
+                          "id": "ne5e41450c2934e5bb248bc29b584f3f6",
+                          "type": "frame",
+                          "name": "Space",
+                          "width": "fill_container",
+                          "height": 0,
+                          "layout": "vertical",
+                          "children": []
+                        },
+                        {
+                          "id": "n4af76fe2f47e4d73947e843f2bd112bc",
+                          "type": "icon",
+                          "name": "ellipsis",
+                          "library": "lucide",
+                          "icon": "ellipsis",
+                          "width": 16,
+                          "height": 16,
+                          "fill": "#8573AA"
+                        }
+                      ],
+                      "alignItems": "center"
+                    },
+                    {
+                      "id": "n7f675a57023e4e70b1201ecb4c874069",
+                      "type": "text",
+                      "name": "Studio website",
+                      "content": "Studio website",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 16,
+                      "fontWeight": "500",
+                      "lineHeight": 1.35,
+                      "fill": "#243B36"
+                    },
+                    {
+                      "id": "n082dcaea302043ec9f4d782bd4c705a7",
+                      "type": "frame",
+                      "name": "Progress track",
+                      "width": "fill_container",
+                      "height": 4,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "id": "nee581febdd8b4ed8a512673e9e9bcad2",
+                          "type": "rectangle",
+                          "width": 146.88,
+                          "height": 4,
+                          "fill": "#8573AA",
+                          "cornerRadius": 2
+                        }
+                      ],
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 2
+                    },
+                    {
+                      "id": "nb7e29e1311744676bb8ec0c57b5030e4",
+                      "type": "frame",
+                      "name": "Project progress",
+                      "width": "fill_container",
+                      "height": "fit_content",
+                      "layout": "horizontal",
+                      "children": [
+                        {
+                          "id": "naf727ddece2a46e69f59740d2b385c2a",
+                          "type": "text",
+                          "name": "AL  JK",
+                          "content": "AL  JK",
+                          "fontFamily": "Noto Sans JP",
+                          "fontSize": 9,
+                          "fontWeight": "700",
+                          "lineHeight": 1.35,
+                          "fill": "#8573AA"
+                        },
+                        {
+                          "id": "n55d464bccbd74cc2980637acd329a310",
+                          "type": "frame",
+                          "name": "Space",
+                          "width": "fill_container",
+                          "height": 0,
+                          "layout": "vertical",
+                          "children": []
+                        },
+                        {
+                          "id": "n512511a6f83a467eb33d92e3e644f8c5",
+                          "type": "text",
+                          "name": "72%",
+                          "content": "72%",
+                          "fontFamily": "Noto Sans JP",
+                          "fontSize": 10,
+                          "fontWeight": "500",
+                          "lineHeight": 1.35,
+                          "fill": "#8573AA"
+                        }
+                      ],
+                      "alignItems": "center"
+                    }
+                  ],
+                  "padding": 18,
+                  "gap": 15,
+                  "fill": "#F0ECF8",
+                  "cornerRadius": 12
+                },
+                {
+                  "id": "nad733698c8854d7ebcffc8b565f165cb",
+                  "type": "frame",
+                  "name": "Everyday app",
+                  "width": "fill_container",
+                  "height": 144,
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "id": "ne001e9f182f74fc7b91a3bec4ea92bdf",
+                      "type": "frame",
+                      "name": "Project category",
+                      "width": "fill_container",
+                      "height": "fit_content",
+                      "layout": "horizontal",
+                      "children": [
+                        {
+                          "id": "n50e60eab517c4a0199f29fc7a7479c84",
+                          "type": "text",
+                          "name": "PRODUCT DESIGN",
+                          "content": "PRODUCT DESIGN",
+                          "fontFamily": "Noto Sans JP",
+                          "fontSize": 9,
+                          "fontWeight": "700",
+                          "lineHeight": 1.35,
+                          "fill": "#BD9B64",
+                          "letterSpacing": 0.6
+                        },
+                        {
+                          "id": "nc83e946ed2ed4ad4a8fb93454a45b1f7",
+                          "type": "frame",
+                          "name": "Space",
+                          "width": "fill_container",
+                          "height": 0,
+                          "layout": "vertical",
+                          "children": []
+                        },
+                        {
+                          "id": "n45d0eb62c08543c581764fc6e79c1677",
+                          "type": "icon",
+                          "name": "ellipsis",
+                          "library": "lucide",
+                          "icon": "ellipsis",
+                          "width": 16,
+                          "height": 16,
+                          "fill": "#BD9B64"
+                        }
+                      ],
+                      "alignItems": "center"
+                    },
+                    {
+                      "id": "ncca0f00337dd48fca312b3a1b801d6dd",
+                      "type": "text",
+                      "name": "Everyday app",
+                      "content": "Everyday app",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 16,
+                      "fontWeight": "500",
+                      "lineHeight": 1.35,
+                      "fill": "#243B36"
+                    },
+                    {
+                      "id": "nd090a4ff070847468108e33eaacccf49",
+                      "type": "frame",
+                      "name": "Progress track",
+                      "width": "fill_container",
+                      "height": 4,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "id": "n03a7ebaa69014ea1ae9b889ce9e55e83",
+                          "type": "rectangle",
+                          "width": 97.92,
+                          "height": 4,
+                          "fill": "#BD9B64",
+                          "cornerRadius": 2
+                        }
+                      ],
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 2
+                    },
+                    {
+                      "id": "ndcde244c2ff2420c9d6ce7e1976df05a",
+                      "type": "frame",
+                      "name": "Project progress",
+                      "width": "fill_container",
+                      "height": "fit_content",
+                      "layout": "horizontal",
+                      "children": [
+                        {
+                          "id": "ndbb8b41557ef4d48bef10f689d3f183d",
+                          "type": "text",
+                          "name": "JD  MN",
+                          "content": "JD  MN",
+                          "fontFamily": "Noto Sans JP",
+                          "fontSize": 9,
+                          "fontWeight": "700",
+                          "lineHeight": 1.35,
+                          "fill": "#BD9B64"
+                        },
+                        {
+                          "id": "n3d728412d95741d0b453121379859890",
+                          "type": "frame",
+                          "name": "Space",
+                          "width": "fill_container",
+                          "height": 0,
+                          "layout": "vertical",
+                          "children": []
+                        },
+                        {
+                          "id": "n3b972b04164a448688c3d16746a8eb7f",
+                          "type": "text",
+                          "name": "48%",
+                          "content": "48%",
+                          "fontFamily": "Noto Sans JP",
+                          "fontSize": 10,
+                          "fontWeight": "500",
+                          "lineHeight": 1.35,
+                          "fill": "#BD9B64"
+                        }
+                      ],
+                      "alignItems": "center"
+                    }
+                  ],
+                  "padding": 18,
+                  "gap": 15,
+                  "fill": "#F9F0E3",
+                  "cornerRadius": 12
+                },
+                {
+                  "id": "n04df731deda54a5dad0fdee9e3648b5a",
+                  "type": "frame",
+                  "name": "Botanical identity",
+                  "width": "fill_container",
+                  "height": 144,
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "id": "n70b1a5ed0cec4f6fb1b4675d16a83353",
+                      "type": "frame",
+                      "name": "Project category",
+                      "width": "fill_container",
+                      "height": "fit_content",
+                      "layout": "horizontal",
+                      "children": [
+                        {
+                          "id": "nb4be9f462bb748c8a1e3bfdcd05e5185",
+                          "type": "text",
+                          "name": "BRAND IDENTITY",
+                          "content": "BRAND IDENTITY",
+                          "fontFamily": "Noto Sans JP",
+                          "fontSize": 9,
+                          "fontWeight": "700",
+                          "lineHeight": 1.35,
+                          "fill": "#749575",
+                          "letterSpacing": 0.6
+                        },
+                        {
+                          "id": "n831788bbf2a7419f839d15dacfda99f5",
+                          "type": "frame",
+                          "name": "Space",
+                          "width": "fill_container",
+                          "height": 0,
+                          "layout": "vertical",
+                          "children": []
+                        },
+                        {
+                          "id": "n4b3cd85e8b234b3789e74f6f1f2058a0",
+                          "type": "icon",
+                          "name": "ellipsis",
+                          "library": "lucide",
+                          "icon": "ellipsis",
+                          "width": 16,
+                          "height": 16,
+                          "fill": "#749575"
+                        }
+                      ],
+                      "alignItems": "center"
+                    },
+                    {
+                      "id": "n283289dd0279459eae4d7e47e4604fd5",
+                      "type": "text",
+                      "name": "Botanical identity",
+                      "content": "Botanical identity",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 16,
+                      "fontWeight": "500",
+                      "lineHeight": 1.35,
+                      "fill": "#243B36"
+                    },
+                    {
+                      "id": "n39439e2815e249db993bb93151f78d25",
+                      "type": "frame",
+                      "name": "Progress track",
+                      "width": "fill_container",
+                      "height": 4,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "id": "n507de59a69254be79f1fd224875557c1",
+                          "type": "rectangle",
+                          "width": 183.6,
+                          "height": 4,
+                          "fill": "#749575",
+                          "cornerRadius": 2
+                        }
+                      ],
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 2
+                    },
+                    {
+                      "id": "n3f28cb17b9f64892bb7bcf5a3055b4fc",
+                      "type": "frame",
+                      "name": "Project progress",
+                      "width": "fill_container",
+                      "height": "fit_content",
+                      "layout": "horizontal",
+                      "children": [
+                        {
+                          "id": "ndd32b8e70fcb4081b6efbfa9b958b031",
+                          "type": "text",
+                          "name": "AL  JD",
+                          "content": "AL  JD",
+                          "fontFamily": "Noto Sans JP",
+                          "fontSize": 9,
+                          "fontWeight": "700",
+                          "lineHeight": 1.35,
+                          "fill": "#749575"
+                        },
+                        {
+                          "id": "nc71e28bc681a4b2da4b0da2e93e37836",
+                          "type": "frame",
+                          "name": "Space",
+                          "width": "fill_container",
+                          "height": 0,
+                          "layout": "vertical",
+                          "children": []
+                        },
+                        {
+                          "id": "na7581d58c5e8435ea61248ccab2acae9",
+                          "type": "text",
+                          "name": "90%",
+                          "content": "90%",
+                          "fontFamily": "Noto Sans JP",
+                          "fontSize": 10,
+                          "fontWeight": "500",
+                          "lineHeight": 1.35,
+                          "fill": "#749575"
+                        }
+                      ],
+                      "alignItems": "center"
+                    }
+                  ],
+                  "padding": 18,
+                  "gap": 15,
+                  "fill": "#E8F0E7",
+                  "cornerRadius": 12
+                }
+              ],
+              "gap": 14
+            },
+            {
+              "id": "n75febd69ee354dbf9726a25ca63cc65a",
+              "type": "frame",
+              "name": "Workspace footer",
+              "width": "fill_container",
+              "height": 16,
+              "layout": "horizontal",
+              "children": [
+                {
+                  "id": "n4453d2c502424454acba1fad69aaa882",
+                  "type": "text",
+                  "name": "Thoughtfully organized. Ready for what’s next.",
+                  "content": "Thoughtfully organized. Ready for what’s next.",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 10,
+                  "fontWeight": "400",
+                  "lineHeight": 1.35,
+                  "fill": "#7B8780"
+                },
+                {
+                  "id": "n2735efb649ec4f659a1a87ad56a8966f",
+                  "type": "frame",
+                  "name": "Space",
+                  "width": "fill_container",
+                  "height": 0,
+                  "layout": "vertical",
+                  "children": []
+                },
+                {
+                  "id": "n66406c7932e9436295300536c4b4d5e5",
+                  "type": "text",
+                  "name": "●  All changes saved",
+                  "content": "●  All changes saved",
+                  "fontFamily": "Noto Sans JP",
+                  "fontSize": 9,
+                  "fontWeight": "400",
+                  "lineHeight": 1.35,
+                  "fill": "#7B8780"
+                }
+              ],
+              "alignItems": "center"
+            }
+          ],
+          "padding": [
+            24,
+            28
+          ],
+          "gap": 14,
+          "fill": "#F7F8F2"
+        }
+      ],
+      "fill": "#F7F8F2",
+      "clip": true
+    }
+  ]
+}

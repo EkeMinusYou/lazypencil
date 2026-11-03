@@ -6,6 +6,11 @@ lazypencil is an open-source editor for `.pen` files, the design document format
 used by Pencil. Describe a screen or a change to Codex or Claude, then review the
 result in a terminal preview. Your design stays in a local, editable file.
 
+![lazypencil running in Herdr, with the node tree, a project dashboard preview, and an AI conversation side by side.](docs/images/lazypencil-tui.png)
+
+The terminal workspace in use, showing the editable
+[project dashboard example](examples/project-dashboard.pen).
+
 - **Create and refine designs:** start from a prompt, edit an existing document,
   or attach a reference image.
 - **Review as you work:** browse the node tree, pan and zoom the preview, check
