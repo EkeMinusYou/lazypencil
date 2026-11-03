@@ -311,6 +311,11 @@ pub fn select(
                 } else {
                     continue;
                 };
+                // Flush feedback before metadata, locking or parsing can block.
+                // This frame remains visible through CLI/session setup as well.
+                startup.draw(|frame| {
+                    view::opening(frame, &settings.layout, &path, Some(&agent_status))
+                })?;
                 if path.is_dir() {
                     search = Search::start(path.clone());
                     listing = Listing {

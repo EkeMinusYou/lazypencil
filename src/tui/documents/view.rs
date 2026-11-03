@@ -8,7 +8,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Clear, List, ListItem, ListState, Padding, Paragraph, Wrap},
 };
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub(super) struct View<'a> {
     pub layout: &'a PanelLayout,
@@ -26,11 +26,7 @@ impl View<'_> {
     pub fn draw(&self, frame: &mut Frame, state: &mut ListState) {
         empty_workspace(frame, self.layout, self.agent);
         let area = frame.area();
-        let popup = centered(
-            area,
-            area.width.saturating_sub(6).min(94),
-            area.height.saturating_sub(6).min(22),
-        );
+        let popup = popup(area);
         frame.render_widget(Clear, popup);
         let title = theme::title("▤", "Open a .pen file", theme::NODES, true);
         let title_width = title.width();
@@ -165,6 +161,48 @@ impl View<'_> {
             ));
         }
     }
+}
+
+fn popup(area: Rect) -> Rect {
+    centered(
+        area,
+        area.width.saturating_sub(6).min(94),
+        area.height.saturating_sub(6).min(22),
+    )
+}
+
+pub(super) fn opening(frame: &mut Frame, layout: &PanelLayout, path: &Path, agent: Option<&str>) {
+    empty_workspace(frame, layout, agent);
+    let popup = popup(frame.area());
+    frame.render_widget(Clear, popup);
+    let block = panel(theme::title("↻", "Opening…", theme::RUNNING, true), true)
+        .padding(Padding::horizontal(1));
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+    let content = Layout::vertical([
+        Constraint::Min(0),
+        Constraint::Length(3),
+        Constraint::Min(0),
+    ])
+    .split(inner)[1];
+    frame.render_widget(
+        Paragraph::new(vec![
+            Line::styled(
+                "Loading…",
+                Style::default()
+                    .fg(theme::RUNNING)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .centered(),
+            Line::raw(""),
+            Line::styled(
+                fit_end(&path.display().to_string(), content.width as usize),
+                Style::default().fg(theme::SECONDARY),
+            )
+            .centered(),
+        ]),
+        content,
+    );
 }
 
 fn empty_workspace(frame: &mut Frame, layout: &PanelLayout, agent: Option<&str>) {
@@ -477,6 +515,33 @@ mod tests {
                 before, after,
                 "Prompt moved while opening at {width}x{height}"
             );
+        }
+    }
+
+    #[test]
+    fn opening_reuses_the_popup_and_shows_loading_instead_of_selection_controls() {
+        for (width, height) in [(130, 34), (80, 24), (50, 16), (1, 1)] {
+            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+            terminal
+                .draw(|frame| {
+                    opening(
+                        frame,
+                        &PanelLayout::default(),
+                        Path::new("nested/設定.pen"),
+                        None,
+                    )
+                })
+                .unwrap();
+            let buffer = terminal.backend().buffer();
+            let screen = text(buffer);
+            if width >= 50 {
+                for label in ["Loading…", "nested/設定.pen", "Nodes", "Preview", "Agent"] {
+                    assert!(screen.contains(label), "Missing {label}: {screen}");
+                }
+                let area = popup(buffer.area);
+                assert_eq!(buffer[(area.x, area.y)].symbol(), "╭");
+            }
+            assert!(!screen.contains("Enter open") && !screen.contains("Filter ›"));
         }
     }
 

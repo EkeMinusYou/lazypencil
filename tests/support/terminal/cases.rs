@@ -89,6 +89,12 @@ pub fn run(
     if matches!(case, "kitty-no-color" | "kitty-placements-no-color") {
         environment.insert("NO_COLOR".into(), "1".into());
     }
+    if case == "picker-loading" {
+        environment.insert(
+            "LAZYPENCIL_LOCK_DIR".into(),
+            root.join("locks").into_os_string(),
+        );
+    }
     let mut document = root.join("design.pen");
     if case == "session-deletion-small" {
         let parent = root
@@ -288,11 +294,42 @@ pub fn run(
             h.finish()?;
             return Ok(());
         }
-        if matches!(case, "picker-default" | "picker-prepared") {
+        if matches!(
+            case,
+            "picker-default" | "picker-prepared" | "picker-loading"
+        ) {
             h.key(b"\x0c")?;
             h.key(b"design.pen")?;
+            let blocked = if case == "picker-loading" {
+                let directory = root.join("locks");
+                fs::create_dir_all(&directory)?;
+                let file = fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .create(true)
+                    .truncate(false)
+                    .open(directory.join(format!(
+                        "{}.lock",
+                        hash(b"lazypencil-managed-assets-activity-v1")
+                    )))?;
+                fs2::FileExt::lock_exclusive(&file)?;
+                Some(file)
+            } else {
+                None
+            };
             picker_open_offset = Some(h.output.len());
             h.key(b"\r")?;
+            if blocked.is_some() {
+                h.wait("loading feedback before blocked file work", 2.0, |h| {
+                    let text = h.screen.text();
+                    text.contains("Loading…")
+                        && text.contains("design.pen")
+                        && !text.contains("Filter ›")
+                })?;
+                assert!(files(root, |name| name == "session.json").is_empty());
+                assert!(!root.join("sent-turn.txt").exists());
+            }
+            drop(blocked);
         } else if case == "picker-direct" {
             h.key(b"\x0c")?;
             h.key(b"nested/deep/selected.pen")?;
@@ -349,6 +386,11 @@ pub fn run(
             let methods = fs::read_to_string(root.join("received-account-methods.jsonl"))?;
             assert_eq!(methods.lines().count(), 2, "{methods}");
             assert!(methods.contains("initialize") && methods.contains("session/new"));
+            assert!(!root.join("sent-turn.txt").exists());
+            Value::Null
+        }
+        "picker-loading" => {
+            h.visible("design.pen")?;
             assert!(!root.join("sent-turn.txt").exists());
             Value::Null
         }
