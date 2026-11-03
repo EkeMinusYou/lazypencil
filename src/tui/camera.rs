@@ -332,7 +332,7 @@ where
     project_region(source, before, after, [source.width(), source.height()])
 }
 
-fn project_region<C>(
+pub(super) fn project_region<C>(
     source: &image::ImageBuffer<Rgba<u8>, C>,
     before: View,
     after: View,

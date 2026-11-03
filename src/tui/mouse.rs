@@ -82,13 +82,29 @@ pub(super) struct Pointer {
 }
 
 impl Pointer {
+    pub fn invalid(&self) -> bool {
+        self.hits.is_empty()
+    }
     pub fn begin(&mut self) {
         self.previous = std::mem::take(&mut self.hits);
     }
     pub fn finish(&mut self) {
-        // A press must never execute a newly exposed row or button.
-        if self.hits != self.previous {
-            self.press = None;
+        // Keep an unchanged target clickable while unrelated panels redraw.
+        // Scope changes cancel separately; a moved/replaced target cancels here.
+        if let Some(press) = self.press {
+            let previous = self
+                .previous
+                .iter()
+                .rev()
+                .find(|hit| hit.area.contains(press.origin));
+            let current = self
+                .hits
+                .iter()
+                .rev()
+                .find(|hit| hit.area.contains(press.origin));
+            if previous != current || current.is_none_or(|hit| hit.target != press.target) {
+                self.press = None;
+            }
         }
     }
     pub fn clear(&mut self) {
@@ -482,6 +498,34 @@ impl App {
         self.request_camera_navigation(worker, picker)
     }
 
+    pub(super) fn pinch_event(
+        &mut self,
+        event: gestures::PinchEvent,
+        picker: &graphics::Backend,
+        worker: &Worker,
+    ) -> Result<()> {
+        if !self.mouse.enabled
+            || self.has_modal()
+            || self.pointer.at(event.position) != Some(Target::Canvas)
+        {
+            return Ok(());
+        }
+        if event.factor != 1.0 && event.factor.is_finite() && event.factor > 0.0 {
+            self.input_profile.input("pinch", KeyEventKind::Press);
+            self.zoom_pointer(
+                event.factor.clamp(0.000001, 1_000_000.0) as f32,
+                Some(event.position),
+                picker,
+                worker,
+            )?;
+            self.dirty = true;
+        }
+        if event.finished {
+            self.finish_camera_gesture(worker);
+        }
+        Ok(())
+    }
+
     pub(super) fn toggle_playback(&mut self) -> Result<()> {
         if self.playback.active() {
             self.pause_playback();
@@ -513,6 +557,10 @@ impl App {
         }
         let position = Position::new(event.column, event.row);
         let target = self.pointer.at(position);
+        self.native_pinch.observe_pointer(
+            position,
+            target == Some(Target::Canvas) && !self.has_modal(),
+        );
         let scope_valid = self.pointer.scope == self.pointer_scope();
         self.input_profile
             .pointer(event, count, target, scope_valid);
@@ -535,8 +583,11 @@ impl App {
                             || button == MouseButton::Right
                             || button == MouseButton::Left && self.pointer.space),
                 });
-                if let Some(Target::Canvas) = target {
-                    self.pointer_focus(Focus::Preview, worker);
+                if target == Some(Target::Canvas)
+                    && button == MouseButton::Left
+                    && self.pointer.press.is_some_and(|press| !press.pan)
+                {
+                    self.begin_canvas_selection(position, event.modifiers, picker);
                 }
             }
             MouseEventKind::Drag(_) => {
@@ -553,6 +604,13 @@ impl App {
                         ]);
                         self.request_camera_navigation(worker, picker)?;
                     }
+                    if !press.pan
+                        && press.target == Target::Canvas
+                        && press.button == MouseButton::Left
+                        && press.moved
+                    {
+                        self.drag_canvas_selection(position, picker, worker)?;
+                    }
                     press.last = position;
                     self.pointer.press = Some(press);
                 }
@@ -563,6 +621,20 @@ impl App {
                 // modifier latched after completing a pointer gesture.
                 self.pointer.space = false;
                 self.finish_camera_gesture(worker);
+                if press
+                    .is_some_and(|press| press.target == Target::Canvas && press.button == button)
+                {
+                    self.pointer_focus(Focus::Preview, worker);
+                }
+                if let Some(press) = press
+                    && press.target == Target::Canvas
+                    && !press.pan
+                    && button == MouseButton::Left
+                    && press.button == button
+                {
+                    self.finish_canvas_selection(position, press.moved, picker, worker)?;
+                    return Ok(false);
+                }
                 if let Some(press) = press
                     && button == press.button
                     && !press.moved
@@ -749,6 +821,7 @@ impl App {
             Target::Button(action) => return self.pointer_action(action, picker, worker).await,
             _ => {}
         }
+        self.sync_tree_selection(picker, worker)?;
         self.dirty = true;
         Ok(false)
     }

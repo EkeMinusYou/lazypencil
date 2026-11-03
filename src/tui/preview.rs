@@ -90,11 +90,26 @@ pub struct Preview {
     pub live_pages: bool,
     pub frame_time: std::time::Duration,
 }
+#[derive(Clone)]
 pub(crate) enum PreviewImage {
-    Png(Vec<u8>),
+    Png(Arc<[u8]>),
     Pixels(crate::render::PreviewPixels),
 }
 impl PreviewImage {
+    pub(super) fn identity(&self) -> usize {
+        match self {
+            Self::Png(png) => png.as_ptr() as usize,
+            Self::Pixels(pixels) => pixels.identity(),
+        }
+    }
+    pub(super) fn bitmap(&self) -> Result<image::RgbaImage> {
+        match self {
+            Self::Png(png) => image::load_from_memory(png)
+                .map(|image| image.into_rgba8())
+                .map_err(|error| Error::new("RENDER_ERROR", error.to_string())),
+            Self::Pixels(pixels) => Ok(pixels.bitmap()),
+        }
+    }
     pub fn png(&self) -> Result<std::borrow::Cow<'_, [u8]>> {
         match self {
             Self::Png(png) => Ok(std::borrow::Cow::Borrowed(png)),
@@ -107,6 +122,7 @@ pub struct Node {
     pub name: String,
     pub display_name: String,
     pub bounds: Rect,
+    pub(super) hit: super::selection::HitGeometry,
     pub target: Value,
     pub kind: String,
     pub text_excerpt: String,
@@ -126,6 +142,10 @@ struct Shared {
     output: Mutex<Option<Output>>,
     notify: Notify,
     generation: AtomicU64,
+    presentation_request: Mutex<Option<super::selection::render::Request>>,
+    presentation_output: Mutex<Option<super::selection::render::Finished>>,
+    presentation_clock: Arc<AtomicU64>,
+    presentation_notify: Notify,
 }
 pub struct Worker {
     shared: Arc<Shared>,
@@ -145,6 +165,10 @@ impl Worker {
             output: Mutex::new(None),
             notify: Notify::new(),
             generation: AtomicU64::new(0),
+            presentation_request: Mutex::new(None),
+            presentation_output: Mutex::new(None),
+            presentation_clock: Arc::default(),
+            presentation_notify: Notify::new(),
         });
         let state = shared.clone();
         let thread = std::thread::Builder::new()
@@ -172,6 +196,11 @@ impl Worker {
         })
     }
     pub fn request(&self, request: Request) {
+        if !request.check_only {
+            self.shared
+                .presentation_clock
+                .fetch_add(1, Ordering::Relaxed);
+        }
         let mut pending = self.shared.request.lock().unwrap();
         self.shared
             .generation
@@ -199,9 +228,34 @@ impl Worker {
         self.shared
             .generation
             .store(request.generation, Ordering::Relaxed);
+        self.shared
+            .presentation_clock
+            .fetch_add(1, Ordering::Relaxed);
         pending.0 = Some(request);
         self.shared.wake.notify_one();
         true
+    }
+    pub(super) fn present(&self, mut request: super::selection::render::Request) -> Arc<AtomicU64> {
+        // Use the same queue lock as scene updates so the wake cannot be lost.
+        let _state = self.shared.request.lock().unwrap();
+        request.serial = self
+            .shared
+            .presentation_clock
+            .fetch_add(1, Ordering::Relaxed)
+            .wrapping_add(1);
+        request.clock = self.shared.presentation_clock.clone();
+        *self.shared.presentation_request.lock().unwrap() = Some(request);
+        self.shared.wake.notify_one();
+        self.shared.presentation_clock.clone()
+    }
+    pub(super) async fn next_presentation(&self) -> super::selection::render::Finished {
+        loop {
+            let notified = self.shared.presentation_notify.notified();
+            if let Some(output) = self.shared.presentation_output.lock().unwrap().take() {
+                return output;
+            }
+            notified.await;
+        }
     }
     pub async fn next(&self) -> Output {
         loop {
@@ -215,6 +269,9 @@ impl Worker {
         self.shared.output.lock().unwrap().take()
     }
     pub fn cancel(&self) {
+        self.shared
+            .presentation_clock
+            .fetch_add(1, Ordering::Relaxed);
         let mut state = self.shared.request.lock().unwrap();
         state.1 = true;
         if let Some(cancel) = self.shared.active.lock().unwrap().as_ref() {
@@ -236,6 +293,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
     let mut cached: Option<(Project, crate::layout::LayoutSnapshot)> = None;
     let mut document_preview_time = None;
     let mut renderer = crate::render::PreviewRenderer::default();
+    let mut presentation_cache = None;
     let mut navigation: Option<Arc<[Node]>> = None;
     let mut revision = revision::RevisionGuard::default();
     // Owned measurements retain stderr separately from terminal output.
@@ -254,7 +312,8 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
         script.expire_idle(now);
         dynamic.expire_idle(now);
         let mut state = shared.request.lock().unwrap();
-        while state.0.is_none() && !state.1 {
+        while state.0.is_none() && shared.presentation_request.lock().unwrap().is_none() && !state.1
+        {
             let deadline = [script.idle_deadline(), dynamic.idle_deadline()]
                 .into_iter()
                 .flatten()
@@ -273,6 +332,13 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             return;
         }
         let Some(request) = state.0.take() else {
+            let presentation = shared.presentation_request.lock().unwrap().take();
+            drop(state);
+            if let Some(request) = presentation {
+                let output = super::selection::render::run(request, &mut presentation_cache);
+                *shared.presentation_output.lock().unwrap() = Some(output);
+                shared.presentation_notify.notify_one();
+            }
             continue;
         };
         let cancel = CancellationToken::new();
@@ -291,7 +357,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 let protocol = encode(picker, image, request.cells, image_id)?;
                 return Ok(Some(Preview {
                     protocol,
-                    image: PreviewImage::Png(png),
+                    image: PreviewImage::Png(png.into()),
                     view: request.view,
                     nodes: Arc::default(),
                     summary: json!({"attachment":attachment}),
@@ -368,12 +434,18 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             } else {
                 let png = image.pixels.png()?;
                 drop(image.pixels);
-                PreviewImage::Png(png)
+                PreviewImage::Png(png.into())
             };
             let protocol = encode(picker, image.bitmap, request.cells, image_id)?;
             timing.mark("terminal_encode_ms");
             let nodes = navigation.get_or_insert_with(|| layout.items.iter().map(|item| Node {
                 id: item.record.id.clone(), name: item.node.properties.get("name").and_then(Value::as_str).unwrap_or(&item.record.id).into(), display_name: super::nodes::node_label(item.node.properties.get("name").and_then(Value::as_str).unwrap_or(&item.record.id)), bounds: item.record.visual_bounds,
+                hit: super::selection::HitGeometry {
+                    enabled: item.record.enabled && item.node.properties.get("opacity").and_then(Value::as_f64).unwrap_or(1.0) > 0.0,
+                    rect: Rect::new(0.0, 0.0, item.record.rect.width, item.record.rect.height),
+                    transform: item.record.transform,
+                    clip: item.node.properties.get("clip") == Some(&Value::Bool(true)),
+                },
                 target: json!({"id":item.record.id,"address":item.record.address,"source_id":item.record.source_id,"source_path":item.record.source_path,"generated_by":item.record.generated_by}),
                 kind: item.node.kind().into(),
                 text_excerpt: item.node.properties.get("content").and_then(Value::as_str).unwrap_or("").chars().take(512).collect(),
@@ -594,6 +666,10 @@ mod tests {
             output: Mutex::new(None),
             notify: Notify::new(),
             generation: AtomicU64::new(7),
+            presentation_request: Mutex::new(None),
+            presentation_output: Mutex::new(None),
+            presentation_clock: Arc::default(),
+            presentation_notify: Notify::new(),
         });
         let worker = Worker {
             shared: shared.clone(),

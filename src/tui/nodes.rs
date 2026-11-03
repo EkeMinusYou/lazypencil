@@ -510,6 +510,7 @@ mod tests {
             parent,
             children,
             bounds: crate::geometry::Rect::new(0.0, 0.0, 10.0, 10.0),
+            hit: super::selection::HitGeometry::default(),
             target: json!({"id":id}),
             kind: "rectangle".into(),
             text_excerpt: String::new(),

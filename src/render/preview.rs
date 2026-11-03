@@ -1,16 +1,17 @@
 //! Owned pixels for fast terminal previews and exact on-demand PNG encoding.
 use super::*;
 
+#[derive(Clone)]
 pub(crate) struct PreviewPixels {
     width: u32,
     height: u32,
     // Preserve premultiplied pixels for on-demand PNG export. No Skia object
     // crosses the preview worker's thread boundary.
-    rgba: Vec<u8>,
+    rgba: std::sync::Arc<[u8]>,
     opaque: bool,
     // Nonopaque frames need a separate straight-alpha copy. Opaque camera
     // feedback borrows rgba directly; large windows retain no camera copy.
-    camera_pixels: Option<image::RgbaImage>,
+    camera_pixels: Option<std::sync::Arc<image::RgbaImage>>,
 }
 
 impl PreviewPixels {
@@ -56,11 +57,11 @@ impl PreviewPixels {
             Self {
                 width,
                 height,
-                rgba,
+                rgba: rgba.into(),
                 opaque,
                 camera_pixels: (!opaque
                     && u64::from(width) * u64::from(height) * 4 <= 16 * 1024 * 1024)
-                    .then(|| bitmap.clone()),
+                    .then(|| std::sync::Arc::new(bitmap.clone())),
             },
             image::DynamicImage::ImageRgba8(bitmap),
         ))
@@ -71,11 +72,34 @@ impl PreviewPixels {
             return None;
         }
         let bytes = if self.opaque {
-            self.rgba.as_slice()
+            self.rgba.as_ref()
         } else {
             self.camera_pixels.as_ref()?.as_raw().as_slice()
         };
         image::ImageBuffer::from_raw(self.width, self.height, bytes)
+    }
+
+    pub(crate) fn identity(&self) -> usize {
+        self.rgba.as_ptr() as usize
+    }
+    pub(crate) fn bitmap(&self) -> image::RgbaImage {
+        if let Some(image) = &self.camera_pixels {
+            return (**image).clone();
+        }
+        let mut bytes = self.rgba.to_vec();
+        if !self.opaque {
+            for pixel in bytes.as_chunks_mut::<4>().0 {
+                let alpha = u16::from(pixel[3]);
+                for channel in &mut pixel[..3] {
+                    *channel = (u16::from(*channel) * 255 + alpha / 2)
+                        .checked_div(alpha)
+                        .unwrap_or(0)
+                        .min(255) as u8;
+                }
+            }
+        }
+        image::RgbaImage::from_raw(self.width, self.height, bytes)
+            .expect("Retained pixel dimensions are valid")
     }
 
     pub(crate) fn png(&self) -> Result<Vec<u8>> {

@@ -177,3 +177,89 @@ pub fn workspace(h: &mut Harness) -> Result {
     assert!(!h.root.join("sent-turn.txt").exists());
     Ok(())
 }
+
+pub fn canvas_selection(h: &mut Harness) -> Result {
+    h.visible("Left canvas shape")?;
+    h.wait("selection camera ready", 15.0, |h| zoom(h).is_some())?;
+    let original = fs::read(&h.document)?;
+    h.paste("Selection keeps this draft")?;
+    h.draft("Selection keeps this draft")?;
+    let row = h
+        .screen
+        .find_text("Left canvas shape")
+        .ok_or("Missing shape row")?;
+    click(h, row)?;
+    h.key(b"f")?;
+    let preview = h.screen.find_text("Preview").ok_or("Missing Preview")?;
+    let agent = h.screen.find_text("Agent").ok_or("Missing Agent")?;
+    let center = ((preview.0 + agent.0 - 4) / 2, 16);
+    click(h, (center.0, preview.1 + 2))?;
+    h.visible("Selection cleared")?;
+    h.wait("fit selection", 15.0, |h| zoom(h).is_some_and(|z| z > 300))?;
+    let frames = h.frames.camera_frames;
+    click(h, center)?;
+    h.visible("1 node selected")?;
+    if h.case == "selection-kitty" {
+        h.wait("selection outline is rendered", 15.0, |h| {
+            h.frames.camera_frames > frames
+                && h.frames
+                    .last_camera
+                    .as_ref()
+                    .is_some_and(|f| f.has_color([59, 130, 246, 255]))
+        })?;
+    }
+    h.key(b"0")?;
+    h.wait("fit full document", 15.0, |h| {
+        zoom(h).is_some_and(|z| z < 300)
+    })?;
+    let start = (preview.0 - 2, preview.1 + 2);
+    let end = (agent.0 - 6, 29);
+    for (from, to) in [(start, end), (end, start)] {
+        event(h, 0, from, false)?;
+        event(h, 32, to, false)?;
+        event(h, 0, to, true)?;
+        h.visible("3 nodes selected")?;
+    }
+    h.key(b"\x1b")?;
+    h.pump_for(0.15)?;
+    if h.case == "selection-kitty" {
+        let old_width = h.frames.images.last().unwrap().width;
+        h.resize(247, 57)?;
+        h.wait("large selection viewport", 15.0, |h| {
+            h.frames
+                .images
+                .last()
+                .is_some_and(|frame| frame.width > old_width)
+        })?;
+        let preview = h
+            .screen
+            .find_text("Preview")
+            .ok_or("Missing resized Preview")?;
+        let agent = h.screen.find_text("Agent").ok_or("Missing resized Agent")?;
+        let origin = (preview.0 - 2, preview.1 + 2);
+        let end = (agent.0 - 6, 50);
+        event(h, 0, origin, false)?;
+        let mut burst = String::new();
+        for index in 0..128 {
+            let point = if index % 2 == 0 {
+                end
+            } else {
+                (end.0 - 4, end.1 - 4)
+            };
+            burst.push_str(&format!("\x1b[<32;{};{}M", point.0 + 1, point.1 + 1));
+        }
+        h.key(burst.as_bytes())?;
+        event(h, 0, end, true)?;
+        h.key(b"\x1bOP")?;
+        h.wait(
+            "large drag bursts keep command input responsive",
+            3.0,
+            |h| h.screen.text().contains("Help ·"),
+        )?;
+        h.key(b"\x1b")?;
+    }
+    assert_eq!(fs::read(&h.document)?, original);
+    assert_eq!(state(h)["draft"], "Selection keeps this draft");
+    assert!(!h.root.join("sent-turn.txt").exists());
+    Ok(())
+}

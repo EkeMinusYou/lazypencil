@@ -9,6 +9,7 @@ mod diagnostics;
 pub mod documents;
 mod events;
 mod footer;
+mod gestures;
 mod graphics;
 mod images;
 mod input;
@@ -20,6 +21,7 @@ mod playback;
 mod preview;
 mod references;
 mod saved;
+mod selection;
 mod terminal;
 #[cfg(test)]
 mod tests;
@@ -231,6 +233,8 @@ struct App {
     panel_layout: crate::config::keys::PanelLayout,
     mouse: crate::config::keys::MouseSettings,
     pointer: mouse::Pointer,
+    selection: selection::Selection,
+    native_pinch: gestures::Pinch,
     editor: TextArea<'static>,
     focus: Focus,
     nodes_collapsed: bool,
@@ -304,6 +308,8 @@ impl App {
             panel_layout: Default::default(),
             mouse: Default::default(),
             pointer: Default::default(),
+            selection: Default::default(),
+            native_pinch: Default::default(),
             editor,
             focus: Focus::Prompt,
             nodes_collapsed: false,
@@ -370,6 +376,10 @@ impl App {
             preview_control.client(self.conversation.store().path(), self.conversation.id()),
         );
         let mut events = events::Events::new()?;
+        if self.mouse.enabled && self.mouse.native_pinch {
+            self.native_pinch.start(false);
+        }
+        screen.pointer_motion(self.native_pinch.active())?;
         self.camera_id = screen.camera_image_id();
         self.presentation.rectangular(
             screen.picker.protocol_type() == ratatui_image::picker::ProtocolType::Kitty
@@ -404,6 +414,17 @@ impl App {
                 let Some(event) = events.try_next() else {
                     break;
                 };
+                // A key can invalidate hit geometry while the next queued
+                // click already belongs to the new view. Rebuild it first.
+                if self.dirty
+                    && (self.pointer.invalid() || self.pointer.scope != self.pointer_scope())
+                    && event
+                        .as_ref()
+                        .is_ok_and(|batch| matches!(batch.event, Event::Mouse(_)))
+                {
+                    events.defer(event);
+                    break;
+                }
                 if self
                     .terminal_event(event.map_err(terminal::io)?, screen, worker)
                     .await?
@@ -432,8 +453,18 @@ impl App {
             let camera_settle_deadline = self.camera_settle_deadline;
             let activity_deadline = (self.conversation.active() && !self.has_modal())
                 .then(|| Instant::now() + Duration::from_millis(200));
+            let pinch = self.native_pinch.shared.clone();
             tokio::select! {
                 biased;
+                output = worker.next_presentation() => {
+                    match self.selection.accept_overlay(output) {
+                        Ok(changed) => self.dirty |= changed,
+                        Err(error) => self.set_preview_error_status(&error),
+                    }
+                },
+                event = pinch.next() => {
+                    if let Err(error) = self.pinch_event(event, &screen.picker, worker) { self.error(error); }
+                },
                 _ = async {
                     if let Some(deadline) = activity_deadline {
                         tokio::time::sleep_until(deadline.into()).await;
@@ -578,6 +609,9 @@ impl App {
             Event::Key(key) => {
                 self.pointer.keyboard();
                 self.pointer.space = false;
+                if self.selection.dragging() {
+                    self.selection.abort();
+                }
                 let modal = self.has_modal();
                 match self.key(key, &screen.picker, worker).await {
                     Ok(true) => return Ok(true),
@@ -587,6 +621,9 @@ impl App {
                     }
                     Err(error) => self.error(error),
                 }
+                if let Err(error) = self.sync_tree_selection(&screen.picker, worker) {
+                    self.error(error);
+                }
                 if modal && !self.has_modal() {
                     screen.redraw();
                 }
@@ -594,6 +631,7 @@ impl App {
                     self.finish_camera_gesture(worker);
                 }
                 screen.preview_keys(self.focus == Focus::Preview && !self.has_modal())?;
+                screen.pointer_motion(self.native_pinch.active())?;
                 self.pointer.clear();
                 self.dirty = true;
             }
@@ -611,16 +649,22 @@ impl App {
                     screen.redraw();
                 }
                 screen.preview_keys(self.focus == Focus::Preview && !self.has_modal())?;
+                screen.pointer_motion(self.native_pinch.active())?;
             }
             Event::Paste(text) if self.focus == Focus::Prompt && !self.has_modal() => {
                 self.insert_text(&text);
                 self.dirty = true;
             }
             Event::FocusLost => {
+                self.native_pinch.cancel();
+                self.selection.abort();
                 self.pointer.cancel();
+                self.refresh_selection_presentation(&screen.picker, worker)?;
                 self.finish_camera_gesture(worker);
             }
             Event::Resize(_, _) => {
+                self.native_pinch.cancel();
+                self.selection.abort();
                 self.pointer.clear();
                 self.finish_camera_gesture(worker);
                 self.presentation.invalidate();
@@ -714,6 +758,17 @@ impl App {
                 }
                 let document = !preview.attachment;
                 self.preview = Some(preview);
+                self.selection.retain(&self.preview.as_ref().unwrap().nodes);
+                let selected = selected
+                    .filter(|id| {
+                        self.preview
+                            .as_ref()
+                            .unwrap()
+                            .nodes
+                            .iter()
+                            .any(|node| node.id == *id)
+                    })
+                    .or_else(|| self.selection.ids.first().cloned());
                 if document {
                     self.pending_node_selection = None;
                     self.nodes_loading = false;
@@ -734,6 +789,7 @@ impl App {
                     self.pending_node_selection = Some(node.id.clone());
                 }
                 self.preview = None;
+                self.selection.clear();
                 self.node_tree.rebuild(&[], &self.filter);
                 self.nodes.select(None);
                 self.refresh_diagnostics(None);
@@ -1098,6 +1154,9 @@ impl App {
         }
         text.push_str("\n/open-preview: open the complete PNG externally\n/time <seconds>: seek; /play [1-10 fps], /pause\n/logs: read current saved turns; /conversations: saved conversations\nSaved logs: arrows select/scroll; Enter opens; n/p pages\nu: select local session; N: new local conversation\nv: raw/formatted; Backspace returns; r refreshes; Esc closes\n/commands, /history, /help, /quit\nCtrl+C: cancel active work; exit when idle\nDialogs keep their displayed keys; Esc closes help\nHelp: PgUp/PgDn or arrows scroll; Home/End jump\n\nClipboard access happens only on explicit paste. SSH reads the remote host's clipboard. Image protocols do not provide clipboard access.");
         text.push_str(&format!("\nDiagnostics: {} / {} select; {} reveals and fits the node\n{} / {} scroll details; {} returns to Nodes\n", label(Nav::PreviousItem), label(Nav::NextItem), label(Nav::ActivateNode), label(Nav::NodePageUp), label(Nav::NodePageDown), label(Nav::ClearSelection)));
+        if self.mouse.enabled {
+            text.push_str("Preview: click selects a shape; ordinary left drag selects fully enclosed shapes; Shift adds/toggles; Esc clears selection\nmacOS: Enable pinch zoom in the command palette (Accessibility access required once)\n");
+        }
         text
     }
 
@@ -1335,9 +1394,18 @@ impl App {
     }
     fn fit_selected(&mut self, picker: &graphics::Backend) -> Result<()> {
         let bounds = self
-            .selected_node()
-            .ok_or_else(|| Error::new("INVALID_ARGUMENT", "Select a node first"))?
-            .bounds;
+            .preview
+            .as_ref()
+            .and_then(|preview| {
+                preview
+                    .nodes
+                    .iter()
+                    .filter(|node| self.selection.ids.contains(&node.id))
+                    .map(|node| node.bounds)
+                    .reduce(|bounds, next| bounds.union(next))
+            })
+            .or_else(|| self.selected_node().map(|node| node.bounds))
+            .ok_or_else(|| Error::new("INVALID_ARGUMENT", "Select a node first"))?;
         self.view
             .fit(bounds, preview::pixel_size(picker, self.cells)?);
         Ok(())
@@ -1420,10 +1488,13 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut Frame) -> Size {
+        self.selection.bind(self.conversation.store().path());
         self.pointer.controls = self.mouse.enabled;
         self.pointer.begin();
         let scope = self.pointer_scope();
         if self.pointer.scope != scope {
+            self.selection.abort();
+            self.native_pinch.cancel();
             self.pointer.cancel();
             self.pointer.reset_modal_list();
             self.pointer.scope = scope;
@@ -1506,11 +1577,20 @@ impl App {
             .as_ref()
             .filter(|camera| camera.generation == self.generation)
         {
-            frame.render_widget(graphics::Image(&camera.image), inner);
-            self.presentation.prepare(frame.buffer_mut(), inner, true);
+            if let Some(image) = self.selection.presentation_for(self.view, self.cells) {
+                self.presentation.render(frame.buffer_mut(), inner, image);
+            } else {
+                frame.render_widget(graphics::Image(&camera.image), inner);
+                self.presentation.prepare(frame.buffer_mut(), inner, true);
+            }
         } else if let Some(preview) = &self.preview {
-            self.presentation
-                .render(frame.buffer_mut(), inner, &preview.protocol);
+            self.presentation.render(
+                frame.buffer_mut(),
+                inner,
+                self.selection
+                    .presentation_for(preview.view, preview.protocol.size())
+                    .unwrap_or(&preview.protocol),
+            );
         } else {
             frame.render_widget(
                 Paragraph::new(match &self.preview_error {

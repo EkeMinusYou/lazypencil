@@ -526,3 +526,40 @@ fn native_menu_preserves_uncovered_pixels_and_restores_full_placement() {
         "A menu outside Preview must not delete its image"
     );
 }
+
+#[test]
+fn native_selection_frames_restore_original_pixels_after_deselection() {
+    let backend = Backend {
+        font: FontSize::new(10, 20),
+        protocol: ProtocolType::Kitty,
+        tmux: false,
+        kitty_compression: false,
+    };
+    let size = Size::new(8, 4);
+    let area = Rect::new(1, 1, 8, 4);
+    let bounds = Rect::new(0, 0, 12, 8);
+    let encode = |color, id| {
+        backend
+            .encode_preview(
+                DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(80, 80, image::Rgba(color))),
+                size,
+                id,
+            )
+            .unwrap()
+    };
+    let original = encode([255, 0, 0, 255], 42);
+    let selected = encode([59, 130, 246, 255], 42 ^ 0x8000_0000);
+    let mut presentation = Presentation::default();
+    presentation.rectangular(true);
+    let mut observer = observer::KittyFrames::for_lazypencil();
+    for image in [&original, &selected, &original] {
+        let mut buffer = Buffer::empty(bounds);
+        presentation.begin();
+        presentation.render(&mut buffer, area, image);
+        presentation.finish(&mut buffer, false);
+        observer.feed(buffer[(0, 0)].symbol().as_bytes()).unwrap();
+    }
+    assert_eq!(observer.images.len(), 2);
+    assert_eq!(observer.camera_frames, 1);
+    assert!(observer.images.last().unwrap().has_color([255, 0, 0, 255]));
+}

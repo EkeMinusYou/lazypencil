@@ -121,7 +121,9 @@ impl Harness {
         case: &str,
         configuration: Option<PathBuf>,
     ) -> Result<Self> {
-        let image_case = if let Some(protocol) = case.strip_prefix("mouse-") {
+        let image_case = if let Some(protocol) = case.strip_prefix("selection-") {
+            protocol
+        } else if let Some(protocol) = case.strip_prefix("mouse-") {
             if protocol == "disabled" {
                 "halfblocks"
             } else {
@@ -198,6 +200,7 @@ impl Harness {
             .current_dir(root)
             .env_remove("HERDR_ENV")
             .env_remove("HC_TERMINAL_ID")
+            .env("LAZYPENCIL_DISABLE_NATIVE_INPUT", "1")
             .envs(&environment)
             .env("LAZYPENCIL_DATA_DIR", root.join("data"));
         if case != "picker-default" {

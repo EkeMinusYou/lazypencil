@@ -9,6 +9,13 @@ mod fixture_support;
 mod terminal;
 
 #[test]
+fn real_pty_canvas_click_and_marquee_select_shapes_without_editing() {
+    for case in ["selection-kitty", "selection-sixel", "selection-halfblocks"] {
+        run_pty_case(case);
+    }
+}
+
+#[test]
 fn real_pty_mouse_and_trackpad_pan_zoom_select_and_restore_terminal_modes() {
     for case in [
         "mouse-kitty",

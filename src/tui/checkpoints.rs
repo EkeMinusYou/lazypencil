@@ -147,6 +147,7 @@ pub const COMMANDS: &[&str] = &[
     "Toggle Nodes panel",
     "Toggle Agent panel",
     "View controls…",
+    "Enable pinch zoom…",
 ];
 
 impl super::App {
@@ -275,6 +276,22 @@ impl super::App {
                 9 => self.toggle_panel(super::Nav::ToggleAgentPanel, worker),
                 10 if self.mouse.enabled => self.pointer.more = true,
                 10 => self.set_status("Pointer input is disabled in user settings".into()),
+                11 => {
+                    let status = if !self.mouse.enabled || !self.mouse.native_pinch {
+                        "Pinch input is disabled in user settings"
+                    } else if !cfg!(target_os = "macos")
+                        || std::env::var_os("SSH_CONNECTION").is_some()
+                    {
+                        "Native pinch input requires a local macOS session; terminal-forwarded Ctrl+wheel zoom remains available"
+                    } else if self.native_pinch.start(true) {
+                        "Pinch zoom enabled"
+                    } else if !self.native_pinch.authorized() {
+                        "Pinch zoom needs macOS Accessibility access; allow the requested app in System Settings and retry"
+                    } else {
+                        "Cannot start native pinch input; restart the TUI after allowing Accessibility access"
+                    };
+                    self.set_status(status.into());
+                }
                 _ => unreachable!(),
             },
             Modal::History(page) if !page.entries.is_empty() => {

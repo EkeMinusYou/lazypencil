@@ -14,6 +14,7 @@ use tokio::sync::mpsc;
 
 pub(super) struct Events {
     receiver: mpsc::Receiver<io::Result<Batch>>,
+    deferred: Option<io::Result<Batch>>,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
@@ -37,13 +38,20 @@ impl Events {
             .spawn(move || {
                 let mut pending = None;
                 while !stopping.load(Ordering::Acquire) {
-                    let event = if let Some(event) = pending.take() { event } else { match crossterm::event::poll(Duration::from_millis(50)) {
+                    let mut event = if let Some(event) = pending.take() { event } else { match crossterm::event::poll(Duration::from_millis(50)) {
                         Ok(false) => continue,
                         Ok(true) => crossterm::event::read(),
                         Err(error) => Err(error),
                     }};
-                    // Hover has no application action and must not delay typing.
-                    if matches!(&event, Ok(Event::Mouse(event)) if event.kind == MouseEventKind::Moved) { continue; }
+                    // Native gestures use hover to identify the owning TTY.
+                    if matches!(&event, Ok(Event::Mouse(event)) if event.kind == MouseEventKind::Moved) {
+                        for _ in 0..64 {
+                            if !crossterm::event::poll(Duration::ZERO).unwrap_or(false) { break; }
+                            let next = crossterm::event::read();
+                            if matches!(&next, Ok(Event::Mouse(event)) if event.kind == MouseEventKind::Moved) { event = next; }
+                            else { pending = Some(next); break; }
+                        }
+                    }
                     let mut count = 1;
                     if event.as_ref().is_ok_and(scroll) {
                         // Preserve direction, position, modifiers and every input
@@ -64,16 +72,26 @@ impl Events {
             .map_err(super::terminal::io)?;
         Ok(Self {
             receiver,
+            deferred: None,
             stop,
             thread: Some(thread),
         })
     }
 
+    pub fn defer(&mut self, event: io::Result<Batch>) {
+        debug_assert!(self.deferred.is_none());
+        self.deferred = Some(event);
+    }
     pub fn try_next(&mut self) -> Option<io::Result<Batch>> {
-        self.receiver.try_recv().ok()
+        self.deferred
+            .take()
+            .or_else(|| self.receiver.try_recv().ok())
     }
 
     pub async fn next(&mut self) -> Option<io::Result<Batch>> {
+        if let Some(event) = self.deferred.take() {
+            return Some(event);
+        }
         self.receiver.recv().await
     }
 }

@@ -22,6 +22,9 @@ impl App {
     ) -> bool {
         let current = output.generation == self.generation;
         let accepted = self.accept_preview(output);
+        if accepted && let Err(error) = self.refresh_selection_presentation(picker, worker) {
+            self.set_preview_error_status(&error);
+        }
         // Both the normal event and the camera deadline can consume an exact
         // frame. Acknowledgements must follow either path exactly once.
         if current {
@@ -70,6 +73,7 @@ impl App {
         }));
         json!({
             "document": self.conversation.store().path(), "conversation": self.conversation.id(),
+            "selected_nodes": self.selection.ids,
             "selected_node": self.selected_node().map(|node| json!({"node_id": node.id, "name": node.name, "bounds": node.bounds})),
             "preview": { "requested_view": view_state(self.view, pixels), "displayed": displayed,
                 "viewport_pixels": pixels, "viewport_cells": [self.cells.width, self.cells.height],

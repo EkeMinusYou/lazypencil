@@ -212,6 +212,7 @@ impl Presentation {
         if !image
             .transmitted
             .swap(true, std::sync::atomic::Ordering::Relaxed)
+            || self.slots[0].is_none_or(|(source, _)| source != image.id)
         {
             let slot = self.visible.map_or(0, |id| (id & 1) ^ 1);
             let target = (image.id & !1).max(2) | slot;

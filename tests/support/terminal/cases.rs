@@ -111,11 +111,18 @@ pub fn run(
             {"type":"rectangle","id":"blue","name":"New destination","x":240,"y":-30,"width":180,"height":90,"fill":"#0000FF"}
         ]});
     }
-    if case == "mouse-kitty" {
+    if case == "mouse-kitty" || case.starts_with("selection-") {
         environment.insert(
             "LAZYPENCIL_PROFILE_INPUT".into(),
             "owned-local-measurement".into(),
         );
+    }
+    if case.starts_with("selection-") {
+        design = json!({"version":"2.21","children":[
+            {"type":"rectangle","id":"left","name":"Left canvas shape","x":-180,"y":-40,"width":100,"height":80,"fill":"#ff0000"},
+            {"type":"rectangle","id":"right","name":"Right canvas shape","x":60,"y":-40,"width":100,"height":80,"fill":"#00ff00"},
+            {"type":"rectangle","id":"top","name":"Top canvas shape","x":80,"y":-20,"width":40,"height":40,"fill":"#0000ff"}
+        ]});
     }
     let mut configuration = None;
     if case.starts_with("mouse-") {
@@ -410,6 +417,10 @@ pub fn run(
         h.screen.find_text("›").is_some() && h.screen.text().contains("Agent")
     })?;
     let mut report = match case {
+        "selection-kitty" | "selection-sixel" | "selection-halfblocks" => {
+            mouse::canvas_selection(&mut h)?;
+            Value::Null
+        }
         "mouse-kitty" | "mouse-sixel" | "mouse-halfblocks" | "mouse-disabled" => {
             mouse::workspace(&mut h)?;
             Value::Null

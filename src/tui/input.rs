@@ -302,6 +302,11 @@ impl App {
         }
         match self.focus {
             Focus::Preview => {
+                if key.code == KeyCode::Esc && !self.selection.ids.is_empty() {
+                    self.selection.clear();
+                    self.nodes.select(None);
+                    return Ok(false);
+                }
                 if action(Nav::PlayPause) {
                     self.toggle_playback()?;
                     return Ok(false);

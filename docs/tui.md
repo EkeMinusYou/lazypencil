@@ -98,7 +98,10 @@ moving keyboard focus, so typing can continue while browsing history or the canv
 | Preview: Ctrl + vertical scroll | Zoom around the pointer, keeping the document point beneath it fixed |
 | Preview: Shift + vertical scroll | Pan horizontally when the terminal forwards the gesture |
 | Preview: Space + left drag, middle drag, or right drag | Grab and pan the canvas; document coordinates stay unchanged |
-| Preview: ordinary left drag | Reserved for a later area-selection feature; currently does not pan or edit |
+| Preview: click / ordinary left drag | Select the topmost shape / select fully enclosed shapes |
+| Preview: Shift + click/drag | Toggle a shape / add enclosed shapes to the selection |
+| Preview: Esc | Clear canvas selection |
+| Preview: pinch (macOS native input) | Zoom around the pointer after enabling pinch input |
 | Nodes: row click / triangle click | Select a node / expand or collapse its branch |
 | Nodes, diagnostics, attachments, references, and modal lists: scroll | Scroll the list without changing selection |
 | Agent history / diagnostic details / Help / saved text: scroll | Scroll the text; history resumes following output at the bottom |
@@ -111,8 +114,12 @@ and header panel toggles when space permits. With either setting, **View control
 in the command palette (`Alt+p`) opens the view menu, including a temporary wheel
 pan/zoom switch. The menu leaves the uncovered portion of Preview visible.
 Selecting or fitting alone never adds an AI reference. There is no persistent
-hand-tool mode. Prompt clicks focus input; pointer caret positioning, canvas
-element selection, and element movement/resizing are not included yet.
+hand-tool mode. Selection outlines and the drag marquee are view-only: they do
+not alter the document, exported pixels or prompt references. Nodes reveals the
+primary selected shape; Fit selected fits the whole canvas selection. Shape hit
+testing respects paint order, transforms, disabled ancestors and clipping.
+Prompt clicks focus input; pointer caret positioning and element movement/resizing
+are not included yet.
 
 A drag belongs to its starting surface until the button is released, including
 when Space is released during the drag. Resize, focus loss, and changed modal or
@@ -134,11 +141,22 @@ The bounded trace records received pointer kinds, cell positions, modifiers, hit
 targets and image presentation timing; it does not record prompt text. Tracing is
 disabled by default.
 
-The current cell-based terminal input has no native pinch event, fractional scroll
-deltas, gesture phases, device identity, or Cmd mouse modifier. Pinch and Cmd+scroll
-are therefore not supported directly: use Ctrl+scroll or the zoom buttons. Trackpad
-scrolling uses the same directional events as a wheel; no additional application
-momentum or acceleration is added. Terminal font zoom and terminal-specific mouse
+For native macOS pinch, open the command palette (`Alt+p`) and choose **Enable
+pinch zoom…**. Allow the requested application in macOS Accessibility settings and
+retry the action. Move the pointer onto Preview, then pinch. The OS bridge reads
+only magnification events and claims them only at a canvas position reported by
+this terminal in the foreground application; other panes and applications retain
+their gestures. Claimed gestures do not also resize the terminal font. The bridge
+is independent of terminal brands and stops when the TUI exits. When access has
+already been granted, local sessions start it automatically. `native_pinch = false`
+disables the bridge; SSH sessions do not start it. PTY regression tests set
+`LAZYPENCIL_DISABLE_NATIVE_INPUT=1` to isolate themselves from desktop input.
+
+Other platforms currently use terminal-forwarded gestures (for example pinch
+translated to Ctrl+wheel). The cell-based terminal protocol itself has no native
+pinch event, fractional scroll deltas, gesture phases, device identity, or Cmd
+mouse modifier. Trackpad scrolling uses the same directional events as a wheel;
+no additional application momentum or acceleration is added. Terminal font zoom and terminal-specific mouse
 bindings remain outside the application. Shift-based text selection/copy belongs to
 the terminal; in particular, some terminals intercept Shift+scroll before forwarding
 it. tmux/SSH and physical device combinations need their own compatibility checks.
@@ -149,6 +167,7 @@ User-only settings can disable capture or change the scroll behavior:
 [tui.mouse]
 enabled = true
 show_controls = false
+native_pinch = true
 wheel_zoom = false
 scroll_step = 2
 zoom_step = 1.1

@@ -25,6 +25,7 @@ fn mouse_settings_are_user_owned_and_reserve_preview_space_only_when_enabled() {
     let shown = f.data(&["config", "show", "--user"]);
     assert_eq!(shown["settings"]["tui"]["mouse"]["enabled"], true);
     assert_eq!(shown["settings"]["tui"]["mouse"]["show_controls"], false);
+    assert_eq!(shown["settings"]["tui"]["mouse"]["native_pinch"], true);
     assert_eq!(shown["settings"]["tui"]["mouse"]["wheel_zoom"], false);
     assert_eq!(
         shown["settings"]["tui"]["navigation"]["play_pause"],

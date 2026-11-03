@@ -22,6 +22,7 @@ pub struct Screen {
     id: u32,
     force_redraw: bool,
     preview_keys: bool,
+    pointer_motion: bool,
 }
 /// Keep the terminal active while the picker hands off to the document workspace.
 pub(super) struct Startup {
@@ -93,12 +94,22 @@ impl Startup {
             id,
             force_redraw: false,
             preview_keys: false,
+            pointer_motion: false,
         })
     }
 }
 impl Screen {
     pub fn camera_image_id(&self) -> u32 {
         self.id ^ 0x8000_0000
+    }
+    pub fn pointer_motion(&mut self, enabled: bool) -> Result<()> {
+        if self.pointer_motion != enabled {
+            let mut stdout = std::io::stdout();
+            write!(stdout, "\x1b[?1003{}", if enabled { 'h' } else { 'l' }).map_err(io)?;
+            stdout.flush().map_err(io)?;
+            self.pointer_motion = enabled;
+        }
+        Ok(())
     }
     pub fn redraw(&mut self) {
         self.force_redraw = true;

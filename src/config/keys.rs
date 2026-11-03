@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-pub const TEMPLATE: &str = "\n[tui.layout]\n# Positive relative widths; they do not need to sum to 100.\n# nodes = 22\n# preview = 53\n# agent = 25\n\n[tui.keys]\n# Each explicit list replaces that action's defaults.\n# submit = [\"Enter\", \"Ctrl+Enter\", \"Ctrl+s\"]\n# paste = [\"Ctrl+v\", \"Alt+v\"]\n\n[tui.navigation]\n# next_panel = [\"Tab\"]\n# previous_panel = [\"Shift+Tab\"]\n# help = [\"F1\", \"?\"]\n# commands = [\"Alt+p\"]\n# pan_left = [\"Left\", \"h\"]\n# pan_right = [\"Right\", \"l\"]\n# zoom_in = [\"+\", \"=\"]\n# zoom_out = [\"-\"]\n# play_pause = [\"p\"]\n\n[tui.mouse]\n# enabled = true\n# show_controls = false\n# wheel_zoom = false\n# scroll_step = 2\n# zoom_step = 1.1\n";
+pub const TEMPLATE: &str = "\n[tui.layout]\n# Positive relative widths; they do not need to sum to 100.\n# nodes = 22\n# preview = 53\n# agent = 25\n\n[tui.keys]\n# Each explicit list replaces that action's defaults.\n# submit = [\"Enter\", \"Ctrl+Enter\", \"Ctrl+s\"]\n# paste = [\"Ctrl+v\", \"Alt+v\"]\n\n[tui.navigation]\n# next_panel = [\"Tab\"]\n# previous_panel = [\"Shift+Tab\"]\n# help = [\"F1\", \"?\"]\n# commands = [\"Alt+p\"]\n# pan_left = [\"Left\", \"h\"]\n# pan_right = [\"Right\", \"l\"]\n# zoom_in = [\"+\", \"=\"]\n# zoom_out = [\"-\"]\n# play_pause = [\"p\"]\n\n[tui.mouse]\n# enabled = true\n# show_controls = false\n# native_pinch = true\n# wheel_zoom = false\n# scroll_step = 2\n# zoom_step = 1.1\n";
 
 mod navigation;
 pub use navigation::{NavigationAction, NavigationKeys};
@@ -36,6 +36,7 @@ impl TuiSettings {
 pub struct MouseSettings {
     pub enabled: bool,
     pub show_controls: bool,
+    pub native_pinch: bool,
     pub wheel_zoom: bool,
     #[schemars(range(min = 1, max = 20))]
     pub scroll_step: u16,
@@ -47,6 +48,7 @@ impl Default for MouseSettings {
         Self {
             enabled: true,
             show_controls: false,
+            native_pinch: true,
             wheel_zoom: false,
             scroll_step: 2,
             zoom_step: 1.1,
