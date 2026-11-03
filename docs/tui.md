@@ -116,7 +116,9 @@ pan/zoom switch. The menu leaves the uncovered portion of Preview visible.
 Selecting or fitting alone never adds an AI reference. There is no persistent
 hand-tool mode. Selection outlines and the drag marquee are view-only: they do
 not alter the document, exported pixels or prompt references. Nodes reveals the
-primary selected shape; Fit selected fits the whole canvas selection. Shape hit
+primary selected shape. In Preview, Fit selected fits the whole canvas selection;
+in Nodes, it fits and outlines the current tree row. Browsing tree rows leaves
+the canvas selection unchanged. Shape hit
 testing respects paint order, transforms, disabled ancestors and clipping.
 Prompt clicks focus input; pointer caret positioning and element movement/resizing
 are not included yet.

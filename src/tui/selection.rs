@@ -299,20 +299,6 @@ impl App {
         self.dirty = true;
         Ok(())
     }
-    pub(super) fn sync_tree_selection(
-        &mut self,
-        picker: &graphics::Backend,
-        worker: &super::Worker,
-    ) -> Result<()> {
-        if self.focus == Focus::Nodes && !self.diagnostics.active {
-            let id = self.selected_node().map(|node| node.id.clone());
-            if id.as_ref() != self.selection.ids.first() {
-                self.selection.ids = id.into_iter().collect();
-                self.refresh_selection_presentation(picker, worker)?;
-            }
-        }
-        Ok(())
-    }
     pub(super) fn refresh_selection_presentation(
         &mut self,
         picker: &graphics::Backend,

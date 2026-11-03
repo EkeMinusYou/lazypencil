@@ -821,7 +821,6 @@ impl App {
             Target::Button(action) => return self.pointer_action(action, picker, worker).await,
             _ => {}
         }
-        self.sync_tree_selection(picker, worker)?;
         self.dirty = true;
         Ok(false)
     }

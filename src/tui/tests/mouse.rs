@@ -388,6 +388,66 @@ fn canvas_cell(app: &App,picker: &Backend,world:[f64;2])->(u16,u16) {
      (f64::from(area.y)+f64::from(area.height)/2.0+(world[1]-view.center[1])*f64::from(view.zoom.unwrap())/f64::from(font.height)-0.5).round() as u16)
 }
 #[test]
+fn node_navigation_preserves_canvas_selection_until_fit() {
+    use crossterm::event::{MouseButton, MouseEventKind as M};
+    runtime().block_on(async {
+        let temp = TempDir::new().unwrap();
+        let (mut app, worker, picker) = selection_fixture(&temp).await;
+        let view = app.view;
+        let generation = app.generation;
+        for id in ["left", "right"] {
+            let row = app.filtered_nodes().iter().position(|row| {
+                app.preview.as_ref().unwrap().nodes[row.index].id == id
+            }).unwrap();
+            let area = app.pointer.area(mouse::Target::Row(mouse::ListTarget::Nodes, row)).unwrap();
+            for kind in [M::Down(MouseButton::Left), M::Up(MouseButton::Left)] {
+                app.mouse_event(mouse_input(kind, (area.x, area.y), KeyModifiers::NONE), &picker, &worker).await.unwrap();
+                paint_mouse(&mut app, 130, 34);
+            }
+            assert_eq!(app.selected_node().unwrap().id, id);
+            assert!(app.selection.ids.is_empty());
+            assert!(app.selection.presentation.is_none());
+            assert_eq!(app.view, view);
+            assert_eq!(app.generation, generation);
+        }
+        press(&mut app, KeyCode::Char('f'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selection.ids, ["right"]);
+        assert_eq!(app.view.center, [110.0, 0.0]);
+        loop {
+            let output = tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap();
+            if output.generation == app.generation {
+                assert!(app.accept_interactive_preview(output, &worker, &picker));
+                break;
+            }
+        }
+        while app.selection.presentation.is_none() {
+            let output = tokio::time::timeout(Duration::from_secs(15), worker.next_presentation()).await.unwrap();
+            app.selection.accept_overlay(output).unwrap();
+        }
+        let fitted = app.view;
+        let generation = app.generation;
+        for (key, expected) in [(KeyCode::Down, "top"), (KeyCode::Up, "right"), (KeyCode::Up, "left")] {
+            press(&mut app, key, KeyModifiers::NONE, &worker).await;
+            assert_eq!(app.selected_node().unwrap().id, expected);
+            assert_eq!(app.selection.ids, ["right"]);
+            assert!(app.selection.presentation_for(fitted, app.cells).is_some());
+            assert_eq!(app.view, fitted);
+            assert_eq!(app.generation, generation);
+        }
+        press(&mut app, KeyCode::Char('f'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selection.ids, ["left"], "Fit follows the tree cursor instead of the previous outline");
+        assert_eq!(app.view.center, [-130.0, 0.0]);
+        app.focus = Focus::Preview;
+        app.selection.ids = vec!["left".into(), "right".into()];
+        press(&mut app, KeyCode::Char('f'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selection.ids, ["left", "right"]);
+        assert_eq!(app.view.center, [-10.0, 0.0], "Preview fit preserves multiple canvas targets");
+        app.conversation.close().await.unwrap();
+        worker.cancel();
+    });
+}
+
+#[test]
 fn canvas_click_selects_topmost_nodes_and_blank_space_clears_without_editing() {
     use crossterm::event::{MouseButton,MouseEventKind as M};
     runtime().block_on(async {

@@ -552,23 +552,28 @@ fn nodes_enter_expands_branches_and_fits_only_leaves() {
         assert_eq!(app.selected_node().unwrap().id, "root");
         assert_eq!(app.view, view);
         assert_eq!(app.generation, generation, "Expanding must not request a preview");
+        assert!(app.selection.ids.is_empty());
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
         assert_eq!(app.selected_node().unwrap().id, "leaf");
         assert_eq!(app.view, view);
         assert_eq!(app.generation, generation);
+        assert!(app.selection.ids.is_empty());
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
         assert_eq!(app.view.center, [24.0, 4.0]);
         assert!(app.view.zoom.is_some());
         assert_eq!(app.focus, Focus::Nodes);
+        assert_eq!(app.selection.ids, ["leaf"]);
 
         app.refresh_nodes(Some("root"));
         press(&mut app, KeyCode::Char('f'), KeyModifiers::NONE, &worker).await;
         assert_eq!(app.view.center, [80.0, 40.0]);
         assert_eq!(app.selected_node().unwrap().id, "root");
         assert_eq!(app.focus, Focus::Nodes);
+        assert_eq!(app.selection.ids, ["root"]);
         app.refresh_nodes(Some("empty"));
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
         assert_eq!(app.view.center, [90.0, 10.0]);
+        assert_eq!(app.selection.ids, ["empty"]);
 
         app.filter = "root".into();
         app.refresh_nodes(Some("root"));

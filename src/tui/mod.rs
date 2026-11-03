@@ -621,9 +621,6 @@ impl App {
                     }
                     Err(error) => self.error(error),
                 }
-                if let Err(error) = self.sync_tree_selection(&screen.picker, worker) {
-                    self.error(error);
-                }
                 if modal && !self.has_modal() {
                     screen.redraw();
                 }
@@ -1393,6 +1390,14 @@ impl App {
         self.preview.as_ref()?.nodes.get(index)
     }
     fn fit_selected(&mut self, picker: &graphics::Backend) -> Result<()> {
+        let ids = if self.focus == Focus::Nodes || self.selection.ids.is_empty() {
+            self.selected_node()
+                .map(|node| node.id.clone())
+                .into_iter()
+                .collect::<Vec<_>>()
+        } else {
+            self.selection.ids.clone()
+        };
         let bounds = self
             .preview
             .as_ref()
@@ -1400,14 +1405,15 @@ impl App {
                 preview
                     .nodes
                     .iter()
-                    .filter(|node| self.selection.ids.contains(&node.id))
+                    .filter(|node| ids.contains(&node.id))
                     .map(|node| node.bounds)
                     .reduce(|bounds, next| bounds.union(next))
             })
-            .or_else(|| self.selected_node().map(|node| node.bounds))
             .ok_or_else(|| Error::new("INVALID_ARGUMENT", "Select a node first"))?;
         self.view
             .fit(bounds, preview::pixel_size(picker, self.cells)?);
+        self.selection.cancel();
+        self.selection.ids = ids;
         Ok(())
     }
     fn open_preview(&mut self) -> Result<()> {
