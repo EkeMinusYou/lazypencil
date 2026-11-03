@@ -281,7 +281,16 @@ impl<'a> Peer<'a> {
                 if mode.starts_with("auth-") {
                     caps["_meta"] = json!({"authStatus":{}});
                 }
-                self.response(&message,json!({"protocolVersion":if mode=="wrong-version"{2}else{1},"agentCapabilities":caps,"agentInfo":{"name":"acp-fixture","version":"1"},"authMethods":[{"id":"fixture-auth","name":"Fixture"}]}))?;
+                let mut initialized = json!({"protocolVersion":if mode=="wrong-version"{2}else{1},"agentCapabilities":caps,"agentInfo":{"name":"acp-fixture","version":"1"},"authMethods":[{"id":"fixture-auth","name":"Fixture"}]});
+                if mode.starts_with("steering") {
+                    initialized["_meta"] = json!({"steering":{"supported":true}});
+                    initialized["agentInfo"] = if mode == "steering-claude" {
+                        json!({"name":"@agentclientprotocol/claude-agent-acp","version":"0.100.0"})
+                    } else {
+                        json!({"name":"@agentclientprotocol/codex-acp","version":if mode=="steering-old" {"2.2.2"} else {"2.3.0"}})
+                    };
+                }
+                self.response(&message, initialized)?;
                 if mode.starts_with("auth-inspect-") && mode != "auth-inspect-hang" {
                     self.auth(if mode == "auth-inspect-none" {
                         "none"
@@ -427,6 +436,31 @@ impl<'a> Peer<'a> {
                 self.turns += 1;
                 self.prompt(params)?;
             }
+            "_session/steering" => {
+                assert_eq!(params["sessionId"], self.session);
+                assert_eq!(
+                    params["_meta"]["steering"]["idleBehavior"],
+                    "promptRequired"
+                );
+                append_json("received-steering.jsonl", params)?;
+                if mode == "steering-hang" {
+                    return Ok(());
+                }
+                if mode == "steering-failure" {
+                    self.send(json!({"id":message["id"],"error":{"code":-32603,"message":"PRIVATE_STEERING_ERROR"}}))?;
+                    return Ok(());
+                }
+                if mode == "steering-flood" {
+                    for _ in 0..64 {
+                        self.notify(json!({"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"progress\n"}}))?;
+                    }
+                }
+                // Completion can precede the steering receipt on the wire.
+                if let Some(pending) = self.pending.take() {
+                    self.response(&pending, json!({"stopReason":"end_turn"}))?;
+                }
+                self.response(&message, json!({"outcome":if mode == "steering-idle" {"promptRequired"} else if mode == "steering-unowned" {"startedNewTurn"} else {"injected"}}))?;
+            }
             "session/set_mode" => {
                 self.selection = params["modeId"]
                     .as_str()
@@ -507,6 +541,17 @@ impl<'a> Peer<'a> {
             self.auth("account")?;
         }
         let mode = self.mode;
+        if mode.starts_with("steering") {
+            append_json("received-prompts.jsonl", params)?;
+            self.notify(json!({"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"working\n"}}))?;
+            if self.turns > 1 || mode == "steering-old" {
+                self.response(
+                    self.pending.as_ref().unwrap(),
+                    json!({"stopReason":"end_turn"}),
+                )?;
+            }
+            return Ok(());
+        }
         if mode == "queued-followups" {
             append_json("received-prompts.jsonl", params)?;
             fs::write(format!("started-turn-{}", self.turns), b"ready")?;

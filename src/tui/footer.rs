@@ -163,7 +163,13 @@ impl App {
                     crate::config::keys::preferred_label(&self.keys.submit, true).map(|key| {
                         Hint::new(
                             key,
-                            if self.conversation.active() || !self.outbox.queued.is_empty() {
+                            if self.outbox.steering.is_some() && self.outbox.references.is_empty() {
+                                "wait"
+                            } else if self.conversation.can_steer()
+                                && self.outbox.references.is_empty()
+                            {
+                                "steer"
+                            } else if self.conversation.active() || !self.outbox.queued.is_empty() {
                                 "queue"
                             } else {
                                 "send"

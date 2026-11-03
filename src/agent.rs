@@ -7,7 +7,10 @@ use futures::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use std::{
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
     time::Duration,
 };
 use tokio::{
@@ -26,6 +29,7 @@ pub mod permissions;
 mod preparation;
 mod process;
 mod settings;
+mod steering;
 use auth::{AuthPolicy, AuthReport};
 use process::AgentProcess;
 
@@ -96,11 +100,23 @@ pub enum AgentEvent {
 struct Turn {
     content: Vec<ContentBlock>,
     cancel: CancellationToken,
+    generation: u64,
+}
+
+struct Commands {
+    turns: mpsc::Receiver<Turn>,
+    steering: mpsc::Receiver<steering::Request>,
+    steering_supported: Arc<AtomicBool>,
+    steering_turn: Arc<Mutex<Option<u64>>>,
 }
 
 /// Owns one adapter connection and one session. Sequential prompts reuse both.
 pub struct AgentHost {
     commands: Option<mpsc::Sender<Turn>>,
+    steering: mpsc::Sender<steering::Request>,
+    steering_supported: Arc<AtomicBool>,
+    steering_turn: Arc<Mutex<Option<u64>>>,
+    generation: AtomicU64,
     events: mpsc::Receiver<AgentEvent>,
     shutdown: CancellationToken,
     task: Option<tokio::task::JoinHandle<Result<()>>>,
@@ -153,6 +169,15 @@ impl AgentHost {
             ));
         }
         let (commands, receiver) = mpsc::channel(1);
+        let (steering, steering_receiver) = mpsc::channel(1);
+        let steering_supported = Arc::new(AtomicBool::new(false));
+        let steering_turn = Arc::new(Mutex::new(None));
+        let controls = Commands {
+            turns: receiver,
+            steering: steering_receiver,
+            steering_supported: steering_supported.clone(),
+            steering_turn: steering_turn.clone(),
+        };
         let (sender, events) = mpsc::channel(32);
         let shutdown = CancellationToken::new();
         let stop = shutdown.clone();
@@ -161,7 +186,7 @@ impl AgentHost {
             let reporting = sender.clone();
             let result = run(
                 options,
-                receiver,
+                controls,
                 sender,
                 stop,
                 auth_sender,
@@ -183,6 +208,10 @@ impl AgentHost {
         });
         Ok(Self {
             commands: Some(commands),
+            steering,
+            steering_supported,
+            steering_turn,
+            generation: AtomicU64::new(0),
             events,
             shutdown,
             task: Some(task),
@@ -246,9 +275,48 @@ impl AgentHost {
         self.commands
             .as_ref()
             .ok_or_else(|| agent_error("Agent is closed"))?
-            .send(Turn { content, cancel })
+            .send(Turn {
+                content,
+                cancel,
+                generation: self.generation.fetch_add(1, Ordering::Relaxed) + 1,
+            })
             .await
             .map_err(|_| agent_error("Agent connection has closed"))
+    }
+
+    /// Whether this adapter supports steering with a host-owned idle fallback.
+    pub fn supports_steering(&self) -> bool {
+        self.steering_supported.load(Ordering::Relaxed)
+    }
+
+    pub fn can_steer(&self) -> bool {
+        self.supports_steering() && self.steering_turn.lock().expect("steering lock").is_some()
+    }
+
+    /// Enqueue mid-turn input without blocking event or permission handling.
+    pub fn steer(&self, id: String, content: Vec<ContentBlock>) -> Result<()> {
+        if !self.supports_steering() {
+            return Err(agent_error(
+                "This adapter does not support safe mid-turn input",
+            ));
+        }
+        if content.is_empty() || content.len() > 32 {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "A prompt must contain 1..32 content blocks",
+            ));
+        }
+        let turn = self.steering_turn.lock().expect("steering lock");
+        let generation = turn.ok_or_else(|| agent_error("The active turn has already finished"))?;
+        self.steering
+            .try_send(steering::Request {
+                id,
+                content,
+                generation,
+            })
+            .map_err(|_| {
+                agent_error("Another mid-turn input is pending or the agent connection has closed")
+            })
     }
 
     pub async fn close(mut self) -> Result<()> {
@@ -273,7 +341,7 @@ impl Drop for AgentHost {
 
 async fn run(
     options: AgentOptions,
-    commands: mpsc::Receiver<Turn>,
+    commands: Commands,
     events: mpsc::Sender<AgentEvent>,
     shutdown: CancellationToken,
     auth_sender: watch::Sender<Option<AuthReport>>,
@@ -408,7 +476,7 @@ async fn run(
 }
 
 struct ConversationChannels<'a> {
-    commands: mpsc::Receiver<Turn>,
+    commands: Commands,
     events: &'a mpsc::Sender<AgentEvent>,
     shutdown: &'a CancellationToken,
     current_cancel: Arc<Mutex<Option<CancellationToken>>>,
@@ -422,12 +490,18 @@ async fn conversation(
     purpose: Purpose,
 ) -> Result<()> {
     let ConversationChannels {
-        mut commands,
+        commands,
         events,
         shutdown,
         current_cancel,
         mut authentication,
     } = channels;
+    let Commands {
+        mut turns,
+        mut steering,
+        steering_supported,
+        steering_turn,
+    } = commands;
     let setup = async {
         let initialized = connection
             .send_request(
@@ -440,6 +514,7 @@ async fn conversation(
         if initialized.protocol_version != ProtocolVersion::V1 {
             return Err(agent_error("The adapter did not negotiate ACP v1"));
         }
+        steering_supported.store(steering::supported(&initialized), Ordering::Relaxed);
         let auth_supported = initialized
             .agent_capabilities
             .meta
@@ -561,10 +636,16 @@ async fn conversation(
         return Ok(());
     };
     loop {
-        let turn = tokio::select! {
+        let mut turn = tokio::select! {
             biased;
             _ = shutdown.cancelled() => return Ok(()),
-            turn = commands.recv() => match turn { Some(turn) => turn, None => return Ok(()) },
+            input = steering.recv() => {
+                if let Some(input) = input {
+                    emit(events, json!({"type":"steering_result", "id":input.id, "outcome":"promptRequired"})).await?;
+                }
+                continue;
+            },
+            turn = turns.recv() => match turn { Some(turn) => turn, None => return Ok(()) },
         };
         if turn.cancel.is_cancelled() {
             emit(events, json!({"type":"turn_error","error":Error::new("CANCELLED", "The queued prompt was cancelled before sending")})).await?;
@@ -586,17 +667,47 @@ async fn conversation(
         }
         *current_cancel.lock().expect("cancellation lock") = Some(turn.cancel.clone());
         let request = connection
-            .send_request(PromptRequest::new(session.clone(), turn.content))
+            .send_request(PromptRequest::new(
+                session.clone(),
+                std::mem::take(&mut turn.content),
+            ))
             .block_task();
         tokio::pin!(request);
-        let result = tokio::select! {
-            biased;
-            _ = shutdown.cancelled() => Err(TurnStop::Cancelled),
-            _ = turn.cancel.cancelled() => Err(TurnStop::Cancelled),
-            _ = tokio::time::sleep(options.turn_timeout) => Err(TurnStop::TimedOut),
-            error = auth::wait_for_conflict(&mut authentication, auth_policy) => Err(TurnStop::Authentication(error)),
-            result = &mut request => Ok(result),
+        *steering_turn.lock().expect("steering lock") = Some(turn.generation);
+        let result = steering::run_prompt(
+            connection,
+            &session,
+            options,
+            &turn,
+            &mut request,
+            steering::Channels {
+                events,
+                shutdown,
+                authentication: &mut authentication,
+                policy: auth_policy,
+                inputs: &mut steering,
+            },
+        )
+        .await;
+        let unsent = {
+            // Serialize admission with completion. Every accepted input gets a
+            // receipt before the prompt's terminal event, even at this boundary.
+            let mut active = steering_turn.lock().expect("steering lock");
+            *active = None;
+            let mut unsent = Vec::new();
+            while let Ok(input) = steering.try_recv() {
+                unsent.push(input.id);
+            }
+            unsent
         };
+        for id in unsent {
+            emit(
+                events,
+                json!({"type":"steering_result","id":id,"outcome":"promptRequired"}),
+            )
+            .await?;
+        }
+        let result = result?;
         let result = match result {
             Ok(result) => result
                 .map_err(|error| protocol_error("session/prompt", error))

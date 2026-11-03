@@ -603,6 +603,10 @@ pub fn run(
             queued_followups(&mut h)?;
             Value::Null
         }
+        "steering" => {
+            conversations::steering(&mut h)?;
+            Value::Null
+        }
         "user-agent-config" => {
             agent(&mut h, &design)?;
             Value::Null

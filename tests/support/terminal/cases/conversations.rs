@@ -1,5 +1,49 @@
 use super::*;
 
+pub fn steering(h: &mut Harness) -> Result {
+    h.paste("First request")?;
+    h.key(b"\r")?;
+    h.wait("mid-turn input available", 15.0, |h| {
+        let text = h.screen.text();
+        text.contains("Working…") && text.contains("steer")
+    })?;
+    h.paste("/queue Check the layout's spacing after this")?;
+    h.key(b"\r")?;
+    h.wait("explicit follow-up remains queued", 15.0, |h| {
+        h.screen.text().contains("1 queued")
+    })?;
+    assert_eq!(h.count("complete"), 0);
+    h.paste("Use English everywhere")?;
+    h.key(b"\r")?;
+    h.wait("steering and queued follow-up complete", 15.0, |h| {
+        h.count("complete") == 2
+    })?;
+    let steers = fs::read_to_string(h.root.join("received-steering.jsonl"))?;
+    let steers = steers
+        .lines()
+        .map(serde_json::from_str::<Value>)
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    assert_eq!(steers.len(), 1);
+    assert_eq!(steers[0]["prompt"][0]["text"], "Use English everywhere");
+    let prompts = fs::read_to_string(h.root.join("received-prompts.jsonl"))?;
+    let prompts = prompts
+        .lines()
+        .map(serde_json::from_str::<Value>)
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    assert_eq!(prompts.len(), 2);
+    assert!(
+        prompts[1]["prompt"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|block| block["text"] == "Check the layout's spacing after this")
+    );
+    h.paste("Unsent newer draft")?;
+    h.draft("Unsent newer draft")?;
+    h.save_screen("steering-complete-screen.txt")?;
+    Ok(())
+}
+
 fn other_session(h: &Harness, original: &Path) -> Option<(PathBuf, Value)> {
     let paths: Vec<_> = h.sessions().into_iter().filter(|p| p != original).collect();
     if paths.len() == 1 {

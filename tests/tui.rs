@@ -106,6 +106,11 @@ fn real_pty_queues_follow_ups_and_restores_typing_after_completion() {
 }
 
 #[test]
+fn real_pty_steering_delivers_mid_turn_and_keeps_explicit_queue_separate() {
+    run_pty_case("steering");
+}
+
+#[test]
 fn real_pty_pan_handles_taps_and_repeats_without_replaying_after_release() {
     run_pty_case("kitty-held");
 }

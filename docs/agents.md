@@ -156,6 +156,16 @@ workers join a host-owned Job before spawning the adapter. Owner death revokes
 host-bound grants and stops ordinary owned descendants. Deliberately escaping
 processes and universal OS-crash cleanup are outside that guarantee.
 
+The TUI can send text into a running turn through `_session/steering`, while
+`/queue <text>` keeps the normal sequential prompt lifecycle. Steering is enabled
+only for an advertised capability and recognized versions with a host-owned idle
+fallback (codex-acp 2.3.0+, claude-agent-acp 0.100.0+). The host sends
+`_meta.steering.idleBehavior = "promptRequired"` so a completion race cannot silently
+start another turn. A `promptRequired` receipt leaves the input queued; an `injected`
+receipt records it as user input in the active transcript. Unconfirmed delivery stays
+in a paused queue for review, including after reopening. Steering neither resets the
+turn deadline nor changes document-tool permissions, authentication or image grants.
+
 Committed edit batches remain in the document after cancellation or a crash. The CLI rereads the actual document after stopping, records its revision, and leaves committed history available through `history` and `restore`. It does not automatically roll back or retry. Invalid final document data produces a failure rather than a successful completion event.
 
 ## Library embedding and development

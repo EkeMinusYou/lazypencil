@@ -68,8 +68,8 @@ fn read_turn(path: &Path, session: &str, document: &Path, turn: &str) -> Option<
         return None;
     }
     let head = window(&mut file, 0)?;
-    let mut records = records(&head);
-    let start = records.next()?;
+    let mut initial_records = records(&head);
+    let start = initial_records.next()?;
     if start["type"] != "start"
         || start["session"] != session
         || start["turn"] != turn
@@ -77,7 +77,7 @@ fn read_turn(path: &Path, session: &str, document: &Path, turn: &str) -> Option<
     {
         return None;
     }
-    let request = records.find(|value| value["type"] == "user_prompt")
+    let request = initial_records.find(|value| value["type"] == "user_prompt")
         .and_then(|value| value["text"].as_str().map(|text| {
             json!({"text":text.chars().take(1024).collect::<String>(),"truncated":text.chars().count() > 1024})
         }));
@@ -90,6 +90,15 @@ fn read_turn(path: &Path, session: &str, document: &Path, turn: &str) -> Option<
         tail.get(tail.iter().position(|byte| *byte == b'\n')? + 1..)?
     };
     let final_record = records_from_tail(tail, session, turn);
+    let mut steering_ids = std::collections::BTreeSet::new();
+    let steering_inputs = records(&head).chain(records(tail))
+        .filter(|record| record["type"] == "user_prompt")
+        .filter_map(|record| {
+            let id = record["steering_id"].as_str()?;
+            if !steering_ids.insert(id.to_owned()) { return None; }
+            let text = record["text"].as_str()?;
+            Some(json!({"text":text.chars().take(1024).collect::<String>(),"truncated":text.chars().count() > 1024}))
+        }).take(8).collect::<Vec<_>>();
     let references = start["selection"]["node_references"]
         .as_array()
         .map(|references| {
@@ -100,7 +109,7 @@ fn read_turn(path: &Path, session: &str, document: &Path, turn: &str) -> Option<
                 .collect::<Vec<_>>()
         });
     Some(
-        json!({"turn":turn,"request":request,"references":references,
+        json!({"turn":turn,"request":request,"steering_inputs":steering_inputs,"references":references,
         "status":final_record.as_ref().map(|record|record["type"].clone()).unwrap_or(json!("interrupted_or_incomplete")),
         "observed_revision":final_record.as_ref().and_then(|record|revision(&record["document"]["revision"])),
         "before_revision":revision(&start["before_revision"])}),
@@ -170,6 +179,31 @@ mod tests {
             .unwrap();
         }
         id
+    }
+
+    #[test]
+    fn steering_continuity_keeps_accepted_inputs_once_and_omits_unconfirmed_text() {
+        let directory = TempDir::new().unwrap();
+        let document = directory.path().join("design.pen");
+        let id = write_turn(directory.path(), &document, None, false);
+        let mut file = OpenOptions::new()
+            .append(true)
+            .open(directory.path().join(format!("turn-{id}.jsonl")))
+            .unwrap();
+        writeln!(
+            file,
+            "{}",
+            json!({"type":"user_prompt","steering_id":"confirmed","text":"Use English"})
+        )
+        .unwrap();
+        writeln!(file, "{}", json!({"type":"steering_result","id":"unconfirmed","outcome":"unknown","text":"Do not replay this"})).unwrap();
+        writeln!(file, "{}", json!({"type":"complete","session":"local","turn":id,"document":{"revision":"b".repeat(64)}})).unwrap();
+        let summary = summarize(directory.path(), "local", &document, "current");
+        assert_eq!(
+            summary["recent_turns"][0]["steering_inputs"],
+            json!([{"text":"Use English","truncated":false}])
+        );
+        assert!(!summary.to_string().contains("Do not replay this"));
     }
 
     #[test]

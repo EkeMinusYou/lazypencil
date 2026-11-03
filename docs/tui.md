@@ -37,9 +37,21 @@ The header reports the connected adapter's actual model, effort, enabled Fast mo
 account/authentication route and local session. Connecting/missing reports are labeled.
 Account identity stays in memory, outside transcripts. Agent activity is independent:
 Idle, Working, or Blocked for an explicit permission response. During a turn the prompt
-remains editable; submitting queues a text follow-up without replacing the active turn
-or automatically reattaching its images. Failure/cancellation pauses the queue;
+remains editable. With a compatible adapter, submitting text steers the running turn
+without waiting for completion or reattaching its images. The footer labels this action
+`steer`, and delivery is confirmed separately. Use `/queue <text>` to explicitly defer
+a follow-up until the current turn finishes. Unsupported adapters, input submitted
+before the active prompt is ready, and node references retain the queued behavior.
+If the turn ends before it can accept the input, the input moves to the normal queue.
+Unconfirmed delivery pauses the queue for review; check saved logs before resuming
+because the agent may already have received the input. Failure/cancellation pauses the queue;
 `/resume-queue` resumes and `/clear-queue` discards it. Reopening never submits drafts.
+Reopening also retains any unconfirmed mid-turn input in the paused queue.
+
+Steering requires the adapter to advertise `_meta.steering.supported` and honor the
+host-owned idle fallback: codex-acp 2.3.0+ or claude-agent-acp 0.100.0+ are recognized.
+Older or unrecognized adapters continue to queue input. See the
+[ACP steering extension](https://github.com/agentclientprotocol/codex-acp/blob/main/docs/steering.md).
 
 Nodes is a foldable, searchable tree. Selection controls viewing, not the next AI
 request's target. Use `a` to add a node or selected diagnostic to References; exact
@@ -230,7 +242,7 @@ Large or high-DPI viewports automatically reduce preview raster resolution to st
 | Right region: `Alt+Up` / `Alt+Down` | Switch between conversation history, pending images, node references, and Prompt; skip empty lists |
 | Agent history / Attachments / References: `Esc` | Return to Prompt |
 | References: arrows / `j`/`k`; Delete / Backspace / `d` | Select a reference; remove it |
-| Prompt: `Enter`, `Ctrl+Enter`, `Ctrl+S` | Submit text and pending images, or queue a text follow-up during an active turn |
+| Prompt: `Enter`, `Ctrl+Enter`, `Ctrl+S` | Submit text and pending images; during work, steer a compatible agent or queue a follow-up |
 | Prompt: `Alt+Enter`, `Shift+Enter` | Insert a newline (Shift+Enter requires terminal support) |
 | Prompt: `Ctrl+V` / `Alt+V` | Explicitly read this host's image, copied image files, or text clipboard |
 | Prompt: `Ctrl+A` / `Ctrl+E`, `Ctrl+B` / `Ctrl+F` | Move to line start/end or one character backward/forward |

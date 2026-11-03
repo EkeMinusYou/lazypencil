@@ -59,6 +59,149 @@ async fn ready(host: &mut AgentHost) {
 }
 
 #[test]
+fn steering_is_delivered_mid_turn_and_settled_before_prompt_completion() {
+    for mode in [
+        "steering",
+        "steering-claude",
+        "steering-idle",
+        "steering-flood",
+        "steering-failure",
+    ] {
+        let directory = TempDir::new().unwrap();
+        runtime().block_on(async {
+            let mut host = AgentHost::spawn(options(mode, directory.path())).unwrap();
+            ready(&mut host).await;
+            assert!(host.supports_steering());
+            let cancel = CancellationToken::new();
+            host.prompt(
+                vec![ContentBlock::Text(TextContent::new("First task"))],
+                cancel.clone(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(message(&mut host).await["type"], "update");
+            host.steer(
+                "follow-up".into(),
+                vec![ContentBlock::Text(TextContent::new("Use English"))],
+            )
+            .unwrap();
+            loop {
+                let event = message(&mut host).await;
+                if event["type"] == "steering_result" {
+                    assert_eq!(event["id"], "follow-up");
+                    assert_eq!(
+                        event["outcome"],
+                        match mode {
+                            "steering-idle" => "promptRequired",
+                            "steering-failure" => "failed",
+                            _ => "injected",
+                        }
+                    );
+                    assert!(!event.to_string().contains("PRIVATE_STEERING_ERROR"));
+                    break;
+                }
+                assert_eq!(event["type"], "update", "{event}");
+            }
+            if mode != "steering-failure" {
+                assert_eq!(message(&mut host).await["type"], "turn_complete");
+                // A stale input must not be injected into a later prompt.
+                assert!(
+                    host.steer(
+                        "late".into(),
+                        vec![ContentBlock::Text(TextContent::new("Next task"))],
+                    )
+                    .is_err()
+                );
+            } else {
+                cancel.cancel();
+                assert_eq!(message(&mut host).await["type"], "turn_error");
+            }
+            host.close().await.unwrap();
+        });
+        let received =
+            std::fs::read_to_string(directory.path().join("received-steering.jsonl")).unwrap();
+        let received: Vec<Value> = received
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(received.len(), 1);
+        assert_eq!(received[0]["prompt"][0]["text"], "Use English");
+    }
+}
+
+#[test]
+fn steering_cancellation_retains_uncertain_delivery_and_stops_the_turn() {
+    let directory = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut host = AgentHost::spawn(options("steering-hang", directory.path())).unwrap();
+        ready(&mut host).await;
+        let cancel = CancellationToken::new();
+        host.prompt(
+            vec![ContentBlock::Text(TextContent::new("First task"))],
+            cancel.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(message(&mut host).await["type"], "update");
+        host.steer(
+            "pending".into(),
+            vec![ContentBlock::Text(TextContent::new("Direction change"))],
+        )
+        .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !directory.path().join("received-steering.jsonl").exists() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        cancel.cancel();
+        let event = message(&mut host).await;
+        assert_eq!(event["type"], "steering_result");
+        assert_eq!(event["outcome"], "unknown");
+        assert_eq!(message(&mut host).await["type"], "turn_error");
+        host.close().await.unwrap();
+    });
+}
+
+#[test]
+fn steering_rejects_legacy_adapters_and_stops_unowned_fallback_turns() {
+    for mode in ["steering-old", "steering-unowned"] {
+        let directory = TempDir::new().unwrap();
+        runtime().block_on(async {
+            let mut host = AgentHost::spawn(options(mode, directory.path())).unwrap();
+            ready(&mut host).await;
+            if mode == "steering-old" {
+                assert!(!host.supports_steering());
+                assert!(
+                    host.steer(
+                        "input".into(),
+                        vec![ContentBlock::Text(TextContent::new("text"))]
+                    )
+                    .is_err()
+                );
+                host.close().await.unwrap();
+            } else {
+                host.prompt(
+                    vec![ContentBlock::Text(TextContent::new("task"))],
+                    CancellationToken::new(),
+                )
+                .await
+                .unwrap();
+                message(&mut host).await;
+                host.steer(
+                    "input".into(),
+                    vec![ContentBlock::Text(TextContent::new("text"))],
+                )
+                .unwrap();
+                assert_eq!(message(&mut host).await["type"], "connection_error");
+                assert!(host.close().await.is_err());
+            }
+        });
+    }
+}
+
+#[test]
 fn embedded_conversation_uses_the_real_helper_for_supervision_and_bound_mcp_edits() {
     use clap::Parser;
     use lazypencil::conversation::{Conversation, ConversationEvent};

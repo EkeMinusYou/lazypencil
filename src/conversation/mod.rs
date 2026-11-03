@@ -50,6 +50,11 @@ struct ActiveTurn {
     denied: bool,
 }
 
+struct PendingSteering {
+    id: String,
+    text: String,
+}
+
 pub struct Conversation {
     store: Store,
     args: PromptArgs,
@@ -70,6 +75,7 @@ pub struct Conversation {
     pending_permissions: HashMap<String, PendingPermission>,
     events: VecDeque<ConversationEvent>,
     result: Option<Result<()>>,
+    pending_steering: Option<PendingSteering>,
 }
 
 impl Conversation {
@@ -145,6 +151,7 @@ impl Conversation {
             pending_permissions: HashMap::new(),
             events: VecDeque::new(),
             result: None,
+            pending_steering: None,
         };
         if !conversation.args.prompt.is_empty() {
             conversation.set_draft(conversation.args.prompt.clone())?;
@@ -172,6 +179,42 @@ impl Conversation {
     }
     pub fn active(&self) -> bool {
         self.active.is_some() || self.preparation.is_some()
+    }
+    /// Mid-turn input is available after the active prompt has been submitted.
+    pub fn can_steer(&self) -> bool {
+        self.pending_steering.is_none()
+            && self
+                .active
+                .as_ref()
+                .is_some_and(|turn| turn.content.is_none() && !turn.cancel.is_cancelled())
+            && self.host.as_ref().is_some_and(AgentHost::can_steer)
+    }
+
+    /// Send text into the active turn; delivery is reported by steering_result.
+    pub fn steer(&mut self, text: String) -> Result<String> {
+        self.require_project_agent()?;
+        if text.trim().is_empty() || text.len() > 1024 * 1024 {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "Mid-turn input must contain text and fit within 1 MiB",
+            ));
+        }
+        if !self.can_steer() {
+            return Err(Error::new(
+                "AGENT_ERROR",
+                "Mid-turn input is unavailable or another input is awaiting delivery",
+            ));
+        }
+        let id = uuid::Uuid::new_v4().to_string();
+        self.host.as_ref().expect("active host").steer(
+            id.clone(),
+            vec![ContentBlock::Text(TextContent::new(&text))],
+        )?;
+        self.pending_steering = Some(PendingSteering {
+            id: id.clone(),
+            text,
+        });
+        Ok(id)
     }
     pub fn result(&self) -> Option<&Result<()>> {
         self.result.as_ref()
@@ -840,6 +883,19 @@ impl Conversation {
                         }
                         return Ok(());
                     }
+                    Some("steering_result") => {
+                        if self
+                            .pending_steering
+                            .as_ref()
+                            .is_some_and(|input| value["id"] == input.id)
+                        {
+                            let input = self.pending_steering.as_ref().expect("pending steering");
+                            if value["outcome"] == "injected" {
+                                self.record(&json!({"type":"user_prompt","text":input.text,"steering_id":input.id}))?;
+                            }
+                            self.pending_steering.take();
+                        }
+                    }
                     Some("turn_complete") => {
                         if let Some(authentication) =
                             value.get("authentication").filter(|value| !value.is_null())
@@ -983,6 +1039,9 @@ impl Conversation {
         let Some(active) = self.active.take() else {
             return Ok(());
         };
+        if let Some(input) = self.pending_steering.take() {
+            self.message(json!({"type":"steering_result","id":input.id,"outcome":"unknown"}))?;
+        }
         self.pending_permissions.clear();
         let usage = self
             .usage

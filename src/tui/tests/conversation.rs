@@ -482,6 +482,149 @@ fn follow_up_queue_keeps_typing_live_and_sends_in_order_without_erasing_the_next
     });
 }
 
+async fn steering_working(app: &mut App) {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let ConversationEvent::Message(value) = app.conversation.next_event().await.unwrap() {
+                app.message(&value);
+                if value["type"] == "update" {
+                    break;
+                }
+            }
+        }
+    }).await.unwrap();
+    assert!(app.conversation.can_steer());
+}
+
+#[test]
+fn steering_submit_delivers_during_work_and_queue_remains_explicit() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "steering-flood");
+        let worker = Worker::start(app.conversation.store().clone(), vec![], Backend::halfblocks(), 518).unwrap();
+        app.accept_input(fake_clipboard(Path::new("unused"), None, &CancellationToken::new()));
+        assert!(!app.conversation.images().is_empty());
+        app.insert_text("First request");
+        app.submit().await.unwrap();
+        steering_working(&mut app).await;
+        assert!(footer_tests::rows(&app, 120).last().unwrap().contains("steer"));
+        let started = app.turn_started;
+
+        app.insert_text("/queue After this, check the layout's spacing");
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.outbox.queued.len(), 1);
+        assert_eq!(app.outbox.queued[0].text, "After this, check the layout's spacing");
+        app.insert_text("Actually, use English everywhere");
+        app.submit().await.unwrap();
+        assert!(app.outbox.steering.is_some());
+        assert_eq!(app.outbox.queued.len(), 1);
+        assert_eq!(app.turn_started, started);
+        app.insert_text("Unsent newer draft");
+        assert!(app.submit().await.is_err(), "A pending receipt must not silently turn another steer into a queued prompt");
+        let events = complete(&mut app).await;
+        let receipt = events.iter().position(|value| value["type"] == "steering_result").unwrap();
+        let completion = events.iter().position(|value| value["type"] == "complete").unwrap();
+        assert!(receipt < completion);
+        for value in events { app.message(&value); }
+        app.sync_turn(&worker);
+        assert!(app.outbox.steering.is_none());
+        assert_eq!(app.editor.lines().join("\n"), "Unsent newer draft");
+        assert!(!app.outbox.paused);
+        assert_eq!(app.outbox.queued.len(), 1);
+        let prompts = std::fs::read_to_string(temp.path().join("received-prompts.jsonl")).unwrap();
+        assert_eq!(prompts.lines().count(), 1, "Steering must not create a second prompt");
+        let steers = std::fs::read_to_string(temp.path().join("received-steering.jsonl")).unwrap();
+        let steer: Value = serde_json::from_str(steers.lines().next().unwrap()).unwrap();
+        assert_eq!(steer["prompt"].as_array().unwrap().len(), 1, "Do not reattach active images or guidance");
+        assert_eq!(steer["prompt"][0]["text"], "Actually, use English everywhere");
+        let transcript = std::fs::read_dir(app.conversation.directory()).unwrap()
+            .flatten().find(|entry| entry.path().extension().is_some_and(|extension| extension == "jsonl")).unwrap().path();
+        let transcript = std::fs::read_to_string(transcript).unwrap();
+        assert!(transcript.lines().map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .any(|value| value["type"] == "user_prompt" && value["text"] == "Actually, use English everywhere"));
+        app.send_queued().await.unwrap();
+        complete(&mut app).await;
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
+fn steering_queue_command_works_with_modified_submit_and_multiline_text() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        app.insert_text("/queue Keep the layout's spacing\nand check typography");
+        app.submit().await.unwrap();
+        assert!(!app.conversation.active());
+        assert_eq!(app.outbox.queued.len(), 1);
+        assert_eq!(app.outbox.queued[0].text, "Keep the layout's spacing\nand check typography");
+        assert_eq!(app.editor.lines(), &[""]);
+        app.insert_text("/queue");
+        assert!(app.submit().await.is_err());
+        assert_eq!(app.editor.lines(), &["/queue"]);
+        assert_eq!(app.outbox.queued.len(), 1);
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
+fn steering_idle_race_queues_once_and_delivery_failure_pauses_without_erasing_drafts() {
+    for mode in ["steering-idle", "steering-failure", "steering-unowned"] {
+        let temp = TempDir::new().unwrap();
+        runtime().block_on(async {
+            let mut app = app(&temp, mode);
+            let worker = Worker::start(app.conversation.store().clone(), vec![], Backend::halfblocks(), 519).unwrap();
+            app.insert_text("First request");
+            app.submit().await.unwrap();
+            steering_working(&mut app).await;
+            app.insert_text("Mid-turn request");
+            app.submit().await.unwrap();
+            app.insert_text("Newer draft");
+            if mode == "steering-failure" {
+                loop {
+                    if let ConversationEvent::Message(value) = app.conversation.next_event().await.unwrap() {
+                        let delivered = value["type"] == "steering_result";
+                        app.message(&value);
+                        if delivered { break; }
+                    }
+                }
+            } else {
+                for value in complete(&mut app).await { app.message(&value); }
+                app.sync_turn(&worker);
+            }
+            assert_eq!(app.outbox.queued.len(), 1);
+            assert_eq!(app.outbox.queued[0].text, "Mid-turn request");
+            assert_eq!(app.outbox.paused, mode != "steering-idle");
+            assert_eq!(app.editor.lines().join("\n"), "Newer draft");
+            if mode == "steering-idle" {
+                app.send_queued().await.unwrap();
+                complete(&mut app).await;
+                assert!(app.outbox.queued.is_empty());
+                let prompts = std::fs::read_to_string(temp.path().join("received-prompts.jsonl")).unwrap();
+                assert_eq!(prompts.lines().count(), 2);
+            }
+            let _ = app.conversation.close().await;
+        });
+    }
+}
+
+#[test]
+fn steering_unconfirmed_delivery_survives_reopening_without_automatic_replay() {
+    let temp = TempDir::new().unwrap();
+    let mut outbox = outbox::Outbox {
+        draft: Some("New draft".into()),
+        steering: Some(outbox::SteeringPrompt { id: "pending".into(), text: "May already be delivered".into() }),
+        ..Default::default()
+    };
+    outbox.save(temp.path()).unwrap();
+    outbox = outbox::Outbox::load(temp.path()).unwrap();
+    assert!(outbox.paused);
+    assert!(outbox.steering.is_none());
+    assert_eq!(outbox.queued.len(), 1);
+    assert_eq!(outbox.queued[0].text, "May already be delivered");
+    assert_eq!(outbox.draft.as_deref(), Some("New draft"));
+}
+
 #[test]
 fn cancelling_a_turn_pauses_follow_ups_and_restores_input_focus() {
     let temp = TempDir::new().unwrap();

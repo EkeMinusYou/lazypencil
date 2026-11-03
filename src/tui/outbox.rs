@@ -1,4 +1,4 @@
-//! Follow-up prompts stay separate from the active turn and survive restarts.
+//! Durable queued prompts and delivery tracking for mid-turn input.
 use super::*;
 use serde::{Deserialize, Serialize};
 
@@ -12,6 +12,12 @@ pub(super) struct Prompt {
     pub image_ids: Vec<String>,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+pub(super) struct SteeringPrompt {
+    pub id: String,
+    pub text: String,
+}
+
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default)]
 pub(super) struct Outbox {
@@ -20,6 +26,7 @@ pub(super) struct Outbox {
     pub paused: bool,
     pub references: Vec<crate::conversation::references::Reference>,
     pub in_flight: Option<Prompt>,
+    pub steering: Option<SteeringPrompt>,
 }
 
 impl Outbox {
@@ -32,6 +39,17 @@ impl Outbox {
                 })?;
                 // Reopening a conversation must not submit prompts by itself.
                 outbox.paused |= !outbox.queued.is_empty();
+                if let Some(input) = outbox.steering.take() {
+                    // A crash may occur after delivery but before its receipt.
+                    // Preserve the text for review without automatically replaying it.
+                    outbox.queued.push_front(Prompt {
+                        text: input.text,
+                        selection: None,
+                        references: vec![],
+                        image_ids: vec![],
+                    });
+                    outbox.paused = true;
+                }
                 Ok(outbox)
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
@@ -71,6 +89,88 @@ impl Outbox {
 }
 
 impl App {
+    pub(super) fn queue_command(&mut self) -> Result<bool> {
+        let line = self.editor.lines().join("\n");
+        let Some(text) = line
+            .strip_prefix("/queue")
+            .filter(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
+        else {
+            return Ok(false);
+        };
+        self.queue_prompt(text.trim_start().to_owned())?;
+        self.set_status("Follow-up queued".into());
+        Ok(true)
+    }
+
+    pub(super) fn queue_prompt(&mut self, text: String) -> Result<()> {
+        self.outbox.push(Prompt {
+            text,
+            selection: None,
+            references: self.outbox.references.clone(),
+            image_ids: vec![],
+        })?;
+        self.outbox.references.clear();
+        self.reference_rows.select(None);
+        self.editor = editor("");
+        self.outbox.draft = Some(String::new());
+        self.outbox.save(self.conversation.directory())?;
+        self.draft_changed = false;
+        Ok(())
+    }
+
+    pub(super) fn steer_prompt(&mut self, text: String) -> Result<()> {
+        let id = match self.conversation.steer(text.clone()) {
+            Ok(id) => id,
+            Err(_) if !self.conversation.can_steer() => {
+                self.queue_prompt(text)?;
+                self.set_status("The turn has finished accepting input; follow-up queued".into());
+                return Ok(());
+            }
+            Err(error) => return Err(error),
+        };
+        self.outbox.steering = Some(SteeringPrompt { id, text });
+        self.editor = editor("");
+        self.outbox.draft = Some(String::new());
+        self.outbox.save(self.conversation.directory())?;
+        self.draft_changed = false;
+        self.set_status("Sending mid-turn input…".into());
+        Ok(())
+    }
+
+    pub(super) fn steering_result(&mut self, value: &Value) -> Result<()> {
+        if !self
+            .outbox
+            .steering
+            .as_ref()
+            .is_some_and(|input| value["id"] == input.id)
+        {
+            return Ok(());
+        }
+        let input = self.outbox.steering.take().expect("pending steering");
+        if value["outcome"] == "injected" {
+            self.append(&format!("\nYou (mid-turn): {}\n", input.text));
+            self.set_status("Mid-turn input delivered".into());
+        } else {
+            self.outbox.queued.push_front(Prompt {
+                text: input.text,
+                selection: None,
+                references: vec![],
+                image_ids: vec![],
+            });
+            if value["outcome"] == "promptRequired" {
+                self.set_status("The turn could not accept input; queued for the next turn".into());
+            } else {
+                self.outbox.paused = true;
+                self.append("\nMid-turn delivery was not confirmed. Input retained in the paused queue; review saved logs before resuming to avoid repeating it.\n");
+                self.set_attention_status(
+                    "Mid-turn delivery unconfirmed; queue paused for review".into(),
+                );
+            }
+        }
+        self.outbox.draft = Some(self.editor.lines().join("\n"));
+        self.outbox.save(self.conversation.directory())
+    }
+
     pub(super) fn restore_outbox(&mut self) {
         match Outbox::load(self.conversation.directory()) {
             Ok(outbox) => {
@@ -83,7 +183,7 @@ impl App {
                 }
                 if !outbox.queued.is_empty() {
                     self.set_attention_status(
-                        "Queued prompts restored; /resume-queue sends them".into(),
+                        "Queued prompts restored; review delivery before /resume-queue".into(),
                     );
                 }
                 self.outbox = outbox;
@@ -101,6 +201,7 @@ impl App {
 
     pub(super) async fn send_queued(&mut self) -> Result<()> {
         if self.conversation.active()
+            || self.outbox.steering.is_some()
             || self.outbox.paused
             || self.has_modal()
             || self.input.is_some()

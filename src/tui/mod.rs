@@ -1029,6 +1029,11 @@ impl App {
             Some("complete") => {
                 self.append("\nRequest complete\n");
             }
+            Some("steering_result") => {
+                if let Err(error) = self.steering_result(value) {
+                    self.error(error);
+                }
+            }
             _ => {}
         }
     }
@@ -1087,7 +1092,7 @@ impl App {
             text.push_str(if self.mouse.wheel_zoom { "Preview: wheel zooms; Ctrl+wheel pans; Shift+wheel pans horizontally\n" } else { "Preview: wheel pans; Ctrl+wheel zooms around pointer; Shift+wheel pans horizontally\n" });
             text.push_str("Menu: [N]/[A] collapse or restore panels; [Menu]/[...] exposes view actions\nNodes: triangle expands/collapses; Show fits; +Ref explicitly attaches a reference\nPrompt clicks focus input. Canvas element/range selection and native pinch zoom are not available yet.\n\n");
         }
-        text.push_str("/attach <quoted path> [WIDTHxHEIGHT|original]: attach PNG, JPEG or WebP\n/paste-image [WIDTHxHEIGHT|original]: read this host's clipboard\n/resize-image <number> <WIDTHxHEIGHT|original>: choose send size\n/clear-images: remove pending images\n/resume-queue: resume saved or paused follow-ups; /clear-queue: discard queued prompts\n");
+        text.push_str("While working, submit text to steer a supported agent; unsupported adapters and node references queue for the next turn.\n/queue <text>: explicitly queue a follow-up instead of steering\n/attach <quoted path> [WIDTHxHEIGHT|original]: attach PNG, JPEG or WebP\n/paste-image [WIDTHxHEIGHT|original]: read this host's clipboard\n/resize-image <number> <WIDTHxHEIGHT|original>: choose send size\n/clear-images: remove pending images\n/resume-queue: resume saved or paused follow-ups; /clear-queue: discard queued prompts\n");
         for (action, description) in [
             (Nav::Help, "show or hide help outside dialogs"),
             (Nav::PanLeft, "Preview: pan left"),
@@ -1222,18 +1227,22 @@ impl App {
                 "Wait for image input before sending",
             ));
         }
+        if self.queue_command()? {
+            return Ok(());
+        }
+        if self.outbox.steering.is_some() && self.outbox.references.is_empty() {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "Wait for the previous mid-turn input's delivery receipt; your draft is retained",
+            ));
+        }
+        if self.conversation.can_steer() && self.outbox.references.is_empty() {
+            return self.steer_prompt(self.editor.lines().join("\n"));
+        }
         if self.conversation.active() || !self.outbox.queued.is_empty() {
             let text = self.editor.lines().join("\n");
             if !text.trim().is_empty() {
-                self.outbox.push(outbox::Prompt {
-                    text,
-                    selection: None,
-                    references: self.outbox.references.clone(),
-                    image_ids: Vec::new(),
-                })?;
-                self.outbox.references.clear();
-                self.reference_rows.select(None);
-                self.editor = editor("");
+                self.queue_prompt(text)?;
             } else if self.conversation.active() {
                 return Err(Error::new("INVALID_ARGUMENT", "Enter a follow-up prompt"));
             }
@@ -1282,6 +1291,9 @@ impl App {
     }
     async fn command(&mut self, worker: &Worker) -> Result<bool> {
         let line = self.editor.lines().join("\n");
+        if self.queue_command()? {
+            return Ok(false);
+        }
         let words = shell_words::split(&line)
             .map_err(|error| Error::new("INVALID_ARGUMENT", error.to_string()))?;
         match words.first().map(String::as_str) {
@@ -1372,7 +1384,7 @@ impl App {
             _ => {
                 return Err(Error::new(
                     "INVALID_ARGUMENT",
-                    "Commands: /resume-queue, /clear-queue, /attach <quoted path> [WIDTHxHEIGHT|original], /paste-image [WIDTHxHEIGHT|original], /resize-image <number> <WIDTHxHEIGHT|original>, /clear-images, /open-preview, /time <nonnegative seconds>, /play [fps], /pause, /commands, /history, /logs, /conversations, /help, /quit",
+                    "Commands: /queue <text>, /resume-queue, /clear-queue, /attach <quoted path> [WIDTHxHEIGHT|original], /paste-image [WIDTHxHEIGHT|original], /resize-image <number> <WIDTHxHEIGHT|original>, /clear-images, /open-preview, /time <nonnegative seconds>, /play [fps], /pause, /commands, /history, /logs, /conversations, /help, /quit",
                 ));
             }
         }
