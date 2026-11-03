@@ -239,12 +239,23 @@ pub fn script(h: &mut Harness) -> Result {
         &path,
         configuration.replace("\ntimeout_ms=2000\n", "\ntimeout_ms=1\n"),
     )?;
-    h.wait("policy-only timeout invalidates preview", 15.0, |h| {
-        status(h).starts_with("RENDER_TIMEOUT:")
-    })?;
+    h.wait(
+        "policy-only timeout keeps the previous preview",
+        15.0,
+        |h| {
+            status(h).contains("RENDER_TIMEOUT:")
+                && h.screen.text().contains("Showing previous preview")
+        },
+    )?;
+    assert!(
+        h.last_color(GREEN),
+        "A script timeout must retain the last successful green preview"
+    );
     fs::write(&path, configuration)?;
     h.wait("policy-only repair restores preview", 15.0, |h| {
-        h.frames.images.len() > frames && green(h)
+        h.frames.images.len() > frames
+            && green(h)
+            && !h.screen.text().contains("Showing previous preview")
     })?;
     assert_eq!(fs::read(source)?, source_bytes);
     h.wait("zero-idle script cleanup", 15.0, |h| {

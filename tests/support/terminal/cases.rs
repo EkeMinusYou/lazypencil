@@ -975,17 +975,22 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
             // Resizing the observer can move its old cursor before the redraw
             // arrives. Require the new layout before accepting the IME anchor.
             prompt_origin(h).is_some_and(|(x, top)| {
-                h.screen.cursor() == (x + 5, top + 1)
+                lines
+                    .get(top as usize)
+                    .is_some_and(|line| line.contains("日本語"))
                     && lines
-                        .get(top as usize)
-                        .is_some_and(|line| line.contains("日本語"))
-                    && lines.get(top as usize + 1).is_some_and(|line| {
-                        // vt100 counts ZWJ components separately, so padded
-                        // cells can overwrite one component in its model.
-                        // Exact draft text and emitted emoji bytes are
-                        // checked separately from this visible prefix.
-                        line.contains("か\u{3099}") && line.contains('👩')
-                    })
+                        .iter()
+                        .enumerate()
+                        .skip(top as usize + 1)
+                        .any(|(row, line)| {
+                            // The first logical line wraps in a narrow prompt.
+                            // Locate the rendered second line independently of the caret.
+                            // vt100 counts ZWJ components separately; the exact draft
+                            // and emitted emoji bytes are checked separately below.
+                            line.contains("か\u{3099}")
+                                && line.contains('👩')
+                                && h.screen.cursor() == (x + 5, row as u16)
+                        })
             }) && lines.get(rows as usize - 1).is_some_and(|line| {
                 // Require the complete current Prompt actions after layout.
                 line.starts_with("Ctrl+Enter send") && line.contains("F1 help")
@@ -1860,13 +1865,19 @@ fn oversized_preview(h: &mut Harness, design: &Value) -> Result {
             .last()
             .is_some_and(|frame| frame.width == 7800 && frame.has_color([255, 0, 0, 255]))
     })?;
+    let retained = h.frames.images.last().unwrap().clone();
     let mut broken = design.clone();
     broken["version"] = "2.9".into();
     write_json(&h.document, &broken)?;
-    h.visible("Preview unavailable")?;
+    h.visible("Showing previous preview")?;
+    h.visible("UNSUPPORTED_VERSION")?;
+    assert_eq!(h.frames.images.last(), Some(&retained));
     h.frames.images.clear();
     write_json(&h.document, design)?;
-    h.hidden("Preview unavailable")?;
+    h.wait("repaired preview replaces the stale state", 15.0, |h| {
+        !h.screen.text().contains("Showing previous preview")
+            && h.frames.images.last() == Some(&retained)
+    })?;
     h.key(b"\x1ba")?;
     h.visible("Prompt")?;
     h.draft(draft)?;
