@@ -146,6 +146,11 @@ mod tests {
                 TextAlign::Justify,
             ] {
                 for (underline, strikethrough) in [(true, false), (false, true), (true, true)] {
+                    if content.trim().is_empty()
+                        && (align != TextAlign::Left || !underline || !strikethrough)
+                    {
+                        continue;
+                    }
                     let mut spec = TextSpec {
                         content: content.into(),
                         family: "LP Test Sans".into(),

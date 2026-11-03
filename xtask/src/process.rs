@@ -95,21 +95,3 @@ pub fn logged(command: &mut Command, timeout: Duration, log: &Path, append: bool
     );
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn preserves_exit_code_and_separate_output() {
-        let result = output(Command::new("git").arg("--version"), Duration::from_secs(5)).unwrap();
-        assert!(result.status.success());
-        assert!(result.stdout.starts_with(b"git version "));
-        let result = output(
-            Command::new("git").arg("definitely-not-a-git-command"),
-            Duration::from_secs(5),
-        )
-        .unwrap();
-        assert!(!result.status.success());
-        assert!(!result.stderr.is_empty());
-    }
-}

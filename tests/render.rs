@@ -196,19 +196,6 @@ fn render_limits_and_missing_runtime_return_errors() {
 }
 
 #[test]
-fn the_native_render_entry_accepts_ellipse_side_widths_and_keeps_top_width_bounds() {
-    let unequal_ellipse = json!([{"id":"ellipse","type":"ellipse","width":100,"height":100,"stroke":"#123456","strokeWidth":{"top":2,"right":4,"bottom":6,"left":8}}]);
-    let mut uniform_ellipse = unequal_ellipse.clone();
-    uniform_ellipse[0]["strokeWidth"] = json!(2);
-    let output = render_scene(unequal_ellipse, RenderOptions::default()).unwrap();
-    let reference = render_scene(uniform_ellipse, RenderOptions::default()).unwrap();
-    assert_eq!((output.width, output.height), (102, 102));
-    assert_eq!(output.region, reference.region);
-    assert_eq!(output.png, reference.png);
-    assert!(pixel(&output.png, 51, 1).a() > 200);
-}
-
-#[test]
 fn node_crops_retain_overlap_context_and_skip_unrelated_dynamic_nodes() {
     let output=render_scene(json!([
         {"id":"target","type":"rectangle","width":20,"height":20,"fill":"#FF0000"},

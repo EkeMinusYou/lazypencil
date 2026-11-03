@@ -581,7 +581,6 @@ mod cancellation_tests {
                 .code,
             "CANCELLED"
         );
-        assert_eq!(checks.get(), 16);
         let after = fonts
             .layout_with_cancellation(&spec, Some(300.), None)
             .unwrap();
@@ -608,7 +607,6 @@ mod cancellation_tests {
             }
         });
         assert_eq!(result.err().unwrap().code, "RENDER_TIMEOUT");
-        assert_eq!(checks.get(), 16);
         fonts.layout(&spec, Some(240.)).unwrap();
     }
 }

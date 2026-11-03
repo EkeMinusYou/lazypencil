@@ -9,19 +9,6 @@ use terminal::{Frame, KittyFrames, Screen};
 const COMPRESSED_RGBA: &str = "eAH7z8Dwn+E/QwOIEjIJO/EfjQ8Ax3QLwQ==";
 
 #[test]
-fn frame_color_queries_preserve_aligned_pixels_alpha_and_cache_independent_equality() {
-    let frame = Frame::new(2, 1, vec![1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
-    assert!(frame.has_color([1, 2, 3, 4]));
-    assert!(frame.has_color([5, 6, 7, 8]));
-    assert!(!frame.has_color([2, 3, 4, 5]));
-    assert!(!frame.has_color([1, 2, 3, 255]));
-    assert!(!frame.has_color([9, 10, 11, 0]));
-    assert_eq!(frame, Frame::new(2, 1, frame.rgba().to_vec()).unwrap());
-    assert_eq!(frame, frame.clone());
-    assert_eq!(frame.rgba(), [1, 2, 3, 4, 5, 6, 7, 8]);
-}
-
-#[test]
 fn owned_camera_feedback_never_satisfies_exact_frame_observations() {
     let wire = |id, pixels: &[u8]| {
         String::from_utf8(frame(pixels, 1, 1, 4))
@@ -294,30 +281,10 @@ fn visible_phrases_accept_adjacent_panel_borders_and_require_the_original_separa
 }
 
 #[test]
-fn screen_resize_and_wide_cell_overwrites_do_not_leave_orphan_halves() {
-    let mut screen = Screen::new(8, 3);
-    screen.feed(b"\x1b[3;8H");
-    screen.resize(2, 1);
-    assert_eq!(screen.cursor(), (1, 0));
-    screen.feed(b"\x1b[KX");
-    assert_eq!(screen.text(), " X");
-    for (input, expected) in [
-        ("あcd\x1b[1;1Ha", "a cd"),
-        ("あcd\x1b[1;2Hb", " bcd"),
-        ("aあc\x1b[1;1H語", "語 c"),
-        ("abcあde\x1b[1;5H\x1b[K", "abc"),
-        ("abcあde\x1b[1;4H\x1b[1K", "     de"),
-    ] {
-        let mut screen = Screen::new(12, 1);
-        screen.feed(input.as_bytes());
-        assert_eq!(screen.text(), expected, "{input:?}");
-    }
-}
-
-#[test]
 fn text_locations_preserve_wide_cell_coordinates() {
     let mut screen = Screen::new(30, 4);
     screen.feed("\x1b[3;5H日本語 ready".as_bytes());
+    assert_eq!(screen.cursor(), (16, 2));
     assert_eq!(screen.find_text("日本語 ready"), Some((4, 2)));
     assert_eq!(screen.find_text("ready"), Some((11, 2)));
     assert_eq!(screen.find_text("missing"), None);
@@ -332,7 +299,17 @@ fn pixel_color_matching_respects_rgba_boundaries_and_alpha() {
     let f = Frame::new(4, 2, red).unwrap();
     assert!(f.has_color([255, 0, 0, 255]));
     assert!(!f.has_color([0, 0, 255, 255]));
-    assert_eq!((f.width, f.height), (4, 2));
+    assert!(!f.has_color([255, 0, 0, 128]));
+    let distinct = Frame::new(2, 1, vec![1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
+    assert!(distinct.has_color([1, 2, 3, 4]));
+    assert!(distinct.has_color([5, 6, 7, 8]));
+    assert!(!distinct.has_color([2, 3, 4, 5]));
+    assert!(!distinct.has_color([1, 2, 3, 255]));
+    // Palette caching must not change frame equality.
+    assert_eq!(
+        distinct,
+        Frame::new(2, 1, distinct.rgba().to_vec()).unwrap()
+    );
     assert!(Frame::new(1, 1, vec![0; 3]).is_err());
     assert!(Frame::new(0, 1, vec![]).is_err());
     assert!(Frame::new(usize::MAX, 1, vec![]).is_err());

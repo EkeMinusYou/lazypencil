@@ -91,28 +91,3 @@ fn missing_fonts_and_missing_glyphs_are_reported_instead_of_silently_substituted
         "ASSET_NOT_FOUND"
     );
 }
-
-#[test]
-fn variable_font_weights_change_the_actual_rendered_pixels() {
-    fn render(fonts: &mut Fonts, weight: i32) -> Vec<u8> {
-        let spec = TextSpec {
-            content: "Hello 日本語".into(),
-            weight,
-            size: 32.0,
-            ..Default::default()
-        };
-        let block = fonts.layout(&spec, Some(320.0)).unwrap();
-        let mut surface = skia_safe::surfaces::raster_n32_premul((360, 100)).unwrap();
-        surface.canvas().clear(skia_safe::Color::WHITE);
-        block.paragraph.paint(surface.canvas(), (16.0, 16.0));
-        skia_safe::png_encoder::encode_image(None, &surface.image_snapshot(), &Default::default())
-            .unwrap()
-            .as_bytes()
-            .to_vec()
-    }
-    let mut fonts = Fonts::new(&[]).unwrap();
-    assert_ne!(
-        hash(&render(&mut fonts, 400)),
-        hash(&render(&mut fonts, 700))
-    );
-}

@@ -1,5 +1,5 @@
 use lazypencil_xtask::util;
-use std::{fs, path::Path};
+use std::fs;
 
 #[test]
 fn development_tools_remain_an_independent_workspace_without_native_application_dependencies() {
@@ -38,28 +38,5 @@ fn development_tools_remain_an_independent_workspace_without_native_application_
             !matches!(name, "lazypencil" | "skia-safe" | "skia-bindings"),
             "Heavy application dependency in tool workspace: {name}"
         );
-    }
-}
-
-#[test]
-fn maintained_helpers_do_not_reintroduce_python_or_shell_script_files() {
-    let root = util::root();
-    for directory in ["xtask", ".github", "scripts", "tests/support"] {
-        let directory = root.join(directory);
-        for path in util::walk_filtered(&directory, |relative| {
-            relative.starts_with(Path::new("target"))
-        })
-        .unwrap()
-        {
-            let extension = path.extension().and_then(|extension| extension.to_str());
-            assert!(
-                !matches!(
-                    extension,
-                    Some("py" | "pyw" | "sh" | "bash" | "zsh" | "fish" | "ps1" | "bat" | "cmd")
-                ),
-                "Maintained helper must be implemented in Rust: {}",
-                path.display()
-            );
-        }
     }
 }

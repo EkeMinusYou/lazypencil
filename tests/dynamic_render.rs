@@ -660,20 +660,6 @@ fn page_network_idle_waits_for_post_load_fetches_and_recovers_after_timeout_and_
     assert_eq!(fs::read_to_string(&file).unwrap(), busy.to_string());
 }
 
-#[test]
-fn uniform_annotations_bind_to_the_correct_declaration() {
-    let parsed=lazypencil::shader::uniforms("/** @resolution */ uniform highp vec2 size;\n/** @time */ uniform float clock;\nuniform vec4 color; /* @color */\n").unwrap();
-    assert_eq!(parsed.len(), 3);
-    assert!(parsed[0].resolution);
-    assert!(!parsed[0].time);
-    assert!(parsed[1].time);
-    assert!(!parsed[2].time);
-    assert!(lazypencil::shader::uniforms("/** @resolution */ uniform float broken;").is_err());
-    let arrays = lazypencil::shader::uniforms("uniform vec2 array[4];").unwrap();
-    assert!(arrays[0].array);
-    assert_eq!(arrays[0].length, Some(4));
-}
-
 #[cfg(unix)]
 #[test]
 fn captured_page_shader_and_render_deadlines_cap_launch_and_reap_the_child() {

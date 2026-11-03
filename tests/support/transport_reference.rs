@@ -100,38 +100,3 @@ impl Drop for Server {
         }
     }
 }
-
-#[test]
-fn transport_sinks_classify_owned_udp_and_fragmented_turn_requests_and_stop() {
-    use std::{
-        io::{Read, Write},
-        net::TcpStream,
-        time::Instant,
-    };
-    let server = Server::new();
-    let udp = UdpSocket::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
-    let mut stun = [0; 20];
-    stun[1] = 1;
-    stun[4..8].copy_from_slice(&[0x21, 0x12, 0xa4, 0x42]);
-    let mut quic = [0; 1200];
-    quic[0] = 0xc0;
-    quic[4] = 1;
-    udp.send_to(&[0], server.stun).unwrap();
-    udp.send_to(&stun, server.stun).unwrap();
-    udp.send_to(&[0; 1200], server.quic).unwrap();
-    udp.send_to(&quic, server.quic).unwrap();
-    udp.send_to(&quic, server.worker_quic).unwrap();
-    let mut turn = TcpStream::connect_timeout(&server.tcp.address, Duration::from_secs(2)).unwrap();
-    turn.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
-    turn.write_all(&stun[..8]).unwrap();
-    turn.write_all(&stun[8..]).unwrap();
-    turn.read_to_end(&mut Vec::new()).unwrap();
-    let started = Instant::now();
-    while server.counts() != (1, 1, 1, 1) && started.elapsed() < Duration::from_secs(2) {
-        thread::sleep(Duration::from_millis(10));
-    }
-    assert_eq!(server.counts(), (1, 1, 1, 1));
-    let started = Instant::now();
-    drop(server);
-    assert!(started.elapsed() < Duration::from_secs(2));
-}

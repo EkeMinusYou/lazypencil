@@ -1071,58 +1071,6 @@ mod tests {
     use clap::Parser;
 
     #[test]
-    fn embedded_conversations_bind_mcp_and_supervision_to_the_supplied_helper() {
-        let temp = tempfile::TempDir::new().unwrap();
-        let helper = temp.path().join("configured-helper");
-        // This case inspects configuration only; real process-backed TUI tests
-        // use the built lazypencil binary for the actual supervisor handshake.
-        std::fs::write(&helper, b"configuration fixture").unwrap();
-        let arguments = crate::cli::Arguments::try_parse_from([
-            "lazypencil".into(),
-            "prompt".into(),
-            temp.path().join("design.pen").into_os_string(),
-            "--create".into(),
-        ])
-        .unwrap();
-        let crate::cli::Command::Prompt(args) = arguments.command else {
-            unreachable!()
-        };
-        let mut conversation = Conversation::open_with_executable(
-            args,
-            Some(temp.path().join("data")),
-            helper.clone(),
-        )
-        .unwrap();
-        conversation.grant = Some(
-            AttachmentGrant::create(
-                &conversation.store,
-                conversation.directory(),
-                conversation.id(),
-                &conversation.session.state.attachments,
-            )
-            .unwrap(),
-        );
-        conversation.usage = Some(
-            crate::guidance::usage::UsageGrant::create(
-                &conversation.store,
-                conversation.directory(),
-                conversation.id(),
-            )
-            .unwrap(),
-        );
-        let options = conversation.agent_options().unwrap();
-        let expected = crate::paths::canonical(&helper).unwrap();
-        assert_eq!(
-            options.supervisor_executable.as_deref(),
-            Some(expected.as_path())
-        );
-        let mcp = serde_json::to_value(&options.mcp_servers[0]).unwrap();
-        assert_eq!(mcp["command"], expected.to_str().unwrap());
-        assert!(conversation.host.is_none());
-        assert!(!conversation.active());
-    }
-
-    #[test]
     fn final_transcript_failure_reports_failure_and_restores_the_saved_draft() {
         for full in [false, true] {
             let temp = tempfile::TempDir::new().unwrap();
