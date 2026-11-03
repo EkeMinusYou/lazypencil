@@ -157,8 +157,8 @@ pub enum Command {
     },
     /// Reconcile an interrupted save without overwriting external changes.
     Recover { file: PathBuf },
-    /// Report build and environment information without changing a design.
-    Doctor,
+    /// Diagnose configuration, agent connectivity and authentication, and local runtimes.
+    Doctor(crate::doctor::Options),
     /// Generate a shell completion hook from this build's CLI definition.
     Completions {
         #[arg(value_enum)]
@@ -1098,32 +1098,8 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
             let store = open(file)?;
             Ok(json!({"recovered":store.recover()?,"revision":store.read()?.revision()}))
         }
-        Command::Doctor => {
-            let data = store::data_directory(arguments.data_dir.clone())?;
-            let release: Value = serde_json::from_str(include_str!("../resources/release.json"))
-                .map_err(|error| Error::new("INTERNAL_ERROR", error.to_string()))?;
-            let release_ready = cfg!(all(
-                target_os = "macos",
-                target_arch = "aarch64",
-                feature = "rendering",
-                feature = "tui",
-                not(debug_assertions)
-            )) && release["format_version"] == 1
-                && release["target"] == "aarch64-apple-darwin"
-                && release["channel"] == "stable"
-                && release["version"] == env!("CARGO_PKG_VERSION");
-            Ok(json!({
-            "version":env!("CARGO_PKG_VERSION"),"os":std::env::consts::OS,"architecture":std::env::consts::ARCH,
-            "document_version":crate::document::DOCUMENT_VERSION,
-            "supported_document_versions":crate::document::SUPPORTED_DOCUMENT_VERSIONS,
-            "data_directory":data,
-            "lock_directory":store::default_lock_dir()?,
-            "user_configuration":crate::config::user_config_path().map(|path|json!({"path":path})).unwrap_or_else(|error|json!({"error":error})),
-            "skia_compiled":cfg!(feature="rendering"),
-            "chromium":crate::runtime::status(&data),
-            "release_ready":release_ready,
-            "release":release,
-            }))
+        Command::Doctor(options) => {
+            crate::doctor::run(options, arguments.data_dir.clone(), arguments.json)
         }
     }
 }

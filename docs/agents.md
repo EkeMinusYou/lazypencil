@@ -13,7 +13,60 @@ Adapters and their runtimes are separate dependencies. lazypencil does not downl
 
 Use the adapter's installation and authentication instructions: [Codex ACP](https://github.com/agentclientprotocol/codex-acp), [Claude ACP](https://github.com/agentclientprotocol/claude-agent-acp). Authenticate with the selected runtime before starting a design session. lazypencil does not read or store ChatGPT/Claude login tokens. An optional `--auth-method ID` calls an agent-managed ACP authentication method only if the adapter advertises that ID. Terminal-based authentication methods are not implemented by the host; use the runtime's own login command.
 
+## Diagnose agent setup
+
+```sh
+lazypencil doctor
+lazypencil doctor --agent codex
+lazypencil --json doctor --strict
+```
+
+Doctor validates the user settings and resolves each configured adapter executable
+using the same user-profile paths and PATH order as a normal launch. Both installed
+adapters are checked unless `--agent codex` or `--agent claude` selects one. The chosen
+agent defaults to `agents.default`, then Codex; its failures are errors. A missing
+unselected adapter is listed without making it a requirement.
+
+For each installed adapter, doctor performs ACP v1 initialization and reads its
+advertised implementation version, steering capability and pushed authentication
+status. It does not create or load a session, call authenticate, send a model prompt,
+register MCP tools, open a browser or change a document. Normal user-profile
+adapter arguments are used, but never printed. Authentication identity, credentials
+and vendor metadata are excluded from the report. The runtime may maintain its own
+startup/cache state. Project executable settings are not loaded or executed by doctor.
+
+Missing executables, a missing Node.js interpreter, startup/protocol failures,
+unreported authentication and an explicitly reported signed-out state have distinct
+results. Authentication must match the user profile's `auth` route. An adapter that
+does not report authentication remains unverified; an installed executable alone
+does not establish that requests can run. Model availability, quota and actual model
+inference are not tested. Steering uses the same capability/version checks as the TUI.
+
+Each adapter has a five-second initialization/account-reporting deadline. Use
+`--timeout-seconds 10` (1–30 seconds) for slow startup. Owned probe processes are
+closed afterward. No dependency is downloaded and no login flow is started.
+
+The default output lists OK/WARN/FAIL/SKIP checks and remedies. `--json` keeps the
+previous build/runtime fields and adds `checks`, `summary` and `agents`. Doctor exits
+successfully when it can print a report; `--strict` returns 1 if the report contains
+errors while still printing the whole report. Optional-runtime and steering warnings
+do not fail strict mode. Normal command errors and cancellation retain their normal
+exit codes.
+
+See the [doctor reference](doctor.md) for the complete environment and automatic
+preview checks, including terminal transport receipts and their limits.
+
+Configuration, directory permission checks, configured font availability, terminal
+facts and optional Chromium installation status are included. Doctor does not create
+data/lock/configuration directories or launch Chromium. Directory checks inspect
+existing permissions rather than writing probe files; font-file availability does not
+certify font parsing. Doctor also exercises image rendering and terminal transport
+automatically in an interactive terminal, without requesting user confirmation.
+
 ## Send a prompt
+
+Before requesting a design edit, check the setup with `lazypencil doctor`.
+See [diagnose agent setup](#diagnose-agent-setup) for its checks and output.
 
 Project `[design]` settings can supply automatic guides, reference-only guides, styles, and a default style. The shared CLI/TUI conversation host reads the same catalogue as the bound MCP server. A local user must first review `config show FILE` and explicitly grant `config trust FILE`; unapproved or unavailable instructions stop a new turn before an adapter is started. The default style applies when `--style` is omitted, and an explicit `--style` takes precedence. Existing design conventions remain the starting point for edits. See [project design configuration](configuration.md#project-guides-and-styles).
 

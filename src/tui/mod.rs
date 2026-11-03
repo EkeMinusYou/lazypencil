@@ -6,6 +6,7 @@ mod checkpoints;
 mod composer;
 mod controls;
 mod diagnostics;
+pub(crate) mod doctor;
 pub mod documents;
 mod events;
 mod footer;

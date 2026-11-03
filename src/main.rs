@@ -81,7 +81,7 @@ fn main() -> ExitCode {
     // has been written, including long-lived TUI, prompt and MCP frontends.
     let uses_assets = !matches!(
         &arguments.command,
-        lazypencil::cli::Command::Doctor
+        lazypencil::cli::Command::Doctor(_)
             | lazypencil::cli::Command::Completions { .. }
             | lazypencil::cli::Command::Assets {
                 command: lazypencil::cli::AssetCommand::Prune { .. }
@@ -163,6 +163,7 @@ fn main() -> ExitCode {
         | lazypencil::cli::Command::Icons { .. }
         | lazypencil::cli::Command::Assets { .. }
         | lazypencil::cli::Command::Runtime { .. } => true,
+        lazypencil::cli::Command::Doctor(_) => true,
         #[cfg(feature = "rendering")]
         lazypencil::cli::Command::Fonts { .. } => true,
         _ => false,
@@ -194,6 +195,11 @@ fn main() -> ExitCode {
         return ExitCode::from(code);
     }
     let output = if !arguments.json
+        && matches!(arguments.command, lazypencil::cli::Command::Doctor(_))
+        && code == 0
+    {
+        lazypencil::doctor::format_report(&value)
+    } else if !arguments.json
         && matches!(
             arguments.command,
             lazypencil::cli::Command::Completions { .. }
@@ -234,7 +240,11 @@ fn main() -> ExitCode {
         eprintln!("Cannot write result: {error}");
         return ExitCode::FAILURE;
     }
-    ExitCode::from(code)
+    let strict_failure = matches!(&arguments.command, lazypencil::cli::Command::Doctor(options) if options.strict)
+        && value["summary"]["errors"]
+            .as_u64()
+            .is_some_and(|errors| errors > 0);
+    ExitCode::from(if strict_failure { 1 } else { code })
 }
 
 /// Private workers run before application configuration or document leases.

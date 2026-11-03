@@ -38,6 +38,7 @@ The terminal workspace in use, showing the editable
 [Install](#install) · [Quick start](#quick-start) · [Demo](#demo) ·
 [Features](#features) · [Nodes](#nodes) · [Preview](#preview) ·
 [MCP](#mcp-and-ai-prompts) · [CLI](#cli) ·
+[Doctor](#check-your-setup) ·
 [Documentation](#documentation-and-development)
 
 ## Features
@@ -98,11 +99,41 @@ materials. The prebuilt package needs no Rust toolchain.
 
 To build the current source instead, follow [Build from source](docs/development.md#build-from-source).
 
+### Check your setup
+
+```sh
+lazypencil doctor
+```
+
+Doctor checks user configuration, data/lock directory access, configured font files,
+the optional Chromium installation, and installed Codex/Claude ACP adapters. It starts
+adapters to check ACP connectivity, reported versions, login state and mid-turn input
+support. It also renders and verifies a small test image; interactive text output
+automatically tests terminal image transport without asking for confirmation.
+It never sends a model prompt, creates an agent session, starts a login flow,
+installs dependencies or edits a design. Each problem includes a suggested next step.
+
+Use `lazypencil doctor --agent codex` (or `claude`) to check one agent,
+`--timeout-seconds 10` for a slower adapter startup, and `--json` for structured output.
+Doctor prints the complete report even when a dependency is missing. Add `--strict`
+to exit with status 1 if it reports errors; warnings about optional features do not fail.
+See the [doctor reference](docs/doctor.md) for check coverage and preview limitations.
+
 ## Quick start
 
 ### 1. Connect an agent
 
-Install and authenticate a [Codex or Claude ACP adapter](docs/agents.md#install-and-authenticate-an-adapter).
+Install one of the separate [Codex or Claude ACP adapters](docs/agents.md#install-and-authenticate-an-adapter):
+
+```sh
+# Codex
+npm install -g @agentclientprotocol/codex-acp@latest
+
+# Or Claude
+npm install -g @agentclientprotocol/claude-agent-acp@latest
+```
+
+Authenticate using the selected runtime's instructions, then run `lazypencil doctor`.
 The adapter bridges lazypencil and your AI runtime: Codex uses `codex-acp`, and
 Claude uses `claude-agent-acp`. Put the selected executable on `PATH` before
 starting. Authentication stays with the external runtime.

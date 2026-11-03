@@ -97,6 +97,18 @@ pub enum AgentEvent {
     },
 }
 
+/// Initialization-only diagnostics. No session, authentication flow or prompt is started.
+#[derive(Debug, Default)]
+pub struct AgentInspection {
+    pub protocol_version: Option<u16>,
+    pub name: Option<String>,
+    pub version: Option<String>,
+    pub authentication_supported: bool,
+    pub steering_supported: bool,
+    pub authentication: Option<AuthReport>,
+    pub failure: Option<Error>,
+}
+
 struct Turn {
     content: Vec<ContentBlock>,
     cancel: CancellationToken,
@@ -227,31 +239,57 @@ impl AgentHost {
 
     /// Initialize the selected runtime without a session, tools, login or prompt.
     pub async fn inspect_authentication(
-        mut options: AgentOptions,
+        options: AgentOptions,
         cancel: CancellationToken,
     ) -> Result<Option<AuthReport>> {
+        let inspection = Self::inspect(options, cancel).await?;
+        match inspection.failure {
+            Some(error) => Err(error),
+            None => Ok(inspection.authentication),
+        }
+    }
+
+    /// Retain negotiated facts even when account reporting fails or times out.
+    pub async fn inspect(
+        mut options: AgentOptions,
+        cancel: CancellationToken,
+    ) -> Result<AgentInspection> {
         options.mcp_servers.clear();
         options.session_id = None;
         options.restart_session = false;
         options.auth_method = None;
         let mut host = Self::spawn_for(options, Purpose::Authentication)?;
+        let mut inspection = AgentInspection::default();
         let result = loop {
             tokio::select! {
                 biased;
                 _ = cancel.cancelled() => break Err(Error::new("CANCELLED", "Account check cancelled")),
                 event = host.next_event() => match event {
                     Some(AgentEvent::Message(value)) if value["type"] == "connection_error" => {
-                        break Err(agent_error(value["error"]["message"].as_str()
+                        inspection.failure = Some(agent_error(value["error"]["message"].as_str()
                             .unwrap_or("Account check failed")));
+                        break Ok(());
+                    },
+                    Some(AgentEvent::Message(value)) if value["type"] == "inspection" => {
+                        inspection.protocol_version = Some(1);
+                        inspection.name = value["name"].as_str().map(str::to_owned);
+                        inspection.version = value["version"].as_str().map(str::to_owned);
+                        inspection.authentication_supported = value["authentication_supported"] == true;
+                        inspection.steering_supported = value["steering_supported"] == true;
                     },
                     Some(AgentEvent::Permission { reply, .. }) => { let _ = reply.send(None); },
                     Some(_) => {},
-                    None => break Ok(host.authentication()),
+                    None => break Ok(()),
                 }
             }
         };
+        inspection.authentication = host.authentication();
         let closed = host.close().await;
-        result.and_then(|report| closed.map(|_| report))
+        result?;
+        if inspection.failure.is_none() {
+            inspection.failure = closed.err();
+        }
+        Ok(inspection)
     }
 
     pub async fn next_event(&mut self) -> Option<AgentEvent> {
@@ -521,6 +559,18 @@ async fn conversation(
             .as_ref()
             .is_some_and(|meta| meta.contains_key("authStatus"));
         if purpose == Purpose::Authentication {
+            // Export only bounded implementation facts, never vendor metadata.
+            let info = initialized.agent_info.as_ref();
+            emit(
+                events,
+                json!({"type":"inspection",
+                    "name":info.map(|info| info.name.chars().take(256).collect::<String>()),
+                    "version":info.map(|info| info.version.chars().take(128).collect::<String>()),
+                    "authentication_supported":auth_supported,
+                    "steering_supported":steering::supported(&initialized),
+                }),
+            )
+            .await?;
             if auth_supported && authentication.borrow().is_none() {
                 tokio::time::timeout(options.auth_status_timeout, async {
                     while authentication.borrow().is_none() {

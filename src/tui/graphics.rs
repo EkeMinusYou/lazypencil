@@ -24,6 +24,16 @@ pub enum Encoded {
 }
 
 impl Encoded {
+    /// Doctor requests an upload receipt without changing normal preview traffic.
+    pub(super) fn request_receipt(&mut self) -> bool {
+        if let Self::Native(image) = self {
+            image.upload = image.upload.replace("q=2", "q=0");
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn size(&self) -> Size {
         match self {
             Self::Native(image) => image.size,

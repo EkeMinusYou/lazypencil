@@ -105,7 +105,7 @@ impl AgentSettings {
         Ok(())
     }
 
-    fn resolved(&self, base: Option<&Path>) -> Self {
+    pub(super) fn resolved(&self, base: Option<&Path>) -> Self {
         let mut result = self.clone();
         for profile in [&mut result.codex, &mut result.claude] {
             if let Some(adapter) = &profile.adapter

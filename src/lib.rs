@@ -12,6 +12,7 @@ pub mod clipboard;
 pub mod color;
 pub mod config;
 pub mod conversation;
+pub mod doctor;
 pub mod document;
 pub mod documents;
 #[cfg(feature = "rendering")]

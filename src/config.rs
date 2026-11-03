@@ -200,6 +200,23 @@ struct UserSource {
     automatic: bool,
 }
 
+pub(crate) struct DiagnosticSettings {
+    pub settings: UserConfig,
+    pub source: Value,
+}
+
+/// Validate user settings without requiring a document or loading configured fonts.
+pub(crate) fn diagnostic_settings() -> Result<DiagnosticSettings> {
+    let source = UserSource::load(Some(user_config_path()?), true)?;
+    source.verify()?;
+    let mut settings = source.settings.clone();
+    settings.agents = settings.agents.resolved(source.base());
+    Ok(DiagnosticSettings {
+        settings,
+        source: json!({"path":source.requested,"resolved_path":source.source.as_ref().map(|(path, _)|path),"exists":source.source.is_some()}),
+    })
+}
+
 /// A selected user file and its effective font discovery, without a document.
 pub struct UserSnapshot {
     source: UserSource,

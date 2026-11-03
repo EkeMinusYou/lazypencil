@@ -349,6 +349,7 @@ fn doctor_and_runtime_status_do_not_launch_an_explicit_browser_or_create_local_s
             .env("LAZYPENCIL_CHROMIUM", &browser)
             .env("LAZYPENCIL_CONFIG_DIR", &settings)
             .env("LAZYPENCIL_LOCK_DIR", &locks)
+            .env("PATH", temp.path().join("absent-bin"))
             .output()
             .unwrap();
         assert!(
