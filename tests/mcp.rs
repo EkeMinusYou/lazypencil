@@ -3385,6 +3385,8 @@ fn set_preview_is_only_advertised_to_bound_tui_clients_and_waits_for_ack() {
                 Err(error) => panic!("{error}"),
             }
         };
+        // Accepted sockets can inherit the listener's nonblocking mode on macOS.
+        socket.set_nonblocking(false).unwrap();
         socket
             .set_read_timeout(Some(Duration::from_secs(5)))
             .unwrap();
