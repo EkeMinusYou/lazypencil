@@ -3479,6 +3479,8 @@ fn node_search_combines_with_preview_state_and_generic_preview_tools() {
                     Err(error) => panic!("{error}"),
                 }
             };
+            // Accepted sockets can inherit the listener's nonblocking mode on macOS.
+            socket.set_nonblocking(false).unwrap();
             socket
                 .set_read_timeout(Some(Duration::from_secs(5)))
                 .unwrap();
