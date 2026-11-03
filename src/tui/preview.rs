@@ -18,6 +18,7 @@ use std::{
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
+pub(super) mod labels;
 mod revision;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -50,6 +51,16 @@ impl View {
                 * 0.94)
                 .clamp(0.01, 16.0),
         );
+    }
+    fn fit_canvas(&mut self, bounds: Rect, pixels: [u32; 2]) {
+        // Reserve display space above the artwork for root names.
+        self.fit(bounds, pixels);
+        if (pixels[1] as f32 - bounds.height * self.zoom.unwrap()) / 2.0 >= 28.0 {
+            return;
+        }
+        let padding = 28.min(pixels[1].saturating_sub(1));
+        self.fit(bounds, [pixels[0], pixels[1] - padding]);
+        self.center[1] -= f64::from(padding) / 2.0 / f64::from(self.zoom.unwrap());
     }
     pub fn pan(&mut self, pixels: [f64; 2]) {
         let scale = f64::from(self.zoom.unwrap_or(1.0));
@@ -291,6 +302,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
     let mut cached: Option<(Project, crate::layout::LayoutSnapshot)> = None;
     let mut document_preview_time = None;
     let mut renderer = crate::render::PreviewRenderer::default();
+    let mut labels = labels::Labels::default();
     let mut presentation_cache = None;
     let mut navigation: Option<Arc<[Node]>> = None;
     let mut revision = revision::RevisionGuard::default();
@@ -333,7 +345,8 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             let presentation = shared.presentation_request.lock().unwrap().take();
             drop(state);
             if let Some(request) = presentation {
-                let output = super::selection::render::run(request, &mut presentation_cache);
+                let output =
+                    super::selection::render::run(request, &mut presentation_cache, &mut labels);
                 *shared.presentation_output.lock().unwrap() = Some(output);
                 shared.presentation_notify.notify_one();
             }
@@ -397,7 +410,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             let pixels = viewport.display;
             let mut view = request.view;
             if view.zoom.is_none() {
-                view.fit(layout.bounds, pixels);
+                view.fit_canvas(layout.bounds, pixels);
             }
             let options = crate::render::RenderOptions {
                 region: Some(view.region(pixels)),
@@ -434,8 +447,6 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 drop(image.pixels);
                 PreviewImage::Png(png.into())
             };
-            let protocol = encode(picker, image.bitmap, request.cells, image_id)?;
-            timing.mark("terminal_encode_ms");
             let nodes = navigation.get_or_insert_with(|| layout.items.iter().map(|item| Node {
                 id: item.record.id.clone(), name: item.node.properties.get("name").and_then(Value::as_str).unwrap_or(&item.record.id).into(), display_name: super::nodes::node_label(item.node.properties.get("name").and_then(Value::as_str).unwrap_or(&item.record.id)), bounds: item.record.visual_bounds,
                 hit: super::selection::HitGeometry {
@@ -451,6 +462,15 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 has_error_diagnostic: item.record.diagnostics.iter().any(|diagnostic| diagnostic.severity == "error"),
                 parent: item.parent, children: item.children.clone(),
             }).collect()).clone();
+            let mut bitmap = image.bitmap.into_rgba8();
+            labels.paint(&mut bitmap, &nodes, view, pixels, &[])?;
+            let protocol = encode(
+                picker,
+                image::DynamicImage::ImageRgba8(bitmap),
+                request.cells,
+                image_id,
+            )?;
+            timing.mark("terminal_encode_ms");
             let time_dependent = image.dynamic_artifacts.iter().any(|artifact| {
                 artifact["acquisition"]["kind"] == "shader"
                     && artifact["acquisition"]["time_dependent"] == true
@@ -546,6 +566,97 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
+    fn root_labels_decorate_initial_and_selected_previews_without_changing_export_pixels() {
+        use ratatui::{buffer::Buffer, widgets::Widget};
+        let directory = TempDir::new().unwrap();
+        let store = Store::init(
+            directory.path().join("design.pen"),
+            Some(directory.path().join("data")),
+        )
+        .unwrap();
+        let document = json!({"version":"2.21","children":[{
+            "id":"page","name":"旧案 / Page 1","type":"frame","layout":"none",
+            "x":-120,"width":160,"height":80,"fill":"#FFFFFF"
+        }]})
+        .to_string();
+        std::fs::write(store.path(), &document).unwrap();
+        let picker = Backend::halfblocks();
+        let cells = Size::new(40, 16);
+        let worker = Worker::start(store.clone(), vec![], picker.clone(), 198).unwrap();
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let view = View {
+                    zoom: Some(1.0),
+                    ..Default::default()
+                };
+                worker.request(Request {
+                    generation: 1,
+                    cells,
+                    view,
+                    refresh: false,
+                    refresh_pages: false,
+                    check_only: false,
+                    attachment: None,
+                });
+                let preview = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                    .await
+                    .unwrap()
+                    .result
+                    .unwrap();
+                let png = preview.image.png().unwrap().into_owned();
+                let bitmap = image::load_from_memory(&png).unwrap().into_rgba8();
+                assert!(
+                    bitmap
+                        .enumerate_pixels()
+                        .filter(|(_, y, _)| *y < 160)
+                        .all(|(_, _, p)| p.0 == [248, 250, 252, 255])
+                );
+                let raw_protocol =
+                    encode(&picker, image::DynamicImage::ImageRgba8(bitmap), cells, 198).unwrap();
+                let area = ratatui::layout::Rect::new(0, 0, cells.width, cells.height);
+                let render = |protocol: &Encoded| {
+                    let Encoded::Protocol(protocol) = protocol else {
+                        panic!("Expected halfblocks");
+                    };
+                    let mut buffer = Buffer::empty(area);
+                    super::super::graphics::Image(protocol).render(area, &mut buffer);
+                    buffer
+                };
+                let plain = render(&raw_protocol);
+                let initial = render(&preview.protocol);
+                assert_ne!(initial, plain, "Initial terminal frame includes root names");
+                worker.present(super::super::selection::render::Request {
+                    source: preview.image.clone(),
+                    nodes: preview.nodes.clone(),
+                    selected: vec!["page".into()],
+                    before: view,
+                    view,
+                    size: cells,
+                    viewport: pixel_size(&picker, cells).unwrap(),
+                    outlines: vec![],
+                    marquee: None,
+                    picker: picker.clone(),
+                    image_id: 198,
+                    serial: 0,
+                    clock: Arc::default(),
+                });
+                let selected =
+                    tokio::time::timeout(Duration::from_secs(15), worker.next_presentation())
+                        .await
+                        .unwrap()
+                        .result
+                        .unwrap()
+                        .unwrap();
+                assert_ne!(render(&selected), initial, "Selected root names turn blue");
+                assert_eq!(preview.image.png().unwrap().as_ref(), png);
+            });
+        assert_eq!(std::fs::read_to_string(store.path()).unwrap(), document);
+    }
+
+    #[test]
     fn oversized_previews_keep_the_camera_and_allow_minimum_zoom() {
         let directory = TempDir::new().unwrap();
         let store = Store::init(
@@ -587,7 +698,7 @@ mod tests {
                 assert_eq!(preview.protocol.size(), cells);
                 let mut expected = view;
                 if zoom.is_none() {
-                    expected.fit(Rect::new(-100.0, -100.0, 200.0, 200.0), pixels);
+                    expected.fit_canvas(Rect::new(-100.0, -100.0, 200.0, 200.0), pixels);
                 }
                 assert_eq!(preview.view, expected);
                 assert_eq!(preview.view.region(pixels), expected.region(pixels));

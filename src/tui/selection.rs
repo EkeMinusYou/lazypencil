@@ -52,7 +52,7 @@ fn visible_at(nodes: &[preview::Node], index: usize, point: [f64; 2]) -> bool {
     }
     true
 }
-fn shape_bounds(node: &preview::Node) -> Rect {
+pub(super) fn shape_bounds(node: &preview::Node) -> Rect {
     if node.hit.rect.width <= 0.0 || node.hit.rect.height <= 0.0 {
         node.bounds
     } else {
@@ -356,6 +356,8 @@ impl App {
             .collect::<Vec<_>>();
         self.selection.clock = Some(worker.present(render::Request {
             source: preview.image.clone(),
+            nodes: preview.nodes.clone(),
+            selected: self.selection.ids.clone(),
             before: preview.view,
             view,
             size,

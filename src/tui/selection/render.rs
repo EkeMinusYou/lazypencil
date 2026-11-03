@@ -7,6 +7,8 @@ use std::sync::{
 
 pub(in crate::tui) struct Request {
     pub source: preview::PreviewImage,
+    pub nodes: Arc<[preview::Node]>,
+    pub selected: Vec<String>,
     pub before: preview::View,
     pub view: preview::View,
     pub size: ratatui::layout::Size,
@@ -27,7 +29,11 @@ pub(in crate::tui) struct Finished {
     pub view: preview::View,
     pub result: Result<Option<graphics::Encoded>>,
 }
-pub(in crate::tui) fn run(request: Request, cache: &mut Option<Cache>) -> Finished {
+pub(in crate::tui) fn run(
+    request: Request,
+    cache: &mut Option<Cache>,
+    labels: &mut preview::labels::Labels,
+) -> Finished {
     let serial = &request.clock;
     let result = (|| {
         if request.serial != serial.load(Ordering::Relaxed) {
@@ -96,6 +102,13 @@ pub(in crate::tui) fn run(request: Request, cache: &mut Option<Cache>) -> Finish
         if request.serial != serial.load(Ordering::Relaxed) {
             return Ok(None);
         }
+        labels.paint(
+            &mut image,
+            &request.nodes,
+            request.view,
+            request.viewport,
+            &request.selected,
+        )?;
         request
             .picker
             .encode_preview(
