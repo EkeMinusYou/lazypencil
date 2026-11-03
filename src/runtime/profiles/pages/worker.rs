@@ -35,13 +35,22 @@ impl Shared {
             .write_all(&[1]);
     }
     fn reserve(self: &Arc<Self>, bytes: usize) -> Option<Reservation> {
-        self.bytes
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
-                current
-                    .checked_add(bytes)
-                    .filter(|next| *next <= wire::MAX_RESOURCES)
-            })
-            .ok()?;
+        let mut current = self.bytes.load(Ordering::Acquire);
+        loop {
+            let next = current
+                .checked_add(bytes)
+                .filter(|next| *next <= wire::MAX_RESOURCES)?;
+            // Publish the reservation only while the observed budget still holds.
+            match self.bytes.compare_exchange_weak(
+                current,
+                next,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(observed) => current = observed,
+            }
+        }
         Some(Reservation {
             state: self.clone(),
             bytes,
@@ -651,5 +660,55 @@ impl Engine {
                 let _ = wire::write_json(&mut output, &Reply::error(error));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn concurrent_reservations_keep_the_limit_and_release_the_exact_budget() {
+        let (wake, _reader) = UnixStream::pair().unwrap();
+        let (queue, _receiver) = mpsc::sync_channel(1);
+        let state = Arc::new(Shared {
+            connections: AtomicUsize::new(0),
+            owners: AtomicUsize::new(0),
+            bootstrap: AtomicBool::new(false),
+            bytes: AtomicUsize::new(wire::MAX_RESOURCES - 3),
+            stopped: AtomicBool::new(false),
+            clients: Mutex::new(BTreeMap::new()),
+            pool: Mutex::new(ResourcePool::default()),
+            wake: Mutex::new(wake),
+            queue,
+        });
+        let gate = std::sync::Barrier::new(3);
+        let reservations = std::thread::scope(|scope| {
+            let handles = (0..2)
+                .map(|_| {
+                    let state = state.clone();
+                    let gate = &gate;
+                    scope.spawn(move || {
+                        gate.wait();
+                        state.reserve(2)
+                    })
+                })
+                .collect::<Vec<_>>();
+            gate.wait();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(reservations.iter().flatten().count(), 1);
+        assert_eq!(state.bytes.load(Ordering::Acquire), wire::MAX_RESOURCES - 1);
+        drop(reservations);
+        assert_eq!(state.bytes.load(Ordering::Acquire), wire::MAX_RESOURCES - 3);
+        assert!(state.reserve(usize::MAX).is_none());
+        let full = state.reserve(3).unwrap();
+        assert_eq!(state.bytes.load(Ordering::Acquire), wire::MAX_RESOURCES);
+        assert!(state.reserve(1).is_none());
+        drop(full);
+        assert_eq!(state.bytes.load(Ordering::Acquire), wire::MAX_RESOURCES - 3);
     }
 }

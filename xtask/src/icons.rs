@@ -211,8 +211,7 @@ pub fn base(directory: &Path, destination: &Path) -> Result<Vec<Value>> {
             .context("Missing npm original license")?;
         let mut aliases = BTreeMap::new();
         let mut icons = BTreeMap::new();
-        let tags;
-        if pack == "lucide" {
+        let tags = if pack == "lucide" {
             let values: Value = serde_json::from_slice(
                 members
                     .get("package/icon-nodes.json")
@@ -260,11 +259,11 @@ pub fn base(directory: &Path, destination: &Path) -> Result<Vec<Value>> {
                     }
                 }
             }
-            tags = serde_json::from_slice::<BTreeMap<String, Value>>(
+            serde_json::from_slice::<BTreeMap<String, Value>>(
                 members
                     .get("package/tags.json")
                     .context("Missing Lucide tags")?,
-            )?;
+            )?
         } else {
             let fragments: BTreeMap<String, String> = serde_json::from_slice(
                 members
@@ -276,8 +275,8 @@ pub fn base(directory: &Path, destination: &Path) -> Result<Vec<Value>> {
                 let doc = roxmltree::Document::parse(&svg)?;
                 icons.insert(name, shapes(doc.root_element())?);
             }
-            tags = BTreeMap::new();
-        }
+            BTreeMap::new()
+        };
         let data = serde_json::to_vec(&Data {
             schema: 1,
             id: pack,
@@ -428,7 +427,7 @@ pub fn catalogue_literal(source: &str) -> Result<Value> {
             }
             let start = self.cursor;
             ensure!(
-                [b'a', b'e'].contains(&first) && self.text.get(start + 1) == Some(&b'.'),
+                b"ae".contains(&first) && self.text.get(start + 1) == Some(&b'.'),
                 "Executable expressions are not catalogue data"
             );
             self.cursor += 2;

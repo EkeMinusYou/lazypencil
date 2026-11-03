@@ -54,10 +54,9 @@ fn command(h: &mut Harness, label: &str, index: usize) -> Result {
     h.key(b"\r")
 }
 fn edit(h: &Harness, color: &str, request: &str) -> Result<Value> {
-    let revision = h.cli(&["inspect".as_ref(), h.document.as_os_str()])?["revision"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let inspected = h.cli(&["inspect".as_ref(), h.document.as_os_str()])?;
+    let revision = inspected["revision"].as_str().unwrap();
+    let dependency_revision = inspected["dependency_revision"].as_str().unwrap();
     let operations = h.root.join("operations.json");
     write_json(
         &operations,
@@ -70,6 +69,8 @@ fn edit(h: &Harness, color: &str, request: &str) -> Result<Value> {
         operations.as_os_str(),
         "--expected-revision".as_ref(),
         revision.as_ref(),
+        "--expected-dependency-revision".as_ref(),
+        dependency_revision.as_ref(),
         "--request-id".as_ref(),
         request.as_ref(),
     ])
@@ -226,6 +227,8 @@ pub fn run(
                     operations.as_os_str(),
                     "--expected-revision".as_ref(),
                     result["revision"].as_str().unwrap().as_ref(),
+                    "--expected-dependency-revision".as_ref(),
+                    result["dependency_revision"].as_str().unwrap().as_ref(),
                     "--request-id".as_ref(),
                     request.as_ref(),
                 ],
@@ -678,10 +681,10 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
                         // checked separately from this visible prefix.
                         line.contains("か\u{3099}") && line.contains('👩')
                     })
-            }) && lines
-                .get(rows as usize - 1)
-                .is_some_and(|line| line.starts_with("Tab / Shift+Tab panels"))
-                && h.screen.cursor().1 != previous.1
+            }) && lines.get(rows as usize - 1).is_some_and(|line| {
+                // Require the complete current Prompt actions after layout.
+                line.starts_with("Ctrl+Enter send") && line.contains("F1 help")
+            }) && h.screen.cursor().1 != previous.1
                 && h.session()
                     .is_some_and(|session| session["draft"] == expected)
         })?;
@@ -825,7 +828,7 @@ fn held_navigation(h: &mut Harness) -> Result {
     h.wait("fit restores the viewport after rapid repeats", 15.0, |h| {
         h.frames.images.last() == Some(&initial)
     })?;
-    for letter in [b'h', b'j', b'k', b'l'] {
+    for letter in *b"hjkl" {
         let count = pan_inputs(h);
         for (index, kind) in [1, 2, 2].into_iter().enumerate() {
             let placements = h.frames.camera_placement_updates;

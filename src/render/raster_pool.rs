@@ -8,6 +8,7 @@ use std::{
 #[derive(Default)]
 pub(super) struct RasterPool {
     workers: Vec<Worker>,
+    pub(super) bands: Option<Vec<(SkRect, skia_safe::Picture)>>,
 }
 
 struct Job {
@@ -16,6 +17,7 @@ struct Job {
     size: (i32, i32),
     background: Color,
     band: SkRect,
+    complete: bool,
     reply: mpsc::Sender<Result<Image>>,
 }
 
@@ -46,8 +48,10 @@ impl Worker {
                             .expect("Raster dimensions were initialized");
                         let canvas = surface.canvas();
                         canvas.save();
-                        // Keep full device coordinates, but clear and paint only this band.
-                        canvas.clip_rect(job.band, ClipOp::Intersect, false);
+                        // Preselected commands keep full device bounds for exact filter pixels.
+                        if !job.complete {
+                            canvas.clip_rect(job.band, ClipOp::Intersect, false);
+                        }
                         canvas.clear(job.background);
                         canvas.draw_picture(&job.picture, Some(&job.transform), None);
                         canvas.restore();
@@ -73,7 +77,85 @@ impl Drop for Worker {
     }
 }
 
+// A queued region owns its worker and reservation until completion, including
+// error paths while the caller is still recording the remaining regions.
+pub(super) struct PendingBand {
+    worker: Worker,
+    receiver: mpsc::Receiver<Result<Image>>,
+    band: SkRect,
+    _reservation: backdrop::RasterLease,
+}
+
+impl PendingBand {
+    pub(super) fn start(
+        picture: &skia_safe::Picture,
+        band: SkRect,
+        size: (i32, i32),
+        background: Color,
+        budget: &Rc<backdrop::RasterBudget>,
+        index: usize,
+    ) -> Result<Self> {
+        let reservation = budget.reserve(size.0 as u64 * size.1 as u64 * 4)?;
+        let worker = Worker::start(index)?;
+        let (reply, receiver) = mpsc::channel();
+        worker
+            .sender
+            .as_ref()
+            .expect("Live raster worker")
+            .send(Job {
+                picture: picture.clone(),
+                transform: Matrix::new_identity(),
+                size,
+                background,
+                band,
+                complete: true,
+                reply,
+            })
+            .map_err(|_| invalid("Preview raster worker stopped"))?;
+        Ok(Self {
+            worker,
+            receiver,
+            band,
+            _reservation: reservation,
+        })
+    }
+
+    pub(super) fn finish(
+        canvas: &Canvas,
+        last: &skia_safe::Picture,
+        background: Color,
+        pending: Vec<Self>,
+    ) -> Result<()> {
+        canvas.clear(background);
+        canvas.draw_picture(last, None, None);
+        let mut paint = Paint::default();
+        paint.set_blend_mode(BlendMode::Src);
+        for region in pending {
+            let image = region
+                .receiver
+                .recv()
+                .map_err(|_| invalid("Preview raster worker stopped"))??;
+            canvas.save();
+            canvas.clip_rect(region.band, ClipOp::Intersect, false);
+            canvas.draw_image(&image, (0.0, 0.0), Some(&paint));
+            canvas.restore();
+            // Join before releasing the region's scratch reservation.
+            drop(region.worker);
+        }
+        Ok(())
+    }
+}
+
 impl RasterPool {
+    pub(super) fn parts(size: (i32, i32)) -> usize {
+        static PARALLELISM: OnceLock<usize> = OnceLock::new();
+        if size.0 as u64 * (size.1 as u64) < 512 * 512 {
+            1
+        } else {
+            *PARALLELISM
+                .get_or_init(|| std::thread::available_parallelism().map_or(1, |n| n.get().min(4)))
+        }
+    }
     pub(super) fn draw(
         &mut self,
         canvas: &Canvas,
@@ -83,43 +165,57 @@ impl RasterPool {
         background: Color,
         budget: &Rc<backdrop::RasterBudget>,
     ) -> Result<()> {
-        static PARALLELISM: OnceLock<usize> = OnceLock::new();
-        let parts = if size.0 as u64 * (size.1 as u64) < 512 * 512 {
-            1
-        } else {
-            *PARALLELISM
-                .get_or_init(|| std::thread::available_parallelism().map_or(1, |n| n.get().min(4)))
-        };
+        let parts = self
+            .bands
+            .as_ref()
+            .map_or_else(|| Self::parts(size), Vec::len);
         if parts == 1 {
             self.workers.clear();
+            let picture = self.bands.as_ref().map_or(picture, |bands| &bands[0].1);
             canvas.draw_picture(picture, Some(transform), None);
             return Ok(());
         }
-        let _reservation = budget.reserve(size.0 as u64 * size.1 as u64 * 4 * parts as u64)?;
+        // Exact image regions can use the caller's full-size canvas as one
+        // raster worker; only the remaining regions need separate surfaces.
+        let worker_count = parts - usize::from(self.bands.is_some());
+        let _reservation =
+            budget.reserve(size.0 as u64 * size.1 as u64 * 4 * worker_count as u64)?;
         let result = (|| {
-            while self.workers.len() < parts {
+            self.workers.truncate(worker_count);
+            while self.workers.len() < worker_count {
                 self.workers.push(Worker::start(self.workers.len())?);
             }
             let mut pending = Vec::with_capacity(parts);
             for (part, worker) in self.workers.iter().enumerate() {
                 let top = size.1 * part as i32 / parts as i32;
                 let bottom = size.1 * (part + 1) as i32 / parts as i32;
-                let band = SkRect::new(0.0, top as f32, size.0 as f32, bottom as f32);
+                let band = self.bands.as_ref().map_or_else(
+                    || SkRect::new(0.0, top as f32, size.0 as f32, bottom as f32),
+                    |bands| bands[part].0,
+                );
                 let (reply, receiver) = mpsc::channel();
                 worker
                     .sender
                     .as_ref()
                     .expect("Live raster worker")
                     .send(Job {
-                        picture: picture.clone(),
+                        picture: self
+                            .bands
+                            .as_ref()
+                            .map_or_else(|| picture.clone(), |bands| bands[part].1.clone()),
                         transform: *transform,
                         size,
                         background,
                         band,
+                        complete: self.bands.is_some(),
                         reply,
                     })
                     .map_err(|_| invalid("Preview raster worker stopped"))?;
                 pending.push((band, receiver));
+            }
+            if let Some(bands) = &self.bands {
+                canvas.clear(background);
+                canvas.draw_picture(&bands[parts - 1].1, Some(transform), None);
             }
             let mut paint = Paint::default();
             paint.set_blend_mode(BlendMode::Src);

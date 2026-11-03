@@ -71,7 +71,14 @@ pub fn page(h: &mut Harness) -> Result {
         h.frames.images.len() <= frames + 1,
         "Paused pages must not be periodically captured"
     );
-    assert!(h.last_color(BLUE));
+    assert!(
+        h.last_color(BLUE),
+        "Paused page changed: red={}, green={}, frames={}\n{}",
+        h.last_color(RED),
+        h.last_color(GREEN),
+        h.frames.images.len(),
+        h.screen.text()
+    );
     assert_eq!(state(h)["draft"], draft);
     no_agent(h);
     assert_eq!(fs::read(&h.document)?, document);

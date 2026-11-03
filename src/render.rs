@@ -8,8 +8,8 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use skia_safe::{
     BlendMode, Canvas, ClipOp, Color, Data, Image, ImageFilter, Matrix, Paint, Path, PathBuilder,
-    PathFillType, Point, RRect, Rect as SkRect, TileMode, Vector, canvas::SaveLayerRec, gradient,
-    image_filters, paint,
+    PathFillType, Point, RRect, Rect as SkRect, RoundOut, TileMode, Vector, canvas::SaveLayerRec,
+    gradient, image_filters, paint,
 };
 use std::{cell::RefCell, collections::BTreeMap, path::PathBuf, rc::Rc};
 
@@ -195,16 +195,40 @@ fn png_impl(
 /// Snapshot-scoped analysis and drawing resources for viewport-only renders.
 struct RasterCache {
     shapes: RefCell<BTreeMap<usize, Path>>,
-    pictures: RefCell<BTreeMap<u32, skia_safe::Picture>>,
+    pictures: RefCell<BTreeMap<PictureKey, RecordedPicture>>,
     pool: RefCell<raster_pool::RasterPool>,
     atlas: RefCell<atlas::AtlasCache>,
     background_nodes: Vec<bool>,
     padding: RefCell<BTreeMap<u32, u32>>,
+    has_images: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct PictureKey {
+    scale: u32,
+    viewport: Option<[u32; 4]>,
+}
+
+struct RecordedPicture {
+    picture: skia_safe::Picture,
+    images: BTreeMap<PathBuf, (String, Image)>,
+    bytes: usize,
+    bands: RefCell<Option<Vec<(SkRect, skia_safe::Picture)>>>,
 }
 
 impl RasterCache {
     #[cfg(feature = "tui")]
     fn new(snapshot: &LayoutSnapshot) -> Self {
+        fn image(value: &Value) -> bool {
+            match value {
+                Value::Object(fields) => {
+                    fields.get("type").and_then(Value::as_str) == Some("image")
+                        || fields.values().any(image)
+                }
+                Value::Array(values) => values.iter().any(image),
+                _ => false,
+            }
+        }
         Self {
             shapes: RefCell::default(),
             pictures: RefCell::default(),
@@ -212,6 +236,10 @@ impl RasterCache {
             atlas: RefCell::default(),
             background_nodes: background_nodes(snapshot),
             padding: RefCell::default(),
+            has_images: snapshot
+                .items
+                .iter()
+                .any(|item| item.node.properties.values().any(image)),
         }
     }
 
@@ -228,6 +256,126 @@ impl RasterCache {
         entries.insert(key, padding);
         Ok(padding)
     }
+}
+
+// Prefer gaps between filtered subtrees so raster workers do not repeat their layers.
+fn image_bands(snapshot: &LayoutSnapshot, viewport: Affine, size: (i32, i32)) -> Vec<SkRect> {
+    let full = SkRect::from_wh(size.0 as f32, size.1 as f32);
+    let visible = snapshot
+        .items
+        .iter()
+        .filter(|item| item.record.enabled)
+        .map(|item| (item, item.record.visual_bounds.transformed(viewport)))
+        .filter(|(_, b)| {
+            b.right() >= -1.0
+                && b.x <= size.0 as f32 + 1.0
+                && b.bottom() >= -1.0
+                && b.y <= size.1 as f32 + 1.0
+        })
+        .collect::<Vec<_>>();
+    let filtered = visible
+        .iter()
+        .filter(|(item, _)| item.node.properties.contains_key("effect"))
+        .map(|(_, b)| SkRect::new(b.x - 1.0, b.y - 1.0, b.right() + 1.0, b.bottom() + 1.0))
+        .collect::<Vec<_>>();
+    let centers = visible
+        .iter()
+        .map(|(_, b)| {
+            Point::new(
+                (b.x + b.width / 2.0).clamp(0.0, size.0 as f32),
+                (b.y + b.height / 2.0).clamp(0.0, size.1 as f32),
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut regions = vec![(full, centers)];
+    while regions.len() < raster_pool::RasterPool::parts(size) {
+        let Some(index) = regions
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, p))| p.len() > 1)
+            .max_by_key(|(_, (_, p))| p.len())
+            .map(|(i, _)| i)
+        else {
+            break;
+        };
+        let (bounds, points) = regions.swap_remove(index);
+        let choose = |horizontal: bool, avoid_filters: bool| {
+            let coordinate = |p: &Point| if horizontal { p.x } else { p.y };
+            let (low, high) = if horizontal {
+                (bounds.left(), bounds.right())
+            } else {
+                (bounds.top(), bounds.bottom())
+            };
+            let mut coordinates = points.iter().map(coordinate).collect::<Vec<_>>();
+            coordinates.sort_by(f32::total_cmp);
+            let mut intervals = filtered
+                .iter()
+                .filter(|b| avoid_filters && b.intersects(bounds))
+                .map(|b| {
+                    if horizontal {
+                        (b.left(), b.right())
+                    } else {
+                        (b.top(), b.bottom())
+                    }
+                })
+                .collect::<Vec<_>>();
+            intervals.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let mut merged: Vec<(f32, f32)> = Vec::new();
+            for (start, end) in intervals {
+                if let Some(last) = merged.last_mut()
+                    && start <= last.1
+                {
+                    last.1 = last.1.max(end);
+                } else {
+                    merged.push((start, end));
+                }
+            }
+            let candidates = std::iter::once(coordinates[coordinates.len() / 2].ceil())
+                .chain(merged.iter().flat_map(|(a, b)| [a.floor(), b.ceil()]));
+            candidates
+                .filter(|cut| *cut > low && *cut < high)
+                .filter(|cut| {
+                    let i = merged.partition_point(|(start, _)| start < cut);
+                    i == 0 || merged[i - 1].1 <= *cut
+                })
+                .filter_map(|cut| {
+                    let n = coordinates.partition_point(|p| *p < cut);
+                    (n > 0 && n < coordinates.len()).then_some((
+                        n.abs_diff(coordinates.len() - n),
+                        horizontal,
+                        cut,
+                    ))
+                })
+                .min_by(|a, b| a.0.cmp(&b.0).then(a.2.total_cmp(&b.2)))
+        };
+        let best = |avoid_filters| {
+            [choose(true, avoid_filters), choose(false, avoid_filters)]
+                .into_iter()
+                .flatten()
+                .min_by_key(|(score, _, _)| *score)
+        };
+        let Some((_, horizontal, cut)) = best(true).or_else(|| best(false)) else {
+            regions.push((bounds, Vec::new()));
+            continue;
+        };
+        let (left, right): (Vec<_>, Vec<_>) = points
+            .into_iter()
+            .partition(|p| if horizontal { p.x < cut } else { p.y < cut });
+        let (first, second) = if horizontal {
+            (
+                SkRect::new(bounds.left(), bounds.top(), cut, bounds.bottom()),
+                SkRect::new(cut, bounds.top(), bounds.right(), bounds.bottom()),
+            )
+        } else {
+            (
+                SkRect::new(bounds.left(), bounds.top(), bounds.right(), cut),
+                SkRect::new(bounds.left(), cut, bounds.right(), bounds.bottom()),
+            )
+        };
+        regions.push((first, left));
+        regions.push((second, right));
+    }
+    regions.into_iter().map(|(bounds, _)| bounds).collect()
 }
 
 fn raster_impl(
@@ -322,6 +470,47 @@ fn raster_impl_cached(
     };
     let (working_width, working_height) =
         raster_dimensions(width + 2 * padding as u64, height + 2 * padding as u64)?;
+    let viewport = Affine::translation(padding as f32, padding as f32)
+        .then(Affine::scale(options.scale, options.scale))
+        .then(Affine::translation(-region.x, -region.y));
+    let anchored = recordable && cache.is_some_and(|cache| cache.has_images);
+    let transform = matrix(viewport);
+    let picture_key = PictureKey {
+        scale: options.scale.to_bits(),
+        viewport: anchored.then_some([
+            transform.translate_x().to_bits(),
+            transform.translate_y().to_bits(),
+            working_width as u32,
+            working_height as u32,
+        ]),
+    };
+    if let Some(cache) = cache.filter(|_| anchored)
+        && let Some(entry) = cache.pictures.borrow().get(&picture_key)
+        && let Some(image) = cache
+            .atlas
+            .borrow_mut()
+            .viewport(&entry.picture, options.background)
+    {
+        project.verify_unchanged()?;
+        let image = crop_image(&image, padding, width as u32, height as u32)?;
+        if let Some(runtime) = runtime.as_deref() {
+            runtime.check()?;
+        }
+        return Ok(RenderedRaster {
+            image,
+            region,
+            snapshot_id: snapshot.id.clone(),
+            assets: entry
+                .images
+                .iter()
+                .map(|(path, (hash, _))| ImageDependency {
+                    path: path.clone(),
+                    hash: hash.clone(),
+                })
+                .collect(),
+            dynamic_artifacts: Vec::new(),
+        });
+    }
     let rasters = Rc::new(backdrop::RasterBudget::default());
     if let Some(runtime) = runtime.as_deref() {
         runtime.check()?;
@@ -331,9 +520,8 @@ fn raster_impl_cached(
         .ok_or_else(|| Error::new("RENDER_ERROR", "Cannot allocate a raster surface"))?;
     let canvas = surface.canvas();
     canvas.clear(options.background);
-    let viewport = Affine::translation(padding as f32, padding as f32)
-        .then(Affine::scale(options.scale, options.scale))
-        .then(Affine::translation(-region.x, -region.y));
+    let mut image_capture = None;
+    let mut pending_bands = Vec::new();
     let mut renderer = Renderer {
         project,
         snapshot,
@@ -354,84 +542,188 @@ fn raster_impl_cached(
         rasters,
         shapes,
         recording: false,
+        band: None,
     };
     // Node selection determines the viewport; compositing keeps scene context.
     if let Some(pictures) = pictures {
-        let scale = options.scale.to_bits();
-        if !pictures.borrow().contains_key(&scale) {
-            let recording_viewport = Affine::scale(options.scale, options.scale);
-            let bounds = snapshot
-                .bounds
-                .transformed(recording_viewport)
-                .outset(2.0, 2.0);
-            let mut recorder = skia_safe::PictureRecorder::new();
-            let recording_canvas = recorder.begin_recording(
-                SkRect::from_xywh(bounds.x, bounds.y, bounds.width, bounds.height),
-                true,
-            );
-            let mut recording = Renderer {
-                project,
-                snapshot,
-                canvas: recording_canvas,
-                viewport: recording_viewport,
-                images: BTreeMap::new(),
-                runtime: renderer.runtime.as_deref_mut(),
-                raster_scale: options.scale,
-                time: options.time,
-                artifacts: Vec::new(),
-                skip_effect: None,
-                external_backdrop: None,
-                backdrop_padding: 0,
-                background_nodes: &background_nodes,
-                coverage: None,
-                own_pass: None,
-                tight_text_layer_hints: false,
-                rasters: renderer.rasters.clone(),
-                shapes,
-                recording: true,
+        let key = picture_key;
+        if anchored
+            && pictures
+                .borrow()
+                .get(&key)
+                .is_some_and(|entry| entry.bands.borrow().is_none())
+        {
+            pictures.borrow_mut().remove(&key);
+        }
+        if !pictures.borrow().contains_key(&key) {
+            // Image scenes retain the exact device origin. Reassociating their
+            // transforms through a later translation can change antialias pixels.
+            let recording_viewport = if anchored {
+                viewport
+            } else {
+                Affine::scale(options.scale, options.scale)
             };
-            for root in &snapshot.roots {
-                recording.node(*root)?;
+            let bounds = if anchored {
+                Rect::new(0.0, 0.0, working_width as f32, working_height as f32)
+            } else {
+                snapshot
+                    .bounds
+                    .transformed(recording_viewport)
+                    .outset(2.0, 2.0)
+            };
+            let bands = if anchored {
+                image_bands(snapshot, viewport, (working_width, working_height))
+            } else {
+                vec![SkRect::from_wh(working_width as f32, working_height as f32)]
+            };
+            let mut images = BTreeMap::new();
+            let mut commands = Vec::with_capacity(bands.len());
+            let band_count = bands.len();
+            for (part, band) in bands.into_iter().enumerate() {
+                let mut recorder = skia_safe::PictureRecorder::new();
+                let recording_canvas = recorder.begin_recording(
+                    SkRect::from_xywh(bounds.x, bounds.y, bounds.width, bounds.height),
+                    true,
+                );
+                let mut recording = Renderer {
+                    project,
+                    snapshot,
+                    canvas: recording_canvas,
+                    viewport: recording_viewport,
+                    images,
+                    runtime: renderer.runtime.as_deref_mut(),
+                    raster_scale: options.scale,
+                    time: options.time,
+                    artifacts: Vec::new(),
+                    skip_effect: None,
+                    external_backdrop: None,
+                    backdrop_padding: if anchored { padding } else { 0 },
+                    background_nodes: &background_nodes,
+                    coverage: None,
+                    own_pass: None,
+                    tight_text_layer_hints: anchored,
+                    rasters: renderer.rasters.clone(),
+                    shapes,
+                    recording: !anchored,
+                    band: anchored.then_some(band),
+                };
+                for root in &snapshot.roots {
+                    recording.node(*root)?;
+                }
+                images = recording.images;
+                let picture = recorder
+                    .finish_recording_as_picture(None)
+                    .ok_or_else(|| invalid("Cannot retain preview drawing commands"))?;
+                // Rasterize completed regions while recording the next one.
+                // Keep oversized fallback on the ordinary bounded draw path.
+                if anchored
+                    && part + 1 < band_count
+                    && working_width as u64 * working_height as u64 <= 8 * 1024 * 1024
+                    && images
+                        .values()
+                        .map(|(_, image)| image.width() as u64 * image.height() as u64 * 4)
+                        .sum::<u64>()
+                        <= 32 * 1024 * 1024
+                {
+                    pending_bands.push(raster_pool::PendingBand::start(
+                        &picture,
+                        band,
+                        (working_width, working_height),
+                        options.background,
+                        &renderer.rasters,
+                        part,
+                    )?);
+                }
+                commands.push((band, picture));
             }
-            let picture = recorder
-                .finish_recording_as_picture(None)
-                .ok_or_else(|| invalid("Cannot retain preview drawing commands"))?;
+            // Pictures keep image references alive. Charge their full decoded
+            // size as well as commands against the existing retained budget.
+            let command_bytes = commands
+                .iter()
+                .map(|(_, picture)| picture.approximate_bytes_used())
+                .sum::<usize>();
+            let bytes = images.values().fold(command_bytes, |bytes, (_, image)| {
+                bytes.saturating_add(
+                    (image.width() as usize)
+                        .saturating_mul(image.height() as usize)
+                        .saturating_mul(4),
+                )
+            });
+            let picture = RecordedPicture {
+                picture: if anchored {
+                    skia_safe::Picture::new_placeholder(SkRect::from_xywh(
+                        bounds.x,
+                        bounds.y,
+                        bounds.width,
+                        bounds.height,
+                    ))
+                } else {
+                    commands[0].1.clone()
+                },
+                images,
+                bytes,
+                bands: RefCell::new(anchored.then_some(commands)),
+            };
             let mut pictures = pictures.borrow_mut();
-            // Keep vector commands for at most two zoom levels, bounded to 32 MiB.
-            while pictures.len() >= 2
+            // Exact image viewports and vector zoom levels share the 32 MiB cap.
+            while pictures.len() >= if anchored { 8 } else { 2 }
                 || pictures
                     .values()
-                    .map(|p| p.approximate_bytes_used())
+                    .map(|p| p.bytes)
                     .sum::<usize>()
-                    + picture.approximate_bytes_used()
+                    .saturating_add(picture.bytes)
                     > 32 * 1024 * 1024
             {
                 if pictures.pop_first().is_none() {
                     break;
                 }
             }
-            if picture.approximate_bytes_used() <= 32 * 1024 * 1024 {
-                pictures.insert(scale, picture);
+            if picture.bytes <= 32 * 1024 * 1024 {
+                pictures.insert(key, picture);
             }
         }
-        if let Some(picture) = pictures.borrow().get(&scale) {
-            let transform = matrix(Affine::translation(
-                -region.x * options.scale,
-                -region.y * options.scale,
-            ));
-            let retained = match cache {
-                Some(cache) => cache.atlas.borrow_mut().draw(
-                    canvas,
-                    picture,
-                    &transform,
-                    options.background,
-                    &renderer.rasters,
-                    &mut cache.pool.borrow_mut(),
-                )?,
-                None => false,
+        if let Some(entry) = pictures.borrow().get(&key) {
+            renderer.images = entry.images.clone();
+            if let Some(pool) = pool {
+                pool.borrow_mut().bands = entry.bands.borrow().clone();
+            }
+            let picture = &entry.picture;
+            let transform = if anchored {
+                Matrix::new_identity()
+            } else {
+                matrix(Affine::translation(
+                    -region.x * options.scale,
+                    -region.y * options.scale,
+                ))
+            };
+            let retained = if anchored {
+                false
+            } else {
+                match cache {
+                    Some(cache) => cache.atlas.borrow_mut().draw(
+                        canvas,
+                        picture,
+                        &transform,
+                        options.background,
+                        &renderer.rasters,
+                        &mut cache.pool.borrow_mut(),
+                    )?,
+                    None => false,
+                }
             };
             if !retained {
-                if let Some(pool) = pool {
+                let prepared = entry.bands.borrow();
+                if let Some(bands) = prepared.as_ref().filter(|bands| {
+                    pending_bands.len() + 1 == bands.len() && !pending_bands.is_empty()
+                }) {
+                    raster_pool::PendingBand::finish(
+                        canvas,
+                        &bands.last().expect("Recorded final region").1,
+                        options.background,
+                        std::mem::take(&mut pending_bands),
+                    )?;
+                } else if let Some(pool) = pool {
+                    pending_bands.clear();
                     pool.borrow_mut().draw(
                         canvas,
                         picture,
@@ -444,7 +736,17 @@ fn raster_impl_cached(
                     canvas.draw_picture(picture, Some(&transform), None);
                 }
             }
+            if anchored {
+                // A stable placeholder identifies the retained pixels without
+                // keeping filters or their native intermediate rasters alive.
+                image_capture = Some(entry.picture.clone());
+                entry.bands.borrow_mut().take();
+                if let Some(pool) = pool {
+                    *pool.borrow_mut() = Default::default();
+                }
+            }
         } else {
+            pending_bands.clear();
             for root in &snapshot.roots {
                 renderer.node(*root)?;
             }
@@ -466,14 +768,18 @@ fn raster_impl_cached(
         });
     }
     let dynamic_artifacts = renderer.artifacts;
-    let image = crop_image(
-        &surface.image_snapshot(),
-        padding,
-        width as u32,
-        height as u32,
-    )?;
+    let full_image = surface.image_snapshot();
+    let image = crop_image(&full_image, padding, width as u32, height as u32)?;
     if let Some(runtime) = runtime.as_deref() {
         runtime.check()?;
+    }
+    if let Some(picture) = image_capture
+        && let Some(cache) = cache
+    {
+        cache
+            .atlas
+            .borrow_mut()
+            .retain_viewport(&picture, options.background, full_image);
     }
     Ok(RenderedRaster {
         image,
@@ -504,6 +810,7 @@ struct Renderer<'a> {
     rasters: Rc<backdrop::RasterBudget>,
     shapes: Option<&'a RefCell<BTreeMap<usize, Path>>>,
     recording: bool,
+    band: Option<SkRect>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -576,10 +883,14 @@ impl Renderer<'_> {
             .transformed(self.viewport);
         let info = self.canvas.image_info();
         // Include one device pixel for antialiasing at a geometric boundary.
-        bounds.right() >= -1.0
-            && bounds.bottom() >= -1.0
-            && bounds.x <= info.width() as f32 + 1.0
-            && bounds.y <= info.height() as f32 + 1.0
+        let left = self.band.map_or(0.0, |band| band.left());
+        let right = self.band.map_or(info.width() as f32, |band| band.right());
+        let top = self.band.map_or(0.0, |band| band.top());
+        let bottom = self.band.map_or(info.height() as f32, |band| band.bottom());
+        bounds.right() >= left - 1.0
+            && bounds.bottom() >= top - 1.0
+            && bounds.x <= right + 1.0
+            && bounds.y <= bottom + 1.0
     }
 
     fn node(&mut self, index: usize) -> Result<()> {
@@ -678,6 +989,26 @@ impl Renderer<'_> {
         } else {
             None
         };
+        let band = self.band;
+        if let Some(filter) = filter.as_ref()
+            && let Some(output) = band
+        {
+            // Cull commands outside the filter's required input, not its output.
+            // Keep the device clip and layer bounds identical to a full render.
+            let output: skia_safe::IRect = output.round_out();
+            let input = filter.filter_bounds(
+                output,
+                &matrix(self.viewport.then(item.record.transform)),
+                skia_safe::image_filter::MapDirection::Reverse,
+                None,
+            );
+            self.band = Some(SkRect::new(
+                (input.left as f32).max(0.0),
+                (input.top as f32).max(0.0),
+                (input.right as f32).min(self.canvas.image_info().width() as f32),
+                (input.bottom as f32).min(self.canvas.image_info().height() as f32),
+            ));
+        }
         let mut layer = Paint::default();
         layer.set_alpha_f(opacity);
         layer.set_image_filter(filter);
@@ -765,6 +1096,7 @@ impl Renderer<'_> {
             self.canvas.restore();
         }
         self.tight_text_layer_hints = tight_text_layer_hints;
+        self.band = band;
         self.canvas.restore();
         Ok(())
     }
@@ -1233,6 +1565,7 @@ impl Renderer<'_> {
             rasters: self.rasters.clone(),
             shapes: self.shapes,
             recording: self.recording,
+            band: self.band,
         };
         nested.node(index)?;
         self.artifacts.extend(nested.artifacts);
