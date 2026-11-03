@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "channel": "stable",
   "target": "aarch64-apple-darwin",
-  "minimum_os": "15.7.9",
+  "minimum_os": "26.0.0",
   "limitations": [
     {
       "id": "pencil-browser-device-presets",

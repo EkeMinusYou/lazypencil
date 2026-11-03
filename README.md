@@ -62,13 +62,24 @@ Camera controls change the view while keeping the design itself in place.
 
 ## Supported environment
 
-**macOS 15.7.9 or later on Apple Silicon.** For image previews, use direct local
+**macOS Tahoe 26 or later on Apple Silicon.** For image previews, use direct local
 Kitty 0.49.2 (Kitty Graphics Protocol) or WezTerm `20240203-110809-5046fc22` (Sixel),
 the initial terminal baselines. Other terminals, input methods, tmux, and SSH need
 separate compatibility checks. Linux, Windows, and Intel Mac are not supported
 release targets. See [terminal support and fallbacks](docs/tui.md#initial-terminal-support).
 
 ## Install
+
+The dedicated [Homebrew tap](https://github.com/EkeMinusYou/homebrew-lazypencil)
+is populated by the signed release workflow. Once its first Cask is available,
+install or update with:
+
+```sh
+brew install --cask ekeminusyou/lazypencil/lazypencil
+brew upgrade --cask lazypencil
+```
+
+For manual installation of the existing v0.1.0 release:
 
 Download `lazypencil-0.1.0-aarch64-apple-darwin.tar.gz` from
 [GitHub Releases](https://github.com/EkeMinusYou/lazypencil/releases).

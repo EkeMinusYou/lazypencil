@@ -7,6 +7,10 @@ on:
         type: choice
         default: macos-15
         options: [ubuntu-24.04, ubuntu-24.04-arm, macos-15]
+      publish_release:
+        description: Sign, notarize and publish the matching release tag, then update the dedicated Homebrew tap
+        type: boolean
+        default: false
       measure_tui:
         description: Measure the packaged TUI after all builds and other checks finish
         type: boolean
@@ -34,14 +38,31 @@ jobs:
   evidence:
     permissions:
       contents: read
+      actions: read
       id-token: write
       attestations: write
     runs-on: ${{ inputs.os == 'macos-15' && inputs.macos_terminal_gui && 'macos-15-xlarge' || inputs.os }}
-    timeout-minutes: 60
+    timeout-minutes: ${{ inputs.publish_release && 90 || 60 }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Validate tagged publication and required signing credentials before building
+        if: inputs.publish_release
+        env:
+          RELEASE_PLATFORM: ${{ inputs.os }}
+          DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          NOTARY_PRIVATE_KEY: ${{ secrets.NOTARY_PRIVATE_KEY }}
+          NOTARY_KEY_ID: ${{ vars.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ vars.NOTARY_ISSUER_ID }}
+        run: bash scripts/release/macos.sh preflight
+      - name: Require the existing successful main CI run for this exact release commit
+        if: inputs.publish_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/release/macos.sh check-ci
       - uses: ./.github/actions/xtask
         with:
           verify: 'true'
@@ -111,6 +132,13 @@ jobs:
       - name: Compile the release executable and record selected Cargo artifacts
         id: release-build
         run: xtask/target/debug/xtask ci native evidence-build
+      - name: Sign the final executable before collecting its hashes and build evidence
+        if: inputs.publish_release
+        env:
+          DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: bash scripts/release/macos.sh sign "$CARGO_TARGET_DIR/release/lazypencil"
       - name: Collect and reverify original notices against this build
         id: notices
         run: xtask/target/debug/xtask evidence --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --cargo-json "$RUNNER_TEMP/release-cargo.jsonl" --revision '${{ github.sha }}' --output "$RUNNER_TEMP/release-evidence" --toolchain-evidence "$RUNNER_TEMP/toolchain-evidence" --link-map "$CARGO_TARGET_DIR/release/lazypencil.map"
@@ -201,7 +229,7 @@ jobs:
           retention-days: 3
       - name: Stage mapped release outputs independently of test results
         id: release-save
-        if: ${{ !cancelled() && steps.release-key.outcome == 'success' && steps.release-cache.outputs.cache-hit != 'true' && steps.candidate-smoke.outcome == 'success' && github.ref == 'refs/heads/main' }}
+        if: ${{ !cancelled() && !inputs.publish_release && steps.release-key.outcome == 'success' && steps.release-cache.outputs.cache-hit != 'true' && steps.candidate-smoke.outcome == 'success' && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         timeout-minutes: 3
         run: xtask/target/debug/xtask ci cache application stage --release-only --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-release-cache" --native-key '${{ steps.cache-key.outputs.primary }}'
@@ -212,3 +240,83 @@ jobs:
         with:
           key: ${{ steps.release-key.outputs.primary }}
           path: ${{ runner.temp }}/lazypencil-release-cache
+      - name: Notarize the signed executable after candidate verification
+        id: notarization
+        if: inputs.publish_release
+        timeout-minutes: 25
+        env:
+          NOTARY_PRIVATE_KEY: ${{ secrets.NOTARY_PRIVATE_KEY }}
+          NOTARY_KEY_ID: ${{ vars.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ vars.NOTARY_ISSUER_ID }}
+        run: bash scripts/release/macos.sh notarize "$CARGO_TARGET_DIR/release/lazypencil" "$RUNNER_TEMP/notarization.json"
+      - name: Retain notarization diagnostics
+        if: ${{ always() && steps.notarization.outcome != 'skipped' && inputs.publish_release }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: notarization-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/notarization*.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Stage the verified notarized package and matching Homebrew Cask
+        if: inputs.publish_release
+        run: bash scripts/release/publish.sh stage
+      - name: Attest the final release archive
+        id: release-attestation
+        if: inputs.publish_release
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/release-assets/*.tar.gz
+          create-storage-record: false
+      - name: Finalize release checksums
+        if: inputs.publish_release
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.release-attestation.outputs.bundle-path }}
+        run: bash scripts/release/publish.sh finalize
+      - name: Transfer the complete signed release without signing credentials
+        if: inputs.publish_release
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: signed-release-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-assets
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    if: inputs.publish_release
+    needs: evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: signed-release-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-assets
+      - name: Publish the immutable signed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/release/publish.sh publish
+
+  homebrew:
+    if: inputs.publish_release
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: signed-release-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-assets
+      - name: Update the independent lazypencil Homebrew tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: bash scripts/release/publish.sh update-tap

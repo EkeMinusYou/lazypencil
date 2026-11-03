@@ -185,7 +185,7 @@ fn stable_release_keeps_source_bound_limits_and_review_status() {
     let verified = binary::verify(&arguments.output, Some(&installed)).unwrap();
     assert_eq!(verified["release_ready"], true);
     assert_eq!(verified["kind"], "release");
-    assert_eq!(verified["release"]["minimum_os"], "15.7.9");
+    assert_eq!(verified["release"]["minimum_os"], "26.0.0");
     assert_eq!(
         verified["release"]["limitations"].as_array().unwrap().len(),
         2
@@ -196,6 +196,41 @@ fn stable_release_keeps_source_bound_limits_and_review_status() {
     );
     let readme = fs::read_to_string(installed.join("README.txt")).unwrap();
     assert!(readme.contains("pencil:object") && readme.contains("device presets"));
+}
+
+#[test]
+fn homebrew_uses_the_verified_archive_and_preserves_the_complete_package() {
+    let (temp, arguments) = fixture_for_release("aarch64-apple-darwin", true);
+    binary::create(&arguments).unwrap();
+    let output = temp.path().join("lazypencil.rb");
+    let report = dist::homebrew::generate(&arguments.output, &output).unwrap();
+    assert_eq!(
+        report["sha256"],
+        util::file_digest(&arguments.output).unwrap()
+    );
+    assert_eq!(report["source_revision"], REVISION);
+    let cask = fs::read_to_string(&output).unwrap();
+    assert!(cask.contains(&format!(
+        "sha256 \"{}\"",
+        report["sha256"].as_str().unwrap()
+    )));
+    assert!(cask.contains("depends_on arch: :arm64"));
+    assert!(cask.contains("depends_on macos: :tahoe"));
+    assert!(cask.contains("lazypencil-#{version}-aarch64-apple-darwin/bin/lazypencil"));
+    // A binary artifact links into the retained Caskroom directory instead of
+    // copying the executable away from corresponding sources and notices.
+    assert!(!cask.contains("installer ") && !cask.contains("preflight"));
+    fs::write(&arguments.output, b"corrupted download").unwrap();
+    assert!(dist::homebrew::generate(&arguments.output, &temp.path().join("bad.rb")).is_err());
+}
+
+#[test]
+fn homebrew_rejects_candidates_that_have_not_passed_stable_release_review() {
+    let (temp, arguments) = fixture("aarch64-apple-darwin");
+    binary::create(&arguments).unwrap();
+    assert!(
+        dist::homebrew::generate(&arguments.output, &temp.path().join("lazypencil.rb")).is_err()
+    );
 }
 
 #[test]
