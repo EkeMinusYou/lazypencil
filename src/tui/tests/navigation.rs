@@ -519,6 +519,81 @@ fn diagnostics_switch_preserves_targets_and_reveals_hidden_nodes_after_refresh()
 }
 
 #[test]
+fn nodes_enter_expands_branches_and_fits_only_leaves() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        std::fs::write(
+            app.conversation.store().path(),
+            json!({"version":"2.21","children":[{
+                "type":"frame","id":"root","width":160,"height":80,"layout":"none",
+                "children":[
+                    {"type":"rectangle","id":"leaf","x":20,"width":8,"height":8},
+                    {"type":"frame","id":"empty","x":80,"width":20,"height":20,"children":[]}
+                ]
+            }]}).to_string(),
+        ).unwrap();
+        let worker = Worker::start(
+            app.conversation.store().clone(), vec![], Backend::halfblocks(), 195,
+        ).unwrap();
+        app.cells = Size::new(20, 12);
+        app.request(&worker, false, false);
+        let output = tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap();
+        assert!(app.accept_preview(output));
+        assert!(app.preview_error.is_none());
+        app.focus = Focus::Nodes;
+        app.refresh_nodes(Some("root"));
+        let view = app.view;
+        let generation = app.generation;
+        assert_eq!(app.filtered_nodes().len(), 1);
+
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.filtered_nodes().len(), 3);
+        assert_eq!(app.selected_node().unwrap().id, "root");
+        assert_eq!(app.view, view);
+        assert_eq!(app.generation, generation, "Expanding must not request a preview");
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selected_node().unwrap().id, "leaf");
+        assert_eq!(app.view, view);
+        assert_eq!(app.generation, generation);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.view.center, [24.0, 4.0]);
+        assert!(app.view.zoom.is_some());
+        assert_eq!(app.focus, Focus::Nodes);
+
+        app.refresh_nodes(Some("root"));
+        press(&mut app, KeyCode::Char('f'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.view.center, [80.0, 40.0]);
+        assert_eq!(app.selected_node().unwrap().id, "root");
+        assert_eq!(app.focus, Focus::Nodes);
+        app.refresh_nodes(Some("empty"));
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.view.center, [90.0, 10.0]);
+
+        app.filter = "root".into();
+        app.refresh_nodes(Some("root"));
+        press(&mut app, KeyCode::Left, KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.filtered_nodes().len(), 1);
+        app.navigation.activate_node = vec!["e".into()];
+        app.navigation.validate(&app.keys).unwrap();
+        let view = app.view;
+        let generation = app.generation;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.filtered_nodes().len(), 1);
+        press(&mut app, KeyCode::Char('e'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.filtered_nodes().len(), 3);
+        assert_eq!(app.selected_node().unwrap().id, "root");
+        assert_eq!(app.view, view);
+        assert_eq!(app.generation, generation);
+        press(&mut app, KeyCode::Char('e'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selected_node().unwrap().id, "leaf");
+        press(&mut app, KeyCode::Char('e'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.view.center, [24.0, 4.0]);
+        assert!(app.help_text().contains("Nodes: expand or enter a branch; fit a node without children"));
+    });
+}
+
+#[test]
 fn nodes_tree_keeps_duplicate_names_distinct_through_search_refresh_and_attachments() {
     async fn rendered(app: &mut App, worker: &Worker) {
         loop {

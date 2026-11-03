@@ -1077,7 +1077,10 @@ impl App {
                 "Diagnostics: switch selected node and descendants / all nodes",
             ),
             (Nav::ClearSelection, "Nodes: clear the editing target"),
-            (Nav::ActivateNode, "Nodes: select and fit the target"),
+            (
+                Nav::ActivateNode,
+                "Nodes: expand or enter a branch; fit a node without children",
+            ),
             (Nav::ExpandNode, "Nodes: expand or enter a branch"),
             (
                 Nav::CollapseNode,

@@ -222,7 +222,8 @@ Large or high-DPI viewports automatically reduce preview raster resolution to st
 | Nodes: `l` / Right, `h` / Left | Expand/enter a branch, or close its parent branch and select it |
 | Nodes: `Ctrl+U` / `Ctrl+D` | Move up/down by half the visible node list |
 | Nodes: `Space` | Toggle a branch when no search filter is active |
-| Nodes: `f` / Enter | Fit the selected node while keeping focus in Nodes; use `a` to add an explicit prompt reference |
+| Nodes: Enter | Expand a branch, or enter its first child if already expanded; fit the selected node if it has no children |
+| Nodes: `f` | Fit the selected node while keeping focus in Nodes; use `a` to add an explicit prompt reference |
 | Nodes: `Esc` | Clear the editing target |
 | Attachments: arrows | Preview pending images in order |
 | Attachments: `d`, Delete, Backspace | Remove a pending image without changing its source |

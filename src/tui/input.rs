@@ -400,6 +400,12 @@ impl App {
                 } else if action(Nav::ClearSelection) {
                     self.nodes.select(None);
                     self.pending_node_selection = None;
+                } else if action(Nav::ActivateNode)
+                    && self
+                        .selected_node()
+                        .is_some_and(|node| !node.children.is_empty())
+                {
+                    self.navigate_node_tree(Nav::ExpandNode);
                 } else if action(Nav::ActivateNode) || action(Nav::FitSelected) {
                     self.fit_selected(picker)?;
                     self.request(worker, false, false);
