@@ -602,6 +602,75 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
 }
 
 #[test]
+fn agent_header_tracks_negotiated_model_and_hides_inactive_fast_mode() {
+    let temp = TempDir::new().unwrap();
+    let mut app = app(&temp, "settings-fast");
+    assert!(app.header_line().to_string().contains("model: default"));
+    assert!(!app.header_line().to_string().contains("Fast"));
+    app.message(&json!({"type":"ready","response":{"configOptions":[
+        {"id":"engine","category":"model","currentValue":"fixture-model"},
+        {"id":"fast-mode","currentValue":"on"}
+    ]}}));
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 20)).unwrap();
+    terminal
+        .draw(|frame| {
+            app.draw(frame);
+        })
+        .unwrap();
+    let top: String = (0..80)
+        .map(|x| terminal.backend().buffer()[(x, 0)].symbol())
+        .collect();
+    assert!(top.contains("model: fixture-model"), "{top}");
+    assert!(top.contains("Fast"), "{top}");
+    app.dirty = false;
+    app.message(&json!({"type":"update","notification":{"update":{
+        "sessionUpdate":"config_option_update","configOptions":[
+            {"id":"model","currentValue":"fixture-model-2"},
+            {"id":"fast-mode","currentValue":"off"}
+        ]
+    }}}));
+    assert!(app.dirty);
+    assert!(
+        app.header_line()
+            .to_string()
+            .contains("model: fixture-model-2")
+    );
+    assert!(!app.header_line().to_string().contains("Fast"));
+    app.message(&json!({"type":"ready","response":{"configOptions":[
+        {"id":"model","currentValue":"another-model"},
+        {"id":"fast-mode","currentValue":true}
+    ]}}));
+    assert!(app.header_line().to_string().contains("Fast"));
+    app.message(&json!({"type":"update","notification":{"update":{
+        "sessionUpdate":"config_option_update","configOptions":[
+            {"id":"model","currentValue":"standard-model"}
+        ]
+    }}}));
+    assert!(
+        app.header_line()
+            .to_string()
+            .contains("model: standard-model")
+    );
+    assert!(!app.header_line().to_string().contains("Fast"));
+    runtime().block_on(async {
+        app.agent_fast = true;
+        let worker = Worker::start(
+            app.conversation.store().clone(),
+            vec![],
+            Backend::halfblocks(),
+            186,
+        )
+        .unwrap();
+        app.select_conversation(saved::SessionChange::New, &worker)
+            .await
+            .unwrap();
+        assert!(app.header_line().to_string().contains("model: default"));
+        assert!(!app.header_line().to_string().contains("Fast"));
+        worker.cancel();
+    });
+}
+
+#[test]
 fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {
@@ -635,6 +704,10 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
             agent: 3,
         };
         app.authentication = "fixture@example.test · subscription · team".into();
+        app.message(&json!({"type":"ready","response":{"configOptions":[
+            {"id":"model","currentValue":"gpt-6.1-sol"},
+            {"id":"fast-mode","currentValue":"on"}
+        ]}}));
         app.preview.as_mut().unwrap().summary["diagnostics"] = json!([{"severity":"warning"}]);
         app.view.zoom = Some(2.0);
         assert_eq!(
@@ -662,7 +735,14 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
         };
         let header = region(Rect::new(0, 0, 160, 1));
         assert!(header.contains("lazypencil") && header.contains(".pen"));
-        for value in ["Codex", "account:", "session:", "subscription"] {
+        for value in [
+            "Codex",
+            "gpt-6.1-sol",
+            "Fast",
+            "account:",
+            "session:",
+            "subscription",
+        ] {
             assert!(
                 header.contains(value),
                 "Missing agent metadata in the global header: {value}"

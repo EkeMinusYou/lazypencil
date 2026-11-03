@@ -208,9 +208,19 @@ impl Harness {
                     "--adapter-arg=queued-followups"
                 } else if case == "account-startup" {
                     "--adapter-arg=auth-inspect-account"
+                } else if case.starts_with("agent-header-") {
+                    "--adapter-arg=settings-fast-inherited"
                 } else {
                     "--adapter-arg=image-inspect"
                 });
+        }
+        if case.starts_with("agent-header-") {
+            command.args(["--model", "fixture-model-2"]);
+            command.arg(if case == "agent-header-fast" {
+                "--fast"
+            } else {
+                "--fast=false"
+            });
         }
         if matches!(case, "kitty-held" | "kitty-progressive") {
             command.env("LAZYPENCIL_PROFILE_INPUT", "owned-local-measurement");

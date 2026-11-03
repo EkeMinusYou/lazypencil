@@ -244,6 +244,35 @@ pub fn run(
         h.screen.find_text("›").is_some() && h.screen.text().contains("Agent")
     })?;
     let mut report = match case {
+        "agent-header-fast" | "agent-header-standard" => {
+            let fast = case == "agent-header-fast";
+            let correct_header = |h: &Harness| {
+                let text = h.screen.text();
+                let header = text.lines().next().unwrap_or_default();
+                header.contains("model: fixture-model-2") && header.contains("Fast") == fast
+            };
+            h.wait(
+                "configured model and speed in the top row",
+                15.0,
+                correct_header,
+            )?;
+            no_agent(&h);
+            h.paste("Check the model and speed")?;
+            h.key(b"\x13")?;
+            h.wait("header turn completed", 15.0, |h| h.count("complete") == 1)?;
+            h.wait(
+                "negotiated model and speed in the top row",
+                15.0,
+                correct_header,
+            )?;
+            h.resize(80, 24)?;
+            h.wait(
+                "model and speed remain visible after resizing",
+                15.0,
+                correct_header,
+            )?;
+            Value::Null
+        }
         "account-startup" => {
             h.visible("must-not-log@example.test")?;
             no_agent(&h);

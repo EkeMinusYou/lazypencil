@@ -1,6 +1,7 @@
 //! Terminal viewing and prompting, sharing the same document and ACP services as CLI.
 
 mod account;
+mod agent_status;
 mod camera;
 mod checkpoints;
 mod composer;
@@ -242,6 +243,8 @@ struct App {
     status_deadline: Option<Instant>,
     status_kind: footer::StatusKind,
     authentication: String,
+    agent_model: Option<String>,
+    agent_fast: bool,
     account_check: Option<account::Check>,
     account_pending: bool,
     permissions: VecDeque<Permission>,
@@ -269,6 +272,8 @@ struct App {
 impl App {
     fn new(conversation: Conversation) -> Self {
         let editor = editor(conversation.draft());
+        let agent_model = conversation.settings().model.clone();
+        let agent_fast = conversation.settings().fast == Some(true);
         let mut app = Self {
             conversation,
             keys: Default::default(),
@@ -312,6 +317,8 @@ impl App {
             status_deadline: None,
             status_kind: footer::StatusKind::Info,
             authentication: "checking".into(),
+            agent_model,
+            agent_fast,
             account_check: None,
             account_pending: true,
             permissions: VecDeque::new(),
@@ -848,6 +855,9 @@ impl App {
             Some("update") => {
                 let update = &value["notification"]["update"];
                 match update["sessionUpdate"].as_str() {
+                    Some("config_option_update") => {
+                        self.update_agent_configuration(&update["configOptions"]);
+                    }
                     Some("agent_message_chunk") => {
                         if let Some(text) = update["content"]["text"].as_str() {
                             self.append(text);
@@ -902,6 +912,7 @@ impl App {
                 ));
             }
             Some("ready") => {
+                self.update_agent_configuration(&value["response"]["configOptions"]);
                 if let Some(report) = self.conversation.authentication() {
                     self.authentication = report.display();
                 }
@@ -1499,6 +1510,8 @@ impl App {
         self.reference_rows.select(None);
         self.permissions.clear();
         self.authentication = "checking".into();
+        self.agent_model = self.conversation.settings().model.clone();
+        self.agent_fast = self.conversation.settings().fast == Some(true);
         self.account_pending = true;
         if let Some(check) = &self.account_check {
             check.cancel.cancel();
@@ -1800,52 +1813,7 @@ impl App {
             Constraint::Length(self.footer_height()),
         ])
         .split(area);
-        frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(
-                    "✎ lazypencil",
-                    Style::default()
-                        .fg(theme::AGENT)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(" · ", Style::default().fg(theme::MUTED)),
-                Span::styled(
-                    clean(
-                        &self
-                            .conversation
-                            .store()
-                            .path()
-                            .file_name()
-                            .unwrap_or_default()
-                            .to_string_lossy(),
-                    )
-                    .replace(['\n', '\t'], " "),
-                    Style::default().add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(" · ", Style::default().fg(theme::MUTED)),
-                Span::styled(
-                    format!("{:?}", self.conversation.settings().agent),
-                    Style::default()
-                        .fg(theme::PREVIEW)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(" · ", Style::default().fg(theme::MUTED)),
-                Span::styled("account: ", Style::default().fg(theme::MUTED)),
-                Span::styled(
-                    clean(&self.authentication),
-                    Style::default().fg(theme::MUTED),
-                ),
-                Span::styled(
-                    format!(" · session: {} · ", &self.conversation.id()[..8]),
-                    Style::default().fg(theme::MUTED),
-                ),
-                Span::styled(
-                    clean(&self.conversation.store().path().display().to_string()),
-                    Style::default().fg(theme::MUTED),
-                ),
-            ])),
-            sections[0],
-        );
+        frame.render_widget(Paragraph::new(self.header_line()), sections[0]);
         let total = u32::from(self.panel_layout.nodes)
             + u32::from(self.panel_layout.preview)
             + u32::from(self.panel_layout.agent);

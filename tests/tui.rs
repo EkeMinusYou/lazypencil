@@ -34,6 +34,12 @@ fn real_pty_handles_japanese_input_live_turns_resize_and_image_protocols() {
 }
 
 #[test]
+fn real_pty_header_shows_model_and_only_enabled_fast_mode() {
+    run_pty_case("agent-header-fast");
+    run_pty_case("agent-header-standard");
+}
+
+#[test]
 fn real_pty_attaches_node_references_without_sending_and_keeps_them_when_browsing() {
     run_pty_case("node-references");
 }
