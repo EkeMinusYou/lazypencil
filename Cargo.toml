@@ -70,6 +70,12 @@ windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Secu
 # CoreText cannot render CBDT or COLRv1; keep a file-only FreeType manager for them.
 skia-safe = { version = "0.153.3", default-features = false, features = ["embed-freetype"], optional = true }
 
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = 0
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
