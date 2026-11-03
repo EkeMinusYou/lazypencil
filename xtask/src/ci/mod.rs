@@ -97,7 +97,7 @@ impl Command {
                 let root = util::root();
                 let event = std::env::var("GITHUB_EVENT_NAME").unwrap_or_default();
                 let paths = verification::changed_paths(&root, &event)?;
-                let platform = focus::retry_platform(&root, &platform);
+                let platform = focus::retry_platform(&platform);
                 let mut plan = focus::select(&root, &paths, &platform)?;
                 let (verification, reason) =
                     verification::select(if full { "workflow_call" } else { &event }, &paths);

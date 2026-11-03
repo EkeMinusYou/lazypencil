@@ -197,7 +197,7 @@ fn rebuilt_dependencies_refresh_application_generations_without_changing_compile
     let f = Fixture::new();
     f.add_dependency();
     fs::write(f.source.join("Cargo.toml"),
-        "[package]\nname='lazypencil'\nversion='0.1.0'\nedition='2024'\n[workspace]\n[dependencies]\nunchanged_dependency={path='dependency'}\n").unwrap();
+        "[package]\nname='lazypencil'\nversion='0.1.0'\nedition='2024'\n[workspace]\n[profile.dev]\ndebug=0\nincremental=false\n[dependencies]\nunchanged_dependency={path='dependency'}\n").unwrap();
     fs::write(
         f.source.join("src/lib.rs"),
         "pub fn fixture() -> u8 { unchanged_dependency::value() }\n",
@@ -505,7 +505,7 @@ fn release_codegen_override_rebuilds_only_application_units_and_keeps_test_edits
     f.add_dependency();
     fs::write(
         f.source.join("Cargo.toml"),
-        "[package]\nname='lazypencil'\nversion='0.1.0'\nedition='2024'\n[workspace]\n[dependencies]\nunchanged_dependency={path='dependency'}\n[profile.release]\ncodegen-units=1\nlto='thin'\n",
+        "[package]\nname='lazypencil'\nversion='0.1.0'\nedition='2024'\n[workspace]\n[profile.dev]\ndebug=0\nincremental=false\n[dependencies]\nunchanged_dependency={path='dependency'}\n[profile.release]\ncodegen-units=1\nlto='thin'\n",
     )
     .unwrap();
     fs::write(
@@ -567,7 +567,7 @@ fn release_recipe_transition_reuses_debug_only_and_overlays_the_new_release_delt
     let f = Fixture::new();
     fs::write(
         f.source.join("Cargo.toml"),
-        "[package]\nname='lazypencil'\nversion='0.1.0'\nedition='2024'\n[workspace]\n[profile.release]\ncodegen-units=1\nlto='thin'\n",
+        "[package]\nname='lazypencil'\nversion='0.1.0'\nedition='2024'\n[workspace]\n[profile.dev]\ndebug=0\nincremental=false\n[profile.release]\ncodegen-units=1\nlto='thin'\n",
     )
     .unwrap();
     fs::write(
@@ -602,9 +602,13 @@ fn release_recipe_transition_reuses_debug_only_and_overlays_the_new_release_delt
             .any(|entry| { entry["path"].as_str().unwrap().starts_with("release/") })
     );
     f.clear();
-    let incompatible =
-        cache::application_identity(&f.source, &f.target, "native-v2-ubuntu-24.04-other-sdk")
-            .unwrap();
+    let incompatible = cache::ApplicationIdentity::capture(
+        &f.source,
+        &f.target,
+        "native-v2-ubuntu-24.04-other-sdk",
+        cache::ApplicationScope::AllOutputs,
+    )
+    .unwrap();
     assert!(
         cache::restore_compatible(
             &f.source,
@@ -635,8 +639,13 @@ fn release_recipe_transition_reuses_debug_only_and_overlays_the_new_release_delt
             .all(|fresh| !fresh)
     );
     let release_cache = f._temp.path().join("release-cache");
-    let release =
-        cache::release_identity(&f.source, &f.target, "native-v2-ubuntu-24.04-fixture").unwrap();
+    let release = cache::ApplicationIdentity::capture(
+        &f.source,
+        &f.target,
+        "native-v2-ubuntu-24.04-fixture",
+        cache::ApplicationScope::Release,
+    )
+    .unwrap();
     cache::stage(&f.source, &f.target, &release_cache, &release).unwrap();
     let delta = cache::stage_focused(
         &f.source,
@@ -694,8 +703,13 @@ fn release_recipe_transition_reuses_debug_only_and_overlays_the_new_release_delt
     }
     f.edit();
     let edited = f.identity();
-    let release =
-        cache::release_identity(&f.source, &f.target, "native-v2-ubuntu-24.04-fixture").unwrap();
+    let release = cache::ApplicationIdentity::capture(
+        &f.source,
+        &f.target,
+        "native-v2-ubuntu-24.04-fixture",
+        cache::ApplicationScope::Release,
+    )
+    .unwrap();
     f.clear();
     cache::restore_compatible(
         &f.source,
@@ -852,7 +866,7 @@ impl Fixture {
     fn dependent_application() -> Self {
         let f = Self::new();
         f.add_dependency();
-        fs::write(f.source.join("Cargo.toml"), "[package]\nname='lazypencil'\nversion='0.1.0'\nedition='2024'\n[workspace]\n[dependencies]\nunchanged_dependency={path='dependency'}\n").unwrap();
+        fs::write(f.source.join("Cargo.toml"), "[package]\nname='lazypencil'\nversion='0.1.0'\nedition='2024'\n[workspace]\n[profile.dev]\ndebug=0\nincremental=false\n[dependencies]\nunchanged_dependency={path='dependency'}\n").unwrap();
         fs::write(
             f.source.join("src/lib.rs"),
             "pub fn fixture() -> u8 { unchanged_dependency::value() }\n",
@@ -935,9 +949,11 @@ impl Fixture {
             "fn main() { assert_eq!(lazypencil::fixture(), 1); }\n",
         )
         .unwrap();
+        // Match the native cache producer: debug sidecar objects are not
+        // supported application cache payloads, and CI disables incremental.
         fs::write(
             f.source.join("Cargo.toml"),
-            "[package]\nname='lazypencil'\nversion='0.1.0'\nedition='2024'\n[workspace]\n",
+            "[package]\nname='lazypencil'\nversion='0.1.0'\nedition='2024'\n[workspace]\n[profile.dev]\ndebug=0\nincremental=false\n",
         )
         .unwrap();
         fs::write(
@@ -1022,8 +1038,13 @@ impl Fixture {
         .unwrap();
     }
     fn identity(&self) -> cache::ApplicationIdentity {
-        cache::application_identity(&self.source, &self.target, "native-v2-ubuntu-24.04-fixture")
-            .unwrap()
+        cache::ApplicationIdentity::capture(
+            &self.source,
+            &self.target,
+            "native-v2-ubuntu-24.04-fixture",
+            cache::ApplicationScope::AllOutputs,
+        )
+        .unwrap()
     }
     fn build(&self, args: &[&str]) -> BTreeMap<String, (bool, PathBuf)> {
         let bytes = process::checked(
@@ -1216,9 +1237,13 @@ fn older_partial_checkpoint_reuses_only_unchanged_compiler_units_after_helper_ed
         );
         assert!(!f.target.exists());
     }
-    let incompatible =
-        cache::application_identity(&f.source, &f.target, "native-v2-ubuntu-24.04-other-sdk")
-            .unwrap();
+    let incompatible = cache::ApplicationIdentity::capture(
+        &f.source,
+        &f.target,
+        "native-v2-ubuntu-24.04-other-sdk",
+        cache::ApplicationScope::AllOutputs,
+    )
+    .unwrap();
     assert!(
         cache::restore_compatible(&f.source, &f.target, &f.exact, &key, &incompatible).is_err()
     );
@@ -1667,8 +1692,13 @@ fn compatible_reuse_rejects_unbound_inputs_recipes_and_non_test_units_before_ove
         }
         f.clear();
         let current = if case == "recipe" {
-            cache::application_identity(&f.source, &f.target, "native-v2-ubuntu-24.04-other")
-                .unwrap()
+            cache::ApplicationIdentity::capture(
+                &f.source,
+                &f.target,
+                "native-v2-ubuntu-24.04-other",
+                cache::ApplicationScope::AllOutputs,
+            )
+            .unwrap()
         } else {
             f.identity()
         };

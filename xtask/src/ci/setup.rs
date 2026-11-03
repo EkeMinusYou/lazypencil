@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-const PACKAGES: &[&str] = &[
+pub const NATIVE_PACKAGES: &[&str] = &[
     "clang",
     "libclang-dev",
     "cmake",
@@ -25,7 +25,7 @@ const PACKAGES: &[&str] = &[
 const SOURCES: &str = "Types: deb\nURIs: https://archive.ubuntu.com/ubuntu\nSuites: noble noble-updates noble-backports\nComponents: main restricted universe multiverse\nArchitectures: amd64\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n\nTypes: deb\nURIs: https://security.ubuntu.com/ubuntu\nSuites: noble-security\nComponents: main restricted universe multiverse\nArchitectures: amd64\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n";
 
 pub fn linux_dependencies() -> Result<()> {
-    hosted_linux_packages(PACKAGES)
+    hosted_linux_packages(NATIVE_PACKAGES)
 }
 
 pub fn linux_core_dependencies() -> Result<()> {
@@ -85,15 +85,7 @@ fn hosted_linux_packages(packages: &[&str]) -> Result<()> {
     })
 }
 
-pub fn install_linux(
-    architecture: &str,
-    temporary: &Path,
-    run: impl FnMut(&mut Command) -> Result<()>,
-) -> Result<()> {
-    install_linux_packages(architecture, temporary, PACKAGES, run)
-}
-
-fn install_linux_packages(
+pub fn install_linux_packages(
     architecture: &str,
     temporary: &Path,
     packages: &[&str],

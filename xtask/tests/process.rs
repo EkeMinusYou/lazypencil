@@ -1016,38 +1016,44 @@ fn native_package_setup_keeps_signed_sources_scoped_and_stops_after_update_failu
         let temporary = tempfile::tempdir().unwrap();
         let mut invocations = Vec::new();
         let mut source_path = None;
-        let result = setup::install_linux(arch, temporary.path(), |command| {
-            assert_eq!(command.get_program(), "sudo");
-            let args = command
-                .get_args()
-                .map(|a| a.to_string_lossy().into_owned())
-                .collect::<Vec<_>>();
-            if arch == "X64" {
-                let path = args
-                    .iter()
-                    .find_map(|s| s.strip_prefix("Dir::Etc::sourcelist="))
-                    .unwrap();
-                let text = fs::read_to_string(path).unwrap();
-                assert!(
-                    text.contains("https://archive.ubuntu.com/ubuntu")
-                        && text.contains("https://security.ubuntu.com/ubuntu")
-                        && text
-                            .contains("Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg")
-                );
-                assert!(!text.contains("trusted=yes") && !text.contains("azure.archive"));
-                let parts = args
-                    .iter()
-                    .find_map(|s| s.strip_prefix("Dir::Etc::sourceparts="))
-                    .unwrap();
-                assert_eq!(fs::read_dir(parts).unwrap().count(), 0);
-                if let Some(previous) = &source_path {
-                    assert_eq!(previous, path);
+        let result = setup::install_linux_packages(
+            arch,
+            temporary.path(),
+            setup::NATIVE_PACKAGES,
+            |command| {
+                assert_eq!(command.get_program(), "sudo");
+                let args = command
+                    .get_args()
+                    .map(|a| a.to_string_lossy().into_owned())
+                    .collect::<Vec<_>>();
+                if arch == "X64" {
+                    let path = args
+                        .iter()
+                        .find_map(|s| s.strip_prefix("Dir::Etc::sourcelist="))
+                        .unwrap();
+                    let text = fs::read_to_string(path).unwrap();
+                    assert!(
+                        text.contains("https://archive.ubuntu.com/ubuntu")
+                            && text.contains("https://security.ubuntu.com/ubuntu")
+                            && text.contains(
+                                "Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg"
+                            )
+                    );
+                    assert!(!text.contains("trusted=yes") && !text.contains("azure.archive"));
+                    let parts = args
+                        .iter()
+                        .find_map(|s| s.strip_prefix("Dir::Etc::sourceparts="))
+                        .unwrap();
+                    assert_eq!(fs::read_dir(parts).unwrap().count(), 0);
+                    if let Some(previous) = &source_path {
+                        assert_eq!(previous, path);
+                    }
+                    source_path = Some(path.to_owned());
                 }
-                source_path = Some(path.to_owned());
-            }
-            invocations.push(args);
-            Ok(())
-        });
+                invocations.push(args);
+                Ok(())
+            },
+        );
         assert_eq!(result.is_ok(), arch != "unknown");
         if arch == "unknown" {
             assert!(invocations.is_empty());
@@ -1067,7 +1073,7 @@ fn native_package_setup_keeps_signed_sources_scoped_and_stops_after_update_failu
     let temporary = tempfile::tempdir().unwrap();
     let mut count = 0;
     assert!(
-        setup::install_linux("X64", temporary.path(), |_| {
+        setup::install_linux_packages("X64", temporary.path(), setup::NATIVE_PACKAGES, |_| {
             count += 1;
             Err(anyhow::anyhow!("update failed"))
         })

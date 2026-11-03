@@ -51,10 +51,6 @@ pub fn test_profile(invocation: &[String], enabled: bool) -> Invocation {
 }
 
 /// Change Cargo's scheduling without changing compiler-visible environment or flags.
-pub fn build_jobs(invocation: &[String], linux: bool) -> Invocation {
-    build_jobs_for(invocation, if linux { 2 } else { 1 })
-}
-
 pub fn build_jobs_for(invocation: &[String], jobs: usize) -> Invocation {
     let mut scheduled = invocation.to_vec();
     let cargo_end = invocation

@@ -59,6 +59,7 @@ const FLAG_PREFIXES: &[&str] = &[
 
 pub mod artifact;
 mod compatible;
+mod migrations;
 pub mod native_snapshots;
 pub use compatible::{CacheMatches, restore_combined, restore_compatible, stage_focused};
 
@@ -276,8 +277,16 @@ impl Command {
                 native_key,
                 github_output,
             } => {
-                let identity =
-                    application_identity_for(&source, &target, &native_key, release_only)?;
+                let identity = ApplicationIdentity::capture(
+                    &source,
+                    &target,
+                    &native_key,
+                    if release_only {
+                        ApplicationScope::Release
+                    } else {
+                        ApplicationScope::AllOutputs
+                    },
+                )?;
                 let value = match operation.as_str() {
                     "identify" => {
                         let previous_debug = identity.previous_debug_identity()?;
@@ -702,51 +711,9 @@ pub fn native_identity(
         )
     };
     let primary = format!("native-v2-{platform}-{image}-{}", hash(tree));
-    let baseline = BTreeMap::from([
-        ("CARGO_BUILD_JOBS".into(), "1".into()),
-        ("CARGO_INCREMENTAL".into(), "0".into()),
-        ("CARGO_PROFILE_DEV_DEBUG".into(), "0".into()),
-        ("CARGO_PROFILE_TEST_DEBUG".into(), "0".into()),
-    ]);
-    let audited = compiler.lines().any(|s| s == "release: 1.94.0")
-        && compiler
-            .lines()
-            .any(|s| s == "commit-hash: 4a4ef493e3a1488c6e321570238084b38948f6db")
-        && flags == baseline;
-    let previous = match tree {
-        // The 0.1.0 release changes only this package's version in Cargo.toml/lock.
-        // Dependency versions, native inputs and compiler flags are identical.
-        // Application outputs are pruned and must pass their own source checks.
-        "9d9ec938606c1c29c9ac36d0868af4b0bf3d61be85d66449287258edbb680e1b" => {
-            Some("4cd30528eaee7f6025192ea093fe203e7c59be06b95b84c8cf0c00f66790f6fa")
-        }
-        // The optional Fontations readers leave native inputs unchanged.
-        // Restore dependencies only; Cargo must recheck unified Rust features.
-        "11d1597cbd47f826b985b5e514b42c0ff8aa9d4a3d378264e88ac38781b0e160" => {
-            Some("80b3b3fc770be2245a731ad66682615c3b4979af5c410c5bf196d10c61aba68b")
-        }
-        // The tool migration adds only a terminal test dependency and a Cargo alias.
-        // Production dependency declarations, native sources and build flags are unchanged.
-        // Removing the retired Shell entry points does not change dependency build inputs.
-        // New byte-preservation attributes apply only to xtask notice files.
-        "b8192b978f7a069656ed03fe0fc8bd0f97725ce33cd9f1787360534b73e8b397" => {
-            Some("b24ec03467f4fe02cfb29f305f8a393d83c9588dd4729e01787a36e2b994c62d")
-        }
-        "c95e9172415f92d6f202a226bf3696f9f6ede08eaa66b81a612b892f8ca3bfc7" => {
-            Some("54c7d2d9cc2e1b5e2d3a0297c8648f27b1aff64c76c685a30e63864b41d60a9f")
-        }
-        "b24ec03467f4fe02cfb29f305f8a393d83c9588dd4729e01787a36e2b994c62d" => {
-            Some("c95e9172415f92d6f202a226bf3696f9f6ede08eaa66b81a612b892f8ca3bfc7")
-        }
-        _ => None,
-    };
-    let legacy = if audited {
-        previous
-            .map(|t| format!("native-v2-{platform}-{image}-{}", hash(t)))
-            .unwrap_or_default()
-    } else {
-        String::new()
-    };
+    let legacy = migrations::previous_native_tree(tree, compiler, &flags)
+        .map(|tree| format!("native-v2-{platform}-{image}-{}", hash(tree)))
+        .unwrap_or_default();
     Ok(
         json!({"primary":primary,"legacy":legacy,"dependency_fingerprint":tree,"build_fingerprint":hash(tree),"compile_flag_names":flags.keys().collect::<Vec<_>>()}),
     )
@@ -834,6 +801,12 @@ pub fn release_source_fingerprint(manifest: &Manifest) -> Result<String> {
     )?)))
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ApplicationScope {
+    AllOutputs,
+    Release,
+}
+
 #[derive(Clone)]
 pub struct ApplicationIdentity {
     pub fingerprint: String,
@@ -898,23 +871,6 @@ impl ApplicationIdentity {
         self.focused_keys()
             .is_ok_and(|(base, _)| matches_checkpoint(&base, key))
     }
-
-    /// One reviewed release-only transition. All native/default/test inputs
-    /// remain bound to the old fingerprint; callers may restore debug only.
-    pub fn previous_debug_identity(&self) -> Result<Option<Self>> {
-        if self.release_only
-            || self.recipe["release_recipe"] != "root-rustc-release-map-app-cgu16-v2"
-        {
-            return Ok(None);
-        }
-        let mut old = self.clone();
-        old.recipe["release_recipe"] = json!("root-rustc-release-map-v1");
-        old.fingerprint = util::digest(stable_json(&old.recipe));
-        old.primary = self.primary.replace(&self.fingerprint, &old.fingerprint);
-        old.checkpoint = self.checkpoint.replace(&self.fingerprint, &old.fingerprint);
-        (old.compatible_primary, old.compatible_prefix) = old.compatible_keys(false)?;
-        Ok(Some(old))
-    }
 }
 
 fn compatible_fingerprint(recipe: &Value, legacy: bool) -> Result<String> {
@@ -936,94 +892,81 @@ fn compatible_fingerprint(recipe: &Value, legacy: bool) -> Result<String> {
     Ok(util::digest(stable_json(&common)))
 }
 
-pub fn application_identity(
-    source: &Path,
-    target: &Path,
-    native_key: &str,
-) -> Result<ApplicationIdentity> {
-    application_identity_for(source, target, native_key, false)
-}
-
-pub fn release_identity(
-    source: &Path,
-    target: &Path,
-    native_key: &str,
-) -> Result<ApplicationIdentity> {
-    application_identity_for(source, target, native_key, true)
-}
-
-fn application_identity_for(
-    source: &Path,
-    target: &Path,
-    native_key: &str,
-    release_only: bool,
-) -> Result<ApplicationIdentity> {
-    let manifest: Manifest = util::json(&source.join(dist::MANIFEST))?;
-    let package: toml::Value = toml::from_str(&fs::read_to_string(source.join("Cargo.toml"))?)?;
-    ensure!(
-        !source.join("build.rs").exists()
-            && package["package"]
-                .get("build")
-                .is_none_or(|v| v.as_bool() == Some(false)),
-        "Custom build scripts disable application reuse"
-    );
-    let re = Regex::new(r"^native-v2-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-")?;
-    let platform = re
-        .captures(native_key)
-        .context("Unknown native build identity")?[1]
-        .to_owned();
-    ensure!(
-        package["package"]["name"].as_str() == Some("lazypencil"),
-        "Unknown application package"
-    );
-    let inputs = scoped_inputs(&manifest, release_only);
-    let target = std::path::absolute(target)?;
-    // Preserve existing all-output cache identities while separating release
-    // files from test-only inputs. Actual compiler dep-info still rejects any
-    // excluded file that becomes a compiled release input.
-    let mut recipe = json!({"version":3,"release_recipe":crate::evidence::link_map::RECIPE,"inputs":inputs,"native":native_key,"source":source.canonicalize()?,"target":target});
-    if release_only {
-        recipe["scope"] = json!("release-v1");
-    } else if commands::optimized_tests()? {
-        // Bind the actual Cargo options, rather than only a mode label.
-        // Release and dependency identities intentionally remain unchanged.
-        recipe["test_profile"] = json!(commands::TEST_PROFILE_CONFIG);
+impl ApplicationIdentity {
+    pub fn capture(
+        source: &Path,
+        target: &Path,
+        native_key: &str,
+        scope: ApplicationScope,
+    ) -> Result<Self> {
+        let release_only = scope == ApplicationScope::Release;
+        let manifest: Manifest = util::json(&source.join(dist::MANIFEST))?;
+        let package: toml::Value = toml::from_str(&fs::read_to_string(source.join("Cargo.toml"))?)?;
+        ensure!(
+            !source.join("build.rs").exists()
+                && package["package"]
+                    .get("build")
+                    .is_none_or(|v| v.as_bool() == Some(false)),
+            "Custom build scripts disable application reuse"
+        );
+        let re = Regex::new(r"^native-v2-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-15)-")?;
+        let platform = re
+            .captures(native_key)
+            .context("Unknown native build identity")?[1]
+            .to_owned();
+        ensure!(
+            package["package"]["name"].as_str() == Some("lazypencil"),
+            "Unknown application package"
+        );
+        let inputs = scoped_inputs(&manifest, release_only);
+        let target = std::path::absolute(target)?;
+        // Preserve existing all-output cache identities while separating release
+        // files from test-only inputs. Actual compiler dep-info still rejects any
+        // excluded file that becomes a compiled release input.
+        let mut recipe = json!({"version":3,"release_recipe":crate::evidence::link_map::RECIPE,"inputs":inputs,"native":native_key,"source":source.canonicalize()?,"target":target});
+        if release_only {
+            recipe["scope"] = json!("release-v1");
+        } else if commands::optimized_tests()? {
+            // Bind the actual Cargo options, rather than only a mode label.
+            // Release and dependency identities intentionally remain unchanged.
+            recipe["test_profile"] = json!(commands::TEST_PROFILE_CONFIG);
+        }
+        let fingerprint = util::digest(stable_json(&recipe));
+        let source_hash = util::digest(stable_json(&serde_json::to_value(&inputs)?));
+        let namespace = if release_only {
+            "release-v1"
+        } else {
+            "application-v2"
+        };
+        // Core and default catalogs are complementary payloads. Keep their
+        // retention namespaces distinct as well as their build fingerprints.
+        let tests_namespace = if native_key.ends_with("-core") {
+            "tests-core-v1"
+        } else {
+            "tests-v1"
+        };
+        let compatible_namespace = format!("{tests_namespace}-{platform}");
+        let compatible_prefix = format!(
+            "{compatible_namespace}-{}-full-",
+            compatible_fingerprint(&recipe, false)?
+        );
+        Ok(ApplicationIdentity {
+            fingerprint: fingerprint.clone(),
+            source_commit: manifest.git["revision"]
+                .as_str()
+                .context("Missing committed source")?
+                .into(),
+            primary: format!("{namespace}-{platform}-{source_hash}-{fingerprint}-full"),
+            checkpoint: format!("{namespace}-{platform}-{source_hash}-{fingerprint}-focus"),
+            application_prefix: format!("{namespace}-{platform}-"),
+            tracked: inputs.into_iter().map(|e| (e.path.clone(), e)).collect(),
+            compatible_primary: format!("{compatible_prefix}{source_hash}"),
+            compatible_prefix,
+            compatible_namespace,
+            recipe,
+            release_only,
+        })
     }
-    let fingerprint = util::digest(stable_json(&recipe));
-    let source_hash = util::digest(stable_json(&serde_json::to_value(&inputs)?));
-    let namespace = if release_only {
-        "release-v1"
-    } else {
-        "application-v2"
-    };
-    // Core and default catalogs are complementary payloads. Keep their
-    // retention namespaces distinct as well as their build fingerprints.
-    let tests_namespace = if native_key.ends_with("-core") {
-        "tests-core-v1"
-    } else {
-        "tests-v1"
-    };
-    let compatible_namespace = format!("{tests_namespace}-{platform}");
-    let compatible_prefix = format!(
-        "{compatible_namespace}-{}-full-",
-        compatible_fingerprint(&recipe, false)?
-    );
-    Ok(ApplicationIdentity {
-        fingerprint: fingerprint.clone(),
-        source_commit: manifest.git["revision"]
-            .as_str()
-            .context("Missing committed source")?
-            .into(),
-        primary: format!("{namespace}-{platform}-{source_hash}-{fingerprint}-full"),
-        checkpoint: format!("{namespace}-{platform}-{source_hash}-{fingerprint}-focus"),
-        application_prefix: format!("{namespace}-{platform}-"),
-        tracked: inputs.into_iter().map(|e| (e.path.clone(), e)).collect(),
-        compatible_primary: format!("{compatible_prefix}{source_hash}"),
-        compatible_prefix,
-        compatible_namespace,
-        recipe,
-        release_only,
-    })
 }
 
 pub fn allowed(name: &str) -> bool {
@@ -1130,12 +1073,17 @@ pub fn outputs(target: &Path) -> Result<Vec<PathBuf>> {
         files.insert(map);
     }
     ensure!(
-        !files.is_empty()
-            && files.iter().all(|p| p.is_file()
-                && !p.is_symlink()
-                && allowed(&p.strip_prefix(target).unwrap().to_string_lossy())),
+        !files.is_empty(),
         "Missing or unsupported application outputs"
     );
+    for path in &files {
+        let relative = path.strip_prefix(target)?;
+        ensure!(
+            path.is_file() && !path.is_symlink() && allowed(&relative.to_string_lossy()),
+            "Missing or unsupported application outputs: {}",
+            relative.display()
+        );
+    }
     Ok(files.into_iter().collect())
 }
 
