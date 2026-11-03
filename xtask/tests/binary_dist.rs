@@ -6,6 +6,13 @@ use serde_json::{Value, json};
 use std::{fs, io::Cursor, path::Path};
 
 const REVISION: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+fn fixture_release() -> Vec<u8> {
+    let mut declaration: Value =
+        serde_json::from_slice(include_bytes!("../../resources/release.json")).unwrap();
+    declaration["version"] = json!("0.1.0");
+    util::encode(&declaration).unwrap()
+}
 const NOTICES: &[&str] = &[
     "licenses/rust/RUST-NOTICES.txt",
     "licenses/native/skcms/LICENSE",
@@ -77,11 +84,7 @@ fn fixture_for_release(target: &str, stable: bool) -> (tempfile::TempDir, binary
         )
         .unwrap();
         fs::create_dir(root.join("resources")).unwrap();
-        fs::write(
-            root.join("resources/release.json"),
-            include_bytes!("../../resources/release.json"),
-        )
-        .unwrap();
+        fs::write(root.join("resources/release.json"), fixture_release()).unwrap();
     }
     let source_archive = temp.path().join("source.tar.gz");
 
@@ -122,7 +125,7 @@ fn fixture_for_release(target: &str, stable: bool) -> (tempfile::TempDir, binary
         b"Original fixture linker map\n"
     };
     let release = if stable {
-        serde_json::from_slice::<Value>(include_bytes!("../../resources/release.json")).unwrap()
+        serde_json::from_slice::<Value>(&fixture_release()).unwrap()
     } else {
         Value::Null
     };
@@ -192,7 +195,7 @@ fn stable_release_keeps_source_bound_limits_and_review_status() {
     );
     assert_eq!(
         fs::read(installed.join("RELEASE.json")).unwrap(),
-        include_bytes!("../../resources/release.json")
+        fixture_release()
     );
     let readme = fs::read_to_string(installed.join("README.txt")).unwrap();
     assert!(readme.contains("pencil:object") && readme.contains("device presets"));
@@ -291,8 +294,7 @@ fn stable_release_rejects_missing_evidence_or_substituted_scope() {
 #[test]
 fn release_declarations_reject_version_or_scope_errors() {
     use lazypencil_xtask::dist::release::Release;
-    let declaration: Value =
-        serde_json::from_slice(include_bytes!("../../resources/release.json")).unwrap();
+    let declaration: Value = serde_json::from_slice(&fixture_release()).unwrap();
     assert!(Release::parse(&util::encode(&declaration).unwrap(), "0.1.0-dev").is_err());
     for case in [
         "format",

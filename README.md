@@ -70,25 +70,24 @@ release targets. See [terminal support and fallbacks](docs/tui.md#initial-termin
 
 ## Install
 
-The dedicated [Homebrew tap](https://github.com/EkeMinusYou/homebrew-lazypencil)
-is populated by the signed release workflow. Once its first Cask is available,
-install or update with:
+Install or update from the dedicated
+[Homebrew tap](https://github.com/EkeMinusYou/homebrew-lazypencil):
 
 ```sh
 brew install --cask ekeminusyou/lazypencil/lazypencil
 brew upgrade --cask lazypencil
 ```
 
-For manual installation of the existing v0.1.0 release:
+For manual installation:
 
-Download `lazypencil-0.1.0-aarch64-apple-darwin.tar.gz` from
+Download `lazypencil-0.2.0-aarch64-apple-darwin.tar.gz` from
 [GitHub Releases](https://github.com/EkeMinusYou/lazypencil/releases).
 See [provenance verification](docs/development.md#distribution-and-build-provenance)
 for checking the download, then extract it:
 
 ```sh
-tar -xzf lazypencil-0.1.0-aarch64-apple-darwin.tar.gz
-export PATH="$PWD/lazypencil-0.1.0-aarch64-apple-darwin/bin:$PATH"
+tar -xzf lazypencil-0.2.0-aarch64-apple-darwin.tar.gz
+export PATH="$PWD/lazypencil-0.2.0-aarch64-apple-darwin/bin:$PATH"
 lazypencil --version
 lazypencil --json doctor
 ```
@@ -98,10 +97,6 @@ on `PATH`. Keep the complete extracted directory, including its source and licen
 materials. The prebuilt package needs no Rust toolchain.
 
 To build the current source instead, follow [Build from source](docs/development.md#build-from-source).
-
-> This README describes the current source. Release v0.1.0 has an older MCP
-> interface and different default keys. Check the installed binary's `--help`
-> and TUI help with F1; changes are listed in the [changelog](CHANGELOG.md).
 
 ## Quick start
 

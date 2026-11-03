@@ -2,12 +2,15 @@
 
 ## Unreleased
 
+## 0.2.0
+
 - Match the Preview canvas to the terminal background, retaining terminal transparency with Kitty and querying the background color for Sixel and halfblocks.
 
 - Select shapes directly in Preview with clicks and drag marquees, with view-only selection outlines and multi-selection fitting. Add terminal-independent native macOS pinch zoom with explicit Accessibility authorization.
 
 - Require macOS Tahoe 26 or later on Apple Silicon for new releases. Add a signed, notarized release workflow that updates the dedicated lazypencil Homebrew tap.
 - Build and verify on macOS 26, and let bound MCP processes use the system allocator instead of the macOS 15 memory overrides.
+- Authenticate notarization with an Apple Account app-specific password instead of an App Store Connect API key.
 
 - Keep local TUI operation errors in the bottom notification row instead of adding them to the conversation.
 

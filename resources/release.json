@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "channel": "stable",
   "target": "aarch64-apple-darwin",
   "minimum_os": "26.0.0",
