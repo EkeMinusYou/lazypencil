@@ -20,7 +20,7 @@ The terminal workspace in use, showing the editable
 - **Render locally:** export PNGs with Skia, including Japanese text with bundled
   Noto Sans JP fonts.
 
-[Install](#install) · [Quick start](#quick-start) ·
+[Install](#install) · [Quick start](#quick-start) · [Demo](#demo) ·
 [MCP](#mcp-and-ai-prompts) · [CLI](#cli) ·
 [Documentation](#documentation-and-development)
 
@@ -91,6 +91,16 @@ lazypencil tui new.pen --agent codex
 Attach a reference with `--image reference.png` at launch, or use `/attach` inside
 the TUI. `/history` opens checkpoints and `/logs` opens saved conversations.
 See [TUI controls](docs/tui.md) and [image attachments](docs/image-attachments.md).
+
+## Demo
+
+A real TUI session in Herdr: ask Codex to recolor the project cards, watch the
+preview update, then zoom, pan, and expand the workspace. Agent waiting time
+is shortened.
+
+[![Recorded TUI session showing a prompt to Codex, project card colors changing in the live preview, and preview navigation.](docs/images/lazypencil-demo.gif)](docs/media/lazypencil-demo.mp4)
+
+[Watch or download the MP4](docs/media/lazypencil-demo.mp4).
 
 ## MCP and AI prompts
 
