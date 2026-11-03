@@ -77,6 +77,75 @@ impl Drop for Worker {
     }
 }
 
+// A queued region owns its worker and reservation until completion, including
+// error paths while the caller is still recording the remaining regions.
+pub(super) struct PendingBand {
+    worker: Worker,
+    receiver: mpsc::Receiver<Result<Image>>,
+    band: SkRect,
+    _reservation: backdrop::RasterLease,
+}
+
+impl PendingBand {
+    pub(super) fn start(
+        picture: &skia_safe::Picture,
+        band: SkRect,
+        size: (i32, i32),
+        background: Color,
+        budget: &Rc<backdrop::RasterBudget>,
+        index: usize,
+    ) -> Result<Self> {
+        let reservation = budget.reserve(size.0 as u64 * size.1 as u64 * 4)?;
+        let worker = Worker::start(index)?;
+        let (reply, receiver) = mpsc::channel();
+        worker
+            .sender
+            .as_ref()
+            .expect("Live raster worker")
+            .send(Job {
+                picture: picture.clone(),
+                transform: Matrix::new_identity(),
+                size,
+                background,
+                band,
+                complete: true,
+                reply,
+            })
+            .map_err(|_| invalid("Preview raster worker stopped"))?;
+        Ok(Self {
+            worker,
+            receiver,
+            band,
+            _reservation: reservation,
+        })
+    }
+
+    pub(super) fn finish(
+        canvas: &Canvas,
+        last: &skia_safe::Picture,
+        background: Color,
+        pending: Vec<Self>,
+    ) -> Result<()> {
+        canvas.clear(background);
+        canvas.draw_picture(last, None, None);
+        let mut paint = Paint::default();
+        paint.set_blend_mode(BlendMode::Src);
+        for region in pending {
+            let image = region
+                .receiver
+                .recv()
+                .map_err(|_| invalid("Preview raster worker stopped"))??;
+            canvas.save();
+            canvas.clip_rect(region.band, ClipOp::Intersect, false);
+            canvas.draw_image(&image, (0.0, 0.0), Some(&paint));
+            canvas.restore();
+            // Join before releasing the region's scratch reservation.
+            drop(region.worker);
+        }
+        Ok(())
+    }
+}
+
 impl RasterPool {
     pub(super) fn parts(size: (i32, i32)) -> usize {
         static PARALLELISM: OnceLock<usize> = OnceLock::new();

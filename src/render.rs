@@ -521,6 +521,7 @@ fn raster_impl_cached(
     let canvas = surface.canvas();
     canvas.clear(options.background);
     let mut image_capture = None;
+    let mut pending_bands = Vec::new();
     let mut renderer = Renderer {
         project,
         snapshot,
@@ -577,7 +578,8 @@ fn raster_impl_cached(
             };
             let mut images = BTreeMap::new();
             let mut commands = Vec::with_capacity(bands.len());
-            for band in bands {
+            let band_count = bands.len();
+            for (part, band) in bands.into_iter().enumerate() {
                 let mut recorder = skia_safe::PictureRecorder::new();
                 let recording_canvas = recorder.begin_recording(
                     SkRect::from_xywh(bounds.x, bounds.y, bounds.width, bounds.height),
@@ -612,6 +614,26 @@ fn raster_impl_cached(
                 let picture = recorder
                     .finish_recording_as_picture(None)
                     .ok_or_else(|| invalid("Cannot retain preview drawing commands"))?;
+                // Rasterize completed regions while recording the next one.
+                // Keep oversized fallback on the ordinary bounded draw path.
+                if anchored
+                    && part + 1 < band_count
+                    && working_width as u64 * working_height as u64 <= 8 * 1024 * 1024
+                    && images
+                        .values()
+                        .map(|(_, image)| image.width() as u64 * image.height() as u64 * 4)
+                        .sum::<u64>()
+                        <= 32 * 1024 * 1024
+                {
+                    pending_bands.push(raster_pool::PendingBand::start(
+                        &picture,
+                        band,
+                        (working_width, working_height),
+                        options.background,
+                        &renderer.rasters,
+                        part,
+                    )?);
+                }
                 commands.push((band, picture));
             }
             // Pictures keep image references alive. Charge their full decoded
@@ -690,7 +712,18 @@ fn raster_impl_cached(
                 }
             };
             if !retained {
-                if let Some(pool) = pool {
+                let prepared = entry.bands.borrow();
+                if let Some(bands) = prepared.as_ref().filter(|bands| {
+                    pending_bands.len() + 1 == bands.len() && !pending_bands.is_empty()
+                }) {
+                    raster_pool::PendingBand::finish(
+                        canvas,
+                        &bands.last().expect("Recorded final region").1,
+                        options.background,
+                        std::mem::take(&mut pending_bands),
+                    )?;
+                } else if let Some(pool) = pool {
+                    pending_bands.clear();
                     pool.borrow_mut().draw(
                         canvas,
                         picture,
@@ -713,6 +746,7 @@ fn raster_impl_cached(
                 }
             }
         } else {
+            pending_bands.clear();
             for root in &snapshot.roots {
                 renderer.node(*root)?;
             }
