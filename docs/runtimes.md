@@ -1,8 +1,9 @@
 # Browser runtime installation
 
-Initial-release support is macOS 15.7.9 or later on Apple Silicon; see [platform evidence](fonts-and-platforms.md#対応環境と後日のクロスプラットフォーム対応). Linux x64/arm64 and Windows are deferred; existing runtime catalogue entries, implementations and explicitly requested diagnostics are retained. Intel Mac is unsupported. Normal native CI and manual-workflow defaults select Mac. Lightweight Linux audit/packaging hosts are not Linux application acceptance.
-
-Static Skia rendering and script-generated geometry do not require Chromium. Browser nodes and GLSL fills/effects require a separate headless browser installation. Rendering never downloads or updates a runtime.
+Static Skia rendering and script-generated geometry require no Chromium. Browser
+nodes and GLSL fills/effects need a separate browser. The supported release platform
+is macOS 15.7.9 or later on Apple Silicon; retained Linux/Windows/Intel catalogue
+entries do not expand that support.
 
 ## Managed installation
 
@@ -11,19 +12,26 @@ lazypencil runtime setup chromium
 lazypencil runtime status
 ```
 
-Use the same `--data-dir` or `LAZYPENCIL_DATA_DIR` for setup and rendering. The installer stores the runtime under `runtimes/chromium/<version>/<platform>` in that directory and keeps versions separate. It requires no administrator privileges to write its files. Linux may still require system libraries; automated host-library diagnosis remains unfinished.
+Use the same `--data-dir` / `LAZYPENCIL_DATA_DIR` for setup and rendering. Installation
+uses `runtimes/chromium/<version>/<platform>` in that user data directory and needs no
+administrator privileges to write its files. Rendering never downloads or updates it.
 
-The current manifest pins Chrome for Testing **156.0.8078.47**, specifically `chrome-headless-shell`, from the [official Chrome for Testing distribution](https://googlechromelabs.github.io/chrome-for-testing/). Platform archives are recorded for macOS arm64/x86_64, Linux arm64/x86_64, and Windows x86_64. Windows and Intel Mac entries are retained for implementation/history and do not expand initial-release support. Initial-release installation/rendering must be accepted on Apple Silicon Mac; the other catalogue entries and their previous results do not expand release support.
+The [manifest](../resources/runtimes/chromium.json) pins Chrome for Testing
+`chrome-headless-shell`, with exact HTTPS archive URLs, lengths, SHA-256, and installed
+file hashes/modes. The hashes are computed from official downloads, not presented as
+publisher-supplied checksums. Updating a pin requires acquiring/reviewing the official
+archives and checking installation and rendering.
 
-[The manifest](../resources/runtimes/chromium.json) records the exact HTTPS URL, archive byte length and SHA-256, and the name, size, SHA-256, and executable bit of every installed file. These hashes were computed from the versioned official downloads; they are **not publisher-supplied checksums**. Updating a pin requires acquiring the official archives, regenerating and reviewing their file manifests, and running the installation and rendering checks before release.
+Setup verifies before bounded extraction, rejects traversal/links/unlisted files,
+checks the installed tree, synchronizes data and directories, and activates by rename.
+Valid installations are reused; modified ones fail with `RUNTIME_INTEGRITY` and are
+not silently overwritten. Status verifies files without launching a browser.
 
-The installer verifies the archive before bounded extraction, rejects traversal paths, symbolic links and unpinned files, checks the complete installed file set, then activates the staging directory by rename. A verified installation is reused. A modified installation fails with `RUNTIME_INTEGRITY` and is not silently overwritten. `runtime status` reports installation availability and integrity without downloading anything or launching the browser.
-
-The installer applies Ctrl+C while waiting for the setup lock, downloading, hashing and extracting. Blocking DNS/TLS/HTTP runs in an owned worker; cancellation stops and reaps it, and closing the host's owner pipe terminates the worker independently. The HTTP limit stays at 180 seconds, with one second for the parent to drain/reap it. Local source and extracted-file transfers retain the exact pinned size limits and check cancellation between bounded chunks. Normal cancellation removes this attempt's temporary archive and staging directory; a modified active installation is retained. An abrupt process/OS crash can leave inactive temporary entries, which are never treated as an installed runtime or reused as verified data.
-
-File contents and executable permissions are synchronized before activation, followed by nested staging directories. The final rename is followed by synchronization of its parent and newly created ancestor entries. Once the rename begins, synchronization finishes even if cancellation arrives; the installed tree is complete. Filesystem/power-loss guarantees remain those of the OS and storage. Installation and cancellation regressions passed the complete CI at `99cc153`; this does not certify power-loss durability or final release acceptance. Embedded hosts can call `setup_with_cancellation` with a token and, for network input, the real lazypencil executable; ordinary rendering still never installs a runtime.
-
-Configured launch and acquisition deadlines also bound partial HTTP/WebSocket reads and blocked sends. Receiving more bytes does not extend the deadline. Cancellation remains active while a response is incomplete, and each subsequent command uses its own current operation budget. Regression tests exercise partial responses and stalled sends separately from real browser rendering.
+Ctrl+C cancels lock waits, download, hashing, and extraction. Owned network workers
+observe host death and bounded cleanup. Normal cancellation removes that attempt's
+temporary archive/staging directory; an abrupt crash can leave inactive entries.
+Once activation starts, synchronization finishes with a complete installed tree.
+These are OS/storage-dependent durability rules, not a power-loss guarantee.
 
 ## Read-only diagnosis
 
@@ -32,11 +40,17 @@ lazypencil --json runtime status
 lazypencil --json doctor
 ```
 
-Both reports include the Chromium installation status and explicitly mark `startup: "not_checked"`. `available` describes installed files, not a successful browser launch. `host` reports OS/architecture, the required browser sandbox, and `sandbox_profile` / `shared_libraries` as `not_checked`. On Linux it also reports the effective UID and observed `unprivileged_userns_clone`, `apparmor_restrict_unprivileged_userns` and `max_user_namespaces` values. Missing, unreadable, malformed or oversized values are `null`; they are not treated as permission granted or denied. Reads are bounded, and neither command changes OS policy or creates runtime/settings/lock directories.
+`available` means the selected files are present, not that startup succeeded. Reports
+mark startup, sandbox-profile inspection, and shared-library inspection as `not_checked`.
+Retained Linux diagnostics include observed namespace/AppArmor-related host settings;
+unknown values are null, not inferred permission. Reads do not create runtime/settings
+or lock directories or modify OS policy.
 
-Page navigation failures retain `PAGE_LOAD_FAILED` and include `details.stage: "page_navigation"`. `details.browser_error` contains only a bounded `net::ERR_` identifier with an uppercase/digit/underscore suffix, or `null` for another response. Arbitrary browser text, URLs and page contents are omitted. This identifies network errors without treating every failed navigation as a selector or runtime-startup failure.
-
-These host facts do not determine which AppArmor profile will apply to a selected executable. A restricted namespace setting can coexist with an allowed browser, as the hosted integration demonstrates. If the browser child exits before CDP is ready, the failure includes `error.details.stage: "browser_startup"` and the same host facts, with a command for obtaining the full report. Automated shared-library dependency inspection, profile verification, and a general startup probe in the product remain unfinished. Read-only reporting regressions passed the completed three-target gates; automated product startup/library/profile probing remains a separate unimplemented diagnostic.
+A failed launch includes `details.stage: "browser_startup"`; navigation failures retain
+`PAGE_LOAD_FAILED` with `details.stage: "page_navigation"`. A bounded `net::ERR_` code
+can identify the navigation failure without returning arbitrary page text or URLs.
+Automatic startup/library/profile probing is not implemented. Do not disable Chromium's
+sandbox to turn an environment failure into success.
 
 ## Offline archives
 
@@ -44,7 +58,8 @@ These host facts do not determine which AppArmor profile will apply to a selecte
 lazypencil runtime setup chromium --archive /path/to/chrome-headless-shell-mac-arm64.zip
 ```
 
-Supply the exact archive for the current platform and pinned version. Offline setup applies the same byte-length, archive-hash, and per-file checks. It does not accept arbitrary ZIP files or infer compatibility from their names.
+Supply the exact current platform/version archive. Offline setup uses the same archive
+and installed-file checks; a matching filename alone is insufficient.
 
 ## An explicitly selected browser
 
@@ -53,102 +68,86 @@ LAZYPENCIL_CHROMIUM=/absolute/path/to/chrome-headless-shell lazypencil runtime s
 LAZYPENCIL_CHROMIUM=/absolute/path/to/chrome-headless-shell lazypencil render design.pen --output design.png
 ```
 
-This explicit override is reported as `external-unverified`, with `managed: false` and `integrity_verified: false`. The actual running browser version is included in acquisition metadata. Its installation, supporting libraries, licensing, CDP compatibility, and software WebGL capability are the caller's responsibility. No existing personal browser profile is reused.
+The override is reported as `external-unverified`, `managed: false`, and
+`integrity_verified: false`. Actual browser identity appears in acquisitions. Its
+installation, libraries, licensing, CDP compatibility, and software WebGL support are
+the caller's responsibility. No existing personal browser profile is adopted.
 
 ## Dedicated authentication profiles
 
-Persistent stores, user selection, canonical-browser binding, owner cleanup and login deadline/recovery passed on all three targets in the earlier cross-platform scope in [the `dd3fe05` gate](https://github.com/EkeMinusYou/lazypencil/actions/runs/40655581713). Ordinary rendering uses temporary, isolated browser contexts. No personal Chrome profile is adopted.
-
 ```sh
 lazypencil runtime profile create work
-# Keep this setting for subsequent render, MCP and TUI commands as well.
 export LAZYPENCIL_CHROMIUM=/absolute/path/to/full-chromium
 lazypencil runtime profile login work \
-  --browser /absolute/path/to/full-chromium \
-  --url https://example.com/login
+  --browser /absolute/path/to/full-chromium --url https://example.com/login
 ```
 
-Login requires a full browser with a visible UI. Set `LAZYPENCIL_CHROMIUM` to that same executable for login and all authenticated acquisitions; the managed headless shell remains available for anonymous work. A matching major version alone does not establish storage compatibility: for example, [headless shell uses a mock keychain on macOS](https://raw.githubusercontent.com/chromium/chromium/main/headless/app/headless_shell.cc). The implementation binds each profile to the canonical executable path on first use, under its guardian lease, and rejects a different path before launching it. The marker stores a path hash, not credentials. A symlink resolving to the same executable is accepted. Updates at the same path remain the browser's responsibility; moving to another executable requires a newly created profile and login. Close the dedicated login tab/window, or quit that browser, to return. Ctrl+C or `--timeout-seconds` (default 600, range 1–3,600) closes the owned browser through the normal cleanup path.
+Login needs a visible full browser. Use that same canonical executable for subsequent
+acquisitions; matching major versions do not make full-browser/headless-shell stores
+interchangeable. First use binds the profile to a hash of its canonical executable
+path, under its lease. A symlink to that path is accepted. Moving to another browser
+path requires a new profile/login; updates at the same path remain browser-owned.
 
-Select the name in **user** configuration:
+Close the owned login tab/window or browser to return. Ctrl+C and `--timeout-seconds`
+(default 600, range 1–3,600) close it through normal cleanup. Select the profile in
+**user** configuration:
 
 ```toml
 [runtime.browser]
 profile = "work"
 ```
 
-The same captured setting applies to CLI, MCP and TUI page acquisitions. A project can disable it with `profile = ""`, but cannot select a nonempty name. Profile names use 1–64 lowercase ASCII letters, digits or hyphens and start with a letter or digit. `runtime profile path work` explicitly returns its private data directory for local management.
+A project can disable it with `profile = ""`, but cannot select a nonempty name.
+Names use 1–64 lowercase ASCII letters/digits/hyphens, starting with a letter/digit.
+`runtime profile path work` returns its private directory for management.
 
-Profiles live under `browser-profiles/<name>` in the selected data directory, with private ownership markers and an exclusive lease held by the browser guardian. Persistent cookies, localStorage, IndexedDB and Cache Storage remain there. Per-acquisition tabs close normally; retained TUI tabs keep their existing DOM lifetime. Shader workers never use these profiles. Acquisition metadata and serialized runtime limits omit the profile name; credentials are not imported into `.pen` files or conversation records. The guardian preserves persistent data after host death and releases its lease only after collecting the browser's children.
+Persistent cookies, localStorage, IndexedDB, and Cache Storage live under
+`browser-profiles/<name>` in the selected data directory. They are not imported into
+`.pen` files or conversations, profile names are omitted from acquisition metadata,
+and shader jobs never use them. Host cleanup preserves persistent storage.
 
-Concurrent independent browser processes cannot use one profile. The macOS sharing implementation below connects retained previews and bound MCP frontends to the same Chromium process. The completed tests cover exclusive ownership, replaced identities, canonical executable matching and refusal, abrupt owner death, all four persistent storage kinds, fresh/retained isolation and restoration, offline acquisition, real CLI selection and login deadline/recovery. Owned visible full-browser login passed on all three targets at [c9ffb37](https://github.com/EkeMinusYou/lazypencil/actions/runs/40679529757): full Chrome for Testing 156.0.8078.47, visible/non-headless state, normal owned-tab close, and all four storage kinds restored through the same canonical executable. These earlier single-owner checks do not certify real vendor-account authentication; sharing evidence follows.
-
-The current implementation candidate routes Unix profile acquisitions through one private local page worker instead of creating competing Chromium owners. It retains the guardian's exclusive lease, serializes complete acquisitions, and scopes retained tabs, resource routing, cancellation and disconnect cleanup to each frontend. Each frontend keeps at most eight pages; at most sixteen frontends connect. Framed control messages and binary bodies have explicit limits, including 128 MiB each for queued resources and live interned resource data. The endpoint checks private ownership, peer UID, profile identity, canonical browser path and the supervisor binary hash. A different engine is rejected with `profile_context`. Online/offline changes relaunch the browser with the corresponding launch policy and preserve disk authentication storage; DOM can reset. The last frontend waits for normal teardown, while disconnecting another frontend must preserve surviving pages. The four new shared-client cases passed the macOS full gates at e786e3e and 4ec8d67, and passed again at f4363a3 before a separate profile-restoration deadline failure. They exercise retained-preview acquisition and real bound MCP, including cross-owner isolation, cancellation/death, captured resources and network-policy changes; they do not establish physical-terminal or vendor-account acceptance. An explicit login still uses the exclusive guardian lease.
+One guardian-owned browser leases a profile. On macOS a private local page worker
+serializes acquisitions from retained TUI previews and bound MCP frontends, scoping
+retained tabs, cancellation, resources, and disconnect cleanup per frontend. It verifies
+peer ownership, profile identity, browser path, and supervisor identity. Each frontend
+retains at most eight pages, with at most sixteen connected frontends. Independent
+browser processes cannot use the same store simultaneously; explicit login still needs
+its exclusive lease. Network-policy changes can restart the page browser and reset DOM
+while preserving disk authentication data.
 
 ## Execution and licensing
 
-Rust connects directly to a loopback Chrome DevTools Protocol socket. Node.js and Puppeteer are not needed for this rendering path. The default page process and every shader process use temporary private profiles. Without an explicitly selected dedicated profile, CLI/MCP acquisitions use fresh isolated contexts with downloads denied. The TUI opts into up to eight isolated page contexts tied to its document and nodes; capture refresh preserves their DOM, while URL/device changes, eviction, idle expiry, failure or browser-policy changes can reset them. Downloads remain denied. The retained-context isolation, eviction, DOM-preserving refresh and periodic-frame/PTY path passed on all three targets in the earlier cross-platform scope in [the `0a8f336` full gate](https://github.com/EkeMinusYou/lazypencil/actions/runs/40574081272). Physical-display timing and simultaneous TUI/MCP profile ownership remain separate. Dedicated single-owner profiles are implemented and verified as described above. Page and shader jobs use separate processes. Browser JavaScript is enabled for page captures.
+Rust uses CDP directly; this rendering path needs neither Node.js nor Puppeteer.
+Anonymous new acquisitions use fresh isolated contexts with downloads denied. TUI
+retention and explicit profiles change only the documented page-state lifetime.
+Page and shader jobs use separate processes.
 
-The shader process explicitly selects `--use-gl=angle --use-angle=swiftshader-webgl --enable-unsafe-swiftshader`. Chromium documents that this software WebGL opt-in has weaker security guarantees than its normal GPU path. It is restricted here to the shader process, which receives captured GLSL and image data and blocks HTTP(S), file, and FTP requests. The ordinary page process does not receive these flags. Chromium's own OS sandbox remains enabled; lazypencil does not add `--no-sandbox`. See [Chromium's SwiftShader documentation](https://chromium.googlesource.com/chromium/src/+/HEAD/docs/gpu/swiftshader.md).
+Only the shader process selects `--use-gl=angle --use-angle=swiftshader-webgl
+--enable-unsafe-swiftshader`. This software WebGL opt-in has weaker security guarantees
+than Chromium's normal GPU path; it receives captured GLSL/images and blocks direct
+HTTP(S), file and FTP acquisition. The page process has no such flags. Chromium's own
+OS sandbox remains enabled; `--no-sandbox` is not added.
 
-The downloaded browser, software renderer, and supporting libraries retain their own licensing. The installer keeps the complete pinned official archive contents, including `ABOUT`, license notices, and supporting resources. lazypencil's MIT license does not relicense this separate runtime. Runtime redistribution and the complete release dependency/license audit must be checked before publishing a packaged release; no browser archive is included in this repository's product binary.
+The downloaded runtime keeps its complete pinned official contents, notices and
+supporting resources. Its licenses remain separate from lazypencil's MIT license.
+The product binary does not bundle a browser archive. Redistribution requires the
+applicable original notices; see [distribution](development.md#licenses-and-third-party-inputs).
 
-## Run the native integration checks
+## Integration checks
 
-After building tests with `cargo test --no-run`, provide an installed executable and the matching official archive:
-
-```sh
-LAZYPENCIL_TEST_CHROMIUM=/path/to/chrome-headless-shell cargo test --test dynamic_render -- --ignored --test-threads=1
-LAZYPENCIL_TEST_CHROMIUM=/path/to/chrome-headless-shell cargo test --test mcp -- --ignored --test-threads=1
-LAZYPENCIL_TEST_CHROMIUM_ARCHIVE=/path/to/pinned.zip cargo test --test runtime -- --ignored --test-threads=1
-```
-
-These tests launch a real browser and are intentionally separate from ordinary unit tests. The tests cover page pixels, transforms and capture conditions, cache refresh, cancellation and recovery, software shader pixels and extensions, object/background sampling, effect order, texture orientation and opacity, CLI interruption, MCP image content, and installation integrity. In a macOS development sandbox, browser startup may need host permission for Mach services. Do not work around an environment restriction by disabling Chromium's own sandbox.
-
-## Hosted integration without local build trees
-
-The manually dispatched [Chromium integration workflow](../.github/workflows/chromium.yml) delegates to the same CI pipeline for Mac by default. Explicit Linux x64/arm64 selections are retained deferred-platform diagnostics. The native job builds verified distributed source, reuses matching dependencies, removes application outputs, installs/verifies the pinned browser and runs ordinary and real browser checks with the same compiled binaries. Sandboxed pixels, both feature configurations, Clippy, real MCP idle cleanup and PTY tests remain covered. The complete Mac gate can produce the initial-release source artifact. An explicitly requested Linux diagnostic does not establish a supported release or produce the release source artifact. Do not dispatch it alongside full CI to repeat browser checks.
+Real-browser tests are opt-in and require a working sandboxed executable:
 
 ```sh
-gh workflow run chromium.yml --ref main -f os=ubuntu-24.04
-gh workflow run chromium.yml --ref main -f os=macos-15
+LAZYPENCIL_CONFIG_DIR="$(mktemp -d)" \
+LAZYPENCIL_TEST_CHROMIUM=/path/to/chrome-headless-shell \
+  cargo test --locked --test dynamic_render -- --ignored --test-threads=1
 ```
 
-The retained diagnostic platform choices are `ubuntu-24.04` (Linux x64), `ubuntu-24.04-arm` (Linux arm64) and `macos-15` (Apple Silicon). Runs retain runtime identity/integrity reports, test logs and a hash-checked combined example PNG for three days. They use the shared native dependency-cache policy and keep build trees/browser downloads on the hosted runner. A dispatch or successful cache restore does not establish a passed integration check; inspect the completed run and its evidence.
+Installer opt-ins use `LAZYPENCIL_TEST_CHROMIUM_ARCHIVE` with the exact pinned ZIP.
+MCP, browser-readiness, uniform, and terminal tests have their own explicit filters;
+prepare their helper/settings as described in [development](development.md).
 
-The native dependency cache identity uses committed dependency/build-script inputs, the actual Rust compiler identity, declared compilation flags, platform and runner image. Application outputs are pruned before verification. Scheduling-only workflow edits do not invalidate those dependencies. Migration from the four previously saved v1 platform caches is enabled only for the audited input fingerprint, Rust 1.94.0 commit and compilation flags; other inputs use a fresh v2 key. Cache identification/restoration is optional, while source verification and tests remain required. Build-affecting environment must be declared before identification; changes to this cache policy require a key-version review. Matching-image reuse has been observed in completed hosted runs. The `0a8f336` macOS full gate reused 150 same-commit application files and retained matching executable/map hashes; final release checks took 1.69s/1.01s. The Linux x64/arm64 jobs correctly missed native caches after image changes and rebuilt dependencies; caches from a different SDK/image are not substituted.
-
-Explicit deferred-Linux jobs probe the verified binary with an isolated `about:blank` profile, a bounded lifetime and core dumps disabled. The artifacts retain its stderr, shared-library resolution and namespace-related kernel settings, even on failure. Run `40008545887` reported `No usable sandbox!`, resolved shared libraries, and `apparmor_restrict_unprivileged_userns=1`.
-
-On a hosted Linux runner with that restriction enabled, the workflow loads an AppArmor profile granting `userns` to the exact canonical path of the already verified browser. The generated path is restricted to this job's managed runtime directory, contains no wildcard, and is retained with a hashed policy report. The workflow checks that the global restriction remains `1`; it neither changes sysctl settings nor disables Chromium's sandbox. This targeted hosted allowance follows [Chromium's AppArmor guidance](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md). Run `40009150116` then passed sandboxed startup, fifteen dynamic-render tests and all ten numeric-uniform tests; its CLI interruption failure was resolved by the later CDP retry path and passed in subsequent gates. The product installer does not load privileged OS profiles. On a similarly restricted user system, an administrator must review the corresponding exact browser path and OS policy before enabling namespace sandboxing; the browser remains unavailable until a supported sandbox can start.
-
-## Current verification and historical runs
-
-The latest [51ed911 Mac pipeline](https://github.com/EkeMinusYou/lazypencil/actions/runs/41031176732) passed all final gates. Its runtime consumer executed on macOS 15.7.9 and its normal/release jobs on 15.8.2. Managed installation, sandboxed pages/shaders, MCP, PTY, integrity and source checks retain their original conditions. Same-profile retained-preview/bound-MCP sharing passed at `e786e3e` and subsequent complete gates; it is not an unimplemented multi-client feature. The initial OS baseline is fixed at 15.7.9; physical terminal acceptance and publication remain open. These results do not certify filesystem power-loss durability, and product read-only host facts remain distinct from a startup probe. The [c9ffb37 three-platform run](https://github.com/EkeMinusYou/lazypencil/actions/runs/40679529757) belongs to the earlier cross-platform scope.
-
-<details>
-<summary>Earlier source-scoped integration results</summary>
-
-The following pending/failure statements describe each named source at the time; later completed results above supersede them. Windows/Intel runs are historical and do not expand initial release support.
-
-[macOS arm64 run 40007811724](https://github.com/EkeMinusYou/lazypencil/actions/runs/40007811724), at commit `9a76e66104c388e0ea1656ba3be5d4cfc60bac8f`, passed seven configuration tests, all sixteen dynamic-render tests, actual MCP image/refresh and 60-second idle checks, and the dynamic TUI PTY test with its real idle interval. The retrieved 1000×640 combined PNG has SHA-256 `4d1ca7eb7e29ceec82c6ef5556c40466bdfe40c9ae84cc924ffb7b68332b51ae`; its dimensions, report hash, two acquisition limits and diagnostic-free result were rechecked, and the image was visually inspected. This run precedes the expanded JS-worker, shader-uniform and normal-TUI coverage above. Linux's corresponding run failed during real Chromium startup; other platforms and the expanded checks remain pending.
-
-Both [Linux x64 run 40010090321](https://github.com/EkeMinusYou/lazypencil/actions/runs/40010090321) and [macOS arm64 run 40010094357](https://github.com/EkeMinusYou/lazypencil/actions/runs/40010094357), at source `c9dd6cb`, passed the expanded 92-test scope: all 39 library tests, seven configuration tests, twelve real JS-worker tests, sixteen dynamic renders, ten uniform tests, actual MCP image and idle checks, and all six TUI tests including the twelve normal PTY cases. Linux CLI interruption returned 130 after the CDP retry fix; the TUI policy-only timeout/recovery assertions passed on both systems. The subsequent host-diagnostic changes, remaining platforms, full normal CI and release gates still need their own results.
-
-At source `36d1269`, the expanded scope including read-only host diagnostics and usage-journal contention/cancellation passed on [macOS arm64](https://github.com/EkeMinusYou/lazypencil/actions/runs/40014476233) (97 tests), [Linux x64](https://github.com/EkeMinusYou/lazypencil/actions/runs/40014480311) (99), [Linux arm64](https://github.com/EkeMinusYou/lazypencil/actions/runs/40014488317) (99), and [Windows x64](https://github.com/EkeMinusYou/lazypencil/actions/runs/40014484065) (84). Windows omits the Unix PTY and real idle-cleanup checks; it includes the real MCP image check. Each run restored its audited legacy native cache. These results precede the new network-idle waiting policy and do not replace full normal CI, physical-terminal tests or release verification.
-
-Source `8f14b13` additionally passed the new network-idle lifecycle/configuration/real-fetch regression on [macOS arm64](https://github.com/EkeMinusYou/lazypencil/actions/runs/40015918054) (101 tests), [Linux arm64](https://github.com/EkeMinusYou/lazypencil/actions/runs/40015927331) (103), and [Windows x64](https://github.com/EkeMinusYou/lazypencil/actions/runs/40015922773) (88). The real fetch test covers delayed green pixels, policy-driven reacquisition, cache reuse, timeout and recovery, cancellation, and unchanged document bytes. Unix MCP idle and TUI checks also passed. This is dedicated integration evidence; full normal CI, Clippy/release at that source and Linux x64's new wait mode still require their results.
-
-[Linux x64 run 40017390797](https://github.com/EkeMinusYou/lazypencil/actions/runs/40017390797), at source `f2b9b84`, passed that expanded scope (103 tests), including the new network-idle regression, actual MCP idle cleanup and all TUI tests. Its package installation completed in 18 seconds using the temporary official-Ubuntu sources; the previous normal job had exhausted its 20-minute limit downloading packages from the Azure mirror. The package list and archive-signature checks were preserved. The subsequent selector-readiness changes and full normal CI remain separate pending verification.
-
-Selector readiness at source `01d559d` passed the complete dedicated scope on [macOS arm64](https://github.com/EkeMinusYou/lazypencil/actions/runs/40019388943) (107 tests), [Linux x64](https://github.com/EkeMinusYou/lazypencil/actions/runs/40019393874) (109), and [Linux arm64](https://github.com/EkeMinusYou/lazypencil/actions/runs/40019397974) (109). This includes configuration, four real selector tests and Unix MCP/TUI cleanup. Windows passed three selector tests but failed HTTP recovery after the cancellation/reaping assertions had passed. Its follow-up adds bounded HTTP-fixture waiting and network-code diagnostics; that correction and the actual-window scroll metadata regression require new hosted results. The downloaded macOS report/PNG retained default selector settings and matched the previously inspected image byte for byte.
-
-The follow-up at source `d617d5e` passed on [macOS arm64](https://github.com/EkeMinusYou/lazypencil/actions/runs/40021082049) (109 tests), [Linux x64](https://github.com/EkeMinusYou/lazypencil/actions/runs/40021085896) (111), [Linux arm64](https://github.com/EkeMinusYou/lazypencil/actions/runs/40021090172) (111), and [Windows x64](https://github.com/EkeMinusYou/lazypencil/actions/runs/40021078150) (96). This verifies same-HTTP-URL recovery after cancellation, delayed-header/idle-shutdown fixtures, bounded navigation-code diagnostics, and actual window scroll metadata despite same-named page variables. Unix MCP idle/TUI tests also passed. The original failed Windows navigation had discarded its network code, so its exact cause remains unproven.
-
-All four downloaded 1000×640 PNGs matched their reports, had no diagnostics and retained the expected selector/state/limits and verified browser identity. Each matched its own earlier platform baseline byte for byte; the baselines for macOS, Windows and Linux arm64 had also been visually inspected. The runs restored v2 native archives on macOS/Windows/Linux arm64 and the audited v1 archive on Linux x64. The source-scoped normal CI and subsequent Intel result are recorded below and in the implementation status; physical-terminal coverage remains pending.
-
-At source `5a29847`, [Intel macOS run 40027340811](https://github.com/EkeMinusYou/lazypencil/actions/runs/40027340811) passed all 109 executed tests, including actual MCP image content, sixty-second MCP idle cleanup and all six Unix TUI tests. A separate runtime-archive opt-in remained excluded. This uses a selector-cleared warm capture before timing selector cancellation and sends the fixture probe only for the target `#never` query; the three-second observation and five-second acquisition limits remain unchanged. The prior cold-start attempt at source `74d4a3d` did not observe that query in time, and did not establish the direct cause. The corrected run observed the actual query before cancellation, verified owned-process cleanup and rendered successfully afterward. The v2 Intel dependency-cache restore was confirmed from completed logs.
-
-The downloaded Intel artifact's ZIP hash and 1000×640 PNG/report hash matched, with no diagnostics and two acquisitions. It retained the effective default selector/state/limits, a verified managed runtime and actual `HeadlessChrome/156.0.8078.47` acquisition identity. The image was also visually inspected; SHA-256 `b10c0cf5f90f371eeca13b9f45f5a0a3cd2570f453df4f2258306ea5d6f5328d` is the first retained Intel baseline. These hosted tests do not establish physical terminal/clipboard behavior, minimum OS support, or full design compatibility.
-
-</details>
+The [Chromium workflow](../.github/workflows/chromium.yml) delegates to the existing
+CI pipeline, using the supported Mac default. Reuse an existing matching full run
+instead of dispatching overlapping browser verification. Explicit deferred-platform
+diagnostics and their host-library/sandbox setup do not certify a supported release.

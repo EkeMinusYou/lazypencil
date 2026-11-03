@@ -1,403 +1,199 @@
-# lazypencil 動的コンテンツの実行
+# Dynamic content
 
-設計日: 2026-10-23
-
-生成したscriptは、出力scopeを適用する前にコードを解決した文書を保持する。後続の子孫上書きを解決するpreviewは合成済みscriptのbindingを保ち、未合成の設定だけを取り除く。コード側と出力側の捕捉表が異なる場合は、コード側の到達可能なlibraryと部品経路・変数・テーマ・素材・browser設定を衝突しない内部キーで合成する。両形式・children差替え／ノード置換・4種のmetadata上書きの16組はd7cc9c6の[完全GHA](https://github.com/EkeMinusYou/lazypencil/actions/runs/40888907387)で成功した。元source削除後と再copy、先行／通常の1,980 PNG・660組の一致を含む。元情報が欠けた旧captureを推測復元するものではない。
-
-入力文脈v3の`generations`は、producerの`input_epoch`ごとに元の入力式・変数／部品対応・下位scope／bindingの入力対応を保持する。再copyは元式と世代キーを維持し、対象だけを転送する。古い生成コードとコピー先で新たに追加した生成コードが同じ部品を使っても、それぞれの世代の入力所有元へ戻す。失効した明示入力文脈は該当世代の下位設定へ戻し、出力だけの変更では有効な明示入力文脈を保持する。両形式・4経路の80組、新旧producerの混在、元source削除と再copyは4252fe2の完全GHAで成功した。644組／1,932 PNGの三段階一致と従来1,680 PNGの不変を確認した。v1／v2の読取りと、不足する旧出自を推測しない方針も維持する。
-
-継承入力を組み合わせるコピーでは、入力文脈v2の`lexical_inputs`と、入力文脈／bindings v3・v4の`input_epoch`を内部の由来情報として使う。通常の入力所有元かどうかと、同じコピー世代に属するかを区別し、再コピーでは元の世代を維持する。旧データや別の入力文脈で由来を確定できない場合は推測して適用しない。これらは利用者が変更するselectorではない。複数世代の復元には上記v3の世代別snapshotを使い、出自を持たない旧形式まで補完できるとはしない。由来検査は7431326の完全GHAで成功した。
-
-生成した`script_scope`と`script_bindings`を同時に指定する場合、出力URIのguardと保存入力のhashを別々に照合する。有効なbindingが出力を優先し、保存した参照入力は有効なbindingの`input_components`、有効なscopeの入力library、元の入力所有元の順に選ぶ。変数式は入力所有元の変数表を維持する。この対の84組・独立した16通りのguardは5b24cfeのGHAで成功した。847件の既定構成・469件のcoreに従来のnamed caseの欠落はなかった。
-
-明示`script_input_context`は通常文書と生成結果で入力一致の判定・形式検査を共用する。提供入力が一致した場合、その文脈の変数・部品の対応を出力scope／bindingと別に捕捉する。文脈のlibraryは生成元の捕捉済み文書から解決し、失効した文脈の未宣言libraryは参照しない。コピー後もJavaScriptは変更しない。単独文脈・scopeとの併用・三者併用、変数の改名・別library・失効の60組とcopy／再copyは7431326の完全GHAで成功した。同じ文書内でも部品名が変わる場合はruntime handleへ変換し、変更前の名前をワーカーへ渡さない。保持済みの元所有元への復帰と複数世代の継承入力は上記4252fe2で検証した。新しい生成置換のコード所有元は上記d7cc9c6で検証した。元情報が欠ける旧captureは元sourceからの再copyを案内する。
-
-状態: JavaScript・Webページ・GLSL、CLI／MCP／TUI、実行上限・保持page・再生・取得方針・専用profileを実装し、確定済みc9ffb37では旧方針のMac／Linux2環境で検証した。初回リリースはmacOS Apple Siliconのみに変更した。入力22ケースも現在のworker／描画試験に含み、改めて未検証には戻さない。明示script文脈の合成はd7cc9c6、保持preview経路と別bound MCPの認証共有はe786e3e・4ec8d67のMac完全CIで検証済み。fill-stage object samplingなどの制約とMacの最終受け入れは残る。[現在の残件](implementation-status.md#remaining-work)
-
-`.pen` の `script` ノード、`browser` ノード、`shader` の塗り・エフェクトを、初期リリースの正式な対応対象とする。元データを保存できるだけでは完了とせず、実行と画像化、AI による入力・参照コードの編集、CLI・MCP・TUI への統合までを含める。
-
-Rust 本体と Skia CPU・SkParagraph の採用は維持する。通常の図形・文字は Skia で描き、JavaScript の生成結果も同じレイアウトへ渡す。Web ページと GLSL は必要時に起動するヘッドレス Chromium で画像化し、Skia が最終合成する。
-
-## 実行構成
-
-コピー済みscriptの`code_namespace`は、現在の出力namespaceとは別にコード指定元の文書を捕捉する。必要な場合だけコード側の宣言library・素材・部品・変数を既存の共通表へ追加し、再copyでも同じ識別子を保持する。URIを継承した出力guardの失効時はこの文書へ戻し、通常metadataだけの編集は元の出力設定を保持する。物理パスはこのフィールドに保存せず、捕捉表の実文書だけを指せるよう検査する。所有元を記録していない旧captureでは、推測せず元sourceからの再copyを案内する。新たに生成する置換ノードは上記のコード所有元保持を使う。通常scope／native binding・両形式・4経路の64組は2c9ac33の完全GHAで成功し、元source削除後と再copyを含む560組／1,680 PNGを照合した。
-
-生成ref／子孫変更の`script_override`は、内側metadataのscope・binding・入力文脈を評価した後、`output`と`input`を個別に適用する。nullは内側の結果を保つ。一致しない入力文脈は内側の明示入力文脈を解除し、scope／bindingの参照入力対応は保持する。明示scriptUriに対して出力guardが失効した場合は生成元文書の出力へ戻す。URIを継承し、戻るべき元コード所有元が未捕捉の場合は診断を維持する。内側の通常metadataにある同名のcarrierは再帰的に適用しない。完全なscript定義にref用carrierを指定することは拒否する。両形式・4経路・7種類の56組を元／copy／再copyと画素で確認し、7431326の完全GHAで成功した。複数世代と入力解除の全範囲を完了したという意味ではない。
-
-```mermaid
-flowchart TD
-    Snapshot[文書と参照アセットのスナップショット] --> Layout[依存関係とレイアウトの解決]
-    Layout <-->|寸法と生成ノード| JS[JavaScript ワーカー]
-    Layout --> Plan[描画計画]
-    Plan --> Static[Skia の図形と文字]
-    Plan --> Browser[BrowserRuntime]
-    Plan --> Shader[ShaderRuntime]
-    Browser --> Chromium[ヘッドレス Chromium]
-    Shader --> Chromium
-    Chromium --> Images[ページと効果の画像]
-    Static --> Composite[Skia による最終合成]
-    Images --> Composite
-    Composite --> Output[PNG と実行メタデータ]
-```
-
-BrowserRuntime と ShaderRuntime は、本体の描画バックエンドと別の実行サービスである。同じブラウザープロセスを再利用しても、Web ページとシェーダーのコンテキスト・入力を分離する。文書全体を HTML に変換してブラウザーに描かせる構成にはしない。
-
-すべての読み取りは、`.pen` と参照コード・画像を取得したスナップショットに基づく。実行の途中でソースが変わった場合は、その出力を新しい版へ混ぜずに再実行するか、依存の変更として診断する。
+Script nodes generate ordinary layout nodes in a QuickJS worker. Browser nodes capture
+web pages, and GLSL fills/strokes/effects use software WebGL in a separate Chromium
+process. Skia composites the results with native graphics. Chromium is installed
+[explicitly](runtimes.md); rendering never downloads a missing runtime.
 
 ## JavaScript
 
-### 実行する内容
-
-Script ノードの寸法と入力を渡し、スクリプトから返ったノード配列を展開して描画する。公式資料には、同期実行、DOM・ネットワーク・ファイルシステムへのアクセスなし、入力ヘッダーと `pencil` オブジェクトを使う仕組みが示されている。[Pencil の Code on Canvas](https://docs.pencil.dev/core-concepts/code-on-canvas)
-
-lazypencil では次を実装対象とする。
-
-- 対応する `@schema` と `@input` 宣言の読み取り、既定値と入力の検証。
-- `pencil.width`、`pencil.height`、`pencil.input` と、返り値のノード配列。
-- ノードの寸法、入力、変数・テーマ、参照コードが変わったときの再実行。
-- 実行ごとに固定される乱数の扱いと、Pencil の出力との互換性の検証。
-- 生成結果の構造・参照・出力件数を検証し、通常の文書レイアウトへ渡す処理。
-
-公開仕様と公式の例で互換性を検証する。乱数列などの具体的な挙動を確認できていない部分は、検証済みと表記しない。対応しているコードの実行を、生成物の静的保存だけで代替しない。
-
-### 入力の既定値と保存済みの旧項目
-
-入力の省略と `null` は宣言の既定値へ戻す。宣言に既定値がなければ、number は0を min／max へ収め、string と ref は空文字列、boolean は false、color は `#000000`、enum は先頭の選択肢を使う。値は実行時だけ補い、`.pen` や JS ヘッダーへ書き込まない。空の ref は未選択として渡し、生成コードがそのまま部品参照に使う場合は既存の参照検査に従う。空でない参照は再利用可能な部品へ解決する。
-
-ヘッダーから削除された保存済み入力は元ファイルへ保持し、`pencil.input` と変数解決から除外する。宣言された入力だけを、キャプチャ済みのヘッダーが判明した時点で一度解決する。新しく生成された入れ子の script はコードの依存を取得してから解決し、壊れたコードの読み取りでは実行を要求しない。`null` で部品参照を戻した場合はスクリプト側の既定値のライブラリを使い、同名の root 部品へ置き換えない。
-
-自作22ケースを、明示した型別の入力契約から独立に期待値を定義して検証する。型ごとの値・null・空の ref・残った旧入力と未定義変数の無視を含む。実 worker の返却 JSON と、2形式・scale 2 の512×528画像全成分を、Rust の契約値・UTF-16 符号化による期待値へ照合する。本家の PNG・観測 JSON は現在のソースに含めず、個別許諾のない本家出力を正解にしない。明示値の型・enum の選択肢の検査、入れ子とライブラリの解決を維持する。置換後の試験は source `f11c10c` の通常 GHA `40219343928` で旧対象3環境を通過した。
-
-### エンジンと分離
-
-軽量な QuickJS 系エンジンを Rust のワーカーへ組み込む。初期検証では `rquickjs` と QuickJS-NG の組み合わせを評価し、対応する版を固定する。確認時点の `rquickjs` は QuickJS-NG のバインディングであり、元の QuickJS と同じ版として扱わない。[QuickJS-NG](https://quickjs-ng.github.io/quickjs/)、[rquickjs](https://github.com/DelSkayn/rquickjs)
-
-ワーカーには許可した入力とコードを渡し、ホストのファイル・ネットワーク API を公開しない。実行時間・メモリ・生成ノード数に上限を持たせ、無限ループや異常終了が TUI・MCP・文書保存を停止させないようにする。上限の具体値は対応版の Pencil の実行条件を調べて固定する。
-
-スクリプトの寸法と生成ノードのサイズが親のレイアウトへ影響するため、依存関係に沿って必要な計測と再実行を行う。収束しない循環は打ち切り、対象ノードの診断として返す。
-
-### 生成物と編集
-
-生成ノードは派生データとして扱い、元の `script` を通常のノードへ暗黙に置き換えない。生成ノードには実行結果内で識別できる ID を与え、文書に保存される ID と区別する。
-
-AI は入力・コード・スクリプトノードの属性を編集する。派生ノードの直接更新は、次の実行で失われるため拒否し、元の入力またはコードを示す。生成ノードを読み取り、画像とともに結果を確認することは可能にする。
-
-生成物の詳細には MCP の `read_nodes` へ `calculated: true` を渡す。`get_layout`・描画・計算を含む検証の `snapshot_id` を渡した場合は、その保持した計算をコードの再実行なしに読む。解決済み属性、属性の出所、テーマ、`generated_by` と同じ計算の `layout` を返し、入れ子の生成物も対象とする。継承した対象は通常のアドレス、生成した対象は返された最上位の不透明な `id` で選択する。依存の変更は再利用を拒否し、ページは計算と検索条件へ束縛する。CLI は `inspect --calculated` を使い、プロセス間では再計算する。通常の読み取りはコードを実行しないため、壊れたコードの修復にも使える。[取得の条件と上限](mcp.md#calculated-and-generated-nodes)
-
-### 外部スクリプトの切り離しと参照元
-
-外部部品の切り離しでは、JS を書き換えたり、生成した子を静的な図形へ置き換えたりしない。`scriptUri` は移動先文書から元の JS ファイルへ結び直し、生成物の部品・変数・画像・入れ子のスクリプトは元の文書から解決する。ヘッダーの既定の参照入力も実行元の文書を使い、明示入力の参照先は入力が指定された文書を使う。元ライブラリと JS・素材は依存として残す。
-
-この参照元は `metadata.lazypencil.script_scope` v1 へ保存する。公開スキーマの `Entity.metadata` は任意の追加情報を保持できるが、この名前空間の実行上の意味は lazypencil 独自の拡張である。本家でこの情報が実行へ反映されるとは扱わず、本家との往復描画互換は未検証とする。[公開スキーマ](https://docs.pencil.dev/for-developers/the-pen-format#typescript-schema)
-
-`script_uri` は対象コードの URI、`library` はメタデータの指定元文書からたどる宣言済みライブラリの別名である。空文字列はその指定元文書を表す。入力には必要な場合だけ `inputs.hash` と `inputs.library` を記録する。ハッシュは保存する入力値のオブジェクトを再帰的にキー順で整列し、空白なしの JSON にしたバイト列の SHA-256 とする。ほかのメタデータや `type` は保持し、既存の名前空間がオブジェクトでない場合は上書きせず編集を失敗させる。
-
-入力の変数式は `inputs` 属性を指定した文書から評価する。`inputs.library` は解決した参照入力の部品文書を指定し、変数式の指定元を移さない。独立コピーでは変数と部品の対応表を別々に捕捉する。たとえば切り離した入力の `$ui:caption` はその属性を保存した文書の `ui` から解決し、部品の入力スコープを使って二重に限定しない。
-
-保存済みコード URI が変われば、生成物には新しい `scriptUri` の指定元を使う。保存済み入力値が変われば、その入力には新しい `inputs` の指定元を使う。インスタンスの明示的な上書きもそれぞれの指定元を使い、JSON の値が同じでも元定義の入力・コードの文書に戻さない。コードと入力の結び付きは別々に判定する。未知の版・形式・宣言されていない別名を推測して解決しない。ライブラリ別名はファイルパスや許可領域の追加として扱わない。
-
-切り離しの前後では、実効プロパティ・テーマ・子構造・素材の正規化パスに加えて、生成物と入力の解決元文書も比較する。実行結果の PNG 比較は `tests/script_scope.rs`、実 stdio MCP は `tests/mcp.rs` で検証する。この経路は元ライブラリへリンクした切り離しである。独立copyは以下の閉じた名前空間・素材の宣言を使う別経路として実装済みで、コード所有元と明示入力文脈の合成はd7cc9c6までのMac完全CIで検証した。
-
-独立コピーの前提となる参照の再割り当てとして、`metadata.lazypencil.script_bindings` v1 を実装する。`script_uri` が保存済みコード URI と一致する間、`components` は JS が生成する部品名からメタデータを所有する文書の再利用可能 ID、`variables` は変数名、`themes` はテーマ軸への対応表として使う。`descendants` は元の部品名ごとに元の完全な上書き経路から新しい経路への対応を持つ。コード本文・生成 ID・名前・任意のメタデータは書き換えない。参照入力には内部 handle を使い、JS 本文の部品名と利用者の明示入力が同じ文字列でも区別する。
-
-ヘッダーの ref 既定値は対応表を使う。保存済み入力にも適用する場合は、キーを整列した JSON の SHA-256 を `inputs_hash` に記録する。入力の変更やインスタンスの明示上書きはその入力の対応だけを失効させ、null はヘッダーの既定値を使う。同じ URI の明示的なコード上書きも対応表を失効させる。対象はメタデータの所有文書、または省略可能な library で指定した宣言済み別名の文書内に存在する部品・変数・テーマに限り、この拡張で新しいファイルパスや許可領域を追加しない。未知の版、未知の項目、欠損した対象、衝突した軸・上書き経路、未登録の生成参照は診断する。対応状態の hash は計算条件と script 実行記録へ含める。
-
-`import_component` の copy は、script が解決元の文書とその import から参照できる再利用可能な部品・変数・テーマを取り込み、JS の生成結果に対する対応表を保存する。現在実行した分岐の出力だけを保存する方式ではなく、コピー中に JS は実行しない。コード本文は不変の管理アセットへ元のバイト列のままコピーする。宣言済み素材と、画像の内容を持つ文字列変数の参照先を取り込み、元ライブラリを削除した後にも解決する。画像を表す文字列変数は既存の private library へ原文の文字列を置く方法を共有し、本文との連動と利用者が新しい URI へ編集した場合のコピー先の解決元を保つ。
-
-JS 内でだけ構築する素材名は `options.script_assets` に追加する。キーは名前の衝突ポリシーと同じ元ノードの修飾キー、値は `[{"kind":"image|shader|script","uri":"relative/path"}]` とする。URI はその script の生成物の元文書から解決し、通常の許可範囲・リビジョン・不変ファイル・保存前の変更検査を適用する。`assets` 対応表にない生成パスを、コピー先の同名ファイルや元ライブラリへ推測して接続しない。元の parent traversal は symlink を通る場合があるため、`a/../` を別の経路へ字句的に統合しない。検査済みの実パスと元の綴りをそれぞれ対応付ける。生成する入れ子の script は、追加した JS と同じ対応表を有限の容量制限内で引き継ぐ。生成した ref の script 入力も型を確認し、内部 handle で生成元の部品を保持する。
-
-素材キーにはローカルfile URLも指定でき、image／shader／scriptのいずれも通常のcanonical path・許可root・変更検査を通す。HTTP(S)はimageだけに許し、既存の画像取得方針・期限・byte／redirect上限を適用する。コードのネットワーク取得は許さない。元URLの綴りをキーとJS本文に残し、画像・shader・scriptのbyte列を管理素材へ転送する。再copy時に同じURIを追加宣言しても、元のコード所有文脈に捕捉した素材があればそれを使い、元file URLやサーバーを読み直さない。未登録の新URIは通常の取得・許可検査を通す。キー4,096 byte・対応表4MiBの既存制限を維持する。この後続対応のGHA結果は[現在の状態](implementation-status.md#current-status)で区別する。
-
-通常の ref 入力と既定の ref 入力を区別し、必要な場合は `input_components` を別に保存する。明示的な利用者のインスタンス入力はコピー先の文書で解決する。複数の元文書で同じテーマ軸を共有する場合は同じコピー先の軸を明示的に再利用し、別々の軸へ分離して元の継承を変える指定は拒否する。ライブラリ経路は最大4096、参照名は最大100,000・4 MiB、生成する入れ子への対応表の継承も出力ごとの容量制限を持ち、上限時に残りを黙って省かない。
-
-対応表を持つ script の再コピーでは、元の名前と ID の identity fallback、保存済み入力・default の別スコープ、変数・テーマ・descendant 経路・素材の対応を新しいコピー先へ合成する。JS は書き換えず、追加素材は再コピー時にも指定できる。元の対応表が拒否していた素材名を同名のコピー先ファイルへ結ばない。新しい対応表は1 script 4 MiB、1 copy 操作の合計は文書の64 MiB枠で生成中に制限し、超過時は部分保存しない。素材の対応も構築中に検査する。自動で追加していた元ファイルの絶対パスの別名は新規に保存せず、明示した URI と確認済みの相対名を使う。
-
-対応表付き script の切り離しは、対応先の所有文書を省略可能な `script_bindings.library` に保持する。別名はメタデータの指定元文書から宣言済み import だけをたどり、ファイルパスや新しい許可範囲を渡さない。コード URI は再配置した値へ結び、入力の対応は切り離し前に有効だった場合だけ新しい raw 入力の hash へ更新する。同じ JSON の明示入力やコード上書きで失効した対応は復活させず、通常のメタデータは保持する。生成する入れ子は既に解決した所有文書を使い、別名を二重に適用しない。
-
-切り離しは既存のコード・部品・素材への依存を保持する。独立コピーを選んだ場合は、転送された所有文書も含めて閉包を作り、新しいコピー先のローカル対応表へ合成する。切り離しの検査では保存形式の URI・別名・hash の綴りを比較する代わりに、正規化したコードの場所、実効プロパティ・テーマ・部品／変数／素材の対応先と入力の失効状態を比較する。disabled な script のヘッダーも snapshot に捕捉し、宣言済みの入力だけを移し、古い未知の入力は解決せず保存する。JS は切り離し中にも実行しない。
-
-継承した script の保存済み入力は `script_input_context` でコード生成用の対応表から分離する。v2は元入力のhashと変換された式の差分を保持し、v1の読取りも維持する。元の入力式・変数・参照部品を実効入力scopeから新しいコピー先へ結び、ヘッダーの既定値にはコードのスコープを使う。未使用の古い入力を評価せず保持し、宣言済みの入力として使う時点で検証する。入力・コードの明示的な再設定は、同じ JSON でもその項目の古い対応を失効させる。
-
-部分上書きで指定した script の追加素材は、所有する ref の ID と descendant 経路を `/` で結んだキーを文書の別名で修飾し、`script_assets` に渡す。例えば `ui:inner/draw` は ui 文書の inner ref が draw へ適用するコードの素材を表す。元のコード URI・生成スコープを使って素材を検査し、入力だけの上書きからコードの所有権を変更しない。
-
-通常の metadata を継承する部分上書きには、専用の `metadata.lazypencil.script_override` v1 を保存する。`input` と `output` を個別に保持し、`metadata:null` は通常のユーザーメタデータを継承する。解決したノードには内部 envelope を公開せず、実効 metadata と参照範囲を計算へ渡す。上書きしていない入力や metadata はコピー後の元定義の編集にも追従する。これらも lazypencil 独自の補助情報であり、本家での実行互換を示すものではない。両形式の実 worker・画素・元ファイル削除・再コピー・継承／切り離しは、c9ffb37までの確定済み対象3環境gateで成功した。
-
-明示的な通常 metadata は envelope の `metadata` に保持し、入力・コードの対応表とは独立して上書きする。通常 metadata の変更だけで、継承元の実行コンテキストを固定しない。`reset_override` は対象項目を元定義へ戻し、存在しない項目の unset/reset では対応表を失効させない。元定義の入力や同じ URI のコードを後から明示更新した場合も、部分上書きがその変更を隠さない。`script_bindings`・`script_scope`・`script_input_context` を明示する場合は、それぞれが所有する対応だけを適用する。
-
-コピーした generator が生成する ref の `scriptUri` と、descendants 内のコード上書きを、登録済みの `script_assets` から解決する。出力の対応表だけを生成元から継承し、指定していない保存済み入力と通常 metadata は参照先の定義から継承する。明示入力は生成元の名前空間、null は置き換えたヘッダーの既定値を使う。ヘッダーの捕捉前に未使用の旧入力を評価せず、宣言された入力だけを厳密に書き換える。対応表は既存の生成出力量上限内で共有して計数する。実 worker と画素、元 library／コピー元 assets の削除、2形式・直接／子孫／型付き置換・5種の入力／metadata と再コピー、未登録コード・明示スコープ・容量超過の拒否を試験する。
-
-参照入力を確定する前に、参照先とその子孫の実効テーマだけを導出する。ヘッダーが未確定の入力や通常プロパティの評価は、この準備処理では行わない。型付きの子孫置換と children 置換にも、対象コンテナのテーマを伝える。別名へコピーしたテーマで参照先を選び、再コピー後にコンテナのテーマを変更・復元する実 worker／画素の試験を追加した。基本30組と追加のテーマ6組は、別々の一時プロジェクト・素材・JS プロセスを使い、スキーマ別に最大2並列で実行する。判定するケースと既存の期限・画素基準は維持する。追加テーマと2スキーマの並列処理は確定済み3環境gateで成功し、namespace画像も照合済みである。
-
-生成 browser の独立コピーは、script の生成元文書が宣言した Web 素材を既存の bundle と補助ライブラリへ保存し、`script_bindings.browser_library` に宣言済み別名を保持する。生成した browser の URL、ref の URL 上書き、descendant の部分上書き・置換、children の置換、入れ子の script に同じ所有文脈を適用する。URL を上書きしない参照は部品定義の素材を継承する。URL・HTML・CSS・JS 本文を変更せず、再コピーで別名を合成する。未宣言の file URL はコピー先の同名 URL へ結ばない。追加する文脈は既存の生成出力容量制限へ算入する。両形式・7経路・元ファイル削除後と再コピー後の42画像は、`b15bfa5` の [GHA `40234583740`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40234583740) で旧対象3環境とも成功した。合計126画像・64,512画素、source／PNG hash、前後の PNG バイト列と素材 revision も独立に照合した。
-
-生成した `browser_scope`／`browser_override` の明示別名には捕捉した `script_bindings.browser_libraries` を使う。v2 の `url_library` は URL 所有元を別途保持し、metadata だけの不一致指定でも元の URL 文脈へ戻す。v1 の読み取りも維持する。捕捉していない別名や所有情報のない旧データを同名のコピー先へ推測で結ばない。明示 script 文脈の独立合成とは別の機能である。
-
-明示script文脈は、捕捉済みの実行・入力・コード所有元を個別に合成する。生成script_scopeは、宣言済みの出力別名とhash付き入力別名を個別に選ぶ。捕捉するscript_bindingsの共通表とscript_scopesを使い、script_namespaceで選んだ文脈の論理名を共通表へ結ぶ。共通表のcomponents／variables／descendantsは選択中の論理名表そのものとは限らない。v3は元URIのhashを追加し、v1／v2の読取りも維持する。5経路×3文脈×2形式の明示URIケースは349c2eaの[完全GHA](https://github.com/EkeMinusYou/lazypencil/actions/runs/40820298828)と90 PNGの独立照合で成功した。metadataだけのsource選択、元入力式に対する継承guard、実効入力scopeの所有元と失効guardの維持はcbc868bの[完全GHA](https://github.com/EkeMinusYou/lazypencil/actions/runs/40831221172)で成功し、継承4経路・両形式を含む追加30組／90 PNGを独立照合した。再配置後のURIや変換後の入力式に古いguardを再接続しない。出自のない旧copyで元のguardを復元できない場合は再copyを案内して拒否する。native parentの単独文脈は下記5eaa691、複合envelopeと入力世代・生成コード所有元は冒頭の後続CIで検証済みである。静的出力や元libraryへのlinkで代替して完了とはしない。本家との全体の往復描画互換も未受け入れである。
-
-捕捉済みの通常namespaceから生成する単独custom script_bindingsは、部品・変数・テーマ・子孫パス・素材のlogical mapとtarget identityを合成する。明示キーがidentity fallbackより優先する。libraryは出力対象を選び、inputs_hashに一致する入力だけinput_componentsを使う。入力変数の所有元は出力mapと分け、継承入力のguardは元の式を使う。閉じたasset manifestの外のファイルや未知の対象をコピー先の同名資源へ結ばない。raw catalogのviewとその到達可能な別名も保持する。62675c9の[完全GHA](https://github.com/EkeMinusYou/lazypencil/actions/runs/40834879129)では、5経路×6文脈×2形式と継承4経路×2文脈×2形式の新規76組が成功し、追加228 PNGのrevision・hash・寸法・独立復号と76組の元／copy／再copyのbyte一致を照合した。元からcustom bindingを持つ親generatorと複合文脈の全範囲の証明とはしない。
-
-native bindingを持つ親のコピーはv4で論理mapと実文書のnamespaceを分離する。元の変数名はsource_variablesに保持し、親の一度だけの変換後の提供入力でguardを照合する。継承入力は別に原式と指定元を保つ。入力の部品scopeを変数式の所有元に使わず、二つの表を独立して捕捉する。旧captureで必要な元式を確定できない場合だけ再copyを案内する。06bab20の所有元36組に加え、5eaa691の[完全GHA](https://github.com/EkeMinusYou/lazypencil/actions/runs/40860814717)では、通常／scope／custom、active／stale、出力guard不一致、継承・5経路・別folder所有元と両形式の新規124組が成功した。先行と通常の888 PNG／JSON、296組の元／copy／再copy、既存detach 3件の回復も照合した。この時点の結果は単独文脈である。後続の複合envelope・入力世代・生成コード所有元は冒頭の4252fe2／d7cc9c6までの検証結果を参照する。
-
-生成された `scriptUri` と一致しなくなった `script_scope` は、入力側も無効と確認できる場合だけ除く。管理 URI への転送前に判定し、入力 hash が有効または継承中で判定不能なら保持する。この失効処理と実 worker／再コピー／画素の回帰は確定済み3環境gateで成功した。この失効処理だけで明示スコープの全合成範囲を実装済みとはしない。
-
-生成 browser の v2 URL所有文脈、空／未宣言 namespace、placeholder の保持は27経路・2形式・3段階の162画像と18回の未宣言ファイル拒否で検証した。c9ffb37 の全3環境では以前の画像と全byte一致し、独立復号も成功した。旧データや再利用定義に所有文脈がない経路は、現在も再コピーを案内して拒否する。
-
-## Web ページ
-
-### ローカル素材の固定と持ち運び
-
-文書の `metadata.lazypencil.browser_resources` v1 は、元の `file:` ディレクトリ URL と、その文書から見た素材ディレクトリを `roots: [{url, path}]` で対応付ける。許可された project root と私有データの境界を検査し、内容・ディレクトリの追加／削除・リンク先を不変入力へ捕捉する。この宣言は本家の `.pen` 属性ではなく lazypencil の補助情報である。
-
-共通編集バッチの `{"op":"pack_browser_resources"}` は、この文書の宣言済み素材を `assets/lazypencil/<hash>.bundle/` へ保存し、宣言を `bundle: {uri, sha256}` に置き換える。版付き `resources.json` が元 URL・MIME・内容 hash・容量を保持し、同じ内容の payload は共有する。HTML・CSS・JavaScript 内の URL は書き換えず、空の CSS や拡張子なしファイルも保持する。原本のディレクトリは変更しない。`.pen` と生成された `assets` を一緒に移動でき、再実行では同じ内容の bundle を再利用する。
-
-dry-run と後続操作の失敗では素材を公開しない。欠損した入力、改変されたカタログ／payload、私有データへの参照を拒否する。欠損状態でも通常の文書編集と修復は可能である。管理素材の出力先を捕捉元のディレクトリ内へ置く操作は、検証中の入力を変更しないよう公開前に拒否する。素材用ディレクトリと `assets` は分ける。
-
-独立コピーでは、URL を所有する文書の捕捉済み namespace を bundle と補助ライブラリへ移す。同じ URL を使う別ライブラリやコピー先の素材と混同しない。`metadata.lazypencil.browser_scope` v1 は元の URL と宣言済みライブラリの別名だけを保持し、任意のファイルパスを開く指定には使わない。browser の URL は [形式仕様](https://docs.pencil.dev/for-developers/the-pen-format) の通常の文字列として扱い、query・fragment・`$` の文字を変数として展開しない。寸法などの対応する変数はコピー先の名前・テーマへ結び直す。HTML・CSS 内の URL は保持し、元ライブラリの削除と別文書への再コピーに対応する。
-
-URL の部分上書きには `browser_override` v1 の専用 metadata envelope を使う。ユーザーの metadata と素材の参照文脈を分け、指定していない metadata や URL は元定義への継承を保つ。切り離しは有効な参照元をルート文書の宣言済み別名へ結び直し、保存前に実効プロパティ・テーマ・素材の参照元が変わらないことを検査する。通常の metadata だけの更新・unset は実行文脈を保持し、URL の明示更新は同じ JSON でも古い対応を失効させる。URL の override を reset すると元定義への継承に戻る。
-
-共通編集バッチの `{"op":"set_browser_resources","roots":[{"url":"file:///original/site/","path":"web"}]}` で宣言を設定し、空配列でこの文書の宣言を解除する。宣言は既存の Project の許可 root を拡張せず、私有データの境界を越えられない。共通描画入口は file URL を所有する文書の捕捉済み namespace だけに結び、未登録の file 要求をホストから読まない。捕捉元と素材 revision を raster cache／保持 page の識別子へ含め、素材が変わった場合は画面外の保持 context も閉じる。寸法だけの変更は DOM を保つ。取消は描画入口で処理し、最初の確認で中止した場合も既存の browser／shader process と動的 cache を回収する。この経路はc38fc1cの[Mac完全CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40935920526)で、実Chromiumによるlocal pageの素材変更・画面外状態の破棄・復帰を含めて成功した。ネイティブ file の日時・range／media・worklet／popup・全 worker 起動方式、本家との往復描画互換と製品全体の残件は引き続き必要である。
-
-### 取得と合成
-
-Browser ノードの URL をヘッドレス Chromium で読み込み、ノードの寸法、対応するデバイス設定、ズーム、スクロール位置を反映して画像を取得する。HTML・CSS・ページの JavaScript はブラウザーに処理させる。Skia は取得画像へ回転・角丸・クリッピング・不透明度・後続の効果を適用する。
-
-Chrome は表示 UI なしで実行でき、DevTools Protocol にはページの画像取得がある。Rust から DevTools Protocol を操作し、Node.js や Puppeteer を必須の中継として追加しない。[Chrome Headless](https://developer.chrome.com/docs/automation-and-testing/headless)、[DevTools Protocol の Page](https://chromedevtools.github.io/devtools-protocol/tot/Page/)
-
-CLI は取得条件を満たした一時点の PNG を出力する。TUI は同じページ状態を保持して更新を取得でき、明示更新と上限付きの更新周期を提供する。ユーザーが Web ページを操作するブラウザー UI は設けず、URL・スクロール位置などの変更はプロンプトまたは構造化操作で行う。
-
-### 取得条件と再現性
-
-読み込みの完了条件、フォントの準備、追加待ち時間、全体のタイムアウトを取得条件として扱う。常時通信するページで無期限に待たない。URL だけでなく、最終 URL、取得時刻、ブラウザーの版、寸法・デバイス設定、準備条件、画像ハッシュを記録する。
-
-`[runtime.browser].additional_wait_ms` は既定0・最大60,000msで、読込／selector条件の後、最終のfont・画像decode・2 animation frameの前に待つ。ページ側のtimerに依存せず、取得／描画の残り期限と取消を共有する。ユーザー設定の待機はプロジェクトの明示0で解除でき、取得metadataとcacheの識別へ含める。設定継承・遅れて追加される画像・host時計・期限・取消／回収／復帰の試験は `360813d` の全3環境CI `40605012001` で成功した。
-
-`[runtime.browser].animation_policy` は既定 `running`、明示 `paused` で取得条件の完了後に native document animation の再生率を0にする。CSS animation・transition・Web Animations を対象にし、JavaScript timer・video・画像decode・別processのframe全体を停止する時計ではない。固定時刻へのseekは行わず、同じ保持contextの更新では停止した状態を取得する。方針変更時は既存の設定再読込に従いcontextを破棄し、metadataと取得cacheも更新する。3種類のnative animation、停止後に作成するanimation、通常frameの継続と設定継承は [全3環境の検証 `d6c5808`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40633683855) で成功した。保存した取得画像の全2,048画素と、停止59,900ms・再開60,000msの観測も独立に照合した。
-
-アニメーションや外部の更新を含むページは、実際に取得した時点の状態として扱う。別の時刻の再取得が同じピクセルになるとは保証しない。ネットワークに依存しない互換試験では、ローカルのテストページとフォントを固定する。
-
-`[runtime.browser].network_policy` は既定 `online`。`offline` はHTTP(S)／WebSocketをcontext単位で拒否し、localhost・worker・子frameにも適用する。宣言済みの捕捉したローカル素材・data・about:blankは既存のファイル境界内で利用でき、外部の主文書が必要な取得は診断を返す。明示したprojectのonlineはuserのofflineを上書きする。取得metadataとlimitsへ含め、設定変更時はcacheと保持contextを更新する。既定onlineではlistener／threadを開始しない。offlineのページ用プロセスではWebRTCをproxy経由へ制限し、network方針の変更時は通常取得と保持取得の両方でプロセスを更新する。
-
-[全3環境の検証 `d6c5808`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40633683855) でHTTP／WS成功対照・HTTPS／WSS接続試行対照、worker／frame、新context、cache、refresh、online復帰を通過した。STUN／TURN(TCP)・ページ／workerのWebTransportは、通常取得と保持取得にそれぞれ所有TCP／UDP接続先を用意し、1500msの観測でoffline／refresh中の到達が各0になることを確認した。全18 UDP／6 TCP接続先、取得画像の8,192画素と取得metadataも独立に照合した。接続先は通信を完了しないため、正常なmedia／contentの対照ではない。これはブラウザーの取得方針であり、全protocol・OS全体の通信遮断を保証する機能ではない。
-
-通常利用するブラウザープロファイルを流用せず、文書用の分離されたコンテキストを使う。認証が必要なページは明示的に設定した専用プロファイルを使い、認証情報を `.pen`・会話ログ・公開する描画メタデータへ書き出さない。
-
-ページ例外と CDP の自由形式本文は公開診断へ転用しない。`PAGE_LOAD_FAILED` と host 定義の stage、操作名・数値 code を返し、秘密を含む本文・stack・data を除く。自作 GLSL の上限付き編集診断は保持する。通常／保持 context の実取得・回収・復帰は確定済み全3環境で成功した。専用認証 profile の作成・永続化・可視 login も成功済みで、保持preview経路と別bound MCPの認証共有はe786e3e・4ec8d67のMac完全CIで検証済みであり、実端末の受け入れとは区別する。[認証の現行範囲](runtimes.md#dedicated-authentication-profiles)
-
-## シェーダー
-
-### 互換実行の経路
-
-対象は対応する `.pen` 仕様の GLSL による塗りとエフェクトである。公式仕様には WebGL 1.0 のフラグメントシェーダー、uniform の宣言、画像入力などの定義がある。[Pencil の形式スキーマ](https://docs.pencil.dev/for-developers/the-pen-format#typescript-schema)
-
-初期の互換実行は、ヘッドレス Chromium の WebGL で行う。入力コードを SkSL として扱わず、GLSL のコンパイル・リンク、uniform の設定、テクスチャの準備、描画結果の取得を ShaderRuntime が担当する。BrowserRuntime の通常の Web ページとは別の実行コンテキストを使う。
-
-次を実装と互換試験の対象に含める。
-
-- 通常の塗りとしての出力と、描画済みノードへ適用するエフェクトとしての出力。
-- 宣言された数値・色・ベクトル・画像などの入力、変数による値の解決。
-- 解像度・時刻の組み込み入力と、描画するノード・背景を参照する画像入力。
-- 対象の寸法と効果用の領域、座標原点・上下方向・画像の向き。
-- 色空間、アルファの扱い、ブレンド、複数の塗りと効果の適用順序。
-
-### 宣言と数値入力
-
-ローカル`file://` URLの文字列samplerは、percent encodingを復号したファイルへ通常の許可領域・依存検査を適用する。独立コピーはURL原文を表示用に保持し、画像だけを`sampler_images`で転送する。元sourceの削除・project移動・再copy後も元URLを開かず、利用者が変数を新しいURLへ変更した場合は新しい参照を検査する。HTTP(S)の取得・通常画像とsamplerの共通捕捉・独立コピーはa00289fの完全CIで検証済みである。埋め込みdata画像の後続対応と、捕捉scriptのfile-URL／HTTP asset keyの残件は[現在の状態](implementation-status.md#current-status)で区別する。
-
-### 埋め込み画像
-
-画像fillとshaderの文字列samplerは、明示した`data:image/png`／`data:image/jpeg`／`data:image/webp`を処理する。末尾の`;base64`がある場合は標準base64、それ以外はpercent encodingでbyte列を復号する。`+`を空白へ置き換えず、元のURL・変数のalias・theme・文字列表示を保持する。リテラルのfragmentは画像payloadから外し、元文書には残す。画像MIMEと実際の静的containerが一致することを検査する。復号後の符号化済み画像は20MiB、headerは4,096 byte、URLは最大で20MiBの全byteをpercent encodingした長さにheaderを加えた範囲とする。既存の文書64MiB・Project128MiBと描画時のdecode／画素上限も適用する。
-
-画像のbyte列は`embedded_image`のhash付き論理IDで一度だけ捕捉し、local path・import・script／shaderコードの参照には流用しない。ネットワークworkerを起動せず、offlineでも処理する。コピー・切り離し・生成scriptの独立コピーでは原文URLを運び、同じpayloadの管理画像ファイルを追加しない。明示`script_assets`のimageに列挙しても余分なファイルを作らない。壊れた画像はpayloadを診断に出さず不完全なassetとしてinspect／構造修復を可能にする。素材回収は対応する画像を復号せず、未対応mediaは未解決入力として保守的に保持する。GHAでの検証状態は[現在の状態](implementation-status.md#current-status)を参照する。
-
-### HTTP画像の取得と保持
-
-通常の画像fillとshaderの画像入力は、HTTP(S)画像をスナップショット内のメモリへ捕捉する。`remote_image`依存のpathはURLをhash化した論理IDであり、ローカルファイルや許可rootの追加には使わない。取得済みのbyte列とhashをそのProjectの寿命まで保持し、`verify_unchanged`でネットワークを再取得しない。次のProjectの読み込みでは改めて取得し、画像のbyte列が変われば依存revisionも変わる。ディスクcache・cookie保存は追加しない。CLI／MCP／TUIは自身の実行ファイルを専用workerに使い、ライブラリを組み込む側の明示捕捉には`Project::load_with_remote_worker`を用意する。
-
-取得は`runtime.browser.network_policy`と`timeout_ms`に従い、offlineでは開始しない。1 ProjectのHTTP画像取得全体は最大30秒、1画像の符号化済み入力は20MiB、URLは4,096 byte、redirectは最大5回である。PNG／JPEG／WebPの静的container検査を共用し、描画時は従来のpixel／decode上限も適用する。URLに埋め込んだ資格情報、別protocolへのredirect、HTTPSからHTTPへの降格を拒否する。明示URLのqueryとfragmentは文書・文字列に保持するが、fragmentを通信要求へ送らず、失敗診断へURL／本文を転用しない。browser認証profileのcookieは画像workerへ引き継がない。
-
-DNS／TLS／HTTPは、既存Chromium downloadと共通の所有者pipe・取消・kill／wait処理を使う専用workerで実行する。上記の通信期限に加えて最大1秒のdrain／回収枠を設け、親の終了でworkerも終了する。取得失敗は不完全なassetと診断に残し、文書のinspectと構造修復を可能にする。新たな未取得画像を導入する編集や、不完全な画像を完全な描画として返すことは認めない。管理素材の回収走査ではHTTPを取得しない。
-
-独立コピーでは使用する変数の別テーマの画像も捕捉し、既存の管理bundleへ保存する。元のURL文字列・alias・themeを残して画像だけを転送するため、通信停止・元source削除・project移動・再copy後もローカルで描画できる。コピー後に利用者が新しいURLへ変数を変更すれば、新しい所有元のHTTP画像として取得する。取得先が将来返す内容の不変性や、認証を要する全サービスへの互換性を保証するものではない。
-
-マクロ・条件分岐がある shader は、実 WebGL コンパイラーで元の GLSL を検査し、そのコンパイラーの predefined macro を使ってブラウザー内の上限付き Wasm で展開してから、選択された宣言を Rust の型検査へ渡す。型・名前・構造体 field・配列長を生成する object／function macro と、異なる型を持つ条件分岐を同じ経路で扱う。選択された宣言の documentation の既定値・時刻・解像度も維持する。注釈と宣言の間にある directive は展開後に消えても区切りとして保持し、元の行・ファイル番号や byte 位置を変更しない内部コピーを使う。コメント内の色などの `#` は directive と区別する。未選択または未知の名前への保存済み override はエラーとし、元のコード・文書は書き換えない。展開ソースは4 MiB、宣言トークン・型・添字の既存の上限を保ち、Wasm にホスト側のファイル・ネットワーク機能を渡さない。宣言取得と型付き入力の準備・描画は一つの shader 期限を共有する。展開ソースと PNG は同じ LRU の容量・件数制限に従い、cache の読み取りで待機期限を延長しない。自作8ケースを両形式・塗り／効果・1倍／2倍で検査し、inactive な時刻・型エラー・未対応版・idle 後の再利用も確認する。新しい Rust／実 WebGL の結果は GHA で検証し、本家との全互換性とは扱わない。
-
-現在は precision qualifier とコメントを含む uniform 宣言、同じ型の複数宣言、1次元の数値配列を扱う。`float`・`int`・`bool`、`vec2/3/4`・`ivec2/3/4`・`bvec2/3/4`、`mat2/3/4` を受け付ける。配列は平坦な数値リストで保存し、`vec3 colors[2]` は6個、`mat2 transforms[2]` は8個の数値を使う。行列は column-major、boolean のベクトルと配列は数値の0・1で指定する。scalar bool は従来どおり JSON boolean とする。色文字列は scalar の vec3・vec4 へ結び、画像は scalar sampler2D または1次元の sampler2D 配列を使う。配列は画像 URI の文字列リストとし、各要素で文字列変数・別名・テーマの参照元を保持する。要素ごとの依存を捕捉し、切り離しでも同じ参照を維持する。固定画像の配列と相対ローカル URI の文字列変数は、元 library から独立したコピーを作れる。文字列の literal だけを画像と同じ管理 bundle の通常 `.pen` library へ置き、root の変数・別名・テーマは接続を保つ。本文の元の文字列を変更しない。絶対パスや、異なる画像が衝突するsymlink経路・大文字小文字の投影は、下記のsampler_imagesによる画像だけの転送で対応する。元の文字列は保持し、通常の許可領域・依存検査は維持する。非localなURIなど、残る全互換性とは区別する。
-
-構造体は名前付き・inline・匿名・入れ子の型を解析し、`lamp.color` や `lights[1].gain` のような修飾した末端名で、既存の平坦な `uniforms` オブジェクトへ値を保存する。構造体の配列、構造体フィールドの配列、配列を含む構造体の入れ子も同じ規則で扱う。構造体配列の内部表現には添字のパターンを使い、WebGL が返す実際の末端名・型に結び付ける。未指定値・field の既定値・画像入力には既存の型と容量の検査を適用する。field の注釈はその宣言だけに適用し、構造体全体への `@default`・`@time`・`@resolution` は拒否する。構造体配列の末端へ自動の時刻・解像度を設定しない。展開は256末端パターン・16段、識別子は1024バイト、修飾名は4096バイトで区切る。[WebGL の uniform 取得](https://registry.khronos.org/webgl/specs/latest/1.0/#5.14.10) と [OpenGL ES の構造体の末端名](https://raw.githubusercontent.com/KhronosGroup/OpenGL-Refpages/main/es2.0/glGetActiveUniform.xml) を参照する。自作10ケースの CLI 0.3.9 はすべて宣言解析エラーとなったため、その画像を互換性の正解にはしない。新しい8ケースを2形式で、自作 GLSL の計算値と実 WebGL の全画素で検証し、同 CLI との一致や全体の構造体互換性は主張しない。16構造体ケースを含む実 WebGL の検証は確定済み全3環境gateで成功した。
-
-対象の GLSL ES 1.00 は直接の配列の配列と、構造体内での新しい型定義を認めないため、それらは構文エラーとして拒否する。既に宣言した型を field として使う入れ子と、構造体を介した複数段の添字は扱う。[GLSL ES 1.00 §4.1.8–4.1.9](https://registry.khronos.org/OpenGL/specs/es/2.0/GLSL_ES_Specification_1.00.pdf)
-
-元の宣言またはマクロ展開で整数リテラルになった配列長は Rust 側で検査し、残る定数式の寸法は WebGL のコンパイラーへ渡す。保存されたソースは変更しない。実際に使われる linked uniform の型・要素数を取得し、最適化で使われなくなった配列末尾を除いて設定する。定数式のサイズでは active な範囲より短い入力を拒否するが、コンパイラーが公開しない inactive な末尾の厳密な長さを保証しない。未指定の数値・ベクトル・行列・active な数値配列には WebGL のゼロ既定値を使い、`.pen` や GLSL へ書き戻さない。
-
-宣言直前の最も近い documentation comment（`/** ... */`）の `@resolution`・`@time` を単語として照合する。空行は許すが、別の comment・通常のコード・プリプロセッサ行を挟むと先行注釈を破棄する。セミコロン後の注釈は同じ行でも次の宣言へ適用し、宣言内の注釈や末尾だけの注釈は適用しない。複数名の宣言では同じ注釈を共有する。組み込み入力の配列・保存済み上書きと、`@time`／`@default` の併用は拒否する。自作20ケースの GLSL と明示した注釈契約から期待色を独立に求め、2形式・scale 1/2 の全画素を検査する。本家出力は期待値に使用しない。拡大出力時の logical 座標・resolution は以下の経路で実装し、比較試験で検証する。最新形式の完全な互換性は未完了とする。
-
-拡大座標を補正する前処理は独立した Rust／Wasm component を共通の描画経路から実行する。塗り・罫線はノード内の論理寸法、effect は合成画像の論理寸法を解像度とし、`gl_FragCoord.xy` を同じ単位へ変換する。z/w は WebGL の値を保持する。GLSL のマクロ・条件分岐を展開した後に残る組み込み座標だけを変換し、元のソースと hash は保持する。Chromium 内の import memory を最大64 MiBに制限し、ファイル・ネットワーク・WASI の import は与えない。component は本体の Cargo.lock と native build cache から分離し、変更時は GHA の Wasm／実行試験と原ライセンス収集を重い native 検証より先に行う。元の WebGL ソースを先に検証し、実コンパイラーへ GL_ macro の定義状態を問い合わせる。GHA で生成・検証した481,016バイトの module を同梱し、通常の利用と native build に Node や Wasm target の導入は要らない。ソース54ファイル・binary・69 package の原表示・wasm32 の標準 library 54点を照合する。元の source hash と module hash・論理寸法を取得結果へ記録する。現行の試験では、自作10ケースの2倍画像と注釈20ケースの1倍／2倍画像を、独立した式と明示した入力契約から求めた期待値で照合する。元の行番号、実コンパイラーの macro と effect／z/w も検査する。期待値の置換後は source `f11c10c` の対象3環境で成功した。従来の本家参照画像は現行ソースに含めず、過去の比較記録を現在の検証根拠にはしない。その他の宣言・注釈・適用領域を含む全互換性は未完成である。
-
-宣言前の `/** ... */` comment の `@default` は、数値・`@color` の色・カンマ区切りの成分を指定できる。grouped 宣言は共有し、保存済みの uniform 値を優先する。配列は先頭要素だけを初期化し、リンクされた残りを0にする。通常 comment は既定値にしない。宣言後の documentation comment は、上記の隣接規則に従って次の宣言へ適用する。自作14ケースの literal／constant 配列の2方式を保持し、独立した式で求めた色と実 WebGL 出力の全画素を、従来の最大差1の基準で照合する。本家の参照 PNG は保持しない。現在の試験は lazypencil の文書化された契約を検証し、最新形式全体の互換性を証明するものではない。置換後の実行は同 source の対象3環境で成功した。
-
-ソースは1 MiB、解析は262,144 token、uniform 名は256個、配列は256要素、明示値・linked numeric component は4,096を上限とする。sampler 配列にも同じ宣言長・active prefix の検査を適用し、未指定要素には透明画像を使う。実際の fragment texture unit 上限を検査し、同じ入力画像は unit を共有する。画像の符号化済み入力は1要求64 MiBを上限とする。マクロ・条件分岐を含めた本家との全 shader 互換性、残る Pencil 注釈と完全な vertex interface の確認は未完了。小さい値や実行期限を削って描画成功に見せる処理は行わない。独自の編集可能な [作例](../examples/uniform-study.pen) は同じ [GLSL](../examples/assets/uniform-study.glsl) を配色配列・行列で再利用する。
-
-最終的なページ取得画像とシェーダー画像は、共通の画像表現に正規化して Skia へ渡す。エフェクトが背景を参照する場合は、それ以前の描画結果を用意する。対象ノードだけを単独で描いて背景を省略しない。
-
-### 変数で指定した画像の参照元
-
-画像 uniform に変数を指定した場合、lazypencil は別名と現在のテーマ条件をたどり、最後に値を定義した文書から画像の相対パスを解決する。塗り・線・エフェクトで同じ規則を使う。計算結果で画像パスを定義元文書へ結び、実際に使う素材を取得・描画するときに正規化して許可領域と依存を検査する。非表示ノードや無効な塗り・線・効果の画像は開かない。保存する変数や、その変数を使うテキストの文字列は変更しない。部品の切り離し後も元の変数への参照を保つため、その後の編集が文字列と画像へ反映される。追加のメタデータは使わない。
-
-この参照元の選択は lazypencil の現在の実行規則として明記し、本家との往復描画互換は別途検証する。独立コピーでは別名・テーマ・テキストとの連動を維持し、画像をコピー先の管理素材と変数ライブラリへ取り込む。相対パスはライブラリ内で同じ表記を保つ。絶対パスは、テキストとしての元の文字列を保持し、画像として解決するときだけ管理素材の相対パスへ結ぶ。コピー先の変数を後から編集した場合は、その新しい値と定義元を使う。明示的に再利用した変数はコピーせず、既存の参照を保つ。
-
-絶対パス・ローカルfile URL・HTTP(S) URLの転送には、生成した変数ライブラリの `metadata.lazypencil.sampler_images` に `{ "version": 1, "images": { "元の文字列": "images/内容ハッシュ.png" } }` を保存する。拡張子は元の PNG・JPEG・WebP の内容に合わせる。これは lazypencil 独自の補助データであり、本家の公開仕様や本家での往復描画保証ではない。画像に使う変数の末端の定義元だけに作用し、通常の文字列・画像 URL・コード・import の解決には適用しない。最大4,096項目・文字列合計4 MiB・各パス4,096バイトで、未知版・未知項目・絶対の転送先・転送先の親移動／URL・不正な型を拒否する。元文字列のfile URLとHTTP(S) URLはそれぞれ前述の検査を受け、その他のURL schemeは許可しない。転送先にも通常の許可領域・依存変更の検査を適用し、未使用の画像は開かない。文書と素材一式を移動した後や再コピーでも、元の絶対パスやfile URLを開き直したり、元のHTTP画像を取得し直したりしない。
-
-相対パスでも、symlink を通った `jump/../pixel.png` と `pixel.png` が別の画像を指す場合や、ファイル／ディレクトリ・大文字小文字の投影が衝突する場合は、同じ `sampler_images` を使って画像だけを内容ハッシュのパスへ分ける。元の文字列・テーマ・別名は保持する。衝突しない相対参照は従来のディレクトリ配置を保ち、画像ごとに大量のライブラリへ分割しない。転送の判断は実ファイル操作の前の共通パス検査だけで行い、保存先の既存ファイル・symlink・内容変更の衝突を転送で回避しない。元の source と素材は通常の許可領域・依存の検査を受け、保存と容量・パス数の上限も維持する。
-
-### 時刻と更新
-
-画像出力では評価時刻を明示し、既定値を `0` 秒とする。TUI では同じ時刻の表示に加え、上限付きのフレーム更新を有効にできる。静止したプレビューでは無駄な再描画を止め、同じコード・入力・時刻の結果を再利用する。
-
-TUI の `/play [fps]` と Preview の Space は、既定5・最大10 fps の再生を要求する。単調時計から評価時刻を求め、描画中・待機要求・未表示の結果がある間はフレームを捨てる。既存の描画を timer で取消せず、遅れたフレームを後から連続実行しない。`/pause` または Space で次の要求を止め、実行中の1フレームはその要求時刻で完了できる。時刻の手動変更は再生を止める。`@time` を持つ実描画の acquisition がない場合は開始せず、描画エラーと静的な結果への変更で停止する。overlay と添付画像の閲覧中はフレーム要求を保留するが、論理時計は進む。停止中は再生の timer を起こさない。元の文書・会話へ再生状態や時刻を保存しない。初回 source `1936598` の macOS arm64 `40052100177`（260試験）と Linux x64 `40052102399`（262試験）が実 PTY・両構成 Clippy を含めて成功し、artifact の digest・必須試験の成功・取得 metadata・画像を照合した。停止時刻を完了済み画像へ結び付ける後続`5fd4ddc`も[Mac arm64](https://github.com/EkeMinusYou/lazypencil/actions/runs/40052437100)／Linux x64で成功し、必須metadata・画像・以前の同OS画像との一致を照合済みである。
-
-Skia の SkSL Runtime Effects を使う最適化は追加可能だが、GLSL と言語・座標・テクスチャの扱いが異なる。変換を行う場合は WebGL の基準出力との比較を必須にし、変換できないシェーダーは WebGL 経路で実行する。[SkSL の説明](https://skia.org/docs/user/sksl/)
-
-### GPU がない環境
-
-通常描画は Skia CPU を使う。GLSL についても、SwiftShader などのソフトウェア経路を持つ検証済み Chromium 構成を用意し、GPU がない保証環境を含める。
-
-Chromium は SwiftShader を使う CPU 実行の構成を持つ一方、WebGL の利用可否をすべての環境で保証していない。自動フォールバックに依存せず、固定した版・設定と分離されたプロセスでソフトウェア実行を試験する。ソフトウェア実行に必要な起動設定とその制約を配布手順へ明記する。[Chromium の SwiftShader 資料](https://chromium.googlesource.com/chromium/src/+/HEAD/docs/gpu/swiftshader.md)
-
-コンテキストを作れない、描画が上限を超える、GPU プロセスが停止する場合は、ランタイムまたは描画の失敗として返す。効果を無視した画像を、正常な出力として返さない。
-
-## コードとアセットの管理
-
-既存の `.js`・シェーダーファイルは `.pen` の参照に従って読み取る。AI が新規作成・変更する場合は、MCP の `put_asset` で内容ハッシュによる不変ファイルを作り、編集バッチでノードの参照を更新する。
-
-この順序では原子的な文書更新を一つの `.pen` に保ち、失敗時には未参照のアセットだけが残る。文書のチェックポイントを復元すると、以前の不変アセットも参照される。管理アセットの回収では現行文書だけでなく、保持中の履歴からの参照も調べる。
-
-ユーザーが外部エディターで参照コードを直接変更した場合も、ハッシュと監視で再実行する。ただし、その外部編集の履歴を lazypencil が復元できるとは扱わない。文書とアセットを持ち運べるようにし、実行結果のキャッシュを正本にしない。
-
-## ランタイムの寿命と配布
-
-JavaScript ワーカーと Chromium は、対象のノード・効果の評価が必要になってから起動する。参照コード・入力・時刻に変化がなければ結果を再利用する。短時間の連続描画ではランタイムを再利用し、待機が続いたら終了する。同時実行数、画像の画素数、実行時間、キャッシュ容量に上限を設ける。
-
-Chromium と必要な補助ファイルは本体に同梱せず、専用コマンドで別途取得する。3機能の対応は製品の標準スコープとし、本体だけを入れた環境でランタイムが不足している場合は、具体的な導入方法を返す。Chromium 同梱版は初期リリースの配布対象に含めない。
-
-`lazypencil runtime setup chromium` を明示的な導入操作として提供する。OS・CPU ごとに検証済みの取得元・版・ハッシュを固定し、取得したファイルを検証してからユーザーデータ領域へ配置する。実行ファイルだけでなく、必要なライブラリ・リソース・ソフトウェア描画の補助ファイルもまとめて管理する。通常の導入に管理者権限を必須にせず、Linux などで必要なシステムライブラリは `doctor` で確認し導入方法を案内する。
-
-導入済みの対応版は再利用する。本体の更新で必要な版が変わった場合も、セットアップを明示的に実行して取得する。更新中や取得失敗で使用中の版を壊さないように版ごとに配置する。既存の対応ブラウザーを指定する設定も用意するが、管理する検証済みの版とは区別して互換性を診断する。描画を契機に無断でダウンロード・更新しない。具体的な配布元と実行環境の版は、Web ページ・WebGL・ソフトウェア描画の初期検証で固定する。
-
-ユーザーによる中断はワーカーとページ・シェーダーのジョブへ伝播する。停止しないジョブは分離した実行プロセスを終了させ、書き込み済み文書は保持する。文書の保存ロックを、コード実行やネットワーク待ちの間に保持しない。
-
-## キャッシュと診断
-
-| 対象 | キャッシュの条件 |
-| --- | --- |
-| スクリプト | コードと実行環境の版、寸法、入力、参照する変数・テーマ、乱数の条件 |
-| Web ページ | 取得条件、文書用コンテキスト、取得画像の ID・ハッシュ、取得時刻と期限 |
-| シェーダー | コード、宣言と uniform、入力画像、時刻、寸法、色条件、実行環境の版 |
-| 最終画像 | 文書のリビジョン、すべての依存ハッシュと取得 ID、領域・倍率、Skia の版 |
-
-ローカルコードと画像の依存ハッシュを、`.pen` のリビジョンと別に記録する。Web ページの再取得では同じ文書リビジョンでも新しい結果になり得るため、TUI は依存の取得 ID でも古い結果を判定する。
-
-診断には対象ノード、参照アセット、実行段階、原因を含める。スクリプトの行位置、シェーダーのコンパイルログ、ページの取得失敗を可能な範囲で返し、AI がコードや入力を修正できるようにする。秘密情報を含む URL・ヘッダー・プロファイル情報をそのままログへ出力しない。
-
-## JavaScript 初期実装の検証状況
-
-Rust の別プロセスへ `rquickjs` 0.14.0 と、その配布ソースが含む QuickJS-NG 0.16.2 を組み込んだ。モジュールローダー・ホストのファイル・ネットワーク・DOM・タイマーの API を提供しない。MCP・TUI ではプロセスを再利用するが、各評価で JS ランタイムとコンテキストを作り直す。最終実行から60秒の待機でプロセスを終了・回収する。乱数は Mulberry32 の seed 0 に変更し、評価ごとに同じ列を開始する。自作4ケースは先頭32個と65,536回目までの離れた位置を含む37個を検査し、寸法・入力を変えても列がリセットされることを確認する。独立した Rust の整数演算で期待値を求め、実 QuickJS の返却値と、両形式の画像の全成分を厳密一致で検査する。原作者の [CC0 公開](https://gist.github.com/tommyettinger/46a874533244883189143505d203312c)と元の表示・ソース hash は [NOTICE](../resources/licenses/script-random/NOTICE.txt) に保持する。本家出力は試験に使わない。置換後の実 QuickJS と画像試験は source `f11c10c` の対象3環境で成功し、独立した計算による画像の再検査も完了した。実行結果キャッシュの永続化は残る項目である。
-
-スクリプトの `@schema` は2.21・2.19に加え、[公式例](https://docs.pencil.dev/core-concepts/code-on-canvas)で使われる2.11ヘッダーを受け付ける。2.11文書の読み込み対応とは区別し、対応する2.19／2.21文書で既存ソースを保持して実行する。乱数の試験には前段の独立した期待値を使う。従来の本家参照画像は現行ソースから除いており、現在の検証結果を本家との画素一致の証明には使わない。版別の入力・生成ノード・寸法を含む全互換性は未確認である。
-
-既定の上限は評価2秒・JS ヒープ64 MiB・待機60秒・8反復・128評価・レイアウト10秒とする。ユーザー／プロジェクトの `[runtime.javascript]` で項目ごとに上書きし、計算ごとに捕捉した設定を CLI・MCP・TUI で使う。親の監視は実効評価時間＋1秒とし、レイアウトの絶対期限でも実行中ワーカーを止める。JS スタック512 KiB、コード1 MiB、返却 JSON 4 MiB、出力1,000ノード・深さ64のガードは独立して維持する。native pass の前後でも期限を検査するが、同期 native layout 自体を途中停止するものではない。設定統合・実worker・取消／復帰は、確定済み全3環境gateで成功した。初期値を全環境の性能保証とは扱わない。[項目と範囲](configuration.md#javascript-execution-limits)
-
-ヘッダーは `@schema 2.11`・`@schema 2.19`・`@schema 2.21`、6種類の入力を受け付ける。共通の実行 API を使い、本家の版別スクリプト挙動との一致は未確認とする。未指定・null入力は宣言既定値、なければ型ごとの既定値を使う。未宣言の保存済みcontrolは文書へ残し、sandbox入力と変数探索から除く。入力の型、数値の範囲、列挙値、参照先の再利用可能性を検査する。文書の変数・テーマを入力へ反映し、参照入力は指定元の文書のスコープを保つ。生成物の ID は保存済み ID と分け、レイアウトの `generated_by` から元スクリプトを示す。生成した子の直接編集はできず、元の入力やコードを編集する。
-
-親からの fill サイズと、寸法に依存しない生成物の内容サイズを計算できる。内容サイズを計算するスクリプトがその寸法を読む場合は明示的なフォールバックを要求し、収束しない場合は診断する。現在の依存検出は寸法の読み取り単位で保守的に判定するもので、すべての JavaScript 式の依存を解析するものではない。
-
-文書・部品・入力から宣言的に確定する依存は従来の `dependency_revision` に含める。実行後に初めて分かる画像や入れ子のコードは、別の `runtime_dependencies` と `runtime_dependency_revision` へ記録する。描画する前にコードを実行しない読み取りや構造編集でも、文書の依存リビジョンが安定して使えるようにするための区別である。計算スナップショットの ID には両方の依存、生成物の属性、実行条件を含め、再利用時には両方の不変バイト列を検査する。
-
-計算結果に基づく編集では、MCP の `expected_runtime_dependency_revision` または CLI の `--expected-runtime-dependency-revision` に計算結果の値を指定できる。保存ロックを取る前にスクリプトを再評価し、取得した実行時依存のハッシュを比較する。保存中は取得した依存の共有ロックを保持し、文書の置換直前にも不変バイト列を検査する。通常の保存とドライランの両方で変更を競合として拒否し、結果へ編集前の `validated_runtime_dependency_revision` を記録する。既に保存した同一要求の再送は、コードが後で壊れても再実行せず保存済みの結果を返す。実行不能なコードの構造修復を妨げないよう、この追加前条件は明示指定とする。外部 Web ページの更新を凍結する条件ではない。
-
-ヘッダー・構文・JavaScript 例外の診断は、元ソースの行・列、前後を含む最大3行・各240文字の抜粋を返す。列は1始まりの UTF-8 バイト位置とし、BOM とヘッダーも元の位置に含める。LF・CRLF・CR・Unicode の行区切りを扱い、実行用ラッパーの行数を除く。構文解析時、実行時、ヘッダーの宣言位置、動的コードへの呼び出し位置、ソース終端を区別する。位置がない例外に行番号を推測して付けない。例外スタックはコード自身が置き換えられるため、位置は修正の手がかりとして使い、保存時のリビジョン検査とは分ける。元コードのハッシュ・パス・所有アドレスを親へ返す際も抜粋を保持し、通常の CLI・TUI 表示にも該当行を含める。[取得する診断の形式](mcp.md#script-execution)
-
-実行・入力変更・生成図形と日本語・部品参照・入れ子のスクリプト・実行時素材の更新・取消・無限ループ・メモリ不足を `tests/scripts.rs`、`tests/script_render.rs`、`tests/mcp.rs` で検証した。実行時依存の編集前条件は実 CLI・MCP、ドライラン、再送、準備中の外部素材変更でも試験している。独自の `examples/script-chart.pen` は960×600で描画し目視確認した。生成ノードの詳細取得は `tests/calculated_nodes.rs` で、元ソースの位置と抜粋は `tests/script_diagnostics.rs` で検証する。TUI の基本プレビュー・待機時終了・明示更新は下記の実 PTY 試験で確認した。本家の旧ヘッダー、公式例との互換性、TUI の全操作と各 OS の試験は引き続き必要である。
-
-## Browser の deviceId
-
-`deviceId`はbrowserノード内のWebページに適用する端末エミュレーションのプリセット名で、実行するMacや利用者の識別番号ではない。[公開スキーマ](https://docs.pencil.dev/for-developers/the-pen-format)は文字列型と、省略時にレスポンシブ表示になることを定義しているが、本家のID一覧と各設定値は掲載していない。
-
-lazypencilの現行実装では、省略または`desktop`はmobile／touchを無効、`phone`・`tablet`は有効にする。表示寸法はノードの計算済みwidth／height、deviceScaleFactorは描画scaleから取得し、IDの指定だけで機種固有の寸法やUser-Agentへ切り替える処理はない。これらの基本モードと、本家の全プリセットIDの互換性は別に扱う。本家固有の未対応IDは推測して読み替えず、描画時に`UNSUPPORTED_FEATURE`を返す。2026-10-31の決定により、本家の全device presetとの互換性は初回リリースの制限事項とし、対応関係の確定と追加対応は後日に回す。
-
-<a id="initial-compatibility-limitations"></a>
-
-## 互換性2点の解決手順
-
-2026-10-31に利用者が、以下の2点を初回リリースの制限事項とすることを承認した。これは公開を止める未解決要件ではなく、将来の互換性拡張である。
-
-- 本家固有のbrowser device presetは未対応。未対応IDは`UNSUPPORTED_FEATURE`となり、省略／基本desktop・phone・tabletモードの範囲を全プリセット互換とは扱わない。
-- shaderの塗り段階での`pencil:object`参照は未対応で、`SHADER_COMPILE_FAILED`となる。effect段階のobject参照は対応済み。
-
-制限対象の設定を読み書きで勝手に置換・削除せず、対象の描画失敗を完全な画像として報告しない。リリース前の照合では、現在のGHA製本体で2.19／2.21の両文書にこの2設定を保持したまま別ノードを更新し、期待したwidthの変更以外が全byte一致することを確認した。描画は各エラーで終了し、新しいPNGは作られなかった。以下は将来対応する場合の仕様確認手順であり、初回公開の前提にはしない。
-
-deviceIdは、有効なIDの一覧と各IDの設定値、ノードのwidth／heightと端末寸法の優先関係を、対象版を明記した公開仕様または提供元の回答で確定する。その後、既存Chromium取得処理へ対応を追加し、独自の検証用ページでviewport、DPR、mobile／touch、User-Agentが回答に一致することを既存のbrowser試験で確認する。第三者の端末一覧があるだけではPencilとの対応を確定した根拠にしない。
-
-fill-stage `pencil:object` は、まずその組み合わせが本家で有効かを確認する。公開スキーマは共通のuniform型を使うが、object画像の意味を明記しているのはeffect段階であり、fillでの許可や評価順を断定する根拠にはしない。無効という仕様が確認できれば現在の拒否動作を照合する。有効なら、既存の塗り・stroke・子・effectのどの段階を入力にするか、座標／範囲を確定して実装し、既存の`tests/dynamic_render.rs`の塗り／effectと`tests/shader_uniforms.rs`を拡張する。自己参照の評価順を推測して本家互換と呼ばない。
-
-仕様確認と比較用データの利用条件を先に確認する。[現行EULA §3](https://www.pen.dev/eula)は、Softwareやoutputsを競合model／serviceの開発・改善へ使うことに制限を設けている。アプリ内部の解析や出力の採取を当然に許された検証経路とはせず、必要な比較は用途・配布範囲を含む許諾確認後に行う。公開仕様や回答が得られなければ、独自動作を完全互換と表示しない。この2点は上記の承認済み制限として扱い、初回公開を止め続ける条件にはしない。
-
-以下は公式窓口`hq@pen.dev`向けに準備した未送信の確認文案である。2026-10-31に利用者が「送信しないで」と指示したため、公開issue・メールとも送信しない。同じ送信許可を繰り返し求めず、以下は文案の履歴として保持する。追加の公開仕様や後日提供された資料が得られた場合に仕様を再確認する。
-
-検討した公開issueの投稿先は[highagency/pen-desktop-releases](https://github.com/highagency/pen-desktop-releases/issues)、件名案は`.pen format clarification: browser deviceId presets and shader-fill pencil:object`だった。投稿やメール送信は行っていない。
-
-2026-10-31に[公開仕様](https://docs.pencil.dev/for-developers/the-pen-format)を再確認した。版は2.21・更新日は2026-10-13で、deviceIdの列挙とfill段階のobject画像の評価順・範囲は確認できなかった。公式公開issueの対象語検索でも、この2点を確定する回答は見つからなかった。見つかったdeviceIdの[issue 12](https://github.com/highagency/pen-desktop-releases/issues/12)は認証、shaderの[issue 10](https://github.com/highagency/pen-desktop-releases/issues/10)は再読込みの報告で、両方ともコメント0件だった。この確認を組合せの有効／無効の仕様根拠にはせず、2点は引き続き未確定とする。
-
-> We are implementing an independent MIT-licensed reader/renderer for .pen files, based on the published format. Could you clarify the supported browser deviceId values and their emulation settings, including precedence relative to node width/height, for formats 2.19/2.21? Is pencil:object valid in a shader fill, or only in shader effects? If valid in a fill, which rendering stage supplies its pixels, and what are its bounds/coordinates? Please also clarify the permitted use of the supplied specification/examples for independent compatibility implementation and testing under EULA Section 3, including any written permission needed to create and retain comparison fixtures.
-
-## Web ページ・GLSL の初期実装の検証状況
-
-Chrome for Testing headless shell 156.0.8078.47 の版別公式 ZIP と全ファイルのサイズ・ハッシュを固定した。専用コマンドから HTTPS 取得または固定したローカル ZIP の導入・検査・再利用を行い、変更された導入先は上書きせず拒否する。[全3環境の検証 `d6c5808`](https://github.com/EkeMinusYou/lazypencil/actions/runs/40633683855) では、macOS Apple Silicon・Linux x64／arm64 の管理runtimeを実際に導入・検査し、sandboxを有効にしたpage／shader・MCP・PTY試験を実行した。過去のWindows結果は初回リリースの対象へ含めない。[導入と試験手順](runtimes.md)
-
-Browser ノードは HTTP(S)・HTML data URL・about:blank、寸法・ズーム・スクロール・基本の desktop/phone/tablet を扱う。読み込み・フォント・画像デコード・2回の描画フレームを待ち、取得条件・時刻・画像 ID・版・画像ハッシュを記録する。URL の query・fragment・資格情報・HTML 本文を取得メタデータから除く。CLI・MCP は既定では取得ごとに新しい隔離コンテキストを用意し、取得画像を容量・件数制限のあるメモリキャッシュから再利用する。`refresh` で明示取得し直せる。TUI は文書・ノードの address/source に結び付けた隔離 context を最大8件保持し、明示再取得で DOM を引き継ぐ。寸法・scale・zoom・scroll 変更では再利用し、URL/device 変更は作り直す。LRU で上限を保ち、削除・無効化されたノードは次の有効 snapshot で閉じる。viewport 外に移動しただけでは捨てない。snapshot 変更時には TUI の動的 raster cache を失効させ、以前の URL の古い画像が復活するのを防ぐ。browser 方針の変更・文書の結び直し・待機回収・実行失敗・eviction では状態を失い得る。`page_state` に retained/id/reused/retained_limit を記録し、cache metadata は元の取得時を示す。TUI preview も取得 metadata を保持する。状態保持と周期的なページ取得は実装済みで、`35e959f` の旧対象3環境の実 Chromium／PTY 検証が成功した。`/play` は既定5fps・最大10fpsで既存 DOM を取得し、停止後は開始済みの1フレームを除いて周期取得しない。専用認証profileの作成・選択・所有者回収・永続storageと可視loginは全3環境で成功した。保持preview経路と別bound MCPの認証共有はe786e3e・4ec8d67のMac完全CIで検証済みである。本家の全device IDは未実装である。追加待機・selector・animation・networkの現在の取得方針と検証範囲は上記を参照する。
-
-GLSL は通常ページと別プロセスで明示的に SwiftShader WebGL を選ぶ。Chromium 自身の OS sandbox は維持し、シェーダー用コンテキストで HTTP(S)・file・FTP の取得を拒否する。塗り・線・効果、対象画像・背景・時刻・解像度、数値・色・ベクトル・行列・配列・構造体の入力とmacro展開を共通経路で扱う。上記「宣言と数値入力」に対応する制限と原式による検証条件を記す。`d6c5808` の全3環境では構造体16ケース・前処理64ケースを含む実WebGL試験が成功し、保存画像と取得条件を独立に照合した。本家との総合的な出力比較と全仕様の互換性が完了したという意味ではない。
-
-動的な画像の固定上限は一辺8,192・16メガピクセル・PNG 32 MiBとする。キャッシュの既定値は32件・64 MiB、起動15秒、ページ30秒、シェーダー15秒、描画全体45秒とし、ユーザー／プロジェクトの `[runtime.browser]`・`[runtime.shader]`・`[runtime.dynamic]` で上書きできる。CLI・MCP・TUI の共通描画入口で捕捉した設定を適用し、起動にも処理全体・共通描画の残り期限を適用する。期限は CDP の段階ごとに延長しない。取得結果に実効 `limits` を記録し、方針が変わったら以前の取得 cache を失効させる。容量か件数が0なら cache を使わず、単体で容量を超す PNG は返却だけして保持しない。PNG encoding 後にも期限と取消を確認するが、同期 native 処理の途中停止やプロセス全体のメモリ上限ではない。この設定統合は上記の全3環境CIで検証した。[値と保証範囲](configuration.md#browser-shader-and-raster-cache-limits)
-
-CLI の割り込みと MCP の取消で停止しないジョブを終了し、次の要求ではランタイムを起動し直せる。TUI の `/time <seconds>` と Preview の `[`・`]` は評価時刻を手動指定し、`/play`・`/pause` は上限付き周期更新を制御する。同じ時刻・文書・依存の停止中のpollでは再描画せず、時刻だけの変更ではlayoutを再利用する。文書や会話には評価時刻を保存しない。`d6c5808` の全3環境では実PTYの合成画素・再生／停止・refresh・待機回収と再起動、実MCPの取消／60秒idleの試験が成功した。物理端末の描画やOS全体のメモリ上限を、この結果だけで保証するものではない。
-
-通常テストから分けた実機試験は `tests/dynamic_render.rs`、`tests/mcp.rs`、`tests/runtime.rs` にある。独自の `examples/dynamic-panel.pen` を1000×640 PNGに変換し、日本語・ページ・GLSLの合成を目視確認した。初期の経路が動作したことと、3機能全体の互換性・公開品質の完成は区別する。
-
-## 待機時のプロセス解放
-
-JavaScript・ページ・シェーダーの各プロセスは、既定では実際の実行を終えた時刻から個別に60秒で待機期限となる。`runtime.javascript`・`runtime.browser`・`runtime.shader` の `idle_seconds` で個別に変更でき、0では直ちに回収する。キャッシュ画像を使うだけでは期限を延長しない。MCP の文書スレッドは要求または最も早い終了期限まで待ち、TUI のプレビュースレッドは同じ期限を条件変数の待ち時間に使う。処理は所有スレッド上で要求の間に行い、実行中のジョブを待機タイマーで中断しない。定期的な全描画や専用の回収スレッドは追加しない。
-
-macOS／Linux の Chromium には必要時だけ起動する private guardian を加える。所有者 pipe と子の終了通知を blocking で待ち、診断の PID は実 Chromium を指す。Linux では guardian が孤立した子孫も回収する。 一時プロファイルも guardian が作成・所有し、終了後に削除する。起動時だけ4 KiB 以下の pipe 通知で PID と profile を返し、状態通知用の file は作らない。通知の受信も取得期限・取消・容量上限に従う。ホストの強制終了後の profile 削除と別所有者の profile の保持を、実プロセスと実 Chromium の試験に含める。プロセス群の使用量を測る際は、この監視プロセスとブラウザーの全子孫も Chromium 側の合計に含める。所有者の強制終了と実 Chromium の子孫回収は、対象3環境の試験結果で確認する。
-
-終了時には子プロセスを停止して wait で回収する。取得済みの画像と未失効の計算スナップショットは保持し、再実行や明示更新が必要になったときに起動し直す。MCP の計算スナップショットも作成から5分の期限に達したら、追加要求を待たずに解放する。CLI の一度の処理ではコマンド終了時にランタイム自体を破棄する。ライブラリを直接組み込む呼び出し側は、`idle_deadline` に合わせて `expire_idle` を呼ぶ責任を持つ。設定の再読込は次の計算／描画時に行い、待機中だけの期限判定は最後に適用した値を使う。
-
-`tests/scripts.rs` は実ワーカーの再利用、期限直前・期限到達、回収、再起動、入力検査だけの失敗で期限を延長しないことを検査する。`tests/dynamic_render.rs` の実 Chromium 試験は、2プロセスの個別終了、回収、画像の再利用と再取得、同じ画素への復帰を確認する。MCP の実時間試験では追加要求を送らずに60秒待ち、3子プロセスの終了と回収、キャッシュだけでの描画、再計算・明示更新による復帰を確認した。
-
-`tests/tui.rs` の実 PTY 試験は JavaScript・ページ・GLSL を一つの文書へ合成し、Kitty の RGBA を独立に復号して赤・緑・青の画素を確認する。実際の60秒の待機で3子プロセスが終了した後もプレビューと日本語の下書きを保持し、更新操作で新しい3プロセスから同じ内容を描画できた。これらの実機試験は macOS arm64 の結果であり、物理端末・各 OS のプロセスツリー回収・性能目標全体を保証するものではない。
-
-```sh
-LAZYPENCIL_TEST_CHROMIUM=/path/to/chrome-headless-shell \
-cargo test --test dynamic_render page_and_shader_processes -- --ignored
-LAZYPENCIL_TEST_CHROMIUM=/path/to/chrome-headless-shell \
-cargo test --test mcp idle_mcp -- --ignored
-LAZYPENCIL_TEST_CHROMIUM=/path/to/chrome-headless-shell \
-cargo test --test tui real_pty_dynamic_previews -- --ignored
+A `script` node supplies `scriptUri`, dimensions, and optional `inputs`. Its source
+starts with a header comment such as:
+
+```javascript
+/**
+ * @schema 2.21
+ * @input label: string = "Hello"
+ */
+return [{type: "text", content: pencil.input.label, fontSize: 16}];
 ```
 
-## 受け入れ条件
+Headers accept 2.11, 2.19, and 2.21; supported document codecs remain 2.19/2.21.
+The worker exposes `pencil.width`, `pencil.height`, and `pencil.input` and synchronously
+expects a node array. It has no DOM, host filesystem/network, timers, or module loader.
+Each evaluation has a fresh context. `Math.random` uses Mulberry32, reseeded to zero
+for every evaluation.
 
-- 公式のスクリプト例を実行し、入力・寸法・テーマ・コードの変更を反映した画像が得られる。
-- 無限ループ・出力過多・不正な生成ノードを処理し、文書と UI を維持できる。
-- 固定したローカルページで、CSS・JavaScript・Web フォント、サイズ・デバイス設定、ズーム・スクロールを検証できる。
-- ページの明示更新、常時通信するページの待ち時間上限、読み込み失敗を扱える。
-- GLSL の塗りとエフェクトを、画像・背景・時刻・変数などの入力を含めて描画できる。
-- シェーダーの座標、アルファ、色空間、適用順序を、利用条件を確認した基準画像・独立した数式と比較する。現行試験は本家出力を使用せず、総合的な本家との品質比較は保留とする。[採用済みの検証方針](design.md#描画)
-- GPU がない保証環境で、ソフトウェア実行と画像取得が成立する。
-- CLI・MCP・TUI で、同じスナップショットと取得条件から同じ画像・診断を利用できる。
-- AI がコードを作成・変更して参照を更新し、描画結果を確認して再編集できる。
-- 通常文書の起動時には Chromium を起動せず、3機能を使う場合は追加プロセスも含めた時間とメモリを測定できる。
-- 対象 OS・CPU のランタイムを専用コマンドで導入・再利用でき、取得失敗や中断で既存の使用可能な版を壊さない。
-- ランタイム未導入時には導入方法を返し、通常の描画ではダウンロード・更新を行わない。
+Typed inputs are `number`, `string`, `boolean`, `color`, `enum`, and `ref`. Omission or
+null uses a declared default; otherwise the implicit values are clamped zero, empty
+string, false, `#000000`, first enum option, and empty ref respectively. Empty ref means
+no component selection. Nonempty refs select existing reusable definitions. Saved keys
+absent from the header remain stored but do not enter execution or variable lookup.
+See the [script guide](../resources/guidance/scripts.md) for input and diagnostic rules.
 
-これらは実装の完了条件であり、現時点の実装済み機能を示すものではない。3機能の採用自体は未決事項へ戻さず、ランタイムの版、既定の上限、再現性の詳細を初期検証で固定する。
+Generated records are derived data with `generated_by` provenance. Read them through
+`inspect --calculated` or MCP calculated `read_nodes`; edit their owning script, inputs,
+or source node. A retained `snapshot_id` reads the same calculation without rerunning
+code. A script reading a content-sized dimension needs a definite dependency or explicit
+fallback; nonconvergent calculations fail rather than inventing a size.
+
+The defaults are 2 seconds/64 MiB per evaluation, 8 layout passes, 128 evaluations, and
+a 10-second generated-layout budget. Code is limited to 1 MiB, protocol frames to 4 MiB,
+output to 1,000 nodes/64 levels, and the JS stack to 512 KiB. Captured
+[JavaScript policy](configuration.md#javascript-execution-limits) controls configurable
+limits; catching an interpreter interruption cannot turn that evaluation into success.
+
+## Script copy and detach
+
+Detachment preserves linked code/input ownership instead of flattening generated
+geometry. An independent component copy closes component, variable, theme, and static
+asset dependencies without executing or rewriting JavaScript. Use `options.script_assets`
+for files selected only inside code, keyed by the qualified source script node.
+
+Code, output, saved-input, variable, and browser-resource namespaces remain distinct
+through nested generation and recopy. An explicit code/input update selects the caller's
+context for that field even when its JSON is unchanged; other fields keep inheritance.
+Private `metadata.lazypencil` scope/binding/input-generation records preserve this
+ownership. They are not user-editable path permissions or a Pencil round-trip contract.
+Missing legacy provenance produces a diagnostic and requires recopying from the source.
+See [component import](mcp.md#importing-components).
+
+## Browser nodes
+
+Browser properties include `url`, `width`, `height`, `zoom`, `scrollX`, `scrollY`, and
+optional `deviceId`. HTTP(S), HTML data URLs, and `about:blank` are supported. Credentials
+embedded in URLs are rejected. Basic desktop/phone/tablet modes do not select a named
+device model or User-Agent. Captures receive ordinary transforms, opacity, clipping,
+borders, and supported effects.
+
+### Local resources
+
+A file page needs a declared captured directory, within the existing project read roots:
+
+```json
+{"op":"set_browser_resources","roots":[{"url":"file:///original/site/","path":"web"}]}
+```
+
+The canonical original directory URL ends in `/`; `path` is relative to the owning
+document. A node can then reference `file:///original/site/index.html`. Only captured
+files from its namespace are served. `pack_browser_resources` saves them as a portable
+managed bundle. Empty roots remove the declaration. Changed resources invalidate old
+rasters and retained DOM. Code/URL text is not rewritten during copy. Complete native
+file metadata, range/media loading, worklets, popups, and all worker bootstrap cases
+are outside the current compatibility guarantee.
+
+### Capture policies and reproducibility
+
+Capture waits for load, web fonts, decoded images, and two animation frames. Optional
+network-idle, selector, extra-wait, animation, and online/offline settings share the
+existing acquisition/render deadline. These are host settings, not extra node fields;
+see [browser configuration](configuration.md#browser-shader-and-raster-cache-limits).
+They do not guarantee that future requests or application state have settled.
+
+CLI/MCP normally reuse captured rasters but create fresh isolated contexts for new
+anonymous acquisitions. `--refresh` / `refresh: true` requests fresh pixels. The TUI
+opts into up to eight retained per-node page contexts, refreshing DOM without navigation
+where identity remains compatible. Dedicated [authentication profiles](runtimes.md#dedicated-authentication-profiles)
+are explicit and separate from personal browser profiles.
+
+Acquisition metadata includes its identity, time, actual browser/renderer, view, limits,
+inputs, and image hashes. URLs are redacted. A calculation snapshot and page acquisition
+have distinct identities; cached metadata describes its original acquisition, not a
+promise that a page process is still alive.
+
+## GLSL fills and effects
+
+A shader references captured GLSL and a flat `uniforms` object. WebGL 1.0 fragment GLSL
+supports numeric/boolean scalars, vectors, colors, column-major matrices, flat numeric
+arrays, sampler2D images/arrays, and qualified structure leaves. Literal bounds are
+checked before launch; expression dimensions also depend on the linked active interface.
+Unused tails can be optimized away by the compiler. Unset numeric leaves use zero and
+unset samplers use transparent images.
+
+### Declarations and numeric inputs
+
+An immediately preceding documentation comment can bind exact `@time` to float or
+`@resolution` to vec2; grouped names share annotations. `@default` supplies ordinary
+uniform defaults. Intervening comments, code, or directives break adjacency. Time and
+resolution cannot be arrays or overridden in the document. Resolution and
+`gl_FragCoord.xy` use local logical dimensions even at enlarged output; z/w retain
+WebGL semantics. Render time defaults to zero.
+
+Bounded Wasm preprocessing uses the actual compiler's predefined macros, preserving
+selected annotations, original source hashes, and diagnostics. The checked-in component
+requires neither Node nor a Wasm toolchain for ordinary application builds. Exact type,
+default, structure, and array syntax is described in the shared
+[shader guide](../resources/guidance/shaders.md).
+
+Effects can sample `pencil:object` and the previously painted `pencil:background`.
+Effect order and parent/backdrop context matter. The shader process explicitly uses
+SwiftShader, with Chromium's OS sandbox enabled; it cannot fetch HTTP(S), file, or FTP
+inputs directly. Failure to create a context or compile/link/bind a shader is an error,
+not permission to drop the effect.
+
+Limits include 1 MiB of source, 262,144 declaration tokens/events, 256 names/leaf patterns,
+256 array elements, 4,096 supplied/active numeric components, 16 structure levels,
+1,024-byte identifiers, and 4,096-byte qualified names. Preprocessing has a 64 MiB memory
+maximum and a 4 MiB expanded-source bound. Sampler inputs total at most 64 MiB per request.
+
+### Image origins
+
+Image fills and samplers share captured static PNG/JPEG/WebP inputs. String variables
+retain their original text, aliases, and themes; an image resolves relative to the
+document defining the selected value. Copy captures all relevant theme alternatives,
+using managed image bindings when path projections conflict or URLs are nonrelative.
+Changing the copied value later selects a new consumer input. Local file URLs retain
+canonical-path/root checks and reject credentials, remote authorities, queries, and
+fragments. Code is never fetched through HTTP(S) image support.
+
+### Embedded images
+
+`data:image/png`, `data:image/jpeg`, and `data:image/webp` accept standard base64 with
+a trailing `;base64` marker, or percent-encoded bytes. The declared MIME must match a
+static image. Decoded source bytes are limited to 20 MiB. These inputs work offline;
+copy/detach preserve the exact URL without creating another managed image file.
+Payload contents are omitted from diagnostics.
+
+### HTTP image acquisition
+
+A project captures remote image bytes in memory and reuses them during verification;
+a new project capture can fetch new bytes. Browser-profile cookies are not imported.
+Policy follows `runtime.browser.network_policy` and its timeout, capped at 30 seconds
+across one project's HTTP image acquisition, 20 MiB per encoded image, 4,096-byte URLs,
+and five redirects. Embedded credentials, protocol changes, and HTTPS-to-HTTP downgrade
+are rejected. A cancellation/owner-bound worker contains network work.
+
+Missing remote images remain explicit incomplete assets for structural repair. Copies
+retain acquired bytes locally and remain renderable after source removal. This does not
+freeze future remote content or guarantee authenticated-service compatibility.
+
+## Runtime lifetime and cache
+
+JS, page, and shader processes independently expire after 60 seconds without actual
+execution by default. Cache hits do not extend their life. Cached pixels and unexpired
+calculations can survive cleanup; a later execution or refresh restarts workers.
+Library hosts schedule `expire_idle` using the runtime's `idle_deadline`.
+
+Dynamic images are limited to 8,192 pixels per side, 16 megapixels, and 32 MiB PNG.
+Browser/shader launch defaults to 15 seconds; acquisitions default to 30/15 seconds and
+a shared render to 45 seconds. The default 32-entry/64 MiB LRU covers encoded rasters
+and expanded shader-source text, not complete process RSS or decoded/native memory.
+Policy changes invalidate acquisitions; zero capacity disables reuse. Native operations
+are cooperatively checked, so an individual synchronous call can finish after a deadline.
+
+TUI playback requests up to 5 fps by default (1–10 configurable) and drops obsolete
+frames. Page DOM follows browser time; seeking shader time does not rewind a web page
+or put document script generation on a clock. Pausing stops new requests while an
+already requested frame may finish. See [TUI controls](tui.md).
+
+## Initial compatibility limitations
+
+- Pencil-specific device presets beyond omitted/desktop/phone/tablet return
+  `UNSUPPORTED_FEATURE`; basic modes do not emulate a particular named device.
+- Shader fills cannot sample `pencil:object` and return `SHADER_COMPILE_FAILED`.
+  Shader effects can sample it.
+
+These settings remain stored during unrelated edits. Rendering rejects the unsupported
+combination instead of returning a complete-looking partial image. Other graphics,
+font, network, and device behavior is limited to the documented implementation;
+complete Pencil parity is not claimed.

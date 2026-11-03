@@ -1,101 +1,79 @@
-# lazypencil 画像の貼り付けと添付
+# Image attachments
 
-設計日: 2026-10-23／実装状態更新: 2026-10-29
+Images are reference inputs to a conversation, not automatically inserted design
+layers. CLI, TUI, and the MCP attachment grant use the same immutable attachment data.
 
-Codex CLI・Claude Code に近い操作で、クリップボードの画像や画像ファイルをプロンプトへ添付できるようにする。macOS では `Ctrl+V` による画像貼り付けを初期リリースの必須操作とする。画像の添付は AI に参考情報を渡す操作であり、文書へ画像レイヤーを自動挿入する操作とは分ける。
-
-## 現在の実装と仕様との差
-
-Ctrl+V、ファイル添付、添付画像のプレビュー／順序／削除、画像付きACPと束縛MCPへの素材取り込みは実装済み。対象3環境のnative clipboard→実PTY→疑似ACPと独立した画像復号は成功し、両実エージェントへのファイル画像入力も既存macOS条件で成功した。物理端末でのスクリーンショット貼付から実エージェントまでの組合せは未受け入れ。
-
-正規化PNGに加え、元エンコード画像の不変保存を実装した。`original` は元バイト列のhash・MIME・容量・向き適用後の寸法を保持する。ファイル入力ワーカーも元のJPEG／PNG／WebPを保存先へ渡し、ACPとMCPへの素材取り込みは正規化PNGを使う。新規の添付IDは元画像と送信用PNGの両hashに結び、同じ画素の異なるエンコードも会話で区別する。同じバイト列のファイルは共有し、削除時は会話・他添付が参照する元画像／PNGを残す。保存・旧会話・共有ファイル回収とnative clipboardは、[491b6e9のMac CI](https://github.com/EkeMinusYou/lazypencil/actions/runs/40726406737) の先行・完全検証・監査・署名付きsourceまで成功した。
-
-旧会話の添付は従来のPNGとIDを引き続き使える。保存されていなかった元画像を復元済みとは扱わず、`Attachment::read_original` は `ATTACHMENT_ORIGINAL_UNAVAILABLE` を返す。元画像のない旧添付を縮小する場合は、元ファイルを再添付する。
-
-送信用縮小版を明示的に選ぶCLI／TUI操作、TUI入力スレッドでの変換・保存・未採用候補の回収、ユーザーの`[attachments]`上限設定は、c11a0f9のMac先行・両feature構成の完全CI・監査・署名sourceまで成功した。上限を下げた後の送信拒否・段階的縮小による修復・元画像と下書きの保持、実ACPへの縮小PNG入力を含む。既定値とネイティブの安全上限は維持する。物理端末と最終配布の受け入れは引き続き確認する。
-
-## TUI の操作
-
-| 操作 | 動作 |
-| --- | --- |
-| プロンプト入力中の `Ctrl+V` | OS のクリップボードから画像を取得し、添付一覧へ追加する |
-| `/paste-image` | 同じ画像貼り付けを実行する。キーを端末が処理してしまう場合にも使える |
-| `/attach <path>` | 画像ファイルを添付する。空白を含むパスは引用符で指定できる |
-| `/resize-image <番号> <幅>x<高さ>` | 1から数えた未送信画像の送信サイズを、縦横比を保って指定範囲へ収める |
-| `/resize-image <番号> original` | 保存した元画像から送信用PNGを作り直し、元サイズへ戻す |
-| 添付一覧の選択 | 名前、寸法、形式、プレビューを確認する |
-| 添付一覧での削除 | 送信前の添付を取り除く。元ファイルや送信済みの添付は削除しない |
-| プロンプトの送信 | テキストと添付画像を一つの要求として渡す |
-
-macOS の `Ctrl+V` を基準に、ほかの環境も Codex CLI・Claude Code で使われる操作に寄せる。端末がキーを受け取れない場合の代替として `Alt+V` などを設定でき、現在有効なキーをヘルプへ表示する。macOS の `Cmd+V` は端末の通常の貼り付けとして扱い、常に画像データが届くとは仮定しない。
-
-`Ctrl+V` は画像があれば添付し、画像がなくテキストがあれば通常の入力として挿入する。コピーした画像ファイルの URI・ファイル一覧を OS 側で取得できる場合も、画像ファイルとして検証して添付できるようにする。何も取得できない場合は理由を表示する。通常のテキスト貼り付けイベントを、画像のデコード処理へ流さない。
-
-画像を追加すると `[Image 1] screenshot.png · 1440×900` のように表示し、複数画像の順序を維持する。画像だけの要求も送信できる。プロンプトの日本語入力、複数行入力、キャンセルと両立させる。プレビューに未対応の端末でも、添付の名前・寸法・件数の確認と送信は利用できる。
-
-縮小時は `1440×900 → 1024×640` のように元画像と送信用画像の寸法を区別する。毎回保存済み元画像から生成し、縮小済み画像を繰り返し縮小しない。元より拡大せず、向き適用後の縦横比を整数画素の範囲で維持する。半透明画素をpremultiplied alphaで線形サンプリングする。変換が成功するまで現在の添付を置き換えず、日本語の下書き・元画像・送信済み画像を保持する。入力中は添付の削除・追加・会話切替・送信を待たせ、Ctrl+Cで取り消せる。
-
-## CLI
-
-ファイル指定には繰り返し可能な `--image` を使う。対話的なクリップボードに依存しないため、CI や SSH 接続でも同じ要求を作れる。
+## CLI and send size
 
 ```sh
-lazypencil prompt design.pen --image reference.png "Match the layout of this reference"
-lazypencil prompt design.pen --image before.png --image target.jpg "Use the second image as the target"
+lazypencil prompt design.pen --image reference.png "Use this reference"
+lazypencil prompt design.pen --image before.png --image after.jpg "Use the second image"
 lazypencil prompt design.pen --image reference.jpg --image-max-size 1024x768 "Use this reference"
 ```
 
-相対パスはコマンドを実行したディレクトリから解決する。`.pen` 内のアセット参照が文書のディレクトリを基準にする規則とは区別する。パスやプロンプトをシェルコマンドへ展開しない。
+`--image` is repeatable. Paths resolve against the invoking directory. Static PNG,
+JPEG, and WebP are accepted; animation, misleading MIME/container data, and oversized
+inputs fail explicitly. Orientation is applied and send data is normalized to PNG.
+Original encoded bytes remain saved separately, without forwarding original EXIF data
+to the model. No image is silently omitted or resized.
 
-`--image-max-size` は明示した場合だけ、その起動で追加する各画像の送信用PNGを指定範囲へ収める。TUI起動時にも使え、後から貼り付ける画像にも適用する。`/attach PATH [WIDTHxHEIGHT|original]` と `/paste-image [WIDTHxHEIGHT|original]` で、その入力だけのサイズを指定できる。`original` は起動時の縮小指定を解除する。元エンコード画像は保持する。指定しなければ従来の寸法を保つ。縮小しても元データ・元画素数・送信用画像それぞれの上限検査は維持する。
+Explicit `--image-max-size WIDTHxHEIGHT` fits without upscaling, preserving aspect and
+resampling alpha correctly. TUI startup applies it to later inputs too. Every resize
+starts from the saved original rather than repeatedly shrinking an already resized PNG.
+Older attachments lacking original bytes remain readable, but resizing them needs the
+original file to be reattached (`ATTACHMENT_ORIGINAL_UNAVAILABLE`).
 
-## 共通の添付処理
+## TUI input
 
-Clipboard と File の入力は、同じ Attachment Service を利用する。
-
-1. ユーザーの明示的な貼り付け・ファイル指定で入力を取得する。クリップボードを定期的に監視しない。
-2. 内容から画像形式を判定し、ファイルサイズと寸法を確認する。初期のファイル形式は PNG・JPEG・WebP とし、アニメーションの入力は明示的に拒否する。
-3. 向きの情報を反映した静止画像を作り、モデルへ渡す画像は PNG へ正規化する。OS からの画素はアルファを含めて PNG にする。元の EXIF などをそのままモデル向け画像へ付加しない。
-4. 元データと送信用データを不変ファイルとしてユーザーデータ領域へ保存し、内容ハッシュ、MIME 型、寸法、表示名、添付 ID を登録する。同じ内容は再利用する。
-5. 縮小プレビューを作る。参照元ファイルやクリップボードが後で変わっても、送信する画像は登録時の内容から変わらない。
-6. 送信前にアダプター・モデルの画像入力対応と要求全体の容量を確認し、表示順に画像ブロックを組み立てる。
-
-既定上限は一要求8枚、元／正規化画像各20MiB、元／送信用画像の合計がそれぞれ50MiB、一画像16Mi画素（16×1024×1024）である。ユーザー設定の `[attachments]` で枚数・元容量・送信容量・元画素数を個別に指定する。枚数は1〜64、合計容量は各1バイト〜256MiB。単体の容量と元画素数は、デコーダーの安全上限である20MiB／16Mi画素の範囲で調整できる。プロジェクトからは変更できない。[設定項目と範囲](configuration.md#image-attachment-budgets)。アダプター／モデルの画像対応と追加制限も確認する。
-
-追加時と送信直前に設定を確認する。設定を下げても保持中の元画像や下書きを削除せず、送信を拒否する。添付を削除するか、送信容量については `/resize-image` で一枚ずつ明示的に縮小して再送できる。数値設定の取得ではフォントを探索しない。画像容量が尽きてもテキストの貼り付けは利用できる。
-
-上限超過時に画像を黙って間引いたり縮小したりしない。ユーザーが縮小版の使用または画像の除外を選べるようにする。画像の読み込み・変換は UI を停止させないワーカーで行い、元画像を全枚数分同時に展開しない。要求の取消・送信失敗では添付を残し、修正して再送できるようにする。
-
-## OS のクリップボード
-
-初回はmacOS Apple Siliconの画像入力を検証する。Linux x64／arm64・Windowsの既存バックエンドと過去の検証結果は後日対応用に保持する。Rust 側の Clipboard Provider は OS 別のバックエンドを維持し、既存の Windows 実装の追加対応は後日に回す。現行実装は `arboard` 3.7.0 を使い、画像、画像ファイル一覧、テキストの順に明示読取りする。Wayland data-control feature も有効にしているが、コンポジターごとの動作保証とはしない。[arboard の画像 API](https://docs.rs/arboard/latest/arboard/struct.Clipboard.html#method.get_image)
-
-| 環境 | 対応方針 |
+| Action | Behavior |
 | --- | --- |
-| macOS | OS の画像クリップボードを読む。スクリーンショットのコピーから `Ctrl+V` で添付する流れを検証する |
-| Windows（後日対応） | 既存実装は保持する。初回の必須条件ではなく、将来は WSL の動作だけで対応済みとは扱わない |
-| Linux X11 | CLIPBOARD の画像を取得する。PRIMARY を画像貼り付けの既定にしない |
-| Linux Wayland | 対応するデータ転送のバックエンドを使う。コンポジターごとの制約を診断し、対応一覧へ記録する |
-| SSH・ヘッドレス | 実行ホストのクリップボードを扱う。接続元 PC の画像へ自動アクセスするとは扱わず、ファイル添付を使えるようにする |
+| Ctrl+V / Alt+V | Explicitly read this host's clipboard |
+| `/paste-image [WIDTHxHEIGHT\|original]` | Paste with an optional send size |
+| `/attach <quoted path> [WIDTHxHEIGHT\|original]` | Attach a file |
+| `/resize-image NUMBER WIDTHxHEIGHT` | Replace one pending send image from its saved original |
+| `/resize-image NUMBER original` | Restore its original dimensions |
+| Attachments arrows | Select and preview pending images |
+| Delete / Backspace / `d` in Attachments | Remove the selected pending attachment |
+| `/clear-images` | Remove pending images |
 
-arboard の Wayland バックエンドには追加 feature とコンポジター側のプロトコル対応が必要な場合がある。純粋な Wayland の全環境で利用できるとは扱わず、対応環境を検証する。[バックエンドの条件](https://docs.rs/crate/arboard/latest)
+`original` overrides a startup resize choice for one input. The UI distinguishes source
+and send dimensions and retains order. Image-only prompts are allowed. Conversion and
+immutable storage run outside the input loop; Ctrl+C cancels without losing adopted
+images or the draft. Submission/image edits wait while an image operation is active.
 
-Kitty・Sixel は画像を端末へ表示する手段であり、OS のクリップボードから画像を取得する機能ではない。画像表示プロトコルの有無から貼り付け可否を推定しない。
+Clipboard priority is bitmap, recognized image-file list, then text. Ordinary bracketed
+text paste stays text. Cmd+V belongs to the terminal and does not guarantee bitmap data.
+SSH uses the remote host's clipboard, not automatic access to the local PC. Terminal
+image-protocol support is independent of OS clipboard availability. The supported
+platform/terminal baseline is listed in the [README](../README.md#supported-environment).
 
-source [`7e651fb` の GHA](https://github.com/EkeMinusYou/lazypencil/actions/runs/40277161584) では、macOS Apple Silicon・Linux x64・Linux arm64 の実 OS クリップボードから、実 PTY の `Ctrl+V`、画像ワーカー、疑似 ACP 受信までを確認した。試験が所有する2枚の画像について、各環境で全3,072画素・順序・日本語の下書き保持・送信後の文書不変・正常終了を検査し、取得した PNG も独立に復号して照合した。Linux は専用 Xvfb、macOS は disposable runner の native pasteboard を使い、ユーザーの既存のクリップボードを利用しない。物理キーボード・IME、端末ごとの方針と、貼り付けから実エージェントまでを通した検証は別途必要である。
+## Budgets and failure
 
-## ACP と MCP への受け渡し
+Defaults are eight images, 20 MiB per source/send image, separate 50 MiB source/send
+totals, and 16 Mi pixels per source (16 × 1024 × 1024). User-only
+[attachment settings](configuration.md#image-attachment-budgets) can change the count
+through 64 and aggregate totals through 256 MiB, while native per-image safety limits
+remain. Provider limits also apply.
 
-Agent Host はテキストと画像を ACP のプロンプトへ含める。画像は `type: image`、MIME 型、Base64 のデータを使い、パスを書いただけで画像を送った扱いにはしない。初期化時に `promptCapabilities.image` を確認し、対応しない接続には画像付き要求を送信せず、理由を返す。[ACP の画像コンテンツ](https://agentclientprotocol.com/protocol/v1/content#image-content)
+Policy is checked at input and again before sending. Tightening it never deletes
+originals or drafts; remove or explicitly resize pending images to repair a request.
+Text paste remains available when image capacity is exhausted. Failed/unsupported
+image submission never falls back to a text-only request silently.
 
-添付 ID と表示名もテキストで対応付け、ユーザーの「2枚目」などの指示が画像の順序と一致するようにする。リサイズを選んだ場合は元画像と送信画像の寸法を区別して記録する。ログには画像の Base64 全体を埋め込まず、添付 ID・ハッシュ・寸法を保存する。
+## ACP, MCP, and storage
 
-要求中の添付一覧は、対象文書・会話に束縛したマニフェストから MCP へ渡す。Host が許可した添付 ID のみを `get_document` の添付メタデータと `put_asset` の入力で利用できるようにし、MCP から任意のユーザーデータを探索できる構成にしない。会話の終了・削除では権限を破棄し、再開時に保持中の添付を再登録する。 初回対象の Unix では接続ごとの所有ロックも確認し、親が強制終了した場合は、残存するマニフェストや接続済み MCP の権限も失効させる。会話の再開時には識別できる失効済み権限ファイルだけを回収し、画像・会話ログ・取得記録・プロジェクト素材は保持する。親の強制終了後のgrant失効・残存MCP拒否・再開時の回収と文書／添付保持は、確定済み全3環境gateで成功した。
+The host requires negotiated ACP image support and sends ordered MIME/Base64 image
+blocks with attachment IDs/display names. A path mentioned in text alone is not an
+image block. Transcripts replace payloads with size/hash metadata.
 
-AI が添付画像をデザインの素材として使う場合は、`put_asset` に `source: { attachment_id: "..." }` を指定してプロジェクト内の管理アセットへ取り込む。その後の編集バッチで画像の塗りとして参照する。参考として添付しただけではプロジェクトにコピーしない。外部 MCP クライアントでは、画像のプロンプト入力はそのクライアントに任せ、素材を取り込む際は `put_asset` に許可された画像データを渡す。
+The owned MCP connection receives a private document/conversation-bound manifest.
+`get_document` exposes its registered images, and `put_asset` can explicitly import
+one with `{"kind":"image","source":{"attachment_id":"ID"}}`. The returned URI
+can then be referenced by a normal atomic edit. External MCP clients instead upload
+approved image bytes; arbitrary user-data discovery is not exposed.
 
-## 保存と失敗
-
-添付は会話の保持方針に従って保存し、会話ログと同じ永続領域から参照する。画像プレビューのキャッシュを消しても、保持中の会話の添付は失われないようにする。未送信の破棄済み添付は参照がなくなってから回収し、プロジェクトへ取り込んだ素材は会話の削除で消さない。
-
-読み込み不能、未対応形式、上限超過、クリップボード利用不可、画像入力非対応を区別して診断する。画像の送信失敗後に、テキストだけの要求へ自動で切り替えない。機能としての完了条件には、貼り付け・削除・複数画像・再送と、両エージェントへの実画像の受け渡しを含める。
+Original/send images live in the user conversation store. Draft recovery preserves
+them; closing/revoking a connection expires its grant while saved images remain.
+Removing a pending attachment never deletes another retained reference or an imported
+project asset. [Conversation deletion and retention](agents.md#delete-local-conversation-data)
+are explicit reviewed operations, separate from project asset maintenance.

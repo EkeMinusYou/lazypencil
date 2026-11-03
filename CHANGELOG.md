@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Submit TUI prompts with Enter, Ctrl+Enter, or Ctrl+S by default; use Alt+Enter or Shift+Enter for a newline. The input stays editable during a turn and queues text follow-ups.
+- Attach explicit node/diagnostic references to prompts. Browsing or fitting a node alone no longer selects an implicit target for the next request.
+- Configure panel widths, collapse Nodes/Agent, and use contextual footer actions and persistent preview-error diagnostics.
+- Prepare document sessions in the background and display the connected adapter's actual model, effort, Fast mode, and account report without sending a prompt.
+- Wait for MCP queue capacity with cancellation instead of returning `BUSY` immediately; calculation IDs remain local to their document and connection.
 - Open a recursive, bounded document picker with `lazypencil` or `lazypencil tui`; retain direct opening through `tui FILE`.
 - Register MCP once per client and select multiple documents with `list_documents`, `open_document`, and `create_document`. Document tools now require `document_id`; `mcp --file` has been removed. Calculation and pagination handles remain isolated by document and connection.
 
