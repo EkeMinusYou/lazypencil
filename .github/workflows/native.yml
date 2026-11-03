@@ -150,10 +150,10 @@ jobs:
       - uses: ./.github/actions/xtask
         id: tools
         with:
-          verify: ${{ inputs.verify_tools || inputs.lane == 'all' || inputs.lane == 'core' && inputs.phase != 'focus' }}
+          verify: ${{ inputs.verify_tools || inputs.lane == 'all' || inputs.lane == 'core' && runner.os == 'macOS' && inputs.phase != 'focus' }}
           retire-old-tools: 'true'
       - name: Install Fish for shell completion integration tests
-        if: runner.os == 'macOS' && inputs.lane != 'release' && (inputs.phase != 'focus' && (inputs.lane == 'core' || inputs.lane == 'all') || contains(fromJSON(inputs.targets), 'completions'))
+        if: runner.os == 'macOS' && inputs.lane != 'release' && (inputs.phase != 'focus' && (inputs.lane == 'core' || inputs.lane == 'all' || inputs.lane == 'build') || contains(fromJSON(inputs.targets), 'completions'))
         timeout-minutes: 10
         env:
           HOMEBREW_NO_AUTO_UPDATE: '1'
@@ -168,9 +168,13 @@ jobs:
           key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'xtask/Cargo.lock') }}
           restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
       - name: Install Linux native build dependencies
-        if: runner.os == 'Linux' && (inputs.phase == 'full' || inputs.measure_tui || inputs.native_clipboard || inputs.runtime_parallel || (inputs.suite != 'core' && inputs.suite != 'conversation'))
+        if: runner.os == 'Linux' && inputs.lane != 'core' && (inputs.phase == 'full' || inputs.measure_tui || inputs.native_clipboard || inputs.runtime_parallel || (inputs.suite != 'core' && inputs.suite != 'conversation'))
         timeout-minutes: 20
         run: xtask/target/debug/xtask ci linux-dependencies
+      - name: Install shells for the portable core completion checks
+        if: runner.os == 'Linux' && inputs.lane == 'core'
+        timeout-minutes: 10
+        run: xtask/target/debug/xtask ci linux-core-dependencies
       - name: Verify, extract and normalize the complete source distribution
         run: xtask/target/debug/xtask ci native source
       - name: Restore immutable upstream emoji fixtures
@@ -385,6 +389,19 @@ jobs:
         if: ${{ (inputs.lane == 'all' || inputs.lane == 'core') && (inputs.phase != 'focus') }}
         timeout-minutes: 15
         run: xtask/target/debug/xtask ci native core-lint
+      - name: Retain platform-specific core checks on the shared Mac builder
+        if: inputs.lane == 'build' && runner.os == 'macOS' && inputs.phase != 'focus'
+        timeout-minutes: 55
+        run: xtask/target/debug/xtask ci native core-platform
+      - name: Check all default targets independently of compiled test consumers
+        # Reuse the shared Mac dependency graph instead of another Mac host.
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'default' || (inputs.lane == 'core' || inputs.lane == 'build') && runner.os == 'macOS') && (inputs.phase != 'focus') }}
+        timeout-minutes: 15
+        run: xtask/target/debug/xtask ci native default-lint
+      - name: Verify normal default-feature development compilation before test-profile binaries
+        if: (inputs.lane == 'core' || inputs.lane == 'build') && runner.os == 'macOS' && inputs.phase != 'focus'
+        timeout-minutes: 45
+        run: xtask/target/debug/xtask ci native default-development-build
       - name: Build default tests and record executable identities
         id: default-build
         if: ${{ (inputs.lane == 'all' || inputs.lane == 'default' || inputs.lane == 'build') && (inputs.phase != 'focus') }}
@@ -410,17 +427,6 @@ jobs:
           path: ${{ runner.temp }}/terminal-reproduction
           if-no-files-found: error
           retention-days: 3
-      - name: Check all default targets independently of compiled test consumers
-        # The independent core host owns this check on the initial Mac target.
-        # Publishing executables does not need to wait for Clippy; the final
-        # workflow gate still requires both hosts to succeed.
-        if: ${{ (inputs.lane == 'all' || inputs.lane == 'default' || inputs.lane == 'core' && runner.os == 'macOS') && (inputs.phase != 'focus') }}
-        timeout-minutes: 15
-        run: xtask/target/debug/xtask ci native default-lint
-      - name: Verify normal default-feature development compilation on the independent core host
-        if: inputs.lane == 'core' && runner.os == 'macOS' && inputs.phase != 'focus'
-        timeout-minutes: 45
-        run: xtask/target/debug/xtask ci native default-development-build
       - name: Stage same-run native tools for consumers
         if: inputs.lane == 'build' && inputs.phase != 'focus'
         run: xtask/target/debug/xtask ci tools stage --output "$RUNNER_TEMP/native-tools"
@@ -546,7 +552,7 @@ jobs:
           path: ${{ runner.temp }}/terminal-evidence
           if-no-files-found: error
           retention-days: 3
-      - name: Measure changed TUI performance code before the full matrix
+      - name: Measure TUI performance when explicitly requested
         id: tui-measurement
         if: (inputs.phase == 'focus' || inputs.lane == 'release') && inputs.measure_tui
         timeout-minutes: 15
@@ -630,8 +636,8 @@ jobs:
           # suppresses the compatible full build used to fill unchanged units.
           key: ${{ steps.application-key.outputs.focused_checkpoint }}
           path: ${{ runner.temp }}/lazypencil-compatible-cache
-      # Compiler outputs are not successful test receipts. PR caches remain
-      # isolated in their merge-ref scope and keep every restore validation.
+      # A compiled cache is not a test receipt. PR writes stay in its merge-ref
+      # scope; source/SDK/compiler validation and every test still run on restore.
       - name: Stage mapped release outputs independently of tests
         id: release-save
         if: ${{ (inputs.lane == 'all' || inputs.lane == 'release') && (!cancelled() && steps.release-key.outcome == 'success' && steps.release-cache.outputs.cache-hit != 'true' && (steps.release-build.outcome == 'success' || steps.release-smoke.outcome == 'success' || steps.focus-release.outcome == 'success' || steps.default-release.outcome == 'success') && (github.ref == 'refs/heads/main' || github.event_name == 'pull_request')) }}

@@ -16,6 +16,10 @@ on:
         type: choice
         default: auto
         options: [auto, macos-15]
+      measure_tui:
+        description: Run the full TUI latency and resource acceptance measurement
+        type: boolean
+        default: false
       rebuild_application:
         description: Measure application recompilation while retaining dependency caches
         type: boolean
@@ -28,6 +32,9 @@ on:
       focus_os:
         type: string
         default: auto
+      measure_tui:
+        type: boolean
+        default: false
       rebuild_application:
         type: boolean
         default: false
@@ -162,8 +169,10 @@ jobs:
     permissions:
       contents: read
       actions: write
-    needs: [plan, shader-preprocessor]
-    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.shader-preprocessor.result == 'success' || needs.shader-preprocessor.result == 'skipped') }}
+    # Native jobs consume the checked-in component, not the Wasm job's artifact.
+    # Request scarce Mac runners while the independent rebuild is verified.
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -173,14 +182,14 @@ jobs:
       os: ${{ matrix.os }}
       suite: ${{ needs.plan.outputs.suite }}
       targets: ${{ needs.plan.outputs.targets }}
-      measure_tui: ${{ needs.plan.outputs.measure_tui == 'true' }}
+      measure_tui: ${{ github.event_name == 'workflow_dispatch' && inputs.measure_tui == true }}
       terminal_reproduction: ${{ needs.plan.outputs.terminal_reproduction_full == 'true' }}
       rebuild_application: ${{ inputs.rebuild_application == true }}
 
   source:
-    if: ${{ !cancelled() && needs.native.result == 'success' && needs.audit.result == 'success' && (inputs.os == 'all' || inputs.os == '' || inputs.os == 'macos-15') }}
+    if: ${{ !cancelled() && needs.native.result == 'success' && needs.audit.result == 'success' && (needs.shader-preprocessor.result == 'success' || needs.shader-preprocessor.result == 'skipped') && (inputs.os == 'all' || inputs.os == '' || inputs.os == 'macos-15') }}
     name: Verified source artifact
-    needs: [native, audit]
+    needs: [native, audit, shader-preprocessor]
     permissions:
       contents: read
       actions: write
