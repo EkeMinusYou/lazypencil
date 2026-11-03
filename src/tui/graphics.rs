@@ -157,6 +157,7 @@ struct NativePlacement {
     image_id: u32,
     placement_id: u32,
     area: Rect,
+    crop: Option<[u32; 4]>,
 }
 
 /// Present new Kitty frames in an inactive slot before replacing their cells.
@@ -223,11 +224,30 @@ impl Presentation {
             ));
         }
         if let Some((_, image_id)) = self.slots[0] {
+            // Keep completed pixels at their original scale while a resized
+            // viewport renders. Center the old frame and crop any overflow.
+            let width = area.width.min(image.size.width);
+            let height = area.height.min(image.size.height);
+            let crop_width =
+                (image.pixels[0] * u32::from(width) / u32::from(image.size.width)).max(1);
+            let crop_height =
+                (image.pixels[1] * u32::from(height) / u32::from(image.size.height)).max(1);
             self.desired = Some(NativePlacement {
                 family: 0,
                 image_id,
                 placement_id: 1,
-                area,
+                area: Rect::new(
+                    area.x + (area.width - width) / 2,
+                    area.y + (area.height - height) / 2,
+                    width,
+                    height,
+                ),
+                crop: Some([
+                    (image.pixels[0] - crop_width) / 2,
+                    (image.pixels[1] - crop_height) / 2,
+                    crop_width,
+                    crop_height,
+                ]),
             });
         }
         for position in area.positions() {
@@ -319,6 +339,7 @@ impl Presentation {
                 image_id: target,
                 placement_id: 1,
                 area,
+                crop: None,
             });
             for position in area.positions() {
                 if let Some(cell) = buffer.cell_mut(position)
@@ -360,6 +381,9 @@ impl Presentation {
                     area.width,
                     area.height
                 );
+                if let Some([x, y, width, height]) = placement.crop {
+                    let _ = write!(commands, ",x={x},y={y},w={width},h={height}");
+                }
                 commands.push_str(";\x1b\\");
             }
             shown = Some(placement);

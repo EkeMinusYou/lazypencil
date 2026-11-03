@@ -370,3 +370,102 @@ fn native_kitty_uploads_preserve_pixels_compression_and_stable_redraws() {
         assert_eq!(presentation.source_size(), Some([800, 480]));
     }
 }
+
+#[test]
+fn native_kitty_resizes_keep_completed_frames_at_their_original_scale() {
+    for compressed in [false, true] {
+        let backend = Backend {
+            font: FontSize::new(10, 20),
+            protocol: ProtocolType::Kitty,
+            tmux: false,
+            kitty_compression: compressed,
+        };
+        let pixels = image::RgbaImage::from_fn(510, 640, |x, y| {
+            image::Rgba([(x % 256) as u8, (y % 256) as u8, 56, 255])
+        });
+        let encoded = backend
+            .encode_preview(
+                DynamicImage::ImageRgba8(pixels.clone()),
+                Size::new(51, 32),
+                42,
+            )
+            .unwrap();
+        let mut presentation = Presentation::default();
+        presentation.rectangular(true);
+        let mut observer = observer::KittyFrames::for_lazypencil();
+        for (index, (area, position, size, crop)) in [
+            // The initial viewport, Nodes hidden, then both side panels hidden.
+            (
+                Rect::new(23, 2, 51, 32),
+                [24, 3],
+                [51, 32],
+                [0, 0, 510, 640],
+            ),
+            (Rect::new(1, 2, 73, 32), [13, 3], [51, 32], [0, 0, 510, 640]),
+            (Rect::new(1, 2, 98, 32), [25, 3], [51, 32], [0, 0, 510, 640]),
+            // A narrower and shorter viewport clips the center without scaling.
+            (
+                Rect::new(23, 2, 31, 20),
+                [24, 3],
+                [31, 20],
+                [100, 120, 310, 400],
+            ),
+            // Restoring the viewport restores the whole retained image.
+            (
+                Rect::new(23, 2, 51, 32),
+                [24, 3],
+                [51, 32],
+                [0, 0, 510, 640],
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut buffer = Buffer::empty(Rect::new(0, 0, 100, 36));
+            presentation.begin();
+            presentation.render(&mut buffer, area, &encoded);
+            presentation.finish(&mut buffer, false);
+            let wire = buffer[(0, 0)].symbol();
+            assert_eq!(wire.contains("a=t,"), index == 0);
+            assert!(wire.contains(&format!("\x1b[{};{}H", position[1], position[0])));
+            assert!(wire.contains(&format!("a=p,i=42,p=1,c={},r={},", size[0], size[1])));
+            assert!(wire.contains(&format!(
+                ",x={},y={},w={},h={};",
+                crop[0], crop[1], crop[2], crop[3]
+            )));
+            assert_eq!(presentation.source_size(), Some([510, 640]));
+            observer.feed(wire.as_bytes()).unwrap();
+            assert_eq!(observer.images.len(), 1);
+        }
+        assert_eq!(observer.images[0].rgba(), pixels.as_raw());
+
+        let completed = backend
+            .encode_preview(
+                DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+                    980,
+                    640,
+                    image::Rgba([12, 34, 56, 255]),
+                )),
+                Size::new(98, 32),
+                42,
+            )
+            .unwrap();
+        let mut buffer = Buffer::empty(Rect::new(0, 0, 100, 36));
+        presentation.begin();
+        presentation.render(&mut buffer, Rect::new(1, 2, 98, 32), &completed);
+        presentation.finish(&mut buffer, false);
+        let wire = buffer[(0, 0)].symbol();
+        assert!(wire.contains("a=t,"));
+        assert!(wire.contains("a=p,i=43,p=1,c=98,r=32,"));
+        assert!(wire.contains(",x=0,y=0,w=980,h=640;"));
+        assert!(wire.contains("a=d,d=i,i=42,p=1"));
+        assert!(wire.find("a=t,").unwrap() < wire.find("a=p,").unwrap());
+        assert!(wire.find("a=p,").unwrap() < wire.find("a=d,").unwrap());
+        observer.feed(wire.as_bytes()).unwrap();
+        assert_eq!(observer.images.len(), 2);
+        assert_eq!(
+            (observer.images[1].width, observer.images[1].height),
+            (980, 640)
+        );
+    }
+}
