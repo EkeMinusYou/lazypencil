@@ -11,6 +11,7 @@
 - Require macOS Tahoe 26 or later on Apple Silicon for new releases. Add a signed, notarized release workflow that updates the dedicated lazypencil Homebrew tap.
 - Build and verify on macOS 26, and let bound MCP processes use the system allocator instead of the macOS 15 memory overrides.
 - Authenticate notarization with an Apple Account app-specific password instead of an App Store Connect API key.
+- Keep typing responsive after queued trackpad scrolling on fallback terminal image protocols by combining adjacent identical scroll events without losing steps or input boundaries.
 
 - Keep local TUI operation errors in the bottom notification row instead of adding them to the conversation.
 
