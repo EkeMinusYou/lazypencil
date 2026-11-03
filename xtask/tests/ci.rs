@@ -592,10 +592,115 @@ fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() 
         "if: (inputs.phase == 'focus' || inputs.lane == 'release') && inputs.measure_tui"
     ));
     let ci = std::fs::read_to_string(util::root().join(".github/workflows/ci.yml")).unwrap();
-    assert!(ci.contains("measure_tui: ${{ needs.plan.outputs.measure_tui == 'true' }}"));
-    assert!(ci.contains("needs: [plan, shader-preprocessor]"));
+    assert!(ci.contains(
+        "measure_tui: ${{ github.event_name == 'workflow_dispatch' && inputs.measure_tui == true }}"
+    ));
+    assert!(!ci.contains("measure_tui: ${{ needs.plan.outputs.measure_tui == 'true' }}"));
+    let dispatch = ci
+        .split("\n  workflow_dispatch:\n")
+        .nth(1)
+        .unwrap()
+        .split("\n  workflow_call:\n")
+        .next()
+        .unwrap();
+    let measurement = dispatch
+        .split("      measure_tui:\n")
+        .nth(1)
+        .unwrap()
+        .split("      rebuild_application:\n")
+        .next()
+        .unwrap();
+    assert!(measurement.contains("type: boolean\n"));
+    assert!(measurement.contains("default: false\n"));
+    assert!(workflow.contains("--chromium-resources"));
+    assert!(workflow.contains("--enforce-targets --allocation-diagnostics=true"));
+    let release_smoke = workflow
+        .split("id: release-smoke\n")
+        .nth(1)
+        .unwrap()
+        .split("      - name:")
+        .next()
+        .unwrap();
+    assert!(release_smoke.contains("ci native release\n"));
+    assert!(!release_smoke.contains("inputs.measure_tui"));
+    let native = ci
+        .split("\n  native:\n")
+        .nth(1)
+        .unwrap()
+        .split("\n  source:\n")
+        .next()
+        .unwrap();
+    assert!(native.contains("needs: plan\n"));
+    assert!(!native.contains("needs.shader-preprocessor"));
+    assert!(ci.contains("needs: [native, audit, shader-preprocessor]"));
     assert!(ci.contains("uses: ./.github/workflows/native-lanes.yml"));
     assert!(!ci.contains("  focus:\n"));
+}
+
+#[test]
+fn portable_core_moves_to_linux_while_mac_keeps_native_contracts_and_normal_builds() {
+    use ci::commands;
+    let root = util::root();
+    let lanes = fs::read_to_string(root.join(".github/workflows/native-lanes.yml")).unwrap();
+    let core = lanes
+        .split("\n  core:\n")
+        .nth(1)
+        .unwrap()
+        .split("\n  release:\n")
+        .next()
+        .unwrap();
+    assert!(core.contains("os: ubuntu-24.04\n"));
+    assert!(core.contains("phase: full\n"));
+    assert!(core.contains("lane: core\n"));
+    let workflow = fs::read_to_string(root.join(".github/workflows/native.yml")).unwrap();
+    assert!(workflow.contains("xtask/target/debug/xtask ci linux-core-dependencies"));
+    let position = |text| workflow.find(text).unwrap();
+    assert!(position("ci native core-platform\n") < position("id: default-build\n"));
+    assert!(position("ci native default-lint\n") < position("id: default-build\n"));
+    assert!(position("ci native default-development-build\n") < position("id: default-build\n"));
+    let commands = commands::core_platform_tests();
+    for command in &commands {
+        assert!(command.iter().any(|s| s == "--no-default-features"));
+        assert!(!command.iter().any(|s| s == "--features"));
+    }
+    assert!(
+        commands[0]
+            .iter()
+            .any(|s| s == commands::MANAGEMENT_REPRODUCTION)
+    );
+    assert!(commands[0].iter().any(|s| s == "--test-threads=1"));
+    assert!(commands[1].iter().any(|s| s == "--lib"));
+    for target in [
+        "agent",
+        "assets",
+        "completions",
+        "config",
+        "paths",
+        "project",
+        "runtime",
+        "user_agent_config",
+        "user_config",
+    ] {
+        assert!(
+            commands[1]
+                .windows(2)
+                .any(|args| args == ["--test", target]),
+            "{target}"
+        );
+    }
+    assert!(
+        commands[1]
+            .windows(2)
+            .any(|args| args == ["--skip", commands::MANAGEMENT_REPRODUCTION])
+    );
+    let build = commands::core_platform_build();
+    assert_eq!(
+        &build[..build.len() - 1],
+        commands[1].split(|s| s == "--").next().unwrap()
+    );
+    assert_eq!(build.last().unwrap(), "--no-run");
+    // The complete featureless suite is still enforced independently of Mac allocation.
+    assert!(commands::core_tests().iter().any(|s| s == "--no-fail-fast"));
 }
 
 #[test]
@@ -1269,9 +1374,15 @@ fn terminal_protocol_and_observer_changes_reproduce_the_bsd_browser_consumer_fir
 
 #[test]
 fn release_gate_rejects_every_incomplete_or_malformed_result() {
-    let valid = json!({"native":{"result":"success"},"audit":{"result":"success"}});
+    let valid = json!({"native":{"result":"success"},"audit":{"result":"success"},"shader-preprocessor":{"result":"success"}});
     assert!(ci::require_success(&valid).is_ok());
-    for job in ["native", "audit"] {
+    let mut unchanged_shader = valid.clone();
+    unchanged_shader["shader-preprocessor"]["result"] = json!("skipped");
+    assert!(ci::require_success(&unchanged_shader).is_ok());
+    let mut extra = valid.clone();
+    extra["extra"] = json!({"result":"success"});
+    assert!(ci::require_success(&extra).is_err());
+    for job in ["native", "audit", "shader-preprocessor"] {
         for state in [
             json!("skipped"),
             json!("failure"),
@@ -1282,6 +1393,9 @@ fn release_gate_rejects_every_incomplete_or_malformed_result() {
             json!(true),
         ] {
             let mut value = valid.clone();
+            if job == "shader-preprocessor" && state == "skipped" {
+                continue;
+            }
             value[job]["result"] = state;
             assert!(ci::require_success(&value).is_err());
         }
@@ -1291,6 +1405,7 @@ fn release_gate_rejects_every_incomplete_or_malformed_result() {
         json!([]),
         json!({}),
         json!({"native":{"result":"success"}}),
+        json!({"native":{"result":"success"},"audit":{"result":"success"}}),
         json!({"native":{"result":"success"},"audit":{"result":"success"},"extra":{}}),
     ] {
         assert!(ci::require_success(&value).is_err());
@@ -1302,9 +1417,11 @@ fn release_gate_rejects_every_incomplete_or_malformed_result() {
         json!({}),
         json!({"outputs":{}}),
     ] {
-        let mut data = valid.clone();
-        data["native"] = value;
-        assert!(ci::require_success(&data).is_err());
+        for job in ["native", "audit", "shader-preprocessor"] {
+            let mut data = valid.clone();
+            data[job] = value.clone();
+            assert!(ci::require_success(&data).is_err());
+        }
     }
 }
 

@@ -25,12 +25,13 @@ permissions:
   actions: write
 jobs:
   core:
+    name: Portable core / ubuntu-24.04
     if: inputs.os == 'macos-15'
     uses: ./.github/workflows/native.yml
     with:
-      os: ${{ inputs.os }}
+      os: ubuntu-24.04
       lane: core
-      phase: ${{ (inputs.suite == 'core' || inputs.suite == 'conversation') && 'verify' || 'full' }}
+      phase: full
       suite: ${{ inputs.suite }}
       targets: ${{ inputs.targets }}
       rebuild_application: ${{ inputs.rebuild_application }}

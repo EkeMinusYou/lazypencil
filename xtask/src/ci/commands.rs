@@ -159,6 +159,46 @@ pub fn core_tests() -> Invocation {
     command
 }
 
+/// The full no-rendering suite runs on Linux. Retain Mac library branches and
+/// integration checks for native filesystems, processes, settings and shells.
+pub fn core_platform_tests() -> [Invocation; 2] {
+    let mut command = words(&[
+        "cargo",
+        "test",
+        "--locked",
+        "--no-default-features",
+        "--lib",
+        "--no-fail-fast",
+    ]);
+    for target in [
+        "agent",
+        "assets",
+        "completions",
+        "config",
+        "paths",
+        "project",
+        "runtime",
+        "user_agent_config",
+        "user_config",
+    ] {
+        command.extend(["--test".into(), target.into()]);
+    }
+    command.extend(words(&["--", "--test-threads=2"]));
+    command.extend(skips([MANAGEMENT_REPRODUCTION]));
+    [management_tests(false), command]
+}
+
+pub fn core_platform_build() -> Invocation {
+    let tests = core_platform_tests();
+    let mut build = tests[1]
+        .iter()
+        .take_while(|arg| arg.as_str() != "--")
+        .cloned()
+        .collect::<Invocation>();
+    build.push("--no-run".into());
+    build
+}
+
 /// Require every Cargo test target before running immutable binaries without its build lock.
 pub fn default_tests(root: &Path, binaries: &BTreeMap<String, PathBuf>) -> Result<Vec<Invocation>> {
     let (integration, _) = focus::integration_targets(root)?;

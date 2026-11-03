@@ -41,6 +41,7 @@ pub enum Stage {
     CoreBuild,
     CoreReproduce,
     CoreTest,
+    CorePlatform,
     CoreLint,
     DefaultBuild,
     DefaultDevelopmentBuild,
@@ -1063,6 +1064,19 @@ impl Session {
             }
             Stage::CoreReproduce => self.core_reproductions(&args.suite, &targets),
             Stage::CoreTest => management::core(self),
+            Stage::CorePlatform => {
+                self.execute(
+                    &commands::core_platform_build(),
+                    2400,
+                    "core-platform-build.log",
+                    false,
+                )?;
+                normal::run_checks(
+                    &commands::core_platform_tests(),
+                    Instant::now() + Duration::from_secs(900),
+                    |args, seconds| self.execute(args, seconds, "core-platform.log", true),
+                )
+            }
             Stage::CoreLint => self.cargo(
                 &[
                     "clippy",
