@@ -224,13 +224,34 @@ fn text_layer_bounds_preserve_native_alpha_at_fractional_scales_and_rotations() 
         }
     }
     // Original lazypencil output, not a Pencil reference. The c355f19 hosted
-    // artifacts from run 40281460362 establish each platform's unchanged
-    // shadow/mesh/text compositor. Hash decoded RGBA rather than PNG encoding.
+    // artifacts from run 40281460362 establish the Linux compositor baselines.
+    // Native CoreText pixels differ across macOS releases: the verified v0.1.0
+    // archive produced the 26.6.2 baseline in run 41681532603 and the 27.2
+    // baseline locally, matching the current renderer on each tested OS.
+    // Hash decoded RGBA rather than PNG encoding.
     // This caught a one-channel rounding regression hidden by isolated text.
     let expected = match (std::env::consts::OS, std::env::consts::ARCH) {
         ("linux", "x86_64") => "ff94788fec42537e375b5841f906bd4917d42b66deac893f7b6f080f0714fc13",
         ("linux", "aarch64") => "c9bbe604900f14172516e644d6dd4a578df16e89092abf9bef6f45a4e4b6bf21",
-        ("macos", "aarch64") => "bae66e1b870d9953e08fc5600054b34aabadbb6b383671f53256f18911313c4e",
+        ("macos", "aarch64") => {
+            let version = std::process::Command::new("/usr/bin/sw_vers")
+                .arg("-productVersion")
+                .output()
+                .unwrap();
+            assert!(version.status.success());
+            match std::str::from_utf8(&version.stdout)
+                .unwrap()
+                .trim()
+                .split('.')
+                .next()
+            {
+                Some("26") => "20341914dff4a81d8189399b73e8c383e7831aa7a65132a56229b48fc5c13dbf",
+                Some("27") => "88880fe311a9df38362f22c5eff42fc0cf53da2cb2a39dc817a8439c8e17d2d1",
+                // All independent pixel oracles above still run on an OS
+                // without an approved native-font bitmap baseline.
+                _ => return,
+            }
+        }
         // Retain the existing Windows/Intel implementation without promising
         // an original-pixel baseline outside the initial release platforms.
         _ => return,
