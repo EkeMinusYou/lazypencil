@@ -111,16 +111,26 @@ pub fn run(
             {"type":"rectangle","id":"blue","name":"New destination","x":240,"y":-30,"width":180,"height":90,"fill":"#0000FF"}
         ]});
     }
+    if case == "mouse-kitty" {
+        environment.insert(
+            "LAZYPENCIL_PROFILE_INPUT".into(),
+            "owned-local-measurement".into(),
+        );
+    }
     let mut configuration = None;
     if case.starts_with("mouse-") {
         design = json!({"version":"2.21","children":(0..64).map(|index| json!({"type":"rectangle","id":format!("mouse-{index}"),"name":format!("Mouse row {index}"),"x":index*100,"width":80,"height":80,"fill":"#ff0000"})).collect::<Vec<_>>()});
     }
-    if case == "mouse-disabled" {
+    if case.starts_with("mouse-") || case == "picker-mouse" {
         let directory = root.join("user-settings");
         fs::create_dir_all(&directory)?;
         fs::write(
             directory.join("config.toml"),
-            "[tui.mouse]\nenabled=false\n",
+            if case == "mouse-disabled" {
+                "[tui.mouse]\nenabled=false\n"
+            } else {
+                "[tui.mouse]\nshow_controls=true\n"
+            },
         )?;
         environment.insert(
             "LAZYPENCIL_CONFIG_DIR".into(),

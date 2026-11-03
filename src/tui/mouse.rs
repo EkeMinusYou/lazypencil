@@ -74,6 +74,7 @@ pub(super) struct Pointer {
     pub space: bool,
     detached: Vec<ListTarget>,
     pub more: bool,
+    pub controls: bool,
     modal_state: ListState,
     modal_kind: Option<ListTarget>,
     modal_count: usize,
@@ -169,7 +170,7 @@ impl Pointer {
     }
     pub fn button(&mut self, frame: &mut Frame, area: Rect, label: &str, action: Action) {
         let width = Line::raw(label).width() as u16;
-        if area.height > 0 && area.width >= width {
+        if self.controls && area.height > 0 && area.width >= width {
             let area = Rect::new(area.x, area.y, width, 1);
             frame.render_widget(
                 Paragraph::new(label)
@@ -510,13 +511,16 @@ impl App {
         if !self.mouse.enabled {
             return Ok(false);
         }
-        if self.pointer.scope != self.pointer_scope() {
+        let position = Position::new(event.column, event.row);
+        let target = self.pointer.at(position);
+        let scope_valid = self.pointer.scope == self.pointer_scope();
+        self.input_profile
+            .pointer(event, count, target, scope_valid);
+        if !scope_valid {
             self.pointer.clear();
             self.dirty = true;
             return Ok(false);
         }
-        let position = Position::new(event.column, event.row);
-        let target = self.pointer.at(position);
         match event.kind {
             MouseEventKind::Moved => return Ok(false),
             MouseEventKind::Down(button) => {
@@ -810,6 +814,15 @@ impl App {
         Ok(false)
     }
 
+    pub(super) fn pointer_menu_area(header: Rect) -> Rect {
+        Rect::new(
+            header.right().saturating_sub(28),
+            header.bottom(),
+            28.min(header.width),
+            13,
+        )
+    }
+
     pub(super) fn draw_pointer_controls(
         &mut self,
         frame: &mut Frame,
@@ -817,7 +830,8 @@ impl App {
     ) {
         let header = workspace.header;
         let mut x = header.right().saturating_sub(16);
-        if self.header_line().width() + 17 <= usize::from(header.width) {
+        if self.mouse.show_controls && self.header_line().width() + 17 <= usize::from(header.width)
+        {
             for (label, action) in [
                 ("[N]", Action::ToggleNodes),
                 ("[A]", Action::ToggleAgent),
@@ -849,7 +863,7 @@ impl App {
             .iter()
             .map(|(label, _)| label.len() as u16 + 1)
             .sum::<u16>();
-        if preview.width >= width + 13 {
+        if self.mouse.show_controls && preview.width >= width + 13 {
             let mut x = preview.right() - width;
             for (label, action) in labels {
                 self.pointer.button(
@@ -860,7 +874,7 @@ impl App {
                 );
                 x += label.len() as u16 + 1;
             }
-        } else {
+        } else if self.mouse.show_controls {
             self.pointer.button(
                 frame,
                 Rect::new(
@@ -874,12 +888,7 @@ impl App {
             );
         }
         if self.pointer.more {
-            let popup = Rect::new(
-                header.right().saturating_sub(28),
-                header.bottom(),
-                28.min(header.width),
-                13,
-            );
+            let popup = Self::pointer_menu_area(header);
             frame.render_widget(Clear, popup);
             let block = panel("View controls", true);
             let inner = block.inner(popup);

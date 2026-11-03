@@ -146,6 +146,7 @@ pub const COMMANDS: &[&str] = &[
     "New empty conversation (save current draft)…",
     "Toggle Nodes panel",
     "Toggle Agent panel",
+    "View controls…",
 ];
 
 impl super::App {
@@ -272,6 +273,8 @@ impl super::App {
                 7 => self.pending_session = Some(super::saved::SessionChange::New),
                 8 => self.toggle_panel(super::Nav::ToggleNodesPanel, worker),
                 9 => self.toggle_panel(super::Nav::ToggleAgentPanel, worker),
+                10 if self.mouse.enabled => self.pointer.more = true,
+                10 => self.set_status("Pointer input is disabled in user settings".into()),
                 _ => unreachable!(),
             },
             Modal::History(page) if !page.entries.is_empty() => {

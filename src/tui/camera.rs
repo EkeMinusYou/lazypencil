@@ -44,6 +44,28 @@ impl InputProfile {
         );
     }
 
+    pub(super) fn pointer(
+        &mut self,
+        event: crossterm::event::MouseEvent,
+        count: u16,
+        target: Option<super::mouse::Target>,
+        scope_valid: bool,
+    ) {
+        if !self.enabled || self.input_id >= 2048 {
+            return;
+        }
+        self.input("pointer", crossterm::event::KeyEventKind::Press);
+        eprintln!(
+            "LAZYPENCIL_INPUT_PROFILE {}",
+            serde_json::json!({
+                "event":"pointer", "input_id":self.input_id,
+                "kind":format!("{:?}", event.kind), "column":event.column, "row":event.row,
+                "modifiers":event.modifiers.bits(), "count":count,
+                "target":target.map(|target| format!("{target:?}")), "scope_valid":scope_valid,
+            })
+        );
+    }
+
     pub(super) fn presented(&mut self, serial: u64, cached: bool) {
         if !self.enabled || serial == self.last_serial || self.input_id >= 2048 {
             return;

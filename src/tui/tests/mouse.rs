@@ -9,6 +9,7 @@ fn paint_mouse(app: &mut App, width: u16, height: u16) {
 
 async fn mouse_fixture(temp: &TempDir) -> (App, Worker, Backend) {
     let mut app = app(temp, "echo");
+    app.mouse.show_controls = true;
     let children = (0..64).map(|index| json!({"type":"rectangle", "id":format!("mouse-{index}"), "name":format!("Mouse row {index}"), "x":index*100, "width":80, "height":80, "fill":"#ff0000"})).collect::<Vec<_>>();
     std::fs::write(app.conversation.store().path(), json!({"version":"2.21", "children":children}).to_string()).unwrap();
     let picker = Backend::halfblocks();
@@ -328,5 +329,39 @@ fn mouse_disclosure_toggles_filtered_branches_without_fitting_or_adding_referenc
         assert!(app.outbox.references.is_empty());
         app.conversation.close().await.unwrap();
         worker.cancel();
+    });
+}
+
+#[test]
+fn pointer_capture_keeps_the_default_workspace_appearance() {
+    let temp = TempDir::new().unwrap();
+    let mut app = app(&temp, "echo");
+    assert!(!app.mouse.show_controls);
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(130, 34)).unwrap();
+    terminal.draw(|frame| { app.cells = app.draw(frame); }).unwrap();
+    let enabled = terminal.backend().buffer().clone();
+    app.mouse.enabled = false;
+    terminal.draw(|frame| { app.cells = app.draw(frame); }).unwrap();
+    assert_eq!(&enabled, terminal.backend().buffer());
+    assert!(app.pointer.area(mouse::Target::Button(mouse::Action::More)).is_none());
+}
+
+#[test]
+fn view_menu_is_available_without_persistent_buttons() {
+    runtime().block_on(async {
+        let temp = TempDir::new().unwrap();
+        let (mut app, worker, _) = mouse_fixture(&temp).await;
+        app.mouse.show_controls = false;
+        app.modal = Some(checkpoints::Modal::Commands { selected: checkpoints::COMMANDS.len() - 1 });
+        app.activate_modal(&worker).unwrap();
+        paint_mouse(&mut app, 130, 34);
+        assert!(app.pointer.more);
+        assert!(app.pointer.area(mouse::Target::Button(mouse::Action::WheelMode)).is_some());
+        app.pointer.more = false;
+        app.mouse.enabled = false;
+        app.modal = Some(checkpoints::Modal::Commands { selected: checkpoints::COMMANDS.len() - 1 });
+        app.activate_modal(&worker).unwrap();
+        assert!(!app.pointer.more, "Disabled pointer input must not open an invisible menu");
+        app.conversation.close().await.unwrap();
     });
 }

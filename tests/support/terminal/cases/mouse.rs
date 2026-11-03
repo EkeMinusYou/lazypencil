@@ -80,6 +80,25 @@ pub fn workspace(h: &mut Harness) -> Result {
         return Ok(());
     }
     assert!(h.contains_bytes(b"\x1b[?1006h"));
+    if h.case == "mouse-kitty" {
+        let initial = h
+            .frames
+            .images
+            .last()
+            .ok_or("Missing rendered preview")?
+            .clone();
+        event(h, 65, point, false)?;
+        h.wait(
+            "unmodified trackpad scrolling changes rendered pixels",
+            15.0,
+            |h| {
+                h.frames
+                    .images
+                    .last()
+                    .is_some_and(|image| image.rgba() != initial.rgba())
+            },
+        )?;
+    }
     let before = zoom(h);
     event(h, 80, point, false)?;
     h.wait("Ctrl wheel zooms the actual preview", 15.0, |h| {
@@ -137,6 +156,22 @@ pub fn workspace(h: &mut Harness) -> Result {
     h.visible("View controls")?;
     h.key(b"\x1b")?;
     h.hidden("View controls")?;
+    if h.case == "mouse-kitty" {
+        let trace = fs::read_to_string(h.root.join("terminal-errors.log"))?;
+        assert!(
+            trace
+                .lines()
+                .filter_map(|line| {
+                    serde_json::from_str::<Value>(line.strip_prefix("LAZYPENCIL_INPUT_PROFILE ")?)
+                        .ok()
+                })
+                .any(|event| event["event"] == "pointer"
+                    && event["kind"] == "ScrollDown"
+                    && event["modifiers"] == 0
+                    && event["target"] == "Canvas"
+                    && event["scope_valid"] == true)
+        );
+    }
     assert_eq!(state(h)["draft"], format!("{draft} 続き"));
     assert_eq!(fs::read(&h.document)?, original);
     assert!(!h.root.join("sent-turn.txt").exists());

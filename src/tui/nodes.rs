@@ -299,7 +299,10 @@ impl App {
         }
         let inner = block.inner(area);
         frame.render_widget(block, area);
-        if self.mouse.enabled && usize::from(area.width) >= title_width + 17 {
+        if self.mouse.enabled
+            && self.mouse.show_controls
+            && usize::from(area.width) >= title_width + 17
+        {
             let x = area.right() - 15;
             self.pointer.button(
                 frame,

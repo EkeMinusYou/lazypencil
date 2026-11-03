@@ -104,14 +104,15 @@ moving keyboard focus, so typing can continue while browsing history or the canv
 | Agent history / diagnostic details / Help / saved text: scroll | Scroll the text; history resumes following output at the bottom |
 | File picker / command palette / checkpoints | Click a row to select, then Open / Run / Review to activate |
 
-Preview's `[-]`, `[+]`, `[Fit]`, and `[Play]`/`[Pause]` buttons provide navigation
-without modifiers. Nodes offers `[Show]` and `[+Ref]`; selecting or fitting alone
-never adds an AI reference. `[N]` and `[A]` collapse or restore Nodes and Agent
-through the view menu; header buttons also appear when there is room beside the
-agent metadata. Preview's
-`[Menu]` (or `[...]` in narrow panels) exposes all view actions, plus Help, Commands,
-and a temporary wheel pan/zoom switch. There is no persistent hand-tool mode. Prompt clicks focus input; pointer caret positioning,
-canvas element selection, and element movement/resizing are not included yet.
+The default workspace keeps its existing borders and labels. Enable
+`show_controls = true` under `[tui.mouse]` in user configuration to show Preview's `[-]`,
+`[+]`, `[Fit]`, `[Play]`/`[Pause]`, and `[Menu]` buttons, Nodes' `[Show]` and `[+Ref]`,
+and header panel toggles when space permits. With either setting, **View controls…**
+in the command palette (`Alt+p`) opens the view menu, including a temporary wheel
+pan/zoom switch. The menu leaves the uncovered portion of Preview visible.
+Selecting or fitting alone never adds an AI reference. There is no persistent
+hand-tool mode. Prompt clicks focus input; pointer caret positioning, canvas
+element selection, and element movement/resizing are not included yet.
 
 A drag belongs to its starting surface until the button is released, including
 when Space is released during the drag. Resize, focus loss, and changed modal or
@@ -121,6 +122,17 @@ restoration and deletion rules remain in force. Exact Space hold/release reporti
 requires the terminal's enhanced keyboard protocol; wheel, middle/right drag, and
 buttons remain alternatives. A completed pointer gesture clears the Space state
 so a missing release cannot leave subsequent drags in pan mode.
+
+[Herdr App 0.1.12](https://github.com/herdrdev/herdr-app/blob/v0.1.12/src/terminal.rs)
+omits mouse modifiers when forwarding directional scrolling. Ctrl+scroll therefore
+arrives as ordinary scrolling there. Use the view menu's wheel pan/zoom switch or
+the keyboard zoom keys instead.
+
+For local input diagnosis, launch with
+`LAZYPENCIL_PROFILE_INPUT=owned-local-measurement` and redirect stderr to a file.
+The bounded trace records received pointer kinds, cell positions, modifiers, hit
+targets and image presentation timing; it does not record prompt text. Tracing is
+disabled by default.
 
 The current cell-based terminal input has no native pinch event, fractional scroll
 deltas, gesture phases, device identity, or Cmd mouse modifier. Pinch and Cmd+scroll
@@ -136,6 +148,7 @@ User-only settings can disable capture or change the scroll behavior:
 ```toml
 [tui.mouse]
 enabled = true
+show_controls = false
 wheel_zoom = false
 scroll_step = 2
 zoom_step = 1.1

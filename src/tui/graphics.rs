@@ -168,7 +168,7 @@ pub(super) struct Presentation {
     rectangular: bool,
     pending: [Option<String>; 2],
     desired: Option<NativePlacement>,
-    shown: Option<NativePlacement>,
+    shown: Vec<NativePlacement>,
     source_sizes: [Option<[u32; 2]>; 2],
     replay: bool,
     serial: u64,
@@ -358,12 +358,77 @@ impl Presentation {
         if !self.rectangular {
             return;
         }
-        let desired = self.desired.filter(|_| !modal);
+        self.finish_with_overlay(buffer, modal, None);
+    }
+
+    pub(super) fn finish_with_overlay(
+        &mut self,
+        buffer: &mut Buffer,
+        modal: bool,
+        overlay: Option<Rect>,
+    ) {
+        if !self.rectangular {
+            return;
+        }
+        let desired = self
+            .desired
+            .filter(|_| !modal)
+            .map(|placement| {
+                let Some(overlay) = overlay.filter(|overlay| placement.area.intersects(*overlay))
+                else {
+                    return vec![placement];
+                };
+                let area = placement.area;
+                let covered = area.intersection(overlay);
+                let [sx, sy, sw, sh] = placement.crop.unwrap_or_else(|| {
+                    let [width, height] = self.source_sizes[placement.family]
+                        .expect("Native placement has source dimensions");
+                    [0, 0, width, height]
+                });
+                let x = |column: u16| u32::from(column - area.x) * sw / u32::from(area.width);
+                let y = |row: u16| u32::from(row - area.y) * sh / u32::from(area.height);
+                [
+                    Rect::new(area.x, area.y, area.width, covered.y - area.y),
+                    Rect::new(
+                        area.x,
+                        covered.bottom(),
+                        area.width,
+                        area.bottom() - covered.bottom(),
+                    ),
+                    Rect::new(area.x, covered.y, covered.x - area.x, covered.height),
+                    Rect::new(
+                        covered.right(),
+                        covered.y,
+                        area.right() - covered.right(),
+                        covered.height,
+                    ),
+                ]
+                .into_iter()
+                .enumerate()
+                .filter_map(|(index, part)| {
+                    if part.is_empty() {
+                        return None;
+                    }
+                    Some(NativePlacement {
+                        area: part,
+                        placement_id: index as u32 + 1,
+                        crop: Some([
+                            sx + x(part.x),
+                            sy + y(part.y),
+                            x(part.right()) - x(part.x),
+                            y(part.bottom()) - y(part.y),
+                        ]),
+                        ..placement
+                    })
+                })
+                .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         let mut commands = String::new();
-        let mut shown = None;
-        if let Some(placement) = desired {
+        let mut shown = Vec::new();
+        for placement in desired {
             let upload = self.pending[placement.family].take();
-            let replace = self.replay || upload.is_some() || self.shown != Some(placement);
+            let replace = self.replay || upload.is_some() || !self.shown.contains(&placement);
             if let Some(upload) = upload {
                 commands.push_str(&upload);
             }
@@ -386,14 +451,14 @@ impl Presentation {
                 }
                 commands.push_str(";\x1b\\");
             }
-            shown = Some(placement);
+            shown.push(placement);
             self.visible = Some(placement.image_id);
         }
-        if let Some(previous) = self.shown
-            && shown.is_none_or(|next| {
-                (next.image_id, next.placement_id) != (previous.image_id, previous.placement_id)
+        for previous in self.shown.iter().filter(|previous| {
+            !shown.iter().any(|next| {
+                (next.image_id, next.placement_id) == (previous.image_id, previous.placement_id)
             })
-        {
+        }) {
             use std::fmt::Write as _;
             let _ = write!(
                 commands,

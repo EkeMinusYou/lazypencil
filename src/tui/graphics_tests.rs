@@ -469,3 +469,60 @@ fn native_kitty_resizes_keep_completed_frames_at_their_original_scale() {
         );
     }
 }
+
+#[test]
+fn native_menu_preserves_uncovered_pixels_and_restores_full_placement() {
+    let backend = Backend {
+        font: FontSize::new(10, 20),
+        protocol: ProtocolType::Kitty,
+        tmux: false,
+        kitty_compression: false,
+    };
+    let area = Rect::new(2, 1, 8, 4);
+    let bounds = Rect::new(0, 0, 16, 8);
+    let encoded = backend
+        .encode_preview(
+            DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+                80,
+                80,
+                image::Rgba([255, 0, 0, 255]),
+            )),
+            area.as_size(),
+            42,
+        )
+        .unwrap();
+    let mut presentation = Presentation::default();
+    presentation.rectangular(true);
+    let render = |presentation: &mut Presentation, overlay| {
+        presentation.begin();
+        let mut buffer = Buffer::empty(bounds);
+        presentation.render(&mut buffer, area, &encoded);
+        presentation.finish_with_overlay(&mut buffer, false, overlay);
+        buffer[(0, 0)].symbol().to_owned()
+    };
+    assert!(render(&mut presentation, None).contains("a=t,"));
+    let wire = render(&mut presentation, Some(Rect::new(5, 2, 2, 2)));
+    assert_eq!(presentation.shown.len(), 4);
+    assert_eq!(
+        presentation
+            .shown
+            .iter()
+            .map(|p| p.area.area())
+            .sum::<u32>(),
+        area.area() - 4
+    );
+    assert_eq!(presentation.shown[2].crop, Some([0, 20, 30, 40]));
+    assert_eq!(presentation.shown[3].crop, Some([50, 20, 30, 40]));
+    assert_eq!(wire.matches("a=p,").count(), 4);
+    assert!(!wire.contains("a=t,"));
+    assert_eq!(render(&mut presentation, Some(Rect::new(5, 2, 2, 2))), " ");
+    let restored = render(&mut presentation, None);
+    assert_eq!(presentation.shown.len(), 1);
+    assert_eq!(presentation.shown[0].area, area);
+    assert_eq!(restored.matches("a=d,").count(), 3);
+    let outside = render(&mut presentation, Some(Rect::new(12, 1, 2, 2)));
+    assert_eq!(
+        outside, " ",
+        "A menu outside Preview must not delete its image"
+    );
+}

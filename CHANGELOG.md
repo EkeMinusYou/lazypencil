@@ -4,6 +4,8 @@
 
 - Keep local TUI operation errors in the bottom notification row instead of adding them to the conversation.
 
+- Preserve the default TUI borders when pointer input is enabled; view buttons are opt-in. Opening the view menu keeps uncovered native Kitty preview pixels visible.
+
 - Navigate the TUI with mouse/trackpad scrolling, pointer-centered zoom, Space/middle/right drag panning, clickable lists and view controls. Playback now uses `p`; user-only pointer settings control capture and wheel behavior.
 
 - Submit TUI prompts with Enter, Ctrl+Enter, or Ctrl+S by default; use Alt+Enter or Shift+Enter for a newline. The input stays editable during a turn and queues text follow-ups.

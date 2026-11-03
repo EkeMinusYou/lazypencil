@@ -1423,6 +1423,7 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut Frame) -> Size {
+        self.pointer.controls = self.mouse.enabled;
         self.pointer.begin();
         let scope = self.pointer_scope();
         if self.pointer.scope != scope {
@@ -1452,7 +1453,10 @@ impl App {
             self.footer_height(),
         );
         let mut header = workspace.header;
-        if self.mouse.enabled && self.header_line().width() + 17 <= usize::from(header.width) {
+        if self.mouse.enabled
+            && self.mouse.show_controls
+            && self.header_line().width() + 17 <= usize::from(header.width)
+        {
             header.width = header.width.saturating_sub(17);
         }
         frame.render_widget(Paragraph::new(self.header_line()), header);
@@ -1654,8 +1658,13 @@ impl App {
             );
         }
         self.pointer.finish();
+        let modal = self.help || self.modal.is_some() || !self.permissions.is_empty();
+        let overlay = self
+            .pointer
+            .more
+            .then(|| Self::pointer_menu_area(workspace.header));
         self.presentation
-            .finish(frame.buffer_mut(), self.has_modal());
+            .finish_with_overlay(frame.buffer_mut(), modal, overlay);
         Size::new(inner.width, inner.height)
     }
 }

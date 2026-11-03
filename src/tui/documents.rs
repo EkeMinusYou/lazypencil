@@ -142,6 +142,7 @@ pub fn select(
     let mut visible: Vec<PathBuf> = vec![];
     let mut list_state = ListState::default();
     let mut pointer = super::mouse::Pointer::default();
+    pointer.controls = settings.mouse.enabled;
     let mut open_requested = false;
     let (mut agent, mut agent_status) = match preparation(args) {
         Ok(host) => (Some(host), format!("{:?} · Preparing agent…", args.agent)),
