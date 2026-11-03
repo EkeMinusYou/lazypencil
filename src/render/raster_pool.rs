@@ -106,10 +106,14 @@ impl RasterPool {
             canvas.draw_picture(picture, Some(transform), None);
             return Ok(());
         }
-        let _reservation = budget.reserve(size.0 as u64 * size.1 as u64 * 4 * parts as u64)?;
+        // Exact image regions can use the caller's full-size canvas as one
+        // raster worker; only the remaining regions need separate surfaces.
+        let worker_count = parts - usize::from(self.bands.is_some());
+        let _reservation =
+            budget.reserve(size.0 as u64 * size.1 as u64 * 4 * worker_count as u64)?;
         let result = (|| {
-            self.workers.truncate(parts);
-            while self.workers.len() < parts {
+            self.workers.truncate(worker_count);
+            while self.workers.len() < worker_count {
                 self.workers.push(Worker::start(self.workers.len())?);
             }
             let mut pending = Vec::with_capacity(parts);
@@ -139,6 +143,10 @@ impl RasterPool {
                     })
                     .map_err(|_| invalid("Preview raster worker stopped"))?;
                 pending.push((band, receiver));
+            }
+            if let Some(bands) = &self.bands {
+                canvas.clear(background);
+                canvas.draw_picture(&bands[parts - 1].1, Some(transform), None);
             }
             let mut paint = Paint::default();
             paint.set_blend_mode(BlendMode::Src);

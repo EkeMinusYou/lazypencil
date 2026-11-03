@@ -470,6 +470,47 @@ fn raster_impl_cached(
     };
     let (working_width, working_height) =
         raster_dimensions(width + 2 * padding as u64, height + 2 * padding as u64)?;
+    let viewport = Affine::translation(padding as f32, padding as f32)
+        .then(Affine::scale(options.scale, options.scale))
+        .then(Affine::translation(-region.x, -region.y));
+    let anchored = recordable && cache.is_some_and(|cache| cache.has_images);
+    let transform = matrix(viewport);
+    let picture_key = PictureKey {
+        scale: options.scale.to_bits(),
+        viewport: anchored.then_some([
+            transform.translate_x().to_bits(),
+            transform.translate_y().to_bits(),
+            working_width as u32,
+            working_height as u32,
+        ]),
+    };
+    if let Some(cache) = cache.filter(|_| anchored)
+        && let Some(entry) = cache.pictures.borrow().get(&picture_key)
+        && let Some(image) = cache
+            .atlas
+            .borrow_mut()
+            .viewport(&entry.picture, options.background)
+    {
+        project.verify_unchanged()?;
+        let image = crop_image(&image, padding, width as u32, height as u32)?;
+        if let Some(runtime) = runtime.as_deref() {
+            runtime.check()?;
+        }
+        return Ok(RenderedRaster {
+            image,
+            region,
+            snapshot_id: snapshot.id.clone(),
+            assets: entry
+                .images
+                .iter()
+                .map(|(path, (hash, _))| ImageDependency {
+                    path: path.clone(),
+                    hash: hash.clone(),
+                })
+                .collect(),
+            dynamic_artifacts: Vec::new(),
+        });
+    }
     let rasters = Rc::new(backdrop::RasterBudget::default());
     if let Some(runtime) = runtime.as_deref() {
         runtime.check()?;
@@ -479,9 +520,7 @@ fn raster_impl_cached(
         .ok_or_else(|| Error::new("RENDER_ERROR", "Cannot allocate a raster surface"))?;
     let canvas = surface.canvas();
     canvas.clear(options.background);
-    let viewport = Affine::translation(padding as f32, padding as f32)
-        .then(Affine::scale(options.scale, options.scale))
-        .then(Affine::translation(-region.x, -region.y));
+    let mut image_capture = None;
     let mut renderer = Renderer {
         project,
         snapshot,
@@ -506,26 +545,12 @@ fn raster_impl_cached(
     };
     // Node selection determines the viewport; compositing keeps scene context.
     if let Some(pictures) = pictures {
-        let anchored = cache.is_some_and(|cache| cache.has_images);
-        let transform = matrix(viewport);
-        let key = PictureKey {
-            scale: options.scale.to_bits(),
-            viewport: anchored.then_some([
-                transform.translate_x().to_bits(),
-                transform.translate_y().to_bits(),
-                working_width as u32,
-                working_height as u32,
-            ]),
-        };
+        let key = picture_key;
         if anchored
-            && pictures.borrow().get(&key).is_some_and(|entry| {
-                entry.bands.borrow().is_none()
-                    && !cache
-                        .unwrap()
-                        .atlas
-                        .borrow()
-                        .contains_viewport(&entry.picture, options.background)
-            })
+            && pictures
+                .borrow()
+                .get(&key)
+                .is_some_and(|entry| entry.bands.borrow().is_none())
         {
             pictures.borrow_mut().remove(&key);
         }
@@ -649,16 +674,20 @@ fn raster_impl_cached(
                     -region.y * options.scale,
                 ))
             };
-            let retained = match cache {
-                Some(cache) => cache.atlas.borrow_mut().draw(
-                    canvas,
-                    picture,
-                    &transform,
-                    options.background,
-                    &renderer.rasters,
-                    &mut cache.pool.borrow_mut(),
-                )?,
-                None => false,
+            let retained = if anchored {
+                false
+            } else {
+                match cache {
+                    Some(cache) => cache.atlas.borrow_mut().draw(
+                        canvas,
+                        picture,
+                        &transform,
+                        options.background,
+                        &renderer.rasters,
+                        &mut cache.pool.borrow_mut(),
+                    )?,
+                    None => false,
+                }
             };
             if !retained {
                 if let Some(pool) = pool {
@@ -677,6 +706,7 @@ fn raster_impl_cached(
             if anchored {
                 // A stable placeholder identifies the retained pixels without
                 // keeping filters or their native intermediate rasters alive.
+                image_capture = Some(entry.picture.clone());
                 entry.bands.borrow_mut().take();
                 if let Some(pool) = pool {
                     *pool.borrow_mut() = Default::default();
@@ -704,14 +734,18 @@ fn raster_impl_cached(
         });
     }
     let dynamic_artifacts = renderer.artifacts;
-    let image = crop_image(
-        &surface.image_snapshot(),
-        padding,
-        width as u32,
-        height as u32,
-    )?;
+    let full_image = surface.image_snapshot();
+    let image = crop_image(&full_image, padding, width as u32, height as u32)?;
     if let Some(runtime) = runtime.as_deref() {
         runtime.check()?;
+    }
+    if let Some(picture) = image_capture
+        && let Some(cache) = cache
+    {
+        cache
+            .atlas
+            .borrow_mut()
+            .retain_viewport(&picture, options.background, full_image);
     }
     Ok(RenderedRaster {
         image,

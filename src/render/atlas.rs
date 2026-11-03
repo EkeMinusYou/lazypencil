@@ -1,5 +1,6 @@
 //! Bounded full-resolution static-scene rasters; cropping never interpolates pixels.
 use super::*;
+use std::io::{Read, Write};
 
 const CAPACITY_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_ENTRIES: usize = 8;
@@ -14,11 +15,79 @@ struct Key {
 }
 
 struct Entry {
-    image: Image,
+    image: StoredImage,
     left: i32,
     top: i32,
     bytes: u64,
     used: u64,
+}
+
+// Device pixels are compressed without color conversion. Vector atlases keep
+// their native image so their frequent integer crops need no decompression.
+enum StoredImage {
+    Native(Image),
+    Deflated {
+        width: i32,
+        height: i32,
+        bytes: Vec<u8>,
+    },
+}
+
+impl StoredImage {
+    fn compact(image: Image) -> Self {
+        let (width, height) = (image.width(), image.height());
+        let info = skia_safe::ImageInfo::new_n32_premul((width, height), None);
+        let mut pixels = vec![0; width as usize * height as usize * 4];
+        if image.read_pixels(
+            &info,
+            &mut pixels,
+            width as usize * 4,
+            (0, 0),
+            skia_safe::image::CachingHint::Disallow,
+        ) {
+            let mut encoder =
+                flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+            if encoder.write_all(&pixels).is_ok()
+                && let Ok(bytes) = encoder.finish()
+                && bytes.len() < pixels.len()
+            {
+                return Self::Deflated {
+                    width,
+                    height,
+                    bytes,
+                };
+            }
+        }
+        Self::Native(image)
+    }
+
+    fn image(&self) -> Option<Image> {
+        match self {
+            Self::Native(image) => Some(image.clone()),
+            Self::Deflated {
+                width,
+                height,
+                bytes,
+            } => {
+                let mut pixels = vec![0; *width as usize * *height as usize * 4];
+                flate2::read::ZlibDecoder::new(bytes.as_slice())
+                    .read_exact(&mut pixels)
+                    .ok()?;
+                skia_safe::images::raster_from_data(
+                    &skia_safe::ImageInfo::new_n32_premul((*width, *height), None),
+                    Data::new_copy(&pixels),
+                    *width as usize * 4,
+                )
+            }
+        }
+    }
+
+    fn bytes(&self) -> u64 {
+        match self {
+            Self::Native(image) => image.width() as u64 * image.height() as u64 * 4,
+            Self::Deflated { bytes, .. } => bytes.len() as u64,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -28,12 +97,8 @@ pub(super) struct AtlasCache {
 }
 
 impl AtlasCache {
-    pub(super) fn contains_viewport(
-        &self,
-        picture: &skia_safe::Picture,
-        background: Color,
-    ) -> bool {
-        self.entries.contains_key(&Key {
+    fn viewport_key(picture: &skia_safe::Picture, background: Color) -> Key {
+        Key {
             picture: picture.unique_id(),
             phase_x: 0.0_f32.to_bits(),
             phase_y: 0.0_f32.to_bits(),
@@ -43,7 +108,62 @@ impl AtlasCache {
                 background.g(),
                 background.b(),
             ]),
-        })
+        }
+    }
+
+    pub(super) fn viewport(
+        &mut self,
+        picture: &skia_safe::Picture,
+        background: Color,
+    ) -> Option<Image> {
+        self.clock = self.clock.saturating_add(1);
+        let entry = self
+            .entries
+            .get_mut(&Self::viewport_key(picture, background))?;
+        entry.used = self.clock;
+        entry.image.image()
+    }
+
+    pub(super) fn retain_viewport(
+        &mut self,
+        picture: &skia_safe::Picture,
+        background: Color,
+        image: Image,
+    ) {
+        let (width, height) = (image.width(), image.height());
+        if background.a() != 255
+            || width > 4096
+            || height > 4096
+            || width as u64 * height as u64 > MAX_ATLAS_PIXELS
+        {
+            return;
+        }
+        let image = StoredImage::compact(image);
+        let bytes = image.bytes();
+        while self.entries.len() >= MAX_ENTRIES
+            || self.entries.values().map(|entry| entry.bytes).sum::<u64>() + bytes > CAPACITY_BYTES
+        {
+            let Some(oldest) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, entry)| entry.used)
+                .map(|(key, _)| *key)
+            else {
+                break;
+            };
+            self.entries.remove(&oldest);
+        }
+        self.clock = self.clock.saturating_add(1);
+        self.entries.insert(
+            Self::viewport_key(picture, background),
+            Entry {
+                image,
+                left: 0,
+                top: 0,
+                bytes,
+                used: self.clock,
+            },
+        );
     }
 
     pub(super) fn draw(
@@ -141,7 +261,7 @@ impl AtlasCache {
             self.entries.insert(
                 key,
                 Entry {
-                    image,
+                    image: StoredImage::Native(image),
                     left: left - ix,
                     top: top - iy,
                     bytes,
@@ -159,8 +279,11 @@ impl AtlasCache {
         paint.set_blend_mode(BlendMode::Src);
         // Exact phase keys plus integer destination coordinates preserve the native
         // pixels. Zoom changes select a different recorded picture and raster.
+        let Some(image) = entry.image.image() else {
+            return Ok(false);
+        };
         canvas.draw_image(
-            &entry.image,
+            &image,
             ((entry.left + ix) as f32, (entry.top + iy) as f32),
             Some(&paint),
         );
@@ -171,6 +294,34 @@ impl AtlasCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compact_rasters_restore_exact_premultiplied_device_pixels() {
+        let info = skia_safe::ImageInfo::new_n32_premul((64, 64), None);
+        let pixels: Vec<u8> = (0..4096)
+            .flat_map(|index| {
+                if index % 2 == 0 {
+                    [8, 16, 32, 64]
+                } else {
+                    [18, 52, 86, 255]
+                }
+            })
+            .collect();
+        let original =
+            skia_safe::images::raster_from_data(&info, Data::new_copy(&pixels), 256).unwrap();
+        let stored = StoredImage::compact(original);
+        assert!(stored.bytes() < pixels.len() as u64 / 8);
+        let restored = stored.image().unwrap();
+        let mut actual = vec![0; pixels.len()];
+        assert!(restored.read_pixels(
+            &info,
+            &mut actual,
+            256,
+            (0, 0),
+            skia_safe::image::CachingHint::Disallow
+        ));
+        assert_eq!(actual, pixels);
+    }
 
     fn checkerboard(invert: bool) -> skia_safe::Picture {
         let mut recorder = skia_safe::PictureRecorder::new();
