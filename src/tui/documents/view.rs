@@ -172,40 +172,19 @@ fn popup(area: Rect) -> Rect {
 }
 
 pub(super) fn opening(frame: &mut Frame, layout: &PanelLayout, path: &Path, agent: Option<&str>) {
-    empty_workspace(frame, layout, agent);
-    let popup = popup(frame.area());
-    frame.render_widget(Clear, popup);
-    let block = panel(theme::title("↻", "Opening…", theme::RUNNING, true), true)
-        .padding(Padding::horizontal(1));
-    let inner = block.inner(popup);
-    frame.render_widget(block, popup);
-    let content = Layout::vertical([
-        Constraint::Min(0),
-        Constraint::Length(3),
-        Constraint::Min(0),
-    ])
-    .split(inner)[1];
-    frame.render_widget(
-        Paragraph::new(vec![
-            Line::styled(
-                "Loading…",
-                Style::default()
-                    .fg(theme::RUNNING)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .centered(),
-            Line::raw(""),
-            Line::styled(
-                fit_end(&path.display().to_string(), content.width as usize),
-                Style::default().fg(theme::SECONDARY),
-            )
-            .centered(),
-        ]),
-        content,
-    );
+    workspace_frame(frame, layout, agent, Some(path));
 }
 
 fn empty_workspace(frame: &mut Frame, layout: &PanelLayout, agent: Option<&str>) {
+    workspace_frame(frame, layout, agent, None);
+}
+
+fn workspace_frame(
+    frame: &mut Frame,
+    layout: &PanelLayout,
+    agent: Option<&str>,
+    opening: Option<&Path>,
+) {
     let areas = workspace::areas(frame.area(), layout, false, false, 1);
     frame.render_widget(
         Paragraph::new(Line::from(vec![
@@ -217,7 +196,20 @@ fn empty_workspace(frame: &mut Frame, layout: &PanelLayout, agent: Option<&str>)
             ),
             Span::styled(
                 format!(
-                    " · No document open{}",
+                    " · {}{}{}",
+                    opening
+                        .map(|path| clean(
+                            &path
+                                .file_name()
+                                .unwrap_or(path.as_os_str())
+                                .to_string_lossy()
+                        ))
+                        .unwrap_or_else(|| "No document open".into()),
+                    if opening.is_some() {
+                        " · Loading…"
+                    } else {
+                        ""
+                    },
                     agent
                         .map(|status| format!(" · {status}"))
                         .unwrap_or_default()
@@ -234,12 +226,30 @@ fn empty_workspace(frame: &mut Frame, layout: &PanelLayout, agent: Option<&str>)
     ] {
         frame.render_widget(panel(theme::title(icon, label, color, false), false), area);
     }
+    if opening.is_some() {
+        let nodes = areas.panes[0].inner(Margin {
+            horizontal: 1,
+            vertical: 1,
+        });
+        frame.render_widget(
+            Paragraph::new("Loading nodes…").style(Style::default().fg(theme::SECONDARY)),
+            nodes,
+        );
+    }
     let preview = areas.panes[1].inner(Margin {
-        horizontal: 2,
+        horizontal: if opening.is_some() { 1 } else { 2 },
         vertical: 1,
     });
+    let preview_text = if let Some(path) = opening {
+        vec![
+            Line::raw("Loading preview…"),
+            Line::raw(fit_end(&path.display().to_string(), preview.width as usize)),
+        ]
+    } else {
+        vec![Line::raw("No document open")]
+    };
     frame.render_widget(
-        Paragraph::new("No document open").style(Style::default().fg(theme::SECONDARY)),
+        Paragraph::new(preview_text).style(Style::default().fg(theme::SECONDARY)),
         preview,
     );
     let agent = areas.panes[2].inner(Margin {
@@ -255,7 +265,13 @@ fn empty_workspace(frame: &mut Frame, layout: &PanelLayout, agent: Option<&str>)
     );
     let block = composer::prompt_block(false);
     frame.render_widget(
-        Paragraph::new("Open a document first").block(block).style(
+        Paragraph::new(if opening.is_some() {
+            "Loading document…"
+        } else {
+            "Open a document first"
+        })
+        .block(block)
+        .style(
             Style::default()
                 .fg(theme::SECONDARY)
                 .bg(theme::PROMPT_BACKGROUND),
@@ -519,7 +535,7 @@ mod tests {
     }
 
     #[test]
-    fn opening_reuses_the_popup_and_shows_loading_instead_of_selection_controls() {
+    fn opening_dismisses_the_popup_and_shows_loading_inside_the_workspace_panes() {
         for (width, height) in [(130, 34), (80, 24), (50, 16), (1, 1)] {
             let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
             terminal
@@ -535,13 +551,40 @@ mod tests {
             let buffer = terminal.backend().buffer();
             let screen = text(buffer);
             if width >= 50 {
-                for label in ["Loading…", "nested/設定.pen", "Nodes", "Preview", "Agent"] {
+                for label in [
+                    "Loading preview…",
+                    "nested/設定.pen",
+                    "Nodes",
+                    "Preview",
+                    "Agent",
+                ] {
                     assert!(screen.contains(label), "Missing {label}: {screen}");
                 }
+                let areas = workspace::areas(buffer.area, &PanelLayout::default(), false, false, 1);
+                for (pane, message) in [
+                    (areas.panes[0], "Loading nodes…"),
+                    (areas.panes[1], "Loading preview…"),
+                ] {
+                    assert_eq!(buffer[(pane.x, pane.y)].symbol(), "╭");
+                    for (index, symbol) in message
+                        .chars()
+                        .take(pane.width.saturating_sub(2) as usize)
+                        .enumerate()
+                    {
+                        assert_eq!(
+                            buffer[(pane.x + 1 + index as u16, pane.y + 1)].symbol(),
+                            symbol.to_string()
+                        );
+                    }
+                }
                 let area = popup(buffer.area);
-                assert_eq!(buffer[(area.x, area.y)].symbol(), "╭");
+                assert_ne!(buffer[(area.x, area.y)].symbol(), "╭");
             }
-            assert!(!screen.contains("Enter open") && !screen.contains("Filter ›"));
+            assert!(
+                !screen.contains("Opening…")
+                    && !screen.contains("Open a .pen file")
+                    && !screen.contains("Filter ›")
+            );
         }
     }
 

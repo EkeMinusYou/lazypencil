@@ -4,9 +4,10 @@
 
 `lazypencil` and `lazypencil tui` open a centered recursive file picker over the empty
 workspace. `lazypencil tui FILE` opens directly; a bare file argument is unsupported.
-Selecting a file immediately shows its path and a loading indicator before file
-access starts. The document opens in the same terminal screen, without returning
-to the shell.
+Selecting a file immediately closes the picker and shows loading states in the
+Nodes and Preview panes before file access starts. The selected path appears in
+Preview. The document opens in the same terminal screen, without returning to
+the shell.
 `--create` and `--session` require an explicit file. A terminal of at least 50 columns
 by 16 rows is required. `--json` and noninteractive input are rejected before opening
 or creating a document.

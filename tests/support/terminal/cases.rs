@@ -322,9 +322,12 @@ pub fn run(
             if blocked.is_some() {
                 h.wait("loading feedback before blocked file work", 2.0, |h| {
                     let text = h.screen.text();
-                    text.contains("Loading…")
+                    text.contains("Loading nodes…")
+                        && text.contains("Loading preview…")
                         && text.contains("design.pen")
                         && !text.contains("Filter ›")
+                        && !text.contains("Opening…")
+                        && !text.contains("Open a .pen file")
                 })?;
                 assert!(files(root, |name| name == "session.json").is_empty());
                 assert!(!root.join("sent-turn.txt").exists());
