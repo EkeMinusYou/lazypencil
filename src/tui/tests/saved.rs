@@ -121,7 +121,7 @@ fn saved_log_selection_preserves_drafts_images_and_native_context_and_closes_the
         app.accept_input(fake_clipboard(Path::new("unused"), None, &CancellationToken::new()));
         let first_images = app.conversation.images().iter().map(|image| image.id.clone()).collect::<Vec<_>>();
         let worker = Worker::start(store.clone(), vec![], Backend::halfblocks(), 151).unwrap();
-        app.modal = Some(checkpoints::Modal::Commands { selected: 7 });
+        app.modal = Some(command_modal(commands::Action::NewConversation));
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
         let second = app.conversation.id().to_string();
         assert_ne!(first, second);
@@ -190,7 +190,7 @@ fn saved_log_browser_pages_formats_refreshes_and_preserves_drafts_images_and_doc
         for number in 2..=55 { saved_log(&app, number, "別の応答"); }
         let worker = Worker::start(app.conversation.store().clone(), vec![], Backend::halfblocks(), 139).unwrap();
         press(&mut app, KeyCode::Char('p'), KeyModifiers::ALT, &worker).await;
-        for _ in 0..5 { press(&mut app, KeyCode::Down, KeyModifiers::NONE, &worker).await; }
+        for _ in 0..command_index(commands::Action::Logs) { press(&mut app, KeyCode::Down, KeyModifiers::NONE, &worker).await; }
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
         document_result(&mut app, &worker).await;
         assert_eq!(saved_page(&app).data["entries"].as_array().unwrap().len(), 50);
@@ -338,6 +338,9 @@ fn checkpoint_palette_reviews_before_restoring_and_keeps_draft_and_images() {
         )
         .unwrap();
         press(&mut app, KeyCode::Char('p'), KeyModifiers::ALT, &worker).await;
+        for _ in 0..command_index(commands::Action::Checkpoints) {
+            press(&mut app, KeyCode::Down, KeyModifiers::NONE, &worker).await;
+        }
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
         document_result(&mut app, &worker).await;
         press(&mut app, KeyCode::Down, KeyModifiers::NONE, &worker).await;

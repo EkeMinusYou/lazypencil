@@ -125,6 +125,7 @@ impl Drop for Task {
 
 pub enum Modal {
     Commands { selected: usize },
+    CommandInput(Box<super::commands::Input>),
     Loading { message: &'static str },
     History(Page),
     Confirm(Page),
@@ -135,20 +136,6 @@ impl Modal {
         Self::Commands { selected: 0 }
     }
 }
-pub const COMMANDS: &[&str] = &[
-    "Restore checkpoint…",
-    "Refresh preview",
-    "Open preview externally",
-    "Help",
-    "Quit",
-    "Browse current conversation logs…",
-    "Browse saved conversations…",
-    "New empty conversation (save current draft)…",
-    "Toggle Nodes panel",
-    "Toggle Agent panel",
-    "View controls…",
-    "Enable pinch zoom…",
-];
 
 impl super::App {
     pub(super) fn has_modal(&self) -> bool {
@@ -257,43 +244,38 @@ impl super::App {
             return Ok(false);
         };
         match modal {
-            Modal::Commands { selected } => match selected {
-                0 => self.open_history(vec![None])?,
-                1 => self.request(worker, false, true),
-                2 => self.open_preview()?,
-                3 => self.show_help(),
-                4 => return Ok(true),
-                5 => self.open_saved(
-                    super::saved::Page::current(self.conversation.id().into()),
-                    None,
-                )?,
-                6 => self.open_saved(
-                    super::saved::Page::sessions(self.conversation.id().into()),
-                    None,
-                )?,
-                7 => self.pending_session = Some(super::saved::SessionChange::New),
-                8 => self.toggle_panel(super::Nav::ToggleNodesPanel, worker),
-                9 => self.toggle_panel(super::Nav::ToggleAgentPanel, worker),
-                10 if self.mouse.enabled => self.pointer.more = true,
-                10 => self.set_status("Pointer input is disabled in user settings".into()),
-                11 => {
-                    let status = if !self.mouse.enabled || !self.mouse.native_pinch {
-                        "Pinch input is disabled in user settings"
-                    } else if !cfg!(target_os = "macos")
-                        || std::env::var_os("SSH_CONNECTION").is_some()
-                    {
-                        "Native pinch input requires a local macOS session; terminal-forwarded Ctrl+wheel zoom remains available"
-                    } else if self.native_pinch.start(true) {
-                        "Pinch zoom enabled"
-                    } else if !self.native_pinch.authorized() {
-                        "Pinch zoom needs macOS Accessibility access; allow the requested app in System Settings and retry"
-                    } else {
-                        "Cannot start native pinch input; restart the TUI after allowing Accessibility access"
-                    };
-                    self.set_status(status.into());
+            Modal::Commands { selected } => {
+                let command = &super::commands::COMMANDS[selected];
+                if let Some(reason) = self.command_unavailable(command) {
+                    self.modal = Some(Modal::Commands { selected });
+                    self.set_attention_status(reason.into());
+                } else if !command.arguments.is_empty() {
+                    self.modal = Some(Modal::CommandInput(Box::new(super::commands::Input::new(
+                        command.action,
+                    ))));
+                } else {
+                    match self.execute_command(command.action, &[], worker) {
+                        Ok(exit) => return Ok(exit),
+                        Err(error) => {
+                            self.modal = Some(Modal::Commands { selected });
+                            return Err(error);
+                        }
+                    }
                 }
-                _ => unreachable!(),
-            },
+            }
+            Modal::CommandInput(mut input) => {
+                let args = input
+                    .action
+                    .command()
+                    .parse_arguments(&input.editor.lines().join("\n"));
+                match args.and_then(|args| self.execute_command(input.action, &args, worker)) {
+                    Ok(exit) => return Ok(exit),
+                    Err(error) => {
+                        input.error = Some(super::clean(&error.to_string()));
+                        self.modal = Some(Modal::CommandInput(input));
+                    }
+                }
+            }
             Modal::History(page) if !page.entries.is_empty() => {
                 self.modal = Some(Modal::Confirm(page))
             }
@@ -330,7 +312,10 @@ impl super::App {
         worker: &super::preview::Worker,
     ) -> Result<bool> {
         use crossterm::event::KeyCode;
-        if key.code == KeyCode::Enter && !matches!(self.modal, Some(Modal::Saved(_))) {
+        if key.code == KeyCode::Enter
+            && key.modifiers.is_empty()
+            && !matches!(self.modal, Some(Modal::Saved(_)))
+        {
             return self.activate_modal(worker);
         }
         let Some(mut modal) = self.modal.take() else {
@@ -343,12 +328,38 @@ impl super::App {
                 };
                 return self.saved_key(page, key);
             }
+            Modal::CommandInput(input) => {
+                if key.code == KeyCode::Esc {
+                    let selected = super::commands::COMMANDS
+                        .iter()
+                        .position(|command| command.action == input.action)
+                        .unwrap();
+                    self.modal = Some(Modal::Commands { selected });
+                    return Ok(false);
+                }
+                if key.code == KeyCode::Enter {
+                    if key.modifiers.intersects(
+                        crossterm::event::KeyModifiers::ALT | crossterm::event::KeyModifiers::SHIFT,
+                    ) {
+                        input.insert("\n");
+                    }
+                } else {
+                    input.editor.input(key);
+                    input.error = None;
+                }
+            }
             Modal::Commands { selected } => match key.code {
                 KeyCode::Esc | KeyCode::Char('q') => return Ok(false),
                 KeyCode::Up | KeyCode::Char('k') => *selected = selected.saturating_sub(1),
                 KeyCode::Down | KeyCode::Char('j') => {
-                    *selected = (*selected + 1).min(COMMANDS.len() - 1)
+                    *selected = (*selected + 1).min(super::commands::COMMANDS.len() - 1)
                 }
+                KeyCode::Home => *selected = 0,
+                KeyCode::End => *selected = super::commands::COMMANDS.len() - 1,
+                KeyCode::PageDown => {
+                    *selected = (*selected + 8).min(super::commands::COMMANDS.len() - 1)
+                }
+                KeyCode::PageUp => *selected = selected.saturating_sub(8),
                 _ => {}
             },
             Modal::Loading { .. } => {
@@ -409,6 +420,44 @@ impl super::App {
             text::Line,
             widgets::{Clear, List, ListItem, Paragraph, Wrap},
         };
+        if self.modal.is_none() {
+            return;
+        }
+        let items = super::commands::COMMANDS
+            .iter()
+            .filter(|_| matches!(self.modal, Some(Modal::Commands { .. })))
+            .map(|command| {
+                let unavailable = self.command_unavailable(command).is_some();
+                ListItem::new(Line::from(vec![
+                    super::Span::styled(
+                        format!("{} · ", command.category),
+                        Style::default().fg(super::theme::SECONDARY),
+                    ),
+                    super::Span::styled(
+                        command.label,
+                        Style::default().fg(if unavailable {
+                            super::theme::SECONDARY
+                        } else {
+                            super::theme::TEXT
+                        }),
+                    ),
+                ]))
+            })
+            .collect::<Vec<_>>();
+        let detail = if let Some(Modal::Commands { selected }) = self.modal.as_ref() {
+            let command = &super::commands::COMMANDS[*selected];
+            format!(
+                "{}\n{}\n{}",
+                command.usage(),
+                self.command_unavailable(command).map_or_else(
+                    || command.description.to_owned(),
+                    |reason| format!("Unavailable: {reason}")
+                ),
+                "↑/↓ select · Enter run · Esc closes"
+            )
+        } else {
+            String::new()
+        };
         let Some(modal) = &mut self.modal else {
             return;
         };
@@ -419,11 +468,18 @@ impl super::App {
         match modal {
             Modal::Saved(page) => super::saved::draw(page, frame, popup, &mut self.pointer),
             Modal::Commands { selected } => {
-                let items = COMMANDS.iter().map(|text| ListItem::new(*text));
                 let block = super::dialog("Commands");
                 let inner = block.inner(popup);
+                let footer = Paragraph::new(detail)
+                    .wrap(Wrap { trim: false })
+                    .style(Style::default().fg(super::theme::SECONDARY));
+                let footer_height = footer
+                    .line_count(inner.width)
+                    .min(usize::from(inner.height.saturating_sub(1)))
+                    as u16;
                 let sections =
-                    Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).split(inner);
+                    Layout::vertical([Constraint::Min(1), Constraint::Length(footer_height)])
+                        .split(inner);
                 frame.render_widget(block, popup);
                 self.pointer.modal_list(
                     frame,
@@ -434,12 +490,9 @@ impl super::App {
                     *selected,
                     super::mouse::ListTarget::Commands,
                 );
-                frame.render_widget(
-                    Paragraph::new("↑/↓ select · Enter run · Esc closes")
-                        .style(Style::default().fg(super::theme::SECONDARY)),
-                    sections[1],
-                );
+                frame.render_widget(footer, sections[1]);
             }
+            Modal::CommandInput(input) => input.draw(frame, popup, self.permissions.is_empty()),
             Modal::Loading { message } => frame.render_widget(
                 Paragraph::new(*message)
                     .style(Style::default().fg(super::theme::SECONDARY))
@@ -539,7 +592,7 @@ impl super::App {
             super::mouse::Action::Close,
         );
         let label = match self.modal {
-            Some(Modal::Commands { .. }) => Some("[Run]"),
+            Some(Modal::Commands { .. } | Modal::CommandInput(_)) => Some("[Run]"),
             Some(Modal::History(_)) => Some("[Review]"),
             Some(Modal::Confirm(_)) => Some("[Restore]"),
             _ => None,

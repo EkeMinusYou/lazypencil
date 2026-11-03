@@ -582,6 +582,10 @@ pub fn run(
             Value::Null
         }
         "user-navigation-config" => navigation(&mut h)?,
+        "command-palette" => {
+            command_palette(&mut h)?;
+            Value::Null
+        }
         "collapsible-panels" => {
             collapsible_panels(&mut h)?;
             Value::Null
@@ -744,6 +748,51 @@ pub fn run(
         "{}",
         json!({"case":case,"terminal_bytes":h.output.len(),"exit_code":0})
     );
+    Ok(())
+}
+
+fn command_palette(h: &mut Harness) -> Result {
+    let draft = "未送信の依頼はそのまま";
+    let document = fs::read(&h.document)?;
+    h.paste(draft)?;
+    h.draft(draft)?;
+    command(h, "Commands", 14)?;
+    h.visible("Seek shader time")?;
+    h.paste("NaN")?;
+    h.key(b"\r")?;
+    h.visible("INVALID_ARGUMENT")?;
+    assert_eq!(state(h)["draft"], draft);
+    h.key(b"\x7f\x7f\x7f1.25\r")?;
+    h.hidden("Arguments")?;
+    assert_eq!(state(h)["draft"], draft);
+
+    for (width, height) in [(130, 34), (50, 16)] {
+        h.resize(width, height)?;
+        command(h, "Commands", 6)?;
+        h.visible("Arguments")?;
+        h.paste("画像.png")?;
+        h.wait("Unicode command input cursor", 15.0, |h| {
+            h.screen
+                .find_text("画像.png")
+                .is_some_and(|(x, y)| h.screen.cursor() == (x + 8, y))
+        })?;
+        assert_eq!(state(h)["draft"], draft);
+        h.save_screen(if width == 50 {
+            "command-palette-small-screen.txt"
+        } else {
+            "command-palette-input-screen.txt"
+        })?;
+        h.key(b"\x1b")?;
+        h.visible("Commands")?;
+        h.hidden("Arguments")?;
+        h.key(b"\x1b[F")?;
+        h.visible("General · Quit")?;
+        h.key(b"\x1b")?;
+        h.hidden("Commands")?;
+    }
+    assert_eq!(fs::read(&h.document)?, document);
+    assert_eq!(state(h)["draft"], draft);
+    no_agent(h);
     Ok(())
 }
 
@@ -1786,7 +1835,7 @@ fn basic(h: &mut Harness) -> Result {
 fn restore(h: &mut Harness, checkpoint: &Value) -> Result {
     h.paste("復元しても保持する下書き")?;
     h.draft("復元しても保持する下書き")?;
-    command(h, "Restore checkpoint", 0)?;
+    command(h, "Commands", 19)?;
     h.wait("checkpoint candidates", 15.0, |h| {
         h.screen.text().contains("first-checkpoint")
             && h.screen.text().contains("second-checkpoint")
@@ -2017,14 +2066,18 @@ fn navigation(h: &mut Harness) -> Result<Value> {
     h.key(b"\x1b[17~\x1b[17~h\x1b[19~")?;
     h.visible("Help")?;
     h.key(b"\x1b[6~\x1b[6~")?;
-    h.wait(
-        "complete help content with the configured pan key",
-        15.0,
-        |h| {
-            h.screen.text().contains("/clear-images")
-                && h.screen.text().contains("a: Preview: pan left")
-        },
-    )?;
+    h.wait("help content with the configured pan key", 15.0, |h| {
+        h.screen.text().contains("a: Preview: pan left")
+    })?;
+    for _ in 0..64 {
+        if h.screen.text().contains("/clear-images") {
+            break;
+        }
+        let previous = h.screen.text();
+        h.key(b"\x1b[6~")?;
+        h.wait("next help section", 15.0, |h| h.screen.text() != previous)?;
+    }
+    h.visible("/clear-images")?;
     assert_eq!(h.frames.images.last(), Some(&before));
     h.key(b"\x1b[F")?;
     h.wait("help final wrapped lines", 15.0, |h| {
@@ -2062,14 +2115,14 @@ fn navigation(h: &mut Harness) -> Result<Value> {
     assert!(panned.has_color([255, 0, 0, 255]) && zoomed.has_color([255, 0, 0, 255]));
     h.key(b"\x1b[20~")?;
     h.wait("configured command palette", 15.0, |h| {
-        h.screen.text().contains("Commands") && h.screen.text().contains("Restore checkpoint")
+        h.screen.text().contains("Commands") && h.screen.text().contains("Conversation")
     })?;
     h.key(b"x")?;
     h.wait("quit key remains search text", 15.0, |h| {
         h.screen.text().contains("Commands") && h.screen.text().contains('x')
     })?;
     h.key(b"\x1b")?;
-    h.hidden("Restore checkpoint")?;
+    h.hidden("Commands")?;
     h.key(b"\x1b[17~")?;
     h.paste(" 続き")?;
     h.draft(&format!("{text} 続き"))?;

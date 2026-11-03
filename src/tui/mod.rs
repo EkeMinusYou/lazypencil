@@ -3,6 +3,7 @@
 mod agent_status;
 mod camera;
 mod checkpoints;
+mod commands;
 mod composer;
 mod controls;
 mod diagnostics;
@@ -657,6 +658,15 @@ impl App {
                 screen.preview_keys(self.focus == Focus::Preview && !self.has_modal())?;
                 screen.pointer_motion(self.native_pinch.active())?;
             }
+            Event::Paste(text)
+                if self.permissions.is_empty()
+                    && matches!(self.modal, Some(checkpoints::Modal::CommandInput(_))) =>
+            {
+                if let Some(checkpoints::Modal::CommandInput(input)) = &mut self.modal {
+                    input.insert(&text);
+                }
+                self.dirty = true;
+            }
             Event::Paste(text) if self.focus == Focus::Prompt && !self.has_modal() => {
                 self.insert_text(&text);
                 self.dirty = true;
@@ -806,14 +816,14 @@ impl App {
         self.dirty = true;
         true
     }
-    fn start_playback(&mut self, fps: u32, now: Instant) -> Result<()> {
-        if !self.preview.as_ref().is_some_and(|preview| {
+    fn playback_unavailable(&self) -> Option<&'static str> {
+        (!self.preview.as_ref().is_some_and(|preview| {
             !preview.attachment && (preview.time_dependent || preview.live_pages)
-        }) {
-            return Err(Error::new(
-                "INVALID_ARGUMENT",
-                "The complete preview must contain a browser page or a shader with an @time uniform before playback can start",
-            ));
+        })).then_some("The complete preview must contain a browser page or a shader with an @time uniform before playback can start")
+    }
+    fn start_playback(&mut self, fps: u32, now: Instant) -> Result<()> {
+        if let Some(reason) = self.playback_unavailable() {
+            return Err(Error::new("INVALID_ARGUMENT", reason));
         }
         self.playback.start(self.view.time, fps, now)?;
         self.clear_status();
@@ -1071,7 +1081,7 @@ impl App {
     fn help_text(&self) -> String {
         let label = |action| self.navigation.label(action);
         let mut text = format!(
-            "{} / {}: switch Nodes, Preview, Prompt (right / left)\n{}: command palette; /history: checkpoints\nPrompt: {} sends; Alt+Enter / Shift+Enter inserts a newline\n{}: paste image, copied image files, or text\n",
+            "{} / {}: switch Nodes, Preview, Prompt (right / left)\n{}: command palette; /checkpoints: committed edits\nPrompt: {} sends; Alt+Enter / Shift+Enter inserts a newline\n{}: paste image, copied image files, or text\n",
             label(Nav::NextPanel),
             label(Nav::PreviousPanel),
             label(Nav::Commands),
@@ -1093,7 +1103,7 @@ impl App {
             text.push_str(if self.mouse.wheel_zoom { "Preview: wheel zooms; Ctrl+wheel pans; Shift+wheel pans horizontally\n" } else { "Preview: wheel pans; Ctrl+wheel zooms around pointer; Shift+wheel pans horizontally\n" });
             text.push_str("Menu: [N]/[A] collapse or restore panels; [Menu]/[...] exposes view actions\nNodes: triangle expands/collapses; Show fits; +Ref explicitly attaches a reference\nPrompt clicks focus input. Preview clicks select shapes; left drag selects a range; Shift adds/toggles.\n\n");
         }
-        text.push_str("While working, submit text to steer a supported agent; unsupported adapters and node references queue for the next turn.\n/queue <text>: explicitly queue a follow-up instead of steering\n/attach <quoted path> [WIDTHxHEIGHT|original]: attach PNG, JPEG or WebP\n/paste-image [WIDTHxHEIGHT|original]: read this host's clipboard\n/resize-image <number> <WIDTHxHEIGHT|original>: choose send size\n/clear-images: remove pending images\n/resume-queue: resume saved or paused follow-ups; /clear-queue: discard queued prompts\n");
+        text.push_str("While working, submit text to steer a supported agent; unsupported adapters and node references queue for the next turn.\n");
         for (action, description) in [
             (Nav::Help, "show or hide help outside dialogs"),
             (Nav::PanLeft, "Preview: pan left"),
@@ -1154,7 +1164,8 @@ impl App {
         ] {
             text.push_str(&format!("{}: {description}\n", label(action)));
         }
-        text.push_str("\n/open-preview: open the complete PNG externally\n/time <seconds>: seek; /play [1-10 fps], /pause\n/logs: read current saved turns; /conversations: saved conversations\nSaved logs: arrows select/scroll; Enter opens; n/p pages\nu: select local session; N: new local conversation\nv: raw/formatted; Backspace returns; r refreshes; Esc closes\n/commands, /history, /help, /quit\nCtrl+C: cancel active work; exit when idle\nDialogs keep their displayed keys; Esc closes help\nHelp: PgUp/PgDn or arrows scroll; Home/End jump\n\nClipboard access happens only on explicit paste. SSH reads the remote host's clipboard. Image protocols do not provide clipboard access.");
+        text.push_str(&commands::help());
+        text.push_str("\nSaved logs: arrows select/scroll; Enter opens; n/p pages\nu: select local session; N: new local conversation\nv: raw/formatted; Backspace returns; r refreshes; Esc closes\nCtrl+C: cancel active work; exit when idle\nDialogs keep their displayed keys; Esc closes help\nHelp: PgUp/PgDn or arrows scroll; Home/End jump\n\nClipboard access happens only on explicit paste. SSH reads the remote host's clipboard. Image protocols do not provide clipboard access.");
         text.push_str(&format!("\nDiagnostics: {} / {} select; {} reveals and fits the node\n{} / {} scroll details; {} returns to Nodes\n", label(Nav::PreviousItem), label(Nav::NextItem), label(Nav::ActivateNode), label(Nav::NodePageUp), label(Nav::NodePageDown), label(Nav::ClearSelection)));
         if self.mouse.enabled {
             text.push_str("Preview: click selects a shape; ordinary left drag selects fully enclosed shapes; Shift adds/toggles; Esc clears selection\nmacOS: Enable pinch zoom in the command palette (Accessibility access required once)\n");
@@ -1292,107 +1303,17 @@ impl App {
     }
     async fn command(&mut self, worker: &Worker) -> Result<bool> {
         let line = self.editor.lines().join("\n");
-        if self.queue_command()? {
-            return Ok(false);
+        let (command, args) = commands::parse(&line)?;
+        let exit = self.execute_command(command.action, &args, worker)?;
+        // A new conversation must save the existing draft before switching.
+        if self.pending_session.is_some() {
+            self.finish_pending_session(worker).await?;
+        } else {
+            self.editor = editor("");
+            self.draft_changed = true;
+            self.save_draft()?;
         }
-        let words = shell_words::split(&line)
-            .map_err(|error| Error::new("INVALID_ARGUMENT", error.to_string()))?;
-        match words.first().map(String::as_str) {
-            Some("/clear-queue") if words.len() == 1 => {
-                self.outbox.queued.clear();
-                self.outbox.paused = false;
-                self.set_status("Prompt queue cleared".into());
-            }
-            Some("/resume-queue") if words.len() == 1 => {
-                self.outbox.paused = false;
-            }
-            Some("/attach") if (2..=3).contains(&words.len()) => {
-                let bounds = images::input_bounds(
-                    words.get(2).map(String::as_str),
-                    self.conversation.settings().image_bounds,
-                )?;
-                self.start_input_with_bounds(Some(PathBuf::from(&words[1])), bounds)?
-            }
-            Some("/paste-image") if (1..=2).contains(&words.len()) => {
-                let bounds = images::input_bounds(
-                    words.get(1).map(String::as_str),
-                    self.conversation.settings().image_bounds,
-                )?;
-                self.start_input_with_bounds(None, bounds)?
-            }
-            Some("/resize-image") if words.len() == 3 => {
-                let index = words[1]
-                    .parse::<usize>()
-                    .ok()
-                    .and_then(|index| index.checked_sub(1))
-                    .ok_or_else(|| {
-                        Error::new(
-                            "INVALID_ARGUMENT",
-                            "Use /resize-image <image number from 1> <WIDTHxHEIGHT|original>",
-                        )
-                    })?;
-                let bounds = if words[2] == "original" {
-                    None
-                } else {
-                    Some(words[2].parse()?)
-                };
-                self.start_resize(index, bounds)?;
-            }
-            Some("/help") if words.len() == 1 => self.show_help(),
-            Some("/commands") if words.len() == 1 => {
-                self.modal = Some(checkpoints::Modal::commands())
-            }
-            Some("/history") if words.len() == 1 => self.open_history(vec![None])?,
-            Some("/logs") if words.len() == 1 => {
-                self.open_saved(saved::Page::current(self.conversation.id().into()), None)?
-            }
-            Some("/conversations") if words.len() == 1 => {
-                self.open_saved(saved::Page::sessions(self.conversation.id().into()), None)?
-            }
-            Some("/clear-images") if words.len() == 1 => {
-                if self.input.is_some() {
-                    return Err(Error::new(
-                        "INVALID_ARGUMENT",
-                        "Finish or cancel image input before clearing attachments",
-                    ));
-                }
-                self.conversation.clear_images()?;
-                self.request(worker, false, false);
-            }
-            Some("/open-preview") if words.len() == 1 => self.open_preview()?,
-            Some("/time") if words.len() == 2 => {
-                let time = words[1].parse::<f64>().map_err(|_| {
-                    Error::new("INVALID_ARGUMENT", "Usage: /time <nonnegative seconds>")
-                })?;
-                self.view.set_time(time)?;
-                self.playback.stop();
-                self.request(worker, false, false);
-            }
-            Some("/play") if words.len() <= 2 => {
-                let fps = words
-                    .get(1)
-                    .map_or(Ok(playback::DEFAULT_FPS), |text| text.parse::<u32>())
-                    .map_err(|_| {
-                        Error::new(
-                            "INVALID_ARGUMENT",
-                            "Usage: /play [integer fps from 1 to 10]",
-                        )
-                    })?;
-                self.start_playback(fps, Instant::now())?;
-            }
-            Some("/pause") if words.len() == 1 => self.pause_playback(),
-            Some("/quit") if words.len() == 1 => return Ok(true),
-            _ => {
-                return Err(Error::new(
-                    "INVALID_ARGUMENT",
-                    "Commands: /queue <text>, /resume-queue, /clear-queue, /attach <quoted path> [WIDTHxHEIGHT|original], /paste-image [WIDTHxHEIGHT|original], /resize-image <number> <WIDTHxHEIGHT|original>, /clear-images, /open-preview, /time <nonnegative seconds>, /play [fps], /pause, /commands, /history, /logs, /conversations, /help, /quit",
-                ));
-            }
-        }
-        self.editor = editor("");
-        self.draft_changed = true;
-        self.save_draft()?;
-        Ok(false)
+        Ok(exit)
     }
     fn filtered_nodes(&self) -> &[nodes::Row] {
         self.node_tree.rows()
@@ -1428,32 +1349,34 @@ impl App {
         self.selection.ids = ids;
         Ok(())
     }
-    fn open_preview(&mut self) -> Result<()> {
+    fn export_unavailable(&self) -> Option<(&'static str, &'static str)> {
         if self.preview_stale {
-            return Err(Error::new(
+            Some((
                 "PREVIEW_UNAVAILABLE",
                 "The previous preview is out of date; refresh successfully before exporting",
-            ));
-        }
-        if self.camera.is_some()
+            ))
+        } else if self.camera.is_some()
             || self.camera_deadline.is_some()
             || self.preview_generation != Some(self.generation)
         {
-            return Err(Error::new(
+            Some((
                 "INVALID_ARGUMENT",
                 "The camera preview is updating; wait for the complete image before exporting",
-            ));
-        }
-        let preview = self
-            .preview
-            .as_ref()
-            .ok_or_else(|| Error::new("INVALID_ARGUMENT", "No complete preview is available"))?;
-        if preview.summary["provisional"] == true {
-            return Err(Error::new(
+            ))
+        } else if let Some(preview) = &self.preview {
+            (preview.summary["provisional"] == true).then_some((
                 "ASSET_NOT_FOUND",
                 "Resolve missing characters before exporting this provisional preview",
-            ));
+            ))
+        } else {
+            Some(("INVALID_ARGUMENT", "No complete preview is available"))
         }
+    }
+    fn open_preview(&mut self) -> Result<()> {
+        if let Some((code, reason)) = self.export_unavailable() {
+            return Err(Error::new(code, reason));
+        }
+        let preview = self.preview.as_ref().expect("exportable preview");
         let directory = self.conversation.directory().join("previews");
         crate::store::create_private_directory(&directory)?;
         let path = directory.join(format!("{}.png", uuid::Uuid::new_v4()));

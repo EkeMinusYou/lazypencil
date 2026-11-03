@@ -85,7 +85,7 @@ pub fn selection(h: &mut Harness) -> Result<Value> {
     let first_path = h.sessions()[0].clone();
     let first_id = state(h)["id"].as_str().unwrap().to_owned();
     let document = fs::read(&h.document)?;
-    command(h, "New empty conversation", 7)?;
+    command(h, "New empty conversation", 0)?;
     h.wait("new empty conversation selected", 15.0, |h| {
         other_session(h, &first_path).is_some_and(|(_, v)| {
             selected(h, v["id"].as_str().unwrap())
@@ -105,7 +105,7 @@ pub fn selection(h: &mut Harness) -> Result<Value> {
         ("first", &first_id, first_draft),
         ("second", &second_id, second_draft),
     ] {
-        command(h, "Browse saved conversations", 6)?;
+        command(h, "Saved conversations", 2)?;
         h.wait("both saved conversations listed", 15.0, |h| {
             h.screen.text().contains("Saved conversations")
                 && h.screen.text().contains(&first_id)
@@ -144,7 +144,7 @@ pub fn deletion(h: &mut Harness) -> Result<Value> {
     let archived_path = h.sessions()[0].clone();
     let archived_id = state(h)["id"].as_str().unwrap().to_owned();
     let document = fs::read(&h.document)?;
-    command(h, "New empty conversation", 7)?;
+    command(h, "New empty conversation", 0)?;
     h.wait("new current conversation selected", 15.0, |h| {
         other_session(h, &archived_path)
             .is_some_and(|(_, v)| selected(h, v["id"].as_str().unwrap()))
@@ -155,7 +155,7 @@ pub fn deletion(h: &mut Harness) -> Result<Value> {
     h.wait("current draft persisted", 15.0, |_| {
         read_json(&current_path).is_some_and(|v| v["draft"] == current_draft)
     })?;
-    command(h, "Browse saved conversations", 6)?;
+    command(h, "Saved conversations", 2)?;
     h.wait("both conversations listed", 15.0, |h| {
         h.screen.text().contains("Saved conversations")
             && h.screen.text().contains(&archived_id)
@@ -320,7 +320,7 @@ pub fn history(h: &mut Harness) -> Result<Value> {
     fs::write(&history_path, log)?;
     let original_hash = hash(fs::read(&history_path)?);
     let mut offsets = serde_json::Map::new();
-    command(h, "Browse current conversation logs", 5)?;
+    command(h, "Current conversation logs", 1)?;
     h.wait("saved turn list", 15.0, |h| {
         h.screen.text().contains("Saved turns") && h.screen.text().contains(turn_id)
     })?;

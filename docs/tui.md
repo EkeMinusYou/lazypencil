@@ -263,7 +263,7 @@ Large or high-DPI viewports automatically reduce preview raster resolution to st
 | Preview: `[` / `]` | Pause and step shader evaluation time backward/forward by 0.1 seconds |
 | Preview: `p` | Play/pause page captures and the shader timeline at a maximum of 5 fps |
 | Prompt: `/play [fps]`, `/pause` then Enter | Start bounded playback (1–10 fps) or stop requesting frames |
-| Prompt: `/time <seconds>` then Enter | Seek shader time without modifying the document |
+| Prompt: `/time <nonnegative seconds>` then Enter | Seek shader time without modifying the document |
 | Nodes: `/` | Search names and IDs; Enter keeps the filter, Esc clears it |
 | Nodes: `j` / `k`, Up / Down | Select the next/previous visible node |
 | Nodes: `l` / Right, `h` / Left | Expand/enter a branch, or close its parent branch and select it |
@@ -279,10 +279,36 @@ Large or high-DPI viewports automatically reduce preview raster resolution to st
 | Outside Prompt: `o`, or `/open-preview` | Open a saved complete PNG in the OS viewer |
 | `F1`, or `/help` | Show help |
 | `Alt+P`, or `/commands` | Open the command palette; Ctrl+P is previous-line editing |
-| `/history` then Enter | Browse checkpoints without starting an agent |
+| `/checkpoints` (or `/history`) then Enter | Browse checkpoints without starting an agent |
 | `/logs`, `/conversations` then Enter | Read current saved turns or browse saved conversations |
 | `Ctrl+C` | Cancel active input/agent work; exit when idle |
 | Outside Prompt: `q`, or `/quit` | Stop the conversation and exit |
+
+The command palette groups workspace actions by Conversation, Send queue, Images,
+Preview, View, Checkpoints and General. Every action has a slash command and a
+shared description. Select a row to see its command syntax and description, or the
+reason it is unavailable. Enter runs the action; unavailable actions stay in the
+palette. Home/End and PgUp/PgDn navigate longer lists, including at 50×16.
+
+Actions needing input open a separate dialog: attach an image file, paste with an
+optional send size, resize a pending image, queue a follow-up, start playback with
+an optional frame rate, or seek shader time. Enter runs, Alt/Shift+Enter inserts a
+newline, and Esc returns to the palette. Argument errors remain editable with the
+error displayed; asynchronous file/clipboard errors use the notification row.
+Typing or pasting into this dialog keeps the Prompt draft and
+pending attachments intact; nothing is sent to the agent until explicitly queued
+or submitted. A queued follow-up runs when the queue is not paused and the agent
+is ready; it does not replace or send the current draft.
+
+| Category | Slash commands |
+| --- | --- |
+| Conversation | `/new-conversation`, `/logs` (current conversation), `/conversations` (saved conversations) |
+| Send queue | `/queue <text>`, `/resume-queue`, `/clear-queue` |
+| Images | `/attach <quoted path> [WIDTHxHEIGHT\|original]`, `/paste-image [WIDTHxHEIGHT\|original]`, `/resize-image <number> <WIDTHxHEIGHT\|original>`, `/clear-images` |
+| Preview | `/refresh`, `/open-preview`, `/play [fps]`, `/pause`, `/time <nonnegative seconds>` |
+| View | `/toggle-nodes`, `/toggle-agent`, `/view-controls`, `/enable-pinch` |
+| Checkpoints | `/checkpoints` (`/history` is a compatibility alias) |
+| General | `/commands`, `/help`, `/quit` |
 
 During a conversation, requests such as “show the login button”, “show both screens”, “zoom out a little” or “center the heading at this scale” can operate Preview. The agent searches names/types through the existing `read_nodes` tool, uses `get_preview_state` for the selected node and current camera, and calls the TUI-only `set_preview` tool. It can target one or multiple nodes, the entire document, a region or a point, and adjust absolute/relative zoom or pan. “Show both” fits their combined bounds without moving design elements. State queries distinguish the requested view from the last complete frame and its revision. They do not expose draft text.
 
@@ -346,7 +372,7 @@ Permission dialogs show tool details and native choices. Reject Once is initiall
 
 ## Saved conversation logs
 
-Choose **Browse current conversation logs…** or **Browse saved conversations…** in the command palette. `/logs` and `/conversations` open the same views. Browsing uses shared, read-only conversation APIs and a cancellable background task. It does not authenticate, start/resume an adapter, resend an old prompt, select a different active agent, edit a document, or clear pending text/images. An already active request continues; permission dialogs retain priority. Ctrl+C cancels both a pending log read and an active request.
+Choose **Conversation · Current conversation logs…** or **Conversation · Saved conversations…** in the command palette. `/logs` and `/conversations` open the same views. Browsing uses shared, read-only conversation APIs and a cancellable background task. It does not authenticate, start/resume an adapter, resend an old prompt, select a different active agent, edit a document, or clear pending text/images. An already active request continues; permission dialogs retain priority. Ctrl+C cancels both a pending log read and an active request.
 
 Lists load 50 entries at a time in stable UUID order, explicitly marked as live listings rather than inferred chronology. Arrows select an entry; Enter opens its turns or transcript. `n`/`p` or PgDn/PgUp request the next/previous list page. Home refreshes the first page, `c` opens the current conversation, and `s` opens saved conversations. Backspace returns to the parent; Esc or `q` closes the browser. Recognized invalid entries remain visible as unavailable.
 
@@ -362,7 +388,7 @@ A successful change restores the selected draft and images, closes the previous 
 
 ## Checkpoint restoration
 
-Choose **Restore checkpoint…** in the command palette, or use `/history`. The list shows committed checkpoints, newest first, with sequence, creation time, revision, and request ID. It loads 50 entries per page. PgDn/n opens older entries, PgUp/p returns to newer entries, Home opens the latest page, and `r` explicitly reloads the current document/dependency revisions.
+Choose **Checkpoints · Browse and restore checkpoints…** in the command palette, or use `/checkpoints` (`/history` remains an alias). The list shows committed checkpoints, newest first, with sequence, creation time, revision, and request ID. It loads 50 entries per page. PgDn/n opens older entries, PgUp/p returns to newer entries, Home opens the latest page, and `r` explicitly reloads the current document/dependency revisions.
 
 Select an entry with arrows and press Enter to review its ID and current/target revisions. The review does not change the document. Esc returns to the list; a second Enter requests restoration. The shared CLI/MCP service validates the checkpoint and both captured revision preconditions, then restores it as a new history entry. The submitted draft, pending images, and source files are preserved. Referenced assets use their current contents; restoration does not roll back external asset edits.
 

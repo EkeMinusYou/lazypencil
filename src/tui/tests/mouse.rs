@@ -129,13 +129,14 @@ fn mouse_modal_rows_and_buttons_survive_redraw_and_block_the_workspace() {
         let original = app.view;
         app.modal = Some(checkpoints::Modal::commands());
         paint_mouse(&mut app, 130, 34);
-        let row = app.pointer.area(mouse::Target::Row(mouse::ListTarget::Commands, 8)).unwrap();
+        let index = command_index(commands::Action::ToggleNodes);
+        let row = app.pointer.area(mouse::Target::Row(mouse::ListTarget::Commands, index)).unwrap();
         let point = (row.x + 3, row.y);
         for kind in [M::Down(MouseButton::Left), M::Up(MouseButton::Left)] {
             app.mouse_event(mouse_input(kind, point, KeyModifiers::NONE), &picker, &worker).await.unwrap();
             paint_mouse(&mut app, 130, 34);
         }
-        assert!(matches!(app.modal, Some(checkpoints::Modal::Commands { selected: 8 })));
+        assert!(matches!(app.modal, Some(checkpoints::Modal::Commands { selected }) if selected == index));
         assert!(!app.nodes_collapsed);
         app.mouse_event(mouse_input(M::ScrollDown, (0, 5), KeyModifiers::CONTROL), &picker, &worker).await.unwrap();
         assert_eq!(app.view, original);
@@ -352,14 +353,14 @@ fn view_menu_is_available_without_persistent_buttons() {
         let temp = TempDir::new().unwrap();
         let (mut app, worker, _) = mouse_fixture(&temp).await;
         app.mouse.show_controls = false;
-        app.modal = Some(checkpoints::Modal::Commands { selected: 10 });
+        app.modal = Some(command_modal(commands::Action::ViewControls));
         app.activate_modal(&worker).unwrap();
         paint_mouse(&mut app, 130, 34);
         assert!(app.pointer.more);
         assert!(app.pointer.area(mouse::Target::Button(mouse::Action::WheelMode)).is_some());
         app.pointer.more = false;
         app.mouse.enabled = false;
-        app.modal = Some(checkpoints::Modal::Commands { selected: 10 });
+        app.modal = Some(command_modal(commands::Action::ViewControls));
         app.activate_modal(&worker).unwrap();
         assert!(!app.pointer.more, "Disabled pointer input must not open an invisible menu");
         app.conversation.close().await.unwrap();

@@ -163,7 +163,9 @@ lazypencil tui new.pen --agent codex
 ```
 
 Attach a reference with `--image reference.png` at launch, or use `/attach` inside
-the TUI. `/history` opens checkpoints and `/logs` opens saved conversations.
+the TUI. `/checkpoints` opens committed edits for review and restoration, `/logs`
+opens the current conversation log, and `/conversations` browses saved conversations.
+`/history` remains an alias for `/checkpoints`.
 See [TUI controls](docs/tui.md) and [image attachments](docs/image-attachments.md).
 
 ## MCP and AI prompts

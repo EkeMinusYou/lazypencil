@@ -138,9 +138,9 @@ fn panel_toggles_use_custom_bindings_and_palette_but_respect_dialogs() {
         ] {
             let previous = (app.nodes_collapsed, app.agent_collapsed);
             app.modal = Some(checkpoints::Modal::Commands {
-                selected: checkpoints::COMMANDS
+                selected: commands::COMMANDS
                     .iter()
-                    .position(|item| *item == label)
+                    .position(|item| item.label == label)
                     .unwrap(),
             });
             let mut terminal =

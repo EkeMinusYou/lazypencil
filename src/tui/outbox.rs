@@ -91,18 +91,19 @@ impl Outbox {
 impl App {
     pub(super) fn queue_command(&mut self) -> Result<bool> {
         let line = self.editor.lines().join("\n");
-        let Some(text) = line
-            .strip_prefix("/queue")
-            .filter(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
-        else {
+        let name = line
+            .split_once(char::is_whitespace)
+            .map_or(line.as_str(), |(name, _)| name);
+        if name != "/queue" {
             return Ok(false);
-        };
-        self.queue_prompt(text.trim_start().to_owned())?;
+        }
+        let (_, args) = commands::parse(&line)?;
+        self.queue_prompt(args[0].clone())?;
         self.set_status("Follow-up queued".into());
         Ok(true)
     }
 
-    pub(super) fn queue_prompt(&mut self, text: String) -> Result<()> {
+    pub(super) fn enqueue_prompt(&mut self, text: String) -> Result<()> {
         self.outbox.push(Prompt {
             text,
             selection: None,
@@ -111,6 +112,11 @@ impl App {
         })?;
         self.outbox.references.clear();
         self.reference_rows.select(None);
+        Ok(())
+    }
+
+    pub(super) fn queue_prompt(&mut self, text: String) -> Result<()> {
+        self.enqueue_prompt(text)?;
         self.editor = editor("");
         self.outbox.draft = Some(String::new());
         self.outbox.save(self.conversation.directory())?;

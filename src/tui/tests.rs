@@ -50,6 +50,17 @@ fn app(temp: &TempDir, mode: &str) -> App {
             .unwrap(),
     )
 }
+fn command_index(action: commands::Action) -> usize {
+    commands::COMMANDS
+        .iter()
+        .position(|command| command.action == action)
+        .unwrap()
+}
+fn command_modal(action: commands::Action) -> checkpoints::Modal {
+    checkpoints::Modal::Commands {
+        selected: command_index(action),
+    }
+}
 fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -192,3 +203,5 @@ include!("tests/images.rs");
 include!("tests/navigation.rs");
 include!("tests/mouse.rs");
 include!("tests/saved.rs");
+
+include!("tests/commands.rs");

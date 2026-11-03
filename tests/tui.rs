@@ -153,6 +153,11 @@ fn real_pty_custom_navigation_preserves_draft_and_changes_preview_pixels() {
 }
 
 #[test]
+fn real_pty_command_palette_inputs_preserve_drafts_validate_and_keep_unicode_cursor() {
+    run_pty_case("command-palette");
+}
+
+#[test]
 fn real_pty_saved_logs_page_format_refresh_and_keep_the_unsent_draft_without_starting_an_agent() {
     run_pty_case("saved-history");
 }
@@ -188,6 +193,7 @@ fn run_pty_case(case: &str) {
             || matches!(
                 case,
                 "ime-commit"
+                    | "command-palette"
                     | "node-references"
                     | "user-navigation-config"
                     | "saved-history"
@@ -202,6 +208,8 @@ fn run_pty_case(case: &str) {
             "terminal-output.bin",
             "terminal-screen.txt",
             "terminal-errors.log",
+            "command-palette-input-screen.txt",
+            "command-palette-small-screen.txt",
             "ime-commit-report.json",
             "ime-commit-80x24-screen.txt",
             "ime-commit-50x16-screen.txt",

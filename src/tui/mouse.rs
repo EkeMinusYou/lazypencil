@@ -277,6 +277,10 @@ impl Pointer {
         }
         self.modal_kind = Some(target);
         self.modal_count = widget.len();
+        if target == ListTarget::Commands {
+            let maximum = self.modal_count.saturating_sub(usize::from(area.height));
+            *state.offset_mut() = state.offset().min(maximum);
+        }
         state.select((self.modal_count > 0).then_some(selected));
         self.list(frame, widget, area, &mut state, (1, target));
         self.modal_state = state;
@@ -350,6 +354,9 @@ impl App {
         if let Some(modal) = &self.modal {
             return match modal {
                 checkpoints::Modal::Commands { .. } => "commands".into(),
+                checkpoints::Modal::CommandInput(input) => {
+                    format!("command-input:{:?}", input.action)
+                }
                 checkpoints::Modal::History(page) => {
                     format!("checkpoints:{}:{:?}", page.revision, page.cursors)
                 }

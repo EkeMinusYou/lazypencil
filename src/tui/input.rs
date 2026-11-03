@@ -35,7 +35,9 @@ impl App {
             self.permission_input(key)?;
             return Ok(false);
         }
-        let typing = self.focus == Focus::Prompt || self.searching;
+        let typing = self.focus == Focus::Prompt
+            || self.searching
+            || matches!(self.modal, Some(checkpoints::Modal::CommandInput(_)));
         let global = |action| {
             if typing {
                 self.navigation.matches_while_typing(action, key)
