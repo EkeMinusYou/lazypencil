@@ -20,6 +20,48 @@ struct Fixture {
 }
 
 #[test]
+fn mouse_settings_are_user_owned_and_reserve_preview_space_only_when_enabled() {
+    let f = Fixture::new();
+    let shown = f.data(&["config", "show", "--user"]);
+    assert_eq!(shown["settings"]["tui"]["mouse"]["enabled"], true);
+    assert_eq!(shown["settings"]["tui"]["mouse"]["wheel_zoom"], false);
+    assert_eq!(
+        shown["settings"]["tui"]["navigation"]["play_pause"],
+        json!(["p"])
+    );
+    let schema = f.data(&["config", "schema", "--user"]);
+    assert!(schema.to_string().contains("MouseSettings"));
+    f.settings("[tui.mouse]\nenabled=false\nwheel_zoom=true\nscroll_step=3\nzoom_step=1.2\n[tui.navigation]\nplay_pause=['Space']\n");
+    let shown = f.data(&["config", "show", "--user"]);
+    assert_eq!(
+        shown["settings"]["tui"]["navigation"]["play_pause"],
+        json!(["Space"])
+    );
+    assert_eq!(shown["settings"]["tui"]["mouse"]["scroll_step"], 3);
+    for settings in [
+        "[tui.mouse]\nscroll_step=0\n",
+        "[tui.mouse]\nscroll_step=21\n",
+        "[tui.mouse]\nzoom_step=1.0\n",
+        "[tui.mouse]\nzoom_step=nan\n",
+        "[tui.navigation]\nplay_pause=['Space']\n",
+        "[tui.navigation]\nzoom_in=['Space']\n",
+    ] {
+        f.settings(settings);
+        let error = UserSnapshot::load_file(Some(f.user.join("config.toml")))
+            .err()
+            .unwrap();
+        assert_eq!(error.code, "CONFIGURATION_ERROR");
+    }
+    f.settings("");
+    fs::write(
+        f.project.join("lazypencil.toml"),
+        "[tui.mouse]\nwheel_zoom=true\n",
+    )
+    .unwrap();
+    assert_eq!(f.snapshot().err().unwrap().code, "CONFIGURATION_ERROR");
+}
+
+#[test]
 fn font_lock_is_project_owned_and_missing_inputs_remain_inspectable() {
     let f = Fixture::new();
     fs::write(

@@ -200,6 +200,7 @@ impl App {
             horizontal: 2,
             vertical: 0,
         });
+        self.pointer.add(sections[0], mouse::Target::History);
         let paragraph = if self.log.is_empty() {
             None
         } else {
@@ -210,6 +211,12 @@ impl App {
         let lines = paragraph.as_ref().map_or(0, |paragraph| {
             paragraph.line_count(text_area.width).min(u16::MAX as usize) as u16
         });
+        if self.scroll > 0 && self.history_metrics.0 == text_area.width {
+            self.scroll = self
+                .scroll
+                .saturating_add(lines.saturating_sub(self.history_metrics.1));
+        }
+        self.history_metrics = (text_area.width, lines, lines.saturating_sub(logarea.height));
         let scroll = lines
             .saturating_sub(logarea.height)
             .saturating_sub(self.scroll);
@@ -249,15 +256,17 @@ impl App {
                     ]))
                 })
                 .collect::<Vec<_>>();
-            frame.render_stateful_widget(
+            let block = self.context_block(
+                "Attachments",
+                "▧",
+                count,
+                self.focus == Focus::Attachments,
+                sections[3].width,
+            );
+            let rows = block.inner(sections[3]);
+            self.pointer.list(
+                frame,
                 List::new(attachments)
-                    .block(self.context_block(
-                        "Attachments",
-                        "▧",
-                        count,
-                        self.focus == Focus::Attachments,
-                        sections[3].width,
-                    ))
                     .highlight_symbol(if self.focus == Focus::Attachments {
                         "› "
                     } else {
@@ -269,9 +278,11 @@ impl App {
                     } else {
                         Style::default()
                     }),
-                sections[3],
+                rows,
                 &mut self.attachments,
+                (1, mouse::ListTarget::Attachments),
             );
+            frame.render_widget(block, sections[3]);
         }
         if let Some(next) = self.outbox.queued.front() {
             frame.render_widget(
@@ -308,6 +319,8 @@ impl App {
             );
         }
         let prompt = sections[7];
+        self.pointer
+            .add(prompt, mouse::Target::Focus(Focus::Prompt));
         let input_style = Style::default()
             .fg(if self.focus == Focus::Prompt {
                 Color::White

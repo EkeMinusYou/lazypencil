@@ -4,6 +4,8 @@
 
 - Keep local TUI operation errors in the bottom notification row instead of adding them to the conversation.
 
+- Navigate the TUI with mouse/trackpad scrolling, pointer-centered zoom, Space/middle/right drag panning, clickable lists and view controls. Playback now uses `p`; user-only pointer settings control capture and wheel behavior.
+
 - Submit TUI prompts with Enter, Ctrl+Enter, or Ctrl+S by default; use Alt+Enter or Shift+Enter for a newline. The input stays editable during a turn and queues text follow-ups.
 - Attach explicit node/diagnostic references to prompts. Browsing or fitting a node alone no longer selects an implicit target for the next request.
 - Configure panel widths, collapse Nodes/Agent, and use contextual footer actions and persistent preview-error diagnostics.

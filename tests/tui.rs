@@ -9,6 +9,19 @@ mod fixture_support;
 mod terminal;
 
 #[test]
+fn real_pty_mouse_and_trackpad_pan_zoom_select_and_restore_terminal_modes() {
+    for case in [
+        "mouse-kitty",
+        "mouse-sixel",
+        "mouse-halfblocks",
+        "mouse-disabled",
+        "picker-mouse",
+    ] {
+        run_pty_case(case);
+    }
+}
+
+#[test]
 fn real_pty_document_picker_recurses_filters_resizes_and_prepares_agent_without_prompts() {
     run_pty_case("picker-default");
     run_pty_case("picker-loading");

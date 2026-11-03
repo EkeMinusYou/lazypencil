@@ -190,4 +190,5 @@ include!("tests/preview.rs");
 include!("tests/conversation.rs");
 include!("tests/images.rs");
 include!("tests/navigation.rs");
+include!("tests/mouse.rs");
 include!("tests/saved.rs");

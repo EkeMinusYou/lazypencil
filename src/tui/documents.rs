@@ -121,7 +121,7 @@ pub fn select(
     }
     let settings = crate::config::keys::load_tui()?;
     let root = std::env::current_dir().map_err(super::terminal::io)?;
-    let mut startup = super::terminal::Startup::enter()?;
+    let mut startup = super::terminal::Startup::enter(settings.mouse.enabled)?;
     let mut search = Search::start(root.clone());
     let mut listing = Listing {
         root,
@@ -141,6 +141,8 @@ pub fn select(
     let mut dirty = true;
     let mut visible: Vec<PathBuf> = vec![];
     let mut list_state = ListState::default();
+    let mut pointer = super::mouse::Pointer::default();
+    let mut open_requested = false;
     let (mut agent, mut agent_status) = match preparation(args) {
         Ok(host) => (Some(host), format!("{:?} · Preparing agent…", args.agent)),
         Err(_) => (None, format!("{:?} · Agent unavailable", args.agent)),
@@ -209,15 +211,115 @@ pub fn select(
                 done,
                 agent: Some(&agent_status),
             };
-            startup.draw(|frame| view.draw(frame, &mut list_state))?;
+            startup.draw(|frame| view.draw(frame, &mut list_state, &mut pointer))?;
             dirty = false;
+        }
+        if open_requested {
+            open_requested = false;
+            dirty = true;
+
+            let path = if let Some(input) = &path_input {
+                let path = Path::new(input);
+                if path.is_absolute() {
+                    path.to_owned()
+                } else {
+                    listing.root.join(path)
+                }
+            } else if let Some(path) = visible.get(selected) {
+                listing.root.join(path)
+            } else {
+                continue;
+            };
+            // Flush feedback before metadata, locking or parsing can block.
+            // This frame remains visible through CLI/session setup as well.
+            startup
+                .draw(|frame| view::opening(frame, &settings.layout, &path, Some(&agent_status)))?;
+            if path.is_dir() {
+                search = Search::start(path.clone());
+                listing = Listing {
+                    root: path,
+                    documents: vec![],
+                    complete: false,
+                    stop_reason: None,
+                    entries_scanned: 0,
+                    unreadable_directories: 0,
+                };
+                path_input = None;
+                filter.clear();
+                filtering = false;
+                notice.clear();
+                done = false;
+                selected = 0;
+                navigated = false;
+                continue;
+            }
+            match crate::documents::require_pen(&path)
+                .and_then(|()| Store::open(&path, data.clone()))
+                .and_then(|store| store.read().map(|_| store.path().to_owned()))
+            {
+                Ok(path) => {
+                    return Ok(Some(Selection {
+                        file: path,
+                        agent,
+                        terminal: startup,
+                    }));
+                }
+                Err(error) => notice = error.to_string(),
+            }
+            continue;
         }
         if !event::poll(Duration::from_millis(50)).map_err(super::terminal::io)? {
             continue;
         }
         let key = match event::read().map_err(super::terminal::io)? {
-            Event::Key(key) => key,
+            Event::Key(key) => {
+                pointer.keyboard();
+                pointer.reattach(super::mouse::ListTarget::Documents);
+                key
+            }
+            Event::Mouse(event) if settings.mouse.enabled => {
+                use super::mouse::{Action, ListTarget, Target};
+                use crossterm::event::MouseEventKind;
+                if matches!(
+                    event.kind,
+                    MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+                ) && matches!(
+                    pointer.at(ratatui::layout::Position::new(event.column, event.row)),
+                    Some(
+                        Target::List(ListTarget::Documents) | Target::Row(ListTarget::Documents, _)
+                    )
+                ) {
+                    pointer.scroll_list(
+                        ListTarget::Documents,
+                        &mut list_state,
+                        visible.len(),
+                        usize::from(settings.mouse.scroll_step),
+                        event.kind == MouseEventKind::ScrollUp,
+                    );
+                }
+                match pointer.click(event) {
+                    Some(Target::Row(ListTarget::Documents, index)) => {
+                        selected = index;
+                        navigated = true;
+                        filtering = false;
+                        path_input = None;
+                    }
+                    Some(Target::Button(Action::Accept)) => open_requested = true,
+                    Some(Target::Button(Action::DocumentPath)) => {
+                        path_input = Some(String::new());
+                        notice.clear();
+                    }
+                    _ => {}
+                }
+                dirty = true;
+                continue;
+            }
+            Event::FocusLost => {
+                pointer.cancel();
+                continue;
+            }
             Event::Resize(_, _) => {
+                pointer.clear();
                 dirty = true;
                 continue;
             }
@@ -298,57 +400,7 @@ pub fn select(
                 selected = 0;
                 navigated = false;
             }
-            KeyCode::Enter => {
-                let path = if let Some(input) = &path_input {
-                    let path = Path::new(input);
-                    if path.is_absolute() {
-                        path.to_owned()
-                    } else {
-                        listing.root.join(path)
-                    }
-                } else if let Some(path) = visible.get(selected) {
-                    listing.root.join(path)
-                } else {
-                    continue;
-                };
-                // Flush feedback before metadata, locking or parsing can block.
-                // This frame remains visible through CLI/session setup as well.
-                startup.draw(|frame| {
-                    view::opening(frame, &settings.layout, &path, Some(&agent_status))
-                })?;
-                if path.is_dir() {
-                    search = Search::start(path.clone());
-                    listing = Listing {
-                        root: path,
-                        documents: vec![],
-                        complete: false,
-                        stop_reason: None,
-                        entries_scanned: 0,
-                        unreadable_directories: 0,
-                    };
-                    path_input = None;
-                    filter.clear();
-                    filtering = false;
-                    notice.clear();
-                    done = false;
-                    selected = 0;
-                    navigated = false;
-                    continue;
-                }
-                match crate::documents::require_pen(&path)
-                    .and_then(|()| Store::open(&path, data.clone()))
-                    .and_then(|store| store.read().map(|_| store.path().to_owned()))
-                {
-                    Ok(path) => {
-                        return Ok(Some(Selection {
-                            file: path,
-                            agent,
-                            terminal: startup,
-                        }));
-                    }
-                    Err(error) => notice = error.to_string(),
-                }
-            }
+            KeyCode::Enter => open_requested = true,
             _ => {}
         }
     }

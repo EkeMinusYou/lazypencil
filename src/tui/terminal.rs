@@ -2,7 +2,8 @@ use crate::{Error, Result};
 use crossterm::{
     SynchronizedUpdate, cursor,
     event::{
-        DisableBracketedPaste, EnableBracketedPaste, KeyboardEnhancementFlags,
+        DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste,
+        EnableFocusChange, EnableMouseCapture, KeyboardEnhancementFlags,
         PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
@@ -37,19 +38,31 @@ impl Drop for Restore {
         if let Some(id) = self.id {
             restore(id, self.tmux);
         } else {
-            let _ = execute!(std::io::stdout(), LeaveAlternateScreen, cursor::Show);
+            let _ = execute!(
+                std::io::stdout(),
+                DisableMouseCapture,
+                DisableFocusChange,
+                LeaveAlternateScreen,
+                cursor::Show
+            );
             let _ = disable_raw_mode();
         }
     }
 }
 impl Startup {
-    pub fn enter() -> Result<Self> {
+    pub fn enter(mouse: bool) -> Result<Self> {
         enable_raw_mode().map_err(io)?;
         let guard = Restore {
             id: None,
             tmux: false,
         };
         execute!(std::io::stdout(), EnterAlternateScreen, cursor::Hide).map_err(io)?;
+        if mouse {
+            execute!(std::io::stdout(), EnableMouseCapture).map_err(io)?;
+            // Hover is unused; keep motion reports scoped to held buttons.
+            write!(std::io::stdout(), "\x1b[?1003l\x1b[?1002h").map_err(io)?;
+        }
+        execute!(std::io::stdout(), EnableFocusChange).map_err(io)?;
         let terminal = Terminal::new(CrosstermBackend::new(std::io::stdout())).map_err(io)?;
         Ok(Self { terminal, guard })
     }
@@ -117,8 +130,8 @@ impl Screen {
         }
         draw_terminal(&mut self.terminal, draw)
     }
-    pub fn enter(protocol: super::ImageProtocol, id: u32) -> Result<Self> {
-        Startup::enter()?.activate(protocol, id)
+    pub fn enter(protocol: super::ImageProtocol, id: u32, mouse: bool) -> Result<Self> {
+        Startup::enter(mouse)?.activate(protocol, id)
     }
 }
 impl Drop for Screen {
@@ -167,6 +180,8 @@ fn restore(id: u32, tmux: bool) {
         EndSynchronizedUpdate,
         PopKeyboardEnhancementFlags,
         DisableBracketedPaste,
+        DisableMouseCapture,
+        DisableFocusChange,
         LeaveAlternateScreen,
         cursor::Show
     );

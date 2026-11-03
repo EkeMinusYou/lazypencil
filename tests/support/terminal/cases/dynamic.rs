@@ -72,7 +72,7 @@ pub fn page(h: &mut Harness) -> Result {
     let draft = "ページの再生中も残る下書き";
     h.paste(draft)?;
     h.draft(draft)?;
-    h.key(b"\t\t ")?;
+    h.key(b"\t\tp")?;
     h.wait("browser-only playback pause", 15.0, paused)?;
     frame_cap(h, first, started);
     let frames = h.frames.images.len();
@@ -162,8 +162,8 @@ pub fn idle(h: &mut Harness) -> Result {
     let draft = "待機と更新の後も残る下書き";
     h.paste(draft)?;
     h.draft(draft)?;
-    h.key(b"\t\t ")?;
-    h.wait("Space pauses and completes requested frame", 15.0, |h| {
+    h.key(b"\t\tp")?;
+    h.wait("p pauses and completes requested frame", 15.0, |h| {
         paused(h) && timeline(h) >= 1.0
     })?;
     assert_eq!(

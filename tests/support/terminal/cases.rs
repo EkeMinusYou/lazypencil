@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 
 mod conversations;
 mod dynamic;
+mod mouse;
 
 fn hash(bytes: impl AsRef<[u8]>) -> String {
     Sha256::digest(bytes.as_ref())
@@ -111,6 +112,22 @@ pub fn run(
         ]});
     }
     let mut configuration = None;
+    if case.starts_with("mouse-") {
+        design = json!({"version":"2.21","children":(0..64).map(|index| json!({"type":"rectangle","id":format!("mouse-{index}"),"name":format!("Mouse row {index}"),"x":index*100,"width":80,"height":80,"fill":"#ff0000"})).collect::<Vec<_>>()});
+    }
+    if case == "mouse-disabled" {
+        let directory = root.join("user-settings");
+        fs::create_dir_all(&directory)?;
+        fs::write(
+            directory.join("config.toml"),
+            "[tui.mouse]\nenabled=false\n",
+        )?;
+        environment.insert(
+            "LAZYPENCIL_CONFIG_DIR".into(),
+            directory.clone().into_os_string(),
+        );
+        configuration = Some(directory);
+    }
     if case == "node-references" {
         design = json!({"version":"2.21","children":[
             {"type":"rectangle","id":"first","name":"First target","width":80,"height":40,"fill":"#00FF00"},
@@ -290,7 +307,10 @@ pub fn run(
         assert!(!root.join("received-account-methods.jsonl").exists());
         assert!(files(root, |name| name == "session.json").is_empty());
         assert!(!root.join("sent-turn.txt").exists());
-        if case == "picker-cancel" {
+        if case == "picker-mouse" {
+            picker_open_offset = Some(h.output.len());
+            mouse::picker(&mut h)?;
+        } else if case == "picker-cancel" {
             h.finish()?;
             return Ok(());
         }
@@ -338,7 +358,7 @@ pub fn run(
             h.key(b"nested/deep/selected.pen")?;
             picker_open_offset = Some(h.output.len());
             h.key(b"\r")?;
-        } else {
+        } else if case != "picker-mouse" {
             h.key(b"/broken")?;
             h.key(b"\r")?;
             h.visible("Open a .pen file")?;
@@ -380,6 +400,11 @@ pub fn run(
         h.screen.find_text("›").is_some() && h.screen.text().contains("Agent")
     })?;
     let mut report = match case {
+        "mouse-kitty" | "mouse-sixel" | "mouse-halfblocks" | "mouse-disabled" => {
+            mouse::workspace(&mut h)?;
+            Value::Null
+        }
+        "picker-mouse" => Value::Null,
         "picker-default" | "picker-prepared" => {
             h.wait("prepared adapter session", 10.0, |_| {
                 fs::read_to_string(root.join("received-account-methods.jsonl"))

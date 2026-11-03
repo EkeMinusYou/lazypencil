@@ -13,6 +13,30 @@ pub(super) struct View {
 }
 
 impl App {
+    pub(super) fn select_diagnostic_row(&mut self, index: usize) {
+        if index < self.diagnostics.rows.len() {
+            self.diagnostics.selection.select(Some(index));
+            self.diagnostics.scroll = 0;
+        }
+    }
+    pub(super) fn scroll_diagnostic_details(&mut self, backwards: bool, step: u16) {
+        self.diagnostics.scroll = if backwards {
+            self.diagnostics.scroll.saturating_sub(step)
+        } else {
+            self.diagnostics.scroll.saturating_add(step)
+        };
+    }
+    pub(super) fn scroll_diagnostic_list(&mut self, backwards: bool, step: u16) {
+        // Diagnostic entries occupy two display rows.
+        let count = self.diagnostics.rows.len();
+        self.pointer.scroll_list(
+            mouse::ListTarget::Diagnostics,
+            &mut self.diagnostics.selection,
+            count,
+            usize::from(step),
+            backwards,
+        );
+    }
     pub(super) fn visible_diagnostic_count(&self) -> usize {
         self.diagnostics.rows.len()
     }
@@ -105,30 +129,39 @@ impl App {
                 self.diagnostics.scroll.saturating_add(step)
             };
         } else if action(Nav::ActivateNode) || action(Nav::FitSelected) {
-            let activate = action(Nav::ActivateNode);
-            let Some(id) = self
-                .selected_diagnostic()
-                .and_then(|item| item["node_id"].as_str())
-                .map(str::to_owned)
-            else {
-                return Ok(());
-            };
-            if !self
-                .preview
-                .as_ref()
-                .is_some_and(|preview| preview.nodes.iter().any(|node| node.id == id))
-            {
-                return Ok(());
-            }
-            self.filter.clear();
-            self.refresh_nodes(Some(&id));
-            if activate {
-                self.diagnostics.active = false;
-            }
-            self.fit_selected(picker)?;
-            self.request(worker, false, false);
-            self.camera_feedback(picker)?;
+            self.fit_diagnostic(action(Nav::ActivateNode), picker, worker)?;
         }
+        Ok(())
+    }
+
+    pub(super) fn fit_diagnostic(
+        &mut self,
+        activate: bool,
+        picker: &graphics::Backend,
+        worker: &Worker,
+    ) -> Result<()> {
+        let Some(id) = self
+            .selected_diagnostic()
+            .and_then(|item| item["node_id"].as_str())
+            .map(str::to_owned)
+        else {
+            return Ok(());
+        };
+        if !self
+            .preview
+            .as_ref()
+            .is_some_and(|preview| preview.nodes.iter().any(|node| node.id == id))
+        {
+            return Ok(());
+        }
+        self.filter.clear();
+        self.refresh_nodes(Some(&id));
+        if activate {
+            self.diagnostics.active = false;
+        }
+        self.fit_selected(picker)?;
+        self.request(worker, false, false);
+        self.camera_feedback(picker)?;
         Ok(())
     }
 
@@ -217,10 +250,12 @@ impl App {
                 ]))
             })
             .collect::<Vec<_>>();
-        frame.render_stateful_widget(
+        self.pointer.list(
+            frame,
             List::new(items).highlight_style(theme::node_selected(self.focus == Focus::Nodes)),
             sections[0],
             &mut self.diagnostics.selection,
+            (2, mouse::ListTarget::Diagnostics),
         );
         let Some(item) = self.selected_diagnostic() else {
             return;
@@ -253,6 +288,7 @@ impl App {
             )))
             .border_style(Style::default().fg(theme::FRAME));
         let inner = block.inner(sections[1]);
+        self.pointer.add(inner, mouse::Target::DiagnosticDetails);
         let paragraph = Paragraph::new(text).wrap(Wrap { trim: false });
         let maximum = paragraph
             .line_count(inner.width)

@@ -13,6 +13,7 @@ mod graphics;
 mod images;
 mod input;
 mod markdown;
+mod mouse;
 mod nodes;
 mod outbox;
 mod playback;
@@ -180,7 +181,7 @@ pub fn run_with_selection(
     let id = (uuid::Uuid::new_v4().as_u128() as u32 & 0x7fff_fffe).max(2);
     let mut screen = match startup {
         Some(startup) => startup.activate(args.image_protocol, id)?,
-        None => terminal::Screen::enter(args.image_protocol, id)?,
+        None => terminal::Screen::enter(args.image_protocol, id, settings.mouse.enabled)?,
     };
     let worker = Worker::start(
         conversation.store().clone(),
@@ -197,6 +198,7 @@ pub fn run_with_selection(
         app.keys = settings.keys;
         app.navigation = settings.navigation;
         app.panel_layout = settings.layout;
+        app.mouse = settings.mouse;
         if !screen.startup_text.is_empty() {
             app.insert_text(&screen.startup_text);
         }
@@ -227,6 +229,8 @@ struct App {
     keys: crate::config::keys::PromptKeys,
     navigation: crate::config::keys::NavigationKeys,
     panel_layout: crate::config::keys::PanelLayout,
+    mouse: crate::config::keys::MouseSettings,
+    pointer: mouse::Pointer,
     editor: TextArea<'static>,
     focus: Focus,
     nodes_collapsed: bool,
@@ -260,6 +264,7 @@ struct App {
     tool_calls: std::collections::HashMap<String, composer::ToolDisplay>,
     turn_sequence: u64,
     history: Option<Paragraph<'static>>,
+    history_metrics: (u16, u16, u16),
     scroll: u16,
     status: String,
     status_deadline: Option<Instant>,
@@ -297,6 +302,8 @@ impl App {
             keys: Default::default(),
             navigation: Default::default(),
             panel_layout: Default::default(),
+            mouse: Default::default(),
+            pointer: Default::default(),
             editor,
             focus: Focus::Prompt,
             nodes_collapsed: false,
@@ -330,6 +337,7 @@ impl App {
             tool_calls: Default::default(),
             turn_sequence: 0,
             history: None,
+            history_metrics: (0, 0, 0),
             scroll: 0,
             status: String::new(),
             status_deadline: None,
@@ -538,11 +546,20 @@ impl App {
     }
     async fn terminal_event(
         &mut self,
-        event: Event,
+        batch: events::Batch,
         screen: &mut terminal::Screen,
         worker: &Worker,
     ) -> Result<bool> {
-        match event {
+        match batch.event {
+            Event::Key(key)
+                if self.mouse.enabled
+                    && key.code == KeyCode::Char(' ')
+                    && self.focus == Focus::Preview
+                    && !self.has_modal()
+                    && key.modifiers.is_empty() =>
+            {
+                self.pointer.space = key.kind != KeyEventKind::Release;
+            }
             Event::Key(key) if key.kind == KeyEventKind::Release => {
                 if [
                     Nav::PanLeft,
@@ -559,6 +576,8 @@ impl App {
                 }
             }
             Event::Key(key) => {
+                self.pointer.keyboard();
+                self.pointer.space = false;
                 let modal = self.has_modal();
                 match self.key(key, &screen.picker, worker).await {
                     Ok(true) => return Ok(true),
@@ -575,14 +594,34 @@ impl App {
                     self.finish_camera_gesture(worker);
                 }
                 screen.preview_keys(self.focus == Focus::Preview && !self.has_modal())?;
+                self.pointer.clear();
                 self.dirty = true;
+            }
+            Event::Mouse(event) => {
+                let modal = self.has_modal();
+                match self
+                    .mouse_events(event, batch.count, &screen.picker, worker)
+                    .await
+                {
+                    Ok(true) => return Ok(true),
+                    Ok(false) => {}
+                    Err(error) => self.error(error),
+                }
+                if modal && !self.has_modal() {
+                    screen.redraw();
+                }
+                screen.preview_keys(self.focus == Focus::Preview && !self.has_modal())?;
             }
             Event::Paste(text) if self.focus == Focus::Prompt && !self.has_modal() => {
                 self.insert_text(&text);
                 self.dirty = true;
             }
-            Event::FocusLost => self.finish_camera_gesture(worker),
+            Event::FocusLost => {
+                self.pointer.cancel();
+                self.finish_camera_gesture(worker);
+            }
             Event::Resize(_, _) => {
+                self.pointer.clear();
                 self.finish_camera_gesture(worker);
                 self.presentation.invalidate();
                 self.dirty = true;
@@ -997,6 +1036,11 @@ impl App {
             label(Nav::PreviousSection),
             label(Nav::NextSection)
         ));
+        if self.mouse.enabled {
+            text.push_str("Mouse/trackpad: click panels or rows to focus/select; scroll under the pointer without moving keyboard focus\nPreview: Space+left drag, middle drag or right drag pans; two-finger scrolling pans in both directions\n");
+            text.push_str(if self.mouse.wheel_zoom { "Preview: wheel zooms; Ctrl+wheel pans; Shift+wheel pans horizontally\n" } else { "Preview: wheel pans; Ctrl+wheel zooms around pointer; Shift+wheel pans horizontally\n" });
+            text.push_str("Menu: [N]/[A] collapse or restore panels; [Menu]/[...] exposes view actions\nNodes: triangle expands/collapses; Show fits; +Ref explicitly attaches a reference\nPrompt clicks focus input. Canvas element/range selection and native pinch zoom are not available yet.\n\n");
+        }
         text.push_str("/attach <quoted path> [WIDTHxHEIGHT|original]: attach PNG, JPEG or WebP\n/paste-image [WIDTHxHEIGHT|original]: read this host's clipboard\n/resize-image <number> <WIDTHxHEIGHT|original>: choose send size\n/clear-images: remove pending images\n/resume-queue: resume saved or paused follow-ups; /clear-queue: discard queued prompts\n");
         for (action, description) in [
             (Nav::Help, "show or hide help outside dialogs"),
@@ -1379,10 +1423,18 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut Frame) -> Size {
+        self.pointer.begin();
+        let scope = self.pointer_scope();
+        if self.pointer.scope != scope {
+            self.pointer.cancel();
+            self.pointer.reset_modal_list();
+            self.pointer.scope = scope;
+        }
         self.expire_status(Instant::now());
         self.presentation.begin();
         let area = frame.area();
         if area.width < 50 || area.height < 16 {
+            self.pointer.clear();
             frame.render_widget(
                 Paragraph::new(
                     "Resize the terminal to at least 50 columns × 16 rows. Ctrl+C exits when idle.",
@@ -1399,8 +1451,18 @@ impl App {
             self.agent_collapsed,
             self.footer_height(),
         );
-        frame.render_widget(Paragraph::new(self.header_line()), workspace.header);
+        let mut header = workspace.header;
+        if self.mouse.enabled && self.header_line().width() + 17 <= usize::from(header.width) {
+            header.width = header.width.saturating_sub(17);
+        }
+        frame.render_widget(Paragraph::new(self.header_line()), header);
         let panes = workspace.panes;
+        self.pointer
+            .add(panes[0], mouse::Target::Focus(Focus::Nodes));
+        self.pointer
+            .add(panes[1], mouse::Target::Focus(Focus::Preview));
+        self.pointer
+            .add(panes[2], mouse::Target::Focus(Focus::Prompt));
         if !self.nodes_collapsed {
             self.draw_nodes(frame, panes[0]);
         }
@@ -1436,6 +1498,7 @@ impl App {
             );
         }
         let inner = block.inner(panes[1]);
+        self.pointer.add(inner, mouse::Target::Canvas);
         frame.render_widget(block, panes[1]);
         if let Some(camera) = self
             .camera
@@ -1461,21 +1524,33 @@ impl App {
             self.draw_conversation(frame, panes[2]);
         }
         self.draw_footer(frame, workspace.footer);
+        if self.mouse.enabled {
+            self.draw_pointer_controls(frame, &workspace);
+        }
         if self.help {
+            self.pointer.overlay();
             let popup = centered(area, 100, 26);
             frame.render_widget(Clear, popup);
             let paragraph = Paragraph::new(self.help_text()).wrap(Wrap { trim: false });
             let block = panel("Help · PgUp/PgDn scroll · Esc closes", true);
             let inner = block.inner(popup);
+            self.pointer.add(inner, mouse::Target::Help);
             let maximum = paragraph
                 .line_count(inner.width)
                 .saturating_sub(inner.height as usize)
                 .min(u16::MAX as usize) as u16;
             self.help_scroll = self.help_scroll.min(maximum);
             frame.render_widget(paragraph.scroll((self.help_scroll, 0)).block(block), popup);
+            self.pointer.button(
+                frame,
+                Rect::new(popup.right().saturating_sub(9), popup.y, 8, 1),
+                "[Close]",
+                mouse::Action::Close,
+            );
         }
         self.draw_checkpoint_modal(frame);
         if let Some(permission) = self.permissions.front() {
+            self.pointer.overlay();
             let popup = centered(area, 92, 26);
             frame.render_widget(Clear, popup);
             let block = panel("Permission · PgUp/PgDn details · Esc denies", true);
@@ -1486,6 +1561,8 @@ impl App {
                 Constraint::Length(permission.request.options.len() as u16 + 3),
             ])
             .split(inner);
+            self.pointer
+                .add(sections[0], mouse::Target::PermissionDetails);
             let details = serde_json::to_value(&permission.request.tool_call).unwrap_or_default();
             let details = crate::conversation::sanitize_event(&details);
             let details = clean(&serde_json::to_string_pretty(&details).unwrap_or_default());
@@ -1533,7 +1610,50 @@ impl App {
                 Paragraph::new(lines).wrap(Wrap { trim: false }),
                 sections[1],
             );
+            // Match wrapped option labels rather than assuming one row each.
+            let mut y = sections[1].y;
+            for line in [
+                clean(
+                    permission
+                        .request
+                        .tool_call
+                        .fields
+                        .title
+                        .as_deref()
+                        .unwrap_or("Agent requests permission"),
+                ),
+                "Up/Down chooses · Enter responds · Esc denies".into(),
+            ] {
+                y = y.saturating_add(
+                    Paragraph::new(line)
+                        .wrap(Wrap { trim: false })
+                        .line_count(sections[1].width) as u16,
+                );
+            }
+            for (index, option) in permission.request.options.iter().enumerate() {
+                let height = Paragraph::new(format!("  {}", clean(&option.name)))
+                    .wrap(Wrap { trim: false })
+                    .line_count(sections[1].width) as u16;
+                let height = height.min(sections[1].bottom().saturating_sub(y));
+                self.pointer.add(
+                    Rect::new(sections[1].x, y, sections[1].width, height),
+                    mouse::Target::PermissionChoice(index),
+                );
+                y = y.saturating_add(height);
+            }
+            self.pointer.button(
+                frame,
+                Rect::new(
+                    popup.right().saturating_sub(11),
+                    popup.bottom().saturating_sub(1),
+                    10,
+                    1,
+                ),
+                "[Respond]",
+                mouse::Action::Accept,
+            );
         }
+        self.pointer.finish();
         self.presentation
             .finish(frame.buffer_mut(), self.has_modal());
         Size::new(inner.width, inner.height)

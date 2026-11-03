@@ -67,7 +67,7 @@ Only completed document frames can be exported. Slow rendering replaces pending 
 with the latest view rather than replaying every queued camera position.
 
 Browser pages can retain per-node DOM state for `r` refresh and bounded playback.
-Preview Space or `/play [fps]` starts at 5 fps by default (1–10); `/pause` stops new
+Preview `p` or `/play [fps]` starts at 5 fps by default (1–10); `/pause` stops new
 frames. `/time SECONDS` and `[`/`]` seek shader time, not page JavaScript or document
 script execution. Runtime expiry, policy changes, failures and eviction can reset DOM.
 See [dynamic content](dynamic-content.md) for capture identity and limits.
@@ -85,6 +85,75 @@ can anchor its preedit/candidate windows. Prompt/search use the text-safe keyboa
 Preview accepts press/repeat/release navigation without moving on release. If Ghostty
 has a `shift+enter=text:\n` override, remove it so Shift+Enter retains its modifier.
 Plain Enter submits by default; Alt+Enter inserts a newline.
+
+## Mouse and trackpad
+
+Pointer input is enabled by default in the document picker and workspace. Click a
+panel or Prompt to focus it. Scroll acts on the region under the pointer without
+moving keyboard focus, so typing can continue while browsing history or the canvas.
+
+| Region / gesture | Action |
+| --- | --- |
+| Preview: wheel or two-finger scrolling | Pan vertically/horizontally in the reported direction |
+| Preview: Ctrl + vertical scroll | Zoom around the pointer, keeping the document point beneath it fixed |
+| Preview: Shift + vertical scroll | Pan horizontally when the terminal forwards the gesture |
+| Preview: Space + left drag, middle drag, or right drag | Grab and pan the canvas; document coordinates stay unchanged |
+| Preview: ordinary left drag | Reserved for a later area-selection feature; currently does not pan or edit |
+| Nodes: row click / triangle click | Select a node / expand or collapse its branch |
+| Nodes, diagnostics, attachments, references, and modal lists: scroll | Scroll the list without changing selection |
+| Agent history / diagnostic details / Help / saved text: scroll | Scroll the text; history resumes following output at the bottom |
+| File picker / command palette / checkpoints | Click a row to select, then Open / Run / Review to activate |
+
+Preview's `[-]`, `[+]`, `[Fit]`, and `[Play]`/`[Pause]` buttons provide navigation
+without modifiers. Nodes offers `[Show]` and `[+Ref]`; selecting or fitting alone
+never adds an AI reference. `[N]` and `[A]` collapse or restore Nodes and Agent
+through the view menu; header buttons also appear when there is room beside the
+agent metadata. Preview's
+`[Menu]` (or `[...]` in narrow panels) exposes all view actions, plus Help, Commands,
+and a temporary wheel pan/zoom switch. There is no persistent hand-tool mode. Prompt clicks focus input; pointer caret positioning,
+canvas element selection, and element movement/resizing are not included yet.
+
+A drag belongs to its starting surface until the button is released, including
+when Space is released during the drag. Resize, focus loss, and changed modal or
+list geometry cancel pending clicks. Dialogs capture pointer input above the
+workspace. Permission choices require a separate Respond action; existing reviewed
+restoration and deletion rules remain in force. Exact Space hold/release reporting
+requires the terminal's enhanced keyboard protocol; wheel, middle/right drag, and
+buttons remain alternatives. A completed pointer gesture clears the Space state
+so a missing release cannot leave subsequent drags in pan mode.
+
+The current cell-based terminal input has no native pinch event, fractional scroll
+deltas, gesture phases, device identity, or Cmd mouse modifier. Pinch and Cmd+scroll
+are therefore not supported directly: use Ctrl+scroll or the zoom buttons. Trackpad
+scrolling uses the same directional events as a wheel; no additional application
+momentum or acceleration is added. Terminal font zoom and terminal-specific mouse
+bindings remain outside the application. Shift-based text selection/copy belongs to
+the terminal; in particular, some terminals intercept Shift+scroll before forwarding
+it. tmux/SSH and physical device combinations need their own compatibility checks.
+
+User-only settings can disable capture or change the scroll behavior:
+
+```toml
+[tui.mouse]
+enabled = true
+wheel_zoom = false
+scroll_step = 2
+zoom_step = 1.1
+```
+
+`wheel_zoom = true` makes unmodified vertical scrolling zoom and Ctrl+scroll pan,
+matching a mouse-first navigation preference. It also affects trackpads because the
+terminal does not identify the device. `scroll_step` accepts 1–20: list/text rows or
+terminal-cell units for camera pan. `zoom_step` accepts 1.01–2.0. Preferences are read
+at startup; the Menu wheel switch lasts only for the invocation. `enabled = false`
+leaves pointer handling to the terminal. Mouse settings are shown in user config
+and its schema and cannot be set by a project.
+
+Playback now defaults to `p` in Preview; Nodes Space still toggles branches and
+Prompt Space still inserts text. While pointer support is enabled, plain Space is
+reserved in Preview for drag panning. An explicit navigation mapping such as
+`play_pause = ["Space"]` fails with a configuration message; change it to `p` or
+another free shortcut, or disable mouse support. User bindings are never rewritten.
 
 ## Panel widths
 
@@ -132,7 +201,7 @@ Large or high-DPI viewports automatically reduce preview raster resolution to st
 | Preview: `hjkl` / arrows | Pan |
 | Preview: `+` / `-`, `0` | Zoom or fit the document, including negative coordinates |
 | Preview: `[` / `]` | Pause and step shader evaluation time backward/forward by 0.1 seconds |
-| Preview: `Space` | Play/pause page captures and the shader timeline at a maximum of 5 fps |
+| Preview: `p` | Play/pause page captures and the shader timeline at a maximum of 5 fps |
 | Prompt: `/play [fps]`, `/pause` then Enter | Start bounded playback (1–10 fps) or stop requesting frames |
 | Prompt: `/time <seconds>` then Enter | Seek shader time without modifying the document |
 | Nodes: `/` | Search names and IDs; Enter keeps the filter, Esc clears it |

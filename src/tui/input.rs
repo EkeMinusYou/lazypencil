@@ -11,6 +11,22 @@ impl App {
         if key.kind == KeyEventKind::Release {
             return Ok(false);
         }
+        self.pointer_keyboard_navigation(key);
+        if self.mouse.enabled
+            && self.focus == Focus::Preview
+            && !self.has_modal()
+            && key.code == KeyCode::Char(' ')
+            && key.modifiers.is_empty()
+        {
+            self.pointer.space = true;
+            return Ok(false);
+        }
+        if self.pointer.more {
+            self.pointer.more = false;
+            if key.code == KeyCode::Esc {
+                return Ok(false);
+            }
+        }
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         if key.code == KeyCode::Char('c') && ctrl {
             return self.cancel_input();
@@ -41,14 +57,7 @@ impl App {
         }
         if self.modal.is_some() {
             let exit = self.modal_key(key, worker)?;
-            if let Some(change) = self.pending_session.take()
-                && let Err(error) = self.select_conversation(change, worker).await
-            {
-                if let Some(checkpoints::Modal::Saved(page)) = &mut self.modal {
-                    page.notice = Some(clean(&error.to_string()));
-                }
-                return Err(error);
-            }
+            self.finish_pending_session(worker).await?;
             return Ok(exit);
         }
         if global(Nav::Help) {
@@ -146,6 +155,9 @@ impl App {
         Ok(false)
     }
     fn permission_input(&mut self, key: KeyEvent) -> Result<()> {
+        if key.code == KeyCode::Enter {
+            return self.respond_permission();
+        }
         let permission = self.permissions.front_mut().expect("pending permission");
 
         let count = permission.request.options.len();
@@ -166,18 +178,22 @@ impl App {
                 permission.selected = (permission.selected + 1).min(count.saturating_sub(1));
                 None
             }
-            KeyCode::Enter => Some(
-                permission
-                    .request
-                    .options
-                    .get(permission.selected)
-                    .map(|option| option.option_id.to_string()),
-            ),
             KeyCode::Esc => Some(crate::conversation::reject_once(&permission.request)),
             _ => None,
         };
         if let Some(choice) = choice {
             let permission = self.permissions.pop_front().unwrap();
+            self.conversation.respond(&permission.id, choice, true)?;
+        }
+        Ok(())
+    }
+    pub(super) fn respond_permission(&mut self) -> Result<()> {
+        if let Some(permission) = self.permissions.pop_front() {
+            let choice = permission
+                .request
+                .options
+                .get(permission.selected)
+                .map(|option| option.option_id.to_string());
             self.conversation.respond(&permission.id, choice, true)?;
         }
         Ok(())
@@ -287,11 +303,7 @@ impl App {
         match self.focus {
             Focus::Preview => {
                 if action(Nav::PlayPause) {
-                    if self.playback.active() {
-                        self.pause_playback();
-                    } else {
-                        self.start_playback(playback::DEFAULT_FPS, Instant::now())?;
-                    }
+                    self.toggle_playback()?;
                     return Ok(false);
                 }
                 let zoom = self.view.zoom.unwrap_or(1.0);

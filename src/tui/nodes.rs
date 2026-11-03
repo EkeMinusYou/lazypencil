@@ -120,6 +120,38 @@ impl Tree {
 }
 
 impl App {
+    pub(super) fn toggle_pointer_branch(&mut self, row: usize) {
+        let Some(row) = self.node_tree.rows.get(row) else {
+            return;
+        };
+        let Some(node) = self
+            .preview
+            .as_ref()
+            .and_then(|preview| preview.nodes.get(row.index))
+        else {
+            return;
+        };
+        if node.children.is_empty() {
+            return;
+        }
+        let id = node.id.clone();
+        if row.expanded {
+            self.node_tree.expanded.remove(&id);
+            self.node_tree.search_closed.insert(id.clone());
+        } else {
+            self.node_tree.expanded.insert(id.clone());
+            self.node_tree.search_closed.remove(&id);
+        }
+        // Rebuild without revealing ancestors or reopening the clicked branch.
+        self.node_tree
+            .rebuild(&self.preview.as_ref().unwrap().nodes, &self.filter);
+        self.nodes.select(
+            self.node_tree
+                .rows
+                .iter()
+                .position(|row| self.preview.as_ref().unwrap().nodes[row.index].id == id),
+        );
+    }
     pub(super) fn refresh_nodes(&mut self, selected: Option<&str>) {
         let Some(preview) = &self.preview else {
             return;
@@ -236,6 +268,7 @@ impl App {
         };
         let focused = self.focus == Focus::Nodes;
         let title = theme::title("▤", title, theme::NODES, focused);
+        let title_width = title.width();
         let mut block = panel(title, focused);
         if let Some(preview) = &self.preview {
             let diagnostics = if self.diagnostics.active && self.diagnostics.selected_only {
@@ -266,6 +299,21 @@ impl App {
         }
         let inner = block.inner(area);
         frame.render_widget(block, area);
+        if self.mouse.enabled && usize::from(area.width) >= title_width + 17 {
+            let x = area.right() - 15;
+            self.pointer.button(
+                frame,
+                Rect::new(x, area.y, 6, 1),
+                "[Show]",
+                mouse::Action::FitSelected,
+            );
+            self.pointer.button(
+                frame,
+                Rect::new(x + 7, area.y, 6, 1),
+                "[+Ref]",
+                mouse::Action::Reference,
+            );
+        }
         if self.diagnostics.active {
             self.draw_diagnostics(frame, inner);
             return;
@@ -368,11 +416,35 @@ impl App {
         let mut highlight = theme::node_selected(focused);
         // Keep the severity color when the selected row is highlighted.
         highlight.fg = None;
-        frame.render_stateful_widget(
+        self.pointer.list(
+            frame,
             List::new(items).highlight_style(highlight),
             inner,
             &mut self.nodes,
+            (1, mouse::ListTarget::Nodes),
         );
+        for (visible, row) in self
+            .node_tree
+            .rows
+            .iter()
+            .skip(self.nodes.offset())
+            .take(usize::from(inner.height))
+            .enumerate()
+        {
+            if self
+                .preview
+                .as_ref()
+                .is_some_and(|preview| !preview.nodes[row.index].children.is_empty())
+            {
+                let indent = row
+                    .depth
+                    .min(usize::from(inner.width.saturating_sub(10)) / 2);
+                self.pointer.add(
+                    Rect::new(inner.x + indent as u16 * 2, inner.y + visible as u16, 1, 1),
+                    mouse::Target::Branch(self.nodes.offset() + visible),
+                );
+            }
+        }
         if self.node_tree.rows.is_empty() {
             frame.render_widget(
                 Paragraph::new(if self.filter.is_empty() {

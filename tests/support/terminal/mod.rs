@@ -121,7 +121,13 @@ impl Harness {
         case: &str,
         configuration: Option<PathBuf>,
     ) -> Result<Self> {
-        let image_case = if [
+        let image_case = if let Some(protocol) = case.strip_prefix("mouse-") {
+            if protocol == "disabled" {
+                "halfblocks"
+            } else {
+                protocol
+            }
+        } else if [
             "dynamic-idle",
             "project-agent-config",
             "page-playback",
@@ -510,6 +516,14 @@ impl Harness {
         assert!(
             self.contains_bytes(b"\x1b[?1049l"),
             "Alternate screen must be restored"
+        );
+        assert!(
+            self.contains_bytes(b"\x1b[?1006l"),
+            "Mouse capture must be disabled on exit"
+        );
+        assert!(
+            self.contains_bytes(b"\x1b[?1004l"),
+            "Focus reporting must be disabled on exit"
         );
         if self.image_case == "kitty" {
             assert!(

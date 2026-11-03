@@ -370,9 +370,9 @@ fn playback_preserves_input_pauses_on_seek_errors_and_static_output_and_drops_la
         app.editor = editor("/play 3");
         app.command(&worker).await.unwrap();
         assert_eq!(app.playback.fps(), Some(3));
-        press(&mut app, KeyCode::Char(' '), KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Char('p'), KeyModifiers::NONE, &worker).await;
         assert!(!app.playback.active());
-        press(&mut app, KeyCode::Char(' '), KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Char('p'), KeyModifiers::NONE, &worker).await;
         assert_eq!(app.playback.fps(), Some(5));
         app.editor = editor("/pause");
         app.command(&worker).await.unwrap();

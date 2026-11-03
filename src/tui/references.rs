@@ -172,15 +172,17 @@ impl App {
                 ]))
             })
             .collect::<Vec<_>>();
-        frame.render_stateful_widget(
+        let block = self.context_block(
+            "References",
+            "↗",
+            self.outbox.references.len(),
+            focused,
+            area.width,
+        );
+        let inner = block.inner(area);
+        self.pointer.list(
+            frame,
             List::new(items)
-                .block(self.context_block(
-                    "References",
-                    "↗",
-                    self.outbox.references.len(),
-                    focused,
-                    area.width,
-                ))
                 .highlight_symbol(if focused { "› " } else { "  " })
                 .highlight_spacing(ratatui::widgets::HighlightSpacing::Always)
                 .highlight_style(if focused {
@@ -188,8 +190,10 @@ impl App {
                 } else {
                     Style::default()
                 }),
-            area,
+            inner,
             &mut self.reference_rows,
+            (1, mouse::ListTarget::References),
         );
+        frame.render_widget(block, area);
     }
 }

@@ -234,7 +234,7 @@ impl super::App {
             || preview.time_dependent
             || preview.live_pages
             || self.playback.active()
-            || !matches!(self.focus, super::Focus::Preview | super::Focus::Nodes)
+            || self.focus == super::Focus::Attachments
             || (preview.view.center == self.view.center && preview.view.zoom == self.view.zoom)
         {
             return Ok(());

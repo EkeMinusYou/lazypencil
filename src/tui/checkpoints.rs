@@ -150,7 +150,7 @@ pub const COMMANDS: &[&str] = &[
 
 impl super::App {
     pub(super) fn has_modal(&self) -> bool {
-        self.help || self.modal.is_some() || !self.permissions.is_empty()
+        self.help || self.modal.is_some() || !self.permissions.is_empty() || self.pointer.more
     }
     pub(super) fn open_history(&mut self, cursors: Vec<Option<u64>>) -> Result<()> {
         if self.conversation.active() || self.document_task.is_some() {
@@ -250,12 +250,69 @@ impl super::App {
             self.document_result(output, worker);
         }
     }
+    pub(super) fn activate_modal(&mut self, worker: &super::preview::Worker) -> Result<bool> {
+        let Some(modal) = self.modal.take() else {
+            return Ok(false);
+        };
+        match modal {
+            Modal::Commands { selected } => match selected {
+                0 => self.open_history(vec![None])?,
+                1 => self.request(worker, false, true),
+                2 => self.open_preview()?,
+                3 => self.show_help(),
+                4 => return Ok(true),
+                5 => self.open_saved(
+                    super::saved::Page::current(self.conversation.id().into()),
+                    None,
+                )?,
+                6 => self.open_saved(
+                    super::saved::Page::sessions(self.conversation.id().into()),
+                    None,
+                )?,
+                7 => self.pending_session = Some(super::saved::SessionChange::New),
+                8 => self.toggle_panel(super::Nav::ToggleNodesPanel, worker),
+                9 => self.toggle_panel(super::Nav::ToggleAgentPanel, worker),
+                _ => unreachable!(),
+            },
+            Modal::History(page) if !page.entries.is_empty() => {
+                self.modal = Some(Modal::Confirm(page))
+            }
+            Modal::Confirm(page) => {
+                if self.conversation.active() || self.document_task.is_some() {
+                    return Err(Error::new(
+                        "INVALID_ARGUMENT",
+                        "Wait for the active operation before restoring",
+                    ));
+                }
+                self.save_draft()?;
+                self.document_task = Some(Task::restore(
+                    self.conversation.store().clone(),
+                    self.conversation.settings().fonts.clone(),
+                    &page,
+                )?);
+                self.restore_return = Some(page.clone());
+                self.modal = Some(Modal::Loading {
+                    message: "Restoring document… · Esc requests cancellation before save",
+                });
+                self.set_status("Restoring checkpoint…".into());
+            }
+            Modal::Saved(mut page) => {
+                let action = page.accept();
+                self.saved_action(page, action)?;
+            }
+            other => self.modal = Some(other),
+        }
+        Ok(false)
+    }
     pub(super) fn modal_key(
         &mut self,
         key: crossterm::event::KeyEvent,
         worker: &super::preview::Worker,
     ) -> Result<bool> {
         use crossterm::event::KeyCode;
+        if key.code == KeyCode::Enter && !matches!(self.modal, Some(Modal::Saved(_))) {
+            return self.activate_modal(worker);
+        }
         let Some(mut modal) = self.modal.take() else {
             return Ok(false);
         };
@@ -271,28 +328,6 @@ impl super::App {
                 KeyCode::Up | KeyCode::Char('k') => *selected = selected.saturating_sub(1),
                 KeyCode::Down | KeyCode::Char('j') => {
                     *selected = (*selected + 1).min(COMMANDS.len() - 1)
-                }
-                KeyCode::Enter => {
-                    match *selected {
-                        0 => self.open_history(vec![None])?,
-                        1 => self.request(worker, false, true),
-                        2 => self.open_preview()?,
-                        3 => self.show_help(),
-                        4 => return Ok(true),
-                        5 => self.open_saved(
-                            super::saved::Page::current(self.conversation.id().into()),
-                            None,
-                        )?,
-                        6 => self.open_saved(
-                            super::saved::Page::sessions(self.conversation.id().into()),
-                            None,
-                        )?,
-                        7 => self.pending_session = Some(super::saved::SessionChange::New),
-                        8 => self.toggle_panel(super::Nav::ToggleNodesPanel, worker),
-                        9 => self.toggle_panel(super::Nav::ToggleAgentPanel, worker),
-                        _ => unreachable!(),
-                    }
-                    return Ok(false);
                 }
                 _ => {}
             },
@@ -311,10 +346,6 @@ impl super::App {
                 KeyCode::Up | KeyCode::Char('k') => page.selected = page.selected.saturating_sub(1),
                 KeyCode::Down | KeyCode::Char('j') => {
                     page.selected = (page.selected + 1).min(page.entries.len().saturating_sub(1))
-                }
-                KeyCode::Enter if !page.entries.is_empty() => {
-                    self.modal = Some(Modal::Confirm(page.clone()));
-                    return Ok(false);
                 }
                 KeyCode::Char('r') => {
                     self.open_history(page.cursors.clone())?;
@@ -345,26 +376,6 @@ impl super::App {
                     self.modal = Some(Modal::History(page.clone()));
                     return Ok(false);
                 }
-                KeyCode::Enter => {
-                    if self.conversation.active() || self.document_task.is_some() {
-                        return Err(Error::new(
-                            "INVALID_ARGUMENT",
-                            "Wait for the active operation before restoring",
-                        ));
-                    }
-                    self.save_draft()?;
-                    self.document_task = Some(Task::restore(
-                        self.conversation.store().clone(),
-                        self.conversation.settings().fonts.clone(),
-                        page,
-                    )?);
-                    self.restore_return = Some(page.clone());
-                    self.modal = Some(Modal::Loading {
-                        message: "Restoring document… · Esc requests cancellation before save",
-                    });
-                    self.set_status("Restoring checkpoint…".into());
-                    return Ok(false);
-                }
                 _ => {}
             },
         }
@@ -376,29 +387,30 @@ impl super::App {
             layout::{Constraint, Layout},
             style::{Color, Style},
             text::Line,
-            widgets::{Clear, List, ListItem, ListState, Paragraph, Wrap},
+            widgets::{Clear, List, ListItem, Paragraph, Wrap},
         };
         let Some(modal) = &mut self.modal else {
             return;
         };
+        self.pointer.overlay();
         let popup = super::centered(frame.area(), 100, 26);
         frame.render_widget(Clear, popup);
         let highlight = Style::default().fg(Color::Black).bg(Color::Cyan);
         match modal {
-            Modal::Saved(page) => super::saved::draw(page, frame, popup),
+            Modal::Saved(page) => super::saved::draw(page, frame, popup, &mut self.pointer),
             Modal::Commands { selected } => {
                 let items = COMMANDS.iter().map(|text| ListItem::new(*text));
-                let mut selection = ListState::default().with_selected(Some(*selected));
-                frame.render_stateful_widget(
+                let block = super::panel("Commands · Up/Down · Enter · Esc closes", true);
+                let inner = block.inner(popup);
+                frame.render_widget(block, popup);
+                self.pointer.modal_list(
+                    frame,
                     List::new(items)
-                        .block(super::panel(
-                            "Commands · Up/Down · Enter · Esc closes",
-                            true,
-                        ))
                         .highlight_style(highlight)
                         .highlight_symbol("› "),
-                    popup,
-                    &mut selection,
+                    inner,
+                    *selected,
+                    super::mouse::ListTarget::Commands,
                 );
             }
             Modal::Loading { message } => frame.render_widget(
@@ -445,14 +457,14 @@ impl super::App {
                         entry.request_id
                     )))
                 });
-                let mut selection = ListState::default()
-                    .with_selected((!page.entries.is_empty()).then_some(page.selected));
-                frame.render_stateful_widget(
+                self.pointer.modal_list(
+                    frame,
                     List::new(items)
                         .highlight_style(highlight)
                         .highlight_symbol("› "),
                     sections[1],
-                    &mut selection,
+                    page.selected,
+                    super::mouse::ListTarget::Checkpoints,
                 );
                 frame.render_widget(Paragraph::new(format!("Page {} · PgDn/n older{} · PgUp/p newer · Home latest\nRestoration creates a new history entry and preserves the draft.", page.cursors.len(), if page.next_before.is_some() { " available" } else { ": none" })).wrap(Wrap { trim: false }), sections[2]);
             }
@@ -474,6 +486,31 @@ impl super::App {
                     popup,
                 );
             }
+        }
+        self.pointer.button(
+            frame,
+            super::Rect::new(popup.right().saturating_sub(9), popup.y, 8, 1),
+            "[Close]",
+            super::mouse::Action::Close,
+        );
+        let label = match self.modal {
+            Some(Modal::Commands { .. }) => Some("[Run]"),
+            Some(Modal::History(_)) => Some("[Review]"),
+            Some(Modal::Confirm(_)) => Some("[Restore]"),
+            _ => None,
+        };
+        if let Some(label) = label {
+            self.pointer.button(
+                frame,
+                super::Rect::new(
+                    popup.right().saturating_sub(12),
+                    popup.bottom().saturating_sub(1),
+                    11,
+                    1,
+                ),
+                label,
+                super::mouse::Action::Accept,
+            );
         }
     }
 }

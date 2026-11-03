@@ -13,7 +13,7 @@ use std::borrow::Cow;
 const PAGE_BYTES: usize = 32 * 1024;
 const MAX_TEXT_PAGES: usize = 8192;
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Location {
     Sessions,
     Turns(String),
@@ -64,6 +64,14 @@ impl Action {
 }
 
 impl Page {
+    pub(super) fn pointer_identity(&self) -> String {
+        format!(
+            "saved:{:?}:{}:{}",
+            self.location,
+            self.cursor.as_deref().unwrap_or(""),
+            self.deletion_review.is_some()
+        )
+    }
     pub fn sessions(current: String) -> Self {
         Self::new(current, Location::Sessions, None, None)
     }
@@ -259,6 +267,48 @@ impl Page {
             self.data["next_cursor"].as_str().map(str::to_owned)
         }
     }
+    pub(super) fn accept(&mut self) -> Action {
+        if self.deletion_review.is_some() || matches!(self.location, Location::Text { .. }) {
+            return Action::Keep;
+        }
+        let Some(entry) = self.entries().get(self.selected) else {
+            return Action::Keep;
+        };
+        if entry["unavailable"] == true {
+            self.notice = Some(super::clean(&entry["error"].to_string()));
+            return Action::Keep;
+        }
+        let Some(id) = entry["id"].as_str() else {
+            return Action::Keep;
+        };
+        let location = match &self.location {
+            Location::Sessions => Location::Turns(id.to_owned()),
+            Location::Turns(session) => Location::Text {
+                session: session.clone(),
+                turn: id.to_owned(),
+                raw: false,
+            },
+            _ => unreachable!(),
+        };
+        Action::read(Self::new(
+            self.current.clone(),
+            location,
+            Some(Box::new(self.clone())),
+            None,
+        ))
+    }
+    pub(super) fn pointer_scroll(&mut self, backwards: bool, step: u16) {
+        let (scroll, maximum) = if self.deletion_review.is_some() {
+            (&mut self.review_scroll, self.review_maximum_scroll)
+        } else {
+            (&mut self.scroll, self.maximum_scroll)
+        };
+        *scroll = if backwards {
+            scroll.saturating_sub(step)
+        } else {
+            scroll.saturating_add(step).min(maximum)
+        };
+    }
     pub fn key(&mut self, key: KeyEvent) -> Result<Action> {
         if key.modifiers.intersects(
             KeyModifiers::CONTROL
@@ -378,33 +428,7 @@ impl Page {
             KeyCode::Down | KeyCode::Char('j') if !text => {
                 self.selected = (self.selected + 1).min(self.entries().len().saturating_sub(1))
             }
-            KeyCode::Enter if !text => {
-                let Some(entry) = self.entries().get(self.selected) else {
-                    return Ok(Action::Keep);
-                };
-                if entry["unavailable"] == true {
-                    self.notice = Some(super::clean(&entry["error"].to_string()));
-                    return Ok(Action::Keep);
-                }
-                let Some(id) = entry["id"].as_str() else {
-                    return Ok(Action::Keep);
-                };
-                let location = match &self.location {
-                    Location::Sessions => Location::Turns(id.to_owned()),
-                    Location::Turns(session) => Location::Text {
-                        session: session.clone(),
-                        turn: id.to_owned(),
-                        raw: false,
-                    },
-                    _ => unreachable!(),
-                };
-                return Ok(Action::read(Self::new(
-                    self.current.clone(),
-                    location,
-                    Some(Box::new(self.clone())),
-                    None,
-                )));
-            }
+            KeyCode::Enter if !text => return Ok(self.accept()),
             KeyCode::Home if !text => return Ok(Action::read(self.fresh(None))),
             KeyCode::Char('r') | KeyCode::Char('g') => {
                 let mut page = self.fresh(None);
@@ -498,11 +522,16 @@ impl Page {
     }
 }
 
-pub fn draw(page: &mut Page, frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
+pub fn draw(
+    page: &mut Page,
+    frame: &mut ratatui::Frame,
+    area: ratatui::layout::Rect,
+    pointer: &mut super::mouse::Pointer,
+) {
     use ratatui::{
         layout::{Constraint, Layout},
         style::{Color, Style},
-        widgets::{List, ListItem, ListState, Paragraph, Wrap},
+        widgets::{List, ListItem, Paragraph, Wrap},
     };
     if let Some(review) = &page.deletion_review {
         let block = super::panel("Delete local conversation?", true);
@@ -537,6 +566,7 @@ pub fn draw(page: &mut Page, frame: &mut ratatui::Frame, area: ratatui::layout::
             .min(u16::MAX as usize) as u16;
         page.review_scroll = page.review_scroll.min(page.review_maximum_scroll);
         frame.render_widget(paragraph.scroll((page.review_scroll, 0)), regions[1]);
+        pointer.add(regions[1], super::mouse::Target::SavedText);
         frame.render_widget(
             Paragraph::new("y confirms · n/Esc returns\n↑/↓ PgUp/PgDn · Home/End scroll"),
             regions[2],
@@ -624,6 +654,7 @@ pub fn draw(page: &mut Page, frame: &mut ratatui::Frame, area: ratatui::layout::
             .min(u16::MAX as usize) as u16;
         page.scroll = page.scroll.min(page.maximum_scroll);
         frame.render_widget(paragraph.scroll((page.scroll, 0)), regions[1]);
+        pointer.add(regions[1], super::mouse::Target::SavedText);
         frame.render_widget(Paragraph::new("↑/↓ PgUp/PgDn scroll · Home/End edges\nn/p pages · v raw/formatted · u use · N new · d delete…\nBackspace parent · s sessions · r refresh · Esc closes").wrap(Wrap { trim: false }), regions[2]);
     } else {
         let entries = page.entries();
@@ -652,16 +683,28 @@ pub fn draw(page: &mut Page, frame: &mut ratatui::Frame, area: ratatui::layout::
             );
         } else {
             page.selected = page.selected.min(items.len() - 1);
-            let mut state = ListState::default().with_selected(Some(page.selected));
-            frame.render_stateful_widget(
+            pointer.modal_list(
+                frame,
                 List::new(items)
                     .highlight_style(Style::default().fg(Color::Black).bg(Color::Cyan))
                     .highlight_symbol("› "),
                 regions[1],
-                &mut state,
+                page.selected,
+                super::mouse::ListTarget::Saved,
             );
         }
         frame.render_widget(Paragraph::new("↑/↓ select · Enter opens · u use · N new · d delete…\nn/p pages · Home first · c current · r refresh\nBackspace parent · Esc/q closes · s sessions").wrap(Wrap { trim: false }), regions[2]);
+        pointer.button(
+            frame,
+            ratatui::layout::Rect::new(
+                area.right().saturating_sub(9),
+                area.bottom().saturating_sub(1),
+                8,
+                1,
+            ),
+            "[Open]",
+            super::mouse::Action::Accept,
+        );
     }
 }
 
@@ -697,6 +740,9 @@ impl super::App {
                 return Err(error);
             }
         };
+        self.saved_action(page, action)
+    }
+    pub(super) fn saved_action(&mut self, page: Box<Page>, action: Action) -> Result<bool> {
         match action {
             Action::Keep => self.modal = Some(super::checkpoints::Modal::Saved(page)),
             Action::Show(page) => self.modal = Some(super::checkpoints::Modal::Saved(page)),

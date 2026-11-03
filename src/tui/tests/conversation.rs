@@ -2,7 +2,8 @@
 
 #[test]
 fn permission_modal_can_answer_and_cancel_without_blocking_the_event_loop() {
-    for cancel in [false, true] {
+    for response in ["keyboard", "cancel", "mouse"] {
+        let cancel = response == "cancel";
         let temp = TempDir::new().unwrap();
         runtime().block_on(async {
             let mut app = app(
@@ -74,6 +75,22 @@ fn permission_modal_can_answer_and_cancel_without_blocking_the_event_loop() {
                 app.activity_line(Instant::now()).unwrap().spans[0].style.fg,
                 app.agent_activity().style.fg
             );
+            if response == "mouse" {
+                use crossterm::event::{MouseButton, MouseEventKind as M};
+                paint_mouse(&mut app, 130, 34);
+                let choice = app.pointer.area(mouse::Target::PermissionChoice(0)).unwrap();
+                for kind in [M::Down(MouseButton::Left), M::Up(MouseButton::Left)] {
+                    app.mouse_event(mouse_input(kind, (choice.x, choice.y), KeyModifiers::NONE), &picker, &worker).await.unwrap();
+                    paint_mouse(&mut app, 130, 34);
+                }
+                assert_eq!(app.permissions.len(), 1, "Selecting a choice must not answer the request");
+                let button = app.pointer.area(mouse::Target::Button(mouse::Action::Accept)).unwrap();
+                for kind in [M::Down(MouseButton::Left), M::Up(MouseButton::Left)] {
+                    app.mouse_event(mouse_input(kind, (button.x, button.y), KeyModifiers::NONE), &picker, &worker).await.unwrap();
+                    paint_mouse(&mut app, 130, 34);
+                }
+                assert!(app.permissions.is_empty());
+            } else {
             app.key(
                 KeyEvent::new(
                     if cancel {
@@ -92,6 +109,7 @@ fn permission_modal_can_answer_and_cancel_without_blocking_the_event_loop() {
             )
             .await
             .unwrap();
+            }
             assert_eq!(app.agent_activity().content, "● Working");
             let events = complete(&mut app).await;
             assert_eq!(app.agent_activity().content, "○ Idle");

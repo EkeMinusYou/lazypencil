@@ -73,7 +73,7 @@ bindings! {
     fit_selected => FitSelected(PREVIEW | NODES, ["f"]),
     time_backward => TimeBackward(PREVIEW, ["["]),
     time_forward => TimeForward(PREVIEW, ["]"]),
-    play_pause => PlayPause(PREVIEW, ["Space"]),
+    play_pause => PlayPause(PREVIEW, ["p"]),
     previous_item => PreviousItem(NODES | ATTACHMENTS | REFERENCES, ["Up", "k"]),
     next_item => NextItem(NODES | ATTACHMENTS | REFERENCES, ["Down", "j"]),
     reference_node => ReferenceNode(NODES, ["a"]),
@@ -94,6 +94,28 @@ bindings! {
 }
 
 impl NavigationKeys {
+    pub(super) fn validate_pointer(&self, enabled: bool) -> Result<()> {
+        if enabled {
+            for (action, values, scope) in self.definitions() {
+                if scope & PREVIEW != 0
+                    && values.iter().any(|value| {
+                        parse_shortcut(value, true).is_ok_and(|key| {
+                            key.key == super::Key::Symbol(' ')
+                                && !key.ctrl
+                                && !key.alt
+                                && !key.shift
+                        })
+                    })
+                {
+                    return Err(invalid(format!(
+                        "Navigation action {} uses Space, reserved for Preview drag panning; choose another key (play_pause defaults to p) or disable tui.mouse.enabled",
+                        action.name()
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
     pub fn validate(&self, prompt: &PromptKeys) -> Result<()> {
         let mut used: BTreeMap<Shortcut, u8> = BTreeMap::new();
         for value in prompt.submit.iter().chain(&prompt.paste) {

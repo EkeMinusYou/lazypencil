@@ -23,7 +23,25 @@ pub(super) struct View<'a> {
 }
 
 impl View<'_> {
-    pub fn draw(&self, frame: &mut Frame, state: &mut ListState) {
+    pub fn draw(
+        &self,
+        frame: &mut Frame,
+        state: &mut ListState,
+        pointer: &mut super::super::mouse::Pointer,
+    ) {
+        pointer.begin();
+        // Background discovery can reorder rows without changing their rectangles.
+        use std::hash::{Hash, Hasher};
+        let mut snapshot = std::collections::hash_map::DefaultHasher::new();
+        self.paths.hash(&mut snapshot);
+        self.selected.hash(&mut snapshot);
+        self.path.hash(&mut snapshot);
+        self.listing.root.hash(&mut snapshot);
+        let scope = format!("documents:{:x}", snapshot.finish());
+        if pointer.scope != scope {
+            pointer.cancel();
+            pointer.scope = scope;
+        }
         empty_workspace(frame, self.layout, self.agent);
         let area = frame.area();
         let popup = popup(area);
@@ -50,6 +68,7 @@ impl View<'_> {
                     .wrap(Wrap { trim: false }),
                 inner,
             );
+            pointer.clear();
             return;
         }
         let sections = Layout::vertical([
@@ -109,10 +128,12 @@ impl View<'_> {
                     ]))
                 })
                 .collect();
-            frame.render_stateful_widget(
+            pointer.list(
+                frame,
                 List::new(items).highlight_style(theme::node_selected(true)),
                 sections[3],
                 state,
+                (1, super::super::mouse::ListTarget::Documents),
             );
         }
         let (status, color) = if let Some(reason) = self.listing.stop_reason {
@@ -153,6 +174,29 @@ impl View<'_> {
             ]),
             sections[5],
         );
+        pointer.button(
+            frame,
+            Rect::new(
+                popup.right().saturating_sub(9),
+                popup.bottom().saturating_sub(2),
+                8,
+                1,
+            ),
+            "[Open]",
+            super::super::mouse::Action::Accept,
+        );
+        pointer.button(
+            frame,
+            Rect::new(
+                popup.right().saturating_sub(9),
+                popup.bottom().saturating_sub(3),
+                8,
+                1,
+            ),
+            "[Path]",
+            super::super::mouse::Action::DocumentPath,
+        );
+        pointer.finish();
         if sections[2].width > 0 && sections[2].height > 0 {
             let x = label_width + Line::raw(input).width();
             frame.set_cursor_position((
@@ -373,7 +417,13 @@ mod tests {
         };
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal
-            .draw(|frame| view.draw(frame, &mut ListState::default()))
+            .draw(|frame| {
+                view.draw(
+                    frame,
+                    &mut ListState::default(),
+                    &mut super::super::super::mouse::Pointer::default(),
+                )
+            })
             .unwrap();
         let buffer = terminal.backend().buffer().clone();
         artifact(&buffer, name);
@@ -444,7 +494,13 @@ mod tests {
         };
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
         terminal
-            .draw(|frame| view.draw(frame, &mut ListState::default()))
+            .draw(|frame| {
+                view.draw(
+                    frame,
+                    &mut ListState::default(),
+                    &mut super::super::super::mouse::Pointer::default(),
+                )
+            })
             .unwrap();
         let screen = text(terminal.backend().buffer());
         for label in [
@@ -466,7 +522,13 @@ mod tests {
         view.path = None;
         view.notice = "";
         terminal
-            .draw(|frame| view.draw(frame, &mut ListState::default()))
+            .draw(|frame| {
+                view.draw(
+                    frame,
+                    &mut ListState::default(),
+                    &mut super::super::super::mouse::Pointer::default(),
+                )
+            })
             .unwrap();
         assert!(text(terminal.backend().buffer()).contains("Searching for .pen files"));
     }
