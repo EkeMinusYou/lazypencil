@@ -420,6 +420,33 @@ fn canvas_click_selects_topmost_nodes_and_blank_space_clears_without_editing() {
     });
 }
 #[test]
+fn canvas_marquee_keeps_completed_frames_during_drag_and_rejects_them_after_release() {
+    use crossterm::event::{MouseButton,MouseEventKind as M};
+    runtime().block_on(async {
+        let temp=TempDir::new().unwrap(); let(mut app,worker,picker)=selection_fixture(&temp).await;
+        let start=canvas_cell(&app,&picker,[-80.0,-150.0]);
+        let end=canvas_cell(&app,&picker,[-20.0,-90.0]);
+        app.mouse_event(mouse_input(M::Down(MouseButton::Left),start,KeyModifiers::NONE),&picker,&worker).await.unwrap();
+        app.mouse_event(mouse_input(M::Drag(MouseButton::Left),end,KeyModifiers::NONE),&picker,&worker).await.unwrap();
+        let first=tokio::time::timeout(Duration::from_secs(15),worker.next_presentation()).await.unwrap();
+        // A new pointer position can arrive before a completed frame is consumed.
+        let next=(end.0+2,end.1+2);
+        app.mouse_event(mouse_input(M::Drag(MouseButton::Left),next,KeyModifiers::NONE),&picker,&worker).await.unwrap();
+        assert!(app.selection.accept_overlay(first).unwrap(),"Pointer updates must not starve completed marquee frames");
+        paint_mouse(&mut app,130,34);
+        let next=(next.0+2,next.1+2);
+        app.mouse_event(mouse_input(M::Drag(MouseButton::Left),next,KeyModifiers::NONE),&picker,&worker).await.unwrap();
+        assert!(app.selection.presentation.is_some(),"Keep the previous marquee visible while its replacement renders");
+        let pending=tokio::time::timeout(Duration::from_secs(15),worker.next_presentation()).await.unwrap();
+        app.mouse_event(mouse_input(M::Up(MouseButton::Left),next,KeyModifiers::NONE),&picker,&worker).await.unwrap();
+        assert!(app.selection.ids.is_empty());
+        assert!(app.selection.presentation.is_none());
+        assert!(!app.selection.accept_overlay(pending).unwrap(),"A late drag frame must not restore the marquee after release");
+        app.conversation.close().await.unwrap(); worker.cancel();
+    });
+}
+
+#[test]
 fn canvas_marquee_selects_multiple_nodes_in_both_directions_and_escape_clears() {
     use crossterm::event::{MouseButton,MouseEventKind as M};
     runtime().block_on(async {

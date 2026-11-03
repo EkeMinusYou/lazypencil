@@ -238,11 +238,9 @@ impl Worker {
     pub(super) fn present(&self, mut request: super::selection::render::Request) -> Arc<AtomicU64> {
         // Use the same queue lock as scene updates so the wake cannot be lost.
         let _state = self.shared.request.lock().unwrap();
-        request.serial = self
-            .shared
-            .presentation_clock
-            .fetch_add(1, Ordering::Relaxed)
-            .wrapping_add(1);
+        // Drag updates share an epoch: finish the active frame while coalescing
+        // the next one, rather than starving the marquee until pointer release.
+        request.serial = self.shared.presentation_clock.load(Ordering::Relaxed);
         request.clock = self.shared.presentation_clock.clone();
         *self.shared.presentation_request.lock().unwrap() = Some(request);
         self.shared.wake.notify_one();

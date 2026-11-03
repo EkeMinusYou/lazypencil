@@ -190,6 +190,7 @@ impl App {
         picker: &graphics::Backend,
     ) {
         self.selection.cancel();
+        self.selection.invalidate();
         self.selection.origin = self.canvas_point(position, picker);
         self.selection.base.clone_from(&self.selection.ids);
         self.selection.additive = modifiers.contains(KeyModifiers::SHIFT);
@@ -317,8 +318,13 @@ impl App {
         picker: &graphics::Backend,
         worker: &super::Worker,
     ) -> Result<()> {
-        self.selection.presentation = None;
-        self.selection.invalidate();
+        // Keep the last visible marquee during a drag, and let an in-flight
+        // frame finish even when newer pointer positions are already queued.
+        // Releasing/cancelling the drag still invalidates all marquee frames.
+        if !self.selection.dragging() {
+            self.selection.presentation = None;
+            self.selection.invalidate();
+        }
         if self.selection.ids.is_empty() && self.selection.marquee.is_none() {
             return Ok(());
         }

@@ -214,6 +214,42 @@ pub fn canvas_selection(h: &mut Harness) -> Result {
     })?;
     let start = (preview.0 - 2, preview.1 + 2);
     let end = (agent.0 - 6, 29);
+    if h.case == "selection-kitty" {
+        // Inspect actual pixels before mouse-up, including a drag over empty space.
+        click(h, start)?;
+        h.visible("Selection cleared")?;
+        let frames = h.frames.camera_frames;
+        event(h, 0, start, false)?;
+        let corner = (start.0 + 8, start.1 + 4);
+        event(h, 32, corner, false)?;
+        h.wait("marquee border appears before release", 15.0, |h| {
+            h.frames.camera_frames > frames
+                && h.frames
+                    .last_camera
+                    .as_ref()
+                    .is_some_and(|f| f.has_color([59, 130, 246, 255]))
+        })?;
+        let first = h.frames.last_camera.as_ref().unwrap().rgba().to_vec();
+        let corner = (corner.0 + 5, corner.1 + 2);
+        event(h, 32, corner, false)?;
+        h.wait(
+            "marquee border follows the drag before release",
+            15.0,
+            |h| {
+                h.frames
+                    .last_camera
+                    .as_ref()
+                    .is_some_and(|f| f.has_color([59, 130, 246, 255]) && f.rgba() != first)
+            },
+        )?;
+        event(h, 0, corner, true)?;
+        h.wait("empty marquee disappears on release", 15.0, |h| {
+            h.frames
+                .images
+                .last()
+                .is_some_and(|f| !f.has_color([59, 130, 246, 255]))
+        })?;
+    }
     for (from, to) in [(start, end), (end, start)] {
         event(h, 0, from, false)?;
         event(h, 32, to, false)?;
