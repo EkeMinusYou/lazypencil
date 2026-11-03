@@ -1034,7 +1034,14 @@ fn terminal_background(h: &mut Harness) -> Result {
                 "Alpha needs no background query"
             );
             let frame = &h.frames.images[0];
-            assert!(frame.rgba().chunks_exact(4).any(|pixel| pixel[3] == 0));
+            assert!(
+                frame
+                    .rgba()
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .any(|pixel| pixel[3] == 0)
+            );
             assert!(frame.has_color([255, 0, 0, 255]));
             h.paste("背景確認")?;
         }
