@@ -190,6 +190,28 @@ fn application_identify_cli_emits_unique_generation_keys_and_ordered_compatible_
             format!("{}-402-{attempt}", identity.checkpoint)
         );
         let outputs = fs::read_to_string(output).unwrap();
+        let previous_keys: Vec<String> = serde_json::from_str(
+            outputs
+                .lines()
+                .find_map(|line| line.strip_prefix("previous_debug_keys="))
+                .unwrap(),
+        )
+        .unwrap();
+        let previous = identity.previous_debug_identities().unwrap();
+        assert_eq!(previous.len(), 2);
+        assert_eq!(previous_keys.len(), previous.len() * 4);
+        for (old, keys) in previous.iter().zip(previous_keys.as_chunks::<4>().0) {
+            let (legacy_primary, legacy_prefix) = old.compatible_keys(true).unwrap();
+            assert_eq!(
+                keys.as_slice(),
+                [
+                    old.compatible_primary.clone(),
+                    old.compatible_prefix.clone(),
+                    legacy_primary,
+                    legacy_prefix,
+                ]
+            );
+        }
         let (focused, focused_prefix) = identity.focused_keys().unwrap();
         for (key, expected) in [
             ("focused_checkpoint", format!("{focused}-402-{attempt}")),

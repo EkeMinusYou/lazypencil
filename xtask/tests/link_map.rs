@@ -131,12 +131,34 @@ fn normal_and_evidence_builds_share_every_compiler_and_linker_argument() {
             [
                 "--verbose",
                 "--config",
-                "profile.release.package.lazypencil.codegen-units=16"
+                "profile.release.package.lazypencil.codegen-units=1"
             ]
         );
         assert_eq!(normal.iter().filter(|arg| *arg == "--config").count(), 1);
         assert_eq!(normal.iter().filter(|arg| *arg == "--").count(), 1);
         assert!(normal.last().unwrap().ends_with(link_map::CACHE_PATH));
+    }
+}
+
+#[test]
+fn compact_release_policy_also_applies_without_link_maps() {
+    let temp = tempfile::tempdir().unwrap();
+    let target = temp.path().canonicalize().unwrap();
+    for host in ["x86_64-apple-darwin", "x86_64-pc-windows-msvc"] {
+        let command = link_map::cargo_arguments(host, &target, false).unwrap();
+        assert_eq!(
+            command,
+            [
+                "cargo",
+                "build",
+                "--locked",
+                "--release",
+                "--bin",
+                "lazypencil",
+                "--config",
+                "profile.release.package.lazypencil.codegen-units=1",
+            ]
+        );
     }
 }
 

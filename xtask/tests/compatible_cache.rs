@@ -531,17 +531,44 @@ fn release_codegen_override_rebuilds_only_application_units_and_keeps_test_edits
         .find_map(|line| line.strip_prefix("host: "))
         .unwrap();
     let current = link_map::cargo_arguments(host, &f.target, true).unwrap();
-    let mut baseline = current.clone();
-    let config = baseline.iter().position(|arg| arg == "--config").unwrap();
-    drop(baseline.drain(config..config + 2));
-    let (before, _) = f.cargo_units(&baseline);
+    let (before, compiler_commands) = f.cargo_units(&current);
     assert_eq!(before.len(), 3);
     assert!(before.values().all(|fresh| !fresh));
-    let (changed, compiler_commands) = f.cargo_units(&current);
+    let application_commands = compiler_commands
+        .lines()
+        .filter(|line| line.contains("--crate-name lazypencil "))
+        .collect::<Vec<_>>();
+    assert_eq!(application_commands.len(), 2);
+    assert!(
+        application_commands
+            .iter()
+            .all(|line| line.contains("codegen-units=1"))
+    );
+    let compact_executable = fs::read(f.target.join("release/lazypencil")).unwrap();
+    let compact_map = fs::read(link_map::path(&f.target)).unwrap();
+    let mut verification = link_map::verification_cargo_arguments();
+    verification.extend(["--verbose".into(), "--message-format=json".into()]);
+    let (changed, compiler_commands) = f.cargo_units(&verification);
     assert!(changed["unchanged_dependency:lib"]);
     assert!(!changed["lazypencil:lib"] && !changed["lazypencil:bin"]);
     assert_eq!(compiler_commands.matches("codegen-units=16").count(), 2);
     assert!(!compiler_commands.contains("--crate-name unchanged_dependency"));
+    process::checked(
+        Command::new(env!("CARGO_BIN_EXE_xtask"))
+            .current_dir(&f.source)
+            .env("CARGO_TARGET_DIR", &f.target)
+            .arg("verify-release"),
+        Duration::from_secs(120),
+    )
+    .unwrap();
+    let (compact, _) = f.cargo_units(&current);
+    assert!(compact.values().all(|fresh| *fresh));
+    assert_eq!(
+        fs::read(f.target.join("release/lazypencil")).unwrap(),
+        compact_executable,
+        "Distribution must restore the compact executable after verification"
+    );
+    assert_eq!(fs::read(link_map::path(&f.target)).unwrap(), compact_map);
     assert!(link_map::path(&f.target).is_file());
     fs::write(
         f.source.join("tests/one.rs"),
@@ -563,6 +590,16 @@ fn release_codegen_override_rebuilds_only_application_units_and_keeps_test_edits
 #[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
 #[test]
 fn release_recipe_transition_reuses_debug_only_and_overlays_the_new_release_delta() {
+    for recipe in [
+        "root-rustc-release-map-app-cgu16-v2",
+        "root-rustc-release-map-v1",
+    ] {
+        release_recipe_transition(recipe);
+    }
+}
+
+#[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
+fn release_recipe_transition(previous_recipe: &str) {
     use lazypencil_xtask::evidence::link_map;
     let f = Fixture::new();
     fs::write(
@@ -587,11 +624,20 @@ fn release_recipe_transition_reuses_debug_only_and_overlays_the_new_release_delt
         .iter()
         .position(|arg| arg == "--config")
         .unwrap();
-    drop(old_command.drain(config..config + 2));
+    if previous_recipe == "root-rustc-release-map-app-cgu16-v2" {
+        old_command[config + 1] = "profile.release.package.lazypencil.codegen-units=16".into();
+    } else {
+        drop(old_command.drain(config..config + 2));
+    }
     f.build(&[]);
     f.cargo_units(&old_command);
     let current = f.identity();
     let old = current.previous_debug_identity().unwrap().unwrap();
+    let old = if previous_recipe == "root-rustc-release-map-v1" {
+        old.previous_debug_identity().unwrap().unwrap()
+    } else {
+        old
+    };
     cache::stage(&f.source, &f.target, &f.full, &old).unwrap();
     let legacy: Value = util::json(&f.full.join("manifest.json")).unwrap();
     assert!(

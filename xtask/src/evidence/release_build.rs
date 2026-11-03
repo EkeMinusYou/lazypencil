@@ -3,7 +3,22 @@
 use anyhow::{Context, Result, ensure};
 use std::path::Path;
 
-pub const RECIPE: &str = "root-rustc-release-map-app-cgu16-v2";
+pub const RECIPE: &str = "root-rustc-release-map-app-cgu1-v3";
+
+pub fn verification_cargo_arguments() -> Vec<String> {
+    [
+        "cargo",
+        "build",
+        "--locked",
+        "--release",
+        "--bin",
+        "lazypencil",
+        "--config",
+        "profile.release.package.lazypencil.codegen-units=16",
+    ]
+    .map(str::to_owned)
+    .to_vec()
+}
 
 pub fn cargo_arguments(host: &str, target: &Path, json: bool) -> Result<Vec<String>> {
     let extra = rustc_arguments(host, &super::link_map::path(target))?;
@@ -18,15 +33,14 @@ pub fn cargo_arguments(host: &str, target: &Path, json: bool) -> Result<Vec<Stri
     .map(str::to_owned)
     .to_vec();
     if extra.is_some() {
-        // Partition only our application package. Dependency, build-script
-        // and native compiler settings retain their verified cache identity.
-        // Cargo still decides which application units need recompilation.
-        arguments.extend([
-            "--verbose".into(),
-            "--config".into(),
-            "profile.release.package.lazypencil.codegen-units=16".into(),
-        ]);
+        arguments.push("--verbose".into());
     }
+    // Distribution evidence and final measurements use the compact executable.
+    // Override only our application; dependencies retain their cache identity.
+    arguments.extend([
+        "--config".into(),
+        "profile.release.package.lazypencil.codegen-units=1".into(),
+    ]);
     if json {
         arguments.push("--message-format=json".into());
     }

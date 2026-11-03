@@ -152,7 +152,9 @@ pub fn collect_inputs(map: &Path, output: &Path) -> Result<Value> {
     Ok(report)
 }
 
-pub use super::release_build::{RECIPE, cargo_arguments, rustc_arguments};
+pub use super::release_build::{
+    RECIPE, cargo_arguments, rustc_arguments, verification_cargo_arguments,
+};
 pub const CACHE_PATH: &str = "release/lazypencil.map";
 
 pub fn path(target: &Path) -> PathBuf {

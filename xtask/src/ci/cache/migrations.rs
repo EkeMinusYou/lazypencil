@@ -54,20 +54,33 @@ pub(super) fn previous_native_tree(
 }
 
 impl ApplicationIdentity {
-    /// One reviewed release-only transition. All native/default/test inputs
+    /// Reviewed release-only transitions. All native/default/test inputs
     /// remain bound to the old fingerprint; callers may restore debug only.
     pub fn previous_debug_identity(&self) -> Result<Option<Self>> {
-        if self.release_only
-            || self.recipe["release_recipe"] != "root-rustc-release-map-app-cgu16-v2"
-        {
+        if self.release_only {
             return Ok(None);
         }
+        let previous = match self.recipe["release_recipe"].as_str() {
+            Some("root-rustc-release-map-app-cgu1-v3") => "root-rustc-release-map-app-cgu16-v2",
+            Some("root-rustc-release-map-app-cgu16-v2") => "root-rustc-release-map-v1",
+            _ => return Ok(None),
+        };
         let mut old = self.clone();
-        old.recipe["release_recipe"] = json!("root-rustc-release-map-v1");
+        old.recipe["release_recipe"] = json!(previous);
         old.fingerprint = util::digest(stable_json(&old.recipe));
         old.primary = self.primary.replace(&self.fingerprint, &old.fingerprint);
         old.checkpoint = self.checkpoint.replace(&self.fingerprint, &old.fingerprint);
         (old.compatible_primary, old.compatible_prefix) = old.compatible_keys(false)?;
         Ok(Some(old))
+    }
+
+    pub fn previous_debug_identities(&self) -> Result<Vec<Self>> {
+        let mut identities = Vec::new();
+        let mut previous = self.previous_debug_identity()?;
+        while let Some(identity) = previous {
+            previous = identity.previous_debug_identity()?;
+            identities.push(identity);
+        }
+        Ok(identities)
     }
 }

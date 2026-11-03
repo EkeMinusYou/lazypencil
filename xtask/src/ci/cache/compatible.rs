@@ -108,9 +108,12 @@ fn compatible_inputs(
         "Cached source set changed"
     );
     let mut accepted = None;
-    for (mut old, debug_only) in std::iter::once((identity.clone(), false))
-        .chain(identity.previous_debug_identity()?.map(|old| (old, true)))
-    {
+    for (mut old, debug_only) in std::iter::once((identity.clone(), false)).chain(
+        identity
+            .previous_debug_identities()?
+            .into_iter()
+            .map(|old| (old, true)),
+    ) {
         old.recipe["inputs"] = serde_json::to_value(inputs)?;
         old.fingerprint = util::digest(stable_json(&old.recipe));
         if old.fingerprint == report.fingerprint

@@ -83,6 +83,26 @@ not evidence that a run stopped: reconnect to that same run instead of starting 
 Starting full CI after focused success needs a concrete change-related reason or a
 requested integration/release outcome.
 
+## Optimized functional verification
+
+Use the faster application compiler settings when functional verification needs an
+optimized executable:
+
+```sh
+cargo xtask verify-release
+```
+
+This overrides only the application's release codegen units to 16. Dependencies, native
+libraries, ThinLTO and the shared target directory keep their existing settings. The
+output is still `release/lazypencil` under the configured target directory. Only the
+application compiler settings change; Cargo reuses cached outputs when available.
+
+Use the default CGU1 release build for installation, distribution and final performance
+acceptance. The CI release lane, candidate packaging and final measurements share that
+compact recipe. Rebuild with the command below after functional verification before
+installing or distributing the executable. A successful CGU16 check is not final
+performance acceptance for the CGU1 executable.
+
 ## Local executable updates
 
 Batch visual adjustments while using a development executable. When a local installation

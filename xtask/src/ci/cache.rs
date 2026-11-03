@@ -289,12 +289,17 @@ impl Command {
                 )?;
                 let value = match operation.as_str() {
                     "identify" => {
-                        let previous_debug = identity.previous_debug_identity()?;
+                        let mut previous_debug_keys = Vec::new();
+                        for old in identity.previous_debug_identities()? {
+                            let (legacy_primary, legacy_prefix) = old.compatible_keys(true)?;
+                            previous_debug_keys.extend([
+                                old.compatible_primary,
+                                old.compatible_prefix,
+                                legacy_primary,
+                                legacy_prefix,
+                            ]);
+                        }
                         let (legacy_primary, legacy_prefix) = identity.compatible_keys(true)?;
-                        let previous_legacy = previous_debug
-                            .as_ref()
-                            .map(|old| old.compatible_keys(true))
-                            .transpose()?;
                         let checkpoint = if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
                         {
                             application_checkpoint(
@@ -356,28 +361,8 @@ impl Command {
                                 ("legacy_compatible_primary".into(), legacy_primary),
                                 ("legacy_compatible_prefix".into(), legacy_prefix),
                                 (
-                                    "previous_legacy_primary".into(),
-                                    previous_legacy
-                                        .as_ref()
-                                        .map_or_else(String::new, |keys| keys.0.clone()),
-                                ),
-                                (
-                                    "previous_legacy_prefix".into(),
-                                    previous_legacy
-                                        .as_ref()
-                                        .map_or_else(String::new, |keys| keys.1.clone()),
-                                ),
-                                (
-                                    "previous_debug_primary".into(),
-                                    previous_debug.as_ref().map_or_else(String::new, |old| {
-                                        old.compatible_primary.clone()
-                                    }),
-                                ),
-                                (
-                                    "previous_debug_prefix".into(),
-                                    previous_debug.as_ref().map_or_else(String::new, |old| {
-                                        old.compatible_prefix.clone()
-                                    }),
+                                    "previous_debug_keys".into(),
+                                    serde_json::to_string(&previous_debug_keys)?,
                                 ),
                             ]),
                         )?;

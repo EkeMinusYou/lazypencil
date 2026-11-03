@@ -4,7 +4,7 @@
 - Commit completed changes proactively in coherent, reviewable units after the relevant checks pass. Keep unrelated changes in separate commits.
 - Limit local build parallelism to two jobs to balance CPU usage and build time. Do not run multiple builds concurrently.
 - Cargo defaults to two jobs through `.cargo/config.toml`. The vendored Skia build forwards Cargo's `NUM_JOBS` to Ninja, so native builds use the same job limit.
-- Use a release build (`cargo build --locked --release --bin lazypencil`) when replacing the user's local executable. Keep debug builds for development and tests.
+- Use `cargo xtask verify-release` (application CGU16) for optimized functional verification. Use the default release build (`cargo build --locked --release --bin lazypencil`, CGU1) for local installation, distribution and final performance acceptance. Keep debug builds for development and tests.
 - Choose validation from the changed behavior before editing. Ordinary fixes finish after relevant checks and a coherent commit; do not expand them into product-wide release work.
 - Start with focused tests. Broaden validation for shared behavior, dependency/build changes, or evidence of a regression; a passing focused check is not a claim that the full suite passed.
 - Reuse an existing CI run for the same commit and inputs. Do not dispatch full CI after passing targeted checks without a concrete reason. Watch the run with `cargo xtask ci watch --run ID --head SHA` instead of repeated model-driven status queries.

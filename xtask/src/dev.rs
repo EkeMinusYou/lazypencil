@@ -4,6 +4,24 @@ use anyhow::{Context, Result, ensure};
 use clap::Args;
 use std::{io::Write, path::Path, process::Command, time::Duration};
 
+pub fn verify_release() -> Result<()> {
+    let invocation = crate::evidence::link_map::verification_cargo_arguments();
+    eprintln!("Running cargo {}", invocation[1..].join(" "));
+    let result = process::output(
+        Command::new(&invocation[0])
+            .args(&invocation[1..])
+            .current_dir(util::root()),
+        Duration::from_secs(3600),
+    )?;
+    std::io::stdout().write_all(&result.stdout)?;
+    std::io::stderr().write_all(&result.stderr)?;
+    ensure!(
+        !result.timed_out && result.status.success(),
+        "Optimized functional-verification build failed"
+    );
+    Ok(())
+}
+
 #[derive(Args)]
 pub struct Arguments {
     /// Check the configuration without rendering and TUI features.

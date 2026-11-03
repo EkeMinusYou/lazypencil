@@ -14,6 +14,8 @@ struct Arguments {
 #[derive(Subcommand)]
 enum Task {
     Test(lazypencil_xtask::dev::Arguments),
+    /// Build an optimized executable for functional verification (application CGU16).
+    VerifyRelease,
     Evidence(lazypencil_xtask::evidence::Arguments),
     #[command(subcommand)]
     Icons(lazypencil_xtask::icons::Command),
@@ -36,6 +38,7 @@ enum Task {
 fn main() -> Result<()> {
     match Arguments::parse().command {
         Task::Test(arguments) => arguments.run(),
+        Task::VerifyRelease => lazypencil_xtask::dev::verify_release(),
         Task::Evidence(arguments) => arguments.run(),
         Task::Icons(command) => command.run(),
         Task::Shader(arguments) => arguments.run(),
