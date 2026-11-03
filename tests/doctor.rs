@@ -73,6 +73,11 @@ fn doctor_missing_adapters_explain_installation_and_strict_mode_without_creating
     );
     assert_eq!(value["agents"][0]["status"], "missing");
     assert_eq!(value["summary"]["status"], "error");
+    assert!(check(&value, "platform")["details"]["minimum_os"].is_string());
+    #[cfg(feature = "rendering")]
+    assert_eq!(check(&value, "fonts.loading")["status"], "ok");
+    #[cfg(not(feature = "rendering"))]
+    assert_eq!(check(&value, "fonts.loading")["status"], "not_checked");
     for key in [
         "version",
         "release",
@@ -137,7 +142,9 @@ fn doctor_checks_acp_and_login_by_default_without_sessions_prompts_logins_or_cre
     let root = TempDir::new().unwrap();
     settings(root.path(), "auth-inspect-account", "");
     let (output, value) = doctor(root.path(), &["--strict"]);
-    assert!(output.status.success(), "{value}");
+    let platform_errors = u64::from(check(&value, "platform")["status"] == "error");
+    assert_eq!(value["summary"]["errors"], platform_errors, "{value}");
+    assert_eq!(output.status.success(), platform_errors == 0, "{value}");
     assert_eq!(check(&value, "agents.codex.communication")["status"], "ok");
     assert_eq!(check(&value, "agents.codex.authentication")["status"], "ok");
     assert_eq!(value["agents"][0]["status"], "ready");
@@ -295,8 +302,69 @@ fn doctor_checks_configured_fonts_and_rejects_a_file_as_a_data_directory() {
     fs::write(root.path().join("absent-data"), b"not a directory").unwrap();
     let (_, value) = doctor(root.path(), &[]);
     assert_eq!(check(&value, "fonts")["status"], "error");
+    assert_eq!(check(&value, "fonts.loading")["status"], "not_checked");
     assert_eq!(check(&value, "data_directory")["status"], "error");
     assert_eq!(check(&value, "agents.codex.authentication")["status"], "ok");
+}
+
+#[cfg(feature = "rendering")]
+#[test]
+fn doctor_loads_all_configured_font_faces_and_reports_corrupt_files_or_unavailable_families() {
+    for scenario in ["valid", "corrupt", "missing-family"] {
+        let root = TempDir::new().unwrap();
+        settings(root.path(), "auth-inspect-account", "");
+        let font = root.path().join("settings/custom.ttf");
+        if scenario == "corrupt" {
+            fs::write(&font, b"This is not a font file.").unwrap();
+        } else {
+            fs::copy(
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fonts/regular.ttf"),
+                &font,
+            )
+            .unwrap();
+        }
+        let configuration = root.path().join("settings/config.toml");
+        let mut text = fs::read_to_string(&configuration).unwrap();
+        text.push_str("\n[fonts]\nfiles=['custom.ttf']\n");
+        if scenario == "missing-family" {
+            text.push_str("default_family='Doctor Missing Font Family 7fdd57e2'\n");
+        }
+        fs::write(configuration, text).unwrap();
+        let (output, value) = doctor(root.path(), &["--strict"]);
+        assert_eq!(
+            check(&value, "fonts")["status"],
+            "ok",
+            "Availability does not prove a font is loadable"
+        );
+        assert_eq!(
+            check(&value, "fonts.loading")["status"],
+            if scenario == "valid" { "ok" } else { "error" },
+            "{value}"
+        );
+        let expected_errors = u64::from(scenario != "valid")
+            + u64::from(check(&value, "platform")["status"] == "error");
+        assert_eq!(value["summary"]["errors"], expected_errors, "{value}");
+        assert_eq!(output.status.success(), expected_errors == 0, "{value}");
+        if scenario == "valid" {
+            assert!(
+                check(&value, "fonts.loading")["details"]["loaded_faces"]
+                    .as_u64()
+                    .unwrap()
+                    >= 2
+            );
+            assert!(
+                check(&value, "fonts.loading")["details"]["families"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|family| family == "LP Test Sans")
+            );
+        }
+        assert_eq!(check(&value, "preview.renderer")["status"], "ok");
+        assert!(
+            !root.path().join("absent-data").exists() && !root.path().join("absent-locks").exists()
+        );
+    }
 }
 
 #[cfg(unix)]

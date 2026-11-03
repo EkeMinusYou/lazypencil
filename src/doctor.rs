@@ -101,6 +101,7 @@ pub fn run(options: &Options, data_override: Option<PathBuf>, json_output: bool)
         && release["version"] == env!("CARGO_PKG_VERSION");
     report.add("build", Status::Ok, format!("lazypencil {} ({}/{})", env!("CARGO_PKG_VERSION"), std::env::consts::OS, std::env::consts::ARCH), None,
         json!({"rendering":cfg!(feature="rendering"),"tui":cfg!(feature="tui"),"release_ready":release_ready}));
+    environment::platform(&mut report, &release);
     report.add(
         "rendering",
         if cfg!(feature = "rendering") {

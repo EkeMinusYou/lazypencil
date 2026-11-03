@@ -105,7 +105,8 @@ To build the current source instead, follow [Build from source](docs/development
 lazypencil doctor
 ```
 
-Doctor checks user configuration, data/lock directory access, configured font files,
+Doctor checks the supported OS/CPU and macOS version, user configuration, data/lock
+directory access, configured font-file availability and loading,
 the optional Chromium installation, and installed Codex/Claude ACP adapters. It starts
 adapters to check ACP connectivity, reported versions, login state and mid-turn input
 support. It also renders and verifies a small test image; interactive text output

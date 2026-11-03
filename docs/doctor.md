@@ -22,9 +22,10 @@ errors and cancellation retain their normal exit codes.
 | Area | Automatic checks |
 | --- | --- |
 | Build | Version, platform, compiled rendering/TUI features and release metadata |
+| Supported platform | OS/CPU release target and minimum macOS version from the release declaration |
 | User configuration | Selected config path, syntax and validated preferences; an absent file uses defaults |
 | Directories | Data/lock paths and access to existing parent directories, without creating probe files |
-| Fonts | Availability of configured font files and search directories |
+| Fonts | File/search-directory availability, loading all configured faces, and the configured default/fallback families |
 | ACP agents | Executable resolution, multiple PATH copies, Node.js when needed, ACP v1 initialization and reported version |
 | Authentication | Reported login state and agreement with the selected subscription/API route |
 | Steering | The same advertised capability and compatible-version checks used by the TUI |
@@ -85,6 +86,10 @@ hint or fix a custom adapter path. Sign in through the selected runtime when it
 reports a signed-out state. Doctor does not install dependencies or initiate login.
 
 Directory checks inspect existing permissions rather than testing an actual write.
-Font availability does not certify font parsing. The optional Chromium check does not
-certify browser launchability. Use `lazypencil --json runtime status` and the
+Font availability and actual loading have separate results. Rendering builds load the
+configured faces and default/fallback families through the normal font loader;
+core builds report font loading as not checked. The supported-platform check reads
+the macOS product version locally; an older macOS is an error, while an unknown
+version or an unsupported release OS/CPU is a warning. The optional Chromium check
+does not certify browser launchability. Use `lazypencil --json runtime status` and the
 [runtime reference](runtimes.md) for browser-specific details.

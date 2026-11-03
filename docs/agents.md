@@ -59,9 +59,10 @@ preview checks, including terminal transport receipts and their limits.
 Configuration, directory permission checks, configured font availability, terminal
 facts and optional Chromium installation status are included. Doctor does not create
 data/lock/configuration directories or launch Chromium. Directory checks inspect
-existing permissions rather than writing probe files; font-file availability does not
-certify font parsing. Doctor also exercises image rendering and terminal transport
-automatically in an interactive terminal, without requesting user confirmation.
+existing permissions rather than writing probe files. Font-file availability and
+actual loading are reported separately. Doctor also exercises image rendering and
+terminal transport automatically in an interactive terminal, without requesting
+user confirmation.
 
 ## Send a prompt
 
