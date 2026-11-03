@@ -299,7 +299,7 @@ fn real_native_clipboard_ctrl_v_preserves_two_images_and_delivers_their_pixels()
     );
     let binary = Path::new(env!("CARGO_BIN_EXE_lazypencil"));
     let mut h = terminal::Harness::start(binary, &root, &document, environment, "kitty", None)?;
-    h.visible("Describe a design change…")?;
+    h.visible("✎ Prompt")?;
     let draft = "ネイティブ画像を二つ貼り付ける";
     h.paste(draft)?;
     h.draft(draft)?;
