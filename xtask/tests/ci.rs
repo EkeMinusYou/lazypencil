@@ -592,7 +592,37 @@ fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() 
         "if: (inputs.phase == 'focus' || inputs.lane == 'release') && inputs.measure_tui"
     ));
     let ci = std::fs::read_to_string(util::root().join(".github/workflows/ci.yml")).unwrap();
-    assert!(ci.contains("measure_tui: ${{ needs.plan.outputs.measure_tui == 'true' }}"));
+    assert!(ci.contains(
+        "measure_tui: ${{ github.event_name == 'workflow_dispatch' && inputs.measure_tui == true }}"
+    ));
+    assert!(!ci.contains("measure_tui: ${{ needs.plan.outputs.measure_tui == 'true' }}"));
+    let dispatch = ci
+        .split("\n  workflow_dispatch:\n")
+        .nth(1)
+        .unwrap()
+        .split("\n  workflow_call:\n")
+        .next()
+        .unwrap();
+    let measurement = dispatch
+        .split("      measure_tui:\n")
+        .nth(1)
+        .unwrap()
+        .split("      rebuild_application:\n")
+        .next()
+        .unwrap();
+    assert!(measurement.contains("type: boolean\n"));
+    assert!(measurement.contains("default: false\n"));
+    assert!(workflow.contains("--chromium-resources"));
+    assert!(workflow.contains("--enforce-targets --allocation-diagnostics=true"));
+    let release_smoke = workflow
+        .split("id: release-smoke\n")
+        .nth(1)
+        .unwrap()
+        .split("      - name:")
+        .next()
+        .unwrap();
+    assert!(release_smoke.contains("ci native release\n"));
+    assert!(!release_smoke.contains("inputs.measure_tui"));
     let native = ci
         .split("\n  native:\n")
         .nth(1)

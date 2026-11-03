@@ -16,6 +16,10 @@ on:
         type: choice
         default: auto
         options: [auto, macos-15]
+      measure_tui:
+        description: Run the full TUI latency and resource acceptance measurement
+        type: boolean
+        default: false
       rebuild_application:
         description: Measure application recompilation while retaining dependency caches
         type: boolean
@@ -28,6 +32,9 @@ on:
       focus_os:
         type: string
         default: auto
+      measure_tui:
+        type: boolean
+        default: false
       rebuild_application:
         type: boolean
         default: false
@@ -175,7 +182,7 @@ jobs:
       os: ${{ matrix.os }}
       suite: ${{ needs.plan.outputs.suite }}
       targets: ${{ needs.plan.outputs.targets }}
-      measure_tui: ${{ needs.plan.outputs.measure_tui == 'true' }}
+      measure_tui: ${{ github.event_name == 'workflow_dispatch' && inputs.measure_tui == true }}
       terminal_reproduction: ${{ needs.plan.outputs.terminal_reproduction_full == 'true' }}
       rebuild_application: ${{ inputs.rebuild_application == true }}
 

@@ -552,7 +552,7 @@ jobs:
           path: ${{ runner.temp }}/terminal-evidence
           if-no-files-found: error
           retention-days: 3
-      - name: Measure changed TUI performance code before the full matrix
+      - name: Measure TUI performance when explicitly requested
         id: tui-measurement
         if: (inputs.phase == 'focus' || inputs.lane == 'release') && inputs.measure_tui
         timeout-minutes: 15
