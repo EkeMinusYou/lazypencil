@@ -1,32 +1,38 @@
 # lazypencil
 
-A terminal-first editor, renderer, and MCP server for `.pen` design files, written in Rust.
+**Design interfaces with AI, from your terminal.**
 
-- Read and edit 2.19 and 2.21 documents while preserving comments and unrelated content.
-- Render native graphics and Japanese text with Skia CPU, SkParagraph, and bundled Noto Sans JP.
-- Run script-generated designs, browser nodes, and GLSL fills/effects.
-- Use Codex or Claude through ACP, or connect an external agent through MCP.
-- Browse previews, attach images, and manage conversations from the terminal.
+lazypencil is an open-source editor for `.pen` files, the design document format
+used by Pencil. Describe a screen or a change to Codex or Claude, then review the
+result in a terminal preview. Your design stays in a local, editable file.
+
+- **Create and refine designs:** start from a prompt, edit an existing document,
+  or attach a reference image.
+- **Review as you work:** browse the node tree, pan and zoom the preview, check
+  layout diagnostics, and restore checkpoints.
+- **Use your preferred workflow:** chat inside lazypencil, connect your own AI
+  client through MCP, or inspect and render files from the command line.
+- **Render locally:** export PNGs with Skia, including Japanese text with bundled
+  Noto Sans JP fonts.
+
+[Install](#install) · [Quick start](#quick-start) ·
+[MCP](#mcp-and-ai-prompts) · [CLI](#cli) ·
+[Documentation](#documentation-and-development)
 
 ## Supported environment
 
-The released platform is **macOS 15.7.9 or later on Apple Silicon**. The initial
-terminal baseline is direct local Kitty 0.49.2 with Kitty Graphics Protocol and
-WezTerm `20240203-110809-5046fc22` with Sixel. Other terminal/input-method combinations,
-tmux, and SSH require their own compatibility checks. Linux and Windows code is
-retained for future support; Intel Mac is unsupported.
-
-Pencil-specific browser device presets and shader-fill `pencil:object` sampling
-are unsupported. Basic `desktop`/`phone`/`tablet` modes and object sampling in
-shader effects are supported. Unsupported combinations produce explicit errors.
-The project does not claim complete Pencil compatibility; see
-[dynamic-content limitations](docs/dynamic-content.md#initial-compatibility-limitations).
+**macOS 15.7.9 or later on Apple Silicon.** For image previews, use direct local
+Kitty 0.49.2 (Kitty Graphics Protocol) or WezTerm `20240203-110809-5046fc22` (Sixel),
+the initial terminal baselines. Other terminals, input methods, tmux, and SSH need
+separate compatibility checks. Linux, Windows, and Intel Mac are not supported
+release targets. See [terminal support and fallbacks](docs/tui.md#initial-terminal-support).
 
 ## Install
 
-Download the Apple Silicon archive from [GitHub Releases](https://github.com/EkeMinusYou/lazypencil/releases).
-Verify its [build provenance](docs/development.md#distribution-and-build-provenance),
-then extract the complete directory:
+Download `lazypencil-0.1.0-aarch64-apple-darwin.tar.gz` from
+[GitHub Releases](https://github.com/EkeMinusYou/lazypencil/releases).
+See [provenance verification](docs/development.md#distribution-and-build-provenance)
+for checking the download, then extract it:
 
 ```sh
 tar -xzf lazypencil-0.1.0-aarch64-apple-darwin.tar.gz
@@ -35,135 +41,138 @@ lazypencil --version
 lazypencil --json doctor
 ```
 
-Add the extracted `bin` directory to your shell startup configuration. Keep its
-matching source, release declaration, and license files together. Basic editing
-and native rendering require neither Rust nor Chromium. Browser nodes and GLSL
-need `lazypencil runtime setup chromium`; AI prompts need an installed and
-authenticated [ACP adapter](docs/agents.md#install-and-authenticate-an-adapter).
+Add the extracted `bin` directory to your shell startup configuration to keep it
+on `PATH`. Keep the complete extracted directory, including its source and license
+materials. The prebuilt package needs no Rust toolchain.
 
-The examples below describe the current source. Post-release changes are listed
-under **Unreleased** in the [changelog](CHANGELOG.md); an older installed binary
-may expose a different interface. Use its `--help` to check available options.
+To build the current source instead, follow [Build from source](docs/development.md#build-from-source).
 
-## CLI
+> This README describes the current source. Release v0.1.0 has an older MCP
+> interface and different default keys. Check the installed binary's `--help`
+> and TUI help with F1; changes are listed in the [changelog](CHANGELOG.md).
 
-```sh
-lazypencil inspect examples/welcome.pen
-lazypencil validate examples/welcome.pen --scope layout
-lazypencil layout examples/welcome.pen
-lazypencil render examples/welcome.pen --output welcome.png
-```
+## Quick start
 
-`--json` returns structured results/errors; `prompt --json` streams NDJSON.
-`layout` reports measured geometry, text metrics, and diagnostics. Layout or
-structural validation complements a rendered visual check; neither certifies
-complete graphics compatibility.
+### 1. Connect an agent
 
-Edits use an atomic operation array. Read the current `revision` and
-`dependency_revision` with `inspect`, then apply a file such as:
+Install and authenticate a [Codex or Claude ACP adapter](docs/agents.md#install-and-authenticate-an-adapter).
+The adapter bridges lazypencil and your AI runtime: Codex uses `codex-acp`, and
+Claude uses `claude-agent-acp`. Put the selected executable on `PATH` before
+starting. Authentication stays with the external runtime.
 
-```json
-[{"op":"update","target":"heading","set":{"content":"My project"}}]
-```
+### 2. Create your first design
 
 ```sh
-lazypencil apply design.pen --operations edits.json \
-  --expected-revision REVISION --expected-dependency-revision DEPENDENCY_REVISION \
-  --request-id edit-1
+lazypencil tui new.pen --create --agent codex
 ```
 
-`--dry-run` validates without saving. Retry an ambiguous result with the same
-request ID and payload. `history`, `restore`, and `recover` expose checkpoints and
-interrupted-save recovery. See the [editing and query reference](docs/mcp.md).
-Editable examples for graphics, meshes, icons, scripts, browser nodes, and shaders
-are in [examples](examples/).
+Use `--agent claude` for Claude. In the prompt panel, describe what you want:
 
-## Configuration
+```text
+Design a settings screen for a note-taking app, with a sidebar and light theme.
+```
+
+Submit using the binding shown in the footer. Review the preview, then ask for
+changes such as “Make the sidebar narrower and increase the spacing.” Tab moves
+between panels; F1 shows the available controls. `--create` creates a new document
+and refuses to overwrite an existing file.
+
+### 3. Continue an existing design
 
 ```sh
-lazypencil config init --user
-lazypencil config show --user
-lazypencil config init
-lazypencil config show design.pen
+lazypencil tui new.pen --agent codex
 ```
 
-On macOS/Linux, user settings use `$XDG_CONFIG_HOME/lazypencil/config.toml`, falling
-back to `~/.config/lazypencil/config.toml`. `LAZYPENCIL_CONFIG_DIR` overrides the
-directory. The former macOS location is no longer read or migrated. Project
-`lazypencil.toml` overrides individual fields; arrays replace inherited arrays.
-Project design instructions and executable settings require separate user grants.
-See [configuration](docs/configuration.md) for the complete settings and trust rules.
-
-Enable Bash, Zsh, or Fish Tab completion with `lazypencil completions SHELL`; see
-[shell setup](docs/completions.md).
+Attach a reference with `--image reference.png` at launch, or use `/attach` inside
+the TUI. `/history` opens checkpoints and `/logs` opens saved conversations.
+See [TUI controls](docs/tui.md) and [image attachments](docs/image-attachments.md).
 
 ## MCP and AI prompts
 
-Register one file-independent MCP server per client:
+### Use lazypencil from your AI client
+
+Connect lazypencil as a **Model Context Protocol (MCP)** server to let your existing
+AI client open, edit, validate, and render `.pen` files. This route uses the
+client's AI connection and does not need an ACP adapter.
+
+The registration commands below use the current source's MCP interface:
 
 ```sh
+# Codex
 codex mcp add lazypencil -- lazypencil mcp
+
+# Claude Code
 claude mcp add --scope user --transport stdio lazypencil -- lazypencil mcp
 ```
 
-Use an absolute executable path if the client cannot resolve your `PATH`. Ask the
-agent to open or create an absolute `.pen` path. The server returns a connection-local
-`document_id`, required by subsequent document tools. `mcp --file` is no longer
-accepted. An external MCP client supplies its own AI and needs no ACP adapter.
+Use an absolute executable path if your client cannot resolve `lazypencil` on
+`PATH`. Register once per client, then ask it to create or open an absolute `.pen`
+path. For example: “Open /absolute/path/new.pen, improve the spacing, and render
+the result.” See the [MCP reference](docs/mcp.md) for tools and editing operations.
 
-For lazypencil's own conversations, install/authenticate an [ACP adapter](docs/agents.md):
+### Send a prompt from the command line
 
-```sh
-lazypencil prompt new.pen --create --agent codex "日本語の設定画面を作って"
-lazypencil prompt new.pen --agent claude --image reference.png "Improve this design"
-```
-
-`--model`, `--mode`, `--auth`, and `--session` control the connection. Credentials
-stay with the external runtime. Document-tool approval does not authorize arbitrary
-shell operations. Image attachments are reference inputs; importing them into the
-design is a separate edit. Built-in English guides and three editable styles are
-available through `guidance`, `styles`, and `style`; they preserve the user's language.
-
-## Terminal UI
+With an ACP adapter configured, you can also run a design request without opening
+the TUI:
 
 ```sh
-lazypencil
-lazypencil tui design.pen
-lazypencil tui new.pen --create --agent claude --image reference.png
+lazypencil prompt new.pen --agent codex "Improve the spacing and hierarchy"
+lazypencil prompt new.pen --agent claude --image reference.png "Use this visual style"
 ```
 
-With no file, a bounded recursive picker opens over the empty workspace. Adapter
-transport preparation runs in the background; document sessions and previews start
-after selection. A bare file argument such as `lazypencil design.pen` is unsupported.
+See [agent setup and prompt options](docs/agents.md) for models, sessions, and permissions.
 
-Use Tab to switch panels, Enter or Ctrl+S to submit, Alt+Enter for a newline,
-Ctrl+V to paste, and `/attach <quoted path>` for image files. Preview supports
-pan/zoom/fit; `/history` browses checkpoints and `/logs` browses saved conversations.
-The prompt stays editable during a turn and queues text follow-ups. F1 shows the
-effective keys. See [TUI controls](docs/tui.md) and [image attachments](docs/image-attachments.md).
+## CLI
+
+Inspect, check, or export an existing document without an AI connection:
+
+```sh
+lazypencil inspect new.pen
+lazypencil validate new.pen --scope layout
+lazypencil layout new.pen
+lazypencil render new.pen --output new.png
+```
+
+Add `--json` for structured output. `layout` reports measured geometry and text
+metrics; `render` exports a PNG. For scripted edits, see the
+[editing reference](docs/mcp.md). Try the documents in [examples](examples/) to
+explore components, graphics, icons, scripts, and shaders.
+
+## Format support
+
+lazypencil reads and edits `.pen` versions **2.19 and 2.21**, preserving comments
+and unrelated content. It implements its own renderer and does not claim complete
+Pencil compatibility. See [document semantics](docs/pen-semantics.md),
+[graphics support](docs/graphics.md), and [dynamic-content limitations](docs/dynamic-content.md#initial-compatibility-limitations).
+
+Basic editing and native rendering need no Chromium. Browser nodes and GLSL
+fills/effects use an optional Chromium runtime:
+
+```sh
+lazypencil runtime setup chromium
+```
+
+See [runtime setup](docs/runtimes.md) before using these features.
 
 ## Documentation and development
 
-| Topic | Reference |
+| What you want to do | Where to start |
 | --- | --- |
-| Build, contribute, test, and package | [Development](docs/development.md) |
-| Core architecture and invariants | [Design](docs/design.md) |
-| Components, variables, and layout | [`.pen` semantics](docs/pen-semantics.md) |
-| MCP tools, editing, assets, and snapshots | [MCP reference](docs/mcp.md) |
-| Configuration, profiles, and trust | [Configuration](docs/configuration.md) |
-| Agent connections and saved conversations | [ACP agents](docs/agents.md) |
-| Terminal controls and protocols | [TUI](docs/tui.md) |
-| Fonts and reproducibility | [Fonts](docs/fonts.md) |
-| Native paints and compositing | [Graphics](docs/graphics.md) |
-| Icon packs and provenance | [Icons](docs/icons.md) |
-| Scripts, browser pages, and GLSL | [Dynamic content](docs/dynamic-content.md) |
-| Chromium installation and profiles | [Runtimes](docs/runtimes.md) |
-| Reproducible performance checks | [Performance](docs/performance.md) |
-| Conversation/tool timing fields | [Timing](docs/performance-logging.md) |
+| Use the terminal workspace | [TUI](docs/tui.md), [image attachments](docs/image-attachments.md) |
+| Configure agents and preferences | [Agent setup](docs/agents.md), [configuration](docs/configuration.md), [shell completion](docs/completions.md) |
+| Automate document editing | [MCP and editing reference](docs/mcp.md) |
+| Understand document rendering | [`.pen` semantics](docs/pen-semantics.md), [graphics](docs/graphics.md), [fonts](docs/fonts.md), [icons](docs/icons.md) |
+| Use scripts, browser nodes, or shaders | [Dynamic content](docs/dynamic-content.md), [runtimes](docs/runtimes.md) |
+| Build, test, or contribute | [Development](docs/development.md), [architecture](docs/design.md) |
+| Measure performance | [Performance checks](docs/performance.md), [timing fields](docs/performance-logging.md) |
+
+Bug reports and contributions are welcome. Include your version, macOS and terminal
+details, reproduction steps, and a minimal `.pen` file when possible in
+[an issue](https://github.com/EkeMinusYou/lazypencil/issues). Read the development
+guide before opening a pull request.
 
 ## License
 
 [MIT](LICENSE). Bundled third-party code, fonts, icons, and separately installed
-runtimes retain their own licenses and attribution. Keep the original notices and
-corresponding-source materials when redistributing binaries; see
-[distribution requirements](docs/development.md#licenses-and-third-party-inputs).
+runtimes retain their own licenses and attribution. See
+[redistribution requirements](docs/development.md#licenses-and-third-party-inputs).
