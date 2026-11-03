@@ -5,13 +5,8 @@ use crate::{
     documents::{Limits, Listing, Scan},
     store::Store,
 };
-use crossterm::{
-    cursor,
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
-    execute,
-    terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
-};
-use ratatui::{Terminal, backend::CrosstermBackend, widgets::ListState};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use ratatui::widgets::ListState;
 use std::{
     io::{self, IsTerminal},
     path::{Path, PathBuf},
@@ -20,13 +15,6 @@ use std::{
 };
 use tokio_util::sync::CancellationToken;
 
-struct Restore;
-impl Drop for Restore {
-    fn drop(&mut self) {
-        let _ = execute!(io::stdout(), LeaveAlternateScreen, cursor::Show);
-        let _ = terminal::disable_raw_mode();
-    }
-}
 struct Search {
     cancel: CancellationToken,
     results: mpsc::Receiver<Result<Listing>>,
@@ -98,7 +86,8 @@ fn refresh_selection(
 
 pub struct Selection {
     pub file: PathBuf,
-    pub agent: Option<crate::agent::AgentHost>,
+    pub(super) agent: Option<crate::agent::AgentHost>,
+    pub(super) terminal: super::terminal::Startup,
 }
 
 fn preparation(args: &crate::prompt::PromptArgs) -> Result<crate::agent::AgentHost> {
@@ -132,11 +121,7 @@ pub fn select(
     }
     let settings = crate::config::keys::load_tui()?;
     let root = std::env::current_dir().map_err(super::terminal::io)?;
-    terminal::enable_raw_mode().map_err(super::terminal::io)?;
-    let _restore = Restore;
-    execute!(io::stdout(), EnterAlternateScreen, cursor::Hide).map_err(super::terminal::io)?;
-    let mut terminal =
-        Terminal::new(CrosstermBackend::new(io::stdout())).map_err(super::terminal::io)?;
+    let mut startup = super::terminal::Startup::enter()?;
     let mut search = Search::start(root.clone());
     let mut listing = Listing {
         root,
@@ -224,7 +209,8 @@ pub fn select(
                 done,
                 agent: Some(&agent_status),
             };
-            terminal
+            startup
+                .terminal
                 .draw(|frame| view.draw(frame, &mut list_state))
                 .map_err(super::terminal::io)?;
             dirty = false;
@@ -351,7 +337,13 @@ pub fn select(
                     .and_then(|()| Store::open(&path, data.clone()))
                     .and_then(|store| store.read().map(|_| store.path().to_owned()))
                 {
-                    Ok(path) => return Ok(Some(Selection { file: path, agent })),
+                    Ok(path) => {
+                        return Ok(Some(Selection {
+                            file: path,
+                            agent,
+                            terminal: startup,
+                        }));
+                    }
                     Err(error) => notice = error.to_string(),
                 }
             }

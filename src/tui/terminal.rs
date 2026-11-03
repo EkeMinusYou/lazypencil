@@ -22,13 +22,61 @@ pub struct Screen {
     force_redraw: bool,
     preview_keys: bool,
 }
+/// Keep the terminal active while the picker hands off to the document workspace.
+pub(super) struct Startup {
+    pub terminal: Terminal<CrosstermBackend<Stdout>>,
+    guard: Restore,
+}
+
 struct Restore {
-    id: u32,
+    id: Option<u32>,
     tmux: bool,
 }
 impl Drop for Restore {
     fn drop(&mut self) {
-        restore(self.id, self.tmux);
+        if let Some(id) = self.id {
+            restore(id, self.tmux);
+        } else {
+            let _ = execute!(std::io::stdout(), LeaveAlternateScreen, cursor::Show);
+            let _ = disable_raw_mode();
+        }
+    }
+}
+impl Startup {
+    pub fn enter() -> Result<Self> {
+        enable_raw_mode().map_err(io)?;
+        let guard = Restore {
+            id: None,
+            tmux: false,
+        };
+        execute!(std::io::stdout(), EnterAlternateScreen, cursor::Hide).map_err(io)?;
+        let terminal = Terminal::new(CrosstermBackend::new(std::io::stdout())).map_err(io)?;
+        Ok(Self { terminal, guard })
+    }
+
+    pub fn activate(self, protocol: super::ImageProtocol, id: u32) -> Result<Screen> {
+        let Self {
+            terminal,
+            mut guard,
+        } = self;
+        guard.id = Some(id);
+        execute!(
+            std::io::stdout(),
+            EnableBracketedPaste,
+            PushKeyboardEnhancementFlags(keyboard_flags(false))
+        )
+        .map_err(io)?;
+        let (picker, startup_text) = super::graphics::Backend::detect(protocol)?;
+        guard.tmux = picker.tmux_detected();
+        std::mem::forget(guard);
+        Ok(Screen {
+            terminal,
+            picker,
+            startup_text,
+            id,
+            force_redraw: false,
+            preview_keys: false,
+        })
     }
 }
 impl Screen {
@@ -72,27 +120,7 @@ impl Screen {
             .map_err(io)?
     }
     pub fn enter(protocol: super::ImageProtocol, id: u32) -> Result<Self> {
-        enable_raw_mode().map_err(io)?;
-        let mut guard = Restore { id, tmux: false };
-        execute!(
-            std::io::stdout(),
-            EnterAlternateScreen,
-            EnableBracketedPaste,
-            PushKeyboardEnhancementFlags(keyboard_flags(false))
-        )
-        .map_err(io)?;
-        let (picker, startup_text) = super::graphics::Backend::detect(protocol)?;
-        guard.tmux = picker.tmux_detected();
-        let terminal = Terminal::new(CrosstermBackend::new(std::io::stdout())).map_err(io)?;
-        std::mem::forget(guard);
-        Ok(Self {
-            terminal,
-            picker,
-            startup_text,
-            id,
-            force_redraw: false,
-            preview_keys: false,
-        })
+        Startup::enter()?.activate(protocol, id)
     }
 }
 impl Drop for Screen {

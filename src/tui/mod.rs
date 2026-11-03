@@ -136,15 +136,19 @@ struct Permission {
     scroll: u16,
 }
 pub fn run(args: &TuiArgs, data: Option<PathBuf>, json_output: bool) -> Result<()> {
-    run_with_prepared(args, data, json_output, None)
+    run_with_selection(args, data, json_output, None)
 }
 
-pub fn run_with_prepared(
+pub fn run_with_selection(
     args: &TuiArgs,
     data: Option<PathBuf>,
     json_output: bool,
-    prepared: Option<crate::agent::AgentHost>,
+    selected: Option<documents::Selection>,
 ) -> Result<()> {
+    let (prepared, startup) = match selected {
+        Some(selected) => (selected.agent, Some(selected.terminal)),
+        None => (None, None),
+    };
     if json_output {
         return Err(Error::new(
             "INVALID_ARGUMENT",
@@ -174,7 +178,10 @@ pub fn run_with_prepared(
     // Reserve two slots each for exact and temporary camera frames. The low
     // bit selects the slot; the high bit identifies temporary feedback.
     let id = (uuid::Uuid::new_v4().as_u128() as u32 & 0x7fff_fffe).max(2);
-    let mut screen = terminal::Screen::enter(args.image_protocol, id)?;
+    let mut screen = match startup {
+        Some(startup) => startup.activate(args.image_protocol, id)?,
+        None => terminal::Screen::enter(args.image_protocol, id)?,
+    };
     let worker = Worker::start(
         conversation.store().clone(),
         args.prompt.fonts.clone(),

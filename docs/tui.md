@@ -7,6 +7,8 @@ The initial release targets macOS Apple Silicon only. Linux x64/arm64 and Window
 `lazypencil` and `lazypencil tui` open a centered file picker over the ordinary
 empty workspace, using the same panel geometry, colors, borders and selection styles. `lazypencil tui FILE`
 continues to open a file directly; a bare file argument is not supported.
+Selecting a file dismisses the popup and opens the document in the same terminal
+screen, without returning to the shell.
 The picker recursively discovers `.pen` files below the launch directory, showing
 relative paths. The adapter process and transport prepare in the background using
 user preferences and explicit CLI options. ACP initialization, document sessions,

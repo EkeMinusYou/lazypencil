@@ -305,6 +305,25 @@ pub fn run(
             h.key(b"\r")?;
         }
     }
+    if case.starts_with("picker-") {
+        h.wait("selected document workspace", 15.0, |h| {
+            let text = h.screen.text();
+            !text.contains("Open a .pen file")
+                && text.lines().next().unwrap_or_default().contains(".pen")
+        })?;
+        assert_eq!(
+            h.output
+                .windows(b"\x1b[?1049h".len())
+                .filter(|bytes| *bytes == b"\x1b[?1049h")
+                .count(),
+            1,
+            "Entered the alternate screen again after selection"
+        );
+        assert!(
+            !h.contains_bytes(b"\x1b[?1049l"),
+            "Left the alternate screen during selection"
+        );
+    }
     h.wait("initial UI", 15.0, |h| {
         h.screen.find_text("›").is_some() && h.screen.text().contains("Agent")
     })?;
