@@ -414,13 +414,29 @@ mod tests {
         let fitted = (900.0 / snapshot.bounds.width).min(980.0 / snapshot.bounds.height) * 0.94;
         let mut retained = PreviewRenderer::default();
         let mut dynamic = crate::dynamic::DynamicRuntime::new(store.data_dir());
-        for (scale, pan, vertical) in [
+        let views = [
             (fitted, 0.0, 0.0),
             (fitted * 1.25, 0.0, 0.0),
             (fitted, 64.0, 0.0),
             (fitted, 0.0, 64.0),
+            (fitted, 128.0, 0.0),
+            (fitted, 192.0, 0.0),
+            (fitted, 256.0, 0.0),
+            (fitted, 320.0, 0.0),
+            (fitted, 384.0, 0.0),
+            (fitted, 448.0, 0.0),
+            (fitted, 512.0, 0.0),
+            (fitted, 576.0, 0.0),
+            (fitted * 1.25, 0.0, 0.0),
             (fitted, 0.0, 0.0),
-        ] {
+        ]
+        .into_iter()
+        .map(|view| (view, Color::from_rgb(248, 250, 252)))
+        .chain(std::iter::once((
+            (fitted, 0.0, 0.0),
+            Color::from_rgb(30, 40, 50),
+        )));
+        for ((scale, pan, vertical), background) in views {
             let width = 900.0 / scale;
             let height = 980.0 / scale;
             let options = RenderOptions {
@@ -432,7 +448,7 @@ mod tests {
                     width,
                     height,
                 )),
-                background: Color::from_rgb(248, 250, 252),
+                background,
                 ..Default::default()
             };
             let cached = retained

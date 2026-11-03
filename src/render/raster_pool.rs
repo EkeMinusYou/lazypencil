@@ -102,6 +102,7 @@ impl RasterPool {
             .map_or_else(|| Self::parts(size), Vec::len);
         if parts == 1 {
             self.workers.clear();
+            let picture = self.bands.as_ref().map_or(picture, |bands| &bands[0].1);
             canvas.draw_picture(picture, Some(transform), None);
             return Ok(());
         }

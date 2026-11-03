@@ -28,6 +28,24 @@ pub(super) struct AtlasCache {
 }
 
 impl AtlasCache {
+    pub(super) fn contains_viewport(
+        &self,
+        picture: &skia_safe::Picture,
+        background: Color,
+    ) -> bool {
+        self.entries.contains_key(&Key {
+            picture: picture.unique_id(),
+            phase_x: 0.0_f32.to_bits(),
+            phase_y: 0.0_f32.to_bits(),
+            background: u32::from_be_bytes([
+                background.a(),
+                background.r(),
+                background.g(),
+                background.b(),
+            ]),
+        })
+    }
+
     pub(super) fn draw(
         &mut self,
         canvas: &Canvas,

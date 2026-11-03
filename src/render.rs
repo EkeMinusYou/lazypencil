@@ -213,7 +213,7 @@ struct RecordedPicture {
     picture: skia_safe::Picture,
     images: BTreeMap<PathBuf, (String, Image)>,
     bytes: usize,
-    bands: Option<Vec<(SkRect, skia_safe::Picture)>>,
+    bands: RefCell<Option<Vec<(SkRect, skia_safe::Picture)>>>,
 }
 
 impl RasterCache {
@@ -517,6 +517,18 @@ fn raster_impl_cached(
                 working_height as u32,
             ]),
         };
+        if anchored
+            && pictures.borrow().get(&key).is_some_and(|entry| {
+                entry.bands.borrow().is_none()
+                    && !cache
+                        .unwrap()
+                        .atlas
+                        .borrow()
+                        .contains_viewport(&entry.picture, options.background)
+            })
+        {
+            pictures.borrow_mut().remove(&key);
+        }
         if !pictures.borrow().contains_key(&key) {
             // Image scenes retain the exact device origin. Reassociating their
             // transforms through a later translation can change antialias pixels.
@@ -591,10 +603,19 @@ fn raster_impl_cached(
                 )
             });
             let picture = RecordedPicture {
-                picture: commands[0].1.clone(),
+                picture: if anchored {
+                    skia_safe::Picture::new_placeholder(SkRect::from_xywh(
+                        bounds.x,
+                        bounds.y,
+                        bounds.width,
+                        bounds.height,
+                    ))
+                } else {
+                    commands[0].1.clone()
+                },
                 images,
                 bytes,
-                bands: anchored.then_some(commands),
+                bands: RefCell::new(anchored.then_some(commands)),
             };
             let mut pictures = pictures.borrow_mut();
             // Exact image viewports and vector zoom levels share the 32 MiB cap.
@@ -614,12 +635,12 @@ fn raster_impl_cached(
                 pictures.insert(key, picture);
             }
         }
-        if let Some(picture) = pictures.borrow().get(&key) {
-            renderer.images = picture.images.clone();
+        if let Some(entry) = pictures.borrow().get(&key) {
+            renderer.images = entry.images.clone();
             if let Some(pool) = pool {
-                pool.borrow_mut().bands = picture.bands.clone();
+                pool.borrow_mut().bands = entry.bands.borrow().clone();
             }
-            let picture = &picture.picture;
+            let picture = &entry.picture;
             let transform = if anchored {
                 Matrix::new_identity()
             } else {
@@ -654,9 +675,12 @@ fn raster_impl_cached(
                 }
             }
             if anchored {
-                // The retained raster replaces native filter intermediates.
-                // Release their separate cache without evicting shaped fonts.
-                skia_safe::graphics::purge_resource_cache();
+                // A stable placeholder identifies the retained pixels without
+                // keeping filters or their native intermediate rasters alive.
+                entry.bands.borrow_mut().take();
+                if let Some(pool) = pool {
+                    *pool.borrow_mut() = Default::default();
+                }
             }
         } else {
             for root in &snapshot.roots {
