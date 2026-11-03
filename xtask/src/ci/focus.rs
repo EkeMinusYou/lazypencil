@@ -149,7 +149,9 @@ pub fn agent_only(paths: &[String]) -> bool {
         && paths.iter().all(|path| {
             documentation_only(path)
                 || path == "src/agent.rs"
-                || (path.starts_with("src/agent/") && path != "src/agent/process/windows.rs")
+                || (path.starts_with("src/agent/")
+                    && path != "src/agent/process.rs"
+                    && !path.starts_with("src/agent/process/"))
                 || [
                     "src/config/agents.rs",
                     "src/config/agent_execution.rs",

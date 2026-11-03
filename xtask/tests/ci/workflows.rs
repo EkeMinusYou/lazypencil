@@ -35,6 +35,7 @@ fn focused_prs_run_regressions_before_lint_and_keep_isolated_compiler_checkpoint
         .unwrap();
     assert!(targeted.contains("cache_focused_outputs: true"));
     assert!(targeted.contains("verification == 'focused'"));
+    assert!(targeted.contains("&& 'ubuntu-24.04' || 'macos-26'"));
 }
 
 #[test]

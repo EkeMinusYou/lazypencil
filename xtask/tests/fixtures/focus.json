@@ -911,11 +911,7 @@
       "platform": "macos-26",
       "suite": "conversation",
       "targets": [
-        "agent",
-        "config",
-        "conversation_history",
-        "mcp",
-        "user_agent_config"
+        "agent"
       ],
       "preprocessor": false
     }
@@ -1543,11 +1539,7 @@
       "platform": "macos-26",
       "suite": "conversation",
       "targets": [
-        "agent",
-        "config",
-        "conversation_history",
-        "mcp",
-        "user_agent_config"
+        "agent"
       ],
       "preprocessor": false
     }
