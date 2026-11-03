@@ -207,6 +207,7 @@ mode = "read-only"
 timeout = 600
 document_tools = "allow"
 # model = "an-adapter-advertised-model"
+# fast = true # Omit to inherit Codex speed; false disables Fast mode.
 # auth_method = "an-adapter-advertised-authentication-method"
 
 [agents.claude]
@@ -219,6 +220,10 @@ mode = "default"
 `prompt` and `tui` resolve these preferences once at invocation, before creating a document or conversation. Without project overrides, the selected agent is explicit `--agent`, then user `agents.default`, then built-in `codex`. Only that agent's profile supplies defaults; fields never leak from the other profile. Each remaining field follows explicit CLI value, selected user profile value, then built-in behavior. An explicitly supplied value equal to the built-in default still overrides the profile, including `--timeout 600`, `--auth subscription`, and `--document-tools allow`.
 
 `--require-auth-status` enables strict authentication reporting; `--require-auth-status=false` explicitly overrides a true user default. Disabling this flag does not disable an adapter's advertised authentication-status requirements or permit a conflicting reported route. Authentication, model/mode negotiation, document-tool permissions, and timeout cancellation retain the same behavior as their CLI options. Credentials remain in the external agent's stores. A profile is a set of preferences, not evidence that an adapter is installed or that a model/API account can execute a request.
+
+Codex Fast mode uses the same CLI > project profile > user profile precedence. Set `[agents.codex] fast = true` or `false`; `--fast` / `--fast=true` and `--fast=false` override it in both `prompt` and `tui`. With no override, lazypencil leaves the adapter's speed setting untouched and delegates inheritance of Codex defaults or saved native settings to the adapter. An explicit override is applied through the advertised ACP `fast-mode` selector after model selection, on both new and loaded sessions. Unsupported or unconfirmed overrides fail before prompting. Fast mode is Codex-only; `[agents.claude] fast` and `--agent claude --fast` are rejected. Codex configuration files are never modified. Availability and higher usage depend on the model/account; see [OpenAI speed documentation](https://learn.chatgpt.com/docs/agent-configuration/speed).
+
+Known upstream limitation: Codex ACP 2.2.2 initializes Fast mode only for `fast`, while Codex returns the canonical tier `priority`. The first prompt can therefore clear an inherited Fast setting. The same comparison remains in the inspected 2.5.0 package. Track [issue #285](https://github.com/agentclientprotocol/codex-acp/issues/285), [PR #327](https://github.com/agentclientprotocol/codex-acp/pull/327), and [PR #673](https://github.com/agentclientprotocol/codex-acp/pull/673). Until the adapter fixes this, explicitly set `fast = true` or pass `--fast` to enable Fast mode reliably through ACP. lazypencil does not patch or install the external adapter.
 
 An explicit `--adapter` replaces both the configured executable and its entire `adapter_args` vector. Other selected-profile fields still apply unless individually overridden. No shell parses the command or arguments, and no adapter is installed automatically. A plain command name searches `PATH`; a relative path such as `./bin/codex-acp` resolves against the physical user configuration directory, including when `config.toml` itself is a symlink. Absolute paths are accepted. The process still runs in the document's directory. Relative **argument strings** are passed unchanged and therefore follow the adapter's own working-directory rules; use absolute script paths when necessary. Home/environment expansion is not performed.
 

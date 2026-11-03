@@ -116,6 +116,7 @@ struct Peer<'a> {
     permission_answered: bool,
     cancel_received: bool,
     model: String,
+    fast: bool,
     selection: String,
     authenticated: bool,
     session: String,
@@ -131,6 +132,7 @@ impl<'a> Peer<'a> {
             permission_answered: false,
             cancel_received: false,
             model: "fixture-model".into(),
+            fast: mode == "settings-fast-inherited",
             selection: "read-only".into(),
             authenticated: false,
             session: "fixture-native".into(),
@@ -162,7 +164,18 @@ impl<'a> Peer<'a> {
         self.send(json!({"method":"_auth/status_update","params":{"authStatus":{"kind":kind,"label":"Fixture account","account":{"plan":"test-plan","email":email},"accessToken":"fixture-not-a-token","vendor":{"secret":"must-not-log"}}}}))
     }
     fn config(&self) -> Value {
-        json!([{"id":"model","name":"Model","category":"model","type":"select","currentValue":self.model,"options":[{"group":"fixture","name":"Fixture","options":[{"value":"fixture-model","name":"Fixture"},{"value":"fixture-model-2","name":"Fixture 2"}]}]}])
+        let mut options = json!([{"id":"model","name":"Model","category":"model","type":"select","currentValue":self.model,"options":[{"group":"fixture","name":"Fixture","options":[{"value":"fixture-model","name":"Fixture"},{"value":"fixture-model-2","name":"Fixture 2"}]}]}]);
+        if self.mode.starts_with("settings-fast")
+            && !(self.mode == "settings-fast-model-only" && self.model != "fixture-model-2")
+            && !(self.mode == "settings-fast-model-removes" && self.model == "fixture-model-2")
+        {
+            let fast = json!({"id":"fast-mode","name":"Fast mode","category":"model_config","type":"select","currentValue":if self.fast {"on"} else {"off"},"options":[{"value":"off","name":"Off"},{"value":"on","name":"On"}]});
+            options.as_array_mut().unwrap().push(fast.clone());
+            if self.mode == "settings-fast-duplicate" {
+                options.as_array_mut().unwrap().push(fast);
+            }
+        }
+        options
     }
     fn call(&mut self, name: &str, args: Value) -> Result<Value> {
         self.mcp
@@ -374,11 +387,24 @@ impl<'a> Peer<'a> {
                 self.response(&message, json!({}))?;
             }
             "session/set_config_option" => {
-                assert_eq!(params["configId"], "model");
-                self.model = params["value"]
-                    .as_str()
-                    .ok_or("Missing selected model")?
-                    .into();
+                if mode.starts_with("settings-fast") {
+                    append_json("received-settings.jsonl", params)?;
+                }
+                match params["configId"].as_str() {
+                    Some("model") => {
+                        self.model = params["value"]
+                            .as_str()
+                            .ok_or("Missing selected model")?
+                            .into();
+                    }
+                    Some("fast-mode") => {
+                        assert!(mode.starts_with("settings-fast"));
+                        if mode != "settings-fast-unconfirmed" {
+                            self.fast = params["value"] == "on";
+                        }
+                    }
+                    _ => return Err("Unexpected configuration selector".into()),
+                }
                 self.response(&message, json!({"configOptions":self.config()}))?;
             }
             "session/cancel" => {

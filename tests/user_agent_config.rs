@@ -88,6 +88,49 @@ fn event<'a>(events: &'a [Value], kind: &str) -> &'a Value {
 }
 
 #[test]
+fn fast_mode_resolves_user_project_and_cli_overrides_with_execution_trust() {
+    let f = Fixture::new();
+    f.settings(&f.peer("codex", "settings-fast", "fast=true"));
+    let selected = |events: &[Value]| {
+        event(events, "ready")["response"]["configOptions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|option| option["id"] == "fast-mode")
+            .unwrap()["currentValue"]
+            .clone()
+    };
+    assert_eq!(selected(&f.events(&[])), "on");
+    assert_eq!(selected(&f.events(&["--fast=false"])), "off");
+    let project = f.temp.path().join("project/lazypencil.toml");
+    fs::write(&project, "[agents.codex]\nfast=false\n").unwrap();
+    let denied = f.prompt(&[]);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&denied.stdout).unwrap()["error"]["code"],
+        "PROJECT_NOT_TRUSTED"
+    );
+    // An explicit CLI value masks the project preference and needs no grant.
+    assert_eq!(selected(&f.events(&["--fast=true"])), "on");
+    let granted = f
+        .command()
+        .args(["config", "trust"])
+        .arg(&f.document)
+        .arg("--executables")
+        .output()
+        .unwrap();
+    assert!(granted.status.success(), "{granted:?}");
+    assert_eq!(selected(&f.events(&[])), "off");
+    assert_eq!(selected(&f.events(&["--fast"])), "on");
+    fs::write(&project, "[agents.codex]\nfast=true\n").unwrap();
+    f.settings(&f.peer("codex", "settings-fast", "fast=false"));
+    let denied = f.prompt(&[]);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&denied.stdout).unwrap()["error"]["code"],
+        "PROJECT_NOT_TRUSTED"
+    );
+}
+
+#[test]
 fn bound_mcp_memory_policy_is_platform_scoped_preserves_overrides_and_never_changes_the_adapter() {
     for agent in ["codex", "claude"] {
         for (explicit, medium) in [

@@ -85,6 +85,12 @@ impl Conversation {
         data_dir: Option<PathBuf>,
         executable: PathBuf,
     ) -> Result<Self> {
+        if args.fast.is_some() && args.agent != crate::prompt::AgentName::Codex {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "Fast mode is only supported with the Codex agent",
+            ));
+        }
         if args.restart_session && args.session.is_none() {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
@@ -593,6 +599,7 @@ impl Conversation {
         }
         options.auth_method = self.args.auth_method.clone();
         options.model = self.args.model.clone();
+        options.fast = self.args.fast;
         options.session_mode = self.args.mode.clone().or_else(|| {
             self.args.adapter.is_none().then(|| match self.args.agent {
                 crate::prompt::AgentName::Codex => "read-only".into(),
