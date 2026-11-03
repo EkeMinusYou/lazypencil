@@ -78,7 +78,8 @@ impl App {
             "preview": { "requested_view": view_state(self.view, pixels), "displayed": displayed,
                 "viewport_pixels": pixels, "viewport_cells": [self.cells.width, self.cells.height],
                 "showing_attachment": self.preview.as_ref().is_some_and(|preview| preview.attachment),
-                "updating": self.preview_generation != Some(self.generation) || self.pending_preview.is_some(),
+                "stale": self.preview_stale,
+                "updating": self.preview_error.is_none() && (self.preview_generation != Some(self.generation) || self.pending_preview.is_some()),
                 "error": self.preview_error.as_ref().map(|error| json!({"code":error.code,"message":error.message})), "playing": self.playback.active(),
             }
         })
@@ -203,6 +204,12 @@ impl App {
     fn target_identity(&self, request: &SetPreviewRequest) -> Result<(Option<Rect>, Value)> {
         if let Some(error) = &self.preview_error {
             return Err(error.clone());
+        }
+        if self.preview_stale {
+            return Err(Error::new(
+                "PREVIEW_UNAVAILABLE",
+                "The latest preview is unavailable; the previous preview is still displayed",
+            ));
         }
         let preview = self
             .preview
@@ -453,6 +460,42 @@ mod tests {
             assert_eq!(std::fs::read_to_string(store.path()).unwrap(), edited);
         });
     }
+    #[test]
+    fn previous_preview_is_reported_as_stale_without_acknowledging_a_failed_update() {
+        runtime().block_on(async {
+            let temp = TempDir::new().unwrap();
+            let mut app = app(&temp);
+            let store = app.conversation.store().clone();
+            let document = json!({"version":"2.21","children":[{"type":"rectangle","id":"button","width":100,"height":80,"fill":"#0f0"}]}).to_string();
+            std::fs::write(store.path(), &document).unwrap();
+            let picker = graphics::Backend::halfblocks();
+            let worker = Worker::start(store.clone(), vec![], picker.clone(), 112).unwrap();
+            app.cells = Size::new(50, 20);
+            app.request(&worker, false, false);
+            frame(&mut app, &worker, &picker).await;
+            let revision = app.preview_state(&picker)["preview"]["displayed"]["revision"].clone();
+            std::fs::write(store.path(), document.replace("2.21", "2.8")).unwrap();
+            let (request, result) = incoming(&app, "button");
+            app.queue_preview(request, &worker);
+            frame(&mut app, &worker, &picker).await;
+            assert_eq!(result.await.unwrap().unwrap_err().code, "UNSUPPORTED_VERSION");
+            let state = app.preview_state(&picker);
+            assert_eq!(state["preview"]["stale"], true);
+            assert_eq!(state["preview"]["updating"], false);
+            assert_eq!(state["preview"]["displayed"]["revision"], revision);
+            assert!(state["preview"]["displayed"].is_object());
+
+            app.request(&worker, false, true);
+            assert!(app.preview_error.is_none());
+            assert_eq!(app.target_identity(&serde_json::from_value(json!({})).unwrap()).unwrap_err().code, "PREVIEW_UNAVAILABLE");
+            frame(&mut app, &worker, &picker).await;
+            std::fs::write(store.path(), &document).unwrap();
+            let updated = set(&mut app, &worker, &picker, json!({"target":{"kind":"nodes","node_ids":["button"]}})).await;
+            assert_eq!(updated["status"], "updated");
+            assert_eq!(app.preview_state(&picker)["preview"]["stale"], false);
+        });
+    }
+
     #[test]
     fn preview_rejects_missing_stale_and_superseded_targets() {
         runtime().block_on(async {

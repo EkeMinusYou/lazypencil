@@ -1,6 +1,103 @@
 // Included in tui::tests to preserve the existing test identities.
 
 #[test]
+fn previous_preview_survives_failed_updates_and_retries_until_recovery() {
+    use ratatui::{Terminal, backend::TestBackend};
+    fn screen(app: &mut App) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(160, 40)).unwrap();
+        terminal.draw(|frame| { app.draw(frame); }).unwrap();
+        terminal.backend().buffer().content.iter().map(|cell| cell.symbol()).collect()
+    }
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let store = app.conversation.store().clone();
+        let document = json!({"version":"2.21","children":[{
+            "id":"page","type":"frame","width":180,"height":100,"children":[
+                {"id":"ready","name":"Ready node","type":"rectangle","width":40,"height":30,"fill":"#FF0000"}
+            ]}]}).to_string();
+        std::fs::write(store.path(), &document).unwrap();
+        let picker = Backend::halfblocks();
+        let worker = Worker::start(store.clone(), vec![], picker.clone(), 195).unwrap();
+        app.cells = Size::new(70, 25);
+        app.request(&worker, false, false);
+        app.accept_preview(tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap());
+        screen(&mut app);
+        app.refresh_nodes(Some("ready"));
+        app.selection.ids = vec!["ready".into()];
+        app.insert_text("日本語の未送信プロンプト");
+        let draft = app.editor.lines().to_vec();
+        let conversation_log = app.log.clone();
+        let previous = app.preview.as_ref().unwrap();
+        let png = previous.image.png().unwrap().into_owned();
+        let revision = previous.summary["revision"].clone();
+        let view = previous.view;
+
+        std::fs::write(store.path(), document.replace("2.21", "2.8")).unwrap();
+        app.view.pan([15., 10.]);
+        app.request(&worker, false, true);
+        assert!(app.accept_preview(tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap()));
+        assert!(app.preview_stale);
+        assert_eq!(app.preview_error.as_ref().unwrap().code, "UNSUPPORTED_VERSION");
+        assert_eq!(app.preview.as_ref().unwrap().image.png().unwrap().as_ref(), png);
+        assert_eq!(app.preview.as_ref().unwrap().view, view);
+        assert_eq!(app.selected_node().unwrap().id, "ready");
+        assert_eq!(app.selection.ids, ["ready"]);
+        assert!(!app.nodes_loading);
+        let state = app.preview_state(&picker);
+        assert_eq!(state["preview"]["stale"], true);
+        assert_eq!(state["preview"]["updating"], false);
+        assert_eq!(state["preview"]["displayed"]["revision"], revision);
+        assert_ne!(state["preview"]["requested_view"], state["preview"]["displayed"]["view"]);
+        let failed = screen(&mut app);
+        assert!(failed.contains("Showing previous preview"));
+        assert!(failed.contains("Nodes · Previous"));
+        assert!(failed.contains("Ready node"));
+        assert!(!failed.contains("Preview unavailable"));
+        assert_eq!(app.open_preview().unwrap_err().code, "PREVIEW_UNAVAILABLE");
+        assert!(!app.conversation.directory().join("previews").exists());
+
+        app.set_status("Unrelated user action".into());
+        app.dirty = false;
+        app.request(&worker, true, false);
+        assert!(!app.accept_preview(tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap()));
+        assert!(!app.dirty);
+        assert_eq!(app.status, "Unrelated user action");
+        assert_eq!(app.preview.as_ref().unwrap().image.png().unwrap().as_ref(), png);
+
+        app.request(&worker, false, true);
+        assert!(app.preview_error.is_none());
+        assert_eq!(app.preview_state(&picker)["preview"]["updating"], true);
+        assert!(screen(&mut app).contains("Showing previous preview"));
+        assert_eq!(app.open_preview().unwrap_err().code, "PREVIEW_UNAVAILABLE");
+        app.accept_preview(tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap());
+        assert!(app.preview_stale);
+
+        let repaired = document.replace("#FF0000", "#0000FF");
+        std::fs::write(store.path(), &repaired).unwrap();
+        app.request(&worker, false, true);
+        app.accept_preview(tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap());
+        assert!(!app.preview_stale);
+        assert!(app.preview_error.is_none());
+        assert!(app.status.is_empty());
+        let state = app.preview_state(&picker);
+        assert_eq!(state["preview"]["stale"], false);
+        assert_eq!(state["preview"]["updating"], false);
+        assert_ne!(state["preview"]["displayed"]["revision"], revision);
+        assert_ne!(app.preview.as_ref().unwrap().image.png().unwrap().as_ref(), png);
+        assert_eq!(app.selected_node().unwrap().id, "ready");
+        assert_eq!(app.selection.ids, ["ready"]);
+        assert_eq!(app.editor.lines(), draft);
+        assert_eq!(app.log, conversation_log);
+        let recovered = screen(&mut app);
+        assert!(!recovered.contains("Showing previous preview"));
+        assert!(!recovered.contains("Nodes · Previous"));
+        assert_eq!(std::fs::read_to_string(store.path()).unwrap(), repaired);
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
 fn preview_missing_glyphs_display_initial_design_warn_and_recover_without_changing_copy() {
     use ratatui::{Terminal, backend::TestBackend};
     let temp = TempDir::new().unwrap();
@@ -443,12 +540,14 @@ fn playback_preserves_input_pauses_on_seek_errors_and_static_output_and_drops_la
             result: Err(Error::new("RENDER_ERROR", "Superseded frame")),
         });
         assert!(app.playback.active());
+        let previous_image = app.preview.as_ref().unwrap().image.identity();
         app.accept_preview(preview::Output {
             generation: app.generation,
             result: Err(Error::new("RENDER_ERROR", "Current frame failed")),
         });
         assert!(!app.playback.active());
-        assert!(app.preview.is_none());
+        assert!(app.preview_stale);
+        assert_eq!(app.preview.as_ref().unwrap().image.identity(), previous_image);
         app.cells = Size::new(20, 8);
         app.request(&worker, false, false);
         let mut output = tokio::time::timeout(Duration::from_secs(15), worker.next())
@@ -724,7 +823,7 @@ fn initial_preview_loading_is_distinct_from_failure_and_explicit_retry() {
             generation: app.generation,
             result: Err(Error::new("REVISION_CONFLICT", "Concurrent document update")),
         });
-        assert!(app.selected_node().is_none());
+        assert_eq!(app.selected_node().unwrap().id, "ready");
         app.request(&worker, false, true);
         app.accept_preview(tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap());
         assert_eq!(app.selected_node().unwrap().id, "ready");
@@ -751,6 +850,7 @@ fn repeated_preview_errors_are_quiet_without_blocking_repair_or_explicit_retry()
         app.cells = Size::new(20, 8);
         app.insert_text("日本語の未送信プロンプト");
         let mut previous_version = None;
+        let mut has_completed_preview = false;
         for (version, check_only, changed) in [
             ("2.9", false, true),
             ("2.9", true, false),
@@ -784,8 +884,11 @@ fn repeated_preview_errors_are_quiet_without_blocking_repair_or_explicit_retry()
             if version == "2.21" {
                 assert!(app.preview.is_some());
                 assert!(app.preview_error.is_none());
+                assert!(!app.preview_stale);
+                has_completed_preview = true;
             } else {
-                assert!(app.preview.is_none());
+                assert_eq!(app.preview.is_some(), has_completed_preview);
+                assert_eq!(app.preview_stale, has_completed_preview);
                 assert_eq!(
                     app.preview_error.as_ref().unwrap().code,
                     "UNSUPPORTED_VERSION"

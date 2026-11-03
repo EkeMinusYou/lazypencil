@@ -246,6 +246,8 @@ struct App {
     presentation: graphics::Presentation,
     input_profile: camera::InputProfile,
     preview_error: Option<Error>,
+    // A retained frame stays stale during retries until a new frame succeeds.
+    preview_stale: bool,
     nodes_loading: bool,
     pending_preview: Option<controls::Pending>,
     camera: Option<camera::Camera>,
@@ -258,7 +260,6 @@ struct App {
     cells: Size,
     nodes: ListState,
     node_tree: nodes::Tree,
-    pending_node_selection: Option<String>,
     diagnostics: diagnostics::View,
     attachments: ListState,
     reference_rows: ListState,
@@ -321,6 +322,7 @@ impl App {
             presentation: Default::default(),
             input_profile: Default::default(),
             preview_error: None,
+            preview_stale: false,
             nodes_loading: true,
             pending_preview: None,
             camera: None,
@@ -333,7 +335,6 @@ impl App {
             cells: Size::new(0, 0),
             nodes: ListState::default(),
             node_tree: nodes::Tree::default(),
-            pending_node_selection: None,
             diagnostics: diagnostics::View::default(),
             attachments: ListState::default(),
             reference_rows: ListState::default(),
@@ -725,15 +726,13 @@ impl App {
         self.camera = None;
         match output.result {
             Ok(mut preview) => {
-                let selected = self
-                    .selected_node()
-                    .map(|node| node.id.clone())
-                    .or_else(|| self.pending_node_selection.clone());
+                let selected = self.selected_node().map(|node| node.id.clone());
                 let diagnostic = self.selected_diagnostic().cloned();
                 if self.status_kind == footer::StatusKind::PreviewError {
                     self.clear_status();
                 }
                 self.preview_error = None;
+                self.preview_stale = false;
                 if !preview.attachment {
                     self.view = preview.view;
                     if !preview.time_dependent && !preview.live_pages {
@@ -767,7 +766,6 @@ impl App {
                     })
                     .or_else(|| self.selection.ids.first().cloned());
                 if document {
-                    self.pending_node_selection = None;
                     self.nodes_loading = false;
                     self.refresh_nodes(selected.as_deref());
                     self.refresh_diagnostics(diagnostic.as_ref());
@@ -782,14 +780,15 @@ impl App {
             }
             Err(error) => {
                 self.playback.stop();
-                if let Some(node) = self.selected_node() {
-                    self.pending_node_selection = Some(node.id.clone());
+                self.preview_stale = self.preview.is_some();
+                if self.preview_stale {
+                    self.selection.abort();
+                } else {
+                    self.selection.clear();
+                    self.node_tree.rebuild(&[], &self.filter);
+                    self.nodes.select(None);
+                    self.refresh_diagnostics(None);
                 }
-                self.preview = None;
-                self.selection.clear();
-                self.node_tree.rebuild(&[], &self.filter);
-                self.nodes.select(None);
-                self.refresh_diagnostics(None);
                 self.preview_generation = None;
                 self.preview_error = Some(error.clone());
                 self.nodes_loading = false;
@@ -1417,6 +1416,12 @@ impl App {
         Ok(())
     }
     fn open_preview(&mut self) -> Result<()> {
+        if self.preview_stale {
+            return Err(Error::new(
+                "PREVIEW_UNAVAILABLE",
+                "The previous preview is out of date; refresh successfully before exporting",
+            ));
+        }
         if self.camera.is_some()
             || self.camera_deadline.is_some()
             || self.preview_generation != Some(self.generation)
@@ -1564,17 +1569,20 @@ impl App {
             self.focus == Focus::Preview,
         );
         let zoom = self.preview_zoom_label();
-        if self
+        let preview_notice = if self.preview_stale {
+            Some(" Showing previous preview ")
+        } else if self
             .preview
             .as_ref()
             .is_some_and(|preview| preview.summary["provisional"] == true)
         {
+            Some(" Missing glyphs · provisional layout ")
+        } else {
+            None
+        };
+        if let Some(notice) = preview_notice {
             block = block.title_top(
-                Line::styled(
-                    " Missing glyphs · provisional layout ",
-                    Style::default().fg(theme::RUNNING),
-                )
-                .right_aligned(),
+                Line::styled(notice, Style::default().fg(theme::RUNNING)).right_aligned(),
             );
         }
         let zoom_width = zoom.as_ref().map_or(0, |zoom| zoom.len() + 3);

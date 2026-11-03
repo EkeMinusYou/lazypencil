@@ -263,6 +263,8 @@ impl App {
         };
         let title = if !self.diagnostics.active && self.nodes_loading && self.preview.is_some() {
             format!("{title} · Loading…")
+        } else if self.preview_stale {
+            format!("{title} · Previous")
         } else {
             title
         };

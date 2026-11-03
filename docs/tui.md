@@ -356,8 +356,13 @@ Esc during an operation requests cancellation and closes its overlay; Ctrl+C als
 
 Document calculation/rendering, log reads, restores, and image conversion run outside
 the interactive input path. Revision/dependency changes reload the preview while
-preserving drafts and attachments. Repeated preview failures stay visible without
-flooding conversation history; a later refresh can recover.
+preserving drafts and attachments. Failed updates keep the last completed preview,
+node list and selection, with a persistent “Showing previous preview” notice until
+a new frame succeeds. The notice stays visible during retries, and the old image
+cannot be exported as a current preview. With no completed frame, the initial
+failure still reports “Preview unavailable”. Preview state reports `stale` and
+preserves the displayed frame's revision. Repeated failures do not flood conversation
+history; a later refresh can recover.
 
 Clipboard input reads only this host's clipboard and is explicit. A bounded child
 worker normalizes images; conversion/storage runs on the input thread. Cancellation

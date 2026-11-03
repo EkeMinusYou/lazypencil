@@ -404,7 +404,6 @@ impl App {
                     self.page_nodes(action(Nav::NodePageUp));
                 } else if action(Nav::ClearSelection) {
                     self.nodes.select(None);
-                    self.pending_node_selection = None;
                 } else if action(Nav::ActivateNode)
                     && self
                         .selected_node()

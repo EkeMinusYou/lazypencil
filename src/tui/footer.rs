@@ -59,7 +59,12 @@ impl App {
     }
 
     pub(super) fn set_preview_error_status(&mut self, error: &Error) {
-        self.set_error_status(clean(&error.to_string()));
+        let message = if self.preview_stale {
+            format!("Preview update failed; showing previous preview. {error}")
+        } else {
+            error.to_string()
+        };
+        self.set_error_status(clean(&message));
         self.status_kind = StatusKind::PreviewError;
     }
 
