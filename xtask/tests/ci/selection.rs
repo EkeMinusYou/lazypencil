@@ -271,19 +271,19 @@ fn bundled_guidance_with_ci_and_prose_uses_its_real_core_contract() {
 
 #[test]
 fn initial_release_selects_only_mac_and_preserves_explicit_deferred_diagnostics() {
-    assert_eq!(focus::verification_platforms("all").unwrap(), ["macos-15"]);
+    assert_eq!(focus::verification_platforms("all").unwrap(), ["macos-26"]);
     assert_eq!(
-        focus::verification_platforms("macos-15").unwrap(),
-        ["macos-15"]
+        focus::verification_platforms("macos-26").unwrap(),
+        ["macos-26"]
     );
     for platform in ["ubuntu-24.04", "ubuntu-24.04-arm"] {
         assert_eq!(focus::retry_platform(platform), platform);
         assert_eq!(focus::verification_platforms(platform).unwrap(), [platform]);
     }
-    for invalid in ["windows-2025", "macos-15-intel", "unknown"] {
+    for invalid in ["windows-2025", "macos-26-intel", "unknown"] {
         assert!(focus::verification_platforms(invalid).is_err());
     }
-    assert_eq!(focus::retry_platform("auto"), "macos-15");
+    assert_eq!(focus::retry_platform("auto"), "macos-26");
     for paths in [
         vec!["src/cdp.rs".to_owned()],
         vec!["src/paths.rs".to_owned()],
@@ -293,7 +293,7 @@ fn initial_release_selects_only_mac_and_preserves_explicit_deferred_diagnostics(
             focus::select(&util::root(), &paths, "auto")
                 .unwrap()
                 .platform,
-            "macos-15"
+            "macos-26"
         );
     }
 }
@@ -369,7 +369,7 @@ fn installer_only_changes_reproduce_without_native_features_and_mixed_changes_st
     .map(str::to_owned)
     .to_vec();
     let plan = focus::select(&root, &paths, "auto").unwrap();
-    assert_eq!(plan.platform, "macos-15");
+    assert_eq!(plan.platform, "macos-26");
     assert_eq!(plan.suite, "core");
     assert_eq!(plan.targets, ["runtime"]);
     let mut combined = paths.clone();
@@ -426,7 +426,7 @@ fn hosted_terminal_changes_select_mac_and_retain_explicit_linux_diagnostics() {
             "xtask/src/test_support/terminal.rs".into(),
         ];
         let plan = focus::select(&util::root(), &paths, "auto").unwrap();
-        assert_eq!(plan.platform, "macos-15");
+        assert_eq!(plan.platform, "macos-26");
         assert_eq!(plan.suite, "candidate");
         assert_eq!(plan.targets, ["render", "tui", "dynamic_render"]);
         let override_plan = focus::select(&util::root(), &paths, "ubuntu-24.04").unwrap();
@@ -460,7 +460,7 @@ fn static_camera_and_pixel_transfer_changes_use_the_complete_tui_candidate_gate(
     .map(str::to_owned)
     .to_vec();
     let plan = focus::select(&util::root(), &paths, "auto").unwrap();
-    assert_eq!(plan.platform, "macos-15");
+    assert_eq!(plan.platform, "macos-26");
     assert_eq!(plan.suite, "candidate");
     assert_eq!(plan.targets, ["render", "tui", "dynamic_render"]);
     assert!(focus::tui_measurement_changed(&paths));

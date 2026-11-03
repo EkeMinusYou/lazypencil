@@ -11,7 +11,7 @@ fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() 
         let paths = vec![path.into()];
         assert!(focus::tui_measurement_changed(&paths));
         let plan = focus::select(&util::root(), &paths, "auto").unwrap();
-        assert_eq!(plan.platform, "macos-15");
+        assert_eq!(plan.platform, "macos-26");
         assert_eq!(plan.suite, "candidate");
         assert_eq!(plan.targets, ["render"]);
     }
@@ -24,7 +24,7 @@ fn changed_measurements_use_one_source_bound_candidate_before_the_full_matrix() 
         "auto",
     )
     .unwrap();
-    assert_eq!(helper.platform, "macos-15");
+    assert_eq!(helper.platform, "macos-26");
     assert_eq!(helper.suite, "candidate");
     assert_eq!(helper.targets, ["render", "tui", "dynamic_render"]);
     assert!(!focus::tui_measurement_changed(&[

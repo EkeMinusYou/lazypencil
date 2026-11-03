@@ -131,7 +131,7 @@ fn fast_mode_resolves_user_project_and_cli_overrides_with_execution_trust() {
 }
 
 #[test]
-fn bound_mcp_memory_policy_is_platform_scoped_preserves_overrides_and_never_changes_the_adapter() {
+fn bound_mcp_keeps_system_allocator_defaults_and_preserves_adapter_environment() {
     for agent in ["codex", "claude"] {
         for (explicit, medium) in [
             (None, None),
@@ -195,16 +195,8 @@ fn bound_mcp_memory_policy_is_platform_scoped_preserves_overrides_and_never_chan
                     .iter()
                     .any(|entry| entry["name"] == "LAZYPENCIL_CONFIG_DIR")
             );
-            for (name, expected) in [
-                ("MallocSpaceEfficient", explicit.unwrap_or("1")),
-                ("MallocMediumZone", medium.unwrap_or("0")),
-            ] {
-                let allocator = environment.iter().find(|entry| entry["name"] == name);
-                if cfg!(target_os = "macos") {
-                    assert_eq!(allocator.unwrap()["value"], expected);
-                } else {
-                    assert!(allocator.is_none());
-                }
+            for name in ["MallocSpaceEfficient", "MallocMediumZone"] {
+                assert!(environment.iter().all(|entry| entry["name"] != name));
             }
             assert_eq!(fs::read(&f.document).unwrap(), original);
         }

@@ -5,8 +5,8 @@ on:
       os:
         description: Mac release evidence; Linux choices are deferred-platform diagnostics
         type: choice
-        default: macos-15
-        options: [ubuntu-24.04, ubuntu-24.04-arm, macos-15]
+        default: macos-26
+        options: [ubuntu-24.04, ubuntu-24.04-arm, macos-26]
       publish_release:
         description: Sign, notarize and publish the matching release tag, then update the dedicated Homebrew tap
         type: boolean
@@ -20,7 +20,7 @@ on:
         type: boolean
         default: false
       macos_terminal_gui:
-        description: Require native Kitty pixels on a billable GPU Mac runner (macos-15 only)
+        description: Require native Kitty pixels on a billable GPU Mac runner (macos-26 only)
         type: boolean
         default: false
 permissions:
@@ -41,7 +41,7 @@ jobs:
       actions: read
       id-token: write
       attestations: write
-    runs-on: ${{ inputs.os == 'macos-15' && inputs.macos_terminal_gui && 'macos-15-xlarge' || inputs.os }}
+    runs-on: ${{ inputs.os == 'macos-26' && inputs.macos_terminal_gui && 'macos-26-xlarge' || inputs.os }}
     timeout-minutes: ${{ inputs.publish_release && 90 || 60 }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -218,7 +218,7 @@ jobs:
         timeout-minutes: 15
         env:
           ALLOCATION_DIAGNOSTICS: ${{ inputs.allocation_diagnostics }}
-        run: xtask/target/debug/xtask measure-tui --candidate "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/tui-measurement" --chromium-resources ${{ inputs.os == 'macos-15' && '--enforce-targets' || '--enforce-memory-target' }} --allocation-diagnostics "$ALLOCATION_DIAGNOSTICS"
+        run: xtask/target/debug/xtask measure-tui --candidate "$RUNNER_TEMP/lazypencil-candidate.tar.gz" --output "$RUNNER_TEMP/tui-measurement" --chromium-resources ${{ inputs.os == 'macos-26' && '--enforce-targets' || '--enforce-memory-target' }} --allocation-diagnostics "$ALLOCATION_DIAGNOSTICS"
       - name: Retain TUI measurements and diagnostic logs
         if: ${{ always() && (steps.tui-measurement.outcome == 'success' || steps.tui-measurement.outcome == 'failure') }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6

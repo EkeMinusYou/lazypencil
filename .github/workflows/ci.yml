@@ -10,12 +10,12 @@ on:
         description: Initial release target (all currently means macOS Apple Silicon only)
         type: choice
         default: all
-        options: [all, macos-15]
+        options: [all, macos-26]
       focus_os:
         description: Override the affected platform for the initial reproduction
         type: choice
         default: auto
-        options: [auto, macos-15]
+        options: [auto, macos-26]
       measure_tui:
         description: Run the full TUI latency and resource acceptance measurement
         type: boolean
@@ -193,7 +193,7 @@ jobs:
       rebuild_application: ${{ inputs.rebuild_application == true }}
 
   source:
-    if: ${{ !cancelled() && needs.native.result == 'success' && needs.audit.result == 'success' && (needs.shader-preprocessor.result == 'success' || needs.shader-preprocessor.result == 'skipped') && (inputs.os == 'all' || inputs.os == '' || inputs.os == 'macos-15') }}
+    if: ${{ !cancelled() && needs.native.result == 'success' && needs.audit.result == 'success' && (needs.shader-preprocessor.result == 'success' || needs.shader-preprocessor.result == 'skipped') && (inputs.os == 'all' || inputs.os == '' || inputs.os == 'macos-26') }}
     name: Verified source artifact
     needs: [native, audit, shader-preprocessor]
     permissions:
@@ -268,7 +268,7 @@ jobs:
     if: needs.plan.outputs.verification == 'focused'
     uses: ./.github/workflows/native.yml
     with:
-      os: macos-15
+      os: macos-26
       phase: focus
       lane: ${{ (needs.plan.outputs.suite == 'core' || needs.plan.outputs.suite == 'conversation') && 'core' || 'build' }}
       suite: ${{ needs.plan.outputs.suite }}

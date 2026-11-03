@@ -249,7 +249,7 @@ To publish a **new** version:
    not dispatch another full CI run.
 2. Create and push an immutable `vVERSION` tag at that exact commit. The version must
    match `resources/release.json`. Do not reuse an existing published tag.
-3. Run **Release build evidence** on that tag with `os=macos-15` and
+3. Run **Release build evidence** on that tag with `os=macos-26` and
    `publish_release=true`. Enable any additional terminal/performance acceptance
    required for that release. Leave `publish_release=false` for ordinary verification.
 4. The workflow signs the executable with hardened runtime and a secure timestamp,

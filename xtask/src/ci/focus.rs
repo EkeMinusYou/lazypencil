@@ -9,9 +9,9 @@ mod selection;
 pub use selection::select;
 
 /// Retained native backends available for explicitly requested diagnostics.
-pub const PLATFORMS: &[&str] = &["ubuntu-24.04", "ubuntu-24.04-arm", "macos-15"];
+pub const PLATFORMS: &[&str] = &["ubuntu-24.04", "ubuntu-24.04-arm", "macos-26"];
 /// Required application targets for the first release, independent of helper hosts.
-pub const RELEASE_PLATFORMS: &[&str] = &["macos-15"];
+pub const RELEASE_PLATFORMS: &[&str] = &["macos-26"];
 
 pub fn verification_platforms(requested: &str) -> Result<Vec<String>> {
     ensure!(

@@ -5,7 +5,7 @@ umask 077
 
 preflight() {
   [[ ${GITHUB_ACTIONS:-} == true && ${RUNNER_OS:-} == macOS ]]
-  [[ ${RUNNER_ARCH:-} == ARM64 && ${RELEASE_PLATFORM:-} == macos-15 ]]
+  [[ ${RUNNER_ARCH:-} == ARM64 && ${RELEASE_PLATFORM:-} == macos-26 ]]
   local version
   version=$(jq -er '.version | select(test("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"))' resources/release.json)
   [[ ${GITHUB_REF:-} == "refs/tags/v$version" ]] || {

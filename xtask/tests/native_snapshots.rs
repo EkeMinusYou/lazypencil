@@ -6,7 +6,7 @@ use serde_json::json;
 
 #[test]
 fn release_baselines_are_extended_once_without_replacing_native_or_application_identity() {
-    let primary = format!("native-v2-macos-15-image-{}", "a".repeat(64));
+    let primary = format!("native-v2-macos-26-image-{}", "a".repeat(64));
     let complete = native_snapshots::complete_key(&primary).unwrap();
     let checkpoint = cache::checkpoint_key(&primary, "full", "402", "1").unwrap();
     let core = format!("core-{primary}");
@@ -84,7 +84,7 @@ fn release_baselines_are_extended_once_without_replacing_native_or_application_i
 
 #[test]
 fn extended_dependencies_retire_only_their_baseline_and_partial_snapshots_after_publication() {
-    let primary = format!("native-v2-macos-15-image-{}", "a".repeat(64));
+    let primary = format!("native-v2-macos-26-image-{}", "a".repeat(64));
     let checkpoint = cache::checkpoint_key(&primary, "full", "402", "1").unwrap();
     let complete = native_snapshots::complete_key(&primary).unwrap();
     let entry = |id, key: String, version: &str, reference: &str| {
@@ -129,7 +129,7 @@ fn stale_dependency_catalog_cannot_prune_outputs_or_publish_a_checkpoint() {
     let marker = target.join("owned-output");
     fs::write(&marker, b"unchanged").unwrap();
     let output = temporary.path().join("github-output");
-    let primary = format!("native-v2-macos-15-image-{}", "a".repeat(64));
+    let primary = format!("native-v2-macos-26-image-{}", "a".repeat(64));
     let checkpoint = cache::checkpoint_key(&primary, "full", "402", "1").unwrap();
     let result = process::output(
         Command::new(env!("CARGO_BIN_EXE_xtask"))

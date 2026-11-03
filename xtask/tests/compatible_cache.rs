@@ -1777,7 +1777,7 @@ fn compatible_cache_retention_is_bounded_and_preserves_other_platforms_and_versi
     );
     let mut others = entries.clone();
     for (id, platform, version, reference) in [
-        (5, "macos-15", "one", "refs/heads/main"),
+        (5, "macos-26", "one", "refs/heads/main"),
         (6, "ubuntu-24.04", "two", "refs/heads/main"),
         (7, "ubuntu-24.04", "one", "refs/pull/1/merge"),
     ] {
@@ -1810,7 +1810,7 @@ fn modern_full_does_not_prove_a_legacy_checkpoint_has_the_same_compiler_context(
     let mut entries = vec![
         entry(1, old("ubuntu-24.04", "full"), "refs/heads/main"),
         entry(2, old("ubuntu-24.04", "focus-401-1"), "refs/heads/main"),
-        entry(3, old("macos-15", "full"), "refs/heads/main"),
+        entry(3, old("macos-26", "full"), "refs/heads/main"),
         entry(4, old("ubuntu-24.04", "full"), "refs/pull/1/merge"),
     ];
     // The matching old full build already makes its focus checkpoint redundant.

@@ -200,12 +200,12 @@ fn publication_retires_only_the_replaced_configuration_compiler_and_wire_format(
         format!("{role}-v1-{platform}-{context}-full-{source}")
     };
     let mut entries = vec![
-        entry(1, key("tests", "macos-15", &context, &old), "wire"),
-        entry(2, key("tests-core", "macos-15", &context, &old), "wire"),
-        entry(3, key("tests", "macos-15", &other_context, &old), "wire"),
-        entry(4, key("tests", "macos-15", &context, &old), "other-wire"),
+        entry(1, key("tests", "macos-26", &context, &old), "wire"),
+        entry(2, key("tests-core", "macos-26", &context, &old), "wire"),
+        entry(3, key("tests", "macos-26", &other_context, &old), "wire"),
+        entry(4, key("tests", "macos-26", &context, &old), "other-wire"),
         entry(5, key("tests", "ubuntu-24.04", &context, &old), "wire"),
-        entry(6, format!("native-v2-macos-15-{context}"), "wire"),
+        entry(6, format!("native-v2-macos-26-{context}"), "wire"),
     ];
     let removed = |entries: &[Value]| {
         cache::obsolete(entries, Some(&current))
@@ -217,7 +217,7 @@ fn publication_retires_only_the_replaced_configuration_compiler_and_wire_format(
     assert!(removed(&entries).is_empty(), "Staging is not publication");
     entries.push(entry(
         7,
-        key("tests", "macos-15", &context, &current),
+        key("tests", "macos-26", &context, &current),
         "wire",
     ));
     assert_eq!(
@@ -227,7 +227,7 @@ fn publication_retires_only_the_replaced_configuration_compiler_and_wire_format(
     );
     entries.push(entry(
         8,
-        key("tests-core", "macos-15", &context, &current),
+        key("tests-core", "macos-26", &context, &current),
         "wire",
     ));
     assert_eq!(removed(&entries), [1, 2]);
@@ -260,7 +260,7 @@ fn application_checkpoints_do_not_collide_across_later_focused_runs_or_retries()
     );
     for namespace in ["tests-v1", "tests-core-v1"] {
         let base = format!(
-            "{namespace}-macos-15-{}-focus-{}",
+            "{namespace}-macos-26-{}-focus-{}",
             "a".repeat(64),
             "b".repeat(64)
         );
@@ -279,7 +279,7 @@ fn application_checkpoints_do_not_collide_across_later_focused_runs_or_retries()
 #[test]
 fn complete_application_generations_retire_only_their_replaced_context_and_wire() {
     let base = format!(
-        "tests-core-v1-macos-15-{}-full-{}",
+        "tests-core-v1-macos-26-{}-full-{}",
         "a".repeat(64),
         "b".repeat(64)
     );
@@ -324,7 +324,7 @@ fn focused_retention_requires_the_same_compiler_source_features_and_cache_layout
         entry(
             1,
             "tests",
-            "macos-15",
+            "macos-26",
             &context,
             "focus",
             format!("{source}-401-1"),
@@ -333,7 +333,7 @@ fn focused_retention_requires_the_same_compiler_source_features_and_cache_layout
         entry(
             2,
             "tests",
-            "macos-15",
+            "macos-26",
             &context,
             "focus",
             format!("{source}-402-1"),
@@ -342,7 +342,7 @@ fn focused_retention_requires_the_same_compiler_source_features_and_cache_layout
         entry(
             3,
             "tests",
-            "macos-15",
+            "macos-26",
             &other,
             "focus",
             format!("{source}-402-1"),
@@ -351,7 +351,7 @@ fn focused_retention_requires_the_same_compiler_source_features_and_cache_layout
         entry(
             4,
             "tests",
-            "macos-15",
+            "macos-26",
             &context,
             "focus",
             format!("{source}-402-1"),
@@ -360,7 +360,7 @@ fn focused_retention_requires_the_same_compiler_source_features_and_cache_layout
         entry(
             5,
             "tests-core",
-            "macos-15",
+            "macos-26",
             &context,
             "focus",
             format!("{source}-402-1"),
@@ -378,7 +378,7 @@ fn focused_retention_requires_the_same_compiler_source_features_and_cache_layout
         entry(
             7,
             "tests",
-            "macos-15",
+            "macos-26",
             &context,
             "full",
             other.clone(),
@@ -400,7 +400,7 @@ fn focused_retention_requires_the_same_compiler_source_features_and_cache_layout
     entries.push(entry(
         8,
         "tests",
-        "macos-15",
+        "macos-26",
         &context,
         "full",
         source.clone(),
@@ -412,7 +412,7 @@ fn focused_retention_requires_the_same_compiler_source_features_and_cache_layout
         "Only the matching context and layout are covered"
     );
     entries.push(entry(
-        9, "tests", "macos-15", &other, "full", source, "wire",
+        9, "tests", "macos-26", &other, "full", source, "wire",
     ));
     assert_eq!(removed(&entries), [1, 2, 3, 7]);
 }
@@ -605,7 +605,7 @@ fn application_retention_keeps_the_latest_generation_then_retires_it_after_full_
 
 #[test]
 fn immutable_checkpoints_distinguish_phase_run_and_retry_without_changing_native_identity() {
-    let primary = format!("native-v2-macos-15-image-{}", "a".repeat(64));
+    let primary = format!("native-v2-macos-26-image-{}", "a".repeat(64));
     let prefix = format!("checkpoint-{primary}-");
     let mut unique = BTreeSet::new();
     for (phase, run, attempt) in [

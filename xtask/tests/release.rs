@@ -20,7 +20,7 @@ fn command(script: &str, temporary: &Path) -> Command {
         .env("GITHUB_ACTIONS", "true")
         .env("RUNNER_OS", "macOS")
         .env("RUNNER_ARCH", "ARM64")
-        .env("RELEASE_PLATFORM", "macos-15")
+        .env("RELEASE_PLATFORM", "macos-26")
         .env("GITHUB_REF", "refs/tags/v0.1.0")
         .env("DEVELOPER_ID_P12_BASE64", "fixture")
         .env("DEVELOPER_ID_P12_PASSWORD", "fixture")
