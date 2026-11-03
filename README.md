@@ -36,8 +36,29 @@ The terminal workspace in use, showing the editable
   Noto Sans JP fonts.
 
 [Install](#install) · [Quick start](#quick-start) · [Demo](#demo) ·
+[Features](#features) · [Nodes](#nodes) · [Preview](#preview) ·
 [MCP](#mcp-and-ai-prompts) · [CLI](#cli) ·
 [Documentation](#documentation-and-development)
+
+## Features
+
+### Nodes
+
+Browse the tree, search by name with `/`, and press `f` or Enter to fit a selected
+element in Preview.
+
+[![Browse and search the node tree, then display the selected elements in Preview.](docs/images/lazypencil-nodes.gif)](docs/media/lazypencil-nodes.mp4)
+
+[Watch or download the Nodes video](docs/media/lazypencil-nodes.mp4).
+
+### Preview
+
+Use the arrow keys to pan, `+` / `-` to zoom, and `0` to fit the whole design.
+Camera controls change the view while keeping the design itself in place.
+
+[![Pan and zoom the design preview, then fit the entire dashboard.](docs/images/lazypencil-preview.gif)](docs/media/lazypencil-preview.mp4)
+
+[Watch or download the Preview video](docs/media/lazypencil-preview.mp4).
 
 ## Supported environment
 
