@@ -114,30 +114,67 @@ pub fn presentation_only(paths: &[String]) -> bool {
         .all(|p| presentation(p))
 }
 
-/// PRs verify their merge result against the PR base; main retains the verified baseline.
+fn pr_base(root: &Path, event: &Value) -> Result<String> {
+    let valid_hash =
+        |value: &str| value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit());
+    let base = event["pull_request"]["base"]["sha"]
+        .as_str()
+        .unwrap_or_default();
+    ensure!(valid_hash(base), "Missing PR base identity");
+    if let Some(head) = event["pull_request"]["head"]["sha"].as_str() {
+        ensure!(valid_hash(head), "Invalid PR head identity");
+        let commit = process::text(Command::new("git").current_dir(root).args([
+            "rev-list",
+            "--parents",
+            "-n",
+            "1",
+            "HEAD",
+        ]))?;
+        let parents: Vec<_> = commit.split_whitespace().collect();
+        if parents
+            .first()
+            .is_none_or(|commit| !commit.eq_ignore_ascii_case(head))
+        {
+            ensure!(
+                parents.len() == 3 && parents[2].eq_ignore_ascii_case(head),
+                "Checkout does not match the advertised PR head or its tested merge"
+            );
+            // GitHub can refresh the merge ref after capturing the event's
+            // base SHA. Its first parent is the base actually tested here.
+            process::checked(
+                Command::new("git").current_dir(root).args([
+                    "merge-base",
+                    "--is-ancestor",
+                    base,
+                    parents[1],
+                ]),
+                Duration::from_secs(30),
+            )?;
+            return Ok(parents[1].to_owned());
+        }
+    }
+    Ok(process::text(
+        Command::new("git")
+            .current_dir(root)
+            .args(["merge-base", base, "HEAD"]),
+    )?
+    .trim()
+    .to_owned())
+}
+
+/// PRs verify against the tested merge's base; main retains the verified baseline.
 pub fn changed_paths(root: &Path, event_name: &str) -> Result<Vec<String>> {
     if event_name != "pull_request" {
         return super::focus::changed_paths(root);
     }
     let changes = (|| -> Result<String> {
         let event: Value = util::json(Path::new(&std::env::var("GITHUB_EVENT_PATH")?))?;
-        let base = event["pull_request"]["base"]["sha"]
-            .as_str()
-            .unwrap_or_default();
-        ensure!(
-            base.len() == 40 && base.bytes().all(|b| b.is_ascii_hexdigit()),
-            "Missing PR base identity"
-        );
-        let base = process::text(Command::new("git").current_dir(root).args([
-            "merge-base",
-            base,
-            "HEAD",
-        ]))?;
+        let base = pr_base(root, &event)?;
         process::text(Command::new("git").current_dir(root).args([
             "diff",
             "--name-only",
             "-z",
-            base.trim(),
+            &base,
             "HEAD",
         ]))
     })();
@@ -159,17 +196,11 @@ pub fn changed_paths(root: &Path, event_name: &str) -> Result<Vec<String>> {
 
 pub fn check_documentation(root: &Path) -> Result<()> {
     let event: Value = util::json(Path::new(&std::env::var("GITHUB_EVENT_PATH")?))?;
-    let base = event["pull_request"]["base"]["sha"]
-        .as_str()
-        .unwrap_or_default();
-    ensure!(
-        base.len() == 40 && base.bytes().all(|b| b.is_ascii_hexdigit()),
-        "Missing PR base identity"
-    );
+    let base = pr_base(root, &event)?;
     process::checked(
         Command::new("git")
             .current_dir(root)
-            .args(["diff", "--check", base, "HEAD"]),
+            .args(["diff", "--check", &base, "HEAD"]),
         Duration::from_secs(30),
     )?;
     Ok(())

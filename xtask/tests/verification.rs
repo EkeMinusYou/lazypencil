@@ -264,4 +264,103 @@ fn pr_planner_uses_the_actual_base_diff_and_rejects_bad_documentation() {
         let commands = ci::commands::plan(&repository, suite, &selected).unwrap();
         assert!(!commands.build.is_empty() && !commands.checks.is_empty());
     }
+
+    // The event can precede a refresh of GitHub's synthetic merge ref. Changes
+    // already on the tested base must not expand this PR's consumer set.
+    let advertised_base = git(&["rev-parse", "HEAD"]).trim().to_owned();
+    git(&["checkout", "--quiet", "-b", "runtime-pr"]);
+    fs::write(
+        root.join("src/runtime/download.rs"),
+        "// Runtime PR input.\n",
+    )
+    .unwrap();
+    git(&["add", "src/runtime/download.rs"]);
+    git(&["commit", "--quiet", "-m", "Runtime PR"]);
+    let runtime_head = git(&["rev-parse", "HEAD"]).trim().to_owned();
+    git(&["checkout", "--quiet", "-b", "tested-base", &advertised_base]);
+    fs::write(root.join("src/tui/preview.rs"), "// Base-only input.  \n").unwrap();
+    fs::write(root.join("tests/tui.rs"), "// Base-only terminal input.\n").unwrap();
+    git(&["add", "src/tui/preview.rs", "tests/tui.rs"]);
+    git(&["commit", "--quiet", "-m", "Advance the base"]);
+    let tested_base = git(&["rev-parse", "HEAD"]).trim().to_owned();
+    git(&[
+        "merge",
+        "--quiet",
+        "--no-ff",
+        "runtime-pr",
+        "-m",
+        "Tested merge",
+    ]);
+    fs::write(
+        &event,
+        serde_json::to_vec(
+            &json!({"pull_request":{"base":{"sha":advertised_base},"head":{"sha":runtime_head}}}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let result = plan();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let output: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(output["verification"], "focused");
+    assert_eq!(output["suite"], "core");
+    assert_eq!(output["targets"], "[\"runtime\"]");
+    assert_eq!(output["native_clipboard"], "false");
+    assert_eq!(output["measure_tui"], "false");
+
+    git(&["checkout", "--quiet", "-b", "docs-pr", &advertised_base]);
+    fs::write(root.join("README.md"), "Clean PR documentation\n").unwrap();
+    git(&["add", "README.md"]);
+    git(&["commit", "--quiet", "-m", "Documentation PR"]);
+    let docs_head = git(&["rev-parse", "HEAD"]).trim().to_owned();
+    git(&[
+        "checkout",
+        "--quiet",
+        "-b",
+        "docs-tested-base",
+        &tested_base,
+    ]);
+    git(&[
+        "merge",
+        "--quiet",
+        "--no-ff",
+        "docs-pr",
+        "-m",
+        "Tested docs merge",
+    ]);
+    fs::write(
+        &event,
+        serde_json::to_vec(
+            &json!({"pull_request":{"base":{"sha":advertised_base},"head":{"sha":docs_head}}}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let result = plan();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let output: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    // Base-only trailing whitespace must not fail the documentation PR either.
+    assert_eq!(output["verification"], "docs");
+    for head in ["invalid".to_owned(), "f".repeat(40)] {
+        fs::write(
+            &event,
+            serde_json::to_vec(
+                &json!({"pull_request":{"base":{"sha":advertised_base},"head":{"sha":head}}}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let result = plan();
+        assert!(result.status.success());
+        let output: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+        assert_eq!(output["verification"], "full");
+    }
 }

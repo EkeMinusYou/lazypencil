@@ -63,8 +63,10 @@ checks affected by that edit, rather than starting every unrelated suite again.
 
 ## Pull requests and integration
 
-CI uses the PR merge result against its base to select a completion contract. A missing
-or invalid base requires full verification. Main, manual CI and reusable CI calls keep
+CI compares the PR merge result with its tested base parent to select a completion
+contract. GitHub may refresh that merge after capturing the event's base SHA; base-only
+changes must not expand a PR's consumer set or whitespace checks. A missing or invalid
+base or mismatched PR head requires full verification. Main, manual CI and reusable CI calls keep
 the complete graph and the existing verified-baseline behavior.
 
 | Contract | PR changes | Required work |
