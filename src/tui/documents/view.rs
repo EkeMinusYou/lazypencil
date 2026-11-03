@@ -240,16 +240,19 @@ fn workspace_frame(
         horizontal: if opening.is_some() { 1 } else { 2 },
         vertical: 1,
     });
-    let preview_text = if let Some(path) = opening {
-        vec![
-            Line::raw("Loading preview…"),
-            Line::raw(fit_end(&path.display().to_string(), preview.width as usize)),
-        ]
+    let preview_text = if opening.is_some() {
+        "Loading preview…"
     } else {
-        vec![Line::raw("No document open")]
+        "No document open"
     };
     frame.render_widget(
-        Paragraph::new(preview_text).style(Style::default().fg(theme::SECONDARY)),
+        Paragraph::new(preview_text)
+            .style(if opening.is_some() {
+                Style::default()
+            } else {
+                Style::default().fg(theme::SECONDARY)
+            })
+            .wrap(Wrap { trim: false }),
         preview,
     );
     let agent = areas.panes[2].inner(Margin {
@@ -551,16 +554,22 @@ mod tests {
             let buffer = terminal.backend().buffer();
             let screen = text(buffer);
             if width >= 50 {
-                for label in [
-                    "Loading preview…",
-                    "nested/設定.pen",
-                    "Nodes",
-                    "Preview",
-                    "Agent",
-                ] {
+                for label in ["Loading preview…", "Nodes", "Preview", "Agent"] {
                     assert!(screen.contains(label), "Missing {label}: {screen}");
                 }
+                assert!(screen.lines().next().unwrap().contains("設定.pen"));
+                assert!(!screen.contains("nested/設定.pen"));
                 let areas = workspace::areas(buffer.area, &PanelLayout::default(), false, false, 1);
+                let preview = areas.panes[1];
+                for y in preview.y + 2..preview.bottom() - 1 {
+                    for x in preview.x + 1..preview.right() - 1 {
+                        assert_eq!(
+                            buffer[(x, y)].symbol(),
+                            " ",
+                            "Unexpected preview content below loading status"
+                        );
+                    }
+                }
                 for (pane, message) in [
                     (areas.panes[0], "Loading nodes…"),
                     (areas.panes[1], "Loading preview…"),
