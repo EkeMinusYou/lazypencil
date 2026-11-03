@@ -8,4 +8,6 @@ Opaque declarations for `std::__rebind_alloc.*` and `std::__hash_table.*` are ba
 
 Dependency source extraction also defers directory entries until descendants are unpacked, matching `tar::Archive::unpack` while retaining the existing root and `infra/` filters. On Unix, it additionally restores the directories' archived modification times with the standard library: tar 0.4.46 preserves file times but does not restore directory times. This prevents a newly extracted `skia/include` from appearing newer than the first Cargo build. Actual header edits remain Cargo inputs. Cargo fingerprints and cache timestamps are unchanged; Windows retains its existing extraction-time mtimes.
 
+The native Ninja invocation forwards Cargo's `NUM_JOBS` through its job limit, so native compilation follows the same parallelism as Cargo instead of using every CPU.
+
 The original MIT license is included in LICENSE. Remove each patch when an upstream crates.io release includes its fix.

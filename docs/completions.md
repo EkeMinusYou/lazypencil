@@ -88,5 +88,5 @@ all three primary shells, deep command nesting, values from the owned bundled
 catalogues, hidden-argument exclusion and paths with spaces/Unicode. Separate
 shell processes source the generated hooks and call the real executable; Zsh's
 ZLE-only final presentation is replaced by a capture function in that test.
-Every process has a deadline and bounded captured output. Validation results
-are recorded in the existing [implementation status](implementation-status.md).
+Every process has a deadline and bounded captured output. Run it with `cargo xtask test --test completions`; see [development](development.md)
+for helper and isolated-settings setup.

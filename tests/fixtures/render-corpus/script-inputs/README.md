@@ -4,4 +4,4 @@ The 22 original scripts encode the JavaScript type, value, declared keys and an 
 
 Cases cover implicit defaults for six types, numeric limits including a negative maximum, declared defaults, explicit zero/false, null resets, valid enum/ref selections, empty refs and stale inputs including an undefined variable. Stored keys remain untouched while undeclared keys do not enter pencil.input. The reusable template lies outside the rendered root.
 
-Tests retain all cases, actual worker checks, byte-preserving input/script checks, no persisted generated nodes/history, and exact all-channel pixel comparison for 2.19/2.21 at scale two. Vendor PNG/observation files are absent. See the parent corpus README for permission/history status.
+Tests retain all cases, actual worker checks, byte-preserving input/script checks, no persisted generated nodes/history, and exact all-channel pixel comparison for 2.19/2.21 at scale two. Vendor PNG/observation files are absent. See the parent corpus README for fixture contribution rules.

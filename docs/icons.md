@@ -101,31 +101,23 @@ It verifies the archives, checks every canonical Lucide primitive against the or
 
 For Phosphor and Material, [icons.rs](../xtask/src/icons.rs) accepts a directory containing the original Phosphor archive, all three pinned TTF and `.codepoints` files, and `Material-LICENSE`. It verifies their pinned hashes before deriving indices and normalized-data hashes. Run `cargo xtask icons optional SOURCES --output resources/icons` after reproducing the existing base catalogue. Per-pack `provenance.json` records source paths/commits, hashes, copyright, and normalization; the original Material codepoint/license bytes are preserved. This developer reproducer performs no network requests and never evaluates package JavaScript.
 
-## Verification and remaining work
+## Development checks
 
-`tests/icons.rs` covers pagination, aliases, no implicit installation, pinned licenses, CLI discovery/license/offline setup, concurrent installation, tamper detection, snapshot invalidation, all 2,441 advertised names' native geometry, native paint pixels, and script-generated Feather dependencies. `tests/mcp.rs` exercises variable and component resolution through a real MCP server and verifies PNG pixels.
+Native tests cover catalogue discovery, original archive installation, tamper/path
+checks, component/variable resolution, and returned PNG pixels. Use
+`cargo xtask test --test icons --test optional_icons` for the affected native path.
 
-An opt-in test compares representative native icons with original Lucide SVGs rendered by Chromium:
+Optional upstream-source comparisons require the exact pinned originals:
 
 ```sh
 LAZYPENCIL_TEST_CHROMIUM=/path/to/chrome-headless-shell \
 LAZYPENCIL_TEST_LUCIDE_ARCHIVE=/path/to/lucide-static-1.57.0.tgz \
-cargo test --test icons -- --ignored
+cargo test --locked --test icons -- --ignored
 ```
 
-Additional opt-in checks use `LAZYPENCIL_TEST_MATERIAL_DIR` containing the original source TTFs and `.codepoints` files:
-
-```sh
-cargo test --test optional_icons official_material_fonts -- --ignored --nocapture
-cargo test --test mcp real_mcp_material -- --ignored --nocapture
-# Also set LAZYPENCIL_TEST_CHROMIUM for the independently rendered source comparison.
-cargo test --test optional_icons optional_icon_paths_match -- --ignored --nocapture
-```
-
-The source comparison uses seven original regular Phosphor SVGs and all three Material fonts at weights 100, 350.5 and 700, served only from a temporary loopback server. SVG text uses geometric precision to compare unhinted outlines, with explicit font axes and no font synthesis. Native extraction also disables font hinting. The same mean absolute channel-difference bound of 2/255 applies to every case; successful macOS arm64 runs measured below 0.5/255 for Material and below 0.01/255 for Phosphor. Material tests separately resolve every one of the 12,912 advertised names, compare changing real weights, exercise cache eviction, themes/components, and reject modified font files. A real MCP check edits the numeric weight, receives actual PNG content, and rejects stale calculations after document/font changes.
-
-Hosted CI is configured to run both native Material opt-ins on all three targets in the earlier cross-platform scope: macOS Apple Silicon and Linux x64/arm64. [The source preparer](../xtask/src/ci/setup.rs) uses the catalogue's exact Google commit, URL and SHA-256, streams each original TTF through a 64 KiB buffer with a 16 MiB limit, and publishes it only after checksum verification. Cached originals are revalidated. Bad downloads, redirects outside the expected HTTPS host, mutable pins and oversized data fail explicitly; temporary downloads are removed. Fonts are stored only in the hosted runner's temporary directory. The native tests need the three original TTFs; the separate Chromium comparison additionally needs its source indices and browser. Per-platform logs distinguish these opt-ins from the normal test configurations, and configuration alone is not proof that they have passed on a platform.
-
-At [source 4e938b7](https://github.com/EkeMinusYou/lazypencil/actions/runs/40610172472), macOS Apple Silicon and Linux x64/arm64 each passed all 32 native icon/asset cases from tests/icons.rs, tests/optional_icons.rs and tests/assets.rs, with 54 successful invocations across their distinct configurations. This includes all Material names and continuous weights, original archive installation, complete license output, tamper/symlink invalidation, native geometry and pixels, and managed asset publication. The two Chromium source-comparison opt-ins were explicitly ignored in these full gates; they are not counted as passing. The completed c9ffb37 baseline preserved these icon/asset cases and multiplicities on all three targets; the two ignored Chromium source-comparison opt-ins are not counted as passing.
-
-The Lucide comparison and explicit HTTPS Feather installation have separately passed on macOS arm64, as have real Codex/Claude subscription workflows that discover icons, create native icon nodes, and return PNG previews. These checks do not establish full Pencil compatibility, product performance, or release packaging. All six catalogue packs and their declared setup/license paths are implemented. Unsupported upstream styles or arbitrary user-defined packs are not advertised as supported. Final per-binary attribution and publication acceptance remain separate.
+Material opt-ins use `LAZYPENCIL_TEST_MATERIAL_DIR` containing the three pinned TTFs
+and `.codepoints` files. The normal native checks and browser source comparisons have
+distinct prerequisites; an ignored test is not a passed test. Follow
+[development setup](development.md) for isolated settings and the native helper.
+Only the catalogued styles are supported; arbitrary user-defined packs and complete
+Pencil output equivalence are not promised.
