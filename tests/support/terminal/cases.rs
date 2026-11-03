@@ -204,6 +204,18 @@ pub fn run(
         write_json(&root.join("nested/deep/selected.pen"), &design)?;
         write_json(&root.join("nested/deep/設定.pen"), &design)?;
         fs::write(root.join("broken.pen"), "not a document")?;
+        if case == "picker-default" {
+            let directory = root.join("user-settings");
+            fs::create_dir_all(&directory)?;
+            fs::write(
+                directory.join("config.toml"),
+                format!(
+                    "[agents.codex]\nadapter={}\nadapter_args=['acp','auth-inspect-account']\n",
+                    serde_json::to_string(&crate::fixture_support::helper().to_string_lossy())?
+                ),
+            )?;
+            environment.insert("LAZYPENCIL_CONFIG_DIR".into(), directory.into_os_string());
+        }
     }
     // Checkpoints are created before opening the TUI so its initial revision is current.
     let mut first_checkpoint = Value::Null;
@@ -249,12 +261,25 @@ pub fn run(
     if case.starts_with("picker-") {
         h.visible("Open a .pen file")?;
         h.visible("nested/deep/selected.pen")?;
+        for label in ["Nodes", "Preview", "Agent", "Agent prepared"] {
+            h.visible(label)?;
+        }
+        assert!(!h.screen.text().contains("Loading preview"));
+        for (width, height) in [(80, 24), (50, 16), (130, 34)] {
+            h.resize(width, height)?;
+            h.visible("Open a .pen file")?;
+        }
+        assert!(!root.join("received-account-methods.jsonl").exists());
         assert!(files(root, |name| name == "session.json").is_empty());
         assert!(!root.join("sent-turn.txt").exists());
         if case == "picker-default" {
             return h.finish();
         }
-        if case == "picker-direct" {
+        if case == "picker-prepared" {
+            h.key(b"\x0c")?;
+            h.key(b"design.pen")?;
+            h.key(b"\r")?;
+        } else if case == "picker-direct" {
             h.key(b"\x0c")?;
             h.key(b"nested/deep/selected.pen")?;
             h.key(b"\r")?;
@@ -280,13 +305,25 @@ pub fn run(
         h.screen.find_text("›").is_some() && h.screen.text().contains("Agent")
     })?;
     let mut report = match case {
+        "picker-prepared" => {
+            h.wait("prepared adapter session", 10.0, |_| {
+                fs::read_to_string(root.join("received-account-methods.jsonl"))
+                    .unwrap_or_default()
+                    .contains("session/new")
+            })?;
+            let methods = fs::read_to_string(root.join("received-account-methods.jsonl"))?;
+            assert_eq!(methods.lines().count(), 2, "{methods}");
+            assert!(methods.contains("initialize") && methods.contains("session/new"));
+            assert!(!root.join("sent-turn.txt").exists());
+            Value::Null
+        }
         "picker-explicit" | "picker-unicode" | "picker-direct" => {
             h.visible(if case == "picker-unicode" {
                 "設定.pen"
             } else {
                 "selected.pen"
             })?;
-            no_agent(&h);
+            assert!(!root.join("sent-turn.txt").exists());
             Value::Null
         }
         "agent-header-fast" | "agent-header-standard" => {

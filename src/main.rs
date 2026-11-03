@@ -111,6 +111,8 @@ fn main() -> ExitCode {
         }
     };
     #[cfg(feature = "tui")]
+    let mut prepared_agent = None;
+    #[cfg(feature = "tui")]
     if let lazypencil::cli::Command::Tui(options) = &mut arguments.command
         && matches.subcommand_matches("tui").is_some_and(|matches| {
             matches.value_source("file") == Some(clap::parser::ValueSource::DefaultValue)
@@ -125,8 +127,18 @@ fn main() -> ExitCode {
                 Some(&arguments),
             );
         }
-        match lazypencil::tui::documents::select(arguments.data_dir.clone()) {
-            Ok(Some(file)) => options.prompt.file = file,
+        let mut startup = options.prompt.clone();
+        if let Err(error) = lazypencil::config::agents::resolve_user(
+            &mut startup,
+            matches.subcommand_matches("tui").expect("TUI matches"),
+        ) {
+            return failure(error, Some(&arguments));
+        }
+        match lazypencil::tui::documents::select(arguments.data_dir.clone(), &startup) {
+            Ok(Some(selection)) => {
+                options.prompt.file = selection.file;
+                prepared_agent = selection.agent;
+            }
             Ok(None) => return ExitCode::SUCCESS,
             Err(error) => return failure(error, Some(&arguments)),
         }
@@ -158,7 +170,12 @@ fn main() -> ExitCode {
     }
     #[cfg(feature = "tui")]
     if let lazypencil::cli::Command::Tui(options) = &arguments.command {
-        return match lazypencil::tui::run(options, arguments.data_dir.clone(), arguments.json) {
+        return match lazypencil::tui::run_with_prepared(
+            options,
+            arguments.data_dir.clone(),
+            arguments.json,
+            prepared_agent,
+        ) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => failure(error, Some(&arguments)),
         };

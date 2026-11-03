@@ -23,6 +23,7 @@ const MAX_LINE: usize = 96 * 1024 * 1024;
 
 pub mod auth;
 pub mod permissions;
+mod preparation;
 mod process;
 mod settings;
 use auth::{AuthPolicy, AuthReport};
@@ -104,6 +105,8 @@ pub struct AgentHost {
     shutdown: CancellationToken,
     task: Option<tokio::task::JoinHandle<Result<()>>>,
     authentication: watch::Receiver<Option<AuthReport>>,
+    deferred_options: Option<oneshot::Sender<AgentOptions>>,
+    prepared_options: Option<AgentOptions>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -118,6 +121,15 @@ impl AgentHost {
     }
 
     fn spawn_for(options: AgentOptions, purpose: Purpose) -> Result<Self> {
+        Self::spawn_task(options, purpose, None, None)
+    }
+
+    fn spawn_task(
+        options: AgentOptions,
+        purpose: Purpose,
+        deferred: Option<oneshot::Receiver<AgentOptions>>,
+        finished: Option<oneshot::Sender<()>>,
+    ) -> Result<Self> {
         if options.restart_session && options.session_id.is_none() {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
@@ -147,13 +159,25 @@ impl AgentHost {
         let (auth_sender, authentication) = watch::channel(None);
         let task = tokio::spawn(async move {
             let reporting = sender.clone();
-            let result = run(options, receiver, sender, stop, auth_sender, purpose).await;
+            let result = run(
+                options,
+                receiver,
+                sender,
+                stop,
+                auth_sender,
+                purpose,
+                deferred,
+            )
+            .await;
             if let Err(error) = &result {
                 let _ = reporting
                     .send(AgentEvent::Message(
                         json!({"type":"connection_error","error":error}),
                     ))
                     .await;
+            }
+            if let Some(finished) = finished {
+                let _ = finished.send(());
             }
             result
         });
@@ -163,6 +187,8 @@ impl AgentHost {
             shutdown,
             task: Some(task),
             authentication,
+            deferred_options: None,
+            prepared_options: None,
         })
     }
 
@@ -208,6 +234,9 @@ impl AgentHost {
         content: Vec<ContentBlock>,
         cancel: CancellationToken,
     ) -> Result<()> {
+        if self.deferred_options.is_some() {
+            return Err(agent_error("Choose a document before submitting a prompt"));
+        }
         if content.is_empty() || content.len() > 32 {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
@@ -249,6 +278,7 @@ async fn run(
     shutdown: CancellationToken,
     auth_sender: watch::Sender<Option<AuthReport>>,
     purpose: Purpose,
+    deferred: Option<oneshot::Receiver<AgentOptions>>,
 ) -> Result<()> {
     let setup_started = std::time::Instant::now();
     let mut process = tokio::select! {
@@ -260,6 +290,7 @@ async fn run(
         .setup_timeout
         .saturating_sub(setup_started.elapsed());
     let child = process.child_mut();
+    let process_id = child.id();
     let stdin = child.stdin.take().expect("piped stdin");
     let stdout = child.stdout.take().expect("piped stdout");
     let mut stderr = child.stderr.take().expect("piped stderr");
@@ -330,11 +361,21 @@ async fn run(
             responder.respond(RequestPermissionResponse::new(outcome))
         }, acp::on_receive_request!())
         .connect_with(transport, async move |connection: acp::ConnectionTo<acp::Agent>| {
-            conversation(&connection, &options, commands, &events, &shutdown, current_cancel, auth_receiver, purpose).await
-                .map_err(|error| {
-                    *captured_error.lock().expect("host error lock") = Some(error);
-                    acp::Error::internal_error()
-                })
+            let result = async {
+                let options = if let Some(deferred) = deferred {
+                    emit(&events, json!({"type":"agent_prepared","process_id":process_id})).await?;
+                    tokio::select! {
+                        biased;
+                        _ = shutdown.cancelled() => return Ok(()),
+                        options = deferred => match options { Ok(options) => options, Err(_) => return Ok(()) },
+                    }
+                } else { options };
+                conversation(&connection, &options, commands, &events, &shutdown, current_cancel, auth_receiver, purpose).await
+            }.await;
+            result.map_err(|error| {
+                *captured_error.lock().expect("host error lock") = Some(error);
+                acp::Error::internal_error()
+            })
         }).await;
     process.stop().await;
     let stderr_bytes = match tokio::time::timeout(Duration::from_secs(1), &mut drain).await {

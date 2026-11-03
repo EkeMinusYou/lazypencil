@@ -215,8 +215,10 @@ lazypencil tui design.pen --image-protocol sixel
 ```
 
 With no arguments, `lazypencil` opens the same document picker as `lazypencil tui`.
-It recursively lists `.pen` files below the launch directory without parsing them
-or starting an agent. Type to filter relative paths (`/` explicitly enters filtering),
+The centered picker uses the ordinary empty workspace as its background. It
+recursively lists `.pen` files below the launch directory without parsing them.
+Adapter process preparation runs in the background; document sessions and previews
+start after selection. Type to filter relative paths (`/` explicitly enters filtering),
 use arrows or `j`/`k` to select, and press Enter to open. Ctrl+L accepts a directory
 or file path; relative paths resolve against the displayed search root. Esc clears
 input and Ctrl+C exits. Discovery runs in the background and stops after 10,000

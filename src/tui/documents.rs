@@ -1,4 +1,5 @@
-//! Startup document picker. No document or agent runtime starts during discovery.
+//! Startup document modal with background discovery and adapter preparation.
+mod view;
 use crate::{
     Error, Result,
     documents::{Limits, Listing, Scan},
@@ -10,13 +11,7 @@ use crossterm::{
     execute,
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{
-    Terminal,
-    backend::CrosstermBackend,
-    layout::{Constraint, Layout},
-    style::{Color, Style},
-    widgets::{Block, List, ListItem, ListState, Paragraph},
-};
+use ratatui::{Terminal, backend::CrosstermBackend, widgets::ListState};
 use std::{
     io::{self, IsTerminal},
     path::{Path, PathBuf},
@@ -78,13 +73,41 @@ impl Drop for Search {
     }
 }
 
-pub fn select(data: Option<PathBuf>) -> Result<Option<PathBuf>> {
+pub struct Selection {
+    pub file: PathBuf,
+    pub agent: Option<crate::agent::AgentHost>,
+}
+
+fn preparation(args: &crate::prompt::PromptArgs) -> Result<crate::agent::AgentHost> {
+    let command = args
+        .adapter
+        .clone()
+        .unwrap_or_else(|| PathBuf::from(args.agent.command()));
+    let command = if command.components().count() > 1 {
+        crate::paths::canonical(&command)?
+    } else {
+        command
+    };
+    let root = crate::paths::canonical(std::env::current_dir().map_err(super::terminal::io)?)?;
+    let mut options = crate::agent::AgentOptions::new(command, root);
+    options.args = args.adapter_args.clone();
+    options.subscription = args.auth == crate::prompt::AuthMode::Subscription;
+    options.require_auth_status = args.require_auth_status;
+    options.turn_timeout = Duration::from_secs(args.timeout);
+    crate::agent::AgentHost::prepare(options)
+}
+
+pub fn select(
+    data: Option<PathBuf>,
+    args: &crate::prompt::PromptArgs,
+) -> Result<Option<Selection>> {
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         return Err(Error::new(
             "INVALID_ARGUMENT",
             "TUI requires a terminal on stdin and stdout",
         ));
     }
+    let settings = crate::config::keys::load_tui()?;
     let root = std::env::current_dir().map_err(super::terminal::io)?;
     terminal::enable_raw_mode().map_err(super::terminal::io)?;
     let _restore = Restore;
@@ -109,7 +132,33 @@ pub fn select(data: Option<PathBuf>) -> Result<Option<PathBuf>> {
     let mut dirty = true;
     let mut visible: Vec<PathBuf> = vec![];
     let mut list_state = ListState::default();
+    let (mut agent, mut agent_status) = match preparation(args) {
+        Ok(host) => (Some(host), format!("{:?} · Preparing agent…", args.agent)),
+        Err(_) => (None, format!("{:?} · Agent unavailable", args.agent)),
+    };
     loop {
+        if let Some(host) = &mut agent {
+            while let Some(event) = host.try_next_event() {
+                match event {
+                    crate::agent::AgentEvent::Message(value)
+                        if value["type"] == "agent_prepared" =>
+                    {
+                        agent_status = format!("{:?} · Agent prepared", args.agent);
+                        dirty = true;
+                    }
+                    crate::agent::AgentEvent::Message(value)
+                        if value["type"] == "connection_error" =>
+                    {
+                        agent_status = format!("{:?} · Agent unavailable", args.agent);
+                        dirty = true;
+                    }
+                    crate::agent::AgentEvent::Permission { reply, .. } => {
+                        let _ = reply.send(None);
+                    }
+                    _ => {}
+                }
+            }
+        }
         while let Ok(result) = search.results.try_recv() {
             dirty = true;
             match result {
@@ -150,67 +199,19 @@ pub fn select(data: Option<PathBuf>) -> Result<Option<PathBuf>> {
                 .cloned()
                 .collect();
             selected = selected.min(visible.len().saturating_sub(1));
+            let view = view::View {
+                layout: &settings.layout,
+                listing: &listing,
+                paths: &visible,
+                selected,
+                filter: &filter,
+                path: path_input.as_deref(),
+                notice: &notice,
+                done,
+                agent: Some(&agent_status),
+            };
             terminal
-                .draw(|frame| {
-                    let areas = Layout::vertical([
-                        Constraint::Length(3),
-                        Constraint::Min(1),
-                        Constraint::Length(3),
-                    ])
-                    .split(frame.area());
-                    frame.render_widget(
-                        Paragraph::new(listing.root.display().to_string())
-                            .block(Block::bordered().title("Open a .pen file")),
-                        areas[0],
-                    );
-                    let items: Vec<_> = visible
-                        .iter()
-                        .map(|p| ListItem::new(p.to_string_lossy().into_owned()))
-                        .collect();
-                    list_state.select((!items.is_empty()).then_some(selected));
-                    frame.render_stateful_widget(
-                        List::new(items)
-                            .highlight_style(Style::default().bg(Color::DarkGray).fg(Color::White)),
-                        areas[1],
-                        &mut list_state,
-                    );
-                    let status = if let Some(reason) = listing.stop_reason {
-                        format!(
-                            "Search stopped: {reason}; {} files found; unsearched locations remain",
-                            listing.documents.len()
-                        )
-                    } else if done {
-                        format!("Search complete: {} files", listing.documents.len())
-                    } else {
-                        format!("Searching… {} files found", listing.documents.len())
-                    };
-                    let input = path_input
-                        .as_ref()
-                        .map(|p| format!("Path: {p}"))
-                        .unwrap_or_else(|| {
-                            format!(
-                                "Filter: {filter}  |  Enter open · Ctrl+L path/root · Ctrl+C quit"
-                            )
-                        });
-                    let message = if notice.is_empty() {
-                        status
-                    } else {
-                        format!("{status} | {notice}")
-                    };
-                    frame.render_widget(Paragraph::new(format!("{input}\n{message}")), areas[2]);
-                    if areas[2].width > 0 && areas[2].height > 0 {
-                        let editing = path_input
-                            .as_ref()
-                            .map(|path| format!("Path: {path}"))
-                            .unwrap_or_else(|| format!("Filter: {filter}"));
-                        let width = ratatui::text::Line::raw(editing).width();
-                        frame.set_cursor_position((
-                            areas[2].x
-                                + width.min(areas[2].width.saturating_sub(1) as usize) as u16,
-                            areas[2].y,
-                        ));
-                    }
-                })
+                .draw(|frame| view.draw(frame, &mut list_state))
                 .map_err(super::terminal::io)?;
             dirty = false;
         }
@@ -321,7 +322,7 @@ pub fn select(data: Option<PathBuf>) -> Result<Option<PathBuf>> {
                     .and_then(|()| Store::open(&path, data.clone()))
                     .and_then(|store| store.read().map(|_| store.path().to_owned()))
                 {
-                    Ok(path) => return Ok(Some(path)),
+                    Ok(path) => return Ok(Some(Selection { file: path, agent })),
                     Err(error) => notice = error.to_string(),
                 }
             }

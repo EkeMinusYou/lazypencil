@@ -57,6 +57,7 @@ pub struct Conversation {
     executable: PathBuf,
     session: Session,
     host: Option<AgentHost>,
+    prepared_host: Option<AgentHost>,
     grant: Option<AttachmentGrant>,
     usage: Option<crate::guidance::usage::UsageGrant>,
     preview_control: Option<crate::preview_control::Client>,
@@ -131,6 +132,7 @@ impl Conversation {
             executable,
             session,
             host: None,
+            prepared_host: None,
             grant: None,
             usage: None,
             preview_control: None,
@@ -319,6 +321,11 @@ impl Conversation {
         }
     }
 
+    /// Reuse a compatible adapter process warmed by the document picker.
+    pub fn set_prepared_agent(&mut self, host: AgentHost) {
+        self.prepared_host = Some(host);
+    }
+
     /// Prepare the actual provider session without submitting a prompt or consuming a draft.
     pub fn connect(&mut self) -> Result<()> {
         self.require_idle()?;
@@ -326,7 +333,10 @@ impl Conversation {
     }
 
     fn start_connection(&mut self) -> Result<()> {
-        self.require_project_agent()?;
+        if let Err(error) = self.require_project_agent() {
+            self.prepared_host.take();
+            return Err(error);
+        }
         if self.host.is_some() {
             return Ok(());
         }
@@ -349,7 +359,16 @@ impl Conversation {
         self.session.save()?;
         self.ready = false;
         self.prepared_ready = None;
-        self.host = Some(AgentHost::spawn(self.agent_options()?)?);
+        let options = self.agent_options()?;
+        self.host = if let Some(mut host) = self.prepared_host.take() {
+            if host.continue_prepared(options.clone()) {
+                Some(host)
+            } else {
+                Some(AgentHost::spawn(options)?)
+            }
+        } else {
+            Some(AgentHost::spawn(options)?)
+        };
         Ok(())
     }
 
@@ -1060,6 +1079,7 @@ impl Conversation {
         Ok(())
     }
     pub async fn close(&mut self) -> Result<()> {
+        self.prepared_host.take();
         self.cancel();
         drop(self.preparation.take());
         let closed = if let Some(host) = self.host.take() {

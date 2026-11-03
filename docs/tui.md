@@ -4,11 +4,15 @@ The initial release targets macOS Apple Silicon only. Linux x64/arm64 and Window
 
 ## Opening a document
 
-`lazypencil` and `lazypencil tui` open a startup picker. `lazypencil tui FILE`
+`lazypencil` and `lazypencil tui` open a centered file picker over the ordinary
+empty workspace, using the same panel geometry, colors, borders and selection styles. `lazypencil tui FILE`
 continues to open a file directly; a bare file argument is not supported.
 The picker recursively discovers `.pen` files below the launch directory, showing
-relative paths. It does not start an agent, restore a conversation, parse documents,
-or render previews before selection. Type to filter; `/` starts filtering even when
+relative paths. The adapter process and transport prepare in the background using
+user preferences and explicit CLI options. ACP initialization, document sessions,
+MCP setup and previews wait for selection. A compatible process is reused; a
+different working directory or adapter profile starts a fresh process. Preparation
+failures do not prevent file selection. Type to filter; `/` starts filtering even when
 its first character is `j` or `k`. Arrows or navigation-mode `j`/`k` select, Enter opens,
 Ctrl+L enters a file path or new search directory, Esc clears input, and Ctrl+C exits.
 Relative paths use the displayed directory. Opening invalid input shows an error

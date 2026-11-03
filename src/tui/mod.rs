@@ -23,6 +23,7 @@ mod terminal;
 mod tests;
 mod theme;
 mod viewport;
+mod workspace;
 
 use crate::config::keys::NavigationAction as Nav;
 use crate::{
@@ -134,6 +135,15 @@ struct Permission {
     scroll: u16,
 }
 pub fn run(args: &TuiArgs, data: Option<PathBuf>, json_output: bool) -> Result<()> {
+    run_with_prepared(args, data, json_output, None)
+}
+
+pub fn run_with_prepared(
+    args: &TuiArgs,
+    data: Option<PathBuf>,
+    json_output: bool,
+    prepared: Option<crate::agent::AgentHost>,
+) -> Result<()> {
     if json_output {
         return Err(Error::new(
             "INVALID_ARGUMENT",
@@ -148,6 +158,9 @@ pub fn run(args: &TuiArgs, data: Option<PathBuf>, json_output: bool) -> Result<(
     }
     let settings = crate::config::keys::load_tui()?;
     let mut conversation = Conversation::open(args.prompt.clone(), data)?;
+    if let Some(host) = prepared {
+        conversation.set_prepared_agent(host);
+    }
     conversation.attachment_limits()?.check_count(
         conversation
             .images()
@@ -1807,32 +1820,15 @@ impl App {
             self.presentation.finish(frame.buffer_mut(), true);
             return Size::new(0, 0);
         }
-        let sections = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Min(4),
-            Constraint::Length(self.footer_height()),
-        ])
-        .split(area);
-        frame.render_widget(Paragraph::new(self.header_line()), sections[0]);
-        let total = u32::from(self.panel_layout.nodes)
-            + u32::from(self.panel_layout.preview)
-            + u32::from(self.panel_layout.agent);
-        let nodes_width = if self.nodes_collapsed {
-            0
-        } else {
-            u32::from(self.panel_layout.nodes)
-        };
-        let agent_width = if self.agent_collapsed {
-            0
-        } else {
-            u32::from(self.panel_layout.agent)
-        };
-        let panes = Layout::horizontal([
-            Constraint::Ratio(nodes_width, total),
-            Constraint::Ratio(total - nodes_width - agent_width, total),
-            Constraint::Ratio(agent_width, total),
-        ])
-        .split(sections[1]);
+        let workspace = workspace::areas(
+            area,
+            &self.panel_layout,
+            self.nodes_collapsed,
+            self.agent_collapsed,
+            self.footer_height(),
+        );
+        frame.render_widget(Paragraph::new(self.header_line()), workspace.header);
+        let panes = workspace.panes;
         if !self.nodes_collapsed {
             self.draw_nodes(frame, panes[0]);
         }
@@ -1892,7 +1888,7 @@ impl App {
         if !self.agent_collapsed {
             self.draw_conversation(frame, panes[2]);
         }
-        self.draw_footer(frame, sections[2]);
+        self.draw_footer(frame, workspace.footer);
         if self.help {
             let popup = centered(area, 100, 26);
             frame.render_widget(Clear, popup);

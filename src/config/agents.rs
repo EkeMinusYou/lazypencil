@@ -244,6 +244,13 @@ fn same_preferences(a: &PromptArgs, b: &PromptArgs) -> bool {
         && a.timeout == b.timeout
 }
 
+/// Resolve only user defaults before the startup picker knows its document.
+pub fn resolve_user(args: &mut PromptArgs, matches: &ArgMatches) -> Result<()> {
+    let source = UserSource::load(Some(user_config_path()?), true)?;
+    source.settings.agents.apply(args, matches, source.base());
+    source.verify()
+}
+
 /// Resolve preferences once, at the CLI boundary, before creating a conversation.
 /// Programmatic callers already supply their complete `PromptArgs` explicitly.
 pub fn resolve_arguments(

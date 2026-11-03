@@ -9,11 +9,12 @@ mod fixture_support;
 mod terminal;
 
 #[test]
-fn real_pty_document_picker_recurses_filters_reports_errors_and_opens_without_agent_work() {
+fn real_pty_document_picker_recurses_filters_resizes_and_prepares_agent_without_prompts() {
     run_pty_case("picker-default");
     run_pty_case("picker-explicit");
     run_pty_case("picker-unicode");
     run_pty_case("picker-direct");
+    run_pty_case("picker-prepared");
 }
 
 #[test]

@@ -211,7 +211,7 @@ impl Harness {
                     "--adapter-arg=image-inspect-audit"
                 } else if case == "queued-followups" {
                     "--adapter-arg=queued-followups"
-                } else if case == "account-startup" {
+                } else if matches!(case, "account-startup" | "picker-prepared") {
                     "--adapter-arg=auth-inspect-account"
                 } else if case == "agent-header-hang" {
                     "--adapter-arg=setup-hang"
