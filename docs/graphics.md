@@ -14,6 +14,8 @@ The original corpus includes triangles at radii 0, 10, 25, 30, 50, and 100, four
 
 ## Text and outlines
 
+Text content is one string; arbitrary rich-text spans are not a supported serialization.
+
 `underline` and `strikethrough` are boolean properties resolved through the ordinary variable/theme path. SkParagraph paints their decoration masks, so they follow wrapping and line alignment. Paint fills, including gradients and images, are masked by the resulting text and decorations.
 
 Text strokes use the positioned glyph runs visited from the same Paragraph that paints the text. This preserves mixed Japanese/Latin runs, wrapping, alignment, spaces, and variable font weights. The renderer outlines glyphs rather than the text box, supports inner/center/outer alignment and stroke joins/caps, and uses the stroke's own fills and property origin. Empty glyphs such as spaces do not require a path.
@@ -22,7 +24,7 @@ Ordinary vector glyphs retain their native paths. Color-table faces and visible 
 
 Silhouette generation is lazy for active text strokes, reuses repeated glyphs within each shaped run, and checks cancellation during sampling and tracing. A paragraph permits 64 Mi sampled glyph pixels and 1 Mi contour points; these are work limits, not process-RSS guarantees. Clipped temporary masks and malformed/open contours fail explicitly.
 
-The Paragraph's raster glyphs and the extracted paths both use unhinted geometry. A Linux regression found that the previous slight hinting moved painted glyph edges while the vector paths remained unhinted: an inner outline could occupy pixels absent from the fill, with or without decorations. The fractional-size regression checks both cases against actual native masks. The policy is reported as `hinting: "none"` in text metrics; see [font behavior](fonts.md).
+The Paragraph's raster glyphs and the extracted paths both use unhinted geometry. Hinting must match glyph-path extraction so an inner outline does not occupy pixels absent from the fill. Fractional-size checks compare both decorated and undecorated text against native masks. The policy is reported as `hinting: "none"` in text metrics; see [font behavior](fonts.md).
 
 The line box and painted ink have separate bounds. Font glyph bounds and decoration metrics contribute to the paint mask and export area, so a small `lineHeight` does not crop letters or decorations above/below that box. The requested line height continues to control layout. A regression test compares against the same Paragraph painted directly on a larger canvas.
 
@@ -58,9 +60,9 @@ Inner shadows use the inverse alpha of an offset, blurred copy of the preceding 
 
 All eighteen serialized color modes in the current [format schema](https://docs.pencil.dev/for-developers/the-pen-format#typescript-schema) are available for native shadows and implemented paints. Non-normal outer shadows use the scene before the node as their blend backdrop, then place the object's preceding effect result over that shadow. Blended source contribution and replacement coverage stay separate, so the backdrop's alpha is not added twice. Parent opacity follows the combined content/effects. Effects retain array order, including intervening foreground blur, background blur, and GLSL stages. Plain shadows do not launch Chromium.
 
-Color and alpha follow source-over blending, using the [W3C compositing model](https://www.w3.org/TR/compositing-1/#blending) for the standard modes. `linearBurn` clamps the sum of straight colors minus one; `linearDodge` clamps their sum. Both then use source-over alpha. The previous `linearDodge` mapping to Skia `Plus` incorrectly added alpha for translucent paints; native color, image, gradient, and stroke painting now share the corrected operation. Built-in native expressions provide these two modes and the shadow color stages. The same names retain their schema spelling, including `light`. Non-string mode values and invalid shadow kinds fail explicitly, and disabled effects skip evaluation.
+Color and alpha follow source-over blending, using the [W3C compositing model](https://www.w3.org/TR/compositing-1/#blending) for the standard modes. `linearBurn` clamps the sum of straight colors minus one; `linearDodge` clamps their sum. Both then use source-over alpha. Native color, image, gradient, and stroke painting share this operation; Skia `Plus` is not equivalent because it also adds alpha. Built-in native expressions provide these two modes and the shadow color stages. The same names retain their schema spelling, including `light`. Non-string mode values and invalid shadow kinds fail explicitly, and disabled effects skip evaluation.
 
-Intermediate node rasters snap outward to the destination pixel grid and retain its phase. Fitting a rounded-up bitmap back into fractional logical bounds previously squeezed rotated layers and could lose a boundary column. Layer allocation, painting, capture, and composition now share one raster geometry. Zero-area layers remain empty without starting a shader. Ordinary descendants that need no backdrop avoid capturing the entire parent canvas, and nested passes share decoded image data.
+Intermediate node rasters snap outward to the destination pixel grid and retain its phase. Layer allocation, painting, capture, and composition share one raster geometry instead of fitting rounded-up bitmaps back into fractional bounds. Zero-area layers remain empty without starting a shader. Ordinary descendants that need no backdrop avoid capturing the entire parent canvas, and nested passes share decoded image data.
 
 A successful structural validation does not prove that every paint/effect in a document can render or match Pencil.
 
