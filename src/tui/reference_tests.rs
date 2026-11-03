@@ -64,6 +64,12 @@ fn explicit_references_preserve_drafts_instances_cursor_and_saved_history() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {
         let mut app = app(&temp, "image-inspect");
+        // Exact caret positions and unwrapped labels require this fixed pane geometry.
+        app.panel_layout = crate::config::keys::PanelLayout {
+            nodes: 22,
+            preview: 48,
+            agent: 30,
+        };
         let path = app.conversation.store().path().to_path_buf();
         let saved = document().to_string();
         std::fs::write(&path, &saved).unwrap();

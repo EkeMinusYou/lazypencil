@@ -101,16 +101,17 @@ pub fn request_with_coordinates(
     background: Option<&[u8]>,
 ) -> Result<Value> {
     request_with_declarations(
-        project,
-        node,
-        fill,
-        property,
-        width,
-        height,
-        coordinates,
-        time,
-        object,
-        background,
+        Request {
+            project,
+            node,
+            fill,
+            property,
+            size: [width, height],
+            coordinates,
+            time,
+            object,
+            background,
+        },
         None,
     )
 }
@@ -134,20 +135,34 @@ pub(crate) fn source<'a>(
     Ok((source, &asset.revision))
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Captured shader inputs shared by declaration reflection and final binding.
+pub(crate) struct Request<'a> {
+    pub project: &'a Project,
+    pub node: &'a ResolvedNode,
+    pub fill: &'a Value,
+    pub property: &'a str,
+    pub size: [u32; 2],
+    pub coordinates: Option<[f64; 2]>,
+    pub time: f64,
+    pub object: Option<&'a [u8]>,
+    pub background: Option<&'a [u8]>,
+}
+
 pub(crate) fn request_with_declarations(
-    project: &Project,
-    node: &ResolvedNode,
-    fill: &Value,
-    property: &str,
-    width: u32,
-    height: u32,
-    coordinates: Option<[f64; 2]>,
-    time: f64,
-    object: Option<&[u8]>,
-    background: Option<&[u8]>,
+    request: Request<'_>,
     expanded: Option<&str>,
 ) -> Result<Value> {
+    let Request {
+        project,
+        node,
+        fill,
+        property,
+        size: [width, height],
+        coordinates,
+        time,
+        object,
+        background,
+    } = request;
     if coordinates.is_some_and(|size| size.iter().any(|value| !value.is_finite() || *value <= 0.0))
     {
         return Err(invalid(
@@ -523,16 +538,17 @@ mod tests {
         let scene = project.resolve().unwrap();
         let node = &scene.roots[0];
         let prepared = request_with_declarations(
-            &project,
-            node,
-            &node.properties["fill"],
-            "fill",
-            64,
-            32,
-            Some([32., 16.]),
-            0.5,
-            None,
-            None,
+            Request {
+                project: &project,
+                node,
+                fill: &node.properties["fill"],
+                property: "fill",
+                size: [64, 32],
+                coordinates: Some([32., 16.]),
+                time: 0.5,
+                object: None,
+                background: None,
+            },
             Some("uniform vec3 tint;"),
         )
         .unwrap();
@@ -547,16 +563,17 @@ mod tests {
         for invalid in ["uniform float tint;", "uniform vec3 other;"] {
             assert_eq!(
                 request_with_declarations(
-                    &project,
-                    node,
-                    &node.properties["fill"],
-                    "fill",
-                    32,
-                    16,
-                    None,
-                    0.,
-                    None,
-                    None,
+                    Request {
+                        project: &project,
+                        node,
+                        fill: &node.properties["fill"],
+                        property: "fill",
+                        size: [32, 16],
+                        coordinates: None,
+                        time: 0.,
+                        object: None,
+                        background: None
+                    },
                     Some(invalid)
                 )
                 .unwrap_err()

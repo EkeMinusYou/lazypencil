@@ -19,7 +19,9 @@ mod atlas;
 mod backdrop;
 mod blending;
 mod mesh;
+mod plan;
 mod polygon;
+use plan::RasterPlan;
 mod raster_pool;
 use backdrop::{background_nodes, composite_layer};
 pub use blending::{MODES as BLEND_MODES, blend};
@@ -401,62 +403,11 @@ fn raster_impl_cached(
     if let Some(runtime) = runtime.as_deref() {
         runtime.check()?;
     }
-    if !options.time.is_finite() || options.time < 0.0 {
-        return Err(invalid("Shader time must be a finite nonnegative number"));
-    }
-    // Cached TUI previews can downsample large viewports below the public
-    // export scale range. Their output still passes the raster size limits.
-    let minimum_scale = if cache.is_some() {
-        f32::MIN_POSITIVE
-    } else {
-        0.01
-    };
-    if !options.scale.is_finite() || !(minimum_scale..=16.0).contains(&options.scale) {
-        return Err(Error::new(
-            "INVALID_ARGUMENT",
-            "Render scale must be within 0.01..16",
-        ));
-    }
-    if snapshot.revision != project.root_document().revision()
-        || snapshot.dependency_revision != project.dependency_revision()
-    {
-        return Err(Error::new(
-            "REVISION_CONFLICT",
-            "The layout snapshot does not belong to this project revision",
-        ));
-    }
-    let selected = options
-        .node
-        .as_ref()
-        .map(|id| {
-            snapshot
-                .items
-                .iter()
-                .position(|i| &i.record.id == id)
-                .ok_or_else(|| Error::new("INVALID_ARGUMENT", format!("No resolved node {id:?}")))
-        })
-        .transpose()?;
-    let region = options.region.unwrap_or_else(|| {
-        selected
-            .map(|i| snapshot.items[i].record.visual_bounds)
-            .unwrap_or(snapshot.bounds)
-    });
-    if [region.x, region.y, region.width, region.height]
-        .iter()
-        .any(|n| !n.is_finite())
-        || region.width < 0.0
-        || region.height < 0.0
-    {
-        return Err(Error::new("INVALID_ARGUMENT", "Invalid render region"));
-    }
-    let width = (region.width * options.scale).ceil().max(1.0) as u64;
-    let height = (region.height * options.scale).ceil().max(1.0) as u64;
-    if width > 16384 || height > 16384 || width * height > MAX_PIXELS {
-        return Err(Error::new(
-            "INVALID_ARGUMENT",
-            "Render exceeds 16384 pixels per side or 32 megapixels",
-        ));
-    }
+    let RasterPlan {
+        region,
+        width,
+        height,
+    } = RasterPlan::new(project, snapshot, options, cache.is_some())?;
     if let Some(runtime) = runtime.as_deref_mut() {
         runtime.prepare_pages(project, snapshot)?;
     }
@@ -1430,18 +1381,17 @@ impl Renderer<'_> {
                             "Shader rendering requires a configured dynamic runtime",
                         )
                     })?
-                    .shader_for_node(
-                        self.project,
+                    .shader_for_node(crate::shader::Request {
+                        project: self.project,
                         node,
                         fill,
                         property,
-                        width,
-                        height,
-                        Some([rect.width() as f64, rect.height() as f64]),
-                        self.time,
-                        None,
-                        background.as_deref(),
-                    )?;
+                        size: [width, height],
+                        coordinates: Some([rect.width() as f64, rect.height() as f64]),
+                        time: self.time,
+                        object: None,
+                        background: background.as_deref(),
+                    })?;
                 let image = Image::from_encoded(Data::new_copy(&raster.png))
                     .ok_or_else(|| invalid("Cannot decode shader PNG"))?;
                 let matrix = Matrix::scale((
@@ -1601,18 +1551,17 @@ impl Renderer<'_> {
                                 "Shader effects require a configured dynamic runtime",
                             )
                         })?
-                        .shader_for_node(
-                            self.project,
-                            &node,
-                            effect,
-                            "effect",
-                            width,
-                            height,
-                            Some([bounds.width as f64, bounds.height as f64]),
-                            self.time,
-                            Some(&object),
-                            background_png.as_deref(),
-                        )?;
+                        .shader_for_node(crate::shader::Request {
+                            project: self.project,
+                            node: &node,
+                            fill: effect,
+                            property: "effect",
+                            size: [width, height],
+                            coordinates: Some([bounds.width as f64, bounds.height as f64]),
+                            time: self.time,
+                            object: Some(&object),
+                            background: background_png.as_deref(),
+                        })?;
                     image = Image::from_encoded(Data::new_copy(&raster.png))
                         .ok_or_else(|| invalid("Cannot decode shader effect PNG"))?;
                     self.artifacts

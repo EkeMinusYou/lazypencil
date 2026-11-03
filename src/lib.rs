@@ -33,6 +33,8 @@ pub mod mcp;
 pub mod operations;
 pub mod paths;
 pub(crate) mod preview_control;
+#[cfg(windows)]
+mod process_job;
 #[cfg(unix)]
 mod process_owner;
 pub mod project;

@@ -3,7 +3,7 @@
 use super::super::AgentOptions;
 use crate::{
     Error, Result,
-    process_owner::{self, Group, GroupControl, stop_group},
+    process_owner::{self, OwnerWatch},
 };
 use serde_json::json;
 use std::{
@@ -13,16 +13,21 @@ use std::{
         unix::{net::UnixStream, process::CommandExt},
     },
     process::{Command, Stdio},
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
     time::Duration,
 };
-use tokio::{io::AsyncReadExt, process::Child};
+use tokio::process::Child;
 
 const MAGIC: &[u8; 8] = b"LPAP\x02\0\r\n";
-const STATUS_BYTES: usize = 13;
+const STARTUP: super::startup::Protocol = super::startup::Protocol::new(
+    MAGIC,
+    &[
+        "owner_start",
+        "adapter_spawn",
+        "stderr_relay",
+        "child_wait_policy",
+    ],
+    "Invalid adapter supervisor startup status",
+);
 
 pub(super) struct Owner {
     parent: UnixStream,
@@ -78,60 +83,14 @@ impl Owner {
 }
 
 pub(super) async fn confirm_startup(child: &mut Child, limit: Duration) -> Result<()> {
-    let mut frame = [0u8; STATUS_BYTES];
-    tokio::time::timeout(
-        limit,
-        child
-            .stderr
-            .as_mut()
-            .expect("piped stderr")
-            .read_exact(&mut frame),
-    )
-    .await
-    .map_err(|_| Error::new("AGENT_ERROR", "Agent initialization timed out"))?
-    .map_err(|e| failure("supervisor_status", e))?;
-    if &frame[..8] != MAGIC || (frame[8] == 0 && frame[9..] != [0; 4]) {
-        return Err(Error::new(
-            "AGENT_UNAVAILABLE",
-            "Invalid adapter supervisor startup status",
-        ));
-    }
-    if frame[8] != 0 {
-        let phase = match frame[8] {
-            1 => "owner_start",
-            2 => "adapter_spawn",
-            3 => "stderr_relay",
-            4 => "child_wait_policy",
-            _ => "supervisor_startup",
-        };
-        let code = i32::from_le_bytes(frame[9..].try_into().expect("fixed status size"));
-        return Err(failure(
-            phase,
-            if code == 0 {
-                io::Error::other("Supervisor startup failed")
-            } else {
-                io::Error::from_raw_os_error(code)
-            },
-        ));
-    }
-    Ok(())
+    STARTUP.confirm(child, limit, failure).await
 }
 
 pub(super) fn serve_worker() -> Result<bool> {
     let mut announced = false;
     let result = worker(&mut announced);
     if !announced && let Err(error) = &result {
-        let details = error.details.as_ref();
-        let phase = match details.and_then(|value| value["supervisor_phase"].as_str()) {
-            Some("adapter_spawn") => 2,
-            Some("stderr_relay") => 3,
-            Some("child_wait_policy") => 4,
-            _ => 1,
-        };
-        let code = details
-            .and_then(|value| value["os_error"].as_i64())
-            .unwrap_or(0) as i32;
-        let _ = status(phase, code);
+        STARTUP.report_error(error);
     }
     result
 }
@@ -167,27 +126,8 @@ fn worker(announced: &mut bool) -> Result<bool> {
         return Err(failure("owner_start", io::ErrorKind::InvalidInput.into()));
     }
     process_owner::prepare().map_err(|e| failure("child_wait_policy", e))?;
-    let lost = Arc::new(AtomicBool::new(false));
-    let watch = lost.clone();
-    let control: GroupControl = Arc::new(Mutex::new(None));
-    let watched_group = control.clone();
-    std::thread::Builder::new()
-        .name("adapter-owner".into())
-        .spawn(move || {
-            let mut byte = [0u8; 1];
-            loop {
-                match owner.read(&mut byte) {
-                    Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                    _ => {
-                        watch.store(true, Ordering::Release);
-                        stop_group(&watched_group);
-                        break;
-                    }
-                }
-            }
-        })
-        .map_err(|e| failure("owner_start", e))?;
-    if lost.load(Ordering::Acquire) {
+    let watch = OwnerWatch::start(owner, "adapter-owner").map_err(|e| failure("owner_start", e))?;
+    if watch.is_lost() {
         return Err(failure("owner_start", io::ErrorKind::BrokenPipe.into()));
     }
     let child = Command::new(command)
@@ -198,37 +138,14 @@ fn worker(announced: &mut bool) -> Result<bool> {
         .process_group(0)
         .spawn()
         .map_err(|e| failure("adapter_spawn", e))?;
-    let mut group = Group {
-        child,
-        control,
-        reaped: false,
-    };
-    *group
-        .control
-        .lock()
-        .unwrap_or_else(|poison| poison.into_inner()) = Some(group.child.id() as libc::pid_t);
-    if lost.load(Ordering::Acquire) {
-        stop_group(&group.control);
-    }
-    let mut stderr = group.child.stderr.take().expect("piped adapter stderr");
-    let (release, gate) = std::sync::mpsc::channel();
-    let relay = std::thread::Builder::new()
-        .name("adapter-stderr".into())
-        .spawn(move || {
-            if gate.recv().is_ok() {
-                let mut buffer = [0u8; 8192];
-                let mut output = io::stderr();
-                while let Ok(size) = stderr.read(&mut buffer) {
-                    if size == 0 || output.write_all(&buffer[..size]).is_err() {
-                        break;
-                    }
-                }
-            }
-        })
-        .map_err(|e| failure("stderr_relay", e))?;
+    let mut group = watch.supervise(child);
+    let stderr = group.child.stderr.take().expect("piped adapter stderr");
+    let (release, relay) = super::startup::relay(stderr).map_err(|e| failure("stderr_relay", e))?;
     // The host consumes this bounded private frame before draining stderr.
     // Adapter output cannot race it, and ACP stdout is never modified.
-    status(0, 0).map_err(|e| failure("stderr_relay", e))?;
+    STARTUP
+        .write(0, 0)
+        .map_err(|e| failure("stderr_relay", e))?;
     *announced = true;
     let _ = release.send(());
     group
@@ -237,16 +154,6 @@ fn worker(announced: &mut bool) -> Result<bool> {
     let exit = group.finish().map_err(|e| failure("adapter_wait", e))?;
     drop(relay);
     Ok(exit.success())
-}
-
-fn status(phase: u8, code: i32) -> io::Result<()> {
-    let mut frame = [0u8; STATUS_BYTES];
-    frame[..8].copy_from_slice(MAGIC);
-    frame[8] = phase;
-    frame[9..].copy_from_slice(&code.to_le_bytes());
-    let mut output = io::stderr().lock();
-    output.write_all(&frame)?;
-    output.flush()
 }
 
 fn failure(phase: &str, error: io::Error) -> Error {

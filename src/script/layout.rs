@@ -58,21 +58,22 @@ pub fn compute(
             .iter()
             .map(|item| (item.record.id.clone(), item.record.rect))
             .collect::<BTreeMap<_, _>>();
-        let mut changed = false;
-        for node in &mut scene.roots {
-            expand(
-                node,
-                true,
-                &sizes,
-                project,
-                runtime,
-                &mut cached,
-                &mut runs,
-                &mut changed,
+        let changed = {
+            let mut pass = ExpansionPass {
+                sizes: &sizes,
+                project: &mut *project,
+                runtime: &mut *runtime,
+                cached: &mut cached,
+                runs: &mut runs,
+                changed: false,
                 deadline,
-                &mut expansion_budget,
-            )?;
-        }
+                expansion_budget: &mut expansion_budget,
+            };
+            for node in &mut scene.roots {
+                pass.expand(node, true)?;
+            }
+            pass.changed
+        };
         if !changed {
             cached.retain(|id, _| {
                 snapshot
@@ -147,151 +148,152 @@ fn validate_tree(node: &ResolvedNode, depth: usize, count: &mut usize) -> Result
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-fn expand(
-    node: &mut ResolvedNode,
-    inherited_enabled: bool,
-    sizes: &BTreeMap<String, Rect>,
-    project: &mut Project,
-    runtime: &mut ScriptRuntime,
-    cached: &mut BTreeMap<String, Cached>,
-    runs: &mut usize,
-    changed: &mut bool,
+/// State shared by every node in one fixed-point layout pass.
+struct ExpansionPass<'a> {
+    sizes: &'a BTreeMap<String, Rect>,
+    project: &'a mut Project,
+    runtime: &'a mut ScriptRuntime,
+    cached: &'a mut BTreeMap<String, Cached>,
+    runs: &'a mut usize,
+    changed: bool,
     deadline: Instant,
-    expansion_budget: &mut Expansion,
-) -> Result<()> {
-    require_budget(deadline)?;
-    let enabled = inherited_enabled && node.properties.get("enabled") != Some(&Value::Bool(false));
-    if !enabled {
-        return Ok(());
-    }
-    if node.kind() == "script" {
-        let id = node.id();
-        let Some(rect) = sizes.get(&id) else {
-            *changed = true;
+    expansion_budget: &'a mut Expansion,
+}
+
+impl ExpansionPass<'_> {
+    fn expand(&mut self, node: &mut ResolvedNode, inherited_enabled: bool) -> Result<()> {
+        require_budget(self.deadline)?;
+        let enabled =
+            inherited_enabled && node.properties.get("enabled") != Some(&Value::Bool(false));
+        if !enabled {
             return Ok(());
-        };
-        let uri = node
-            .properties
-            .get("scriptUri")
-            .and_then(Value::as_str)
-            .filter(|uri| !uri.is_empty())
-            .ok_or_else(|| {
-                Error::new(
-                    "SCRIPT_EXECUTION_FAILED",
-                    "Script node is missing scriptUri",
-                )
-                .details(json!({"node":node.address}))
-            })?;
-        let path = project.resolve_file(node.property_source("scriptUri"), uri)?;
-        let asset = project.asset(&path)?;
-        let source_hash = asset.revision.clone();
-        let context = |error| super::diagnostic::context(error, &node.address, &path, &source_hash);
-        let code = std::str::from_utf8(&asset.bytes)
-            .map_err(|_| {
-                context(Error::new(
-                    "SCRIPT_EXECUTION_FAILED",
-                    "Script source must be UTF-8",
-                ))
-            })?
-            .to_string();
-        let header = Header::parse(&code).map_err(context)?;
-        let mut inputs = node
-            .properties
-            .get("inputs")
-            .map(|value| {
-                value.as_object().cloned().ok_or_else(|| {
-                    Error::new("SCRIPT_EXECUTION_FAILED", "Script inputs must be an object")
-                })
-            })
-            .transpose()
-            .map_err(context)?
-            .unwrap_or_default();
-        if !node.script_inputs_resolved {
-            inputs = project
-                .resolve_script_inputs_bounded(node, &header, &inputs, expansion_budget)
-                .map_err(context)?;
-            if node.properties.contains_key("inputs") {
-                node.properties
-                    .insert("inputs".into(), Value::Object(inputs.clone()));
-            }
-            node.script_inputs_resolved = true;
         }
-        let inputs = header.prepare(&inputs).map_err(context)?;
-        let inputs = project
-            .prepare_script_refs(node, &header, inputs)
-            .map_err(context)?;
-        let bindings_revision = node.script_bindings_revision();
-        let input_key=hash(json!({"source":source_hash,"inputs":inputs,"origin":node.script_origin(),"input_origin":node.script_input_origin(),"bindings_revision":bindings_revision,"theme":node.theme,"limits":runtime.settings()}).to_string().as_bytes());
-        let (width, height) = (rect.width as f64, rect.height as f64);
-        let valid = cached.get(&id).is_some_and(|entry: &Cached| {
-            entry.input_key == input_key
-                && (!entry.output.reads_width || entry.width == width)
-                && (!entry.output.reads_height || entry.height == height)
-        });
-        if !valid {
-            *runs += 1;
-            if *runs > runtime.settings().max_evaluations {
-                return Err(Error::new(
-                    "RENDER_TIMEOUT",
-                    format!(
-                        "A calculation may execute at most {} script evaluations",
-                        runtime.settings().max_evaluations
-                    ),
-                ));
+        if node.kind() == "script" {
+            let id = node.id();
+            let Some(rect) = self.sizes.get(&id) else {
+                self.changed = true;
+                return Ok(());
+            };
+            let uri = node
+                .properties
+                .get("scriptUri")
+                .and_then(Value::as_str)
+                .filter(|uri| !uri.is_empty())
+                .ok_or_else(|| {
+                    Error::new(
+                        "SCRIPT_EXECUTION_FAILED",
+                        "Script node is missing scriptUri",
+                    )
+                    .details(json!({"node":node.address}))
+                })?;
+            let path = self
+                .project
+                .resolve_file(node.property_source("scriptUri"), uri)?;
+            let asset = self.project.asset(&path)?;
+            let source_hash = asset.revision.clone();
+            let context =
+                |error| super::diagnostic::context(error, &node.address, &path, &source_hash);
+            let code = std::str::from_utf8(&asset.bytes)
+                .map_err(|_| {
+                    context(Error::new(
+                        "SCRIPT_EXECUTION_FAILED",
+                        "Script source must be UTF-8",
+                    ))
+                })?
+                .to_string();
+            let header = Header::parse(&code).map_err(context)?;
+            let mut inputs = node
+                .properties
+                .get("inputs")
+                .map(|value| {
+                    value.as_object().cloned().ok_or_else(|| {
+                        Error::new("SCRIPT_EXECUTION_FAILED", "Script inputs must be an object")
+                    })
+                })
+                .transpose()
+                .map_err(context)?
+                .unwrap_or_default();
+            if !node.script_inputs_resolved {
+                inputs = self
+                    .project
+                    .resolve_script_inputs_bounded(node, &header, &inputs, self.expansion_budget)
+                    .map_err(context)?;
+                if node.properties.contains_key("inputs") {
+                    node.properties
+                        .insert("inputs".into(), Value::Object(inputs.clone()));
+                }
+                node.script_inputs_resolved = true;
             }
-            let output = runtime
-                .execute_until(
-                    &ScriptRequest {
-                        code,
+            let inputs = header.prepare(&inputs).map_err(context)?;
+            let inputs = self
+                .project
+                .prepare_script_refs(node, &header, inputs)
+                .map_err(context)?;
+            let bindings_revision = node.script_bindings_revision();
+            let input_key=hash(json!({"source":source_hash,"inputs":inputs,"origin":node.script_origin(),"input_origin":node.script_input_origin(),"bindings_revision":bindings_revision,"theme":node.theme,"limits":self.runtime.settings()}).to_string().as_bytes());
+            let (width, height) = (rect.width as f64, rect.height as f64);
+            let valid = self.cached.get(&id).is_some_and(|entry: &Cached| {
+                entry.input_key == input_key
+                    && (!entry.output.reads_width || entry.width == width)
+                    && (!entry.output.reads_height || entry.height == height)
+            });
+            if !valid {
+                *self.runs += 1;
+                if *self.runs > self.runtime.settings().max_evaluations {
+                    return Err(Error::new(
+                        "RENDER_TIMEOUT",
+                        format!(
+                            "A calculation may execute at most {} script evaluations",
+                            self.runtime.settings().max_evaluations
+                        ),
+                    ));
+                }
+                let output = self
+                    .runtime
+                    .execute_until(
+                        &ScriptRequest {
+                            code,
+                            width,
+                            height,
+                            inputs: inputs.clone(),
+                        },
+                        Some(self.deadline),
+                    )
+                    .map_err(context)?;
+                for (key, reads) in [
+                    ("width", output.reads_width),
+                    ("height", output.reads_height),
+                ] {
+                    if reads
+                        && node.properties.get(key).and_then(Value::as_str) == Some("fit_content")
+                    {
+                        return Err(Error::new("LAYOUT_UNRESOLVED",format!("Script reads its content-sized {key}; provide an explicit fallback to resolve this dependency"))
+                        .details(json!({"node":node.address,"axis":key})));
+                    }
+                }
+                node.children =
+                    self.project
+                        .generated_children(node, &output.nodes, self.expansion_budget)?;
+                let metadata = json!({"node_id":id,"source_path":path,"source_hash":source_hash,"bindings_revision":bindings_revision,"width":width,"height":height,
+                "inputs_hash":hash(serde_json::to_string(&inputs).expect("inputs").as_bytes()),"output_hash":hash(serde_json::to_string(&output.nodes).expect("nodes").as_bytes()),
+                "output_root_count":output.nodes.len(),"engine":ENGINE,"limits":self.runtime.settings(),"reads_width":output.reads_width,"reads_height":output.reads_height});
+                self.cached.insert(
+                    id,
+                    Cached {
+                        input_key,
                         width,
                         height,
-                        inputs: inputs.clone(),
+                        output,
+                        metadata,
                     },
-                    Some(deadline),
-                )
-                .map_err(context)?;
-            for (key, reads) in [
-                ("width", output.reads_width),
-                ("height", output.reads_height),
-            ] {
-                if reads && node.properties.get(key).and_then(Value::as_str) == Some("fit_content")
-                {
-                    return Err(Error::new("LAYOUT_UNRESOLVED",format!("Script reads its content-sized {key}; provide an explicit fallback to resolve this dependency"))
-                        .details(json!({"node":node.address,"axis":key})));
-                }
+                );
+                self.changed = true;
+                return Ok(());
             }
-            node.children = project.generated_children(node, &output.nodes, expansion_budget)?;
-            let metadata = json!({"node_id":id,"source_path":path,"source_hash":source_hash,"bindings_revision":bindings_revision,"width":width,"height":height,
-                "inputs_hash":hash(serde_json::to_string(&inputs).expect("inputs").as_bytes()),"output_hash":hash(serde_json::to_string(&output.nodes).expect("nodes").as_bytes()),
-                "output_root_count":output.nodes.len(),"engine":ENGINE,"limits":runtime.settings(),"reads_width":output.reads_width,"reads_height":output.reads_height});
-            cached.insert(
-                id,
-                Cached {
-                    input_key,
-                    width,
-                    height,
-                    output,
-                    metadata,
-                },
-            );
-            *changed = true;
-            return Ok(());
         }
+        for child in &mut node.children {
+            self.expand(child, enabled)?;
+        }
+        Ok(())
     }
-    for child in &mut node.children {
-        expand(
-            child,
-            enabled,
-            sizes,
-            project,
-            runtime,
-            cached,
-            runs,
-            changed,
-            deadline,
-            expansion_budget,
-        )?;
-    }
-    Ok(())
 }

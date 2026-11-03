@@ -155,8 +155,10 @@ pub fn run(
             | "user-key-config"
             | "user-navigation-config"
             | "node-references"
+            | "ime-commit"
     ) {
-        let path = if case.starts_with("user-") || case == "node-references" {
+        let path = if case.starts_with("user-") || matches!(case, "node-references" | "ime-commit")
+        {
             let directory = root.join("user-settings");
             fs::create_dir(&directory)?;
             environment.insert(
@@ -168,6 +170,8 @@ pub fn run(
             root.join("lazypencil.toml")
         };
         let text = match case {
+            // Keep exact IME anchors independent of the application's default pane ratios.
+            "ime-commit" => "[tui.layout]\nnodes=22\npreview=48\nagent=30\n".to_owned(),
             "node-references" => "[tui.navigation]\nprevious_section=['F6','Alt+Up']\nnext_section=['F7','Alt+Down']\n".to_owned(),
             "font-config" | "user-font-config" => {
                 design = json!({"version":"2.21","children":[{"type":"text","id":"label","content":"A","fontSize":80,"fill":"#FF0000"}]});

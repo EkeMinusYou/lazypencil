@@ -330,7 +330,13 @@ async fn run(
             responder.respond(RequestPermissionResponse::new(outcome))
         }, acp::on_receive_request!())
         .connect_with(transport, async move |connection: acp::ConnectionTo<acp::Agent>| {
-            conversation(&connection, &options, commands, &events, &shutdown, current_cancel, auth_receiver, purpose).await
+            conversation(&connection, &options, ConversationChannels {
+                commands,
+                events: &events,
+                shutdown: &shutdown,
+                current_cancel,
+                authentication: auth_receiver,
+            }, purpose).await
                 .map_err(|error| {
                     *captured_error.lock().expect("host error lock") = Some(error);
                     acp::Error::internal_error()
@@ -360,17 +366,27 @@ async fn run(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
+struct ConversationChannels<'a> {
+    commands: mpsc::Receiver<Turn>,
+    events: &'a mpsc::Sender<AgentEvent>,
+    shutdown: &'a CancellationToken,
+    current_cancel: Arc<Mutex<Option<CancellationToken>>>,
+    authentication: watch::Receiver<Option<AuthReport>>,
+}
+
 async fn conversation(
     connection: &acp::ConnectionTo<acp::Agent>,
     options: &AgentOptions,
-    mut commands: mpsc::Receiver<Turn>,
-    events: &mpsc::Sender<AgentEvent>,
-    shutdown: &CancellationToken,
-    current_cancel: Arc<Mutex<Option<CancellationToken>>>,
-    mut authentication: watch::Receiver<Option<AuthReport>>,
+    channels: ConversationChannels<'_>,
     purpose: Purpose,
 ) -> Result<()> {
+    let ConversationChannels {
+        mut commands,
+        events,
+        shutdown,
+        current_cancel,
+        mut authentication,
+    } = channels;
     let setup = async {
         let initialized = connection
             .send_request(

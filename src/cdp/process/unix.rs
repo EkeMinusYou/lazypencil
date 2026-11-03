@@ -4,7 +4,7 @@ use super::{Budget, Owned};
 use crate::{
     Error, Result,
     cdp::failed,
-    process_owner::{self, Group, GroupControl, stop_group},
+    process_owner::{self, OwnerWatch},
 };
 use serde_json::{Value, json};
 use std::{
@@ -16,10 +16,6 @@ use std::{
     },
     path::Path,
     process::{Child, Command, Stdio},
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
     time::{Duration, Instant},
 };
 
@@ -209,27 +205,9 @@ pub fn serve_worker() -> Result<bool> {
             return Err(failed("Invalid browser owner handshake"));
         }
         process_owner::prepare().map_err(|e| failure("child_wait_policy", e))?;
-        let lost = Arc::new(AtomicBool::new(false));
-        let watch = lost.clone();
-        let control: GroupControl = Arc::new(Mutex::new(None));
-        let watched_group = control.clone();
-        std::thread::Builder::new()
-            .name("browser-owner".into())
-            .spawn(move || {
-                let mut byte = [0u8; 1];
-                loop {
-                    match owner.read(&mut byte) {
-                        Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                        _ => {
-                            watch.store(true, Ordering::Release);
-                            stop_group(&watched_group);
-                            break;
-                        }
-                    }
-                }
-            })
-            .map_err(|e| failure("owner_watch", e))?;
-        if lost.load(Ordering::Acquire) {
+        let watch =
+            OwnerWatch::start(owner, "browser-owner").map_err(|e| failure("owner_watch", e))?;
+        if watch.is_lost() {
             return Err(failure(
                 "owner_start",
                 io::Error::from(io::ErrorKind::BrokenPipe),
@@ -286,18 +264,7 @@ pub fn serve_worker() -> Result<bool> {
             .process_group(0)
             .spawn()
             .map_err(|e| failure("browser_spawn", e))?;
-        let mut group = Group {
-            child,
-            control,
-            reaped: false,
-        };
-        *group
-            .control
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner()) = Some(group.child.id() as libc::pid_t);
-        if lost.load(Ordering::Acquire) {
-            stop_group(&group.control);
-        }
+        let mut group = watch.supervise(child);
         publish(&json!({"pid":group.child.id(),"profile":directory}))?;
         announced = true;
         group

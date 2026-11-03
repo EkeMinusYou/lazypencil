@@ -1,23 +1,20 @@
 //! Reflect compiler preprocessing before preparing typed project inputs.
 
 use super::*;
-use crate::project::Project;
 
 impl DynamicRuntime {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn shader_for_node(
         &mut self,
-        project: &Project,
-        node: &ResolvedNode,
-        fill: &Value,
-        property: &str,
-        width: u32,
-        height: u32,
-        coordinates: Option<[f64; 2]>,
-        time: f64,
-        object: Option<&[u8]>,
-        background: Option<&[u8]>,
+        request: crate::shader::Request<'_>,
     ) -> Result<Raster> {
+        let crate::shader::Request {
+            project,
+            node,
+            fill,
+            property,
+            size: [width, height],
+            ..
+        } = request;
         self.check()?;
         dimensions(width as f64, height as f64)?;
         let cancel = self.cancel.clone();
@@ -32,19 +29,7 @@ impl DynamicRuntime {
         let expanded = crate::shader::preprocessing_source(source)?
             .map(|input| self.shader_declarations(source, &input, &budget))
             .transpose()?;
-        let request = crate::shader::request_with_declarations(
-            project,
-            node,
-            fill,
-            property,
-            width,
-            height,
-            coordinates,
-            time,
-            object,
-            background,
-            expanded.as_deref(),
-        )?;
+        let request = crate::shader::request_with_declarations(request, expanded.as_deref())?;
         self.shader_with_budget(request, &budget)
     }
 
@@ -125,13 +110,13 @@ mod tests {
             metadata: json!({"kind":"browser"}),
         };
         runtime.cache("page".into(), page);
-        assert!(!runtime.cache.contains_key("source"));
+        assert!(!runtime.cache.entries.contains_key("source"));
         runtime.cache_entry(
             "source".into(),
             Cached::ShaderSource("x".repeat(400_000).into()),
         );
         runtime.refresh_pages();
-        assert!(!runtime.cache.contains_key("page"));
+        assert!(!runtime.cache.entries.contains_key("page"));
         assert!(matches!(
             runtime.cached_entry("source"),
             Some(Cached::ShaderSource(_))
@@ -141,22 +126,22 @@ mod tests {
             "excessive".into(),
             Cached::ShaderSource("x".repeat(1024 * 1024 + 1).into()),
         );
-        assert!(!runtime.cache.contains_key("excessive"));
+        assert!(!runtime.cache.entries.contains_key("excessive"));
         runtime = runtime.with_executable("another-runtime");
-        assert!(runtime.cache.is_empty());
+        assert!(runtime.cache.entries.is_empty());
         for (bytes, entries) in [(0, 2), (1, 0)] {
             settings.dynamic.cache_mib = bytes;
             settings.dynamic.cache_entries = entries;
             runtime.configure(settings.clone()).unwrap();
             runtime.cache_entry("disabled".into(), Cached::ShaderSource("small".into()));
-            assert!(runtime.cache.is_empty());
+            assert!(runtime.cache.entries.is_empty());
         }
         settings.dynamic.cache_mib = 1;
         settings.dynamic.cache_entries = 2;
         runtime.configure(settings).unwrap();
         runtime.cache_entry("source".into(), Cached::ShaderSource("small".into()));
         runtime.begin_render(None, true);
-        assert!(runtime.cache.is_empty());
-        assert!(runtime.cache_order.is_empty());
+        assert!(runtime.cache.entries.is_empty());
+        assert!(runtime.cache.order.is_empty());
     }
 }
