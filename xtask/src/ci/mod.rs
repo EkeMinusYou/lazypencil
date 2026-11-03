@@ -7,6 +7,8 @@ pub mod provenance;
 pub mod setup;
 pub mod toolchain;
 pub mod tools;
+pub mod verification;
+pub mod watch;
 
 use crate::{dist, util};
 use anyhow::{Result, ensure};
@@ -40,11 +42,23 @@ pub enum Command {
         output: PathBuf,
     },
     Plan {
+        /// Require the complete graph, including when called from a PR workflow.
+        #[arg(long)]
+        full: bool,
         #[arg(long, default_value = "auto")]
         platform: String,
         #[arg(long, default_value = "all")]
         matrix: String,
     },
+    Watch {
+        #[arg(long)]
+        run: u64,
+        #[arg(long)]
+        head: String,
+        #[arg(long, default_value_t = 30)]
+        interval: u64,
+    },
+    VerificationGate,
     Gate,
     Cache {
         #[command(subcommand)]
@@ -75,17 +89,33 @@ impl Command {
                 &util::root().join("resources/icons/catalogue.json"),
                 &output,
             )?),
-            Self::Plan { platform, matrix } => {
+            Self::Plan {
+                full,
+                platform,
+                matrix,
+            } => {
                 let root = util::root();
-                let paths = focus::changed_paths(&root)?;
+                let event = std::env::var("GITHUB_EVENT_NAME").unwrap_or_default();
+                let paths = verification::changed_paths(&root, &event)?;
                 let platform = focus::retry_platform(&root, &platform);
-                let plan = focus::select(&root, &paths, &platform)?;
+                let mut plan = focus::select(&root, &paths, &platform)?;
+                let (verification, reason) =
+                    verification::select(if full { "workflow_call" } else { &event }, &paths);
+                if verification == "docs" {
+                    verification::check_documentation(&root)?;
+                }
+                if verification == "focused" && verification::presentation_only(&paths) {
+                    plan.suite = "graphics".into();
+                    plan.targets = ["tui", "agent", "user_config"].map(str::to_owned).to_vec();
+                }
                 let platforms = focus::verification_platforms(&matrix)?;
                 ensure!(
                     matrix != "all" || focus::RELEASE_PLATFORMS.contains(&plan.platform.as_str()),
                     "Release verification must focus on a release target"
                 );
                 let outputs = BTreeMap::from([
+                    ("verification".into(), verification.into()),
+                    ("verification_reason".into(), reason.into()),
                     ("platform".into(), plan.platform.clone()),
                     ("suite".into(), plan.suite.clone()),
                     ("targets".into(), serde_json::to_string(&plan.targets)?),
@@ -124,6 +154,16 @@ impl Command {
                         .as_deref(),
                     &outputs,
                 )
+            }
+            Self::Watch {
+                run,
+                head,
+                interval,
+            } => watch::run(&util::root(), run, &head, interval),
+            Self::VerificationGate => {
+                let mode = std::env::var("VERIFICATION_MODE")?;
+                let results = serde_json::from_str(&std::env::var("VERIFICATION_RESULTS")?)?;
+                util::print(&verification::gate(&mode, &results)?)
             }
             Self::Gate => {
                 let value: Value = serde_json::from_str(&std::env::var("VERIFICATION_RESULTS")?)?;

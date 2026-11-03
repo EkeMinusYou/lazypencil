@@ -26,6 +26,10 @@ on:
         default: false
   workflow_call:
     inputs:
+      full_verification:
+        description: Reusable calls retain complete verification even from a PR event
+        type: boolean
+        default: true
       os:
         type: string
         default: all
@@ -64,6 +68,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
+      verification: ${{ steps.focus.outputs.verification }}
+      verification_reason: ${{ steps.focus.outputs.verification_reason }}
       platform: ${{ steps.focus.outputs.platform }}
       suite: ${{ steps.focus.outputs.suite }}
       targets: ${{ steps.focus.outputs.targets }}
@@ -90,14 +96,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           FOCUS_PLATFORM: ${{ inputs.focus_os || 'auto' }}
           REQUESTED_OS: ${{ inputs.os || 'all' }}
-        run: xtask/target/debug/xtask ci plan --platform "$FOCUS_PLATFORM" --matrix "$REQUESTED_OS"
+        run: xtask/target/debug/xtask ci plan --platform "$FOCUS_PLATFORM" --matrix "$REQUESTED_OS" ${{ inputs.full_verification && '--full' || '' }}
       - name: Verify the stored shader component when its inputs are unchanged
-        if: steps.focus.outputs.preprocessor != 'true'
+        if: steps.focus.outputs.verification == 'full' && steps.focus.outputs.preprocessor != 'true'
         run: xtask/target/debug/xtask shader
 
   audit:
     needs: plan
-    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.plan.outputs.verification == 'full' || needs.plan.outputs.verification == 'tools') }}
     name: Rust tools, dependency policy and RustSec
     permissions:
       contents: read
@@ -158,7 +164,7 @@ jobs:
   shader-preprocessor:
     name: Check isolated shader preprocessing
     needs: plan
-    if: needs.plan.outputs.preprocessor == 'true'
+    if: needs.plan.outputs.verification == 'full' && needs.plan.outputs.preprocessor == 'true'
     uses: ./.github/workflows/shader-preprocessor.yml
     with:
       # The audit job owns the same helper tests and gates the verified source.
@@ -172,7 +178,7 @@ jobs:
     # Native jobs consume the checked-in component, not the Wasm job's artifact.
     # Request scarce Mac runners while the independent rebuild is verified.
     needs: plan
-    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.verification == 'full' }}
     strategy:
       fail-fast: false
       matrix:
@@ -252,3 +258,36 @@ jobs:
             ${{ runner.temp }}/source-provenance
           if-no-files-found: error
           retention-days: 3
+
+  targeted:
+    name: Verify affected behavior
+    permissions:
+      contents: read
+      actions: write
+    needs: plan
+    if: needs.plan.outputs.verification == 'focused'
+    uses: ./.github/workflows/native.yml
+    with:
+      os: macos-15
+      phase: focus
+      lane: ${{ (needs.plan.outputs.suite == 'core' || needs.plan.outputs.suite == 'conversation') && 'core' || 'build' }}
+      suite: ${{ needs.plan.outputs.suite }}
+      targets: ${{ needs.plan.outputs.targets }}
+      native_clipboard: ${{ needs.plan.outputs.native_clipboard == 'true' }}
+
+  checks:
+    name: Verification
+    needs: [plan, audit, shader-preprocessor, native, targeted, source]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/xtask
+      - name: Require the selected verification contract
+        env:
+          VERIFICATION_MODE: ${{ needs.plan.outputs.verification }}
+          VERIFICATION_RESULTS: ${{ toJSON(needs) }}
+        run: xtask/target/debug/xtask ci verification-gate
