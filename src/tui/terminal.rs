@@ -54,6 +54,10 @@ impl Startup {
         Ok(Self { terminal, guard })
     }
 
+    pub fn draw(&mut self, draw: impl FnOnce(&mut ratatui::Frame)) -> Result<()> {
+        draw_terminal(&mut self.terminal, draw)
+    }
+
     pub fn activate(self, protocol: super::ImageProtocol, id: u32) -> Result<Screen> {
         let Self {
             terminal,
@@ -101,23 +105,17 @@ impl Screen {
         Ok(())
     }
     pub fn draw(&mut self, draw: impl FnOnce(&mut ratatui::Frame)) -> Result<()> {
-        // Keep text and image-slot replacement in one display update. Never
-        // erase the physical screen merely to invalidate the drawing cache.
-        std::io::stdout()
-            .sync_update(|_| {
-                if self.force_redraw {
-                    // Invalidate the previous buffer without emitting a clear or
-                    // querying the cursor while the input reader owns stdin.
-                    self.terminal.swap_buffers();
-                    for cell in &mut self.terminal.current_buffer_mut().content {
-                        cell.set_diff_option(CellDiffOption::AlwaysUpdate);
-                    }
-                    self.terminal.swap_buffers();
-                    self.force_redraw = false;
-                }
-                self.terminal.draw(draw).map(|_| ()).map_err(io)
-            })
-            .map_err(io)?
+        if self.force_redraw {
+            // Invalidate the cached buffer without writing to the terminal or
+            // querying the cursor while the input reader owns stdin.
+            self.terminal.swap_buffers();
+            for cell in &mut self.terminal.current_buffer_mut().content {
+                cell.set_diff_option(CellDiffOption::AlwaysUpdate);
+            }
+            self.terminal.swap_buffers();
+            self.force_redraw = false;
+        }
+        draw_terminal(&mut self.terminal, draw)
     }
     pub fn enter(protocol: super::ImageProtocol, id: u32) -> Result<Self> {
         Startup::enter()?.activate(protocol, id)
@@ -128,6 +126,17 @@ impl Drop for Screen {
         restore(self.id, self.picker.tmux_detected());
     }
 }
+fn draw_terminal(
+    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+    draw: impl FnOnce(&mut ratatui::Frame),
+) -> Result<()> {
+    // Both the launcher and document workspace present each complete frame in
+    // one update; modal removal must not expose a partially painted workspace.
+    std::io::stdout()
+        .sync_update(|_| terminal.draw(draw).map(|_| ()).map_err(io))
+        .map_err(io)?
+}
+
 fn keyboard_flags(preview: bool) -> KeyboardEnhancementFlags {
     let base = KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
         | KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS;

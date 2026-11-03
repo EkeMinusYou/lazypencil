@@ -7,6 +7,23 @@ use ratatui::{
     widgets::{HighlightSpacing, Padding},
 };
 
+pub(super) fn prompt_height(lines: usize, available: u16) -> u16 {
+    (lines.clamp(3, 6) as u16 + 2).min(available.max(3))
+}
+
+pub(super) fn prompt_block(focused: bool) -> Block<'static> {
+    Block::default()
+        .borders(Borders::TOP)
+        .border_style(Style::default().fg(if focused { theme::FOCUS } else { theme::FRAME }))
+        .title(theme::title("✎", "Prompt", theme::AGENT, focused))
+        .padding(Padding {
+            left: 3,
+            right: 3,
+            top: 0,
+            bottom: 1,
+        })
+}
+
 pub(super) struct ToolDisplay {
     pub title: String,
     pub status: String,
@@ -156,8 +173,7 @@ impl App {
         let prompt_space = inner
             .height
             .saturating_sub(context_rows + activity_rows + history_gap + context_gap + 1);
-        let prompt_height =
-            (self.editor.lines().len().clamp(3, 6) as u16 + 2).min(prompt_space.max(3));
+        let prompt_height = prompt_height(self.editor.lines().len(), prompt_space);
         let sections = Layout::vertical([
             Constraint::Min(1),
             Constraint::Length(history_gap),
@@ -301,26 +317,8 @@ impl App {
             .bg(theme::PROMPT_BACKGROUND);
         frame.render_widget(Block::default().style(input_style), prompt);
         self.editor.set_style(input_style);
-        let input_block = Block::default()
-            .borders(Borders::TOP)
-            .border_style(Style::default().fg(if self.focus == Focus::Prompt {
-                theme::FOCUS
-            } else {
-                theme::FRAME
-            }))
-            .title(theme::title(
-                "✎",
-                "Prompt",
-                theme::AGENT,
-                self.focus == Focus::Prompt,
-            ))
-            .padding(Padding {
-                left: 3,
-                right: 3,
-                top: 0,
-                bottom: 1,
-            });
-        self.editor.set_block(input_block);
+        self.editor
+            .set_block(prompt_block(self.focus == Focus::Prompt));
         let input = self.editor.block().unwrap().inner(prompt);
         let placeholder = if self.conversation.active() {
             "Add a follow-up…"

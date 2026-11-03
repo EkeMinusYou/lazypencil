@@ -262,6 +262,7 @@ pub fn run(
         }
     }
     let mut h = Harness::start(binary, root, &document, environment, case, configuration)?;
+    let mut picker_open_offset = None;
     if case.starts_with("picker-") {
         h.visible("Open a .pen file")?;
         h.visible("nested/deep/selected.pen")?;
@@ -271,21 +272,31 @@ pub fn run(
         assert!(!h.screen.text().contains("Loading preview"));
         for (width, height) in [(80, 24), (50, 16), (130, 34)] {
             h.resize(width, height)?;
+            h.wait("resized picker footer", 10.0, |h| {
+                h.screen
+                    .text()
+                    .lines()
+                    .last()
+                    .is_some_and(|line| line.contains("Ctrl+C"))
+            })?;
             h.visible("Open a .pen file")?;
         }
         assert!(!root.join("received-account-methods.jsonl").exists());
         assert!(files(root, |name| name == "session.json").is_empty());
         assert!(!root.join("sent-turn.txt").exists());
-        if case == "picker-default" {
-            return h.finish();
+        if case == "picker-cancel" {
+            h.finish()?;
+            return Ok(());
         }
-        if case == "picker-prepared" {
+        if matches!(case, "picker-default" | "picker-prepared") {
             h.key(b"\x0c")?;
             h.key(b"design.pen")?;
+            picker_open_offset = Some(h.output.len());
             h.key(b"\r")?;
         } else if case == "picker-direct" {
             h.key(b"\x0c")?;
             h.key(b"nested/deep/selected.pen")?;
+            picker_open_offset = Some(h.output.len());
             h.key(b"\r")?;
         } else {
             h.key(b"/broken")?;
@@ -302,6 +313,7 @@ pub fn run(
             } else {
                 b"/selected"
             })?;
+            picker_open_offset = Some(h.output.len());
             h.key(b"\r")?;
         }
     }
@@ -328,7 +340,7 @@ pub fn run(
         h.screen.find_text("›").is_some() && h.screen.text().contains("Agent")
     })?;
     let mut report = match case {
-        "picker-prepared" => {
+        "picker-default" | "picker-prepared" => {
             h.wait("prepared adapter session", 10.0, |_| {
                 fs::read_to_string(root.join("received-account-methods.jsonl"))
                     .unwrap_or_default()
@@ -517,6 +529,35 @@ pub fn run(
         }
     };
     h.finish()?;
+    if case.starts_with("picker-") {
+        let mut synchronized = false;
+        let mut positions = 0;
+        for offset in 0..h.output.len() {
+            let bytes = &h.output[offset..];
+            if bytes.starts_with(b"\x1b[?2026h") {
+                synchronized = true;
+            } else if bytes.starts_with(b"\x1b[?2026l") {
+                synchronized = false;
+            }
+            if offset >= picker_open_offset.expect("Selected a document") {
+                assert!(
+                    !bytes.starts_with(b"\x1b[2J"),
+                    "Cleared the reused workspace while opening"
+                );
+            }
+            if let Some(csi) = bytes.strip_prefix(b"\x1b[") {
+                let command = csi
+                    .iter()
+                    .copied()
+                    .find(|byte| (0x40..=0x7e).contains(byte));
+                if matches!(command, Some(b'H' | b'f')) {
+                    assert!(synchronized, "Painted a partial picker/workspace update");
+                    positions += 1;
+                }
+            }
+        }
+        assert!(positions > 0 && !synchronized);
+    }
     if case == "user-navigation-config" {
         // Inspect the completed stream once, after the existing exit/drain checks.
         // Scanning the growing output on every wait poll can starve PTY reads.

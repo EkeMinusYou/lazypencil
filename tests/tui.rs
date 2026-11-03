@@ -11,6 +11,7 @@ mod terminal;
 #[test]
 fn real_pty_document_picker_recurses_filters_resizes_and_prepares_agent_without_prompts() {
     run_pty_case("picker-default");
+    run_pty_case("picker-cancel");
     run_pty_case("picker-explicit");
     run_pty_case("picker-unicode");
     run_pty_case("picker-direct");

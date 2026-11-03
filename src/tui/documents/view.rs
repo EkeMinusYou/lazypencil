@@ -1,12 +1,12 @@
 //! The document modal shares the workspace's panels, palette and selection style.
-use super::super::{centered, clean, panel, theme, workspace};
+use super::super::{centered, clean, composer, panel, theme, workspace};
 use crate::{config::keys::PanelLayout, documents::Listing};
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Margin, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, ListState, Padding, Paragraph, Wrap},
+    widgets::{Clear, List, ListItem, ListState, Padding, Paragraph, Wrap},
 };
 use std::path::PathBuf;
 
@@ -208,22 +208,14 @@ fn empty_workspace(frame: &mut Frame, layout: &PanelLayout, agent: Option<&str>)
         horizontal: 1,
         vertical: 1,
     });
+    let height = composer::prompt_height(1, agent.height.saturating_sub(1)).min(agent.height);
     let prompt = Rect::new(
         agent.x,
-        agent.bottom().saturating_sub(4).max(agent.y),
+        agent.bottom().saturating_sub(height),
         agent.width,
-        agent.height.min(4),
+        height,
     );
-    let block = Block::default()
-        .borders(Borders::TOP)
-        .border_style(Style::default().fg(theme::FRAME))
-        .title(theme::title("✎", "Prompt", theme::AGENT, false))
-        .padding(Padding {
-            left: 3,
-            right: 3,
-            top: 0,
-            bottom: 1,
-        });
+    let block = composer::prompt_block(false);
     frame.render_widget(
         Paragraph::new("Open a document first").block(block).style(
             Style::default()
@@ -341,7 +333,6 @@ mod tests {
             "Nodes",
             "Preview",
             "Agent",
-            "Prompt",
             "Open a .pen file",
             "screens/settings.pen",
             "Search complete",
@@ -440,6 +431,51 @@ mod tests {
             assert_eq!(
                 terminal.backend().buffer()[(pane.x, pane.y)].fg,
                 theme::FRAME
+            );
+        }
+    }
+
+    #[test]
+    fn startup_workspace_keeps_prompt_geometry_when_document_opens() {
+        use clap::Parser;
+        let temp = tempfile::tempdir().unwrap();
+        let arguments = crate::cli::Arguments::try_parse_from([
+            "lazypencil".into(),
+            "tui".into(),
+            temp.path().join("design.pen").into_os_string(),
+            "--create".into(),
+        ])
+        .unwrap();
+        let crate::cli::Command::Tui(args) = arguments.command else {
+            unreachable!()
+        };
+        let conversation =
+            crate::conversation::Conversation::open(args.prompt, Some(temp.path().join("data")))
+                .unwrap();
+        let mut app = crate::tui::App::new(conversation);
+        for (width, height) in [(130, 34), (80, 24), (50, 16)] {
+            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+            terminal
+                .draw(|frame| empty_workspace(frame, &app.panel_layout, None))
+                .unwrap();
+            let before = text(terminal.backend().buffer());
+            let before = before
+                .lines()
+                .position(|line| line.contains("Prompt"))
+                .unwrap();
+            terminal
+                .draw(|frame| {
+                    app.draw(frame);
+                })
+                .unwrap();
+            let after = text(terminal.backend().buffer());
+            let after = after
+                .lines()
+                .position(|line| line.contains("Prompt"))
+                .unwrap();
+            assert_eq!(
+                before, after,
+                "Prompt moved while opening at {width}x{height}"
             );
         }
     }

@@ -209,10 +209,7 @@ pub fn select(
                 done,
                 agent: Some(&agent_status),
             };
-            startup
-                .terminal
-                .draw(|frame| view.draw(frame, &mut list_state))
-                .map_err(super::terminal::io)?;
+            startup.draw(|frame| view.draw(frame, &mut list_state))?;
             dirty = false;
         }
         if !event::poll(Duration::from_millis(50)).map_err(super::terminal::io)? {
