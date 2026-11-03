@@ -151,6 +151,7 @@ struct Peer<'a> {
     selection: String,
     authenticated: bool,
     session: String,
+    mcp_server: String,
 }
 impl<'a> Peer<'a> {
     fn new(mode: &'a str) -> Self {
@@ -167,6 +168,7 @@ impl<'a> Peer<'a> {
             selection: "read-only".into(),
             authenticated: false,
             session: "fixture-native".into(),
+            mcp_server: "lazypencil".into(),
         }
     }
     fn send(&self, mut value: Value) -> Result {
@@ -309,7 +311,7 @@ impl<'a> Peer<'a> {
                 if mode.starts_with("settings-fast") {
                     append_json(
                         "received-settings-sessions.jsonl",
-                        &json!({"method":method}),
+                        &json!({"method":method,"mcpServers":params["mcpServers"]}),
                     )?;
                 }
                 if mode.starts_with("resume-") || mode == "selection" {
@@ -333,6 +335,9 @@ impl<'a> Peer<'a> {
                         self.authenticated,
                         "Authentication must precede session creation"
                     );
+                }
+                if let Some(name) = params["mcpServers"][0]["name"].as_str() {
+                    self.mcp_server = name.into();
                 }
                 if mode == "mcp-environment" {
                     write_json(
@@ -806,7 +811,7 @@ impl<'a> Peer<'a> {
         {
             let mut tool = json!({"toolCallId":"shell-1","title":"Unrelated shell operation"});
             if mode == "document-permission" {
-                tool["name"] = json!("mcp__lazypencil__apply_operations");
+                tool["name"] = json!(format!("mcp__{}__apply_operations", self.mcp_server));
             }
             if mode == "spoofed-permission" {
                 tool["title"] = json!("mcp__lazypencil__apply_operations");
@@ -814,7 +819,7 @@ impl<'a> Peer<'a> {
             }
             let correlated = ["correlated-document", "configured-document-ask"].contains(&mode);
             if correlated {
-                self.notify(json!({"sessionUpdate":"tool_call","toolCallId":"shell-1","kind":"execute","status":"pending","_meta":{"is_mcp_tool_call":true},"rawInput":{"server":"lazypencil","tool":"apply_operations","arguments":{}}}))?;
+                self.notify(json!({"sessionUpdate":"tool_call","toolCallId":"shell-1","kind":"execute","status":"pending","_meta":{"is_mcp_tool_call":true},"rawInput":{"server":self.mcp_server,"tool":"apply_operations","arguments":{}}}))?;
             }
             let mut params = json!({"sessionId":"fixture-native","toolCall":tool,"options":[{"optionId":"allow","name":"Allow once","kind":"allow_once"},{"optionId":"deny","name":"Reject once","kind":"reject_once"}]});
             if correlated {

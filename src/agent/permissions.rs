@@ -5,6 +5,7 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
 pub struct DocumentPermissions {
+    server: String,
     session: Option<String>,
     tools: HashSet<String>,
     pending: HashMap<String, String>,
@@ -16,11 +17,19 @@ impl Default for DocumentPermissions {
 }
 impl DocumentPermissions {
     pub fn new() -> Self {
+        Self::for_server("lazypencil")
+    }
+
+    pub fn for_server(server: impl Into<String>) -> Self {
         Self {
+            server: server.into(),
             session: None,
             tools: crate::mcp::tool_names().into_iter().collect(),
             pending: HashMap::new(),
         }
+    }
+    pub fn server_name(&self) -> &str {
+        &self.server
     }
     pub fn set_session(&mut self, session: &str) {
         self.session = Some(session.into());
@@ -52,7 +61,7 @@ impl DocumentPermissions {
         // Codex's permission request may carry only an ID. Correlate it with the
         // adapter's explicit MCP marker and structured server/tool facts, never a title.
         if update["_meta"]["is_mcp_tool_call"] == true
-            && update["rawInput"]["server"] == "lazypencil"
+            && update["rawInput"]["server"] == self.server
             && let Some(tool) = update["rawInput"]["tool"]
                 .as_str()
                 .filter(|tool| self.tools.contains(*tool))
@@ -73,7 +82,7 @@ impl DocumentPermissions {
             .fields
             .name
             .as_deref()
-            .and_then(|name| name.strip_prefix("mcp__lazypencil__"))
+            .and_then(|name| name.strip_prefix(&format!("mcp__{}__", self.server)))
             .is_some_and(|name| self.tools.contains(name));
         let correlated = request
             .meta
@@ -139,5 +148,35 @@ mod tests {
         assert_eq!(policy.allow_once(&request), Some("once".into()));
         policy.observe(&json!({"sessionId":"bound","update":{"sessionUpdate":"tool_call_update","toolCallId":"call-1","status":"completed"}}));
         assert_eq!(policy.allow_once(&request), None);
+    }
+
+    #[test]
+    fn bound_server_names_do_not_authorize_the_global_server() {
+        let mut policy = DocumentPermissions::for_server("lazypencil_bound_test");
+        policy.set_session("bound");
+        assert_eq!(
+            policy.allow_once(&request(
+                "bound",
+                Some("mcp__lazypencil_bound_test__apply_operations"),
+                false
+            )),
+            Some("once".into())
+        );
+        assert_eq!(
+            policy.allow_once(&request(
+                "bound",
+                Some("mcp__lazypencil__apply_operations"),
+                false
+            )),
+            None
+        );
+        let request = request("bound", None, true);
+        let mut notification = json!({"sessionId":"bound","update":{"sessionUpdate":"tool_call","toolCallId":"call-1","status":"pending",
+            "_meta":{"is_mcp_tool_call":true},"rawInput":{"server":"lazypencil","tool":"apply_operations"}}});
+        policy.observe(&notification);
+        assert_eq!(policy.allow_once(&request), None);
+        notification["update"]["rawInput"]["server"] = json!("lazypencil_bound_test");
+        policy.observe(&notification);
+        assert_eq!(policy.allow_once(&request), Some("once".into()));
     }
 }

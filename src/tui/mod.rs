@@ -964,14 +964,7 @@ impl App {
                             let id = format!("{}:{id}", self.turn_sequence);
                             let fresh = !self.tool_calls.contains_key(&id);
                             let tool = self.tool_calls.entry(id.clone()).or_default();
-                            if let Some(title) =
-                                update["title"].as_str().filter(|title| !title.is_empty())
-                            {
-                                tool.title = clean(title).replace(['\n', '\t'], " ");
-                            }
-                            if let Some(status) = update["status"].as_str() {
-                                tool.status = status.into();
-                            }
+                            tool.update(update);
                             if fresh {
                                 self.append(&format!(
                                     "\n[tool_call] {}\n",

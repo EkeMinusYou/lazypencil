@@ -27,6 +27,7 @@ pub(super) fn prompt_block(focused: bool) -> Block<'static> {
 pub(super) struct ToolDisplay {
     pub title: String,
     pub status: String,
+    details: String,
 }
 
 impl Default for ToolDisplay {
@@ -34,6 +35,29 @@ impl Default for ToolDisplay {
         Self {
             title: "Tool".into(),
             status: "running".into(),
+            details: String::new(),
+        }
+    }
+}
+
+impl ToolDisplay {
+    pub fn update(&mut self, update: &Value) {
+        if let Some(title) = update["title"].as_str().filter(|title| !title.is_empty()) {
+            self.title = clean(title).replace(['\n', '\t'], " ");
+        }
+        if let Some(status) = update["status"].as_str() {
+            self.status = status.into();
+        }
+        if let Some(content) = update["content"].as_array() {
+            self.details = clean(
+                &content
+                    .iter()
+                    .filter(|item| item["type"] == "content" && item["content"]["type"] == "text")
+                    .filter_map(|item| item["content"]["text"].as_str())
+                    .flat_map(|text| text.chars().chain(std::iter::once('\n')))
+                    .take(4096)
+                    .collect::<String>(),
+            );
         }
     }
 }
@@ -494,6 +518,16 @@ fn history_text(
             flush_body(&mut body, &mut lines, activity.is_empty(), user);
             let title = if let Some(name) = title.strip_prefix("mcp.lazypencil.") {
                 name.replace('_', " ")
+            } else if let Some((_, name)) = title
+                .strip_prefix("mcp__lazypencil_bound_")
+                .and_then(|name| name.split_once("__"))
+                .or_else(|| {
+                    title
+                        .strip_prefix("mcp.lazypencil_bound_")
+                        .and_then(|name| name.split_once('.'))
+                })
+            {
+                name.replace('_', " ")
             } else {
                 title.to_owned()
             };
@@ -512,6 +546,18 @@ fn history_text(
                     }),
                 ),
             ]));
+            if status == "failed"
+                && let Some(tool) = tool
+                && !tool.details.trim().is_empty()
+            {
+                close_tools(&mut lines, &mut activity);
+                lines.extend(
+                    tool.details.trim().lines().map(|line| {
+                        Line::styled(line.to_owned(), Style::default().fg(theme::ERROR))
+                    }),
+                );
+                lines.push(Line::default());
+            }
             continue;
         }
         if line == "[0 images]" {
@@ -604,6 +650,28 @@ fn flush_body(body: &mut String, lines: &mut Vec<Line<'static>>, spacing: bool, 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn failed_tools_keep_the_error_body_visible_across_status_updates() {
+        let mut tool = ToolDisplay::default();
+        tool.update(&json!({"title":"mcp__lazypencil_bound_test__startup","status":"in_progress",
+            "content":[{"type":"content","content":{"type":"text","text":"MCP server was not started: duplicate server name."}}]}));
+        let mut tools = std::collections::HashMap::from([("startup".into(), tool)]);
+        let log = "[tool_call] \"startup\"\n";
+        assert!(
+            !history_text(log, &tools)
+                .to_string()
+                .contains("duplicate server")
+        );
+        tools
+            .get_mut("startup")
+            .unwrap()
+            .update(&json!({"status":"failed"}));
+        let rendered = history_text(log, &tools).to_string();
+        assert!(rendered.contains("✕ startup"));
+        assert!(rendered.contains("MCP server was not started: duplicate server name."));
+    }
 
     #[test]
     fn tool_runs_show_only_the_latest_three_calls() {

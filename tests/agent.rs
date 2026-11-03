@@ -299,6 +299,11 @@ fn startup_connection_reports_actual_settings_without_prompting_and_reuses_the_s
                 }
             }
         }).await.unwrap();
+        let sessions = std::fs::read_to_string(directory.path().join("received-settings-sessions.jsonl")).unwrap();
+        let session: Value = serde_json::from_str(sessions.lines().next().unwrap()).unwrap();
+        let server = session["mcpServers"][0]["name"].as_str().unwrap();
+        let suffix = server.strip_prefix("lazypencil_bound_").expect("The document server must not collide with a configured lazypencil server");
+        uuid::Uuid::parse_str(suffix).unwrap();
         assert!(!conversation.active());
         assert_eq!(conversation.draft(), "Keep this draft until submitted");
         assert!(!directory.path().join("sent-turn.txt").exists());

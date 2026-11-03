@@ -147,7 +147,10 @@ impl Conversation {
             transcript: None,
             active: None,
             preparation: None,
-            permissions: DocumentPermissions::new(),
+            permissions: DocumentPermissions::for_server(format!(
+                "lazypencil_bound_{}",
+                uuid::Uuid::new_v4().simple()
+            )),
             pending_permissions: HashMap::new(),
             events: VecDeque::new(),
             result: None,
@@ -541,7 +544,8 @@ impl Conversation {
             ));
         }
         let mut content = vec![ContentBlock::Text(TextContent::new(format!(
-            "You are editing the .pen document identified below. First call open_document with its absolute path, then pass the returned document_id to every document-specific MCP tool, including get_document, project guidance, styles, assets, layout and previews. Do not edit another document. Reopen this path after reconnecting; document IDs belong to one connection. Follow this workflow. Keep the user's language. Do not claim visual verification without inspecting a rendered image.\n\nDocument path: {}\n\n{}{}{}",
+            "You are editing the .pen document identified below. Use the document tools on MCP server {}. First call open_document with its absolute path, then pass the returned document_id to every document-specific MCP tool, including get_document, project guidance, styles, assets, layout and previews. Do not edit another document. Reopen this path after reconnecting; document IDs belong to one connection. Follow this workflow. Keep the user's language. Do not claim visual verification without inspecting a rendered image.\n\nDocument path: {}\n\n{}{}{}",
+            self.permissions.server_name(),
             self.store.path().display(),
             guidance["body"].as_str().unwrap_or_default(),
             guidance
@@ -705,7 +709,7 @@ impl Conversation {
             )?,
         )];
         options.mcp_servers = vec![McpServer::Stdio(
-            McpServerStdio::new("lazypencil", self.executable.clone())
+            McpServerStdio::new(self.permissions.server_name(), self.executable.clone())
                 .args(args)
                 .env(environment),
         )];

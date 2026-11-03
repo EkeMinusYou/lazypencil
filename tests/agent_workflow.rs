@@ -253,14 +253,18 @@ fn tool_names(events: &[Value]) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
     for event in events {
         let update = &event["notification"]["update"];
-        if let Some(name) = update["name"]
-            .as_str()
-            .and_then(|name| name.strip_prefix("mcp__lazypencil__"))
-        {
+        if let Some(name) = update["name"].as_str().and_then(|name| {
+            name.strip_prefix("mcp__lazypencil__").or_else(|| {
+                name.strip_prefix("mcp__lazypencil_bound_")
+                    .and_then(|name| name.split_once("__").map(|(_, tool)| tool))
+            })
+        }) {
             names.insert(name.into());
         }
         if update["_meta"]["is_mcp_tool_call"] == true
-            && update["rawInput"]["server"] == "lazypencil"
+            && update["rawInput"]["server"].as_str().is_some_and(|server| {
+                server == "lazypencil" || server.starts_with("lazypencil_bound_")
+            })
             && let Some(name) = update["rawInput"]["tool"].as_str()
         {
             names.insert(name.into());

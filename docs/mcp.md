@@ -69,6 +69,8 @@ settings, captured source bytes, and discovered files remain dependencies.
 remain explicit local user actions; opening a document does not grant trust.
 Owned CLI/TUI conversations use the same open-document API; private attachment and
 usage grants continue to restrict their connection to the host's selected document.
+Their server name is `lazypencil_bound_<UUID>`, separate from a user's configured
+`lazypencil` server. Always use the tools advertised by the bound connection.
 External MCP connections cannot discover or operate a running TUI.
 
 The implementation uses the [official Rust SDK](https://github.com/modelcontextprotocol/rust-sdk) at version 3.6.0. The currently advertised protocol is `2025-11-25`; other protocol revisions and broader real-agent workflows still require interoperability testing. Codex and Claude subscription workflows have been checked separately; see [agent integration](agents.md). MCP messages use stdout; startup errors use stderr. Closing stdin ends the server.

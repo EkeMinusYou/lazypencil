@@ -42,7 +42,10 @@ impl Conversation {
         self.transcript.take();
         self.events.clear();
         self.result = None;
-        self.permissions = DocumentPermissions::new();
+        self.permissions = DocumentPermissions::for_server(format!(
+            "lazypencil_bound_{}",
+            uuid::Uuid::new_v4().simple()
+        ));
         Ok(true)
     }
 }
