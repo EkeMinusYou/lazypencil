@@ -35,7 +35,7 @@ impl Walker<'_, '_, '_> {
         let Some(scope) = &prefix.substitution else {
             return Provenance::Ordinary;
         };
-        match self.copier.reused_sources[&scope.key]
+        match self.copier.reused.sources[&scope.key]
             .positions
             .get(&position(child))
         {
@@ -96,10 +96,10 @@ impl Walker<'_, '_, '_> {
                     .as_ref()
                     .zip(relative.as_ref())
                     .is_some_and(|(scope, path)| {
-                        self.copier.reused_targets[&self.copier.reuse[&scope.key]][path]
+                        self.copier.reused.paths[&self.copier.reused.targets[&scope.key]][path]
                     })
             } else {
-                child.is_instance || self.copier.reuse.contains_key(&authored(child))
+                child.is_instance || self.copier.reused.targets.contains_key(&authored(child))
             };
             if fresh
                 && !(self.visitor)(Mapping {

@@ -4,7 +4,6 @@ use rmcp::{
     model::{
         CallToolRequestParams, CallToolResponse, CallToolResult, Implementation, ListToolsResult,
         PaginatedRequestParams, ProtocolVersion, ServerCapabilities, ServerConfig, Tool,
-        ToolAnnotations,
     },
     service::RequestContext,
 };
@@ -20,8 +19,10 @@ use std::{
 };
 use tokio::sync::{mpsc, oneshot};
 
+mod catalog;
 pub(crate) mod timing;
 mod workspace;
+use catalog::{ToolKind, tool, tools_for};
 
 const MAX_TOOL_BYTES: usize = 4 * 1024 * 1024;
 #[cfg(feature = "rendering")]
@@ -159,9 +160,7 @@ impl ServerHandler for Server {
         Cow::Owned(vec![ProtocolVersion::V_2025_11_25])
     }
     fn get_tool(&self, name: &str) -> Option<Tool> {
-        tools_for(self.preview_control)
-            .into_iter()
-            .find(|tool| tool.name == name)
+        catalog::find(name, self.preview_control)
     }
     async fn list_tools(
         &self,
@@ -188,11 +187,13 @@ impl ServerHandler for Server {
             return Err(ErrorData::invalid_params("Unknown tool", None));
         }
         let arguments = Value::Object(request.arguments.unwrap_or_default());
-        if arguments.to_string().len() > MAX_TOOL_BYTES {
-            return Ok(CallToolResult::structured_error(
-                json!({"error":Error::new("INVALID_ARGUMENT","Tool input exceeds 4 MiB")}),
-            )
-            .into());
+        if let Err(error) = crate::query::check_response_size(
+            &arguments,
+            MAX_TOOL_BYTES,
+            None,
+            "Tool input exceeds 4 MiB",
+        ) {
+            return Ok(CallToolResult::structured_error(json!({"error":error})).into());
         }
         if context.ct.is_cancelled() {
             return Ok(CallToolResult::structured_error(json!({"error":Error::new("CANCELLED","The request was cancelled before execution")})).into());
@@ -235,165 +236,6 @@ impl ServerHandler for Server {
         };
         Ok(result.into())
     }
-}
-
-fn tool<T: JsonSchema>(name: &'static str, description: &'static str, read_only: bool) -> Tool {
-    let schema = schemars::schema_for!(T)
-        .to_value()
-        .as_object()
-        .expect("object schema")
-        .clone();
-    let mut tool = Tool::new(name, description, schema);
-    tool.annotations = Some(
-        ToolAnnotations::new()
-            .read_only(read_only)
-            .destructive(!read_only)
-            .idempotent(true)
-            .open_world(false),
-    );
-    tool
-}
-
-fn tools() -> Vec<Tool> {
-    let tools = vec![
-        tool::<GuideArgs>(
-            "get_guidance",
-            "Read an English built-in guide or a trusted project guide. Omit id for the workflow, automatic project_guides and index. Project instructions require an explicit local user grant; never grant trust yourself. Preserve the user's response and design language.",
-            true,
-        ),
-        tool::<StylesArgs>(
-            "list_styles",
-            "List built-in and trusted project design styles by use case. Project IDs use project:ID. Existing document conventions take priority unless the user requests a visual change.",
-            true,
-        ),
-        tool::<StyleArgs>(
-            "get_style",
-            "Read style tokens, guidance references, font requirements and a read-only editable .pen example. Import or create elements through normal editing operations; never reuse example IDs as generated IDs.",
-            true,
-        ),
-        tool::<Empty>(
-            "get_document",
-            "Read the bound document, current revisions, roots, dependency hashes and diagnostics before editing.",
-            true,
-        ),
-        tool::<service::ReadNodesRequest>(
-            "read_nodes",
-            "Read stored nodes by ID, name or type with bounded depth and pagination. instance_path selects an inherited descendant; expand_instances preserves variable references. library_alias selects declared definitions read-only. calculated:true explicitly executes scripts and returns resolved properties, generated children and matching geometry. Pass snapshot_id from get_layout/render to read that exact calculation without rerunning scripts. Generated IDs are read-only: edit their owning script's inputs or source. Omit calculated and snapshot_id to inspect or repair stored code without executing it.",
-            true,
-        ),
-        tool::<Page>(
-            "list_components",
-            "List reusable definitions in the bound document and its declared libraries. Library definitions are read-only.",
-            true,
-        ),
-        tool::<service::VariablesRequest>(
-            "get_variables",
-            "Read paginated variable definitions and resolved values with source documents and per-variable diagnostics. name selects an exact name or declared-library-qualified reference; library_alias selects a declared library. node_id and instance_path select inherited theme context; property selects its origin namespace. theme overrides are hypothetical and do not edit the document. Preserve raw definitions and alias references when editing.",
-            true,
-        ),
-        tool::<crate::icons::ListRequest>(
-            "list_icons",
-            "Search pinned vector icons by pack, name or tags. Lucide is bundled; Feather requires explicit CLI installation. Results include aliases, pack versions, content hashes and licenses. Use type:'icon', library:'lucide', icon:an_advertised_name, explicit width/height and a fill. Do not substitute missing icons or synthesize weights.",
-            true,
-        ),
-        tool::<EditRequest>(
-            "apply_operations",
-            "Apply an all-or-nothing edit batch. Read revisions first; supply expected_dependency_revision when external dependencies exist. For edits based on a calculation, also supply its runtime_dependency_revision as expected_runtime_dependency_revision. Generated IDs can be referenced using client_ref and result_of. Reuse request_id only to retry the same request.",
-            false,
-        ),
-        tool::<service::ValidateRequest>(
-            "validate_document",
-            "Query current diagnostics without a UI or attached reference. Default scope:'structure' checks structure and references; scope:'layout' adds measured text, geometry and overflow diagnostics from the same calculation as get_layout/render and executes scripts. Follow next_cursor as cursor, reusing snapshot_id for layout pages. Inspect issues within the user's requested scope; after repairs validate again without the pre-edit snapshot_id or cursor. Optional expected revisions reject stale input. Warnings do not invalidate a document; errors do. Validation does not perform a rendered visual check or validate every graphics/browser/shader capability.",
-            true,
-        ),
-        tool::<History>(
-            "get_history",
-            "List committed edits and checkpoint IDs, newest first.",
-            true,
-        ),
-        tool::<Restore>(
-            "restore_checkpoint",
-            "Restore the document content of a checkpoint as a new atomic edit. External files are not restored; their current revisions are checked.",
-            false,
-        ),
-        tool::<crate::assets::ReadAssetRequest>(
-            "read_asset",
-            "Read captured script or shader text by dependency hash, including nested script code retained after a failed calculation on this connection. Failed captures are not layout snapshots. This tool cannot read an arbitrary filesystem path.",
-            true,
-        ),
-        {
-            let mut definition = tool::<crate::assets::PutAssetRequest>(
-                "put_asset",
-                "Create an immutable managed image, JS, or GLSL asset and return its relative URI and hash. Images use MIME-typed Base64 data or a registered attachment_id and are normalized to PNG. Code uses UTF-8 text. This does not edit the document; link the URI in a subsequent atomic batch. For an image, set fill to the complete object {type:'image',url:returned_uri,mode:'contain'}. Modes are cover, contain, stretch. Updating fill replaces the entire object; keep type and url.",
-                false,
-            );
-            definition.annotations = Some(
-                ToolAnnotations::new()
-                    .read_only(false)
-                    .destructive(false)
-                    .idempotent(true)
-                    .open_world(false),
-            );
-            definition
-        },
-    ];
-    #[cfg(feature = "rendering")]
-    let tools = {
-        let mut tools = tools;
-        tools.extend([
-        tool::<LayoutArgs>("get_layout","Compute actual positions, transforms, shaped text metrics and overflow warnings. Inspect all pages as needed. Reuse snapshot_id from a calculation retained on this MCP connection. TUI preview IDs and IDs from earlier connections are not reusable here. On SNAPSHOT_UNAVAILABLE, omit snapshot_id and cursor to acquire one fresh calculation, then share its returned ID for subsequent reads.",true),
-        tool::<RenderArgs>("render","Return a PNG image content block for the whole design or a document-space crop. node_id selects its visual bounds while preserving document compositing context. Inspect the image, then correct problems using apply_operations. Layout and render share the same snapshot. Supply expected revisions.",true),
-        tool::<Empty>("list_fonts","List each face in bundled and explicitly configured fonts, including collection index, source/face hashes, weight, slant, PostScript name, variation axes and the default fallback chain. Layout text metrics report the actual shaped faces. Unavailable requested families fail instead of silent substitution.",true),
-        ]);
-        tools
-    };
-    tools
-}
-
-fn tools_for(preview: bool) -> Vec<Tool> {
-    let mut tools = tools();
-    if preview {
-        tools.push(tool::<Empty>(
-            "get_preview_state",
-            "Read the connected TUI preview's requested camera, displayed frame identity and document bounds, viewport dimensions, loading/error and playback state, and selected node for contextual references. Use before relative or contextual preview requests. preview_snapshot_id identifies the displayed frame; it is not a retained MCP snapshot_id. Obtain a reusable calculation from get_layout, validate_document scope layout, render or a calculated read on this connection. Does not read prompt text or modify the document, selection or camera.",
-            true,
-        ));
-        let mut set = tool::<crate::preview_control::SetPreviewRequest>(
-            "set_preview",
-            "Operate the connected TUI camera without editing the document or selection. Search named/described targets first with read_nodes (calculated:true, depth:0, name/type filters) and use its exact IDs. target can fit the document, one/multiple nodes or a region, or center a point. fit:false preserves current scale; zoom overrides fitting; zoom_factor multiplies the fitted/current scale; pan moves the camera in document units, positive right/down. Inspect get_preview_state for relative requests. Returns only after a complete frame; a newer manual view cancels the request. Do not rearrange nodes to satisfy display requests.",
-            false,
-        );
-        set.annotations = Some(
-            ToolAnnotations::new()
-                .read_only(false)
-                .destructive(false)
-                .idempotent(false)
-                .open_world(false),
-        );
-        tools.push(set);
-    }
-    for definition in &mut tools {
-        if definition.name == "list_icons" {
-            continue;
-        }
-        let mut schema = (*definition.input_schema).clone();
-        let properties = schema.entry("properties").or_insert_with(|| json!({}));
-        properties["document_id"] = json!({"type":"string","description":"Document ID returned by open_document or create_document on this connection."});
-        if !matches!(
-            definition.name.as_ref(),
-            "get_guidance" | "get_style" | "list_styles"
-        ) {
-            schema
-                .entry("required")
-                .or_insert_with(|| json!([]))
-                .as_array_mut()
-                .expect("required array")
-                .push(json!("document_id"));
-        }
-        definition.input_schema = std::sync::Arc::new(schema);
-    }
-    tools.extend(workspace::tools());
-    tools
 }
 
 pub(crate) fn tool_names() -> Vec<String> {
@@ -587,8 +429,10 @@ impl DocumentWorker {
                 access.check_connection().map_err(|_| expired())?;
             }
         }
-        let value = match name {
-            "get_preview_state" => {
+        let kind =
+            ToolKind::parse(name).ok_or_else(|| Error::new("INVALID_ARGUMENT", "Unknown tool"))?;
+        let value = match kind {
+            ToolKind::GetPreviewState => {
                 let _: Empty = parse(arguments)?;
                 self.preview_control
                     .as_ref()
@@ -597,13 +441,13 @@ impl DocumentWorker {
                     })?
                     .state(cancel)?
             }
-            "set_preview" => self
+            ToolKind::SetPreview => self
                 .preview_control
                 .as_ref()
                 .ok_or_else(|| Error::new("PREVIEW_UNAVAILABLE", "No TUI preview is connected"))?
                 .set(parse(arguments)?, cancel)?,
-            "list_icons" => crate::icons::list(self.store.data_dir(), &parse(arguments)?)?,
-            "get_guidance" => {
+            ToolKind::ListIcons => crate::icons::list(self.store.data_dir(), &parse(arguments)?)?,
+            ToolKind::GetGuidance => {
                 let args: GuideArgs = parse(arguments)?;
                 service::project_guidance_with_cancellation(
                     &self.store,
@@ -611,7 +455,7 @@ impl DocumentWorker {
                     Some(cancel),
                 )?
             }
-            "list_styles" => {
+            ToolKind::ListStyles => {
                 let args: StylesArgs = parse(arguments)?;
                 service::project_styles_with_cancellation(
                     &self.store,
@@ -621,11 +465,11 @@ impl DocumentWorker {
                     Some(cancel),
                 )?
             }
-            "get_style" => {
+            ToolKind::GetStyle => {
                 let args: StyleArgs = parse(arguments)?;
                 service::project_style_with_cancellation(&self.store, &args.id, Some(cancel))?
             }
-            "get_document" => {
+            ToolKind::GetDocument => {
                 let _: Empty = parse(arguments)?;
                 let mut value = service::document_metadata_with_cancellation(
                     &self.store,
@@ -639,7 +483,7 @@ impl DocumentWorker {
                 }
                 value
             }
-            "read_nodes" => {
+            ToolKind::ReadNodes => {
                 let args: service::ReadNodesRequest = parse(arguments)?;
                 if args.calculated || args.snapshot_id.is_some() {
                     #[cfg(not(feature = "rendering"))]
@@ -674,7 +518,7 @@ impl DocumentWorker {
                     )?
                 }
             }
-            "list_components" => {
+            ToolKind::ListComponents => {
                 let args: Page = parse(arguments)?;
                 let project = self.project(Some(cancel))?;
                 let components = project.components();
@@ -694,10 +538,10 @@ impl DocumentWorker {
                 result["dependency_revision"] = json!(project.dependency_revision());
                 result
             }
-            "get_variables" => {
+            ToolKind::GetVariables => {
                 service::get_variables(&self.store, &self.fonts, &parse(arguments)?, Some(cancel))?
             }
-            "apply_operations" => {
+            ToolKind::ApplyOperations => {
                 let request: EditRequest = parse(arguments)?;
                 #[cfg(feature = "rendering")]
                 if request.expected_runtime_dependency_revision.is_some() {
@@ -721,7 +565,7 @@ impl DocumentWorker {
                     Some(cancel),
                 )?
             }
-            "validate_document" => {
+            ToolKind::ValidateDocument => {
                 let args: service::ValidateRequest = parse(arguments)?;
                 args.validate()?;
                 #[cfg(feature = "rendering")]
@@ -747,7 +591,7 @@ impl DocumentWorker {
                     Some(cancel),
                 )?
             }
-            "get_history" => {
+            ToolKind::GetHistory => {
                 let args: History = parse(arguments)?;
                 if !(1..=1000).contains(&args.limit) {
                     return Err(Error::new(
@@ -767,7 +611,7 @@ impl DocumentWorker {
                 };
                 json!({"revision":self.store.read()?.revision(),"entries":entries,"next_before_sequence":next})
             }
-            "restore_checkpoint" => {
+            ToolKind::RestoreCheckpoint => {
                 let args: Restore = parse(arguments)?;
                 service::restore_checkpoint_with_cancellation(
                     &self.store,
@@ -781,11 +625,11 @@ impl DocumentWorker {
                     Some(cancel),
                 )?
             }
-            "read_asset" => {
+            ToolKind::ReadAsset => {
                 let args: crate::assets::ReadAssetRequest = parse(arguments)?;
                 self.read_asset(&args, cancel)?
             }
-            "put_asset" => {
+            ToolKind::PutAsset => {
                 let args: crate::assets::PutAssetRequest = parse(arguments)?;
                 let asset = if let crate::assets::AssetSource::Attachment { attachment_id } =
                     &args.source
@@ -817,11 +661,11 @@ impl DocumentWorker {
                     .map_err(|e| Error::new("INTERNAL_ERROR", e.to_string()))?
             }
             #[cfg(feature = "rendering")]
-            "get_layout" => return self.get_layout(parse(arguments)?, cancel),
+            ToolKind::GetLayout => return self.get_layout(parse(arguments)?, cancel),
             #[cfg(feature = "rendering")]
-            "render" => return self.render(parse(arguments)?, cancel),
+            ToolKind::Render => return self.render(parse(arguments)?, cancel),
             #[cfg(feature = "rendering")]
-            "list_fonts" => {
+            ToolKind::ListFonts => {
                 let _: Empty = parse(arguments)?;
                 let project = self.project(Some(cancel))?;
                 let mut fonts = project.load_fonts()?;
@@ -829,12 +673,15 @@ impl DocumentWorker {
                 project.verify_unchanged()?;
                 json!({"revision":project.root_document().revision(),"dependency_revision":project.dependency_revision(),"fonts":inventory,"fallback_families":fonts.fallback_families(),"default_family":fonts.default_family(),"locale":fonts.locale(),"configuration":project.configuration()})
             }
-            _ => return Err(Error::new("INVALID_ARGUMENT", "Unknown tool")),
+            ToolKind::OpenDocument | ToolKind::CreateDocument | ToolKind::ListDocuments => {
+                return Err(Error::new(
+                    "INVALID_ARGUMENT",
+                    "Tool requires workspace dispatch",
+                ));
+            }
         };
-        if !matches!(
-            name,
-            "apply_operations" | "restore_checkpoint" | "set_preview" | "get_preview_state"
-        ) && let Some(revision) = value.get("revision").and_then(Value::as_str)
+        if kind.checks_revision()
+            && let Some(revision) = value.get("revision").and_then(Value::as_str)
         {
             crate::store::require_revision(&self.store.read()?, revision)?;
         }
@@ -1114,12 +961,12 @@ fn parse<T: DeserializeOwned>(value: Value) -> Result<T> {
         .map_err(|e| Error::new("INVALID_ARGUMENT", format!("Invalid tool arguments: {e}")))
 }
 fn structured(value: Value) -> Result<CallToolResult> {
-    if value.to_string().len() > MAX_TOOL_BYTES {
-        return Err(Error::new(
-            "INVALID_ARGUMENT",
-            "Tool result exceeds 4 MiB; reduce depth or page size",
-        ));
-    }
+    crate::query::check_response_size(
+        &value,
+        MAX_TOOL_BYTES,
+        None,
+        "Tool result exceeds 4 MiB; reduce depth or page size",
+    )?;
     Ok(CallToolResult::structured(value))
 }
 fn paginate(
@@ -1129,31 +976,7 @@ fn paginate(
     cursor: Option<&str>,
     key: &str,
 ) -> Result<Value> {
-    if !(1..=500).contains(&limit) {
-        return Err(Error::new("INVALID_ARGUMENT", "Page limit must be 1..500"));
-    }
-    let offset = if let Some(cursor) = cursor {
-        let (key, offset) = cursor
-            .rsplit_once(':')
-            .ok_or_else(|| Error::new("INVALID_ARGUMENT", "Malformed page cursor"))?;
-        if key != identity {
-            return Err(Error::new(
-                "REVISION_CONFLICT",
-                "This cursor belongs to a different revision or query",
-            ));
-        }
-        offset
-            .parse::<usize>()
-            .map_err(|_| Error::new("INVALID_ARGUMENT", "Malformed cursor offset"))?
-    } else {
-        0
-    };
-    if offset > values.len() {
-        return Err(Error::new(
-            "INVALID_ARGUMENT",
-            "Cursor offset is outside this result",
-        ));
-    }
+    let offset = crate::query::page_offset(identity, cursor, limit, values.len())?;
     let total = values.len();
     let page = values
         .into_iter()

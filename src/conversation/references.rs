@@ -75,7 +75,7 @@ pub(crate) fn decode(selection: Option<&Value>) -> Result<Vec<Reference>> {
     let Some(value) = selection.and_then(|selection| selection.get("node_references")) else {
         return Ok(Vec::new());
     };
-    if value.to_string().len() > 64 * 1024 {
+    if crate::query::serialized_size(value) > 64 * 1024 {
         return Err(Error::new(
             "INVALID_ARGUMENT",
             "Node references exceed 64 KiB",

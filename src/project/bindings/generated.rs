@@ -334,7 +334,7 @@ impl Selection {
                 Some(original),
                 json!({"version":1,"values":values,"variables":bound.values.variables,"components":bound.values.components}),
             )?;
-            *budget = budget.saturating_add(context.to_string().len());
+            *budget = budget.saturating_add(crate::query::serialized_size(&context));
             if *budget > crate::script::MAX_OUTPUT_BYTES {
                 return Err(invalid(
                     "Inherited script contexts exceed the generated output budget",
@@ -646,7 +646,7 @@ impl Bound {
             {
                 let generations =
                     serde_json::to_value(&original.values.generations).expect("input generations");
-                *budget = budget.saturating_add(generations.to_string().len() + 128);
+                *budget = budget.saturating_add(crate::query::serialized_size(&generations) + 128);
                 if *budget > crate::script::MAX_OUTPUT_BYTES {
                     return Err(invalid(
                         "Inherited input generations exceed the generated output budget",
@@ -659,7 +659,7 @@ impl Bound {
                 context["generations"] = generations;
                 context["input_epoch"] = json!(self.original().input_epoch);
                 context["lexical_inputs"] = json!(false);
-                if context.to_string().len() > 4 * 1024 * 1024 {
+                if crate::query::serialized_size(&context) > 4 * 1024 * 1024 {
                     return Err(invalid("Inherited input generations exceed 4 MiB"));
                 }
             }

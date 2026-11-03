@@ -107,18 +107,29 @@ impl Context<'_> {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+pub(super) struct Request<'a> {
+    pub source: &'a ComponentSource,
+    pub mode: ImportMode,
+    pub options: &'a ImportOptions,
+    pub expected: Option<&'a str>,
+    pub parent: Option<&'a Target>,
+    pub index: Option<usize>,
+}
+
 pub(super) fn apply_import(
     document: &mut Document,
     context: &mut Context<'_>,
-    source: &ComponentSource,
-    mode: ImportMode,
-    options: &ImportOptions,
-    expected: Option<&str>,
-    parent: Option<&Target>,
-    index: Option<usize>,
+    request: Request<'_>,
     bindings: &BTreeMap<String, String>,
 ) -> Result<(String, Value)> {
+    let Request {
+        source,
+        mode,
+        options,
+        expected,
+        parent,
+        index,
+    } = request;
     crate::cancel::check(context.cancel)?;
     let mut source_document = document.clone();
     let mut file_source = None;

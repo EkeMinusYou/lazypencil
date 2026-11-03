@@ -52,6 +52,7 @@ pub struct NodeLocation {
 #[derive(Debug, Clone)]
 pub struct Document {
     text: String,
+    revision: String,
     value: Value,
     nodes: BTreeMap<String, NodeLocation>,
 }
@@ -79,7 +80,12 @@ impl Document {
             .ok_or_else(|| invalid("The document must contain a children array"))?;
         let mut nodes = BTreeMap::new();
         index_nodes(children, "/children", None, &mut nodes)?;
-        Ok(Self { text, value, nodes })
+        Ok(Self {
+            revision: hash(text.as_bytes()),
+            text,
+            value,
+            nodes,
+        })
     }
 
     pub fn empty() -> Self {
@@ -96,7 +102,7 @@ impl Document {
         &self.value
     }
     pub fn revision(&self) -> String {
-        hash(self.text.as_bytes())
+        self.revision.clone()
     }
     pub fn version(&self) -> &str {
         self.value["version"].as_str().unwrap_or_default()
@@ -315,9 +321,21 @@ impl Document {
 }
 
 pub fn hash(bytes: &[u8]) -> String {
+    digest_hex(Sha256::digest(bytes))
+}
+
+/// Hash JSON values independently of object insertion order, preserving arrays.
+pub(crate) fn canonical_hash(value: &Value) -> String {
+    let mut normalized = value.clone();
+    normalized.sort_all_objects();
+    hash(normalized.to_string().as_bytes())
+}
+
+pub(crate) fn digest_hex(bytes: impl AsRef<[u8]>) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut result = String::with_capacity(64);
-    for byte in Sha256::digest(bytes) {
+    let bytes = bytes.as_ref();
+    let mut result = String::with_capacity(bytes.len() * 2);
+    for &byte in bytes {
         result.push(HEX[(byte >> 4) as usize] as char);
         result.push(HEX[(byte & 15) as usize] as char);
     }
@@ -562,4 +580,40 @@ fn separator(text: &str, container: &CstNode, previous: Option<&CstNode>) -> Str
         .unwrap_or_else(|| format!("{base}  "));
     let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
     format!("{newline}{indent}")
+}
+
+#[cfg(test)]
+mod hash_tests {
+    use super::*;
+
+    #[test]
+    fn revision_cache_tracks_jsonc_edits_and_independent_clones() {
+        let mut document = Document::parse(
+            "{\n // preserved\n \"version\":\"2.21\",\n \"children\":[]\n}\n".into(),
+        )
+        .unwrap();
+        let original = document.clone();
+        document.set_property("", "name", &json!("edited")).unwrap();
+        assert_ne!(document.revision(), original.revision());
+        assert_eq!(document.revision(), hash(document.text().as_bytes()));
+        assert_eq!(original.revision(), hash(original.text().as_bytes()));
+        assert!(document.text().contains("// preserved"));
+        let previous = document.revision();
+        assert!(document.set_property_raw("", "name", "not-json").is_err());
+        assert_eq!(document.revision(), previous);
+    }
+
+    #[test]
+    fn canonical_identity_ignores_nested_object_order_but_preserves_array_order() {
+        let first: Value = serde_json::from_str(r#"{"z":[{"b":2,"a":1},3],"a":true}"#).unwrap();
+        let reordered: Value = serde_json::from_str(r#"{"a":true,"z":[{"a":1,"b":2},3]}"#).unwrap();
+        let changed: Value = serde_json::from_str(r#"{"a":true,"z":[3,{"a":1,"b":2}]}"#).unwrap();
+        assert_eq!(canonical_hash(&first), canonical_hash(&reordered));
+        assert_ne!(canonical_hash(&first), canonical_hash(&changed));
+        assert_eq!(
+            hash(b""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_eq!(digest_hex([0, 15, 16, 127, 128, 255]), "000f107f80ff");
+    }
 }

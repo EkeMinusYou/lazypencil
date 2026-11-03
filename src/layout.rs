@@ -244,11 +244,7 @@ fn snapshot_identity(revision: &str, dependency_revision: &str, items: &[LayoutI
         serde_json::to_writer(&mut writer, &identity).expect("Serializable layout identity");
         std::io::Write::flush(&mut writer).expect("In-memory identity hash");
     }
-    digest
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    crate::document::digest_hex(digest.finalize())
 }
 
 struct Solver<'a> {

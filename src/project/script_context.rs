@@ -171,7 +171,7 @@ impl Bound {
 }
 
 pub(super) fn parse(value: &Value) -> Result<Inputs> {
-    if value.to_string().len() > 4 * 1024 * 1024 {
+    if crate::query::serialized_size(&value) > 4 * 1024 * 1024 {
         return Err(invalid("Copied input context exceeds 4 MiB"));
     }
     let values: Inputs = serde_json::from_value(value.clone())

@@ -75,7 +75,7 @@ impl Bound {
         }
         let root = source.script_namespace.as_deref().unwrap_or("");
         let names = reachable(source, root);
-        let initial_bytes = serde_json::to_vec(&result).expect("bindings").len();
+        let initial_bytes = crate::query::serialized_size(&result);
         let reusable = names.iter().all(|name| {
             let scope = &source.script_scopes[name];
             result.script_scopes.get(name) == Some(scope)
@@ -238,7 +238,7 @@ impl Bound {
             result.version = 4;
         }
         let value = serde_json::to_value(result).expect("code ownership");
-        let growth = value.to_string().len().saturating_sub(initial_bytes);
+        let growth = crate::query::serialized_size(&value).saturating_sub(initial_bytes);
         *budget = budget.saturating_add(growth);
         if *budget > crate::script::MAX_OUTPUT_BYTES {
             return Err(invalid(

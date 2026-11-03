@@ -423,7 +423,7 @@ where
 fn require_edit_response_budget(value: &Value) -> Result<()> {
     // Leave room for the store's request, revision, checkpoint, and replay fields.
     let limit = 4 * 1024 * 1024 - 16384;
-    let bytes = value.to_string().len();
+    let bytes = crate::query::serialized_size(value);
     if bytes > limit {
         return Err(Error::new(
             "INVALID_ARGUMENT",
@@ -471,7 +471,7 @@ pub fn document_metadata_with_cancellation(
         "variables":{"resolved_values":true,"sources":true,"node_theme_context":true,"property_namespace":true,"pagination":true},
         "node_reads":{"calculated":cfg!(feature="rendering"),"generated":cfg!(feature="rendering"),"snapshot_reuse":cfg!(feature="rendering")},
         "validation":{"structure":true,"layout":cfg!(feature="rendering"),"diagnostic_pagination":true,"rendered_visual_check":false},
-        "script":{"execution":true,"rendering":cfg!(feature="rendering"),"schemas":crate::document::SUPPORTED_DOCUMENT_VERSIONS,"engine":crate::script::ENGINE},
+        "script":{"execution":true,"rendering":cfg!(feature="rendering"),"schemas":crate::script::header::SUPPORTED_SCHEMAS,"engine":crate::script::ENGINE},
         "browser":{"rendering":cfg!(feature="rendering"),"runtime_setup_required":true,"devices":["desktop","phone","tablet"],"file_url_rendering":cfg!(feature="rendering"),"file_url_requires_declared_resources":true,"resource_bundle":{"version":1,"declare":true,"pack":true,"preserve_original_urls":true}},
         "shader":{"fills":cfg!(feature="rendering"),"effects":cfg!(feature="rendering"),"software_webgl":true,"annotations":["resolution","time"],"variable_image_origins":true,"sampler_arrays":true,"max_encoded_sampler_bytes":67108864},
         "graphics":{"rounded_polygons":cfg!(feature="rendering"),"background_blur":cfg!(feature="rendering"),"node_preview":"document_crop","inner_shadow_blending":cfg!(feature="rendering"),"outer_shadow_blending":cfg!(feature="rendering"),"linear_color_blending":cfg!(feature="rendering"),"mesh_gradient":cfg!(feature="rendering")},
@@ -778,12 +778,7 @@ pub fn read_nodes(
     limit: usize,
     cursor: Option<&str>,
 ) -> Result<Value> {
-    if depth > 16 || !(1..=500).contains(&limit) {
-        return Err(Error::new(
-            "INVALID_ARGUMENT",
-            "Node depth must be 0..16 and limit 1..500",
-        ));
-    }
+    validate_node_page(depth, limit)?;
     let revision = document.revision();
     let query_hash = crate::document::hash(
         json!({"id":id,"name":name,"type":kind,"depth":depth})
@@ -820,13 +815,8 @@ pub fn read_nodes(
     } else {
         collect_nodes(&document.value()["children"], &mut nodes);
     }
-    nodes.retain(|node| {
-        name.is_none_or(|q| {
-            node["name"]
-                .as_str()
-                .is_some_and(|s| s.to_lowercase().contains(&q.to_lowercase()))
-        }) && kind.is_none_or(|t| node["type"] == t)
-    });
+    let filter = NodeFilter::new(name, kind);
+    nodes.retain(|node| filter.matches(node["name"].as_str(), node["type"].as_str()));
     if offset > nodes.len() {
         return Err(Error::new(
             "INVALID_ARGUMENT",
@@ -847,12 +837,12 @@ pub fn read_nodes(
     };
     let result =
         json!({"revision":revision,"nodes":nodes,"next_cursor":next,"total_matches":total});
-    if result.to_string().len() > 4 * 1024 * 1024 {
-        return Err(Error::new(
-            "INVALID_ARGUMENT",
-            "Node response exceeds 4 MiB; reduce depth or limit",
-        ));
-    }
+    crate::query::check_response_size(
+        &result,
+        crate::query::MAX_RESPONSE_BYTES,
+        None,
+        "Node response exceeds 4 MiB; reduce depth or limit",
+    )?;
     Ok(result)
 }
 
@@ -883,6 +873,60 @@ pub struct ReadNodesRequest {
     pub limit: usize,
     #[serde(default)]
     pub cursor: Option<String>,
+}
+
+impl ReadNodesRequest {
+    fn validate_page(&self) -> Result<()> {
+        validate_node_page(self.depth, self.limit)
+    }
+
+    fn validate_address(&self) -> Result<()> {
+        if self.instance_path.len() > 128
+            || self
+                .instance_path
+                .iter()
+                .any(|part| part.is_empty() || part.contains('/'))
+            || (!self.instance_path.is_empty() && self.node_id.is_none())
+        {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "An instance path requires a node ID and at most 128 nonempty IDs without '/'",
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn validate_node_page(depth: usize, limit: usize) -> Result<()> {
+    if depth > 16 || !(1..=500).contains(&limit) {
+        return Err(Error::new(
+            "INVALID_ARGUMENT",
+            "Node depth must be 0..16 and limit 1..500",
+        ));
+    }
+    Ok(())
+}
+
+struct NodeFilter<'a> {
+    name: Option<String>,
+    kind: Option<&'a str>,
+}
+
+impl<'a> NodeFilter<'a> {
+    fn new(name: Option<&str>, kind: Option<&'a str>) -> Self {
+        Self {
+            name: name.map(str::to_lowercase),
+            kind,
+        }
+    }
+
+    fn matches(&self, name: Option<&str>, kind: Option<&str>) -> bool {
+        self.kind.is_none_or(|expected| kind == Some(expected))
+            && self
+                .name
+                .as_ref()
+                .is_none_or(|query| name.is_some_and(|name| name.to_lowercase().contains(query)))
+    }
 }
 
 fn node_depth() -> usize {
@@ -976,24 +1020,8 @@ pub fn read_project_nodes(project: &Project, request: &ReadNodesRequest) -> Resu
             "Calculated reads require a layout snapshot; use the store or MCP read_nodes entry point",
         ));
     }
-    if request.depth > 16 || !(1..=500).contains(&request.limit) {
-        return Err(Error::new(
-            "INVALID_ARGUMENT",
-            "Node depth must be 0..16 and limit 1..500",
-        ));
-    }
-    if request.instance_path.len() > 128
-        || request
-            .instance_path
-            .iter()
-            .any(|p| p.is_empty() || p.contains('/'))
-        || (!request.instance_path.is_empty() && request.node_id.is_none())
-    {
-        return Err(Error::new(
-            "INVALID_ARGUMENT",
-            "An instance path requires a node ID and at most 128 nonempty IDs without '/'",
-        ));
-    }
+    request.validate_page()?;
+    request.validate_address()?;
     let mut query = serde_json::to_value(request).expect("serializable query");
     query.as_object_mut().expect("object").remove("cursor");
     query.as_object_mut().expect("object").remove("limit");
@@ -1037,17 +1065,12 @@ pub fn read_project_nodes(project: &Project, request: &ReadNodesRequest) -> Resu
                 collect_expanded(root, &mut nodes);
             }
         }
+        let filter = NodeFilter::new(request.name.as_deref(), request.kind.as_deref());
         nodes.retain(|node| {
-            request
-                .kind
-                .as_deref()
-                .is_none_or(|kind| node.kind() == kind)
-                && request.name.as_deref().is_none_or(|name| {
-                    node.properties
-                        .get("name")
-                        .and_then(Value::as_str)
-                        .is_some_and(|value| value.to_lowercase().contains(&name.to_lowercase()))
-                })
+            filter.matches(
+                node.properties.get("name").and_then(Value::as_str),
+                Some(node.kind()),
+            )
         });
         let offset = cursor
             .unwrap_or("0")
@@ -1088,12 +1111,12 @@ pub fn read_project_nodes(project: &Project, request: &ReadNodesRequest) -> Resu
     if !expanded {
         result["view"] = json!("stored");
     }
-    if result.to_string().len() > 4 * 1024 * 1024 {
-        return Err(Error::new(
-            "INVALID_ARGUMENT",
-            "Node response exceeds 4 MiB; reduce depth or limit",
-        ));
-    }
+    crate::query::check_response_size(
+        &result,
+        crate::query::MAX_RESPONSE_BYTES,
+        None,
+        "Node response exceeds 4 MiB; reduce depth or limit",
+    )?;
     project.verify_unchanged()?;
     Ok(result)
 }
@@ -1244,5 +1267,61 @@ mod write_tests {
         assert_eq!(error.code, "REVISION_CONFLICT");
         assert_eq!(store.read().unwrap().text(), before.text());
         assert!(store.history(10, None).unwrap().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod query_contract_tests {
+    use super::*;
+
+    #[test]
+    fn script_capabilities_advertise_legacy_headers_without_accepting_legacy_documents() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let store = Store::init(
+            directory.path().join("main.pen"),
+            Some(directory.path().join("data")),
+        )
+        .unwrap();
+        let metadata = document_metadata(&store).unwrap();
+        let schemas = metadata["capabilities"]["script"]["schemas"]
+            .as_array()
+            .unwrap();
+        assert!(schemas.iter().any(|value| value == "2.11"));
+        for schema in schemas {
+            let header = format!("/* @schema {} */\nreturn [];", schema.as_str().unwrap());
+            crate::script::header::Header::parse(&header).unwrap();
+        }
+        let document =
+            Document::parse(json!({"version":"2.11","children":[]}).to_string()).unwrap();
+        assert_eq!(
+            document.ensure_writable().unwrap_err().code,
+            "UNSUPPORTED_VERSION"
+        );
+    }
+
+    #[test]
+    fn stored_queries_keep_case_insensitive_names_and_exact_type_filtering() {
+        let document = Document::parse(
+            json!({"version":"2.21","children":[
+                {"id":"first","type":"rectangle","name":"FÖÖ 日本語"},
+                {"id":"second","type":"ellipse","name":"föö 日本語"},
+                {"id":"third","type":"rectangle","name":"bar"}
+            ]})
+            .to_string(),
+        )
+        .unwrap();
+        let result = read_nodes(
+            &document,
+            None,
+            Some("fÖö 日"),
+            Some("rectangle"),
+            0,
+            1,
+            None,
+        )
+        .unwrap();
+        assert_eq!(result["total_matches"], 1);
+        assert_eq!(result["nodes"][0]["id"], "first");
+        assert!(result["next_cursor"].is_null());
     }
 }

@@ -220,8 +220,8 @@ impl bindings::Bound {
             metadata = properties.remove("metadata");
         }
         if let Some(scope) = &scope {
-            *inherited_bytes = inherited_bytes
-                .saturating_add(serde_json::to_vec(scope).expect("browser scope").len() + 256);
+            *inherited_bytes =
+                inherited_bytes.saturating_add(crate::query::serialized_size(scope) + 256);
             if *inherited_bytes > crate::script::MAX_OUTPUT_BYTES {
                 return Err(invalid(
                     "Inherited browser scopes exceed the generated output budget",

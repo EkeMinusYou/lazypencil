@@ -1157,7 +1157,7 @@ fn run_layout(store: &Store, options: &Layout) -> Result<Value> {
     result["nodes"] = json!(records.into_iter().take(options.limit).collect::<Vec<_>>());
     result["total_matches"] = json!(total);
     result["truncated"] = json!(total > options.limit);
-    if result.to_string().len() > 4 * 1024 * 1024 {
+    if crate::query::serialized_size(&result) > 4 * 1024 * 1024 {
         return Err(Error::new(
             "INVALID_ARGUMENT",
             "Layout response exceeds 4 MiB; reduce the limit",

@@ -49,12 +49,7 @@ fn stamp(metadata: &Metadata) -> Value {
 
 impl Inventory {
     pub(super) fn revision(&self) -> String {
-        use std::fmt::Write;
-        let mut text = String::with_capacity(64);
-        for byte in self.hash.clone().finalize() {
-            write!(&mut text, "{byte:02x}").expect("string write");
-        }
-        text
+        crate::document::digest_hex(self.hash.clone().finalize())
     }
 
     fn verify(&self, budget: &Budget<'_>) -> Result<()> {

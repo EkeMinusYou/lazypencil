@@ -126,11 +126,7 @@ impl Project {
             roots: BTreeSet::new(),
             queue: VecDeque::from([selected.clone()]),
             ids: BTreeMap::new(),
-            reuse: BTreeMap::new(),
-            reused_targets: BTreeMap::new(),
-            reused_sources: BTreeMap::new(),
-            reused_target_expansion: Expansion::default(),
-            reused_path_bytes: 0,
+            reused: reuse::State::default(),
             names: BTreeMap::new(),
             vars: BTreeMap::new(),
             var_values: BTreeMap::new(),
@@ -152,7 +148,7 @@ impl Project {
         };
         while let Some(key) = graph.queue.pop_front() {
             graph.project.check_cancelled()?;
-            if graph.owned.contains(&key) || graph.reuse.contains_key(&key) {
+            if graph.owned.contains(&key) || graph.reused.targets.contains_key(&key) {
                 continue;
             }
             let node = graph.project.documents[&key.0].node(&key.1)?.clone();
@@ -183,7 +179,11 @@ impl Project {
                     // A substituted ancestor no longer emits its original
                     // children. Independently referenced inner definitions
                     // must therefore remain standalone copied roots.
-                    if graph.reuse.contains_key(&(key.0.clone(), id.clone())) {
+                    if graph
+                        .reused
+                        .targets
+                        .contains_key(&(key.0.clone(), id.clone()))
+                    {
                         break;
                     }
                     if graph.roots.contains(&(key.0.clone(), id.clone())) {
@@ -231,7 +231,8 @@ impl Project {
         }
         if options.component_paths.keys().any(|key| {
             !graph
-                .reuse
+                .reused
+                .targets
                 .keys()
                 .any(|source| graph.key(source).is_ok_and(|value| &value == key))
         }) {
@@ -266,7 +267,8 @@ impl Project {
             .map(|(key, name)| graph.report_entry(key, name, &mut map_bytes))
             .collect::<Result<Map<_, _>>>()?;
         let reused = graph
-            .reuse
+            .reused
+            .targets
             .iter()
             .map(|(key, id)| graph.report_entry(key, id, &mut map_bytes))
             .collect::<Result<Map<_, _>>>()?;
@@ -334,11 +336,7 @@ struct Copier<'a> {
     roots: BTreeSet<Key>,
     queue: VecDeque<Key>,
     ids: BTreeMap<Key, String>,
-    reuse: BTreeMap<Key, String>,
-    reused_targets: BTreeMap<String, BTreeMap<String, bool>>,
-    reused_sources: BTreeMap<Key, reuse::Source>,
-    reused_target_expansion: Expansion,
-    reused_path_bytes: usize,
+    reused: reuse::State,
     names: BTreeMap<Key, String>,
     vars: BTreeMap<Key, String>,
     var_values: BTreeMap<Key, Value>,
@@ -449,7 +447,8 @@ impl Copier<'_> {
         Ok(())
     }
     fn node_target(&self, key: &Key) -> Result<String> {
-        self.reuse
+        self.reused
+            .targets
             .get(key)
             .or_else(|| self.ids.get(key))
             .cloned()
@@ -850,11 +849,11 @@ impl Copier<'_> {
         self.rewrite_properties(origin, node, true)
     }
     fn reused_placement(&self, origin: &Path, node: &Value) -> Result<Option<Value>> {
-        if self.reuse.is_empty() {
+        if self.reused.targets.is_empty() {
             return Ok(None);
         }
         let key = (origin.into(), node["id"].as_str().expect("node ID").into());
-        if let Some(target) = self.reuse.get(&key).cloned() {
+        if let Some(target) = self.reused.targets.get(&key).cloned() {
             let mut placement = reuse::placement(node);
             // Only placement expressions belong to the source namespace. The
             // selected definition and its code/assets belong to the consumer.

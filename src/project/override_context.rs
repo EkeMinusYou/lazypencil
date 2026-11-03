@@ -88,7 +88,7 @@ pub(super) fn parse<T: DeserializeOwned>(
     else {
         return Ok(None);
     };
-    if value.to_string().len() > 4 * 1024 * 1024 {
+    if crate::query::serialized_size(&value) > 4 * 1024 * 1024 {
         return Err(invalid("Copied execution override exceeds 4 MiB"));
     }
     let metadata = changes["metadata"].as_object().expect("override owner");
