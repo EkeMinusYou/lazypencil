@@ -87,6 +87,10 @@ pub fn run(
     environment.remove(std::ffi::OsStr::new("HERDR_ENV"));
     environment.remove(std::ffi::OsStr::new("HC_TERMINAL_ID"));
     environment.extend(extra_environment.iter().cloned());
+    if case.starts_with("background-") {
+        // These cases inspect emitted RGB; NO_COLOR has separate coverage.
+        environment.insert("NO_COLOR".into(), "".into());
+    }
     if matches!(case, "kitty-no-color" | "kitty-placements-no-color") {
         environment.insert("NO_COLOR".into(), "1".into());
     }
@@ -417,6 +421,13 @@ pub fn run(
         h.screen.find_text("›").is_some() && h.screen.text().contains("Agent")
     })?;
     let mut report = match case {
+        "background-kitty"
+        | "background-sixel"
+        | "background-halfblocks"
+        | "background-fallback" => {
+            terminal_background(&mut h)?;
+            Value::Null
+        }
         "selection-kitty" | "selection-sixel" | "selection-halfblocks" => {
             mouse::canvas_selection(&mut h)?;
             Value::Null
@@ -1014,6 +1025,57 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
     )
 }
 
+fn terminal_background(h: &mut Harness) -> Result {
+    match h.image_case.as_str() {
+        "kitty" => {
+            encoded(h)?;
+            assert!(
+                !h.contains_bytes(b"]11;?"),
+                "Alpha needs no background query"
+            );
+            let frame = &h.frames.images[0];
+            assert!(frame.rgba().chunks_exact(4).any(|pixel| pixel[3] == 0));
+            assert!(frame.has_color([255, 0, 0, 255]));
+            h.paste("背景確認")?;
+        }
+        "sixel" => {
+            encoded(h)?;
+            let data = String::from_utf8_lossy(sixel(&h.output).unwrap());
+            assert!(
+                data.split(";2;").skip(1).any(|part| {
+                    let components = part
+                        .split(|c: char| !c.is_ascii_digit())
+                        .take(3)
+                        .filter_map(|value| value.parse::<u8>().ok())
+                        .collect::<Vec<_>>();
+                    components.len() == 3
+                        && components
+                            .iter()
+                            .zip([7, 13, 20])
+                            .all(|(actual, expected)| actual.abs_diff(expected) <= 1)
+                }),
+                "Sixel palette must include the queried terminal background"
+            );
+        }
+        _ => {
+            let rgb = if h.case == "background-fallback" {
+                "248;250;252"
+            } else {
+                "17;34;51"
+            };
+            h.wait("halfblocks canvas background", 15.0, |h| {
+                h.contains_bytes(format!("48;2;{rgb}").as_bytes())
+            })?;
+            if h.case == "background-fallback" {
+                h.paste("背景確認")?;
+            }
+        }
+    }
+    h.draft("背景確認")?;
+    no_agent(h);
+    Ok(())
+}
+
 fn encoded(h: &mut Harness) -> Result {
     if h.image_case == "kitty" {
         h.wait("complete Kitty image", 15.0, |h| {
@@ -1039,6 +1101,11 @@ fn encoded(h: &mut Harness) -> Result {
     }
     if matches!(h.case.as_str(), "auto-kitty" | "auto-kitty-raw") {
         assert_eq!(h.frames.compressed_frames > 0, h.case == "auto-kitty");
+    }
+    if matches!(
+        h.case.as_str(),
+        "auto-kitty" | "auto-kitty-raw" | "auto-sixel"
+    ) {
         h.paste("自動判定後の日本語")?;
         h.draft("自動判定後の日本語")?;
     }

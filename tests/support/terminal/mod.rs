@@ -121,7 +121,9 @@ impl Harness {
         case: &str,
         configuration: Option<PathBuf>,
     ) -> Result<Self> {
-        let image_case = if let Some(protocol) = case.strip_prefix("selection-") {
+        let image_case = if let Some(protocol) = case.strip_prefix("background-") {
+            protocol
+        } else if let Some(protocol) = case.strip_prefix("selection-") {
             protocol
         } else if let Some(protocol) = case.strip_prefix("mouse-") {
             if protocol == "disabled" {
@@ -291,6 +293,19 @@ impl Harness {
             self.output.extend_from_slice(bytes);
             self.frames.feed(bytes)?;
             self.screen.feed(bytes);
+            if matches!(
+                self.case.as_str(),
+                "background-sixel" | "background-halfblocks"
+            ) && !self.probe_answered
+                && self.contains_bytes(b"\x1b[5n")
+            {
+                assert!(self.contains_bytes(b"\x1b]11;?\x07"));
+                assert!(!self.contains_bytes(b"_Gi=31,"));
+                self.key("背景\x1b[0n\x1b]11;rgb:1111/".as_bytes())?;
+                std::thread::sleep(Duration::from_millis(40));
+                self.key("2222/3333\x1b\\確認".as_bytes())?;
+                self.probe_answered = true;
+            }
             if ["auto-kitty", "auto-kitty-raw", "auto-sixel"].contains(&self.case.as_str())
                 && !self.probe_answered
                 && self.contains_bytes(b"\x1b[5n")
@@ -313,6 +328,7 @@ impl Harness {
                 } else {
                     self.key(b"\x1b[?1;2;4c\x1b[6;20;10t\x1b[0n")?;
                 }
+                self.key(b"\x1b]11;rgb:1111/2222/3333\x07")?;
                 self.probe_answered = true;
             }
             if self.output.len() >= 64 * 1024 * 1024 {

@@ -60,6 +60,7 @@ pub(in crate::tui) fn run(
                 request.before,
                 request.view,
                 request.viewport,
+                request.picker.canvas_background(),
             ) else {
                 return Ok(None);
             };

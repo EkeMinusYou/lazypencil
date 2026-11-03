@@ -412,10 +412,11 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             if view.zoom.is_none() {
                 view.fit_canvas(layout.bounds, pixels);
             }
+            let image::Rgba([r, g, b, a]) = picker.canvas_background();
             let options = crate::render::RenderOptions {
                 region: Some(view.region(pixels)),
                 scale: view.zoom.unwrap() * viewport.scale,
-                background: skia_safe::Color::from_rgb(248, 250, 252),
+                background: skia_safe::Color::from_argb(a, r, g, b),
                 refresh: request.refresh,
                 refresh_pages: request.refresh_pages,
                 time: view.time,

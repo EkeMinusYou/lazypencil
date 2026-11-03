@@ -9,6 +9,25 @@ mod fixture_support;
 mod terminal;
 
 #[test]
+fn real_pty_background_query_keeps_automatic_image_protocol_detection() {
+    for case in ["auto-kitty", "auto-kitty-raw", "auto-sixel"] {
+        run_pty_case(case);
+    }
+}
+
+#[test]
+fn real_pty_preview_inherits_terminal_background_without_polluting_the_draft() {
+    for case in [
+        "background-kitty",
+        "background-sixel",
+        "background-halfblocks",
+        "background-fallback",
+    ] {
+        run_pty_case(case);
+    }
+}
+
+#[test]
 fn real_pty_canvas_click_and_marquee_select_shapes_without_editing() {
     for case in ["selection-kitty", "selection-sixel", "selection-halfblocks"] {
         run_pty_case(case);

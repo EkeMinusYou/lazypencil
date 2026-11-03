@@ -254,7 +254,6 @@ impl Presentation {
         for position in area.positions() {
             if let Some(cell) = buffer.cell_mut(position) {
                 cell.reset();
-                cell.set_bg(ratatui::style::Color::Rgb(248, 250, 252));
             }
         }
     }
@@ -347,7 +346,6 @@ impl Presentation {
                     && cell.symbol().contains(PLACEHOLDER)
                 {
                     cell.reset();
-                    cell.set_bg(ratatui::style::Color::Rgb(248, 250, 252));
                 }
             }
         } else if visible {
@@ -489,6 +487,7 @@ pub struct Backend {
     protocol: ProtocolType,
     tmux: bool,
     kitty_compression: bool,
+    background: image::Rgba<u8>,
 }
 impl Backend {
     pub fn halfblocks() -> Self {
@@ -497,6 +496,7 @@ impl Backend {
             protocol: ProtocolType::Halfblocks,
             tmux: false,
             kitty_compression: false,
+            background: image::Rgba([248, 250, 252, 255]),
         }
     }
     pub fn detect(selected: super::ImageProtocol) -> Result<(Self, String)> {
@@ -526,10 +526,18 @@ impl Backend {
         }
         // Explicit protocols and a direct Kitty terminal need no capability query.
         // A late APC reply otherwise reaches Crossterm as ordinary prompt text.
-        if selected == super::ImageProtocol::Auto && !direct_kitty {
-            let (responses, input) = probe(backend.tmux)?;
+        let capabilities = selected == super::ImageProtocol::Auto && !direct_kitty;
+        let opaque = matches!(
+            selected,
+            super::ImageProtocol::Sixel | super::ImageProtocol::Halfblocks
+        );
+        if capabilities || opaque {
+            let (responses, input) = probe(backend.tmux, capabilities)?;
             startup = input;
             for response in &responses {
+                if let Response::Background(r, g, b) = response {
+                    backend.background = image::Rgba([*r, *g, *b, 255]);
+                }
                 if let Response::CellSize(Some((width, height))) = response
                     && (1..=256).contains(width)
                     && (1..=256).contains(height)
@@ -537,10 +545,11 @@ impl Backend {
                     backend.font = FontSize::new(*width, *height);
                 }
             }
-            if responses.contains(&Response::Sixel) {
+            if capabilities && responses.contains(&Response::Sixel) {
                 backend.protocol = ProtocolType::Sixel;
             }
-            if responses.contains(&Response::Kitty)
+            if capabilities
+                && responses.contains(&Response::Kitty)
                 && std::env::var_os("WEZTERM_EXECUTABLE").is_none()
                 && std::env::var_os("KONSOLE_VERSION").is_none()
             {
@@ -565,6 +574,14 @@ impl Backend {
     pub fn tmux_detected(&self) -> bool {
         self.tmux
     }
+    pub fn canvas_background(&self) -> image::Rgba<u8> {
+        if self.protocol == ProtocolType::Kitty {
+            // Let the terminal composite its own background, including opacity.
+            image::Rgba([0, 0, 0, 0])
+        } else {
+            self.background
+        }
+    }
     pub fn encode_preview(&self, image: DynamicImage, size: Size, id: u32) -> Result<Encoded> {
         if self.protocol == ProtocolType::Kitty && !self.tmux {
             let image = self.resize(image, size)?;
@@ -580,7 +597,7 @@ impl Backend {
                 &image,
                 FontSize::new(1, 1),
                 Size::new(width as u16, height as u16),
-                Some(image::Rgba([248, 250, 252, 255])),
+                Some(self.canvas_background()),
             );
             drop(image);
             image = resized;
@@ -612,7 +629,7 @@ impl Backend {
 }
 
 #[cfg(unix)]
-fn probe(tmux: bool) -> Result<(Vec<Response>, String)> {
+fn probe(tmux: bool, capabilities: bool) -> Result<(Vec<Response>, String)> {
     use std::{
         os::fd::AsRawFd,
         time::{Duration, Instant},
@@ -632,13 +649,7 @@ fn probe(tmux: bool) -> Result<(Vec<Response>, String)> {
         }
     }
     let _flags = Flags(fd, original);
-    let query = Parser::query(
-        tmux,
-        QueryStdioOptions {
-            kitty_compression: true,
-            ..Default::default()
-        },
-    );
+    let query = probe_query(tmux, capabilities);
     let mut stdout = std::io::stdout();
     stdout
         .write_all(query.as_bytes())
@@ -681,11 +692,67 @@ fn probe(tmux: bool) -> Result<(Vec<Response>, String)> {
             responses.extend(parser.push(char::from(*byte)));
         }
     }
+    // The dependency assumes 16-bit OSC components; terminals may use 1–4 hex
+    // digits. Normalize these replies separately before choosing the background.
+    responses.retain(|response| !matches!(response, Response::Background(..)));
+    responses.extend(background_response(&bytes));
     Ok((responses, startup_text(&bytes)))
 }
 #[cfg(not(unix))]
-fn probe(_: bool) -> Result<(Vec<Response>, String)> {
+fn probe(_: bool, _: bool) -> Result<(Vec<Response>, String)> {
     Ok((vec![], String::new()))
+}
+
+#[cfg(unix)]
+fn probe_query(tmux: bool, capabilities: bool) -> String {
+    if capabilities {
+        Parser::query(
+            tmux,
+            QueryStdioOptions {
+                kitty_compression: true,
+                terminal_background_color_osc: true,
+                ..Default::default()
+            },
+        )
+    } else {
+        let (start, escape, end) = Parser::tmux_start_escape_end(tmux);
+        format!("{start}{escape}]11;?\x07{escape}[5n{end}")
+    }
+}
+
+#[cfg(unix)]
+fn background_response(bytes: &[u8]) -> Option<Response> {
+    let prefix = b"\x1b]11;rgb:";
+    bytes
+        .windows(prefix.len())
+        .enumerate()
+        .find_map(|(index, window)| {
+            if window != prefix {
+                return None;
+            }
+            let color = &bytes[index + prefix.len()..];
+            let end = color.iter().position(|byte| matches!(byte, 0x07 | 0x1b))?;
+            if color[end] == 0x1b && !color[end..].starts_with(b"\x1b\\") {
+                return None;
+            }
+            let color = std::str::from_utf8(&color[..end]).ok()?;
+            let mut parts = color.split('/');
+            let mut component = || {
+                let part = parts.next()?;
+                if !(1..=4).contains(&part.len())
+                    || !part.bytes().all(|byte| byte.is_ascii_hexdigit())
+                {
+                    return None;
+                }
+                let value = u32::from_str_radix(part, 16).ok()?;
+                Some((value * 255 / ((1 << (4 * part.len())) - 1)) as u8)
+            };
+            let (r, g, b) = (component()?, component()?, component()?);
+            parts
+                .next()
+                .is_none()
+                .then_some(Response::Background(r, g, b))
+        })
 }
 
 #[cfg(unix)]
@@ -693,7 +760,20 @@ fn startup_text(bytes: &[u8]) -> String {
     let mut retained = vec![];
     let mut index = 0;
     while index < bytes.len() {
-        if bytes[index..].starts_with(b"\x1b_G") {
+        if bytes[index..].starts_with(b"\x1b]11;") {
+            // Consume complete or partial color replies, never their RGB payload
+            // as prompt text. Keep ordinary UTF-8 typed around the probe intact.
+            index += 5;
+            while index < bytes.len() && !matches!(bytes[index], 0x07 | 0x1b) {
+                index += 1;
+            }
+            if bytes.get(index) == Some(&0x07) {
+                index += 1;
+            } else if bytes[index..].starts_with(b"\x1b\\") {
+                index += 2;
+            }
+            continue;
+        } else if bytes[index..].starts_with(b"\x1b_G") {
             if let Some(end) = bytes[index + 3..]
                 .windows(2)
                 .position(|window| window == b"\x1b\\")

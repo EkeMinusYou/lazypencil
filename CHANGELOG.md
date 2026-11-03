@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Match the Preview canvas to the terminal background, retaining terminal transparency with Kitty and querying the background color for Sixel and halfblocks.
+
 - Select shapes directly in Preview with clicks and drag marquees, with view-only selection outlines and multi-selection fitting. Add terminal-independent native macOS pinch zoom with explicit Accessibility authorization.
 
 - Keep local TUI operation errors in the bottom notification row instead of adding them to the conversation.

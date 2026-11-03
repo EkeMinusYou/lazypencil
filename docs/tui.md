@@ -66,6 +66,13 @@ a previous complete image while an exact frame renders; cached feedback is label
 Only completed document frames can be exported. Slow rendering replaces pending work
 with the latest view rather than replaying every queued camera position.
 
+The canvas underneath the design follows the terminal background. Kitty keeps this
+canvas transparent, allowing the terminal's background color, image and window opacity
+to show through. Sixel and halfblocks use the background color queried at startup;
+if the terminal does not answer, they keep the previous light canvas. Pan/zoom feedback
+uses the same background. Document fills and CLI PNG exports keep their original colors
+and transparency; `/open-preview` opens the completed preview with its canvas background.
+
 Browser pages can retain per-node DOM state for `r` refresh and bounded playback.
 Preview `p` or `/play [fps]` starts at 5 fps by default (1–10); `/pause` stops new
 frames. `/time SECONDS` and `[`/`]` seek shader time, not page JavaScript or document
@@ -74,8 +81,9 @@ See [dynamic content](dynamic-content.md) for capture identity and limits.
 
 `--image-protocol kitty|sixel|halfblocks` selects a transport explicitly. Auto recognizes
 direct Kitty or uses a bounded 350 ms probe in other environments, preserving typed
-text and consuming terminal replies. Compression is used when supported. Windows
-high-resolution output currently needs an explicit override. tmux uses passthrough
+text and consuming terminal replies. Explicit Sixel/halfblocks also query the background
+within that time limit, without negotiating a different transport. Compression is used
+when supported. Windows high-resolution output currently needs an explicit override. tmux uses passthrough
 without changing pane settings. Direct Kitty-compatible transports use whole rectangular
 placements; nested tmux retains the Unicode-placeholder transport. `NO_COLOR` disables
 text colors while retaining image identity metadata.

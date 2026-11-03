@@ -299,7 +299,13 @@ impl super::App {
         {
             return Ok(());
         }
-        let Some(bitmap) = project_region(&bitmap, preview.view, self.view, [width, height]) else {
+        let Some(bitmap) = project_region(
+            &bitmap,
+            preview.view,
+            self.view,
+            [width, height],
+            picker.canvas_background(),
+        ) else {
             return Ok(());
         };
         // The projection owns its pixels; release a decoded fallback before
@@ -329,7 +335,13 @@ pub(super) fn project<C>(
 where
     C: std::ops::Deref<Target = [u8]>,
 {
-    project_region(source, before, after, [source.width(), source.height()])
+    project_region(
+        source,
+        before,
+        after,
+        [source.width(), source.height()],
+        Rgba([248, 250, 252, 255]),
+    )
 }
 
 pub(super) fn project_region<C>(
@@ -337,6 +349,7 @@ pub(super) fn project_region<C>(
     before: View,
     after: View,
     size: [u32; 2],
+    background: Rgba<u8>,
 ) -> Option<RgbaImage>
 where
     C: std::ops::Deref<Target = [u8]>,
@@ -373,7 +386,7 @@ where
     }
     if ratio == 1.0 {
         let (dx, dy) = ((dx + 0.5).floor(), (dy + 0.5).floor());
-        let mut result = RgbaImage::from_pixel(size[0], size[1], Rgba([248, 250, 252, 255]));
+        let mut result = RgbaImage::from_pixel(size[0], size[1], background);
         if dx <= -f64::from(size[0])
             || dx >= f64::from(size[0])
             || dy <= -f64::from(size[1])
@@ -405,7 +418,7 @@ where
             (source_x >= 0.0 && source_x < f64::from(size[0])).then_some(source_x as usize)
         })
         .collect::<Vec<_>>();
-    let mut result = RgbaImage::from_pixel(size[0], size[1], Rgba([248, 250, 252, 255]));
+    let mut result = RgbaImage::from_pixel(size[0], size[1], background);
     for (y, row) in result.chunks_exact_mut(size[0] as usize * 4).enumerate() {
         let source_y = ((y as f64 + 0.5) * ratio + dy).floor();
         if source_y < 0.0 || source_y >= f64::from(size[1]) {
@@ -425,6 +438,33 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn camera_feedback_fills_uncovered_pan_and_zoom_with_the_canvas_background() {
+        let artwork = Rgba([255, 255, 255, 255]);
+        let image = RgbaImage::from_pixel(12, 8, artwork);
+        let before = View {
+            zoom: Some(1.0),
+            ..Default::default()
+        };
+        for background in [Rgba([0, 0, 0, 0]), Rgba([17, 34, 51, 255])] {
+            for zoom in [0.5, 1.0] {
+                let after = View {
+                    center: [3.0, 2.0],
+                    zoom: Some(zoom),
+                    ..before
+                };
+                let projected = project_region(&image, before, after, [12, 8], background).unwrap();
+                assert_eq!(*projected.get_pixel(11, 7), background);
+                assert!(projected.pixels().any(|pixel| *pixel == artwork));
+                assert!(
+                    projected
+                        .pixels()
+                        .all(|pixel| *pixel == background || *pixel == artwork)
+                );
+            }
+        }
+    }
 
     #[test]
     fn camera_feedback_preserves_pan_direction_and_reuses_original_pixels_without_drift() {
@@ -467,7 +507,13 @@ mod tests {
                 ..before
             };
             assert_eq!(
-                project_region(&borrowed, before, after, [120, 80]),
+                project_region(
+                    &borrowed,
+                    before,
+                    after,
+                    [120, 80],
+                    Rgba([248, 250, 252, 255])
+                ),
                 project(&cropped, before, after)
             );
         }

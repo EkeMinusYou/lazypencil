@@ -1,6 +1,210 @@
 use super::*;
 use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
 
+#[cfg(unix)]
+#[test]
+fn background_queries_preserve_protocol_overrides_and_wrap_tmux() {
+    for tmux in [false, true] {
+        for capabilities in [false, true] {
+            let query = probe_query(tmux, capabilities);
+            assert!(query.contains("]11;?\x07"));
+            assert_eq!(query.contains("_Gi=31"), capabilities);
+            assert_eq!(query.contains("_Gi=32"), capabilities);
+            assert_eq!(query.contains("[16t"), capabilities);
+            assert_eq!(query.starts_with("\x1bPtmux;"), tmux);
+            if tmux {
+                assert!(query.contains("\x1b\x1b]11;?"));
+                assert!(query.ends_with("\x1b\\"));
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn background_replies_accept_both_terminators_and_rgb_precisions_without_leaking_into_input() {
+    for color in ["1/2/3", "11/22/33", "111/222/333", "1111/2222/3333"] {
+        for terminator in ["\x07", "\x1b\\"] {
+            let bytes = format!("日本\x1b[0n\x1b]11;rgb:{color}{terminator}語の下書き");
+            assert_eq!(
+                background_response(bytes.as_bytes()),
+                Some(Response::Background(17, 34, 51))
+            );
+            assert_eq!(startup_text(bytes.as_bytes()), "日本語の下書き");
+        }
+    }
+    for color in [
+        "",
+        "11/22",
+        "11/22/33/44",
+        "zz/22/33",
+        "12345/22/33",
+        "+1/22/33",
+    ] {
+        let bytes = format!("draft\x1b]11;rgb:{color}\x07text");
+        assert_eq!(background_response(bytes.as_bytes()), None);
+        assert_eq!(startup_text(bytes.as_bytes()), "drafttext");
+    }
+    for bytes in [
+        b"draft\x1b]11;rgb:11/22/33".as_slice(),
+        b"draft\x1b]11;rgb:11/22",
+    ] {
+        assert_eq!(background_response(bytes), None);
+        assert_eq!(startup_text(bytes), "draft");
+    }
+    assert_eq!(background_response(b"ordinary input\x1b[0n"), None);
+    assert_eq!(background_response(b"\x1b]10;rgb:1111/2222/3333\x07"), None);
+}
+
+#[test]
+fn canvas_background_uses_terminal_rgb_for_opaque_protocols_and_alpha_for_kitty() {
+    let fallback = image::Rgba([248, 250, 252, 255]);
+    assert_eq!(Backend::halfblocks().canvas_background(), fallback);
+    for protocol in [
+        ProtocolType::Halfblocks,
+        ProtocolType::Sixel,
+        ProtocolType::Kitty,
+    ] {
+        for background in [fallback, image::Rgba([17, 34, 51, 255])] {
+            let backend = Backend {
+                protocol,
+                background,
+                ..Backend::halfblocks()
+            };
+            assert_eq!(
+                backend.canvas_background(),
+                if protocol == ProtocolType::Kitty {
+                    image::Rgba([0, 0, 0, 0])
+                } else {
+                    background
+                }
+            );
+        }
+    }
+}
+
+#[test]
+fn preview_worker_changes_only_the_canvas_and_preserves_explicit_document_fills() {
+    use crate::{
+        store::Store,
+        tui::preview::{Request, View, Worker},
+    };
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("background.pen");
+    let document = serde_json::json!({"version":"2.21","children":[
+        {"id":"white","name":" ","type":"rectangle","width":20,"height":20,"fill":"#FFFFFF"},
+        {"id":"translucent","name":" ","type":"rectangle","x":30,"width":20,"height":20,"fill":"#FF0000","opacity":0.5}
+    ]}).to_string();
+    std::fs::write(&path, &document).unwrap();
+    let store = Store::open(&path, Some(temp.path().join("data"))).unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        for protocol in [
+            ProtocolType::Kitty,
+            ProtocolType::Sixel,
+            ProtocolType::Halfblocks,
+        ] {
+            let backend = Backend {
+                protocol,
+                font: FontSize::new(1, 1),
+                background: image::Rgba([17, 34, 51, 255]),
+                ..Backend::halfblocks()
+            };
+            let background = backend.canvas_background();
+            let worker = Worker::start(store.clone(), vec![], backend, 194).unwrap();
+            worker.request(Request {
+                generation: 1,
+                cells: Size::new(80, 60),
+                view: View {
+                    center: [20.0, 20.0],
+                    zoom: Some(1.0),
+                    time: 0.0,
+                },
+                refresh: false,
+                refresh_pages: false,
+                check_only: false,
+                attachment: None,
+            });
+            let output = tokio::time::timeout(std::time::Duration::from_secs(15), worker.next())
+                .await
+                .unwrap();
+            let preview = output.result.unwrap();
+            let pixels = preview.image.bitmap().unwrap();
+            assert_eq!(*pixels.get_pixel(0, 0), background);
+            assert_eq!(*pixels.get_pixel(25, 15), image::Rgba([255, 255, 255, 255]));
+            let translucent = pixels.get_pixel(55, 15).0;
+            if protocol == ProtocolType::Kitty {
+                assert_eq!(translucent, [255, 0, 0, 128]);
+            } else {
+                assert_eq!(translucent[3], 255);
+                assert!(translucent[0] > 120 && translucent[1] < 34 && translucent[2] < 51);
+            }
+        }
+    });
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), document);
+    let (project, layout) = crate::service::layout_snapshot(&store, &[], None, None).unwrap();
+    let export = crate::render::png(
+        &project,
+        &layout,
+        &crate::render::RenderOptions {
+            region: Some(crate::geometry::Rect::new(-20.0, -10.0, 80.0, 60.0)),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let png = image::load_from_memory(&export.png).unwrap().into_rgba8();
+    assert_eq!(
+        png.get_pixel(0, 0).0[3],
+        0,
+        "PNG exports keep their transparent canvas"
+    );
+    assert_eq!(png.get_pixel(25, 15).0, [255, 255, 255, 255]);
+}
+
+#[test]
+fn native_kitty_resize_and_upload_keep_canvas_transparent_and_artwork_opaque() {
+    let cells = Size::new(8, 4);
+    let area = Rect::new(0, 0, cells.width, cells.height);
+    for compressed in [false, true] {
+        let backend = Backend {
+            protocol: ProtocolType::Kitty,
+            kitty_compression: compressed,
+            font: FontSize::new(1, 1),
+            ..Backend::halfblocks()
+        };
+        // A square source leaves padding in the wide terminal placement.
+        let source = image::RgbaImage::from_fn(2, 2, |x, _| {
+            if x == 0 {
+                image::Rgba([0, 0, 0, 0])
+            } else {
+                image::Rgba([255, 255, 255, 255])
+            }
+        });
+        let encoded = backend.encode_preview(source.into(), cells, 77).unwrap();
+        let mut presentation = Presentation::default();
+        presentation.rectangular(true);
+        let mut buffer = Buffer::empty(area);
+        presentation.begin();
+        presentation.render(&mut buffer, area, &encoded);
+        presentation.finish(&mut buffer, false);
+        let mut decoder = observer::KittyFrames::default();
+        decoder.feed(buffer[(0, 0)].symbol().as_bytes()).unwrap();
+        assert_eq!(decoder.images.len(), 1);
+        let pixels = decoder.images[0].rgba();
+        assert!(pixels.chunks_exact(4).any(|pixel| pixel[3] == 0));
+        assert!(
+            pixels
+                .chunks_exact(4)
+                .any(|pixel| pixel == [255, 255, 255, 255])
+        );
+        assert_eq!(&pixels[(8 - 1) * 4..8 * 4], &[0, 0, 0, 0]);
+        assert_eq!(buffer[(7, 3)].bg, ratatui::style::Color::Reset);
+    }
+}
+
 #[test]
 fn oversized_images_are_bounded_without_shrinking_the_kitty_placement() {
     let cells = Size::new(90, 2);
@@ -11,6 +215,7 @@ fn oversized_images_are_bounded_without_shrinking_the_kitty_placement() {
             protocol: ProtocolType::Kitty,
             tmux: false,
             kitty_compression: compressed,
+            ..Backend::halfblocks()
         };
         let image = DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
             20,
@@ -50,6 +255,7 @@ fn oversized_images_are_bounded_without_shrinking_the_kitty_placement() {
         protocol: ProtocolType::Sixel,
         tmux: false,
         kitty_compression: false,
+        ..Backend::halfblocks()
     };
     let image = DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
         20,
@@ -90,6 +296,7 @@ fn kitty_virtual_placements_match_placeholder_cells_with_changed_pixel_metrics()
                     protocol: ProtocolType::Kitty,
                     tmux,
                     kitty_compression: compressed,
+                    ..Backend::halfblocks()
                 };
                 let pixels = DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
                     u32::from(width) * u32::from(size.width),
@@ -150,6 +357,7 @@ fn compressed_and_raw_kitty_transfers_preserve_identical_rgba_without_changing_p
             protocol: ProtocolType::Kitty,
             tmux: false,
             kitty_compression: compressed,
+            ..Backend::halfblocks()
         };
         let protocol = backend
             .encode(DynamicImage::ImageRgba8(source.clone()), size, 77)
@@ -191,6 +399,7 @@ fn kitty_frames_switch_inactive_slots_and_keep_stable_redraws_without_retransmis
         protocol: ProtocolType::Kitty,
         tmux: false,
         kitty_compression: true,
+        ..Backend::halfblocks()
     };
     let mut presentation = Presentation::default();
     let mut observer = observer::KittyFrames::for_lazypencil();
@@ -260,6 +469,7 @@ fn rectangular_kitty_uploads_once_places_the_whole_image_and_restores_after_moda
         protocol: ProtocolType::Kitty,
         tmux: false,
         kitty_compression: true,
+        ..Backend::halfblocks()
     };
     let pixels = image::RgbaImage::from_pixel(80, 80, image::Rgba([248, 250, 252, 255]));
     let protocol = backend
@@ -273,6 +483,7 @@ fn rectangular_kitty_uploads_once_places_the_whole_image_and_restores_after_moda
         Image(&protocol).render(area, &mut buffer);
         presentation.prepare(&mut buffer, area, false);
         presentation.finish(&mut buffer, modal);
+        assert_eq!(buffer[(area.x, area.y)].bg, ratatui::style::Color::Reset);
         assert!(
             buffer
                 .content
@@ -316,6 +527,7 @@ fn native_kitty_uploads_preserve_pixels_compression_and_stable_redraws() {
             protocol: ProtocolType::Kitty,
             tmux: false,
             kitty_compression: compressed,
+            ..Backend::halfblocks()
         };
         let size = Size::new(80, 24);
         let pixels = image::RgbaImage::from_fn(800, 480, |x, y| {
@@ -379,6 +591,7 @@ fn native_kitty_resizes_keep_completed_frames_at_their_original_scale() {
             protocol: ProtocolType::Kitty,
             tmux: false,
             kitty_compression: compressed,
+            ..Backend::halfblocks()
         };
         let pixels = image::RgbaImage::from_fn(510, 640, |x, y| {
             image::Rgba([(x % 256) as u8, (y % 256) as u8, 56, 255])
@@ -477,6 +690,7 @@ fn native_menu_preserves_uncovered_pixels_and_restores_full_placement() {
         protocol: ProtocolType::Kitty,
         tmux: false,
         kitty_compression: false,
+        ..Backend::halfblocks()
     };
     let area = Rect::new(2, 1, 8, 4);
     let bounds = Rect::new(0, 0, 16, 8);
@@ -534,6 +748,7 @@ fn native_selection_frames_restore_original_pixels_after_deselection() {
         protocol: ProtocolType::Kitty,
         tmux: false,
         kitty_compression: false,
+        ..Backend::halfblocks()
     };
     let size = Size::new(8, 4);
     let area = Rect::new(1, 1, 8, 4);
