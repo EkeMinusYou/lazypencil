@@ -1976,14 +1976,9 @@ fn navigation(h: &mut Harness) -> Result<Value> {
     h.paste(text)?;
     h.draft(text)?;
     h.key(b"\x1b[17~\x1b[17~h\x1b[19~")?;
-    h.wait(
-        "complete help content with the configured pan key",
-        15.0,
-        |h| {
-            h.screen.text().contains("/clear-images")
-                && h.screen.text().contains("a: Preview: pan left")
-        },
-    )?;
+    h.visible("/clear-images")?;
+    h.key(b"\x1b[6~")?;
+    h.visible("a: Preview: pan left")?;
     assert_eq!(h.frames.images.last(), Some(&before));
     h.key(b"\x1b[F")?;
     h.wait("help final wrapped lines", 15.0, |h| {
