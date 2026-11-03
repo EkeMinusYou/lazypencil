@@ -55,15 +55,11 @@ impl DynamicRuntime {
             .as_ref()
             .is_err_and(|error| error.code == "CANCELLED")
         {
-            self.pages.take();
-            #[cfg(unix)]
-            self.shared_pages.take();
+            self.clear_pages();
             self.shaders.take();
-            self.page_used = None;
             self.shader_used = None;
             self.page_snapshot = None;
             self.cache.clear();
-            self.cache_order.clear();
         }
         result
     }
@@ -88,10 +84,7 @@ impl DynamicRuntime {
 
     pub(super) fn page_result<T>(&mut self, result: Result<T>) -> Result<T> {
         if result.is_err() {
-            self.pages.take();
-            #[cfg(unix)]
-            self.shared_pages.take();
-            self.page_used = None;
+            self.clear_pages();
         }
         result
     }

@@ -1,5 +1,6 @@
 use super::*;
 use crate::script::header::{Header, InputKind};
+use std::io::Read;
 
 mod composition;
 mod scopes;
@@ -487,7 +488,7 @@ impl Copier<'_> {
             .map(|(name, value)| {
                 let value = self.copied_input_value(info, name, value)?;
                 budget.key(name)?;
-                budget.charge(value.to_string().len() + 4)?;
+                budget.charge(crate::query::serialized_size(&value) + 4)?;
                 Ok((name.clone(), value))
             })
             .collect::<Result<Map<_, _>>>()?;
@@ -538,10 +539,10 @@ impl Copier<'_> {
         budget.charge(
             context
                 .get("source_values")
-                .map_or(0, |values| values.to_string().len())
+                .map_or(0, |values| crate::query::serialized_size(&values))
                 + 128,
         )?;
-        if context.to_string().len() > 4 * 1024 * 1024 {
+        if crate::query::serialized_size(&context) > 4 * 1024 * 1024 {
             return Err(copy_error("Copied input generations exceed 4 MiB"));
         }
         Ok(Some(context))
@@ -616,7 +617,7 @@ impl Copier<'_> {
             &self.input_epoch,
             generation["hash"].as_str().expect("generation hash"),
         )?;
-        budget.charge(raw.to_string().len() + 64)?;
+        budget.charge(crate::query::serialized_size(&raw) + 64)?;
         generations.insert(self.input_epoch.clone(), generation);
         Ok(Value::Object(generations))
     }
@@ -643,7 +644,7 @@ impl Copier<'_> {
         self.walk_copied_paths(root, &mut |path| {
             let context = json!({"parent":path.parent,"instance":path.instance,"target_instance":path.target_instance});
             budget.key(path.source)?;
-            budget.charge(context.to_string().len() + 4)?;
+            budget.charge(crate::query::serialized_size(&context) + 4)?;
             contexts.insert(path.source.to_owned(), context);
             if let Some(target) = path.target {
                 budget.pair(path.source, target)?;
@@ -777,11 +778,7 @@ impl Copier<'_> {
             self.capture_script_scopes(output_scope, &mut values, &mut budget)?;
             values
         };
-        let inputs_hash = result.get("inputs").map(|value| {
-            let mut value = value.clone();
-            value.sort_all_objects();
-            hash(value.to_string().as_bytes())
-        });
+        let inputs_hash = result.get("inputs").map(crate::document::canonical_hash);
         if output {
             if info
                 .resolved

@@ -5,6 +5,9 @@ use tokio::process::Child;
 #[cfg(not(any(windows, unix)))]
 use tokio::process::Command;
 
+#[cfg(any(windows, unix))]
+mod startup;
+
 #[cfg(unix)]
 mod unix;
 #[cfg(unix)]

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
     fs::{self, File, OpenOptions},
-    io::{Read, Write},
+    io::Write,
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
@@ -719,23 +719,34 @@ fn conflict(expected: &str, actual: &str) -> Error {
 }
 
 pub fn read_text(path: &Path) -> Result<String> {
-    let file = open_regular_file(path)?;
-    let mut bytes = Vec::new();
-    file.take(MAX_DOCUMENT_BYTES as u64 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|e| Error::io(path, e))?;
-    if bytes.len() > MAX_DOCUMENT_BYTES {
-        return Err(Error::new(
-            "INVALID_DOCUMENT",
-            "File exceeds the size limit",
-        ));
-    }
+    let bytes = content::read_bounded(
+        open_regular_file(path)?,
+        path,
+        MAX_DOCUMENT_BYTES,
+        None,
+        Error::new("INVALID_DOCUMENT", "File exceeds the size limit"),
+    )?;
     String::from_utf8(bytes).map_err(|e| {
         Error::new(
             "INVALID_DOCUMENT",
             format!("{} is not UTF-8: {e}", path.display()),
         )
     })
+}
+
+/// Read a regular file under a byte limit; callers may translate the limit error.
+pub(crate) fn read_bounded_regular_file(
+    path: &Path,
+    limit: usize,
+    cancel: Option<&tokio_util::sync::CancellationToken>,
+) -> Result<Vec<u8>> {
+    content::read_bounded(
+        open_regular_file(path)?,
+        path,
+        limit,
+        cancel,
+        Error::new("RESOURCE_LIMIT", "File exceeds its size limit"),
+    )
 }
 
 pub(crate) fn open_regular_file(path: &Path) -> Result<File> {

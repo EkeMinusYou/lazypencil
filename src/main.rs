@@ -6,74 +6,8 @@ fn main() -> ExitCode {
     clap_complete::CompleteEnv::with_factory(lazypencil::cli::Arguments::command)
         .var(lazypencil::cli::COMPLETE_ENV)
         .complete();
-    if std::env::args_os()
-        .nth(1)
-        .is_some_and(|argument| argument == "__http_image_worker")
-    {
-        return match lazypencil::remote_images::serve_worker() {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(_) => ExitCode::FAILURE,
-        };
-    }
-    #[cfg(all(unix, feature = "rendering"))]
-    if std::env::args_os()
-        .nth(1)
-        .is_some_and(|argument| argument == "__profile_page_worker")
-    {
-        return match lazypencil::runtime::profiles::serve_page_worker() {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(error) => failure(error, None),
-        };
-    }
-    if std::env::args_os()
-        .nth(1)
-        .is_some_and(|argument| argument == "__runtime_download_worker")
-    {
-        return match lazypencil::runtime::serve_download_worker() {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(error) => failure(error, None),
-        };
-    }
-    #[cfg(any(windows, unix))]
-    if std::env::args_os()
-        .nth(1)
-        .is_some_and(|argument| argument == "__browser_process_worker")
-    {
-        return match lazypencil::cdp::serve_process_worker() {
-            Ok(true) => ExitCode::SUCCESS,
-            Ok(false) => ExitCode::FAILURE,
-            Err(error) => failure(error, None),
-        };
-    }
-    #[cfg(any(windows, unix))]
-    if std::env::args_os()
-        .nth(1)
-        .is_some_and(|argument| argument == "__agent_process_worker")
-    {
-        return match lazypencil::agent::serve_process_worker() {
-            Ok(true) => ExitCode::SUCCESS,
-            Ok(false) => ExitCode::FAILURE,
-            Err(error) => failure(error, None),
-        };
-    }
-    #[cfg(feature = "tui")]
-    if std::env::args_os()
-        .nth(1)
-        .is_some_and(|argument| argument == "__image_worker")
-    {
-        return match lazypencil::clipboard::serve_worker() {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(error) => failure(error, None),
-        };
-    }
-    if std::env::args_os()
-        .nth(1)
-        .is_some_and(|arg| arg == "__script_worker")
-    {
-        return match lazypencil::script::serve_worker() {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(error) => failure(error, None),
-        };
+    if let Some(exit) = dispatch_worker(std::env::args_os().nth(1).as_deref()) {
+        return exit;
     }
     lazypencil::remote_images::initialize_worker();
     let input: Vec<_> = std::env::args_os().collect();
@@ -297,6 +231,38 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
     ExitCode::from(code)
+}
+
+/// Private workers run before application configuration or document leases.
+fn dispatch_worker(command: Option<&std::ffi::OsStr>) -> Option<ExitCode> {
+    let result = match command?.to_str()? {
+        "__http_image_worker" => {
+            // Image URLs can carry private information; worker errors stay silent.
+            return Some(if lazypencil::remote_images::serve_worker().is_ok() {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            });
+        }
+        #[cfg(all(unix, feature = "rendering"))]
+        "__profile_page_worker" => {
+            lazypencil::runtime::profiles::serve_page_worker().map(|()| true)
+        }
+        "__runtime_download_worker" => lazypencil::runtime::serve_download_worker().map(|()| true),
+        #[cfg(any(windows, unix))]
+        "__browser_process_worker" => lazypencil::cdp::serve_process_worker(),
+        #[cfg(any(windows, unix))]
+        "__agent_process_worker" => lazypencil::agent::serve_process_worker(),
+        #[cfg(feature = "tui")]
+        "__image_worker" => lazypencil::clipboard::serve_worker().map(|()| true),
+        "__script_worker" => lazypencil::script::serve_worker().map(|()| true),
+        _ => return None,
+    };
+    Some(match result {
+        Ok(true) => ExitCode::SUCCESS,
+        Ok(false) => ExitCode::FAILURE,
+        Err(error) => failure(error, None),
+    })
 }
 
 fn failure(error: lazypencil::Error, arguments: Option<&lazypencil::cli::Arguments>) -> ExitCode {

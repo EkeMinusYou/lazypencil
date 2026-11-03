@@ -66,6 +66,7 @@ impl AgentHost {
             .is_some_and(|sender| sender.send(options).is_ok())
     }
 
+    #[cfg(feature = "tui")]
     pub(crate) fn try_next_event(&mut self) -> Option<AgentEvent> {
         self.events.try_recv().ok()
     }

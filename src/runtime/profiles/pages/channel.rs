@@ -223,9 +223,5 @@ pub(super) fn context(
         context.update(value);
     }
     context.update(engine.finalize());
-    Ok(context
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect())
+    Ok(crate::document::digest_hex(context.finalize()))
 }

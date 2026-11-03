@@ -423,11 +423,7 @@ fn digest_with_cancellation(
     if bytes != expected_bytes {
         return Err(integrity("Runtime file size changed while hashing"));
     }
-    Ok(digest
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect())
+    Ok(crate::document::digest_hex(digest.finalize()))
 }
 
 fn copy_checked(

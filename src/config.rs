@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    io::{Read, Write},
+    io::Write,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -205,8 +205,7 @@ pub struct UserSnapshot {
     source: UserSource,
     pub settings: UserConfig,
     pub font_files: Vec<PathBuf>,
-    directories: Vec<Directory>,
-    bindings: Vec<(PathBuf, PathBuf)>,
+    font_sources: FontSources,
     missing_fonts: Vec<MissingFont>,
 }
 
@@ -268,8 +267,7 @@ pub struct Snapshot {
     font_origins: BTreeMap<&'static str, &'static str>,
     runtime_origins: BTreeMap<&'static str, &'static str>,
     lock_paths: Vec<PathBuf>,
-    directories: Vec<Directory>,
-    bindings: Vec<(PathBuf, PathBuf)>,
+    font_sources: FontSources,
     pub(crate) missing_fonts: Vec<MissingFont>,
 }
 
@@ -283,15 +281,14 @@ pub(crate) struct FontLockInput {
 }
 
 pub(crate) fn read_font_lock(path: &Path) -> Result<Arc<[u8]>> {
-    let mut bytes = Vec::new();
-    crate::store::open_regular_file(path)?
-        .take(MAX_FONT_LOCK_BYTES as u64 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|error| Error::io(path, error))?;
-    if bytes.len() > MAX_FONT_LOCK_BYTES {
-        return Err(invalid("Font lockfile exceeds 1 MiB"));
-    }
-    Ok(bytes.into())
+    crate::store::content::read_bounded(
+        crate::store::open_regular_file(path)?,
+        path,
+        MAX_FONT_LOCK_BYTES,
+        None,
+        invalid("Font lockfile exceeds 1 MiB"),
+    )
+    .map(Into::into)
 }
 
 fn invalid(message: impl Into<String>) -> Error {
@@ -378,11 +375,7 @@ fn verify_project_source(
         return Err(conflict());
     }
     if let Some((path, expected)) = source {
-        let mut bytes = Vec::new();
-        crate::store::open_regular_file(path)
-            .map_err(|_| conflict())?
-            .take(MAX_BYTES as u64 + 1)
-            .read_to_end(&mut bytes)
+        let bytes = crate::store::read_bounded_regular_file(path, MAX_BYTES, None)
             .map_err(|_| conflict())?;
         if hash(&bytes) != hash(expected) {
             return Err(conflict());
@@ -576,21 +569,27 @@ fn absolute(path: &Path) -> Result<PathBuf> {
 }
 
 fn read_configuration(path: &Path) -> Result<Arc<[u8]>> {
-    let mut bytes = Vec::new();
-    crate::store::open_regular_file(path)
-        .map_err(|_| {
-            invalid(format!(
-                "Cannot read configuration {} as a regular file",
-                path.display()
-            ))
-        })?
-        .take(MAX_BYTES as u64 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|error| invalid(error.to_string()))?;
-    if bytes.len() > MAX_BYTES {
-        return Err(invalid("Configuration exceeds 256 KiB"));
-    }
-    Ok(bytes.into())
+    let file = crate::store::open_regular_file(path).map_err(|_| {
+        invalid(format!(
+            "Cannot read configuration {} as a regular file",
+            path.display()
+        ))
+    })?;
+    crate::store::content::read_bounded(
+        file,
+        path,
+        MAX_BYTES,
+        None,
+        invalid("Configuration exceeds 256 KiB"),
+    )
+    .map(Into::into)
+    .map_err(|error| {
+        if error.code == "IO_ERROR" {
+            invalid(error.message)
+        } else {
+            error
+        }
+    })
 }
 
 fn origins() -> BTreeMap<&'static str, &'static str> {
@@ -693,9 +692,34 @@ impl UserSource {
 
 struct FontInputs {
     files: Vec<PathBuf>,
+    sources: FontSources,
+    missing: Vec<MissingFont>,
+}
+
+/// Discovery identity is shared by user and project font snapshots. Keep public
+/// file lists independent so callers cannot mutate the captured verification set.
+struct FontSources {
     directories: Vec<Directory>,
     bindings: Vec<(PathBuf, PathBuf)>,
-    missing: Vec<MissingFont>,
+}
+
+impl FontSources {
+    fn verify(&self, missing: &[MissingFont]) -> Result<()> {
+        for font in missing {
+            font.path.verify().map_err(|_| conflict())?;
+        }
+        for (requested, expected) in &self.bindings {
+            if canonical(requested).map_err(|_| conflict())? != *expected {
+                return Err(conflict());
+            }
+        }
+        for snapshot in &self.directories {
+            if directory(&snapshot.requested).map_err(|_| conflict())? != *snapshot {
+                return Err(conflict());
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -808,31 +832,12 @@ fn font_inputs(
     }
     Ok(FontInputs {
         files: font_files,
-        directories,
-        bindings,
+        sources: FontSources {
+            directories,
+            bindings,
+        },
         missing,
     })
-}
-
-fn verify_fonts(
-    bindings: &[(PathBuf, PathBuf)],
-    directories: &[Directory],
-    missing: &[MissingFont],
-) -> Result<()> {
-    for font in missing {
-        font.path.verify().map_err(|_| conflict())?;
-    }
-    for (requested, expected) in bindings {
-        if canonical(requested).map_err(|_| conflict())? != *expected {
-            return Err(conflict());
-        }
-    }
-    for snapshot in directories {
-        if directory(&snapshot.requested).map_err(|_| conflict())? != *snapshot {
-            return Err(conflict());
-        }
-    }
-    Ok(())
 }
 
 fn require_fonts(missing: &[MissingFont]) -> Result<()> {
@@ -869,14 +874,13 @@ impl UserSnapshot {
             source,
             settings,
             font_files: inputs.files,
-            directories: inputs.directories,
-            bindings: inputs.bindings,
+            font_sources: inputs.sources,
             missing_fonts: inputs.missing,
         })
     }
     pub fn verify_unchanged(&self) -> Result<()> {
         self.source.verify()?;
-        verify_fonts(&self.bindings, &self.directories, &self.missing_fonts)
+        self.font_sources.verify(&self.missing_fonts)
     }
     pub fn require_fonts(&self) -> Result<()> {
         require_fonts(&self.missing_fonts)
@@ -1007,8 +1011,7 @@ impl Snapshot {
             font_origins,
             runtime_origins,
             lock_paths,
-            directories: inputs.directories,
-            bindings: inputs.bindings,
+            font_sources: inputs.sources,
             missing_fonts: inputs.missing,
         })
     }
@@ -1030,7 +1033,7 @@ impl Snapshot {
         {
             return Err(conflict());
         }
-        verify_fonts(&self.bindings, &self.directories, &self.missing_fonts)
+        self.font_sources.verify(&self.missing_fonts)
     }
     pub fn require_fonts(&self) -> Result<()> {
         require_fonts(&self.missing_fonts)

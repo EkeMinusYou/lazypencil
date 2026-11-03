@@ -92,14 +92,16 @@ impl Copier<'_> {
                 }
             };
             for (name, mut scope) in captured {
-                let original_size = serde_json::to_vec(&scope).expect("scope").len() + name.len();
+                let original_size = crate::query::serialized_size(&scope) + name.len();
                 for target in scope.libraries.values_mut() {
                     *target = rename(target);
                 }
                 let name = rename(&name);
                 let scope = serde_json::to_value(scope).expect("scope");
-                budget
-                    .charge((scope.to_string().len() + name.len()).saturating_sub(original_size))?;
+                budget.charge(
+                    (crate::query::serialized_size(&scope) + name.len())
+                        .saturating_sub(original_size),
+                )?;
                 if previous.insert(name, scope).is_some() {
                     return Err(copy_error("Captured code namespaces collide"));
                 }
@@ -287,7 +289,7 @@ impl Copier<'_> {
             }
             let scope = serde_json::to_value(scope).expect("captured scope");
             budget.key(identity)?;
-            budget.charge(scope.to_string().len() + 4)?;
+            budget.charge(crate::query::serialized_size(&scope) + 4)?;
             result.insert(identity.clone(), scope);
         }
         values["script_scopes"] = Value::Object(result);
@@ -354,7 +356,7 @@ impl Copier<'_> {
         native.libraries.insert(String::new(), namespace.clone());
         let native = serde_json::to_value(native).expect("native scope");
         budget.key(&namespace)?;
-        budget.charge(native.to_string().len() + 4)?;
+        budget.charge(crate::query::serialized_size(&native) + 4)?;
         values["script_scopes"][&namespace] = native;
         values["script_namespace"] = json!(namespace);
         values["version"] = json!(4);

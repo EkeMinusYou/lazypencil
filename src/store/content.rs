@@ -19,8 +19,41 @@ pub(crate) fn hash_reader(
     limit: usize,
     cancel: Option<&CancellationToken>,
 ) -> Result<String> {
-    let mut reader = reader.take((limit as u64).saturating_add(1));
     let mut digest = Sha256::new();
+    read_chunks(
+        reader,
+        path,
+        limit,
+        cancel,
+        Error::new("INVALID_DOCUMENT", "An asset exceeds its size limit"),
+        |bytes| digest.update(bytes),
+    )?;
+    Ok(crate::document::digest_hex(digest.finalize()))
+}
+
+pub(crate) fn read_bounded(
+    reader: impl Read,
+    path: &Path,
+    limit: usize,
+    cancel: Option<&CancellationToken>,
+    limit_error: Error,
+) -> Result<Vec<u8>> {
+    let mut output = Vec::new();
+    read_chunks(reader, path, limit, cancel, limit_error, |bytes| {
+        output.extend_from_slice(bytes);
+    })?;
+    Ok(output)
+}
+
+fn read_chunks(
+    reader: impl Read,
+    path: &Path,
+    limit: usize,
+    cancel: Option<&CancellationToken>,
+    limit_error: Error,
+    mut consume: impl FnMut(&[u8]),
+) -> Result<()> {
+    let mut reader = reader.take((limit as u64).saturating_add(1));
     let mut buffer = [0u8; 64 * 1024];
     let mut total = 0usize;
     loop {
@@ -31,19 +64,13 @@ pub(crate) fn hash_reader(
             Err(error) => return Err(Error::io(path, error)),
         };
         if count == 0 {
-            crate::cancel::check(cancel)?;
-            use std::fmt::Write;
-            let mut revision = String::with_capacity(64);
-            for byte in digest.finalize() {
-                write!(&mut revision, "{byte:02x}").expect("Writing to String cannot fail");
-            }
-            return Ok(revision);
+            return crate::cancel::check(cancel);
         }
         total = total
             .checked_add(count)
             .filter(|total| *total <= limit)
-            .ok_or_else(|| Error::new("INVALID_DOCUMENT", "An asset exceeds its size limit"))?;
-        digest.update(&buffer[..count]);
+            .ok_or_else(|| limit_error.clone())?;
+        consume(&buffer[..count]);
     }
 }
 
@@ -73,6 +100,34 @@ mod tests {
                     .code,
                 "INVALID_DOCUMENT"
             );
+        }
+    }
+
+    #[test]
+    fn bounded_reads_share_hash_limits_and_preserve_the_callers_error() {
+        for length in [0, 1, 65535, 65536, 65537] {
+            let bytes = vec![7; length];
+            assert_eq!(
+                read_bounded(
+                    Cursor::new(&bytes),
+                    Path::new("input"),
+                    length,
+                    None,
+                    Error::new("ATTACHMENT_INVALID", "custom limit")
+                )
+                .unwrap(),
+                bytes
+            );
+            let error = read_bounded(
+                Cursor::new(&bytes),
+                Path::new("input"),
+                length.saturating_sub(1),
+                None,
+                Error::new("ATTACHMENT_INVALID", "custom limit"),
+            );
+            if length != 0 {
+                assert_eq!(error.unwrap_err().message, "custom limit");
+            }
         }
     }
 

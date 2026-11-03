@@ -3,9 +3,12 @@
 #[cfg(target_os = "linux")]
 use std::{fs, time::Duration};
 use std::{
-    io,
+    io::{self, Read},
     process::{Child, ExitStatus},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 /// Apply child-wait policy only in a freshly started private guardian.
@@ -20,9 +23,61 @@ pub(crate) fn prepare() -> io::Result<()> {
     Ok(())
 }
 
-pub(crate) type GroupControl = Arc<Mutex<Option<libc::pid_t>>>;
+type GroupControl = Arc<Mutex<Option<libc::pid_t>>>;
 
-pub(crate) fn stop_group(control: &GroupControl) {
+/// Keep host liveness independent of the child's protocol and backpressure.
+pub(crate) struct OwnerWatch {
+    lost: Arc<AtomicBool>,
+    control: GroupControl,
+}
+
+impl OwnerWatch {
+    pub(crate) fn start(mut reader: impl Read + Send + 'static, name: &str) -> io::Result<Self> {
+        let lost = Arc::new(AtomicBool::new(false));
+        let control: GroupControl = Arc::new(Mutex::new(None));
+        let watched_lost = lost.clone();
+        let watched_group = control.clone();
+        std::thread::Builder::new()
+            .name(name.into())
+            .spawn(move || {
+                let mut byte = [0u8; 1];
+                loop {
+                    match reader.read(&mut byte) {
+                        Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                        _ => {
+                            watched_lost.store(true, Ordering::Release);
+                            stop_group(&watched_group);
+                            break;
+                        }
+                    }
+                }
+            })?;
+        Ok(Self { lost, control })
+    }
+
+    pub(crate) fn is_lost(&self) -> bool {
+        self.lost.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn supervise(&self, child: Child) -> Group {
+        let group = Group {
+            child,
+            control: self.control.clone(),
+            reaped: false,
+        };
+        *group
+            .control
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner()) = Some(group.child.id() as libc::pid_t);
+        // Close the race where the owner disappeared before this ID was bound.
+        if self.is_lost() {
+            stop_group(&group.control);
+        }
+        group
+    }
+}
+
+fn stop_group(control: &GroupControl) {
     let mut group = control.lock().unwrap_or_else(|poison| poison.into_inner());
     if let Some(group) = group.take() {
         // SAFETY: The guardian owns this unreaped group leader. The same lock
@@ -36,8 +91,8 @@ pub(crate) fn stop_group(control: &GroupControl) {
 
 pub(crate) struct Group {
     pub(crate) child: Child,
-    pub(crate) control: GroupControl,
-    pub(crate) reaped: bool,
+    control: GroupControl,
+    reaped: bool,
 }
 
 impl Group {
@@ -179,5 +234,30 @@ fn drain_adopted_children() -> io::Result<()> {
         // Keep ownership until all adopted descendants are reaped. The host's
         // bounded stop can hand this wait to its reaper thread if the OS stalls.
         std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn owner_watch_retries_interrupted_reads_before_recording_eof() {
+        struct Interrupted(bool);
+        impl Read for Interrupted {
+            fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+                if std::mem::replace(&mut self.0, false) {
+                    Err(io::ErrorKind::Interrupted.into())
+                } else {
+                    Ok(0)
+                }
+            }
+        }
+        let watch = OwnerWatch::start(Interrupted(true), "test-owner").unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while !watch.is_lost() && std::time::Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        assert!(watch.is_lost());
     }
 }

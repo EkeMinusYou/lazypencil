@@ -11,7 +11,6 @@ use serde_json::{Value, json};
 use std::{
     collections::BTreeSet,
     fs,
-    io::Read,
     path::{Path, PathBuf},
 };
 
@@ -555,27 +554,22 @@ pub(crate) fn reclaim_stale_grant(
 }
 
 pub(crate) fn read_bounded(path: &Path, max: usize) -> Result<Vec<u8>> {
-    let mut options = fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        // A named pipe must not block before the regular-file check below.
-        options.custom_flags(libc::O_NONBLOCK);
-    }
-    let file = options.open(path).map_err(|e| Error::io(path, e))?;
-    if !file.metadata().map_err(|e| Error::io(path, e))?.is_file() {
-        return Err(invalid("Attachment input must be a regular file"));
-    }
-    let mut bytes = Vec::new();
-    file.take(max as u64 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|e| Error::io(path, e))?;
-    if bytes.len() > max {
-        return Err(invalid("The input exceeds its size limit"));
-    }
-    Ok(bytes)
+    let file = crate::store::open_regular_file(path).map_err(|error| {
+        if error.code == "INVALID_DOCUMENT" {
+            invalid("Attachment input must be a regular file")
+        } else {
+            error
+        }
+    })?;
+    crate::store::content::read_bounded(
+        file,
+        path,
+        max,
+        None,
+        invalid("The input exceeds its size limit"),
+    )
 }
+
 fn invalid(message: impl Into<String>) -> Error {
     Error::new("ATTACHMENT_INVALID", message)
 }

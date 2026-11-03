@@ -10,7 +10,7 @@ impl Composition {
     fn charge(&mut self, value: &impl Serialize) -> Result<()> {
         self.bytes = self
             .bytes
-            .saturating_add(serde_json::to_vec(value).expect("binding data").len());
+            .saturating_add(crate::query::serialized_size(value));
         if self.bytes > crate::script::MAX_OUTPUT_BYTES {
             return Err(invalid(
                 "Custom script bindings exceed the generated output budget",
@@ -141,10 +141,7 @@ pub(super) fn table(
 ) -> Result<BTreeMap<String, String>> {
     let mut result = BTreeMap::new();
     let mut bytes = 0usize;
-    for (name, target) in values
-        .iter()
-        .chain(values.values().map(|target| (target, target)))
-    {
+    for (name, target) in alias_entries(values) {
         if result.contains_key(name) {
             continue;
         }
@@ -152,11 +149,7 @@ pub(super) fn table(
             .get(target)
             .or_else(|| owner.values().find(|value| *value == target))
             .ok_or_else(|| invalid("A custom binding target is outside its captured namespace"))?;
-        bytes = bytes.saturating_add(
-            serde_json::to_vec(&(name, mapped))
-                .expect("binding pair")
-                .len(),
-        );
+        bytes = bytes.saturating_add(crate::query::serialized_size(&(name, mapped)));
         if bytes > crate::script::MAX_OUTPUT_BYTES {
             return Err(invalid(
                 "Custom script bindings exceed the generated output budget",
@@ -245,7 +238,7 @@ impl Bound {
         let base = owner.original();
         let mut composition = Composition {
             values: self.original().clone(),
-            bytes: serde_json::to_vec(self.original()).expect("bindings").len(),
+            bytes: crate::query::serialized_size(self.original()),
         };
         // Legacy parents retain their closed manifest but cannot manufacture
         // declared aliases which were never captured.

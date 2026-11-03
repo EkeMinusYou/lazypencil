@@ -13,17 +13,19 @@ use crate::{
 use base64::Engine;
 use serde_json::{Value, json};
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::BTreeMap,
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
 };
 use tokio_util::sync::CancellationToken;
 pub(crate) mod acquisition;
+mod cache;
 mod pages;
 mod preprocessor;
 mod shader;
 use acquisition::PageAcquisition;
+use cache::Cache;
 use pages::{PageInput, page_url};
 
 #[derive(Clone)]
@@ -59,8 +61,7 @@ pub struct DynamicRuntime {
     shaders: Option<Browser>,
     page_used: Option<Instant>,
     shader_used: Option<Instant>,
-    cache: BTreeMap<String, Cached>,
-    cache_order: VecDeque<String>,
+    cache: Cache,
     cancel: Option<CancellationToken>,
     begun: Instant,
     refresh: bool,
@@ -83,8 +84,7 @@ impl DynamicRuntime {
             shaders: None,
             page_used: None,
             shader_used: None,
-            cache: BTreeMap::new(),
-            cache_order: VecDeque::new(),
+            cache: Cache::default(),
             cancel: None,
             begun: Instant::now(),
             refresh: false,
@@ -95,13 +95,9 @@ impl DynamicRuntime {
     }
     pub fn with_executable(mut self, path: impl Into<PathBuf>) -> Self {
         self.shaders.take();
-        self.pages.take();
-        #[cfg(unix)]
-        self.shared_pages.take();
-        self.page_used = None;
+        self.clear_pages();
         self.shader_used = None;
         self.cache.clear();
-        self.cache_order.clear();
         self.executable = Some(path.into());
         self
     }
@@ -115,16 +111,19 @@ impl DynamicRuntime {
     pub fn with_retained_pages(mut self, document: &Path) -> Self {
         let scope = hash(document.as_os_str().as_encoded_bytes());
         if self.page_scope.as_ref() != Some(&scope) {
-            self.pages.take();
-            #[cfg(unix)]
-            self.shared_pages.take();
-            self.page_used = None;
+            self.clear_pages();
             self.cache.clear();
-            self.cache_order.clear();
             self.page_scope = Some(scope);
             self.page_snapshot = None;
         }
         self
+    }
+
+    fn clear_pages(&mut self) {
+        self.pages.take();
+        #[cfg(unix)]
+        self.shared_pages.take();
+        self.page_used = None;
     }
 
     fn page_identity(&self, node: &ResolvedNode) -> Option<String> {
@@ -155,7 +154,6 @@ impl DynamicRuntime {
         // node was removed, edited and later restored. Viewport-only requests
         // still reuse the same captured layout and cache.
         self.cache.clear();
-        self.cache_order.clear();
         if self.has_pages() {
             let mut signatures = BTreeMap::new();
             for item in snapshot
@@ -200,17 +198,13 @@ impl DynamicRuntime {
             || self.browser_settings.network_policy != settings.browser.network_policy
             || self.browser_settings.profile != settings.browser.profile
         {
-            self.pages.take();
-            #[cfg(unix)]
-            self.shared_pages.take();
-            self.page_used = None;
+            self.clear_pages();
         }
         if self.browser_settings != settings.browser
             || self.shader_settings != settings.shader
             || self.settings != settings.dynamic
         {
             self.cache.clear();
-            self.cache_order.clear();
             self.browser_settings = settings.browser;
             self.shader_settings = settings.shader;
             self.settings = settings.dynamic;
@@ -225,7 +219,6 @@ impl DynamicRuntime {
         self.refresh = refresh;
         if refresh {
             self.cache.clear();
-            self.cache_order.clear();
         }
     }
     /// Refresh browser acquisitions for one render without invalidating shaders.
@@ -235,8 +228,6 @@ impl DynamicRuntime {
         self.cache.retain(|_, entry| {
             !matches!(entry, Cached::Raster(raster) if raster.metadata["kind"] == "browser")
         });
-        let cache = &self.cache;
-        self.cache_order.retain(|key| cache.contains_key(key));
     }
     /// The owned Chromium child IDs, for runtime diagnostics.
     pub fn process_ids(&self) -> Vec<u32> {
@@ -345,15 +336,7 @@ impl DynamicRuntime {
             &mut self.shaders
         };
         if slot.is_none() {
-            let browser = if let Some(path) = &self.executable {
-                crate::runtime::InstalledBrowser {
-                    executable: crate::paths::canonical(path)?,
-                    version: "external-unverified".into(),
-                    platform: crate::runtime::platform()?.into(),
-                }
-            } else {
-                crate::runtime::installed(&self.data)?
-            };
+            let browser = installed_browser(&self.data, self.executable.as_deref())?;
             let profile = if purpose == Purpose::Page && !self.browser_settings.profile.is_empty() {
                 Some(crate::runtime::profiles::Profile::open(
                     &self.data,
@@ -386,15 +369,7 @@ impl DynamicRuntime {
                         self.browser_settings.launch_timeout_ms,
                     ));
             let budget = Budget::new(duration, self.cancel.as_ref());
-            let browser = if let Some(path) = &self.executable {
-                crate::runtime::InstalledBrowser {
-                    executable: crate::paths::canonical(path)?,
-                    version: "external-unverified".into(),
-                    platform: crate::runtime::platform()?.into(),
-                }
-            } else {
-                crate::runtime::installed(&self.data)?
-            };
+            let browser = installed_browser(&self.data, self.executable.as_deref())?;
             let profile = crate::runtime::profiles::Profile::open(
                 &self.data,
                 &self.browser_settings.profile,
@@ -428,21 +403,7 @@ impl DynamicRuntime {
     }
 
     fn cache_entry(&mut self, key: String, entry: Cached) {
-        let capacity = self.settings.cache_mib as usize * 1024 * 1024;
-        if self.settings.cache_entries == 0 || capacity == 0 || entry.bytes() > capacity {
-            return;
-        }
-        self.cache.remove(&key);
-        self.cache_order.retain(|existing| existing != &key);
-        let mut total = self.cache.values().map(Cached::bytes).sum::<usize>();
-        while self.cache.len() >= self.settings.cache_entries || total + entry.bytes() > capacity {
-            let oldest = self.cache_order.pop_front().expect("cache eviction order");
-            if let Some(evicted) = self.cache.remove(&oldest) {
-                total -= evicted.bytes();
-            }
-        }
-        self.cache_order.push_back(key.clone());
-        self.cache.insert(key, entry);
+        self.cache.insert(key, entry, self.settings);
     }
 
     fn cached(&mut self, key: &str) -> Option<Raster> {
@@ -453,10 +414,7 @@ impl DynamicRuntime {
     }
 
     fn cached_entry(&mut self, key: &str) -> Option<Cached> {
-        let entry = self.cache.get(key)?.clone();
-        self.cache_order.retain(|existing| existing != key);
-        self.cache_order.push_back(key.into());
-        Some(entry)
+        self.cache.get(key)
     }
 
     pub fn page(
@@ -634,6 +592,20 @@ impl DynamicRuntime {
     }
 }
 
+fn installed_browser(
+    data: &Path,
+    executable: Option<&Path>,
+) -> Result<crate::runtime::InstalledBrowser> {
+    match executable {
+        Some(path) => Ok(crate::runtime::InstalledBrowser {
+            executable: crate::paths::canonical(path)?,
+            version: "external-unverified".into(),
+            platform: crate::runtime::platform()?.into(),
+        }),
+        None => crate::runtime::installed(data),
+    }
+}
+
 pub fn dimensions(width: f64, height: f64) -> Result<(u32, u32)> {
     if !width.is_finite()
         || !height.is_finite()
@@ -783,22 +755,22 @@ mod tests {
         runtime.configure(settings.clone()).unwrap();
         runtime.cache("a".into(), raster(700_000));
         runtime.cache("b".into(), raster(400_000));
-        assert!(!runtime.cache.contains_key("a"));
-        assert!(runtime.cache.contains_key("b"));
+        assert!(!runtime.cache.entries.contains_key("a"));
+        assert!(runtime.cache.entries.contains_key("b"));
         let large = runtime.cache("oversized".into(), raster(1024 * 1024 + 1));
         assert_eq!(large.png.len(), 1024 * 1024 + 1);
-        assert!(!runtime.cache.contains_key("oversized"));
+        assert!(!runtime.cache.entries.contains_key("oversized"));
         runtime.cache("c".into(), raster(20));
-        assert_eq!(runtime.cache.len(), 2);
+        assert_eq!(runtime.cache.entries.len(), 2);
         runtime.cache("d".into(), raster(20));
-        assert_eq!(runtime.cache.len(), 2);
-        assert!(!runtime.cache.contains_key("b"));
-        assert!(runtime.cache.contains_key("c"));
+        assert_eq!(runtime.cache.entries.len(), 2);
+        assert!(!runtime.cache.entries.contains_key("b"));
+        assert!(runtime.cache.entries.contains_key("c"));
         runtime.configure(settings.clone()).unwrap();
-        assert!(runtime.cache.contains_key("d"));
+        assert!(runtime.cache.entries.contains_key("d"));
         settings.browser.timeout_ms = 1234;
         runtime.configure(settings.clone()).unwrap();
-        assert!(runtime.cache.is_empty());
+        assert!(runtime.cache.entries.is_empty());
         runtime.cache("e".into(), raster(20));
         let mut invalid = settings.clone();
         invalid.shader.timeout_ms = 0;
@@ -806,14 +778,14 @@ mod tests {
             runtime.configure(invalid).unwrap_err().code,
             "CONFIGURATION_ERROR"
         );
-        assert!(runtime.cache.contains_key("e"));
+        assert!(runtime.cache.entries.contains_key("e"));
         assert_eq!(runtime.shader_settings, settings.shader);
         for (mib, entries) in [(0, 2), (1, 0)] {
             settings.dynamic.cache_mib = mib;
             settings.dynamic.cache_entries = entries;
             runtime.configure(settings.clone()).unwrap();
             assert_eq!(runtime.cache("disabled".into(), raster(20)).png.len(), 20);
-            assert!(runtime.cache.is_empty());
+            assert!(runtime.cache.entries.is_empty());
         }
         assert!(runtime.process_ids().is_empty());
     }
@@ -829,24 +801,32 @@ mod tests {
         for frame in 0..100 {
             assert!(runtime.cached("page").is_some());
             runtime.cache(format!("frame-{frame}"), raster(400_000));
-            assert!(runtime.cache.contains_key("page"));
-            assert!(runtime.cache.len() <= 3);
-            assert_eq!(runtime.cache_order.len(), runtime.cache.len());
-            assert!(runtime.cache.values().map(Cached::bytes).sum::<usize>() <= 1024 * 1024);
+            assert!(runtime.cache.entries.contains_key("page"));
+            assert!(runtime.cache.entries.len() <= 3);
+            assert_eq!(runtime.cache.order.len(), runtime.cache.entries.len());
+            assert!(
+                runtime
+                    .cache
+                    .entries
+                    .values()
+                    .map(Cached::bytes)
+                    .sum::<usize>()
+                    <= 1024 * 1024
+            );
         }
         // Replacing a key must not accumulate eviction records or double-count bytes.
         for _ in 0..20 {
             runtime.cache("page".into(), raster(250_000));
         }
-        assert_eq!(runtime.cache_order.len(), runtime.cache.len());
+        assert_eq!(runtime.cache.order.len(), runtime.cache.entries.len());
         assert!(runtime.cached("page").is_some());
         assert!(
             runtime.idle_deadline().is_none(),
             "Cached reads do not launch or extend runtime processes"
         );
         runtime.begin_render(None, true);
-        assert!(runtime.cache.is_empty());
-        assert!(runtime.cache_order.is_empty());
+        assert!(runtime.cache.entries.is_empty());
+        assert!(runtime.cache.order.is_empty());
     }
 
     #[test]

@@ -2,89 +2,21 @@
 
 use super::{Budget, Owned};
 use crate::cdp::failed;
+pub(super) use crate::process_job::Job;
 use crate::{Error, Result};
 use serde_json::{Value, json};
 use std::{
     fs,
     io::{self, Read, Write},
-    os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
     os::windows::process::CommandExt,
     path::Path,
     process::{Command, Stdio},
     time::Duration,
 };
-use windows_sys::Win32::{
-    Foundation::{ERROR_ALREADY_EXISTS, GetLastError, SetLastError},
-    System::{
-        JobObjects::{
-            AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-            JOBOBJECT_BASIC_LIMIT_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-            JobObjectExtendedLimitInformation, OpenJobObjectW, SetInformationJobObject,
-        },
-        Threading::{CREATE_NEW_PROCESS_GROUP, GetCurrentProcess},
-    },
-};
+use windows_sys::Win32::System::Threading::CREATE_NEW_PROCESS_GROUP;
 
 const PREFIX: &str = "Local\\lazypencil-browser-";
-const JOB_OBJECT_ASSIGN_PROCESS: u32 = 0x0001;
 const MAX_STATUS: u64 = 4096;
-
-pub(super) struct Job {
-    _handle: OwnedHandle,
-    name: String,
-}
-
-impl Job {
-    fn new() -> Result<Self> {
-        let name = format!("{PREFIX}{}", uuid::Uuid::new_v4());
-        let wide = wide(&name);
-        // SAFETY: The NUL-terminated name is valid, and null security attributes
-        // create a non-inheritable handle. Only this host retains the owner.
-        let raw = unsafe {
-            SetLastError(0);
-            CreateJobObjectW(std::ptr::null(), wide.as_ptr())
-        };
-        let error = unsafe { GetLastError() };
-        if raw.is_null() {
-            return Err(failure(
-                "job_create",
-                io::Error::from_raw_os_error(error as i32),
-            ));
-        }
-        // SAFETY: CreateJobObjectW returned one owned handle.
-        let handle = unsafe { OwnedHandle::from_raw_handle(raw) };
-        if error == ERROR_ALREADY_EXISTS {
-            return Err(failure(
-                "job_create",
-                io::Error::from(io::ErrorKind::AlreadyExists),
-            ));
-        }
-        let limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
-            BasicLimitInformation: JOBOBJECT_BASIC_LIMIT_INFORMATION {
-                LimitFlags: JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        // SAFETY: The live handle and pointer/size match the declared class.
-        // Breakaway and job-handle inheritance are deliberately not enabled.
-        if unsafe {
-            SetInformationJobObject(
-                handle.as_raw_handle(),
-                JobObjectExtendedLimitInformation,
-                std::ptr::from_ref(&limits).cast(),
-                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-            )
-        } == 0
-        {
-            return Err(failure("job_limits", io::Error::last_os_error()));
-        }
-        Ok(Self {
-            _handle: handle,
-            name,
-        })
-    }
-}
 
 pub(super) fn spawn(
     command: Command,
@@ -105,11 +37,11 @@ pub(super) fn spawn(
             "An absolute lazypencil browser supervisor executable is required",
         ));
     }
-    let job = Job::new()?;
+    let job = Job::new(PREFIX).map_err(|error| failure(error.phase, error.error))?;
     let status = profile.join(format!("lazypencil-process-{}.json", uuid::Uuid::new_v4()));
     let child = Command::new(helper)
         .arg("__browser_process_worker")
-        .arg(&job.name)
+        .arg(job.name())
         .arg(&status)
         .arg("--")
         .arg(command.get_program())
@@ -197,23 +129,8 @@ pub fn serve_worker() -> Result<bool> {
     let command = args
         .next()
         .ok_or_else(|| failed("Missing browser executable"))?;
-    let result = (|| {
-        let wide = wide(&name);
-        // SAFETY: Only self-assignment rights are requested. This temporary
-        // non-inheritable handle must close before Chromium can execute.
-        let raw = unsafe { OpenJobObjectW(JOB_OBJECT_ASSIGN_PROCESS, 0, wide.as_ptr()) };
-        if raw.is_null() {
-            return Err(failure("job_join", io::Error::last_os_error()));
-        }
-        // SAFETY: OpenJobObjectW returned a new owned kernel handle.
-        let job = unsafe { OwnedHandle::from_raw_handle(raw) };
-        // SAFETY: Both handles are live; the process pseudo handle is borrowed.
-        if unsafe { AssignProcessToJobObject(job.as_raw_handle(), GetCurrentProcess()) } == 0 {
-            return Err(failure("job_join", io::Error::last_os_error()));
-        }
-        // If the host died during startup, closing the last owner terminates
-        // this worker here, before it can start a browser outside supervision.
-        drop(job);
+    let result: Result<bool> = (|| {
+        crate::process_job::join(&name).map_err(|error| failure("job_join", error))?;
         let mut browser = Command::new(command)
             .args(args)
             .stdin(Stdio::null())
@@ -246,10 +163,6 @@ fn publish(path: &Path, value: &Value) -> Result<()> {
     file.persist_noclobber(path)
         .map_err(|e| failure("supervisor_status", e.error))?;
     Ok(())
-}
-
-fn wide(value: &str) -> Vec<u16> {
-    value.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
 fn failure(phase: &str, error: io::Error) -> Error {

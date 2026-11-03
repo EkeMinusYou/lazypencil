@@ -102,6 +102,18 @@ impl Serialize for Bound {
     }
 }
 
+/// Authored names win over identity fallbacks, including names shared by targets.
+pub(in crate::project) fn alias_entries(
+    values: &BTreeMap<String, String>,
+) -> impl Iterator<Item = (&String, &String)> {
+    values.iter().chain(
+        values
+            .values()
+            .filter(|target| !values.contains_key(*target))
+            .map(|target| (target, target)),
+    )
+}
+
 fn valid_name(value: &str) -> bool {
     !value.is_empty() && value.len() <= 4096 && !value.chars().any(char::is_control)
 }
@@ -129,7 +141,7 @@ pub(super) fn bind(project: &Project, node: &ResolvedNode) -> Result<Option<Boun
 }
 
 fn parse(value: &Value) -> Result<Bindings> {
-    if value.to_string().len() > 4 * 1024 * 1024 {
+    if crate::query::serialized_size(&value) > 4 * 1024 * 1024 {
         return Err(invalid("Script bindings exceed 4 MiB"));
     }
     let values: Bindings = serde_json::from_value(value.clone())
@@ -320,11 +332,9 @@ pub(super) fn bind_value(
         }
     }
     let inputs_bound = values.inputs_hash.as_ref().is_some_and(|expected| {
-        node.properties.get("inputs").is_some_and(|inputs| {
-            let mut inputs = inputs.clone();
-            inputs.sort_all_objects();
-            hash(inputs.to_string().as_bytes()) == *expected
-        })
+        node.properties
+            .get("inputs")
+            .is_some_and(|inputs| crate::document::canonical_hash(inputs) == *expected)
     });
     Ok(Some(Bound::from_values(origin, inputs_bound, values)?))
 }
@@ -489,7 +499,7 @@ impl Bound {
         inherited_bytes: &mut usize,
     ) -> Result<Bindings> {
         *inherited_bytes = inherited_bytes
-            .saturating_add(serde_json::to_vec(self.original()).expect("bindings").len())
+            .saturating_add(crate::query::serialized_size(self.original()))
             .saturating_add(8192);
         if *inherited_bytes > crate::script::MAX_OUTPUT_BYTES {
             return Err(invalid(
@@ -533,11 +543,7 @@ impl Bound {
             values.input_epoch = None;
         }
         values.input_components = None;
-        values.inputs_hash = inputs.map(|value| {
-            let mut value = value.clone();
-            value.sort_all_objects();
-            hash(value.to_string().as_bytes())
-        });
+        values.inputs_hash = inputs.map(crate::document::canonical_hash);
         Ok(values)
     }
 

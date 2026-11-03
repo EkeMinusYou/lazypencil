@@ -380,18 +380,17 @@ impl Renderer<'_> {
                                 "Shader effects require a configured dynamic runtime",
                             )
                         })?
-                        .shader_for_node(
-                            self.project,
-                            &node,
-                            effect,
-                            "effect",
-                            width as u32,
-                            height as u32,
-                            None,
-                            self.time,
-                            Some(&object),
-                            background_png.as_deref(),
-                        )?;
+                        .shader_for_node(crate::shader::Request {
+                            project: self.project,
+                            node: &node,
+                            fill: effect,
+                            property: "effect",
+                            size: [width as u32, height as u32],
+                            coordinates: None,
+                            time: self.time,
+                            object: Some(&object),
+                            background: background_png.as_deref(),
+                        })?;
                     color = Image::from_encoded(Data::new_copy(&raster.png))
                         .ok_or_else(|| invalid("Cannot decode backdrop shader result"))?;
                     coverage = max_coverage(&coverage, &color)?;

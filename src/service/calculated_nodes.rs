@@ -1,41 +1,22 @@
 //! Read the same expanded, script-generated tree used by layout and PNG output.
-use super::ReadNodesRequest;
+use super::{NodeFilter, ReadNodesRequest};
 use crate::{Error, Result, layout::LayoutSnapshot, project::Project};
 use serde::{
     Serialize, Serializer,
     ser::{SerializeMap, SerializeSeq},
 };
 use serde_json::{Value, json};
-use std::io::{self, Write};
 use tokio_util::sync::CancellationToken;
 
-const MAX_BYTES: usize = 4 * 1024 * 1024;
-
 pub fn validate_calculated_nodes_request(request: &ReadNodesRequest) -> Result<()> {
-    if request.depth > 16 || !(1..=500).contains(&request.limit) {
-        return Err(Error::new(
-            "INVALID_ARGUMENT",
-            "Node depth must be 0..16 and limit 1..500",
-        ));
-    }
+    request.validate_page()?;
     if request.library_alias.is_some() {
         return Err(Error::new(
             "INVALID_ARGUMENT",
             "A calculation contains the bound document's effective tree; library_alias selects uncalculated library definitions",
         ));
     }
-    if request.instance_path.len() > 128
-        || request
-            .instance_path
-            .iter()
-            .any(|part| part.is_empty() || part.contains('/'))
-        || (!request.instance_path.is_empty() && request.node_id.is_none())
-    {
-        return Err(Error::new(
-            "INVALID_ARGUMENT",
-            "An instance path requires a node ID and at most 128 nonempty IDs without '/'",
-        ));
-    }
+    request.validate_address()?;
     Ok(())
 }
 
@@ -74,7 +55,7 @@ pub fn read_calculated_nodes(
             .to_string()
             .as_bytes(),
     );
-    let name = request.name.as_ref().map(|name| name.to_lowercase());
+    let filter = NodeFilter::new(request.name.as_deref(), request.kind.as_deref());
     let mut found = request.node_id.is_none();
     let mut matches = Vec::new();
     for (index, item) in snapshot.items.iter().enumerate() {
@@ -91,21 +72,10 @@ pub fn read_calculated_nodes(
             }
             found = true;
         }
-        if request
-            .kind
-            .as_deref()
-            .is_some_and(|kind| kind != item.node.kind())
-        {
-            continue;
-        }
-        if name.as_ref().is_some_and(|name| {
-            !item
-                .node
-                .properties
-                .get("name")
-                .and_then(Value::as_str)
-                .is_some_and(|value| value.to_lowercase().contains(name))
-        }) {
+        if !filter.matches(
+            item.node.properties.get("name").and_then(Value::as_str),
+            Some(item.node.kind()),
+        ) {
             continue;
         }
         matches.push(index);
@@ -144,24 +114,12 @@ pub fn read_calculated_nodes(
     };
     // Count borrowed data before constructing Values. Overlapping subtrees and
     // large generated properties must not allocate an unbounded response first.
-    let mut counter = Counter {
-        used: 0,
-        exceeded: false,
+    crate::query::check_response_size(
+        &response,
+        crate::query::MAX_RESPONSE_BYTES,
         cancel,
-    };
-    if serde_json::to_writer(&mut counter, &response).is_err() {
-        crate::cancel::check(cancel)?;
-        if counter.exceeded {
-            return Err(Error::new(
-                "INVALID_ARGUMENT",
-                "Calculated node response exceeds 4 MiB; reduce depth or limit",
-            ));
-        }
-        return Err(Error::new(
-            "INTERNAL_ERROR",
-            "Cannot serialize calculated nodes",
-        ));
-    }
+        "Calculated node response exceeds 4 MiB; reduce depth or limit",
+    )?;
     crate::cancel::check(cancel)?;
     let value = serde_json::to_value(&response)
         .map_err(|_| Error::new("INTERNAL_ERROR", "Cannot construct calculated node result"))?;
@@ -231,28 +189,5 @@ impl Serialize for Children<'_> {
             })?;
         }
         sequence.end()
-    }
-}
-
-struct Counter<'a> {
-    used: usize,
-    exceeded: bool,
-    cancel: Option<&'a CancellationToken>,
-}
-impl Write for Counter<'_> {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        // Interrupted errors would make write_all retry forever after cancellation.
-        if self.cancel.is_some_and(CancellationToken::is_cancelled) {
-            return Err(io::Error::other("Query cancelled"));
-        }
-        if bytes.len() > MAX_BYTES - self.used {
-            self.exceeded = true;
-            return Err(io::Error::other("Node response limit"));
-        }
-        self.used += bytes.len();
-        Ok(bytes.len())
-    }
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
     }
 }

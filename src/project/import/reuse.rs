@@ -3,6 +3,16 @@ use super::*;
 
 mod paths;
 
+/// Reused definition identities, their path indexes and one shared index budget.
+#[derive(Default)]
+pub(super) struct State {
+    pub(super) targets: BTreeMap<Key, String>,
+    pub(super) paths: BTreeMap<String, BTreeMap<String, bool>>,
+    pub(super) sources: BTreeMap<Key, Source>,
+    pub(super) expansion: Expansion,
+    pub(super) bytes: usize,
+}
+
 #[derive(Default)]
 pub(super) struct Source {
     positions: BTreeMap<Key, BTreeSet<Key>>,
@@ -112,11 +122,11 @@ fn index_paths(
 
 impl Copier<'_> {
     pub(super) fn remember_reuse(&mut self, key: &Key, target: &str) -> Result<()> {
-        if self.reuse.contains_key(key) {
+        if self.reused.targets.contains_key(key) {
             return Ok(());
         }
         self.existing_component(target)?;
-        if !self.reused_targets.contains_key(target) {
+        if !self.reused.paths.contains_key(target) {
             let definition = self.project.root_document().node(target)?;
             let expanded = self.project.expand(
                 &self.project.root,
@@ -124,7 +134,7 @@ impl Copier<'_> {
                 None,
                 &[],
                 &mut Vec::new(),
-                &mut self.reused_target_expansion,
+                &mut self.reused.expansion,
             )?;
             let mut paths = BTreeMap::new();
             index_paths(
@@ -132,9 +142,9 @@ impl Copier<'_> {
                 &expanded,
                 "",
                 &mut paths,
-                &mut self.reused_path_bytes,
+                &mut self.reused.bytes,
             )?;
-            self.reused_targets.insert(target.into(), paths);
+            self.reused.paths.insert(target.into(), paths);
         }
         let original = self.project.expand(
             &key.0,
@@ -145,12 +155,7 @@ impl Copier<'_> {
             &mut Expansion::default(),
         )?;
         let mut source = Source::default();
-        index_source(
-            self.project,
-            &original,
-            &mut source,
-            &mut self.reused_path_bytes,
-        )?;
+        index_source(self.project, &original, &mut source, &mut self.reused.bytes)?;
         if let Some(paths) = self.options.component_paths.get(&self.key(key)?) {
             let mut source_paths = BTreeMap::new();
             index_paths(self.project, &original, "", &mut source_paths, &mut 0)?;
@@ -163,16 +168,15 @@ impl Copier<'_> {
                         ));
                     }
                 }
-                if !source_paths.contains_key(from) || !self.reused_targets[target].contains_key(to)
-                {
+                if !source_paths.contains_key(from) || !self.reused.paths[target].contains_key(to) {
                     return Err(copy_error(
                         "A reused component path must resolve in both the source and selected local definition",
                     ));
                 }
             }
         }
-        self.reused_sources.insert(key.clone(), source);
-        self.reuse.insert(key.clone(), target.into());
+        self.reused.sources.insert(key.clone(), source);
+        self.reused.targets.insert(key.clone(), target.into());
         Ok(())
     }
 
@@ -180,7 +184,7 @@ impl Copier<'_> {
         self.ids
             .get(key)
             .cloned()
-            .or_else(|| self.reuse.get(key).cloned())
+            .or_else(|| self.reused.targets.get(key).cloned())
             .ok_or_else(|| copy_error("Missing copied placement ID"))
     }
 
@@ -197,19 +201,19 @@ impl Copier<'_> {
             .get(&self.key(key)?)
             .and_then(|paths| paths.get(&original))
             .unwrap_or(&original);
-        Ok(self.reused_targets[&self.reuse[key]]
+        Ok(self.reused.paths[&self.reused.targets[key]]
             .contains_key(replacement)
             .then(|| replacement.clone()))
     }
 
     pub(super) fn root_reuse(&self, node: &ResolvedNode) -> Result<Option<Key>> {
-        if self.reuse.is_empty() {
+        if self.reused.targets.is_empty() {
             return Ok(None);
         }
         // A full descendant replacement retains the old address, but its
         // authored node owns the new body. Do not revive the old substitution.
         let key = authored(node);
-        if self.reuse.contains_key(&key) {
+        if self.reused.targets.contains_key(&key) {
             return Ok(Some(key));
         }
         if let Some((origin, id)) = &node.instance_identity {
@@ -225,7 +229,7 @@ impl Copier<'_> {
                     path.clone(),
                     definition["id"].as_str().expect("definition ID").into(),
                 );
-                if self.reuse.contains_key(&key) {
+                if self.reused.targets.contains_key(&key) {
                     return Ok(Some(key));
                 }
                 source = path;

@@ -32,29 +32,19 @@ fn yes() -> bool {
     true
 }
 pub(super) fn tools() -> Vec<Tool> {
-    let mut create = tool::<Open>(
-        "create_document",
+    let create = tool::<Open>(
+        ToolKind::CreateDocument,
         "Create an empty .pen file in an existing directory without overwriting anything. Returns document_id for subsequent tools. Paths resolve against the server working directory unless absolute.",
-        false,
-    );
-    create.annotations = Some(
-        ToolAnnotations::new()
-            .read_only(false)
-            .destructive(false)
-            .idempotent(false)
-            .open_world(false),
     );
     vec![
         tool::<Open>(
-            "open_document",
+            ToolKind::OpenDocument,
             "Open an existing .pen file and return its connection-local document_id and current metadata. Reopening the same canonical path returns the same ID. This does not execute scripts or initialize a renderer.",
-            true,
         ),
         create,
         tool::<List>(
-            "list_documents",
+            ToolKind::ListDocuments,
             "Discover .pen files below directory (default server working directory), recursively by default. Does not parse documents or follow directory symlinks. Search stops after 10,000 documents, 100,000 entries or 5 seconds; complete and stop_reason identify partial results. query filters collected relative paths. Reuse the same directory, recursive and query with cursor to page this retained listing.",
-            true,
         ),
     ]
 }
@@ -373,11 +363,13 @@ impl Workspace {
         {
             crate::attachments::AttachmentAccess::open(owned, path).map_err(|_| expired())?;
         }
-        match name {
-            "open_document" => return self.open(parse(arguments)?, false, cancel),
-            "create_document" => return self.open(parse(arguments)?, true, cancel),
-            "list_documents" => return self.list(parse(arguments)?, cancel),
-            "list_icons" => {
+        let kind =
+            ToolKind::parse(name).ok_or_else(|| Error::new("INVALID_ARGUMENT", "Unknown tool"))?;
+        match kind {
+            ToolKind::OpenDocument => return self.open(parse(arguments)?, false, cancel),
+            ToolKind::CreateDocument => return self.open(parse(arguments)?, true, cancel),
+            ToolKind::ListDocuments => return self.list(parse(arguments)?, cancel),
+            ToolKind::ListIcons => {
                 return crate::icons::list(
                     &crate::store::data_directory(self.options.data_dir.clone())?,
                     &parse(arguments)?,
@@ -418,7 +410,7 @@ impl Workspace {
                     arguments[field] = json!(token);
                 }
             }
-            let usage = if matches!(name, "get_guidance" | "get_style" | "list_styles") {
+            let usage = if kind.catalogue_query() {
                 document
                     .usage
                     .as_ref()
@@ -436,13 +428,13 @@ impl Workspace {
                     }
                 }
                 value["document_id"] = json!(id);
+                crate::query::check_response_size(
+                    value,
+                    MAX_TOOL_BYTES,
+                    Some(cancel),
+                    "Tool result exceeds 4 MiB; reduce depth or page size",
+                )?;
                 let text = value.to_string();
-                if text.len() > MAX_TOOL_BYTES {
-                    return Err(Error::new(
-                        "INVALID_ARGUMENT",
-                        "Tool result exceeds 4 MiB; reduce depth or page size",
-                    ));
-                }
                 if let Some(usage) = usage {
                     usage.record(name, value, cancel)?;
                 }
@@ -453,12 +445,12 @@ impl Workspace {
             }
             return Ok(result);
         }
-        let value = match name {
-            "get_guidance" => {
+        let value = match kind {
+            ToolKind::GetGuidance => {
                 let args: GuideArgs = parse(arguments)?;
                 crate::guidance::get_guidance(args.id.as_deref())?
             }
-            "list_styles" => {
+            ToolKind::ListStyles => {
                 let args: StylesArgs = parse(arguments)?;
                 crate::guidance::list_styles(
                     args.use_case.as_deref(),
@@ -466,7 +458,7 @@ impl Workspace {
                     args.cursor.as_deref(),
                 )?
             }
-            "get_style" => {
+            ToolKind::GetStyle => {
                 let args: StyleArgs = parse(arguments)?;
                 crate::guidance::get_style(&args.id)?
             }

@@ -1,5 +1,5 @@
 use super::*;
-use crate::project::bindings::Bound;
+use crate::project::bindings::{Bound, alias_entries};
 
 const LIMIT: usize = 4 * 1024 * 1024;
 
@@ -55,10 +55,7 @@ pub(super) fn mapped(
 ) -> Result<Map<String, Value>> {
     let mut result = Map::new();
     // A literal key shadows the identity fallback in the original runtime.
-    for (name, old) in source
-        .iter()
-        .chain(source.values().map(|value| (value, value)))
-    {
+    for (name, old) in alias_entries(source) {
         if result.contains_key(name) {
             continue;
         }
@@ -159,7 +156,7 @@ impl Copier<'_> {
                                 .is_some_and(|(_, instance)| *instance);
                             let context = serde_json::to_value(context).expect("context");
                             budget.key(path)?;
-                            budget.charge(context.to_string().len() + 4)?;
+                            budget.charge(crate::query::serialized_size(&context) + 4)?;
                             contexts.insert(path.clone(), context);
                         }
                     }

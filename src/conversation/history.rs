@@ -348,12 +348,7 @@ fn revision(file: &mut File, budget: &Budget<'_>) -> Result<String> {
         }
         digest.update(&buffer[..count]);
     }
-    use std::fmt::Write;
-    let mut text = String::with_capacity(64);
-    for byte in digest.finalize() {
-        write!(&mut text, "{byte:02x}").expect("string write");
-    }
-    Ok(text)
+    Ok(crate::document::digest_hex(digest.finalize()))
 }
 
 /// Pages preserve the complete original JSONL bytes, including a crash's partial

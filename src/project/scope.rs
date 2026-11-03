@@ -247,10 +247,7 @@ pub(super) fn metadata_namespace(node: &mut Value) -> Result<&mut Map<String, Va
 }
 
 pub(super) fn value_hash(value: &Value) -> String {
-    // Object key order is immaterial to an input binding.
-    let mut normalized = value.clone();
-    normalized.sort_all_objects();
-    hash(normalized.to_string().as_bytes())
+    crate::document::canonical_hash(value)
 }
 
 pub(super) fn without_script_scope(properties: &mut Map<String, Value>) {
