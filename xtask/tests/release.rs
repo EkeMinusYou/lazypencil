@@ -25,9 +25,11 @@ fn command(script: &str, temporary: &Path) -> Command {
         .env("DEVELOPER_ID_P12_BASE64", "fixture")
         .env("DEVELOPER_ID_P12_PASSWORD", "fixture")
         .env("APPLE_TEAM_ID", "ABCDEFGHIJ")
-        .env("NOTARY_PRIVATE_KEY", "fixture")
-        .env("NOTARY_KEY_ID", "fixture")
-        .env("NOTARY_ISSUER_ID", "fixture")
+        .env("APPLE_ID", "fixture@example.com")
+        .env(
+            "APPLE_APP_SPECIFIC_PASSWORD",
+            "fixture-app-specific-password",
+        )
         .env("GH_TOKEN", "fixture");
     command
 }
@@ -56,9 +58,8 @@ fn publication_requires_a_matching_tag_supported_runner_and_complete_credentials
         ("RELEASE_PLATFORM", "ubuntu-24.04"),
         ("DEVELOPER_ID_P12_BASE64", ""),
         ("DEVELOPER_ID_P12_PASSWORD", ""),
-        ("NOTARY_PRIVATE_KEY", ""),
-        ("NOTARY_KEY_ID", ""),
-        ("NOTARY_ISSUER_ID", ""),
+        ("APPLE_ID", ""),
+        ("APPLE_APP_SPECIFIC_PASSWORD", ""),
         ("APPLE_TEAM_ID", "wrong team"),
     ] {
         let result = command("macos.sh", temp.path())
@@ -186,11 +187,14 @@ fn notarization_requires_accepted_success_and_cleans_up_private_key_material() {
     let temp = tempfile::tempdir().unwrap();
     let bin = temp.path().join("bin");
     fs::create_dir(&bin).unwrap();
+    // Keychain setup is mocked so the test never changes the user's keychains.
+    executable(&bin.join("security"), "#!/bin/bash\nexit 0\n");
     executable(
         &bin.join("xcrun"),
         r#"#!/bin/bash
 set -eu
 case "$2" in
+  store-credentials) exit 0 ;;
   submit)
     printf '{"id":"fixture-id","status":"%s"}\n' "$TEST_NOTARY_STATUS"
     exit "$TEST_NOTARY_EXIT" ;;
@@ -263,4 +267,10 @@ fn signed_release_order_preserves_byte_bound_evidence_and_publication_dependenci
     assert!(workflow.contains("!inputs.publish_release"));
     assert!(workflow.contains("needs: evidence"));
     assert!(workflow.contains("needs: publish"));
+    let tap = workflow.split("\n  homebrew:\n").nth(1).unwrap();
+    assert!(tap.contains("repositories: homebrew-lazypencil"));
+    assert!(tap.contains("permission-contents: write"));
+    assert!(!tap.contains("DEVELOPER_ID_P12"));
+    assert!(!tap.contains("APPLE_APP_SPECIFIC_PASSWORD"));
+    assert!(!workflow.contains("NOTARY_PRIVATE_KEY"));
 }

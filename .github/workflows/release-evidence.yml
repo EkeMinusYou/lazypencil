@@ -54,9 +54,8 @@ jobs:
           DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
           DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
-          NOTARY_PRIVATE_KEY: ${{ secrets.NOTARY_PRIVATE_KEY }}
-          NOTARY_KEY_ID: ${{ vars.NOTARY_KEY_ID }}
-          NOTARY_ISSUER_ID: ${{ vars.NOTARY_ISSUER_ID }}
+          APPLE_ID: ${{ vars.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: bash scripts/release/macos.sh preflight
       - name: Require the existing successful main CI run for this exact release commit
         if: inputs.publish_release
@@ -245,9 +244,9 @@ jobs:
         if: inputs.publish_release
         timeout-minutes: 25
         env:
-          NOTARY_PRIVATE_KEY: ${{ secrets.NOTARY_PRIVATE_KEY }}
-          NOTARY_KEY_ID: ${{ vars.NOTARY_KEY_ID }}
-          NOTARY_ISSUER_ID: ${{ vars.NOTARY_ISSUER_ID }}
+          APPLE_ID: ${{ vars.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: bash scripts/release/macos.sh notarize "$CARGO_TARGET_DIR/release/lazypencil" "$RUNNER_TEMP/notarization.json"
       - name: Retain notarization diagnostics
         if: ${{ always() && steps.notarization.outcome != 'skipped' && inputs.publish_release }}
@@ -316,7 +315,16 @@ jobs:
         with:
           name: signed-release-${{ github.sha }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/release-assets
+      - name: Create a short-lived token scoped to the independent Homebrew tap
+        id: tap-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ vars.RELEASER_APP_ID }}
+          private-key: ${{ secrets.RELEASER_PRIVATE_KEY }}
+          owner: EkeMinusYou
+          repositories: homebrew-lazypencil
+          permission-contents: write
       - name: Update the independent lazypencil Homebrew tap
         env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          GH_TOKEN: ${{ steps.tap-token.outputs.token }}
         run: bash scripts/release/publish.sh update-tap

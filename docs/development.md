@@ -210,16 +210,16 @@ Configure these **repository Actions secrets** in `EkeMinusYou/lazypencil`:
 | --- | --- |
 | `DEVELOPER_ID_P12_BASE64` | Base64 of the Developer ID Application certificate **and its private key**, exported together as a password-protected `.p12` |
 | `DEVELOPER_ID_P12_PASSWORD` | Password protecting that `.p12` |
-| `NOTARY_PRIVATE_KEY` | Contents of the App Store Connect team API private-key file (`.p8`), authorized for notarization |
-| `HOMEBREW_TAP_TOKEN` | Fine-grained token with **Contents: read and write** for **only** `EkeMinusYou/homebrew-lazypencil` |
+| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password generated for notarization in the signing account's Apple Account; never the primary account password |
+| `RELEASER_PRIVATE_KEY` | PEM private key for the shared Homebrew release GitHub App |
 
 Configure these **repository Actions variables**:
 
 | Variable | Value |
 | --- | --- |
 | `APPLE_TEAM_ID` | Team ID associated with the Developer ID certificate |
-| `NOTARY_KEY_ID` | App Store Connect API Key ID |
-| `NOTARY_ISSUER_ID` | Issuer ID for that team API key |
+| `APPLE_ID` | Apple Account email associated with the signing team |
+| `RELEASER_APP_ID` | ID of the shared Homebrew release GitHub App |
 
 In Keychain Access, select **My Certificates**, find the Developer ID Application
 certificate, and export it with its associated private key in `.p12` format. Exporting
@@ -230,12 +230,16 @@ without printing their contents:
 ```sh
 base64 -i /private/path/developer-id.p12 | gh secret set DEVELOPER_ID_P12_BASE64 --repo EkeMinusYou/lazypencil
 gh secret set DEVELOPER_ID_P12_PASSWORD --repo EkeMinusYou/lazypencil
-gh secret set NOTARY_PRIVATE_KEY --repo EkeMinusYou/lazypencil < /private/path/AuthKey.p8
-gh secret set HOMEBREW_TAP_TOKEN --repo EkeMinusYou/lazypencil
+gh secret set APPLE_APP_SPECIFIC_PASSWORD --repo EkeMinusYou/lazypencil
+gh secret set RELEASER_PRIVATE_KEY --repo EkeMinusYou/lazypencil < /private/path/releaser.private-key.pem
 ```
 
 See [GitHub's certificate import guide](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications)
 and [Apple's notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
+Generate the app-specific password under **Sign-In and Security → App-Specific
+Passwords** at [account.apple.com](https://account.apple.com/). App Store Connect
+API keys are not used. Notarization credentials are validated and stored in a temporary
+runner keychain for that step, then removed on exit, including failure paths.
 The build job imports the certificate into a temporary keychain and removes the keychain
 and credential files after signing. The public CLI does not require an App Store
 provisioning profile. GitHub publication and tap updates run in separate jobs with

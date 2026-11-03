@@ -45,7 +45,7 @@ publish() {
 
 update_tap() {
   local repository=EkeMinusYou/homebrew-lazypencil previous_sha previous_version newest request
-  : "${GH_TOKEN:?Missing HOMEBREW_TAP_TOKEN}"
+  : "${GH_TOKEN:?Missing repository-scoped GitHub App token}"
   [[ -s $assets/lazypencil.rb ]]
   previous_sha=$(gh api "repos/$repository/git/trees/main?recursive=1" \
     --jq '.tree[] | select(.path == "Casks/lazypencil.rb") | .sha')
