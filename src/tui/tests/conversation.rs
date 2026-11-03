@@ -191,6 +191,57 @@ fn tool_updates_keep_names_and_share_a_separate_block_from_prose() {
 }
 
 #[test]
+fn tool_runs_stay_compact_and_refresh_visible_statuses() {
+    let temp = TempDir::new().unwrap();
+    let mut app = app(&temp, "echo");
+    app.append("Inspecting the document.\n");
+    for index in 0..20 {
+        app.message(&json!({"type":"update","notification":{"update":{
+            "sessionUpdate":"tool_call", "toolCallId":index.to_string(),
+            "title":format!("Call {index}"),
+            "status":if index == 19 { "in_progress" } else { "completed" }
+        }}}));
+    }
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(180, 36)).unwrap();
+    let mut draw = |app: &mut App| {
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        (0..36)
+            .map(|y| {
+                (0..180)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let text = draw(&mut app);
+    for expected in [
+        "Inspecting the document.",
+        "│ … 17 earlier calls",
+        "│ ✓ Call 17",
+        "│ ✓ Call 18",
+        "│ ● Call 19",
+    ] {
+        assert!(text.contains(expected), "{expected}\n{text}");
+    }
+    assert_eq!(text.matches("Call ").count(), 3);
+    app.message(&json!({"type":"update","notification":{"update":{
+        "sessionUpdate":"tool_call_update", "toolCallId":"19", "status":"failed"
+    }}}));
+    let text = draw(&mut app);
+    assert!(text.contains("│ ✕ Call 19"));
+    assert!(!text.contains("│ ● Call 19"));
+    assert_eq!(text.matches("earlier calls").count(), 1);
+    assert_eq!(app.tool_calls.len(), 20);
+    assert_eq!(app.log.matches("[tool_call]").count(), 20);
+}
+
+#[test]
 fn activity_indicator_stays_above_the_prompt_when_history_scrolls() {
     fn row(
         terminal: &ratatui::Terminal<ratatui::backend::TestBackend>,

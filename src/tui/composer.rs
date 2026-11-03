@@ -448,7 +448,7 @@ fn history_text(
     let ranges = markdown::code_ranges(log);
     let mut ranges = ranges.iter().peekable();
     let mut offset = 0;
-    let mut activity = false;
+    let mut activity = Vec::new();
     let mut user = false;
     for raw in log.split_inclusive('\n') {
         let line = raw.strip_suffix('\n').unwrap_or(raw);
@@ -481,24 +481,13 @@ fn history_text(
                 _ => None,
             }
         {
-            flush_body(&mut body, &mut lines, !activity, user);
-            if !activity {
-                lines.push(Line::from(vec![
-                    Span::styled("┌ ", Style::default().fg(theme::MUTED)),
-                    Span::styled(
-                        "Tools",
-                        Style::default()
-                            .fg(theme::SECONDARY)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ]));
-            }
+            flush_body(&mut body, &mut lines, activity.is_empty(), user);
             let title = if let Some(name) = title.strip_prefix("mcp.lazypencil.") {
                 name.replace('_', " ")
             } else {
                 title.to_owned()
             };
-            lines.push(Line::from(vec![
+            activity.push(Line::from(vec![
                 Span::styled("│ ", Style::default().fg(theme::MUTED)),
                 Span::styled(
                     format!("{icon} "),
@@ -513,13 +502,12 @@ fn history_text(
                     }),
                 ),
             ]));
-            activity = true;
             continue;
         }
         if line == "[0 images]" {
             continue;
         }
-        if activity && line.trim().is_empty() {
+        if !activity.is_empty() && line.trim().is_empty() {
             continue;
         }
         close_tools(&mut lines, &mut activity);
@@ -531,12 +519,10 @@ fn history_text(
             user = true;
             body.push_str(message.trim_start());
             body.push('\n');
-            activity = false;
             continue;
         } else if matches!(line, "Codex:" | "Claude:") {
             flush_body(&mut body, &mut lines, true, user);
             user = false;
-            activity = false;
             continue;
         } else if line == "Request complete" {
             Line::styled(format!("✓ {line}"), Style::default().fg(theme::SUCCESS))
@@ -553,7 +539,6 @@ fn history_text(
         };
         flush_body(&mut body, &mut lines, true, user);
         lines.push(styled);
-        activity = false;
     }
     close_tools(&mut lines, &mut activity);
     flush_body(&mut body, &mut lines, false, user);
@@ -563,12 +548,32 @@ fn history_text(
     Text::from(lines)
 }
 
-fn close_tools(lines: &mut Vec<Line<'static>>, active: &mut bool) {
-    if *active {
-        lines.push(Line::styled("└", Style::default().fg(theme::MUTED)));
-        lines.push(Line::default());
-        *active = false;
+fn close_tools(lines: &mut Vec<Line<'static>>, activity: &mut Vec<Line<'static>>) {
+    const VISIBLE_TOOL_CALLS: usize = 3;
+
+    if activity.is_empty() {
+        return;
     }
+    lines.push(Line::from(vec![
+        Span::styled("┌ ", Style::default().fg(theme::MUTED)),
+        Span::styled(
+            "Tools",
+            Style::default()
+                .fg(theme::SECONDARY)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]));
+    let hidden = activity.len().saturating_sub(VISIBLE_TOOL_CALLS);
+    if hidden > 0 {
+        let label = if hidden == 1 { "call" } else { "calls" };
+        lines.push(Line::styled(
+            format!("│ … {hidden} earlier {label}"),
+            Style::default().fg(theme::MUTED),
+        ));
+    }
+    lines.extend(activity.drain(..).skip(hidden));
+    lines.push(Line::styled("└", Style::default().fg(theme::MUTED)));
+    lines.push(Line::default());
 }
 
 fn flush_body(body: &mut String, lines: &mut Vec<Line<'static>>, spacing: bool, user: bool) {
@@ -589,6 +594,51 @@ fn flush_body(body: &mut String, lines: &mut Vec<Line<'static>>, spacing: bool, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tool_runs_show_only_the_latest_three_calls() {
+        for count in 0_usize..=6 {
+            let source = (0..count)
+                .map(|index| format!("[completed] call {index}\n\n"))
+                .collect::<String>();
+            let rendered = history_text(&source, &Default::default()).to_string();
+            if count == 0 {
+                assert!(rendered.is_empty());
+                continue;
+            }
+            let hidden = count.saturating_sub(3);
+            let mut expected = String::from("┌ Tools\n");
+            if hidden > 0 {
+                expected.push_str(match hidden {
+                    1 => "│ … 1 earlier call\n",
+                    2 => "│ … 2 earlier calls\n",
+                    3 => "│ … 3 earlier calls\n",
+                    _ => unreachable!(),
+                });
+            }
+            for index in hidden..count {
+                expected.push_str(&format!("│ ✓ call {index}\n"));
+            }
+            expected.push('└');
+            assert_eq!(rendered, expected, "{count} calls");
+        }
+    }
+
+    #[test]
+    fn tool_runs_collapse_independently_across_prose_and_code() {
+        let calls =
+            "[completed] old\n\n[completed] read\n\n[failed] edit\n\n[in_progress] render\n\n";
+        let source = format!(
+            "{calls}Checking the result.\n\n{calls}```text\n[completed] literal\n```\n\n[completed] final\n"
+        );
+        let rendered = history_text(&source, &Default::default()).to_string();
+        let block = "┌ Tools\n│ … 1 earlier call\n│ ✓ read\n│ ✕ edit\n│ ● render\n└";
+        assert_eq!(rendered.matches(block).count(), 2);
+        assert!(rendered.contains(&format!("{block}\n\nChecking the result.")));
+        assert!(rendered.contains("│ [completed] literal"));
+        assert!(rendered.ends_with("┌ Tools\n│ ✓ final\n└"));
+        assert!(!rendered.contains("✓ old"));
+    }
 
     #[test]
     fn transcript_formats_markdown_and_activity_but_preserves_code() {
