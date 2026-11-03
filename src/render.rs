@@ -653,6 +653,11 @@ fn raster_impl_cached(
                     canvas.draw_picture(picture, Some(&transform), None);
                 }
             }
+            if anchored {
+                // The retained raster replaces native filter intermediates.
+                // Release their separate cache without evicting shaped fonts.
+                skia_safe::graphics::purge_resource_cache();
+            }
         } else {
             for root in &snapshot.roots {
                 renderer.node(*root)?;
