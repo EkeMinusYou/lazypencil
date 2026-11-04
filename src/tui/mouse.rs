@@ -189,8 +189,11 @@ impl Pointer {
         if self.controls && area.height > 0 && area.width >= width {
             let area = Rect::new(area.x, area.y, width, 1);
             frame.render_widget(
-                Paragraph::new(label)
-                    .style(Style::default().fg(theme::KEY).add_modifier(Modifier::BOLD)),
+                Paragraph::new(label).style(
+                    Style::default()
+                        .fg(theme::colors().key)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 area,
             );
             self.add(area, Target::Button(action));

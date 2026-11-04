@@ -4,6 +4,10 @@
 
 - Group TUI workspace actions by purpose in a shared command palette, slash-command and help catalog. Add palette input dialogs for images, queued prompts and playback while preserving the prompt draft. Use `/checkpoints` for editing history; `/history` remains an alias.
 
+- Add selectable auto, dark, light and monochrome UI themes, with automatic light-terminal colors, user configuration, a launch override and in-session switching.
+
+- Match preview canvases to the active UI theme across image protocols, including theme changes, avoiding black canvases in terminals that do not composite transparent image pixels correctly.
+
 ## 0.2.0
 
 - Match the Preview canvas to the terminal background, retaining terminal transparency with Kitty and querying the background color for Sixel and halfblocks.

@@ -379,7 +379,7 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
         assert!(region(Rect::new(32, 38, 80, 1)).contains("100%"));
         let zoom_cell = &terminal.backend().buffer()[(109, 38)];
         assert_eq!(zoom_cell.symbol(), "%");
-        assert_eq!(zoom_cell.fg, theme::SECONDARY);
+        assert_eq!(zoom_cell.fg, theme::colors().secondary);
         assert!(!zoom_cell.modifier.contains(Modifier::BOLD));
         assert!(!preview.contains("Playback"));
         let agent = region(Rect::new(112, 1, 48, 38));
@@ -392,15 +392,15 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
             );
         }
         let buffer = terminal.backend().buffer();
-        assert_eq!(buffer[(0, 0)].bg, theme::CANVAS);
-        assert_eq!(buffer[(3, 2)].fg, theme::TEXT);
-        assert_eq!(buffer[(3, 2)].bg, theme::CANVAS);
+        assert_eq!(buffer[(0, 0)].bg, theme::colors().canvas);
+        assert_eq!(buffer[(3, 2)].fg, theme::colors().text);
+        assert_eq!(buffer[(3, 2)].bg, theme::colors().canvas);
         assert_eq!(buffer[(114, 2)].symbol(), "C");
-        assert_eq!(buffer[(114, 2)].fg, theme::PREVIEW);
+        assert_eq!(buffer[(114, 2)].fg, theme::colors().preview);
         for (x, label, color) in [
-            (2, "Nodes", theme::NODES),
-            (34, "Preview", theme::PREVIEW),
-            (114, "Agent", theme::AGENT),
+            (2, "Nodes", theme::colors().nodes),
+            (34, "Preview", theme::colors().preview),
+            (114, "Agent", theme::colors().agent),
         ] {
             let start = (x..160)
                 .find(|x| buffer[(*x, 1)].symbol() == label.get(..1).unwrap())
@@ -428,7 +428,7 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
             })
             .unwrap();
         assert_eq!(terminal.backend().buffer()[(32, 14)].symbol(), "%");
-        assert_eq!(terminal.backend().buffer()[(32, 14)].fg, theme::SECONDARY);
+        assert_eq!(terminal.backend().buffer()[(32, 14)].fg, theme::colors().secondary);
         app.preview.as_mut().unwrap().time_dependent = false;
         app.accept_input(fake_clipboard(
             Path::new("unused"),
@@ -793,7 +793,7 @@ fn initial_preview_loading_is_distinct_from_failure_and_explicit_retry() {
         let cells = buffer.content.windows(heading.len()).find(|cells| {
             cells.iter().zip(&heading).all(|(cell, symbol)| cell.symbol() == symbol)
         }).unwrap();
-        assert!(cells.iter().all(|cell| cell.fg == theme::ERROR && cell.bg == theme::CANVAS));
+        assert!(cells.iter().all(|cell| cell.fg == theme::colors().error && cell.bg == theme::colors().canvas));
         let worker = Worker::start(
             app.conversation.store().clone(),
             vec![],

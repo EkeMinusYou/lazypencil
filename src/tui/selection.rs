@@ -108,7 +108,7 @@ impl Selection {
         }
         Ok(false)
     }
-    fn invalidate(&self) {
+    pub(super) fn invalidate(&self) {
         if let Some(clock) = &self.clock {
             clock.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
@@ -340,21 +340,25 @@ impl App {
             .filter(|node| selected.contains(node.id.as_str()))
             .map(shape_bounds)
             .collect::<Vec<_>>();
-        self.selection.clock = Some(worker.present(render::Request {
-            source: preview.image.clone(),
-            nodes: preview.nodes.clone(),
-            selected: self.selection.ids.clone(),
-            before: preview.view,
-            view,
-            size,
-            viewport,
-            outlines,
-            marquee: self.selection.marquee,
-            picker: picker.clone(),
-            image_id: self.camera_id,
-            serial: 0,
-            clock: std::sync::Arc::default(),
-        }));
+        self.selection.clock = Some(
+            worker.present(render::Request {
+                source: preview.image.clone(),
+                nodes: preview.nodes.clone(),
+                selected: self.selection.ids.clone(),
+                before: preview.view,
+                view,
+                size,
+                viewport,
+                outlines,
+                marquee: self.selection.marquee,
+                picker: picker
+                    .clone()
+                    .with_canvas_background(super::theme::canvas_background()),
+                image_id: self.camera_id,
+                serial: 0,
+                clock: std::sync::Arc::default(),
+            }),
+        );
         Ok(())
     }
 }

@@ -189,7 +189,7 @@ impl App {
             "All nodes".into()
         };
         frame.render_widget(
-            Paragraph::new(scope).style(Style::default().fg(theme::SECONDARY)),
+            Paragraph::new(scope).style(Style::default().fg(theme::colors().secondary)),
             sections[0],
         );
         let area = sections[1];
@@ -214,7 +214,7 @@ impl App {
             };
             frame.render_widget(
                 Paragraph::new(message)
-                    .style(Style::default().fg(theme::SECONDARY))
+                    .style(Style::default().fg(theme::colors().secondary))
                     .wrap(Wrap { trim: false }),
                 area,
             );
@@ -233,9 +233,9 @@ impl App {
             .map(|item| {
                 let severity = item["severity"].as_str().unwrap_or("warning");
                 let color = if severity == "error" {
-                    theme::ERROR
+                    theme::colors().error
                 } else {
-                    theme::RUNNING
+                    theme::colors().running
                 };
                 ListItem::new(Text::from(vec![
                     Line::styled(
@@ -286,7 +286,7 @@ impl App {
             .padding(ratatui::widgets::Padding::horizontal(u16::from(
                 area.width >= 16,
             )))
-            .border_style(Style::default().fg(theme::FRAME));
+            .border_style(Style::default().fg(theme::colors().frame));
         let inner = block.inner(sections[1]);
         self.pointer.add(inner, mouse::Target::DiagnosticDetails);
         let paragraph = Paragraph::new(text).wrap(Wrap { trim: false });
@@ -302,7 +302,7 @@ impl App {
                 self.diagnostics.scroll.saturating_add(1),
                 maximum.saturating_add(1)
             ),
-            Style::default().fg(theme::SECONDARY),
+            Style::default().fg(theme::colors().secondary),
         ));
         frame.render_widget(
             paragraph.scroll((self.diagnostics.scroll, 0)).block(block),

@@ -121,7 +121,9 @@ impl Harness {
         case: &str,
         configuration: Option<PathBuf>,
     ) -> Result<Self> {
-        let image_case = if let Some(protocol) = case.strip_prefix("background-") {
+        let image_case = if case.starts_with("theme-") || case == "background-direct-kitty" {
+            "kitty"
+        } else if let Some(protocol) = case.strip_prefix("background-") {
             protocol
         } else if let Some(protocol) = case.strip_prefix("selection-") {
             protocol
@@ -155,7 +157,7 @@ impl Harness {
         } else {
             case.strip_prefix("auto-").unwrap_or(case)
         };
-        let protocol = if case.starts_with("auto-") {
+        let protocol = if case.starts_with("auto-") || case == "background-direct-kitty" {
             "auto"
         } else if ["kitty", "sixel"].contains(&image_case) {
             image_case
@@ -251,6 +253,25 @@ impl Harness {
         if matches!(case, "kitty-held" | "kitty-progressive") {
             command.env("LAZYPENCIL_PROFILE_INPUT", "owned-local-measurement");
         }
+        if case.starts_with("theme-") {
+            command.env_remove("COLORFGBG");
+            if case.ends_with("-override") {
+                command
+                    .arg("--theme")
+                    .arg(if case == "theme-light-override" {
+                        "light"
+                    } else {
+                        "dark"
+                    });
+            }
+        }
+        if case == "background-direct-kitty" {
+            command
+                .env("TERM", "xterm-kitty")
+                .env_remove("TERM_PROGRAM")
+                .env_remove("WEZTERM_EXECUTABLE")
+                .env_remove("KONSOLE_VERSION");
+        }
         if case != "picker-default" {
             command.args(["--image-protocol", protocol]);
         }
@@ -310,9 +331,26 @@ impl Harness {
             self.output.extend_from_slice(bytes);
             self.frames.feed(bytes)?;
             self.screen.feed(bytes);
+            if self.case.starts_with("theme-")
+                && self.case != "theme-unknown"
+                && !self.probe_answered
+                && self.contains_bytes(b"\x1b[5n")
+            {
+                let color = if self.case == "theme-auto-dark" || self.case == "theme-light-override"
+                {
+                    "1111/2222/3333"
+                } else {
+                    "f5f5/f5f5/f5f5"
+                };
+                self.key(format!("\x1b[0n\x1b]11;rgb:{color}\x07").as_bytes())?;
+                self.probe_answered = true;
+            }
             if matches!(
                 self.case.as_str(),
-                "background-sixel" | "background-halfblocks"
+                "background-kitty"
+                    | "background-direct-kitty"
+                    | "background-sixel"
+                    | "background-halfblocks"
             ) && !self.probe_answered
                 && self.contains_bytes(b"\x1b[5n")
             {

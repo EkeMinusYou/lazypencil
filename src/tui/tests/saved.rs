@@ -346,7 +346,7 @@ fn checkpoint_palette_reviews_before_restoring_and_keeps_draft_and_images() {
         press(&mut app, KeyCode::Down, KeyModifiers::NONE, &worker).await;
         let buffer = crate::tui::test_artifacts::snapshot(&mut app, "checkpoints");
         assert!(buffer.content.iter().any(|cell| {
-            cell.symbol() == "›" && cell.fg == theme::CANVAS && cell.bg == theme::PREVIEW
+            cell.symbol() == "›" && cell.fg == theme::colors().canvas && cell.bg == theme::colors().preview
         }));
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
         assert!(matches!(app.modal, Some(checkpoints::Modal::Confirm(_))));

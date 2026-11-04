@@ -68,7 +68,12 @@ fn main() -> ExitCode {
         ) {
             return failure(error, Some(&arguments));
         }
-        match lazypencil::tui::documents::select(arguments.data_dir.clone(), &startup) {
+        match lazypencil::tui::documents::select(
+            arguments.data_dir.clone(),
+            &startup,
+            options.image_protocol,
+            options.theme,
+        ) {
             Ok(Some(selection)) => {
                 options.prompt.file = selection.file.clone();
                 selected_document = Some(selection);

@@ -87,7 +87,7 @@ pub fn run(
     environment.remove(std::ffi::OsStr::new("HERDR_ENV"));
     environment.remove(std::ffi::OsStr::new("HC_TERMINAL_ID"));
     environment.extend(extra_environment.iter().cloned());
-    if case.starts_with("background-") {
+    if case.starts_with("background-") || case.starts_with("theme-") {
         // These cases inspect emitted RGB; NO_COLOR has separate coverage.
         environment.insert("NO_COLOR".into(), "".into());
     }
@@ -129,6 +129,25 @@ pub fn run(
         ]});
     }
     let mut configuration = None;
+    if case.starts_with("theme-") {
+        let directory = root.join("user-settings");
+        fs::create_dir_all(&directory)?;
+        let theme = match case {
+            "theme-light-override" => "dark",
+            "theme-dark-override" => "light",
+            "theme-monochrome" => "monochrome",
+            _ => "auto",
+        };
+        fs::write(
+            directory.join("config.toml"),
+            format!("[tui]\ntheme='{theme}'\n"),
+        )?;
+        environment.insert(
+            "LAZYPENCIL_CONFIG_DIR".into(),
+            directory.clone().into_os_string(),
+        );
+        configuration = Some(directory);
+    }
     if case.starts_with("mouse-") {
         design = json!({"version":"2.21","children":(0..64).map(|index| json!({"type":"rectangle","id":format!("mouse-{index}"),"name":format!("Mouse row {index}"),"x":index*100,"width":80,"height":80,"fill":"#ff0000"})).collect::<Vec<_>>()});
     }
@@ -447,7 +466,12 @@ pub fn run(
             );
             Value::Null
         }
+        case if case.starts_with("theme-") => {
+            ui_theme(&mut h)?;
+            Value::Null
+        }
         "background-kitty"
+        | "background-direct-kitty"
         | "background-sixel"
         | "background-halfblocks"
         | "background-fallback" => {
@@ -982,8 +1006,10 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
         b"\x1b[0;1u".to_vec()
     }
     let original = fs::read(&h.document)?;
-    h.wait("negotiated keyboard text mode", 15.0, |h| {
-        flags(&h.output).is_some()
+    h.wait("negotiated prompt keyboard text mode", 15.0, |h| {
+        // The focus-changing Tab is asynchronous. Model an IME commit only
+        // after the terminal has received the prompt's UTF-8 keyboard mode.
+        flags(&h.output).is_some_and(|flags| flags & 8 == 0)
     })?;
     let negotiated = flags(&h.output).unwrap();
     let first = "日本語の変換確定";
@@ -1111,25 +1137,81 @@ fn ime_commit(h: &mut Harness) -> Result<Value> {
     )
 }
 
+fn ui_theme(h: &mut Harness) -> Result {
+    encoded(h)?;
+    let settings = fs::read(config(h).join("config.toml"))?;
+    let original = fs::read(&h.document)?;
+    let background = match h.case.as_str() {
+        "theme-auto-dark" | "theme-dark-override" => "24;24;37",
+        "theme-monochrome" => "245;245;245",
+        "theme-unknown" => "24;24;37",
+        _ => "242;244;247",
+    };
+    h.wait("theme input background", 15.0, |h| {
+        h.contains_bytes(format!("48;2;{background}").as_bytes())
+    })?;
+    let canvas = match h.case.as_str() {
+        "theme-auto-dark" | "theme-dark-override" => [30, 30, 46, 255],
+        "theme-unknown" => [30, 30, 46, 255],
+        "theme-monochrome" => [250, 250, 250, 255],
+        _ => [250, 250, 252, 255],
+    };
+    assert_eq!(&h.frames.images[0].rgba()[..4], &canvas);
+    h.paste("/theme light")?;
+    h.key(b"\r")?;
+    h.visible("UI theme: Light")?;
+    theme_canvas(h, [250, 250, 252, 255])?;
+    h.paste("/theme dark")?;
+    h.key(b"\r")?;
+    h.visible("UI theme: Dark")?;
+    theme_canvas(h, [30, 30, 46, 255])?;
+    // The shared command palette opens theme arguments without sending a prompt.
+    h.key(b"\x1bp")?;
+    arrow(h, 17)?;
+    h.key(b"\r")?;
+    h.visible("Arguments")?;
+    h.paste("light")?;
+    h.key(b"\r")?;
+    h.visible("UI theme: Light")?;
+    theme_canvas(h, [250, 250, 252, 255])?;
+    assert_eq!(fs::read(config(h).join("config.toml"))?, settings);
+    assert_eq!(fs::read(&h.document)?, original);
+    no_agent(h);
+    Ok(())
+}
+
+fn theme_canvas(h: &mut Harness, background: [u8; 4]) -> Result {
+    h.wait(
+        "preview follows the workspace theme background",
+        15.0,
+        |h| {
+            h.frames.images.last().is_some_and(|image| {
+                image.rgba()[..4] == background && image.has_color([255, 0, 0, 255])
+            })
+        },
+    )
+}
+
 fn terminal_background(h: &mut Harness) -> Result {
     match h.image_case.as_str() {
         "kitty" => {
             encoded(h)?;
             assert!(
-                !h.contains_bytes(b"]11;?"),
-                "Alpha needs no background query"
+                h.contains_bytes(b"]11;?"),
+                "Kitty also queries the terminal background"
             );
             let frame = &h.frames.images[0];
+            assert!(frame.has_color([30, 30, 46, 255]));
             assert!(
                 frame
                     .rgba()
                     .as_chunks::<4>()
                     .0
                     .iter()
-                    .any(|pixel| pixel[3] == 0)
+                    .all(|pixel| pixel[3] == 255),
+                "Canvas must not depend on terminal image alpha compositing"
             );
             assert!(frame.has_color([255, 0, 0, 255]));
-            h.paste("背景確認")?;
         }
         "sixel" => {
             encoded(h)?;
@@ -1144,18 +1226,14 @@ fn terminal_background(h: &mut Harness) -> Result {
                     components.len() == 3
                         && components
                             .iter()
-                            .zip([7, 13, 20])
+                            .zip([12, 12, 18])
                             .all(|(actual, expected)| actual.abs_diff(expected) <= 1)
                 }),
-                "Sixel palette must include the queried terminal background"
+                "Sixel palette must include the workspace theme background"
             );
         }
         _ => {
-            let rgb = if h.case == "background-fallback" {
-                "248;250;252"
-            } else {
-                "17;34;51"
-            };
+            let rgb = "30;30;46";
             h.wait("halfblocks canvas background", 15.0, |h| {
                 h.contains_bytes(format!("48;2;{rgb}").as_bytes())
             })?;
@@ -1835,7 +1913,7 @@ fn basic(h: &mut Harness) -> Result {
 fn restore(h: &mut Harness, checkpoint: &Value) -> Result {
     h.paste("復元しても保持する下書き")?;
     h.draft("復元しても保持する下書き")?;
-    command(h, "Commands", 19)?;
+    command(h, "Commands", 20)?;
     h.wait("checkpoint candidates", 15.0, |h| {
         h.screen.text().contains("first-checkpoint")
             && h.screen.text().contains("second-checkpoint")

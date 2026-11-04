@@ -81,6 +81,9 @@ pub struct TuiArgs {
     /// Select the image protocol; auto probes the terminal before reading input.
     #[arg(long, value_enum, default_value = "auto")]
     pub image_protocol: ImageProtocol,
+    /// Override the user UI theme; auto follows the terminal background.
+    #[arg(long, value_enum)]
+    pub theme: Option<crate::config::keys::Theme>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,8 +189,13 @@ pub fn run_with_selection(
     // bit selects the slot; the high bit identifies temporary feedback.
     let id = (uuid::Uuid::new_v4().as_u128() as u32 & 0x7fff_fffe).max(2);
     let mut screen = match startup {
-        Some(startup) => startup.activate(args.image_protocol, id)?,
-        None => terminal::Screen::enter(args.image_protocol, id, settings.mouse.enabled)?,
+        Some(startup) => startup.activate(id)?,
+        None => terminal::Screen::enter(
+            args.image_protocol,
+            id,
+            settings.mouse.enabled,
+            args.theme.unwrap_or(settings.theme),
+        )?,
     };
     let worker = Worker::start(
         conversation.store().clone(),
@@ -195,12 +203,15 @@ pub fn run_with_selection(
         screen.picker.clone(),
         id,
     )?;
+    worker.set_canvas_background(theme::canvas_background());
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(terminal::io)?;
     let (result, session_id) = runtime.block_on(async {
         let mut app = App::new(conversation);
+        app.theme = args.theme.unwrap_or(settings.theme);
+        app.terminal_background = screen.picker.terminal_background();
         app.keys = settings.keys;
         app.navigation = settings.navigation;
         app.panel_layout = settings.layout;
@@ -232,6 +243,8 @@ pub fn run_with_selection(
 
 struct App {
     conversation: Conversation,
+    theme: crate::config::keys::Theme,
+    terminal_background: Option<[u8; 3]>,
     keys: crate::config::keys::PromptKeys,
     navigation: crate::config::keys::NavigationKeys,
     panel_layout: crate::config::keys::PanelLayout,
@@ -313,6 +326,8 @@ impl App {
         };
         let mut app = Self {
             conversation,
+            theme: Default::default(),
+            terminal_background: None,
             keys: Default::default(),
             navigation: Default::default(),
             panel_layout: Default::default(),
@@ -1315,6 +1330,19 @@ impl App {
         }
         Ok(exit)
     }
+    fn set_theme(&mut self, theme: crate::config::keys::Theme, worker: &Worker) {
+        self.theme = theme;
+        theme::select(theme, self.terminal_background);
+        self.history = None;
+        worker.set_canvas_background(theme::canvas_background());
+        self.selection.presentation = None;
+        self.selection.invalidate();
+        self.request(worker, false, false);
+        self.dirty = true;
+        self.set_status(format!(
+            "UI theme: {theme:?} · session only; set [tui] theme in user config to keep it"
+        ));
+    }
     fn filtered_nodes(&self) -> &[nodes::Row] {
         self.node_tree.rows()
     }
@@ -1401,11 +1429,11 @@ impl App {
     }
     fn agent_activity(&self) -> Span<'static> {
         let (label, color) = if !self.permissions.is_empty() {
-            ("! Blocked", theme::RUNNING)
+            ("! Blocked", theme::colors().running)
         } else if self.conversation.active() {
-            ("● Working", theme::WORKING)
+            ("● Working", theme::colors().working)
         } else {
-            ("○ Idle", theme::SECONDARY)
+            ("○ Idle", theme::colors().secondary)
         };
         Span::styled(label, Style::default().fg(color))
     }
@@ -1497,9 +1525,9 @@ impl App {
                 if self.camera.is_some() { "↻" } else { "▣" },
                 "Preview",
                 if self.camera.is_some() {
-                    theme::RUNNING
+                    theme::colors().running
                 } else {
-                    theme::PREVIEW
+                    theme::colors().preview
                 },
                 false,
             ),
@@ -1519,7 +1547,7 @@ impl App {
         };
         if let Some(notice) = preview_notice {
             block = block.title_top(
-                Line::styled(notice, Style::default().fg(theme::RUNNING)).right_aligned(),
+                Line::styled(notice, Style::default().fg(theme::colors().running)).right_aligned(),
             );
         }
         let zoom_width = zoom.as_ref().map_or(0, |zoom| zoom.len() + 3);
@@ -1530,13 +1558,16 @@ impl App {
                     .chars()
                     .take(width)
                     .collect::<String>(),
-                Style::default().fg(theme::SECONDARY),
+                Style::default().fg(theme::colors().secondary),
             ));
         }
         if let Some(zoom) = zoom {
             block = block.title_bottom(
-                Line::styled(format!(" {zoom} "), Style::default().fg(theme::SECONDARY))
-                    .right_aligned(),
+                Line::styled(
+                    format!(" {zoom} "),
+                    Style::default().fg(theme::colors().secondary),
+                )
+                .right_aligned(),
             );
         }
         let inner = block.inner(panes[1]);
@@ -1567,15 +1598,18 @@ impl App {
                     Line::styled(
                         "Preview unavailable",
                         Style::default()
-                            .fg(theme::ERROR)
+                            .fg(theme::colors().error)
                             .add_modifier(Modifier::BOLD),
                     ),
                     Line::styled(
                         clean(&error.to_string()),
-                        Style::default().fg(theme::SECONDARY),
+                        Style::default().fg(theme::colors().secondary),
                     ),
                 ]),
-                None => Text::styled("Loading preview…", Style::default().fg(theme::SECONDARY)),
+                None => Text::styled(
+                    "Loading preview…",
+                    Style::default().fg(theme::colors().secondary),
+                ),
             };
             frame.render_widget(Paragraph::new(message).wrap(Wrap { trim: false }), inner);
         }
@@ -1605,7 +1639,7 @@ impl App {
             frame.render_widget(paragraph.scroll((self.help_scroll, 0)), sections[0]);
             frame.render_widget(
                 Paragraph::new("PgUp/PgDn scroll · Esc closes")
-                    .style(Style::default().fg(theme::SECONDARY)),
+                    .style(Style::default().fg(theme::colors().secondary)),
                 sections[1],
             );
             self.pointer.button(
@@ -1627,7 +1661,7 @@ impl App {
             let details = crate::conversation::sanitize_event(&details);
             let details = clean(&serde_json::to_string_pretty(&details).unwrap_or_default());
             let paragraph = Paragraph::new(details)
-                .style(Style::default().fg(theme::SECONDARY))
+                .style(Style::default().fg(theme::colors().secondary))
                 .wrap(Wrap { trim: false });
             let title = clean(
                 permission
@@ -1683,7 +1717,7 @@ impl App {
             )];
             for (index, option) in permission.request.options.iter().enumerate() {
                 let style = if index == permission.selected {
-                    Style::default().fg(theme::CANVAS).bg(theme::RUNNING)
+                    theme::permission_selected()
                 } else {
                     Style::default()
                 };
@@ -1706,7 +1740,7 @@ impl App {
             );
             frame.render_widget(
                 Paragraph::new("↑/↓ choose · Enter respond · Esc denies · PgUp/PgDn details")
-                    .style(Style::default().fg(theme::SECONDARY)),
+                    .style(Style::default().fg(theme::colors().secondary)),
                 sections[4],
             );
             // Match wrapped option labels rather than assuming one row each.
@@ -1717,10 +1751,9 @@ impl App {
                 let height = height.min(sections[2].bottom().saturating_sub(y));
                 let option_area = Rect::new(sections[2].x, y, sections[2].width, height);
                 if index == permission.selected {
-                    frame.buffer_mut().set_style(
-                        option_area,
-                        Style::default().fg(theme::CANVAS).bg(theme::RUNNING),
-                    );
+                    frame
+                        .buffer_mut()
+                        .set_style(option_area, theme::permission_selected());
                 }
                 self.pointer
                     .add(option_area, mouse::Target::PermissionChoice(index));
@@ -1769,7 +1802,11 @@ fn editor(text: &str) -> TextArea<'static> {
 fn panel(title: impl Into<Line<'static>>, focused: bool) -> Block<'static> {
     let title = title.into();
     let style = Style::default()
-        .fg(if focused { theme::FOCUS } else { theme::MUTED })
+        .fg(if focused {
+            theme::colors().focus
+        } else {
+            theme::colors().muted
+        })
         .add_modifier(Modifier::BOLD)
         .patch(title.style);
     Block::default()
@@ -1777,7 +1814,11 @@ fn panel(title: impl Into<Line<'static>>, focused: bool) -> Block<'static> {
         .borders(Borders::ALL)
         .border_set(ratatui::symbols::border::ROUNDED)
         .title(title.style(style))
-        .border_style(Style::default().fg(if focused { theme::FOCUS } else { theme::FRAME }))
+        .border_style(Style::default().fg(if focused {
+            theme::colors().focus
+        } else {
+            theme::colors().frame
+        }))
 }
 fn dialog(title: impl Into<Line<'static>>) -> Block<'static> {
     panel(title, true).padding(ratatui::widgets::Padding::horizontal(1))

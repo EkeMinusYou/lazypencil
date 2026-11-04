@@ -14,8 +14,12 @@ pub(super) fn prompt_height(lines: usize, available: u16) -> u16 {
 pub(super) fn prompt_block(focused: bool) -> Block<'static> {
     Block::default()
         .borders(Borders::TOP)
-        .border_style(Style::default().fg(if focused { theme::FOCUS } else { theme::FRAME }))
-        .title(theme::title("✎", "Prompt", theme::AGENT, focused))
+        .border_style(Style::default().fg(if focused {
+            theme::colors().focus
+        } else {
+            theme::colors().frame
+        }))
+        .title(theme::title("✎", "Prompt", theme::colors().agent, focused))
         .padding(Padding {
             left: 3,
             right: 3,
@@ -72,22 +76,33 @@ impl App {
         width: u16,
     ) -> Block<'static> {
         let title = Line::from(vec![
-            Span::styled(format!(" {icon} "), Style::default().fg(theme::NODES)),
+            Span::styled(
+                format!(" {icon} "),
+                Style::default().fg(theme::colors().nodes),
+            ),
             Span::styled(
                 label.to_owned(),
                 Style::default()
-                    .fg(if focused { theme::FOCUS } else { theme::NODES })
+                    .fg(if focused {
+                        theme::colors().focus
+                    } else {
+                        theme::colors().nodes
+                    })
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!(" · {count} "),
-                Style::default().fg(theme::SECONDARY),
+                Style::default().fg(theme::colors().secondary),
             ),
         ]);
         let available = usize::from(width).saturating_sub(title.width() + 2);
         let mut block = Block::default()
             .borders(Borders::TOP)
-            .border_style(Style::default().fg(if focused { theme::FOCUS } else { theme::FRAME }))
+            .border_style(Style::default().fg(if focused {
+                theme::colors().focus
+            } else {
+                theme::colors().frame
+            }))
             .padding(Padding {
                 left: 1,
                 right: 3,
@@ -103,7 +118,8 @@ impl App {
             let hint = format!(" {key} remove · Esc input ");
             if !key.is_empty() && Span::raw(&hint).width() <= available {
                 block = block.title_top(
-                    Line::styled(hint, Style::default().fg(theme::SECONDARY)).right_aligned(),
+                    Line::styled(hint, Style::default().fg(theme::colors().secondary))
+                        .right_aligned(),
                 );
             } else {
                 let hint = if key.is_empty() {
@@ -113,7 +129,8 @@ impl App {
                 };
                 if Span::raw(&hint).width() <= available {
                     block = block.title_top(
-                        Line::styled(hint, Style::default().fg(theme::SECONDARY)).right_aligned(),
+                        Line::styled(hint, Style::default().fg(theme::colors().secondary))
+                            .right_aligned(),
                     );
                 }
             }
@@ -133,23 +150,23 @@ impl App {
             (
                 frames[(elapsed.as_millis() / 200 % frames.len() as u128) as usize],
                 "Working…",
-                theme::WORKING,
+                theme::colors().working,
             )
         } else {
-            ("!", "Waiting for approval", theme::RUNNING)
+            ("!", "Waiting for approval", theme::colors().running)
         };
         Some(Line::from(vec![
             Span::styled(format!("{icon} {label}"), Style::default().fg(color)),
             Span::styled(
                 format!(" {}s", elapsed.as_secs()),
-                Style::default().fg(theme::SECONDARY),
+                Style::default().fg(theme::colors().secondary),
             ),
         ]))
     }
 
     pub(super) fn draw_conversation(&mut self, frame: &mut Frame, area: Rect) {
         let badge = self.agent_activity();
-        let title = theme::title("◉", "Agent", theme::AGENT, false);
+        let title = theme::title("◉", "Agent", theme::colors().agent, false);
         let available = usize::from(area.width).saturating_sub(title.width() + 2);
         let mut block = panel(title, self.focus.in_conversation()).border_set(border::ROUNDED);
         let mut right = Line::default();
@@ -232,7 +249,7 @@ impl App {
             frame.render_widget(
                 Paragraph::new(format!("{:?}", self.conversation.settings().agent)).style(
                     Style::default()
-                        .fg(theme::PREVIEW)
+                        .fg(theme::colors().preview)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Rect::new(logarea.x, logarea.y, logarea.width, top_gap),
@@ -287,18 +304,18 @@ impl App {
                         Span::styled(
                             format!("{} ", index + 1),
                             Style::default().fg(if selected {
-                                theme::NODE_SELECTION
+                                theme::colors().node_selection
                             } else {
-                                theme::SECONDARY
+                                theme::colors().secondary
                             }),
                         ),
                         Span::raw(clean(&image.display_name)),
                         Span::styled(
                             format!("  {}", images::dimensions(image)),
                             Style::default().fg(if selected {
-                                theme::TEXT
+                                theme::colors().text
                             } else {
-                                theme::SECONDARY
+                                theme::colors().secondary
                             }),
                         ),
                     ]))
@@ -336,11 +353,11 @@ impl App {
             let mut lines = vec![Line::from(vec![
                 Span::styled(
                     format!("{} queued", self.outbox.queued.len()),
-                    Style::default().fg(theme::WORKING),
+                    Style::default().fg(theme::colors().working),
                 ),
                 Span::styled(
                     if self.outbox.paused { " (paused)" } else { "" },
-                    Style::default().fg(theme::RUNNING),
+                    Style::default().fg(theme::colors().running),
                 ),
             ])];
             lines.extend(
@@ -351,7 +368,7 @@ impl App {
                     .map(|(index, prompt)| {
                         Line::styled(
                             format!("{}. {}", index + 1, prompt.text.replace('\n', " ")),
-                            Style::default().fg(theme::SECONDARY),
+                            Style::default().fg(theme::colors().secondary),
                         )
                     }),
             );
@@ -380,11 +397,11 @@ impl App {
             .add(prompt, mouse::Target::Focus(Focus::Prompt));
         let input_style = Style::default()
             .fg(if self.focus == Focus::Prompt {
-                theme::TEXT
+                theme::colors().text
             } else {
-                theme::SECONDARY
+                theme::colors().secondary
             })
-            .bg(theme::PROMPT_BACKGROUND);
+            .bg(theme::colors().prompt_background);
         frame.render_widget(Block::default().style(input_style), prompt);
         self.editor.set_style(input_style);
         self.editor
@@ -448,7 +465,7 @@ impl App {
         }
         if self.editor.is_empty() {
             frame.render_widget(
-                Paragraph::new(placeholder).style(input_style.fg(theme::SECONDARY)),
+                Paragraph::new(placeholder).style(input_style.fg(theme::colors().secondary)),
                 input,
             );
         }
@@ -456,17 +473,23 @@ impl App {
 }
 
 fn fill_user_backgrounds(buffer: &mut ratatui::buffer::Buffer, area: Rect) {
+    if theme::colors().user_background == Color::Reset {
+        return;
+    }
     // Paragraph applies line styles to text cells. Extend each rendered user
     // row across the viewport, including rows created by wrapping or scrolling.
     let mut previous_user = false;
     for y in area.y..area.bottom() {
-        let user = (area.x..area.right()).any(|x| buffer[(x, y)].bg == theme::USER_BACKGROUND);
+        let user =
+            (area.x..area.right()).any(|x| buffer[(x, y)].bg == theme::colors().user_background);
         if user {
             for x in area.x..area.right() {
-                buffer[(x, y)].set_bg(theme::USER_BACKGROUND);
+                buffer[(x, y)].set_bg(theme::colors().user_background);
             }
             if !previous_user && area.width > 0 {
-                buffer[(area.x, y)].set_symbol("›").set_fg(theme::USER);
+                buffer[(area.x, y)]
+                    .set_symbol("›")
+                    .set_fg(theme::colors().user);
             }
         }
         previous_user = user;
@@ -507,11 +530,11 @@ fn history_text(
                     .and_then(|line| line.split_once("] "))
             })
             && let Some((icon, color)) = match status {
-                "running" | "in_progress" => Some(("●", theme::WORKING)),
-                "pending" => Some(("○", theme::KEY)),
-                "completed" => Some(("✓", theme::SUCCESS)),
-                "failed" => Some(("✕", theme::ERROR)),
-                "cancelled" | "canceled" => Some(("−", theme::MUTED)),
+                "running" | "in_progress" => Some(("●", theme::colors().working)),
+                "pending" => Some(("○", theme::colors().key)),
+                "completed" => Some(("✓", theme::colors().success)),
+                "failed" => Some(("✕", theme::colors().error)),
+                "cancelled" | "canceled" => Some(("−", theme::colors().muted)),
                 _ => None,
             }
         {
@@ -532,7 +555,7 @@ fn history_text(
                 title.to_owned()
             };
             activity.push(Line::from(vec![
-                Span::styled("│ ", Style::default().fg(theme::MUTED)),
+                Span::styled("│ ", Style::default().fg(theme::colors().muted)),
                 Span::styled(
                     format!("{icon} "),
                     Style::default().fg(color).add_modifier(Modifier::BOLD),
@@ -540,9 +563,9 @@ fn history_text(
                 Span::styled(
                     title,
                     Style::default().fg(if status == "failed" {
-                        theme::ERROR
+                        theme::colors().error
                     } else {
-                        theme::SECONDARY
+                        theme::colors().secondary
                     }),
                 ),
             ]));
@@ -551,11 +574,9 @@ fn history_text(
                 && !tool.details.trim().is_empty()
             {
                 close_tools(&mut lines, &mut activity);
-                lines.extend(
-                    tool.details.trim().lines().map(|line| {
-                        Line::styled(line.to_owned(), Style::default().fg(theme::ERROR))
-                    }),
-                );
+                lines.extend(tool.details.trim().lines().map(|line| {
+                    Line::styled(line.to_owned(), Style::default().fg(theme::colors().error))
+                }));
                 lines.push(Line::default());
             }
             continue;
@@ -581,13 +602,19 @@ fn history_text(
             user = false;
             continue;
         } else if line == "Request complete" {
-            Line::styled(format!("✓ {line}"), Style::default().fg(theme::SUCCESS))
+            Line::styled(
+                format!("✓ {line}"),
+                Style::default().fg(theme::colors().success),
+            )
         } else if line.starts_with("Request failed:") {
-            Line::styled(format!("✕ {line}"), Style::default().fg(theme::ERROR))
+            Line::styled(
+                format!("✕ {line}"),
+                Style::default().fg(theme::colors().error),
+            )
         } else if line.starts_with('[') && line.ends_with(" images]") {
             Line::styled(
                 format!("▧ {}", line.trim_matches(['[', ']'])),
-                Style::default().fg(theme::KEY),
+                Style::default().fg(theme::colors().key),
             )
         } else {
             body.push_str(raw);
@@ -611,11 +638,11 @@ fn close_tools(lines: &mut Vec<Line<'static>>, activity: &mut Vec<Line<'static>>
         return;
     }
     lines.push(Line::from(vec![
-        Span::styled("┌ ", Style::default().fg(theme::MUTED)),
+        Span::styled("┌ ", Style::default().fg(theme::colors().muted)),
         Span::styled(
             "Tools",
             Style::default()
-                .fg(theme::SECONDARY)
+                .fg(theme::colors().secondary)
                 .add_modifier(Modifier::BOLD),
         ),
     ]));
@@ -624,11 +651,14 @@ fn close_tools(lines: &mut Vec<Line<'static>>, activity: &mut Vec<Line<'static>>
         let label = if hidden == 1 { "call" } else { "calls" };
         lines.push(Line::styled(
             format!("│ … {hidden} earlier {label}"),
-            Style::default().fg(theme::MUTED),
+            Style::default().fg(theme::colors().muted),
         ));
     }
     lines.extend(activity.drain(..).skip(hidden));
-    lines.push(Line::styled("└", Style::default().fg(theme::MUTED)));
+    lines.push(Line::styled(
+        "└",
+        Style::default().fg(theme::colors().muted),
+    ));
     lines.push(Line::default());
 }
 
@@ -637,7 +667,14 @@ fn flush_body(body: &mut String, lines: &mut Vec<Line<'static>>, spacing: bool, 
     let has_content = !rendered.is_empty();
     if user {
         for line in &mut rendered {
-            line.style = line.style.fg(theme::USER).bg(theme::USER_BACKGROUND);
+            line.style = line
+                .style
+                .fg(theme::colors().user)
+                .bg(theme::colors().user_background);
+            if theme::colors().user_background == Color::Reset {
+                line.spans.insert(0, Span::raw("› "));
+                line.style = line.style.add_modifier(Modifier::BOLD);
+            }
         }
     }
     lines.extend(rendered);
@@ -732,7 +769,10 @@ mod tests {
         assert_eq!(text.matches("[0 images]").count(), 1);
         assert!(text.contains("✓ Request complete"));
         assert!(!text.contains("› You") && !text.contains("◆ Codex"));
-        assert_eq!(rendered.lines[0].style.bg, Some(theme::USER_BACKGROUND));
+        assert_eq!(
+            rendered.lines[0].style.bg,
+            Some(theme::colors().user_background)
+        );
         assert!(
             rendered
                 .lines
@@ -762,7 +802,7 @@ mod tests {
         for y in 0..2 {
             assert_eq!(
                 buffer[(13, y)].bg,
-                theme::USER_BACKGROUND,
+                theme::colors().user_background,
                 "Wrapped user rows retain their background"
             );
         }

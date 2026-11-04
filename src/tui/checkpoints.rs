@@ -431,14 +431,14 @@ impl super::App {
                 ListItem::new(Line::from(vec![
                     super::Span::styled(
                         format!("{} · ", command.category),
-                        Style::default().fg(super::theme::SECONDARY),
+                        Style::default().fg(super::theme::colors().secondary),
                     ),
                     super::Span::styled(
                         command.label,
                         Style::default().fg(if unavailable {
-                            super::theme::SECONDARY
+                            super::theme::colors().secondary
                         } else {
-                            super::theme::TEXT
+                            super::theme::colors().text
                         }),
                     ),
                 ]))
@@ -472,7 +472,7 @@ impl super::App {
                 let inner = block.inner(popup);
                 let footer = Paragraph::new(detail)
                     .wrap(Wrap { trim: false })
-                    .style(Style::default().fg(super::theme::SECONDARY));
+                    .style(Style::default().fg(super::theme::colors().secondary));
                 let footer_height = footer
                     .line_count(inner.width)
                     .min(usize::from(inner.height.saturating_sub(1)))
@@ -495,7 +495,7 @@ impl super::App {
             Modal::CommandInput(input) => input.draw(frame, popup, self.permissions.is_empty()),
             Modal::Loading { message } => frame.render_widget(
                 Paragraph::new(*message)
-                    .style(Style::default().fg(super::theme::SECONDARY))
+                    .style(Style::default().fg(super::theme::colors().secondary))
                     .block(super::dialog("Document operation"))
                     .wrap(Wrap { trim: false }),
                 popup,
@@ -510,7 +510,7 @@ impl super::App {
                     page.cursors.len(),
                     if page.next_before.is_some() { "available" } else { "unavailable" },
                 ))
-                .style(Style::default().fg(super::theme::SECONDARY))
+                .style(Style::default().fg(super::theme::colors().secondary))
                 .wrap(Wrap { trim: false });
                 let footer_height = footer
                     .line_count(inner.width)
@@ -528,18 +528,18 @@ impl super::App {
                         short(&page.revision),
                         short(&page.dependency_revision)
                     ),
-                    Style::default().fg(super::theme::SECONDARY),
+                    Style::default().fg(super::theme::colors().secondary),
                 )];
                 if let Some(notice) = &page.notice {
                     lines.push(Line::styled(
                         notice.clone(),
-                        Style::default().fg(super::theme::RUNNING),
+                        Style::default().fg(super::theme::colors().running),
                     ));
                 }
                 if page.entries.is_empty() {
                     lines.push(Line::styled(
                         "No committed checkpoints yet",
-                        Style::default().fg(super::theme::SECONDARY),
+                        Style::default().fg(super::theme::colors().secondary),
                     ));
                 }
                 frame.render_widget(

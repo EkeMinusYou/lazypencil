@@ -53,16 +53,27 @@ pub(super) fn artifact(buffer: &Buffer, name: &str) {
             Color::Red => "#e06c75".into(),
             Color::DarkGray => "#5c6370".into(),
             Color::Gray => "#abb2bf".into(),
-            Color::Reset if !foreground => "#171923".into(),
+            Color::Reset if !foreground => default_paper().into(),
+            Color::Reset => default_ink().into(),
             _ => "#e5e5e5".into(),
         }
     }
+    fn light() -> bool {
+        matches!(super::theme::colors().canvas, Color::Rgb(r, g, b) if r > 128 && g > 128 && b > 128)
+    }
+    fn default_paper() -> &'static str {
+        if light() { "#fafafc" } else { "#171923" }
+    }
+    fn default_ink() -> &'static str {
+        if light() { "#20242c" } else { "#e5e5e5" }
+    }
     let mut svg = format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\"><rect width=\"100%\" height=\"100%\" fill=\"#171923\"/>",
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\"><rect width=\"100%\" height=\"100%\" fill=\"{}\"/>",
         buffer.area.width * 10,
         buffer.area.height * 20,
         buffer.area.width * 10,
-        buffer.area.height * 20
+        buffer.area.height * 20,
+        default_paper()
     );
     for y in 0..buffer.area.height {
         for x in 0..buffer.area.width {

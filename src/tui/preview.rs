@@ -147,6 +147,7 @@ pub struct Output {
     pub result: Result<Preview>,
 }
 struct Shared {
+    canvas_background: Mutex<image::Rgba<u8>>,
     request: Mutex<(Option<Request>, bool)>,
     wake: Condvar,
     active: Mutex<Option<CancellationToken>>,
@@ -170,6 +171,7 @@ impl Worker {
         image_id: u32,
     ) -> Result<Self> {
         let shared = Arc::new(Shared {
+            canvas_background: Mutex::new(picker.canvas_background()),
             request: Mutex::new((None, false)),
             wake: Condvar::new(),
             active: Mutex::new(None),
@@ -205,6 +207,9 @@ impl Worker {
             shared,
             thread: Some(thread),
         })
+    }
+    pub(super) fn set_canvas_background(&self, background: image::Rgba<u8>) {
+        *self.shared.canvas_background.lock().unwrap() = background;
     }
     pub fn request(&self, request: Request) {
         if !request.check_only {
@@ -301,6 +306,7 @@ impl Drop for Worker {
 fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, image_id: u32) {
     let mut cached: Option<(Project, crate::layout::LayoutSnapshot)> = None;
     let mut document_preview_time = None;
+    let mut document_preview_background = None;
     let mut renderer = crate::render::PreviewRenderer::default();
     let mut labels = labels::Labels::default();
     let mut presentation_cache = None;
@@ -355,6 +361,8 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
         let cancel = CancellationToken::new();
         *shared.active.lock().unwrap() = Some(cancel.clone());
         drop(state);
+        let canvas_background = *shared.canvas_background.lock().unwrap();
+        let picker = &picker.clone().with_canvas_background(canvas_background);
         script.set_cancellation(Some(cancel.clone()));
         let mut timing = PreviewTiming::new(profile && profile_reports < 128);
         let result = (|| -> Result<Option<Preview>> {
@@ -387,6 +395,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 && !request.refresh_pages
                 && unchanged
                 && document_preview_time == Some(request.view.time)
+                && document_preview_background == Some(canvas_background)
             {
                 return Ok(None);
             }
@@ -508,6 +517,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             Ok(Some(preview)) => {
                 if !preview.attachment {
                     document_preview_time = Some(preview.view.time);
+                    document_preview_background = Some(canvas_background);
                     if let Some(report) = timing.report(request.generation) {
                         eprintln!("LAZYPENCIL_PREVIEW_TIMING {report}");
                         profile_reports += 1;
@@ -774,6 +784,7 @@ mod tests {
     #[test]
     fn automatic_frames_do_not_cancel_work_overwrite_pending_output_or_queue_a_backlog() {
         let shared = Arc::new(Shared {
+            canvas_background: Mutex::new(Backend::halfblocks().canvas_background()),
             request: Mutex::new((None, false)),
             wake: Condvar::new(),
             active: Mutex::new(None),

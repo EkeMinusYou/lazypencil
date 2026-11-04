@@ -46,7 +46,7 @@ impl View<'_> {
         let area = frame.area();
         let popup = popup(area);
         frame.render_widget(Clear, popup);
-        let title = theme::title("▤", "Open a .pen file", theme::NODES, true);
+        let title = theme::title("▤", "Open a .pen file", theme::colors().nodes, true);
         let title_width = title.width();
         let mut block = panel(title, true).padding(Padding::horizontal(1));
         let count = Line::styled(
@@ -55,7 +55,7 @@ impl View<'_> {
                 self.paths.len(),
                 self.listing.documents.len()
             ),
-            Style::default().fg(theme::SECONDARY),
+            Style::default().fg(theme::colors().secondary),
         );
         if title_width + count.width() + 2 <= usize::from(popup.width) {
             block = block.title_top(count.right_aligned());
@@ -85,7 +85,7 @@ impl View<'_> {
                 &clean(&self.listing.root.display().to_string()),
                 sections[0].width as usize,
             ))
-            .style(Style::default().fg(theme::SECONDARY)),
+            .style(Style::default().fg(theme::colors().secondary)),
             sections[0],
         );
         let input = self.path.unwrap_or(self.filter);
@@ -99,10 +99,10 @@ impl View<'_> {
         let input = input_tail(input, available);
         frame.render_widget(
             Paragraph::new(Line::from(vec![
-                Span::styled(label, Style::default().fg(theme::SECONDARY)),
+                Span::styled(label, Style::default().fg(theme::colors().secondary)),
                 Span::raw(input.clone()),
             ]))
-            .style(Style::default().bg(theme::PROMPT_BACKGROUND)),
+            .style(Style::default().bg(theme::colors().prompt_background)),
             sections[2],
         );
         state.select((!self.paths.is_empty()).then_some(self.selected));
@@ -113,7 +113,7 @@ impl View<'_> {
                 "Searching for .pen files…"
             };
             frame.render_widget(
-                Paragraph::new(message).style(Style::default().fg(theme::SECONDARY)),
+                Paragraph::new(message).style(Style::default().fg(theme::colors().secondary)),
                 sections[3],
             );
         } else {
@@ -123,7 +123,7 @@ impl View<'_> {
                 .iter()
                 .map(|path| {
                     ListItem::new(Line::from(vec![
-                        Span::styled("✎ ", Style::default().fg(theme::NODES)),
+                        Span::styled("✎ ", Style::default().fg(theme::colors().nodes)),
                         Span::raw(fit_end(&clean(&path.to_string_lossy()), width)),
                     ]))
                 })
@@ -144,23 +144,26 @@ impl View<'_> {
                 "search_error" => "search unavailable",
                 _ => "some folders could not be searched",
             };
-            (format!("Partial results · {reason}"), theme::RUNNING)
+            (
+                format!("Partial results · {reason}"),
+                theme::colors().running,
+            )
         } else if self.done {
             (
                 format!("Search complete · {} files", self.listing.documents.len()),
-                theme::SECONDARY,
+                theme::colors().secondary,
             )
         } else {
             (
                 format!("Searching… · {} files", self.listing.documents.len()),
-                theme::SECONDARY,
+                theme::colors().secondary,
             )
         };
         let mut messages = vec![Line::styled(status, Style::default().fg(color))];
         if !self.notice.is_empty() {
             messages.push(Line::styled(
                 clean(self.notice),
-                Style::default().fg(theme::ERROR),
+                Style::default().fg(theme::colors().error),
             ));
         }
         frame.render_widget(
@@ -239,7 +242,7 @@ fn workspace_frame(
             Span::styled(
                 "✎ lazypencil",
                 Style::default()
-                    .fg(theme::AGENT)
+                    .fg(theme::colors().agent)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
@@ -262,15 +265,15 @@ fn workspace_frame(
                         .map(|status| format!(" · {status}"))
                         .unwrap_or_default()
                 ),
-                Style::default().fg(theme::SECONDARY),
+                Style::default().fg(theme::colors().secondary),
             ),
         ])),
         areas.header,
     );
     for (area, icon, label, color) in [
-        (areas.panes[0], "▤", "Nodes", theme::NODES),
-        (areas.panes[1], "▣", "Preview", theme::PREVIEW),
-        (areas.panes[2], "◉", "Agent", theme::AGENT),
+        (areas.panes[0], "▤", "Nodes", theme::colors().nodes),
+        (areas.panes[1], "▣", "Preview", theme::colors().preview),
+        (areas.panes[2], "◉", "Agent", theme::colors().agent),
     ] {
         frame.render_widget(panel(theme::title(icon, label, color, false), false), area);
     }
@@ -280,7 +283,7 @@ fn workspace_frame(
             vertical: 1,
         });
         frame.render_widget(
-            Paragraph::new("Loading nodes…").style(Style::default().fg(theme::SECONDARY)),
+            Paragraph::new("Loading nodes…").style(Style::default().fg(theme::colors().secondary)),
             nodes,
         );
     }
@@ -298,7 +301,7 @@ fn workspace_frame(
             .style(if opening.is_some() {
                 Style::default()
             } else {
-                Style::default().fg(theme::SECONDARY)
+                Style::default().fg(theme::colors().secondary)
             })
             .wrap(Wrap { trim: false }),
         preview,
@@ -324,8 +327,8 @@ fn workspace_frame(
         .block(block)
         .style(
             Style::default()
-                .fg(theme::SECONDARY)
-                .bg(theme::PROMPT_BACKGROUND),
+                .fg(theme::colors().secondary)
+                .bg(theme::colors().prompt_background),
         ),
         prompt,
     );
@@ -336,15 +339,20 @@ fn hints(items: &[(&str, &str)]) -> Line<'static> {
     let mut spans = vec![];
     for (index, (key, label)) in items.iter().enumerate() {
         if index > 0 {
-            spans.push(Span::styled(" · ", Style::default().fg(theme::MUTED)));
+            spans.push(Span::styled(
+                " · ",
+                Style::default().fg(theme::colors().muted),
+            ));
         }
         spans.push(Span::styled(
             key.to_string(),
-            Style::default().fg(theme::KEY).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme::colors().key)
+                .add_modifier(Modifier::BOLD),
         ));
         spans.push(Span::styled(
             label.to_string(),
-            Style::default().fg(theme::SECONDARY),
+            Style::default().fg(theme::colors().secondary),
         ));
     }
     Line::from(spans)
@@ -435,6 +443,29 @@ mod tests {
     }
 
     #[test]
+    fn theme_presets_keep_picker_selection_and_input_readable() {
+        use crate::config::keys::Theme;
+        for (name, preset, background) in [
+            ("light", Theme::Auto, [245, 245, 245]),
+            ("dark", Theme::Auto, [17, 17, 27]),
+            ("monochrome-light", Theme::Monochrome, [245, 245, 245]),
+        ] {
+            let _theme = theme::activate(preset, Some(background));
+            let (buffer, cursor) = render(130, 34, &format!("document-picker-theme-{name}"));
+            assert!(text(&buffer).contains("Open a .pen file"));
+            assert_eq!(
+                buffer[(cursor.x, cursor.y)].bg,
+                theme::colors().prompt_background
+            );
+            assert!(buffer.content.iter().any(|cell| {
+                cell.bg == theme::colors().selected_background
+                    && cell.fg == theme::colors().node_selection
+                    && cell.symbol() == "s"
+            }));
+        }
+    }
+
+    #[test]
     fn modal_preserves_the_unopened_workspace_and_uses_its_theme() {
         let (buffer, cursor) = render(130, 34, "document-picker-wide");
         let screen = text(&buffer);
@@ -455,17 +486,23 @@ mod tests {
         }
         let popup = centered(buffer.area, 94, 22);
         assert_eq!(buffer[(popup.x, popup.y)].symbol(), "╭");
-        assert_eq!(buffer[(popup.x, popup.y)].fg, theme::FOCUS);
+        assert_eq!(buffer[(popup.x, popup.y)].fg, theme::colors().focus);
         let selected = buffer
             .content
             .iter()
-            .find(|cell| cell.bg == theme::SELECTION_BACKGROUND && cell.symbol() == "s")
+            .find(|cell| cell.bg == theme::colors().selected_background && cell.symbol() == "s")
             .expect("Workspace selection palette");
-        assert_eq!(selected.fg, theme::NODE_SELECTION);
-        assert_eq!(buffer[(popup.x + 1, popup.bottom() - 2)].bg, theme::CANVAS);
-        assert_eq!(buffer[(0, 0)].bg, theme::CANVAS);
+        assert_eq!(selected.fg, theme::colors().node_selection);
+        assert_eq!(
+            buffer[(popup.x + 1, popup.bottom() - 2)].bg,
+            theme::colors().canvas
+        );
+        assert_eq!(buffer[(0, 0)].bg, theme::colors().canvas);
         assert!(popup.contains(cursor));
-        assert_eq!(buffer[(cursor.x, cursor.y)].bg, theme::PROMPT_BACKGROUND);
+        assert_eq!(
+            buffer[(cursor.x, cursor.y)].bg,
+            theme::colors().prompt_background
+        );
         assert!(popup.x > 0 && popup.y > 1 && popup.bottom() < buffer.area.bottom() - 1);
     }
 
@@ -521,7 +558,7 @@ mod tests {
         let cursor = terminal.get_cursor_position().unwrap();
         assert_eq!(
             terminal.backend().buffer()[(cursor.x, cursor.y)].bg,
-            theme::PROMPT_BACKGROUND
+            theme::colors().prompt_background
         );
         crate::tui::test_artifacts::artifact(terminal.backend().buffer(), "document-picker-error");
         view.done = false;
@@ -555,7 +592,7 @@ mod tests {
             assert_eq!(terminal.backend().buffer()[(pane.x, pane.y)].symbol(), "╭");
             assert_eq!(
                 terminal.backend().buffer()[(pane.x, pane.y)].fg,
-                theme::FRAME
+                theme::colors().frame
             );
         }
     }

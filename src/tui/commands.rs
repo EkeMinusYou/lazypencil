@@ -80,6 +80,8 @@ commands! {
         "toggle-nodes", [], "", 0, 0, Always;
     ToggleAgent, "View", "Toggle Agent panel", "Collapse or expand the Agent panel.",
         "toggle-agent", [], "", 0, 0, Always;
+    Theme, "View", "Theme…", "Select auto, dark, light or monochrome UI colors for this session.",
+        "theme", [], "[auto|dark|light|monochrome]", 0, 1, Always;
     ViewControls, "View", "View controls…", "Open view controls, including the temporary wheel pan/zoom switch.",
         "view-controls", [], "", 0, 0, Pointer;
     EnablePinch, "View", "Enable pinch zoom…", "Enable native macOS pinch input; grant Accessibility access if requested.",
@@ -211,9 +213,9 @@ impl Input {
         let footer = Paragraph::new(message)
             .wrap(Wrap { trim: false })
             .style(Style::default().fg(if self.error.is_some() {
-                theme::RUNNING
+                theme::colors().running
             } else {
-                theme::SECONDARY
+                theme::colors().secondary
             }));
         let footer_height = footer
             .line_count(inner.width)
@@ -377,6 +379,24 @@ impl App {
             }
             Action::ToggleNodes => self.toggle_panel(Nav::ToggleNodesPanel, worker),
             Action::ToggleAgent => self.toggle_panel(Nav::ToggleAgentPanel, worker),
+            Action::Theme => {
+                if let Some(name) = args.first() {
+                    let theme =
+                        <crate::config::keys::Theme as clap::ValueEnum>::from_str(name, false)
+                            .map_err(|_| {
+                                Error::new(
+                                    "INVALID_ARGUMENT",
+                                    format!("Usage: {}", action.command().usage()),
+                                )
+                            })?;
+                    self.set_theme(theme, worker);
+                } else {
+                    self.set_status(format!(
+                        "UI theme: {:?} · /theme auto|dark|light|monochrome",
+                        self.theme
+                    ));
+                }
+            }
             Action::ViewControls => self.pointer.more = true,
             Action::EnablePinch => {
                 let status = if self.native_pinch.start(true) {

@@ -351,7 +351,7 @@ fn diagnostics_attach_the_selected_issue_without_changing_the_tree_target() {
             })
             .unwrap();
         assert_eq!(terminal.backend().buffer()[(13, 1)].symbol(), "⚠");
-        assert_eq!(terminal.backend().buffer()[(13, 1)].fg, theme::RUNNING);
+        assert_eq!(terminal.backend().buffer()[(13, 1)].fg, theme::colors().running);
         assert_eq!(terminal.backend().buffer()[(16, 1)].symbol(), "]");
         app.insert_text("この診断を直してください");
         press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE, &worker).await;

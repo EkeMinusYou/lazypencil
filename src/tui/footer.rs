@@ -34,11 +34,13 @@ impl Hint {
         Line::from(vec![
             Span::styled(
                 self.key,
-                Style::default().fg(theme::KEY).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme::colors().key)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!(" {}", self.description),
-                Style::default().fg(theme::SECONDARY),
+                Style::default().fg(theme::colors().secondary),
             ),
         ])
     }
@@ -250,11 +252,11 @@ impl App {
                         self.status.clone()
                     },
                     if self.status_kind.is_error() {
-                        theme::ERROR
+                        theme::colors().error
                     } else if self.status_kind == StatusKind::Attention {
-                        theme::RUNNING
+                        theme::colors().running
                     } else {
-                        theme::SECONDARY
+                        theme::colors().secondary
                     },
                 )
             } else {
@@ -262,9 +264,9 @@ impl App {
                 (
                     activity.to_string(),
                     if self.permissions.is_empty() {
-                        theme::WORKING
+                        theme::colors().working
                     } else {
-                        theme::RUNNING
+                        theme::colors().running
                     },
                 )
             };
@@ -288,8 +290,10 @@ impl App {
                 continue;
             }
             if separator > 0 {
-                left.spans
-                    .push(Span::styled(" · ", Style::default().fg(theme::MUTED)));
+                left.spans.push(Span::styled(
+                    " · ",
+                    Style::default().fg(theme::colors().muted),
+                ));
             }
             left.spans.extend(hint.spans);
         }

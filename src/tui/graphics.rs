@@ -498,6 +498,7 @@ pub struct Backend {
     tmux: bool,
     kitty_compression: bool,
     background: image::Rgba<u8>,
+    background_known: bool,
 }
 impl Backend {
     pub fn halfblocks() -> Self {
@@ -507,6 +508,7 @@ impl Backend {
             tmux: false,
             kitty_compression: false,
             background: image::Rgba([248, 250, 252, 255]),
+            background_known: false,
         }
     }
     pub fn detect(selected: super::ImageProtocol) -> Result<(Self, String)> {
@@ -523,7 +525,6 @@ impl Backend {
                 backend.font = FontSize::new(width, height);
             }
         }
-        let mut startup = String::new();
         let direct_kitty = !backend.tmux
             && std::env::var("TERM").as_deref() == Ok("xterm-kitty")
             && std::env::var_os("WEZTERM_EXECUTABLE").is_none()
@@ -537,35 +538,31 @@ impl Backend {
         // Explicit protocols and a direct Kitty terminal need no capability query.
         // A late APC reply otherwise reaches Crossterm as ordinary prompt text.
         let capabilities = selected == super::ImageProtocol::Auto && !direct_kitty;
-        let opaque = matches!(
-            selected,
-            super::ImageProtocol::Sixel | super::ImageProtocol::Halfblocks
-        );
-        if capabilities || opaque {
-            let (responses, input) = probe(backend.tmux, capabilities)?;
-            startup = input;
-            for response in &responses {
-                if let Response::Background(r, g, b) = response {
-                    backend.background = image::Rgba([*r, *g, *b, 255]);
-                }
-                if let Response::CellSize(Some((width, height))) = response
-                    && (1..=256).contains(width)
-                    && (1..=256).contains(height)
-                {
-                    backend.font = FontSize::new(*width, *height);
-                }
+        // Query the background even for Kitty: compatible renderers do not
+        // consistently composite transparent image pixels over terminal cells.
+        let (responses, startup) = probe(backend.tmux, capabilities)?;
+        for response in &responses {
+            if let Response::Background(r, g, b) = response {
+                backend.background = image::Rgba([*r, *g, *b, 255]);
+                backend.background_known = true;
             }
-            if capabilities && responses.contains(&Response::Sixel) {
-                backend.protocol = ProtocolType::Sixel;
-            }
-            if capabilities
-                && responses.contains(&Response::Kitty)
-                && std::env::var_os("WEZTERM_EXECUTABLE").is_none()
-                && std::env::var_os("KONSOLE_VERSION").is_none()
+            if let Response::CellSize(Some((width, height))) = response
+                && (1..=256).contains(width)
+                && (1..=256).contains(height)
             {
-                backend.protocol = ProtocolType::Kitty;
-                backend.kitty_compression = responses.contains(&Response::KittyCompression);
+                backend.font = FontSize::new(*width, *height);
             }
+        }
+        if capabilities && responses.contains(&Response::Sixel) {
+            backend.protocol = ProtocolType::Sixel;
+        }
+        if capabilities
+            && responses.contains(&Response::Kitty)
+            && std::env::var_os("WEZTERM_EXECUTABLE").is_none()
+            && std::env::var_os("KONSOLE_VERSION").is_none()
+        {
+            backend.protocol = ProtocolType::Kitty;
+            backend.kitty_compression = responses.contains(&Response::KittyCompression);
         }
         backend.protocol = match selected {
             super::ImageProtocol::Kitty => ProtocolType::Kitty,
@@ -585,12 +582,18 @@ impl Backend {
         self.tmux
     }
     pub fn canvas_background(&self) -> image::Rgba<u8> {
-        if self.protocol == ProtocolType::Kitty {
-            // Let the terminal composite its own background, including opacity.
-            image::Rgba([0, 0, 0, 0])
-        } else {
-            self.background
-        }
+        self.background
+    }
+    pub(super) fn with_canvas_background(mut self, background: image::Rgba<u8>) -> Self {
+        self.background = background;
+        self
+    }
+    pub fn terminal_background(&self) -> Option<[u8; 3]> {
+        self.background_known.then_some([
+            self.background[0],
+            self.background[1],
+            self.background[2],
+        ])
     }
     pub fn encode_preview(&self, image: DynamicImage, size: Size, id: u32) -> Result<Encoded> {
         if self.protocol == ProtocolType::Kitty && !self.tmux {

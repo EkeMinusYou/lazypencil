@@ -112,6 +112,8 @@ fn preparation(args: &crate::prompt::PromptArgs) -> Result<crate::agent::AgentHo
 pub fn select(
     data: Option<PathBuf>,
     args: &crate::prompt::PromptArgs,
+    protocol: super::ImageProtocol,
+    theme: Option<crate::config::keys::Theme>,
 ) -> Result<Option<Selection>> {
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         return Err(Error::new(
@@ -121,7 +123,11 @@ pub fn select(
     }
     let settings = crate::config::keys::load_tui()?;
     let root = std::env::current_dir().map_err(super::terminal::io)?;
-    let mut startup = super::terminal::Startup::enter(settings.mouse.enabled)?;
+    let mut startup = super::terminal::Startup::enter(
+        settings.mouse.enabled,
+        protocol,
+        theme.unwrap_or(settings.theme),
+    )?;
     let mut search = Search::start(root.clone());
     let mut listing = Listing {
         root,
@@ -131,8 +137,8 @@ pub fn select(
         entries_scanned: 0,
         unreadable_directories: 0,
     };
-    let mut filter = String::new();
-    let mut filtering = false;
+    let mut filter = std::mem::take(&mut startup.startup_text);
+    let mut filtering = !filter.is_empty();
     let mut path_input: Option<String> = None;
     let mut selected = 0usize;
     let mut navigated = false;

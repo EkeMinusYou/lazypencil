@@ -90,15 +90,17 @@ impl Renderer {
                 if self.quotes > 0 {
                     self.spans.push(Span::styled(
                         "│ ".repeat(self.quotes),
-                        Style::default().fg(theme::MUTED),
+                        Style::default().fg(theme::colors().muted),
                     ));
                 }
                 if !self.lists.is_empty() {
                     self.spans.push(Span::raw("  ".repeat(self.lists.len())));
                 }
                 if self.code {
-                    self.spans
-                        .push(Span::styled("│ ", Style::default().fg(theme::MUTED)));
+                    self.spans.push(Span::styled(
+                        "│ ",
+                        Style::default().fg(theme::colors().muted),
+                    ));
                 }
             }
             self.spans.push(Span::styled(part.to_owned(), style));
@@ -112,7 +114,10 @@ impl Renderer {
                 match tag {
                     Tag::Heading { .. } => {
                         self.separate();
-                        self.style = self.style.fg(theme::AGENT).add_modifier(Modifier::BOLD);
+                        self.style = self
+                            .style
+                            .fg(theme::colors().agent)
+                            .add_modifier(Modifier::BOLD);
                     }
                     Tag::Strong => self.style = self.style.add_modifier(Modifier::BOLD),
                     Tag::TableHead => {
@@ -131,10 +136,13 @@ impl Renderer {
                             }
                             CodeBlockKind::Indented => String::new(),
                         };
-                        self.push(&format!("┌ {language}"), Style::default().fg(theme::MUTED));
+                        self.push(
+                            &format!("┌ {language}"),
+                            Style::default().fg(theme::colors().muted),
+                        );
                         self.flush();
                         self.code = true;
-                        self.style = self.style.fg(theme::PREVIEW);
+                        self.style = self.style.fg(theme::colors().preview);
                     }
                     Tag::BlockQuote(_) => {
                         self.separate();
@@ -161,7 +169,7 @@ impl Renderer {
                         };
                         self.spans.push(Span::styled(
                             format!("{indent}{marker}"),
-                            Style::default().fg(theme::KEY),
+                            Style::default().fg(theme::colors().key),
                         ));
                     }
                     Tag::Link {
@@ -176,11 +184,14 @@ impl Renderer {
                                 Some(dest_url.to_string())
                             },
                         );
-                        self.style = self.style.fg(theme::KEY).add_modifier(Modifier::UNDERLINED);
+                        self.style = self
+                            .style
+                            .fg(theme::colors().key)
+                            .add_modifier(Modifier::UNDERLINED);
                     }
                     Tag::Image { dest_url, .. } => {
                         self.links.push(Some(dest_url.to_string()));
-                        self.push("▧ ", Style::default().fg(theme::KEY));
+                        self.push("▧ ", Style::default().fg(theme::colors().key));
                     }
                     Tag::Table(_) => self.separate(),
                     Tag::TableRow => self.flush(),
@@ -200,7 +211,7 @@ impl Renderer {
                     TagEnd::CodeBlock => {
                         self.flush();
                         self.code = false;
-                        self.push("└", Style::default().fg(theme::MUTED));
+                        self.push("└", Style::default().fg(theme::colors().muted));
                         self.separate();
                     }
                     TagEnd::BlockQuote(_) => {
@@ -220,11 +231,11 @@ impl Renderer {
                         if let Some(Some(destination)) = self.links.pop() {
                             self.push(
                                 &format!(" ({destination})"),
-                                self.style.fg(theme::SECONDARY),
+                                self.style.fg(theme::colors().secondary),
                             );
                         }
                     }
-                    TagEnd::TableCell => self.push(" │ ", self.style.fg(theme::MUTED)),
+                    TagEnd::TableCell => self.push(" │ ", self.style.fg(theme::colors().muted)),
                     TagEnd::TableHead | TagEnd::TableRow => self.flush(),
                     TagEnd::Table => self.separate(),
                     _ => {}
@@ -235,23 +246,23 @@ impl Renderer {
             | Event::InlineHtml(text)
             | Event::InlineMath(text)
             | Event::DisplayMath(text) => self.push(&text, self.style),
-            Event::Code(text) => self.push(&text, self.style.fg(theme::PREVIEW)),
+            Event::Code(text) => self.push(&text, self.style.fg(theme::colors().preview)),
             Event::SoftBreak | Event::HardBreak => self.flush(),
             Event::Rule => {
                 self.separate();
-                self.push("────────", Style::default().fg(theme::MUTED));
+                self.push("────────", Style::default().fg(theme::colors().muted));
                 self.separate();
             }
             Event::TaskListMarker(checked) => self.push(
                 if checked { "☑ " } else { "☐ " },
                 self.style.fg(if checked {
-                    theme::SUCCESS
+                    theme::colors().success
                 } else {
-                    theme::MUTED
+                    theme::colors().muted
                 }),
             ),
             Event::FootnoteReference(label) => {
-                self.push(&format!("[{label}]"), self.style.fg(theme::KEY))
+                self.push(&format!("[{label}]"), self.style.fg(theme::colors().key))
             }
         }
     }

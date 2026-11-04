@@ -16,7 +16,8 @@ use std::time::{Duration, Instant};
 
 pub(crate) fn check_preview(png: &[u8], protocol: ImageProtocol) -> Result<Value> {
     let id = (uuid::Uuid::new_v4().as_u128() as u32 & 0x3fff_fffe).max(2);
-    let mut screen = terminal::Screen::enter(protocol, id, false)?;
+    let mut screen =
+        terminal::Screen::enter(protocol, id, false, crate::config::keys::Theme::Auto)?;
     let size = screen.terminal.size().map_err(terminal::io)?;
     if size.width < 24 || size.height < 12 {
         return Err(Error::new(

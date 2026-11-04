@@ -22,12 +22,27 @@ fn real_pty_background_query_keeps_automatic_image_protocol_detection() {
 }
 
 #[test]
-fn real_pty_preview_inherits_terminal_background_without_polluting_the_draft() {
+fn real_pty_preview_matches_workspace_background_without_polluting_the_draft() {
     for case in [
         "background-kitty",
+        "background-direct-kitty",
         "background-sixel",
         "background-halfblocks",
         "background-fallback",
+    ] {
+        run_pty_case(case);
+    }
+}
+
+#[test]
+fn real_pty_ui_themes_adapt_to_light_terminals_and_support_overrides_and_switching() {
+    for case in [
+        "theme-auto-light",
+        "theme-auto-dark",
+        "theme-light-override",
+        "theme-dark-override",
+        "theme-monochrome",
+        "theme-unknown",
     ] {
         run_pty_case(case);
     }

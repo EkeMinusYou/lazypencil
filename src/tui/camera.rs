@@ -304,7 +304,7 @@ impl super::App {
             preview.view,
             self.view,
             [width, height],
-            picker.canvas_background(),
+            super::theme::canvas_background(),
         ) else {
             return Ok(());
         };

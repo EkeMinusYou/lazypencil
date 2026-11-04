@@ -154,7 +154,7 @@ impl App {
                             .diagnostic_code()
                             .map(|code| format!("{} · ", nodes::node_label(code)))
                             .unwrap_or_default(),
-                        Style::default().fg(theme::RUNNING),
+                        Style::default().fg(theme::colors().running),
                     ),
                     Span::raw(nodes::node_label(&reference.name)),
                     Span::styled(
@@ -164,9 +164,9 @@ impl App {
                             state
                         ),
                         Style::default().fg(if state.is_empty() {
-                            theme::SECONDARY
+                            theme::colors().secondary
                         } else {
-                            theme::RUNNING
+                            theme::colors().running
                         }),
                     ),
                 ]))

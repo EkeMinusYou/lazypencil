@@ -343,3 +343,43 @@ fn workspace_checkpoint_commands_keep_review_and_busy_operation_guards() {
         app.conversation.close().await.unwrap();
     });
 }
+
+#[test]
+fn theme_commands_share_the_palette_preserve_drafts_and_reject_invalid_values() {
+    runtime().block_on(async {
+        use crate::config::keys::Theme;
+        let _theme = theme::activate(Theme::Dark, Some([17, 34, 51]));
+        let temp = TempDir::new().unwrap();
+        let mut app = app(&temp, "echo");
+        app.terminal_background = Some([17, 34, 51]);
+        app.insert_text("Keep this draft");
+        app.save_draft().unwrap();
+        let worker = Worker::start(app.conversation.store().clone(), vec![], Backend::halfblocks(), 175).unwrap();
+        app.modal = Some(command_modal(commands::Action::Theme));
+        app.activate_modal(&worker).unwrap();
+        let Some(checkpoints::Modal::CommandInput(input)) = &mut app.modal else { panic!("Expected theme input"); };
+        input.insert("light");
+        app.activate_modal(&worker).unwrap();
+        assert_eq!(app.theme, Theme::Light);
+        let buffer = crate::tui::test_artifacts::snapshot(&mut app, "theme-light");
+        assert_eq!(buffer[(0, 0)].bg, theme::colors().canvas);
+        assert_eq!(theme::colors().canvas, Color::Rgb(250, 250, 252));
+        assert_eq!(app.editor.lines(), ["Keep this draft"]);
+        assert_eq!(app.conversation.draft(), "Keep this draft");
+        for name in ["monochrome", "auto", "dark"] {
+            let (command, args) = commands::parse(&format!("/theme {name}")).unwrap();
+            app.execute_command(command.action, &args, &worker).unwrap();
+            crate::tui::test_artifacts::snapshot(&mut app, &format!("theme-{name}"));
+        }
+        assert_eq!(app.theme, Theme::Dark);
+        let (command, args) = commands::parse("/theme invalid").unwrap();
+        assert_eq!(app.execute_command(command.action, &args, &worker).unwrap_err().code, "INVALID_ARGUMENT");
+        assert_eq!(app.theme, Theme::Dark);
+        assert!(commands::parse("/theme dark extra").is_err());
+        app.execute_command(command.action, &[], &worker).unwrap();
+        assert!(app.status.contains("UI theme: Dark"));
+        assert_eq!(app.editor.lines(), ["Keep this draft"]);
+        assert!(!temp.path().join("sent-turn.txt").exists());
+        app.conversation.close().await.unwrap();
+    });
+}

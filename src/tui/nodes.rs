@@ -269,7 +269,7 @@ impl App {
             title
         };
         let focused = self.focus == Focus::Nodes;
-        let title = theme::title("▤", title, theme::NODES, false);
+        let title = theme::title("▤", title, theme::colors().nodes, false);
         let title_width = title.width();
         let mut block = panel(title, focused);
         if let Some(preview) = &self.preview {
@@ -284,7 +284,7 @@ impl App {
             block = block.title_bottom(Line::from(vec![
                 Span::styled(
                     format!(" {count} node{} · ", if count == 1 { "" } else { "s" }),
-                    Style::default().fg(theme::SECONDARY),
+                    Style::default().fg(theme::colors().secondary),
                 ),
                 Span::styled(
                     format!(
@@ -292,9 +292,9 @@ impl App {
                         if diagnostics == 1 { "" } else { "s" }
                     ),
                     Style::default().fg(if diagnostics == 0 {
-                        theme::SECONDARY
+                        theme::colors().secondary
                     } else {
-                        theme::RUNNING
+                        theme::colors().running
                     }),
                 ),
             ]));
@@ -334,7 +334,7 @@ impl App {
             };
             frame.render_widget(
                 Paragraph::new(message)
-                    .style(Style::default().fg(theme::SECONDARY))
+                    .style(Style::default().fg(theme::colors().secondary))
                     .wrap(Wrap { trim: false }),
                 inner,
             );
@@ -360,9 +360,9 @@ impl App {
                 };
                 let selected = self.nodes.selected() == Some(row_index);
                 let color = if selected {
-                    theme::NODE_SELECTION
+                    theme::colors().node_selection
                 } else {
-                    theme::NODES
+                    theme::colors().nodes
                 };
                 let badge = if row.diagnostic_count == 0 {
                     String::new()
@@ -394,7 +394,7 @@ impl App {
                     Span::styled(
                         name,
                         if selected {
-                            Style::default().fg(theme::NODE_SELECTION)
+                            Style::default().fg(theme::colors().node_selection)
                         } else {
                             Style::default()
                         },
@@ -403,9 +403,9 @@ impl App {
                     Span::styled(
                         badge,
                         Style::default().fg(if row.has_error_diagnostic {
-                            theme::ERROR
+                            theme::colors().error
                         } else {
-                            theme::RUNNING
+                            theme::colors().running
                         }),
                     ),
                 ])))
@@ -457,7 +457,7 @@ impl App {
                 } else {
                     "No matching nodes"
                 })
-                .style(Style::default().fg(theme::SECONDARY)),
+                .style(Style::default().fg(theme::colors().secondary)),
                 inner,
             );
         }

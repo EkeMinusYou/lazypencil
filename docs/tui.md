@@ -79,16 +79,16 @@ a previous complete image while an exact frame renders; cached feedback is label
 Only completed document frames can be exported. Slow rendering replaces pending work
 with the latest view rather than replaying every queued camera position.
 
-The workspace chrome uses the semantic palette in `design.pen`: a dark canvas,
-light text, blue node selections, cyan Preview, purple Agent and green focus borders.
-The file picker and dialogs share the same surfaces; user messages and the prompt
-use distinct backgrounds. Panel widths and keyboard bindings remain configurable.
+The dark theme retains the semantic palette in `design.pen`; the file picker and
+dialogs share the active theme surfaces.
 
-The canvas underneath the design follows the terminal background. Kitty keeps this
-canvas transparent, allowing the terminal's background color, image and window opacity
-to show through. Sixel and halfblocks use the background color queried at startup;
-if the terminal does not answer, they keep the previous light canvas. Pan/zoom feedback
-uses the same background. Document fills and CLI PNG exports keep their original colors
+The canvas underneath the design uses the active UI theme background for Kitty, Sixel
+and halfblocks, matching the surrounding workspace panels. The canvas is opaque so
+Kitty-compatible terminals that render transparent image pixels as black still show
+the workspace background. Terminal background images and window opacity are not
+reproduced inside the preview. Auto uses the dark theme when the terminal reports
+neither a background color nor a valid `COLORFGBG` hint. Pan/zoom feedback uses the
+same background. Document fills and CLI PNG exports keep their original colors
 and transparency; `/open-preview` opens the completed preview with its canvas background.
 
 Browser pages can retain per-node DOM state for `r` refresh and bounded playback.
@@ -99,9 +99,9 @@ See [dynamic content](dynamic-content.md) for capture identity and limits.
 
 `--image-protocol kitty|sixel|halfblocks` selects a transport explicitly. Auto recognizes
 direct Kitty or uses a bounded 350 ms probe in other environments, preserving typed
-text and consuming terminal replies. Explicit Sixel/halfblocks also query the background
-within that time limit, without negotiating a different transport. Compression is used
-when supported. Windows high-resolution output currently needs an explicit override. tmux uses passthrough
+text and consuming terminal replies. Explicit protocols and direct Kitty also query
+the background within that time limit, without negotiating a different transport.
+Compression is used when supported. Windows high-resolution output currently needs an explicit override. tmux uses passthrough
 without changing pane settings. Direct Kitty-compatible transports use whole rectangular
 placements; nested tmux retains the Unicode-placeholder transport. `NO_COLOR` disables
 text colors while retaining image identity metadata.
@@ -111,6 +111,30 @@ can anchor its preedit/candidate windows. Prompt/search use the text-safe keyboa
 Preview accepts press/repeat/release navigation without moving on release. If Ghostty
 has a `shift+enter=text:\n` override, remove it so Shift+Enter retains its modifier.
 Plain Enter submits by default; Alt+Enter inserts a newline.
+
+## UI themes
+
+The default `auto` theme chooses light or dark UI colors from the terminal background
+queried at startup. If the query is unsupported, it uses `COLORFGBG` when available;
+otherwise it falls back to the dark theme so the UI and preview keep matching
+surfaces. The document picker uses the same theme as the workspace.
+
+Open `View · Theme…` in the command palette (Alt+P) and enter `auto`, `dark`,
+`light` or `monochrome`, or use
+`/theme light` while editing. `/theme` shows the current selection. These changes last
+for the current TUI session. For a persistent preference, set the user configuration:
+
+```toml
+[tui]
+theme = "auto"
+```
+
+`lazypencil tui FILE --theme light` overrides the user preference for one launch.
+Themes change UI accents, text, selections, conversation messages and input surfaces.
+The workspace background follows the selected UI theme; document colors are preserved.
+The preview canvas follows the same background, including in-session theme changes.
+`monochrome` adapts its gray surfaces to the terminal's light/dark background. Terminal
+theme changes are detected on the next launch.
 
 ## Mouse and trackpad
 

@@ -20,6 +20,37 @@ struct Fixture {
 }
 
 #[test]
+fn ui_themes_default_to_auto_and_are_user_owned() {
+    let f = Fixture::new();
+    assert_eq!(
+        f.data(&["config", "show", "--user"])["settings"]["tui"]["theme"],
+        "auto"
+    );
+    for theme in ["auto", "dark", "light", "monochrome"] {
+        f.settings(&format!("[tui]\ntheme='{theme}'\n"));
+        assert_eq!(
+            f.data(&["config", "show", "--user"])["settings"]["tui"]["theme"],
+            theme
+        );
+    }
+    let schema = f.data(&["config", "schema", "--user"]);
+    for theme in ["auto", "dark", "light", "monochrome"] {
+        assert!(schema.to_string().contains(&format!("\"{theme}\"")));
+    }
+    f.settings("[tui]\ntheme='unknown'\n");
+    assert_eq!(
+        UserSnapshot::load_file(Some(f.user.join("config.toml")))
+            .err()
+            .unwrap()
+            .code,
+        "CONFIGURATION_ERROR"
+    );
+    f.settings("");
+    fs::write(f.project.join("lazypencil.toml"), "[tui]\ntheme='dark'\n").unwrap();
+    assert_eq!(f.snapshot().err().unwrap().code, "CONFIGURATION_ERROR");
+}
+
+#[test]
 fn mouse_settings_are_user_owned_and_reserve_preview_space_only_when_enabled() {
     let f = Fixture::new();
     let shown = f.data(&["config", "show", "--user"]);

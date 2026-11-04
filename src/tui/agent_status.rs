@@ -104,19 +104,19 @@ impl App {
     }
 
     pub(super) fn header_line(&self) -> Line<'static> {
-        let separator = || Span::styled(" · ", Style::default().fg(theme::MUTED));
+        let separator = || Span::styled(" · ", Style::default().fg(theme::colors().muted));
         let mut spans = vec![
             Span::styled(
                 "✎ lazypencil",
                 Style::default()
-                    .fg(theme::AGENT)
+                    .fg(theme::colors().agent)
                     .add_modifier(Modifier::BOLD),
             ),
             separator(),
             Span::styled(
                 format!("{:?}", self.conversation.settings().agent),
                 Style::default()
-                    .fg(theme::PREVIEW)
+                    .fg(theme::colors().preview)
                     .add_modifier(Modifier::BOLD),
             ),
             separator(),
@@ -125,7 +125,7 @@ impl App {
                     "model: {}",
                     clean(self.agent.model()).replace(['\n', '\t'], " ")
                 ),
-                Style::default().fg(theme::SECONDARY),
+                Style::default().fg(theme::colors().secondary),
             ),
         ];
         if let Some(effort) = self.agent.effort() {
@@ -133,7 +133,7 @@ impl App {
                 separator(),
                 Span::styled(
                     format!("effort: {}", clean(effort).replace(['\n', '\t'], " ")),
-                    Style::default().fg(theme::SECONDARY),
+                    Style::default().fg(theme::colors().secondary),
                 ),
             ]);
         }
@@ -143,7 +143,7 @@ impl App {
                 Span::styled(
                     "Fast",
                     Style::default()
-                        .fg(theme::SUCCESS)
+                        .fg(theme::colors().success)
                         .add_modifier(Modifier::BOLD),
                 ),
             ]);
@@ -164,18 +164,18 @@ impl App {
                 Style::default().add_modifier(Modifier::BOLD),
             ),
             separator(),
-            Span::styled("account: ", Style::default().fg(theme::SECONDARY)),
+            Span::styled("account: ", Style::default().fg(theme::colors().secondary)),
             Span::styled(
                 clean(&self.agent.authentication),
-                Style::default().fg(theme::SECONDARY),
+                Style::default().fg(theme::colors().secondary),
             ),
             Span::styled(
                 format!(" · session: {} · ", &self.conversation.id()[..8]),
-                Style::default().fg(theme::SECONDARY),
+                Style::default().fg(theme::colors().secondary),
             ),
             Span::styled(
                 clean(&self.conversation.store().path().display().to_string()),
-                Style::default().fg(theme::SECONDARY),
+                Style::default().fg(theme::colors().secondary),
             ),
         ]);
         Line::from(spans)

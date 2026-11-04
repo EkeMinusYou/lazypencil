@@ -57,7 +57,7 @@ fn background_replies_accept_both_terminators_and_rgb_precisions_without_leaking
 }
 
 #[test]
-fn canvas_background_uses_terminal_rgb_for_opaque_protocols_and_alpha_for_kitty() {
+fn canvas_background_uses_terminal_rgb_for_every_protocol() {
     let fallback = image::Rgba([248, 250, 252, 255]);
     assert_eq!(Backend::halfblocks().canvas_background(), fallback);
     for protocol in [
@@ -71,14 +71,7 @@ fn canvas_background_uses_terminal_rgb_for_opaque_protocols_and_alpha_for_kitty(
                 background,
                 ..Backend::halfblocks()
             };
-            assert_eq!(
-                backend.canvas_background(),
-                if protocol == ProtocolType::Kitty {
-                    image::Rgba([0, 0, 0, 0])
-                } else {
-                    background
-                }
-            );
+            assert_eq!(backend.canvas_background(), background);
         }
     }
 }
@@ -136,11 +129,28 @@ fn preview_worker_changes_only_the_canvas_and_preserves_explicit_document_fills(
             assert_eq!(*pixels.get_pixel(0, 0), background);
             assert_eq!(*pixels.get_pixel(25, 15), image::Rgba([255, 255, 255, 255]));
             let translucent = pixels.get_pixel(55, 15).0;
-            if protocol == ProtocolType::Kitty {
-                assert_eq!(translucent, [255, 0, 0, 128]);
-            } else {
-                assert_eq!(translucent[3], 255);
-                assert!(translucent[0] > 120 && translucent[1] < 34 && translucent[2] < 51);
+            assert_eq!(translucent[3], 255);
+            assert!(translucent[0] > 120 && translucent[1] < 34 && translucent[2] < 51);
+            for (generation, background) in [(2, [250, 250, 252, 255]), (3, [30, 30, 46, 255])] {
+                worker.set_canvas_background(image::Rgba(background));
+                worker.request(Request {
+                    generation,
+                    cells: Size::new(80, 60),
+                    view: preview.view,
+                    refresh: false,
+                    refresh_pages: false,
+                    check_only: true,
+                    attachment: None,
+                });
+                let updated =
+                    tokio::time::timeout(std::time::Duration::from_secs(15), worker.next())
+                        .await
+                        .unwrap()
+                        .result
+                        .unwrap();
+                let pixels = updated.image.bitmap().unwrap();
+                assert_eq!(pixels.get_pixel(0, 0).0, background);
+                assert_eq!(pixels.get_pixel(25, 15).0, [255, 255, 255, 255]);
             }
         }
     });
@@ -165,7 +175,7 @@ fn preview_worker_changes_only_the_canvas_and_preserves_explicit_document_fills(
 }
 
 #[test]
-fn native_kitty_resize_and_upload_keep_canvas_transparent_and_artwork_opaque() {
+fn native_kitty_resize_and_upload_use_terminal_background_for_padding() {
     let cells = Size::new(8, 4);
     let area = Rect::new(0, 0, cells.width, cells.height);
     for compressed in [false, true] {
@@ -173,6 +183,7 @@ fn native_kitty_resize_and_upload_keep_canvas_transparent_and_artwork_opaque() {
             protocol: ProtocolType::Kitty,
             kitty_compression: compressed,
             font: FontSize::new(1, 1),
+            background: image::Rgba([17, 34, 51, 255]),
             ..Backend::halfblocks()
         };
         // A square source leaves padding in the wide terminal placement.
@@ -194,13 +205,18 @@ fn native_kitty_resize_and_upload_keep_canvas_transparent_and_artwork_opaque() {
         decoder.feed(buffer[(0, 0)].symbol().as_bytes()).unwrap();
         assert_eq!(decoder.images.len(), 1);
         let pixels = decoder.images[0].rgba();
-        assert!(pixels.chunks_exact(4).any(|pixel| pixel[3] == 0));
+        assert!(pixels.chunks_exact(4).all(|pixel| pixel[3] == 255));
+        assert!(
+            pixels
+                .chunks_exact(4)
+                .any(|pixel| pixel == [17, 34, 51, 255])
+        );
         assert!(
             pixels
                 .chunks_exact(4)
                 .any(|pixel| pixel == [255, 255, 255, 255])
         );
-        assert_eq!(&pixels[(8 - 1) * 4..8 * 4], &[0, 0, 0, 0]);
+        assert_eq!(&pixels[(8 - 1) * 4..8 * 4], &[17, 34, 51, 255]);
         assert_eq!(buffer[(7, 3)].bg, ratatui::style::Color::Reset);
     }
 }

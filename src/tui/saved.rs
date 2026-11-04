@@ -545,7 +545,7 @@ pub fn draw(
         .split(inner);
         frame.render_widget(
             Paragraph::new(review["session"].as_str().unwrap_or(""))
-                .style(Style::default().fg(super::theme::SECONDARY)),
+                .style(Style::default().fg(super::theme::colors().secondary)),
             regions[0],
         );
         let mut text = format!(
@@ -570,7 +570,7 @@ pub fn draw(
         pointer.add(regions[1], super::mouse::Target::SavedText);
         frame.render_widget(
             Paragraph::new("y confirms · n/Esc returns\n↑/↓ PgUp/PgDn · Home/End scroll")
-                .style(Style::default().fg(super::theme::SECONDARY)),
+                .style(Style::default().fg(super::theme::colors().secondary)),
             regions[2],
         );
         return;
@@ -615,7 +615,7 @@ pub fn draw(
         notice.push_str(&format!("\n{} · r refreshes", super::clean(message)));
     }
     let notice = Paragraph::new(notice)
-        .style(Style::default().fg(super::theme::SECONDARY))
+        .style(Style::default().fg(super::theme::colors().secondary))
         .wrap(Wrap { trim: false });
     let height = notice
         .line_count(inner.width)
@@ -659,7 +659,7 @@ pub fn draw(
         page.scroll = page.scroll.min(page.maximum_scroll);
         frame.render_widget(paragraph.scroll((page.scroll, 0)), regions[1]);
         pointer.add(regions[1], super::mouse::Target::SavedText);
-        frame.render_widget(Paragraph::new("↑/↓ PgUp/PgDn scroll · Home/End edges\nn/p pages · v raw/formatted · u use · N new · d delete…\nBackspace parent · s sessions · r refresh · Esc closes").style(Style::default().fg(super::theme::SECONDARY)).wrap(Wrap { trim: false }), regions[2]);
+        frame.render_widget(Paragraph::new("↑/↓ PgUp/PgDn scroll · Home/End edges\nn/p pages · v raw/formatted · u use · N new · d delete…\nBackspace parent · s sessions · r refresh · Esc closes").style(Style::default().fg(super::theme::colors().secondary)).wrap(Wrap { trim: false }), regions[2]);
     } else {
         let entries = page.entries();
         let items = entries
@@ -683,7 +683,7 @@ pub fn draw(
         if items.is_empty() {
             frame.render_widget(
                 Paragraph::new("No saved entries in this page · Home refreshes")
-                    .style(Style::default().fg(super::theme::SECONDARY)),
+                    .style(Style::default().fg(super::theme::colors().secondary)),
                 regions[1],
             );
         } else {
@@ -698,7 +698,7 @@ pub fn draw(
                 super::mouse::ListTarget::Saved,
             );
         }
-        frame.render_widget(Paragraph::new("↑/↓ select · Enter opens · u use · N new · d delete…\nn/p pages · Home first · c current · r refresh\nBackspace parent · Esc/q closes · s sessions").style(Style::default().fg(super::theme::SECONDARY)).wrap(Wrap { trim: false }), regions[2]);
+        frame.render_widget(Paragraph::new("↑/↓ select · Enter opens · u use · N new · d delete…\nn/p pages · Home first · c current · r refresh\nBackspace parent · Esc/q closes · s sessions").style(Style::default().fg(super::theme::colors().secondary)).wrap(Wrap { trim: false }), regions[2]);
         pointer.button(
             frame,
             ratatui::layout::Rect::new(

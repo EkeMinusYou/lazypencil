@@ -23,11 +23,15 @@ pub struct Screen {
     force_redraw: bool,
     preview_keys: bool,
     pointer_motion: bool,
+    _theme: super::theme::Guard,
 }
 /// Keep the terminal active while the picker hands off to the document workspace.
 pub(super) struct Startup {
     pub terminal: Terminal<CrosstermBackend<Stdout>>,
+    pub startup_text: String,
+    picker: super::graphics::Backend,
     guard: Restore,
+    theme: super::theme::Guard,
 }
 
 struct Restore {
@@ -51,7 +55,11 @@ impl Drop for Restore {
     }
 }
 impl Startup {
-    pub fn enter(mouse: bool) -> Result<Self> {
+    pub fn enter(
+        mouse: bool,
+        protocol: super::ImageProtocol,
+        theme: crate::config::keys::Theme,
+    ) -> Result<Self> {
         enable_raw_mode().map_err(io)?;
         let guard = Restore {
             id: None,
@@ -64,18 +72,29 @@ impl Startup {
             write!(std::io::stdout(), "\x1b[?1003l\x1b[?1002h").map_err(io)?;
         }
         execute!(std::io::stdout(), EnableFocusChange).map_err(io)?;
+        let (picker, startup_text) = super::graphics::Backend::detect(protocol)?;
+        let theme = super::theme::activate(theme, picker.terminal_background());
         let terminal = Terminal::new(CrosstermBackend::new(std::io::stdout())).map_err(io)?;
-        Ok(Self { terminal, guard })
+        Ok(Self {
+            terminal,
+            startup_text,
+            picker,
+            guard,
+            theme,
+        })
     }
 
     pub fn draw(&mut self, draw: impl FnOnce(&mut ratatui::Frame)) -> Result<()> {
         draw_terminal(&mut self.terminal, draw)
     }
 
-    pub fn activate(self, protocol: super::ImageProtocol, id: u32) -> Result<Screen> {
+    pub fn activate(self, id: u32) -> Result<Screen> {
         let Self {
             terminal,
+            picker,
+            startup_text,
             mut guard,
+            theme,
         } = self;
         guard.id = Some(id);
         execute!(
@@ -84,7 +103,6 @@ impl Startup {
             PushKeyboardEnhancementFlags(keyboard_flags(false))
         )
         .map_err(io)?;
-        let (picker, startup_text) = super::graphics::Backend::detect(protocol)?;
         guard.tmux = picker.tmux_detected();
         std::mem::forget(guard);
         Ok(Screen {
@@ -95,6 +113,7 @@ impl Startup {
             force_redraw: false,
             preview_keys: false,
             pointer_motion: false,
+            _theme: theme,
         })
     }
 }
@@ -141,8 +160,13 @@ impl Screen {
         }
         draw_terminal(&mut self.terminal, draw)
     }
-    pub fn enter(protocol: super::ImageProtocol, id: u32, mouse: bool) -> Result<Self> {
-        Startup::enter(mouse)?.activate(protocol, id)
+    pub fn enter(
+        protocol: super::ImageProtocol,
+        id: u32,
+        mouse: bool,
+        theme: crate::config::keys::Theme,
+    ) -> Result<Self> {
+        Startup::enter(mouse, protocol, theme)?.activate(id)
     }
 }
 impl Drop for Screen {

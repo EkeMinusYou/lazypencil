@@ -122,8 +122,8 @@ fn panel_toggles_use_custom_bindings_and_palette_but_respect_dialogs() {
             })
             .unwrap();
         let help_buffer = help_terminal.backend().buffer();
-        assert_eq!(help_buffer[(15, 4)].fg, theme::FOCUS);
-        assert_eq!(help_buffer[(16, 5)].bg, theme::CANVAS);
+        assert_eq!(help_buffer[(15, 4)].fg, theme::colors().focus);
+        assert_eq!(help_buffer[(16, 5)].bg, theme::colors().canvas);
         crate::tui::test_artifacts::artifact(help_buffer, "help");
         press(&mut app, KeyCode::Char('a'), KeyModifiers::ALT, &worker).await;
         assert!(!app.agent_collapsed);
@@ -148,7 +148,7 @@ fn panel_toggles_use_custom_bindings_and_palette_but_respect_dialogs() {
             terminal.draw(|frame| { app.draw(frame); }).unwrap();
             let buffer = terminal.backend().buffer();
             assert!(buffer.content.iter().any(|cell| {
-                cell.symbol() == "›" && cell.fg == theme::CANVAS && cell.bg == theme::PREVIEW
+                cell.symbol() == "›" && cell.fg == theme::colors().canvas && cell.bg == theme::colors().preview
             }));
             crate::tui::test_artifacts::artifact(buffer, "commands");
             press(&mut app, KeyCode::Char('n'), KeyModifiers::ALT, &worker).await;
