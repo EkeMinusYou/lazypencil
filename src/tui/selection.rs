@@ -52,6 +52,21 @@ fn visible_at(nodes: &[preview::Node], index: usize, point: [f64; 2]) -> bool {
     }
     true
 }
+fn visible_in(nodes: &[preview::Node], index: usize, region: Rect) -> bool {
+    let mut bounds = shape_bounds(&nodes[index]).intersection(region);
+    let mut ancestor = Some(index);
+    while let Some(index) = ancestor {
+        let node = &nodes[index];
+        if !node.hit.enabled {
+            return false;
+        }
+        if node.hit.clip {
+            bounds = bounds.intersection(node.hit.rect.transformed(node.hit.transform));
+        }
+        ancestor = node.parent;
+    }
+    bounds.width > 0.0 && bounds.height > 0.0
+}
 pub(super) fn shape_bounds(node: &preview::Node) -> Rect {
     if node.hit.rect.width <= 0.0 || node.hit.rect.height <= 0.0 {
         node.bounds
@@ -184,15 +199,13 @@ impl App {
                 node.parent
             }
         } else {
-            self.selected_node()
-                .filter(|node| node.hit.enabled)
-                .and_then(|selected| preview.nodes.iter().position(|node| node.id == selected.id))
-                .or_else(|| {
-                    preview
-                        .nodes
-                        .iter()
-                        .position(|node| node.parent.is_none() && node.hit.enabled)
-                })
+            let view = if self.camera.is_some() {
+                self.view
+            } else {
+                preview.view
+            };
+            let region = view.region(preview::pixel_size(picker, self.cells)?);
+            (0..preview.nodes.len()).find(|&index| visible_in(&preview.nodes, index, region))
         };
         let Some(target) = target else {
             return Ok(());
@@ -551,6 +564,27 @@ mod tests {
             hit_test(&[rotated], [f64::from(inside.0), f64::from(inside.1)]),
             Some(0)
         );
+    }
+    #[test]
+    fn viewport_selection_respects_partial_visibility_ancestors_and_clipping() {
+        let size = Rect::new(0.0, 0.0, 40.0, 40.0);
+        let mut nodes = vec![
+            node("parent", Affine::default(), size, None, true),
+            node(
+                "child",
+                Affine::translation(30.0, 0.0),
+                size,
+                Some(0),
+                false,
+            ),
+        ];
+        assert!(visible_in(&nodes, 1, Rect::new(35.0, 0.0, 20.0, 20.0)));
+        assert!(!visible_in(&nodes, 1, Rect::new(40.0, 0.0, 20.0, 20.0)));
+        nodes[0].hit.clip = false;
+        assert!(visible_in(&nodes, 1, Rect::new(40.0, 0.0, 20.0, 20.0)));
+        assert!(!visible_in(&nodes, 1, Rect::new(70.0, 0.0, 20.0, 20.0)));
+        nodes[0].hit.enabled = false;
+        assert!(!visible_in(&nodes, 1, Rect::new(40.0, 0.0, 20.0, 20.0)));
     }
     #[test]
     fn outlines_are_clipped_without_painting_an_offscreen_edge() {

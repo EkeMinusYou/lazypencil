@@ -580,7 +580,9 @@ fn canvas_hierarchy_shortcuts_start_selection_and_fit_children_and_parents() {
         press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
         app.refresh_nodes(Some("branch"));
         press(&mut app, KeyCode::Char('['), KeyModifiers::NONE, &worker).await;
-        assert_eq!(app.selection.ids, ["branch"], "Start at the current row before entering its children");
+        assert_eq!(app.selection.ids, ["root"], "Start at a visible node independently of the Nodes row");
+        press(&mut app, KeyCode::Char('['), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selection.ids, ["branch"]);
         assert_eq!(app.view.center, [20.0, 20.0]);
         for (key, expected) in [
             ('[', "leaf"), ('[', "leaf"),
@@ -636,6 +638,60 @@ fn canvas_hierarchy_shortcuts_start_selection_and_fit_children_and_parents() {
         assert_eq!(app.selection.ids, ["branch"]);
         assert_eq!(std::fs::read_to_string(app.conversation.store().path()).unwrap(), document);
         assert!(app.outbox.references.is_empty());
+        app.conversation.close().await.unwrap();
+        worker.cancel();
+    });
+}
+
+#[test]
+fn canvas_hierarchy_shortcuts_start_with_a_visible_node_and_ignore_offscreen_rows() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let document = json!({"version":"2.21","children":[
+            {"type":"rectangle","id":"offscreen","width":40,"height":40},
+            {"type":"rectangle","id":"disabled","enabled":false,"x":200,"width":40,"height":40},
+            {"type":"rectangle","id":"visible","x":200,"width":40,"height":40}
+        ]}).to_string();
+        std::fs::write(app.conversation.store().path(), &document).unwrap();
+        let picker = Backend::halfblocks();
+        let worker = Worker::start(
+            app.conversation.store().clone(), vec![], picker.clone(), 197,
+        ).unwrap();
+        app.cells = Size::new(20, 12);
+        app.focus = Focus::Preview;
+        for center in [[220.0, 20.0], [260.0, 20.0], [1000.0, 1000.0]] {
+            for key in ['[', ']'] {
+                app.selection.clear();
+                app.view = View { center, zoom: Some(2.0), time: 0.0 };
+                app.request(&worker, false, false);
+                loop {
+                    let output = tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap();
+                    if output.generation == app.generation {
+                        assert!(app.accept_preview(output));
+                        break;
+                    }
+                }
+                app.refresh_nodes(Some("offscreen"));
+                assert_eq!(app.selected_node().unwrap().id, "offscreen");
+                // Pending camera input must not replace the displayed viewport.
+                app.view.center = [20.0, 20.0];
+                let view = app.view;
+                let generation = app.generation;
+                press(&mut app, KeyCode::Char(key), KeyModifiers::NONE, &worker).await;
+                if center[0] < 1000.0 {
+                    assert_eq!(app.selection.ids, ["visible"]);
+                    assert_eq!(app.selected_node().unwrap().id, "visible");
+                    assert_eq!(app.view.center, [220.0, 20.0]);
+                    assert_eq!(app.generation, generation + 1);
+                } else {
+                    assert!(app.selection.ids.is_empty());
+                    assert_eq!(app.view, view);
+                    assert_eq!(app.generation, generation);
+                }
+            }
+        }
+        assert_eq!(std::fs::read_to_string(app.conversation.store().path()).unwrap(), document);
         app.conversation.close().await.unwrap();
         worker.cancel();
     });

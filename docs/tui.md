@@ -180,8 +180,10 @@ In Preview, `[` selects the first enabled direct child and `]` selects the paren
 The camera centers and fits the selected element, and Nodes reveals it. A leaf or root with
 no target keeps its selection. With multiple selected shapes, navigation starts at
 the primary shape and replaces the selection with one target. Without a canvas
-selection, either key selects the current Nodes row itself, or the first enabled
-root when no row is selected. An empty document keeps the selection empty.
+selection, either key selects the first enabled node intersecting the displayed
+Preview area, in document order, independently of the current Nodes row. A partly
+visible node is eligible; disabled ancestors and ancestor clipping are respected.
+If no node is visible, the selection stays empty.
 Prompt clicks focus input; pointer caret positioning and element movement/resizing
 are not included yet.
 
@@ -296,7 +298,7 @@ Large or high-DPI viewports automatically reduce preview raster resolution to st
 | Prompt: `/clear-images` then Enter | Remove pending images |
 | Preview: `hjkl` / arrows | Pan |
 | Preview: `+` / `-`, `0` | Zoom or fit the document, including negative coordinates |
-| Preview: `[` / `]` | Select and fit the first enabled child / parent; when unselected, select the current Nodes row or first enabled root |
+| Preview: `[` / `]` | Select and fit the first enabled child / parent; when unselected, select the first visible node in Preview |
 | Preview: `Alt+[` / `Alt+]` | Pause and step shader evaluation time backward/forward by 0.1 seconds |
 | Preview: `p` | Play/pause page captures and the shader timeline at a maximum of 5 fps |
 | Prompt: `/play [fps]`, `/pause` then Enter | Start bounded playback (1–10 fps) or stop requesting frames |
