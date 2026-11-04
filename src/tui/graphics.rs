@@ -382,7 +382,9 @@ impl Presentation {
         }
         for position in area.positions() {
             if let Some(cell) = buffer.cell_mut(position) {
+                let background = cell.bg;
                 cell.reset();
+                cell.set_bg(background);
             }
         }
     }

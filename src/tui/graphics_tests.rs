@@ -708,6 +708,39 @@ fn local_kitty_upload_links_preserve_pixels_after_cached_sources_are_evicted() {
 }
 
 #[test]
+fn native_image_placements_preserve_the_canvas_background_without_terminal_images() {
+    let area = Rect::new(0, 0, 3, 2);
+    let background = ratatui::style::Color::Rgb(17, 34, 51);
+    let backend = Backend {
+        font: FontSize::new(1, 1),
+        ..Backend::native_for_test()
+    };
+    let image = backend
+        .encode_preview(
+            image::RgbaImage::from_pixel(3, 2, image::Rgba([12, 34, 56, 255])).into(),
+            Size::new(3, 2),
+            42,
+        )
+        .unwrap();
+    let mut buffer = Buffer::empty(area);
+    for cell in &mut buffer.content {
+        cell.set_bg(background).set_symbol("old");
+    }
+    let mut presentation = Presentation::default();
+    presentation.rectangular(true);
+    presentation.begin();
+    presentation.render(&mut buffer, area, &image);
+    presentation.finish(&mut buffer, false);
+    assert!(buffer.content.iter().all(|cell| cell.bg == background));
+    assert!(
+        buffer
+            .content
+            .iter()
+            .all(|cell| !cell.symbol().contains("old"))
+    );
+}
+
+#[test]
 fn local_kitty_upload_failure_falls_back_to_the_exact_inline_pixels() {
     let local = Arc::new(LocalTransfer::new().unwrap());
     let pixels = image::RgbaImage::from_pixel(3, 2, image::Rgba([12, 34, 56, 255]));
