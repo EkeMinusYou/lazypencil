@@ -713,6 +713,8 @@ mod owned {
             report["statistics"] = statistics;
             if args.sweep_steps > 0 {
                 let mut samples = Vec::new();
+                let mut round_trips = Vec::new();
+                let mut resets = Vec::new();
                 for pair in actions.chunks_exact(2) {
                     for &(action, key) in pair {
                         for _ in 0..args.sweep_steps {
@@ -724,10 +726,15 @@ mod owned {
                             samples.push(sample);
                         }
                     }
+                    round_trips.push(samples.last().unwrap()["hash"] == first.hash);
+                    // Repeated f32 multiplication/division can leave zoom drift
+                    // even in the reference binary. Isolate subsequent sweeps.
+                    let reset = terminal.interaction("sweep_fit", b"0")?;
                     ensure!(
-                        samples.last().unwrap()["hash"] == first.hash,
-                        "Sweep failed to restore initial pixels"
+                        reset["hash"] == first.hash,
+                        "Sweep fit failed to restore initial pixels"
                     );
+                    resets.push(reset);
                 }
                 if let Some(reference) = &reference {
                     let expected = reference["sweep_samples"]
@@ -760,6 +767,8 @@ mod owned {
                 }
                 report["sweep_steps"] = json!(args.sweep_steps);
                 report["sweep_samples"] = json!(samples);
+                report["sweep_round_trips_restored"] = json!(round_trips);
+                report["sweep_resets"] = json!(resets);
                 report["sweep_statistics"] = statistics;
             }
             if let Some(profiler) = &mut profiler {

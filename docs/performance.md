@@ -60,6 +60,8 @@ Add `--sweep-steps N` to measure N consecutive steps per direction before revers
 This includes new zoom levels and camera positions; the synchronized median limit
 also applies to each sweep operation. Choose a count that does not reach zoom limits.
 A reference run must contain the same sweep workload and matching restored pixels.
+Sweeps record whether reversal alone restores the initial image, then explicitly
+fit the document between pairs to isolate accumulated floating-point zoom drift.
 
 Retain cold zooms, outliers, all requested samples, burst round trips, and normal exit.
 Report complete-image receipt, temporary camera feedback, synchronized-update completion,
