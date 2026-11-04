@@ -167,7 +167,7 @@ impl App {
         let badge = self.agent_activity();
         let title = theme::title("◉", "Agent", theme::colors().agent, false);
         let available = usize::from(area.width).saturating_sub(title.width() + 2);
-        let mut block = panel(title, self.focus.in_conversation());
+        let mut block = panel(title, self.focus.in_conversation()).padding(Padding::top(1));
         let mut right = Line::default();
         if area.width >= 32 {
             right = Line::from(vec![Span::raw(" "), badge, Span::raw(" ")]);
