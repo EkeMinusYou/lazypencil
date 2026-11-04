@@ -14,6 +14,7 @@ pub(super) fn prompt_height(lines: usize, available: u16) -> u16 {
 pub(super) fn prompt_block(focused: bool) -> Block<'static> {
     Block::default()
         .borders(Borders::TOP)
+        .border_set(theme::border_set(focused, border::PLAIN))
         .border_style(Style::default().fg(if focused {
             theme::colors().focus
         } else {
@@ -98,6 +99,7 @@ impl App {
         let available = usize::from(width).saturating_sub(title.width() + 2);
         let mut block = Block::default()
             .borders(Borders::TOP)
+            .border_set(theme::border_set(focused, border::PLAIN))
             .border_style(Style::default().fg(if focused {
                 theme::colors().focus
             } else {
@@ -168,7 +170,7 @@ impl App {
         let badge = self.agent_activity();
         let title = theme::title("◉", "Agent", theme::colors().agent, false);
         let available = usize::from(area.width).saturating_sub(title.width() + 2);
-        let mut block = panel(title, self.focus.in_conversation()).border_set(border::ROUNDED);
+        let mut block = panel(title, self.focus.in_conversation());
         let mut right = Line::default();
         if area.width >= 32 {
             right = Line::from(vec![Span::raw(" "), badge, Span::raw(" ")]);
@@ -244,23 +246,6 @@ impl App {
             horizontal: 1,
             vertical: 0,
         });
-        let top_gap = u16::from(logarea.height > 1);
-        if top_gap > 0 {
-            frame.render_widget(
-                Paragraph::new(format!("{:?}", self.conversation.settings().agent)).style(
-                    Style::default()
-                        .fg(theme::colors().preview)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Rect::new(logarea.x, logarea.y, logarea.width, top_gap),
-            );
-        }
-        let logarea = Rect::new(
-            logarea.x,
-            logarea.y + top_gap,
-            logarea.width,
-            logarea.height - top_gap,
-        );
         let text_area = logarea.inner(Margin {
             horizontal: 2,
             vertical: 0,

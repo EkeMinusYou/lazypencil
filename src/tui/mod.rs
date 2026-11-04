@@ -1812,7 +1812,10 @@ fn panel(title: impl Into<Line<'static>>, focused: bool) -> Block<'static> {
     Block::default()
         .style(theme::base())
         .borders(Borders::ALL)
-        .border_set(ratatui::symbols::border::ROUNDED)
+        .border_set(theme::border_set(
+            focused,
+            ratatui::symbols::border::ROUNDED,
+        ))
         .title(title.style(style))
         .border_style(Style::default().fg(if focused {
             theme::colors().focus

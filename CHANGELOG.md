@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Distinguish keyboard focus with double borders in light UI themes and remove the duplicated agent name above conversation history.
+
 - Group TUI workspace actions by purpose in a shared command palette, slash-command and help catalog. Add palette input dialogs for images, queued prompts and playback while preserving the prompt draft. Use `/checkpoints` for editing history; `/history` remains an alias.
 
 - Add selectable auto, dark, light and monochrome UI themes, with automatic light-terminal colors, user configuration, a launch override and in-session switching.

@@ -2,6 +2,7 @@
 use crate::config::keys::Theme;
 use ratatui::{
     style::{Color, Modifier, Style},
+    symbols::border,
     text::{Line, Span},
 };
 use std::cell::Cell;
@@ -28,6 +29,7 @@ pub(super) struct Palette {
     pub prompt_background: Color,
     pub selected_background: Color,
     pub inactive_background: Color,
+    focused_border: Option<border::Set<'static>>,
 }
 impl Palette {
     // Keep the dark theme aligned with the semantic tokens in design.pen.
@@ -52,6 +54,7 @@ impl Palette {
         prompt_background: Color::Rgb(24, 24, 37),
         selected_background: Color::Rgb(69, 71, 90),
         inactive_background: Color::Rgb(69, 71, 90),
+        focused_border: None,
     };
     const LIGHT: Self = Self {
         canvas: Color::Rgb(250, 250, 252),
@@ -59,7 +62,7 @@ impl Palette {
         frame: Color::Rgb(94, 102, 115),
         muted: Color::Rgb(94, 102, 115),
         secondary: Color::Rgb(68, 77, 91),
-        focus: Color::Rgb(25, 105, 50),
+        focus: Color::Rgb(0, 95, 184),
         key: Color::Rgb(28, 75, 172),
         working: Color::Rgb(28, 75, 172),
         nodes: Color::Rgb(28, 75, 172),
@@ -74,6 +77,7 @@ impl Palette {
         prompt_background: Color::Rgb(242, 244, 247),
         selected_background: Color::Rgb(215, 226, 247),
         inactive_background: Color::Rgb(232, 237, 245),
+        focused_border: Some(border::DOUBLE),
     };
     fn monochrome(light: bool) -> Self {
         let rgb = |n| Color::Rgb(n, n, n);
@@ -180,6 +184,14 @@ pub(super) fn modal_selected() -> Style {
 
 pub(super) fn permission_selected() -> Style {
     Style::default().fg(colors().canvas).bg(colors().running)
+}
+
+pub(super) fn border_set(focused: bool, regular: border::Set<'static>) -> border::Set<'static> {
+    if focused {
+        colors().focused_border.unwrap_or(regular)
+    } else {
+        regular
+    }
 }
 
 pub(super) fn title(

@@ -5,8 +5,18 @@ fn previous_preview_survives_failed_updates_and_retries_until_recovery() {
     use ratatui::{Terminal, backend::TestBackend};
     fn screen(app: &mut App) -> String {
         let mut terminal = Terminal::new(TestBackend::new(160, 40)).unwrap();
-        terminal.draw(|frame| { app.draw(frame); }).unwrap();
-        terminal.backend().buffer().content.iter().map(|cell| cell.symbol()).collect()
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect()
     }
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {
@@ -384,7 +394,7 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
         assert!(!preview.contains("Playback"));
         let agent = region(Rect::new(112, 1, 48, 38));
         assert!(agent.contains("Agent") && agent.contains("Idle"));
-        assert_eq!(agent.matches("Codex").count(), 1);
+        assert!(!agent.contains("Codex"));
         for value in ["fixture@example.test", "subscription", "session:"] {
             assert!(
                 !agent.contains(value),
@@ -395,8 +405,8 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
         assert_eq!(buffer[(0, 0)].bg, theme::colors().canvas);
         assert_eq!(buffer[(3, 2)].fg, theme::colors().text);
         assert_eq!(buffer[(3, 2)].bg, theme::colors().canvas);
-        assert_eq!(buffer[(114, 2)].symbol(), "C");
-        assert_eq!(buffer[(114, 2)].fg, theme::colors().preview);
+        assert_eq!(buffer[(114, 2)].symbol(), " ");
+        assert_eq!(buffer[(114, 2)].fg, theme::colors().text);
         for (x, label, color) in [
             (2, "Nodes", theme::colors().nodes),
             (34, "Preview", theme::colors().preview),
@@ -428,7 +438,10 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
             })
             .unwrap();
         assert_eq!(terminal.backend().buffer()[(32, 14)].symbol(), "%");
-        assert_eq!(terminal.backend().buffer()[(32, 14)].fg, theme::colors().secondary);
+        assert_eq!(
+            terminal.backend().buffer()[(32, 14)].fg,
+            theme::colors().secondary
+        );
         app.preview.as_mut().unwrap().time_dependent = false;
         app.accept_input(fake_clipboard(
             Path::new("unused"),
@@ -1492,6 +1505,80 @@ fn progressive_navigation_refreshes_sources_without_rewinding_or_exporting_inter
         assert_eq!(app.view, target);
         assert_eq!(app.editor.lines(), &["日本語の下書き"]);
         assert_eq!(std::fs::read_to_string(path).unwrap(), document);
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
+fn light_workspace_focus_uses_double_borders_for_panels_and_prompt() {
+    use crate::config::keys::Theme;
+    runtime().block_on(async {
+        let temp = TempDir::new().unwrap();
+        let mut app = app(&temp, "echo");
+        app.append("You: Focus check\n\nCodex:\nResponse stays in the conversation\n");
+        let area = Rect::new(0, 0, 130, 34);
+        for preset in [Theme::Light, Theme::Auto, Theme::Monochrome] {
+            let _theme = theme::activate(preset, Some([250, 250, 250]));
+            for focus in [
+                Focus::Nodes,
+                Focus::Preview,
+                Focus::Conversation,
+                Focus::Prompt,
+            ] {
+                app.focus = focus;
+                let buffer = crate::tui::test_artifacts::snapshot(
+                    &mut app,
+                    &format!("light-focus-{preset:?}-{focus:?}"),
+                );
+                let areas = workspace::areas(area, &app.panel_layout, false, false, 1);
+                for (index, pane) in areas.panes.iter().enumerate() {
+                    let active = match index {
+                        0 => focus == Focus::Nodes,
+                        1 => focus == Focus::Preview,
+                        _ => focus.in_conversation(),
+                    };
+                    let corner = &buffer[(pane.x, pane.y)];
+                    assert_eq!(
+                        corner.symbol(),
+                        if active { "╔" } else { "╭" },
+                        "{preset:?}: {focus:?}, pane {index}"
+                    );
+                    assert_eq!(
+                        corner.fg,
+                        if active {
+                            theme::colors().focus
+                        } else {
+                            theme::colors().frame
+                        }
+                    );
+                }
+                let prompt = app
+                    .pointer
+                    .area(mouse::Target::Focus(Focus::Prompt))
+                    .unwrap();
+                assert_eq!(
+                    buffer[(prompt.right() - 1, prompt.y)].symbol(),
+                    if focus == Focus::Prompt { "═" } else { "─" }
+                );
+                let header = (0..area.width)
+                    .map(|x| buffer[(x, 0)].symbol())
+                    .collect::<String>();
+                assert_eq!(header.matches("Codex").count(), 1);
+                let agent = areas.panes[2].inner(ratatui::layout::Margin {
+                    horizontal: 1,
+                    vertical: 1,
+                });
+                let history = (agent.y..prompt.y)
+                    .map(|y| {
+                        (agent.x..agent.right())
+                            .map(|x| buffer[(x, y)].symbol())
+                            .collect::<String>()
+                    })
+                    .collect::<String>();
+                assert!(!history.contains("Codex"));
+                assert!(history.contains("Focus check") && history.contains("Response stays"));
+            }
+        }
         app.conversation.close().await.unwrap();
     });
 }
