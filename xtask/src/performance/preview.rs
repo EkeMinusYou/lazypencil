@@ -30,6 +30,17 @@ enum KittyTransfer {
     Png,
 }
 
+#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+enum FirstAction {
+    #[default]
+    ZoomIn,
+    ZoomOut,
+    PanRight,
+    PanLeft,
+    PanDown,
+    PanUp,
+}
+
 #[derive(Args)]
 pub struct Arguments {
     #[arg(long)]
@@ -45,8 +56,11 @@ pub struct Arguments {
     #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(2..=200))]
     samples: u32,
     /// Number of Tab presses needed to focus Preview in the measured UI version.
-    #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u8).range(1..=8))]
+    #[arg(long, default_value_t = 0, value_parser = clap::value_parser!(u8).range(0..=8))]
     focus_tabs: u8,
+    /// Start each round with this operation, retaining inverse pairs for pixel checks.
+    #[arg(long, value_enum, default_value = "zoom-in")]
+    first_action: FirstAction,
     /// Include down/up round trips in addition to zoom and horizontal movement.
     #[arg(long)]
     all_directions: bool,
@@ -55,10 +69,16 @@ pub struct Arguments {
     kitty_transfer: KittyTransfer,
     #[arg(long)]
     median_limit_ms: Option<f64>,
+    /// Bound each operation's key-to-synchronized-update-end median.
+    #[arg(long)]
+    sync_median_limit_ms: Option<f64>,
     #[arg(long)]
     reference_report: Option<PathBuf>,
     #[arg(long)]
     bursts: bool,
+    /// Measure consecutive steps before reversing, including previously unseen views.
+    #[arg(long, default_value_t = 0, value_parser = clap::value_parser!(u8).range(0..=20))]
+    sweep_steps: u8,
     #[arg(long)]
     worker_profile: bool,
     #[arg(long)]
@@ -81,10 +101,27 @@ impl Arguments {
                 ("pan_up", b"\x1b[A".as_slice()),
             ]);
         }
+        let (pair, reverse) = match self.first_action {
+            FirstAction::ZoomIn => (0, false),
+            FirstAction::ZoomOut => (0, true),
+            FirstAction::PanRight => (2, false),
+            FirstAction::PanLeft => (2, true),
+            FirstAction::PanDown => (4, false),
+            FirstAction::PanUp => (4, true),
+        };
+        actions.rotate_left(pair);
+        if reverse {
+            actions.swap(0, 1);
+        }
         actions
     }
 
     fn validate(&self) -> Result<()> {
+        ensure!(
+            self.all_directions
+                || !matches!(self.first_action, FirstAction::PanDown | FirstAction::PanUp),
+            "A vertical first action requires --all-directions"
+        );
         ensure!(
             !self.label.is_empty()
                 && self.label != "."
@@ -92,7 +129,10 @@ impl Arguments {
                 && !self.label.contains(['/', '\\']),
             "Label must be one file name"
         );
-        if let Some(limit) = self.median_limit_ms {
+        for limit in [self.median_limit_ms, self.sync_median_limit_ms]
+            .into_iter()
+            .flatten()
+        {
             ensure!(
                 limit.is_finite()
                     && limit > 0.0
@@ -671,6 +711,57 @@ mod owned {
                 }
             }
             report["statistics"] = statistics;
+            if args.sweep_steps > 0 {
+                let mut samples = Vec::new();
+                for pair in actions.chunks_exact(2) {
+                    for &(action, key) in pair {
+                        for _ in 0..args.sweep_steps {
+                            let sample = terminal.interaction(action, key)?;
+                            ensure!(
+                                sample["changed"] == true,
+                                "Sweep reached an unchanged/clamped camera"
+                            );
+                            samples.push(sample);
+                        }
+                    }
+                    ensure!(
+                        samples.last().unwrap()["hash"] == first.hash,
+                        "Sweep failed to restore initial pixels"
+                    );
+                }
+                if let Some(reference) = &reference {
+                    let expected = reference["sweep_samples"]
+                        .as_array()
+                        .context("Reference has no sweep samples")?;
+                    ensure!(
+                        reference["sweep_steps"] == args.sweep_steps
+                            && expected.len() == samples.len(),
+                        "Reference sweep workload differs"
+                    );
+                    ensure!(
+                        samples
+                            .iter()
+                            .zip(expected)
+                            .all(|(actual, expected)| actual["action"] == expected["action"]
+                                && actual["hash"] == expected["hash"]),
+                        "Reference sweep pixels differ"
+                    );
+                }
+                let mut statistics = json!({});
+                for &(action, _) in &actions {
+                    for field in ["complete_ms", "complete_sync_ms"] {
+                        let values = samples
+                            .iter()
+                            .filter(|s| s["action"] == action)
+                            .map(|s| s[field].as_f64().context("Missing sweep timing"))
+                            .collect::<Result<Vec<_>>>()?;
+                        statistics[action][field] = stats(&values)?;
+                    }
+                }
+                report["sweep_steps"] = json!(args.sweep_steps);
+                report["sweep_samples"] = json!(samples);
+                report["sweep_statistics"] = statistics;
+            }
             if let Some(profiler) = &mut profiler {
                 let until = Instant::now() + Duration::from_secs(15);
                 loop {
@@ -768,6 +859,18 @@ mod owned {
                 "Complete-image median exceeds limit; all observations retained"
             );
         }
+        if let Some(limit) = args.sync_median_limit_ms {
+            for field in ["statistics", "sweep_statistics"] {
+                if let Some(statistics) = report[field].as_object() {
+                    ensure!(
+                        statistics.values().all(|v| v["complete_sync_ms"]["median"]
+                            .as_f64()
+                            .is_some_and(|median| median <= limit)),
+                        "Synchronized-update median exceeds limit; all observations retained"
+                    );
+                }
+            }
+        }
         util::print(
             &json!({"report":report_path,"statistics":report["statistics"],"exit_code":report["exit_code"]}),
         )
@@ -785,6 +888,61 @@ mod tests {
     }
 
     #[test]
+    fn first_actions_keep_inverse_pairs_and_existing_document_focus() {
+        for (name, expected) in [
+            ("zoom-in", "zoom_in"),
+            ("zoom-out", "zoom_out"),
+            ("pan-right", "pan_right"),
+            ("pan-left", "pan_left"),
+            ("pan-down", "pan_down"),
+            ("pan-up", "pan_up"),
+        ] {
+            let parsed = Cli::try_parse_from([
+                "preview",
+                "--binary",
+                "app",
+                "--document",
+                "scene.pen",
+                "--output",
+                "new",
+                "--all-directions",
+                "--first-action",
+                name,
+            ])
+            .unwrap();
+            parsed.args.validate().unwrap();
+            let actions = parsed.args.actions();
+            assert_eq!(actions[0].0, expected);
+            assert_eq!(actions.len(), 6);
+            assert_eq!(parsed.args.focus_tabs, 0);
+            for pair in actions.chunks_exact(2) {
+                assert!(matches!(
+                    (pair[0].0, pair[1].0),
+                    ("zoom_in", "zoom_out")
+                        | ("zoom_out", "zoom_in")
+                        | ("pan_right", "pan_left")
+                        | ("pan_left", "pan_right")
+                        | ("pan_down", "pan_up")
+                        | ("pan_up", "pan_down")
+                ));
+            }
+        }
+        let parsed = Cli::try_parse_from([
+            "preview",
+            "--binary",
+            "app",
+            "--document",
+            "scene.pen",
+            "--output",
+            "new",
+            "--first-action",
+            "pan-down",
+        ])
+        .unwrap();
+        assert!(parsed.args.validate().is_err());
+    }
+
+    #[test]
     fn geometry_requires_four_positive_bounded_values() {
         assert_eq!(
             geometry("57,224,2688,1140").unwrap(),
@@ -797,13 +955,29 @@ mod tests {
 
     #[test]
     fn acceptance_rejects_instrumentation_and_path_labels() {
-        for extra in [
-            vec!["--capture"],
-            vec!["--worker-profile"],
-            vec!["--profile"],
-            vec!["--label", "../escape"],
-        ] {
-            let mut argv = vec![
+        for limit_flag in ["--median-limit-ms", "--sync-median-limit-ms"] {
+            for extra in [
+                vec!["--capture"],
+                vec!["--worker-profile"],
+                vec!["--profile"],
+                vec!["--label", "../escape"],
+            ] {
+                let mut argv = vec![
+                    "preview",
+                    "--binary",
+                    "app",
+                    "--document",
+                    "scene.pen",
+                    "--output",
+                    "new",
+                    limit_flag,
+                    "30",
+                ];
+                argv.extend(extra);
+                let parsed = Cli::try_parse_from(argv).unwrap();
+                assert!(parsed.args.validate().is_err());
+            }
+            let parsed = Cli::try_parse_from([
                 "preview",
                 "--binary",
                 "app",
@@ -811,25 +985,11 @@ mod tests {
                 "scene.pen",
                 "--output",
                 "new",
-                "--median-limit-ms",
+                limit_flag,
                 "30",
-            ];
-            argv.extend(extra);
-            let parsed = Cli::try_parse_from(argv).unwrap();
-            assert!(parsed.args.validate().is_err());
+            ])
+            .unwrap();
+            assert!(parsed.args.validate().is_ok());
         }
-        let parsed = Cli::try_parse_from([
-            "preview",
-            "--binary",
-            "app",
-            "--document",
-            "scene.pen",
-            "--output",
-            "new",
-            "--median-limit-ms",
-            "30",
-        ])
-        .unwrap();
-        assert!(parsed.args.validate().is_ok());
     }
 }

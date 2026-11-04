@@ -42,14 +42,24 @@ cargo xtask fixtures performance dashboard --output-dir /tmp/lazypencil-dashboar
 Choose a new output directory. The observer owns its PTY/session, selects an inert
 adapter, isolates configuration, and preserves document/executable hashes. Geometry
 is `rows,columns,pixel_width,pixel_height`; use identical geometry for comparisons.
-The default `--focus-tabs 2` follows the Prompt → Nodes → Preview panel cycle.
-Use an explicit value when measuring a different configured panel cycle.
+The default `--focus-tabs 0` retains the initial Preview focus for an existing file.
+Use an explicit value when measuring a different initial focus or panel cycle.
+Use `--first-action zoom-out`, `pan-right`, `pan-left`, `pan-down`, or `pan-up`
+to isolate cold interactions across fresh processes; vertical actions also require
+`--all-directions`. Every round still checks inverse camera pairs against the initial pixels.
 
 `--kitty-transfer zlib` simulates direct Kitty; `png` exercises the unprobed compatible
 transport. Both are lossless. `--reference-report PATH` additionally checks matching
 document, geometry, protocol, samples, and decoded image hashes. `--median-limit-ms N`
 requires each operation's complete-image median to meet that value. Profile/capture
 runs are separate and cannot use the median acceptance option.
+`--sync-median-limit-ms N` instead bounds receipt of the synchronized-update end
+for every operation, including observer parsing/decompression backpressure. This is
+the input-response reference; it does not acknowledge terminal drawing or scanout.
+Add `--sweep-steps N` to measure N consecutive steps per direction before reversing.
+This includes new zoom levels and camera positions; the synchronized median limit
+also applies to each sweep operation. Choose a count that does not reach zoom limits.
+A reference run must contain the same sweep workload and matching restored pixels.
 
 Retain cold zooms, outliers, all requested samples, burst round trips, and normal exit.
 Report complete-image receipt, temporary camera feedback, synchronized-update completion,
