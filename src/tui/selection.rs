@@ -171,26 +171,28 @@ impl App {
         let Some(preview) = self.preview.as_ref().filter(|preview| !preview.attachment) else {
             return Ok(());
         };
-        let current = self
-            .selection
-            .ids
-            .first()
-            .map(String::as_str)
-            .or_else(|| self.selected_node().map(|node| node.id.as_str()));
-        let Some(node) = preview
-            .nodes
-            .iter()
-            .find(|node| Some(node.id.as_str()) == current)
-        else {
-            return Ok(());
-        };
-        let target = if inward {
-            node.children
-                .iter()
-                .copied()
-                .find(|&index| preview.nodes[index].hit.enabled)
+        let target = if let Some(current) = self.selection.ids.first() {
+            let Some(node) = preview.nodes.iter().find(|node| node.id == *current) else {
+                return Ok(());
+            };
+            if inward {
+                node.children
+                    .iter()
+                    .copied()
+                    .find(|&index| preview.nodes[index].hit.enabled)
+            } else {
+                node.parent
+            }
         } else {
-            node.parent
+            self.selected_node()
+                .filter(|node| node.hit.enabled)
+                .and_then(|selected| preview.nodes.iter().position(|node| node.id == selected.id))
+                .or_else(|| {
+                    preview
+                        .nodes
+                        .iter()
+                        .position(|node| node.parent.is_none() && node.hit.enabled)
+                })
         };
         let Some(target) = target else {
             return Ok(());
@@ -204,7 +206,11 @@ impl App {
         self.diagnostics.active = false;
         self.refresh_nodes(Some(&id));
         self.pointer.reattach(super::mouse::ListTarget::Nodes);
-        self.refresh_selection_presentation(picker, worker)?;
+        self.selection.presentation = None;
+        self.selection.invalidate();
+        self.fit_selected(picker)?;
+        self.request(worker, false, false);
+        self.camera_feedback(picker)?;
         self.set_status(format!("1 node selected · {name}"));
         self.dirty = true;
         Ok(())

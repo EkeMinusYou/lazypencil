@@ -539,11 +539,12 @@ fn diagnostics_switch_preserves_targets_and_reveals_hidden_nodes_after_refresh()
 }
 
 #[test]
-fn canvas_hierarchy_shortcuts_select_children_and_parents_without_moving_the_camera() {
+fn canvas_hierarchy_shortcuts_start_selection_and_fit_children_and_parents() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {
         let mut app = app(&temp, "echo");
-        let document = json!({"version":"2.21","children":[{
+        let document = json!({"version":"2.21","children":[
+          {"type":"rectangle","id":"hidden-root","enabled":false,"width":8,"height":8}, {
             "type":"frame","id":"root","width":160,"height":80,"layout":"none",
             "children":[
                 {"type":"rectangle","id":"hidden","enabled":false,"width":8,"height":8},
@@ -563,23 +564,46 @@ fn canvas_hierarchy_shortcuts_select_children_and_parents_without_moving_the_cam
         assert!(app.accept_preview(output));
         assert!(app.preview_error.is_none());
         app.focus = Focus::Preview;
-        let view = app.view;
-        let generation = app.generation;
+        let pixels = preview::pixel_size(&picker, app.cells).unwrap();
         for key in ['[', ']'] {
+            press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
+            app.view.center = [-900.0, 500.0];
+            app.view.zoom = Some(0.01);
+            let generation = app.generation;
             press(&mut app, KeyCode::Char(key), KeyModifiers::NONE, &worker).await;
-            assert!(app.selection.ids.is_empty());
+            assert_eq!(app.selection.ids, ["root"]);
+            assert_eq!(app.selected_node().unwrap().id, "root");
+            assert_eq!(app.view.center, [80.0, 40.0]);
+            assert!(app.view.zoom.unwrap() > 0.01);
+            assert_eq!(app.generation, generation + 1);
         }
-        app.refresh_nodes(Some("root"));
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
+        app.refresh_nodes(Some("branch"));
+        press(&mut app, KeyCode::Char('['), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selection.ids, ["branch"], "Start at the current row before entering its children");
+        assert_eq!(app.view.center, [20.0, 20.0]);
         for (key, expected) in [
-            ('[', "branch"), ('[', "leaf"), ('[', "leaf"),
+            ('[', "leaf"), ('[', "leaf"),
             (']', "branch"), (']', "root"), (']', "root"),
         ] {
+            let changed = app.selection.ids[0] != expected;
+            let generation = app.generation;
             press(&mut app, KeyCode::Char(key), KeyModifiers::NONE, &worker).await;
             assert_eq!(app.selection.ids, [expected]);
             assert_eq!(app.selected_node().unwrap().id, expected);
             assert_eq!(app.focus, Focus::Preview);
-            assert_eq!(app.view, view);
-            assert_eq!(app.generation, generation);
+            let mut fitted = View::default();
+            fitted.fit(app.selected_node().unwrap().bounds, pixels);
+            assert_eq!(app.view, fitted);
+            assert_eq!(app.generation, generation + u64::from(changed));
+        }
+        loop {
+            let output = tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap();
+            if output.generation == app.generation {
+                assert!(app.accept_interactive_preview(output, &worker, &picker));
+                assert!(app.preview_error.is_none());
+                break;
+            }
         }
         loop {
             let output = tokio::time::timeout(Duration::from_secs(15), worker.next_presentation())
@@ -602,7 +626,7 @@ fn canvas_hierarchy_shortcuts_select_children_and_parents_without_moving_the_cam
         assert_eq!(app.selection.ids, ["leaf"]);
         press(&mut app, KeyCode::Char('u'), KeyModifiers::NONE, &worker).await;
         assert_eq!(app.selection.ids, ["branch"]);
-        assert!(app.help_text().contains("c: Preview: select the first enabled child"));
+        assert!(app.help_text().contains("c: Preview: select and fit the first enabled child"));
 
         app.focus = Focus::Prompt;
         for key in ['[', ']'] {

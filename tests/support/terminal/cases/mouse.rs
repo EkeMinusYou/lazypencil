@@ -195,6 +195,8 @@ pub fn canvas_selection(h: &mut Harness) -> Result {
     let center = ((preview.0 + agent.0 - 4) / 2, 16);
     click(h, (center.0, preview.1 + 2))?;
     h.visible("Selection cleared")?;
+    h.key(b"]")?;
+    h.visible("1 node selected · Left canvas shape")?;
     h.wait("fit selection", 15.0, |h| zoom(h).is_some_and(|z| z > 300))?;
     let frames = h.frames.camera_frames;
     click(h, center)?;
@@ -208,9 +210,13 @@ pub fn canvas_selection(h: &mut Harness) -> Result {
                     .is_some_and(|f| f.has_color([137, 180, 250, 255]))
         })?;
     }
+    let parent_zoom = zoom(h).ok_or("Missing parent zoom")?;
     let frames = h.frames.camera_frames;
     h.key(b"[")?;
     h.visible("1 node selected · Canvas child")?;
+    h.wait("child selection fits the camera", 15.0, |h| {
+        zoom(h).is_some_and(|z| z > parent_zoom)
+    })?;
     if h.case == "selection-kitty" {
         h.wait("child outline is rendered", 15.0, |h| {
             h.frames.camera_frames > frames
@@ -222,6 +228,9 @@ pub fn canvas_selection(h: &mut Harness) -> Result {
     }
     h.key(b"]")?;
     h.visible("1 node selected · Left canvas shape")?;
+    h.wait("parent selection fits the camera", 15.0, |h| {
+        zoom(h) == Some(parent_zoom)
+    })?;
     h.key(b"0")?;
     h.wait("fit full document", 15.0, |h| {
         zoom(h).is_some_and(|z| z < 300)
