@@ -25,7 +25,9 @@ OS-reboot-cold filesystem.
 ## Local preview measurements
 
 Direct Kitty previews of retained static scenes prepare exact native-resolution
-zoom frames and immediate pan neighbors before publishing the first document frame.
+frames for one zoom step in each direction and four immediate pan neighbors before
+publishing the first document frame. Startup never prepares the full zoom ladder;
+more distant views are prepared only in response to repeated gestures.
 Completed uploads and losslessly compressed source pixels share a 32 MiB cache.
 At most two recent sources stay raw within that same budget, avoiding PNG
 compression between consecutive inputs.

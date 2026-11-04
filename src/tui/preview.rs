@@ -540,8 +540,8 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             timing.mark("metadata_ms");
             if prepare_camera {
                 // Prepare exact camera frames before publishing the initial view.
-                // Retained uploads avoid repeating rasterization and compression
-                // on the first keypress, including previously unused zoom levels.
+                // Bound startup work to the six immediate camera operations.
+                // More distant views are prepared only for repeated gestures.
                 let preparation = preparation::Frame {
                     project,
                     layout,
@@ -556,7 +556,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                     interrupted: None,
                 };
                 let mut preparation_renderer = renderer.fork();
-                for neighbor in camera_preparation_views(view) {
+                for neighbor in initial_camera_views(view) {
                     if neighbor == view {
                         continue;
                     }
@@ -724,28 +724,7 @@ fn preparation_pending(shared: &Shared) -> bool {
         || shared.presentation_request.lock().unwrap().is_some()
 }
 
-fn camera_preparation_views(view: View) -> Vec<View> {
-    let mut views = Vec::new();
-    // Prepare commands at the full supported discrete zoom range. Higher zooms
-    // still rasterize their viewport at native resolution when requested.
-    for factor in [1.25_f32, 0.8_f32] {
-        let mut zoom = view.zoom.unwrap_or(1.0);
-        loop {
-            let next = if factor > 1.0 {
-                (zoom * 1.25).min(16.0)
-            } else {
-                (zoom / 1.25).max(0.01)
-            };
-            if next == zoom {
-                break;
-            }
-            views.push(View {
-                zoom: Some(next),
-                ..view
-            });
-            zoom = next;
-        }
-    }
+fn initial_camera_views(view: View) -> [View; 6] {
     let mut neighbors = [view; 6];
     for (neighbor, delta) in
         neighbors
@@ -757,9 +736,7 @@ fn camera_preparation_views(view: View) -> Vec<View> {
     let zoom = view.zoom.unwrap_or(1.0);
     neighbors[4].zoom = Some((zoom * 1.25).min(16.0));
     neighbors[5].zoom = Some((zoom / 1.25).max(0.01));
-    // Keep the nearest rasters hot after preparing more distant zoom commands.
-    views.extend(neighbors);
-    views
+    neighbors
 }
 
 struct PreviewTiming {
@@ -805,6 +782,37 @@ mod tests {
     use super::*;
     use std::time::Duration;
     use tempfile::TempDir;
+
+    #[test]
+    fn initial_camera_preparation_is_bounded_to_the_first_six_operations() {
+        for zoom in [0.01, 0.06482758, 1.0, 16.0] {
+            let initial = View {
+                center: [1234.25, -3456.75],
+                zoom: Some(zoom),
+                time: 2.0,
+            };
+            let neighbors = initial_camera_views(initial);
+            assert_eq!(
+                neighbors.len(),
+                6,
+                "Startup must not prepare the zoom ladder"
+            );
+            for (neighbor, delta) in
+                neighbors[..4]
+                    .iter()
+                    .zip([[64.0, 0.0], [-64.0, 0.0], [0.0, 64.0], [0.0, -64.0]])
+            {
+                let mut expected = initial;
+                expected.pan(delta);
+                assert_eq!(*neighbor, expected);
+            }
+            assert_eq!(neighbors[4].zoom, Some((zoom * 1.25).min(16.0)));
+            assert_eq!(neighbors[5].zoom, Some((zoom / 1.25).max(0.01)));
+            assert!(neighbors[4..].iter().all(|neighbor| {
+                neighbor.center == initial.center && neighbor.time == initial.time
+            }));
+        }
+    }
 
     #[test]
     fn revisited_native_frames_reuse_pixels_but_invalidate_changed_documents_backgrounds_and_sizes()
