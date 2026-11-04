@@ -1,13 +1,13 @@
 //! Owned pixels for fast terminal previews and exact on-demand PNG encoding.
 use super::*;
+mod pixels;
 
 #[derive(Clone)]
 pub(crate) struct PreviewPixels {
     width: u32,
     height: u32,
-    // Preserve premultiplied pixels for on-demand PNG export. No Skia object
-    // crosses the preview worker's thread boundary.
-    rgba: std::sync::Arc<Vec<u8>>,
+    // Immutable premultiplied pixels preserve exact on-demand PNG exports.
+    rgba: pixels::Pixels,
     opaque: bool,
     // Nonopaque frames need a separate straight-alpha copy. Opaque camera
     // feedback borrows rgba directly; large windows retain no camera copy.
@@ -35,11 +35,22 @@ impl PreviewPixels {
             return Err(Error::new("RENDER_ERROR", "Cannot copy preview pixels"));
         }
         let opaque = rgba.as_chunks::<4>().0.iter().all(|pixel| pixel[3] == 255);
-        let bitmap = if opaque {
+        let mapped = pixels::Pixels::mapped(&rgba);
+        let (rgba, bitmap) = if opaque {
             // Straight and premultiplied pixels are identical for opaque images.
-            image::RgbaImage::from_raw(width, height, rgba.clone())
-                .expect("Read pixels have the checked image dimensions")
+            if let Some(mapped) = mapped {
+                (
+                    mapped,
+                    image::RgbaImage::from_raw(width, height, rgba)
+                        .expect("Read pixels have the checked image dimensions"),
+                )
+            } else {
+                let bitmap = image::RgbaImage::from_raw(width, height, rgba.clone())
+                    .expect("Read pixels have the checked image dimensions");
+                (pixels::Pixels::heap(rgba), bitmap)
+            }
         } else {
+            let rgba = mapped.unwrap_or_else(|| pixels::Pixels::heap(rgba));
             let mut bitmap = image::RgbaImage::new(width, height);
             let unpremul = info.with_alpha_type(skia_safe::AlphaType::Unpremul);
             if !image.read_pixels(
@@ -51,13 +62,13 @@ impl PreviewPixels {
             ) {
                 return Err(Error::new("RENDER_ERROR", "Cannot convert preview pixels"));
             }
-            bitmap
+            (rgba, bitmap)
         };
         Ok((
             Self {
                 width,
                 height,
-                rgba: std::sync::Arc::new(rgba),
+                rgba,
                 opaque,
                 camera_pixels: (!opaque
                     && u64::from(width) * u64::from(height) * 4 <= 16 * 1024 * 1024)
@@ -72,7 +83,7 @@ impl PreviewPixels {
             return None;
         }
         let bytes = if self.opaque {
-            self.rgba.as_ref()
+            &self.rgba
         } else {
             self.camera_pixels.as_ref()?.as_raw().as_slice()
         };
@@ -94,6 +105,7 @@ impl PreviewPixels {
             return (**image).clone();
         }
         let mut bytes = self.rgba.to_vec();
+        self.rgba.discard_pages();
         if !self.opaque {
             for pixel in bytes.as_chunks_mut::<4>().0 {
                 let alpha = u16::from(pixel[3]);
@@ -116,17 +128,17 @@ impl PreviewPixels {
             skia_safe::AlphaType::Premul,
             None,
         );
-        let image = skia_safe::images::raster_from_data(
-            &info,
-            Data::new_copy(&self.rgba),
-            self.width as usize * 4,
-        )
-        .ok_or_else(|| Error::new("RENDER_ERROR", "Cannot restore preview pixels"))?;
+        let data = self.rgba.data();
+        let image = skia_safe::images::raster_from_data(&info, data, self.width as usize * 4)
+            .ok_or_else(|| Error::new("RENDER_ERROR", "Cannot restore preview pixels"))?;
         let mut encoding = skia_safe::png_encoder::Options::default();
         encoding.z_lib_level = 1;
-        skia_safe::png_encoder::encode_image(None, &image, &encoding)
+        let result = skia_safe::png_encoder::encode_image(None, &image, &encoding)
             .map(|data| data.as_bytes().to_vec())
-            .ok_or_else(|| Error::new("RENDER_ERROR", "Cannot encode preview pixels"))
+            .ok_or_else(|| Error::new("RENDER_ERROR", "Cannot encode preview pixels"));
+        drop(image);
+        self.rgba.discard_pages();
+        result
     }
 }
 

@@ -23,6 +23,7 @@ mod plan;
 mod polygon;
 use plan::RasterPlan;
 mod raster_pool;
+mod surface;
 use backdrop::{background_nodes, composite_layer};
 pub use blending::{MODES as BLEND_MODES, blend};
 
@@ -524,7 +525,7 @@ fn raster_impl_cached(
         runtime.check()?;
     }
     let _working = rasters.reserve(working_width as u64 * working_height as u64 * 12)?;
-    let mut surface = skia_safe::surfaces::raster_n32_premul((working_width, working_height))
+    let mut surface = surface::RasterSurface::new((working_width, working_height))
         .ok_or_else(|| Error::new("RENDER_ERROR", "Cannot allocate a raster surface"))?;
     let canvas = surface.canvas();
     canvas.clear(options.background);
@@ -784,7 +785,7 @@ fn raster_impl_cached(
         });
     }
     let dynamic_artifacts = renderer.artifacts;
-    let full_image = surface.image_snapshot();
+    let full_image = surface.finish();
     let image = crop_image(&full_image, padding, width as u32, height as u32)?;
     if let Some(runtime) = runtime.as_deref() {
         runtime.check()?;

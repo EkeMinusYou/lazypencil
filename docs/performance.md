@@ -45,6 +45,21 @@ payload; inline transfers remain the fallback for remote terminals, multiplexers
 unsupported terminals, or filesystem errors. This avoids sending the same large
 base64 payload through the PTY on every cached camera move.
 
+On Unix, temporary rasters of at least 4 MiB and retained preview sources above
+16 MiB use private temporary-file mappings. Finished rasters release their writer
+mapping, while retained sources can release resident pages and reload the exact
+bytes when needed. Failed file allocation or mapping falls back to heap storage.
+Small worker buffers and prepared drawing commands remain reusable between inputs.
+This trades temporary-file I/O for fewer full-viewport copies and less retained
+anonymous memory; it does not change resolution, sampling, alpha, or compression.
+The operating system may retain file-cache pages, so lower process RSS is not a
+hard bound on total system memory use.
+
+macOS native work uses thread-bound autorelease pools. Eligible large system
+fonts are captured into immutable mappings in bounded chunks, avoiding a second
+full native font stream. Font bytes and metadata remain identical to the native
+capture; unsupported inputs retain the existing capture path.
+
 Build the observer in release mode before measuring so its parsing/decompression does
 not add debug-build backpressure. On Unix:
 

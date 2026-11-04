@@ -35,7 +35,15 @@ impl Worker {
                 let mut surface = None;
                 let mut size = (0, 0);
                 while let Ok(job) = receiver.recv() {
+                    let _pool = crate::native_memory::AutoreleasePool::new();
                     let result = (|| {
+                        #[cfg(unix)]
+                        if job.size.0 as u64 * job.size.1 as u64 * 4 >= 4 * 1024 * 1024 {
+                            let mut surface = super::surface::RasterSurface::new(job.size)
+                                .ok_or_else(|| invalid("Cannot allocate a preview raster band"))?;
+                            paint_job(surface.canvas(), &job);
+                            return Ok(surface.finish());
+                        }
                         if size != job.size {
                             surface =
                                 Some(skia_safe::surfaces::raster_n32_premul(job.size).ok_or_else(
@@ -46,15 +54,7 @@ impl Worker {
                         let surface = surface
                             .as_mut()
                             .expect("Raster dimensions were initialized");
-                        let canvas = surface.canvas();
-                        canvas.save();
-                        // Preselected commands keep full device bounds for exact filter pixels.
-                        if !job.complete {
-                            canvas.clip_rect(job.band, ClipOp::Intersect, false);
-                        }
-                        canvas.clear(job.background);
-                        canvas.draw_picture(&job.picture, Some(&job.transform), None);
-                        canvas.restore();
+                        paint_job(surface.canvas(), &job);
                         Ok(surface.image_snapshot())
                     })();
                     let _ = job.reply.send(result);
@@ -66,6 +66,17 @@ impl Worker {
             thread: Some(thread),
         })
     }
+}
+
+fn paint_job(canvas: &Canvas, job: &Job) {
+    canvas.save();
+    // Preselected commands keep full device bounds for exact filter pixels.
+    if !job.complete {
+        canvas.clip_rect(job.band, ClipOp::Intersect, false);
+    }
+    canvas.clear(job.background);
+    canvas.draw_picture(&job.picture, Some(&job.transform), None);
+    canvas.restore();
 }
 
 impl Drop for Worker {
