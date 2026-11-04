@@ -39,6 +39,12 @@ Repeated gestures may prepare one next frame, with queued user requests taking
 priority. Prediction uses isolated renderer state and never publishes a camera move.
 All reuse preserves native pixels; it does not interpolate an old preview at a new zoom.
 
+Local Kitty terminals can opt into temporary-file transfers after a successful
+capability query. Each upload uses its own disposable link to a private lossless
+payload; inline transfers remain the fallback for remote terminals, multiplexers,
+unsupported terminals, or filesystem errors. This avoids sending the same large
+base64 payload through the PTY on every cached camera move.
+
 Build the observer in release mode before measuring so its parsing/decompression does
 not add debug-build backpressure. On Unix:
 
@@ -71,7 +77,8 @@ comparing latency with older reports; their parser backpressure was included in
 the synchronization timing.
 
 `--kitty-transfer zlib` simulates direct Kitty; `png` exercises the unprobed compatible
-transport. Both are lossless. `--reference-report PATH` additionally checks matching
+transport, and `file` enables the local temporary-file capability query and validates
+its decoded payloads. All three are lossless. `--reference-report PATH` additionally checks matching
 document, geometry, protocol, samples, and decoded image hashes. `--median-limit-ms N`
 requires each operation's complete-image median to meet that value. Profile/capture
 runs are separate and cannot use the median acceptance option.

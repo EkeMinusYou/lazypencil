@@ -157,10 +157,14 @@ pub struct KittyFrames {
     pub camera_frames: usize,
     pub camera_placement_updates: usize,
     pub last_camera: Option<Frame>,
+    pub allow_local_files: bool,
+    pub local_queries: Vec<u32>,
+    pub local_file_frames: usize,
     dimensions: Option<(usize, usize)>,
     compressed: bool,
     png: bool,
     rgb: bool,
+    local_file: bool,
     image_id: Option<u32>,
     split_camera_frames: bool,
     exact_image_id: Option<u32>,
@@ -214,6 +218,19 @@ impl KittyFrames {
                 }
             }
             let action = fields.get("a").copied();
+            if self.allow_local_files && action == Some("q") && fields.get("t") == Some(&"t") {
+                let separator = split.ok_or("Missing local query payload")?;
+                let path = local_image_path(&STANDARD.decode(&packet[separator + 1..])?, 4)?;
+                if std::fs::read(path)? != [0, 0, 0, 255]
+                    || fields.get("s") != Some(&"1")
+                    || fields.get("v") != Some(&"1")
+                    || self.local_queries.len() >= 16
+                {
+                    return Err("Unexpected local Kitty query".into());
+                }
+                self.local_queries
+                    .push(fields.get("i").ok_or("Missing local query ID")?.parse()?);
+            }
             if action == Some("d")
                 && fields.get("d") == Some(&"I")
                 && fields.get("q") == Some(&"2")
@@ -242,6 +259,11 @@ impl KittyFrames {
                 }
                 self.png = fields.get("f") == Some(&"100");
                 self.rgb = fields.get("f") == Some(&"24");
+                self.local_file = match fields.get("t").copied().unwrap_or("d") {
+                    "d" => false,
+                    "t" if self.allow_local_files => true,
+                    _ => return Err("Unexpected Kitty transmission medium".into()),
+                };
                 if !self.png && !self.rgb && fields.get("f") != Some(&"32") {
                     return Err("Expected RGB, RGBA or PNG Kitty pixels".into());
                 }
@@ -316,14 +338,27 @@ impl KittyFrames {
                     return Err("Kitty image ID changed during a frame".into());
                 }
                 let separator = split.ok_or("A Kitty image packet needs a payload separator")?;
-                let decoded = STANDARD.decode(&packet[separator + 1..])?;
+                let mut decoded = STANDARD.decode(&packet[separator + 1..])?;
                 // Incompressible ZLIB has a small encoding overhead. Bound both
                 // the wire payload and the independently declared decoded size.
-                let limit = if self.compressed || self.png {
+                let limit = if self.png {
+                    expected + expected / 8 + 1024
+                } else if self.compressed {
                     expected + expected / 8 + 64
                 } else {
                     expected
                 };
+                if self.local_file {
+                    if fields.get("m").is_some_and(|value| *value != "0")
+                        || !self.payload.is_empty()
+                    {
+                        return Err("A local Kitty image cannot use continuation packets".into());
+                    }
+                    let path = local_image_path(&decoded, limit as u64)?;
+                    decoded = std::fs::read(&path)?;
+                    std::fs::remove_file(path)?;
+                    self.local_file_frames += 1;
+                }
                 if decoded.len() > limit - self.payload.len() {
                     return Err("Kitty pixels exceed declared dimensions".into());
                 }
@@ -416,6 +451,7 @@ impl KittyFrames {
                         self.compressed = false;
                         self.png = false;
                         self.rgb = false;
+                        self.local_file = false;
                         self.image_id = None;
                     }
                     _ => return Err("Invalid Kitty continuation marker".into()),
@@ -424,6 +460,28 @@ impl KittyFrames {
             offset = end + 2;
         }
     }
+}
+
+fn local_image_path(bytes: &[u8], limit: u64) -> Result<std::path::PathBuf> {
+    let path = std::path::PathBuf::from(std::str::from_utf8(bytes)?);
+    let parent = path
+        .parent()
+        .ok_or("Missing local image directory")?
+        .canonicalize()?;
+    let temporary = std::env::temp_dir().canonicalize()?;
+    if !parent.starts_with(temporary)
+        || !parent
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with("tty-graphics-protocol-lazypencil-"))
+    {
+        return Err("Local Kitty image is outside the owned temporary directory".into());
+    }
+    let metadata = std::fs::symlink_metadata(&path)?;
+    if !metadata.is_file() || metadata.len() > limit {
+        return Err("Invalid local Kitty image file".into());
+    }
+    Ok(path)
 }
 
 pub fn sixel_red_pixels(data: &[u8]) -> Result<(usize, usize)> {

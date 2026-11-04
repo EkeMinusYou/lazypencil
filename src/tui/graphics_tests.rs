@@ -658,6 +658,91 @@ fn native_kitty_uploads_preserve_pixels_compression_and_stable_redraws() {
 }
 
 #[test]
+fn local_kitty_upload_links_preserve_pixels_after_cached_sources_are_evicted() {
+    for compressed in [false, true] {
+        for alpha in [255, 254] {
+            let local = Arc::new(LocalTransfer::new().unwrap());
+            let backend = Backend {
+                font: FontSize::new(1, 1),
+                protocol: ProtocolType::Kitty,
+                kitty_compression: compressed,
+                local_transfer: Some(local.clone()),
+                ..Backend::halfblocks()
+            };
+            let pixels =
+                image::RgbaImage::from_fn(3, 2, |x, y| image::Rgba([x as u8, y as u8, 56, alpha]));
+            let Encoded::Native(encoded) = backend
+                .encode_preview(
+                    DynamicImage::ImageRgba8(pixels.clone()),
+                    Size::new(3, 2),
+                    42,
+                )
+                .unwrap()
+            else {
+                panic!("Expected a native image")
+            };
+            let first = encoded.upload(42);
+            let second = encoded.clone().upload(43);
+            assert!(first.contains(",t=t;"));
+            assert!(second.contains("i=43,"));
+            assert!(!first.contains("m=1"));
+            drop(encoded);
+            let mut decoder = observer::KittyFrames::default();
+            decoder.allow_local_files = true;
+            decoder.feed(first.as_bytes()).unwrap();
+            decoder.feed(second.as_bytes()).unwrap();
+            assert_eq!(decoder.local_file_frames, 2);
+            assert_eq!(decoder.images.len(), 2);
+            assert!(
+                decoder
+                    .images
+                    .iter()
+                    .all(|frame| frame.rgba() == pixels.as_raw())
+            );
+            assert_eq!(
+                std::fs::read_dir(local.directory.path()).unwrap().count(),
+                0
+            );
+        }
+    }
+}
+
+#[test]
+fn local_kitty_upload_failure_falls_back_to_the_exact_inline_pixels() {
+    let local = Arc::new(LocalTransfer::new().unwrap());
+    let pixels = image::RgbaImage::from_pixel(3, 2, image::Rgba([12, 34, 56, 255]));
+    let encoded = NativeImage::new(
+        DynamicImage::ImageRgba8(pixels.clone()),
+        Size::new(3, 2),
+        42,
+        true,
+        Some(&local),
+    )
+    .unwrap();
+    std::fs::remove_dir_all(local.directory.path()).unwrap();
+    let wire = encoded.upload(43);
+    assert!(!wire.contains(",t=t;"));
+    let mut decoder = observer::KittyFrames::default();
+    decoder.feed(wire.as_bytes()).unwrap();
+    assert_eq!(decoder.images[0].rgba(), pixels.as_raw());
+}
+
+#[cfg(unix)]
+#[test]
+fn local_kitty_probe_requires_its_own_positive_response() {
+    assert!(local_transfer_response(
+        b"typed\x1b_Gi=2147483645;OK\x1b\\tail"
+    ));
+    assert!(!local_transfer_response(b"\x1b_Gi=1;OK\x1b\\"));
+    assert!(!local_transfer_response(b"\x1b_Gi=2147483645;ENOENT\x1b\\"));
+    assert!(!local_transfer_response(b"\x1b_Gi=2147483645;OK"));
+    assert_eq!(
+        startup_text(b"hi\x1b_Gi=2147483645;OK\x1b\\there"),
+        "hithere"
+    );
+}
+
+#[test]
 fn native_kitty_resizes_keep_completed_frames_at_their_original_scale() {
     for compressed in [false, true] {
         let backend = Backend {

@@ -28,6 +28,7 @@ enum KittyTransfer {
     #[default]
     Zlib,
     Png,
+    File,
 }
 
 #[derive(Clone, Copy, Debug, Default, ValueEnum)]
@@ -360,7 +361,7 @@ mod owned {
                 .env(
                     "TERM",
                     match args.kitty_transfer {
-                        KittyTransfer::Zlib => "xterm-kitty",
+                        KittyTransfer::Zlib | KittyTransfer::File => "xterm-kitty",
                         KittyTransfer::Png => "xterm-256color",
                     },
                 )
@@ -398,12 +399,14 @@ mod owned {
             let reader = super::reader::Reader::start(master.try_clone()?)?;
             let started = Instant::now();
             let child = command.spawn()?;
+            let mut decoder = decoder::KittyFrames::for_lazypencil();
+            decoder.allow_local_files = matches!(args.kitty_transfer, KittyTransfer::File);
             Ok(Self {
                 child,
                 reader,
                 master,
                 _slave: slave,
-                decoder: decoder::KittyFrames::for_lazypencil(),
+                decoder,
                 control: Vec::new(),
                 frames: Vec::new(),
                 pending: Vec::new(),
@@ -446,6 +449,9 @@ mod owned {
             self.decoder
                 .feed(data)
                 .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            for id in std::mem::take(&mut self.decoder.local_queries) {
+                write!(self.master, "\x1b_Gi={id};OK\x1b\\")?;
+            }
             let exact = std::mem::take(&mut self.decoder.images);
             for frame in exact {
                 self.record(frame, true, received)?;
@@ -614,6 +620,7 @@ mod owned {
         report["kitty_transfer"] = json!(match args.kitty_transfer {
             KittyTransfer::Zlib => "zlib",
             KittyTransfer::Png => "png",
+            KittyTransfer::File => "file",
         });
         report["actions"] = json!(
             actions
@@ -834,6 +841,7 @@ mod owned {
             .map(serde_json::from_str::<Value>)
             .collect::<std::result::Result<Vec<_>, _>>()?;
         report["worker_profiles"] = json!(profiles);
+        report["local_file_frames"] = json!(terminal.decoder.local_file_frames);
         let report_path = output.join(format!("{}.json", args.label));
         fs::write(&report_path, util::encode(&report)?)?;
         result?;
@@ -842,6 +850,10 @@ mod owned {
                 && report["document_unchanged"] == true
                 && report["binary_unchanged"] == true,
             "Measurement changed inputs or failed to exit normally"
+        );
+        ensure!(
+            !matches!(args.kitty_transfer, KittyTransfer::File) || terminal.decoder.local_file_frames > 0,
+            "The requested local-file transport was not negotiated"
         );
         if let Some(limit) = args.median_limit_ms {
             ensure!(

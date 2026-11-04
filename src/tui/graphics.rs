@@ -16,6 +16,10 @@ use ratatui_image::{
 };
 #[cfg(unix)]
 use std::io::Write;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 
 /// A compact native upload, or the library encoder for negotiated/fallback paths.
 #[derive(Clone)]
@@ -34,7 +38,7 @@ impl Encoded {
     /// Doctor requests an upload receipt without changing normal preview traffic.
     pub(super) fn request_receipt(&mut self) -> bool {
         if let Self::Native(image) = self {
-            image.upload = image.upload.replace("q=2", "q=0");
+            image.upload = image.upload.replace("q=2", "q=0").into();
             true
         } else {
             false
@@ -53,7 +57,8 @@ pub struct NativeImage {
     id: u32,
     size: Size,
     pixels: [u32; 2],
-    upload: String,
+    upload: Arc<str>,
+    local: Option<Arc<LocalImage>>,
     transmitted: std::sync::atomic::AtomicBool,
 }
 
@@ -64,6 +69,7 @@ impl Clone for NativeImage {
             size: self.size,
             pixels: self.pixels,
             upload: self.upload.clone(),
+            local: self.local.clone(),
             // A retained frame must upload again into the inactive terminal slot.
             transmitted: false.into(),
         }
@@ -71,7 +77,13 @@ impl Clone for NativeImage {
 }
 
 impl NativeImage {
-    fn new(image: DynamicImage, size: Size, id: u32, compressed: bool) -> Result<Self> {
+    fn new(
+        image: DynamicImage,
+        size: Size,
+        id: u32,
+        compressed: bool,
+        local: Option<&Arc<LocalTransfer>>,
+    ) -> Result<Self> {
         use base64::{Engine, engine::general_purpose::STANDARD};
         use image::{
             ImageEncoder,
@@ -80,21 +92,22 @@ impl NativeImage {
         use std::fmt::Write as _;
         let pixels = [image.width(), image.height()];
         let rgba = image.into_rgba8();
-        // Fully opaque previews need no alpha bytes on the wire. This is the
-        // lossless RGB form of the same Kitty protocol, not color quantization.
-        let rgb = rgba
-            .as_raw()
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .all(|pixel| pixel[3] == 255)
-            .then(|| {
-                let mut rgb = Vec::with_capacity(rgba.len() / 4 * 3);
-                for pixel in rgba.as_raw().as_chunks::<4>().0 {
-                    rgb.extend_from_slice(&pixel[..3]);
-                }
-                rgb
-            });
+        // Inline opaque uploads omit alpha losslessly. Local file transfers
+        // keep RGBA directly, avoiding a second window-sized conversion buffer.
+        let rgb = (local.is_none()
+            && rgba
+                .as_raw()
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|pixel| pixel[3] == 255))
+        .then(|| {
+            let mut rgb = Vec::with_capacity(rgba.len() / 4 * 3);
+            for pixel in rgba.as_raw().as_chunks::<4>().0 {
+                rgb.extend_from_slice(&pixel[..3]);
+            }
+            rgb
+        });
         let format = if !compressed {
             100
         } else if rgb.is_some() {
@@ -138,6 +151,14 @@ impl NativeImage {
         };
         drop(rgb);
         drop(rgba);
+        let local = local.and_then(|transfer| {
+            let mut file = tempfile::NamedTempFile::new_in(transfer.directory.path()).ok()?;
+            std::io::Write::write_all(&mut file, &payload).ok()?;
+            Some(Arc::new(LocalImage {
+                file,
+                transfer: transfer.clone(),
+            }))
+        });
         // Encode pixels and packet chunks on the worker. Native placements need
         // no Unicode-placeholder grid, even when ZLIB was negotiated.
         let mut upload = String::new();
@@ -163,10 +184,60 @@ impl NativeImage {
             id,
             size,
             pixels,
-            upload,
+            upload: upload.into(),
+            local,
             transmitted: false.into(),
         })
     }
+
+    fn upload(&self, target: u32) -> String {
+        use base64::{Engine, engine::general_purpose::STANDARD};
+        if let Some(local) = &self.local {
+            let number = local.transfer.sequence.fetch_add(1, Ordering::Relaxed);
+            let path = local
+                .transfer
+                .directory
+                .path()
+                .join(format!("upload-{number}"));
+            if let Some(path_text) = path.to_str()
+                && std::fs::hard_link(local.file.path(), &path).is_ok()
+            {
+                // The terminal owns this link. The cached original can be
+                // evicted without racing the terminal's asynchronous file read.
+                let control = self
+                    .upload
+                    .split_once(';')
+                    .expect("Kitty upload control")
+                    .0
+                    .replacen(&format!("i={},", self.id), &format!("i={target},"), 1)
+                    .replace("m=1", "m=0");
+                return format!("{control},t=t;{}\x1b\\", STANDARD.encode(path_text));
+            }
+        }
+        self.upload
+            .replacen(&format!("i={},", self.id), &format!("i={target},"), 1)
+    }
+}
+
+struct LocalTransfer {
+    directory: tempfile::TempDir,
+    sequence: AtomicU64,
+}
+
+impl LocalTransfer {
+    fn new() -> std::io::Result<Self> {
+        Ok(Self {
+            directory: tempfile::Builder::new()
+                .prefix("tty-graphics-protocol-lazypencil-")
+                .tempdir()?,
+            sequence: AtomicU64::new(0),
+        })
+    }
+}
+
+struct LocalImage {
+    file: tempfile::NamedTempFile,
+    transfer: Arc<LocalTransfer>,
 }
 
 /// Bind a Kitty virtual placement to the same cell grid as its placeholders.
@@ -280,11 +351,7 @@ impl Presentation {
             let target = (image.id & !1).max(2) | slot;
             self.slots[0] = Some((image.id, target));
             self.source_sizes[0] = Some(image.pixels);
-            self.pending[0] = Some(image.upload.replacen(
-                &format!("i={},", image.id),
-                &format!("i={target},"),
-                1,
-            ));
+            self.pending[0] = Some(image.upload(target));
         }
         if let Some((_, image_id)) = self.slots[0] {
             // Keep completed pixels at their original scale while a resized
@@ -549,6 +616,7 @@ pub struct Backend {
     protocol: ProtocolType,
     tmux: bool,
     kitty_compression: bool,
+    local_transfer: Option<Arc<LocalTransfer>>,
     background: image::Rgba<u8>,
     background_known: bool,
 }
@@ -567,6 +635,7 @@ impl Backend {
             protocol: ProtocolType::Halfblocks,
             tmux: false,
             kitty_compression: false,
+            local_transfer: None,
             background: image::Rgba([248, 250, 252, 255]),
             background_known: false,
         }
@@ -600,7 +669,18 @@ impl Backend {
         let capabilities = selected == super::ImageProtocol::Auto && !direct_kitty;
         // Query the background even for Kitty: compatible renderers do not
         // consistently composite transparent image pixels over terminal cells.
-        let (responses, startup) = probe(backend.tmux, capabilities)?;
+        let local_transfer = (!backend.tmux
+            && std::env::var_os("SSH_CONNECTION").is_none()
+            && std::env::var_os("SSH_TTY").is_none()
+            && !matches!(
+                selected,
+                super::ImageProtocol::Halfblocks | super::ImageProtocol::Sixel
+            ))
+        .then(LocalTransfer::new)
+        .and_then(std::result::Result::ok)
+        .map(Arc::new);
+        let (responses, startup, local_supported) =
+            probe(backend.tmux, capabilities, local_transfer.as_deref())?;
         for response in &responses {
             if let Response::Background(r, g, b) = response {
                 backend.background = image::Rgba([*r, *g, *b, 255]);
@@ -630,6 +710,9 @@ impl Backend {
             super::ImageProtocol::Halfblocks => ProtocolType::Halfblocks,
             super::ImageProtocol::Auto => backend.protocol,
         };
+        if local_supported && backend.protocol == ProtocolType::Kitty {
+            backend.local_transfer = local_transfer;
+        }
         Ok((backend, startup))
     }
     pub fn font_size(&self) -> FontSize {
@@ -658,7 +741,14 @@ impl Backend {
     pub fn encode_preview(&self, image: DynamicImage, size: Size, id: u32) -> Result<Encoded> {
         if self.protocol == ProtocolType::Kitty && !self.tmux {
             let image = self.resize(image, size)?;
-            return NativeImage::new(image, size, id, self.kitty_compression).map(Encoded::Native);
+            return NativeImage::new(
+                image,
+                size,
+                id,
+                self.kitty_compression,
+                self.local_transfer.as_ref(),
+            )
+            .map(Encoded::Native);
         }
         self.encode(image, size, id).map(Encoded::Protocol)
     }
@@ -702,7 +792,11 @@ impl Backend {
 }
 
 #[cfg(unix)]
-fn probe(tmux: bool, capabilities: bool) -> Result<(Vec<Response>, String)> {
+fn probe(
+    tmux: bool,
+    capabilities: bool,
+    local: Option<&LocalTransfer>,
+) -> Result<(Vec<Response>, String, bool)> {
     use std::{
         os::fd::AsRawFd,
         time::{Duration, Instant},
@@ -711,7 +805,7 @@ fn probe(tmux: bool, capabilities: bool) -> Result<(Vec<Response>, String)> {
     let fd = stdin.as_raw_fd();
     let original = unsafe { libc::fcntl(fd, libc::F_GETFL) };
     if original < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, original | libc::O_NONBLOCK) } < 0 {
-        return Ok((vec![], String::new()));
+        return Ok((vec![], String::new(), false));
     }
     struct Flags(i32, i32);
     impl Drop for Flags {
@@ -722,7 +816,18 @@ fn probe(tmux: bool, capabilities: bool) -> Result<(Vec<Response>, String)> {
         }
     }
     let _flags = Flags(fd, original);
-    let query = probe_query(tmux, capabilities);
+    let mut query = probe_query(tmux, capabilities);
+    let local_probe = local.and_then(|local| {
+        use base64::{Engine, engine::general_purpose::STANDARD};
+        let mut file = tempfile::NamedTempFile::new_in(local.directory.path()).ok()?;
+        file.write_all(&[0, 0, 0, 255]).ok()?;
+        let path = file.path().to_str()?;
+        query.push_str(&format!(
+            "\x1b_Ga=q,t=t,f=32,s=1,v=1,i=2147483645;{}\x1b\\\x1b[6n",
+            STANDARD.encode(path)
+        ));
+        Some(file)
+    });
     let mut stdout = std::io::stdout();
     stdout
         .write_all(query.as_bytes())
@@ -769,11 +874,19 @@ fn probe(tmux: bool, capabilities: bool) -> Result<(Vec<Response>, String)> {
     // digits. Normalize these replies separately before choosing the background.
     responses.retain(|response| !matches!(response, Response::Background(..)));
     responses.extend(background_response(&bytes));
-    Ok((responses, startup_text(&bytes)))
+    let local_supported = local_probe.is_some() && local_transfer_response(&bytes);
+    Ok((responses, startup_text(&bytes), local_supported))
 }
 #[cfg(not(unix))]
-fn probe(_: bool, _: bool) -> Result<(Vec<Response>, String)> {
-    Ok((vec![], String::new()))
+fn probe(_: bool, _: bool, _: Option<&LocalTransfer>) -> Result<(Vec<Response>, String, bool)> {
+    Ok((vec![], String::new(), false))
+}
+
+#[cfg(unix)]
+fn local_transfer_response(bytes: &[u8]) -> bool {
+    bytes
+        .windows(b"\x1b_Gi=2147483645;OK\x1b\\".len())
+        .any(|part| part == b"\x1b_Gi=2147483645;OK\x1b\\")
 }
 
 #[cfg(unix)]
@@ -860,7 +973,7 @@ fn startup_text(bytes: &[u8]) -> String {
                 .position(|byte| (0x40..=0x7e).contains(byte))
         {
             let command = bytes[index + 2 + end];
-            if matches!(command, b'c' | b't' | b'n') {
+            if matches!(command, b'c' | b't' | b'n' | b'R') {
                 index += 3 + end;
                 continue;
             }
