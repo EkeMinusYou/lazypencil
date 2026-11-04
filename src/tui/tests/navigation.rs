@@ -337,6 +337,7 @@ fn agent_header_tracks_negotiated_model_and_hides_inactive_fast_mode() {
             let cell = &terminal.backend().buffer()[(x, 0)];
             assert_eq!(cell.fg, theme::colors().success);
             assert!(!cell.modifier.contains(Modifier::DIM));
+            assert!(!cell.modifier.contains(Modifier::BOLD));
         }
     }
     app.dirty = false;
