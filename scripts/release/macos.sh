@@ -32,6 +32,13 @@ check_ci() {
 }
 
 cleanup() {
+  if [[ ${credentials_search_list_changed:-false} == true ]]; then
+    if (( ${#credentials_search_list[@]} > 0 )); then
+      security list-keychains -d user -s "${credentials_search_list[@]}" || true
+    else
+      security list-keychains -d user -s || true
+    fi
+  fi
   if [[ -n ${credentials_keychain:-} ]]; then
     security delete-keychain "$credentials_keychain" || true
   fi
@@ -41,12 +48,21 @@ cleanup() {
 }
 
 prepare_credentials() {
-  local keychain_password
+  local keychain_password keychain
   credentials_dir=$(mktemp -d "$RUNNER_TEMP/lazypencil-$1.XXXXXXXX")
   credentials_keychain="$credentials_dir/credentials.keychain-db"
   trap cleanup EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
+  security list-keychains -d user > "$credentials_dir/original-keychains.txt"
+  credentials_search_list=()
+  while IFS= read -r keychain; do
+    keychain=${keychain#*\"}
+    keychain=${keychain%\"*}
+    if [[ -n $keychain ]]; then
+      credentials_search_list+=("$keychain")
+    fi
+  done < "$credentials_dir/original-keychains.txt"
   keychain_password=$(openssl rand -hex 32)
   printf '::add-mask::%s\n' "$keychain_password"
   security create-keychain -p "$keychain_password" "$credentials_keychain"
@@ -58,6 +74,12 @@ prepare_credentials() {
       -k "$credentials_keychain" -T /usr/bin/codesign
     security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
       -k "$keychain_password" "$credentials_keychain" >/dev/null
+    credentials_search_list_changed=true
+    if (( ${#credentials_search_list[@]} > 0 )); then
+      security list-keychains -d user -s "$credentials_keychain" "${credentials_search_list[@]}"
+    else
+      security list-keychains -d user -s "$credentials_keychain"
+    fi
   fi
 }
 
