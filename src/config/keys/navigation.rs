@@ -71,8 +71,10 @@ bindings! {
     zoom_out => ZoomOut(PREVIEW, ["-"]),
     fit_document => FitDocument(PREVIEW, ["0"]),
     fit_selected => FitSelected(PREVIEW | NODES, ["f"]),
-    time_backward => TimeBackward(PREVIEW, ["["]),
-    time_forward => TimeForward(PREVIEW, ["]"]),
+    select_child => SelectChild(PREVIEW, ["["]),
+    select_parent => SelectParent(PREVIEW, ["]"]),
+    time_backward => TimeBackward(PREVIEW, ["Alt+["]),
+    time_forward => TimeForward(PREVIEW, ["Alt+]"]),
     play_pause => PlayPause(PREVIEW, ["p"]),
     previous_item => PreviousItem(NODES | ATTACHMENTS | REFERENCES, ["Up", "k"]),
     next_item => NextItem(NODES | ATTACHMENTS | REFERENCES, ["Down", "j"]),
@@ -271,6 +273,25 @@ mod tests {
     fn enhanced_shifted_symbols_and_legacy_backtab_match_the_same_binding() {
         use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
         let keys = NavigationKeys::default();
+        for (symbol, selection, time) in [
+            (
+                '[',
+                NavigationAction::SelectChild,
+                NavigationAction::TimeBackward,
+            ),
+            (
+                ']',
+                NavigationAction::SelectParent,
+                NavigationAction::TimeForward,
+            ),
+        ] {
+            let plain = KeyEvent::new(KeyCode::Char(symbol), KeyModifiers::NONE);
+            let alt = KeyEvent::new(KeyCode::Char(symbol), KeyModifiers::ALT);
+            assert!(keys.matches(selection, plain));
+            assert!(!keys.matches(time, plain));
+            assert!(keys.matches(time, alt));
+            assert!(!keys.matches(selection, alt));
+        }
         for modifiers in [KeyModifiers::NONE, KeyModifiers::SHIFT] {
             assert!(keys.matches(
                 NavigationAction::ZoomIn,

@@ -162,6 +162,54 @@ impl Selection {
 }
 
 impl App {
+    pub(super) fn navigate_canvas_hierarchy(
+        &mut self,
+        inward: bool,
+        picker: &graphics::Backend,
+        worker: &super::Worker,
+    ) -> Result<()> {
+        let Some(preview) = self.preview.as_ref().filter(|preview| !preview.attachment) else {
+            return Ok(());
+        };
+        let current = self
+            .selection
+            .ids
+            .first()
+            .map(String::as_str)
+            .or_else(|| self.selected_node().map(|node| node.id.as_str()));
+        let Some(node) = preview
+            .nodes
+            .iter()
+            .find(|node| Some(node.id.as_str()) == current)
+        else {
+            return Ok(());
+        };
+        let target = if inward {
+            node.children
+                .iter()
+                .copied()
+                .find(|&index| preview.nodes[index].hit.enabled)
+        } else {
+            node.parent
+        };
+        let Some(target) = target else {
+            return Ok(());
+        };
+        let id = preview.nodes[target].id.clone();
+        let name = preview.nodes[target].name.clone();
+        self.selection.cancel();
+        self.selection.ids = vec![id.clone()];
+        self.filter.clear();
+        self.searching = false;
+        self.diagnostics.active = false;
+        self.refresh_nodes(Some(&id));
+        self.pointer.reattach(super::mouse::ListTarget::Nodes);
+        self.refresh_selection_presentation(picker, worker)?;
+        self.set_status(format!("1 node selected · {name}"));
+        self.dirty = true;
+        Ok(())
+    }
+
     fn canvas_point(&self, position: Position, picker: &graphics::Backend) -> Option<[f64; 2]> {
         let preview = self.preview.as_ref().filter(|p| !p.attachment)?;
         let view = if self.camera.is_some() {

@@ -539,6 +539,85 @@ fn diagnostics_switch_preserves_targets_and_reveals_hidden_nodes_after_refresh()
 }
 
 #[test]
+fn canvas_hierarchy_shortcuts_select_children_and_parents_without_moving_the_camera() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let document = json!({"version":"2.21","children":[{
+            "type":"frame","id":"root","width":160,"height":80,"layout":"none",
+            "children":[
+                {"type":"rectangle","id":"hidden","enabled":false,"width":8,"height":8},
+                {"type":"frame","id":"branch","width":40,"height":40,"layout":"none",
+                 "children":[{"type":"rectangle","id":"leaf","width":8,"height":8}]},
+                {"type":"rectangle","id":"sibling","x":80,"width":8,"height":8}
+            ]
+        }]}).to_string();
+        std::fs::write(app.conversation.store().path(), &document).unwrap();
+        let picker = Backend::halfblocks();
+        let worker = Worker::start(
+            app.conversation.store().clone(), vec![], picker.clone(), 196,
+        ).unwrap();
+        app.cells = Size::new(20, 12);
+        app.request(&worker, false, false);
+        let output = tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap();
+        assert!(app.accept_preview(output));
+        assert!(app.preview_error.is_none());
+        app.focus = Focus::Preview;
+        let view = app.view;
+        let generation = app.generation;
+        for key in ['[', ']'] {
+            press(&mut app, KeyCode::Char(key), KeyModifiers::NONE, &worker).await;
+            assert!(app.selection.ids.is_empty());
+        }
+        app.refresh_nodes(Some("root"));
+        for (key, expected) in [
+            ('[', "branch"), ('[', "leaf"), ('[', "leaf"),
+            (']', "branch"), (']', "root"), (']', "root"),
+        ] {
+            press(&mut app, KeyCode::Char(key), KeyModifiers::NONE, &worker).await;
+            assert_eq!(app.selection.ids, [expected]);
+            assert_eq!(app.selected_node().unwrap().id, expected);
+            assert_eq!(app.focus, Focus::Preview);
+            assert_eq!(app.view, view);
+            assert_eq!(app.generation, generation);
+        }
+        loop {
+            let output = tokio::time::timeout(Duration::from_secs(15), worker.next_presentation())
+                .await.unwrap();
+            if app.selection.accept_overlay(output).unwrap() {
+                break;
+            }
+        }
+        assert!(app.selection.presentation.is_some());
+
+        app.selection.ids = vec!["leaf".into(), "sibling".into()];
+        press(&mut app, KeyCode::Char(']'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selection.ids, ["branch"]);
+        app.navigation.select_child = vec!["c".into()];
+        app.navigation.select_parent = vec!["u".into()];
+        app.navigation.validate(&app.keys).unwrap();
+        press(&mut app, KeyCode::Char('['), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selection.ids, ["branch"]);
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selection.ids, ["leaf"]);
+        press(&mut app, KeyCode::Char('u'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selection.ids, ["branch"]);
+        assert!(app.help_text().contains("c: Preview: select the first enabled child"));
+
+        app.focus = Focus::Prompt;
+        for key in ['[', ']'] {
+            press(&mut app, KeyCode::Char(key), KeyModifiers::NONE, &worker).await;
+        }
+        assert_eq!(app.editor.lines(), &["[]"]);
+        assert_eq!(app.selection.ids, ["branch"]);
+        assert_eq!(std::fs::read_to_string(app.conversation.store().path()).unwrap(), document);
+        assert!(app.outbox.references.is_empty());
+        app.conversation.close().await.unwrap();
+        worker.cancel();
+    });
+}
+
+#[test]
 fn nodes_enter_expands_branches_and_fits_only_leaves() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {

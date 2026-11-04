@@ -1129,6 +1129,8 @@ impl App {
             (Nav::ZoomOut, "Preview: zoom out"),
             (Nav::FitDocument, "Preview: fit the document"),
             (Nav::FitSelected, "Preview/Nodes: fit selected node"),
+            (Nav::SelectChild, "Preview: select the first enabled child"),
+            (Nav::SelectParent, "Preview: select the parent"),
             (
                 Nav::TimeBackward,
                 "Preview: pause and step time back by 0.1s",

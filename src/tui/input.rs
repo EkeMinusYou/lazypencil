@@ -309,6 +309,10 @@ impl App {
                     self.nodes.select(None);
                     return Ok(false);
                 }
+                if action(Nav::SelectChild) || action(Nav::SelectParent) {
+                    self.navigate_canvas_hierarchy(action(Nav::SelectChild), picker, worker)?;
+                    return Ok(false);
+                }
                 if action(Nav::PlayPause) {
                     self.toggle_playback()?;
                     return Ok(false);

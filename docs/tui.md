@@ -93,7 +93,7 @@ and transparency; `/open-preview` opens the completed preview with its canvas ba
 
 Browser pages can retain per-node DOM state for `r` refresh and bounded playback.
 Preview `p` or `/play [fps]` starts at 5 fps by default (1–10); `/pause` stops new
-frames. `/time SECONDS` and `[`/`]` seek shader time, not page JavaScript or document
+frames. `/time SECONDS` and `Alt+[`/`Alt+]` seek shader time, not page JavaScript or document
 script execution. Runtime expiry, policy changes, failures and eviction can reset DOM.
 See [dynamic content](dynamic-content.md) for capture identity and limits.
 
@@ -170,6 +170,11 @@ primary selected shape. In Preview, Fit selected fits the whole canvas selection
 in Nodes, it fits and outlines the current tree row. Browsing tree rows leaves
 the canvas selection unchanged. Shape hit
 testing respects paint order, transforms, disabled ancestors and clipping.
+In Preview, `[` selects the first enabled direct child and `]` selects the parent.
+The camera stays in place and Nodes reveals the new selection. A leaf or root with
+no target keeps its selection. With multiple selected shapes, navigation starts at
+the primary shape and replaces the selection with one target. Without a canvas
+selection, the current Nodes row is the starting point.
 Prompt clicks focus input; pointer caret positioning and element movement/resizing
 are not included yet.
 
@@ -284,7 +289,8 @@ Large or high-DPI viewports automatically reduce preview raster resolution to st
 | Prompt: `/clear-images` then Enter | Remove pending images |
 | Preview: `hjkl` / arrows | Pan |
 | Preview: `+` / `-`, `0` | Zoom or fit the document, including negative coordinates |
-| Preview: `[` / `]` | Pause and step shader evaluation time backward/forward by 0.1 seconds |
+| Preview: `[` / `]` | Select the first enabled child / parent, updating the outline and Nodes row without moving the camera |
+| Preview: `Alt+[` / `Alt+]` | Pause and step shader evaluation time backward/forward by 0.1 seconds |
 | Preview: `p` | Play/pause page captures and the shader timeline at a maximum of 5 fps |
 | Prompt: `/play [fps]`, `/pause` then Enter | Start bounded playback (1–10 fps) or stop requesting frames |
 | Prompt: `/time <nonnegative seconds>` then Enter | Seek shader time without modifying the document |
@@ -379,7 +385,7 @@ The schema and `config show --user` list all actions and effective defaults:
 | --- | --- |
 | Normal panels | `next_panel`, `previous_panel`, `toggle_nodes_panel`, `toggle_agent_panel`, `help`, `commands` |
 | Outside Prompt | `quit`, `refresh`, `open_preview` |
-| Preview | `pan_left`, `pan_right`, `pan_up`, `pan_down`, `zoom_in`, `zoom_out`, `fit_document`, `time_backward`, `time_forward`, `play_pause` |
+| Preview | `pan_left`, `pan_right`, `pan_up`, `pan_down`, `zoom_in`, `zoom_out`, `fit_document`, `select_child`, `select_parent`, `time_backward`, `time_forward`, `play_pause` |
 | Preview and Nodes | `fit_selected` |
 | Nodes, Attachments and References | `previous_item`, `next_item` |
 | Nodes (including Diagnostics) | `reference_node`, `toggle_diagnostics`, `diagnostic_scope`, `search_nodes`, `clear_selection`, `activate_node`, `expand_node`, `collapse_node`, `toggle_node`, `node_page_up`, `node_page_down` |

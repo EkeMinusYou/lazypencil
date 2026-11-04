@@ -208,6 +208,20 @@ pub fn canvas_selection(h: &mut Harness) -> Result {
                     .is_some_and(|f| f.has_color([137, 180, 250, 255]))
         })?;
     }
+    let frames = h.frames.camera_frames;
+    h.key(b"[")?;
+    h.visible("1 node selected · Canvas child")?;
+    if h.case == "selection-kitty" {
+        h.wait("child outline is rendered", 15.0, |h| {
+            h.frames.camera_frames > frames
+                && h.frames
+                    .last_camera
+                    .as_ref()
+                    .is_some_and(|f| f.has_color([137, 180, 250, 255]))
+        })?;
+    }
+    h.key(b"]")?;
+    h.visible("1 node selected · Left canvas shape")?;
     h.key(b"0")?;
     h.wait("fit full document", 15.0, |h| {
         zoom(h).is_some_and(|z| z < 300)
