@@ -28,7 +28,9 @@ Direct Kitty previews of retained static scenes prepare exact native-resolution
 frames for one zoom step in each direction and four immediate pan neighbors before
 publishing the first document frame. Startup never prepares the full zoom ladder;
 more distant views are prepared only in response to repeated gestures.
-Completed uploads and losslessly compressed source pixels share a 32 MiB cache.
+Completed uploads and losslessly compressed source pixels share a 128 MiB cache.
+The cache grows on demand rather than reserving that capacity at startup; retained
+entries remain available until eviction, document dependency invalidation, or exit.
 At most two recent sources stay raw within that same budget, avoiding PNG
 compression between consecutive inputs.
 Entries are keyed by canvas background, viewport and exact camera region, and are
