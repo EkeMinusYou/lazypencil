@@ -24,13 +24,12 @@ impl Frame<'_> {
     ) -> Result<()> {
         self.check_interrupted()?;
         let options = self.options(view);
-        renderer.render(
+        renderer.hydrate(
             self.project,
             self.layout,
             &options,
             dynamic,
             Some(self.cancel.clone()),
-            None,
         )?;
         self.check_interrupted()
     }

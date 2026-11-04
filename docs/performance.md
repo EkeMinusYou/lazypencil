@@ -37,6 +37,9 @@ Entries are keyed by canvas background, viewport and exact camera region, and ar
 discarded when captured document dependencies change.
 Repeated gestures may prepare one next frame, with queued user requests taking
 priority. Prediction uses isolated renderer state and never publishes a camera move.
+If a queued request needs exactly the predicted native pixels, it reuses that
+completed frame rather than interrupting and repeating the same render. Different
+views, backgrounds, sizes, refreshes and presentation work still preempt prediction.
 All reuse preserves native pixels; it does not interpolate an old preview at a new zoom.
 
 Local Kitty terminals can opt into temporary-file transfers after a successful
@@ -45,15 +48,16 @@ payload; inline transfers remain the fallback for remote terminals, multiplexers
 unsupported terminals, or filesystem errors. This avoids sending the same large
 base64 payload through the PTY on every cached camera move.
 
-On Unix, temporary rasters of at least 4 MiB and retained preview sources above
-16 MiB use private temporary-file mappings. Finished rasters release their writer
-mapping, while retained sources can release resident pages and reload the exact
-bytes when needed. Failed file allocation or mapping falls back to heap storage.
-Small worker buffers and prepared drawing commands remain reusable between inputs.
-This trades temporary-file I/O for fewer full-viewport copies and less retained
-anonymous memory; it does not change resolution, sampling, alpha, or compression.
-The operating system may retain file-cache pages, so lower process RSS is not a
-hard bound on total system memory use.
+On macOS, native rasters of at least 4 MiB use application-owned pixel buffers.
+Immutable native images retain that ownership until their last reader releases it;
+a writer with live snapshots obtains a separate buffer before painting again.
+Workers reuse buffers during gestures and release them after 500 ms without work.
+Prepared commands and exact camera frames remain available. The rendering
+executable maps Rust buffers of at least 16 MiB directly and unmaps them on release;
+smaller or more strictly aligned allocations keep the system allocator. This avoids
+per-frame temporary-file I/O and deferred retention of freed native framebuffers.
+Embedding the library keeps the host application's allocator. Resolution, alpha,
+sampling and lossless compression remain unchanged.
 
 macOS native work uses thread-bound autorelease pools. Eligible large system
 fonts are captured into immutable mappings in bounded chunks, avoiding a second

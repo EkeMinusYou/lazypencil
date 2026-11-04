@@ -223,6 +223,7 @@ struct RecordedPicture {
 }
 
 impl RasterCache {
+    #[cfg(feature = "tui")]
     fn fork(&self) -> Self {
         Self {
             shapes: RefCell::new(self.shapes.borrow().clone()),
@@ -527,7 +528,9 @@ fn raster_impl_cached(
     let _working = rasters.reserve(working_width as u64 * working_height as u64 * 12)?;
     let mut surface = surface::RasterSurface::new((working_width, working_height))
         .ok_or_else(|| Error::new("RENDER_ERROR", "Cannot allocate a raster surface"))?;
-    let canvas = surface.canvas();
+    let canvas = surface
+        .canvas()
+        .ok_or_else(|| invalid("Cannot acquire native raster pixels"))?;
     canvas.clear(options.background);
     let mut image_capture = None;
     let mut pending_bands = Vec::new();

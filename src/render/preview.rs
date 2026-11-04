@@ -1,13 +1,13 @@
 //! Owned pixels for fast terminal previews and exact on-demand PNG encoding.
 use super::*;
-mod pixels;
 
 #[derive(Clone)]
 pub(crate) struct PreviewPixels {
     width: u32,
     height: u32,
-    // Immutable premultiplied pixels preserve exact on-demand PNG exports.
-    rgba: pixels::Pixels,
+    // Preserve premultiplied pixels for on-demand PNG export. No Skia object
+    // crosses the preview worker's thread boundary.
+    rgba: std::sync::Arc<Vec<u8>>,
     opaque: bool,
     // Nonopaque frames need a separate straight-alpha copy. Opaque camera
     // feedback borrows rgba directly; large windows retain no camera copy.
@@ -35,22 +35,11 @@ impl PreviewPixels {
             return Err(Error::new("RENDER_ERROR", "Cannot copy preview pixels"));
         }
         let opaque = rgba.as_chunks::<4>().0.iter().all(|pixel| pixel[3] == 255);
-        let mapped = pixels::Pixels::mapped(&rgba);
-        let (rgba, bitmap) = if opaque {
+        let bitmap = if opaque {
             // Straight and premultiplied pixels are identical for opaque images.
-            if let Some(mapped) = mapped {
-                (
-                    mapped,
-                    image::RgbaImage::from_raw(width, height, rgba)
-                        .expect("Read pixels have the checked image dimensions"),
-                )
-            } else {
-                let bitmap = image::RgbaImage::from_raw(width, height, rgba.clone())
-                    .expect("Read pixels have the checked image dimensions");
-                (pixels::Pixels::heap(rgba), bitmap)
-            }
+            image::RgbaImage::from_raw(width, height, rgba.clone())
+                .expect("Read pixels have the checked image dimensions")
         } else {
-            let rgba = mapped.unwrap_or_else(|| pixels::Pixels::heap(rgba));
             let mut bitmap = image::RgbaImage::new(width, height);
             let unpremul = info.with_alpha_type(skia_safe::AlphaType::Unpremul);
             if !image.read_pixels(
@@ -62,13 +51,13 @@ impl PreviewPixels {
             ) {
                 return Err(Error::new("RENDER_ERROR", "Cannot convert preview pixels"));
             }
-            (rgba, bitmap)
+            bitmap
         };
         Ok((
             Self {
                 width,
                 height,
-                rgba,
+                rgba: std::sync::Arc::new(rgba),
                 opaque,
                 camera_pixels: (!opaque
                     && u64::from(width) * u64::from(height) * 4 <= 16 * 1024 * 1024)
@@ -83,7 +72,7 @@ impl PreviewPixels {
             return None;
         }
         let bytes = if self.opaque {
-            &self.rgba
+            self.rgba.as_ref()
         } else {
             self.camera_pixels.as_ref()?.as_raw().as_slice()
         };
@@ -105,7 +94,6 @@ impl PreviewPixels {
             return (**image).clone();
         }
         let mut bytes = self.rgba.to_vec();
-        self.rgba.discard_pages();
         if !self.opaque {
             for pixel in bytes.as_chunks_mut::<4>().0 {
                 let alpha = u16::from(pixel[3]);
@@ -128,17 +116,16 @@ impl PreviewPixels {
             skia_safe::AlphaType::Premul,
             None,
         );
-        let data = self.rgba.data();
+        // The immutable source outlives this local image and its synchronous
+        // encoder. Only the encoded PNG leaves this scope, never the borrowed Data.
+        let data = unsafe { Data::new_bytes(&self.rgba) };
         let image = skia_safe::images::raster_from_data(&info, data, self.width as usize * 4)
             .ok_or_else(|| Error::new("RENDER_ERROR", "Cannot restore preview pixels"))?;
         let mut encoding = skia_safe::png_encoder::Options::default();
         encoding.z_lib_level = 1;
-        let result = skia_safe::png_encoder::encode_image(None, &image, &encoding)
+        skia_safe::png_encoder::encode_image(None, &image, &encoding)
             .map(|data| data.as_bytes().to_vec())
-            .ok_or_else(|| Error::new("RENDER_ERROR", "Cannot encode preview pixels"));
-        drop(image);
-        self.rgba.discard_pages();
-        result
+            .ok_or_else(|| Error::new("RENDER_ERROR", "Cannot encode preview pixels"))
     }
 }
 
@@ -210,6 +197,12 @@ impl PreviewRenderer {
         self.recordable = None;
     }
 
+    pub(crate) fn release_working_buffers(&self) {
+        if let Some(cache) = &self.cache {
+            cache.pool.borrow().release_buffers();
+        }
+    }
+
     pub(crate) fn render(
         &mut self,
         project: &Project,
@@ -219,6 +212,63 @@ impl PreviewRenderer {
         cancel: Option<tokio_util::sync::CancellationToken>,
         mut observer: Option<&mut dyn FnMut(&'static str)>,
     ) -> Result<RenderedPreview> {
+        self.with_raster(
+            project,
+            snapshot,
+            options,
+            runtime,
+            cancel,
+            |raster, recordable| {
+                if let Some(observer) = observer.as_mut() {
+                    observer("render_raster_ms");
+                }
+                let (pixels, bitmap) = PreviewPixels::from_image(&raster.image)?;
+                if let Some(observer) = observer.as_mut() {
+                    observer("render_pixel_copy_ms");
+                }
+                Ok(RenderedPreview {
+                    pixels,
+                    bitmap,
+                    dynamic_artifacts: raster.dynamic_artifacts,
+                    retain_raw_pixels: recordable,
+                })
+            },
+        )
+    }
+
+    pub(crate) fn hydrate(
+        &mut self,
+        project: &Project,
+        snapshot: &LayoutSnapshot,
+        options: &RenderOptions,
+        runtime: &mut crate::dynamic::DynamicRuntime,
+        cancel: Option<tokio_util::sync::CancellationToken>,
+    ) -> Result<()> {
+        crate::cancel::check(cancel.as_ref())?;
+        if self.recordable == Some(true)
+            && self.cache.as_ref().is_some_and(|cache| !cache.has_images)
+        {
+            let plan = RasterPlan::new(project, snapshot, options, true)?;
+            if plan.width * plan.height > atlas::MAX_ATLAS_PIXELS {
+                // Vector commands use world coordinates. With no possible atlas,
+                // revisiting a cached pan has no device origin to synchronize.
+                project.verify_unchanged()?;
+                return Ok(());
+            }
+        }
+        // Update exact raster origins without copying pixels that will be discarded.
+        self.with_raster(project, snapshot, options, runtime, cancel, |_, _| Ok(()))
+    }
+
+    fn with_raster<T>(
+        &mut self,
+        project: &Project,
+        snapshot: &LayoutSnapshot,
+        options: &RenderOptions,
+        runtime: &mut crate::dynamic::DynamicRuntime,
+        cancel: Option<tokio_util::sync::CancellationToken>,
+        finish: impl FnOnce(RenderedRaster, bool) -> Result<T>,
+    ) -> Result<T> {
         runtime.configure(project.runtime_settings())?;
         runtime.begin_render(cancel, options.refresh);
         if options.refresh_pages {
@@ -251,20 +301,9 @@ impl PreviewRenderer {
                 Some(cache),
                 recordable,
             )?;
-            if let Some(observer) = observer.as_mut() {
-                observer("render_raster_ms");
-            }
-            let (pixels, bitmap) = PreviewPixels::from_image(&raster.image)?;
-            if let Some(observer) = observer.as_mut() {
-                observer("render_pixel_copy_ms");
-            }
+            let output = finish(raster, recordable)?;
             runtime.check()?;
-            Ok(RenderedPreview {
-                pixels,
-                bitmap,
-                dynamic_artifacts: raster.dynamic_artifacts,
-                retain_raw_pixels: recordable,
-            })
+            Ok(output)
         })();
         runtime.render_result(result)
     }
@@ -285,6 +324,43 @@ pub(crate) fn preview_with_runtime_observed(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn large_vector_camera_hydration_needs_no_raster_or_pixel_copy() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("design.pen");
+        std::fs::write(&path, r##"{"version":"2.21","children":[{"type":"rectangle","id":"box","width":20,"height":20,"fill":"#123456"}]}"##).unwrap();
+        let store = crate::store::Store::open(&path, Some(directory.path().join("data"))).unwrap();
+        let (project, snapshot) = crate::service::layout_snapshot(&store, &[], None, None).unwrap();
+        let mut retained = PreviewRenderer {
+            cache: Some(RasterCache::new(&snapshot)),
+            recordable: Some(true),
+        };
+        let options = RenderOptions {
+            region: Some(Rect::new(0.0, 0.0, 4096.0, 4096.0)),
+            ..Default::default()
+        };
+        let mut runtime = crate::dynamic::DynamicRuntime::new(store.data_dir());
+        retained
+            .hydrate(&project, &snapshot, &options, &mut runtime, None)
+            .unwrap();
+        assert!(
+            retained
+                .cache
+                .as_ref()
+                .unwrap()
+                .pictures
+                .borrow()
+                .is_empty()
+        );
+        let cancel = tokio_util::sync::CancellationToken::new();
+        cancel.cancel();
+        assert!(
+            retained
+                .hydrate(&project, &snapshot, &options, &mut runtime, Some(cancel))
+                .is_err()
+        );
+    }
 
     #[test]
     fn preview_pixel_storage_preserves_export_and_borrows_opaque_camera_bytes() {
@@ -404,6 +480,9 @@ mod tests {
                         None,
                     )
                     .unwrap();
+                    retained
+                        .hydrate(&project, &snapshot, &options, &mut dynamic, None)
+                        .unwrap();
                     let cached = retained
                         .render(&project, &snapshot, &options, &mut dynamic, None, None)
                         .unwrap();

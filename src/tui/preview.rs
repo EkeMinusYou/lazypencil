@@ -339,12 +339,24 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
         script.expire_idle(now);
         dynamic.expire_idle(now);
         let mut state = shared.request.lock().unwrap();
+        let mut release_working_at = Some(now + std::time::Duration::from_millis(500));
         while state.0.is_none() && shared.presentation_request.lock().unwrap().is_none() && !state.1
         {
-            let deadline = [script.idle_deadline(), dynamic.idle_deadline()]
-                .into_iter()
-                .flatten()
-                .min();
+            if release_working_at.is_some_and(|deadline| Instant::now() >= deadline) {
+                renderer.release_working_buffers();
+                if let Some((_, predicted)) = &speculation {
+                    predicted.release_working_buffers();
+                }
+                release_working_at = None;
+            }
+            let deadline = [
+                script.idle_deadline(),
+                dynamic.idle_deadline(),
+                release_working_at,
+            ]
+            .into_iter()
+            .flatten()
+            .min();
             state = if let Some(deadline) = deadline {
                 let remaining = deadline.saturating_duration_since(Instant::now());
                 if remaining.is_zero() {
@@ -699,12 +711,25 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             {
                 continue;
             }
-            // Speculate only one frame after a confirmed repeated gesture. A real
-            // request can queue immediately and takes priority over encoding.
+            // A different request preempts speculation. An exact request for the
+            // predicted pixels can consume the completed frame without redrawing it.
+            let interrupted = || {
+                prediction_superseded(
+                    shared,
+                    request.cells,
+                    canvas_background,
+                    next,
+                    viewport.display,
+                )
+            };
+            let prediction = preparation::Frame {
+                interrupted: Some(&interrupted),
+                ..preparation
+            };
             let mut speculative_renderer = renderer.fork();
             let prediction_started = Instant::now();
             let prepared =
-                preparation.render(&mut speculative_renderer, &mut dynamic, &mut labels, next);
+                prediction.render(&mut speculative_renderer, &mut dynamic, &mut labels, next);
             if profile && profile_reports < 128 {
                 eprintln!(
                     "LAZYPENCIL_PREVIEW_PREDICTED {}",
@@ -712,7 +737,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 );
             }
             if let Ok(preview) = prepared
-                && !preparation_pending(shared)
+                && !interrupted()
             {
                 frames.insert_recent(request.cells, canvas_background, &preview);
             }
@@ -723,6 +748,28 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
 
 fn preparation_pending(shared: &Shared) -> bool {
     shared.request.lock().unwrap().0.is_some()
+        || shared.presentation_request.lock().unwrap().is_some()
+}
+
+fn prediction_superseded(
+    shared: &Shared,
+    cells: Size,
+    background: image::Rgba<u8>,
+    predicted: View,
+    pixels: [u32; 2],
+) -> bool {
+    let pending = shared.request.lock().unwrap();
+    let superseded = pending.1
+        || pending.0.as_ref().is_some_and(|request| {
+            request.cells != cells
+                || request.refresh
+                || request.refresh_pages
+                || request.attachment.is_some()
+                || !cache::same_pixels(request.view, predicted, pixels)
+        });
+    drop(pending);
+    superseded
+        || *shared.canvas_background.lock().unwrap() != background
         || shared.presentation_request.lock().unwrap().is_some()
 }
 
@@ -1152,6 +1199,60 @@ mod tests {
                 assert_eq!(view.region(pixels), original);
             }
         }
+    }
+
+    #[test]
+    fn predictions_accept_exact_queued_pixels_but_yield_to_different_work() {
+        let background = Backend::halfblocks().canvas_background();
+        let shared = Shared {
+            canvas_background: Mutex::new(background),
+            request: Mutex::new((None, false)),
+            wake: Condvar::new(),
+            active: Mutex::new(None),
+            output: Mutex::new(None),
+            notify: Notify::new(),
+            generation: AtomicU64::new(1),
+            presentation_request: Mutex::new(None),
+            presentation_output: Mutex::new(None),
+            presentation_clock: Arc::default(),
+            presentation_notify: Notify::new(),
+        };
+        let request = Request {
+            generation: 2,
+            cells: Size::new(20, 8),
+            view: View {
+                zoom: Some(1.0),
+                ..View::default()
+            },
+            refresh: false,
+            refresh_pages: false,
+            check_only: false,
+            attachment: None,
+        };
+        let superseded =
+            || prediction_superseded(&shared, request.cells, background, request.view, [200, 160]);
+        assert!(!superseded());
+        *shared.request.lock().unwrap() = (Some(request.clone()), false);
+        assert!(!superseded());
+        for change in 0..5 {
+            let mut other = request.clone();
+            match change {
+                0 => other.cells.width += 1,
+                1 => other.view.pan([64.0, 0.0]),
+                2 => other.view.time += 1.0,
+                3 => other.refresh = true,
+                _ => other.refresh_pages = true,
+            }
+            shared.request.lock().unwrap().0 = Some(other);
+            assert!(superseded(), "Changed work {change} must take priority");
+        }
+        shared.request.lock().unwrap().0 = Some(request.clone());
+        *shared.canvas_background.lock().unwrap() = image::Rgba([1, 2, 3, 255]);
+        assert!(superseded());
+        *shared.canvas_background.lock().unwrap() = background;
+        assert!(!superseded());
+        shared.request.lock().unwrap().1 = true;
+        assert!(superseded());
     }
 
     #[test]

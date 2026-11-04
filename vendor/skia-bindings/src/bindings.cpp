@@ -1481,6 +1481,21 @@ extern "C" void C_SkBitmap_Copy(const SkBitmap* from, SkBitmap* to) {
     *to = *from;
 }
 
+extern "C" bool C_Lazypencil_installRasterBitmap(
+    void* bitmap, size_t bitmap_size, size_t bitmap_alignment,
+    int width, int height, void* pixels, size_t row_bytes,
+    void (*release)(void*, void*), void* context) noexcept {
+    // skia-safe's Bitmap is a transparent wrapper around the pinned SkBitmap.
+    // Refuse an incompatible layout before interpreting the Rust-owned object.
+    if (bitmap_size != sizeof(SkBitmap) || bitmap_alignment != alignof(SkBitmap)) {
+        release(pixels, context);
+        return false;
+    }
+    // installPixels invokes release even when validation fails.
+    return static_cast<SkBitmap*>(bitmap)->installPixels(
+        SkImageInfo::MakeN32Premul(width, height), pixels, row_bytes, release, context);
+}
+
 extern "C" bool C_SkBitmap_ComputeIsOpaque(const SkBitmap* self) {
     return SkBitmap::ComputeIsOpaque(*self);
 }

@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 
 const CAPACITY_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_ENTRIES: usize = 8;
-const MAX_ATLAS_PIXELS: u64 = 8 * 1024 * 1024;
+pub(super) const MAX_ATLAS_PIXELS: u64 = 8 * 1024 * 1024;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct Key {

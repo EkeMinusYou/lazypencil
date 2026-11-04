@@ -10,7 +10,9 @@ completion conditions. Report which checks ran and which did not.
 Use Rust 1.94 or later and a native C/C++ toolchain. On the supported Mac host,
 install Xcode Command Line Tools. Building Skia from source also uses Python, Ninja,
 and its upstream GN/dependency tooling; warm verified native archives can avoid that
-work. The [vendored build README](../vendor/skia-bindings/README.md) describes native
+work. Mac rendering builds compile the vendored native bindings from source because
+upstream binary archives lack the local raster-ownership bridge; the shared target
+cache reuses unchanged native objects. The [vendored build README](../vendor/skia-bindings/README.md) describes native
 configuration. Ordinary builds use the checked-in shader component and need no Node
 or Wasm toolchain.
 

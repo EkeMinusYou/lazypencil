@@ -110,7 +110,10 @@ fn main() -> Result<(), io::Error> {
         let build_skia = true;
 
         #[cfg(feature = "binary-cache")]
-        let build_skia = build_support::binary_cache::try_prepare_download(&binaries_config);
+        // The Mac renderer uses the local bitmap-ownership bridge. Upstream
+        // binary archives do not contain that binding, so keep its build native.
+        let build_skia = std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos")
+            || build_support::binary_cache::try_prepare_download(&binaries_config);
 
         //
         // full build?

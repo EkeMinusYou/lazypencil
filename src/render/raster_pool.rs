@@ -22,31 +22,39 @@ struct Job {
 }
 
 struct Worker {
-    sender: Option<mpsc::SyncSender<Job>>,
+    sender: Option<mpsc::SyncSender<Command>>,
     thread: Option<JoinHandle<()>>,
+}
+
+enum Command {
+    Render(Job),
+    #[cfg(feature = "tui")]
+    ReleaseBuffers,
 }
 
 impl Worker {
     fn start(index: usize) -> Result<Self> {
-        let (sender, receiver) = mpsc::sync_channel::<Job>(1);
+        let (sender, receiver) = mpsc::sync_channel::<Command>(1);
         let thread = std::thread::Builder::new()
             .name(format!("lazypencil-raster-{index}"))
             .spawn(move || {
                 let mut surface = None;
                 let mut size = (0, 0);
-                while let Ok(job) = receiver.recv() {
+                while let Ok(command) = receiver.recv() {
                     let _pool = crate::native_memory::AutoreleasePool::new();
-                    let result = (|| {
-                        #[cfg(unix)]
-                        if job.size.0 as u64 * job.size.1 as u64 * 4 >= 4 * 1024 * 1024 {
-                            let mut surface = super::surface::RasterSurface::new(job.size)
-                                .ok_or_else(|| invalid("Cannot allocate a preview raster band"))?;
-                            paint_job(surface.canvas(), &job);
-                            return Ok(surface.finish());
+                    let job = match command {
+                        Command::Render(job) => job,
+                        #[cfg(feature = "tui")]
+                        Command::ReleaseBuffers => {
+                            surface = None;
+                            size = (0, 0);
+                            continue;
                         }
+                    };
+                    let result = (|| {
                         if size != job.size {
                             surface =
-                                Some(skia_safe::surfaces::raster_n32_premul(job.size).ok_or_else(
+                                Some(super::surface::RasterSurface::new(job.size).ok_or_else(
                                     || invalid("Cannot allocate a preview raster band"),
                                 )?);
                             size = job.size;
@@ -54,8 +62,11 @@ impl Worker {
                         let surface = surface
                             .as_mut()
                             .expect("Raster dimensions were initialized");
-                        paint_job(surface.canvas(), &job);
-                        Ok(surface.image_snapshot())
+                        let canvas = surface
+                            .canvas()
+                            .ok_or_else(|| invalid("Cannot acquire preview raster pixels"))?;
+                        paint_job(canvas, &job);
+                        Ok(surface.snapshot())
                     })();
                     let _ = job.reply.send(result);
                 }
@@ -113,7 +124,7 @@ impl PendingBand {
             .sender
             .as_ref()
             .expect("Live raster worker")
-            .send(Job {
+            .send(Command::Render(Job {
                 picture: picture.clone(),
                 transform: Matrix::new_identity(),
                 size,
@@ -121,7 +132,7 @@ impl PendingBand {
                 band,
                 complete: true,
                 reply,
-            })
+            }))
             .map_err(|_| invalid("Preview raster worker stopped"))?;
         Ok(Self {
             worker,
@@ -158,6 +169,15 @@ impl PendingBand {
 }
 
 impl RasterPool {
+    #[cfg(feature = "tui")]
+    pub(super) fn release_buffers(&self) {
+        for worker in &self.workers {
+            if let Some(sender) = &worker.sender {
+                // Idle cleanup never waits behind real rendering work.
+                let _ = sender.try_send(Command::ReleaseBuffers);
+            }
+        }
+    }
     pub(super) fn parts(size: (i32, i32)) -> usize {
         static PARALLELISM: OnceLock<usize> = OnceLock::new();
         if size.0 as u64 * (size.1 as u64) < 512 * 512 {
@@ -209,7 +229,7 @@ impl RasterPool {
                     .sender
                     .as_ref()
                     .expect("Live raster worker")
-                    .send(Job {
+                    .send(Command::Render(Job {
                         picture: self
                             .bands
                             .as_ref()
@@ -220,7 +240,7 @@ impl RasterPool {
                         band,
                         complete: self.bands.is_some(),
                         reply,
-                    })
+                    }))
                     .map_err(|_| invalid("Preview raster worker stopped"))?;
                 pending.push((band, receiver));
             }

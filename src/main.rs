@@ -1,6 +1,13 @@
 use clap::{CommandFactory, FromArgMatches};
 use std::{io::Write, process::ExitCode};
 
+#[cfg(all(target_os = "macos", feature = "rendering"))]
+#[path = "native_memory/allocation.rs"]
+mod native_allocation;
+#[cfg(all(target_os = "macos", feature = "rendering"))]
+#[global_allocator]
+static ALLOCATOR: native_allocation::LargeBufferAllocator = native_allocation::LargeBufferAllocator;
+
 fn main() -> ExitCode {
     // Completion queries finish before worker setup, configuration, or locks.
     clap_complete::CompleteEnv::with_factory(lazypencil::cli::Arguments::command)
