@@ -330,12 +330,12 @@ fn agent_header_tracks_negotiated_model_and_hides_inactive_fast_mode() {
     for label in ["model:", "effort:", "account:", "session:"] {
         assert!(!app.header_line().to_string().contains(label));
     }
-    for value in ["fixture-model", "xhigh"] {
+    for value in ["fixture-model", "xhigh", "Fast"] {
         let offset = top.find(value).unwrap();
         let start = top[..offset].chars().count() as u16;
         for x in start..start + value.len() as u16 {
             let cell = &terminal.backend().buffer()[(x, 0)];
-            assert_eq!(cell.fg, theme::colors().text);
+            assert_eq!(cell.fg, theme::colors().success);
             assert!(!cell.modifier.contains(Modifier::DIM));
         }
     }

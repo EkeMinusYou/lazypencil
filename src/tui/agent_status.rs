@@ -122,7 +122,7 @@ impl App {
             separator(),
             Span::styled(
                 clean(self.agent.model()).replace(['\n', '\t'], " "),
-                Style::default().fg(theme::colors().text),
+                Style::default().fg(theme::colors().success),
             ),
         ];
         if let Some(effort) = self.agent.effort() {
@@ -130,7 +130,7 @@ impl App {
                 Span::raw(" "),
                 Span::styled(
                     clean(effort).replace(['\n', '\t'], " "),
-                    Style::default().fg(theme::colors().text),
+                    Style::default().fg(theme::colors().success),
                 ),
             ]);
         }
