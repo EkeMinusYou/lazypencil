@@ -7,7 +7,7 @@ pub(crate) struct PreviewPixels {
     height: u32,
     // Preserve premultiplied pixels for on-demand PNG export. No Skia object
     // crosses the preview worker's thread boundary.
-    rgba: std::sync::Arc<[u8]>,
+    rgba: std::sync::Arc<Vec<u8>>,
     opaque: bool,
     // Nonopaque frames need a separate straight-alpha copy. Opaque camera
     // feedback borrows rgba directly; large windows retain no camera copy.
@@ -57,7 +57,7 @@ impl PreviewPixels {
             Self {
                 width,
                 height,
-                rgba: rgba.into(),
+                rgba: std::sync::Arc::new(rgba),
                 opaque,
                 camera_pixels: (!opaque
                     && u64::from(width) * u64::from(height) * 4 <= 16 * 1024 * 1024)
@@ -81,6 +81,13 @@ impl PreviewPixels {
 
     pub(crate) fn identity(&self) -> usize {
         self.rgba.as_ptr() as usize
+    }
+    pub(crate) fn retained_bytes(&self) -> usize {
+        self.rgba.len()
+            + self
+                .camera_pixels
+                .as_ref()
+                .map_or(0, |image| image.as_raw().len())
     }
     pub(crate) fn bitmap(&self) -> image::RgbaImage {
         if let Some(image) = &self.camera_pixels {
@@ -138,6 +145,54 @@ pub(crate) struct PreviewRenderer {
 }
 
 impl PreviewRenderer {
+    pub(crate) fn fork(&self) -> Self {
+        Self {
+            cache: self.cache.as_ref().map(RasterCache::fork),
+            recordable: self.recordable,
+        }
+    }
+    pub(crate) fn retain_prepared_commands(&mut self, prepared: &Self) {
+        if let (Some(cache), Some(prepared)) = (&self.cache, &prepared.cache) {
+            // Commands are keyed by exact scale and, for image scenes, viewport.
+            // Keep atlas origins from actual display order: speculative raster
+            // origins can change f32 antialias rounding on a later camera move.
+            let mut pictures = cache.pictures.borrow_mut();
+            let mut bytes = pictures
+                .values()
+                .map(|picture| picture.bytes)
+                .sum::<usize>();
+            let prepared_pictures = prepared.pictures.borrow();
+            let mut entries = prepared_pictures.iter().collect::<Vec<_>>();
+            entries.sort_by_key(|(_, picture)| std::cmp::Reverse(picture.used.get()));
+            for (key, picture) in entries {
+                if pictures.contains_key(key)
+                    || pictures.len() >= if key.viewport.is_some() { 8 } else { 48 }
+                    || bytes.saturating_add(picture.bytes) > 32 * 1024 * 1024
+                {
+                    continue;
+                }
+                bytes += picture.bytes;
+                pictures.insert(*key, picture.clone());
+            }
+            cache
+                .picture_clock
+                .set(cache.picture_clock.get().max(prepared.picture_clock.get()));
+        }
+    }
+    pub(crate) fn retained_commands(&self, scale: f32) -> (usize, usize, bool, Option<u32>) {
+        self.cache.as_ref().map_or((0, 0, false, None), |cache| {
+            let pictures = cache.pictures.borrow();
+            (
+                pictures.len(),
+                pictures.values().map(|entry| entry.bytes).sum(),
+                pictures.keys().any(|key| key.scale == scale.to_bits()),
+                pictures
+                    .keys()
+                    .map(|key| key.scale.abs_diff(scale.to_bits()))
+                    .min(),
+            )
+        })
+    }
     pub(crate) fn clear(&mut self) {
         self.cache = None;
         self.recordable = None;
@@ -340,6 +395,38 @@ mod tests {
                     let cached = retained
                         .render(&project, &snapshot, &options, &mut dynamic, None, None)
                         .unwrap();
+                    if scale == 0.375 && x == 16.0 {
+                        let identities = retained
+                            .cache
+                            .as_ref()
+                            .unwrap()
+                            .pictures
+                            .borrow()
+                            .iter()
+                            .map(|(key, picture)| (*key, picture.picture.unique_id()))
+                            .collect::<Vec<_>>();
+                        let mut prepared = PreviewRenderer::default();
+                        prepared
+                            .render(&project, &snapshot, &options, &mut dynamic, None, None)
+                            .unwrap();
+                        retained.retain_prepared_commands(&prepared);
+                        for (key, identity) in identities {
+                            assert_eq!(
+                                retained.cache.as_ref().unwrap().pictures.borrow()[&key]
+                                    .picture
+                                    .unique_id(),
+                                identity,
+                                "Preparation must preserve active raster identities and origins"
+                            );
+                        }
+                        let revisited = retained
+                            .render(&project, &snapshot, &options, &mut dynamic, None, None)
+                            .unwrap();
+                        assert_eq!(
+                            revisited.pixels.png().unwrap(),
+                            cached.pixels.png().unwrap()
+                        );
+                    }
                     assert_eq!(
                         crate::document::hash(&cached.pixels.png().unwrap()),
                         crate::document::hash(&original.png),

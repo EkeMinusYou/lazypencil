@@ -18,7 +18,9 @@ use std::{
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
+mod cache;
 pub(super) mod labels;
+mod preparation;
 mod revision;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -90,6 +92,7 @@ pub struct Request {
     pub check_only: bool,
     pub attachment: Option<(Attachment, PathBuf)>,
 }
+#[derive(Clone)]
 pub struct Preview {
     pub protocol: Encoded,
     pub(crate) image: PreviewImage,
@@ -308,6 +311,12 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
     let mut document_preview_time = None;
     let mut document_preview_background = None;
     let mut renderer = crate::render::PreviewRenderer::default();
+    let mut prepared_camera = None;
+    let mut first_camera_frame = true;
+    let mut frames = cache::Frames::new(picker.font_size());
+    let mut previous_view = None;
+    let mut predicted_view = None;
+    let mut speculation: Option<(View, crate::render::PreviewRenderer)> = None;
     let mut labels = labels::Labels::default();
     let mut presentation_cache = None;
     let mut navigation: Option<Arc<[Node]>> = None;
@@ -410,6 +419,11 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                     &mut script,
                 )?);
                 renderer.clear();
+                frames.clear();
+                previous_view = None;
+                predicted_view = None;
+                speculation = None;
+                prepared_camera = None;
                 navigation = None;
             }
             let (project, layout) = cached.as_ref().unwrap();
@@ -418,6 +432,21 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             let mut view = request.view;
             if view.zoom.is_none() {
                 view.fit_canvas(layout.bounds, pixels);
+            }
+            if let Some((predicted, prepared)) = speculation.take()
+                && cache::same_pixels(predicted, view, pixels)
+            {
+                renderer = prepared;
+            }
+            if !request.refresh_pages
+                && let Some(mut preview) = frames.get(request.cells, canvas_background, view)
+            {
+                revision.verify(store, &layout.revision)?;
+                project.verify_unchanged()?;
+                prepared_camera = Some((request.cells, canvas_background));
+                preview.frame_time = std::time::Duration::ZERO;
+                timing.mark("frame_cache_ms");
+                return Ok(Some(preview));
             }
             let image::Rgba([r, g, b, a]) = picker.canvas_background();
             let options = crate::render::RenderOptions {
@@ -430,6 +459,14 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 ..Default::default()
             };
             timing.mark("snapshot_ms");
+            if profile && profile_reports < 128 {
+                let (pictures, bytes, scale_recorded, nearest_scale_ulps) =
+                    renderer.retained_commands(options.scale);
+                eprintln!(
+                    "LAZYPENCIL_PREVIEW_CACHE {}",
+                    json!({"generation":request.generation,"pictures":pictures,"bytes":bytes,"scale_recorded":scale_recorded,"nearest_scale_ulps":nearest_scale_ulps})
+                );
+            }
             let frame_started = Instant::now();
             let image = renderer.render(
                 project,
@@ -445,6 +482,11 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 return Ok(None);
             }
             timing.mark("verification_ms");
+            let camera_key = (request.cells, canvas_background);
+            let static_camera = image.retain_raw_pixels
+                && picker.protocol_type() == ratatui_image::picker::ProtocolType::Kitty
+                && !picker.tmux_detected();
+            let prepare_camera = static_camera && first_camera_frame;
             // Native retained scenes keep direct pixels for low-latency camera
             // updates. Other scenes retain a lossless PNG instead of a full
             // framebuffer, and release its raw storage before terminal encoding.
@@ -496,6 +538,57 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             );
             summary["dynamic_artifacts"] = Value::Array(image.dynamic_artifacts);
             timing.mark("metadata_ms");
+            if prepare_camera {
+                // Prepare exact camera frames before publishing the initial view.
+                // Retained uploads avoid repeating rasterization and compression
+                // on the first keypress, including previously unused zoom levels.
+                let preparation = preparation::Frame {
+                    project,
+                    layout,
+                    picker,
+                    cells: request.cells,
+                    pixels,
+                    raster_scale: viewport.scale,
+                    image_id,
+                    nodes: nodes.clone(),
+                    summary: summary.clone(),
+                    cancel: cancel.clone(),
+                    interrupted: None,
+                };
+                let mut preparation_renderer = renderer.fork();
+                for neighbor in camera_preparation_views(view) {
+                    if neighbor == view {
+                        continue;
+                    }
+                    // A first pan in any direction starts from the actual
+                    // initial raster, rather than another prepared pan's origin.
+                    let mut pan_renderer = (neighbor.zoom == view.zoom).then(|| renderer.fork());
+                    let neighbor_renderer =
+                        pan_renderer.as_mut().unwrap_or(&mut preparation_renderer);
+                    if let Ok(preview) =
+                        preparation.render(neighbor_renderer, &mut dynamic, &mut labels, neighbor)
+                    {
+                        frames.insert(request.cells, canvas_background, &preview);
+                    } else if cancel.is_cancelled() {
+                        return Ok(None);
+                    }
+                    // A failed optional view must not hide the valid first frame.
+                }
+                renderer.retain_prepared_commands(&preparation_renderer);
+                revision.verify(store, &layout.revision)?;
+                project.verify_unchanged()?;
+                if profile && profile_reports < 128 {
+                    let (frames, bytes) = frames.retained();
+                    eprintln!(
+                        "LAZYPENCIL_PREVIEW_PREPARED {}",
+                        json!({"frames":frames,"bytes":bytes})
+                    );
+                }
+                timing.mark("camera_prepare_ms");
+            }
+            if static_camera {
+                prepared_camera = Some(camera_key);
+            }
             Ok(Some(Preview {
                 protocol,
                 image: retained_image,
@@ -516,6 +609,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
         let result = match result {
             Ok(Some(preview)) => {
                 if !preview.attachment {
+                    first_camera_frame = false;
                     document_preview_time = Some(preview.view.time);
                     document_preview_background = Some(canvas_background);
                     if let Some(report) = timing.report(request.generation) {
@@ -528,12 +622,144 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             Ok(None) => continue,
             Err(error) => Err(error),
         };
+        let retain = result
+            .as_ref()
+            .ok()
+            .filter(|preview| {
+                !preview.attachment
+                    && !preview.time_dependent
+                    && !preview.live_pages
+                    && preview.protocol.native_bytes().is_some()
+            })
+            .cloned();
         *shared.output.lock().unwrap() = Some(Output {
             generation: request.generation,
             result,
         });
         shared.notify.notify_one();
+        // Recent frames reuse owned pixels without another compression pass.
+        if let Some(preview) = retain {
+            frames.insert_recent(request.cells, canvas_background, &preview);
+            if prepared_camera != Some((request.cells, canvas_background)) {
+                continue;
+            }
+            let Ok(viewport) = super::viewport::Viewport::new(picker.font_size(), request.cells)
+            else {
+                continue;
+            };
+            let Some((project, layout)) = cached.as_ref() else {
+                continue;
+            };
+            let interrupted = || preparation_pending(shared);
+            let preparation = preparation::Frame {
+                project,
+                layout,
+                picker,
+                cells: request.cells,
+                pixels: viewport.display,
+                raster_scale: viewport.scale,
+                image_id,
+                nodes: preview.nodes.clone(),
+                summary: preview.summary.clone(),
+                cancel: cancel.clone(),
+                interrupted: Some(&interrupted),
+            };
+            if preview.frame_time.is_zero()
+                && previous_view.is_some_and(|previous: View| {
+                    previous.zoom == preview.view.zoom
+                        && !cache::same_pixels(previous, preview.view, viewport.display)
+                })
+            {
+                // Keep pan rasters in actual display order. Prepared zooms need
+                // no second rasterization: they already carry the exact pixels
+                // and retained commands for their own native scale.
+                let _ = preparation.hydrate(&mut renderer, &mut dynamic, preview.view);
+            }
+            let repeated = predicted_view.is_some_and(|predicted| {
+                cache::same_pixels(predicted, preview.view, viewport.display)
+            });
+            let next = previous_view.and_then(|previous| {
+                preparation::predict(previous, preview.view, viewport.display)
+            });
+            previous_view = Some(preview.view);
+            predicted_view = next;
+            if profile && profile_reports < 128 {
+                eprintln!(
+                    "LAZYPENCIL_PREVIEW_PREDICTION {}",
+                    json!({"generation":request.generation,"repeated":repeated,"next":next.is_some(),"queued":preparation_pending(shared)})
+                );
+            }
+            let Some(next) = next.filter(|_| repeated) else {
+                continue;
+            };
+            if frames.get(request.cells, canvas_background, next).is_some()
+                || preparation_pending(shared)
+            {
+                continue;
+            }
+            // Speculate only one frame after a confirmed repeated gesture. A real
+            // request can queue immediately and takes priority over encoding.
+            let mut speculative_renderer = renderer.fork();
+            let prediction_started = Instant::now();
+            let prepared =
+                preparation.render(&mut speculative_renderer, &mut dynamic, &mut labels, next);
+            if profile && profile_reports < 128 {
+                eprintln!(
+                    "LAZYPENCIL_PREVIEW_PREDICTED {}",
+                    json!({"generation":request.generation,"ready":prepared.is_ok(),"queued":preparation_pending(shared),"cancelled":cancel.is_cancelled(),"elapsed_ms":prediction_started.elapsed().as_secs_f64()*1000.0})
+                );
+            }
+            if let Ok(preview) = prepared
+                && !preparation_pending(shared)
+            {
+                frames.insert_recent(request.cells, canvas_background, &preview);
+            }
+            speculation = Some((next, speculative_renderer));
+        }
     }
+}
+
+fn preparation_pending(shared: &Shared) -> bool {
+    shared.request.lock().unwrap().0.is_some()
+        || shared.presentation_request.lock().unwrap().is_some()
+}
+
+fn camera_preparation_views(view: View) -> Vec<View> {
+    let mut views = Vec::new();
+    // Prepare commands at the full supported discrete zoom range. Higher zooms
+    // still rasterize their viewport at native resolution when requested.
+    for factor in [1.25_f32, 0.8_f32] {
+        let mut zoom = view.zoom.unwrap_or(1.0);
+        loop {
+            let next = if factor > 1.0 {
+                (zoom * 1.25).min(16.0)
+            } else {
+                (zoom / 1.25).max(0.01)
+            };
+            if next == zoom {
+                break;
+            }
+            views.push(View {
+                zoom: Some(next),
+                ..view
+            });
+            zoom = next;
+        }
+    }
+    let mut neighbors = [view; 6];
+    for (neighbor, delta) in
+        neighbors
+            .iter_mut()
+            .zip([[64.0, 0.0], [-64.0, 0.0], [0.0, 64.0], [0.0, -64.0]])
+    {
+        neighbor.pan(delta);
+    }
+    let zoom = view.zoom.unwrap_or(1.0);
+    neighbors[4].zoom = Some((zoom * 1.25).min(16.0));
+    neighbors[5].zoom = Some((zoom / 1.25).max(0.01));
+    // Keep the nearest rasters hot after preparing more distant zoom commands.
+    views.extend(neighbors);
+    views
 }
 
 struct PreviewTiming {
@@ -579,6 +805,139 @@ mod tests {
     use super::*;
     use std::time::Duration;
     use tempfile::TempDir;
+
+    #[test]
+    fn revisited_native_frames_reuse_pixels_but_invalidate_changed_documents_backgrounds_and_sizes()
+    {
+        let directory = TempDir::new().unwrap();
+        let store = Store::init(
+            directory.path().join("design.pen"),
+            Some(directory.path().join("data")),
+        )
+        .unwrap();
+        let document = json!({"version":"2.21","children":[{"id":"shape","type":"rectangle","width":120,"height":80,"fill":"#FF0000"}]}).to_string();
+        std::fs::write(store.path(), &document).unwrap();
+        let worker = Worker::start(store.clone(), vec![], Backend::native_for_test(), 198).unwrap();
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let mut request = Request {
+                    generation: 1,
+                    cells: Size::new(40, 16),
+                    view: View::default(),
+                    refresh: false,
+                    refresh_pages: false,
+                    check_only: false,
+                    attachment: None,
+                };
+                worker.request(request.clone());
+                let initial = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                    .await
+                    .unwrap()
+                    .result
+                    .unwrap();
+                request.view = initial.view;
+                let fitted = initial.view;
+                request.view.pan([64.0, 0.0]);
+                request.generation += 1;
+                worker.request(request.clone());
+                let moved = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                    .await
+                    .unwrap()
+                    .result
+                    .unwrap();
+                assert_ne!(moved.image.png().unwrap(), initial.image.png().unwrap());
+                assert!(
+                    matches!(&moved.image, PreviewImage::Png(_)),
+                    "Initial preparation retains distant sources losslessly compressed"
+                );
+                request.view = fitted;
+                request.view.center[0] = f64::from_bits(fitted.center[0].to_bits() + 1);
+                request.generation += 1;
+                worker.request(request.clone());
+                let returned = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                    .await
+                    .unwrap()
+                    .result
+                    .unwrap();
+                assert_eq!(returned.image.png().unwrap(), initial.image.png().unwrap());
+                assert!(
+                    matches!(&returned.image, PreviewImage::Pixels(_)),
+                    "Recent frames avoid another source compression pass"
+                );
+                assert_eq!(returned.frame_time, Duration::ZERO);
+                assert_eq!(
+                    returned.view, request.view,
+                    "Reuse must preserve precise requested camera coordinates"
+                );
+                worker.set_canvas_background(image::Rgba([20, 30, 40, 255]));
+                request.generation += 1;
+                worker.request(request.clone());
+                let dark = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                    .await
+                    .unwrap()
+                    .result
+                    .unwrap();
+                assert_ne!(dark.image.png().unwrap(), initial.image.png().unwrap());
+                std::fs::write(store.path(), document.replace("#FF0000", "#00FF00")).unwrap();
+                request.generation += 1;
+                worker.request(request.clone());
+                let edited = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                    .await
+                    .unwrap()
+                    .result
+                    .unwrap();
+                assert_ne!(edited.image.png().unwrap(), dark.image.png().unwrap());
+                request.generation += 1;
+                request.cells.width += 1;
+                worker.request(request.clone());
+                let resized = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                    .await
+                    .unwrap()
+                    .result
+                    .unwrap();
+                assert_eq!(resized.protocol.size(), Size::new(41, 16));
+                let mut recent = cache::Frames::new(Backend::native_for_test().font_size());
+                let cells = Size::new(40, 16);
+                let background = Backend::native_for_test().canvas_background();
+                let dark_background = image::Rgba([20, 30, 40, 255]);
+                recent.insert_recent(cells, background, &initial);
+                recent.insert_recent(cells, dark_background, &dark);
+                recent.insert_recent(request.cells, dark_background, &resized);
+                assert_eq!(recent.retained().0, 2);
+                assert!(recent.get(cells, background, initial.view).is_none());
+                assert_eq!(
+                    recent
+                        .get(cells, dark_background, dark.view)
+                        .unwrap()
+                        .image
+                        .png()
+                        .unwrap(),
+                    dark.image.png().unwrap(),
+                    "Evicting old raw sources must preserve recent exact pixels"
+                );
+                request.view = resized.view;
+                for _ in 0..2 {
+                    request.generation += 1;
+                    request.view.pan([64.0, 0.0]);
+                    worker.request(request.clone());
+                    let actual = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                        .await
+                        .unwrap()
+                        .result
+                        .unwrap();
+                    assert_eq!(actual.view, request.view);
+                }
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(200), worker.next())
+                        .await
+                        .is_err(),
+                    "Speculative frames must never become visible outputs"
+                );
+            });
+    }
 
     #[test]
     fn root_labels_decorate_initial_and_selected_previews_without_changing_export_pixels() {

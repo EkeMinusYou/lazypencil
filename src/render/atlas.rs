@@ -14,6 +14,7 @@ struct Key {
     background: u32,
 }
 
+#[derive(Clone)]
 struct Entry {
     image: StoredImage,
     left: i32,
@@ -24,6 +25,7 @@ struct Entry {
 
 // Device pixels are compressed without color conversion. Vector atlases keep
 // their native image so their frequent integer crops need no decompression.
+#[derive(Clone)]
 enum StoredImage {
     Native(Image),
     Deflated {
@@ -90,13 +92,73 @@ impl StoredImage {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct AtlasCache {
     entries: BTreeMap<Key, Entry>,
     clock: u64,
 }
 
 impl AtlasCache {
+    pub(super) fn crop(
+        &mut self,
+        picture: &skia_safe::Picture,
+        transform: &Matrix,
+        viewport: skia_safe::IRect,
+        background: Color,
+    ) -> Option<Image> {
+        if background.a() != 255 {
+            return None;
+        }
+        let (dx, dy) = (transform.translate_x(), transform.translate_y());
+        if !dx.is_finite() || !dy.is_finite() || dx.abs() > 8_000_000.0 || dy.abs() > 8_000_000.0 {
+            return None;
+        }
+        let (ix, iy) = (dx.floor() as i32, dy.floor() as i32);
+        let key = Key {
+            picture: picture.unique_id(),
+            phase_x: (dx - ix as f32).to_bits(),
+            phase_y: (dy - iy as f32).to_bits(),
+            background: u32::from_be_bytes([
+                background.a(),
+                background.r(),
+                background.g(),
+                background.b(),
+            ]),
+        };
+        let entry = self.entries.get_mut(&key)?;
+        let image = entry.image.image()?;
+        let (x, y) = (
+            viewport.left - entry.left - ix,
+            viewport.top - entry.top - iy,
+        );
+        if x < 0
+            || y < 0
+            || x + viewport.width() > image.width()
+            || y + viewport.height() > image.height()
+        {
+            // The retained raster covers the complete picture. Pixels beyond
+            // it are the opaque canvas, including after a large camera move.
+            let mut surface =
+                skia_safe::surfaces::raster_n32_premul((viewport.width(), viewport.height()))?;
+            surface.canvas().clear(background);
+            let mut paint = Paint::default();
+            paint.set_blend_mode(BlendMode::Src);
+            surface
+                .canvas()
+                .draw_image(&image, (-x as f32, -y as f32), Some(&paint));
+            self.clock = self.clock.saturating_add(1);
+            entry.used = self.clock;
+            return Some(surface.image_snapshot());
+        }
+        self.clock = self.clock.saturating_add(1);
+        entry.used = self.clock;
+        image.make_subset(
+            None,
+            skia_safe::IRect::from_xywh(x, y, viewport.width(), viewport.height()),
+            skia_safe::image::RequiredProperties::default(),
+        )
+    }
+
     fn viewport_key(picture: &skia_safe::Picture, background: Color) -> Key {
         Key {
             picture: picture.unique_id(),
@@ -138,7 +200,13 @@ impl AtlasCache {
         {
             return;
         }
-        let image = StoredImage::compact(image);
+        // Ordinary viewports fit within the existing eight-entry budget as
+        // native pixels. Avoid decompressing the same frame on every revisit.
+        let image = if width as u64 * height as u64 * 4 <= CAPACITY_BYTES / MAX_ENTRIES as u64 {
+            StoredImage::Native(image)
+        } else {
+            StoredImage::compact(image)
+        };
         let bytes = image.bytes();
         while self.entries.len() >= MAX_ENTRIES
             || self.entries.values().map(|entry| entry.bytes).sum::<u64>() + bytes > CAPACITY_BYTES
@@ -226,7 +294,17 @@ impl AtlasCache {
             {
                 return Ok(false);
             }
-            let bytes = width as u64 * height as u64 * 4;
+            // Pad only after rasterization. Translating vector commands by the
+            // border width changes f32 rounding and can change antialias pixels.
+            let border = if width + 256 <= 4096
+                && height + 256 <= 4096
+                && (width + 256) as u64 * (height + 256) as u64 <= MAX_ATLAS_PIXELS
+            {
+                128
+            } else {
+                0
+            };
+            let bytes = (width + border * 2) as u64 * (height + border * 2) as u64 * 4;
             while self.entries.len() >= MAX_ENTRIES
                 || self.entries.values().map(|entry| entry.bytes).sum::<u64>() + bytes
                     > CAPACITY_BYTES
@@ -255,15 +333,29 @@ impl AtlasCache {
                 background,
                 budget,
             )?;
-            let image = surface.image_snapshot();
+            let mut image = surface.image_snapshot();
+            if border != 0 {
+                let mut padded = skia_safe::surfaces::raster_n32_premul((
+                    width + border * 2,
+                    height + border * 2,
+                ))
+                .ok_or_else(|| invalid("Cannot pad retained preview raster"))?;
+                padded.canvas().clear(background);
+                let mut paint = Paint::default();
+                paint.set_blend_mode(BlendMode::Src);
+                padded
+                    .canvas()
+                    .draw_image(&image, (border as f32, border as f32), Some(&paint));
+                image = padded.image_snapshot();
+            }
             // Warm crops need no raster workers or their backing surfaces.
             *pool = Default::default();
             self.entries.insert(
                 key,
                 Entry {
                     image: StoredImage::Native(image),
-                    left: left - ix,
-                    top: top - iy,
+                    left: left - ix - border,
+                    top: top - iy - border,
                     bytes,
                     used: self.clock,
                 },
@@ -347,7 +439,13 @@ mod tests {
         for picture in [checkerboard(false), checkerboard(true)] {
             for background in [Color::WHITE, Color::from_rgb(248, 250, 252)] {
                 for phase in [0.0, 0.25, 0.5, 0.75, 0.0] {
-                    for offset in [(0.0, 0.0), (16.0, -32.0), (-80.0, 60.0), (0.0, 0.0)] {
+                    for offset in [
+                        (0.0, 0.0),
+                        (16.0, -32.0),
+                        (-80.0, 60.0),
+                        (400.0, -500.0),
+                        (0.0, 0.0),
+                    ] {
                         let transform = Matrix::translate((offset.0 + phase, offset.1 + phase));
                         let mut expected =
                             skia_safe::surfaces::raster_n32_premul((73, 61)).unwrap();
@@ -374,12 +472,35 @@ mod tests {
                                 == encode_image(&actual.image_snapshot()).unwrap(),
                             "offset={offset:?}, phase={phase}"
                         );
+                        let cropped = cache
+                            .crop(
+                                &picture,
+                                &transform,
+                                skia_safe::IRect::from_wh(73, 61),
+                                background,
+                            )
+                            .expect("Nearby viewports must reuse exact retained pixels");
+                        assert_eq!(
+                            encode_image(&expected.image_snapshot()).unwrap(),
+                            encode_image(&cropped).unwrap(),
+                            "crop offset={offset:?}, phase={phase}"
+                        );
                     }
                 }
             }
         }
         assert!(cache.entries.len() <= MAX_ENTRIES);
         assert!(cache.entries.values().map(|entry| entry.bytes).sum::<u64>() <= CAPACITY_BYTES);
+        assert!(
+            cache
+                .crop(
+                    &checkerboard(false),
+                    &Matrix::new_identity(),
+                    skia_safe::IRect::from_wh(73, 61),
+                    Color::WHITE
+                )
+                .is_none()
+        );
     }
 
     #[test]

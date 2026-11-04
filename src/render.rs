@@ -198,6 +198,7 @@ fn png_impl(
 struct RasterCache {
     shapes: RefCell<BTreeMap<usize, Path>>,
     pictures: RefCell<BTreeMap<PictureKey, RecordedPicture>>,
+    picture_clock: std::cell::Cell<u64>,
     pool: RefCell<raster_pool::RasterPool>,
     atlas: RefCell<atlas::AtlasCache>,
     background_nodes: Vec<bool>,
@@ -211,14 +212,28 @@ struct PictureKey {
     viewport: Option<[u32; 4]>,
 }
 
+#[derive(Clone)]
 struct RecordedPicture {
     picture: skia_safe::Picture,
     images: BTreeMap<PathBuf, (String, Image)>,
     bytes: usize,
+    used: std::cell::Cell<u64>,
     bands: RefCell<Option<Vec<(SkRect, skia_safe::Picture)>>>,
 }
 
 impl RasterCache {
+    fn fork(&self) -> Self {
+        Self {
+            shapes: RefCell::new(self.shapes.borrow().clone()),
+            pictures: RefCell::new(self.pictures.borrow().clone()),
+            picture_clock: std::cell::Cell::new(self.picture_clock.get()),
+            pool: RefCell::default(),
+            atlas: RefCell::new(self.atlas.borrow().clone()),
+            background_nodes: self.background_nodes.clone(),
+            padding: RefCell::new(self.padding.borrow().clone()),
+            has_images: self.has_images,
+        }
+    }
     #[cfg(feature = "tui")]
     fn new(snapshot: &LayoutSnapshot) -> Self {
         fn image(value: &Value) -> bool {
@@ -234,6 +249,7 @@ impl RasterCache {
         Self {
             shapes: RefCell::default(),
             pictures: RefCell::default(),
+            picture_clock: std::cell::Cell::new(0),
             pool: RefCell::default(),
             atlas: RefCell::default(),
             background_nodes: background_nodes(snapshot),
@@ -435,6 +451,14 @@ fn raster_impl_cached(
             working_height as u32,
         ]),
     };
+    if let Some(cache) = cache {
+        cache
+            .picture_clock
+            .set(cache.picture_clock.get().saturating_add(1));
+        if let Some(entry) = cache.pictures.borrow().get(&picture_key) {
+            entry.used.set(cache.picture_clock.get());
+        }
+    }
     if let Some(cache) = cache.filter(|_| anchored)
         && let Some(entry) = cache.pictures.borrow().get(&picture_key)
         && let Some(image) = cache
@@ -444,6 +468,39 @@ fn raster_impl_cached(
     {
         project.verify_unchanged()?;
         let image = crop_image(&image, padding, width as u32, height as u32)?;
+        if let Some(runtime) = runtime.as_deref() {
+            runtime.check()?;
+        }
+        return Ok(RenderedRaster {
+            image,
+            region,
+            snapshot_id: snapshot.id.clone(),
+            assets: entry
+                .images
+                .iter()
+                .map(|(path, (hash, _))| ImageDependency {
+                    path: path.clone(),
+                    hash: hash.clone(),
+                })
+                .collect(),
+            dynamic_artifacts: Vec::new(),
+        });
+    }
+    if let Some(cache) = cache.filter(|_| recordable && !anchored)
+        && let Some(entry) = cache.pictures.borrow().get(&picture_key)
+        && let Some(image) = cache.atlas.borrow_mut().crop(
+            &entry.picture,
+            &Matrix::translate((-region.x * options.scale, -region.y * options.scale)),
+            skia_safe::IRect::from_xywh(
+                padding as i32,
+                padding as i32,
+                width as i32,
+                height as i32,
+            ),
+            options.background,
+        )
+    {
+        project.verify_unchanged()?;
         if let Some(runtime) = runtime.as_deref() {
             runtime.check()?;
         }
@@ -601,6 +658,7 @@ fn raster_impl_cached(
                 )
             });
             let picture = RecordedPicture {
+                used: std::cell::Cell::new(cache.map_or(0, |cache| cache.picture_clock.get())),
                 picture: if anchored {
                     skia_safe::Picture::new_placeholder(SkRect::from_xywh(
                         bounds.x,
@@ -617,7 +675,9 @@ fn raster_impl_cached(
             };
             let mut pictures = pictures.borrow_mut();
             // Exact image viewports and vector zoom levels share the 32 MiB cap.
-            while pictures.len() >= if anchored { 8 } else { 2 }
+            // Static camera zooms can reuse their exact commands across a wide
+            // navigation range; the decoded-image/command byte cap still applies.
+            while pictures.len() >= if anchored { 8 } else { 48 }
                 || pictures
                     .values()
                     .map(|p| p.bytes)
@@ -625,9 +685,14 @@ fn raster_impl_cached(
                     .saturating_add(picture.bytes)
                     > 32 * 1024 * 1024
             {
-                if pictures.pop_first().is_none() {
+                let Some(oldest) = pictures
+                    .iter()
+                    .min_by_key(|(_, entry)| entry.used.get())
+                    .map(|(key, _)| *key)
+                else {
                     break;
-                }
+                };
+                pictures.remove(&oldest);
             }
             if picture.bytes <= 32 * 1024 * 1024 {
                 pictures.insert(key, picture);

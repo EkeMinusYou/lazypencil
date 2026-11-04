@@ -536,6 +536,47 @@ fn rectangular_kitty_uploads_once_places_the_whole_image_and_restores_after_moda
 }
 
 #[test]
+fn native_kitty_rgb_omits_only_fully_opaque_alpha_without_changing_pixels() {
+    for compressed in [false, true] {
+        for alpha in [255, 254] {
+            let backend = Backend {
+                font: FontSize::new(1, 1),
+                protocol: ProtocolType::Kitty,
+                tmux: false,
+                kitty_compression: compressed,
+                ..Backend::halfblocks()
+            };
+            let pixels = image::RgbaImage::from_fn(32, 16, |x, y| {
+                image::Rgba([x as u8 * 7, y as u8 * 13, 93, alpha])
+            });
+            let Encoded::Native(encoded) = backend
+                .encode_preview(
+                    DynamicImage::ImageRgba8(pixels.clone()),
+                    Size::new(32, 16),
+                    77,
+                )
+                .unwrap()
+            else {
+                panic!("Expected native frame")
+            };
+            assert!(encoded.upload.contains(if !compressed {
+                "f=100,"
+            } else if alpha == 255 {
+                "f=24,"
+            } else {
+                "f=32,"
+            }));
+            let mut decoder = observer::KittyFrames::default();
+            for chunk in encoded.upload.as_bytes().chunks(137) {
+                decoder.feed(chunk).unwrap();
+            }
+            assert_eq!(decoder.images.len(), 1);
+            assert_eq!(decoder.images[0].rgba(), pixels.as_raw());
+        }
+    }
+}
+
+#[test]
 fn native_kitty_uploads_preserve_pixels_compression_and_stable_redraws() {
     for compressed in [false, true] {
         let backend = Backend {
@@ -596,6 +637,23 @@ fn native_kitty_uploads_preserve_pixels_compression_and_stable_redraws() {
         assert_eq!(decoder.images.len(), 1);
         assert_eq!(decoder.images[0].rgba(), pixels.as_raw());
         assert_eq!(presentation.source_size(), Some([800, 480]));
+        let replay = encoded.clone();
+        let mut buffer = Buffer::empty(bounds);
+        presentation.begin();
+        presentation.render(&mut buffer, area, &replay);
+        presentation.finish(&mut buffer, false);
+        let wire = buffer
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(
+            wire.contains("a=t,"),
+            "Revisited frames must upload into the inactive slot"
+        );
+        decoder.feed(wire.as_bytes()).unwrap();
+        assert_eq!(decoder.images.len(), 2);
+        assert_eq!(decoder.images[1].rgba(), pixels.as_raw());
     }
 }
 

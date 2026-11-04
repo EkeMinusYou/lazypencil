@@ -18,12 +18,19 @@ use ratatui_image::{
 use std::io::Write;
 
 /// A compact native upload, or the library encoder for negotiated/fallback paths.
+#[derive(Clone)]
 pub enum Encoded {
     Native(NativeImage),
     Protocol(Protocol),
 }
 
 impl Encoded {
+    pub(super) fn native_bytes(&self) -> Option<usize> {
+        match self {
+            Self::Native(image) => Some(image.upload.len()),
+            Self::Protocol(_) => None,
+        }
+    }
     /// Doctor requests an upload receipt without changing normal preview traffic.
     pub(super) fn request_receipt(&mut self) -> bool {
         if let Self::Native(image) = self {
@@ -50,6 +57,19 @@ pub struct NativeImage {
     transmitted: std::sync::atomic::AtomicBool,
 }
 
+impl Clone for NativeImage {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id,
+            size: self.size,
+            pixels: self.pixels,
+            upload: self.upload.clone(),
+            // A retained frame must upload again into the inactive terminal slot.
+            transmitted: false.into(),
+        }
+    }
+}
+
 impl NativeImage {
     fn new(image: DynamicImage, size: Size, id: u32, compressed: bool) -> Result<Self> {
         use base64::{Engine, engine::general_purpose::STANDARD};
@@ -60,12 +80,34 @@ impl NativeImage {
         use std::fmt::Write as _;
         let pixels = [image.width(), image.height()];
         let rgba = image.into_rgba8();
+        // Fully opaque previews need no alpha bytes on the wire. This is the
+        // lossless RGB form of the same Kitty protocol, not color quantization.
+        let rgb = rgba
+            .as_raw()
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .all(|pixel| pixel[3] == 255)
+            .then(|| {
+                let mut rgb = Vec::with_capacity(rgba.len() / 4 * 3);
+                for pixel in rgba.as_raw().as_chunks::<4>().0 {
+                    rgb.extend_from_slice(&pixel[..3]);
+                }
+                rgb
+            });
+        let format = if !compressed {
+            100
+        } else if rgb.is_some() {
+            24
+        } else {
+            32
+        };
         let payload = if compressed {
             use std::io::Write as _;
             let mut encoder =
                 flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
             encoder
-                .write_all(&rgba)
+                .write_all(rgb.as_deref().unwrap_or(rgba.as_raw()))
                 .and_then(|()| encoder.finish())
                 .map_err(|error| {
                     Error::new(
@@ -76,7 +118,16 @@ impl NativeImage {
         } else {
             let mut png = Vec::new();
             PngEncoder::new_with_quality(&mut png, CompressionType::Fast, FilterType::Sub)
-                .write_image(&rgba, pixels[0], pixels[1], image::ExtendedColorType::Rgba8)
+                .write_image(
+                    rgb.as_deref().unwrap_or(rgba.as_raw()),
+                    pixels[0],
+                    pixels[1],
+                    if rgb.is_some() {
+                        image::ExtendedColorType::Rgb8
+                    } else {
+                        image::ExtendedColorType::Rgba8
+                    },
+                )
                 .map_err(|error| {
                     Error::new(
                         "RENDER_ERROR",
@@ -85,6 +136,8 @@ impl NativeImage {
                 })?;
             png
         };
+        drop(rgb);
+        drop(rgba);
         // Encode pixels and packet chunks on the worker. Native placements need
         // no Unicode-placeholder grid, even when ZLIB was negotiated.
         let mut upload = String::new();
@@ -93,7 +146,6 @@ impl NativeImage {
         for (index, chunk) in chunks.enumerate() {
             upload.push_str("\x1b_G");
             if index == 0 {
-                let format = if compressed { 32 } else { 100 };
                 let _ = write!(
                     upload,
                     "a=t,f={format},i={id},s={},v={},",
@@ -501,6 +553,14 @@ pub struct Backend {
     background_known: bool,
 }
 impl Backend {
+    #[cfg(test)]
+    pub(super) fn native_for_test() -> Self {
+        Self {
+            protocol: ProtocolType::Kitty,
+            kitty_compression: true,
+            ..Self::halfblocks()
+        }
+    }
     pub fn halfblocks() -> Self {
         Self {
             font: FontSize::new(10, 20),

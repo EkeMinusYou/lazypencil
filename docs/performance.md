@@ -24,6 +24,17 @@ OS-reboot-cold filesystem.
 
 ## Local preview measurements
 
+Direct Kitty previews of retained static scenes prepare exact native-resolution
+zoom frames and immediate pan neighbors before publishing the first document frame.
+Completed uploads and losslessly compressed source pixels share a 32 MiB cache.
+At most two recent sources stay raw within that same budget, avoiding PNG
+compression between consecutive inputs.
+Entries are keyed by canvas background, viewport and exact camera region, and are
+discarded when captured document dependencies change.
+Repeated gestures may prepare one next frame, with queued user requests taking
+priority. Prediction uses isolated renderer state and never publishes a camera move.
+All reuse preserves native pixels; it does not interpolate an old preview at a new zoom.
+
 Build the observer in release mode before measuring so its parsing/decompression does
 not add debug-build backpressure. On Unix:
 
@@ -48,13 +59,20 @@ Use `--first-action zoom-out`, `pan-right`, `pan-left`, `pan-down`, or `pan-up`
 to isolate cold interactions across fresh processes; vertical actions also require
 `--all-directions`. Every round still checks inverse camera pairs against the initial pixels.
 
+The version 2 observer timestamps reads on a dedicated thread with a bounded wire
+queue. Image decoding, SHA-256 validation and optional capture writes cannot delay
+the timestamp of a following synchronized-update marker. All pixel and stream
+validation remains enabled. Remeasure the baseline with this observer before
+comparing latency with older reports; their parser backpressure was included in
+the synchronization timing.
+
 `--kitty-transfer zlib` simulates direct Kitty; `png` exercises the unprobed compatible
 transport. Both are lossless. `--reference-report PATH` additionally checks matching
 document, geometry, protocol, samples, and decoded image hashes. `--median-limit-ms N`
 requires each operation's complete-image median to meet that value. Profile/capture
 runs are separate and cannot use the median acceptance option.
 `--sync-median-limit-ms N` instead bounds receipt of the synchronized-update end
-for every operation, including observer parsing/decompression backpressure. This is
+for every operation, using the independent read timestamp. This is
 the input-response reference; it does not acknowledge terminal drawing or scanout.
 Add `--sweep-steps N` to measure N consecutive steps per direction before reversing.
 This includes new zoom levels and camera positions; the synchronized median limit
