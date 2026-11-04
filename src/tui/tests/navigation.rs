@@ -310,7 +310,7 @@ fn conversation_region_defaults_to_prompt_and_keeps_history_and_attachments_acce
 fn agent_header_tracks_negotiated_model_and_hides_inactive_fast_mode() {
     let temp = TempDir::new().unwrap();
     let mut app = app(&temp, "settings-fast");
-    assert!(app.header_line().to_string().contains("model: connecting"));
+    assert!(app.header_line().to_string().contains(" · connecting · "));
     assert!(!app.header_line().to_string().contains("Fast"));
     app.message(&json!({"type":"ready","response":{"configOptions":[
         {"id":"engine","category":"model","currentValue":"fixture-model"},
@@ -326,9 +326,19 @@ fn agent_header_tracks_negotiated_model_and_hides_inactive_fast_mode() {
     let top: String = (0..80)
         .map(|x| terminal.backend().buffer()[(x, 0)].symbol())
         .collect();
-    assert!(top.contains("model: fixture-model"), "{top}");
-    assert!(top.contains("effort: xhigh"), "{top}");
-    assert!(top.contains("Fast"), "{top}");
+    assert!(top.contains(" · fixture-model xhigh Fast · "), "{top}");
+    for label in ["model:", "effort:", "account:", "session:"] {
+        assert!(!app.header_line().to_string().contains(label));
+    }
+    for value in ["fixture-model", "xhigh"] {
+        let offset = top.find(value).unwrap();
+        let start = top[..offset].chars().count() as u16;
+        for x in start..start + value.len() as u16 {
+            let cell = &terminal.backend().buffer()[(x, 0)];
+            assert_eq!(cell.fg, theme::colors().text);
+            assert!(!cell.modifier.contains(Modifier::DIM));
+        }
+    }
     app.dirty = false;
     app.message(&json!({"type":"update","notification":{"update":{
         "sessionUpdate":"config_option_update","configOptions":[
@@ -338,12 +348,7 @@ fn agent_header_tracks_negotiated_model_and_hides_inactive_fast_mode() {
         ]
     }}}));
     assert!(app.dirty);
-    assert!(
-        app.header_line()
-            .to_string()
-            .contains("model: fixture-model-2")
-    );
-    assert!(app.header_line().to_string().contains("effort: high"));
+    assert!(app.header_line().to_string().contains(" · fixture-model-2 high · "));
     assert!(!app.header_line().to_string().contains("Fast"));
     app.message(&json!({"type":"ready","response":{"configOptions":[
         {"id":"model","currentValue":"another-model"},
@@ -355,13 +360,9 @@ fn agent_header_tracks_negotiated_model_and_hides_inactive_fast_mode() {
             {"id":"model","currentValue":"standard-model"}
         ]
     }}}));
-    assert!(
-        app.header_line()
-            .to_string()
-            .contains("model: standard-model")
-    );
+    assert!(app.header_line().to_string().contains(" · standard-model not reported · "));
     assert!(!app.header_line().to_string().contains("Fast"));
-    assert!(!app.header_line().to_string().contains("effort: high"));
+    assert!(!app.header_line().to_string().contains(" high "));
     runtime().block_on(async {
         app.update_agent_configuration(&json!([{"id":"fast-mode","currentValue":true}]));
         let worker = Worker::start(
@@ -374,7 +375,7 @@ fn agent_header_tracks_negotiated_model_and_hides_inactive_fast_mode() {
         app.select_conversation(saved::SessionChange::New, &worker)
             .await
             .unwrap();
-        assert!(app.header_line().to_string().contains("model: connecting"));
+        assert!(app.header_line().to_string().contains(" · connecting · "));
         assert!(!app.header_line().to_string().contains("Fast"));
         worker.cancel();
     });

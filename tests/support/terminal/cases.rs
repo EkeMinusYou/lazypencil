@@ -519,8 +519,11 @@ pub fn run(
             let correct_header = |h: &Harness| {
                 let text = h.screen.text();
                 let header = text.lines().next().unwrap_or_default();
-                header.contains("model: fixture-model")
-                    && header.contains("effort: medium")
+                header.contains(" · fixture-model medium")
+                    && !header.contains("model:")
+                    && !header.contains("effort:")
+                    && !header.contains("account:")
+                    && !header.contains("session:")
                     && header.contains("Fast") == fast
             };
             h.wait(
@@ -552,7 +555,7 @@ pub fn run(
             Value::Null
         }
         "agent-header-hang" => {
-            h.visible("model: connecting")?;
+            h.visible(" · connecting · ")?;
             h.paste("Keep this draft while connecting")?;
             h.draft("Keep this draft while connecting")?;
             no_agent(&h);

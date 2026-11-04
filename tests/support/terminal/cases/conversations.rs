@@ -53,20 +53,22 @@ fn other_session(h: &Harness, original: &Path) -> Option<(PathBuf, Value)> {
     }
 }
 fn selected(h: &Harness, id: &str) -> bool {
-    h.screen.text().contains(&format!("session: {}", &id[..8]))
+    h.screen
+        .text()
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .contains(&format!(" · {} · ", &id[..8]))
 }
 fn highlight(h: &mut Harness, target: &str, first: &str, second: &str) -> Result {
     let mut order = [first, second];
     order.sort();
     let text = h.screen.text();
-    let header = text
-        .lines()
-        .find(|line| line.contains("session: "))
-        .unwrap_or_default();
+    let header = text.lines().next().unwrap_or_default();
     let current = order
         .iter()
-        .position(|id| header.contains(&format!("session: {}", &id[..8])))
-        .expect("Actual current session in Agent panel");
+        .position(|id| header.contains(&format!(" · {} · ", &id[..8])))
+        .expect("Actual current session in the global header");
     let target_index = order.iter().position(|id| *id == target).unwrap();
     arrow(h, target_index as isize - current as isize)?;
     h.wait("target conversation highlighted", 15.0, |h| {

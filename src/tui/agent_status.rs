@@ -121,25 +121,22 @@ impl App {
             ),
             separator(),
             Span::styled(
-                format!(
-                    "model: {}",
-                    clean(self.agent.model()).replace(['\n', '\t'], " ")
-                ),
-                Style::default().fg(theme::colors().secondary),
+                clean(self.agent.model()).replace(['\n', '\t'], " "),
+                Style::default().fg(theme::colors().text),
             ),
         ];
         if let Some(effort) = self.agent.effort() {
             spans.extend([
-                separator(),
+                Span::raw(" "),
                 Span::styled(
-                    format!("effort: {}", clean(effort).replace(['\n', '\t'], " ")),
-                    Style::default().fg(theme::colors().secondary),
+                    clean(effort).replace(['\n', '\t'], " "),
+                    Style::default().fg(theme::colors().text),
                 ),
             ]);
         }
         if self.agent.fast() {
             spans.extend([
-                separator(),
+                Span::raw(" "),
                 Span::styled(
                     "Fast",
                     Style::default()
@@ -164,15 +161,16 @@ impl App {
                 Style::default().add_modifier(Modifier::BOLD),
             ),
             separator(),
-            Span::styled("account: ", Style::default().fg(theme::colors().secondary)),
             Span::styled(
                 clean(&self.agent.authentication),
                 Style::default().fg(theme::colors().secondary),
             ),
+            separator(),
             Span::styled(
-                format!(" · session: {} · ", &self.conversation.id()[..8]),
+                self.conversation.id()[..8].to_owned(),
                 Style::default().fg(theme::colors().secondary),
             ),
+            separator(),
             Span::styled(
                 clean(&self.conversation.store().path().display().to_string()),
                 Style::default().fg(theme::colors().secondary),

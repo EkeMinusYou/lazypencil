@@ -370,8 +370,8 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
             "Codex",
             "gpt-6.1-sol",
             "Fast",
-            "account:",
-            "session:",
+            "fixture@example.test",
+            &app.conversation.id()[..8],
             "subscription",
         ] {
             assert!(
@@ -395,7 +395,7 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
         let agent = region(Rect::new(112, 1, 48, 38));
         assert!(agent.contains("Agent") && agent.contains("Idle"));
         assert!(!agent.contains("Codex"));
-        for value in ["fixture@example.test", "subscription", "session:"] {
+        for value in ["fixture@example.test", "subscription", &app.conversation.id()[..8]] {
             assert!(
                 !agent.contains(value),
                 "Metadata must not occupy the Agent history: {value}"
