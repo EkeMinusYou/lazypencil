@@ -268,7 +268,7 @@ jobs:
     if: needs.plan.outputs.verification == 'focused'
     uses: ./.github/workflows/native.yml
     with:
-      os: macos-26
+      os: ${{ (needs.plan.outputs.suite == 'core' || needs.plan.outputs.suite == 'conversation') && 'ubuntu-24.04' || 'macos-26' }}
       phase: focus
       lane: ${{ (needs.plan.outputs.suite == 'core' || needs.plan.outputs.suite == 'conversation') && 'core' || 'build' }}
       suite: ${{ needs.plan.outputs.suite }}

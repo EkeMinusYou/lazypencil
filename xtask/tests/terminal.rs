@@ -5,6 +5,41 @@ use lazypencil_xtask::util;
 use serde_json::Value;
 use terminal::{Frame, KittyFrames, Screen};
 
+#[test]
+fn screen_finds_text_across_undrawn_spaces_without_expanding_wide_continuations() {
+    let mut screen = Screen::new(30, 4);
+    screen.feed("\x1b[2;4HMouse\x1b[Crow\x1b[C0\x1b[3;5H日本語\x1b[Cready".as_bytes());
+    assert!(screen.text().contains("Mouse row 0"));
+    assert_eq!(screen.find_text("Mouse row 0"), Some((3, 1)));
+    assert_eq!(screen.find_text(" row 0"), Some((8, 1)));
+    assert_eq!(screen.find_text("日本語 ready"), Some((4, 2)));
+    assert_eq!(screen.find_text(" ready"), Some((10, 2)));
+    assert_eq!(screen.find_text("ready"), Some((11, 2)));
+}
+
+#[test]
+fn screen_locates_combining_input_after_soft_wrapped_logical_lines() {
+    for (bytes, second_row) in [
+        (
+            "\x1b[2;4H› 日本語の変換確定\x1b[3;6Hか\u{3099} 👩‍💻\x1b[3;11H",
+            2,
+        ),
+        (
+            "\x1b[2;4H› 日本語\x1b[3;6Hの変換\x1b[4;6H確定\x1b[5;6Hか\u{3099} 👩‍💻\x1b[5;11H",
+            4,
+        ),
+    ] {
+        let mut screen = Screen::new(50, 10);
+        screen.feed(bytes.as_bytes());
+        assert_eq!(screen.find_text("›"), Some((3, 1)));
+        assert_eq!(screen.find_text("か\u{3099}"), Some((5, second_row)));
+        assert_eq!(screen.cursor(), (10, second_row));
+        // A stale cursor on the first row is not a valid IME anchor.
+        screen.feed(b"\x1b[2;11H");
+        assert_ne!(screen.cursor(), (10, second_row));
+    }
+}
+
 // Fixed RFC 1950 bytes produced independently of the Rust codec.
 const COMPRESSED_RGBA: &str = "eAH7z8Dwn+E/QwOIEjIJO/EfjQ8Ax3QLwQ==";
 

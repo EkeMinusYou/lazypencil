@@ -21,6 +21,30 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     }
     .to_owned();
     let preprocessor = preprocessor_changed(paths);
+    if agent_only(paths) {
+        return Ok(Plan {
+            platform,
+            suite: "conversation".into(),
+            targets: [
+                "agent",
+                "config",
+                "conversation_history",
+                "mcp",
+                "user_agent_config",
+            ]
+            .map(str::to_owned)
+            .to_vec(),
+            preprocessor,
+        });
+    }
+    if runtime_only(paths) {
+        return Ok(Plan {
+            platform,
+            suite: "core".into(),
+            targets: vec!["runtime".into()],
+            preprocessor,
+        });
+    }
     // The clipboard worker and attachment persistence share the encoded image
     // boundary. Their real consumer needs rendering, even when conversation
     // metadata changes would otherwise select the core-only ownership suite.

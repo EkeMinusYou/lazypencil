@@ -143,6 +143,39 @@ fn bundled_guidance(path: &str) -> bool {
         || path.starts_with("resources/guidance/")
 }
 
+/// ACP and user-owned adapter settings have deterministic core consumers.
+pub fn agent_only(paths: &[String]) -> bool {
+    paths.iter().any(|path| !documentation_only(path))
+        && paths.iter().all(|path| {
+            documentation_only(path)
+                || path == "src/agent.rs"
+                || (path.starts_with("src/agent/")
+                    && path != "src/agent/process.rs"
+                    && !path.starts_with("src/agent/process/"))
+                || [
+                    "src/config/agents.rs",
+                    "src/config/agent_execution.rs",
+                    "tests/agent.rs",
+                    "tests/user_agent_config.rs",
+                ]
+                .contains(&path.as_str())
+        })
+}
+
+/// Browser profiles and shared runtime configuration retain full verification.
+pub fn runtime_only(paths: &[String]) -> bool {
+    paths.iter().any(|path| !documentation_only(path))
+        && paths.iter().all(|path| {
+            documentation_only(path)
+                || [
+                    "src/runtime.rs",
+                    "src/runtime/download.rs",
+                    "tests/runtime.rs",
+                ]
+                .contains(&path.as_str())
+        })
+}
+
 pub fn ci_only(path: &str) -> bool {
     path.starts_with(".github/")
         || path.starts_with("scripts/ci/")

@@ -42,17 +42,33 @@ impl Screen {
         (x, y)
     }
     pub fn find_text(&self, text: &str) -> Option<(u16, u16)> {
+        fn contents(cell: &vt100::Cell) -> &str {
+            if cell.is_wide_continuation() {
+                ""
+            } else if cell.has_contents() {
+                cell.contents()
+            } else {
+                // Cursor movement and erasure leave visible spaces without text data.
+                " "
+            }
+        }
         let first = text.chars().next()?;
         let screen = self.parser.screen();
         let (rows, columns) = screen.size();
         for row in 0..rows.get() {
             for column in 0..columns.get() {
-                if !screen.cell(row, column)?.contents().starts_with(first) {
+                if !screen
+                    .cell(row, column)
+                    .is_some_and(|cell| contents(cell).starts_with(first))
+                {
                     continue;
                 }
                 let mut candidate = String::new();
                 for x in column..columns.get() {
-                    candidate.push_str(screen.cell(row, x)?.contents());
+                    let Some(cell) = screen.cell(row, x) else {
+                        break;
+                    };
+                    candidate.push_str(contents(cell));
                     if candidate == text {
                         return Some((column, row));
                     }
