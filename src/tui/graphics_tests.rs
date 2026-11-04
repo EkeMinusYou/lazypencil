@@ -681,9 +681,14 @@ fn local_kitty_upload_links_preserve_pixels_after_cached_sources_are_evicted() {
             else {
                 panic!("Expected a native image")
             };
+            local.drain();
             let first = encoded.upload(42);
             let second = encoded.clone().upload(43);
             assert!(first.contains(",t=t;"));
+            if compressed {
+                assert!(first.contains(",f=32,"));
+                assert!(!first.contains(",o=z,"));
+            }
             assert!(second.contains("i=43,"));
             assert!(!first.contains("m=1"));
             drop(encoded);
@@ -699,11 +704,44 @@ fn local_kitty_upload_links_preserve_pixels_after_cached_sources_are_evicted() {
                     .iter()
                     .all(|frame| frame.rgba() == pixels.as_raw())
             );
+            local.drain();
             assert_eq!(
                 std::fs::read_dir(local.directory.path()).unwrap().count(),
                 0
             );
         }
+    }
+}
+
+#[test]
+fn evicted_local_transfer_files_fall_back_to_prepared_lossless_inline_pixels() {
+    for compressed in [false, true] {
+        let local = Arc::new(LocalTransfer::new().unwrap());
+        let backend = Backend {
+            font: FontSize::new(1, 1),
+            protocol: ProtocolType::Kitty,
+            kitty_compression: compressed,
+            local_transfer: Some(local.clone()),
+            ..Backend::halfblocks()
+        };
+        let pixels = image::RgbaImage::from_pixel(3, 2, image::Rgba([12, 34, 56, 127]));
+        let Encoded::Native(encoded) = backend
+            .encode_preview(pixels.clone().into(), Size::new(3, 2), 42)
+            .unwrap()
+        else {
+            panic!("Expected a native image")
+        };
+        // Removing the original reproduces eviction while the encoded source lives.
+        local.drain();
+        for entry in std::fs::read_dir(local.directory.path()).unwrap() {
+            std::fs::remove_file(entry.unwrap().path()).unwrap();
+        }
+        let wire = encoded.upload(43);
+        assert!(!wire.contains(",t=t;"));
+        let mut decoder = observer::KittyFrames::default();
+        decoder.feed(wire.as_bytes()).unwrap();
+        assert_eq!(decoder.images.len(), 1);
+        assert_eq!(decoder.images[0].rgba(), pixels.as_raw());
     }
 }
 
@@ -752,6 +790,7 @@ fn local_kitty_upload_failure_falls_back_to_the_exact_inline_pixels() {
         Some(&local),
     )
     .unwrap();
+    local.drain();
     std::fs::remove_dir_all(local.directory.path()).unwrap();
     let wire = encoded.upload(43);
     assert!(!wire.contains(",t=t;"));

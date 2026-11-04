@@ -48,6 +48,16 @@ payload; inline transfers remain the fallback for remote terminals, multiplexers
 unsupported terminals, or filesystem errors. This avoids sending the same large
 base64 payload through the PTY on every cached camera move.
 
+A separate worker prepares uncompressed RGBA files from completed ZLIB transfers,
+avoiding full-viewport decompression on the terminal's input thread during reuse.
+New views retain their ready compressed transfer while that preparation runs. An
+independent 256 MiB least-recently used file cache bounds the exact RGBA files; it
+allocates on demand with no upfront memory reservation. Each upload creates a
+separate terminal-owned link, so eviction cannot invalidate an in-flight read.
+Evicted or unprepared files use their ready compressed local transfer; filesystem
+errors retain the lossless inline fallback. The 128 MiB preview-source cache keeps
+its existing budget.
+
 On macOS, native rasters of at least 4 MiB use application-owned pixel buffers.
 Immutable native images retain that ownership until their last reader releases it;
 a writer with live snapshots obtains a separate buffer before painting again.
@@ -57,7 +67,7 @@ executable maps Rust buffers of at least 16 MiB directly and unmaps them on rele
 smaller or more strictly aligned allocations keep the system allocator. This avoids
 per-frame temporary-file I/O and deferred retention of freed native framebuffers.
 Embedding the library keeps the host application's allocator. Resolution, alpha,
-sampling and lossless compression remain unchanged.
+sampling and exported pixels remain unchanged.
 
 macOS native work uses thread-bound autorelease pools. Eligible large system
 fonts are captured into immutable mappings in bounded chunks, avoiding a second

@@ -1,7 +1,9 @@
 //! Bounded terminal probing without a detached stdin reader or tmux configuration changes.
 
 use crate::{Error, Result};
+mod local;
 use image::DynamicImage;
+use local::{LocalImage, LocalTransfer};
 use ratatui::{
     buffer::Buffer,
     layout::{Rect, Size},
@@ -16,10 +18,7 @@ use ratatui_image::{
 };
 #[cfg(unix)]
 use std::io::Write;
-use std::sync::{
-    Arc,
-    atomic::{AtomicU64, Ordering},
-};
+use std::sync::Arc;
 
 /// A compact native upload, or the library encoder for negotiated/fallback paths.
 #[derive(Clone)]
@@ -149,16 +148,13 @@ impl NativeImage {
                 })?;
             png
         };
+        // Local terminals can read exact RGBA without decoding a compressed
+        // viewport on their input thread. Keep the prepared inline fallback.
+        let local = local.and_then(|transfer| {
+            transfer.store(&payload, compressed.then_some(rgba.as_raw().len()))
+        });
         drop(rgb);
         drop(rgba);
-        let local = local.and_then(|transfer| {
-            let mut file = tempfile::NamedTempFile::new_in(transfer.directory.path()).ok()?;
-            std::io::Write::write_all(&mut file, &payload).ok()?;
-            Some(Arc::new(LocalImage {
-                file,
-                transfer: transfer.clone(),
-            }))
-        });
         // Encode pixels and packet chunks on the worker. Native placements need
         // no Unicode-placeholder grid, even when ZLIB was negotiated.
         let mut upload = String::new();
@@ -192,52 +188,30 @@ impl NativeImage {
 
     fn upload(&self, target: u32) -> String {
         use base64::{Engine, engine::general_purpose::STANDARD};
-        if let Some(local) = &self.local {
-            let number = local.transfer.sequence.fetch_add(1, Ordering::Relaxed);
-            let path = local
-                .transfer
-                .directory
-                .path()
-                .join(format!("upload-{number}"));
-            if let Some(path_text) = path.to_str()
-                && std::fs::hard_link(local.file.path(), &path).is_ok()
-            {
+        if let Some(local) = &self.local
+            && let Some(link) = local.link()
+        {
+            let path = link.path;
+            if let Some(path_text) = path.to_str() {
                 // The terminal owns this link. The cached original can be
                 // evicted without racing the terminal's asynchronous file read.
-                let control = self
+                let mut control = self
                     .upload
                     .split_once(';')
                     .expect("Kitty upload control")
                     .0
                     .replacen(&format!("i={},", self.id), &format!("i={target},"), 1)
                     .replace("m=1", "m=0");
+                if link.raw {
+                    control = control.replace("o=z,", "");
+                }
                 return format!("{control},t=t;{}\x1b\\", STANDARD.encode(path_text));
             }
+            let _ = std::fs::remove_file(path);
         }
         self.upload
             .replacen(&format!("i={},", self.id), &format!("i={target},"), 1)
     }
-}
-
-struct LocalTransfer {
-    directory: tempfile::TempDir,
-    sequence: AtomicU64,
-}
-
-impl LocalTransfer {
-    fn new() -> std::io::Result<Self> {
-        Ok(Self {
-            directory: tempfile::Builder::new()
-                .prefix("tty-graphics-protocol-lazypencil-")
-                .tempdir()?,
-            sequence: AtomicU64::new(0),
-        })
-    }
-}
-
-struct LocalImage {
-    file: tempfile::NamedTempFile,
-    transfer: Arc<LocalTransfer>,
 }
 
 /// Bind a Kitty virtual placement to the same cell grid as its placeholders.
