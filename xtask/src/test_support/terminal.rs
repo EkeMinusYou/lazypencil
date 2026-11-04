@@ -160,6 +160,7 @@ pub struct KittyFrames {
     dimensions: Option<(usize, usize)>,
     compressed: bool,
     png: bool,
+    rgb: bool,
     image_id: Option<u32>,
     split_camera_frames: bool,
     exact_image_id: Option<u32>,
@@ -240,8 +241,9 @@ impl KittyFrames {
                     return Err("A new Kitty frame interrupted an incomplete frame".into());
                 }
                 self.png = fields.get("f") == Some(&"100");
-                if !self.png && fields.get("f") != Some(&"32") {
-                    return Err("Expected RGBA or PNG Kitty pixels".into());
+                self.rgb = fields.get("f") == Some(&"24");
+                if !self.png && !self.rgb && fields.get("f") != Some(&"32") {
+                    return Err("Expected RGB, RGBA or PNG Kitty pixels".into());
                 }
                 self.compressed = match fields.get("o").copied() {
                     None => false,
@@ -303,7 +305,7 @@ impl KittyFrames {
             if let Some((width, height)) = self.dimensions
                 && matches!(action, None | Some("T" | "t"))
             {
-                let expected = width * height * 4;
+                let expected = width * height * if self.rgb { 3 } else { 4 };
                 if action.is_none() && fields.contains_key("o") {
                     return Err("Kitty compression must be declared in the first chunk".into());
                 }
@@ -334,17 +336,21 @@ impl KittyFrames {
                             if self.compressed {
                                 return Err("Unexpected additional compression for PNG".into());
                             }
-                            let mut reader = png::Decoder::new_with_limits(
+                            let mut decoder = png::Decoder::new_with_limits(
                                 std::io::Cursor::new(&payload),
                                 png::Limits {
                                     bytes: expected + 1024 * 1024,
                                 },
-                            )
-                            .read_info()?;
+                            );
+                            decoder.set_transformations(png::Transformations::ALPHA);
+                            let mut reader = decoder.read_info()?;
                             let header = reader.info();
                             if header.width as usize != width
                                 || header.height as usize != height
-                                || header.color_type != png::ColorType::Rgba
+                                || !matches!(
+                                    header.color_type,
+                                    png::ColorType::Rgb | png::ColorType::Rgba
+                                )
                                 || header.bit_depth != png::BitDepth::Eight
                                 || header.animation_control.is_some()
                             {
@@ -381,6 +387,15 @@ impl KittyFrames {
                         if pixels.len() != expected {
                             return Err("Incomplete Kitty pixel data".into());
                         }
+                        let pixels = if self.rgb {
+                            let mut rgba = Vec::with_capacity(width * height * 4);
+                            for pixel in pixels.as_chunks::<3>().0 {
+                                rgba.extend_from_slice(&[pixel[0], pixel[1], pixel[2], 255]);
+                            }
+                            rgba
+                        } else {
+                            pixels
+                        };
                         let frame = Frame::new(width, height, pixels)?;
                         if self.split_camera_frames
                             && self
@@ -400,6 +415,7 @@ impl KittyFrames {
                         self.dimensions = None;
                         self.compressed = false;
                         self.png = false;
+                        self.rgb = false;
                         self.image_id = None;
                     }
                     _ => return Err("Invalid Kitty continuation marker".into()),

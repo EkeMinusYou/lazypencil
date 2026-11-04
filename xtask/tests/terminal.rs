@@ -147,6 +147,45 @@ fn encoded_frame(
 }
 
 #[test]
+fn rgb_frames_restore_opaque_alpha_and_validate_exact_wire_lengths() {
+    use std::io::Write;
+    let rgb: Vec<u8> = (0..128).flat_map(|i| [i as u8, 37, 93]).collect();
+    let rgba: Vec<u8> = rgb
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .flat_map(|p| [p[0], p[1], p[2], 255])
+        .collect();
+    for compressed in [false, true] {
+        let payload = if compressed {
+            let mut encoder =
+                flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+            encoder.write_all(&rgb).unwrap();
+            encoder.finish().unwrap()
+        } else {
+            rgb.clone()
+        };
+        let wire = String::from_utf8(encoded_frame(&payload, 8, 16, 7, compressed))
+            .unwrap()
+            .replacen("f=32,", "f=24,", 1);
+        let mut decoder = KittyFrames::default();
+        for chunk in wire.as_bytes().chunks(11) {
+            decoder.feed(chunk).unwrap();
+        }
+        assert_eq!(decoder.images[0].rgba(), rgba);
+        for malformed in [
+            payload[..payload.len() - 1].to_vec(),
+            [payload.as_slice(), &[0]].concat(),
+        ] {
+            let wire = String::from_utf8(encoded_frame(&malformed, 8, 16, 7, compressed))
+                .unwrap()
+                .replacen("f=32,", "f=24,", 1);
+            assert!(KittyFrames::default().feed(wire.as_bytes()).is_err());
+        }
+    }
+}
+
+#[test]
 fn compressed_kitty_streams_preserve_every_rgba_byte_across_chunk_boundaries() {
     let payload = STANDARD.decode(COMPRESSED_RGBA).unwrap();
     let pixels = [

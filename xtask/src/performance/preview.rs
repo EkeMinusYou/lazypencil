@@ -163,6 +163,9 @@ impl Arguments {
 }
 
 #[cfg(unix)]
+mod reader;
+
+#[cfg(unix)]
 use super::observer as decoder;
 
 #[cfg(unix)]
@@ -173,11 +176,8 @@ mod owned {
     use serde_json::{Value, json};
     use std::{
         fs,
-        io::{Read, Write},
-        os::{
-            fd::{AsRawFd, FromRawFd},
-            unix::process::CommandExt,
-        },
+        io::Write,
+        os::{fd::FromRawFd, unix::process::CommandExt},
         path::Path,
         process::{Child, Command, Stdio},
         thread,
@@ -288,6 +288,7 @@ mod owned {
     struct Terminal {
         child: Child,
         master: fs::File,
+        reader: super::reader::Reader,
         _slave: fs::File,
         decoder: decoder::KittyFrames,
         control: Vec<u8>,
@@ -394,10 +395,12 @@ mod owned {
                     Ok(())
                 });
             }
+            let reader = super::reader::Reader::start(master.try_clone()?)?;
             let started = Instant::now();
             let child = command.spawn()?;
             Ok(Self {
                 child,
+                reader,
                 master,
                 _slave: slave,
                 decoder: decoder::KittyFrames::for_lazypencil(),
@@ -458,30 +461,12 @@ mod owned {
                 self.child.try_wait()?.is_none(),
                 "Preview process exited during measurement"
             );
-            let mut poll = libc::pollfd {
-                fd: self.master.as_raw_fd(),
-                events: libc::POLLIN,
-                revents: 0,
-            };
-            let ready = unsafe { libc::poll(&mut poll, 1, wait.as_millis().min(20) as i32) };
-            if ready < 0 {
-                let error = std::io::Error::last_os_error();
-                if error.kind() == std::io::ErrorKind::Interrupted {
-                    return Ok(());
-                }
-                return Err(error.into());
-            }
-            if ready == 0 {
+            let Some(chunk) = self.reader.receive(wait.min(Duration::from_millis(20)))? else {
                 return Ok(());
-            }
-            ensure!(
-                poll.revents & (libc::POLLERR | libc::POLLNVAL) == 0,
-                "Measurement PTY failed"
-            );
-            let mut bytes = [0; 65536];
-            let size = self.master.read(&mut bytes)?;
-            let received = Instant::now();
-            ensure!(size > 0, "Measurement PTY closed");
+            };
+            let received = chunk.received;
+            let bytes = chunk.bytes;
+            let size = bytes.len();
             self.bytes += size as u64;
             ensure!(
                 self.bytes <= 512 * 1024 * 1024,
@@ -625,7 +610,7 @@ mod owned {
         let root = output.join(&args.label);
         fs::create_dir(&root)?;
         let mut terminal = Terminal::start(&args, &binary, &document, &root)?;
-        let mut report = json!({"format_version":1,"observer":"Rust owned PTY / Kitty","binary":binary,"binary_sha256":binary_hash,"document_sha256":document_hash,"document_bytes":fs::metadata(&document)?.len(),"protocol":"kitty","geometry":geometry,"platform":format!("{}-{}",std::env::consts::OS,std::env::consts::ARCH),"scope":"Key write to full image receipt and synchronized update end in an owned PTY; no physical display timing. False adapter prevents agent/account work. OS caches and load uncontrolled.","samples":[]});
+        let mut report = json!({"format_version":2,"observer":"Rust owned PTY / Kitty with independent read timestamps","binary":binary,"binary_sha256":binary_hash,"document_sha256":document_hash,"document_bytes":fs::metadata(&document)?.len(),"protocol":"kitty","geometry":geometry,"platform":format!("{}-{}",std::env::consts::OS,std::env::consts::ARCH),"scope":"Key write to full image receipt and synchronized update end in an owned PTY; no physical display timing. False adapter prevents agent/account work. OS caches and load uncontrolled.","samples":[]});
         report["kitty_transfer"] = json!(match args.kitty_transfer {
             KittyTransfer::Zlib => "zlib",
             KittyTransfer::Png => "png",
@@ -715,7 +700,7 @@ mod owned {
                 let mut samples = Vec::new();
                 let mut round_trips = Vec::new();
                 let mut resets = Vec::new();
-                for pair in actions.chunks_exact(2) {
+                for pair in actions.as_chunks::<2>().0 {
                     for &(action, key) in pair {
                         for _ in 0..args.sweep_steps {
                             let sample = terminal.interaction(action, key)?;
@@ -736,6 +721,10 @@ mod owned {
                     );
                     resets.push(reset);
                 }
+                report["sweep_steps"] = json!(args.sweep_steps);
+                report["sweep_samples"] = json!(&samples);
+                report["sweep_round_trips_restored"] = json!(&round_trips);
+                report["sweep_resets"] = json!(&resets);
                 if let Some(reference) = &reference {
                     let expected = reference["sweep_samples"]
                         .as_array()
@@ -745,14 +734,14 @@ mod owned {
                             && expected.len() == samples.len(),
                         "Reference sweep workload differs"
                     );
-                    ensure!(
-                        samples
-                            .iter()
-                            .zip(expected)
-                            .all(|(actual, expected)| actual["action"] == expected["action"]
-                                && actual["hash"] == expected["hash"]),
-                        "Reference sweep pixels differ"
-                    );
+                    for (index, (actual, expected)) in samples.iter().zip(expected).enumerate() {
+                        ensure!(
+                            actual["action"] == expected["action"]
+                                && actual["hash"] == expected["hash"],
+                            "Reference sweep pixels differ at sample {index} ({})",
+                            actual["action"]
+                        );
+                    }
                 }
                 let mut statistics = json!({});
                 for &(action, _) in &actions {
@@ -765,10 +754,6 @@ mod owned {
                         statistics[action][field] = stats(&values)?;
                     }
                 }
-                report["sweep_steps"] = json!(args.sweep_steps);
-                report["sweep_samples"] = json!(samples);
-                report["sweep_round_trips_restored"] = json!(round_trips);
-                report["sweep_resets"] = json!(resets);
                 report["sweep_statistics"] = statistics;
             }
             if let Some(profiler) = &mut profiler {
