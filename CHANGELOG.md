@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Distinguish keyboard focus with double borders in light UI themes and remove the duplicated agent name above conversation history.
+- Distinguish keyboard focus with stronger border colors in light and monochrome UI themes and remove the duplicated agent name above conversation history.
 
 - Group TUI workspace actions by purpose in a shared command palette, slash-command and help catalog. Add palette input dialogs for images, queued prompts and playback while preserving the prompt draft. Use `/checkpoints` for editing history; `/history` remains an alias.
 

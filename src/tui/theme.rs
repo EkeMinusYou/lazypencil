@@ -2,7 +2,6 @@
 use crate::config::keys::Theme;
 use ratatui::{
     style::{Color, Modifier, Style},
-    symbols::border,
     text::{Line, Span},
 };
 use std::cell::Cell;
@@ -29,7 +28,6 @@ pub(super) struct Palette {
     pub prompt_background: Color,
     pub selected_background: Color,
     pub inactive_background: Color,
-    focused_border: Option<border::Set<'static>>,
 }
 impl Palette {
     // Keep the dark theme aligned with the semantic tokens in design.pen.
@@ -54,15 +52,14 @@ impl Palette {
         prompt_background: Color::Rgb(24, 24, 37),
         selected_background: Color::Rgb(69, 71, 90),
         inactive_background: Color::Rgb(69, 71, 90),
-        focused_border: None,
     };
     const LIGHT: Self = Self {
         canvas: Color::Rgb(250, 250, 252),
         text: Color::Rgb(28, 35, 45),
-        frame: Color::Rgb(94, 102, 115),
+        frame: Color::Rgb(148, 156, 170),
         muted: Color::Rgb(94, 102, 115),
         secondary: Color::Rgb(68, 77, 91),
-        focus: Color::Rgb(0, 95, 184),
+        focus: Color::Rgb(0, 75, 153),
         key: Color::Rgb(28, 75, 172),
         working: Color::Rgb(28, 75, 172),
         nodes: Color::Rgb(28, 75, 172),
@@ -77,7 +74,6 @@ impl Palette {
         prompt_background: Color::Rgb(242, 244, 247),
         selected_background: Color::Rgb(215, 226, 247),
         inactive_background: Color::Rgb(232, 237, 245),
-        focused_border: Some(border::DOUBLE),
     };
     fn monochrome(light: bool) -> Self {
         let rgb = |n| Color::Rgb(n, n, n);
@@ -85,8 +81,8 @@ impl Palette {
         let ink = rgb(if light { 32 } else { 230 });
         palette.canvas = rgb(if light { 250 } else { 30 });
         palette.text = ink;
-        palette.frame = rgb(if light { 96 } else { 155 });
-        palette.muted = palette.frame;
+        palette.frame = rgb(155);
+        palette.muted = rgb(if light { 96 } else { 155 });
         palette.secondary = rgb(if light { 64 } else { 190 });
         palette.focus = ink;
         palette.key = ink;
@@ -184,14 +180,6 @@ pub(super) fn modal_selected() -> Style {
 
 pub(super) fn permission_selected() -> Style {
     Style::default().fg(colors().canvas).bg(colors().running)
-}
-
-pub(super) fn border_set(focused: bool, regular: border::Set<'static>) -> border::Set<'static> {
-    if focused {
-        colors().focused_border.unwrap_or(regular)
-    } else {
-        regular
-    }
 }
 
 pub(super) fn title(
@@ -320,6 +308,10 @@ mod tests {
             assert!(contrast(palette.user, palette.user_background) >= 4.5);
             assert!(contrast(palette.user, palette.prompt_background) >= 4.5);
             assert!(contrast(palette.node_selection, palette.selected_background) >= 4.5);
+            assert!(
+                contrast(palette.focus, palette.frame) >= 3.0,
+                "{theme:?}: focused and inactive borders must stay visually distinct"
+            );
         }
     }
 

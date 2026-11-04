@@ -1510,15 +1510,22 @@ fn progressive_navigation_refreshes_sources_without_rewinding_or_exporting_inter
 }
 
 #[test]
-fn light_workspace_focus_uses_double_borders_for_panels_and_prompt() {
+fn workspace_focus_uses_color_without_changing_borders() {
     use crate::config::keys::Theme;
     runtime().block_on(async {
         let temp = TempDir::new().unwrap();
         let mut app = app(&temp, "echo");
         app.append("You: Focus check\n\nCodex:\nResponse stays in the conversation\n");
         let area = Rect::new(0, 0, 130, 34);
-        for preset in [Theme::Light, Theme::Auto, Theme::Monochrome] {
-            let _theme = theme::activate(preset, Some([250, 250, 250]));
+        for (name, preset, background) in [
+            ("light", Theme::Light, [250, 250, 250]),
+            ("auto-light", Theme::Auto, [250, 250, 250]),
+            ("monochrome-light", Theme::Monochrome, [250, 250, 250]),
+            ("dark", Theme::Dark, [30, 30, 46]),
+            ("monochrome-dark", Theme::Monochrome, [30, 30, 46]),
+        ] {
+            let _theme = theme::activate(preset, Some(background));
+            assert_ne!(theme::colors().focus, theme::colors().frame);
             for focus in [
                 Focus::Nodes,
                 Focus::Preview,
@@ -1528,7 +1535,7 @@ fn light_workspace_focus_uses_double_borders_for_panels_and_prompt() {
                 app.focus = focus;
                 let buffer = crate::tui::test_artifacts::snapshot(
                     &mut app,
-                    &format!("light-focus-{preset:?}-{focus:?}"),
+                    &format!("focus-color-{name}-{focus:?}"),
                 );
                 let areas = workspace::areas(area, &app.panel_layout, false, false, 1);
                 for (index, pane) in areas.panes.iter().enumerate() {
@@ -1538,11 +1545,7 @@ fn light_workspace_focus_uses_double_borders_for_panels_and_prompt() {
                         _ => focus.in_conversation(),
                     };
                     let corner = &buffer[(pane.x, pane.y)];
-                    assert_eq!(
-                        corner.symbol(),
-                        if active { "╔" } else { "╭" },
-                        "{preset:?}: {focus:?}, pane {index}"
-                    );
+                    assert_eq!(corner.symbol(), "╭", "{preset:?}: {focus:?}, pane {index}");
                     assert_eq!(
                         corner.fg,
                         if active {
@@ -1556,9 +1559,14 @@ fn light_workspace_focus_uses_double_borders_for_panels_and_prompt() {
                     .pointer
                     .area(mouse::Target::Focus(Focus::Prompt))
                     .unwrap();
+                assert_eq!(buffer[(prompt.right() - 1, prompt.y)].symbol(), "─");
                 assert_eq!(
-                    buffer[(prompt.right() - 1, prompt.y)].symbol(),
-                    if focus == Focus::Prompt { "═" } else { "─" }
+                    buffer[(prompt.right() - 1, prompt.y)].fg,
+                    if focus == Focus::Prompt {
+                        theme::colors().focus
+                    } else {
+                        theme::colors().frame
+                    }
                 );
                 let header = (0..area.width)
                     .map(|x| buffer[(x, 0)].symbol())

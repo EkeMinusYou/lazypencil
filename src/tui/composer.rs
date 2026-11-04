@@ -2,7 +2,6 @@
 use super::*;
 use ratatui::{
     layout::Margin,
-    symbols::border,
     text::Span,
     widgets::{HighlightSpacing, Padding},
 };
@@ -14,7 +13,6 @@ pub(super) fn prompt_height(lines: usize, available: u16) -> u16 {
 pub(super) fn prompt_block(focused: bool) -> Block<'static> {
     Block::default()
         .borders(Borders::TOP)
-        .border_set(theme::border_set(focused, border::PLAIN))
         .border_style(Style::default().fg(if focused {
             theme::colors().focus
         } else {
@@ -99,7 +97,6 @@ impl App {
         let available = usize::from(width).saturating_sub(title.width() + 2);
         let mut block = Block::default()
             .borders(Borders::TOP)
-            .border_set(theme::border_set(focused, border::PLAIN))
             .border_style(Style::default().fg(if focused {
                 theme::colors().focus
             } else {
