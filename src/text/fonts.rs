@@ -112,6 +112,8 @@ pub struct Fonts {
     fallbacks: Vec<String>,
     loaded_bytes: usize,
     system_bytes: usize,
+    #[cfg(unix)]
+    mapped_fonts: Vec<Data>,
     default_family: String,
     locale: String,
     pending: Vec<PendingFace>,
@@ -162,6 +164,7 @@ impl Fonts {
         sources: &[FontFile],
         cancel: Option<&tokio_util::sync::CancellationToken>,
     ) -> Result<Self> {
+        let _pool = crate::native_memory::AutoreleasePool::new();
         let total = sources
             .iter()
             .try_fold(0usize, |total, source| total.checked_add(source.length))
@@ -183,6 +186,8 @@ impl Fonts {
             fallbacks: vec![],
             loaded_bytes: 0,
             system_bytes: 0,
+            #[cfg(unix)]
+            mapped_fonts: Vec::new(),
             default_family: DEFAULT_FONT_FAMILY.into(),
             locale: "ja".into(),
             pending: Vec::new(),
@@ -356,6 +361,25 @@ impl Fonts {
         self.file_face_data(bytes, Data::new_copy(bytes))
     }
 
+    fn captured_system_face(&mut self, bytes: &[u8]) -> Result<Option<Typeface>> {
+        #[cfg(unix)]
+        if bytes.len() > 16 * 1024 * 1024 {
+            use std::io::Write;
+            // Freeze the complete font without keeping every bitmap glyph in
+            // anonymous memory. The mapping survives unlinking this private file.
+            let data = (|| {
+                let mut file = tempfile::NamedTempFile::new().ok()?;
+                file.write_all(bytes).ok()?;
+                Data::from_filename(file.path())
+            })();
+            if let Some(data) = data {
+                self.mapped_fonts.push(data.clone());
+                return self.file_face_data(bytes, data);
+            }
+        }
+        self.file_face(bytes)
+    }
+
     fn bundled_face(&mut self) -> Result<Typeface> {
         static FACE: OnceLock<Result<Typeface>> = OnceLock::new();
         FACE.get_or_init(|| {
@@ -394,6 +418,21 @@ impl Fonts {
         // A cached bundled typeface does not need another OS font manager.
         // Keep each real system/file lookup fresh within its own Fonts context.
         self.system.get_or_insert_with(FontMgr::new)
+    }
+
+    pub(crate) fn release_unused_pages(&self) {
+        #[cfg(unix)]
+        for data in &self.mapped_fonts {
+            // Only whole, immutable mappings from Data::from_filename enter
+            // this list. Live typefaces retain them and fault in needed pages.
+            unsafe {
+                libc::madvise(
+                    data.as_bytes().as_ptr().cast_mut().cast(),
+                    data.size(),
+                    libc::MADV_DONTNEED,
+                );
+            }
+        }
     }
 
     fn add(&mut self, face: Typeface, info: FontInfo, size: usize) -> Result<()> {
@@ -494,6 +533,47 @@ impl Fonts {
         if self.registered.len() >= MAX_FACES {
             return Err(invalid("Font resolution exceeds 256 faces"));
         }
+        #[cfg(target_os = "macos")]
+        if let Some(captured) = super::system_capture::capture(&face, self.cancel.as_ref()) {
+            if let Some(existing) = self.registered.values().find(|info| {
+                info.source == "system:font-data"
+                    && info.hash == captured.digest
+                    && info.face_index == 0
+            }) {
+                let family = existing.family.clone();
+                self.families.insert(key, family.clone());
+                self.system_requests.insert(selected_request);
+                self.system_requests.insert(request);
+                return Ok(family);
+            }
+            let bytes = captured.data.clone();
+            self.mapped_fonts.push(bytes.clone());
+            let frozen = self
+                .file_face_data(bytes.as_bytes(), captured.data)?
+                .ok_or_else(|| invalid("Cannot load captured system font data"))?;
+            self.add(
+                frozen,
+                FontInfo {
+                    family: actual.clone(),
+                    source: "system:font-data".into(),
+                    hash: captured.digest.clone(),
+                    face_index: 0,
+                    face_hash: captured.digest,
+                    postscript_name: None,
+                    weight: 0,
+                    width: 0,
+                    slant: String::new(),
+                    axes: vec![],
+                    synthetic_bold: false,
+                    synthetic_italic: false,
+                },
+                captured.length,
+            )?;
+            self.system_requests.insert(selected_request);
+            self.system_requests.insert(request);
+            return Ok(actual);
+        }
+        crate::cancel::check(self.cancel.as_ref())?;
         let (bytes, index) = face.to_font_bytes().ok_or_else(|| {
             Error::new(
                 "ASSET_NOT_FOUND",
@@ -518,7 +598,7 @@ impl Fonts {
         let normalized = super::container::extract_bounded(&bytes, index, MAX_SYSTEM_BYTES)?;
         let size = normalized.len();
         let frozen = self
-            .file_face(&normalized)?
+            .captured_system_face(&normalized)?
             .ok_or_else(|| invalid("Cannot load captured system font data"))?;
         self.add(
             frozen,
@@ -815,6 +895,7 @@ mod sharing_tests {
                     None,
                 )
                 .unwrap();
+            fonts.release_unused_pages();
             let captured = block
                 .metrics
                 .fonts

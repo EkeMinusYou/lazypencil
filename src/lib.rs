@@ -31,6 +31,8 @@ mod inline_images;
 pub mod layout;
 mod managed;
 pub mod mcp;
+#[cfg(feature = "rendering")]
+mod native_memory;
 pub mod operations;
 pub mod paths;
 pub(crate) mod preview_control;

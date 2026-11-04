@@ -155,6 +155,7 @@ pub fn run_with_selection(
     json_output: bool,
     selected: Option<documents::Selection>,
 ) -> Result<()> {
+    let _pool = crate::native_memory::AutoreleasePool::new();
     let (prepared, startup) = match selected {
         Some(selected) => (selected.agent, Some(selected.terminal)),
         None => (None, None),
@@ -414,6 +415,7 @@ impl App {
         timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut termination = Box::pin(termination());
         loop {
+            let _pool = crate::native_memory::AutoreleasePool::new();
             self.sync_turn(worker);
             if let Err(error) = self.send_queued().await {
                 self.outbox.paused = true;

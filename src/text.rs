@@ -34,6 +34,8 @@ mod container;
 mod decorations;
 mod font_index;
 mod fonts;
+#[cfg(target_os = "macos")]
+mod system_capture;
 pub use fonts::{FontAxis, FontInfo, Fonts};
 
 impl Fonts {
@@ -61,6 +63,7 @@ impl Fonts {
         width: Option<f32>,
         check: &dyn Fn() -> Result<()>,
     ) -> Result<TextBlock> {
+        let _pool = crate::native_memory::AutoreleasePool::new();
         check()?;
         if !spec.size.is_finite() || !(0.0..=4096.0).contains(&spec.size) || spec.size == 0.0 {
             return Err(Error::new(

@@ -307,6 +307,7 @@ impl Drop for Worker {
 }
 
 fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, image_id: u32) {
+    let _thread_pool = crate::native_memory::AutoreleasePool::new();
     let mut cached: Option<(Project, crate::layout::LayoutSnapshot)> = None;
     let mut document_preview_time = None;
     let mut document_preview_background = None;
@@ -333,6 +334,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
     let mut dynamic =
         crate::dynamic::DynamicRuntime::new(store.data_dir()).with_retained_pages(store.path());
     loop {
+        let _pool = crate::native_memory::AutoreleasePool::new();
         let now = Instant::now();
         script.expire_idle(now);
         dynamic.expire_idle(now);

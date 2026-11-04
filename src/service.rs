@@ -794,6 +794,7 @@ fn layout_snapshot_with_text_policy(
             return Err(error);
         }
     };
+    fonts.release_unused_pages();
     store::require_revision(&store.read()?, &snapshot.revision)?;
     project.verify_unchanged()?;
     crate::cancel::check(cancel.as_ref())?;
