@@ -24,8 +24,7 @@ impl Labels {
         Self {
             fonts: None,
             blocks: BTreeMap::new(),
-            // Match terminal text density instead of treating physical image
-            // pixels as UI pixels. Camera zoom never changes this scale.
+            // Terminal metrics bound the readable title size when zoomed in.
             screen_scale: (f32::from(font.height) / 20.0).max(1.0),
             ellipses: [None, None],
         }
@@ -66,6 +65,10 @@ impl Labels {
         let region = view.region(viewport);
         let scale = image.width() as f32 / viewport[0] as f32;
         let zoom = view.zoom.unwrap_or(1.0);
+        // Preserve the compact overview captions, then grow them as the artwork
+        // becomes readable. Scale vector text, never a cached bitmap.
+        let title_scale = (zoom * 2.0).clamp(1.0, self.screen_scale);
+        let text_scale = title_scale / self.screen_scale;
         let info = skia_safe::ImageInfo::new(
             (image.width() as i32, image.height() as i32),
             skia_safe::ColorType::RGBA8888,
@@ -84,9 +87,9 @@ impl Labels {
             let bounds = super::super::selection::shape_bounds(node);
             let x = (bounds.x - region.x) * zoom;
             let width = bounds.width * zoom;
-            let bottom = (bounds.y - region.y) * zoom - 6.0 * self.screen_scale;
+            let bottom = (bounds.y - region.y) * zoom - 6.0 * title_scale;
             if bottom <= 0.0
-                || bottom > viewport[1] as f32 + 24.0 * self.screen_scale
+                || bottom > viewport[1] as f32 + 24.0 * title_scale
                 || x >= viewport[0] as f32
                 || width <= 0.0
                 || x + width <= 0.0
@@ -105,43 +108,56 @@ impl Labels {
                 let block = self.shape(&key.0, key.1)?;
                 self.blocks.insert(key.clone(), block);
             }
-            let truncated = self.blocks[&key].metrics.width > width;
+            let text_width_limit = width / text_scale;
+            let truncated = self.blocks[&key].metrics.width > text_width_limit;
             let style = usize::from(key.1);
             if truncated && self.ellipses[style].is_none() {
                 self.ellipses[style] = Some(self.shape("…", key.1)?);
             }
             let block = self.blocks.get(&key).unwrap();
             let ellipsis = truncated.then(|| self.ellipses[style].as_ref().unwrap());
-            let text_width =
-                ellipsis.map_or(width, |ellipsis| (width - ellipsis.metrics.width).max(0.0));
+            let text_width = ellipsis.map_or(text_width_limit, |ellipsis| {
+                (text_width_limit - ellipsis.metrics.width).max(0.0)
+            });
             // Clip decoration to its own frame; shaping stays cached across zooms.
             canvas.save();
+            canvas.translate((x, bottom));
+            canvas.scale((text_scale, text_scale));
+            canvas.save();
             canvas.clip_rect(
-                skia_safe::Rect::from_xywh(x, 0.0, text_width, viewport[1] as f32),
+                skia_safe::Rect::from_xywh(
+                    0.0,
+                    -bottom / text_scale,
+                    text_width,
+                    viewport[1] as f32 / text_scale,
+                ),
                 skia_safe::ClipOp::Intersect,
                 false,
             );
-            block
-                .paragraph
-                .paint(canvas, (x, bottom - block.metrics.height));
+            block.paragraph.paint(canvas, (0.0, -block.metrics.height));
             canvas.restore();
             if let Some(ellipsis) = ellipsis {
                 canvas.save();
                 canvas.clip_rect(
-                    skia_safe::Rect::from_xywh(x, 0.0, width, viewport[1] as f32),
+                    skia_safe::Rect::from_xywh(
+                        0.0,
+                        -bottom / text_scale,
+                        text_width_limit,
+                        viewport[1] as f32 / text_scale,
+                    ),
                     skia_safe::ClipOp::Intersect,
                     false,
                 );
                 ellipsis.paragraph.paint(
                     canvas,
                     (
-                        x + text_width,
-                        bottom - block.metrics.height + block.metrics.baseline
-                            - ellipsis.metrics.baseline,
+                        text_width,
+                        -block.metrics.height + block.metrics.baseline - ellipsis.metrics.baseline,
                     ),
                 );
                 canvas.restore();
             }
+            canvas.restore();
         }
         Ok(())
     }
@@ -281,6 +297,49 @@ mod tests {
             }
             assert_eq!(labels.blocks.len(), 1, "Zooms reuse the same shaped title");
         }
+    }
+
+    #[test]
+    fn overview_titles_grow_towards_readable_size_without_reshaping_each_zoom() {
+        let mut root = node("Root", -100.0, None, true);
+        root.hit.rect.width = 800.0;
+        root.bounds.width = 800.0;
+        let viewport = [1280, 640];
+        let white = image::Rgba([255, 255, 255, 255]);
+        let mut labels = Labels::new(ratatui_image::FontSize::new(30, 60));
+        let mut heights = Vec::new();
+        for zoom in [0.2, 0.6, 1.0, 2.0, 4.0] {
+            let mut bitmap = image::RgbaImage::from_pixel(viewport[0], viewport[1], white);
+            labels
+                .paint(
+                    &mut bitmap,
+                    std::slice::from_ref(&root),
+                    View {
+                        zoom: Some(zoom),
+                        ..Default::default()
+                    },
+                    viewport,
+                    &[],
+                )
+                .unwrap();
+            let rows = bitmap
+                .enumerate_pixels()
+                .filter(|(_, _, p)| **p != white)
+                .map(|(_, y, _)| y)
+                .collect::<Vec<_>>();
+            heights.push(rows.iter().max().unwrap() - rows.iter().min().unwrap() + 1);
+        }
+        assert!(
+            heights[0] <= 13,
+            "Overview captions retain their former compact size"
+        );
+        assert!(heights[0] < heights[1] && heights[1] < heights[2] && heights[2] < heights[3]);
+        assert_eq!(heights[3], heights[4], "Close views cap the title size");
+        assert_eq!(
+            labels.blocks.len(),
+            1,
+            "Zooms reuse vector text, not scaled bitmaps"
+        );
     }
 
     #[test]

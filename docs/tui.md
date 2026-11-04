@@ -79,11 +79,11 @@ a previous complete image while an exact frame renders; cached feedback is label
 Only completed document frames can be exported. Slow rendering replaces pending work
 with the latest view rather than replaying every queued camera position.
 
-Root node titles stay at a constant screen size when zooming. Their font size and
-spacing follow terminal cell metrics so they remain readable on high-resolution
-displays. Long names are clipped with an ellipsis to their frame width rather than
-shrinking the text or overlapping adjacent titles. These titles decorate the
-preview only and are not added to exports.
+Root node titles stay compact in the overview and grow as you zoom in, up to a
+readable screen size based on terminal cell metrics. Further zooming keeps that
+size constant. Text is rasterized directly at each size. Long names are clipped
+with an ellipsis to their frame width rather than shrinking to fit or overlapping
+adjacent titles. These titles decorate the preview only and are not added to exports.
 
 The dark theme retains the semantic palette in `design.pen`; the file picker and
 dialogs share the active theme surfaces.
