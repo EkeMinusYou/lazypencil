@@ -424,6 +424,12 @@ mod tests {
         for file in ["dashboard.pen", "avatar.png"] {
             std::fs::copy(fixture.join(file), directory.path().join(file)).unwrap();
         }
+        // Pixel parity must not depend on hosted debug-render timing.
+        std::fs::write(
+            directory.path().join("lazypencil.toml"),
+            "version=1\n[runtime.dynamic]\nrender_timeout_ms=180000\n",
+        )
+        .unwrap();
         let store = crate::store::Store::open(
             directory.path().join("dashboard.pen"),
             Some(directory.path().join("data")),
