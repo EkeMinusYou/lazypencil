@@ -54,13 +54,13 @@ impl View {
                 .clamp(0.01, 16.0),
         );
     }
-    fn fit_canvas(&mut self, bounds: Rect, pixels: [u32; 2]) {
+    fn fit_canvas(&mut self, bounds: Rect, pixels: [u32; 2], top_padding: u32) {
         // Reserve display space above the artwork for root names.
         self.fit(bounds, pixels);
-        if (pixels[1] as f32 - bounds.height * self.zoom.unwrap()) / 2.0 >= 28.0 {
+        if (pixels[1] as f32 - bounds.height * self.zoom.unwrap()) / 2.0 >= top_padding as f32 {
             return;
         }
-        let padding = 28.min(pixels[1].saturating_sub(1));
+        let padding = top_padding.min(pixels[1].saturating_sub(1));
         self.fit(bounds, [pixels[0], pixels[1] - padding]);
         self.center[1] -= f64::from(padding) / 2.0 / f64::from(self.zoom.unwrap());
     }
@@ -317,7 +317,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
     let mut previous_view = None;
     let mut predicted_view = None;
     let mut speculation: Option<(View, crate::render::PreviewRenderer)> = None;
-    let mut labels = labels::Labels::default();
+    let mut labels = labels::Labels::new(picker.font_size());
     let mut presentation_cache = None;
     let mut navigation: Option<Arc<[Node]>> = None;
     let mut revision = revision::RevisionGuard::default();
@@ -431,7 +431,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             let pixels = viewport.display;
             let mut view = request.view;
             if view.zoom.is_none() {
-                view.fit_canvas(layout.bounds, pixels);
+                view.fit_canvas(layout.bounds, pixels, labels.top_padding());
             }
             if let Some((predicted, prepared)) = speculation.take()
                 && cache::same_pixels(predicted, view, pixels)
@@ -1080,7 +1080,11 @@ mod tests {
                 assert_eq!(preview.protocol.size(), cells);
                 let mut expected = view;
                 if zoom.is_none() {
-                    expected.fit_canvas(Rect::new(-100.0, -100.0, 200.0, 200.0), pixels);
+                    expected.fit_canvas(
+                        Rect::new(-100.0, -100.0, 200.0, 200.0),
+                        pixels,
+                        labels::Labels::new(picker.font_size()).top_padding(),
+                    );
                 }
                 assert_eq!(preview.view, expected);
                 assert_eq!(preview.view.region(pixels), expected.region(pixels));

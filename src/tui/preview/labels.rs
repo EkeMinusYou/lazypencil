@@ -6,13 +6,55 @@ use crate::{
 };
 use std::collections::BTreeMap;
 
-#[derive(Default)]
 pub(in crate::tui) struct Labels {
     fonts: Option<Fonts>,
     blocks: BTreeMap<(String, bool), TextBlock>,
+    screen_scale: f32,
+    ellipses: [Option<TextBlock>; 2],
+}
+
+impl Default for Labels {
+    fn default() -> Self {
+        Self::new(ratatui_image::FontSize::new(10, 20))
+    }
 }
 
 impl Labels {
+    pub fn new(font: ratatui_image::FontSize) -> Self {
+        Self {
+            fonts: None,
+            blocks: BTreeMap::new(),
+            // Match terminal text density instead of treating physical image
+            // pixels as UI pixels. Camera zoom never changes this scale.
+            screen_scale: (f32::from(font.height) / 20.0).max(1.0),
+            ellipses: [None, None],
+        }
+    }
+
+    pub(super) fn top_padding(&self) -> u32 {
+        (28.0 * self.screen_scale).ceil() as u32
+    }
+
+    fn shape(&mut self, content: &str, selected: bool) -> Result<TextBlock> {
+        if self.fonts.is_none() {
+            self.fonts = Some(Fonts::new(&[])?);
+        }
+        let [r, g, b] = if selected {
+            super::super::theme::BLUE_RGB
+        } else {
+            super::super::theme::SECONDARY_RGB
+        };
+        self.fonts.as_mut().unwrap().layout(
+            &TextSpec {
+                content: content.into(),
+                size: 13.0 * self.screen_scale,
+                color: skia_safe::Color::from_rgb(r, g, b),
+                ..Default::default()
+            },
+            None,
+        )
+    }
+
     pub fn paint(
         &mut self,
         image: &mut image::RgbaImage,
@@ -41,8 +83,14 @@ impl Labels {
         {
             let bounds = super::super::selection::shape_bounds(node);
             let x = (bounds.x - region.x) * zoom;
-            let bottom = (bounds.y - region.y) * zoom - 6.0;
-            if bottom <= 0.0 || bottom > viewport[1] as f32 + 24.0 || x >= viewport[0] as f32 {
+            let width = bounds.width * zoom;
+            let bottom = (bounds.y - region.y) * zoom - 6.0 * self.screen_scale;
+            if bottom <= 0.0
+                || bottom > viewport[1] as f32 + 24.0 * self.screen_scale
+                || x >= viewport[0] as f32
+                || width <= 0.0
+                || x + width <= 0.0
+            {
                 continue;
             }
             let name: String = node.display_name.chars().take(512).collect();
@@ -54,31 +102,46 @@ impl Labels {
                 if self.blocks.len() >= 256 {
                     self.blocks.clear();
                 }
-                if self.fonts.is_none() {
-                    self.fonts = Some(Fonts::new(&[])?);
-                }
-                let block = self.fonts.as_mut().unwrap().layout(
-                    &TextSpec {
-                        content: key.0.clone(),
-                        size: 13.0,
-                        color: {
-                            let [r, g, b] = if key.1 {
-                                super::super::theme::BLUE_RGB
-                            } else {
-                                super::super::theme::SECONDARY_RGB
-                            };
-                            skia_safe::Color::from_rgb(r, g, b)
-                        },
-                        ..Default::default()
-                    },
-                    None,
-                )?;
+                let block = self.shape(&key.0, key.1)?;
                 self.blocks.insert(key.clone(), block);
             }
+            let truncated = self.blocks[&key].metrics.width > width;
+            let style = usize::from(key.1);
+            if truncated && self.ellipses[style].is_none() {
+                self.ellipses[style] = Some(self.shape("…", key.1)?);
+            }
             let block = self.blocks.get(&key).unwrap();
+            let ellipsis = truncated.then(|| self.ellipses[style].as_ref().unwrap());
+            let text_width =
+                ellipsis.map_or(width, |ellipsis| (width - ellipsis.metrics.width).max(0.0));
+            // Clip decoration to its own frame; shaping stays cached across zooms.
+            canvas.save();
+            canvas.clip_rect(
+                skia_safe::Rect::from_xywh(x, 0.0, text_width, viewport[1] as f32),
+                skia_safe::ClipOp::Intersect,
+                false,
+            );
             block
                 .paragraph
                 .paint(canvas, (x, bottom - block.metrics.height));
+            canvas.restore();
+            if let Some(ellipsis) = ellipsis {
+                canvas.save();
+                canvas.clip_rect(
+                    skia_safe::Rect::from_xywh(x, 0.0, width, viewport[1] as f32),
+                    skia_safe::ClipOp::Intersect,
+                    false,
+                );
+                ellipsis.paragraph.paint(
+                    canvas,
+                    (
+                        x + text_width,
+                        bottom - block.metrics.height + block.metrics.baseline
+                            - ellipsis.metrics.baseline,
+                    ),
+                );
+                canvas.restore();
+            }
         }
         Ok(())
     }
@@ -116,12 +179,14 @@ mod tests {
 
     #[test]
     fn root_labels_follow_pan_keep_screen_size_and_skip_nested_or_hidden_nodes() {
-        let nodes = vec![
+        let mut nodes = vec![
             node("旧案 / Page 1", -100.0, None, true),
             node("Nested", 0.0, Some(0), true),
             node("Hidden", 100.0, None, false),
             node("   ", 200.0, None, true),
         ];
+        nodes[0].hit.rect.width = 400.0;
+        nodes[0].bounds.width = 400.0;
         let mut labels = Labels::default();
         let white = image::Rgba([255, 255, 255, 255]);
         let mut previous_ink = None;
@@ -160,26 +225,146 @@ mod tests {
     }
 
     #[test]
-    fn root_labels_have_room_above_tall_artwork_after_initial_fit() {
+    fn root_labels_match_terminal_metrics_and_stay_constant_across_zoom() {
         let mut root = node("旧案 / Page 1", -100.0, None, true);
-        root.hit.rect.height = 800.0;
-        root.bounds.height = 800.0;
-        let mut view = View::default();
-        view.fit_canvas(root.bounds, [240, 120]);
-        let region = view.region([240, 120]);
-        assert!((root.bounds.y - region.y) * view.zoom.unwrap() >= 28.0);
-        assert!((root.bounds.bottom() - region.y) * view.zoom.unwrap() <= 120.0);
+        root.hit.rect.width = 400.0;
+        root.bounds.width = 400.0;
         let white = image::Rgba([255, 255, 255, 255]);
-        let mut image = image::RgbaImage::from_pixel(240, 120, white);
-        Labels::default()
-            .paint(&mut image, &[root], view, [240, 120], &[])
-            .unwrap();
-        let ink: Vec<_> = image
-            .enumerate_pixels()
-            .filter(|(_, _, p)| **p != white)
-            .collect();
-        assert!(!ink.is_empty());
-        assert!(ink.iter().all(|(_, y, _)| *y > 0));
+        let mut base_size: Option<[u32; 2]> = None;
+        for factor in [1_u32, 2, 3] {
+            let font = ratatui_image::FontSize::new(10 * factor as u16, 20 * factor as u16);
+            let viewport = [640 * factor, 320 * factor];
+            let mut labels = Labels::new(font);
+            let mut previous_size = None;
+            for zoom in [0.5, 1.0, 2.0] {
+                let view = View {
+                    zoom: Some(zoom * factor as f32),
+                    ..Default::default()
+                };
+                let mut bitmap = image::RgbaImage::from_pixel(viewport[0], viewport[1], white);
+                labels
+                    .paint(
+                        &mut bitmap,
+                        std::slice::from_ref(&root),
+                        view,
+                        viewport,
+                        &[],
+                    )
+                    .unwrap();
+                let ink = bitmap
+                    .enumerate_pixels()
+                    .filter(|(_, _, pixel)| **pixel != white)
+                    .map(|(x, y, _)| (x, y))
+                    .collect::<Vec<_>>();
+                assert!(!ink.is_empty());
+                let size = [
+                    ink.iter().map(|p| p.0).max().unwrap() - ink.iter().map(|p| p.0).min().unwrap()
+                        + 1,
+                    ink.iter().map(|p| p.1).max().unwrap() - ink.iter().map(|p| p.1).min().unwrap()
+                        + 1,
+                ];
+                if let Some(previous) = previous_size {
+                    assert_eq!(size, previous, "Canvas zoom must not resize the title");
+                }
+                previous_size = Some(size);
+                if let Some(base) = base_size {
+                    for axis in 0..2 {
+                        assert!(
+                            size[axis].abs_diff(base[axis] * factor) <= factor + 1,
+                            "Title must track terminal metrics: font={font:?}, base={base:?}, size={size:?}"
+                        );
+                    }
+                }
+            }
+            if base_size.is_none() {
+                base_size = previous_size;
+            }
+            assert_eq!(labels.blocks.len(), 1, "Zooms reuse the same shaped title");
+        }
+    }
+
+    #[test]
+    fn long_root_titles_keep_their_font_size_and_stay_inside_the_frame_width() {
+        let root = node(
+            "Long title that must not overlap the next frame",
+            -100.0,
+            None,
+            true,
+        );
+        let white = image::Rgba([255, 255, 255, 255]);
+        for factor in [1_u32, 2, 3] {
+            let font = ratatui_image::FontSize::new(10 * factor as u16, 20 * factor as u16);
+            let viewport = [640 * factor, 320 * factor];
+            let mut labels = Labels::new(font);
+            for zoom in [0.5, 1.0, 2.0] {
+                for selected in [vec![], vec![root.id.clone()]] {
+                    let view = View {
+                        zoom: Some(zoom * factor as f32),
+                        ..Default::default()
+                    };
+                    let mut bitmap = image::RgbaImage::from_pixel(viewport[0], viewport[1], white);
+                    labels
+                        .paint(
+                            &mut bitmap,
+                            std::slice::from_ref(&root),
+                            view,
+                            viewport,
+                            &selected,
+                        )
+                        .unwrap();
+                    let ink = bitmap
+                        .enumerate_pixels()
+                        .filter(|(_, _, pixel)| **pixel != white)
+                        .map(|(x, y, _)| (x, y))
+                        .collect::<Vec<_>>();
+                    assert!(!ink.is_empty());
+                    let left = (root.bounds.x - view.region(viewport).x) * view.zoom.unwrap();
+                    let right = left + root.bounds.width * view.zoom.unwrap();
+                    assert!(
+                        ink.iter()
+                            .all(|(x, _)| *x as f32 >= left && (*x as f32) < right),
+                        "Titles must not paint over adjacent frame names"
+                    );
+                    let height = ink.iter().map(|p| p.1).max().unwrap()
+                        - ink.iter().map(|p| p.1).min().unwrap()
+                        + 1;
+                    assert!(height >= 9 * factor, "Truncation must not shrink the font");
+                }
+            }
+            assert_eq!(
+                labels.blocks.len(),
+                2,
+                "Widths and zooms reuse the shaped titles"
+            );
+        }
+    }
+
+    #[test]
+    fn root_labels_have_room_above_tall_artwork_after_initial_fit() {
+        for factor in [1_u32, 2, 3] {
+            let mut root = node("旧案 / Page 1", -100.0, None, true);
+            root.hit.rect.height = 800.0;
+            root.bounds.height = 800.0;
+            let font = ratatui_image::FontSize::new(10 * factor as u16, 20 * factor as u16);
+            let mut labels = Labels::new(font);
+            let pixels = [240 * factor, 120 * factor];
+            let mut view = View::default();
+            view.fit_canvas(root.bounds, pixels, labels.top_padding());
+            let region = view.region(pixels);
+            assert!((root.bounds.y - region.y) * view.zoom.unwrap() >= labels.top_padding() as f32);
+            assert!((root.bounds.bottom() - region.y) * view.zoom.unwrap() <= pixels[1] as f32);
+            let white = image::Rgba([255, 255, 255, 255]);
+            let mut image = image::RgbaImage::from_pixel(pixels[0], pixels[1], white);
+            labels
+                .paint(&mut image, &[root], view, pixels, &[])
+                .unwrap();
+            let ink: Vec<_> = image
+                .enumerate_pixels()
+                .filter(|(_, _, p)| **p != white)
+                .collect();
+            assert!(!ink.is_empty());
+            assert!(ink.iter().all(|(_, y, _)| *y > 0));
+        }
     }
 
     #[test]
