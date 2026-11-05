@@ -292,14 +292,13 @@ impl Command {
                     "identify" => {
                         let mut previous_debug_keys = Vec::new();
                         for old in identity.previous_debug_identities()? {
-                            let (legacy_primary, legacy_prefix) = old.compatible_keys(true)?;
-                            previous_debug_keys.extend([
-                                old.compatible_primary,
-                                old.compatible_prefix,
-                                legacy_primary,
-                                legacy_prefix,
-                            ]);
+                            let (_, legacy_prefix) = old.compatible_keys(true)?;
+                            // Prefixes also match exact-source keys. Keep the
+                            // newest reviewed contexts within Actions' ten-key
+                            // limit: one primary plus four current fallbacks.
+                            previous_debug_keys.extend([old.compatible_prefix, legacy_prefix]);
                         }
+                        previous_debug_keys.truncate(5);
                         let (legacy_primary, legacy_prefix) = identity.compatible_keys(true)?;
                         let checkpoint = if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
                         {

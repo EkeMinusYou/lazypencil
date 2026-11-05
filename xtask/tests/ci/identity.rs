@@ -199,18 +199,35 @@ fn application_identify_cli_emits_unique_generation_keys_and_ordered_compatible_
         .unwrap();
         let previous = identity.previous_debug_identities().unwrap();
         assert_eq!(previous.len(), 2);
-        assert_eq!(previous_keys.len(), previous.len() * 4);
-        for (old, keys) in previous.iter().zip(previous_keys.as_chunks::<4>().0) {
-            let (legacy_primary, legacy_prefix) = old.compatible_keys(true).unwrap();
-            assert_eq!(
-                keys.as_slice(),
-                [
-                    old.compatible_primary.clone(),
-                    old.compatible_prefix.clone(),
-                    legacy_primary,
-                    legacy_prefix,
-                ]
-            );
+        let workflow =
+            fs::read_to_string(util::root().join(".github/workflows/native.yml")).unwrap();
+        let current_keys = workflow
+            .split("id: compatible-cache\n")
+            .nth(1)
+            .unwrap()
+            .split("restore-keys: |\n")
+            .nth(1)
+            .unwrap()
+            .split("          path:")
+            .next()
+            .unwrap()
+            .lines()
+            .filter(|line| !line.trim().is_empty() && !line.contains("join("))
+            .count();
+        assert!(
+            1 + current_keys + previous_keys.len() <= 10,
+            "Actions rejects the entire cache lookup when its key budget is exceeded"
+        );
+        for old in &previous {
+            let (legacy_primary, _) = old.compatible_keys(true).unwrap();
+            for primary in [&old.compatible_primary, &legacy_primary] {
+                assert!(
+                    previous_keys
+                        .iter()
+                        .any(|prefix| primary.starts_with(prefix)),
+                    "Lost a reviewed older compiler context: {primary}"
+                );
+            }
         }
         let (focused, focused_prefix) = identity.focused_keys().unwrap();
         for (key, expected) in [
