@@ -476,7 +476,7 @@ pub fn run(
             assert_eq!(
                 read_json(&h.document).unwrap(),
                 if case == "startup-new" {
-                    json!({"version":"2.21","children":[]})
+                    json!({"version":"2.22","children":[]})
                 } else {
                     design.clone()
                 }
