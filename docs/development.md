@@ -270,7 +270,9 @@ separate credentials.
 To publish a **new** version:
 
 1. Update `Cargo.toml`, the application entry in `Cargo.lock`, `resources/release.json`,
-   and release notes together. Merge the reviewed commit to `main` and wait for its
+   and release notes together. Regenerate `resources/licenses/rust` with the Rust
+   notice collector after changing the package identity, then verify the bundle.
+   Merge the reviewed commit to `main` and wait for its
    existing push CI run to succeed. The release workflow reuses that result; it does
    not dispatch another full CI run.
 2. Create and push an immutable `vVERSION` tag at that exact commit. The version must
