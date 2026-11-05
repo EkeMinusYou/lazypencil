@@ -256,10 +256,8 @@ impl App {
     pub(super) fn draw_nodes(&mut self, frame: &mut Frame, area: Rect) {
         let title = if self.diagnostics.active {
             "Diagnostics".into()
-        } else if self.searching || !self.filter.is_empty() {
-            format!("Nodes /{}", self.filter)
         } else {
-            "Nodes".into()
+            search::title("Nodes", &self.filter, self.searching)
         };
         let title = if !self.diagnostics.active && self.nodes_loading && self.preview.is_some() {
             format!("{title} · Loading…")
@@ -271,6 +269,13 @@ impl App {
         let focused = self.focus == Focus::Nodes;
         let title = theme::title("▤", title, theme::colors().nodes, false);
         let title_width = title.width();
+        let search_title_width = theme::title(
+            "▤",
+            search::title("Nodes", &self.filter, self.searching),
+            theme::colors().nodes,
+            false,
+        )
+        .width();
         let mut block = panel(title, focused);
         if let Some(preview) = &self.preview {
             let diagnostics = if self.diagnostics.active && self.diagnostics.selected_only {
@@ -301,6 +306,9 @@ impl App {
         }
         let inner = block.inner(area);
         frame.render_widget(block, area);
+        if self.searching && focused && !self.diagnostics.active {
+            self.search_cursor(frame, area, search_title_width);
+        }
         if self.mouse.enabled
             && self.mouse.show_controls
             && usize::from(area.width) >= title_width + 17

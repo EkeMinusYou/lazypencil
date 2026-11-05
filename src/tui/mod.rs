@@ -24,6 +24,7 @@ mod preview;
 mod preview_search;
 mod references;
 mod saved;
+mod search;
 mod selection;
 mod terminal;
 #[cfg(test)]
@@ -692,12 +693,15 @@ impl App {
                 self.dirty = true;
             }
             Event::Paste(text)
-                if self.preview_search.editing
-                    && !self.help
-                    && self.modal.is_none()
-                    && self.permissions.is_empty() =>
+                if (self.preview_search.editing || self.searching) && !self.has_overlay() =>
             {
-                self.paste_preview_search(&text, &screen.picker, worker)?;
+                if self.preview_search.editing {
+                    self.paste_preview_search(&text, &screen.picker, worker)?;
+                } else {
+                    let selected = self.selected_node().map(|node| node.id.clone());
+                    search::paste(&mut self.filter, &text);
+                    self.search_nodes(selected.as_deref());
+                }
                 self.dirty = true;
             }
             Event::FocusLost => {
@@ -1547,19 +1551,22 @@ impl App {
         if !self.nodes_collapsed {
             self.draw_nodes(frame, panes[0]);
         }
-        let mut block = panel(
-            theme::title(
-                if self.camera.is_some() { "↻" } else { "▣" },
+        let title = theme::title(
+            if self.camera.is_some() { "↻" } else { "▣" },
+            search::title(
                 "Preview",
-                if self.camera.is_some() {
-                    theme::colors().running
-                } else {
-                    theme::colors().preview
-                },
-                false,
+                &self.preview_search.query,
+                self.preview_search.editing,
             ),
-            self.focus == Focus::Preview,
+            if self.camera.is_some() {
+                theme::colors().running
+            } else {
+                theme::colors().preview
+            },
+            false,
         );
+        let title_width = title.width();
+        let mut block = panel(title, self.focus == Focus::Preview);
         let zoom = self.preview_zoom_label();
         let preview_notice = if self.preview_stale {
             Some(" Showing previous preview ")
@@ -1578,7 +1585,11 @@ impl App {
             );
         }
         let zoom_width = zoom.as_ref().map_or(0, |zoom| zoom.len() + 3);
-        if let Some(timeline) = self.preview_timeline() {
+        if let Some(timeline) = self
+            .preview_search
+            .summary()
+            .or_else(|| self.preview_timeline())
+        {
             let width = usize::from(panes[1].width.saturating_sub(2)).saturating_sub(zoom_width);
             block = block.title_bottom(Line::styled(
                 format!(" {timeline} ")
@@ -1600,7 +1611,9 @@ impl App {
         let inner = block.inner(panes[1]);
         self.pointer.add(inner, mouse::Target::Canvas);
         frame.render_widget(block, panes[1]);
-        self.draw_preview_search(frame, panes[1]);
+        if self.preview_search.editing && self.focus == Focus::Preview {
+            self.search_cursor(frame, panes[1], title_width);
+        }
         if let Some(camera) = self
             .camera
             .as_ref()

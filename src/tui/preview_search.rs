@@ -34,6 +34,20 @@ impl Search {
         self.current = selected.and_then(|id| self.matches.iter().position(|item| *item == id));
     }
 
+    pub(super) fn summary(&self) -> Option<String> {
+        if self.query.is_empty() {
+            None
+        } else if self.matches.is_empty() {
+            Some("No matches".into())
+        } else {
+            Some(format!(
+                "{}/{}",
+                self.current.map_or(0, |index| index + 1),
+                self.matches.len()
+            ))
+        }
+    }
+
     fn step(&mut self, backwards: bool) -> Option<String> {
         let count = self.matches.len();
         if count == 0 {
@@ -64,24 +78,11 @@ impl App {
         picker: &graphics::Backend,
         worker: &Worker,
     ) -> Result<()> {
-        match key.code {
-            KeyCode::Esc => self.preview_search = Default::default(),
-            KeyCode::Enter => self.preview_search.editing = false,
-            KeyCode::Down | KeyCode::Tab => self.step_preview_search(false, picker, worker)?,
-            KeyCode::Up | KeyCode::BackTab => self.step_preview_search(true, picker, worker)?,
-            KeyCode::Backspace => {
-                self.preview_search.query.pop();
-                self.update_preview_search(picker, worker)?;
-            }
-            KeyCode::Char(c)
-                if !key
-                    .modifiers
-                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
-                    && !c.is_control() =>
-            {
-                self.paste_preview_search(&c.to_string(), picker, worker)?;
-            }
-            _ => {}
+        match search::edit(&mut self.preview_search.query, key) {
+            search::Edit::Clear => self.preview_search = Default::default(),
+            search::Edit::Keep => self.preview_search.editing = false,
+            search::Edit::Changed => self.update_preview_search(picker, worker)?,
+            search::Edit::Ignored => {}
         }
         Ok(())
     }
@@ -92,12 +93,7 @@ impl App {
         picker: &graphics::Backend,
         worker: &Worker,
     ) -> Result<()> {
-        for c in text.chars().filter(|c| !c.is_control()) {
-            if self.preview_search.query.len() + c.len_utf8() > 1024 * 1024 {
-                break;
-            }
-            self.preview_search.query.push(c);
-        }
+        search::paste(&mut self.preview_search.query, text);
         self.update_preview_search(picker, worker)
     }
 
@@ -132,49 +128,5 @@ impl App {
         self.request(worker, false, false);
         self.camera_feedback(picker)?;
         Ok(())
-    }
-
-    pub(super) fn draw_preview_search(&self, frame: &mut Frame, pane: Rect) {
-        let search = &self.preview_search;
-        if (!search.editing && search.query.is_empty()) || pane.width < 4 || pane.height < 2 {
-            return;
-        }
-        let area = Rect::new(pane.x + 1, pane.bottom() - 1, pane.width - 2, 1);
-        let count = if search.query.is_empty() {
-            String::new()
-        } else if search.matches.is_empty() {
-            " No matches ".into()
-        } else {
-            format!(
-                " {}/{} ",
-                search.current.map_or(0, |n| n + 1),
-                search.matches.len()
-            )
-        };
-        let available = usize::from(area.width).saturating_sub(count.len() + 2);
-        let query = clean(&search.query);
-        let mut start = query.len();
-        let mut width = 0;
-        for (index, c) in query.char_indices().rev() {
-            width += Span::raw(c.to_string()).width();
-            if width > available {
-                break;
-            }
-            start = index;
-        }
-        let input = Line::from(format!("/{}", &query[start..]));
-        let cursor = input.width() as u16;
-        frame.render_widget(Clear, area);
-        frame.render_widget(input.style(Style::default().fg(theme::colors().key)), area);
-        if count.len() <= usize::from(area.width) {
-            frame.render_widget(
-                Line::styled(&count, Style::default().fg(theme::colors().secondary))
-                    .right_aligned(),
-                area,
-            );
-        }
-        if search.editing && !self.help && self.modal.is_none() && self.permissions.is_empty() {
-            frame.set_cursor_position((area.x + cursor.min(area.width - 1), area.y));
-        }
     }
 }

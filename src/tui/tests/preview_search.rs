@@ -9,6 +9,52 @@ fn preview_search_screen(app: &mut App) -> (String, Option<ratatui::layout::Posi
 }
 
 #[test]
+fn preview_search_and_nodes_share_themed_titles_input_hints_and_cursor_positions() {
+    use crate::config::keys::Theme;
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        for theme in [Theme::Light, Theme::Dark, Theme::Monochrome, Theme::Auto] {
+            let _theme = theme::activate(theme, Some([250, 250, 252]));
+            for query in ["", "日本語"] {
+                let mut hints = Vec::new();
+                for focus in [Focus::Nodes, Focus::Preview] {
+                    app.focus = focus;
+                    app.searching = focus == Focus::Nodes;
+                    app.filter = if app.searching { query.into() } else { String::new() };
+                    app.preview_search.editing = focus == Focus::Preview;
+                    app.preview_search.query = if app.preview_search.editing { query.into() } else { String::new() };
+                    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(130, 34)).unwrap();
+                    terminal.draw(|frame| { app.draw(frame); }).unwrap();
+                    let cursor = terminal.get_cursor_position().unwrap();
+                    let buffer = terminal.backend().buffer();
+                    let panes = workspace::areas(buffer.area, &app.panel_layout, false, false, app.footer_height()).panes;
+                    let pane = panes[usize::from(focus == Focus::Preview)];
+                    let top = (pane.x..pane.right()).map(|x| buffer[(x, pane.y)].symbol()).collect::<String>().replace(' ', "");
+                    let label = if focus == Focus::Preview { "Preview" } else { "Nodes" };
+                    assert!(top.contains(&format!("{label}/{query}")), "{theme:?}/{focus:?}: {top}");
+                    assert_eq!(cursor.y, pane.y);
+                    let slash = (pane.x..pane.right()).find(|x| buffer[(*x, pane.y)].symbol() == "/").unwrap();
+                    assert_eq!(cursor.x, slash + 1 + if query.is_empty() { 0 } else { 6 });
+                    for y in [pane.y, pane.bottom() - 1] {
+                        let mut x = pane.x;
+                        while x < pane.right() {
+                            let cell = &buffer[(x, y)];
+                            assert_eq!(cell.bg, theme::colors().canvas, "{theme:?}/{focus:?} at {x},{y}");
+                            x += Line::raw(cell.symbol()).width().max(1) as u16;
+                        }
+                    }
+                    hints.push(footer_tests::rows(&app, 100));
+                    test_artifacts::artifact(buffer, &format!("search-{theme:?}-{focus:?}-{}", if query.is_empty() { "empty" } else { "query" }));
+                }
+                assert_eq!(hints[0], hints[1], "Both search modes expose the same actions");
+            }
+        }
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
 fn preview_search_finds_full_text_names_and_ids_and_cycles_visible_matches() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {
@@ -38,6 +84,7 @@ fn preview_search_finds_full_text_names_and_ids_and_cycles_visible_matches() {
         app.cells = Size::new(80, 30);
         app.request(&worker, false, false);
         app.accept_preview(tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap());
+        preview_search_screen(&mut app);
         app.focus = Focus::Preview;
         app.nodes_collapsed = true;
         press(&mut app, KeyCode::Char('/'), KeyModifiers::NONE, &worker).await;
@@ -52,12 +99,14 @@ fn preview_search_finds_full_text_names_and_ids_and_cycles_visible_matches() {
         assert!(app.view.zoom.is_some());
         let (screen, cursor) = preview_search_screen(&mut app);
         assert!(screen.contains("/hello") && screen.contains("1/4"), "{screen}");
-        assert!(screen.contains("↑/↓ result") && screen.contains("Enter keep"));
+        assert!(screen.contains("Enter keep filter · Esc clear"));
         assert!(cursor.is_some());
         press(&mut app, KeyCode::Down, KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.selection.ids, ["first"], "Arrows remain inactive while editing, as in Nodes");
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE, &worker).await;
         assert_eq!(app.selection.ids, ["second"]);
         assert!(app.view.center[0] > 900.0);
-        press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
         assert!(!app.preview_search.editing && !app.has_modal());
         assert!(preview_search_screen(&mut app).1.is_none());
         for expected in ["named", "hello-id", "first"] {
@@ -126,9 +175,14 @@ fn preview_search_routes_typing_handles_empty_results_and_refreshes_after_edits(
         press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
         press(&mut app, KeyCode::F(6), KeyModifiers::NONE, &worker).await;
         app.paste_preview_search("hello world", &picker, &worker).unwrap();
-        press(&mut app, KeyCode::BackTab, KeyModifiers::SHIFT, &worker).await;
-        assert_eq!(app.selection.ids, ["second"]);
+        for code in [KeyCode::Down, KeyCode::Up, KeyCode::Tab, KeyCode::BackTab] {
+            press(&mut app, code, KeyModifiers::NONE, &worker).await;
+            assert_eq!(app.selection.ids, ["first"]);
+            assert!(app.preview_search.editing);
+        }
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Char('B'), KeyModifiers::SHIFT, &worker).await;
+        assert_eq!(app.selection.ids, ["second"]);
         press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE, &worker).await;
         assert_eq!(app.selection.ids, ["second"]);
         press(&mut app, KeyCode::Char('b'), KeyModifiers::NONE, &worker).await;

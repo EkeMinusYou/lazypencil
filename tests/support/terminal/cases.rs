@@ -109,7 +109,7 @@ pub fn run(
         document = parent.join("design.pen");
     }
     let mut design = json!({"version":"2.21","children":[{"type":"rectangle","id":"red","name":"日本語の対象","x":-80,"y":-30,"width":180,"height":90,"fill":"#FF0000"}]});
-    if case == "preview-search" {
+    if case.starts_with("preview-search") {
         design = json!({"version":"2.21","children":[
             {"type":"text","id":"first","content":"日本語の対象","width":200,"height":40},
             {"type":"text","id":"second","x":1000,"content":"日本語の対象","width":200,"height":40}
@@ -136,6 +136,16 @@ pub fn run(
         ]});
     }
     let mut configuration = None;
+    if case == "preview-search-light" {
+        let directory = root.join("user-settings");
+        fs::create_dir_all(&directory)?;
+        fs::write(directory.join("config.toml"), "[tui]\ntheme='light'\n")?;
+        environment.insert(
+            "LAZYPENCIL_CONFIG_DIR".into(),
+            directory.clone().into_os_string(),
+        );
+        configuration = Some(directory);
+    }
     if case.starts_with("theme-") {
         let directory = root.join("user-settings");
         fs::create_dir_all(&directory)?;
@@ -607,7 +617,7 @@ pub fn run(
             Value::Null
         }
         "ime-commit" => ime_commit(&mut h)?,
-        "preview-search" => {
+        case if case.starts_with("preview-search") => {
             preview_search(&mut h)?;
             Value::Null
         }
@@ -806,6 +816,11 @@ fn preview_search(h: &mut Harness) -> Result {
     })?;
     h.key("日本語".as_bytes())?;
     h.visible("/日本語")?;
+    assert!(
+        h.screen
+            .find_text("Preview /日本語")
+            .is_some_and(|(_, y)| y == 1)
+    );
     h.visible("1/2")?;
     h.wait("IME cursor follows the Japanese query", 15.0, |h| {
         h.screen
@@ -813,13 +828,13 @@ fn preview_search(h: &mut Harness) -> Result {
             .is_some_and(|(x, y)| h.screen.cursor() == (x + 7, y))
     })?;
     h.key(b"\x1b[B")?;
-    h.visible("2/2")?;
     h.key(b"\r")?;
     h.visible("Esc clear search")?;
-    h.key(b"n")?;
     h.visible("1/2")?;
-    h.key(b"N")?;
+    h.key(b"n")?;
     h.visible("2/2")?;
+    h.key(b"N")?;
+    h.visible("1/2")?;
     h.key(b"\x1b")?;
     h.hidden("/日本語")?;
     h.key(b"/")?;
@@ -832,6 +847,19 @@ fn preview_search(h: &mut Harness) -> Result {
     h.visible("/日本語の対象 q?rpn")?;
     h.key(b"\x1b")?;
     h.hidden("Enter keep")?;
+    h.key(b"\x1b[Z/")?;
+    h.visible("Nodes /")?;
+    h.visible("Enter keep filter")?;
+    h.paste("first")?;
+    h.visible("Nodes /first")?;
+    h.key(b"\r")?;
+    h.hidden("Enter keep filter")?;
+    h.key(b"/")?;
+    h.visible("Enter keep filter")?;
+    h.key(b"\x1b")?;
+    h.hidden("Nodes /first")?;
+    h.key(b"\t")?;
+    h.visible(" pan")?;
     h.key(b"\t")?;
     h.visible(" send")?;
     h.paste(" 続き")?;

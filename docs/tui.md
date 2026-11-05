@@ -298,8 +298,7 @@ Large or high-DPI viewports automatically reduce preview raster resolution to st
 | Prompt: `/clear-images` then Enter | Remove pending images |
 | Preview: `hjkl` / arrows | Pan |
 | Preview: `/` | Search text, names and IDs (case-insensitive); select and fit the first matching element while typing |
-| Preview search: Up / Down, Shift+Tab / Tab | Select and fit the previous / next matching element, wrapping at either end |
-| Preview search: Enter / Esc | Keep the query and return to navigation / clear the search; `n` / `N` moves to the next / previous result after Enter |
+| Nodes / Preview search: Enter / Esc | Keep the filter and return to navigation / clear the search. Both panes show the query in their title; Preview uses `n` / `N` to select and fit the next / previous result after Enter |
 | Preview: `+` / `-`, `0` | Zoom or fit the document, including negative coordinates |
 | Preview: `[` / `]` | Select and fit the first enabled child / parent; when unselected, select the first visible node in Preview |
 | Preview: `Alt+[` / `Alt+]` | Pause and step shader evaluation time backward/forward by 0.1 seconds |

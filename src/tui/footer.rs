@@ -159,15 +159,8 @@ impl App {
         if self.input.is_some() || self.document_task.is_some() {
             return vec![Hint::new("Ctrl+C", "cancel")];
         }
-        if self.searching {
+        if self.searching || self.preview_search.editing {
             return vec![Hint::new("Enter", "keep filter"), Hint::new("Esc", "clear")];
-        }
-        if self.preview_search.editing {
-            return vec![
-                Hint::new("↑/↓", "result"),
-                Hint::new("Enter", "keep"),
-                Hint::new("Esc", "clear"),
-            ];
         }
         let hints = match self.focus {
             Focus::Prompt => {
@@ -287,7 +280,7 @@ impl App {
             draw_notice(frame, Rect::new(area.x, area.y, area.width, 1), text, color);
         }
         let row = Rect::new(area.x, area.bottom() - 1, area.width, 1);
-        let help = (!self.has_modal())
+        let help = (!self.has_overlay())
             .then(|| self.hint(Nav::Help, "help"))
             .flatten()
             .map(Hint::line);

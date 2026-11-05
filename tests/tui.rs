@@ -17,6 +17,7 @@ fn real_pty_startup_focus_opens_existing_documents_at_preview_and_new_documents_
 #[test]
 fn real_pty_preview_search_preserves_japanese_input_and_navigates_matches() {
     run_pty_case("preview-search");
+    run_pty_case("preview-search-light");
 }
 
 #[test]

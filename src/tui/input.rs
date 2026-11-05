@@ -218,21 +218,11 @@ impl App {
         }
     }
     fn search_input(&mut self, key: KeyEvent) {
-        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-        let alt = key.modifiers.contains(KeyModifiers::ALT);
-
         let selected = self.selected_node().map(|node| node.id.clone());
-        match key.code {
-            KeyCode::Esc => {
-                self.searching = false;
-                self.filter.clear();
-            }
-            KeyCode::Enter => self.searching = false,
-            KeyCode::Backspace => {
-                self.filter.pop();
-            }
-            KeyCode::Char(c) if !ctrl && !alt => self.filter.push(c),
-            _ => {}
+        match search::edit(&mut self.filter, key) {
+            search::Edit::Clear | search::Edit::Keep => self.searching = false,
+            search::Edit::Changed => {}
+            search::Edit::Ignored => return,
         }
         self.search_nodes(selected.as_deref());
     }
