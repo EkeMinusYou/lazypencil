@@ -409,6 +409,7 @@ impl App {
                 } else if action(Nav::NodePageUp) || action(Nav::NodePageDown) {
                     self.page_nodes(action(Nav::NodePageUp));
                 } else if action(Nav::ClearSelection) {
+                    self.selection.clear();
                     self.nodes.select(None);
                 } else if action(Nav::ActivateNode)
                     && self

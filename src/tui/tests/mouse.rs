@@ -438,6 +438,15 @@ fn node_navigation_preserves_canvas_selection_until_fit() {
         press(&mut app, KeyCode::Char('f'), KeyModifiers::NONE, &worker).await;
         assert_eq!(app.selection.ids, ["left"], "Fit follows the tree cursor instead of the previous outline");
         assert_eq!(app.view.center, [-130.0, 0.0]);
+        let fitted = app.view;
+        let generation = app.generation;
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
+        assert!(app.selection.ids.is_empty());
+        assert!(app.selection.presentation.is_none());
+        assert!(app.nodes.selected().is_none());
+        assert_eq!(app.focus, Focus::Nodes);
+        assert_eq!(app.view, fitted);
+        assert_eq!(app.generation, generation);
         app.focus = Focus::Preview;
         app.selection.ids = vec!["left".into(), "right".into()];
         press(&mut app, KeyCode::Char('f'), KeyModifiers::NONE, &worker).await;

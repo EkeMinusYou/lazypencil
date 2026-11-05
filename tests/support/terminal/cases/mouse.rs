@@ -190,6 +190,37 @@ pub fn canvas_selection(h: &mut Harness) -> Result {
         .ok_or("Missing shape row")?;
     click(h, row)?;
     h.key(b"f")?;
+    h.wait("node fit completes", 15.0, |h| {
+        zoom(h).is_some_and(|z| z > 300)
+    })?;
+    if h.case == "selection-kitty" {
+        h.wait("node fit outline appears", 15.0, |h| {
+            h.frames
+                .last_camera
+                .as_ref()
+                .is_some_and(|f| f.has_color([137, 180, 250, 255]))
+        })?;
+    }
+    let fitted_zoom = zoom(h);
+    let frames_before_clear = h.frames.images.len();
+    h.key(b"\x1b")?;
+    h.pump_for(0.15)?;
+    assert_eq!(
+        zoom(h),
+        fitted_zoom,
+        "Clearing the outline must keep the fitted camera"
+    );
+    if h.case == "selection-kitty" {
+        h.wait("node escape removes the fit outline", 15.0, |h| {
+            h.frames.images.len() > frames_before_clear
+                && h.frames
+                    .images
+                    .last()
+                    .is_some_and(|f| !f.has_color([137, 180, 250, 255]))
+        })?;
+    }
+    click(h, row)?;
+    h.key(b"f")?;
     let preview = h.screen.find_text("Preview").ok_or("Missing Preview")?;
     let agent = h.screen.find_text("Agent").ok_or("Missing Agent")?;
     let center = ((preview.0 + agent.0 - 4) / 2, 16);

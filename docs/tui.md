@@ -310,7 +310,7 @@ Large or high-DPI viewports automatically reduce preview raster resolution to st
 | Nodes: `Space` | Toggle a branch when no search filter is active |
 | Nodes: Enter | Expand a branch, or enter its first child if already expanded; fit the selected node if it has no children |
 | Nodes: `f` | Fit the selected node while keeping focus in Nodes; use `a` to add an explicit prompt reference |
-| Nodes: `Esc` | Clear the editing target |
+| Nodes: `Esc` | Clear the editing target and canvas selection outline; keep the camera |
 | Attachments: arrows | Preview pending images in order |
 | Attachments: `d`, Delete, Backspace | Remove a pending image without changing its source |
 | Agent history: PgUp/PgDn, End | Scroll or follow new output |
