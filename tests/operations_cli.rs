@@ -21,6 +21,65 @@ fn operations(value: Value) -> Vec<Operation> {
 mod fixture_support;
 
 #[test]
+fn cli_document_versions_create_validate_edit_and_preserve_source() {
+    let temp = TempDir::new().unwrap();
+    fs::create_dir(temp.path().join(".git")).unwrap();
+    let run = |arguments: &[&str]| {
+        let output = fixture_support::output(
+            Command::new(env!("CARGO_BIN_EXE_lazypencil"))
+                .args(["--json", "--data-dir"])
+                .arg(temp.path().join("data"))
+                .args(arguments)
+                .env("LAZYPENCIL_CONFIG_DIR", temp.path().join("config")),
+            std::time::Duration::from_secs(15),
+        );
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()
+    };
+    let file = temp.path().join("new.pen");
+    let file = file.to_str().unwrap();
+    run(&["init", file]);
+    let document = Document::parse(fs::read_to_string(file).unwrap()).unwrap();
+    assert_eq!(document.version(), "2.22");
+    let operations_file = temp.path().join("operations.json");
+    fs::write(
+        &operations_file,
+        r#"[{"op":"update","target":"box","set":{"width":24}}]"#,
+    )
+    .unwrap();
+    for version in ["2.19", "2.21", "2.22"] {
+        let source = format!(
+            "{{\n // retained\n \"version\":\"{version}\",\"metadata\":{{\"number\":1.000e+3}},\n \"children\":[{{\"id\":\"box\",\"type\":\"rectangle\",\"width\":20,\"height\":10,\"fill\":\"#123456\"}}]\n}}\n"
+        );
+        fs::write(file, &source).unwrap();
+        let metadata = run(&["inspect", file]);
+        assert_eq!(metadata["capabilities"]["schema"], version);
+        assert_eq!(metadata["capabilities"]["default_schema"], "2.22");
+        assert_eq!(
+            metadata["capabilities"]["supported_schemas"],
+            json!(["2.19", "2.21", "2.22"])
+        );
+        assert_eq!(run(&["validate", file])["valid"], true);
+        run(&[
+            "apply",
+            file,
+            "--operations",
+            operations_file.to_str().unwrap(),
+            "--expected-revision",
+            metadata["revision"].as_str().unwrap(),
+        ]);
+        assert_eq!(
+            fs::read_to_string(file).unwrap(),
+            source.replace("\"width\":20", "\"width\":24")
+        );
+    }
+}
+
+#[test]
 fn cli_validation_finishes_shared_alias_graphs_without_changing_the_document() {
     let temporary = TempDir::new().unwrap();
     fs::create_dir(temporary.path().join(".git")).unwrap();
@@ -297,36 +356,36 @@ fn deleting_a_referenced_component_requires_resolving_the_reference_in_the_same_
 
 #[test]
 fn copy_remaps_internal_refs_and_preserves_comments_and_numeric_spelling() {
-    let doc = Document::parse(
-        r#"{"version":"2.21","children":[
+    let source = r#"{"version":"2.21","children":[
       {"id":"scene","type":"frame","children":[
         // retained inside the copied subtree
         {"id":"component","type":"rectangle","width":1.000e2,"reusable":true},
         {"id":"ref","type":"ref","ref":"component"}
       ]}
-    ]}"#
-        .into(),
-    )
-    .unwrap();
-    let (after, result) = operations::apply(
-        &doc,
-        &operations(json!([{"op":"copy","target":"scene","client_ref":"copy"}])),
-    )
-    .unwrap();
-    assert_eq!(after.node_count(), 6);
-    let copy = after
-        .node(result["bindings"]["copy"].as_str().unwrap())
+    ]}"#;
+    for version in ["2.19", "2.21", "2.22"] {
+        let doc = Document::parse(source.replace("2.21", version)).unwrap();
+        let (after, result) = operations::apply(
+            &doc,
+            &operations(json!([{"op":"copy","target":"scene","client_ref":"copy"}])),
+        )
         .unwrap();
-    assert_ne!(copy["children"][0]["id"], "component");
-    assert_eq!(copy["children"][1]["ref"], copy["children"][0]["id"]);
-    assert_eq!(
-        after
-            .text()
-            .matches("// retained inside the copied subtree")
-            .count(),
-        2
-    );
-    assert_eq!(after.text().matches("1.000e2").count(), 2);
+        assert_eq!(after.node_count(), 6);
+        let copy = after
+            .node(result["bindings"]["copy"].as_str().unwrap())
+            .unwrap();
+        assert_ne!(copy["children"][0]["id"], "component");
+        assert_eq!(copy["children"][1]["ref"], copy["children"][0]["id"]);
+        assert_eq!(
+            after
+                .text()
+                .matches("// retained inside the copied subtree")
+                .count(),
+            2
+        );
+        assert_eq!(after.text().matches("1.000e2").count(), 2);
+        assert_eq!(after.version(), version);
+    }
 }
 
 #[test]

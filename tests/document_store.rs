@@ -512,8 +512,15 @@ fn saves_respect_read_only_documents_and_keep_private_recovery_files() {
 }
 
 #[test]
+fn new_documents_use_the_current_schema() {
+    let (_temp, store) = setup();
+    assert_eq!(Document::empty().version(), "2.22");
+    assert_eq!(store.read().unwrap().version(), "2.22");
+}
+
+#[test]
 fn supported_versions_survive_transactions_restores_and_rejected_edits_verbatim() {
-    for version in ["2.19", "2.21"] {
+    for version in ["2.19", "2.21", "2.22"] {
         let (_temp, store) = setup();
         let original = fixture().replace("2.21", version);
         fs::write(store.path(), &original).unwrap();
@@ -555,7 +562,7 @@ fn supported_versions_survive_transactions_restores_and_rejected_edits_verbatim(
 
 #[test]
 fn unrecognized_wire_versions_remain_read_only_without_running_the_edit() {
-    for version in ["2.9", "2.18", "2.20", "2.22", "9", "2.19.0"] {
+    for version in ["2.9", "2.11", "2.18", "2.20", "2.23", "9", "2.19.0"] {
         let (_temp, store) = setup();
         let original = fixture().replace("2.21", version);
         fs::write(store.path(), &original).unwrap();

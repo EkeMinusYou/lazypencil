@@ -2,7 +2,7 @@
 
 Call `list_icons` to discover names, aliases, versions, licenses, and installation status. Lucide is bundled and works offline. Feather, Phosphor Regular, and Material Symbols Outlined/Rounded/Sharp require the user's explicit setup. For example: `lazypencil icons setup phosphor` or `lazypencil icons setup 'Material Symbols Outlined'`. Rendering never downloads a missing pack. Check the exact library ID and installed status before promising an icon is available.
 
-Use the serialized `.pen` 2.21 icon node:
+Use the serialized `.pen` 2.19/2.21/2.22 icon node:
 
 ```json
 {"type":"icon","library":"lucide","icon":"search","width":24,"height":24,"fill":"#0F172A"}

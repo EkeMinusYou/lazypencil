@@ -23,12 +23,12 @@ fn fixture(body: &str, node: Value) -> (TempDir, Store) {
     let file = temp.path().join("scene.pen");
     fs::write(
         temp.path().join("draw.js"),
-        format!("/**\n * @schema 2.21\n */\n{body}"),
+        format!("/**\n * @schema 2.22\n */\n{body}"),
     )
     .unwrap();
     fs::write(
         &file,
-        json!({"version":"2.21","children":[node]}).to_string(),
+        json!({"version":"2.22","children":[node]}).to_string(),
     )
     .unwrap();
     let store = Store::open(file, Some(temp.path().join("data"))).unwrap();
@@ -87,7 +87,7 @@ fn independent_script_contract(corpus: &str, filename: &str, artifact_stem: &str
         _ => panic!("Unknown independent script corpus"),
     };
     let dimensions = (expected.width, expected.height);
-    for version in ["2.19", "2.21"] {
+    for version in ["2.19", "2.21", "2.22"] {
         let root = TempDir::new().unwrap();
         let mut scripts = Vec::new();
         for entry in fs::read_dir(&fixtures).unwrap() {

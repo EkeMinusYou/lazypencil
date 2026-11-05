@@ -108,6 +108,10 @@ fn project_instructions_require_a_grant_and_share_one_catalog_and_default_style(
     assert_eq!(guide["language"], "en");
     assert_eq!(guide["project_guides"].as_array().unwrap().len(), 1);
     assert_eq!(guide["project_guides"][0]["language"], "ja");
+    assert_eq!(
+        guide["project_guides"][0]["schema_versions"],
+        json!(["2.19", "2.21", "2.22"])
+    );
     assert!(
         guide["project_guides"][0]["body"]
             .as_str()

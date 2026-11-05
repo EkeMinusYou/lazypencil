@@ -1142,7 +1142,7 @@ fn independent_contract_rounded_polygons_match_aspect_ratios_and_oversized_radii
             750,
         ),
     ] {
-        for version in ["2.19", "2.21"] {
+        for version in ["2.19", "2.21", "2.22"] {
             eprintln!("Reference {name}, schema {version}");
             let directory = TempDir::new().unwrap();
             let file = directory.path().join("native.pen");
@@ -1169,7 +1169,7 @@ fn independent_contract_nonrectangular_side_strokes_match_top_width_reference() 
     let source = include_str!("fixtures/render-corpus/nonrect-strokes.pen");
     let expected = render_oracles::shapes::raster(&serde_json::from_str(source).unwrap(), 2);
     assert_eq!((expected.width, expected.height), (1760, 480));
-    for version in ["2.19", "2.21"] {
+    for version in ["2.19", "2.21", "2.22"] {
         let directory = TempDir::new().unwrap();
         let file = directory.path().join("native.pen");
         let source = source.replace("2.19", version);

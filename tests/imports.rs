@@ -507,12 +507,54 @@ fn explicit_variable_reuse_checks_types_and_component_reuse_avoids_extra_files()
 }
 
 #[test]
+fn mixed_document_versions_link_and_copy_without_rewriting_user_libraries() {
+    for consumer in ["2.19", "2.21", "2.22"] {
+        for library_version in ["2.19", "2.21", "2.22"] {
+            for mode in ["link", "copy"] {
+                let (temp, store) = fixture();
+                let consumer_source = store.read().unwrap().text().replace("2.21", consumer);
+                fs::write(store.path(), consumer_source).unwrap();
+                let library = temp.path().join("library/ui.lib.pen");
+                let library_source = fs::read_to_string(&library)
+                    .unwrap()
+                    .replace("2.21", library_version);
+                fs::write(&library, &library_source).unwrap();
+                let base = temp.path().join("library/base/base.lib.pen");
+                let base_source = fs::read(&base).unwrap();
+                let result = service::apply_request(
+                    &store,
+                    &request(
+                        &store,
+                        "mixed-version-import",
+                        json!([operation(mode)]),
+                        false,
+                    ),
+                )
+                .unwrap();
+                assert_eq!(store.read().unwrap().version(), consumer);
+                assert_eq!(fs::read_to_string(&library).unwrap(), library_source);
+                assert_eq!(fs::read(&base).unwrap(), base_source);
+                let scene = Project::load(&store).unwrap().resolve().unwrap();
+                assert!(
+                    scene
+                        .roots
+                        .iter()
+                        .any(|node| node.id() == result["bindings"]["widget"].as_str().unwrap())
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn bundled_style_imports_support_both_modes_and_an_explicit_source_revision() {
     for (version, mode) in [
         ("2.19", "link"),
         ("2.19", "copy"),
         ("2.21", "link"),
         ("2.21", "copy"),
+        ("2.22", "link"),
+        ("2.22", "copy"),
     ] {
         let (_temp, store) = fixture();
         let source = store.read().unwrap().text().replace("2.21", version);
@@ -534,7 +576,7 @@ fn bundled_style_imports_support_both_modes_and_an_explicit_source_revision() {
         assert_eq!(metadata["capabilities"]["schema"], version);
         assert_eq!(
             metadata["capabilities"]["supported_schemas"],
-            json!(["2.19", "2.21"])
+            json!(["2.19", "2.21", "2.22"])
         );
         for (alias, uri) in document.value()["imports"]
             .as_object()

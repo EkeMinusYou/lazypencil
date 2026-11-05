@@ -92,6 +92,11 @@ fn doctor_missing_adapters_explain_installation_and_strict_mode_without_creating
     ] {
         assert!(!value[key].is_null(), "Missing legacy field {key}");
     }
+    assert_eq!(value["document_version"], "2.22");
+    assert_eq!(
+        value["supported_document_versions"],
+        serde_json::json!(["2.19", "2.21", "2.22"])
+    );
     #[cfg(feature = "rendering")]
     assert_eq!(check(&value, "preview.renderer")["status"], "ok");
     #[cfg(feature = "tui")]

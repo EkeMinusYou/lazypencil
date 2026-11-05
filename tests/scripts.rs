@@ -10,7 +10,7 @@ mod fixture_support;
 
 fn request(body: &str) -> ScriptRequest {
     ScriptRequest {
-        code: format!("/**\n * @schema 2.21\n */\n{body}"),
+        code: format!("/**\n * @schema 2.22\n */\n{body}"),
         width: 120.0,
         height: 80.0,
         inputs: Default::default(),
@@ -224,6 +224,29 @@ fn typed_headers_clamp_numbers_preserve_strings_and_validate_all_six_input_types
 }
 
 #[test]
+fn supported_header_versions_execute_typed_inputs_with_the_real_worker() {
+    let mut worker = runtime();
+    for version in ["2.11", "2.19", "2.21", "2.22"] {
+        let request = ScriptRequest {
+            code: format!(
+                "/**\n * @schema {version}\n * @input size: number(min=1,max=8) = 3\n * @input ink: color = #123456\n */\nreturn [{{type:'rectangle',width:pencil.input.size,height:pencil.height,fill:pencil.input.ink}}];"
+            ),
+            width: 20.0,
+            height: 10.0,
+            inputs: serde_json::from_value(json!({"size":99})).unwrap(),
+        };
+        assert_eq!(Header::parse(&request.code).unwrap().schema, version);
+        let output = worker.execute(&request).unwrap();
+        assert_eq!(
+            output.nodes,
+            vec![json!({"type":"rectangle","width":8,"height":10,"fill":"#123456"})]
+        );
+        assert_eq!(request.inputs["size"], 99);
+        assert!(request.code.contains(&format!("@schema {version}")));
+    }
+}
+
+#[test]
 fn malformed_headers_are_rejected_without_evaluating_input_declarations() {
     for code in [
         "return [];",
@@ -236,7 +259,7 @@ fn malformed_headers_are_rejected_without_evaluating_input_declarations() {
     ] {
         assert!(Header::parse(code).is_err(), "{code}");
     }
-    for version in ["2.18", "2.20", "2.22"] {
+    for version in ["2.18", "2.20", "2.23"] {
         assert_eq!(
             Header::parse(&format!("/** @schema {version} */ return [];"))
                 .unwrap_err()
@@ -260,8 +283,8 @@ fn a_real_worker_uses_dimensions_inputs_and_isolated_host_free_globals() {
     assert!(output.reads_width && output.reads_height);
     let mut input = request("return [{type:'text',content:pencil.input.title}];");
     input.code = input.code.replace(
-        "@schema 2.21",
-        "@schema 2.21\n * @input title: string = \"Default\"",
+        "@schema 2.22",
+        "@schema 2.22\n * @input title: string = \"Default\"",
     );
     input.inputs.insert("title".into(), json!("Provided"));
     assert_eq!(

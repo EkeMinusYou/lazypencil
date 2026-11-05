@@ -12,13 +12,13 @@ starts with a header comment such as:
 
 ```javascript
 /**
- * @schema 2.21
+ * @schema 2.22
  * @input label: string = "Hello"
  */
 return [{type: "text", content: pencil.input.label, fontSize: 16}];
 ```
 
-Headers accept 2.11, 2.19, and 2.21; supported document codecs remain 2.19/2.21.
+Headers accept 2.11, 2.19, 2.21, and 2.22; supported document codecs are 2.19/2.21/2.22.
 The worker exposes `pencil.width`, `pencil.height`, and `pencil.input` and synchronously
 expects a node array. It has no DOM, host filesystem/network, timers, or module loader.
 Each evaluation has a fresh context. `Math.random` uses Mulberry32, reseeded to zero

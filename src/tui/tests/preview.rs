@@ -895,6 +895,7 @@ fn repeated_preview_errors_are_quiet_without_blocking_repair_or_explicit_retry()
             ("2.9", true, false),
             ("2.8", true, true),
             ("2.21", true, true),
+            ("2.22", true, true),
             ("2.9", true, true),
             ("2.9", false, true),
         ] {
@@ -919,7 +920,7 @@ fn repeated_preview_errors_are_quiet_without_blocking_repair_or_explicit_retry()
                 assert_eq!(app.log, log);
                 assert_eq!(app.status, "Unrelated user action");
             }
-            if version == "2.21" {
+            if matches!(version, "2.21" | "2.22") {
                 assert!(app.preview.is_some());
                 assert!(app.preview_error.is_none());
                 assert!(!app.preview_stale);
@@ -936,9 +937,9 @@ fn repeated_preview_errors_are_quiet_without_blocking_repair_or_explicit_retry()
                         .as_ref()
                         .unwrap()
                         .message
-                        .contains("supported versions are 2.19, 2.21")
+                        .contains("supported versions are 2.19, 2.21, 2.22")
                 );
-                assert!(!app.log.contains("supported versions are 2.19, 2.21"));
+                assert!(!app.log.contains("supported versions are 2.19, 2.21, 2.22"));
             }
             assert_eq!(std::fs::read_to_string(store.path()).unwrap(), document);
             assert_eq!(app.editor.lines(), &["日本語の未送信プロンプト"]);

@@ -30,7 +30,7 @@ fn scene(version: &str) -> (TempDir, Store) {
 
 #[test]
 fn named_font_weights_match_numeric_pixels_and_variables_without_rewriting_source() {
-    for version in ["2.19", "2.21"] {
+    for version in ["2.19", "2.21", "2.22"] {
         let (_root, store) = scene(version);
         let template = store.read().unwrap().value().clone();
         let mut weight_images = vec![];
@@ -99,7 +99,7 @@ fn named_font_weights_match_numeric_pixels_and_variables_without_rewriting_sourc
 
 #[test]
 fn legacy_center_vertical_alignment_matches_middle_in_bounds_and_both_painters() {
-    for version in ["2.19", "2.21"] {
+    for version in ["2.19", "2.21", "2.22"] {
         let (_root, store) = scene(version);
         let template = store.read().unwrap().value().clone();
         for backdrop in [false, true] {
@@ -150,7 +150,7 @@ fn legacy_center_vertical_alignment_matches_middle_in_bounds_and_both_painters()
 
 #[test]
 fn native_cancellation_static_runtime_computation_stops_and_recovers_without_a_worker() {
-    for version in ["2.19", "2.21"] {
+    for version in ["2.19", "2.21", "2.22"] {
         let (root, store) = scene(version);
         let original = fs::read(store.path()).unwrap();
         let mut project = Project::from_document(

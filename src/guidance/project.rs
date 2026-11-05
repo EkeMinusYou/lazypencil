@@ -163,7 +163,7 @@ impl ProjectCatalog {
                 ));
             }
             let mut value = json!({"id":format!("project:{}",guide.id),"version":guide.version,"language":guide.language,"summary":guide.summary,
-                "body":body,"automatic":guide.automatic,"source_path":path,"source_hash":hash(&bytes),"schema_versions":["2.21"],"origin":"project"});
+                "body":body,"automatic":guide.automatic,"source_path":path,"source_hash":hash(&bytes),"schema_versions":crate::document::SUPPORTED_DOCUMENT_VERSIONS,"origin":"project"});
             super::stamp(&mut value);
             catalog.guides.push(value);
         }

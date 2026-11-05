@@ -96,7 +96,7 @@ fn test_image() -> Result<Vec<u8>> {
     };
     use skia_safe::{Color, Data, Image};
     let document = Document::parse(
-        json!({"version":"2.21","children":[{
+        json!({"version":crate::document::DOCUMENT_VERSION,"children":[{
         "id":"test","type":"frame","width":128,"height":128,"layout":"none","children":[
             {"id":"red","type":"rectangle","width":64,"height":64,"fill":"#FF0000"},
             {"id":"green","type":"rectangle","x":64,"width":64,"height":64,"fill":"#00FF00"},

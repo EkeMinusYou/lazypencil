@@ -53,8 +53,8 @@ not replacement Python/Shell build orchestrators.
 
 ## Document and save invariants
 
-The `.pen` file is authoritative. Read adapters accept 2.19 and 2.21, and new files
-use 2.21. Edits preserve the existing version, comments, unknown fields, and unrelated
+The `.pen` file is authoritative. Read adapters accept 2.19, 2.21, and 2.22, and new files
+use 2.22. Edits preserve the existing version, comments, unknown fields, and unrelated
 source text. An unknown version fails explicitly; it is not silently upgraded.
 
 A batch resolves references against captured inputs, validates the resulting document,

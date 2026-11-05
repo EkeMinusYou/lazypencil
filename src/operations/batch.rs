@@ -221,8 +221,10 @@ impl Batch<'_> {
                 }
                 remap_references(&mut template, &mapping);
                 let id = template["id"].as_str().expect("allocated ID").to_string();
-                let mut copy =
-                    Document::parse(format!("{{\"version\":\"2.21\",\"children\":[{raw}]}}"))?;
+                let mut copy = Document::parse(format!(
+                    "{{\"version\":\"{}\",\"children\":[{raw}]}}",
+                    self.edited.version()
+                ))?;
                 let original = copy.value()["children"][0].clone();
                 patch_value(&mut copy, "/children/0", &original, &template)?;
                 let raw = copy.raw("/children/0")?;

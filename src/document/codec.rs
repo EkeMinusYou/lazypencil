@@ -3,21 +3,23 @@
 use super::Document;
 use crate::{Error, Result};
 
-pub const SUPPORTED_DOCUMENT_VERSIONS: &[&str] = &["2.19", "2.21"];
+pub const SUPPORTED_DOCUMENT_VERSIONS: &[&str] = &["2.19", "2.21", "2.22"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Codec {
     Pen219,
     Pen221,
+    Pen222,
 }
 
 impl Codec {
-    pub const DEFAULT: Self = Self::Pen221;
+    pub const DEFAULT: Self = Self::Pen222;
 
     pub fn parse(version: &str) -> Option<Self> {
         match version {
             "2.19" => Some(Self::Pen219),
             "2.21" => Some(Self::Pen221),
+            "2.22" => Some(Self::Pen222),
             _ => None,
         }
     }
@@ -26,6 +28,7 @@ impl Codec {
         match self {
             Self::Pen219 => "2.19",
             Self::Pen221 => "2.21",
+            Self::Pen222 => "2.22",
         }
     }
 

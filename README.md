@@ -221,9 +221,10 @@ explore components, graphics, icons, scripts, and shaders.
 
 ## Format support
 
-lazypencil reads and edits `.pen` versions **2.19 and 2.21**, preserving comments
-and unrelated content. It implements its own renderer and does not claim complete
-Pencil compatibility. See [document semantics](docs/pen-semantics.md),
+lazypencil reads and edits `.pen` versions **2.19, 2.21, and 2.22**, preserving comments
+and unrelated content. New documents use **2.22**; existing documents and imported
+user libraries keep their versions. It implements its own renderer and does not
+claim complete Pencil compatibility. See [document semantics](docs/pen-semantics.md),
 [graphics support](docs/graphics.md), and [dynamic-content limitations](docs/dynamic-content.md#initial-compatibility-limitations).
 
 Basic editing and native rendering need no Chromium. Browser nodes and GLSL

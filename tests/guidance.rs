@@ -9,6 +9,10 @@ fn guides_styles_and_editable_examples_form_a_resolvable_catalog() {
     let entry = guidance::get_guidance(None).unwrap();
     assert_eq!(entry["id"], "start");
     assert_eq!(entry["language"], "en");
+    assert_eq!(
+        entry["schema_versions"],
+        serde_json::json!(["2.19", "2.21", "2.22"])
+    );
     assert!(
         entry["body"]
             .as_str()

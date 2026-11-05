@@ -1761,6 +1761,53 @@ fn mcp_font_collections_resolve_styles_fallback_pixels_and_dependency_changes() 
 }
 
 #[test]
+fn mcp_document_versions_create_edit_validate_and_restore_without_migration() {
+    for version in ["2.19", "2.21", "2.22"] {
+        let (temp, file, data) = fixture();
+        let source = format!(
+            "{{\n // retained\n \"version\":\"{version}\",\"future\":{{\"number\":1.000e+3}},\n \"children\":[{{\"id\":\"box\",\"type\":\"rectangle\",\"width\":20,\"height\":10,\"fill\":\"#123456\"}}]\n}}\n"
+        );
+        fs::write(&file, &source).unwrap();
+        let mut client = Client::start(&file, &data);
+        let before = client.data("get_document", json!({}));
+        assert_eq!(before["capabilities"]["schema"], version);
+        assert_eq!(before["capabilities"]["default_schema"], "2.22");
+        assert_eq!(
+            before["capabilities"]["supported_schemas"],
+            json!(["2.19", "2.21", "2.22"])
+        );
+        assert_eq!(client.data("validate_document", json!({}))["valid"], true);
+        let edited = client.data("apply_operations", json!({"request_id":"edit","expected_revision":before["revision"],"expected_dependency_revision":before["dependency_revision"],"operations":[{"op":"update","target":"box","set":{"width":24}}]}));
+        let saved = source.replace("\"width\":20", "\"width\":24");
+        assert_eq!(fs::read_to_string(&file).unwrap(), saved);
+        #[cfg(feature = "rendering")]
+        {
+            let document = client.data("get_document", json!({}));
+            let layout = client.data("get_layout", json!({"expected_revision":document["revision"],"expected_dependency_revision":document["dependency_revision"]}));
+            let rendered = client.data("render", json!({"snapshot_id":layout["snapshot_id"],"expected_revision":layout["revision"],"expected_dependency_revision":layout["dependency_revision"]}));
+            assert_eq!(
+                (rendered["width"].as_u64(), rendered["height"].as_u64()),
+                (Some(24), Some(10))
+            );
+        }
+        let changed = client.data("apply_operations", json!({"request_id":"change","expected_revision":edited["revision"],"operations":[{"op":"update","target":"box","set":{"width":32}}]}));
+        client.data("restore_checkpoint", json!({"request_id":"restore","expected_revision":changed["revision"],"checkpoint_id":edited["checkpoint_id"]}));
+        assert_eq!(fs::read_to_string(&file).unwrap(), saved);
+        let created_path = temp.path().join("created.pen");
+        client.data("create_document", json!({"path":created_path}));
+        assert_eq!(
+            Store::open(&created_path, Some(data))
+                .unwrap()
+                .read()
+                .unwrap()
+                .version(),
+            "2.22"
+        );
+        client.finish();
+    }
+}
+
+#[test]
 fn real_stdio_server_lists_typed_tools_and_edits_one_bound_document() {
     let (temp, file, data) = fixture();
     let outside = temp.path().join("outside.pen");

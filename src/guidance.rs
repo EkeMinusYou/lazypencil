@@ -4,7 +4,7 @@ mod project;
 pub use project::{DesignSettings, ProjectCatalog};
 pub mod usage;
 
-const VERSION: &str = "1.0.58";
+const VERSION: &str = "1.0.59";
 struct Guide {
     id: &'static str,
     summary: &'static str,
@@ -118,7 +118,7 @@ pub fn get_guidance(id: Option<&str>) -> Result<Value> {
         .find(|g| g.id == id)
         .ok_or_else(|| Error::new("INVALID_ARGUMENT", format!("Unknown guidance ID {id:?}")))?;
     let mut result = json!({"id":guide.id,"version":VERSION,"language":"en","license":"MIT", "summary":guide.summary,
-        "body":guide.body,"schema_versions":["2.21"],"available_guides":GUIDES.iter().map(|g| json!({"id":g.id,"summary":g.summary,"version":VERSION})).collect::<Vec<_>>()});
+        "body":guide.body,"schema_versions":crate::document::SUPPORTED_DOCUMENT_VERSIONS,"available_guides":GUIDES.iter().map(|g| json!({"id":g.id,"summary":g.summary,"version":VERSION})).collect::<Vec<_>>()});
     if guide.id == "operations" {
         result["example_operations"] =
             serde_json::from_str(include_str!("../resources/examples/button-operations.json"))
@@ -220,7 +220,7 @@ pub fn get_style(id: &str) -> Result<Value> {
     );
     style["language"] = json!("en");
     style["license"] = json!("MIT");
-    style["schema_versions"] = json!(["2.21"]);
+    style["schema_versions"] = json!([document.version()]);
     style["required_fonts"] =
         json!([{"family":"Noto Sans JP","source":"bundled","license":"OFL-1.1"}]);
     stamp(&mut style);
