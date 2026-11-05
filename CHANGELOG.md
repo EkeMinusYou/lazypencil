@@ -6,6 +6,8 @@
 
 - Read and edit `.pen` 2.22 documents, use 2.22 for new documents, and accept `@schema 2.22` scripts. Preserve existing 2.19/2.21 document and user-library versions, including mixed-version imports and checkpoint restoration.
 
+- Preserve an independently scrolled node list during preview refreshes so in-progress clicks keep their target even without a selected node.
+
 - Distinguish keyboard focus with stronger border colors in light and monochrome UI themes and remove the duplicated agent name above conversation history.
 
 - Group TUI workspace actions by purpose in a shared command palette, slash-command and help catalog. Add palette input dialogs for images, queued prompts and playback while preserving the prompt draft. Use `/checkpoints` for editing history; `/history` remains an alias.

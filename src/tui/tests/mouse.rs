@@ -52,6 +52,30 @@ fn mouse_scroll_keeps_selection_and_clicks_the_rendered_row() {
 }
 
 #[test]
+fn mouse_click_survives_preview_refresh_without_a_node_selection() {
+    use crossterm::event::{MouseButton, MouseEventKind as M};
+    runtime().block_on(async {
+        let temp = TempDir::new().unwrap();
+        let (mut app, worker, picker) = mouse_fixture(&temp).await;
+        assert_eq!(app.nodes.selected(), None);
+        let area = app.pointer.area(mouse::Target::List(mouse::ListTarget::Nodes)).unwrap();
+        let point = (area.x + 3, area.y);
+        app.mouse_event(mouse_input(M::ScrollDown, point, KeyModifiers::NONE), &picker, &worker).await.unwrap();
+        paint_mouse(&mut app, 130, 34);
+        assert_eq!(app.nodes.offset(), 2);
+        app.mouse_event(mouse_input(M::Down(MouseButton::Left), point, KeyModifiers::NONE), &picker, &worker).await.unwrap();
+        app.refresh_nodes(None);
+        paint_mouse(&mut app, 130, 34);
+        assert_eq!(app.nodes.offset(), 2, "A preview refresh must preserve the independently scrolled list");
+        app.mouse_event(mouse_input(M::Up(MouseButton::Left), point, KeyModifiers::NONE), &picker, &worker).await.unwrap();
+        assert_eq!(app.selected_node().unwrap().id, "mouse-2");
+        assert_eq!(app.focus, Focus::Nodes);
+        app.conversation.close().await.unwrap();
+        worker.cancel();
+    });
+}
+
+#[test]
 fn mouse_zoom_anchors_the_pointer_and_pan_preserves_the_prompt_and_document() {
     use crossterm::event::MouseEventKind as M;
     runtime().block_on(async {

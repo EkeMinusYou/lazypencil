@@ -173,8 +173,8 @@ impl App {
             self.node_tree.reveal(index, nodes);
         }
         self.node_tree.rebuild(nodes, &self.filter);
-        self.nodes
-            .select(selected.and_then(|index| self.node_tree.position(index)));
+        // A preview refresh must preserve independent scrolling even without a selection.
+        *self.nodes.selected_mut() = selected.and_then(|index| self.node_tree.position(index));
     }
 
     pub(super) fn search_nodes(&mut self, selected: Option<&str>) {
