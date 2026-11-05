@@ -852,7 +852,8 @@ mod owned {
             "Measurement changed inputs or failed to exit normally"
         );
         ensure!(
-            !matches!(args.kitty_transfer, KittyTransfer::File) || terminal.decoder.local_file_frames > 0,
+            !matches!(args.kitty_transfer, KittyTransfer::File)
+                || terminal.decoder.local_file_frames > 0,
             "The requested local-file transport was not negotiated"
         );
         if let Some(limit) = args.median_limit_ms {
@@ -921,7 +922,7 @@ mod tests {
             assert_eq!(actions[0].0, expected);
             assert_eq!(actions.len(), 6);
             assert_eq!(parsed.args.focus_tabs, 0);
-            for pair in actions.chunks_exact(2) {
+            for pair in actions.as_chunks::<2>().0 {
                 assert!(matches!(
                     (pair[0].0, pair[1].0),
                     ("zoom_in", "zoom_out")

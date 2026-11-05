@@ -37,8 +37,8 @@
     },
     {
       "path": "build.rs",
-      "bytes": 8491,
-      "sha256": "436592627e66588d7f5113ff8e72de98a08c4aa8be991f0a0dd8d2b490820b36"
+      "bytes": 8728,
+      "sha256": "eb547e2f63989b49b243395489dcca5edd388e0a2cbb4669a7a7584f2ae31929"
     },
     {
       "path": "build_support/features.rs",
@@ -52,8 +52,8 @@
     },
     {
       "path": "src/bindings.cpp",
-      "bytes": 134556,
-      "sha256": "87a7d3e66a5063066e0829e2f2d3ce795cf6a439ee04d8acd9e372b35ef55ee7"
+      "bytes": 135309,
+      "sha256": "4c2ff600af645ca64893297e0afef675def645cab75720fc08d0af1c066db7b8"
     },
     {
       "path": "src/bindings.h",
