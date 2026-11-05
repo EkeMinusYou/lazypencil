@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.1
+
 - Read and edit `.pen` 2.22 documents, use 2.22 for new documents, and accept `@schema 2.22` scripts. Preserve existing 2.19/2.21 document and user-library versions, including mixed-version imports and checkpoint restoration.
 
 - Distinguish keyboard focus with stronger border colors in light and monochrome UI themes and remove the duplicated agent name above conversation history.
