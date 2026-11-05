@@ -515,7 +515,7 @@ mod tests {
             hit: super::selection::HitGeometry::default(),
             target: json!({"id":id}),
             kind: "rectangle".into(),
-            text_excerpt: String::new(),
+            text: String::new(),
             diagnostic_count: 0,
             has_error_diagnostic: false,
         })

@@ -135,7 +135,7 @@ fn preview_missing_glyphs_display_initial_design_warn_and_recover_without_changi
         assert_eq!(warnings[0]["severity"], "warning");
         assert_eq!(warnings[0]["details"]["missing_characters"], json!(["\u{10ffff}"]));
         let label = preview.nodes.iter().find(|node| node.id == "label").unwrap();
-        assert!(label.text_excerpt.contains('\u{10ffff}'));
+        assert!(label.text.contains('\u{10ffff}'));
         assert!(label.diagnostic_count > 0);
         let pixels = image::load_from_memory(&preview.image.png().unwrap()).unwrap().into_rgba8();
         assert!(pixels.pixels().any(|pixel| pixel.0 == [0, 255, 0, 255]), "Unaffected shapes remain visible");

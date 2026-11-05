@@ -76,6 +76,9 @@ bindings! {
     time_backward => TimeBackward(PREVIEW, ["Alt+["]),
     time_forward => TimeForward(PREVIEW, ["Alt+]"]),
     play_pause => PlayPause(PREVIEW, ["p"]),
+    search_preview => SearchPreview(PREVIEW, ["/"]),
+    next_search_match => NextSearchMatch(PREVIEW, ["n"]),
+    previous_search_match => PreviousSearchMatch(PREVIEW, ["Shift+n"]),
     previous_item => PreviousItem(NODES | ATTACHMENTS | REFERENCES, ["Up", "k"]),
     next_item => NextItem(NODES | ATTACHMENTS | REFERENCES, ["Down", "j"]),
     reference_node => ReferenceNode(NODES, ["a"]),
@@ -185,7 +188,7 @@ impl NavigationKeys {
             .any(|value| parse_shortcut(value, true).is_ok_and(|shortcut| shortcut.matches(event)))
     }
 
-    /// Plain text shortcuts never intercept prompt or node-search input.
+    /// Plain text shortcuts never intercept prompt or search input.
     #[cfg(feature = "tui")]
     pub fn matches_while_typing(
         &self,
@@ -215,6 +218,14 @@ mod tests {
         };
         keys.validate(&PromptKeys::default()).unwrap();
         keys.pan_right = vec!["B".into()];
+        assert!(keys.validate(&PromptKeys::default()).is_err());
+        let mut keys = NavigationKeys {
+            search_preview: vec!["f".into()],
+            ..Default::default()
+        };
+        assert!(keys.validate(&PromptKeys::default()).is_err());
+        keys.search_preview = vec!["/".into()];
+        keys.next_search_match = vec!["p".into()];
         assert!(keys.validate(&PromptKeys::default()).is_err());
     }
 
@@ -258,7 +269,7 @@ mod tests {
         keys.next_panel.clear();
         keys.previous_panel.clear();
         assert!(keys.validate(&prompt).is_err());
-        keys.next_panel = vec!["n".into()];
+        keys.next_panel = vec!["m".into()];
         assert!(keys.validate(&prompt).is_err());
         keys.previous_panel = vec!["F6".into()];
         keys.validate(&prompt).unwrap();

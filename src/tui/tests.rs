@@ -198,6 +198,7 @@ fn saved_page(app: &App) -> &saved::Page {
 
 // Keep one test module so CI filters and shared process fixtures retain their identities.
 include!("tests/preview.rs");
+include!("tests/preview_search.rs");
 include!("tests/conversation.rs");
 include!("tests/images.rs");
 include!("tests/navigation.rs");

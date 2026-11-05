@@ -109,6 +109,12 @@ pub fn run(
         document = parent.join("design.pen");
     }
     let mut design = json!({"version":"2.21","children":[{"type":"rectangle","id":"red","name":"日本語の対象","x":-80,"y":-30,"width":180,"height":90,"fill":"#FF0000"}]});
+    if case == "preview-search" {
+        design = json!({"version":"2.21","children":[
+            {"type":"text","id":"first","content":"日本語の対象","width":200,"height":40},
+            {"type":"text","id":"second","x":1000,"content":"日本語の対象","width":200,"height":40}
+        ]});
+    }
     if case == "kitty-progressive" {
         design = json!({"version":"2.21","children":[
             {"type":"rectangle","id":"red","name":"Red source","x":-80,"y":-30,"width":180,"height":90,"fill":"#FF0000"},
@@ -601,6 +607,10 @@ pub fn run(
             Value::Null
         }
         "ime-commit" => ime_commit(&mut h)?,
+        "preview-search" => {
+            preview_search(&mut h)?;
+            Value::Null
+        }
         "node-references" => {
             node_references(&mut h, &design)?;
             Value::Null
@@ -776,6 +786,58 @@ pub fn run(
         "{}",
         json!({"case":case,"terminal_bytes":h.output.len(),"exit_code":0})
     );
+    Ok(())
+}
+
+fn preview_search(h: &mut Harness) -> Result {
+    let original = fs::read(&h.document)?;
+    let draft = "未送信の依頼";
+    h.paste(draft)?;
+    h.draft(draft)?;
+    h.key(b"\x1b[Z")?;
+    h.visible("/ search")?;
+    let start = h.output.len();
+    h.key(b"/")?;
+    h.visible("Enter keep")?;
+    h.wait("search uses UTF-8 keyboard mode", 15.0, |h| {
+        h.output[start..]
+            .windows(b"\x1b[=5u".len())
+            .any(|bytes| bytes == b"\x1b[=5u")
+    })?;
+    h.key("日本語".as_bytes())?;
+    h.visible("/日本語")?;
+    h.visible("1/2")?;
+    h.wait("IME cursor follows the Japanese query", 15.0, |h| {
+        h.screen
+            .find_text("/日本語")
+            .is_some_and(|(x, y)| h.screen.cursor() == (x + 7, y))
+    })?;
+    h.key(b"\x1b[B")?;
+    h.visible("2/2")?;
+    h.key(b"\r")?;
+    h.visible("Esc clear search")?;
+    h.key(b"n")?;
+    h.visible("1/2")?;
+    h.key(b"N")?;
+    h.visible("2/2")?;
+    h.key(b"\x1b")?;
+    h.hidden("/日本語")?;
+    h.key(b"/")?;
+    h.visible("Enter keep")?;
+    h.paste("日本語の対象")?;
+    h.visible("/日本語の対象")?;
+    h.visible("1/2")?;
+    h.key(b" q?rpn")?;
+    h.visible("No matches")?;
+    h.visible("/日本語の対象 q?rpn")?;
+    h.key(b"\x1b")?;
+    h.hidden("Enter keep")?;
+    h.key(b"\t")?;
+    h.visible(" send")?;
+    h.paste(" 続き")?;
+    h.draft(&format!("{draft} 続き"))?;
+    no_agent(h);
+    assert_eq!(fs::read(&h.document)?, original);
     Ok(())
 }
 

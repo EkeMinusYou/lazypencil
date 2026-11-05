@@ -95,7 +95,10 @@ impl App {
 
     fn hint(&self, action: Nav, description: &'static str) -> Option<Hint> {
         self.navigation
-            .preferred_label(action, self.focus == Focus::Prompt || self.searching)
+            .preferred_label(
+                action,
+                self.focus == Focus::Prompt || self.searching || self.preview_search.editing,
+            )
             .map(|key| Hint::new(key, description))
     }
 
@@ -159,6 +162,13 @@ impl App {
         if self.searching {
             return vec![Hint::new("Enter", "keep filter"), Hint::new("Esc", "clear")];
         }
+        if self.preview_search.editing {
+            return vec![
+                Hint::new("↑/↓", "result"),
+                Hint::new("Enter", "keep"),
+                Hint::new("Esc", "clear"),
+            ];
+        }
         let hints = match self.focus {
             Focus::Prompt => {
                 let submit =
@@ -205,12 +215,16 @@ impl App {
                 self.hint(Nav::SearchNodes, "search"),
                 self.hint(Nav::ToggleDiagnostics, "diagnostics"),
             ],
+            Focus::Preview if !self.preview_search.query.is_empty() => vec![
+                self.grouped_hint(&[Nav::NextSearchMatch, Nav::PreviousSearchMatch], "result"),
+                Some(Hint::new("Esc", "clear search")),
+            ],
             Focus::Preview => vec![
                 self.grouped_hint(
                     &[Nav::PanLeft, Nav::PanDown, Nav::PanUp, Nav::PanRight],
                     "pan",
                 ),
-                self.grouped_hint(&[Nav::ZoomIn, Nav::ZoomOut], "zoom"),
+                self.hint(Nav::SearchPreview, "search"),
             ],
             Focus::Attachments | Focus::References => vec![
                 self.hint(Nav::RemoveAttachment, "remove"),

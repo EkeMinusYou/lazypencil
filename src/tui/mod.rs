@@ -21,6 +21,7 @@ mod nodes;
 mod outbox;
 mod playback;
 mod preview;
+mod preview_search;
 mod references;
 mod saved;
 mod selection;
@@ -283,6 +284,7 @@ struct App {
     reference_rows: ListState,
     filter: String,
     searching: bool,
+    preview_search: preview_search::Search,
     log: String,
     tool_calls: std::collections::HashMap<String, composer::ToolDisplay>,
     turn_sequence: u64,
@@ -365,6 +367,7 @@ impl App {
             reference_rows: ListState::default(),
             filter: String::new(),
             searching: false,
+            preview_search: Default::default(),
             log: String::new(),
             tool_calls: Default::default(),
             turn_sequence: 0,
@@ -688,6 +691,15 @@ impl App {
                 self.insert_text(&text);
                 self.dirty = true;
             }
+            Event::Paste(text)
+                if self.preview_search.editing
+                    && !self.help
+                    && self.modal.is_none()
+                    && self.permissions.is_empty() =>
+            {
+                self.paste_preview_search(&text, &screen.picker, worker)?;
+                self.dirty = true;
+            }
             Event::FocusLost => {
                 self.native_pinch.cancel();
                 self.selection.abort();
@@ -789,6 +801,8 @@ impl App {
                 }
                 let document = !preview.attachment;
                 self.preview = Some(preview);
+                self.preview_search
+                    .refresh(&self.preview.as_ref().unwrap().nodes);
                 self.selection.retain(&self.preview.as_ref().unwrap().nodes);
                 let selected = selected
                     .filter(|id| {
@@ -1089,6 +1103,9 @@ impl App {
         if self.focus != Focus::Nodes {
             self.searching = false;
         }
+        if self.focus != Focus::Preview {
+            self.preview_search.editing = false;
+        }
         if was_attachment && self.focus != Focus::Attachments {
             self.request(worker, false, false);
         }
@@ -1145,6 +1162,9 @@ impl App {
                 "Preview: pause and step time forward by 0.1s",
             ),
             (Nav::PlayPause, "Preview: toggle bounded playback"),
+            (Nav::SearchPreview, "Preview: search text, names and IDs"),
+            (Nav::NextSearchMatch, "Preview: next search result"),
+            (Nav::PreviousSearchMatch, "Preview: previous search result"),
             (
                 Nav::PreviousItem,
                 "Nodes/Attachments/References: previous item",
@@ -1580,6 +1600,7 @@ impl App {
         let inner = block.inner(panes[1]);
         self.pointer.add(inner, mouse::Target::Canvas);
         frame.render_widget(block, panes[1]);
+        self.draw_preview_search(frame, panes[1]);
         if let Some(camera) = self
             .camera
             .as_ref()

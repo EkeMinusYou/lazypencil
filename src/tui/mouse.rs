@@ -460,6 +460,9 @@ impl App {
         if focus != Focus::Nodes {
             self.searching = false;
         }
+        if focus != Focus::Preview {
+            self.preview_search.editing = false;
+        }
         if attachment != (focus == Focus::Attachments) {
             self.request(worker, false, false);
         }

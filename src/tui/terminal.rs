@@ -137,7 +137,7 @@ impl Screen {
         if self.preview_keys != enabled {
             // Text-producing keys need both flags to report press/repeat/release
             // directly. Keep that mode scoped to navigation so IME commits in
-            // Prompt and node search retain their UTF-8 representation.
+            // Prompt and search retain their UTF-8 representation.
             // Update our existing stack entry atomically. Popping first exposes
             // legacy mode to multiplexers between the two commands.
             let mut stdout = std::io::stdout();

@@ -28,7 +28,7 @@ fn footer_shows_only_contextual_actions_and_prefers_non_function_bindings() {
                 vec!["Enter send", "Alt+Enter newline", "F1 help"],
             ),
             (Focus::Nodes, vec!["/ search", "d diagnostics", "? help"]),
-            (Focus::Preview, vec!["←/↓/↑/→ pan", "+/- zoom", "? help"]),
+            (Focus::Preview, vec!["←/↓/↑/→ pan", "/ search", "? help"]),
             (
                 Focus::References,
                 vec!["Delete remove", "Esc input", "? help"],

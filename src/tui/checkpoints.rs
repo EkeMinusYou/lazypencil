@@ -139,7 +139,11 @@ impl Modal {
 
 impl super::App {
     pub(super) fn has_modal(&self) -> bool {
-        self.help || self.modal.is_some() || !self.permissions.is_empty() || self.pointer.more
+        self.help
+            || self.modal.is_some()
+            || !self.permissions.is_empty()
+            || self.pointer.more
+            || self.preview_search.editing
     }
     pub(super) fn open_history(&mut self, cursors: Vec<Option<u64>>) -> Result<()> {
         if self.conversation.active() || self.document_task.is_some() {

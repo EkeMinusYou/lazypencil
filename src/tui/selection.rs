@@ -52,7 +52,7 @@ fn visible_at(nodes: &[preview::Node], index: usize, point: [f64; 2]) -> bool {
     }
     true
 }
-fn visible_in(nodes: &[preview::Node], index: usize, region: Rect) -> bool {
+pub(super) fn visible_in(nodes: &[preview::Node], index: usize, region: Rect) -> bool {
     let mut bounds = shape_bounds(&nodes[index]).intersection(region);
     let mut ancestor = Some(index);
     while let Some(index) = ancestor {
@@ -509,7 +509,7 @@ mod tests {
             },
             target: json!({"id":id}),
             kind: "rectangle".into(),
-            text_excerpt: String::new(),
+            text: String::new(),
             diagnostic_count: 0,
             has_error_diagnostic: false,
             parent,

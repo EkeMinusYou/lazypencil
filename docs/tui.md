@@ -297,6 +297,9 @@ Large or high-DPI viewports automatically reduce preview raster resolution to st
 | Prompt: `/paste-image [WIDTHxHEIGHT\|original]` then Enter | Invoke clipboard input with an optional explicit send size |
 | Prompt: `/clear-images` then Enter | Remove pending images |
 | Preview: `hjkl` / arrows | Pan |
+| Preview: `/` | Search text, names and IDs (case-insensitive); select and fit the first matching element while typing |
+| Preview search: Up / Down, Shift+Tab / Tab | Select and fit the previous / next matching element, wrapping at either end |
+| Preview search: Enter / Esc | Keep the query and return to navigation / clear the search; `n` / `N` moves to the next / previous result after Enter |
 | Preview: `+` / `-`, `0` | Zoom or fit the document, including negative coordinates |
 | Preview: `[` / `]` | Select and fit the first enabled child / parent; when unselected, select the first visible node in Preview |
 | Preview: `Alt+[` / `Alt+]` | Pause and step shader evaluation time backward/forward by 0.1 seconds |
@@ -394,7 +397,7 @@ The schema and `config show --user` list all actions and effective defaults:
 | --- | --- |
 | Normal panels | `next_panel`, `previous_panel`, `toggle_nodes_panel`, `toggle_agent_panel`, `help`, `commands` |
 | Outside Prompt | `quit`, `refresh`, `open_preview` |
-| Preview | `pan_left`, `pan_right`, `pan_up`, `pan_down`, `zoom_in`, `zoom_out`, `fit_document`, `select_child`, `select_parent`, `time_backward`, `time_forward`, `play_pause` |
+| Preview | `pan_left`, `pan_right`, `pan_up`, `pan_down`, `zoom_in`, `zoom_out`, `fit_document`, `select_child`, `select_parent`, `time_backward`, `time_forward`, `play_pause`, `search_preview`, `next_search_match`, `previous_search_match` |
 | Preview and Nodes | `fit_selected` |
 | Nodes, Attachments and References | `previous_item`, `next_item` |
 | Nodes (including Diagnostics) | `reference_node`, `toggle_diagnostics`, `diagnostic_scope`, `search_nodes`, `clear_selection`, `activate_node`, `expand_node`, `collapse_node`, `toggle_node`, `node_page_up`, `node_page_down` |
@@ -403,7 +406,7 @@ The schema and `config show --user` list all actions and effective defaults:
 
 Navigation supports ASCII letters and printable symbols, Enter, Space, Tab, Esc/Escape, arrows, Home/End, PageUp/PageDown, Delete/Backspace, and F1–F24. Ctrl, Alt and Shift can be combined; `Plus` names `+`. `BackTab` is the same binding as `Shift+Tab`. Already shifted symbols normalize their Shift bit across terminal protocols, so `+` and `Shift+Plus` are equivalent. Other modifiers match exactly. Keys may be shared between disjoint panels, such as Up for panning and list selection. Overlaps in the same panel, including global bindings that would intercept prompt submit/paste, fail before terminal entry.
 
-Unmodified text bindings do not intercept prompt or node-search input. Permission and checkpoint dialogs retain their displayed acceptance/rejection keys. Ctrl+C remains the fixed emergency cancellation/exit key; its aliases and legacy Ctrl+H/I/J/M encodings cannot be rebound. Prompt shortcuts retain their own restrictions above. Help, footer and panel titles show the captured effective keys. Help supports PageUp/PageDown or arrows to scroll and Home/End to jump. Changing the configuration file affects the next invocation; it does not change the active keyboard map. Projects cannot select these user controls.
+Unmodified text bindings do not intercept prompt or search input. Permission and checkpoint dialogs retain their displayed acceptance/rejection keys. Ctrl+C remains the fixed emergency cancellation/exit key; its aliases and legacy Ctrl+H/I/J/M encodings cannot be rebound. Prompt shortcuts retain their own restrictions above. Help, footer and panel titles show the captured effective keys. Help supports PageUp/PageDown or arrows to scroll and Home/End to jump. Changing the configuration file affects the next invocation; it does not change the active keyboard map. Projects cannot select these user controls.
 
 During a turn, the submitted request is frozen while the prompt holds the next editable draft. Failure/cancellation restores the request when safe or leaves it at the front of the paused queue, preserving newer input. Idle drafts are saved after a one-second debounce and on normal exit; an abrupt kill can lose edits within that interval. Conversation metadata versions 1/2 migrate to version 3 without discarding drafts, images, or continuity state.
 

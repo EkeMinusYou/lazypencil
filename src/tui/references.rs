@@ -44,7 +44,7 @@ impl App {
             target: node.target.clone(),
             name: references::single_line(&node.name),
             kind: node.kind.clone(),
-            text_excerpt: clean(&node.text_excerpt),
+            text_excerpt: clean(&node.text.chars().take(512).collect::<String>()),
             revision: preview.summary["revision"].as_str().unwrap_or("").into(),
             dependency_revision: preview.summary["dependency_revision"]
                 .as_str()

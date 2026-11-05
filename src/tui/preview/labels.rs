@@ -185,7 +185,7 @@ mod tests {
             },
             target: serde_json::Value::Null,
             kind: "frame".into(),
-            text_excerpt: String::new(),
+            text: String::new(),
             diagnostic_count: 0,
             has_error_diagnostic: false,
             parent,

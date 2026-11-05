@@ -37,6 +37,7 @@ impl App {
         }
         let typing = self.focus == Focus::Prompt
             || self.searching
+            || self.preview_search.editing
             || matches!(self.modal, Some(checkpoints::Modal::CommandInput(_)));
         let global = |action| {
             if typing {
@@ -84,6 +85,10 @@ impl App {
         }
         if self.searching {
             self.search_input(key);
+            return Ok(false);
+        }
+        if self.preview_search.editing {
+            self.preview_search_input(key, picker, worker)?;
             return Ok(false);
         }
         let section = self.focus.in_conversation()
@@ -304,6 +309,18 @@ impl App {
         }
         match self.focus {
             Focus::Preview => {
+                if action(Nav::SearchPreview) {
+                    self.start_preview_search();
+                    return Ok(false);
+                }
+                if action(Nav::NextSearchMatch) || action(Nav::PreviousSearchMatch) {
+                    self.step_preview_search(action(Nav::PreviousSearchMatch), picker, worker)?;
+                    return Ok(false);
+                }
+                if key.code == KeyCode::Esc && !self.preview_search.query.is_empty() {
+                    self.preview_search = Default::default();
+                    return Ok(false);
+                }
                 if key.code == KeyCode::Esc && !self.selection.ids.is_empty() {
                     self.selection.clear();
                     self.nodes.select(None);
