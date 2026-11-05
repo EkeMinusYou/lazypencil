@@ -127,9 +127,9 @@ impl Session {
             invocation,
             std::env::var(commands::TEST_PROFILE_ENV).as_deref() == Ok("optimized-debug-v1"),
         );
-        let jobs = if cfg!(target_os = "macos") {
+        let jobs = if cfg!(target_os = "macos") && std::env::var("CI").as_deref() == Ok("true") {
             3
-        } else if cfg!(target_os = "linux") {
+        } else if cfg!(any(target_os = "linux", target_os = "macos")) {
             2
         } else {
             1

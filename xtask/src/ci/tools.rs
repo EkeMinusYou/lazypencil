@@ -59,6 +59,10 @@ impl Command {
                 );
                 // Packaging regressions compile the same declaration shipped by the application.
                 inputs.push(root.join("resources/release.json"));
+                // Real Cargo cache regressions compile the reviewed native bridge.
+                // The Actions tool keys include these external fixture inputs too.
+                inputs.push(root.join("build.rs"));
+                inputs.push(root.join("src/tui/gestures/macos.m"));
                 for path in inputs {
                     fs::File::open(path)?.set_times(times)?;
                 }

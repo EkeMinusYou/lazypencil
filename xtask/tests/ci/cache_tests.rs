@@ -418,6 +418,10 @@ fn application_reuse_rejects_changed_sources_external_dep_info_and_compiled_excl
         "/tmp/outside",
         "debug/deps/../../outside",
         "debug/build/anything",
+        "debug/build/lazypencil-1234567890abcdef/out/generated.rs",
+        "debug/build/lazypencil-1234567890abcdef/out/../../outside",
+        "debug/build/other-1234567890abcdef/out/liblazypencil_pinch.a",
+        "debug/build/lazypencil-1234567890abcdef/build_script_build-fedcba0987654321",
         "release-smoke.png",
         "debug/examples/report.png",
     ] {

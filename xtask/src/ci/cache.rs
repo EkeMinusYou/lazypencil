@@ -58,6 +58,7 @@ const FLAG_PREFIXES: &[&str] = &[
 ];
 
 pub mod artifact;
+mod build_script;
 mod compatible;
 mod migrations;
 pub mod native_snapshots;
@@ -886,13 +887,7 @@ impl ApplicationIdentity {
         let release_only = scope == ApplicationScope::Release;
         let manifest: Manifest = util::json(&source.join(dist::MANIFEST))?;
         let package: toml::Value = toml::from_str(&fs::read_to_string(source.join("Cargo.toml"))?)?;
-        ensure!(
-            !source.join("build.rs").exists()
-                && package["package"]
-                    .get("build")
-                    .is_none_or(|v| v.as_bool() == Some(false)),
-            "Custom build scripts disable application reuse"
-        );
+        let build_script = build_script::capture(source, &manifest, &package)?;
         let re = Regex::new(r"^native-v2-(ubuntu-24\.04-arm|ubuntu-24\.04|macos-26)-")?;
         let platform = re
             .captures(native_key)
@@ -908,6 +903,9 @@ impl ApplicationIdentity {
         // files from test-only inputs. Actual compiler dep-info still rejects any
         // excluded file that becomes a compiled release input.
         let mut recipe = json!({"version":3,"release_recipe":crate::evidence::link_map::RECIPE,"inputs":inputs,"native":native_key,"source":source.canonicalize()?,"target":target});
+        if let Some(build_script) = build_script {
+            recipe["build_script"] = build_script;
+        }
         if release_only {
             recipe["scope"] = json!("release-v1");
         } else if commands::optimized_tests()? {
@@ -985,7 +983,7 @@ pub fn allowed(name: &str) -> bool {
         ["examples", file] => Regex::new(r"^[A-Za-z0-9_]+(?:-[0-9a-f]{16})?(?:\.(?:d|rmeta))?$")
             .unwrap()
             .is_match(file),
-        _ => false,
+        parts => build_script::allowed(parts),
     }
 }
 
@@ -1007,6 +1005,12 @@ pub fn outputs(target: &Path) -> Result<Vec<PathBuf>> {
                     continue;
                 };
                 let suffix = &captures[1];
+                // Cargo needs both the compiled build script and its run outputs
+                // to retain dependent Rust units without rerunning the script.
+                let build = root.join("build").join(name.as_ref());
+                if build.exists() {
+                    files.extend(util::walk(&build)?);
+                }
                 for item in fs::read_dir(directory.path())? {
                     let item = item?;
                     let name = item.file_name();

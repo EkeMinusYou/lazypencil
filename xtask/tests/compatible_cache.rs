@@ -378,6 +378,37 @@ mod script_copy {
         output
     };
     let targets = "[\"script_scope\",\"tui\"]";
+    // The complete CI producer compiles every target without executing its
+    // consumers' regressions. Keep the standalone early-reproduction route too.
+    let compiled = run("default-build", "copy", targets);
+    assert!(
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    let root = f._temp.path();
+    for log in ["focus-generated-code-owner.log", "focus-terminal-modes.log"] {
+        assert!(
+            !root.join(log).exists(),
+            "The full producer duplicated {log}"
+        );
+    }
+    let catalog: Value = util::json(&root.join("test-executables.json")).unwrap();
+    for target in [
+        "script_scope",
+        "tui",
+        "mcp",
+        "optional_icons",
+        "one",
+        "two",
+        "lib",
+    ] {
+        assert!(
+            catalog["binaries"][target]["path"].is_string(),
+            "Missing complete consumer target {target}"
+        );
+    }
+    fs::remove_file(root.join("test-executables.json")).unwrap();
     let builder = run("build-and-reproduce", "copy", targets);
     assert!(
         builder.status.success(),
@@ -1032,6 +1063,8 @@ impl Fixture {
             "examples/preview.rs",
         ];
         for extra in [
+            "build.rs",
+            "src/tui/gestures/macos.m",
             "dependency/Cargo.toml",
             "dependency/src/lib.rs",
             "src/main.rs",
@@ -1148,6 +1181,155 @@ impl Fixture {
         .unwrap();
         self.manifest();
     }
+}
+
+#[test]
+fn native_bridge_cache_keeps_real_cargo_fresh_and_rebuilds_only_an_edited_test() {
+    let f = Fixture::new();
+    let manifest = fs::read_to_string(f.source.join("Cargo.toml")).unwrap();
+    fs::write(
+        f.source.join("Cargo.toml"),
+        format!("{manifest}\n[features]\ndefault=['tui']\ntui=[]\n"),
+    )
+    .unwrap();
+    fs::write(f.source.join("build.rs"), include_bytes!("../../build.rs")).unwrap();
+    fs::create_dir_all(f.source.join("src/tui/gestures")).unwrap();
+    fs::write(
+        f.source.join("src/tui/gestures/macos.m"),
+        include_bytes!("../../src/tui/gestures/macos.m"),
+    )
+    .unwrap();
+    fs::write(
+        f.source.join("src/lib.rs"),
+        r#"
+pub fn fixture() -> u8 {
+    #[cfg(all(target_os = "macos", feature = "tui"))]
+    {
+        unsafe extern "C" { fn lp_pinch_authorized(request: bool) -> bool; }
+        // Resolve the real bridge symbol without asking for OS permissions.
+        std::hint::black_box(lp_pinch_authorized as unsafe extern "C" fn(bool) -> bool);
+    }
+    1
+}
+"#,
+    )
+    .unwrap();
+    f.manifest();
+    f.build(&[]);
+    f.build(&["--no-default-features"]);
+    let identity = f.identity();
+    let cached_key = identity.compatible_primary.clone();
+    cache::stage_tests(&f.source, &f.target, &f.full, &identity).unwrap();
+    let report: Value = util::json(&f.full.join("manifest.json")).unwrap();
+    let build_files = report["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|file| file["path"].as_str().unwrap().starts_with("debug/build/"))
+        .map(|file| file["path"].as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert!(
+        build_files
+            .iter()
+            .any(|file| file.ends_with("/build-script-build"))
+    );
+    assert!(build_files.iter().any(|file| file.ends_with("/output")));
+    if cfg!(target_os = "macos") {
+        assert!(
+            build_files
+                .iter()
+                .any(|file| file.ends_with("/out/liblazypencil_pinch.a"))
+        );
+    }
+    for edited in [false, true] {
+        if edited {
+            f.edit();
+        }
+        let identity = f.identity();
+        cache::prune(&f.source, &f.target).unwrap();
+        cache::restore_compatible(&f.source, &f.target, &f.full, &cached_key, &identity).unwrap();
+        let times = build_files
+            .iter()
+            .map(|name| {
+                let path = f.target.join(name);
+                let modified = fs::metadata(&path).unwrap().modified().unwrap();
+                (path, modified)
+            })
+            .collect::<Vec<_>>();
+        for arguments in [&[][..], &["--no-default-features"][..]] {
+            let built = f.build(arguments);
+            assert_eq!(built["one"].0, !edited);
+            for name in ["lazypencil", "two", "library-tests", "preview"] {
+                assert!(
+                    built[name].0,
+                    "{name} rebuilt after restoring the native bridge"
+                );
+            }
+        }
+        for (path, modified) in times {
+            assert_eq!(
+                fs::metadata(&path).unwrap().modified().unwrap(),
+                modified,
+                "Cargo reran the cached native bridge: {}",
+                path.display()
+            );
+        }
+    }
+    // A native source change must invalidate both exact and test-compatible reuse,
+    // even when CI normalizes its modification time back to the same value.
+    let native = f.source.join("src/tui/gestures/macos.m");
+    let original = fs::read(&native).unwrap();
+    fs::write(
+        &native,
+        [original.as_slice(), b"\n// Changed native input\n"].concat(),
+    )
+    .unwrap();
+    assert!(
+        cache::ApplicationIdentity::capture(
+            &f.source,
+            &f.target,
+            "native-v2-ubuntu-24.04-fixture",
+            cache::ApplicationScope::AllOutputs
+        )
+        .is_err()
+    );
+    f.manifest();
+    let changed = f.identity();
+    assert_ne!(identity.compatible_primary, changed.compatible_primary);
+    assert!(cache::restore(&f.source, &f.target, &f.full, &changed).is_err());
+    assert!(
+        cache::restore_compatible(
+            &f.source,
+            &f.target,
+            &f.full,
+            &identity.compatible_primary,
+            &changed
+        )
+        .is_err()
+    );
+    fs::write(native, original).unwrap();
+    f.manifest();
+    // Corrupted native outputs must fail before any target file is overlaid.
+    f.clear();
+    let output = f.full.join("files").join(&build_files[0]);
+    fs::write(output, b"corrupted build output").unwrap();
+    assert!(
+        cache::restore_compatible(&f.source, &f.target, &f.full, &cached_key, &f.identity())
+            .is_err()
+    );
+    assert!(!f.target.exists());
+    let script = f.source.join("build.rs");
+    fs::write(script, b"fn main() {}\n").unwrap();
+    f.manifest();
+    assert!(
+        cache::ApplicationIdentity::capture(
+            &f.source,
+            &f.target,
+            "native-v2-ubuntu-24.04-fixture",
+            cache::ApplicationScope::AllOutputs
+        )
+        .is_err()
+    );
 }
 
 #[test]

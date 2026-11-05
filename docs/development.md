@@ -92,10 +92,14 @@ selected test targets. Main retains all-target Clippy, all test consumers and th
 lane; publishing still requires fully verified main source.
 Portable focused contracts reuse the full workflow's existing Linux core lane, avoiding
 scarce Mac runners. Terminal UI changes still use the native Mac workflow.
-Application checkpoint reuse is currently disabled by the custom application `build.rs`.
-Dependency caches remain available. Keep that guard until build-script inputs and native
-outputs can be validated and restored together; a cache download alone does not prove
-that application compiler outputs were reused.
+Application checkpoints include the reviewed native pinch bridge's build script,
+Cargo metadata and native outputs. Reuse binds both source files, the native build
+identity, and the selected macOS tools and SDK. Changed or unreviewed build scripts
+disable reuse; changed native inputs invalidate the checkpoint. Cargo still checks
+freshness after restore. A cache download alone does not prove application reuse.
+Full verification builds the complete executable catalog before handing regressions
+to their normal, pixel, runtime and terminal consumers. Standalone focused runs keep
+their early reproductions; the full builder does not repeat the consumers' tests.
 Do not interpret focused success as a full product verification result.
 
 The stable `Verification` check requires precisely the jobs selected by the contract.

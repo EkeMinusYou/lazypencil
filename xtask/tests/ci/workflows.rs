@@ -250,6 +250,15 @@ fn portable_core_moves_to_linux_while_mac_keeps_native_contracts_and_normal_buil
     assert!(position("ci native core-platform\n") < position("id: default-build\n"));
     assert!(position("ci native default-lint\n") < position("id: default-build\n"));
     assert!(position("ci native default-development-build\n") < position("id: default-build\n"));
+    let default_build = workflow
+        .split("id: default-build\n")
+        .nth(1)
+        .unwrap()
+        .split("      - name:")
+        .next()
+        .unwrap();
+    assert!(default_build.contains("ci native default-build --suite"));
+    assert!(!default_build.contains("build-and-reproduce"));
     let commands = commands::core_platform_tests();
     for command in &commands {
         assert!(command.iter().any(|s| s == "--no-default-features"));

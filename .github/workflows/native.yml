@@ -400,8 +400,11 @@ jobs:
       - name: Build default tests and record executable identities
         id: default-build
         if: ${{ (inputs.lane == 'all' || inputs.lane == 'default' || inputs.lane == 'build') && (inputs.phase != 'focus') }}
-        timeout-minutes: ${{ inputs.lane == 'build' && inputs.phase == 'verify' && 60 || 45 }}
-        run: xtask/target/debug/xtask ci native '${{ inputs.lane == 'build' && inputs.phase == 'verify' && 'build-and-reproduce' || 'default-build' }}' --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
+        # Complete consumers own the same regressions, including ignored emoji
+        # fixtures and quiet terminal checks. Publish their catalog immediately;
+        # standalone focused verification retains its early reproductions.
+        timeout-minutes: 45
+        run: xtask/target/debug/xtask ci native default-build --suite "$FOCUS_SUITE" --targets "$FOCUS_TARGETS"
       - name: Reproduce real emoji, TUI and isolated MCP cancellation first
         if: ${{ (inputs.lane == 'all' || inputs.lane == 'default') && (inputs.phase != 'focus') }}
         run: xtask/target/debug/xtask ci native reproduce
