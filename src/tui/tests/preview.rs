@@ -552,7 +552,7 @@ fn playback_preserves_input_pauses_on_seek_errors_and_static_output_and_drops_la
         assert_eq!(app.playback.deadline(), None);
         app.start_playback(10, now).unwrap();
         app.cells = Size::new(0, 0);
-        press(&mut app, KeyCode::Char(']'), KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Char(']'), KeyModifiers::ALT, &worker).await;
         assert!(!app.playback.active());
         assert!((app.view.time - 3.1).abs() < 1e-10);
         app.editor = editor("/play 3");
@@ -676,15 +676,15 @@ fn time_commands_validate_without_sending_or_saving_and_view_keys_keep_input_pre
         assert_eq!(app.view.time, 1.25);
         app.focus = Focus::Preview;
         app.help = true;
-        press(&mut app, KeyCode::Char(']'), KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Char(']'), KeyModifiers::ALT, &worker).await;
         assert_eq!(app.view.time, 1.25);
         app.help = false;
-        press(&mut app, KeyCode::Char(']'), KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Char(']'), KeyModifiers::ALT, &worker).await;
         assert!((app.view.time - 1.35).abs() < 1e-10);
-        press(&mut app, KeyCode::Char('['), KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Char('['), KeyModifiers::ALT, &worker).await;
         assert!((app.view.time - 1.25).abs() < 1e-10);
         app.view.set_time(0.01).unwrap();
-        press(&mut app, KeyCode::Char('['), KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Char('['), KeyModifiers::ALT, &worker).await;
         assert_eq!(app.view.time, 0.0);
         assert_eq!(
             std::fs::read(app.conversation.store().path()).unwrap(),
@@ -1154,7 +1154,7 @@ fn custom_navigation_preserves_typing_search_modals_and_moves_the_actual_preview
         assert_eq!(app.view.zoom, zoomed);
         press(&mut app, KeyCode::Char('c'), KeyModifiers::NONE, &worker).await;
         assert_eq!(app.view.zoom, None);
-        press(&mut app, KeyCode::Char(']'), KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Char(']'), KeyModifiers::ALT, &worker).await;
         assert_eq!(app.view.time, 0.0);
         press(&mut app, KeyCode::Char('.'), KeyModifiers::NONE, &worker).await;
         assert_eq!(app.view.time, 0.1);
