@@ -4,7 +4,7 @@ use std::path::Path;
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Clone, Serialize, thiserror::Error)]
-#[error("{code}: {message}{diagnostic}", diagnostic = self.diagnostic_text())]
+#[error("{code}: {safe_message}{diagnostic}", safe_message = self.terminal_message(), diagnostic = self.diagnostic_text())]
 pub struct Error {
     pub code: &'static str,
     pub message: String,
@@ -13,6 +13,18 @@ pub struct Error {
 }
 
 impl Error {
+    fn terminal_message(&self) -> String {
+        let mut text = String::with_capacity(self.message.len());
+        for character in self.message.chars() {
+            if character.is_control() {
+                text.extend(character.escape_debug());
+            } else {
+                text.push(character);
+            }
+        }
+        text
+    }
+
     fn diagnostic_text(&self) -> String {
         use std::fmt::Write;
         let Some(details) = &self.details else {
@@ -119,5 +131,22 @@ impl Error {
             "CANCELLED" => 130,
             _ => 1,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn terminal_errors_escape_controls_without_changing_structured_data() {
+        let message = "日本語 'quoted' \x1b]0;title\x07\r\nforged\t\u{009b}31m";
+        let error = Error::new("INVALID_DOCUMENT", message);
+        let displayed = error.to_string();
+        assert!(!displayed.chars().any(char::is_control));
+        assert!(displayed.contains("日本語 'quoted'"));
+        assert!(displayed.contains("\\u{1b}]0;title\\u{7}\\r\\nforged\\t\\u{9b}31m"));
+        assert_eq!(serde_json::to_value(&error).unwrap()["message"], message);
+        assert_eq!(error.message, message);
     }
 }

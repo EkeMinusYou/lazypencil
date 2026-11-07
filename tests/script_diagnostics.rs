@@ -161,6 +161,42 @@ fn source_functions_cannot_capture_private_locals_or_replace_captured_normalizer
 }
 
 #[test]
+fn cli_errors_escape_document_controls_and_keep_json_messages_exact() {
+    use std::{fs, process::Command};
+    let temporary = tempfile::TempDir::new().unwrap();
+    let file = temporary.path().join("controls.pen");
+    let id = "日本語\u{1b}]0;forged-title\u{7}\r\nforged-line";
+    let source = json!({"version":"2.22","children":[
+        {"id":id,"type":"rectangle","width":-1,"height":10}]})
+    .to_string();
+    fs::write(&file, &source).unwrap();
+    let run = |json: bool| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_lazypencil"));
+        command
+            .env("LAZYPENCIL_CONFIG_DIR", temporary.path().join("config"))
+            .env("LAZYPENCIL_DATA_DIR", temporary.path().join("data"))
+            .env("LAZYPENCIL_LOCK_DIR", temporary.path().join("locks"));
+        if json {
+            command.arg("--json");
+        }
+        command.arg("validate").arg(&file).output().unwrap()
+    };
+    let human = run(false);
+    assert_eq!(human.status.code(), Some(4));
+    let stderr = String::from_utf8(human.stderr).unwrap();
+    assert!(
+        !stderr.trim_end_matches('\n').chars().any(char::is_control),
+        "{stderr:?}"
+    );
+    assert!(stderr.contains("日本語\\u{1b}]0;forged-title\\u{7}\\r\\nforged-line"));
+    let structured = run(true);
+    assert_eq!(structured.status.code(), Some(4));
+    let result: Value = serde_json::from_slice(&structured.stdout).unwrap();
+    assert!(result["error"]["message"].as_str().unwrap().contains(id));
+    assert_eq!(fs::read_to_string(file).unwrap(), source);
+}
+
+#[test]
 fn readable_diagnostics_escape_source_controls_and_keep_location_labels_bounded() {
     let error = lazypencil::Error::new("SCRIPT_EXECUTION_FAILED", "Invalid source").details(
         json!({"script_path":"source\u{1b}[31m.js","script_diagnostic":{
