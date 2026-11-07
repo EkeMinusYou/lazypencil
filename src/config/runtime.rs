@@ -404,7 +404,13 @@ impl RuntimeOverrides {
         apply!(browser, selector_state);
         apply!(browser, additional_wait_ms);
         apply!(browser, animation_policy);
-        apply!(browser, network_policy);
+        // A project may restrict networking, but cannot relax the user's denial.
+        if !(origin == "project"
+            && settings.browser.network_policy == PageNetworkPolicy::Offline
+            && self.browser.network_policy == Some(PageNetworkPolicy::Online))
+        {
+            apply!(browser, network_policy);
+        }
         apply!(browser, profile);
         apply!(shader, timeout_ms);
         apply!(shader, launch_timeout_ms);

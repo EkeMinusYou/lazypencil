@@ -9,6 +9,9 @@ use std::{fs, path::PathBuf, process::Command};
 use tempfile::TempDir;
 #[path = "support/fixture.rs"]
 mod fixture_support;
+#[cfg(unix)]
+#[path = "support/page_wait_reference.rs"]
+mod network_fixture;
 
 struct Fixture {
     temp: TempDir,
@@ -511,6 +514,62 @@ fn page_animation_policy_inherits_and_explicit_running_resets_the_user_preferenc
 }
 
 #[test]
+#[cfg(unix)]
+fn user_offline_blocks_inspection_requests_even_when_the_project_requests_online() {
+    let fixture = Fixture::new();
+    let server = network_fixture::Server::new();
+    fs::write(
+        fixture.user.join("config.toml"),
+        "[runtime.browser]\nnetwork_policy='offline'\n",
+    )
+    .unwrap();
+    fs::write(
+        fixture.project.join("lazypencil.toml"),
+        "[runtime.browser]\nnetwork_policy='online'\n",
+    )
+    .unwrap();
+    let source = json!({"version":"2.22","children":[{"id":"image","type":"rectangle","width":1,"height":1,
+        "fill":{"type":"image","url":format!("http://{}/network/http-image/yellow.png", server.address)}}]}).to_string();
+    fs::write(&fixture.document, &source).unwrap();
+    let inspect = || {
+        let output = fixture_support::output(
+            Command::new(env!("CARGO_BIN_EXE_lazypencil"))
+                .env("LAZYPENCIL_CONFIG_DIR", &fixture.user)
+                .env("LAZYPENCIL_DATA_DIR", fixture.temp.path().join("data"))
+                .args(["--json", "inspect"])
+                .arg(&fixture.document),
+            std::time::Duration::from_secs(5),
+        );
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()
+    };
+    let offline = inspect();
+    assert_eq!(server.network_counts().0, 0);
+    assert_eq!(
+        offline["configuration"]["settings"]["runtime"]["browser"]["network_policy"],
+        "offline"
+    );
+    assert_eq!(offline["assets_complete"], false);
+    fs::write(
+        fixture.user.join("config.toml"),
+        "[runtime.browser]\nnetwork_policy='online'\n",
+    )
+    .unwrap();
+    let online = inspect();
+    assert_eq!(
+        server.network_counts().0,
+        1,
+        "The positive control must reach the actual server"
+    );
+    assert_eq!(online["assets_complete"], true);
+    assert_eq!(fs::read_to_string(&fixture.document).unwrap(), source);
+}
+
+#[test]
 fn page_network_policy_is_data_only_inherits_and_rejects_invalid_lower_scopes() {
     let f = Fixture::new();
     assert_eq!(
@@ -548,16 +607,35 @@ fn page_network_policy_is_data_only_inherits_and_rejects_invalid_lower_scopes() 
     let current = f.snapshot().unwrap();
     assert_eq!(
         current.settings.runtime.browser.network_policy,
-        PageNetworkPolicy::Online
+        PageNetworkPolicy::Offline
     );
     assert_eq!(current.settings.runtime.browser.additional_wait_ms, 250);
     assert_eq!(
         current.summary()["runtime_origins"]["browser.network_policy"],
-        "project"
+        "user"
     );
     assert_eq!(
         captured.settings.runtime.browser.network_policy,
         PageNetworkPolicy::Offline
+    );
+    fs::write(
+        f.user.join("config.toml"),
+        "[runtime.browser]\nnetwork_policy='online'\n",
+    )
+    .unwrap();
+    fs::write(
+        f.project.join("lazypencil.toml"),
+        "[runtime.browser]\nnetwork_policy='offline'\n",
+    )
+    .unwrap();
+    let restricted = f.snapshot().unwrap();
+    assert_eq!(
+        restricted.settings.runtime.browser.network_policy,
+        PageNetworkPolicy::Offline
+    );
+    assert_eq!(
+        restricted.summary()["runtime_origins"]["browser.network_policy"],
+        "project"
     );
     for invalid in [
         "[runtime.browser]\nnetwork_policy='private-invalid'\n",
