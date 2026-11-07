@@ -1808,6 +1808,61 @@ fn mcp_document_versions_create_edit_validate_and_restore_without_migration() {
 }
 
 #[test]
+fn shared_reference_expansion_limits_leave_the_mcp_worker_available() {
+    let (temporary, file, data) = fixture();
+    let mut nodes = vec![
+        json!({"id":"000-first","type":"ref","ref":"c40"}),
+        json!({"id":"c0","type":"frame","reusable":true}),
+    ];
+    for index in 1..=40 {
+        nodes.push(
+            json!({"id":format!("c{index}"),"type":"frame","reusable":true,"children":[
+            {"id":format!("a{index}"),"type":"ref","ref":format!("c{}", index-1)},
+            {"id":format!("b{index}"),"type":"ref","ref":format!("c{}", index-1)}]}),
+        );
+    }
+    let original = json!({"version":"2.22","children":nodes}).to_string();
+    fs::write(&file, &original).unwrap();
+    let mut client = Client::start(&file, &data);
+    let result = client.call("validate_document", json!({}));
+    assert_eq!(result["isError"], true);
+    assert!(
+        matches!(
+            result["structuredContent"]["error"]["code"].as_str(),
+            Some("RESOURCE_LIMIT" | "INVALID_DOCUMENT")
+        ),
+        "{result}"
+    );
+    let deep = temporary.path().join("deep.pen");
+    let mut chain = (0..300)
+        .map(|index| {
+            json!({"id":format!("r{index}"),"type":"ref","reusable":true,
+            "ref":format!("r{}", index+1)})
+        })
+        .collect::<Vec<_>>();
+    chain.push(json!({"id":"r300","type":"frame","reusable":true}));
+    fs::write(
+        &deep,
+        json!({"version":"2.22","children":chain}).to_string(),
+    )
+    .unwrap();
+    client.open(&deep);
+    let result = client.call("validate_document", json!({}));
+    assert_eq!(result["isError"], true, "{result}");
+    assert_eq!(
+        result["structuredContent"]["error"]["code"],
+        "INVALID_DOCUMENT"
+    );
+    let healthy = temporary.path().join("healthy.pen");
+    fs::write(&healthy, r#"{"version":"2.22","children":[]}"#).unwrap();
+    client.open(&healthy);
+    assert_eq!(client.data("get_document", json!({}))["node_count"], 0);
+    assert_eq!(client.data("get_history", json!({}))["entries"], json!([]));
+    assert_eq!(fs::read_to_string(&file).unwrap(), original);
+    client.finish();
+}
+
+#[test]
 #[cfg(feature = "rendering")]
 fn large_diagnostic_sets_allow_small_layout_pages_and_png_responses() {
     let (_temp, file, data) = fixture();

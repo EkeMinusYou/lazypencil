@@ -62,6 +62,9 @@ pub fn serve(options: Options) -> Result<()> {
     let (sender, mut receiver) = mpsc::channel::<Job>(16);
     let worker = std::thread::Builder::new()
         .name("lazypencil-document".into())
+        // Bounded scene expansion can reach 128 references and 256 child levels.
+        // Reserve enough stack for debug frames before those guards reject input.
+        .stack_size(16 * 1024 * 1024)
         .spawn(move || -> Result<()> {
             let mut documents = workspace::Workspace::new(options)?;
             #[cfg(feature = "rendering")]
