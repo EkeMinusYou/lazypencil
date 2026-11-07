@@ -24,9 +24,10 @@ cargo build --locked --jobs 2
 ```
 
 On Linux developer hosts, use a fixed cache such as
-`${XDG_CACHE_HOME:-$HOME/.cache}/lazypencil/target`. The environment variable overrides
-checkout-specific Cargo configuration. Reuse one target per toolchain; avoid per-task
-directories. Limit local builds to two jobs and run one build at a time across worktrees.
+`${XDG_CACHE_HOME:-$HOME/.cache}/lazypencil/target`. The repository does not select a
+machine-specific target path. The environment variable also overrides any target
+directory in personal Cargo configuration. Reuse one target per toolchain; avoid
+per-task directories. Limit local builds to two jobs and run one build at a time across worktrees.
 `--no-default-features` builds the portable core; `--no-default-features --features rendering`
 adds image export without the terminal UI. A successful portable-core check does not
 certify a supported Linux application release.

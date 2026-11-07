@@ -1,6 +1,5 @@
 [build]
 jobs = 2
-target-dir = "/Users/mineo/Library/Caches/lazypencil/target"
 
 [env]
 MACOSX_DEPLOYMENT_TARGET = "26.0"
