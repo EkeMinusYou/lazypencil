@@ -587,6 +587,63 @@ fn layout_errors_are_reported_as_invalid_and_cli_returns_a_failure_exit_code() {
 
 #[cfg(feature = "rendering")]
 #[test]
+fn layout_and_export_keep_large_diagnostic_sets_out_of_small_response_pages() {
+    let (_temp, store) = fixture();
+    let children = (0..2000)
+        .map(|index| {
+            json!({"id":format!("child-{index}-{}", "x".repeat(2100)),
+        "type":"rectangle","x":2,"width":2,"height":2})
+        })
+        .collect::<Vec<_>>();
+    write(
+        store.path(),
+        json!({"version":"2.22","children":[
+        {"id":"frame","type":"frame","layout":"none","width":1,"height":1,"children":children}]}),
+    );
+    let (project, snapshot) = service::layout_snapshot(&store, &[], None, None).unwrap();
+    assert!(snapshot.summary().to_string().len() > 4 * 1024 * 1024);
+    let summary = snapshot.response_summary();
+    assert_eq!(summary["total_diagnostics"], 2000);
+    assert_eq!(summary["warning_count"], 2000);
+    assert_eq!(summary["diagnostics_truncated"], true);
+    assert!(summary.to_string().len() < 70 * 1024);
+    let complete_page = service::validation_from_snapshot(
+        &project,
+        &snapshot,
+        &serde_json::from_value(json!({"scope":"layout","limit":1})).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(complete_page["total_diagnostics"], 2000);
+    assert_eq!(complete_page["diagnostics"][0], summary["diagnostics"][0]);
+    for command in ["layout", "render"] {
+        let mut process = Command::new(env!("CARGO_BIN_EXE_lazypencil"));
+        process
+            .args(["--json", command])
+            .arg(store.path())
+            .args(["--node", "frame"]);
+        if command == "layout" {
+            process.args(["--limit", "1"]);
+        } else {
+            process
+                .arg("--output")
+                .arg(store.path().with_extension("png"));
+        }
+        let output = process.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["diagnostics_truncated"], true);
+        assert_eq!(report["total_diagnostics"], 2000);
+        assert_eq!(report["snapshot_id"], snapshot.id);
+        assert!(output.stdout.len() < 100 * 1024);
+    }
+}
+
+#[cfg(feature = "rendering")]
+#[test]
 fn large_layout_diagnostic_sets_remain_paged_without_losing_totals() {
     let (_temp, store) = fixture();
     let children=(0..1001).map(|index|json!({"id":format!("child-{index}"),"type":"rectangle","x":2,"width":2,"height":2})).collect::<Vec<_>>();

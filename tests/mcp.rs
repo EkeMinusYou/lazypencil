@@ -1808,6 +1808,54 @@ fn mcp_document_versions_create_edit_validate_and_restore_without_migration() {
 }
 
 #[test]
+#[cfg(feature = "rendering")]
+fn large_diagnostic_sets_allow_small_layout_pages_and_png_responses() {
+    let (_temp, file, data) = fixture();
+    let children = (0..2000)
+        .map(|index| {
+            json!({"id":format!("child-{index}-{}", "x".repeat(2100)),
+        "type":"rectangle","x":2,"width":2,"height":2})
+        })
+        .collect::<Vec<_>>();
+    fs::write(
+        &file,
+        json!({"version":"2.22","children":[
+        {"id":"frame","type":"frame","layout":"none","width":1,"height":1,"children":children}]})
+        .to_string(),
+    )
+    .unwrap();
+    let mut client = Client::start(&file, &data);
+    let before = client.data("get_document", json!({}));
+    let layout = client.data(
+        "get_layout",
+        json!({"expected_revision":before["revision"],
+        "expected_dependency_revision":before["dependency_revision"],"node_id":"frame","limit":1}),
+    );
+    assert_eq!(layout["nodes"].as_array().unwrap().len(), 1);
+    assert_eq!(layout["total_diagnostics"], 2000);
+    assert_eq!(layout["diagnostics_truncated"], true);
+    let rendered = client.call("render", json!({"expected_revision":before["revision"],
+        "expected_dependency_revision":before["dependency_revision"],"snapshot_id":layout["snapshot_id"],"node_id":"frame"}));
+    assert_ne!(rendered["isError"], true, "{rendered}");
+    assert!(
+        rendered["content"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|block| block["type"] == "image")
+    );
+    assert_eq!(rendered["structuredContent"]["total_diagnostics"], 2000);
+    let page = client.data(
+        "validate_document",
+        json!({"scope":"layout","snapshot_id":layout["snapshot_id"],"limit":1}),
+    );
+    assert_eq!(page["diagnostics"].as_array().unwrap().len(), 1);
+    assert_eq!(page["total_diagnostics"], 2000);
+    assert!(page["next_cursor"].is_string());
+    client.finish();
+}
+
+#[test]
 fn real_stdio_server_lists_typed_tools_and_edits_one_bound_document() {
     let (temp, file, data) = fixture();
     let outside = temp.path().join("outside.pen");

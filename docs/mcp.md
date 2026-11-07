@@ -203,6 +203,15 @@ Retained IDs belong to the connection that produced them and may be evicted or e
 
 Diagnostics use `limit` 1..500 (default 100) and `next_cursor`; the cursor binds to the requested scope and calculation, and a new page size is allowed. For layout pages, reuse the returned `snapshot_id`. Responses retain the shared 4 MiB budget. Cancellation reaches code execution and subsequent verification without poisoning retained calculations.
 
+Layout and PNG responses include a diagnostic excerpt of at most 100 entries and
+64 KiB of diagnostic data, plus document-wide `total_diagnostics`, `error_count`,
+`warning_count`, and `diagnostics_truncated`. Node selection and page size do not
+change these totals. Use layout validation with the returned `snapshot_id` and
+its diagnostic cursor to read every diagnostic; a truncated excerpt is not a
+complete validation report. CLI `layout` and `render` use the same excerpt limits;
+`validate --scope layout` provides the complete paginated diagnostics.
+
+
 ```sh
 lazypencil validate design.pen
 lazypencil validate design.pen --scope layout --limit 100

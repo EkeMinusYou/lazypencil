@@ -1129,7 +1129,7 @@ fn run_layout(store: &Store, options: &Layout) -> Result<Value> {
         }
     }
     let total = records.len();
-    let mut result = snapshot.summary();
+    let mut result = snapshot.response_summary();
     result["nodes"] = json!(records.into_iter().take(options.limit).collect::<Vec<_>>());
     result["total_matches"] = json!(total);
     result["truncated"] = json!(total > options.limit);
@@ -1240,7 +1240,7 @@ fn run_render(store: &Store, options: &Render) -> Result<Value> {
         ));
     }
     store::atomic_replace(&output, &rendered.png)?;
-    let mut result = snapshot.summary();
+    let mut result = snapshot.response_summary();
     result["output"] = json!(output);
     result["width"] = json!(rendered.width);
     result["height"] = json!(rendered.height);

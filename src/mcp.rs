@@ -895,7 +895,7 @@ impl DocumentWorker {
             args.cursor.as_deref(),
             "nodes",
         )?;
-        let mut result = snapshot.summary();
+        let mut result = snapshot.response_summary();
         result
             .as_object_mut()
             .expect("summary object")
@@ -941,7 +941,7 @@ impl DocumentWorker {
                 "PNG exceeds 8 MiB; render a smaller region or reduce scale",
             ));
         }
-        let mut metadata = cached.layout.summary();
+        let mut metadata = cached.layout.response_summary();
         metadata["width"] = json!(image.width);
         metadata["height"] = json!(image.height);
         metadata["region"] = json!(image.region);

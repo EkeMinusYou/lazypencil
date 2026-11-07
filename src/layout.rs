@@ -83,6 +83,43 @@ impl LayoutSnapshot {
         result
     }
 
+    /// Bound ancillary diagnostics independently of the selected node page or PNG.
+    /// Full diagnostic pages remain available through layout validation.
+    pub fn response_summary(&self) -> Value {
+        let mut result = self.metadata();
+        let mut diagnostics = Vec::new();
+        let mut remaining = 64 * 1024;
+        let (mut total, mut errors, mut warnings) = (0usize, 0usize, 0usize);
+        let mut truncated = false;
+        for diagnostic in self.items.iter().flat_map(|item| &item.record.diagnostics) {
+            total += 1;
+            errors += usize::from(diagnostic.severity == "error");
+            warnings += usize::from(diagnostic.severity == "warning");
+            if truncated
+                || diagnostics.len() >= 100
+                || crate::query::check_response_size(
+                    diagnostic,
+                    remaining,
+                    None,
+                    "Diagnostic excerpt limit",
+                )
+                .is_err()
+            {
+                truncated = true;
+                continue;
+            }
+            let value = serde_json::to_value(diagnostic).expect("Serializable diagnostic");
+            remaining -= crate::query::serialized_size(&value);
+            diagnostics.push(value);
+        }
+        result["diagnostics"] = json!(diagnostics);
+        result["total_diagnostics"] = json!(total);
+        result["error_count"] = json!(errors);
+        result["warning_count"] = json!(warnings);
+        result["diagnostics_truncated"] = json!(truncated);
+        result
+    }
+
     pub fn records(&self) -> Vec<&LayoutRecord> {
         self.items.iter().map(|i| &i.record).collect()
     }
