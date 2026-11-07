@@ -118,17 +118,24 @@ pub fn from_rgba8_with_limits(
     limits: DecodeLimits,
 ) -> Result<NormalizedImage> {
     limits.validate()?;
-    if width == 0
-        || height == 0
-        || (width as u64).saturating_mul(height as u64) > limits.max_pixels
-        || width
-            .checked_mul(height)
-            .and_then(|pixels| pixels.checked_mul(4))
-            != Some(rgba.len())
-    {
+    if width == 0 || height == 0 {
         return Err(invalid(format!(
-            "Clipboard pixels must be nonempty RGBA8 within {} pixels",
+            "Clipboard image has empty dimensions: {width}x{height}"
+        )));
+    }
+    let pixels = (width as u64).saturating_mul(height as u64);
+    if pixels > limits.max_pixels {
+        return Err(invalid(format!(
+            "Clipboard image {width}x{height} has {pixels} pixels; limit is {}",
             limits.max_pixels
+        )));
+    }
+    // The validated pixel limit also bounds the RGBA byte count on supported targets.
+    let expected_bytes = pixels as usize * 4;
+    if rgba.len() != expected_bytes {
+        return Err(invalid(format!(
+            "Clipboard RGBA8 length mismatch for {width}x{height}: expected {expected_bytes} bytes, received {}",
+            rgba.len()
         )));
     }
     let info = skia_safe::ImageInfo::new(
