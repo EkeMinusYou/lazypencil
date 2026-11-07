@@ -198,8 +198,9 @@ so a missing release cannot leave subsequent drags in pan mode.
 
 [Herdr App 0.1.12](https://github.com/herdrdev/herdr-app/blob/v0.1.12/src/terminal.rs)
 omits mouse modifiers when forwarding directional scrolling. Ctrl+scroll therefore
-arrives as ordinary scrolling there. Use the view menu's wheel pan/zoom switch or
-the keyboard zoom keys instead.
+arrives as ordinary scrolling there. The native macOS bridge described below
+preserves these modifiers for precise scrolling. Without that bridge, use the view
+menu's wheel pan/zoom switch or the keyboard zoom keys instead.
 
 For local input diagnosis, launch with
 `LAZYPENCIL_PROFILE_INPUT=owned-local-measurement` and redirect stderr to a file.
@@ -207,25 +208,39 @@ The bounded trace records received pointer kinds, cell positions, modifiers, hit
 targets and image presentation timing; it does not record prompt text. Tracing is
 disabled by default.
 
-For native macOS pinch, open the command palette (`Alt+p`) and choose **Enable
-pinch zoom…**. Allow the requested application in macOS Accessibility settings and
-retry the action. Move the pointer onto Preview, then pinch. The OS bridge reads
-only magnification events and claims them only at a canvas position reported by
-this terminal in the foreground application; other panes and applications retain
-their gestures. Claimed gestures do not also resize the terminal font. The bridge
-is independent of terminal brands and stops when the TUI exits. When access has
-already been granted, local sessions start it automatically. `native_pinch = false`
-disables the bridge; SSH sessions do not start it. PTY regression tests set
+For native macOS pinch and precise scrolling, open the command palette (`Alt+p`)
+and choose **Enable native gestures…**. Allow the requested application in macOS
+Accessibility settings and retry the action. Move the pointer onto Preview, then
+pinch or scroll with two fingers. The OS bridge reads magnification and precise
+scrolling events, retaining
+both scroll axes, small deltas, modifiers and the system's momentum. Scroll points
+are converted to display pixels using the display's backing scale. Ordinary mouse
+wheel detents continue through the terminal.
+
+The bridge claims input only inside the canvas calibrated from this terminal's
+pointer reports in the foreground application; other panes and applications retain
+their gestures. Calibration accounts for terminal-cell size and display scale, so
+small pointer movements between cell reports do not invalidate a pinch. Because a
+cell report does not include the exact offset inside that cell, the bridge uses a
+conservative inner canvas boundary; at an edge, move the pointer slightly inward
+if the terminal has not yet reported its new cell. Accepted native scroll packets
+are suppressed before the terminal can send a second, rounded copy. Claimed
+gestures do not also resize the terminal font. The bridge is independent of terminal
+brands and stops when the TUI exits. When access has already been granted, local
+sessions start it automatically. `native_pinch = false`
+disables native pinch, and `native_scroll = false` disables precise native scrolling.
+SSH sessions do not start the bridge. PTY regression tests set
 `LAZYPENCIL_DISABLE_NATIVE_INPUT=1` to isolate themselves from desktop input.
 
 Other platforms currently use terminal-forwarded gestures (for example pinch
 translated to Ctrl+wheel). The cell-based terminal protocol itself has no native
 pinch event, fractional scroll deltas, gesture phases, device identity, or Cmd
-mouse modifier. Trackpad scrolling uses the same directional events as a wheel;
-no additional application momentum or acceleration is added. Terminal font zoom and terminal-specific mouse
-bindings remain outside the application. Shift-based text selection/copy belongs to
-the terminal; in particular, some terminals intercept Shift+scroll before forwarding
-it. tmux/SSH and physical device combinations need their own compatibility checks.
+mouse modifier. Without the native macOS bridge, trackpad scrolling uses the same
+directional events as a wheel. No additional application momentum or acceleration
+is added. Terminal font zoom and terminal-specific mouse bindings remain outside
+the application. Shift-based text selection/copy belongs to the terminal; in
+particular, some terminals intercept Shift+scroll before forwarding it. tmux/SSH
+and physical device combinations need their own compatibility checks.
 
 User-only settings can disable capture or change the scroll behavior:
 
@@ -234,17 +249,19 @@ User-only settings can disable capture or change the scroll behavior:
 enabled = true
 show_controls = false
 native_pinch = true
+native_scroll = true
 wheel_zoom = false
 scroll_step = 2
 zoom_step = 1.1
 ```
 
 `wheel_zoom = true` makes unmodified vertical scrolling zoom and Ctrl+scroll pan,
-matching a mouse-first navigation preference. It also affects trackpads because the
-terminal does not identify the device. `scroll_step` accepts 1–20: list/text rows or
-terminal-cell units for camera pan. `zoom_step` accepts 1.01–2.0. Preferences are read
-at startup; the Menu wheel switch lasts only for the invocation. `enabled = false`
-leaves pointer handling to the terminal. Mouse settings are shown in user config
+matching a mouse-first navigation preference. This also applies to native precise
+scrolling. `scroll_step` accepts 1–20: list/text rows or terminal-cell units for camera
+pan through the terminal. Native precise pan uses the actual scroll distance; its
+zoom uses the equivalent distance for one terminal scroll step. `zoom_step` accepts
+1.01–2.0. Preferences are read at startup; the Menu wheel switch lasts only for the
+invocation. `enabled = false` leaves pointer handling to the terminal. Mouse settings are shown in user config
 and its schema and cannot be set by a project.
 
 Playback now defaults to `p` in Preview; Nodes Space still toggles branches and

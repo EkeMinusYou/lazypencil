@@ -13,6 +13,8 @@ fn workspace_commands_keep_legacy_names_and_literal_queue_text() {
         ("clear-images", Action::ClearImages),
         ("open-preview", Action::OpenPreview),
         ("pause", Action::Pause),
+        ("enable-pinch", Action::EnablePinch),
+        ("enable-native-input", Action::EnablePinch),
         ("commands", Action::Commands),
         ("help", Action::Help),
         ("quit", Action::Quit),

@@ -254,7 +254,7 @@ struct App {
     mouse: crate::config::keys::MouseSettings,
     pointer: mouse::Pointer,
     selection: selection::Selection,
-    native_pinch: gestures::Pinch,
+    native_input: gestures::Input,
     editor: TextArea<'static>,
     focus: Focus,
     nodes_collapsed: bool,
@@ -338,7 +338,7 @@ impl App {
             mouse: Default::default(),
             pointer: Default::default(),
             selection: Default::default(),
-            native_pinch: Default::default(),
+            native_input: Default::default(),
             editor,
             focus,
             nodes_collapsed: false,
@@ -406,10 +406,10 @@ impl App {
             preview_control.client(self.conversation.store().path(), self.conversation.id()),
         );
         let mut events = events::Events::new()?;
-        if self.mouse.enabled && self.mouse.native_pinch {
-            self.native_pinch.start(false);
+        if self.mouse.enabled && (self.mouse.native_pinch || self.mouse.native_scroll) {
+            self.native_input.start(false);
         }
-        screen.pointer_motion(self.native_pinch.active())?;
+        screen.pointer_motion(self.native_input.active())?;
         self.camera_id = screen.camera_image_id();
         self.presentation.rectangular(
             screen.picker.protocol_type() == ratatui_image::picker::ProtocolType::Kitty
@@ -484,7 +484,7 @@ impl App {
             let camera_settle_deadline = self.camera_settle_deadline;
             let activity_deadline = (self.conversation.active() && !self.has_modal())
                 .then(|| Instant::now() + Duration::from_millis(200));
-            let pinch = self.native_pinch.shared.clone();
+            let gestures = self.native_input.shared.clone();
             tokio::select! {
                 biased;
                 output = worker.next_presentation() => {
@@ -493,8 +493,12 @@ impl App {
                         Err(error) => self.set_preview_error_status(&error),
                     }
                 },
-                event = pinch.next() => {
-                    if let Err(error) = self.pinch_event(event, &screen.picker, worker) { self.error(error); }
+                // Publish ready frames even while native gestures keep arriving.
+                output = worker.next() => {
+                    self.accept_interactive_preview(output, worker, &screen.picker);
+                },
+                event = gestures.next() => {
+                    if let Err(error) = self.gesture_event(event, &screen.picker, worker) { self.error(error); }
                 },
                 _ = async {
                     if let Some(deadline) = activity_deadline {
@@ -529,9 +533,6 @@ impl App {
                     let incoming = incoming.ok_or_else(|| Error::new("PREVIEW_UNAVAILABLE", "Preview control listener stopped"))?;
                     self.receive_preview_control(incoming, worker, &screen.picker);
                     self.dirty = true;
-                },
-                output = worker.next() => {
-                    self.accept_interactive_preview(output, worker, &screen.picker);
                 },
                 _ = async {
                     if let Some(deadline) = camera_settle_deadline {
@@ -659,7 +660,7 @@ impl App {
                     self.finish_camera_gesture(worker);
                 }
                 screen.preview_keys(self.focus == Focus::Preview && !self.has_modal())?;
-                screen.pointer_motion(self.native_pinch.active())?;
+                screen.pointer_motion(self.native_input.active())?;
                 self.pointer.clear();
                 self.dirty = true;
             }
@@ -677,7 +678,7 @@ impl App {
                     screen.redraw();
                 }
                 screen.preview_keys(self.focus == Focus::Preview && !self.has_modal())?;
-                screen.pointer_motion(self.native_pinch.active())?;
+                screen.pointer_motion(self.native_input.active())?;
             }
             Event::Paste(text)
                 if self.permissions.is_empty()
@@ -705,14 +706,14 @@ impl App {
                 self.dirty = true;
             }
             Event::FocusLost => {
-                self.native_pinch.cancel();
+                self.native_input.cancel();
                 self.selection.abort();
                 self.pointer.cancel();
                 self.refresh_selection_presentation(&screen.picker, worker)?;
                 self.finish_camera_gesture(worker);
             }
             Event::Resize(_, _) => {
-                self.native_pinch.cancel();
+                self.native_input.cancel();
                 self.selection.abort();
                 self.pointer.clear();
                 self.finish_camera_gesture(worker);
@@ -1214,7 +1215,7 @@ impl App {
         text.push_str("\nSaved logs: arrows select/scroll; Enter opens; n/p pages\nu: select local session; N: new local conversation\nv: raw/formatted; Backspace returns; r refreshes; Esc closes\nCtrl+C: cancel active work; exit when idle\nDialogs keep their displayed keys; Esc closes help\nHelp: PgUp/PgDn or arrows scroll; Home/End jump\n\nClipboard access happens only on explicit paste. SSH reads the remote host's clipboard. Image protocols do not provide clipboard access.");
         text.push_str(&format!("\nDiagnostics: {} / {} select; {} reveals and fits the node\n{} / {} scroll details; {} returns to Nodes\n", label(Nav::PreviousItem), label(Nav::NextItem), label(Nav::ActivateNode), label(Nav::NodePageUp), label(Nav::NodePageDown), label(Nav::ClearSelection)));
         if self.mouse.enabled {
-            text.push_str("Preview: click selects a shape; ordinary left drag selects fully enclosed shapes; Shift adds/toggles; Esc clears selection\nmacOS: Enable pinch zoom in the command palette (Accessibility access required once)\n");
+            text.push_str("Preview: click selects a shape; ordinary left drag selects fully enclosed shapes; Shift adds/toggles; Esc clears selection\nmacOS: Enable native gestures in the command palette (Accessibility access required once)\n");
         }
         text
     }
@@ -1506,7 +1507,7 @@ impl App {
         let scope = self.pointer_scope();
         if self.pointer.scope != scope {
             self.selection.abort();
-            self.native_pinch.cancel();
+            self.native_input.cancel();
             self.pointer.cancel();
             self.pointer.reset_modal_list();
             self.pointer.scope = scope;
@@ -1516,6 +1517,7 @@ impl App {
         let area = frame.area();
         frame.render_widget(Block::default().style(theme::base()), area);
         if area.width < 50 || area.height < 16 {
+            self.native_input.cancel();
             self.pointer.clear();
             frame.render_widget(
                 Paragraph::new(
@@ -1819,6 +1821,7 @@ impl App {
             );
         }
         self.pointer.finish();
+        self.native_input.retain_canvas(self.gesture_canvas());
         let modal = self.help || self.modal.is_some() || !self.permissions.is_empty();
         let overlay = self
             .pointer

@@ -580,6 +580,88 @@ fn pinch_zoom_preserves_the_pointer_anchor_and_does_not_select_or_edit() {
 }
 
 #[test]
+fn precise_trackpad_scroll_preserves_fractional_diagonal_movement_and_the_draft() {
+    runtime().block_on(async {
+        let temp = TempDir::new().unwrap();
+        let (mut app, worker, picker) = mouse_fixture(&temp).await;
+        app.insert_text("日本語の下書き");
+        let document = std::fs::read(app.conversation.store().path()).unwrap();
+        let canvas = app.pointer.area(mouse::Target::Canvas).unwrap();
+        let position = ratatui::layout::Position::new(canvas.x + 4, canvas.y + 4);
+        app.effective_camera();
+        let before = app.view;
+        for index in 0..16 {
+            app.gesture_event(gestures::GestureEvent::Scroll(gestures::ScrollEvent {
+                pixels: [0.125, -0.25], position, modifiers: KeyModifiers::NONE, finished: index == 15,
+            }), &picker, &worker).unwrap();
+        }
+        let scale = f64::from(before.zoom.unwrap());
+        assert!((app.view.center[0] - before.center[0] - 2.0 / scale).abs() < 1e-9);
+        assert!((app.view.center[1] - before.center[1] + 4.0 / scale).abs() < 1e-9);
+        assert_eq!(app.view.zoom, before.zoom);
+        assert!(app.camera_settle_deadline.is_none());
+        assert_eq!(app.focus, Focus::Prompt);
+        assert_eq!(app.editor.lines(), &["日本語の下書き"]);
+        assert!(app.selection.ids.is_empty());
+        assert_eq!(std::fs::read(app.conversation.store().path()).unwrap(), document);
+        app.conversation.close().await.unwrap();
+        worker.cancel();
+    });
+}
+
+#[test]
+fn precise_trackpad_scroll_keeps_zoom_anchor_modifiers_and_wheel_preferences() {
+    runtime().block_on(async {
+        let temp = TempDir::new().unwrap();
+        let (mut app, worker, picker) = mouse_fixture(&temp).await;
+        let canvas = app.pointer.area(mouse::Target::Canvas).unwrap();
+        let position = ratatui::layout::Position::new(canvas.x + 4, canvas.y + 4);
+        app.effective_camera();
+        let font = picker.font_size();
+        let offset = [
+            (f64::from(position.x) + 0.5 - f64::from(canvas.x) - f64::from(canvas.width) / 2.0) * f64::from(font.width),
+            (f64::from(position.y) + 0.5 - f64::from(canvas.y) - f64::from(canvas.height) / 2.0) * f64::from(font.height),
+        ];
+        for wheel_zoom in [false, true] {
+            app.mouse.wheel_zoom = wheel_zoom;
+            let modifiers = if wheel_zoom { KeyModifiers::NONE } else { KeyModifiers::CONTROL };
+            let before = app.view;
+            app.gesture_event(gestures::GestureEvent::Scroll(gestures::ScrollEvent {
+                pixels: [0.0, -0.25], position, modifiers, finished: false,
+            }), &picker, &worker).unwrap();
+            assert!(app.view.zoom.unwrap() > before.zoom.unwrap());
+            assert!(app.view.zoom.unwrap() < before.zoom.unwrap() * app.mouse.zoom_step);
+            for (axis, offset) in offset.into_iter().enumerate() {
+                assert!((before.center[axis] + offset / f64::from(before.zoom.unwrap())
+                    - app.view.center[axis] - offset / f64::from(app.view.zoom.unwrap())).abs() < 1e-6);
+            }
+            let before = app.view;
+            let modifiers = if wheel_zoom { KeyModifiers::CONTROL | KeyModifiers::SHIFT } else { KeyModifiers::SHIFT };
+            app.gesture_event(gestures::GestureEvent::Scroll(gestures::ScrollEvent {
+                pixels: [0.0, 0.25], position, modifiers, finished: false,
+            }), &picker, &worker).unwrap();
+            assert!(app.view.center[0] > before.center[0]);
+            assert_eq!(app.view.center[1], before.center[1]);
+            assert_eq!(app.view.zoom, before.zoom);
+        }
+        let before = app.view;
+        app.mouse.native_scroll = false;
+        app.gesture_event(gestures::GestureEvent::Scroll(gestures::ScrollEvent {
+            pixels: [10.0, 10.0], position, modifiers: KeyModifiers::NONE, finished: false,
+        }), &picker, &worker).unwrap();
+        assert_eq!(app.view, before);
+        app.mouse.native_scroll = true;
+        app.gesture_event(gestures::GestureEvent::Scroll(gestures::ScrollEvent {
+            pixels: [10.0, 10.0], position: ratatui::layout::Position::new(0, 0),
+            modifiers: KeyModifiers::NONE, finished: false,
+        }), &picker, &worker).unwrap();
+        assert_eq!(app.view, before);
+        app.conversation.close().await.unwrap();
+        worker.cancel();
+    });
+}
+
+#[test]
 fn mouse_button_click_survives_unrelated_geometry_changes_but_not_a_moved_target() {
     use crossterm::event::{MouseButton,MouseEventKind as M};
     let mut pointer=mouse::Pointer::default();

@@ -14,7 +14,7 @@ enum Requirement {
     CompletePreview,
     Playable,
     Pointer,
-    Pinch,
+    NativeInput,
 }
 
 #[derive(Debug)]
@@ -84,8 +84,8 @@ commands! {
         "theme", [], "[auto|dark|light|monochrome]", 0, 1, Always;
     ViewControls, "View", "View controls…", "Open view controls, including the temporary wheel pan/zoom switch.",
         "view-controls", [], "", 0, 0, Pointer;
-    EnablePinch, "View", "Enable pinch zoom…", "Enable native macOS pinch input; grant Accessibility access if requested.",
-        "enable-pinch", [], "", 0, 0, Pinch;
+    EnablePinch, "View", "Enable native gestures…", "Enable macOS pinch zoom and precise scrolling; grant Accessibility access if requested.",
+        "enable-pinch", ["enable-native-input"], "", 0, 0, NativeInput;
     Checkpoints, "Checkpoints", "Browse and restore checkpoints…", "Browse committed edits; review a checkpoint before restoring it.",
         "checkpoints", ["history"], "", 0, 0, Checkpoints;
     Commands, "General", "Command palette", "Browse workspace actions by category.",
@@ -280,12 +280,14 @@ impl App {
             }
             CompletePreview => self.export_unavailable().map(|(_, reason)| reason),
             Playable => self.playback_unavailable(),
-            Pointer | Pinch if !self.mouse.enabled => {
+            Pointer | NativeInput if !self.mouse.enabled => {
                 Some("Pointer input is disabled in user settings")
             }
-            Pinch if !self.mouse.native_pinch => Some("Pinch input is disabled in user settings"),
-            Pinch if !cfg!(target_os = "macos") || std::env::var_os("SSH_CONNECTION").is_some() => {
-                Some("Native pinch input requires a local macOS session")
+            NativeInput if !self.mouse.native_pinch && !self.mouse.native_scroll => {
+                Some("Native gestures are disabled in user settings")
+            }
+            NativeInput if !cfg!(target_os = "macos") || std::env::var_os("SSH_CONNECTION").is_some() => {
+                Some("Native gestures require a local macOS session")
             }
             _ => None,
         }
@@ -399,12 +401,12 @@ impl App {
             }
             Action::ViewControls => self.pointer.more = true,
             Action::EnablePinch => {
-                let status = if self.native_pinch.start(true) {
-                    "Pinch zoom enabled"
-                } else if !self.native_pinch.authorized() {
-                    "Pinch zoom needs macOS Accessibility access; allow the requested app in System Settings and retry"
+                let status = if self.native_input.start(true) {
+                    "Native gestures enabled"
+                } else if !self.native_input.authorized() {
+                    "Native gestures need macOS Accessibility access; allow the requested app in System Settings and retry"
                 } else {
-                    "Cannot start native pinch input; restart the TUI after allowing Accessibility access"
+                    "Cannot start native gesture input; restart the TUI after allowing Accessibility access"
                 };
                 self.set_status(status.into());
             }

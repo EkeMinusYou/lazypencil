@@ -478,6 +478,18 @@ impl App {
         }
     }
 
+    pub(super) fn gesture_canvas(&self) -> Option<Rect> {
+        (self.mouse.enabled
+            && !self.has_modal()
+            && self.focus != Focus::Attachments
+            && self
+                .preview
+                .as_ref()
+                .is_some_and(|preview| !preview.attachment))
+        .then(|| self.pointer.area(Target::Canvas))
+        .flatten()
+    }
+
     fn zoom_pointer(
         &mut self,
         factor: f32,
@@ -511,6 +523,71 @@ impl App {
         self.request_camera_navigation(worker, picker)
     }
 
+    pub(super) fn gesture_event(
+        &mut self,
+        event: gestures::GestureEvent,
+        picker: &graphics::Backend,
+        worker: &Worker,
+    ) -> Result<()> {
+        match event {
+            gestures::GestureEvent::Pinch(event) => self.pinch_event(event, picker, worker),
+            gestures::GestureEvent::Scroll(event) => {
+                self.precise_scroll_event(event, picker, worker)
+            }
+        }
+    }
+
+    fn precise_scroll_event(
+        &mut self,
+        event: gestures::ScrollEvent,
+        picker: &graphics::Backend,
+        worker: &Worker,
+    ) -> Result<()> {
+        if !self.mouse.enabled
+            || !self.mouse.native_scroll
+            || self.has_modal()
+            || self.focus == Focus::Attachments
+            || self.pointer.at(event.position) != Some(Target::Canvas)
+            || self
+                .preview
+                .as_ref()
+                .is_none_or(|preview| preview.attachment)
+            || event.pixels.iter().any(|value| !value.is_finite())
+        {
+            return Ok(());
+        }
+        let [mut x, mut y] = event.pixels;
+        if x != 0.0 || y != 0.0 {
+            self.input_profile.input("scroll", KeyEventKind::Press);
+            self.pointer.press = None;
+            self.effective_camera();
+            if y != 0.0 && (event.modifiers.contains(KeyModifiers::CONTROL) ^ self.mouse.wheel_zoom)
+            {
+                let step = f64::from(picker.font_size().height) * f64::from(self.mouse.scroll_step);
+                let factor = f64::from(self.mouse.zoom_step).powf(-y / step);
+                self.zoom_pointer(
+                    factor.clamp(0.000001, 1_000_000.0) as f32,
+                    Some(event.position),
+                    picker,
+                    worker,
+                )?;
+                y = 0.0;
+            } else if event.modifiers.contains(KeyModifiers::SHIFT) {
+                x += y;
+                y = 0.0;
+            }
+            if x != 0.0 || y != 0.0 {
+                self.view.pan([x, y]);
+                self.request_camera_navigation(worker, picker)?;
+            }
+            self.dirty = true;
+        }
+        if event.finished {
+            self.finish_camera_gesture(worker);
+        }
+        Ok(())
+    }
+
     pub(super) fn pinch_event(
         &mut self,
         event: gestures::PinchEvent,
@@ -518,7 +595,9 @@ impl App {
         worker: &Worker,
     ) -> Result<()> {
         if !self.mouse.enabled
+            || !self.mouse.native_pinch
             || self.has_modal()
+            || self.focus == Focus::Attachments
             || self.pointer.at(event.position) != Some(Target::Canvas)
         {
             return Ok(());
@@ -570,9 +649,13 @@ impl App {
         }
         let position = Position::new(event.column, event.row);
         let target = self.pointer.at(position);
-        self.native_pinch.observe_pointer(
+        self.native_input.observe_pointer(
             position,
-            target == Some(Target::Canvas) && !self.has_modal(),
+            (target == Some(Target::Canvas))
+                .then(|| self.gesture_canvas())
+                .flatten(),
+            picker.font_size(),
+            &self.mouse,
         );
         let scope_valid = self.pointer.scope == self.pointer_scope();
         self.input_profile

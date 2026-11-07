@@ -57,6 +57,7 @@ fn mouse_settings_are_user_owned_and_reserve_preview_space_only_when_enabled() {
     assert_eq!(shown["settings"]["tui"]["mouse"]["enabled"], true);
     assert_eq!(shown["settings"]["tui"]["mouse"]["show_controls"], false);
     assert_eq!(shown["settings"]["tui"]["mouse"]["native_pinch"], true);
+    assert_eq!(shown["settings"]["tui"]["mouse"]["native_scroll"], true);
     assert_eq!(shown["settings"]["tui"]["mouse"]["wheel_zoom"], false);
     assert_eq!(
         shown["settings"]["tui"]["navigation"]["play_pause"],
@@ -64,13 +65,15 @@ fn mouse_settings_are_user_owned_and_reserve_preview_space_only_when_enabled() {
     );
     let schema = f.data(&["config", "schema", "--user"]);
     assert!(schema.to_string().contains("MouseSettings"));
-    f.settings("[tui.mouse]\nenabled=false\nwheel_zoom=true\nscroll_step=3\nzoom_step=1.2\n[tui.navigation]\nplay_pause=['Space']\n");
+    f.settings("[tui.mouse]\nenabled=false\nnative_scroll=false\nwheel_zoom=true\nscroll_step=3\nzoom_step=1.2\n[tui.navigation]\nplay_pause=['Space']\n");
     let shown = f.data(&["config", "show", "--user"]);
     assert_eq!(
         shown["settings"]["tui"]["navigation"]["play_pause"],
         json!(["Space"])
     );
     assert_eq!(shown["settings"]["tui"]["mouse"]["scroll_step"], 3);
+    assert_eq!(shown["settings"]["tui"]["mouse"]["native_scroll"], false);
+    assert_eq!(shown["settings"]["tui"]["mouse"]["native_pinch"], true);
     for settings in [
         "[tui.mouse]\nscroll_step=0\n",
         "[tui.mouse]\nscroll_step=21\n",

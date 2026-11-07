@@ -9,23 +9,113 @@ pub(super) struct PinchEvent {
     pub position: Position,
     pub finished: bool,
 }
+#[derive(Clone, Copy, Debug)]
+pub(super) struct ScrollEvent {
+    pub pixels: [f64; 2],
+    pub position: Position,
+    pub modifiers: crossterm::event::KeyModifiers,
+    pub finished: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) enum GestureEvent {
+    Pinch(PinchEvent),
+    Scroll(ScrollEvent),
+}
+
+impl GestureEvent {
+    fn merge(&mut self, next: Self) -> bool {
+        match (self, next) {
+            (Self::Pinch(previous), Self::Pinch(next))
+                if !previous.finished && previous.position == next.position =>
+            {
+                previous.factor = (previous.factor * next.factor).clamp(0.000001, 1_000_000.0);
+                previous.finished = next.finished;
+            }
+            (Self::Scroll(previous), Self::Scroll(next))
+                if !previous.finished
+                    && previous.position == next.position
+                    && previous.modifiers == next.modifiers =>
+            {
+                let pixels = std::array::from_fn(|axis| previous.pixels[axis] + next.pixels[axis]);
+                if pixels.iter().any(|value| !value.is_finite()) {
+                    return false;
+                }
+                previous.pixels = pixels;
+                previous.finished = next.finished;
+            }
+            _ => return false,
+        }
+        true
+    }
+}
+
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 #[derive(Clone, Copy)]
 struct Pointer {
     position: Position,
     screen: [f64; 2],
     host: i32,
+    canvas: ratatui::layout::Rect,
+    cell: [f64; 2],
+    scale: f64,
+    pinch: bool,
+    scroll: bool,
 }
+
+impl Pointer {
+    fn locate(self, screen: [f64; 2], host: i32) -> Option<Position> {
+        if host <= 0 || host != self.host || !self.canvas.contains(self.position) {
+            return None;
+        }
+        let mut position = [self.position.x, self.position.y];
+        let bounds = [
+            (self.canvas.left(), self.canvas.right()),
+            (self.canvas.top(), self.canvas.bottom()),
+        ];
+        for axis in 0..2 {
+            if !screen[axis].is_finite()
+                || !self.screen[axis].is_finite()
+                || !self.cell[axis].is_finite()
+                || self.cell[axis] <= 0.0
+            {
+                return None;
+            }
+            let delta = (screen[axis] - self.screen[axis]) / self.cell[axis];
+            let (start, end) = bounds[axis];
+            // The terminal reports a cell, not the pointer's offset within it.
+            // Use the intersection of all possible canvas bounds, so a stale
+            // cell report never expands ownership into a neighboring pane.
+            if !delta.is_finite()
+                || delta < f64::from(start) - f64::from(position[axis])
+                || delta > f64::from(end - 1) - f64::from(position[axis])
+            {
+                return None;
+            }
+            position[axis] = (f64::from(position[axis]) + delta).round() as u16;
+        }
+        Some(Position::new(position[0], position[1]))
+    }
+}
+
 #[derive(Default)]
 pub(super) struct Shared {
     pointer: Mutex<Option<Pointer>>,
-    pending: Mutex<Option<PinchEvent>>,
+    pending: Mutex<std::collections::VecDeque<GestureEvent>>,
     wake: Notify,
 }
 impl Shared {
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-    fn receive(&self, delta: f64, screen: [f64; 2], host: i32, finished: bool) -> bool {
-        if !delta.is_finite() || !(-0.99..=10.0).contains(&delta) {
+    fn receive(
+        &self,
+        kind: u32,
+        delta: [f64; 2],
+        screen: [f64; 2],
+        host: i32,
+        modifiers: u32,
+        finished: bool,
+    ) -> bool {
+        if delta.iter().any(|value| !value.is_finite()) {
             return false;
         }
         let Ok(pointer) = self.pointer.lock() else {
@@ -34,36 +124,51 @@ impl Shared {
         let Some(pointer) = *pointer else {
             return false;
         };
-        // Only claim a gesture at a position reported by this TTY, in the same
-        // foreground host. Other panes and applications retain their gestures.
-        if host <= 0
-            || host != pointer.host
-            || screen
-                .iter()
-                .zip(pointer.screen)
-                .any(|(a, b)| !a.is_finite() || (a - b).abs() > 4.0)
-        {
+        let Some(position) = pointer.locate(screen, host) else {
             return false;
-        }
+        };
+        let event = match kind {
+            0 if pointer.pinch && (-0.99..=10.0).contains(&delta[0]) => {
+                GestureEvent::Pinch(PinchEvent {
+                    factor: 1.0 + delta[0],
+                    position,
+                    finished,
+                })
+            }
+            1 if pointer.scroll => {
+                let pixels = delta.map(|value| -value * pointer.scale);
+                if pixels.iter().any(|value| !value.is_finite()) {
+                    return false;
+                }
+                GestureEvent::Scroll(ScrollEvent {
+                    pixels,
+                    position,
+                    finished,
+                    modifiers: crossterm::event::KeyModifiers::from_bits_truncate(modifiers as u8),
+                })
+            }
+            _ => return false,
+        };
         let Ok(mut pending) = self.pending.lock() else {
             return false;
         };
-        let factor = 1.0 + delta;
-        let previous = pending.take();
-        *pending = Some(PinchEvent {
-            factor: previous.map_or(factor, |previous| {
-                (previous.factor * factor).clamp(0.000001, 1_000_000.0)
-            }),
-            position: pointer.position,
-            finished,
-        });
+        if !pending
+            .back_mut()
+            .is_some_and(|previous| previous.merge(event))
+        {
+            // Declining a packet leaves it on the terminal's normal input path.
+            if pending.len() >= 128 {
+                return false;
+            }
+            pending.push_back(event);
+        }
         self.wake.notify_one();
         true
     }
-    pub async fn next(&self) -> PinchEvent {
+    pub async fn next(&self) -> GestureEvent {
         loop {
             let notified = self.wake.notified();
-            if let Some(event) = self.pending.lock().unwrap().take() {
+            if let Some(event) = self.pending.lock().unwrap().pop_front() {
                 return event;
             }
             notified.await;
@@ -71,14 +176,14 @@ impl Shared {
     }
 }
 
-pub(super) struct Pinch {
+pub(super) struct Input {
     pub shared: Arc<Shared>,
     #[cfg(target_os = "macos")]
     handle: *mut std::ffi::c_void,
     #[cfg(target_os = "macos")]
     context: *const Shared,
 }
-impl Default for Pinch {
+impl Default for Input {
     fn default() -> Self {
         Self {
             shared: Arc::default(),
@@ -89,7 +194,7 @@ impl Default for Pinch {
         }
     }
 }
-impl Pinch {
+impl Input {
     pub fn start(&mut self, request: bool) -> bool {
         #[cfg(target_os = "macos")]
         {
@@ -143,36 +248,61 @@ impl Pinch {
             false
         }
     }
-    pub fn observe_pointer(&self, position: Position, canvas: bool) {
+    pub fn observe_pointer(
+        &self,
+        position: Position,
+        canvas: Option<ratatui::layout::Rect>,
+        font: ratatui_image::FontSize,
+        settings: &crate::config::keys::MouseSettings,
+    ) {
         if !self.active() {
             return;
         }
         #[cfg(target_os = "macos")]
         {
-            let mut screen = [0.0; 2];
-            let mut host = 0;
-            if canvas {
+            let pointer = canvas.and_then(|canvas| {
+                let mut screen = [0.0; 2];
+                let mut host = 0;
+                let mut scale = 1.0;
                 unsafe {
-                    lp_pinch_pointer(&mut screen[0], &mut screen[1], &mut host);
+                    lp_pinch_pointer(&mut screen[0], &mut screen[1], &mut host, &mut scale);
                 }
-            }
-            *self.shared.pointer.lock().unwrap() = (canvas && host > 0).then_some(Pointer {
-                position,
-                screen,
-                host,
+                (host > 0 && scale.is_finite() && scale > 0.0).then_some(Pointer {
+                    position,
+                    screen,
+                    host,
+                    canvas,
+                    scale,
+                    cell: [
+                        f64::from(font.width) / scale,
+                        f64::from(font.height) / scale,
+                    ],
+                    pinch: settings.native_pinch,
+                    scroll: settings.native_scroll,
+                })
             });
+            *self.shared.pointer.lock().unwrap() = pointer;
         }
         #[cfg(not(target_os = "macos"))]
         {
-            let _ = (position, canvas);
+            let _ = (position, canvas, font, settings);
         }
     }
+
     pub fn cancel(&self) {
         *self.shared.pointer.lock().unwrap() = None;
-        *self.shared.pending.lock().unwrap() = None;
+        self.shared.pending.lock().unwrap().clear();
+    }
+
+    pub fn retain_canvas(&self, canvas: Option<ratatui::layout::Rect>) {
+        let mut pointer = self.shared.pointer.lock().unwrap();
+        if pointer.is_some_and(|pointer| Some(pointer.canvas) != canvas) {
+            *pointer = None;
+            self.shared.pending.lock().unwrap().clear();
+        }
     }
 }
-impl Drop for Pinch {
+impl Drop for Input {
     fn drop(&mut self) {
         #[cfg(target_os = "macos")]
         if !self.handle.is_null() {
@@ -187,79 +317,37 @@ impl Drop for Pinch {
 unsafe extern "C" {
     fn lp_pinch_authorized(request: bool) -> bool;
     fn lp_pinch_start(
-        callback: extern "C" fn(*mut std::ffi::c_void, f64, f64, f64, i32, bool) -> bool,
+        callback: extern "C" fn(
+            *mut std::ffi::c_void,
+            u32,
+            f64,
+            f64,
+            f64,
+            f64,
+            i32,
+            u32,
+            bool,
+        ) -> bool,
         context: *mut std::ffi::c_void,
     ) -> *mut std::ffi::c_void;
     fn lp_pinch_stop(handle: *mut std::ffi::c_void);
-    fn lp_pinch_pointer(x: *mut f64, y: *mut f64, host: *mut i32);
+    fn lp_pinch_pointer(x: *mut f64, y: *mut f64, host: *mut i32, scale: *mut f64);
 }
 #[cfg(target_os = "macos")]
 extern "C" fn receive(
     context: *mut std::ffi::c_void,
-    delta: f64,
+    kind: u32,
+    dx: f64,
+    dy: f64,
     x: f64,
     y: f64,
     host: i32,
+    modifiers: u32,
     finished: bool,
 ) -> bool {
     // The native source is joined before this strong Arc reference is released.
-    unsafe { &*context.cast::<Shared>() }.receive(delta, [x, y], host, finished)
+    unsafe { &*context.cast::<Shared>() }.receive(kind, [dx, dy], [x, y], host, modifiers, finished)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn pinch_is_scoped_to_its_tty_and_coalesces_fractional_scale() {
-        let source = Shared::default();
-        assert!(!source.receive(0.1, [100.0, 100.0], 42, false));
-        *source.pointer.lock().unwrap() = Some(Pointer {
-            position: Position::new(20, 10),
-            screen: [100.0, 100.0],
-            host: 42,
-        });
-        assert!(!source.receive(0.1, [100.0, 100.0], 43, false));
-        assert!(!source.receive(0.1, [200.0, 100.0], 42, false));
-        assert!(!source.receive(f64::NAN, [100.0, 100.0], 42, false));
-        assert!(source.receive(0.01, [100.0, 100.0], 42, false));
-        assert!(source.receive(0.02, [100.0, 100.0], 42, false));
-        assert!(source.receive(0.0, [100.0, 100.0], 42, true));
-        let event = source.pending.lock().unwrap().take().unwrap();
-        assert!((event.factor - 1.01 * 1.02).abs() < 1e-12);
-        assert_eq!(event.position, Position::new(20, 10));
-        assert!(event.finished);
-    }
-}
-
-#[cfg(all(test, target_os = "macos"))]
-mod native_tests {
-    use std::ffi::c_void;
-    unsafe extern "C" {
-        fn CGEventCreate(source: *const c_void) -> *mut c_void;
-        fn CGEventSetType(event: *mut c_void, kind: u32);
-        fn CGEventSetIntegerValueField(event: *mut c_void, field: u32, value: i64);
-        fn CGEventSetDoubleValueField(event: *mut c_void, field: u32, value: f64);
-        fn CFRelease(object: *mut c_void);
-        fn lp_pinch_decode(event: *mut c_void, delta: *mut f64, ended: *mut bool) -> bool;
-    }
-    #[test]
-    fn native_decoder_reads_magnification_and_phase_without_posting_input() {
-        unsafe {
-            let event = CGEventCreate(std::ptr::null());
-            assert!(!event.is_null());
-            // Construct a gesture fixture in memory; it is never posted to the desktop.
-            // Gesture subtype/phase fields match native trackpad packets.
-            CGEventSetType(event, 29);
-            CGEventSetIntegerValueField(event, 110, 8);
-            CGEventSetDoubleValueField(event, 113, 0.125);
-            CGEventSetIntegerValueField(event, 132, 8);
-            let mut delta = 0.0;
-            let mut ended = false;
-            let decoded = lp_pinch_decode(event, &mut delta, &mut ended);
-            CFRelease(event);
-            assert!(decoded);
-            assert!((delta - 0.125).abs() < 1e-6);
-            assert!(ended);
-        }
-    }
-}
+mod tests;
