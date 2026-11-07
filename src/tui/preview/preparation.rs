@@ -8,6 +8,7 @@ pub(super) struct Frame<'a> {
     pub cells: Size,
     pub pixels: [u32; 2],
     pub raster_scale: f32,
+    pub raster: [u32; 2],
     pub image_id: u32,
     pub nodes: Arc<[Node]>,
     pub summary: Value,
@@ -23,6 +24,7 @@ impl Frame<'_> {
         view: View,
     ) -> Result<()> {
         self.check_interrupted()?;
+        renderer.set_viewport(self.raster);
         let options = self.options(view);
         renderer.hydrate(
             self.project,
@@ -52,6 +54,7 @@ impl Frame<'_> {
         view: View,
     ) -> Result<Preview> {
         self.check_interrupted()?;
+        renderer.set_viewport(self.raster);
         let options = self.options(view);
         let image = renderer.render(
             self.project,

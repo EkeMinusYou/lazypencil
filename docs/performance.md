@@ -42,6 +42,12 @@ completed frame rather than interrupting and repeating the same render. Differen
 views, backgrounds, sizes, refreshes and presentation work still preempt prediction.
 All reuse preserves native pixels; it does not interpolate an old preview at a new zoom.
 
+TUI rendering allocates the explicit integer viewport, including prepared and
+predicted camera frames. At fractional zoom, converting the integer viewport to a
+world-space region and back can add one pixel when the result is rounded outward. Matching the viewport during
+raster allocation avoids a full-image resize and preserves the native pixel grid.
+CLI and MCP image exports retain their outward-rounded dimensions.
+
 Local Kitty terminals can opt into temporary-file transfers after a successful
 capability query. Each upload uses its own disposable link to a private lossless
 payload; inline transfers remain the fallback for remote terminals, multiplexers,

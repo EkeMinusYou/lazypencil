@@ -141,6 +141,7 @@ pub(crate) struct RenderedPreview {
 pub(crate) struct PreviewRenderer {
     cache: Option<RasterCache>,
     recordable: Option<bool>,
+    viewport: Option<[u32; 2]>,
 }
 
 impl PreviewRenderer {
@@ -148,7 +149,12 @@ impl PreviewRenderer {
         Self {
             cache: self.cache.as_ref().map(RasterCache::fork),
             recordable: self.recordable,
+            viewport: self.viewport,
         }
+    }
+
+    pub(crate) fn set_viewport(&mut self, pixels: [u32; 2]) {
+        self.viewport = Some(pixels);
     }
     pub(crate) fn retain_prepared_commands(&mut self, prepared: &Self) {
         if let (Some(cache), Some(prepared)) = (&self.cache, &prepared.cache) {
@@ -248,7 +254,8 @@ impl PreviewRenderer {
         if self.recordable == Some(true)
             && self.cache.as_ref().is_some_and(|cache| !cache.has_images)
         {
-            let plan = RasterPlan::new(project, snapshot, options, true)?;
+            let plan =
+                RasterPlan::new(project, snapshot, options, true)?.with_viewport(self.viewport)?;
             if plan.width * plan.height > atlas::MAX_ATLAS_PIXELS {
                 // Vector commands use world coordinates. With no possible atlas,
                 // revisiting a cached pan has no device origin to synchronize.
@@ -300,6 +307,7 @@ impl PreviewRenderer {
                 Some(&mut *runtime),
                 Some(cache),
                 recordable,
+                self.viewport,
             )?;
             let output = finish(raster, recordable)?;
             runtime.check()?;
@@ -326,6 +334,165 @@ mod tests {
     use super::*;
 
     #[test]
+    fn preview_viewport_preserves_pixels_at_fractional_zoom_without_resampling() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("design.pen");
+        std::fs::write(
+            &path,
+            json!({"version":"2.21","children":[{
+                "type":"frame","id":"root","width":7562,"height":17560,"clip":true,
+                "fill":"#12345680","children":[
+                    {"type":"path","id":"diagonal","width":7562,"height":17560,
+                     "geometry":"M0 0 L7562 17560 L0 17560 Z","fill":"#F59E0BA0"},
+                    {"type":"rectangle","id":"edge","x":2200.25,"y":1300.5,
+                     "width":1,"height":15000,"fill":"#FFFFFF"}
+                ]
+            }]})
+            .to_string(),
+        )
+        .unwrap();
+        let store = crate::store::Store::open(&path, Some(directory.path().join("data"))).unwrap();
+        let (project, snapshot) = crate::service::layout_snapshot(&store, &[], None, None).unwrap();
+        let mut runtime = crate::dynamic::DynamicRuntime::new(store.data_dir());
+        for [width, height] in [[996, 980], [1992, 1960]] {
+            let fitted = height as f32 / 17560.0 * 0.94;
+            for background in [Color::TRANSPARENT, Color::from_rgb(248, 250, 252)] {
+                let mut retained = PreviewRenderer::default();
+                retained.set_viewport([width, height]);
+                for scale in [fitted, fitted * 1.01] {
+                    for pan in [0.0, 64.0] {
+                        let options = RenderOptions {
+                            scale,
+                            region: Some(Rect::new(
+                                3781.0 - width as f32 / scale / 2.0 + pan / scale,
+                                8780.0 - height as f32 / scale / 2.0,
+                                width as f32 / scale,
+                                height as f32 / scale,
+                            )),
+                            background,
+                            ..Default::default()
+                        };
+                        let export =
+                            png_with_runtime(&project, &snapshot, &options, &mut runtime, None)
+                                .unwrap();
+                        if scale == fitted {
+                            assert_eq!(
+                                export.height,
+                                height + 1,
+                                "Exercise the measured outward-rounding case"
+                            );
+                        }
+                        // Compare against the existing retained raster before
+                        // terminal resizing, preserving its native alpha and AA.
+                        let original = PreviewRenderer::default()
+                            .render(&project, &snapshot, &options, &mut runtime, None, None)
+                            .unwrap();
+                        let reference = image::load_from_memory(&original.pixels.png().unwrap())
+                            .unwrap()
+                            .crop_imm(0, 0, width, height)
+                            .into_rgba8();
+                        for _ in 0..2 {
+                            let mut renderer = retained.fork();
+                            let preview = renderer
+                                .render(&project, &snapshot, &options, &mut runtime, None, None)
+                                .unwrap();
+                            let bitmap = image::load_from_memory(&preview.pixels.png().unwrap())
+                                .unwrap()
+                                .into_rgba8();
+                            assert_eq!(bitmap.dimensions(), (width, height));
+                            assert_eq!(preview.bitmap.width(), width);
+                            assert_eq!(preview.bitmap.height(), height);
+                            assert!(
+                                bitmap == reference,
+                                "Preserve native pixels and alpha without filtering at scale={scale}, pan={pan}: first differing pixels {:?}",
+                                bitmap
+                                    .pixels()
+                                    .zip(reference.pixels())
+                                    .enumerate()
+                                    .filter(|(_, (a, b))| a != b)
+                                    .take(4)
+                                    .map(|(i, (a, b))| ((i as u32 % width, i as u32 / width), a, b))
+                                    .collect::<Vec<_>>()
+                            );
+                            renderer
+                                .hydrate(&project, &snapshot, &options, &mut runtime, None)
+                                .unwrap();
+                            retained = renderer;
+                        }
+                        assert_eq!(
+                            crate::document::hash(
+                                &png_with_runtime(
+                                    &project,
+                                    &snapshot,
+                                    &options,
+                                    &mut runtime,
+                                    None
+                                )
+                                .unwrap()
+                                .png
+                            ),
+                            crate::document::hash(&export.png)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn preview_viewport_keeps_image_scene_pixels_and_transparency_at_the_trailing_edge() {
+        let directory = tempfile::tempdir().unwrap();
+        image::RgbaImage::from_fn(7, 5, |x, y| {
+            image::Rgba([x as u8 * 30, y as u8 * 40, 90, 180])
+        })
+        .save(directory.path().join("image.png"))
+        .unwrap();
+        let path = directory.path().join("design.pen");
+        std::fs::write(
+            &path,
+            json!({"version":"2.21","children":[{
+                "type":"rectangle","id":"image","width":7562,"height":17560,
+                "fill":{"type":"image","url":"image.png","mode":"cover","opacity":0.75}
+            }]})
+            .to_string(),
+        )
+        .unwrap();
+        let store = crate::store::Store::open(&path, Some(directory.path().join("data"))).unwrap();
+        let (project, snapshot) = crate::service::layout_snapshot(&store, &[], None, None).unwrap();
+        let mut runtime = crate::dynamic::DynamicRuntime::new(store.data_dir());
+        let scale = 0.052460138;
+        let mut retained = PreviewRenderer::default();
+        retained.set_viewport([128, 980]);
+        for background in [Color::TRANSPARENT, Color::from_rgb(248, 250, 252)] {
+            for pan in [0.0, 64.0] {
+                let options = RenderOptions {
+                    scale,
+                    background,
+                    region: Some(Rect::new(pan / scale, 0.0, 128.0 / scale, 980.0 / scale)),
+                    ..Default::default()
+                };
+                let original = PreviewRenderer::default()
+                    .render(&project, &snapshot, &options, &mut runtime, None, None)
+                    .unwrap();
+                let reference = image::load_from_memory(&original.pixels.png().unwrap()).unwrap();
+                assert_eq!(reference.height(), 981);
+                let reference = reference.crop_imm(0, 0, 128, 980).into_rgba8();
+                let preview = retained
+                    .render(&project, &snapshot, &options, &mut runtime, None, None)
+                    .unwrap();
+                let actual = image::load_from_memory(&preview.pixels.png().unwrap())
+                    .unwrap()
+                    .into_rgba8();
+                assert_eq!(actual.dimensions(), (128, 980));
+                assert_eq!(
+                    crate::document::hash(actual.as_raw()),
+                    crate::document::hash(reference.as_raw())
+                );
+            }
+        }
+    }
+
+    #[test]
     fn large_vector_camera_hydration_needs_no_raster_or_pixel_copy() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("design.pen");
@@ -335,6 +502,7 @@ mod tests {
         let mut retained = PreviewRenderer {
             cache: Some(RasterCache::new(&snapshot)),
             recordable: Some(true),
+            viewport: None,
         };
         let options = RenderOptions {
             region: Some(Rect::new(0.0, 0.0, 4096.0, 4096.0)),

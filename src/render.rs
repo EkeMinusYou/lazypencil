@@ -404,7 +404,7 @@ fn raster_impl(
     options: &RenderOptions,
     runtime: Option<&mut crate::dynamic::DynamicRuntime>,
 ) -> Result<RenderedRaster> {
-    raster_impl_cached(project, snapshot, options, runtime, None, false)
+    raster_impl_cached(project, snapshot, options, runtime, None, false, None)
 }
 
 fn raster_impl_cached(
@@ -414,6 +414,7 @@ fn raster_impl_cached(
     mut runtime: Option<&mut crate::dynamic::DynamicRuntime>,
     cache: Option<&RasterCache>,
     recordable: bool,
+    viewport: Option<[u32; 2]>,
 ) -> Result<RenderedRaster> {
     let shapes = cache.map(|cache| &cache.shapes);
     let pictures = cache.filter(|_| recordable).map(|cache| &cache.pictures);
@@ -425,7 +426,7 @@ fn raster_impl_cached(
         region,
         width,
         height,
-    } = RasterPlan::new(project, snapshot, options, cache.is_some())?;
+    } = RasterPlan::new(project, snapshot, options, cache.is_some())?.with_viewport(viewport)?;
     if let Some(runtime) = runtime.as_deref_mut() {
         runtime.prepare_pages(project, snapshot)?;
     }

@@ -62,16 +62,78 @@ impl RasterPlan {
         }
         let width = (region.width * options.scale).ceil().max(1.0) as u64;
         let height = (region.height * options.scale).ceil().max(1.0) as u64;
-        if width > 16384 || height > 16384 || width * height > MAX_PIXELS {
-            return Err(Error::new(
-                "INVALID_ARGUMENT",
-                "Render exceeds 16384 pixels per side or 32 megapixels",
-            ));
-        }
+        Self::check_size(width, height)?;
         Ok(Self {
             region,
             width,
             height,
         })
+    }
+
+    pub fn with_viewport(mut self, viewport: Option<[u32; 2]>) -> Result<Self> {
+        if let Some([width, height]) = viewport {
+            let (width, height) = (u64::from(width), u64::from(height));
+            Self::check_size(width, height)?;
+            if self.width.abs_diff(width) > 1 || self.height.abs_diff(height) > 1 {
+                return Err(invalid(
+                    "Preview viewport does not match the render region and scale",
+                ));
+            }
+            // A preview already knows its integer viewport. Dividing it by a
+            // fractional zoom and multiplying back in f32 can add one pixel to
+            // ceil(). Allocate the requested viewport without resampling pixels.
+            self.width = width;
+            self.height = height;
+        }
+        Ok(self)
+    }
+
+    fn check_size(width: u64, height: u64) -> Result<()> {
+        if width == 0
+            || height == 0
+            || width > 16384
+            || height > 16384
+            || width * height > MAX_PIXELS
+        {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "Render exceeds 16384 pixels per side or 32 megapixels",
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preview_viewport_keeps_rounding_adjustments_bounded_and_checks_allocation_limits() {
+        let plan = || RasterPlan {
+            region: Rect::new(0.0, 0.0, 100.0, 100.0),
+            width: 996,
+            height: 981,
+        };
+        for pixels in [[996, 980], [996, 981], [997, 982]] {
+            let result = plan().with_viewport(Some(pixels)).unwrap();
+            assert_eq!([result.width, result.height], pixels.map(u64::from));
+        }
+        assert_eq!(plan().with_viewport(None).unwrap().height, 981);
+        for pixels in [
+            [0, 980],
+            [996, 0],
+            [998, 981],
+            [996, 983],
+            [u32::MAX, u32::MAX],
+        ] {
+            assert!(plan().with_viewport(Some(pixels)).is_err());
+        }
+        let plan = RasterPlan {
+            region: Rect::default(),
+            width: 16384,
+            height: 2048,
+        };
+        assert!(plan.with_viewport(Some([16384, 2049])).is_err());
     }
 }

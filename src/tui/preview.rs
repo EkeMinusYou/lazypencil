@@ -452,6 +452,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             {
                 renderer = prepared;
             }
+            renderer.set_viewport(viewport.raster);
             if !request.refresh_pages
                 && let Some(mut preview) = frames.get(request.cells, canvas_background, view)
             {
@@ -563,6 +564,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                     cells: request.cells,
                     pixels,
                     raster_scale: viewport.scale,
+                    raster: viewport.raster,
                     image_id,
                     nodes: nodes.clone(),
                     summary: summary.clone(),
@@ -672,6 +674,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 cells: request.cells,
                 pixels: viewport.display,
                 raster_scale: viewport.scale,
+                raster: viewport.raster,
                 image_id,
                 nodes: preview.nodes.clone(),
                 summary: preview.summary.clone(),
@@ -831,6 +834,86 @@ mod tests {
     use super::*;
     use std::time::Duration;
     use tempfile::TempDir;
+
+    #[test]
+    fn native_worker_keeps_exact_viewport_sizes_for_prepared_frames_and_resize_revisits() {
+        let directory = TempDir::new().unwrap();
+        let document = directory.path().join("design.pen");
+        std::fs::write(
+            &document,
+            json!({"version":"2.21","children":[{
+                "type":"rectangle","id":"shape","width":7562,"height":17560,"fill":"#2563EB"
+            }]})
+            .to_string(),
+        )
+        .unwrap();
+        let store = Store::open(&document, Some(directory.path().join("data"))).unwrap();
+        let picker = Backend::native_for_test();
+        let worker = Worker::start(store, vec![], picker.clone(), 175).unwrap();
+        let view = View {
+            center: [3781.0, 8780.0],
+            zoom: Some(0.052460138),
+            time: 0.0,
+        };
+        let mut zoomed = view;
+        zoomed.zoom = Some(view.zoom.unwrap() * 1.25);
+        let mut panned = view;
+        panned.pan([64.0, 0.0]);
+        let mut hidpi = view;
+        hidpi.zoom = Some(view.zoom.unwrap() * 2.0);
+        let mut hidpi_zoomed = hidpi;
+        hidpi_zoomed.zoom = Some(hidpi.zoom.unwrap() * 1.01);
+        let normal = Size::new(100, 49);
+        let large = Size::new(200, 98);
+        let requests = [
+            (normal, view, false),
+            (normal, zoomed, true),
+            (normal, panned, true),
+            (large, hidpi, false),
+            (large, hidpi_zoomed, false),
+            (normal, zoomed, true),
+        ];
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                for (index, (cells, view, cached)) in requests.into_iter().enumerate() {
+                    let generation = index as u64 + 1;
+                    worker.request(Request {
+                        generation,
+                        cells,
+                        view,
+                        refresh: false,
+                        refresh_pages: false,
+                        check_only: false,
+                        attachment: None,
+                    });
+                    let output = loop {
+                        let output = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                            .await
+                            .unwrap();
+                        if output.generation == generation {
+                            break output;
+                        }
+                    };
+                    let preview = output.result.unwrap();
+                    let viewport =
+                        super::super::viewport::Viewport::new(picker.font_size(), cells).unwrap();
+                    let bitmap = preview.image.bitmap().unwrap();
+                    assert_eq!([bitmap.width(), bitmap.height()], viewport.raster);
+                    assert_eq!(preview.protocol.size(), cells);
+                    assert_eq!(preview.view, view);
+                    if cached {
+                        assert!(
+                            preview.frame_time.is_zero(),
+                            "Exercise prepared and revisited source frames: request {index}, cells {cells:?}"
+                        );
+                    }
+                }
+            });
+        worker.cancel();
+    }
 
     #[test]
     fn initial_camera_preparation_is_bounded_to_the_first_six_operations() {
