@@ -11,6 +11,9 @@ use std::{
     sync::Arc,
 };
 
+// Scene workers must reach the bounded reference/child depth guards in debug builds.
+pub(crate) const SCENE_WORKER_STACK_BYTES: usize = 16 * 1024 * 1024;
+
 const MAX_DEPENDENCY_DOCUMENTS: usize = 128;
 const MAX_PROJECT_BYTES: usize = 128 * 1024 * 1024;
 const MAX_ASSET_BYTES: usize = 64 * 1024 * 1024;

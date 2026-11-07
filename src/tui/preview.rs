@@ -189,6 +189,7 @@ impl Worker {
         let state = shared.clone();
         let thread = std::thread::Builder::new()
             .name("lazypencil-preview".into())
+            .stack_size(crate::project::SCENE_WORKER_STACK_BYTES)
             .spawn(move || {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     work(&state, &store, &fonts, &picker, image_id)
@@ -834,6 +835,68 @@ mod tests {
     use super::*;
     use std::time::Duration;
     use tempfile::TempDir;
+
+    #[test]
+    fn preview_worker_rejects_deep_component_expansion_and_keeps_running() {
+        let directory = TempDir::new().unwrap();
+        let document = directory.path().join("deep.pen");
+        let mut chain = (0..300)
+            .map(|index| {
+                json!({"id":format!("r{index}"),"type":"ref","reusable":true,
+                "ref":format!("r{}", index+1)})
+            })
+            .collect::<Vec<_>>();
+        chain.push(json!({"id":"r300","type":"frame","reusable":true}));
+        std::fs::write(
+            &document,
+            json!({"version":"2.22","children":chain}).to_string(),
+        )
+        .unwrap();
+        let store = Store::open(&document, Some(directory.path().join("data"))).unwrap();
+        let worker = Worker::start(store, vec![], Backend::halfblocks(), 174).unwrap();
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                for generation in 1..=2 {
+                    if generation == 2 {
+                        std::fs::write(
+                            &document,
+                            json!({"version":"2.22","children":[
+                                {"id":"healthy","type":"rectangle","width":20,"height":10}
+                            ]})
+                            .to_string(),
+                        )
+                        .unwrap();
+                    }
+                    worker.request(Request {
+                        generation,
+                        cells: Size::new(20, 10),
+                        view: View::default(),
+                        refresh: true,
+                        refresh_pages: false,
+                        check_only: false,
+                        attachment: None,
+                    });
+                    let output = loop {
+                        let output = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                            .await
+                            .unwrap();
+                        if output.generation == generation {
+                            break output;
+                        }
+                    };
+                    if generation == 1 {
+                        assert_eq!(output.result.err().unwrap().code, "INVALID_DOCUMENT");
+                    } else {
+                        let preview = output.result.unwrap();
+                        assert!(preview.nodes.iter().any(|node| node.id == "healthy"));
+                    }
+                }
+            });
+        worker.cancel();
+    }
 
     #[test]
     fn native_worker_keeps_exact_viewport_sizes_for_prepared_frames_and_resize_revisits() {

@@ -64,7 +64,7 @@ pub fn serve(options: Options) -> Result<()> {
         .name("lazypencil-document".into())
         // Bounded scene expansion can reach 128 references and 256 child levels.
         // Reserve enough stack for debug frames before those guards reject input.
-        .stack_size(16 * 1024 * 1024)
+        .stack_size(crate::project::SCENE_WORKER_STACK_BYTES)
         .spawn(move || -> Result<()> {
             let mut documents = workspace::Workspace::new(options)?;
             #[cfg(feature = "rendering")]
