@@ -12,6 +12,7 @@ use uuid::Uuid;
 mod batch;
 mod import;
 use batch::apply as apply_impl;
+mod reference_cycles;
 mod variable_cycles;
 pub use import::{
     ComponentSource, ImportMode, ImportOptions, NameResolution, ScriptAsset, ScriptAssetKind,
@@ -277,7 +278,6 @@ pub(crate) fn validate_local_with_cancellation(
                         "Instance {id} references a non-reusable node"
                     )));
                 }
-                check_ref_cycle(document, id, &mut HashSet::new())?;
             } else if !has_imports {
                 return Err(invalid(format!(
                     "Instance {id} references missing component {target}"
@@ -338,7 +338,7 @@ pub(crate) fn validate_local_with_cancellation(
         }
         check_variable_uses(node, variables, has_imports)?;
     }
-    Ok(())
+    reference_cycles::check(document, &check)
 }
 
 fn destination(
@@ -883,30 +883,6 @@ fn patch_value(doc: &mut Document, pointer: &str, before: &Value, after: &Value)
             }
         }
     }
-    Ok(())
-}
-
-fn check_ref_cycle(document: &Document, id: &str, active: &mut HashSet<String>) -> Result<()> {
-    if !active.insert(id.into()) {
-        return Err(Error::new(
-            "REFERENCE_CYCLE",
-            format!("Component cycle at {id}"),
-        ));
-    }
-    let node = document.node(id)?;
-    if let Some(target) = node.get("ref").and_then(Value::as_str)
-        && document.node(target).is_ok()
-    {
-        check_ref_cycle(document, target, active)?;
-    }
-    if let Some(children) = node.get("children").and_then(Value::as_array) {
-        for child in children {
-            if let Some(id) = child["id"].as_str() {
-                check_ref_cycle(document, id, active)?;
-            }
-        }
-    }
-    active.remove(id);
     Ok(())
 }
 

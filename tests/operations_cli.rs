@@ -118,6 +118,45 @@ fn cli_validation_finishes_shared_alias_graphs_without_changing_the_document() {
 }
 
 #[test]
+fn cli_bounds_shared_component_expansion_without_hanging_in_cycle_checks() {
+    let temporary = TempDir::new().unwrap();
+    fs::create_dir(temporary.path().join(".git")).unwrap();
+    let path = temporary.path().join("references.pen");
+    let mut nodes = vec![
+        json!({"id":"000-first","type":"ref","ref":"c32"}),
+        json!({"id":"c0","type":"frame","reusable":true}),
+    ];
+    for index in 1..=32 {
+        nodes.push(
+            json!({"id":format!("c{index}"),"type":"frame","reusable":true,"children":[
+            {"id":format!("a{index}"),"type":"ref","ref":format!("c{}", index-1)},
+            {"id":format!("b{index}"),"type":"ref","ref":format!("c{}", index-1)}]}),
+        );
+    }
+    let original = json!({"version":"2.22","children":nodes}).to_string();
+    fs::write(&path, &original).unwrap();
+    let output = fixture_support::output(
+        Command::new(env!("CARGO_BIN_EXE_lazypencil"))
+            .args(["--json", "validate"])
+            .arg(&path)
+            .env("LAZYPENCIL_CONFIG_DIR", temporary.path().join("config"))
+            .env("LAZYPENCIL_DATA_DIR", temporary.path().join("data"))
+            .env("LAZYPENCIL_LOCK_DIR", temporary.path().join("locks")),
+        std::time::Duration::from_secs(15),
+    );
+    assert!(!output.status.success());
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        matches!(
+            result["error"]["code"].as_str(),
+            Some("RESOURCE_LIMIT" | "INVALID_DOCUMENT")
+        ),
+        "{result}"
+    );
+    assert_eq!(fs::read_to_string(path).unwrap(), original);
+}
+
+#[test]
 fn cli_argument_errors_respect_json_before_or_after_the_subcommand() {
     for (index, arguments) in [
         vec!["not-a-command"],
